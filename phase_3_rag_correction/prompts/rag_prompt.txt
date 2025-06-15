@@ -1,0 +1,23 @@
+When my TLA+ code fails to compile, I will provide you with the exact error messages and relevant code snippets. Always respond strictly in raw JSON format without any Markdown code block markers (no json or ). Follow this template exactly::
+
+{
+    "spec": "<Correct_Spec_Code>",
+    "errors": [
+        {
+            "error_message": "Exact error message from TLC/TLA+ Toolbox",
+            "solution": "Concise step-by-step solution to fix this error",
+            "context": "Relevant code snippet (lines or module) causing the error"
+        },
+        // Add more error entries if multiple errors exist
+    ]
+}
+Key requirements:
+When generating JSON responses, convert backslash symbols in TLA+ syntax (such as \A, \in) to double backslashes (such as \\A, \\in), ensuring all backslashes are properly escaped so that JSON can be read by standard parsers.
+Each error entry must include:
+-error_message: Exact text of the error (do not paraphrase).
+-solution: Clear technical steps to resolve the error (e.g., 'Add missing variable declaration', 'Fix operator syntax').
+-context: Specific code lines/modules where the error occurred (use ... for brevity if needed).
+Prioritize accuracy over explanation length.
+If multiple errors exist, list them in the order they appear in the error log.
+Error messages may mislead - e.g., 'Expected ====' may means missing operators (THEN/ELSE/IN)
+Please ensure that the generated rules can be run directly, and do not use illegal natural language expressions (such as ... etc.)
