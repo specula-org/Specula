@@ -3,7 +3,7 @@ import sys
 from openai import OpenAI
 import time
 import json
-from concurrent.futures import ThreadPoolExecutor  # 新增这行
+from concurrent.futures import ThreadPoolExecutor
 from get_errors import complete_actions, tla_sany, add_var_func
 import concurrent.futures
 import threading
@@ -13,43 +13,43 @@ from pathlib import Path
 
 UPDATE_ERROR = True
 
-# 获取当前文件绝对路径
+# Get current file absolute path
 current_file = os.path.abspath(__file__)
-# 计算项目根目录路径（LLM_gen/spec_rag_system）
+# Calculate project root directory path (LLM_gen/spec_rag_system)
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
 
-# 添加项目根目录到Python路径
+# Add project root directory to Python path
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
     
-# 现在可以正确导入
+# Now can import correctly
 from spec_rag_system.retrieval_system.retrievers.basic_retriever import ErrorRetriever
 
 LOOPTIMES = 5
 
 def parse_args():
-    """解析命令行参数"""
-    parser = argparse.ArgumentParser(description='批量处理配置')
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description='Batch processing configuration')
     
     parser.add_argument('--error_data', type=str, 
                         default="/home/ubuntu/LLM_gen/spec_rag_system/knowledge_base/raw_errors/sany_errors/initial_errors.json",
-                        help='错误数据文件路径')
+                        help='Error data file path')
     
     parser.add_argument('--code_folder', type=str,
                         default="/home/ubuntu/LLM_gen/spec_rag_system/data_gen/output/test_actions",
-                        help='代码输入目录路径')
+                        help='Code input directory path')
     
     parser.add_argument('--output_folder', type=str,
                         default="/home/ubuntu/LLM_gen/spec_rag_system/batch_processing",
-                        help='输出目录路径')
+                        help='Output directory path')
     
     parser.add_argument('--exp2_prompt', type=str,
                         default="/home/ubuntu/LLM_gen/spec_rag_system/batch_processing/prompt/experiment2",
-                        help='实验2提示词目录')
+                        help='Experiment 2 prompt directory')
     
     parser.add_argument('--exp3_prompt', type=str,
                         default="/home/ubuntu/LLM_gen/spec_rag_system/batch_processing/prompt/experiment3",
-                        help='实验3提示词目录')
+                        help='Experiment 3 prompt directory')
     
     return parser.parse_args()
 
@@ -64,15 +64,15 @@ client = OpenAI(
     api_key = "sk-2dc693d4f70c429ca14e9eb3e23c6124"
 )
 
-# 创建线程安全的锁
+# Create thread-safe lock
 write_lock = threading.Lock()
 
 def get_completion(prompt, content):
     while True:
         try:
-            # 添加请求开始日志
-            print(f"\n[DEBUG] 开始API请求，代码块长度: {len(content)} 字符")
-            print(f"[DEBUG] 使用的Prompt前缀: {prompt[:50]}...")  # 显示前50字符
+            # Add request start log
+            print(f"\n[DEBUG] Starting API request, code block length: {len(content)} characters")
+            print(f"[DEBUG] Using prompt prefix: {prompt[:50]}...")  # Show first 50 characters
             
             completion = client.chat.completions.create(
                 model="deepseek-reasoner",
@@ -85,7 +85,7 @@ def get_completion(prompt, content):
                 #frequency_penalty=1,
                 #presence_penalty=1,
                 max_tokens=8192,
-                stream=True  # 启用流式输出
+                stream=True  # Enable streaming output
             )
             try:
                 full_response = ""
@@ -94,30 +94,30 @@ def get_completion(prompt, content):
                 
                 for chunk in completion:
                     chunk_count += 1
-                    # 打印流式接收状态
+                    # Print streaming reception status
                     if chunk_count % 1000 == 0:
-                        print(f"[DEBUG] 已接收 {chunk_count} 个数据块，耗时 {time.time()-start_time:.2f}s")
+                        print(f"[DEBUG] Received {chunk_count} chunks, elapsed time: {time.time()-start_time:.2f}s")
                         
                     if chunk.choices[0].delta.content is not None:
                         full_response += chunk.choices[0].delta.content
                 
-                # 添加响应统计日志    
-                print(f"[SUCCESS] 请求完成，共接收 {chunk_count} 个数据块")
-                print(f"[RESPONSE] 响应首行: {full_response.splitlines()[0][:50]}...")
+                # Add response statistics log    
+                print(f"[SUCCESS] Request completed, received {chunk_count} chunks total")
+                print(f"[RESPONSE] First line of response: {full_response.splitlines()[0][:50]}...")
                 return full_response
                 
             except Exception as e:
-                print(f"[ERROR] 流式处理异常: {str(e)}")
-                print(f"[DUMP] 最后收到的数据块: {chunk}")  # 打印异常时的chunk
+                print(f"[ERROR] Streaming processing exception: {str(e)}")
+                print(f"[DUMP] Last received chunk: {chunk}")  # Print chunk when exception occurs
                 time.sleep(5)
                 
         except Exception as e:
-            print(f"[FATAL] API请求失败: {e}")
-            print(f"[DUMP] 当前内容: {content[:100]}...")  # 截断前100字符
+            print(f"[FATAL] API request failed: {e}")
+            print(f"[DUMP] Current content: {content[:100]}...")  # Truncate to first 100 characters
             time.sleep(60)
 
 
-# 创建输出目录结构
+# Create output directory structure
 def create_output_dirs(output_folder_path):
     os.makedirs(output_folder_path, exist_ok=True)
     exp1_dir = os.path.join(output_folder_path, "experiment1/" + time.strftime("%Y%m%d_%H%M%S", time.localtime())) 
@@ -130,53 +130,53 @@ def create_output_dirs(output_folder_path):
     return exp1_dir, exp2_dir, exp3_dir
 
 def run_experiment1(code_folder_path, output_dir):
-    # 记录实验结果的文件
+    # Record experiment results file
     results_file = os.path.join(output_dir, "compilation_results.txt")
     log_file = os.path.join(output_dir, "experiment1.log")
     
     passed_files = []
     failed_files = []
     
-    # 遍历所有tla文件
+    # Iterate through all tla files
     for file in os.listdir(code_folder_path):
         if file.endswith('.tla'):
             file_path = os.path.join(code_folder_path, file)
             
-            # 调用complete_actions处理文件
+            # Call complete_actions to process file
             try:
                 #complete_actions(file_path, output_dir)
                 
-                # 调用tla_sany进行编译
+                # Call tla_sany to compile
                 output = tla_sany(file_path)
                 
-                # 检查是否有编译错误
+                # Check if there are compilation errors
                 if "Error" not in output and "error" not in output:
                     passed_files.append(file)
                 else:
                     failed_files.append((code_folder_path + "/" + file, output))
                     
             except Exception as e:
-                # 记录错误日志
+                # Record error log
                 with open(log_file, 'a') as f:
-                    f.write(f"处理文件 {file} 时发生错误: {str(e)}\n")
+                    f.write(f"Error processing file {file}: {str(e)}\n")
     
-    # 写入实验结果
+    # Write experiment results
     with open(results_file, 'a') as f:
-        f.write(f"编译通过的文件数: {len(passed_files)}\n")
-        f.write(f"编译失败的文件数: {len(failed_files)}\n\n")
+        f.write(f"Files passed compilation: {len(passed_files)}\n")
+        f.write(f"Files failed compilation: {len(failed_files)}\n\n")
         
-        f.write("通过编译的文件:\n")
+        f.write("Files that passed compilation:\n")
         for file in passed_files:
             f.write(f"- {file}\n")
             
-        f.write("\n失败的文件及错误信息:\n")
+        f.write("\nFailed files and error information:\n")
         for file, error in failed_files:
             f.write(f"=== {file} ===\n{error}\n\n")
             
     return failed_files
 
 def process_single_file(file, error, output_dir, log_file, prompt, example_info=None):
-    """处理单个文件的线程任务"""
+    """Thread task for processing a single file"""
     try:
         with open(file, 'r') as f:
             code = f.read()
@@ -185,7 +185,7 @@ def process_single_file(file, error, output_dir, log_file, prompt, example_info=
         else:
             response = get_completion(prompt, "error: \n" + error + "\n" + "code: \n" + code)
         with open(log_file, 'a') as f:
-            f.write(f"文件 {file} 的完整响应:\n{response}\n\n")
+            f.write(f"Complete response for file {file}:\n{response}\n\n")
         response_json = json.loads(response)
         spec = response_json.get("spec")
         if not spec:
@@ -194,43 +194,43 @@ def process_single_file(file, error, output_dir, log_file, prompt, example_info=
         output_file = os.path.join(output_dir, os.path.basename(file))
         errors = response_json.get("errors", [])
         
-        # 使用锁保证写入安全
+        # Use lock to ensure write safety
         with write_lock:
             with open(output_file, 'w') as f:
                 f.write(spec)
             with open(log_file, 'a') as f:
-                f.write(f"已处理文件 {file} 并保存到 {output_file}\n")
+                f.write(f"Processed file {file} and saved to {output_file}\n")
                 
         return output_file, errors
     except json.JSONDecodeError as e:
         with write_lock:
             with open(log_file, 'a') as f:
-                f.write(f"解析文件 {file} 的响应时发生错误: {str(e)}\n")
+                f.write(f"Error parsing response for file {file}: {str(e)}\n")
                 
         return None
     except Exception as e:
         with write_lock:
             with open(log_file, 'a') as f:
-                f.write(f"处理文件 {file} 时发生未预期错误: {str(e)}\n")
+                f.write(f"Unexpected error processing file {file}: {str(e)}\n")
         return None
 
 def run_experiment2(failed_files, output_dir):
-    # 读取prompt文件
+    # Read prompt file
     prompt_file = os.path.join(exp2_prompt_folder_path, "prompt.txt")
     
     results_file = os.path.join(output_dir, "compilation_results.txt")
     log_file = os.path.join(output_dir, "experiment2.log")
     
-    # 检查prompt文件是否存在
+    # Check if prompt file exists
     if not os.path.exists(prompt_file):
-        raise FileNotFoundError("未找到所需的prompt文件")
+        raise FileNotFoundError("Required prompt file not found")
         
-    # 读取prompt文件内容
+    # Read prompt file content
     with open(prompt_file, 'r') as f:
         prompt = f.read()
 
 
-    # # 修改后的主处理逻辑
+    # Modified main processing logic
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = []
         for file, error in failed_files:
@@ -240,13 +240,13 @@ def run_experiment2(failed_files, output_dir):
             )
             futures.append(future)
         
-        # 等待所有任务完成
+        # Wait for all tasks to complete
         for future in concurrent.futures.as_completed(futures):
             result, errors= future.result()
             if result:
-                print(f"成功处理: {result}")
+                print(f"Successfully processed: {result}")
 
-    # 运行tla_sany检查修正后的文件
+    # Run tla_sany to check corrected files
     fixed_files = [f for f in os.listdir(output_dir) if f.endswith('.tla')]
     still_failed = []
     failed_files = []
@@ -254,42 +254,42 @@ def run_experiment2(failed_files, output_dir):
         file_path = os.path.join(output_dir, file)
 
         add_var_func(file_path)
-        # 运行tla_sany
+        # Run tla_sany
         result = tla_sany(file_path)
-        # 检查是否有编译错误
+        # Check if there are compilation errors
         if "Error" not in result and "error" not in result:
-            print(f"文件 {file} 编译通过")
+            print(f"File {file} passed compilation")
         else:
             still_failed.append((file_path, result))
             failed_files.append((output_dir + "/" + file, result))
             with open(log_file, 'a') as f:
-                f.write(f"文件 {file} 仍有编译错误:\n{result}\n")
+                f.write(f"File {file} still has compilation errors:\n{result}\n")
                 
-    # 记录编译结果统计
+    # Record compilation result statistics
     with open(results_file, 'a') as f:
-        f.write(f"编译通过的文件数: {len(fixed_files) - len(still_failed)}\n")
-        f.write(f"编译失败的文件数: {len(still_failed)}\n\n")
+        f.write(f"Files passed compilation: {len(fixed_files) - len(still_failed)}\n")
+        f.write(f"Files failed compilation: {len(still_failed)}\n\n")
         
-        # 记录通过编译的文件
-        f.write("通过编译的文件:\n")
+        # Record files that passed compilation
+        f.write("Files that passed compilation:\n")
         for file in fixed_files:
             if not any(file in failed[0] for failed in still_failed):
                 f.write(f"- {file}\n")
         f.write("\n")
         
-        # 记录失败的文件及错误信息
+        # Record failed files and error information
         if still_failed:
-            f.write("失败的文件及错误信息:\n")
+            f.write("Failed files and error information:\n")
             for file, error in still_failed:
                 f.write(f"=== {file} ===\n{error}\n\n")
     return failed_files
 
 def get_error_info(error):
-    # 判断错误类型并提取相关信息
+    # Determine error type and extract relevant information
     error_info = ""
     
     if "***Parse Error***" in error:
-        # 解析错误
+        # Parse error
         lines = error.split('\n')
         start_idx = -1
         end_idx = -1
@@ -305,10 +305,10 @@ def get_error_info(error):
             error_info = "\n".join(lines[start_idx:end_idx])
         else:
             error_info = error
-            print(f"找不到错误信息")
+            print(f"Cannot find error information")
 
     elif "*** Errors:" in error:
-        # 语义错误
+        # Semantic error
         lines = error.split('\n')
         start_idx = -1
         
@@ -321,7 +321,7 @@ def get_error_info(error):
             error_info = "\n".join(lines[start_idx:])
         else:
             error_info = error
-            print(f"找不到错误信息")
+            print(f"Cannot find error information")
             
     return error_info.strip()
 
@@ -335,53 +335,53 @@ def get_exp_prompt(results):
     return prompt
 
 def update_errors_database(new_errors, error_data_file_path):
-    # 确保文件存在
+    # Ensure file exists
     Path(error_data_file_path).touch(exist_ok=True)
     
-    # 读取现有数据
+    # Read existing data
     try:
         with open(error_data_file_path, 'r') as f:
             existing_errors = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         existing_errors = []
 
-    # 步骤1：获取当前最大错误序号
+    # Step 1: Get current maximum error number
     max_id = 0
-    id_pattern = re.compile(r'^E(\d+)$', re.IGNORECASE)  # 兼容大小写
+    id_pattern = re.compile(r'^E(\d+)$', re.IGNORECASE)  # Compatible with case
     for err in existing_errors:
         if match := id_pattern.match(err.get("error_id", "")):
             current_num = int(match.group(1))
             max_id = max(max_id, current_num)
 
-    # 步骤2：分配新序号
+    # Step 2: Assign new number
     for new_err in new_errors:
-        # 检查是否已有合法ID
+        # Check if there is a valid ID
         if "error_id" in new_err:
             if id_pattern.match(new_err["error_id"]):
-                # 检查ID是否已存在
+                # Check if ID already exists
                 existing_ids = {e["error_id"].upper() for e in existing_errors}
                 if new_err["error_id"].upper() in existing_ids:
-                    # ID冲突时自动分配新号
+                    # ID conflict, automatically assign new number
                     max_id += 1
                     new_err["error_id"] = f"E{max_id:03d}"
                 else:
-                    # 更新最大ID（处理不连续情况）
+                    # Update maximum ID (handle non-continuous cases)
                     if match := id_pattern.match(new_err["error_id"]):
                         current_num = int(match.group(1))
                         max_id = max(max_id, current_num)
             else:
-                # 非法格式时自动分配
+                # Invalid format, automatically assign new number
                 max_id += 1
                 new_err["error_id"] = f"E{max_id:03d}"
         else:
-            # 自动分配新ID
+            # Automatically assign new ID
             max_id += 1
             new_err["error_id"] = f"E{max_id:03d}"
 
-    # 步骤3：追加新数据
+    # Step 3: Append new data
     updated_errors = existing_errors + new_errors
 
-    # 写回文件
+    # Write back to file
     with open(error_data_file_path, 'w') as f:
         json.dump(updated_errors, f, indent=2, ensure_ascii=False)
 
@@ -391,31 +391,31 @@ def run_experiment3(failed_files, error_data_file_path, output_dir):
     results_file = os.path.join(output_dir, "compilation_results.txt")
     log_file = os.path.join(output_dir, "experiment3.log")
 
-    # 检查prompt文件是否存在
+    # Check if prompt file exists
     if not os.path.exists(prompt_file):
-        raise FileNotFoundError("未找到所需的prompt文件")
+        raise FileNotFoundError("Required prompt file not found")
         
-    # 读取prompt文件内容
+    # Read prompt file content
     with open(prompt_file, 'r') as f:
         prompt = f.read()
 
-    # 初始化检索器
+    # Initialize retriever
     retriever = ErrorRetriever(error_data_file_path)
     
     errors_map = {}
 
-    # # 修改后的主处理逻辑
+    # Modified main processing logic
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = []
         for file, error in failed_files:
             query = get_error_info(error)
             results = retriever.search(query, top_k=3)
-            # 将结果写入日志
+            # Write results to log
             log_file = os.path.join(output_dir, "experiment3.log")
             with open(log_file, 'a') as f:
-                f.write(f"检索结果示例:\n{json.dumps(results, indent=2)}")
+                f.write(f"Retrieval results example:\n{json.dumps(results, indent=2)}")
 
-            # 获取检索结果中的错误信息
+            # Get error information from retrieval results
             example_info = get_exp_prompt(results)
 
             future = executor.submit(
@@ -424,11 +424,11 @@ def run_experiment3(failed_files, error_data_file_path, output_dir):
             )
             futures.append(future)
         
-        # 等待所有任务完成
+        # Wait for all tasks to complete
         for future in concurrent.futures.as_completed(futures):
             result, errors = future.result()
             if result:
-                print(f"成功处理: {result}")
+                print(f"Successfully processed: {result}")
                 errors_map[result] = errors
 
 
@@ -440,70 +440,70 @@ def run_experiment3(failed_files, error_data_file_path, output_dir):
         file_path = os.path.join(output_dir, file)
 
         add_var_func(file_path)
-        # 运行tla_sany
+        # Run tla_sany
         result = tla_sany(file_path)
-        # 检查是否有编译错误
+        # Check if there are compilation errors
         if "Error" not in result and "error" not in result:
             if UPDATE_ERROR:
                 if file_path in errors_map:
                     update_errors_database(errors_map[file_path], error_data_file_path)
                 else:
-                    print(f"在此之前已经处理过文件 {file_path}")
-            print(f"文件 {file} 编译通过")
+                    print(f"File {file_path} has been processed before")
+            print(f"File {file} passed compilation")
         else:
             still_failed.append((file_path, result))
             failed_files.append((output_dir + "/" + file, result))
             with open(log_file, 'a') as f:
-                f.write(f"文件 {file} 仍有编译错误:\n{result}\n")
+                f.write(f"File {file} still has compilation errors:\n{result}\n")
                 
-    # 记录编译结果统计
+    # Record compilation result statistics
     with open(results_file, 'a') as f:
-        f.write(f"编译通过的文件数: {len(fixed_files) - len(still_failed)}\n")
-        f.write(f"编译失败的文件数: {len(still_failed)}\n\n")
+        f.write(f"Files passed compilation: {len(fixed_files) - len(still_failed)}\n")
+        f.write(f"Files failed compilation: {len(still_failed)}\n\n")
         
-        # 记录通过编译的文件
-        f.write("通过编译的文件:\n")
+        # Record files that passed compilation
+        f.write("Files that passed compilation:\n")
         for file in fixed_files:
             if not any(file in failed[0] for failed in still_failed):
                 f.write(f"- {file}\n")
         f.write("\n")
         
-        # 记录失败的文件及错误信息
+        # Record failed files and error information
         if still_failed:
-            f.write("失败的文件及错误信息:\n")
+            f.write("Failed files and error information:\n")
             for file, error in still_failed:
                 f.write(f"=== {file} ===\n{error}\n\n")
 
     return failed_files
 
 def run_all_experiments(code_folder_path, output_folder_path, error_data_file_path):
-    # 创建输出目录
+    # Create output directory
     exp1_dir, exp2_dir, exp3_dir = create_output_dirs(output_folder_path)
-    # 清空日志文件
+    # Clear log files
     with open(os.path.join(exp1_dir, "experiment1.log"), 'w') as f:
         f.write("")
     with open(os.path.join(exp2_dir, "experiment2.log"), 'w') as f:
         f.write("")
     with open(os.path.join(exp3_dir, "experiment3.log"), 'w') as f:
         f.write("")
-    # 运行实验1
-    print("开始运行实验1...")
+    # Run experiment 1
+    print("Starting experiment 1...")
     failed_files_2 = run_experiment1(code_folder_path, exp1_dir)
     failed_files_3 = failed_files_2
-    # 运行实验2
-    # print("开始运行实验2...")
+    # Run experiment 2
+    # print("Starting experiment 2...")
     # for i in range(LOOPTIMES):
     #     failed_files_2 = run_experiment2(failed_files_2, exp2_dir)
     
-    # 运行实验3
-    print("开始运行实验3...")
+    # Run experiment 3
+    print("Starting experiment 3...")
     for i in range(LOOPTIMES):
         failed_files_3 = run_experiment3(failed_files_3, error_data_file_path, exp3_dir)
 
 if __name__ == "__main__":
     args = parse_args()
     
-    # 使用参数或默认值
+    # Use parameters or default values
     error_data_file_path = args.error_data
     code_folder_path = args.code_folder
     output_folder_path = args.output_folder

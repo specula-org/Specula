@@ -4,42 +4,42 @@ import subprocess
 import re
 
 def tla_sany(file_path):
-    # 运行tla_sany命令
+    # Run tla_sany command
     result = subprocess.run(['tla_sany', file_path], capture_output=True, text=True)
     output = result.stdout + result.stderr
     print(output)
     return output
     
 def process_actions(yaml_file_path: str, output_dir: str):
-    # 读取yaml文件
+    # Read yaml file
     with open(yaml_file_path, 'r') as f:
         yaml_data = yaml.safe_load(f)
     
-    # 获取yaml文件名(不含扩展名)作为目录名
+    # Get yaml filename (without extension) as directory name
     base_name = os.path.splitext(os.path.basename(yaml_file_path))[0]
-    # 创建动作目录
+    # Create action directory
     action_dir = os.path.join(output_dir, f"{base_name}_actions")
-    # 创建输出目录
+    # Create output directory
     os.makedirs(action_dir, exist_ok=True)
     file_name = []
-    # 处理每个动作
+    # Process each action
     for action in yaml_data.get('code', []):
-        # 分割成行
+        # Split into lines
         lines = action.strip().split('\n')                  
         
-        # 安全过滤（列表推导式）
+        # Safe filtering (list comprehension)
         lines = [line for line in lines 
-                if line.strip() not in {'```tla+', '```tla', '```'}  # 删除代码块标记
-                and not line.strip().startswith('\\*')]  # 删除转义注释
+                if line.strip() not in {'```tla+', '```tla', '```'}  # Remove code block markers
+                and not line.strip().startswith('\\*')]  # Remove escaped comments
         
         if len(lines) == 0:
             continue
-        # 获取动作名称(第一行中第一个==前的内容)
+        # Get action name (content before first == in first line)
         action_name = lines[0].split('==')[0].strip()
         
         add_Module(action_name.split('(')[0], lines)
 
-        # 写入文件
+        # Write to file
         action_file = os.path.join(action_dir, f"{action_name.split('(')[0]}.tla")
         with open(action_file, 'w') as f:
             f.write('\n'.join(lines))
@@ -47,7 +47,7 @@ def process_actions(yaml_file_path: str, output_dir: str):
     return file_name
 
 def add_Module(module_name: str, lines: list):
-    #插入前都要检查是否存在
+    # Check if exists before inserting
     ext_flag = False
     module_flag = False
     end_flag = False
@@ -70,75 +70,75 @@ def add_var_func(file_path: str):
     add_func(file_path)
 
 def add_var(file_path: str):
-    # 使用正则表达式提取Unknown operator后的变量名
+    # Use regular expression to extract variable names after Unknown operator
     output = tla_sany(file_path)
     pattern = r"Unknown operator: `([^']*)'."
     matches = re.findall(pattern, output)
     
-    # 转换为集合去重
+    # Convert to set for deduplication
     var_set = set(matches)
     
     if var_set:
-        # 读取原文件内容
+        # Read original file content
         with open(file_path, 'r') as f:
             lines = f.readlines()
         
-        # 检查是否已存在VARIABLES声明
+        # Check if VARIABLES declaration already exists
         var_line_idx = -1
         for i, line in enumerate(lines):
             if line.startswith("VARIABLES"):
                 var_line_idx = i
                 break
                 
-        # 构造新的VARIABLES声明
+        # Construct new VARIABLES declaration
         var_str = "VARIABLES " + ", ".join(var_set) + "\n"
         
-        # 如果存在则替换,否则插入到第2行
+        # Replace if exists, otherwise insert at line 2
         if var_line_idx >= 0:
             lines[var_line_idx] = var_str
         else:
             lines.insert(2, var_str)
         
-        # 写回文件
+        # Write back to file
         with open(file_path, 'w') as f:
             f.writelines(lines)
     else :
-        #第三行写入空行
+        # Write empty line at line 3
         with open(file_path, 'r') as f:
             lines = f.readlines()
             lines.insert(2, "\n")
-        # 写回文件
+        # Write back to file
         with open(file_path, 'w') as f:
             f.writelines(lines)
 
 def add_func(file_path: str):
-    # 使用正则表达式提取需要0参数的函数名
+    # Use regular expression to extract function names that require 0 arguments
     output = tla_sany(file_path)
     pattern = r"The operator ([^\s]*) requires 0 arguments"
     matches = re.findall(pattern, output)
-    # matches 去重
+    # Deduplicate matches
     matches = list(set(matches))
     if matches:
-        # 读取原文件内容
+        # Read original file content
         with open(file_path, 'r') as f:
             lines = f.readlines()
             
-        # 找到VARIABLES行
+        # Find VARIABLES line
         for i, line in enumerate(lines):
             if line.startswith("VARIABLES"):
-                # 获取所有变量
+                # Get all variables
                 vars = [v.strip() for v in line[9:].strip().split(",")]
-                # 移除匹配到的函数名
+                # Remove matched function names
                 vars = [v for v in vars if v not in matches]
-                # 重写VARIABLES行
+                # Rewrite VARIABLES line
                 if vars:
                     lines[i] = "VARIABLES " + ", ".join(vars) + "\n"
                 else:
                     lines.pop(i)
                 break
                 
-        # 在第3行插入函数定义
-        # 检查是否已存在相同的函数定义
+        # Insert function definitions at line 3
+        # Check if same function definitions already exist
         existing_funcs = []
         for line in lines:
             if "==" in line:
@@ -147,24 +147,24 @@ def add_func(file_path: str):
                     existing_funcs.append(func_name.split("(")[0].strip())
         func_defs = []
         for func in matches:
-            # 检查函数调用时的参数个数
+            # Check parameter count when function is called
             param_pattern = rf"{func}\((.*?)\)"
             param_matches = re.findall(param_pattern, "".join(lines))
             if param_matches:
-                # 获取第一次调用时的参数个数
+                # Get parameter count from first call
                 params = [p.strip() for p in param_matches[0].split(",") if p.strip()]
                 param_count = len(params)
-                # 根据参数个数生成参数列表
+                # Generate parameter list based on parameter count
                 param_list = ", ".join([f"x{i+1}" for i in range(param_count)])
                 func_defs.append(f"{func}({param_list}) == UNCHANGED <<{param_list}>>\n")
             else:
-                #error
+                # error
                 print(f"Error: {func} has no parameters")
         
         if func_defs and func_defs not in existing_funcs:
             lines[3:3] = func_defs
             
-        # 写回文件
+        # Write back to file
         with open(file_path, 'w') as f:
             f.writelines(lines)
 
