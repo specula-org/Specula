@@ -184,7 +184,6 @@ code:
 - Automatically completes variable and function definitions
 - Validates specifications using TLA+ SANY
 - Performs RAG-enhanced error correction if needed
-- Suitable for individual file processing and debugging
 
 **Experiments Mode**:
 - Runs three comparative experiments:
@@ -192,23 +191,6 @@ code:
   2. Baseline correction  
   3. RAG-enhanced correction
 - Generates detailed comparison reports
-- Suitable for research and methodology evaluation
-
-### Reproducing the Example Transformation
-
-To process the provided example and see the complete action completion and error correction workflow:
-
-```bash
-cd phase_3_rag_correction
-python3 main.py input/example_input.yaml output simple
-```
-
-This will demonstrate the system's ability to:
-- Extract 4 TLA+ actions from the YAML input
-- Automatically add missing MODULE headers, EXTENDS statements, and VARIABLES declarations
-- Validate each generated specification
-- Apply RAG-based correction for any syntax or semantic errors
-- Generate a comprehensive statistics report
 
 ## Phase 4: Trace Validation Tool
 
