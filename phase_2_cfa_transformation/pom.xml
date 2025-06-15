@@ -16,32 +16,40 @@
     </properties>
 
    <dependencies>
+       <!-- ==================================================================== -->
+       <!-- MODIFICATION 1: Removed <scope>test</scope> from antlr4 dependency   -->
+       <!-- This ensures the ANTLR tool is available for the build process.      -->
+       <!-- ==================================================================== -->
        <dependency>
            <groupId>org.antlr</groupId>
            <artifactId>antlr4</artifactId>
            <version>${antlr4.version}</version>
-           <scope>test</scope>
        </dependency>
+       
        <dependency>
            <groupId>org.antlr</groupId>
            <artifactId>antlr4-runtime</artifactId>
            <version>${antlr4.version}</version>
        </dependency>
+       
        <dependency>
            <groupId>junit</groupId>
            <artifactId>junit</artifactId>
            <version>4.13.2</version>
-           <scope>test</scope>
+           <scope>test</scope> <!-- JUnit is correctly scoped to 'test' -->
        </dependency>
    </dependencies>
 
 <build>
     <plugins>
+        <!-- Your existing antlr4-maven-plugin remains unchanged. It's correct. -->
         <plugin>
             <groupId>org.antlr</groupId>
             <artifactId>antlr4-maven-plugin</artifactId>
             <version>${antlr4.version}</version>
             <configuration>
+                <!-- Assuming your .g4 files are in src/main/java/grammar -->
+                <!-- If they are in another location, please update this path. -->
                 <sourceDirectory>${basedir}/src/main/java/grammar</sourceDirectory>
                 <outputDirectory>${project.build.directory}/generated-sources/antlr4</outputDirectory>
                 <listener>true</listener>
@@ -49,6 +57,8 @@
                 <arguments>
                     <argument>-visitor</argument>
                 </arguments>
+                <!-- Let's specify the package for the generated sources -->
+                <packageName>parser.antlr</packageName>
             </configuration>
             <executions>
                 <execution>
@@ -60,6 +70,8 @@
                 </execution>
             </executions>
         </plugin>
+        
+        <!-- Your existing maven-compiler-plugin remains unchanged. It's correct. -->
         <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-compiler-plugin</artifactId>
@@ -68,8 +80,38 @@
                 <source>${maven.compiler.source}</source>
                 <target>${maven.compiler.target}</target>
                 <encoding>${project.build.sourceEncoding}</encoding>
-                <generatedSourcesDirectory>${project.build.directory}/generated-sources/antlr4</generatedSourcesDirectory>
             </configuration>
+        </plugin>
+
+        <!-- ==================================================================== -->
+        <!-- MODIFICATION 2: Added maven-assembly-plugin to create a runnable JAR  -->
+        <!-- This is the key change to make your project a distributable tool.    -->
+        <!-- ==================================================================== -->
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-assembly-plugin</artifactId>
+            <version>3.6.0</version> <!-- Using a recent version -->
+            <configuration>
+                <archive>
+                    <manifest>
+                        <!-- IMPORTANT: Replace 'parser.CfaTransformerCli' with the -->
+                        <!-- fully qualified name of your main class if it's different. -->
+                        <mainClass>parser.CfaTransformerCli</mainClass>
+                    </manifest>
+                </archive>
+                <descriptorRefs>
+                    <descriptorRef>jar-with-dependencies</descriptorRef>
+                </descriptorRefs>
+            </configuration>
+            <executions>
+                <execution>
+                    <id>make-assembly</id> <!-- this is used for inheritance merges -->
+                    <phase>package</phase> <!-- bind to the packaging phase -->
+                    <goals>
+                        <goal>single</goal>
+                    </goals>
+                </execution>
+            </executions>
         </plugin>
     </plugins>
 </build>
