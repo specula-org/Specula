@@ -68,6 +68,6 @@ To replicate the conversion of the `etcd` case study from its Imperative-style S
 
 TODO
 
-## Phase 2: CFA Transformation Tool
+## Phase 4: Trace Validation Tool
 
 TODO
