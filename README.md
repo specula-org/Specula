@@ -42,6 +42,15 @@ Output written to: results/structspec/test_output.tla
 ```
 The transformed specification will be available at the specified output path.
 
+### 4. Example Results
+For quick reference, you can find example transformation results in the `example_result` directory. These examples demonstrate the tool's capabilities and can be used as a reference for expected output formats.
+
+To view the example results:
+```bash
+# View example output
+cat example_result/test_output.tla
+```
+
 ### Reproducing the `etcd` Transformation
 
 To replicate the conversion of the `etcd` case study from its Imperative-style Specification (`IISpec`) to the corresponding Structured Specification (`StructSpec`), execute the command below from the project's root directory.
