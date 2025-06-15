@@ -7,6 +7,21 @@
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
+# Create output directory if it doesn't exist
+mkdir -p "$(dirname "$2")"
+
+# 检查脚本执行权限
+if [ ! -x "$0" ]; then
+    echo "Setting execution permission for the script..."
+    chmod +x "$0"
+fi
+
+# 检查输入文件是否存在
+if [ ! -f "$1" ]; then
+    echo "Error: Input file '$1' does not exist"
+    exit 1
+fi
+
 # --- 1. Argument Validation ---
 if [ "$#" -ne 2 ]; then
     echo "ERROR: Invalid number of arguments."
@@ -33,6 +48,12 @@ echo "Building the Java project with Maven... (this may take a moment)"
 # The ( ) creates a subshell, so the 'cd' doesn't affect the rest of the script.
 (cd "$SCRIPT_DIR" && mvn package -DskipTests)
 
+# 检查Maven构建是否成功
+if [ $? -ne 0 ]; then
+    echo "Error: Maven build failed"
+    exit 1
+fi
+
 # --- 4. Find the Executable JAR ---
 # The JAR file is usually in the 'target' directory. We find it dynamically.
 JAR_FILE=$(find "$SCRIPT_DIR/target" -name "*-jar-with-dependencies.jar" | head -n 1)
@@ -47,6 +68,12 @@ echo "Found executable JAR: $JAR_FILE"
 # --- 5. Run the Java Application ---
 echo "Running the CFA transformation logic..."
 java -jar "$JAR_FILE" "$INPUT_FILE" "$OUTPUT_FILE"
+
+# 检查转换是否成功
+if [ $? -ne 0 ]; then
+    echo "Error: CFA transformation failed"
+    exit 1
+fi
 
 echo "=== [Phase 2] CFA Transformation successful. ==="
 echo "Output written to: $OUTPUT_FILE"

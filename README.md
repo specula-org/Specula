@@ -23,7 +23,12 @@ The tool can be built and executed using a single script from the project's root
 
 **Step 1: Build and Run the Tool**
 
-Execute the following command in your terminal:
+1. Set execution permission for the script:
+```bash
+chmod +x phase_2_cfa_transformation/run.sh
+```
+
+2. Execute the following command in your terminal:
 
 ```bash
 # Usage: ./phase_2_cfa_transformation/run.sh <input-file> <output-file>
