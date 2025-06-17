@@ -1,0 +1,36 @@
+# TLA+ RAG Error Correction System Configuration File
+
+# API Configuration
+api:
+  base_url: "https://api.deepseek.com"
+  api_key: "${DEEPSEEK_API_KEY}"  # Read from environment variable
+  model: "deepseek-reasoner"
+  temperature: 0.1
+  max_tokens: 8192
+
+# Path Configuration
+paths:
+  # Knowledge base path
+  knowledge_base: "./data/initial_errors.json"
+  
+  # Prompt paths
+  prompts:
+    baseline: "./data/baseline_prompt.txt"
+    rag: "./data/rag_prompt.txt"
+  
+  # Model path
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"  # Use online model as default
+  local_embedding_model: "/home/ubuntu/.cache/huggingface/huball-MiniLM-L6-v2"  # Local model path
+  
+  # Output path
+  output_base: "./output"
+
+# Experiment Configuration
+experiments:
+  loop_times: 5
+  max_workers: 5
+  
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "[%(levelname)s] %(asctime)s - %(message)s" 

@@ -1,7 +1,0 @@
----- MODULE Action ----
-EXTENDS TLC, Sequences, Bags, FiniteSets, Integers, Naturals
-VARIABLES a
-
-Action ==
-  /\ IF a = 1 THEN a' = 2 ELSE a' = a
-====

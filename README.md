@@ -1,8 +1,15 @@
-# README
+# TLAGEN: TLA+ Generation and Analysis System
 
-## Phase 1: LLM Generation Tool
+A professional, modular system for TLA+ specification generation, control flow analysis, and RAG-enhanced error correction.
 
-TODO
+## Project Overview
+
+This project consists of multiple phases that work together to provide a comprehensive TLA+ development and analysis pipeline:
+
+1. **Phase 1**: LLM Generation Tool (TODO)
+2. **Phase 2**: CFA (Control Flow Analysis) Transformation Tool
+3. **Phase 3**: RAG Error Correction System  
+4. **Phase 4**: Trace Validation Tool (TODO)
 
 ## Phase 2: CFA Transformation Tool
 
@@ -25,14 +32,14 @@ The tool can be built and executed using a single script from the project's root
 
 1. Set execution permission for the script:
 ```bash
-chmod +x phase_2_cfa_transformation/run.sh
+chmod +x tools/cfa/run.sh
 ```
 
 2. Execute the following command in your terminal:
 
 ```bash
-# Usage: ./phase_2_cfa_transformation/run.sh <input-file> <output-file>
-./phase_2_cfa_transformation/run.sh data/iispec/example/test_input.tla results/structspec/test_output.tla
+# Usage: ./tools/cfa/run.sh <input-file> <output-file>
+./tools/cfa/run.sh tools/cfa/input/example/test_input.tla output/test_output.tla
 ```
 This script automates two main actions:
 
@@ -43,17 +50,17 @@ This script automates two main actions:
 After running the command, you will see build logs from Maven, followed by a confirmation message from the script:
 ```
 === [Phase 2] CFA Transformation successful. ===
-Output written to: results/structspec/test_output.tla
+Output written to: output/test_output.tla
 ```
 The transformed specification will be available at the specified output path.
 
 ### 4. Example Results
-For quick reference, you can find example transformation results in the `example_result` directory. These examples demonstrate the tool's capabilities and can be used as a reference for expected output formats.
+For quick reference, you can find example transformation results in the `tools/cfa/output` directory. These examples demonstrate the tool's capabilities and can be used as a reference for expected output formats.
 
 To view the example results:
 ```bash
 # View example output
-cat example_result/test_output.tla
+cat tools/cfa/output/test_output.tla
 ```
 
 ### Reproducing the `etcd` Transformation
@@ -61,38 +68,56 @@ cat example_result/test_output.tla
 To replicate the conversion of the `etcd` case study from its Imperative-style Specification (`IISpec`) to the corresponding Structured Specification (`StructSpec`), execute the command below from the project's root directory.
 
 ```bash
-./phase_2_cfa_transformation/run.sh data/iispec/etcd/etcd.tla results/structspec/etcd.tla
+./tools/cfa/run.sh tools/cfa/input/etcd/etcd.tla output/etcd_transformed.tla
 ```
 
-## Phase 3: RAG Error Correction Tool
+## Phase 3: RAG Error Correction System
 
-This part of the project is a comprehensive system that integrates action completion with RAG-based error correction for TLA+ specifications. It can automatically extract TLA+ actions from YAML files, complete missing variable and function definitions, validate specifications, and perform error correction using RAG-enhanced LLM.
+A professional, modular system that integrates TLA+ action completion with RAG-enhanced error correction. The system automatically extracts TLA+ actions from YAML files, completes missing definitions, validates specifications, and performs intelligent error correction using retrieval-augmented generation.
 
-### 1. Prerequisites
+### 1. Project Structure
+
+```
+TLAGEN/
+├── src/                          # Main source code
+│   ├── core/                     # Core business logic
+│   ├── llm/                      # LLM client and API handling
+│   ├── rag/                      # RAG retrieval system
+│   ├── tla/                      # TLA+ processing utilities
+│   ├── utils/                    # Configuration and utilities
+│   └── __main__.py              # Main entry point
+├── data/                         # Input data, prompts, knowledge base
+├── tools/                        # External tools (CFA, etc.)
+├── scripts/                      # Setup and utility scripts
+├── tests/                        # Test code
+├── docs/                         # Documentation
+├── config.yaml                  # Main configuration file
+└── requirements.txt              # Python dependencies
+```
+
+### 2. Prerequisites
 
 Ensure the following software is installed and available in your system:
 
-*   **Python**: Version 3.8 or higher.
-*   **TLA+ SANY Tools**: For specification validation.
-*   **DeepSeek API Key**: For LLM-based error correction (optional for validation-only mode).
+*   **Python**: Version 3.8 or higher
+*   **TLA+ SANY Tools**: For specification validation
+*   **DeepSeek API Key**: For LLM-based error correction (optional for validation-only mode)
 
 You can verify Python installation by running `python3 --version`.
 
-### 2. How to Run
-
-The tool provides both simple correction mode and comprehensive experiment comparison mode.
+### 3. Quick Start
 
 **Step 1: Environment Setup**
 
-1. Navigate to the phase 3 directory:
+1. Navigate to the project root directory:
 ```bash
-cd phase_3_rag_correction
+cd TLAGEN
 ```
 
 2. Set up the environment:
 ```bash
-chmod +x setup.sh
-./setup.sh
+chmod +x scripts/setup.sh
+./scripts/setup.sh
 ```
 
 3. Set your API key (optional, but recommended for full functionality):
@@ -102,95 +127,64 @@ export DEEPSEEK_API_KEY=your_api_key_here
 
 4. Check environment configuration:
 ```bash
-python3 main.py --check-env
+python3 -m src --check-env
 ```
 
-**Step 2: Run the Tool**
+**Step 2: Run the System**
 
 For simple correction mode (recommended for first-time users):
 ```bash
-# Usage: python3 main.py <input-file> <output-directory> <mode>
-python3 main.py input/example_input.yaml output simple
+# Usage: python3 -m src <input-file> <output-directory> <mode>
+python3 -m src data/example_input.yaml output simple
 ```
 
 For comprehensive experiment comparison:
 ```bash
-python3 main.py input/example_input.yaml output experiments
+python3 -m src data/example_input.yaml output experiments
 ```
 
-### 3. Expected Output
+### 4. Command Line Options
 
-After running the simple mode command, you will see processing logs followed by a completion summary:
-```
-[START] Running simple mode (action completion + RAG correction)...
-[STEP 1] Processing actions from YAML file...
-         Generated 4 action files
-[STEP 2] Completing action files...
-         [OK] Completed: Increment.tla
-         [OK] Completed: AddToQueue.tla
-         [OK] Completed: ProcessQueue.tla
-         [OK] Completed: Action.tla
-[STEP 3] Validating TLA+ files and performing RAG correction...
-         [OK] Validation passed: Increment.tla
-         [FIXING] Attempting RAG correction: Action.tla
-         [OK] Correction successful: Action.tla
-[COMPLETE] Simple mode finished!
-           Total actions: 4
-           Completed files: 4
-           Validation passed: 4
-           Total success rate: 100.00%
-```
-
-The generated TLA+ specifications will be available in the `output/` directory, along with detailed statistics in `output/stats.json`.
-
-### 4. Example Results
-
-For quick reference, you can examine the generated output structure:
+The system supports both positional and named arguments:
 
 ```bash
-# View generated TLA+ files
-ls output/example_input_actions/
+# Positional arguments (recommended)
+python3 -m src input.yaml output_dir simple
 
-# Check processing statistics
-cat output/stats.json
+# Named arguments (alternative)
+python3 -m src --input input.yaml --output output_dir --mode simple
 
-# View detailed logs (if any errors occurred)
-ls output/logs/
+# With custom configuration
+python3 -m src input.yaml output_dir simple --config custom_config.yaml
+
+# Set log level
+python3 -m src input.yaml output_dir simple --log-level DEBUG
+
+# Environment check
+python3 -m src --check-env
 ```
 
-### 5. Input Format
+### 5. Expected Output
 
-The tool expects YAML files with TLA+ code snippets in the following format:
+After running the simple mode command, you will see structured processing logs:
 
-```yaml
-code:
-  - |
-    Increment == 
-        /\ counter < 100
-        /\ counter' = counter + 1
-        /\ UNCHANGED <<status, queue>>
-  
-  - |
-    AddToQueue(item) == 
-        /\ Len(queue) < 10
-        /\ queue' = Append(queue, item)
-        /\ UNCHANGED <<counter, status>>
+```
+[INFO] Starting simple mode...
+[INFO] Processing actions from YAML file...
+[INFO] Generated 4 action files
+[INFO] Completing action files...
+[INFO] Validating and correcting specifications...
+[INFO] Simple mode finished successfully.
+[INFO] Statistics: {
+  "total": 4,
+  "passed": 4,
+  "failed": 0,
+  "success_rate": 1.00
+}
 ```
 
-### 6. Modes Explained
+The generated TLA+ specifications will be available in the specified output directory, along with detailed statistics in `stats.json`.
 
-**Simple Mode**: 
-- Extracts TLA+ actions from YAML
-- Automatically completes variable and function definitions
-- Validates specifications using TLA+ SANY
-- Performs RAG-enhanced error correction if needed
-
-**Experiments Mode**:
-- Runs three comparative experiments:
-  1. Baseline compilation test
-  2. Baseline correction  
-  3. RAG-enhanced correction
-- Generates detailed comparison reports
 
 ## Phase 4: Trace Validation Tool
 
