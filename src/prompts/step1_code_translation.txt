@@ -1,0 +1,132 @@
+You are a TLA+ specification expert. Your task is to translate source code into a TLA+ specification that models the imperative control flow and state transitions.
+
+## Translation Requirements:
+
+1. **Selective Function Modeling**: NOT all functions need to become TLA+ actions. Categorize functions into three types:
+   - **Core Logic Functions**: Main business logic that should be modeled in detail as TLA+ actions (e.g., leader election, log replication in Raft; lock/unlock in concurrency)
+   - **Helper/Utility Functions**: Supporting functions that should be abstracted or simplified (e.g., message handling, data structure operations)
+   - **Infrastructure Functions**: Logging, tracing, debugging functions that should be completely omitted (e.g., Logger, Tracer, Debug utilities)
+
+2. **Function-to-Action Mapping**: Each CORE function that you decide to model must correspond to exactly one TLA+ action with the same name.
+
+3. **State Variables**: Extract only the ESSENTIAL state variables that are relevant to the core logic being modeled.
+
+4. **Imperative Control Flow**: Model the imperative control flow directly for CORE functions only, even if it results in semantically incorrect TLA+ that cannot run properly. This is intentional - the control flow analysis in Phase 2 will fix semantic issues.
+
+5. **Variable Assignments**: Include all variable assignments from the CORE functions, even if variables are assigned multiple times within a function. This may cause TLA+ runtime issues, but that's acceptable.
+
+6. **Syntax Correctness**: The specification must pass TLA+ SANY validation (syntactic correctness), but semantic correctness is not required.
+
+## TLA+ Template Structure:
+
+```tla
+---- MODULE ModuleName ----
+EXTENDS Naturals, Sequences, FiniteSets, TLC
+
+CONSTANTS [Define any constants needed]
+
+VARIABLES 
+    [List all state variables from the code]
+
+vars == <<[comma-separated list of all variables]>>
+
+TypeInvariant == 
+    [Define type constraints for all variables]
+
+Init == 
+    [Initialize all variables to appropriate starting values]
+
+\* Action for each function in the source code
+FunctionName(parameters) ==
+    [Translate function body to TLA+ operations]
+    [Include all variable assignments from the original function]
+    [Model conditional logic and loops as TLA+ constructs]
+
+Next == 
+    \/ \E [parameters] : FunctionName([parameters])
+    [Include all actions corresponding to functions]
+
+Spec == Init /\ [][Next]_vars
+
+\* Safety properties (basic)
+TypeOK == TypeInvariant
+
+====
+```
+
+## Translation Guidelines:
+
+1. **Variable Declarations**: 
+   - Extract all class fields, global variables, and important local variables
+   - Use appropriate TLA+ types (BOOLEAN, Nat, sequences, sets, records)
+
+2. **Function Translation**:
+   - Keep the same function name for the TLA+ action
+   - Include function parameters as action parameters
+   - Translate each statement in the function body
+   - Use TLA+ assignment (variable' = value) for state changes
+
+3. **Control Structures**:
+   - Translate if-statements to IF-THEN-ELSE
+   - Translate loops to recursive actions or non-deterministic choices
+   - Translate switch/case to nested IF-THEN-ELSE
+
+4. **Data Structures**:
+   - Arrays → TLA+ sequences
+   - Lists → TLA+ sequences  
+   - Sets → TLA+ sets
+   - Objects/Structs → TLA+ records
+   - Maps/Dictionaries → TLA+ functions
+
+5. **Concurrency Modeling**:
+   - Model concurrent function calls as non-deterministic action choices in Next
+   - Use parameters to distinguish between different instances/threads
+
+## Function Classification Guidelines:
+
+**CORE Functions (Model as Actions):**
+- Main business logic operations (e.g., lock/unlock, leader election, log append)
+- State transition functions that change critical system state
+- Protocol-specific operations (e.g., vote handling, heartbeat processing)
+- Functions that implement the main algorithm being verified
+
+**HELPER Functions (Abstract/Simplify):**
+- Message creation and parsing functions → Abstract as simple assignments
+- Data structure manipulation → Use TLA+ built-in operations
+- Validation and checking functions → Combine into preconditions
+- Timeout and timer functions → Model as non-deterministic events
+
+**INFRASTRUCTURE Functions (Omit Completely):**
+- Logging functions (log, debug, trace, etc.)
+- Metrics and monitoring functions
+- Configuration and setup functions
+- Memory management functions
+- Pure utility functions that don't affect core state
+
+## Source Code to Analyze:
+
+{source_code}
+
+## Instructions:
+
+1. **Analyze and Categorize**: Examine the source code and categorize each function:
+   - Identify CORE business logic functions that are essential to model
+   - Identify HELPER functions that can be abstracted or simplified
+   - Identify INFRASTRUCTURE functions (logging, debugging, etc.) to omit entirely
+
+2. **Focus on Core Logic**: Extract state variables and data structures that are essential to the CORE functionality only
+
+3. **Create Selective TLA+ Specification**: 
+   - Model only the CORE functions as TLA+ actions with the same names
+   - Abstract or simplify HELPER functions (combine them, use non-deterministic choices, or represent as simple state changes)
+   - Completely omit INFRASTRUCTURE functions
+
+4. **Preserve Core Imperative Logic**: Ensure the imperative control flow of CORE functions is preserved, even if it creates semantic issues
+
+5. **Focus on Syntactic Correctness**: The specification must pass SANY validation
+
+6. **Document Decisions**: Include brief comments explaining which functions were modeled, abstracted, or omitted and why
+
+Generate the complete TLA+ specification:
+
+**IMPORTANT: Return ONLY the TLA+ code. Do not include any natural language explanations, comments about the translation process, or markdown formatting. Start directly with the module declaration and end with the module terminator.** 
