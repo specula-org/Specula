@@ -13,16 +13,16 @@ The framework follows a multi-step process to progressively refine the TLA+ spec
 This is the first step, where we translate source code into an initial TLA+ specification.
 
 *   **Process**: The `iispec_generator` script uses an LLM to perform a "reverse formalization," converting the logic from the source code into an imperative, intermediate TLA+ specification (IISpec).
-*   **Input**: Go source code for Raft (`archive/systems/etcd/raft.go`).
-*   **Output**: An initial TLA+ specification (`output/etcd/Raft.tla`).
+*   **Input**: Go source code for Raft (`systems/etcd/raft.go`).
+*   **Output**: An initial TLA+ specification (`spec/etcd/step1/raft.tla`).
 *   **Command**:
-    ```bash
+```bash
     # Ensure the output directory exists
     mkdir -p output/etcd
 
     # Generate the initial specification from the source code
-    python3 -m src.core.iispec_generator archive/systems/etcd/raft.go output/etcd --mode draft-based
-    ```
+    python3 -m src.core.iispec_generator systems/etcd/raft.go spec/etcd/step1/ --mode draft-based
+```
 
 ### Step 2: Automated Syntax Correction
 
@@ -30,29 +30,37 @@ The initial specification often contains syntax errors. This step automatically 
 
 *   **Process**: The generation script from Step 1 has a built-in correction loop. It repeatedly uses the TLA+ SANY parser to find syntax errors and leverages a simple Retrieval-Augmented Generation (RAG) mechanism to fix them. The process continues until the specification is syntactically valid.
 *   **Input**: The initial, potentially erroneous `Raft.tla` generated internally during Step 1.
-*   **Output**: A syntactically valid `output/etcd/Raft.tla`.
-*   **Command**: This step is automatically integrated into the command from Step 1. The final file `output/etcd/Raft.tla` is the result of this correction process.
+*   **Output**: A syntactically valid `spec/etcd/step1/raft.tla`.
+*   **Command**: This step is automatically integrated into the command from Step 1. The final file `spec/etcd/step2/raft.tla` is the result of this correction process.
 
 ### Step 3: Control Flow Analysis (CFA) Transformation
 
 This step converts the imperative-style IISpec into a standard, structured TLA+ specification.
 
 *   **Process**: The CFA tool parses the imperative control flow (e.g., labels, gotos) in the IISpec and transforms it into a declarative, state-based TLA+ format (`StructSpec`).
-*   **Input**: The syntactically valid IISpec (`output/etcd/Raft.tla`).
-*   **Output**: A structured TLA+ specification (`output/etcd/Raft_transformed.tla`).
+*   **Input**: The syntactically valid IISpec (`spec/etcd/step2/raft.tla`).
+*   **Output**: A structured TLA+ specification (`spec/etcd/step3/raft.tla`).
 *   **Command**:
-    ```bash
-    # The CFA tool requires the input file to be in its specific input directory.
-    cp output/etcd/Raft.tla tools/cfa/input/etcd/
-
+```bash
     # Run the CFA transformation script.
-    ./tools/cfa/run.sh tools/cfa/input/etcd/Raft.tla output/etcd/Raft_transformed.tla
-    ```
+    ./tools/cfa/run.sh spec/etcd/step2/raft.tla spec/etcd/step3/raft.tla
+```
 *   **Note**: The CFA transformation tool is a work in progress. Its parser is not yet fully robust and may require manual adjustments to the input specification to run successfully. This will be improved in future work.
 
-### Step 4: Agent-based Runtime Correction (TODO)
+### Step 4: Agent-based Runtime Correction
 
-*   **Process**: This planned phase will involve an agent that uses the TLA+ model checker (TLC) to find runtime errors, such as deadlocks or invariant violations, and attempts to automatically correct the specification's logic.
+This step automatically detects and fixes runtime errors in TLA+ specifications using model checking.
+
+*   **Process**: The `runtime_corrector` script generates a TLC configuration file, runs the TLC model checker to detect runtime errors, and uses LLM-based correction to iteratively fix the specification until all errors are resolved.
+*   **Input**: A syntactically valid TLA+ specification (e.g., `spec/etcd/step3/raft.tla` from Step 2, or `spec/etcd/step4/raft.tla` from Step 3).
+*   **Output**: 
+    - A TLC configuration file (`spec/etcd/step4/raft.cfg`)
+    - A runtime-corrected TLA+ specification (`spec/etcd/step4/raft.tla`)
+*   **Command**:
+```bash
+    # Run agent-based runtime correction
+    python3 -m src.core.runtime_corrector spec/etcd/step3/raft.tla spec/etcd/step4/
+```
 
 ### Step 5: Automated Trace Validation (TODO)
 

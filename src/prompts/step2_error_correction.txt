@@ -19,7 +19,7 @@ You are a TLA+ specification expert specializing in error correction and specifi
 2. **Type Mismatches**:
    - Fix record field access syntax: record.field → record["field"]
    - Fix sequence operations: seq[i] for access, Append(seq, elem) for append
-   - Fix set operations: elem \\in set, set \\cup {elem}
+   - Fix set operations: elem \\in set, set \\cup {{elem}}
 
 3. **Variable Declaration Issues**:
    - Ensure all variables are declared in VARIABLES section

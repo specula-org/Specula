@@ -1,0 +1,211 @@
+# TLA+ Translation Strategy for Raft Implementation
+
+## 1. FUNCTION CLASSIFICATION
+
+**CORE LOGIC FUNCTIONS:**
+- `Step`: Main message processing dispatcher that handles all Raft protocol messages
+- `stepLeader`: Leader-specific message handling including log replication and heartbeats
+- `stepCandidate`: Candidate state message handling for election process
+- `stepFollower`: Follower state message handling and message forwarding
+- `becomeLeader`: State transition to leader with initialization of leader-specific state
+- `becomeCandidate`: State transition to candidate with term increment and vote casting
+- `becomeFollower`: State transition to follower with state reset
+- `campaign`: Election initiation process with vote request broadcasting
+- `poll`: Vote counting and election result determination
+- `maybeCommit`: Commit index advancement based on majority replication
+- `handleAppendEntries`: Log replication message processing and consistency checks
+- `handleHeartbeat`: Heartbeat message processing and commit index updates
+- `handleSnapshot`: Snapshot installation and state restoration
+- `maybeSendAppend`: Log entry replication with flow control and conflict resolution
+- `sendHeartbeat`: Heartbeat message generation with commit index propagation
+- `appendEntry`: Log entry appending with uncommitted size tracking
+- `restore`: Snapshot-based state restoration and configuration updates
+
+**HELPER FUNCTIONS:**
+- `send`: Message queuing with term validation and durability requirements
+- `bcastAppend`: Broadcast wrapper for log replication to all peers
+- `bcastHeartbeat`: Broadcast wrapper for heartbeat messages
+- `reset`: State reset utility for term transitions
+- `promotable`: Eligibility check for leader promotion
+- `hasLeader`: Leader presence check
+- `pastElectionTimeout`: Election timeout condition check
+- `resetRandomizedElectionTimeout`: Timeout randomization for election safety
+- `increaseUncommittedSize`/`reduceUncommittedSize`: Uncommitted log size management
+- `switchToConfig`: Configuration change application and state updates
+
+**INFRASTRUCTURE FUNCTIONS:**
+- `newRaft`: Constructor with configuration validation and initialization
+- `validate`: Configuration parameter validation
+- `softState`/`hardState`: State extraction for persistence layer
+- `loadState`: State restoration from persistent storage
+- `appliedTo`/`appliedSnap`: Application layer integration
+- `sendTimeoutNow`: Leadership transfer utility
+- `abortLeaderTransfer`: Leadership transfer cleanup
+- `responseToReadIndexReq`: Read-only request response generation
+- All logging and tracing functions
+- `lockedRand` and random number generation utilities
+
+## 2. CORE LOGIC ANALYSIS
+
+**Step:**
+- Purpose: Central message dispatcher that routes messages based on type and current state
+- Key Logic: Term comparison, state-specific delegation, vote message handling
+- State Changes: May trigger state transitions, term updates, vote recording
+- TLA+ Mapping: Main action that branches to specific handlers based on message type
+
+**stepLeader:**
+- Purpose: Handles all leader responsibilities including replication, heartbeats, and proposals
+- Key Logic: Progress tracking, commit advancement, flow control, leadership transfer
+- State Changes: Updates follower progress, commit index, pending proposals
+- TLA+ Mapping: Leader-specific action handling MsgApp responses, proposals, and heartbeats
+
+**stepCandidate:**
+- Purpose: Manages election process and vote collection for candidates
+- Key Logic: Vote counting, quorum determination, election outcome processing
+- State Changes: May transition to leader or follower based on vote results
+- TLA+ Mapping: Candidate action processing vote responses and determining election outcomes
+
+**stepFollower:**
+- Purpose: Handles follower behavior including message forwarding and leader tracking
+- Key Logic: Leader detection, proposal forwarding, append entry acceptance
+- State Changes: Updates leader information, forwards messages, resets election timer
+- TLA+ Mapping: Follower action for message processing and leader interaction
+
+**becomeLeader:**
+- Purpose: Transitions node to leader state and initializes leader responsibilities
+- Key Logic: Progress tracker setup, empty entry appending, state initialization
+- State Changes: Sets leader state, resets progress tracking, appends no-op entry
+- TLA+ Mapping: Leader election completion action with state initialization
+
+**becomeCandidate:**
+- Purpose: Initiates candidacy by incrementing term and voting for self
+- Key Logic: Term increment, self-vote, state transition validation
+- State Changes: Increments term, sets vote to self, changes to candidate state
+- TLA+ Mapping: Election initiation action with term advancement
+
+**campaign:**
+- Purpose: Broadcasts vote requests to all voters in the configuration
+- Key Logic: Vote message construction, voter enumeration, self-vote handling
+- State Changes: Sends vote requests, records self-vote
+- TLA+ Mapping: Vote request broadcasting action for election process
+
+**poll:**
+- Purpose: Records votes and determines election outcome based on quorum
+- Key Logic: Vote recording, quorum calculation, result determination
+- State Changes: Updates vote tracking, returns election result
+- TLA+ Mapping: Vote counting function for election outcome determination
+
+**maybeCommit:**
+- Purpose: Advances commit index based on majority replication acknowledgment
+- Key Logic: Quorum-based commit advancement, term matching validation
+- State Changes: Updates commit index if majority has replicated entries
+- TLA+ Mapping: Commit advancement action based on replication quorum
+
+**handleAppendEntries:**
+- Purpose: Processes log replication messages and maintains log consistency
+- Key Logic: Log matching, conflict detection, entry appending, commit advancement
+- State Changes: Appends entries, updates commit index, sends responses
+- TLA+ Mapping: Log replication handler with consistency checks and conflict resolution
+
+**maybeSendAppend:**
+- Purpose: Sends log entries to followers with flow control and conflict handling
+- Key Logic: Progress checking, entry selection, conflict resolution, snapshot fallback
+- State Changes: Updates follower progress, sends append messages
+- TLA+ Mapping: Log replication action with progress tracking and flow control
+
+## 3. ABSTRACTION STRATEGY
+
+**send:**
+- Current Role: Message queuing with durability and term validation
+- Abstraction Approach: Simplify to direct message delivery without durability concerns
+- Essential Elements: Message routing, term setting, response message handling
+
+**bcastAppend/bcastHeartbeat:**
+- Current Role: Broadcast utilities for leader communication
+- Abstraction Approach: Abstract as single broadcast actions
+- Essential Elements: Message delivery to all followers, progress updates
+
+**reset:**
+- Current Role: State cleanup during term transitions
+- Abstraction Approach: Combine with state transition actions
+- Essential Elements: Term updates, vote clearing, timer resets
+
+**increaseUncommittedSize/reduceUncommittedSize:**
+- Current Role: Flow control for proposal acceptance
+- Abstraction Approach: Abstract as simple proposal acceptance/rejection
+- Essential Elements: Proposal limiting mechanism
+
+## 4. VARIABLE IDENTIFICATION
+
+**Essential State Variables:**
+- `currentTerm`: Current Raft term for each node
+- `votedFor`: Vote cast in current term
+- `log`: Sequence of log entries with terms and indices
+- `commitIndex`: Index of highest committed entry
+- `state`: Node state (Follower, Candidate, Leader)
+- `leaderId`: Current leader identifier
+- `nextIndex`: Next log index to send to each follower (leader only)
+- `matchIndex`: Highest replicated log index for each follower (leader only)
+- `votes`: Vote tracking for current election
+- `electionTimeout`: Randomized election timeout value
+- `configuration`: Current cluster membership configuration
+
+**Derived/Temporary Variables to Omit:**
+- `msgs`/`msgsAfterAppend`: Message queues (abstract as direct delivery)
+- `uncommittedSize`: Flow control state (simplify proposal acceptance)
+- `readStates`: Read-only request state (omit for core consensus focus)
+- `pendingConfIndex`: Configuration change tracking (simplify)
+- `heartbeatElapsed`/`electionElapsed`: Timing state (abstract with timeouts)
+
+## 5. TLA+ STRUCTURE OUTLINE
+
+**Module Name**: RaftConsensus
+**Constants**: Nodes, MaxLogLength, MaxTerm
+**Variables**: 
+- currentTerm, votedFor, log, commitIndex (per node)
+- state, leaderId (per node)  
+- nextIndex, matchIndex (leader state)
+- messages (network state)
+
+**Key Actions**:
+- RequestVote (campaign initiation)
+- HandleVoteRequest/HandleVoteResponse (election process)
+- AppendEntries (log replication)
+- HandleAppendRequest/HandleAppendResponse (replication handling)
+- BecomeLeader/BecomeCandidate/BecomeFollower (state transitions)
+- AdvanceCommitIndex (commit progression)
+- ElectionTimeout/HeartbeatTimeout (timing events)
+
+**Invariants**:
+- ElectionSafety (at most one leader per term)
+- LeaderAppendOnly (leader never overwrites log entries)
+- LogMatching (logs consistent across nodes)
+- LeaderCompleteness (committed entries present in future leaders)
+- StateMachineSafety (nodes apply same sequence of commands)
+
+## 6. TRANSLATION NOTES
+
+**System Completeness Requirements:**
+- **Leader Election**: Full modeling of term advancement, vote collection, quorum determination, and leader establishment
+- **Log Replication**: Complete append entry protocol with consistency checks, conflict resolution, and commit advancement
+- **State Transitions**: All state changes (Follower↔Candidate↔Leader) with proper term handling
+- **Configuration Management**: Basic membership changes and their impact on quorum calculations
+
+**Quality Assurance:**
+- Preserve all safety properties: election safety, log matching, leader completeness
+- Maintain liveness properties: eventual leader election, progress under majority availability
+- Ensure proper term monotonicity and vote uniqueness per term
+- Model network partitions and message reordering/loss scenarios
+- Validate quorum-based decision making for both elections and commits
+
+**Critical Behaviors to Preserve:**
+- Split-vote scenarios and election timeout randomization
+- Log conflict detection and resolution mechanisms
+- Commit safety through majority acknowledgment
+- Leadership transfer and term transitions
+- Snapshot installation for log compaction scenarios
+
+**Balanced Coverage Verification:**
+- Election subsystem: Vote requests, responses, quorum calculation, leader establishment
+- Replication subsystem: Entry appending, consistency checks, commit advancement, conflict resolution
+- Both subsystems must be equally detailed to ensure complete Raft protocol modeling

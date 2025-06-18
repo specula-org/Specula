@@ -178,5 +178,11 @@
     "solution": "Add missing ==== delimiter at module end and ensure proper module declaration syntax",
     "context": "----MODULE TryUpread----\n...\nELSE /\\ IF (old /\\ WRITER) # 0 THEN lock' = [lock EXCEPT ![mtx] = old - UPGRADEABLE_READER] ELSE UNCHANGED lock /\\ FALSE",
     "error_id": "E030"
+  },
+  {
+    "error_message": "Item at line 95, col 9 to line 95, col 9 of module RaftConsensus is not properly indented inside conjunction or  disjunction list item at line 85, col 9 to line 95, col 10 of module RaftConsensus",
+    "solution": "Add Indentation",
+    "context": "msg' = [ a |-> b, c |-> d ]",
+    "error_id": "E031"
   }
 ]

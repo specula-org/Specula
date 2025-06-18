@@ -1,34 +1,34 @@
-# TLAGEN 配置文件
-# LLM 模型配置
+# TLAGEN Configuration File
+# LLM Model Configuration
 llm:
-  # 模型名称 - 请根据你的 API 访问权限选择合适的模型
-  model: "claude-sonnet-4-20250514"  # 可选: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022
+  # Model name - please choose a model appropriate for your API access
+  model: "claude-sonnet-4-20250514"  # Options: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022
   
-  # API 参数
-  max_tokens: 64000        # 最大输出 tokens（claude-3-5-sonnet-20241022 限制为 8192）
-  temperature: 0.1        # 控制生成随机性，0.0-1.0，越低越确定
-  timeout: 3000           # API 请求超时时间（秒）
+  # API Parameters
+  max_tokens: 64000        # Maximum output tokens (claude-3-5-sonnet-20241022 has a limit of 8192)
+  temperature: 0.1        # Controls randomness of generation, 0.0-1.0, lower is more deterministic
+  timeout: 3000           # API request timeout (seconds)
   
-  # 流式处理配置
-  use_streaming: true     # 是否使用流式处理
-  stream_chunk_size: 2000 # 流式处理时的进度显示间隔
+  # Streaming Configuration
+  use_streaming: true     # Whether to use streaming
+  stream_chunk_size: 2000 # Progress display interval for streaming
 
-# TLA+ 验证配置
+# TLA+ Validator Configuration
 tla_validator:
-  tools_path: "lib/tla2tools.jar"  # TLA+ 工具路径
-  timeout: 30                      # 验证超时时间（秒）
+  tools_path: "lib/tla2tools.jar"  # Path to TLA+ tools
+  timeout: 30                      # Validator timeout (seconds)
 
-# 生成配置
+# Generation Configuration
 generation:
-  max_correction_attempts: 3  # 最大错误修正尝试次数
-  mode: "draft-based"              # 生成模式: "direct" 或 "draft-based"
+  max_correction_attempts: 3  # Maximum error correction attempts
+  mode: "draft-based"              # Generation mode: "direct" or "draft-based"
   
-# 路径配置
+# Path Configuration
 paths:
   prompts_dir: "src/prompts"
   output_dir: "output"
   
-# 日志配置
+# Logging Configuration
 logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR
   format: "[%(levelname)s] %(message)s" 
