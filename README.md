@@ -1,191 +1,59 @@
-# TLAGEN: TLA+ Generation and Analysis System
+# TLAGEN: A Framework for Generating High-Quality TLA+ Specifications from Source Code
 
-A professional, modular system for TLA+ specification generation, control flow analysis, and RAG-enhanced error correction.
+This document provides an overview of the TLAGEN framework, a pipeline for generating, correcting, and analyzing TLA+ specifications derived directly from source code.
 
-## Project Overview
+We will use the Go implementation of the Raft consensus algorithm from `etcd` as a running example to demonstrate the workflow, from raw source code to a high-quality, validated specification.
 
-This project consists of multiple phases that work together to provide a comprehensive TLA+ development and analysis pipeline:
+## The Pipeline: From Go Code to a Validated Specification
 
-1. **Phase 1**: LLM Generation Tool (TODO)
-2. **Phase 2**: CFA (Control Flow Analysis) Transformation Tool
-3. **Phase 3**: RAG Error Correction System  
-4. **Phase 4**: Trace Validation Tool (TODO)
+The framework follows a multi-step process to progressively refine the TLA+ specification.
 
-## Phase 2: CFA Transformation Tool
+### Step 1: Initial Intermediate Specification (IISpec) Generation
 
-This part of the project is a command-line tool that performs Control Flow Analysis (CFA) on a TLA+ specification and transforms it into a structured format.
+This is the first step, where we translate source code into an initial TLA+ specification.
 
-### 1. Prerequisites
+*   **Process**: The `iispec_generator` script uses an LLM to perform a "reverse formalization," converting the logic from the source code into an imperative, intermediate TLA+ specification (IISpec).
+*   **Input**: Go source code for Raft (`archive/systems/etcd/raft.go`).
+*   **Output**: An initial TLA+ specification (`output/etcd/Raft.tla`).
+*   **Command**:
+    ```bash
+    # Ensure the output directory exists
+    mkdir -p output/etcd
 
-Ensure the following software is installed and available in your system's PATH:
+    # Generate the initial specification from the source code
+    python3 -m src.core.iispec_generator archive/systems/etcd/raft.go output/etcd --mode draft-based
+    ```
 
-*   **Java Development Kit (JDK)**: Version 11 or higher.
-*   **Apache Maven**: Version 3.6 or higher.
+### Step 2: Automated Syntax Correction
 
-You can verify their installation by running `java -version` and `mvn -version`.
+The initial specification often contains syntax errors. This step automatically fixes them.
 
-### 2. How to Run
+*   **Process**: The generation script from Step 1 has a built-in correction loop. It repeatedly uses the TLA+ SANY parser to find syntax errors and leverages a simple Retrieval-Augmented Generation (RAG) mechanism to fix them. The process continues until the specification is syntactically valid.
+*   **Input**: The initial, potentially erroneous `Raft.tla` generated internally during Step 1.
+*   **Output**: A syntactically valid `output/etcd/Raft.tla`.
+*   **Command**: This step is automatically integrated into the command from Step 1. The final file `output/etcd/Raft.tla` is the result of this correction process.
 
-The tool can be built and executed using a single script from the project's root directory.
+### Step 3: Control Flow Analysis (CFA) Transformation
 
-**Step 1: Build and Run the Tool**
+This step converts the imperative-style IISpec into a standard, structured TLA+ specification.
 
-1. Set execution permission for the script:
-```bash
-chmod +x tools/cfa/run.sh
-```
+*   **Process**: The CFA tool parses the imperative control flow (e.g., labels, gotos) in the IISpec and transforms it into a declarative, state-based TLA+ format (`StructSpec`).
+*   **Input**: The syntactically valid IISpec (`output/etcd/Raft.tla`).
+*   **Output**: A structured TLA+ specification (`output/etcd/Raft_transformed.tla`).
+*   **Command**:
+    ```bash
+    # The CFA tool requires the input file to be in its specific input directory.
+    cp output/etcd/Raft.tla tools/cfa/input/etcd/
 
-2. Execute the following command in your terminal:
+    # Run the CFA transformation script.
+    ./tools/cfa/run.sh tools/cfa/input/etcd/Raft.tla output/etcd/Raft_transformed.tla
+    ```
+*   **Note**: The CFA transformation tool is a work in progress. Its parser is not yet fully robust and may require manual adjustments to the input specification to run successfully. This will be improved in future work.
 
-```bash
-# Usage: ./tools/cfa/run.sh <input-file> <output-file>
-./tools/cfa/run.sh tools/cfa/input/example/test_input.tla output/test_output.tla
-```
-This script automates two main actions:
+### Step 4: Agent-based Runtime Correction (TODO)
 
-1. It invokes Maven (mvn package) to compile the Java source and package it into a self-contained, executable JAR file.
-2. It then runs the newly created JAR, passing the specified input and output file paths as arguments.
+*   **Process**: This planned phase will involve an agent that uses the TLA+ model checker (TLC) to find runtime errors, such as deadlocks or invariant violations, and attempts to automatically correct the specification's logic.
 
-### 3. Expected Output
-After running the command, you will see build logs from Maven, followed by a confirmation message from the script:
-```
-=== [Phase 2] CFA Transformation successful. ===
-Output written to: output/test_output.tla
-```
-The transformed specification will be available at the specified output path.
+### Step 5: Automated Trace Validation (TODO)
 
-### 4. Example Results
-For quick reference, you can find example transformation results in the `tools/cfa/output` directory. These examples demonstrate the tool's capabilities and can be used as a reference for expected output formats.
-
-To view the example results:
-```bash
-# View example output
-cat tools/cfa/output/test_output.tla
-```
-
-### Reproducing the `etcd` Transformation
-
-To replicate the conversion of the `etcd` case study from its Imperative-style Specification (`IISpec`) to the corresponding Structured Specification (`StructSpec`), execute the command below from the project's root directory.
-
-```bash
-./tools/cfa/run.sh tools/cfa/input/etcd/etcd.tla output/etcd_transformed.tla
-```
-
-## Phase 3: RAG Error Correction System
-
-A professional, modular system that integrates TLA+ action completion with RAG-enhanced error correction. The system automatically extracts TLA+ actions from YAML files, completes missing definitions, validates specifications, and performs intelligent error correction using retrieval-augmented generation.
-
-### 1. Project Structure
-
-```
-TLAGEN/
-├── src/                          # Main source code
-│   ├── core/                     # Core business logic
-│   ├── llm/                      # LLM client and API handling
-│   ├── rag/                      # RAG retrieval system
-│   ├── tla/                      # TLA+ processing utilities
-│   ├── utils/                    # Configuration and utilities
-│   └── __main__.py              # Main entry point
-├── data/                         # Input data, prompts, knowledge base
-├── tools/                        # External tools (CFA, etc.)
-├── scripts/                      # Setup and utility scripts
-├── tests/                        # Test code
-├── docs/                         # Documentation
-├── config.yaml                  # Main configuration file
-└── requirements.txt              # Python dependencies
-```
-
-### 2. Prerequisites
-
-Ensure the following software is installed and available in your system:
-
-*   **Python**: Version 3.8 or higher
-*   **TLA+ SANY Tools**: For specification validation
-*   **DeepSeek API Key**: For LLM-based error correction (optional for validation-only mode)
-
-You can verify Python installation by running `python3 --version`.
-
-### 3. Quick Start
-
-**Step 1: Environment Setup**
-
-1. Navigate to the project root directory:
-```bash
-cd TLAGEN
-```
-
-2. Set up the environment:
-```bash
-chmod +x scripts/setup.sh
-./scripts/setup.sh
-```
-
-3. Set your API key (optional, but recommended for full functionality):
-```bash
-export DEEPSEEK_API_KEY=your_api_key_here
-```
-
-4. Check environment configuration:
-```bash
-python3 -m src --check-env
-```
-
-**Step 2: Run the System**
-
-For simple correction mode (recommended for first-time users):
-```bash
-# Usage: python3 -m src <input-file> <output-directory> <mode>
-python3 -m src data/example_input.yaml output simple
-```
-
-For comprehensive experiment comparison:
-```bash
-python3 -m src data/example_input.yaml output experiments
-```
-
-### 4. Command Line Options
-
-The system supports both positional and named arguments:
-
-```bash
-# Positional arguments (recommended)
-python3 -m src input.yaml output_dir simple
-
-# Named arguments (alternative)
-python3 -m src --input input.yaml --output output_dir --mode simple
-
-# With custom configuration
-python3 -m src input.yaml output_dir simple --config custom_config.yaml
-
-# Set log level
-python3 -m src input.yaml output_dir simple --log-level DEBUG
-
-# Environment check
-python3 -m src --check-env
-```
-
-### 5. Expected Output
-
-After running the simple mode command, you will see structured processing logs:
-
-```
-[INFO] Starting simple mode...
-[INFO] Processing actions from YAML file...
-[INFO] Generated 4 action files
-[INFO] Completing action files...
-[INFO] Validating and correcting specifications...
-[INFO] Simple mode finished successfully.
-[INFO] Statistics: {
-  "total": 4,
-  "passed": 4,
-  "failed": 0,
-  "success_rate": 1.00
-}
-```
-
-The generated TLA+ specifications will be available in the specified output directory, along with detailed statistics in `stats.json`.
-
-
-## Phase 4: Trace Validation Tool
-
-TODO
+*   **Process**: The final planned phase will validate the corrected TLA+ specification against execution traces gathered from the original system. This ensures that the formal model's behavior accurately reflects the real implementation.
