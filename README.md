@@ -40,6 +40,7 @@ This step converts the imperative-style IISpec into a standard, structured TLA+ 
 *   **Process**: The CFA tool parses the imperative control flow (e.g., labels, gotos) in the IISpec and transforms it into a declarative, state-based TLA+ format (`StructSpec`).
 *   **Input**: The syntactically valid IISpec (`spec/etcd/step2/raft.tla`).
 *   **Output**: A structured TLA+ specification (`spec/etcd/step3/raft.tla`).
+A trace configuration file (`spec/etcd/step2/raft_config.yaml`) describing the specification structure.
 *   **Command**:
 ```bash
     # Run the CFA transformation script.
@@ -62,6 +63,23 @@ This step automatically detects and fixes runtime errors in TLA+ specifications 
     python3 -m src.core.runtime_corrector spec/etcd/step3/raft.tla spec/etcd/step4/
 ```
 
-### Step 5: Automated Trace Validation (TODO)
+### Step 5: Trace Validation Framework
 
-*   **Process**: The final planned phase will validate the corrected TLA+ specification against execution traces gathered from the original system. This ensures that the formal model's behavior accurately reflects the real implementation.
+This step generates trace validation drivers that can validate TLA+ specifications against execution traces from the original system.
+
+#### Step 5.1: Trace Validation Driver Generation
+
+*   **Process**: The `trace_generator` script generates specialized TLA+ modules that can accept and validate execution traces. It takes a configuration file describing the spec's structure (constants, variables, and actions) and automatically generates the trace validation driver files.
+*   **Input**: A trace configuration file (`spec/etcd/step2/raft_config.yaml`) describing the specification structure.
+*   **Output**: 
+    - Trace validation TLA+ specification (`spec/etcd/step4/spec/specTrace.tla`)
+    - Trace validation TLC configuration file (`spec/etcd/step4/spec/specTrace.cfg`)
+*   **Command**:
+```bash
+    # Generate trace validation driver from configuration
+    python3 src/core/trace_generator.py spec/etcd/step2/raft_config.yaml spec/etcd/step4/spec/
+```
+
+#### Step 5.2: Automated Instrumentation (TODO)
+
+*   **Process**: The planned second phase will automatically instrument the original source code to generate execution traces that can be consumed by the trace validation driver generated in Step 5.1.
