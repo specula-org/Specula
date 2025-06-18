@@ -2,20 +2,21 @@ You are a TLA+ specification expert. Your task is to translate source code into 
 
 ## Translation Requirements:
 
-1. **Selective Function Modeling**: NOT all functions need to become TLA+ actions. Categorize functions into three types:
-   - **Core Logic Functions**: Main business logic that should be modeled in detail as TLA+ actions (e.g., leader election, log replication in Raft; lock/unlock in concurrency)
-   - **Helper/Utility Functions**: Supporting functions that should be abstracted or simplified (e.g., message handling, data structure operations)
-   - **Infrastructure Functions**: Logging, tracing, debugging functions that should be completely omitted (e.g., Logger, Tracer, Debug utilities)
+1. **Selective Function Modeling**: Categorize functions into three types:
+   - **Core Logic Functions**: Main business logic that should be modeled as TLA+ actions
+   - **Helper/Utility Functions**: Supporting functions that should be abstracted or simplified
+   - **Infrastructure Functions**: Logging, tracing, debugging functions that should be omitted
 
-2. **Function-to-Action Mapping**: Each CORE function that you decide to model must correspond to exactly one TLA+ action with the same name.
+2. **System Balance Priority**: For distributed systems like Raft, ensure EQUAL implementation of:
+   - **Leader Election**: Vote handling, term management, state transitions
+   - **Log Replication**: Entry appending, consistency checks, commit advancement
+   - Both subsystems must be fully represented as TLA+ actions
 
-3. **State Variables**: Extract only the ESSENTIAL state variables that are relevant to the core logic being modeled.
+3. **Function-to-Action Mapping**: Each CORE function must correspond to exactly one TLA+ action with the same name.
 
-4. **Imperative Control Flow**: Model the imperative control flow directly for CORE functions only, even if it results in semantically incorrect TLA+ that cannot run properly. This is intentional - the control flow analysis in Phase 2 will fix semantic issues.
+4. **State Variables**: Extract only the ESSENTIAL state variables relevant to the core logic.
 
-5. **Variable Assignments**: Include all variable assignments from the CORE functions, even if variables are assigned multiple times within a function. This may cause TLA+ runtime issues, but that's acceptable.
-
-6. **Syntax Correctness**: The specification must pass TLA+ SANY validation (syntactic correctness), but semantic correctness is not required.
+5. **Syntax Correctness**: The specification must pass TLA+ SANY validation (syntactic correctness).
 
 ## TLA+ Template Structure:
 
@@ -36,19 +37,16 @@ TypeInvariant ==
 Init == 
     [Initialize all variables to appropriate starting values]
 
-\* Action for each function in the source code
+\* Action for each core function in the source code
 FunctionName(parameters) ==
     [Translate function body to TLA+ operations]
-    [Include all variable assignments from the original function]
-    [Model conditional logic and loops as TLA+ constructs]
 
 Next == 
     \/ \E [parameters] : FunctionName([parameters])
-    [Include all actions corresponding to functions]
+    [Include ALL actions corresponding to core functions]
 
 Spec == Init /\ [][Next]_vars
 
-\* Safety properties (basic)
 TypeOK == TypeInvariant
 
 ====
@@ -78,30 +76,22 @@ TypeOK == TypeInvariant
    - Objects/Structs → TLA+ records
    - Maps/Dictionaries → TLA+ functions
 
-5. **Concurrency Modeling**:
-   - Model concurrent function calls as non-deterministic action choices in Next
-   - Use parameters to distinguish between different instances/threads
-
 ## Function Classification Guidelines:
 
 **CORE Functions (Model as Actions):**
 - Main business logic operations (e.g., lock/unlock, leader election, log append)
 - State transition functions that change critical system state
 - Protocol-specific operations (e.g., vote handling, heartbeat processing)
-- Functions that implement the main algorithm being verified
 
 **HELPER Functions (Abstract/Simplify):**
 - Message creation and parsing functions → Abstract as simple assignments
 - Data structure manipulation → Use TLA+ built-in operations
 - Validation and checking functions → Combine into preconditions
-- Timeout and timer functions → Model as non-deterministic events
 
 **INFRASTRUCTURE Functions (Omit Completely):**
 - Logging functions (log, debug, trace, etc.)
 - Metrics and monitoring functions
 - Configuration and setup functions
-- Memory management functions
-- Pure utility functions that don't affect core state
 
 ## Source Code to Analyze:
 
@@ -109,23 +99,17 @@ TypeOK == TypeInvariant
 
 ## Instructions:
 
-1. **Analyze and Categorize**: Examine the source code and categorize each function:
-   - Identify CORE business logic functions that are essential to model
-   - Identify HELPER functions that can be abstracted or simplified
-   - Identify INFRASTRUCTURE functions (logging, debugging, etc.) to omit entirely
+1. **Analyze and Categorize**: Examine the source code and categorize each function into CORE, HELPER, or INFRASTRUCTURE.
 
-2. **Focus on Core Logic**: Extract state variables and data structures that are essential to the CORE functionality only
+2. **Focus on Core Logic**: Extract state variables and data structures essential to the CORE functionality only.
 
-3. **Create Selective TLA+ Specification**: 
-   - Model only the CORE functions as TLA+ actions with the same names
-   - Abstract or simplify HELPER functions (combine them, use non-deterministic choices, or represent as simple state changes)
-   - Completely omit INFRASTRUCTURE functions
+3. **Create Complete TLA+ Specification**: 
+   - Model ALL CORE functions as TLA+ actions with the same names
+   - For distributed systems: Ensure BOTH consensus/election AND data replication are fully represented
+   - Abstract HELPER functions appropriately
+   - Omit INFRASTRUCTURE functions completely
 
-4. **Preserve Core Imperative Logic**: Ensure the imperative control flow of CORE functions is preserved, even if it creates semantic issues
-
-5. **Focus on Syntactic Correctness**: The specification must pass SANY validation
-
-6. **Document Decisions**: Include brief comments explaining which functions were modeled, abstracted, or omitted and why
+4. **Ensure System Completeness**: Verify that all major subsystems are represented in the specification.
 
 Generate the complete TLA+ specification:
 

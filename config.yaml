@@ -1,36 +1,34 @@
-# TLA+ RAG Error Correction System Configuration File
+# TLAGEN 配置文件
+# LLM 模型配置
+llm:
+  # 模型名称 - 请根据你的 API 访问权限选择合适的模型
+  model: "claude-sonnet-4-20250514"  # 可选: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022
+  
+  # API 参数
+  max_tokens: 64000        # 最大输出 tokens（claude-3-5-sonnet-20241022 限制为 8192）
+  temperature: 0.1        # 控制生成随机性，0.0-1.0，越低越确定
+  timeout: 3000           # API 请求超时时间（秒）
+  
+  # 流式处理配置
+  use_streaming: true     # 是否使用流式处理
+  stream_chunk_size: 2000 # 流式处理时的进度显示间隔
 
-# API Configuration
-api:
-  base_url: "https://api.deepseek.com"
-  api_key: "${DEEPSEEK_API_KEY}"  # Read from environment variable
-  model: "deepseek-reasoner"
-  temperature: 0.1
-  max_tokens: 8192
+# TLA+ 验证配置
+tla_validator:
+  tools_path: "lib/tla2tools.jar"  # TLA+ 工具路径
+  timeout: 30                      # 验证超时时间（秒）
 
-# Path Configuration
+# 生成配置
+generation:
+  max_correction_attempts: 3  # 最大错误修正尝试次数
+  mode: "draft-based"              # 生成模式: "direct" 或 "draft-based"
+  
+# 路径配置
 paths:
-  # Knowledge base path
-  knowledge_base: "./data/initial_errors.json"
+  prompts_dir: "src/prompts"
+  output_dir: "output"
   
-  # Prompt paths
-  prompts:
-    baseline: "./data/baseline_prompt.txt"
-    rag: "./data/rag_prompt.txt"
-  
-  # Model path
-  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"  # Use online model as default
-  local_embedding_model: "/home/ubuntu/.cache/huggingface/huball-MiniLM-L6-v2"  # Local model path
-  
-  # Output path
-  output_base: "./output"
-
-# Experiment Configuration
-experiments:
-  loop_times: 5
-  max_workers: 5
-  
-# Logging Configuration
+# 日志配置
 logging:
-  level: "INFO"
-  format: "[%(levelname)s] %(asctime)s - %(message)s" 
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "[%(levelname)s] %(message)s" 
