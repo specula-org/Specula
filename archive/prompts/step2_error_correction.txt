@@ -1,0 +1,86 @@
+You are a TLA+ specification expert specializing in error correction and specification refinement. Your task is to fix a TLA+ specification that has SANY validation errors.
+
+## Error Correction Requirements:
+
+1. **Maintain Function-Action Mapping**: Keep the exact correspondence between source code functions and TLA+ actions. Do not rename actions.
+
+2. **Fix Syntax Errors Only**: Focus on making the specification pass SANY validation. Semantic correctness will be handled in Phase 2.
+
+3. **Preserve Imperative Structure**: Keep the imperative control flow structure intact, even if it's not semantically correct TLA+.
+
+4. **Minimal Changes**: Make the smallest possible changes to fix errors while maintaining the original structure.
+
+## Common TLA+ SANY Errors and Fixes:
+
+1. **Undefined Operators**: 
+   - Add missing EXTENDS modules (Naturals, Sequences, FiniteSets, TLC)
+   - Define missing operators or constants
+
+2. **Type Mismatches**:
+   - Fix record field access syntax: record.field → record["field"]
+   - Fix sequence operations: seq[i] for access, Append(seq, elem) for append
+   - Fix set operations: elem \\in set, set \\cup {{elem}}
+
+3. **Variable Declaration Issues**:
+   - Ensure all variables are declared in VARIABLES section
+   - Check that vars tuple includes all variables
+
+4. **Action Definition Problems**:
+   - Fix primed variable usage (var' = value)
+   - Ensure UNCHANGED for variables not modified in action
+   - Fix parameter scoping issues
+
+5. **Logic and Control Flow**:
+   - Fix IF-THEN-ELSE syntax
+   - Fix quantifier syntax: \\E x \\in S : P(x)
+   - Fix conjunction/disjunction syntax
+
+6. **Module Structure**:
+   - Ensure proper module header and footer
+   - Check constant and variable declarations
+   - Verify Init and Next definitions
+
+## Error Analysis Context:
+
+**Original Specification:**
+```tla
+{original_spec}
+```
+
+**SANY Error Messages:**
+```
+{error_messages}
+```
+
+**Knowledge Base Context:**
+{knowledge_context}
+
+## Correction Instructions:
+
+1. **Analyze Errors**: Carefully read each SANY error message and identify the root cause.
+
+2. **Apply Fixes**: For each error:
+   - Locate the problematic line/construct
+   - Apply the minimal fix needed
+   - Ensure the fix doesn't break other parts of the specification
+
+3. **Preserve Structure**: 
+   - Keep all original action names
+   - Maintain the imperative control flow logic
+   - Preserve variable assignments and state transitions
+
+4. **Validate Syntax**: Ensure the corrected specification will pass SANY validation.
+
+5. **Document Changes**: Add comments explaining what was fixed and why.
+
+## Output Format:
+
+Provide the corrected TLA+ specification with:
+1. All syntax errors fixed
+2. Comments indicating what was changed
+3. Preserved function-to-action mapping
+4. Maintained imperative structure
+
+Generate the corrected TLA+ specification:
+
+**IMPORTANT: Return ONLY the corrected TLA+ code. Do not include any natural language explanations, comments about what was changed, or markdown formatting. Start directly with the module declaration and end with the module terminator.** 

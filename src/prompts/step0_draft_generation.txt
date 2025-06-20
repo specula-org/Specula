@@ -1,22 +1,43 @@
-You are a TLA+ specification expert and software architect. Your task is to analyze source code and generate a natural language draft that outlines the translation strategy for converting the code into a TLA+ specification.
+You are a TLA+ specification expert. Your task is to analyze source code and generate a concise technical summary to enable precise TLA+ specification conversion. Focus on code-level accuracy and structured analysis.
 
-## Analysis Requirements:
+## Objective:
+Produce a concise technical summary of functions from the source code to enable precise TLA+ specification conversion. Focus on code-level accuracy and LLM-friendly structure.
 
-1. **Function Classification**: Categorize each function in the source code into:
-   - **Core Logic Functions**: Main business logic that should be modeled as TLA+ actions
-   - **Helper Functions**: Supporting functions that should be abstracted or simplified
-   - **Infrastructure Functions**: Logging, debugging, monitoring functions that should be omitted
+## Processing Requirements:
 
-2. **Key Logic Description**: For each CORE function, describe:
-   - The main purpose and behavior of the function
-   - Critical state transitions it performs
-   - Important conditional logic and control flow
-   - Key variables and data structures it manipulates
+### Function Analysis:
+Identify and categorize functions into:
+• **Core protocol logic** (e.g., consensus algorithms, state transitions) - requires detailed analysis
+• **Supporting operations** (e.g., validation, utility functions) - brief summary only
+• **Infrastructure code** (e.g., logging, networking, timers) - one line mention
 
-3. **System Balance Priority**: For distributed systems like Raft, ensure EQUAL emphasis on:
-   - **Leader Election**: Vote handling, term management, state transitions
-   - **Log Replication**: Entry appending, consistency checks, commit advancement
-   - Both subsystems must be fully represented in core functions
+### Function Documentation:
+**For CORE functions only (detailed analysis):**
+a. Declare signature with input/output types
+b. Describe primary purpose in 1 sentence
+c. Map to system protocol phase/component
+d. Flag critical control flows affecting state transitions
+
+**For NON-CORE functions (brief summary):**
+a. One line describing role and modeling approach
+
+### Modeling Decisions:
+**Full Modeling Required for:**
+• State machine transition logic
+• Term/version comparison logic
+• Protocol-critical condition checks
+• Consensus and consistency mechanisms
+
+**Abstract when:**
+• Network I/O operations (e.g., sendRPC, network calls)
+• Timer management (e.g., timeout handling)
+• Non-deterministic utilities
+• Performance optimizations
+
+**Omit completely:**
+• Logging/debug/tracing calls
+• Metrics and monitoring
+• Error formatting and display
 
 ## Source Code to Analyze:
 
@@ -24,80 +45,52 @@ You are a TLA+ specification expert and software architect. Your task is to anal
 
 ## Output Format:
 
-Generate a structured natural language draft with the following sections:
+Present in structured markdown with:
 
-### 1. FUNCTION CLASSIFICATION
+### FUNCTION CLASSIFICATION
 
-**CORE LOGIC FUNCTIONS:**
-- [Function Name]: [Brief description of why it's core logic]
-- [Function Name]: [Brief description of why it's core logic]
+**CORE FUNCTIONS (require detailed analysis):**
+- [Function Name]: [One sentence description]
+- [Function Name]: [One sentence description]
 ...
 
-**HELPER FUNCTIONS:**
-- [Function Name]: [Brief description of its supporting role]
-- [Function Name]: [Brief description of its supporting role]
+**SUPPORTING FUNCTIONS (brief summary):**
+- [Function Name]: [Brief role/purpose] - [Modeling Approach]
+- [Function Name]: [Brief role/purpose] - [Modeling Approach]
 ...
 
-**INFRASTRUCTURE FUNCTIONS:**
-- [Function Name]: [Brief description of why it should be omitted]
-- [Function Name]: [Brief description of why it should be omitted]
+**INFRASTRUCTURE FUNCTIONS (to omit):**
+- [Function Name]: [Brief description] - Omitted
+- [Function Name]: [Brief description] - Omitted
 ...
-
-### 2. CORE LOGIC ANALYSIS
-
-**[Function Name]:**
-- Purpose: [What this function does]
-- Key Logic: [Critical algorithmic steps and decision points]
-- State Changes: [What variables/state it modifies]
-- TLA+ Mapping: [How it should be represented as a TLA+ action]
-
-[Repeat for each core function]
-
-### 3. ABSTRACTION STRATEGY
-
-**[Helper Function Name]:**
-- Current Role: [What it does in the original code]
-- Abstraction Approach: [How to simplify it in TLA+]
-- Essential Elements: [What must be preserved]
-
-[Repeat for each helper function]
-
-### 4. VARIABLE IDENTIFICATION
-
-**Essential State Variables:**
-- [Variable Name]: [Type and purpose]
-- [Variable Name]: [Type and purpose]
-...
-
-**Derived/Temporary Variables to Omit:**
-- [Variable Name]: [Why it can be omitted]
-- [Variable Name]: [Why it can be omitted]
-...
-
-### 5. TLA+ STRUCTURE OUTLINE
-
-**Module Name**: [Suggested name]
-**Constants**: [List of constants needed]
-**Variables**: [List of state variables]
-**Key Actions**: [List of actions corresponding to core functions]
-**Invariants**: [Suggested safety properties to check]
-
-### 6. TRANSLATION NOTES
-
-**System Completeness Requirements:**
-- For Raft: Both leader election AND log replication must be fully modeled
-- For concurrency systems: All synchronization mechanisms must be included
-- Ensure balanced coverage - no subsystem should dominate others
-
-**Quality Assurance:**
-- [Key behaviors that must be preserved]
-- [Critical properties that should hold]
 
 ---
 
-**IMPORTANT**: 
-- For distributed systems, prioritize BOTH consensus/election AND data replication equally
-- Ensure the abstraction preserves ALL essential properties of the original system
-- Focus on logical structure and behavior, not implementation details
+### DETAILED CORE FUNCTION ANALYSIS
 
-Generate the complete structured analysis following the format above. 
+### [Core Function Name]
+- **Signature**: `func(...) ...`
+- **Purpose**: [One sentence description]
+- **Protocol Component**: [Election/Replication/Consensus/Utility]
+- **Critical Logic**:
+  • Condition: [specific comparison/check] → Action: [state change]
+  • [List key conditional flows and state modifications]
+- **Modeling Approach**: [Full/Abstracted with reasoning]
+
+[Repeat detailed analysis ONLY for core functions]
+
+---
+
+### ESSENTIAL STATE VARIABLES:
+- [Variable Name]: [Type and purpose in protocol]
+- [Variable Name]: [Type and purpose in protocol]
+
+---
+
+## Validation Rules:
+• Cross-validate function calls and dependencies
+• Preserve execution order dependencies between functions
+• Highlight any non-idempotent operations
+• Ensure balanced coverage of all protocol components
+
+**Focus on producing a translation-ready technical summary that preserves algorithmic correctness.** 

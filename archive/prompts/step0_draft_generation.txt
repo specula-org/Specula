@@ -1,0 +1,103 @@
+You are a TLA+ specification expert and software architect. Your task is to analyze source code and generate a natural language draft that outlines the translation strategy for converting the code into a TLA+ specification.
+
+## Analysis Requirements:
+
+1. **Function Classification**: Categorize each function in the source code into:
+   - **Core Logic Functions**: Main business logic that should be modeled as TLA+ actions
+   - **Helper Functions**: Supporting functions that should be abstracted or simplified
+   - **Infrastructure Functions**: Logging, debugging, monitoring functions that should be omitted
+
+2. **Key Logic Description**: For each CORE function, describe:
+   - The main purpose and behavior of the function
+   - Critical state transitions it performs
+   - Important conditional logic and control flow
+   - Key variables and data structures it manipulates
+
+3. **System Balance Priority**: For distributed systems like Raft, ensure EQUAL emphasis on:
+   - **Leader Election**: Vote handling, term management, state transitions
+   - **Log Replication**: Entry appending, consistency checks, commit advancement
+   - Both subsystems must be fully represented in core functions
+
+## Source Code to Analyze:
+
+{source_code}
+
+## Output Format:
+
+Generate a structured natural language draft with the following sections:
+
+### 1. FUNCTION CLASSIFICATION
+
+**CORE LOGIC FUNCTIONS:**
+- [Function Name]: [Brief description of why it's core logic]
+- [Function Name]: [Brief description of why it's core logic]
+...
+
+**HELPER FUNCTIONS:**
+- [Function Name]: [Brief description of its supporting role]
+- [Function Name]: [Brief description of its supporting role]
+...
+
+**INFRASTRUCTURE FUNCTIONS:**
+- [Function Name]: [Brief description of why it should be omitted]
+- [Function Name]: [Brief description of why it should be omitted]
+...
+
+### 2. CORE LOGIC ANALYSIS
+
+**[Function Name]:**
+- Purpose: [What this function does]
+- Key Logic: [Critical algorithmic steps and decision points]
+- State Changes: [What variables/state it modifies]
+- TLA+ Mapping: [How it should be represented as a TLA+ action]
+
+[Repeat for each core function]
+
+### 3. ABSTRACTION STRATEGY
+
+**[Helper Function Name]:**
+- Current Role: [What it does in the original code]
+- Abstraction Approach: [How to simplify it in TLA+]
+- Essential Elements: [What must be preserved]
+
+[Repeat for each helper function]
+
+### 4. VARIABLE IDENTIFICATION
+
+**Essential State Variables:**
+- [Variable Name]: [Type and purpose]
+- [Variable Name]: [Type and purpose]
+...
+
+**Derived/Temporary Variables to Omit:**
+- [Variable Name]: [Why it can be omitted]
+- [Variable Name]: [Why it can be omitted]
+...
+
+### 5. TLA+ STRUCTURE OUTLINE
+
+**Module Name**: [Suggested name]
+**Constants**: [List of constants needed]
+**Variables**: [List of state variables]
+**Key Actions**: [List of actions corresponding to core functions]
+**Invariants**: [Suggested safety properties to check]
+
+### 6. TRANSLATION NOTES
+
+**System Completeness Requirements:**
+- For Raft: Both leader election AND log replication must be fully modeled
+- For concurrency systems: All synchronization mechanisms must be included
+- Ensure balanced coverage - no subsystem should dominate others
+
+**Quality Assurance:**
+- [Key behaviors that must be preserved]
+- [Critical properties that should hold]
+
+---
+
+**IMPORTANT**: 
+- For distributed systems, prioritize BOTH consensus/election AND data replication equally
+- Ensure the abstraction preserves ALL essential properties of the original system
+- Focus on logical structure and behavior, not implementation details
+
+Generate the complete structured analysis following the format above. 
