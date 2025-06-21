@@ -30,3 +30,4 @@ release.properties
 dependency-reduced-pom.xml
 buildNumber.properties
 .m2/
+archive/
