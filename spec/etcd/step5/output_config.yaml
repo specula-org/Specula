@@ -1,0 +1,80 @@
+spec_name: Raft
+constants:
+- name: Server
+  value: '{"n1", "n2", "n3"}'
+- name: Value
+  value: '{"v1", "v2", "v3"}'
+- name: Nil
+  value: '"Nil"'
+- name: NoLimit
+  value: '3'
+variables:
+- name: currentTerm
+  default_type: node_map_int
+- name: votedFor
+  default_type: custom
+  default_value: '[s \\in Server |-> Nil]'
+- name: log
+  default_type: node_map_sequence
+- name: commitIndex
+  default_type: node_map_int
+- name: state
+  default_type: custom
+  default_value: '[s \\in Server |-> "Follower"]'
+- name: leaderId
+  default_type: custom
+  default_value: '[s \\in Server |-> Nil]'
+- name: nextIndex
+  default_type: custom
+  default_value: '[s \\in Server |-> [t \\in Server |-> 1]]'
+- name: matchIndex
+  default_type: custom
+  default_value: '[s \\in Server |-> [t \\in Server |-> 0]]'
+- name: votesGranted
+  default_type: custom
+  default_value: '[s \\in Server |-> {}]'
+- name: votesRejected
+  default_type: custom
+  default_value: '[s \\in Server |-> {}]'
+- name: electionElapsed
+  default_type: node_map_int
+- name: heartbeatElapsed
+  default_type: node_map_int
+- name: randomizedElectionTimeout
+  default_type: node_map_int
+- name: messages
+  default_type: set
+- name: readStates
+  default_type: node_map_sequence
+- name: pendingReadIndexMessages
+  default_type: node_map_sequence
+- name: leadTransferee
+  default_type: custom
+  default_value: '[s \\in Server |-> Nil]'
+- name: pendingConfIndex
+  default_type: node_map_int
+- name: uncommittedSize
+  default_type: node_map_int
+- name: isLearner
+  default_type: node_map_bool
+- name: config
+  default_type: custom
+  default_value: '[s \\in Server |-> [voters: Server, learners: {}]]'
+- name: readOnlyOption
+  default_type: custom
+  default_value: '[s \\in Server |-> "Safe"]'
+actions:
+- name: tickElection
+  parameters:
+  - name: s
+    source: Server
+- name: tickHeartbeat
+  parameters:
+  - name: s
+    source: Server
+- name: Step
+  parameters:
+  - name: s
+    source: Server
+  - name: m
+    source: messages

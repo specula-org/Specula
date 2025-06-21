@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 from openai import OpenAI
@@ -18,14 +19,15 @@ class LLMClient:
         self.config = get_config(config_path)
         api_config = self.config.get_api_config()
         
-        # Check API key
-        api_key = api_config.get('api_key')
-        if not api_key or api_key.startswith('${'):
+        # Check API key - always use DEEPSEEK_API_KEY regardless of URL
+        api_key = api_config.get('api_key') or os.getenv('DEEPSEEK_API_KEY')
+        if not api_key:
             raise ValueError("Please set DEEPSEEK_API_KEY environment variable")
         
         self.client = OpenAI(
             base_url=api_config.get('base_url'),
-            api_key=api_key
+            api_key=api_key,
+            timeout=180.0  # 2 minutes timeout for large files
         )
         
         self.model = api_config.get('model', 'deepseek-reasoner')

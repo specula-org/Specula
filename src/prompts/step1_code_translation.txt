@@ -1,9 +1,9 @@
-You are a TLA+ specification expert. Your task is to translate source code into a TLA+ specification that models the imperative control flow and state transitions.
+You are a TLA+ specification expert. Your task is to translate source code into a TLA+ specification that faithfully models the imperative control flow and state transitions. **Focus on statement-by-statement translation of core logic functions.**
 
 ## Translation Requirements:
 
 1. **Selective Function Modeling**: Categorize functions into three types:
-   - **Core Logic Functions**: Main business logic that should be modeled as TLA+ actions
+   - **Core Logic Functions**: Main business logic that must be translated statement-by-statement as TLA+ actions
    - **Helper/Utility Functions**: Supporting functions that should be abstracted or simplified
    - **Infrastructure Functions**: Logging, tracing, debugging functions that should be omitted
 
@@ -58,40 +58,19 @@ TypeOK == TypeInvariant
    - Extract all class fields, global variables, and important local variables
    - Use appropriate TLA+ types (BOOLEAN, Nat, sequences, sets, records)
 
-2. **Function Translation**:
+2. **Rigorous Function Translation (CRITICAL)**:
    - Keep the same function name for the TLA+ action
    - Include function parameters as action parameters
-   - Translate each statement in the function body
+   - **Translate EVERY statement in core functions line-by-line**
+   - **Preserve the exact execution order of all operations**
+   - **Capture every conditional check, variable assignment, and state modification**
    - Use TLA+ assignment (variable' = value) for state changes
+   - **DO NOT skip or abstract any critical logic in core functions**
 
 3. **Control Structures**:
    - Translate if-statements to IF-THEN-ELSE
    - Translate loops to recursive actions or non-deterministic choices
    - Translate switch/case to nested IF-THEN-ELSE
-
-4. **Data Structures**:
-   - Arrays → TLA+ sequences
-   - Lists → TLA+ sequences  
-   - Sets → TLA+ sets
-   - Objects/Structs → TLA+ records
-   - Maps/Dictionaries → TLA+ functions
-
-## Function Classification Guidelines:
-
-**CORE Functions (Model as Actions):**
-- Main business logic operations (e.g., lock/unlock, leader election, log append)
-- State transition functions that change critical system state
-- Protocol-specific operations (e.g., vote handling, heartbeat processing)
-
-**HELPER Functions (Abstract/Simplify):**
-- Message creation and parsing functions → Abstract as simple assignments
-- Data structure manipulation → Use TLA+ built-in operations
-- Validation and checking functions → Combine into preconditions
-
-**INFRASTRUCTURE Functions (Omit Completely):**
-- Logging functions (log, debug, trace, etc.)
-- Metrics and monitoring functions
-- Configuration and setup functions
 
 ## Source Code to Analyze:
 
@@ -99,17 +78,19 @@ TypeOK == TypeInvariant
 
 ## Instructions:
 
-1. **Analyze and Categorize**: Examine the source code and categorize each function into CORE, HELPER, or INFRASTRUCTURE.
-
-2. **Focus on Core Logic**: Extract state variables and data structures essential to the CORE functionality only.
-
-3. **Create Complete TLA+ Specification**: 
-   - Model ALL CORE functions as TLA+ actions with the same names
+1. **Create Complete TLA+ Specification**: 
+   - **Translate ALL CORE functions statement-by-statement as TLA+ actions with the same names**
+   - **For each core function: translate every line of code, every conditional, every assignment**
+   - **Preserve the exact algorithmic behavior and execution flow**
    - For distributed systems: Ensure BOTH consensus/election AND data replication are fully represented
    - Abstract HELPER functions appropriately
    - Omit INFRASTRUCTURE functions completely
 
-4. **Ensure System Completeness**: Verify that all major subsystems are represented in the specification.
+2. **Ensure Rigorous Translation**: 
+   - **Every critical operation in core functions must be captured**
+   - **No simplification or abstraction of core logic**
+   - **Faithful line-by-line translation is the priority**
+   - Verify that all major subsystems are represented in the specification
 
 Generate the complete TLA+ specification:
 

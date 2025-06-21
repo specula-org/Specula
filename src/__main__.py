@@ -93,6 +93,10 @@ Running Mode Description:
     * Experiment 1: Baseline compilation test
     * Experiment 2: Baseline correction
     * Experiment 3: RAG correction
+  generate-config - Generate trace validation configuration from TLA+ specification
+    * Analyze TLA+ specification structure
+    * Generate YAML configuration for trace validation
+    * Output includes constants, variables, and actions
 
 Environment Requirements:
   - Set DEEPSEEK_API_KEY environment variable to enable LLM correction functionality
@@ -102,10 +106,12 @@ Examples:
   # Positional argument format
   python main.py input.yaml ./results simple
   python main.py input.yaml ./results experiments
+  python main.py spec.tla config.yaml generate-config
   
   # Option argument format (compatible with old version)
   python main.py --input input.yaml --output ./results --mode simple
   python main.py --input input.yaml --output ./results --mode experiments
+  python main.py --input spec.tla --output config.yaml --mode generate-config
         """
     )
     
@@ -113,20 +119,20 @@ Examples:
     parser.add_argument(
         "--input", "-i",
         type=str,
-        help="Input YAML file path"
+        help="Input file path (YAML for simple/experiments mode, TLA+ for generate-config mode)"
     )
     
     parser.add_argument(
         "--output", "-o",
         type=str,
-        help="Output directory path"
+        help="Output path (directory for simple/experiments mode, file for generate-config mode)"
     )
     
     parser.add_argument(
         "--mode", "-m",
         type=str,
-        choices=["simple", "experiments"],
-        help="Running mode: simple (simple mode) or experiments (experiment mode)"
+        choices=["simple", "experiments", "generate-config"],
+        help="Running mode: simple (simple mode), experiments (experiment mode), or generate-config (generate trace config)"
     )
     
     parser.add_argument(
@@ -220,8 +226,8 @@ def validate_inputs(args):
         input_file = args.positional_args[0]
         output_dir = args.positional_args[1]
         mode = args.positional_args[2]
-        if mode not in ['simple', 'experiments']:
-            raise ValueError(f"Invalid running mode: {mode}, must be 'simple' or 'experiments'")
+        if mode not in ['simple', 'experiments', 'generate-config']:
+            raise ValueError(f"Invalid running mode: {mode}, must be 'simple', 'experiments', or 'generate-config'")
     # Otherwise use option arguments
     else:
         input_file = args.input
@@ -241,8 +247,13 @@ def validate_inputs(args):
     if not input_path.exists():
         raise FileNotFoundError(f"Input file does not exist: {input_file}")
     
-    if not input_path.suffix.lower() in ['.yaml', '.yml']:
-        raise ValueError(f"Input file must be in YAML format: {input_file}")
+    # Validate input file format based on mode
+    if mode in ['simple', 'experiments']:
+        if not input_path.suffix.lower() in ['.yaml', '.yml']:
+            raise ValueError(f"Input file must be in YAML format for {mode} mode: {input_file}")
+    elif mode == 'generate-config':
+        if not input_path.suffix.lower() == '.tla':
+            raise ValueError(f"Input file must be in TLA+ format for generate-config mode: {input_file}")
     
     # Check configuration file
     if args.config:
@@ -250,9 +261,13 @@ def validate_inputs(args):
         if not config_path.exists():
             raise FileNotFoundError(f"Configuration file does not exist: {args.config}")
     
-    # Create output directory
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+    # Create output directory or ensure output file parent directory exists
+    if mode in ['simple', 'experiments']:
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+    elif mode == 'generate-config':
+        output_path = Path(output_dir)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
     
     # Store normalized parameters back to args object
     args.input_file = input_file
@@ -298,6 +313,30 @@ def run_experiments_mode(input_file: str, output_dir: str, config_path: str = No
         logger.error(f"Error occurred during experiment mode: {e}", exc_info=True)
         sys.exit(1)
 
+def run_generate_config_mode(input_file: str, output_file: str, config_path: str = None):
+    """Run in generate-config mode"""
+    logger = logging.getLogger(__name__)
+    logger.info("Starting generate-config mode...")
+    
+    try:
+        processor = TLAProcessor(config_path)
+        result = processor.generate_trace_config(input_file, output_file)
+        
+        if result['success']:
+            logger.info("Generate-config mode finished successfully.")
+            logger.info(f"Generated configuration: {result['spec_name']}")
+            logger.info(f"  - Constants: {result['constants_count']}")
+            logger.info(f"  - Variables: {result['variables_count']}")
+            logger.info(f"  - Actions: {result['actions_count']}")
+            logger.info(f"  - Output file: {result['output_file']}")
+        else:
+            logger.error(f"Generate-config mode failed: {result['error']}")
+            sys.exit(1)
+        
+    except Exception as e:
+        logger.error(f"Error occurred during generate-config mode: {e}", exc_info=True)
+        sys.exit(1)
+
 def main():
     """Main function"""
     args = parse_arguments()
@@ -316,6 +355,8 @@ def main():
             run_simple_mode(input_file, output_dir, args.config)
         elif mode == 'experiments':
             run_experiments_mode(input_file, output_dir, args.config)
+        elif mode == 'generate-config':
+            run_generate_config_mode(input_file, output_dir, args.config)
             
     except (ValueError, FileNotFoundError) as e:
         logging.error(f"Input error: {e}")

@@ -649,4 +649,165 @@ class TLAProcessor:
         with open(report_file, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
         
-        return report 
+        return report
+    
+    def generate_trace_config(self, spec_file: str, output_file: str) -> Dict[str, Any]:
+        """Generate trace validation configuration file from TLA+ specification
+        
+        Args:
+            spec_file: TLA+ specification file path
+            output_file: Output configuration file path
+            
+        Returns:
+            Generation result information
+        """
+        logger.info(f"Starting trace validation config generation: {spec_file}")
+        
+        try:
+            # Read specification file
+            with open(spec_file, 'r', encoding='utf-8') as f:
+                spec_content = f.read()
+            
+            # Read prompt
+            prompt_path = Path(__file__).parent.parent / "prompts" / "step5_trace_config_generation.txt"
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                prompt = f.read()
+            
+            # Call LLM to generate configuration
+            logger.info("Calling LLM to analyze specification and generate configuration...")
+            response = self.llm_client.get_completion(prompt, spec_content)
+            
+            # Extract YAML content
+            yaml_content = self._extract_yaml_from_response(response)
+            
+            # Validate and parse YAML
+            try:
+                config_data = yaml.safe_load(yaml_content)
+            except yaml.YAMLError as e:
+                logger.error(f"Generated YAML format invalid: {e}")
+                return {
+                    'success': False,
+                    'error': f"YAML format error: {e}",
+                    'raw_response': response
+                }
+            
+            # Validate configuration structure
+            validation_result = self._validate_config_structure(config_data)
+            if not validation_result['valid']:
+                logger.warning(f"Configuration structure validation failed: {validation_result['error']}")
+                # Attempt to fix configuration
+                config_data = self._fix_config_structure(config_data)
+            
+            # Reorder configuration to ensure correct structure
+            ordered_config = self._reorder_config(config_data)
+            
+            # Save configuration file
+            output_path = Path(output_file)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(output_path, 'w', encoding='utf-8') as f:
+                yaml.dump(ordered_config, f, default_flow_style=False, allow_unicode=True, indent=2, sort_keys=False)
+            
+            logger.info(f"Configuration file generated successfully: {output_file}")
+            
+            return {
+                'success': True,
+                'output_file': str(output_path),
+                'config_data': config_data,
+                'spec_name': config_data.get('spec_name', 'Unknown'),
+                'constants_count': len(config_data.get('constants', [])),
+                'variables_count': len(config_data.get('variables', [])),
+                'actions_count': len(config_data.get('actions', []))
+            }
+            
+        except Exception as e:
+            logger.error(f"Error generating configuration file: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def _extract_yaml_from_response(self, response: str) -> str:
+        """Extract YAML content from LLM response"""
+        lines = response.split('\n')
+        yaml_lines = []
+        in_yaml_block = False
+        
+        for line in lines:
+            # Look for YAML code block
+            if line.strip().startswith('```yaml') or line.strip().startswith('```yml'):
+                in_yaml_block = True
+                continue
+            elif line.strip() == '```' and in_yaml_block:
+                break
+            elif in_yaml_block:
+                yaml_lines.append(line)
+            # If no code block, look for YAML content start
+            elif line.strip().startswith('spec_name:') and not in_yaml_block:
+                in_yaml_block = True
+                yaml_lines.append(line)
+        
+        return '\n'.join(yaml_lines)
+    
+    def _validate_config_structure(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate configuration file structure"""
+        required_fields = ['spec_name', 'constants', 'variables', 'actions']
+        missing_fields = []
+        
+        for field in required_fields:
+            if field not in config_data:
+                missing_fields.append(field)
+        
+        if missing_fields:
+            return {
+                'valid': False,
+                'error': f"Missing required fields: {', '.join(missing_fields)}"
+            }
+        
+        # Validate structure of each section
+        if not isinstance(config_data['constants'], list):
+            return {'valid': False, 'error': 'constants must be a list'}
+        
+        if not isinstance(config_data['variables'], list):
+            return {'valid': False, 'error': 'variables must be a list'}
+        
+        if not isinstance(config_data['actions'], list):
+            return {'valid': False, 'error': 'actions must be a list'}
+        
+        return {'valid': True}
+    
+    def _fix_config_structure(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Attempt to fix configuration structure"""
+        # Ensure required fields exist
+        if 'spec_name' not in config_data:
+            config_data['spec_name'] = 'Unknown'
+        
+        if 'constants' not in config_data or not isinstance(config_data['constants'], list):
+            config_data['constants'] = []
+        
+        if 'variables' not in config_data or not isinstance(config_data['variables'], list):
+            config_data['variables'] = []
+        
+        if 'actions' not in config_data or not isinstance(config_data['actions'], list):
+            config_data['actions'] = []
+        
+        return config_data
+    
+    def _reorder_config(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Reorder configuration to ensure correct structure"""
+        ordered_config = {}
+        
+        # Correct order: spec_name, constants, variables, actions
+        if 'spec_name' in config_data:
+            ordered_config['spec_name'] = config_data['spec_name']
+        
+        if 'constants' in config_data:
+            ordered_config['constants'] = config_data['constants']
+        
+        if 'variables' in config_data:
+            ordered_config['variables'] = config_data['variables']
+        
+        if 'actions' in config_data:
+            ordered_config['actions'] = config_data['actions']
+        
+        return ordered_config 
