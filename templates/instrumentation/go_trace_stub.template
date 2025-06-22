@@ -1,0 +1,5 @@
+traceAction("ACTION_NAME", map[string]interface{}{
+	"node_id": r.id,
+	"term": r.Term,
+	"state": r.state.String(),
+})

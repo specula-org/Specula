@@ -32,3 +32,6 @@ buildNumber.properties
 .m2/
 archive/
 lib/
+
+# Embedded git repositories
+systems/etcd/raft/

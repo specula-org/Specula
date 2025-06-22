@@ -1,0 +1,200 @@
+{"action":"tickElection","timestamp":1750598628422055502,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750598628623061230,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750598628823694167,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750598629024496339,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750598629224973311,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750598629425437834,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750598629625880146,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750598629826338207,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750598630026760719,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750598630227264272,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750598630427596780,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750598630628016261,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750598630828453163,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750598631028899774,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750598631229330026,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750598631429776367,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750598631630222228,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750598631830638819,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750598632031056589,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750598632231495711,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750598686729262425,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750598686929733349,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750598687130166323,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750598687330607927,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750598687531179234,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750598687731770652,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750598687932278757,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750598688132723311,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750598688333204836,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750598688533668980,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750598688734116914,"params":map[node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750598688934557277,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750598689135066383,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750598689335685751,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750598689536159005,"params":map[node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750598689736638260,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750598689937094834,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750598690137546227,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750598690338018302,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750598690538562768,"params":map[node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750600566182970740,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750600566383707154,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750600566584240541,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750600566784671616,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750600566985056609,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750600567185442133,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750600567385864347,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750600567586305741,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750600567786735216,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750600567987157280,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750600568187633696,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750600568388023320,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750600568588456885,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750600568788856499,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750600568989311344,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750600569189714008,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750600569390184194,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750600569590613188,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750600569791020282,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750600569991410186,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750601175951259829,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750601176151892546,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750601176352388150,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750601176552870183,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750601176753373187,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750601176953828440,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750601177154282732,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750601177354722334,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750601177555199317,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750601177755585487,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750601177956002419,"params":map[node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750601178156427520,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750601178356908533,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750601178557334575,"params":map[node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750601178757743686,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750601178958190888,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750601179158616850,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750601179359048002,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750601179559483084,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750601179759906495,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750601724793015169,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750601724993606210,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750601725194084488,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750601725394546276,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750601725594988263,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750601725795426090,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750601725995861646,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750601726196327924,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750601726396794222,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750601726597356252,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750601726797785079,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750601726998231846,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750601727198653432,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750601727399141320,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"tickElection","timestamp":1750601727599596858,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"tickHeartbeat","timestamp":1750601727800012724,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750601728000428690,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750601728200862427,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750601728401315094,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750601728601736750,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750602743040275909,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750602743240912427,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750602743441408460,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750602743641908314,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750602743842362617,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750602744042843520,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750602744243292692,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750602744443599051,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750602744644049373,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750602744844437584,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750602745044865676,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750602745245483443,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750602745445964526,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750602745646482120,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750602745846897531,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750602746047327643,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750602746247818786,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750602746448267018,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"tickElection","timestamp":1750602746648681450,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750602746849148992,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"tickHeartbeat","timestamp":1750602775788554935,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750602775989179899,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750602776189648160,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750602776390261784,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750602776590852768,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750602776791281607,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750602776991733106,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750602777192209497,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750602777392675657,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750602777593117896,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750602777793533174,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750602777993978654,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750602778194472365,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750602778394908004,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750602778595323342,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750602778795782632,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750602778996234112,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750602779196683301,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"tickHeartbeat","timestamp":1750602779397137330,"params":map[node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750602779597599280,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750603314136715571,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750603314337412380,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750603314537886732,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750603314738345555,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750603314938843458,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750603315139295530,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750603315339750992,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750603315540199644,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750603315740665017,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750603315941094398,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750603316141558541,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750603316342053274,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750603316542510006,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"tickHeartbeat","timestamp":1750603316743005800,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750603316943534814,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750603317144043657,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750603317344512030,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750603317544990402,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750603317745486045,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750603317946013670,"params":map[node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750603370022758250,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750603370223341904,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750603370423782615,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750603370624228715,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750603370824679186,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750603371025161317,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750603371225609998,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750603371426077219,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750603371626503548,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"tickElection","timestamp":1750603371826919778,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"tickHeartbeat","timestamp":1750603372027306776,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750603372227747387,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"tickElection","timestamp":1750603372428178727,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"tickHeartbeat","timestamp":1750603372628598946,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750603372829052497,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"tickElection","timestamp":1750603373029519258,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"tickHeartbeat","timestamp":1750603373229968358,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"tickHeartbeat","timestamp":1750603373430443309,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"tickHeartbeat","timestamp":1750603373630861219,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750603373831279738,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750603972543693967,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750603972744357934,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750603972944826026,"params":map[node_id:1 state:Follower term:1]}
+{"action":"tickHeartbeat","timestamp":1750603973145366470,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750603973345833631,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750603973546309063,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750603973746803346,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750603973947240957,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750603974147689438,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750603974348073578,"params":map[node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750603974548508849,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750603974748955270,"params":map[node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750603974949404741,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750603975149874333,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750603975350320634,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750603975550764515,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750603975751237507,"params":map[node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750603975951701299,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750603976152175071,"params":map[node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750603976352633652,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
