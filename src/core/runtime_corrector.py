@@ -15,143 +15,13 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import logging
 
+# Import unified LLM client and config
+from ..llm.client import get_llm_client
+from ..utils.config import get_config
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
-
-
-class Config:
-    """Configuration management class (simplified version)"""
-    
-    def __init__(self, config_path: str = "config.yaml"):
-        self.config_path = config_path
-        self.config = self._load_config()
-    
-    def _load_config(self) -> Dict:
-        """Load configuration file"""
-        try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                return yaml.safe_load(f)
-        except FileNotFoundError:
-            print(f"Configuration file {self.config_path} not found, using defaults.")
-            return self._get_default_config()
-        except Exception as e:
-            print(f"Failed to load configuration: {e}, using defaults.")
-            return self._get_default_config()
-    
-    def _get_default_config(self) -> Dict:
-        """Default configuration"""
-        return {
-            'llm': {
-                'model': 'claude-3-5-sonnet-20241022',
-                'max_tokens': 8192,
-                'temperature': 0.1,
-                'timeout': 300,
-                'use_streaming': True,
-                'stream_chunk_size': 2000
-            },
-            'tla_validator': {
-                'tools_path': 'lib/tla2tools.jar',
-                'timeout': 60
-            },
-            'generation': {
-                'max_correction_attempts': 3
-            },
-            'paths': {
-                'prompts_dir': 'src/prompts',
-                'output_dir': 'output'
-            }
-        }
-    
-    def get(self, key_path: str, default=None):
-        """Get configuration value using dot notation"""
-        keys = key_path.split('.')
-        value = self.config
-        for key in keys:
-            if isinstance(value, dict) and key in value:
-                value = value[key]
-            else:
-                return default
-        return value
-
-
-class LLMClient:
-    """Simple LLM client for Claude models"""
-    
-    def __init__(self, config_obj: Config):
-        self.model = config_obj.get('llm.model')
-        self.max_tokens = config_obj.get('llm.max_tokens')
-        self.temperature = config_obj.get('llm.temperature')
-        self.timeout = config_obj.get('llm.timeout')
-        self.use_streaming = config_obj.get('llm.use_streaming')
-        self.stream_chunk_size = config_obj.get('llm.stream_chunk_size')
-        
-        self.api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not self.api_key:
-            raise ValueError("Anthropic API key not found. Set ANTHROPIC_API_KEY environment variable.")
-        
-        logger.info(f"Initialized LLM client - Model: {self.model}, Max Tokens: {self.max_tokens}, Temperature: {self.temperature}")
-    
-    def generate(self, prompt: str, max_tokens: Optional[int] = None, temperature: Optional[float] = None) -> str:
-        """Generate response using Anthropic API"""
-        try:
-            import anthropic
-        except ImportError:
-            raise ImportError("anthropic package not installed. Run: pip install anthropic")
-        
-        max_tokens = max_tokens or self.max_tokens
-        temperature = temperature or self.temperature
-        
-        logger.info(f"Starting generation - Parameters: max_tokens={max_tokens}, temperature={temperature}")
-        
-        client = anthropic.Anthropic(api_key=self.api_key)
-        
-        try:
-            if self.use_streaming:
-                return self._generate_streaming(client, prompt, max_tokens, temperature)
-            else:
-                return self._generate_standard(client, prompt, max_tokens, temperature)
-        except Exception as e:
-            logger.error(f"Generation failed: {e}")
-            if self.use_streaming:
-                logger.info("Streaming failed, falling back to standard generation...")
-                return self._generate_standard(client, prompt, max_tokens, temperature)
-            else:
-                raise
-    
-    def _generate_streaming(self, client, prompt: str, max_tokens: int, temperature: float) -> str:
-        """Streaming generation"""
-        logger.info("Starting streaming generation...")
-        response_text = ""
-        
-        with client.messages.stream(
-            model=self.model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            messages=[{"role": "user", "content": prompt}]
-        ) as stream:
-            for text in stream.text_stream:
-                response_text += text
-                if len(response_text) % self.stream_chunk_size == 0:
-                    logger.debug(f"Generated {len(response_text)} characters...")
-        
-        logger.info(f"Streaming generation complete. Total length: {len(response_text)} characters")
-        return response_text
-    
-    def _generate_standard(self, client, prompt: str, max_tokens: int, temperature: float) -> str:
-        """Standard generation"""
-        logger.info("Starting standard generation...")
-        
-        response = client.messages.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        
-        result = response.content[0].text
-        logger.info(f"Standard generation complete. Length: {len(result)} characters")
-        return result
 
 
 class TLCRunner:
@@ -191,83 +61,93 @@ class RuntimeCorrector:
     """Main runtime correction class"""
     
     def __init__(self, config_path: str = "config.yaml"):
-        # Load configuration
-        self.config = Config(config_path)
+        # Load configuration using unified config system
+        self.config = get_config(config_path)
         
-        # Initialize components
-        self.llm = LLMClient(self.config)
-        self.tlc = TLCRunner(self.config.get('tla_validator.tools_path'))
+        # Initialize unified LLM client
+        self.llm = get_llm_client(config_path)
+        
+        # Initialize TLC runner
+        tla_tools_path = self.config.get('tla_validator', {}).get('tools_path', 'lib/tla2tools.jar')
+        self.tlc = TLCRunner(tla_tools_path)
+        
+        # Load configuration values
+        self.max_correction_attempts = self.config.get('generation', {}).get('max_correction_attempts', 3)
+        self.tlc_timeout = self.config.get('tla_validator', {}).get('timeout', 60)
         
         # Load prompts
-        self.prompts_dir = Path(self.config.get('paths.prompts_dir'))
         self.config_prompt = self._load_prompt("step3_config_generation.txt")
         self.correction_prompt = self._load_prompt("step4_runtime_correction.txt")
         
-        # Configuration
-        self.max_correction_attempts = self.config.get('generation.max_correction_attempts', 3)
-        self.tlc_timeout = self.config.get('tla_validator.timeout', 60)
+        logger.info("Runtime corrector initialized with unified LLM client")
     
     def _load_prompt(self, filename: str) -> str:
         """Load prompt template from file"""
-        prompt_path = self.prompts_dir / filename
-        if not prompt_path.exists():
-            raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
-        
-        with open(prompt_path, 'r', encoding='utf-8') as f:
-            return f.read()
+        prompts_dir = self.config.get('paths', {}).get('prompts_dir', 'src/prompts')
+        prompt_path = Path(prompts_dir) / filename
+        try:
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except FileNotFoundError:
+            logger.error(f"Prompt file not found: {prompt_path}")
+            sys.exit(1)
     
     def _read_file(self, file_path: str) -> str:
-        """Read content from file"""
+        """Read file content"""
         with open(file_path, 'r', encoding='utf-8') as f:
             return f.read()
     
     def _extract_module_name(self, tla_code: str) -> str:
         """Extract module name from TLA+ code"""
-        for line in tla_code.split('\n'):
-            if "---- MODULE" in line:
-                try:
-                    return line.split("---- MODULE")[1].split("----")[0].strip()
-                except IndexError:
-                    continue
-        return "UnnamedModule"
+        lines = tla_code.strip().split('\n')
+        for line in lines:
+            if line.strip().startswith('---- MODULE'):
+                parts = line.split()
+                if len(parts) >= 3:
+                    return parts[2]
+        return "UnknownModule"
     
     def _extract_config_content(self, response: str) -> str:
         """Extract configuration content from LLM response"""
         lines = response.split('\n')
-        in_code_block = False
         config_lines = []
+        in_config_block = False
         
         for line in lines:
-            if line.strip().startswith('```') and not in_code_block:
-                in_code_block = True
+            # Look for configuration file markers
+            if '```' in line and any(marker in line.lower() for marker in ['cfg', 'config', 'tlc']):
+                in_config_block = True
                 continue
-            elif line.strip() == '```' and in_code_block:
+            elif line.strip() == '```' and in_config_block:
                 break
-            elif in_code_block:
+            elif in_config_block:
                 config_lines.append(line)
-            elif line.strip().startswith('SPECIFICATION'):
-                # Direct configuration content without code blocks
-                config_lines = lines[lines.index(line):]
-                break
+            # Also capture lines that look like configuration content
+            elif any(keyword in line for keyword in ['SPECIFICATION', 'CONSTANTS', 'INVARIANT', 'PROPERTY']):
+                config_lines.append(line)
         
         if not config_lines:
-            return response.strip()
+            # If no code block found, try to extract configuration-like lines
+            for line in lines:
+                if any(keyword in line for keyword in ['SPECIFICATION', 'CONSTANTS', 'INVARIANT', 'PROPERTY']):
+                    config_lines.append(line)
+        
         return '\n'.join(config_lines).strip()
     
     def _extract_tla_code(self, response: str) -> str:
         """Extract TLA+ code from LLM response"""
         lines = response.split('\n')
-        in_code_block = False
         tla_lines = []
+        in_code_block = False
         
         for line in lines:
-            if line.strip().startswith('```tla') or line.strip().startswith('```'):
-                if not tla_lines:
-                    in_code_block = True
-                    continue
+            # Look for TLA+ code block markers
+            if '```' in line and any(marker in line.lower() for marker in ['tla', 'tlaplus']):
+                in_code_block = True
+                continue
             elif line.strip() == '```' and in_code_block:
                 break
-            if in_code_block:
+            elif in_code_block:
                 tla_lines.append(line)
         
         if not tla_lines:
@@ -279,7 +159,10 @@ class RuntimeCorrector:
         logger.info("Generating TLC configuration file...")
         
         prompt = self.config_prompt.format(tla_spec=spec_content)
-        response = self.llm.generate(prompt)
+        response = self.llm.get_completion(
+            "You are a TLA+ expert. Generate a TLC configuration file for the given specification.",
+            prompt
+        )
         config_content = self._extract_config_content(response)
         
         if not config_content.strip():
@@ -297,7 +180,10 @@ class RuntimeCorrector:
             error_output=error_output
         )
         
-        response = self.llm.generate(prompt)
+        response = self.llm.get_completion(
+            "You are a TLA+ expert. Fix the runtime errors in the given specification based on the TLC error output.",
+            prompt
+        )
         corrected_spec = self._extract_tla_code(response)
         
         if not corrected_spec.strip():
@@ -402,8 +288,8 @@ class RuntimeCorrector:
             "final_tlc_output": tlc_output if not success else "Model checking passed",
             "config_used": {
                 "model": self.llm.model,
-                "max_tokens": self.llm.max_tokens,
-                "temperature": self.llm.temperature
+                "temperature": self.llm.temperature,
+                "max_tokens": self.llm.max_tokens
             }
         }
         
@@ -427,9 +313,6 @@ def main():
     parser.add_argument("input", help="Input TLA+ specification file (.tla)")
     parser.add_argument("output", help="Output directory path")
     parser.add_argument("--config", default="config.yaml", help="Configuration file path")
-    parser.add_argument("--model", help="Override LLM model from config")
-    parser.add_argument("--max-tokens", type=int, help="Override max_tokens from config")
-    parser.add_argument("--temperature", type=float, help="Override temperature from config")
     parser.add_argument("--max-attempts", type=int, help="Maximum correction attempts")
     parser.add_argument("--tlc-timeout", type=int, help="TLC execution timeout in seconds")
     parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -455,15 +338,6 @@ def main():
         corrector = RuntimeCorrector(args.config)
         
         # Apply command-line overrides
-        if args.model:
-            corrector.llm.model = args.model
-            logger.info(f"Using command-line override for model: {args.model}")
-        if args.max_tokens:
-            corrector.llm.max_tokens = args.max_tokens
-            logger.info(f"Using command-line override for max_tokens: {args.max_tokens}")
-        if args.temperature:
-            corrector.llm.temperature = args.temperature
-            logger.info(f"Using command-line override for temperature: {args.temperature}")
         if args.max_attempts:
             corrector.max_correction_attempts = args.max_attempts
             logger.info(f"Using command-line override for max attempts: {args.max_attempts}")
@@ -474,20 +348,27 @@ def main():
         # Run correction
         summary = corrector.correct_specification(args.input, args.output)
         
-        # Print results
-        print(f"\nRuntime correction complete!")
-        print(f"Input: {summary['input_file']}")
+        # Print summary
+        print("\n" + "="*60)
+        print("RUNTIME CORRECTION SUMMARY")
+        print("="*60)
+        print(f"Input file: {summary['input_file']}")
+        print(f"Output directory: {summary['output_directory']}")
         print(f"Final specification: {summary['final_spec_file']}")
-        print(f"Configuration: {summary['config_file']}")
         print(f"TLC passed: {summary['tlc_passed']}")
         print(f"Correction attempts: {summary['correction_attempts']}")
+        print("="*60)
         
-        if not summary['tlc_passed']:
-            print(f"Final TLC output: {summary['final_tlc_output']}")
-            sys.exit(1)
+        if summary['tlc_passed']:
+            logger.info("✅ Runtime correction completed successfully!")
+            sys.exit(0)
         else:
-            print("✅ Specification successfully passed TLC model checking!")
-    
+            logger.error("❌ Runtime correction failed - specification still has errors")
+            sys.exit(1)
+            
+    except KeyboardInterrupt:
+        logger.info("Runtime correction interrupted by user")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Runtime correction failed: {e}")
         sys.exit(1)
