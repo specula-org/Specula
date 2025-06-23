@@ -19,10 +19,27 @@ class LLMClient:
         self.config = get_config(config_path)
         api_config = self.config.get_api_config()
         
-        # Check API key - always use DEEPSEEK_API_KEY regardless of URL
-        api_key = api_config.get('api_key') or os.getenv('DEEPSEEK_API_KEY')
+        # Get API key from config or environment variables
+        # Try multiple common API key environment variables
+        api_key = api_config.get('api_key')
         if not api_key:
-            raise ValueError("Please set DEEPSEEK_API_KEY environment variable")
+            # Try common API key environment variables based on the base_url or model
+            base_url = api_config.get('base_url', '').lower()
+            if 'anthropic' in base_url or 'claude' in api_config.get('model', '').lower():
+                api_key = os.getenv('ANTHROPIC_API_KEY')
+            elif 'openai' in base_url or 'gpt' in api_config.get('model', '').lower():
+                api_key = os.getenv('OPENAI_API_KEY')
+            elif 'deepseek' in base_url or 'deepseek' in api_config.get('model', '').lower():
+                api_key = os.getenv('DEEPSEEK_API_KEY')
+            else:
+                # Try common environment variables as fallback
+                api_key = (os.getenv('API_KEY') or 
+                          os.getenv('ANTHROPIC_API_KEY') or 
+                          os.getenv('OPENAI_API_KEY') or 
+                          os.getenv('DEEPSEEK_API_KEY'))
+        
+        if not api_key:
+            raise ValueError("API key not found. Please set one of: API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or DEEPSEEK_API_KEY environment variable, or configure 'api_key' in config.yaml")
         
         self.client = OpenAI(
             base_url=api_config.get('base_url'),

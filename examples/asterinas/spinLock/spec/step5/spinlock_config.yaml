@@ -1,0 +1,23 @@
+spec_name: SpinLock
+constants:
+- name: Threads
+  value: '{"t1", "t2", "t3"}'
+variables:
+- name: lock
+  default_type: bool
+  default_value: 'FALSE'
+- name: waiting
+  default_type: set
+  default_value: '{}'
+- name: pc
+  default_type: custom
+  default_value: '[t \\in Threads |-> "idle"]'
+actions:
+- name: TryAcquire
+  parameters:
+  - name: t
+    source: Threads
+- name: Release
+  parameters:
+  - name: t
+    source: Threads

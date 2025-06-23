@@ -19,6 +19,10 @@ echo "Example directory: $EXAMPLE_DIR"
 echo "Spec directory: $SPEC_DIR"
 echo
 
+# Note: etcd/raft source code will be automatically cloned by run_instrumentation_test.sh
+echo "Note: This workflow will automatically clone etcd/raft from https://github.com/etcd-io/raft.git if needed"
+echo
+
 # Step 1: Run instrumentation and generate system trace
 echo "1. Running instrumentation and generating system trace..."
 cd "$EXAMPLE_DIR"

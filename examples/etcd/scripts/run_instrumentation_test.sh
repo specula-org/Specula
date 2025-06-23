@@ -17,6 +17,37 @@ echo "Project root: $PROJECT_ROOT"
 echo "Example directory: $EXAMPLE_DIR"
 echo
 
+# Step 0: Clone etcd/raft source code if not present
+echo "0. Checking etcd/raft source code..."
+ETCD_RAFT_DIR="$PROJECT_ROOT/systems/etcd/raft"
+SOURCE_FILE="$EXAMPLE_DIR/source/raft.go"
+
+if [ ! -f "$SOURCE_FILE" ]; then
+    echo "Source file not found. Cloning etcd/raft repository..."
+    
+    # Create directories if they don't exist
+    mkdir -p "$PROJECT_ROOT/systems/etcd"
+    mkdir -p "$EXAMPLE_DIR/source"
+    
+    # Clone etcd/raft repository
+    if [ ! -d "$ETCD_RAFT_DIR" ]; then
+        echo "Cloning https://github.com/etcd-io/raft.git..."
+        git clone https://github.com/etcd-io/raft.git "$ETCD_RAFT_DIR"
+    fi
+    
+    # Copy raft.go to example directory
+    if [ -f "$ETCD_RAFT_DIR/raft.go" ]; then
+        cp "$ETCD_RAFT_DIR/raft.go" "$SOURCE_FILE"
+        echo "✓ Copied raft.go from etcd/raft repository"
+    else
+        echo "Error: raft.go not found in cloned repository"
+        exit 1
+    fi
+else
+    echo "✓ Source file already exists: $SOURCE_FILE"
+fi
+echo
+
 # Step 1: Use the Go instrumentation template
 echo "1. Using Go instrumentation template..."
 TEMPLATE_FILE="$PROJECT_ROOT/templates/instrumentation/go_trace_stub.template"

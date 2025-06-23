@@ -89,86 +89,33 @@ class Config:
 config = Config()
 logger = logging.getLogger(__name__)
 
-class LLMClient:
-    """Simple LLM client supporting Claude models"""
+# Import the unified LLM client
+from ..llm.client import get_llm_client
+
+class LLMClientWrapper:
+    """Wrapper for the unified LLM client to maintain compatibility"""
     
-    def __init__(self, api_key: Optional[str] = None):
-        self.model = config.get('llm.model')
-        self.max_tokens = config.get('llm.max_tokens')
-        self.temperature = config.get('llm.temperature')
-        self.timeout = config.get('llm.timeout')
-        self.use_streaming = config.get('llm.use_streaming')
-        self.stream_chunk_size = config.get('llm.stream_chunk_size')
+    def __init__(self):
+        self.client = get_llm_client()
+        self.model = self.client.model
+        self.max_tokens = self.client.max_tokens
+        self.temperature = self.client.temperature
         
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-        if not self.api_key:
-            raise ValueError("Anthropic API key not found. Set ANTHROPIC_API_KEY environment variable.")
-    
         logger.info(f"Initialized LLM client - Model: {self.model}, Max Tokens: {self.max_tokens}, Temperature: {self.temperature}")
     
     def generate(self, prompt: str, max_tokens: Optional[int] = None, temperature: Optional[float] = None) -> str:
-        """Generate response using Anthropic API"""
-        try:
-            import anthropic
-        except ImportError:
-            raise ImportError("anthropic package not installed. Run: pip install anthropic")
-        
-        # Use provided parameters or fall back to config defaults
-        max_tokens = max_tokens or self.max_tokens
-        temperature = temperature or self.temperature
-        
-        logger.info(f"Starting generation - Parameters: max_tokens={max_tokens}, temperature={temperature}")
-        
-        client = anthropic.Anthropic(api_key=self.api_key)
+        """Generate response using unified LLM client"""
+        # For compatibility with existing code structure, we'll use the prompt as both system and user content
+        # This may need adjustment based on your specific prompt structure
+        system_prompt = "You are a helpful assistant that generates TLA+ specifications."
         
         try:
-            if self.use_streaming:
-                return self._generate_streaming(client, prompt, max_tokens, temperature)
-            else:
-                return self._generate_standard(client, prompt, max_tokens, temperature)
-                
+            response = self.client.get_completion(system_prompt, prompt)
+            logger.info(f"Generation complete. Length: {len(response)} characters")
+            return response
         except Exception as e:
             logger.error(f"Generation failed: {e}")
-            # Fallback to standard generation if streaming fails
-            if self.use_streaming:
-                logger.info("Streaming failed, falling back to standard generation...")
-                return self._generate_standard(client, prompt, max_tokens, temperature)
-            else:
-                raise
-    
-    def _generate_streaming(self, client, prompt: str, max_tokens: int, temperature: float) -> str:
-        """Streaming generation"""
-        logger.info("Starting streaming generation...")
-        response_text = ""
-        
-        with client.messages.stream(
-            model=self.model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            messages=[{"role": "user", "content": prompt}]
-        ) as stream:
-            for text in stream.text_stream:
-                response_text += text
-                if len(response_text) % self.stream_chunk_size == 0:
-                    logger.debug(f"Generated {len(response_text)} characters...")
-        
-        logger.info(f"Streaming generation complete. Total length: {len(response_text)} characters")
-        return response_text
-            
-    def _generate_standard(self, client, prompt: str, max_tokens: int, temperature: float) -> str:
-        """Standard generation"""
-        logger.info("Starting standard generation...")
-        
-        response = client.messages.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        
-        result = response.content[0].text
-        logger.info(f"Standard generation complete. Length: {len(result)} characters")
-        return result
+            raise
 
 class TLAValidator:
     """TLA+ SANY validator"""
@@ -199,7 +146,7 @@ class Phase1Generator:
     """Main Phase 1 generator class"""
     
     def __init__(self):
-        self.llm = LLMClient()
+        self.llm = LLMClientWrapper()
         self.validator = TLAValidator()
         self.prompts_dir = Path(config.get('paths.prompts_dir'))
         self.max_correction_attempts = config.get('generation.max_correction_attempts')

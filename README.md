@@ -11,6 +11,7 @@ We will use the Go implementation of the Raft consensus algorithm from `etcd` as
 - **Java 8+** (for TLA+ tools)
 - **Python 3.8+** 
 - **Go 1.18+** (for etcd example)
+- **Git** (for cloning etcd/raft source code)
 - **Linux/macOS** (tested on Ubuntu 20.04+)
 
 ### One-Step Setup
@@ -25,6 +26,23 @@ The setup script will:
 - Download TLA+ tools (tla2tools.jar, CommunityModules-deps.jar)
 - Verify Java installation
 - Set up the environment
+
+### Quick Start with etcd/raft Example
+
+For a complete demonstration from scratch (no etcd source code required):
+
+```bash
+# Option 1: Setup etcd source first, then run workflow
+cd examples/etcd
+bash scripts/setup_etcd_source.sh
+bash scripts/run_full_test_with_verification.sh
+
+# Option 2: Run directly (will auto-clone etcd/raft)
+cd examples/etcd
+bash scripts/run_full_test_with_verification.sh
+```
+
+**Note**: The framework automatically clones the latest Raft implementation from the [official etcd/raft repository](https://github.com/etcd-io/raft.git), no manual source code preparation required.
 
 ## Configuration
 
@@ -148,7 +166,7 @@ This step generates trace validation drivers that can validate TLA+ specificatio
 
 *   **Process**: The `instrumentation` script automatically instruments the original source code to inject trace collection points. It supports multiple programming languages (Go, Python, Rust) and uses template-based code injection to generate execution traces that can be consumed by the trace validation driver generated in Step 5.1.
 *   **Input**: 
-    - Original source code (`examples/etcd/source/raft.go`)
+    - Original source code from [etcd/raft repository](https://github.com/etcd-io/raft.git)
     - Configuration file (`examples/etcd/config/raft_config.yaml`) mapping TLA+ actions to source functions
     - Language-specific instrumentation template (`templates/instrumentation/go_trace_stub.template`)
 *   **Output**: 
@@ -156,43 +174,53 @@ This step generates trace validation drivers that can validate TLA+ specificatio
     - System execution traces (`examples/etcd/runners/raft_simulator/raft_trace.ndjson`)
 *   **Commands**:
 ```bash
-    # Step 5.2a: Instrument the source code
+    # Step 5.2a: Clone etcd/raft source code
+    git clone https://github.com/etcd-io/raft.git systems/etcd/raft
+    cp systems/etcd/raft/raft.go examples/etcd/source/
+
+    # Step 5.2b: Instrument the source code
     python3 -m src.core.instrumentation \
         examples/etcd/config/raft_config.yaml \
         examples/etcd/source/raft.go \
         --output examples/etcd/output/instrumented_raft.go \
         --verbose
 
-    # Step 5.2b: Run instrumented system to generate traces
+    # Step 5.2c: Run instrumented system to generate traces
     cd examples/etcd/runners/raft_simulator
     go run main.go
 
-    # Step 5.2c: Convert system traces to TLA+ format
+    # Step 5.2d: Convert system traces to TLA+ format
     cd examples/etcd
     python3 scripts/trace_converter.py \
         runners/raft_simulator/raft_trace.ndjson \
         spec/step5/spec/trace.ndjson \
         --servers n1 n2 n3
 
-    # Step 5.2d: Validate traces with TLA+ model checker
+    # Step 5.2e: Validate traces with TLA+ model checker
     cd spec/step5/spec
     export TRACE_PATH=trace.ndjson
     java -cp "../../../lib/tla2tools.jar" tlc2.TLC \
         -config specTrace.cfg specTrace.tla
 ```
 
-#### Complete Workflow Example
+##### Complete Workflow Example
 
-For a complete demonstration of the entire pipeline:
+For a complete demonstration of the entire Step 5 from scratch:
 
 ```bash
-# Quick instrumentation test
+# Method 1: Use dedicated setup script (recommended)
 cd examples/etcd
-bash scripts/run_instrumentation_test.sh
+bash scripts/setup_etcd_source.sh      # Clone and prepare etcd/raft
+bash scripts/run_instrumentation_test.sh  # Test instrumentation
+bash scripts/run_full_test_with_verification.sh  # Full workflow
 
-# Full workflow with TLA+ verification
-bash scripts/run_full_test_with_verification.sh
+# Method 2: Direct execution (auto-clone)
+cd examples/etcd
+bash scripts/run_full_test_with_verification.sh  # Will auto-clone if needed
 ```
+
+**Note**: All scripts will automatically check and download etcd/raft source code, no manual preparation required.
+
 
 ## Project Structure
 

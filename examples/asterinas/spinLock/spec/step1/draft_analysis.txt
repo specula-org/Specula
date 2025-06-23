@@ -1,0 +1,57 @@
+### FUNCTION CLASSIFICATION
+
+**CORE FUNCTIONS (require detailed analysis):**
+- `acquire_lock`: Implements the core spin lock acquisition with busy-waiting semantics
+- `try_acquire_lock`: Attempts atomic lock acquisition using compare-and-exchange operation
+- `release_lock`: Releases the spin lock by atomically setting lock state to false
+
+**SUPPORTING FUNCTIONS (brief summary):**
+- `new`: Constructor for spin lock initialization - Model as simple state initialization
+- `lock`: Creates lock guard with guardian behavior - Model as acquire_lock + guard creation
+- `lock_arc`: Arc-based lock acquisition - Model same as lock but with Arc reference counting abstracted
+- `try_lock`: Non-blocking lock attempt - Model as conditional try_acquire_lock + guard creation
+- `get_mut`: Mutable access bypass for exclusive ownership - Model as direct access when lock unused
+- `disable_irq`: Guard behavior conversion - Abstract as guard type change
+
+**INFRASTRUCTURE FUNCTIONS (to omit):**
+- `fmt::Debug` implementations: Debug formatting - Omitted
+- `Deref`/`DerefMut` implementations: Trait implementations for guard access - Omitted
+- `Drop` implementation: Cleanup logic calling release_lock - Model only the release_lock call
+- Safety trait implementations (`Send`/`Sync`): Thread safety markers - Omitted
+
+---
+
+### DETAILED CORE FUNCTION ANALYSIS
+
+### acquire_lock
+- **Signature**: `fn acquire_lock(&self)`
+- **Purpose**: Acquires the spin lock through busy-waiting until successful atomic acquisition
+- **Protocol Component**: Mutual Exclusion/Synchronization
+- **Critical Logic**:
+  • Condition: `try_acquire_lock() == false` → Action: Continue spinning with `spin_loop()`
+  • Condition: `try_acquire_lock() == true` → Action: Exit loop and acquire lock
+- **Modeling Approach**: Full modeling required - represents core mutual exclusion protocol with busy-waiting semantics
+
+### try_acquire_lock  
+- **Signature**: `fn try_acquire_lock(&self) -> bool`
+- **Purpose**: Performs atomic compare-and-exchange to attempt lock acquisition without blocking
+- **Protocol Component**: Mutual Exclusion/Atomic Operations
+- **Critical Logic**:
+  • Condition: `atomic_lock == false` → Action: Set to `true` with Acquire ordering, return `true`
+  • Condition: `atomic_lock == true` → Action: No change, return `false`
+- **Modeling Approach**: Full modeling required - represents atomic state transition critical for correctness
+
+### release_lock
+- **Signature**: `fn release_lock(&self)`
+- **Purpose**: Releases the spin lock by atomically storing false with Release ordering
+- **Protocol Component**: Mutual Exclusion/Synchronization
+- **Critical Logic**:
+  • Action: Unconditionally set `atomic_lock = false` with Release memory ordering
+- **Modeling Approach**: Full modeling required - represents critical state transition enabling other processes to acquire lock
+
+---
+
+### ESSENTIAL STATE VARIABLES:
+- `lock: AtomicBool`: Core synchronization primitive representing lock state (false=unlocked, true=locked)
+- `val: UnsafeCell<T>`: Protected data accessible only when lock is held
+- `guard: G::Guard`: Guardian behavior state managing preemption/IRQ disable during lock hold
