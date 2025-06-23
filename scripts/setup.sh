@@ -5,7 +5,7 @@
 
 set -e  # Exit on any error
 
-echo "🚀 Setting up TLAGEN Framework..."
+echo "Setting up TLAGEN Framework..."
 
 # Colors for output
 RED='\033[0;31m'
@@ -207,7 +207,7 @@ chmod +x "$PROJECT_ROOT/tlagen"
 
 print_success "Setup completed successfully!"
 echo
-print_status "🎉 TLAGEN is ready to use!"
+print_status "TLAGEN is ready to use!"
 echo
 print_status "Quick start:"
 print_status "  cd examples/etcd"

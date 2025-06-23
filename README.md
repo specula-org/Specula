@@ -2,6 +2,26 @@
 
 This document provides an overview of the TLAGEN framework, a pipeline for generating, correcting, and analyzing TLA+ specifications derived directly from source code.
 
+## Overview
+
+TLAGEN is designed to generate **code-level specifications** that accurately describe the core logic and behavior of existing software systems. Unlike high-level architectural specifications, our framework focuses on capturing the essential algorithmic details and control flow patterns present in the source code itself.
+
+### The Five-Step Pipeline
+
+The framework operates through a systematic five-step process:
+
+1. **LLM-based Code Translation**: Large Language Models translate source code into initial TLA+ specifications, performing "reverse formalization" to capture the code's logical structure.
+
+2. **RAG-enhanced Syntax Correction**: A Retrieval-Augmented Generation mechanism automatically detects and fixes compilation errors by leveraging TLA+ syntax knowledge and error patterns.
+
+3. **Control Flow Analysis (CFA) Transformation**: Our custom-built CFA tool converts imperative-style specifications into structured, declarative TLA+ formats suitable for formal verification.
+
+4. **LLM-driven Runtime Error Correction**: Automated detection and correction of runtime errors using model checking feedback and intelligent error resolution.
+
+5. **Trace Validation Framework**: Generation of trace-enabled specifications combined with automated code instrumentation. Users can run deterministic system executions to generate traces, which are then replayed against the specification to validate correctness and adherence to the original code behavior.
+
+This approach ensures that the final TLA+ specifications not only compile and run correctly but also faithfully represent the actual behavior of the source system, bridging the gap between implementation and formal verification.
+
 We will use the Go implementation of the Raft consensus algorithm from `etcd` as a running example to demonstrate the workflow, from raw source code to a high-quality, validated specification.
 
 ## Quick Setup
@@ -11,7 +31,6 @@ We will use the Go implementation of the Raft consensus algorithm from `etcd` as
 - **Java 8+** (for TLA+ tools)
 - **Python 3.8+** 
 - **Go 1.18+** (for etcd example)
-- **Git** (for cloning etcd/raft source code)
 - **Linux/macOS** (tested on Ubuntu 20.04+)
 
 ### One-Step Setup
@@ -26,23 +45,6 @@ The setup script will:
 - Download TLA+ tools (tla2tools.jar, CommunityModules-deps.jar)
 - Verify Java installation
 - Set up the environment
-
-### Quick Start with etcd/raft Example
-
-For a complete demonstration from scratch (no etcd source code required):
-
-```bash
-# Option 1: Setup etcd source first, then run workflow
-cd examples/etcd
-bash scripts/setup_etcd_source.sh
-bash scripts/run_full_test_with_verification.sh
-
-# Option 2: Run directly (will auto-clone etcd/raft)
-cd examples/etcd
-bash scripts/run_full_test_with_verification.sh
-```
-
-**Note**: The framework automatically clones the latest Raft implementation from the [official etcd/raft repository](https://github.com/etcd-io/raft.git), no manual source code preparation required.
 
 ## Configuration
 
@@ -99,9 +101,6 @@ This is the first step, where we translate source code into an initial TLA+ spec
 *   **Output**: An initial TLA+ specification (`examples/etcd/spec/step1/Raft.tla`).
 *   **Command**:
 ```bash
-    # Ensure the output directory exists
-    mkdir -p examples/etcd/spec/step1/
-
     # Generate the initial specification from the source code
     python3 -m src.core.iispec_generator examples/etcd/source/raft.go examples/etcd/spec/step1/ --mode draft-based
 ```
@@ -152,14 +151,14 @@ This step generates trace validation drivers that can validate TLA+ specificatio
 #### Step 5.1: Trace Validation Driver Generation
 
 *   **Process**: The `trace_generator` script generates specialized TLA+ modules that can accept and validate execution traces. It takes a configuration file describing the spec's structure (constants, variables, and actions) and automatically generates the trace validation driver files.
-*   **Input**: A trace configuration file (`examples/etcd/spec/step5/raft_config.yaml`) describing the specification structure.
+*   **Input**: A trace configuration file (`examples/etcd/config/raft_config.yaml`) describing the specification structure.
 *   **Output**: 
     - Trace validation TLA+ specification (`examples/etcd/spec/step5/spec/specTrace.tla`)
     - Trace validation TLC configuration file (`examples/etcd/spec/step5/spec/specTrace.cfg`)
 *   **Command**:
 ```bash
     # Generate trace validation driver from configuration
-    python3 -m src.core.trace_generator examples/etcd/spec/step5/raft_config.yaml examples/etcd/spec/step5/spec/
+    python3 -m src.core.trace_generator examples/etcd/config/raft_config.yaml examples/etcd/spec/step5/spec/
 ```
 
 #### Step 5.2: Automated Instrumentation
@@ -174,36 +173,32 @@ This step generates trace validation drivers that can validate TLA+ specificatio
     - System execution traces (`examples/etcd/runners/raft_simulator/raft_trace.ndjson`)
 *   **Commands**:
 ```bash
-    # Step 5.2a: Clone etcd/raft source code
-    git clone https://github.com/etcd-io/raft.git systems/etcd/raft
-    cp systems/etcd/raft/raft.go examples/etcd/source/
-
-    # Step 5.2b: Instrument the source code
+    # Step 5.2a: Instrument the source code
     python3 -m src.core.instrumentation \
         examples/etcd/config/raft_config.yaml \
         examples/etcd/source/raft.go \
         --output examples/etcd/output/instrumented_raft.go \
         --verbose
 
-    # Step 5.2c: Run instrumented system to generate traces
+    # Step 5.2b: Run instrumented system to generate traces
     cd examples/etcd/runners/raft_simulator
     go run main.go
 
-    # Step 5.2d: Convert system traces to TLA+ format
+    # Step 5.2c: Convert system traces to TLA+ format
     cd examples/etcd
     python3 scripts/trace_converter.py \
         runners/raft_simulator/raft_trace.ndjson \
         spec/step5/spec/trace.ndjson \
         --servers n1 n2 n3
 
-    # Step 5.2e: Validate traces with TLA+ model checker
+    # Step 5.2d: Validate traces with TLA+ model checker
     cd spec/step5/spec
     export TRACE_PATH=trace.ndjson
     java -cp "../../../lib/tla2tools.jar" tlc2.TLC \
         -config specTrace.cfg specTrace.tla
 ```
 
-##### Complete Workflow Example
+#### Complete Workflow Example
 
 For a complete demonstration of the entire Step 5 from scratch:
 
@@ -219,33 +214,3 @@ cd examples/etcd
 bash scripts/run_full_test_with_verification.sh  # Will auto-clone if needed
 ```
 
-**Note**: All scripts will automatically check and download etcd/raft source code, no manual preparation required.
-
-
-## Project Structure
-
-```
-tlagen/
-├── src/core/                    # Core framework modules
-│   ├── iispec_generator.py      # Step 1: Initial spec generation
-│   ├── processor.py             # Step 2: Syntax correction (integrated)
-│   ├── runtime_corrector.py     # Step 4: Runtime error correction
-│   ├── trace_generator.py       # Step 5.1: Trace validation driver
-│   └── instrumentation.py       # Step 5.2: Code instrumentation
-├── templates/instrumentation/   # Language-specific templates
-│   ├── go_trace_stub.template   # Go instrumentation template
-│   ├── python_trace_stub.template
-│   └── rust_trace_stub.template
-├── examples/etcd/              # Complete etcd example
-│   ├── config/raft_config.yaml # Configuration file
-│   ├── source/raft.go          # Original source code
-│   ├── output/                 # Instrumented code output
-│   ├── runners/raft_simulator/ # Test runner
-│   ├── spec/step1-5/           # Generated TLA+ specifications
-│   └── scripts/                # Automation scripts
-├── tools/cfa/                  # Step 3: Control flow analysis
-├── lib/                        # TLA+ tools (auto-downloaded)
-│   ├── tla2tools.jar
-│   └── CommunityModules-deps.jar
-└── scripts/setup.sh            # Environment setup
-```

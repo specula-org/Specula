@@ -1,0 +1,4 @@
+{"Server": ["n1", "n2", "n3"], "Value": [1, 2, 3], "Nil": ["Nil"], "NoLimit": ["NoLimit"]}
+{"event": "tickElection"}
+{"event": "tickElection"}
+{"event": "tickElection"}
