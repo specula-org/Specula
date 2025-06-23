@@ -36,3 +36,11 @@ lib/
 # Embedded git repositories
 systems/etcd/raft/
 systems/asterinas/asterinas/
+
+# TLA+ generated files
+*.st
+*.fp
+states/
+traces/
+**/output/
+generation_summary.json
