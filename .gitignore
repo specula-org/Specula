@@ -35,3 +35,4 @@ lib/
 
 # Embedded git repositories
 systems/etcd/raft/
+systems/asterinas/asterinas/
