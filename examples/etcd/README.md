@@ -1,104 +1,126 @@
-# TLAGEN Examples
+## ETCD Example
 
-This directory contains examples and templates to help you get started with TLAGEN. These are **reference implementations** that demonstrate the framework's capabilities and serve as starting points for your own customizations.
+The framework follows a multi-step process to progressively refine the TLA+ specification.
 
-## 📁 Directory Structure
+### Step 1: Initial Intermediate Specification (IISpec) Generation
 
+This is the first step, where we translate source code into an initial TLA+ specification.
+
+*   **Process**: The `iispec_generator` script uses an LLM to perform a "reverse formalization," converting the logic from the source code into an imperative, intermediate TLA+ specification (IISpec).
+*   **Input**: Go source code for Raft (`examples/etcd/source/raft.go`).
+*   **Output**: An initial TLA+ specification (`examples/etcd/spec/step1/Raft.tla`).
+*   **Command**:
+```bash
+    # Generate the initial specification from the source code
+    python3 -m src.core.iispec_generator examples/etcd/source/raft.go examples/etcd/spec/step1/ --mode draft-based
 ```
-examples/
-├── etcd/                    # Complete ETCD/Raft example
-│   ├── config/              # TLA+ action configuration
-│   ├── source/              # Original source code
-│   ├── output/              # Generated instrumented code
-│   └── scripts/             # Automation scripts
-└── runners/                 # Example test runners
-    └── raft_simulator/      # Raft state machine simulator
+
+### Step 2: Automated Syntax Correction
+
+The initial specification often contains syntax errors. This step automatically fixes them.
+
+*   **Process**: The generation script from Step 1 has a built-in correction loop. It repeatedly uses the TLA+ SANY parser to find syntax errors and leverages a simple Retrieval-Augmented Generation (RAG) mechanism to fix them. The process continues until the specification is syntactically valid.
+*   **Input**: The initial, potentially erroneous `Raft.tla` generated internally during Step 1.
+*   **Output**: A syntactically valid `examples/etcd/spec/step1/Raft.tla`.
+*   **Command**: This step is automatically integrated into the command from Step 1. The final file `examples/etcd/spec/step2/Raft.tla` is the result of this correction process.
+
+### Step 3: Control Flow Analysis (CFA) Transformation
+
+This step converts the imperative-style IISpec into a standard, structured TLA+ specification.
+
+*   **Process**: The CFA tool parses the imperative control flow (e.g., labels, gotos) in the IISpec and transforms it into a declarative, state-based TLA+ format (`StructSpec`).
+*   **Input**: The syntactically valid IISpec (`examples/etcd/spec/step2/Raft.tla`).
+*   **Output**: A structured TLA+ specification (`examples/etcd/spec/step3/Raft.tla`).
+A trace configuration file (`examples/etcd/spec/step2/raft_config.yaml`) describing the specification structure.
+*   **Command**:
+```bash
+    # Run the CFA transformation script.
+    ./tools/cfa/run.sh examples/etcd/spec/step2/Raft.tla examples/etcd/spec/step3/Raft.tla
+```
+*   **Note**: The CFA transformation tool is a work in progress. Its parser is not yet fully robust and may require manual adjustments to the input specification to run successfully. This will be improved in future work.
+
+### Step 4: Agent-based Runtime Correction
+
+This step automatically detects and fixes runtime errors in TLA+ specifications using model checking.
+
+*   **Process**: The `runtime_corrector` script generates a TLC configuration file, runs the TLC model checker to detect runtime errors, and uses LLM-based correction to iteratively fix the specification until all errors are resolved.
+*   **Input**: A syntactically valid TLA+ specification (e.g., `examples/etcd/spec/step3/Raft.tla` from Step 3).
+*   **Output**: 
+    - A TLC configuration file (`examples/etcd/spec/step4/Raft.cfg`)
+    - A runtime-corrected TLA+ specification (`examples/etcd/spec/step4/Raft.tla`)
+*   **Command**:
+```bash
+    # Run agent-based runtime correction
+    python3 -m src.core.runtime_corrector examples/etcd/spec/step3/Raft.tla examples/etcd/spec/step4/
 ```
 
-## 🎯 ETCD Example
+### Step 5: Trace Validation Framework
 
-The ETCD example demonstrates the complete workflow for a real-world distributed system.
+This step generates trace validation drivers that can validate TLA+ specifications against execution traces from the original system.
 
-### Files Overview
+#### Step 5.1: Trace Validation Driver Generation
 
-- **`config/raft_config.yaml`**: Defines the mapping between TLA+ actions and Go functions
-- **`source/raft.go`**: Original etcd/raft source code
-- **`output/`**: Directory for generated instrumented code
-- **`scripts/run_instrumentation_test.sh`**: Complete automation script
+*   **Process**: The `trace_generator` script generates specialized TLA+ modules that can accept and validate execution traces. It takes a configuration file describing the spec's structure (constants, variables, and actions) and automatically generates the trace validation driver files.
+*   **Input**: A trace configuration file (`examples/etcd/config/raft_config.yaml`) describing the specification structure.
+*   **Output**: 
+    - Trace validation TLA+ specification (`examples/etcd/spec/step5/spec/specTrace.tla`)
+    - Trace validation TLC configuration file (`examples/etcd/spec/step5/spec/specTrace.cfg`)
+*   **Command**:
+```bash
+    # Generate trace validation driver from configuration
+    python3 -m src.core.trace_generator examples/etcd/config/raft_config.yaml examples/etcd/spec/step5/spec/
+```
 
-### Usage
+#### Step 5.2: Automated Instrumentation
+
+*   **Process**: The `instrumentation` script automatically instruments the original source code to inject trace collection points. It supports multiple programming languages (Go, Python, Rust) and uses template-based code injection to generate execution traces that can be consumed by the trace validation driver generated in Step 5.1.
+*   **Input**: 
+    - Original source code from [etcd/raft repository](https://github.com/etcd-io/raft.git)
+    - Configuration file (`examples/etcd/config/raft_config.yaml`) mapping TLA+ actions to source functions
+    - Language-specific instrumentation template (`templates/instrumentation/go_trace_stub.template`)
+*   **Output**: 
+    - Instrumented source code (`examples/etcd/output/instrumented_raft.go`)
+    - System execution traces (`examples/etcd/runners/raft_simulator/raft_trace.ndjson`)
+*   **Commands**:
+```bash
+    # Step 5.2a: Instrument the source code
+    python3 -m src.core.instrumentation \
+        examples/etcd/config/raft_config.yaml \
+        examples/etcd/source/raft.go \
+        --output examples/etcd/output/instrumented_raft.go \
+        --verbose
+
+    # Step 5.2b: Run instrumented system to generate traces
+    cd examples/etcd/runners/raft_simulator
+    go run main.go
+
+    # Step 5.2c: Convert system traces to TLA+ format
+    cd examples/etcd
+    python3 scripts/trace_converter.py \
+        runners/raft_simulator/raft_trace.ndjson \
+        spec/step5/spec/trace.ndjson \
+        --servers n1 n2 n3
+
+    # Step 5.2d: Validate traces with TLA+ model checker
+    cd spec/step5/spec
+    export TRACE_PATH=trace.ndjson
+    java -cp "../../../lib/tla2tools.jar" tlc2.TLC \
+        -config specTrace.cfg specTrace.tla
+```
+
+#### Complete Workflow Example
+
+For a complete demonstration of the entire Step 5 from scratch:
 
 ```bash
-cd etcd
-./scripts/run_instrumentation_test.sh
+# Method 1: Use dedicated setup script (recommended)
+cd examples/etcd
+bash scripts/setup_etcd_source.sh      # Clone and prepare etcd/raft
+bash scripts/run_instrumentation_test.sh  # Test instrumentation
+bash scripts/run_full_test_with_verification.sh  # Full workflow
+
+# Method 2: Direct execution (auto-clone)
+cd examples/etcd
+bash scripts/run_full_test_with_verification.sh  # Will auto-clone if needed
 ```
 
-This will:
-1. Use the Go instrumentation template
-2. Instrument the raft.go source code
-3. Run the simulator to generate traces
-4. Show results and generated files
-
-## 🏃 Test Runners
-
-The `runners/` directory contains example test runners that demonstrate different approaches to generating execution traces.
-
-### Raft Simulator
-
-A lightweight Raft state machine simulator that:
-- Simulates basic Raft operations (tickElection, tickHeartbeat, Step)
-- Generates random state transitions
-- Produces NDJSON trace files
-- Serves as a template for building real test harnesses
-
-**Key Features:**
-- Simple Go implementation
-- Configurable through environment variables
-- Generates structured trace data
-- Easy to extend and customize
-
-## 🔧 Customization Guide
-
-### For Your Own System
-
-1. **Create a new directory** under `examples/` for your system
-2. **Copy the etcd structure** as a starting point:
-   ```bash
-   cp -r examples/etcd examples/my_system
-   ```
-3. **Update the configuration** in `config/` to match your TLA+ actions
-4. **Replace the source code** in `source/` with your system's code
-5. **Modify the automation script** in `scripts/` for your specific needs
-
-### For Different Languages
-
-1. **Use appropriate templates** from `templates/instrumentation/`
-2. **Modify the test runner** to match your language's execution model
-3. **Update trace generation** to match your system's data structures
-
-### For Custom Test Scenarios
-
-1. **Copy the raft_simulator** as a base:
-   ```bash
-   cp -r examples/runners/raft_simulator examples/runners/my_runner
-   ```
-2. **Modify the state machine logic** to match your system
-3. **Add your specific test scenarios** and randomization strategies
-4. **Update trace data format** as needed
-
-## ⚠️ Important Notes
-
-- **These are examples, not production code**: The runners and scripts are meant to demonstrate concepts, not to be used directly in production
-- **Customization required**: You'll need to adapt these examples to your specific system and requirements
-- **Template nature**: Think of these as templates or starting points rather than finished solutions
-
-## 🚀 Next Steps
-
-1. **Start with the ETCD example** to understand the workflow
-2. **Examine the simulator code** to understand trace generation
-3. **Create your own example** based on these templates
-4. **Extend the framework** with your own improvements
-
----
-
-**Remember**: The goal is to provide you with working examples that you can understand, modify, and extend for your own use cases. 

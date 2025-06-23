@@ -24,6 +24,10 @@ This approach ensures that the final TLA+ specifications not only compile and ru
 
 We will use the Go implementation of the Raft consensus algorithm from `etcd` as a running example to demonstrate the workflow, from raw source code to a high-quality, validated specification.
 
+## Documentation
+
+For detailed usage instructions, command-line options, and comprehensive examples of each component, please refer to the [Usage Documentation](docs/Usage.md). The usage guide provides step-by-step instructions for all five pipeline stages and configuration management tips.
+
 ## Quick Setup
 
 ### Prerequisites
