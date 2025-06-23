@@ -21,32 +21,40 @@ class TraceGenerator:
         
     def generate_default_impl(self) -> str:
         """Generate DefaultImpl function based on variables"""
-        lines = ["DefaultImpl(varName) ==", "    CASE"]
+        lines = ["DefaultImpl(varName) =="]
         
         variables = self.config.get('variables', [])
         for i, var in enumerate(variables):
             var_name = var['name']
             default_type = var.get('default_type', 'custom')
             
-            if i > 0:
-                lines.append("     []")
+            if i == 0:
+                prefix = "    CASE"
+            else:
+                prefix = "     []"
             
             if default_type == 'mutex_map_bool':
-                lines.append(f'        varName = "{var_name}" -> [m \\in TraceMutexes |-> FALSE]')
+                lines.append(f'{prefix} varName = "{var_name}" -> [m \\in TraceMutexes |-> FALSE]')
             elif default_type == 'mutex_map_sequence':
-                lines.append(f'        varName = "{var_name}" -> [m \\in TraceMutexes |-> <<>>]')
+                lines.append(f'{prefix} varName = "{var_name}" -> [m \\in TraceMutexes |-> <<>>]')
             elif default_type == 'mutex_map_int':
-                lines.append(f'        varName = "{var_name}" -> [m \\in TraceMutexes |-> 0]')
+                lines.append(f'{prefix} varName = "{var_name}" -> [m \\in TraceMutexes |-> 0]')
+            elif default_type == 'node_map_bool':
+                lines.append(f'{prefix} varName = "{var_name}" -> [n \\in TraceNodes |-> FALSE]')
+            elif default_type == 'node_map_sequence':
+                lines.append(f'{prefix} varName = "{var_name}" -> [n \\in TraceNodes |-> <<>>]')
+            elif default_type == 'node_map_int':
+                lines.append(f'{prefix} varName = "{var_name}" -> [n \\in TraceNodes |-> 0]')
             elif default_type == 'set':
-                lines.append(f'        varName = "{var_name}" -> {{}}')
+                lines.append(f'{prefix} varName = "{var_name}" -> {{}}')
             elif default_type == 'int':
-                lines.append(f'        varName = "{var_name}" -> 0')
+                lines.append(f'{prefix} varName = "{var_name}" -> 0')
             elif default_type == 'bool':
-                lines.append(f'        varName = "{var_name}" -> FALSE')
+                lines.append(f'{prefix} varName = "{var_name}" -> FALSE')
             else:
                 # Custom default
                 default_value = var.get('default_value', '0')
-                lines.append(f'        varName = "{var_name}" -> {default_value}')
+                lines.append(f'{prefix} varName = "{var_name}" -> {default_value}')
         
         return '\n'.join(lines)
     
@@ -70,25 +78,31 @@ class TraceGenerator:
         actions = self.config.get('actions', [])
         for action in actions:
             action_name = action['name']
-            event_name = action.get('event_name', action_name)
             parameters = action.get('parameters', [])
             
             lines.append(f"Is{action_name} ==")
-            lines.append(f'    /\\ IsEvent("{event_name}")')
+            lines.append(f'    /\\ IsEvent("{action_name}")')
             
             if parameters:
-                for param in parameters:
+                # Generate nested existential quantifiers for each parameter
+                for i, param in enumerate(parameters):
                     param_name = param['name']
                     param_source = param['source']
-                    lines.append(f'    /\\ \\E {param_name} \\in {param_source} :')
+                    # Convert source to Trace format automatically
+                    trace_source = f"Trace{param_source}"
+                    
+                    # Calculate indentation: each level adds 4 spaces
+                    indent = "    " + "    " * i
+                    lines.append(f'{indent}/\\ \\E {param_name} \\in {trace_source} :')
                 
-                # Generate the action call
+                # Generate the action call with proper indentation
+                call_indent = "    " + "    " * len(parameters)
                 param_names = [p['name'] for p in parameters]
                 if len(param_names) == 1:
-                    lines.append(f'        {action_name}({param_names[0]})')
+                    lines.append(f'{call_indent}{action_name}({param_names[0]})')
                 else:
                     param_str = ', '.join(param_names)
-                    lines.append(f'        {action_name}({param_str})')
+                    lines.append(f'{call_indent}{action_name}({param_str})')
             else:
                 lines.append(f'        {action_name}')
             
@@ -111,7 +125,7 @@ class TraceGenerator:
         return '\n'.join(lines)
     
     def generate_constants_section(self) -> str:
-        """Generate CONSTANTS section"""
+        """Generate CONSTANTS section for TLA file"""
         lines = ["CONSTANTS"]
         
         constants = self.config.get('constants', [])
@@ -137,14 +151,14 @@ class TraceGenerator:
         return '\n'.join(lines)
     
     def generate_trace_sources(self) -> str:
-        """Generate trace source definitions"""
+        """Generate trace source definitions automatically from constants"""
         lines = []
         
-        sources = self.config.get('trace_sources', [])
-        for source in sources:
-            source_name = source['name']
-            source_field = source['field']
-            lines.append(f"{source_name} == ToSet(Trace[1].{source_field})")
+        constants = self.config.get('constants', [])
+        for constant in constants:
+            const_name = constant['name']
+            trace_name = f"Trace{const_name}"
+            lines.append(f"{trace_name} == ToSet(Trace[1].{const_name})")
         
         return '\n'.join(lines)
     
@@ -180,47 +194,41 @@ ComposedNext == FALSE
 (* NOTHING TO CHANGE BELOW *)
 BaseSpec == Init /\\ [][Next \\/ ComposedNext]_vars
 
------------------------------------------------------------------------------
 =============================================================================
-
-{self.generate_constants_section()}
-
-SPECIFICATION
-    TraceSpec
-
-VIEW
-    TraceView
-
-\\* PROPERTIES
-\\*     \\* Verify mutual exclusion and type invariants
-\\*     TypeInvariant
-
-
-POSTCONDITION
-    TraceAccepted
-
-CHECK_DEADLOCK
-    FALSE \\* Deadlock checking disabled due to stuttering
 
 """
         return template
     
     def generate_cfg_file(self) -> str:
         """Generate the TLC configuration file"""
-        cfg_lines = []
+        cfg_lines = ["CONSTANTS"]
         
-        # Add constants with their values
+        # Add user-defined constants with their values
         constants = self.config.get('constants', [])
         for constant in constants:
             const_name = constant['name']
             const_value = constant.get('value', '')
             if const_value:
-                cfg_lines.append(f"CONSTANT {const_name} = {const_value}")
+                cfg_lines.append(f"    {const_name} = {const_value}")
+            else:
+                cfg_lines.append(f"    {const_name}")
+        
+        # Add base configuration constants (always present)
+        cfg_lines.extend([
+            "    Nil <- TraceNil",
+            "    Vars <- vars",
+            "    Default <- DefaultImpl", 
+            "    BaseInit <- Init",
+            "    UpdateVariables <- UpdateVariablesImpl",
+            "    TraceNext <- TraceNextImpl"
+        ])
         
         # Add other standard configuration
         cfg_lines.extend([
             "",
             "SPECIFICATION TraceSpec",
+            "",
+            "VIEW TraceView",
             "",
             "POSTCONDITION TraceAccepted",
             "",

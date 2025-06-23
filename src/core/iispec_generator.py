@@ -100,7 +100,7 @@ class LLMClientWrapper:
         self.model = self.client.model
         self.max_tokens = self.client.max_tokens
         self.temperature = self.client.temperature
-        
+    
         logger.info(f"Initialized LLM client - Model: {self.model}, Max Tokens: {self.max_tokens}, Temperature: {self.temperature}")
     
     def generate(self, prompt: str, max_tokens: Optional[int] = None, temperature: Optional[float] = None) -> str:
