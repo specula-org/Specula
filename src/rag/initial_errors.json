@@ -1,0 +1,188 @@
+[
+  {
+    "error_id": "E001",
+    "error_message": "Fatal errors while parsing TLA+ spec in file test.tla \n java.lang.NullPointerException: Cannot invoke \"String.length()\" because \"str\" is null",
+    "solution": "Add '---- MODULE <filename> ----' to the head of the file , Add '====' to the end of the file.",
+    "context": ""
+  },
+  {
+    "error_id": "E002",
+    "error_message": "Encountered \"Storage\" at line 7, column 5 and token '/\\' ",
+    "solution": "'/\\''s after cannot be a line of all comments or empty, should be '/\\'s <statement>",
+    "context": "/\\ \\* Validate storage existence \n Storage /= None"
+  },
+  {
+    "error_id": "E003",
+    "error_message": "Encountered \"====\" at line 8, column 1 and token \"None\" ",
+    "solution": "IF <statement> THEN <statement> ELSE <statement>, ELSE is necessary. you can use UNCHANGED <<>> to replace <statement>",
+    "context": "IF <statement> THEN <statement>"
+  },
+  {
+    "error_id": "E004",
+    "error_message": "Was expecting \"====\" or more Module body. \n Encountered \"o\" at line 6, column 24 and token \"Storage\" ",
+    "solution": "'o'is not a valid operator in TLA+. '\\cup' is the correct operator.",
+    "context": "Storage' = Storage o None"
+  },
+  {
+    "error_id": "E005",
+    "error_message": "Was expecting \"====\" or more Module body. \n Encountered \"a\" at line 7, column 9 and token \"2\" ",
+    "solution": "CASE <statement> -> <statement> \n [] <statement> -> <statement> \n [] <statement> -> <statement> \n [] TRUE -> <statement>, don't forget '[]'",
+    "context": "CASE a = 1 -> 2 \n a = 2 -> 3 \n  a = 3 -> 1 \n TRUE -> 1"
+  },
+  {
+    "error_id": "E006",
+    "error_message": "Encountered '/\\' at line 7, column 5 and token '1' ",
+    "solution": "LET <variable> == <expression> IN \n <statement>, don't forget 'IN'",
+    "context": "    /\\ LET B == 1 \n    /\\ a' = B"
+  },
+  {
+    "error_id": "E007",
+    "error_message": "Was expecting \"====\" or more Module body. \n Encountered \"(\" at line 5, column 48 and token \"parseFrom\"  ",
+    "solution": "When converting, the structure was unexpectedly retained, only the last function name should be retained, and the data in the class should be represented using an array, i.e. parseFrom(entry.data)",
+    "context": "/\\ configuration' = Configuration.parseFrom(entry.data)"
+  },
+  {
+    "error_id": "E008",
+    "error_message": "Encountered \"====\" at line 8, column 1 and token \"None\" ",
+    "solution": "IF <statement> THEN <statement> ELSE <statement>, ELSE is necessary. you can use UNCHANGED <<>> to replace <statement>",
+    "context": "IF <statement> THEN <statement>"
+  },
+  {
+    "error_id": "E009",
+    "error_message": "Operator lastFileLength already defined or declared. ",
+    "solution": "In the previous LET IN body, variables were defined, but are still being used outside the body, so they can be redefined once again",
+    "context": "/\\ IF currentEntry' = Null /\\ currentOffset_candidate >= lastFileLength"
+  },
+  {
+    "error_id": "E010",
+    "error_message": "  Precedence conflict between ops DOMAIN in block line 40, col 60 to line 40, col 65 of module AppendEntries and |. ",
+    "solution": "'|'is not a valid operator in TLA+. ':' is the correct operator.",
+    "context": "lastIndexKept == [i \\in DOMAIN newEntries | \n IF i <= firstLogIndex THEN FALSE \n ELSE raftLog[i].term /= newEntries[i].term]"
+  },
+  {
+    "error_id": "E011",
+    "error_message": "Unknown operator: `lastLogIndex'.",
+    "solution": "define the variable before using it. VARIABLES <variables>",
+    "context": "lastLogIndex == MIN(lastLogIndex[raftLog], nextIndex + maxLogEntriesPerRequest[raftOptions] - 1)"
+  },
+  {
+    "error_id": "E012",
+    "error_message": "  Precedence conflict between ops \\lor in block line 12, col 7 to line 12, col 8 of module Success and \\land.",
+    "solution": "'/\\ and \\/ cannot be used concurrently",
+    "context": "    /\\ (   ( (currentTerm /= requestTerm) / (state /= 'CANDIDATE') ) \n/\\ currentTerm' = currentTerm \n / ( (currentTerm = requestTerm) /\\ (state = 'CANDIDATE') )"
+  },
+  {
+    "error_id": "E013",
+    "error_message": "  Was expecting \"====\" or more Module body. \n Encountered \"(\" at line 7, column 25 and token \"StartNewHeartbeat\" ",
+    "solution": "Actions without parameters should not have parentheses, i.e. func",
+    "context": " Run == StartNewHeartbeat()"
+  },
+  {
+    "error_message": "The operator MutexGuardDrop requires 2 arguments.",
+    "solution": "Add missing second argument to MutexGuardDrop call matching operator definition",
+    "context": "/\\ MutexGuardDrop([type |-> \"MutexGuard\", mutex |-> mtx])",
+    "error_id": "E014"
+  },
+  {
+    "error_message": "Encountered \"IN\" at line 4, column 127 and token \"]\"",
+    "solution": "Add missing closing parenthesis for Head() function call in LET binding",
+    "context": "LET next_thread == Head(queue[mtx] IN",
+    "error_id": "E015"
+  },
+  {
+    "error_message": "Was expecting \"==== or more Module body\"\nEncountered \"<EOF>\" at line 12, column 20 and token \"guards\"",
+    "solution": "Add missing ==== at module end and fix module declaration syntax",
+    "context": "----MODULE MutexTryLock----\n...\nELSE \n    UNCHANGED guards",
+    "error_id": "E016"
+  },
+  {
+    "error_message": "Could not parse module MutexTryLock",
+    "solution": "Fix module header format to use proper spacing: '---- MODULE Name ----'",
+    "context": "----MODULE MutexTryLock----",
+    "error_id": "E017"
+  },
+  {
+    "error_message": "Encountered \"ELSE\" at line 10, column 5 and token \"TRUE\"",
+    "solution": "Add missing EXCEPT! operator and close function bracket in THEN clause",
+    "context": "THEN lock' = [lock EXCEPT ![mtx] = TRUE",
+    "error_id": "E018"
+  },
+  {
+    "error_message": "Encountered \"old\" at line 4, column 55 and token \"mutex\"",
+    "solution": "Fix LET clause syntax by using == for definitions and proper line separation",
+    "context": "UpgradeableGuardDrop(guard) == LET mtx == guard.mutex old = lock[mtx] new = old - UPGRADEABLE_READER IN ...",
+    "error_id": "E019"
+  },
+  {
+    "error_message": "Encountered \"TRUE\" at line 4, column 157 and token \"RETURN\"",
+    "solution": "Remove RETURN statements and restructure operator with proper TLA+ action syntax",
+    "context": "TryWrite(mtx) == IF lock[mtx] = 0 THEN /\\ lock' = [lock EXCEPT ![mtx] = WRITER] /\\ guards' = guards \\cup {[type |-> \"WriteGuard\", mutex |-> mtx]} /\\ RETURN TRUE ELSE /\\ RETURN FALSE",
+    "error_id": "E020"
+  },
+  {
+    "error_message": "Unknown operator: `lock'.",
+    "solution": "Add missing variable declaration for 'lock' in VARIABLES list",
+    "context": "VARIABLES WRITER\nWriteGuardDrop(guard) == ... lock' = [lock EXCEPT ...",
+    "error_id": "E021"
+  },
+  {
+    "error_message": "Unknown operator: `queue'.",
+    "solution": "Add missing variable declaration for 'queue' in VARIABLES list",
+    "context": "WriteGuardDrop(guard) == ... queue' = [queue EXCEPT ...",
+    "error_id": "E022"
+  },
+  {
+    "error_message": "Unknown operator: `guards'.",
+    "solution": "Add missing variable declaration for 'guards' in VARIABLES list",
+    "context": "WriteGuardDrop(guard) == ... guards' = guards \\ {guard}",
+    "error_id": "E023"
+  },
+  {
+    "error_message": "Encountered \"mtx\" at line 5, column 29 and token \"LET\"",
+    "solution": "Replace assignment operator '=' with definition operator '==' in LET clause",
+    "context": "ReadGuardDrop(guard) == LET mtx = guard.mutex\n                             old = lock[mtx]\n                             new = old - READER",
+    "error_id": "E024"
+  },
+  {
+    "error_message": "Unknown operator: `lock'.",
+    "solution": "Add 'lock' to VARIABLES declaration",
+    "context": "VARIABLES UPGRADEABLE_READER, READER, WRITER",
+    "error_id": "E025"
+  },
+  {
+    "error_message": "Unknown operator: `BEING_UPGRADED'.",
+    "solution": "Declare BEING_UPGRADED as CONSTANT",
+    "context": "![mtx] = @ \\/ BEING_UPGRADED",
+    "error_id": "E026"
+  },
+  {
+    "error_message": "Unknown operator: `guards'.",
+    "solution": "Add 'guards' to VARIABLES declaration",
+    "context": "guards' = (guards \\ {guard})",
+    "error_id": "E027"
+  },
+  {
+    "error_message": "Unknown operator: `lock'.",
+    "solution": "Add 'lock' to VARIABLES declaration",
+    "context": "VARIABLES BEING_UPGRADED, WRITER, MAX_READER",
+    "error_id": "E028"
+  },
+  {
+    "error_message": "Unknown operator: `READER'.",
+    "solution": "Declare READER in CONSTANTS section",
+    "context": "new == old + READER",
+    "error_id": "E029"
+  },
+  {
+    "error_message": "Was expecting \"==== or more Module body\"\nEncountered \"<EOF>\" at line 6, column 372 and token \"FALSE\"",
+    "solution": "Add missing ==== delimiter at module end and ensure proper module declaration syntax",
+    "context": "----MODULE TryUpread----\n...\nELSE /\\ IF (old /\\ WRITER) # 0 THEN lock' = [lock EXCEPT ![mtx] = old - UPGRADEABLE_READER] ELSE UNCHANGED lock /\\ FALSE",
+    "error_id": "E030"
+  },
+  {
+    "error_message": "Item at line 95, col 9 to line 95, col 9 of module RaftConsensus is not properly indented inside conjunction or  disjunction list item at line 85, col 9 to line 95, col 10 of module RaftConsensus",
+    "solution": "Add Indentation",
+    "context": "msg' = [ a |-> b, c |-> d ]",
+    "error_id": "E031"
+  }
+]

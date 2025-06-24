@@ -124,3 +124,5 @@ cd examples/etcd
 bash scripts/run_full_test_with_verification.sh  # Will auto-clone if needed
 ```
 
+The final, high-quality specification for etcd's Raft implementation, which has been refined through all the steps above, can be found at [Raft.tla](spec/step5/spec/Raft.tla).
+

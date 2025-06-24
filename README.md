@@ -125,7 +125,7 @@ This step converts the imperative-style IISpec into a standard, structured TLA+ 
 *   **Process**: The CFA tool parses the imperative control flow (e.g., labels, gotos) in the IISpec and transforms it into a declarative, state-based TLA+ format (`StructSpec`).
 *   **Input**: The syntactically valid IISpec (`examples/etcd/spec/step2/Raft.tla`).
 *   **Output**: A structured TLA+ specification (`examples/etcd/spec/step3/Raft.tla`).
-A trace configuration file (`examples/etcd/spec/step2/raft_config.yaml`) describing the specification structure.
+A trace configuration file (`examples/etcd/config/raft_config.yaml`) describing the specification structure.
 *   **Command**:
 ```bash
     # Run the CFA transformation script.
@@ -196,9 +196,9 @@ This step generates trace validation drivers that can validate TLA+ specificatio
         --servers n1 n2 n3
 
     # Step 5.2d: Validate traces with TLA+ model checker
-    cd spec/step5/spec
+    cd examples/etcd/spec/step5/spec
     export TRACE_PATH=trace.ndjson
-    java -cp "../../../lib/tla2tools.jar" tlc2.TLC \
+    java -cp "../../../../../lib/tla2tools.jar" tlc2.TLC \
         -config specTrace.cfg specTrace.tla
 ```
 
@@ -217,4 +217,6 @@ bash scripts/run_full_test_with_verification.sh  # Full workflow
 cd examples/etcd
 bash scripts/run_full_test_with_verification.sh  # Will auto-clone if needed
 ```
+
+The final, high-quality specification for etcd's Raft implementation, which has been refined through all the steps above, can be found at [Raft.tla](examples/etcd/spec/step5/spec/Raft.tla).
 

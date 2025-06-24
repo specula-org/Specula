@@ -21,7 +21,7 @@ tla_validator:
 
 # Generation Configuration
 generation:
-  max_correction_attempts: 3  # Maximum error correction attempts
+  max_correction_attempts: 10  # Maximum error correction attempts
   mode: "draft-based"              # Generation mode: "direct" or "draft-based"
   
 # Path Configuration

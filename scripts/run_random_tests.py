@@ -13,7 +13,7 @@ from pathlib import Path
 # Add src path to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from core.raft_state_machine_runner import RaftStateMachineRunner
+from examples.etcd.scripts.raft_state_machine_runner import RaftStateMachineRunner
 from core.raftexample_runner import RaftExampleRunner
 from core.docker_runner import DockerRaftRunner
 from core.instrumentation import InstrumentationTool

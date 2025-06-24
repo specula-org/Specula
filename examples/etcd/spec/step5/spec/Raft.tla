@@ -34,6 +34,8 @@ VARIABLES
     info,
     stack
 
+raft_vars == <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+
 vars == <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption, pc, info, stack>>
 
 TypeInvariant ==
@@ -72,7 +74,7 @@ Init ==
     /\ votesRejected = [s \in Server |-> {}]
     /\ electionElapsed = [s \in Server |-> 0]
     /\ heartbeatElapsed = [s \in Server |-> 0]
-    /\ randomizedElectionTimeout = [s \in Server |-> 10]
+    /\ randomizedElectionTimeout = [s \in Server |-> 3]
     /\ messages = {}
     /\ readStates = [s \in Server |-> <<>>]
     /\ pendingReadIndexMessages = [s \in Server |-> <<>>]
@@ -248,7 +250,7 @@ appendEntry(s, entries) ==
            newEntries == [i \in 1..Len(entries) |-> [term |-> currentTerm[s], index |-> lastIndex + i, value |-> entries[i].value, type |-> entries[i].type]]
            totalSize == IF Len(newEntries) > 0 THEN 1 ELSE 0
        IN IF (uncommittedSize[s] > 0 /\ totalSize > 0 /\ uncommittedSize[s] + totalSize > NoLimit)
-          THEN UNCHANGED vars
+          THEN UNCHANGED raft_vars
           ELSE /\ log' = [log EXCEPT ![s] = log[s] \o newEntries]
                /\ uncommittedSize' = [uncommittedSize EXCEPT ![s] = uncommittedSize[s] + totalSize]
                /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "AppResp", term |-> currentTerm[s], index |-> Len(log'[s])]}
@@ -271,9 +273,9 @@ campaign(s, campaignType) ==
 
 hup(s, campaignType) ==
     /\ IF state[s] = "Leader"
-       THEN UNCHANGED vars
+       THEN UNCHANGED raft_vars
        ELSE IF ~(s \in Server) \/ isLearner[s]
-            THEN UNCHANGED vars
+            THEN UNCHANGED raft_vars
             ELSE campaign(s, campaignType)
 
 poll(s, from, msgType, granted) ==
@@ -291,7 +293,7 @@ poll(s, from, msgType, granted) ==
                     /\ bcastAppend(s)
           ELSE IF rejectedCount * 2 >= voterCount
                THEN becomeFollower(s, currentTerm[s], Nil)
-               ELSE UNCHANGED vars
+               ELSE UNCHANGED raft_vars
 
 stepLeader(s, m) ==
     CASE m.type = "Beat" -> 
@@ -299,11 +301,11 @@ stepLeader(s, m) ==
     [] m.type = "CheckQuorum" -> 
         /\ IF Cardinality({t \in Server : t = s \/ matchIndex[s][t] > 0}) * 2 <= Cardinality(Server)
            THEN becomeFollower(s, currentTerm[s], Nil)
-           ELSE UNCHANGED vars
+           ELSE UNCHANGED raft_vars
     [] m.type = "Prop" -> 
         /\ m.from = s
         /\ IF leadTransferee[s] # Nil
-            THEN /\ UNCHANGED vars
+            THEN /\ UNCHANGED raft_vars
             ELSE /\ appendEntry(s, m.entries)
     [] m.type = "AppResp" -> 
         /\ IF m.reject
@@ -331,14 +333,14 @@ stepLeader(s, m) ==
         /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
     [] m.type = "TransferLeader" -> 
         /\ IF m.from \in config[s].learners
-           THEN /\ UNCHANGED vars
+           THEN /\ UNCHANGED raft_vars
            ELSE /\ IF leadTransferee[s] # Nil
                     THEN IF leadTransferee[s] = m.from
-                        THEN /\ UNCHANGED vars
+                        THEN /\ UNCHANGED raft_vars
                         ELSE /\ leadTransferee' = [leadTransferee EXCEPT ![s] = Nil]
                             /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
                     ELSE IF m.from = s
-                        THEN UNCHANGED vars
+                        THEN UNCHANGED raft_vars
                         ELSE /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
                             /\ leadTransferee' = [leadTransferee EXCEPT ![s] = m.from]
                             /\ IF matchIndex[s][m.from] = Len(log[s])
@@ -381,7 +383,7 @@ stepCandidate(s, m) ==
     LET myVoteRespType == IF state[s] = "PreCandidate" THEN "PreVoteResp" ELSE "VoteResp"
      IN 
       /\ CASE m.type = "Prop" -> 
-           /\ UNCHANGED vars
+           /\ UNCHANGED raft_vars
        [] m.type = "App" -> 
            /\ becomeFollower(s, m.term, m.from)
            /\ handleAppendEntries(s, m)
@@ -394,14 +396,14 @@ stepCandidate(s, m) ==
        [] m.type = myVoteRespType -> 
            /\ poll(s, m.from, m.type, ~m.reject)
        [] m.type = "TimeoutNow" -> 
-           /\ UNCHANGED vars
+           /\ UNCHANGED raft_vars
        [] m.type = "CheckQuorum" -> 
-           /\ UNCHANGED vars
+           /\ UNCHANGED raft_vars
 
 stepFollower(s, m) ==
     /\ CASE m.type = "Prop" -> 
         /\ IF leaderId[s] = Nil
-           THEN /\ UNCHANGED vars
+           THEN /\ UNCHANGED raft_vars
            ELSE /\ messages' = messages \cup {[from |-> s, to |-> leaderId[s], type |-> m.type, entries |-> m.entries]}
         /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
         [] m.type = "App" -> 
@@ -418,14 +420,14 @@ stepFollower(s, m) ==
             /\ handleSnapshot(s, m)
         [] m.type = "TransferLeader" -> 
             /\ IF leaderId[s] = Nil
-                THEN UNCHANGED vars
+                THEN UNCHANGED raft_vars
                 ELSE messages' = messages \cup {[from |-> s, to |-> leaderId[s], type |-> m.type]}
             /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
         [] m.type = "TimeoutNow" -> hup(s, "Transfer")
         [] m.type = "Hup" -> hup(s, "Election")
         [] m.type = "ReadIndex" -> 
             /\ IF leaderId[s] = Nil
-                THEN /\ UNCHANGED vars
+                THEN /\ UNCHANGED raft_vars
                 ELSE /\ messages' = messages \cup {[from |-> s, to |-> leaderId[s], type |-> m.type, entries |-> m.entries]}
             /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
         [] m.type = "ReadIndexResp" -> 
@@ -434,12 +436,13 @@ stepFollower(s, m) ==
                 ELSE /\ UNCHANGED readStates
             /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
         [] m.type = "CheckQuorum" -> 
-            /\ UNCHANGED vars
+            /\ UNCHANGED raft_vars
 
 RECURSIVE Step(_, _)
 
 Step(s, m) ==
-    \/ /\ m.term = 0
+    /\ Print(<<"Step: server", s, "processing message", m.type, "from", m.from, "state =", state[s]>>, TRUE)
+    /\ \/ /\ m.term = 0
        /\ \/ /\ m.type = "Hup"
              /\ hup(s, "Election")
           \/ /\ m.type = "StorageAppendResp"
@@ -479,12 +482,12 @@ Step(s, m) ==
           THEN /\ LET force == m.context = "Transfer"
                       inLease == leaderId[s] # Nil /\ electionElapsed[s] < randomizedElectionTimeout[s]
                   IN IF ~force /\ inLease
-                     THEN UNCHANGED vars
+                     THEN UNCHANGED raft_vars
                      ELSE Step(s, [m EXCEPT !.term = 0])
           ELSE IF m.type = "PreVote"
-               THEN UNCHANGED vars
+               THEN UNCHANGED raft_vars
                ELSE IF m.type = "PreVoteResp" /\ ~m.reject
-                    THEN UNCHANGED vars
+                    THEN UNCHANGED raft_vars
                     ELSE /\ IF m.type \in {"App", "Heartbeat", "Snap"}
                             THEN becomeFollower(s, m.term, m.from)
                             ELSE becomeFollower(s, m.term, Nil)
@@ -520,15 +523,17 @@ HandletickHeartbeat(s) ==
     /\ stack' = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>]>>
     /\ UNCHANGED <<votedFor, randomizedElectionTimeout, leadTransferee, log, nextIndex, pendingReadIndexMessages, leaderId, readStates, currentTerm, votesGranted, matchIndex, messages, state, readOnlyOption, pendingConfIndex, config, commitIndex, votesRejected, uncommittedSize, isLearner>>
 HandletickElection(s) ==
+    /\ Print(<<"HandletickElection: server", s, "pc =", pc, "state =", state[s]>>, TRUE)
     /\ pc = Nil
     /\ tickElection(s)
     /\ stack' = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>]>>
+    /\ pc' = "HandletickElection_1"
     /\ UNCHANGED <<votedFor, randomizedElectionTimeout, leadTransferee, log, nextIndex, pendingReadIndexMessages, leaderId, readStates, currentTerm, votesGranted, heartbeatElapsed, matchIndex, messages, state, readOnlyOption, pendingConfIndex, config, commitIndex, votesRejected, uncommittedSize, isLearner>>
 
 Next ==
     \/ \E s \in Server : HandletickElection(s)
     \/ \E s \in Server : HandletickHeartbeat(s)
-    \/ \E s \in Server : \E m \in messages : (pc = Nil /\ Step(s, m))
+    \/ \E s \in Server : \E m \in messages : (pc = Nil /\ Step(s, m) /\ UNCHANGED <<pc, info, stack>>)
     \/ HandletickElection_1
     \/ HandletickHeartbeat_1
     \/ HandletickHeartbeat_1_2
