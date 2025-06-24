@@ -212,16 +212,9 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
 
 #### Complete Workflow Example
 
-For a complete demonstration of the entire Step 5 from scratch:
+For a complete demonstration of the entire Step 5.2 from scratch:
 
 ```bash
-# Method 1: Use dedicated setup script (recommended)
-cd examples/etcd
-bash scripts/setup_etcd_source.sh      # Clone and prepare etcd/raft
-bash scripts/run_instrumentation_test.sh  # Test instrumentation
-bash scripts/run_full_test_with_verification.sh  # Full workflow
-
-# Method 2: Direct execution (auto-clone)
 cd examples/etcd
 bash scripts/run_full_test_with_verification.sh  # Will auto-clone if needed
 ```
