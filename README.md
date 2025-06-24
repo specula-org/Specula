@@ -154,17 +154,25 @@ This step generates trace validation drivers that can validate TLA+ specificatio
 
 #### Step 5.1: Trace Validation Driver Generation
 
-*   **Process**: The `trace_generator` script generates specialized TLA+ modules that can accept and validate execution traces. It takes a configuration file describing the spec's structure (constants, variables, and actions) and automatically generates the trace validation driver files.
-*   **Input**: A trace configuration file (`examples/etcd/config/raft_config.yaml`) describing the specification structure.
-*   **Output**: 
-    - Trace validation TLA+ specification (`examples/etcd/spec/step5/spec/specTrace.tla`)
-    - Trace validation TLC configuration file (`examples/etcd/spec/step5/spec/specTrace.cfg`)
+This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg`) that can validate execution traces against the specification. The `spectrace_generator.py` script orchestrates this:
+
+**Automatic Configuration Generation**
+
+*   **Process**: The script uses an LLM to analyze the TLA+ specification from the previous step, automatically generating a YAML configuration file that describes the spec's structure (constants, variables, actions, and interactions). This configuration is then used to create the final trace validation driver.
+*   **Input**: The runtime-corrected specification from Step 4 (`examples/etcd/spec/step4/Raft.tla` and `Raft.cfg`).
+*   **Output**:
+    - An automatically generated trace configuration file (`examples/etcd/spec/step5/raft_config.yaml`).
+    - Trace validation TLA+ specification (`examples/etcd/spec/step5/spec/specTrace.tla`).
+    - Trace validation TLC configuration file (`examples/etcd/spec/step5/spec/specTrace.cfg`).
 *   **Command**:
 ```bash
-    # Generate trace validation driver from configuration
-    python3 -m src.core.trace_generator examples/etcd/config/raft_config.yaml examples/etcd/spec/step5/spec/
+    # Auto-generate config and then the trace validation driver
+    python3 -m src.core.spectrace_generator \
+        --tla examples/etcd/spec/step4/Raft.tla \
+        --cfg examples/etcd/spec/step4/Raft.cfg \
+        --auto-config examples/etcd/spec/step5/raft_config.yaml \
+        examples/etcd/spec/step5/spec/
 ```
-
 #### Step 5.2: Automated Instrumentation
 
 *   **Process**: The `instrumentation` script automatically instruments the original source code to inject trace collection points. It supports multiple programming languages (Go, Python, Rust) and uses template-based code injection to generate execution traces that can be consumed by the trace validation driver generated in Step 5.1.

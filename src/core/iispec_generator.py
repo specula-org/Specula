@@ -17,6 +17,8 @@ from typing import Dict, List, Optional, Tuple
 import logging
 import traceback
 
+from ..rag.retriever import ErrorRetriever
+
 class Config:
     """Configuration management class"""
     
@@ -145,13 +147,19 @@ class TLAValidator:
 class Phase1Generator:
     """Main Phase 1 generator class"""
     
-    def __init__(self):
+    def __init__(self, use_rag: bool = True):
         self.llm = LLMClientWrapper()
         self.validator = TLAValidator()
         self.prompts_dir = Path(config.get('paths.prompts_dir'))
         self.max_correction_attempts = config.get('generation.max_correction_attempts')
         self.generation_mode = config.get('generation.mode', 'direct')
         self.step2_prompt = self._load_prompt("step2_error_correction.txt")
+        self.use_rag = use_rag
+        self.retriever = None
+        if self.use_rag:
+            logger.info("RAG-based error correction from knowledge base is enabled.")
+        else:
+            logger.info("RAG-based error correction is disabled.")
     
     def _load_prompt(self, filename: str) -> str:
         """Load prompt template from file"""
@@ -188,15 +196,15 @@ class Phase1Generator:
         return '\n'.join(tla_lines).strip()
     
     def _extract_module_name(self, tla_code: str) -> str:
-        """Extract module name from TLA+ code, fall back to a default"""
         for line in tla_code.split('\n'):
             if "---- MODULE" in line:
                 try:
-                    return line.split("---- MODULE")[1].strip()
-                except IndexError:
+                    # 提取 ---- MODULE 和 ---- 之间的内容并去除空格
+                    return line.split("---- MODULE")[1].split("----")[0].strip()
+                except (IndexError, AttributeError):
                     continue
         return "UnnamedModule"
-    
+        
     def step0_generate_draft(self, source_code: str) -> str:
         """Step 0: Generate a natural language analysis draft"""
         logger.info("Step 0: Generating natural language analysis draft...")
@@ -244,16 +252,43 @@ class Phase1Generator:
         current_spec = initial_spec
         error_output = initial_errors
         correction_attempts = 0
+
+        if self.use_rag and self.retriever is None:
+            try:
+                error_db_path = 'src/rag/initial_errors.json'
+                self.retriever = ErrorRetriever(data_path=error_db_path)
+                logger.info("RAG error retriever initialized successfully.")
+            except Exception as e:
+                logger.warning(f"Failed to initialize RAG error retriever: {e}. Proceeding without RAG.")
+                self.use_rag = False
         
         while correction_attempts < self.max_correction_attempts:
             correction_attempts += 1
             logger.info(f"Correction attempt {correction_attempts}/{self.max_correction_attempts}")
             
             knowledge_context = self._load_knowledge_context()
+            
+            if self.use_rag and self.retriever:
+                try:
+                    logger.info("Retrieving similar errors from the knowledge base...")
+                    retrieved_errors = self.retriever.search(error_output, top_k=3)
+                    if retrieved_errors:
+                        retrieved_context = "\n\nHere are some similar errors and their solutions from our knowledge base:\n"
+                        for err in retrieved_errors:
+                            retrieved_context += f"- Error: {err['error_message']}\\n  Solution: {err['solution']}\\n"
+                        knowledge_context += retrieved_context
+                        logger.info(f"Found {len(retrieved_errors)} relevant solutions in the knowledge base.")
+                    else:
+                        logger.info("No similar errors found in the knowledge base.")
+                except Exception as e:
+                    logger.warning(f"Error retrieval failed: {e}. Proceeding without retrieved context.")
+            
             corrected_spec = self.step2_correct_errors(current_spec, error_output, knowledge_context)
             
             module_name = self._extract_module_name(corrected_spec)
-            attempt_file = output_path / f"{module_name}_correction_attempt_{correction_attempts}.tla"
+            attempt_dir = output_path / f"attempt_{correction_attempts}"
+            attempt_dir.mkdir(exist_ok=True)
+            attempt_file = attempt_dir / f"{module_name}.tla"
             with open(attempt_file, 'w', encoding='utf-8') as f:
                 f.write(corrected_spec)
             
@@ -411,7 +446,9 @@ class Phase1Generator:
             sys.exit(1)
         
         module_name = self._extract_module_name(initial_spec)
-        initial_file = output_path / f"{module_name}_initial.tla"
+        initial_dir = output_path / "initial"
+        initial_dir.mkdir(exist_ok=True)
+        initial_file = initial_dir / f"{module_name}.tla"
         with open(initial_file, 'w', encoding='utf-8') as f:
             f.write(initial_spec)
         
@@ -427,7 +464,7 @@ class Phase1Generator:
             )
         
         final_module_name = self._extract_module_name(final_spec)
-        final_file = output_path / f"{final_module_name}_corrected.tla"
+        final_file = output_path / f"{final_module_name}.tla"
         with open(final_file, 'w', encoding='utf-8') as f:
             f.write(final_spec)
         
@@ -493,6 +530,7 @@ def main():
     parser.add_argument("--model", help="Override LLM model from config")
     parser.add_argument("--max-tokens", type=int, help="Override max_tokens from config")
     parser.add_argument("--temperature", type=float, help="Override temperature from config")
+    parser.add_argument("--no-rag", action="store_true", help="Disable RAG-based error correction from the knowledge base.")
     parser.add_argument("--mode", choices=["direct", "draft-based", "correct-only", "draft-only", "existing-draft"],
                         help="""Generation mode:
 - direct: Source code -> TLA+
@@ -512,7 +550,8 @@ def main():
         if args.log_level:
             logging.getLogger().setLevel(getattr(logging, args.log_level))
 
-        generator = Phase1Generator()
+        use_rag = not args.no_rag
+        generator = Phase1Generator(use_rag=use_rag)
 
         # Apply command-line overrides
         if args.model:

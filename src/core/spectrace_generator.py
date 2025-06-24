@@ -4,14 +4,23 @@ Trace Validation Generator
 
 Generates specTrace.tla and specTrace.cfg files based on a configuration file
 that describes the spec's constants, variables, and actions.
+Can also automatically generate configuration from TLA+ specification files using LLM.
 """
 
 import os
 import sys
 import yaml
 import argparse
+import re
 from typing import Dict, List, Any
 from pathlib import Path
+
+# Import LLM client for automatic config generation
+try:
+    from ..llm.client import get_llm_client
+    LLM_AVAILABLE = True
+except ImportError:
+    LLM_AVAILABLE = False
 
 
 class TraceGenerator:
@@ -24,6 +33,10 @@ class TraceGenerator:
         lines = ["DefaultImpl(varName) =="]
         
         variables = self.config.get('variables', [])
+        constants = self.config.get('constants', [])
+        # Sort by length descending to avoid partial replacements (e.g. Server vs ServerId)
+        const_names = sorted([c['name'] for c in constants if c['name'] != 'Nil'], key=len, reverse=True)
+        
         for i, var in enumerate(variables):
             var_name = var['name']
             default_type = var.get('default_type', 'custom')
@@ -54,6 +67,12 @@ class TraceGenerator:
             else:
                 # Custom default
                 default_value = var.get('default_value', '0')
+                
+                # Replace constants with Trace<Constant>
+                for const_name in const_names:
+                    # Use word boundaries to avoid replacing parts of other words
+                    default_value = re.sub(r'\b' + re.escape(const_name) + r'\b', f'Trace{const_name}', default_value)
+                
                 lines.append(f'{prefix} varName = "{var_name}" -> {default_value}')
         
         return '\n'.join(lines)
@@ -80,16 +99,27 @@ class TraceGenerator:
             action_name = action['name']
             parameters = action.get('parameters', [])
             
-            lines.append(f"Is{action_name} ==")
-            lines.append(f'    /\\ IsEvent("{action_name}")')
+            # Determine event name - remove "Handle" prefix if present
+            event_name = action_name
+            if action_name.startswith('Handle'):
+                event_name = action_name[6:]  # Remove "Handle" prefix
+            
+            lines.append(f"Is{event_name} ==")
+            lines.append(f'    /\\ IsEvent("{event_name}")')
             
             if parameters:
                 # Generate nested existential quantifiers for each parameter
                 for i, param in enumerate(parameters):
                     param_name = param['name']
                     param_source = param['source']
-                    # Convert source to Trace format automatically
-                    trace_source = f"Trace{param_source}"
+                    
+                    # Check if source is a variable (like messages) or a constant
+                    if param_source in [var['name'] for var in self.config.get('variables', [])]:
+                        # It's a variable, use it directly
+                        trace_source = param_source
+                    else:
+                        # It's a constant, convert to Trace format
+                        trace_source = f"Trace{param_source}"
                     
                     # Calculate indentation: each level adds 4 spaces
                     indent = "    " + "    " * i
@@ -104,11 +134,42 @@ class TraceGenerator:
                     param_str = ', '.join(param_names)
                     lines.append(f'{call_indent}{action_name}({param_str})')
             else:
-                lines.append(f'        {action_name}')
+                # Handle action statement format
+                stmt = action.get('stmt', action_name)
+                if stmt != action_name:
+                    # Multi-line statement, preserve formatting
+                    stmt_lines = stmt.split('\n')
+                    for j, stmt_line in enumerate(stmt_lines):
+                        if stmt_line.strip():  # Skip empty lines
+                            if j == 0:
+                                lines.append(f'    /\\ {stmt_line.strip()}')
+                            else:
+                                lines.append(f'       {stmt_line.strip()}')
+                else:
+                    lines.append(f'    /\\ {action_name}')
             
             lines.append("")
         
         return '\n'.join(lines[:-1])  # Remove last empty line
+    
+    def generate_interactions_predicate(self) -> str:
+        """Generate IsInter predicate for interactions"""
+        interactions = self.config.get('interactions', []) or self.config.get('Interactions', [])
+        if not interactions:
+            return ""
+        
+        lines = ["IsInter == "]
+        lines.append("    /\\ pc # Nil")
+        lines.append("    /\\ UNCHANGED <<l>>")
+        
+        for i, interaction in enumerate(interactions):
+            interaction_name = interaction['name']
+            if i == 0:
+                lines.append(f"    /\\ \\/ {interaction_name}")
+            else:
+                lines.append(f"       \\/ {interaction_name}")
+        
+        return '\n'.join(lines)
     
     def generate_trace_next(self) -> str:
         """Generate TraceNextImpl function"""
@@ -117,10 +178,20 @@ class TraceGenerator:
         actions = self.config.get('actions', [])
         for i, action in enumerate(actions):
             action_name = action['name']
+            # Determine event name - remove "Handle" prefix if present
+            event_name = action_name
+            if action_name.startswith('Handle'):
+                event_name = action_name[6:]  # Remove "Handle" prefix
+                
             if i == 0:
-                lines.append(f"    \\/ Is{action_name}")
+                lines.append(f"    \\/ Is{event_name}")
             else:
-                lines.append(f"    \\/ Is{action_name}")
+                lines.append(f"    \\/ Is{event_name}")
+        
+        # Add interactions if they exist
+        interactions = self.config.get('interactions', []) or self.config.get('Interactions', [])
+        if interactions:
+            lines.append("    \\/ IsInter")
         
         return '\n'.join(lines)
     
@@ -157,6 +228,9 @@ class TraceGenerator:
         constants = self.config.get('constants', [])
         for constant in constants:
             const_name = constant['name']
+            # Skip Nil as it's handled specially
+            if const_name == 'Nil':
+                continue
             trace_name = f"Trace{const_name}"
             lines.append(f"{trace_name} == ToSet(Trace[1].{const_name})")
         
@@ -164,6 +238,14 @@ class TraceGenerator:
     
     def generate_tla_file(self) -> str:
         """Generate the complete TLA+ file"""
+        action_predicates = self.generate_action_predicates()
+        interactions_predicate = self.generate_interactions_predicate()
+        
+        # Combine action predicates and interactions predicate
+        all_predicates = action_predicates
+        if interactions_predicate:
+            all_predicates += "\n\n" + interactions_predicate
+        
         template = f"""--------------------------- MODULE specTrace ---------------------------
 
 EXTENDS TLC, Sequences, SequencesExt, Naturals, FiniteSets, Bags, Json, IOUtils, {self.spec_name}, TraceSpec, TVOperators
@@ -182,7 +264,7 @@ TraceNil == "null"
 
 (* Action event matching *)
 
-{self.generate_action_predicates()}
+{all_predicates}
 
 (* State transition definition *)
 {self.generate_trace_next()}
@@ -259,19 +341,131 @@ BaseSpec == Init /\\ [][Next \\/ ComposedNext]_vars
         print(f"  - {cfg_file}")
 
 
+def generate_config_from_tla(tla_file: str, cfg_file: str, prompt_file: str = None, config_path: str = None) -> Dict[str, Any]:
+    """
+    Automatically generate configuration from TLA+ and CFG files using LLM
+    
+    Args:
+        tla_file: Path to the TLA+ specification file
+        cfg_file: Path to the TLC configuration file  
+        prompt_file: Path to the prompt template file (optional)
+        config_path: Path to the LLM configuration file (optional)
+        
+    Returns:
+        Generated configuration as dictionary
+    """
+    if not LLM_AVAILABLE:
+        raise ImportError("LLM client not available. Please install required dependencies.")
+    
+    # Read TLA+ and CFG files
+    try:
+        with open(tla_file, 'r') as f:
+            tla_content = f.read()
+    except Exception as e:
+        raise Exception(f"Error reading TLA+ file {tla_file}: {e}")
+    
+    try:
+        with open(cfg_file, 'r') as f:
+            cfg_content = f.read()
+    except Exception as e:
+        raise Exception(f"Error reading CFG file {cfg_file}: {e}")
+    
+    # Read prompt template
+    if prompt_file is None:
+        # Use default prompt file
+        script_dir = Path(__file__).parent.parent
+        prompt_file = script_dir / "prompts" / "step5_trace_config_generation.txt"
+    
+    try:
+        with open(prompt_file, 'r') as f:
+            prompt_template = f.read()
+    except Exception as e:
+        raise Exception(f"Error reading prompt file {prompt_file}: {e}")
+    
+    # Prepare input content
+    input_content = f"""TLA+ Specification (.tla file):
+```tla
+{tla_content}
+```
+
+TLC Configuration (.cfg file):
+```cfg
+{cfg_content}
+```"""
+    
+    # Get LLM client and generate configuration
+    try:
+        llm_client = get_llm_client(config_path)
+        response = llm_client.get_completion(prompt_template, input_content)
+        
+        # Parse YAML response
+        # Remove any markdown code blocks if present
+        yaml_content = response.strip()
+        if yaml_content.startswith('```yaml'):
+            yaml_content = yaml_content[7:]
+        if yaml_content.startswith('```'):
+            yaml_content = yaml_content[3:]
+        if yaml_content.endswith('```'):
+            yaml_content = yaml_content[:-3]
+        
+        config_data = yaml.safe_load(yaml_content)
+        return config_data
+        
+    except Exception as e:
+        raise Exception(f"Error generating configuration with LLM: {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate trace validation files')
-    parser.add_argument('config', help='Input configuration file (YAML)')
+    parser.add_argument('--config', help='Input configuration file (YAML)')
+    parser.add_argument('--tla', help='Input TLA+ specification file (.tla)')
+    parser.add_argument('--cfg', help='Input TLC configuration file (.cfg)')
+    parser.add_argument('--prompt', help='Prompt template file (optional)')
+    parser.add_argument('--llm-config', help='LLM configuration file (optional)')
     parser.add_argument('output_dir', help='Output directory for generated files')
+    parser.add_argument('--auto-config', help='Output path for auto-generated config file (optional)')
     
     args = parser.parse_args()
     
-    # Load configuration
-    try:
-        with open(args.config, 'r') as f:
-            config_data = yaml.safe_load(f)
-    except Exception as e:
-        print(f"Error loading config file: {e}")
+    config_data = None
+    
+    # Check input method
+    if args.config:
+        # Load from existing configuration file
+        try:
+            with open(args.config, 'r') as f:
+                config_data = yaml.safe_load(f)
+        except Exception as e:
+            print(f"Error loading config file: {e}")
+            sys.exit(1)
+    elif args.tla and args.cfg:
+        # Generate configuration from TLA+ and CFG files using LLM
+        if not LLM_AVAILABLE:
+            print("Error: LLM client not available. Please install required dependencies or provide a config file.")
+            sys.exit(1)
+        
+        try:
+            print("Generating configuration from TLA+ and CFG files...")
+            config_data = generate_config_from_tla(
+                args.tla, 
+                args.cfg, 
+                args.prompt, 
+                args.llm_config
+            )
+            print("Configuration generated successfully.")
+            
+            # Save auto-generated config if requested
+            if args.auto_config:
+                with open(args.auto_config, 'w') as f:
+                    yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True)
+                print(f"Auto-generated config saved to: {args.auto_config}")
+                
+        except Exception as e:
+            print(f"Error generating configuration: {e}")
+            sys.exit(1)
+    else:
+        print("Error: Must provide either --config file or both --tla and --cfg files")
+        parser.print_help()
         sys.exit(1)
     
     # Generate files

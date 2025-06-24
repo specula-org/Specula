@@ -1,118 +1,87 @@
-# TLA+ Specification to Trace Validation Configuration Generator
+Generate a YAML configuration file from the provided TLA+ specification (.tla) and configuration (.cfg) files. Extract information according to the following rules:
+## Task Description
+Parse the TLA+ specification and configuration files to create a structured YAML configuration that captures the specification name, constants, variables, actions, and interactions.
+## Extraction Rules
+### spec_name
+Extract from the module declaration line: `---- MODULE <ModuleName> ----`
+The spec_name is the ModuleName between "---- MODULE" and "----".
+### constants
+Extract from the CONSTANTS section in the .cfg file.
+- name: The constant identifier
+- value: The assigned value, formatted as:
+  - Sets: Wrap in single quotes, e.g., '{s1, s2, s3}' becomes '{"s1", "s2", "s3"}'
+  - Strings: Wrap in single quotes with double quotes inside, e.g., Nil becomes '"Nil"'
+  - Numbers: Wrap in single quotes as string, e.g., 5 becomes '5'
+### variables
+Extract from the Init operator definition in the .tla file.
+For each variable assignment in Init:
+- name: The variable name
+- default_value: The initial value expression (preserve TLA+ syntax, escape backslashes)
+### actions
+Extract from the Next operator definition. Include only direct action calls (not numbered interactions).
+For each action:
+- name: The action/operator name
+- parameters: List of parameters with:
+  - name: Parameter variable name
+  - source: Where the parameter comes from (e.g., Server, messages)
+- stmt: The complete statement as it appears in Next (including any conditions)
+### interactions
+Extract from the Next operator definition. Include only numbered intermediate actions.
+Just list the names (e.g., HandletickElection_1, HandletickHeartbeat_1)
+## Example
+Given this TLA+ specification:
 
-## Task Objective
+---- MODULE SimpleSpec ----
+...
+Init ==
+/\ x = 0
+/\ y = [s \in Server |-> 0]
 
-You need to analyze a given TLA+ specification and generate a corresponding trace validation configuration file for verifying execution traces against the specification.
+Next ==
+/ \E s \in Server : Action1(s)
+/ \E m \in messages : Action2(m)
+/ IntermediateAction_1
 
-## Input
+And this configuration:
 
-- TLA+ specification file content
+CONSTANTS
+Server = {s1, s2}
+MaxValue = 10
 
-## Output Requirements
-
-Generate a YAML format configuration file containing the following sections:
-
-### 1. Basic Information
-- `spec_name`: Specification module name (extracted from MODULE declaration)
-
-### 2. Constants Definition (constants)
-- Analyze CONSTANTS declarations and provide reasonable default values
-- Node-related constants usually defined as string sets, e.g., '{"n1", "n2", "n3"}'
-- Numeric limit constants set to small test values, e.g., '3'
-
-### 3. Variables Definition (variables)
-- Analyze VARIABLES declarations and Init operations
-- Infer variable types based on initialization and type invariants:
-  - `node_map_int`: Node to integer mapping (e.g., currentTerm, commitIndex)
-  - `node_map_bool`: Node to boolean mapping (e.g., electionTimeout)
-  - `node_map_sequence`: Node to sequence mapping (e.g., log)
-  - `set`: Set type (e.g., messages)
-  - `custom`: Complex types, need to provide default_value
-
-### 4. Actions Definition (actions)
-- **ONLY analyze the Next operation** to identify top-level actions
-- Look for the main disjunction (∨) structure in Next
-- Extract each disjunct as a separate action (ignore internal helper functions)
-- Identify parameters for each action:
-  - Parameters from existential quantifiers ∃ x ∈ Set
-  - Use EXACT constant names from CONSTANTS declaration (e.g., if CONSTANTS defines "Server", use "Server"; if "Nodes", use "Nodes")
-  - Parameters chosen from message set: `source: "messages"`
-
-## Type Mapping Rules
-
-1. **Node Mapping Type Inference**:
-   - If variable initialized in Init as `[n \in Nodes |-> 0]` or similar integer → `node_map_int`
-   - If variable initialized in Init as `[n \in Nodes |-> FALSE]` or boolean → `node_map_bool`
-   - If variable initialized in Init as `[n \in Nodes |-> <<>>]` or sequence → `node_map_sequence`
-
-2. **Complex Type Handling**:
-   - Nested mappings (e.g., nextIndex, matchIndex) → `custom`, provide complete default_value
-   - State enumeration types → `custom`, provide enumeration default
-   - Set types (e.g., votes, messages) → corresponding type
-
-3. **Action Parameter Identification**:
-   - **CRITICAL**: Only analyze actions that appear directly in the Next operation's main disjunction
-   - For each action, look for existential quantifiers (∃ x ∈ Set) to identify parameters
-   - Use EXACT constant names from CONSTANTS declaration (e.g., if spec defines "Server", use "Server"; if "Nodes", use "Nodes")
-   - Operations using `\E x \in ConstantName` → parameter x, source is "ConstantName" (use actual name from CONSTANTS)
-   - Operations using `\E msg \in messages` → parameter msg, source is "messages"
-
-## Output Format Requirements
-
-The YAML configuration must have the following EXACT order:
-
-1. **spec_name** (first)
-2. **constants** (second) 
-3. **variables** (third)
-4. **actions** (last)
-
-**CRITICAL**: You must analyze ONLY the Next operation's main disjunction structure. Include only the top-level actions that appear directly in Next, NOT internal helper functions.
-
-## Example Output Format
+Generate this YAML:
 
 ```yaml
-spec_name: "SpecificationName"
-
+spec_name: SimpleSpec
 constants:
-  - name: "Server"
-    value: '{"n1", "n2", "n3"}'
-  - name: "MaxLogLength"
-    value: '3'
-
+- name: Server
+  value: '{"s1", "s2"}'
+- name: MaxValue
+  value: '10'
 variables:
-  - name: "currentTerm"
-    default_type: "node_map_int"
-  - name: "state"
-    default_type: "custom"
-    default_value: '[s \\in TraceServer |-> "Follower"]'
-  - name: "messages"
-    default_type: "set"
-
+- name: x
+  default_value: '0'
+- name: y
+  default_value: '[s \\in Server |-> 0]'
 actions:
-  - name: "BecomeCandidate"
-    parameters:
-      - name: "s"
-        source: "Server"
-  - name: "RequestVote"
-    parameters:
-      - name: "s"
-        source: "Server"
-  - name: "HandleVoteRequest"
-    parameters:
-      - name: "s"
-        source: "Server"
-      - name: "msg"
-        source: "messages"
-```
+- name: Action1
+  parameters:
+  - name: s
+    source: Server
+  stmt: Action1(s)
+- name: Action2
+  parameters:
+  - name: m
+    source: messages
+  stmt: Action2(m)
+interactions:
+- name: IntermediateAction_1
 
-## Important Notes
+Important Notes
+1. Return ONLY the YAML content - no explanations, comments, or natural language
+2. Preserve TLA+ syntax exactly in default_value fields (escape backslashes)
+3. For actions with conditions, include the full stmt as it appears in Next
+4. Ignore variables that appear in Init but are not part of the main specification (e.g., pc, info, stack)
+5. Order matters: spec_name, constants, variables, actions, interactions
 
-1. **Precise Analysis**: Carefully read the CONSTANTS, VARIABLES, Init, and Next sections of the specification
-2. **Type Inference**: Infer variable types based on Init operations and TypeInvariant (if present)
-3. **Action Completeness**: Ensure all actions in Next operation are included
-4. **Parameter Identification**: Accurately identify each action's parameters and their sources
-5. **Default Value Reasonableness**: Provided default values should be suitable for testing and verification
+Generate the YAML configuration based on the provided TLA+ files:
 
-Please analyze the given TLA+ specification and generate the corresponding configuration file.
-
-**IMPORTANT: Return ONLY the YAML configuration content. Do not include explanations, comments, or markdown formatting. Start directly with the YAML content.** 

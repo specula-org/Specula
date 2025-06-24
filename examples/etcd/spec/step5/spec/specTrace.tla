@@ -120,8 +120,7 @@ IsStep ==
     /\ IsEvent("Step")
     /\ \E s \in TraceServer :
         /\ \E m \in messages :
-            /\ Step(s, m) 
-            /\ UNCHANGED <<pc, info, stack>>
+            Step(s, m)
 
 IsInter == 
     /\ pc # Nil
@@ -145,4 +144,3 @@ ComposedNext == FALSE
 BaseSpec == Init /\ [][Next \/ ComposedNext]_vars
 
 =============================================================================
-
