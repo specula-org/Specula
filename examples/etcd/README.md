@@ -87,6 +87,7 @@ This step generates trace validation drivers that can validate TLA+ specificatio
     python3 -m src.core.instrumentation \
         examples/etcd/config/raft_config.yaml \
         examples/etcd/source/raft.go \
+        --stub-template templates/instrumentation/go_trace_stub.template \
         --output examples/etcd/output/instrumented_raft.go \
         --verbose
 
@@ -104,7 +105,7 @@ This step generates trace validation drivers that can validate TLA+ specificatio
     # Step 5.2d: Validate traces with TLA+ model checker
     cd spec/step5/spec
     export TRACE_PATH=trace.ndjson
-    java -cp "../../../lib/tla2tools.jar" tlc2.TLC \
+    java -cp "../../../../../lib/tla2tools.jar" tlc2.TLC \
         -config specTrace.cfg specTrace.tla
 ```
 

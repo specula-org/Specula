@@ -336,7 +336,11 @@ class InstrumentationTool:
             instrumentation_result['total_instrumentations'] += 1
         
         # Write instrumented code
-        with open(output_file, 'w') as f:
+        # Create output directory if it doesn't exist
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(output_path, 'w') as f:
             f.write('\n'.join(source_lines) + '\n')
         
         return instrumentation_result
@@ -397,17 +401,13 @@ def main():
     if validation_result['missing_actions']:
         print(f"  Missing actions: {', '.join(validation_result['missing_actions'])}")
     
-    if args.validate_only:
+    # If no stub template or output specified, default to validate-only mode
+    if args.validate_only or not args.stub_template or not args.output:
+        if not args.validate_only and (not args.stub_template or not args.output):
+            print("Note: No stub template or output specified, running in validation-only mode.")
         return
     
     # Instrumentation
-    if not args.stub_template:
-        print("Error: --stub-template required for instrumentation")
-        sys.exit(1)
-    
-    if not args.output:
-        print("Error: --output required for instrumentation")
-        sys.exit(1)
     
     try:
         stub_template = tool.load_stub_template(args.stub_template)

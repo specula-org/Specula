@@ -1,20 +1,22 @@
-You are a TLA+ specification expert. Your task is to translate source code into a TLA+ specification that faithfully models the imperative control flow and state transitions. **Focus on statement-by-statement translation of core logic functions.**
+You are a TLA+ specification expert. Your task is to translate source code into a TLA+ specification based on a pre-generated analysis draft that outlines the translation strategy.
 
 ## Translation Requirements:
 
-1. **Selective Function Modeling**: Categorize functions into three types:
-   - **Core Logic Functions**: Main business logic that must be translated statement-by-statement as TLA+ actions
-   - **Helper/Utility Functions**: Supporting functions that should be abstracted or simplified
-   - **Infrastructure Functions**: Logging, tracing, debugging functions that should be omitted
+1. **Follow the Draft Strategy**: Use the provided natural language draft as your guide for:
+   - Which functions to model as TLA+ actions
+   - How to abstract helper functions
+   - Which infrastructure functions to omit
+   - What state variables to include
 
-2. **System Balance Priority**: For distributed systems like Raft, ensure EQUAL implementation of:
-   - **Leader Election**: Vote handling, term management, state transitions
-   - **Log Replication**: Entry appending, consistency checks, commit advancement
-   - Both subsystems must be fully represented as TLA+ actions
+2. **Complete System Implementation**: 
+   - **CRITICAL**: Implement ALL core functions identified in the draft
+   - For Raft/distributed systems: BOTH leader election AND log replication must be fully implemented
+   - For concurrency systems: ALL synchronization mechanisms must be modeled
+   - Ensure no major subsystem is incomplete or omitted
 
-3. **Function-to-Action Mapping**: Each CORE function must correspond to exactly one TLA+ action with the same name.
+3. **Function-to-Action Mapping**: Each CORE function identified in the draft should correspond to exactly one TLA+ action with the same name.
 
-4. **State Variables**: Extract only the ESSENTIAL state variables relevant to the core logic.
+4. **State Variables**: Use only the ESSENTIAL state variables identified in the draft analysis.
 
 5. **Syntax Correctness**: The specification must pass TLA+ SANY validation (syntactic correctness).
 
@@ -27,7 +29,7 @@ EXTENDS Naturals, Sequences, FiniteSets, TLC
 CONSTANTS [Define any constants needed]
 
 VARIABLES 
-    [List all state variables from the code]
+    [List essential state variables from draft analysis]
 
 vars == <<[comma-separated list of all variables]>>
 
@@ -37,13 +39,13 @@ TypeInvariant ==
 Init == 
     [Initialize all variables to appropriate starting values]
 
-\* Action for each core function in the source code
-FunctionName(parameters) ==
-    [Translate function body to TLA+ operations]
+\* Actions for core functions identified in the draft
+CoreFunctionName(parameters) ==
+    [Implement based on the key logic described in the draft]
 
 Next == 
-    \/ \E [parameters] : FunctionName([parameters])
-    [Include ALL actions corresponding to core functions]
+    \/ \E [parameters] : CoreFunctionName([parameters])
+    [Include ALL core actions from the draft]
 
 Spec == Init /\ [][Next]_vars
 
@@ -54,44 +56,46 @@ TypeOK == TypeInvariant
 
 ## Translation Guidelines:
 
-1. **Variable Declarations**: 
-   - Extract all class fields, global variables, and important local variables
-   - Use appropriate TLA+ types (BOOLEAN, Nat, sequences, sets, records)
+1. **Use Draft Analysis**: 
+   - Follow the core logic analysis for implementation details
+   - Apply the abstraction strategies for helper functions
+   - Use the identified essential state variables
 
-2. **Rigorous Function Translation (CRITICAL)**:
-   - Keep the same function name for the TLA+ action
-   - Include function parameters as action parameters
-   - **Translate EVERY statement in core functions line-by-line**
-   - **Preserve the exact execution order of all operations**
-   - **Capture every conditional check, variable assignment, and state modification**
-   - Use TLA+ assignment (variable' = value) for state changes
-   - **DO NOT skip or abstract any critical logic in core functions**
+2. **System Completeness Priority**:
+   - Implement ALL core functions identified in the draft
+   - For distributed systems: Balance election logic AND replication logic
+   - Verify that the Next action includes all core function calls
+   - If approaching token limits, reduce comments but maintain ALL functionality
 
-3. **Control Structures**:
-   - Translate if-statements to IF-THEN-ELSE
-   - Translate loops to recursive actions or non-deterministic choices
-   - Translate switch/case to nested IF-THEN-ELSE
+3. **Function Translation**:
+   - Implement core functions as described in the key logic analysis
+   - Abstract helper functions according to the strategy
+   - Omit infrastructure functions as specified
 
-## Source Code to Analyze:
+## Input Materials:
 
+**Natural Language Draft:**
+```
+{draft_analysis}
+```
+
+**Source Code:**
+```
 {source_code}
+```
 
 ## Instructions:
 
-1. **Create Complete TLA+ Specification**: 
-   - **Translate ALL CORE functions statement-by-statement as TLA+ actions with the same names**
-   - **For each core function: translate every line of code, every conditional, every assignment**
-   - **Preserve the exact algorithmic behavior and execution flow**
-   - For distributed systems: Ensure BOTH consensus/election AND data replication are fully represented
-   - Abstract HELPER functions appropriately
-   - Omit INFRASTRUCTURE functions completely
+1. **Review the Draft**: Carefully read the natural language analysis to understand the translation strategy.
 
-2. **Ensure Rigorous Translation**: 
-   - **Every critical operation in core functions must be captured**
-   - **No simplification or abstraction of core logic**
-   - **Faithful line-by-line translation is the priority**
-   - Verify that all major subsystems are represented in the specification
+2. **Implement the Complete Strategy**: Create the TLA+ specification following the guidelines in the draft:
+   - Use the suggested module name and structure
+   - Implement ALL core functions as TLA+ actions based on the key logic analysis
+   - Include only essential state variables
+   - Ensure no major subsystem is left incomplete
 
-Generate the complete TLA+ specification:
+3. **Preserve Critical Properties**: Ensure the specification captures the key behaviors and properties identified in the quality assurance section.
+
+Generate the complete TLA+ specification following the draft analysis:
 
 **IMPORTANT: Return ONLY the TLA+ code. Do not include any natural language explanations, comments about the translation process, or markdown formatting. Start directly with the module declaration and end with the module terminator.** 

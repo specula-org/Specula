@@ -12,26 +12,26 @@ TraceNoLimit == ToSet(Trace[1].NoLimit)
 
 (* Default variable initialization *)
 DefaultImpl(varName) ==
-    CASE varName = "currentTerm" -> [n \in TraceServer |-> 0]
+    CASE varName = "currentTerm" -> [s \in TraceServer |-> 0]
      [] varName = "votedFor" -> [s \in TraceServer |-> Nil]
-     [] varName = "log" -> [n \in TraceServer |-> <<>>]
-     [] varName = "commitIndex" -> [n \in TraceServer |-> 0]
+     [] varName = "log" -> [s \in TraceServer |-> <<>>]
+     [] varName = "commitIndex" -> [s \in TraceServer |-> 0]
      [] varName = "state" -> [s \in TraceServer |-> "Follower"]
      [] varName = "leaderId" -> [s \in TraceServer |-> Nil]
      [] varName = "nextIndex" -> [s \in TraceServer |-> [t \in TraceServer |-> 1]]
      [] varName = "matchIndex" -> [s \in TraceServer |-> [t \in TraceServer |-> 0]]
      [] varName = "votesGranted" -> [s \in TraceServer |-> {}]
      [] varName = "votesRejected" -> [s \in TraceServer |-> {}]
-     [] varName = "electionElapsed" -> [n \in TraceServer |-> 0]
-     [] varName = "heartbeatElapsed" -> [n \in TraceServer |-> 0]
-     [] varName = "randomizedElectionTimeout" -> [n \in TraceServer |-> 0]
+     [] varName = "electionElapsed" -> [s \in TraceServer |-> 0]
+     [] varName = "heartbeatElapsed" -> [s \in TraceServer |-> 0]
+     [] varName = "randomizedElectionTimeout" -> [s \in TraceServer |-> 3]
      [] varName = "messages" -> {}
-     [] varName = "readStates" -> [n \in TraceServer |-> <<>>]
-     [] varName = "pendingReadIndexMessages" -> [n \in TraceServer |-> <<>>]
+     [] varName = "readStates" -> [s \in TraceServer |-> <<>>]
+     [] varName = "pendingReadIndexMessages" -> [s \in TraceServer |-> <<>>]
      [] varName = "leadTransferee" -> [s \in TraceServer |-> Nil]
-     [] varName = "pendingConfIndex" -> [n \in TraceServer |-> 0]
-     [] varName = "uncommittedSize" -> [n \in TraceServer |-> 0]
-     [] varName = "isLearner" -> [n \in TraceServer |-> FALSE]
+     [] varName = "pendingConfIndex" -> [s \in TraceServer |-> 0]
+     [] varName = "uncommittedSize" -> [s \in TraceServer |-> 0]
+     [] varName = "isLearner" -> [s \in TraceServer |-> FALSE]
      [] varName = "config" -> [s \in TraceServer |-> [voters: TraceServer, learners: {}]]
      [] varName = "readOnlyOption" -> [s \in TraceServer |-> "Safe"]
 
@@ -144,3 +144,4 @@ ComposedNext == FALSE
 BaseSpec == Init /\ [][Next \/ ComposedNext]_vars
 
 =============================================================================
+

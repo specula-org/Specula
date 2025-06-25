@@ -47,17 +47,17 @@ class TraceGenerator:
                 prefix = "     []"
             
             if default_type == 'mutex_map_bool':
-                lines.append(f'{prefix} varName = "{var_name}" -> [m \\in TraceMutexes |-> FALSE]')
+                lines.append(f'{prefix} varName = "{var_name}" -> [m \in TraceMutexes |-> FALSE]')
             elif default_type == 'mutex_map_sequence':
-                lines.append(f'{prefix} varName = "{var_name}" -> [m \\in TraceMutexes |-> <<>>]')
+                lines.append(f'{prefix} varName = "{var_name}" -> [m \in TraceMutexes |-> <<>>]')
             elif default_type == 'mutex_map_int':
-                lines.append(f'{prefix} varName = "{var_name}" -> [m \\in TraceMutexes |-> 0]')
+                lines.append(f'{prefix} varName = "{var_name}" -> [m \in TraceMutexes |-> 0]')
             elif default_type == 'node_map_bool':
-                lines.append(f'{prefix} varName = "{var_name}" -> [n \\in TraceNodes |-> FALSE]')
+                lines.append(f'{prefix} varName = "{var_name}" -> [n \in TraceNodes |-> FALSE]')
             elif default_type == 'node_map_sequence':
-                lines.append(f'{prefix} varName = "{var_name}" -> [n \\in TraceNodes |-> <<>>]')
+                lines.append(f'{prefix} varName = "{var_name}" -> [n \in TraceNodes |-> <<>>]')
             elif default_type == 'node_map_int':
-                lines.append(f'{prefix} varName = "{var_name}" -> [n \\in TraceNodes |-> 0]')
+                lines.append(f'{prefix} varName = "{var_name}" -> [n \in TraceNodes |-> 0]')
             elif default_type == 'set':
                 lines.append(f'{prefix} varName = "{var_name}" -> {{}}')
             elif default_type == 'int':
@@ -67,6 +67,14 @@ class TraceGenerator:
             else:
                 # Custom default
                 default_value = var.get('default_value', '0')
+                
+                # Fix escaped TLA+ operators from YAML (\\in -> \in, \\E -> \E, etc.)
+                # Handle common TLA+ operators that get double-escaped in YAML
+                default_value = re.sub(r'\\\\in\b', r'\\in', default_value)  # \\in -> \in
+                default_value = re.sub(r'\\\\E\b', r'\\E', default_value)    # \\E -> \E
+                default_value = re.sub(r'\\\\A\b', r'\\A', default_value)    # \\A -> \A
+                default_value = re.sub(r'\\\\/', r'\\/', default_value)      # \\/ -> \/
+                default_value = re.sub(r'\\\\\\\\', r'\\\\', default_value) # \\\\ -> \\
                 
                 # Replace constants with Trace<Constant>
                 for const_name in const_names:
@@ -84,7 +92,7 @@ class TraceGenerator:
         variables = self.config.get('variables', [])
         for var in variables:
             var_name = var['name']
-            lines.append(f'    /\\ IF "{var_name}" \\in DOMAIN t')
+            lines.append(f'    /\\ IF "{var_name}" \in DOMAIN t')
             lines.append(f'       THEN {var_name}\' = UpdateVariable({var_name}, "{var_name}", t)')
             lines.append(f'       ELSE TRUE')
         
@@ -123,7 +131,7 @@ class TraceGenerator:
                     
                     # Calculate indentation: each level adds 4 spaces
                     indent = "    " + "    " * i
-                    lines.append(f'{indent}/\\ \\E {param_name} \\in {trace_source} :')
+                    lines.append(f'{indent}/\\ \\E {param_name} \in {trace_source} :')
                 
                 # Generate the action call with proper indentation
                 call_indent = "    " + "    " * len(parameters)
@@ -456,7 +464,11 @@ def main():
             
             # Save auto-generated config if requested
             if args.auto_config:
-                with open(args.auto_config, 'w') as f:
+                # Create directory if it doesn't exist
+                config_path = Path(args.auto_config)
+                config_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                with open(config_path, 'w') as f:
                     yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True)
                 print(f"Auto-generated config saved to: {args.auto_config}")
                 

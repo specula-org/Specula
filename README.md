@@ -189,6 +189,7 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
     python3 -m src.core.instrumentation \
         examples/etcd/config/raft_config.yaml \
         examples/etcd/source/raft.go \
+        --stub-template templates/instrumentation/go_trace_stub.template \
         --output examples/etcd/output/instrumented_raft.go \
         --verbose
 
@@ -197,7 +198,7 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
     go run main.go
 
     # Step 5.2c: Convert system traces to TLA+ format
-    cd examples/etcd
+    cd ../..
     python3 scripts/trace_converter.py \
         runners/raft_simulator/raft_trace.ndjson \
         spec/step5/spec/trace.ndjson \
