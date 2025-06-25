@@ -106,7 +106,7 @@ This is the first step, where we translate source code into an initial TLA+ spec
 *   **Command**:
 ```bash
     # Generate the initial specification from the source code
-    python3 -m src.core.iispec_generator examples/etcd/source/raft.go examples/etcd/spec/step1/ --mode draft-based
+    ./tlagen iispec_generator examples/etcd/source/raft.go examples/etcd/spec/step1/ --mode draft-based
 ```
 
 ### Step 2: Automated Syntax Correction
@@ -145,7 +145,7 @@ This step automatically detects and fixes runtime errors in TLA+ specifications 
 *   **Command**:
 ```bash
     # Run agent-based runtime correction
-    python3 -m src.core.runtime_corrector examples/etcd/spec/step3/Raft.tla examples/etcd/spec/step4/
+    ./tlagen runtime_corrector examples/etcd/spec/step3/Raft.tla examples/etcd/spec/step4/
 ```
 
 ### Step 5: Trace Validation Framework
@@ -167,7 +167,7 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
 *   **Command**:
 ```bash
     # Auto-generate config and then the trace validation driver
-    python3 -m src.core.spectrace_generator \
+    ./tlagen spectrace_generator \
         --tla examples/etcd/spec/step4/Raft.tla \
         --cfg examples/etcd/spec/step4/Raft.cfg \
         --auto-config examples/etcd/spec/step5/raft_config.yaml \
@@ -186,24 +186,21 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
 *   **Commands**:
 ```bash
     # Step 5.2a: Instrument the source code
-    python3 -m src.core.instrumentation \
+    ./tlagen instrumentation \
         examples/etcd/config/raft_config.yaml \
         examples/etcd/source/raft.go \
         --stub-template templates/instrumentation/go_trace_stub.template \
         --output examples/etcd/output/instrumented_raft.go \
         --verbose
-
     # Step 5.2b: Run instrumented system to generate traces
     cd examples/etcd/runners/raft_simulator
     go run main.go
-
     # Step 5.2c: Convert system traces to TLA+ format
     cd ../..
     python3 scripts/trace_converter.py \
         runners/raft_simulator/raft_trace.ndjson \
         spec/step5/spec/trace.ndjson \
         --servers n1 n2 n3
-
     # Step 5.2d: Validate traces with TLA+ model checker
     cd examples/etcd/spec/step5/spec
     export TRACE_PATH=trace.ndjson
