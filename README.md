@@ -32,7 +32,7 @@ For detailed usage instructions, command-line options, and comprehensive example
 
 ### Prerequisites
 
-- **Java 8+** (for TLA+ tools)
+- **Java 11+** (for TLA+ tools)
 - **Python 3.8+** 
 - **Go 1.18+** (for etcd example)
 - **Linux/macOS** (tested on Ubuntu 20.04+)
@@ -98,11 +98,13 @@ The framework follows a multi-step process to progressively refine the TLA+ spec
 
 ### Step 1: Initial Intermediate Specification (IISpec) Generation
 
-This is the first step, where we translate source code into an initial TLA+ specification.
+This step generates an Initial Intermediate Specification (IISpec), a novel intermediate form between code and specification designed to improve generation accuracy. The IISpec uses valid TLA+ statements but models control flow exactly as in the source code. A draft is first generated for the LLM to assist in TLA+ specification creation.
 
 *   **Process**: The `iispec_generator` script uses an LLM to perform a "reverse formalization," converting the logic from the source code into an imperative, intermediate TLA+ specification (IISpec).
 *   **Input**: Go source code for Raft (`examples/etcd/source/raft.go`).
-*   **Output**: An initial TLA+ specification (`examples/etcd/spec/step1/Raft.tla`).
+*   **Output**: 
+    - An initial TLA+ specification (`examples/etcd/spec/step1/Raft.tla`).
+    - A draft (`examples/etcd/spec/step1/draft_analysis.txt`)
 *   **Command**:
 ```bash
     # Generate the initial specification from the source code
@@ -125,7 +127,6 @@ This step converts the imperative-style IISpec into a standard, structured TLA+ 
 *   **Process**: The CFA tool parses the imperative control flow (e.g., labels, gotos) in the IISpec and transforms it into a declarative, state-based TLA+ format (`StructSpec`).
 *   **Input**: The syntactically valid IISpec (`examples/etcd/spec/step2/Raft.tla`).
 *   **Output**: A structured TLA+ specification (`examples/etcd/spec/step3/Raft.tla`).
-A trace configuration file (`examples/etcd/config/raft_config.yaml`) describing the specification structure.
 *   **Command**:
 ```bash
     # Run the CFA transformation script.
@@ -142,6 +143,7 @@ This step automatically detects and fixes runtime errors in TLA+ specifications 
 *   **Output**: 
     - A TLC configuration file (`examples/etcd/spec/step4/Raft.cfg`)
     - A runtime-corrected TLA+ specification (`examples/etcd/spec/step4/Raft.tla`)
+    - A trace configuration file (`examples/etcd/config/raft_config.yaml`) describing the specification structure.
 *   **Command**:
 ```bash
     # Run agent-based runtime correction

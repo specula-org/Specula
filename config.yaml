@@ -28,6 +28,8 @@ generation:
 paths:
   prompts_dir: "src/prompts"
   output_dir: "output"
+  knowledge_base: "src/rag/initial_errors.json"
+  local_embedding_model: "models/huggingface-MiniLM-L6-v2"
   
 # Logging Configuration
 logging:

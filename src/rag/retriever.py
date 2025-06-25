@@ -16,17 +16,36 @@ class ErrorRetriever:
         # Get model path from configuration file
         config = get_config(config_path)
         model_path = config.get('paths.local_embedding_model', 
-                               '/home/ubuntu/.cache/huggingface/huball-MiniLM-L6-v2')
+                               'models/huggingface-MiniLM-L6-v2')
+        
+        # Try to load from local path first, fallback to downloading from HuggingFace
         try:
+            # First try local files only
             self.model = SentenceTransformer(
                 model_path,
                 device="cpu",
-                local_files_only=True,  # Force use of local files
+                local_files_only=True,
             )
-            print(f"Successfully loaded model: {model_path}")
+            print(f"Successfully loaded model from local path: {model_path}")
         except Exception as e:
-            print(f"Model loading failed, please check if path is correct: {str(e)}")
-            raise
+            print(f"Local model loading failed: {str(e)}")
+            print("Attempting to download model from HuggingFace...")
+            try:
+                # Fallback to downloading from HuggingFace
+                self.model = SentenceTransformer(
+                    'sentence-transformers/all-MiniLM-L6-v2',
+                    device="cpu"
+                )
+                print("Successfully downloaded and loaded model from HuggingFace")
+                
+                # Save to local path for future use
+                import os
+                os.makedirs(os.path.dirname(model_path), exist_ok=True)
+                self.model.save(model_path)
+                print(f"Model saved to local path: {model_path}")
+            except Exception as e2:
+                print(f"Failed to download model from HuggingFace: {str(e2)}")
+                raise Exception(f"Could not load embedding model. Local path failed: {str(e)}, Download failed: {str(e2)}")
         
         # Load error data
         with open(data_path, 'r', encoding='utf-8') as f:

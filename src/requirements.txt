@@ -1,4 +1,21 @@
+# Core dependencies
 anthropic>=0.34.0
-pathlib
-typing
-argparse 
+openai>=1.0.0
+pyyaml>=6.0
+requests>=2.25.0
+
+# ML and embedding dependencies
+torch>=1.9.0
+sentence-transformers>=2.2.0
+numpy>=1.21.0
+scikit-learn>=1.0.0
+
+# Utility dependencies
+pathlib2>=2.3.5
+typing-extensions>=4.0.0
+argparse
+
+# Optional dependencies for development and testing
+pytest>=7.0.0
+black>=22.0.0
+flake8>=4.0.0 

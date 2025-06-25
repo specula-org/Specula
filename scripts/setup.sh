@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # TLAGEN Framework Setup Script
-# This script sets up the complete TLAGEN environment
+# This script sets up the complete TLAGEN environment with all dependencies
 
 set -e  # Exit on any error
 
@@ -54,6 +54,16 @@ else
     exit 1
 fi
 
+# Check pip
+if command_exists pip3; then
+    print_success "pip3 found"
+else
+    print_error "pip3 is required but not found"
+    print_status "Please install pip3:"
+    print_status "  Ubuntu/Debian: sudo apt update && sudo apt install python3-pip"
+    exit 1
+fi
+
 # Check Java
 if command_exists java; then
     JAVA_VERSION=$(java -version 2>&1 | head -n1 | cut -d'"' -f2)
@@ -64,6 +74,50 @@ else
     print_status "  Ubuntu/Debian: sudo apt update && sudo apt install openjdk-11-jdk"
     print_status "  macOS: brew install openjdk@11"
     exit 1
+fi
+
+# Check/Install Maven
+if command_exists mvn; then
+    MVN_VERSION=$(mvn -version 2>&1 | head -n1 | cut -d' ' -f3)
+    print_success "Maven found: $MVN_VERSION"
+else
+    print_warning "Maven not found - required for CFA tool"
+    print_status "Installing Maven..."
+    
+    # Detect OS and install Maven
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        if command_exists apt; then
+            sudo apt update && sudo apt install -y maven
+        elif command_exists yum; then
+            sudo yum install -y maven
+        elif command_exists dnf; then
+            sudo dnf install -y maven
+        else
+            print_error "Cannot auto-install Maven. Please install manually:"
+            print_status "  Ubuntu/Debian: sudo apt install maven"
+            print_status "  CentOS/RHEL: sudo yum install maven"
+            exit 1
+        fi
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        if command_exists brew; then
+            brew install maven
+        else
+            print_error "Cannot auto-install Maven. Please install Homebrew first or install Maven manually"
+            exit 1
+        fi
+    else
+        print_error "Unsupported OS for auto-installation. Please install Maven manually"
+        exit 1
+    fi
+    
+    # Verify Maven installation
+    if command_exists mvn; then
+        MVN_VERSION=$(mvn -version 2>&1 | head -n1 | cut -d' ' -f3)
+        print_success "Maven installed successfully: $MVN_VERSION"
+    else
+        print_error "Maven installation failed"
+        exit 1
+    fi
 fi
 
 # Check Go (optional, for etcd example)
@@ -82,16 +136,21 @@ print_status "Installing Python dependencies..."
 cd "$PROJECT_ROOT"
 
 if [ -f "src/requirements.txt" ]; then
+    print_status "Installing from src/requirements.txt..."
     pip3 install -r src/requirements.txt
     print_success "Python dependencies installed"
 else
     print_warning "requirements.txt not found, installing common dependencies..."
-    pip3 install pyyaml requests openai anthropic
+    pip3 install anthropic>=0.34.0 openai>=1.0.0 pyyaml>=6.0 requests>=2.25.0 torch>=1.9.0 sentence-transformers>=2.2.0 numpy>=1.21.0
 fi
 
-# Create lib directory and download TLA+ tools
-print_status "Setting up TLA+ tools..."
+# Create necessary directories
+print_status "Creating necessary directories..."
 mkdir -p "$PROJECT_ROOT/lib"
+mkdir -p "$PROJECT_ROOT/models"
+
+# Download TLA+ tools
+print_status "Setting up TLA+ tools..."
 
 # Download tla2tools.jar if not exists
 if [ ! -f "$PROJECT_ROOT/lib/tla2tools.jar" ]; then
@@ -134,6 +193,62 @@ if [ ! -f "$PROJECT_ROOT/lib/CommunityModules-deps.jar" ]; then
     fi
 else
     print_success "CommunityModules-deps.jar already exists"
+fi
+
+# Download Hugging Face model
+print_status "Setting up Hugging Face embedding model..."
+MODEL_DIR="$PROJECT_ROOT/models/huggingface-MiniLM-L6-v2"
+
+if [ ! -d "$MODEL_DIR" ]; then
+    print_status "Downloading sentence-transformers/all-MiniLM-L6-v2 model..."
+    
+    # Create the model directory
+    mkdir -p "$MODEL_DIR"
+    
+    # Use Python to download the model
+    python3 -c "
+from sentence_transformers import SentenceTransformer
+import os
+import shutil
+
+model_name = 'sentence-transformers/all-MiniLM-L6-v2'
+target_dir = '$MODEL_DIR'
+
+print(f'Downloading model: {model_name}')
+print(f'Target directory: {target_dir}')
+
+try:
+    # Download model to a temporary cache location
+    model = SentenceTransformer(model_name)
+    
+    # Get the cache directory where the model was downloaded
+    cache_dir = model._modules['0'].auto_model.config._name_or_path
+    if not os.path.isabs(cache_dir):
+        from transformers import AutoModel
+        temp_model = AutoModel.from_pretrained(model_name)
+        cache_dir = temp_model.config._name_or_path
+    
+    print(f'Model downloaded successfully to cache')
+    
+    # Save the model to our target directory
+    model.save(target_dir)
+    print(f'Model saved to: {target_dir}')
+    
+except Exception as e:
+    print(f'Error downloading model: {e}')
+    print('You may need to install additional dependencies or check your internet connection')
+    exit(1)
+"
+    
+    if [ $? -eq 0 ] && [ -d "$MODEL_DIR" ]; then
+        print_success "Hugging Face model downloaded successfully"
+    else
+        print_warning "Failed to download Hugging Face model automatically"
+        print_status "The model will be downloaded automatically on first use"
+        print_status "Make sure you have internet connection when running the framework"
+    fi
+else
+    print_success "Hugging Face model already exists"
 fi
 
 # Set up example directories
@@ -179,6 +294,14 @@ EOF
     print_success "Default raft_config.yaml created"
 fi
 
+# Verify knowledge base exists
+if [ -f "$PROJECT_ROOT/src/rag/initial_errors.json" ]; then
+    print_success "Knowledge base found at src/rag/initial_errors.json"
+else
+    print_warning "Knowledge base not found at src/rag/initial_errors.json"
+    print_status "RAG functionality may not work without the knowledge base"
+fi
+
 # Verify installation
 print_status "Verifying installation..."
 
@@ -190,9 +313,53 @@ else
 fi
 
 # Test Python imports
-python3 -c "import yaml; import sys; print('Python imports OK')" 2>/dev/null && \
-    print_success "Python environment OK" || \
-    print_warning "Python environment may have issues"
+print_status "Testing Python dependencies..."
+python3 -c "
+import sys
+missing_packages = []
+
+packages = [
+    'yaml', 'anthropic', 'openai', 'requests', 
+    'torch', 'sentence_transformers', 'numpy'
+]
+
+for package in packages:
+    try:
+        if package == 'yaml':
+            import yaml
+        elif package == 'anthropic':
+            import anthropic
+        elif package == 'openai':
+            import openai
+        elif package == 'requests':
+            import requests
+        elif package == 'torch':
+            import torch
+        elif package == 'sentence_transformers':
+            from sentence_transformers import SentenceTransformer
+        elif package == 'numpy':
+            import numpy
+        print(f'✓ {package}')
+    except ImportError as e:
+        print(f'✗ {package}: {e}')
+        missing_packages.append(package)
+
+if missing_packages:
+    print(f'Missing packages: {missing_packages}')
+    sys.exit(1)
+else:
+    print('All Python dependencies are available')
+" && print_success "Python environment OK" || print_warning "Python environment may have issues"
+
+# Test Maven (for CFA tool)
+if command_exists mvn; then
+    print_status "Testing Maven..."
+    if mvn -version >/dev/null 2>&1; then
+        print_success "Maven working correctly"
+    else
+        print_warning "Maven verification failed"
+    fi
+fi
 
 # Create convenience aliases/scripts
 print_status "Creating convenience scripts..."
@@ -207,9 +374,15 @@ python3 -m src.core."$@"
 EOF
 chmod +x "$PROJECT_ROOT/tlagen"
 
+
+
 print_success "Setup completed successfully!"
 echo
 print_status "TLAGEN is ready to use!"
+echo
+print_status "Verification tests:"
+print_status "  Test TLA+ tools: java -cp lib/tla2tools.jar tlc2.TLC -help"
+print_status "  Test CFA tool: cd tools/cfa && mvn compile"
 echo
 print_status "Quick start:"
 print_status "  cd examples/etcd"
