@@ -83,6 +83,7 @@ paths:
 logging:
   level: "INFO"
   format: "[%(levelname)s] %(message)s"
+...
 ```
 
 **Key sections:**

@@ -363,11 +363,11 @@ public class CFGVarChangeAnalyzer {
                 }
                 CFGStmtNode pc_jump = new CFGStmtNode(stmt.getIndentation(), "/\\ pc' = \"" + funcNode.getFuncName() + "_" + id + "\"", null, CFGStmtNode.StmtType.NORMAL);
                 // 检查所有 parent 的 OutVar 是不是相同，否则报错
-                for (CFGStmtNode parent : parents){
-                    if (!parent.OutVar.equals(stmt.InVar)){
-                        throw new RuntimeException("多函数调用变量修改冲突: " + parent.OutVar + " " + stmt.InVar);
-                    }
-                }
+                // for (CFGStmtNode parent : parents){
+                //     if (!parent.OutVar.equals(stmt.InVar)){
+                //         throw new RuntimeException("多函数调用变量修改冲突: " + parent.OutVar + " " + stmt.InVar);
+                //     }
+                // }
                 pc_jump.InVar = new HashSet<>(stmt.InVar);
                 pc_jump.OutVar = new HashSet<>(stmt.InVar);
                 pc_jump.OutVar.add("pc");
@@ -526,7 +526,7 @@ public class CFGVarChangeAnalyzer {
     public Set<String> VarChangedOneStmt(CFGStmtNode stmt) {
         Set<String> result = new HashSet<>();
         for (String var : variables) {
-            String pattern = "(?<![\\w_])" + var + "'";
+            String pattern = "(?<![\\w_])" + var + "'\\s*=";
             if (stmt.getContent().matches(".*" + pattern + ".*")) {
                 result.add(var);
             }

@@ -123,6 +123,7 @@ EQUIV: '\\equiv';
 GEQ: '\\geq';
 GG: '\\gg';
 IN: '\\in';
+NOTIN: '\\notin';
 INTERSECT: '\\intersect';
 LAND: '\\land';
 LEQ: '\\leq';

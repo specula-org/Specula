@@ -127,7 +127,7 @@ expression:
     | (WF_ | SF_) expression LPAREN expression RPAREN rightExpression  # FairnessExpression
     | IF expression thenExpression elseExpression DEDENT? # IfExpression
     | CASE expression ARROW body (BRACKETS expression ARROW body)* (BRACKETS OTHER ARROW body)? # CaseExpression
-    | LET (( INDENT? operatorDefinition | functionDefinition | moduleDefinition)LINE_BREAK? DEDENT?)+  INDENT?  BIGIN body # LetExpression
+    | LET (( INDENT? operatorDefinition | functionDefinition | moduleDefinition)LINE_BREAK? DEDENT?)+  INDENT?  BIGIN body DEDENT? # LetExpression
     | SLASH_BACKSLASH aobody # SlashBackslashExpression
     | BACKSLASH_SLASH aobody # BackslashSlashExpression
     | Number rightExpression  # NumberExpression
@@ -169,7 +169,7 @@ infixOp:
     QUESTION | QUESTION_QUESTION | AT_AT | BACKSLASH | BACKSLASH_SLASH | CARET | BAR | BAR_MINUS | BAR_EQUAL | BAR_BAR | TILDE_GREATER |
     DOT | APPROX | ASYMP | BIGCIRC | BULLET | CAP | CDOT | CIRC | CONG | CUP | DIV | DOTEQ | EQUIV | GEQ | GG | IN | INTERSECT | LAND | LEQ |
     LL | LOR | O | ODOT | OMINUS | OPLUS | OSLASH | OTIMES | PREC | PRECEQ | PROPTO | SIM | SIMEQ | SQCAP | SQCUP | SQSQUBSET | SQSQUBSETEQ |
-    SQSQUPSET | SQSQUPSETEQ | STAR_s | SUBSET_s | SUBSETEQ | SUCC | SUCCEQ | SUPSET_s | SUPSETEQ | UNION_s | UPLUS | WR
+    SQSQUPSET | SQSQUPSETEQ | STAR_s | SUBSET_s | SUBSETEQ | SUCC | SUCCEQ | SUPSET_s | SUPSETEQ | UNION_s | UPLUS | WR | NOTIN
     ;
 
 postfixOp: 
