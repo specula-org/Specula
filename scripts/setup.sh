@@ -116,7 +116,7 @@ fi
 # Download CommunityModules-deps.jar if not exists
 if [ ! -f "$PROJECT_ROOT/lib/CommunityModules-deps.jar" ]; then
     print_status "Downloading CommunityModules-deps.jar..."
-    COMMUNITY_MODULES_URL="https://github.com/tlaplus/CommunityModules/releases/download/202310061030/CommunityModules-deps.jar"
+    COMMUNITY_MODULES_URL="https://github.com/tlaplus/CommunityModules/releases/download/202505152026/CommunityModules-deps.jar"
     
     if command_exists wget; then
         wget -O "$PROJECT_ROOT/lib/CommunityModules-deps.jar" "$COMMUNITY_MODULES_URL"
@@ -129,6 +129,8 @@ if [ ! -f "$PROJECT_ROOT/lib/CommunityModules-deps.jar" ]; then
     
     if [ -f "$PROJECT_ROOT/lib/CommunityModules-deps.jar" ]; then
         print_success "CommunityModules-deps.jar downloaded"
+    else
+        print_warning "CommunityModules-deps.jar download failed - this is optional for basic functionality"
     fi
 else
     print_success "CommunityModules-deps.jar already exists"

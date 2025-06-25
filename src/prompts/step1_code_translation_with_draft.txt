@@ -53,3 +53,25 @@ Next ==
 
 Spec == Init /\ [][Next]_vars
 
+====
+```
+
+## Analysis Draft:
+
+{draft_analysis}
+
+## Source Code to Translate:
+
+{source_code}
+
+## Instructions:
+
+Based on the analysis draft above, translate the provided source code into a complete TLA+ specification. Follow the draft's recommendations for:
+
+1. **Core Functions**: Implement ALL functions identified as core in the draft analysis
+2. **State Variables**: Use the essential state variables listed in the draft
+3. **Function Mapping**: Map each source code function to TLA+ actions as outlined in the draft
+4. **Control Flow**: Preserve the control flow and logic patterns described in the draft analysis
+
+Generate a complete, syntactically correct TLA+ specification that faithfully represents the source code according to the draft analysis strategy.
+
