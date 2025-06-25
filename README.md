@@ -119,6 +119,7 @@ The initial specification often contains syntax errors. This step automatically 
 *   **Input**: The initial, potentially erroneous `Raft.tla` generated internally during Step 1.
 *   **Output**: A syntactically valid `examples/etcd/spec/step1/Raft.tla`.
 *   **Command**: This step is automatically integrated into the command from Step 1. The final file `examples/etcd/spec/step2/Raft.tla` is the result of this correction process.
+*   **Note**: For highly complex specifications or when using models with limited capabilities, the iterative correction process may not achieve full success, requiring manual intervention.
 
 ### Step 3: Control Flow Analysis (CFA) Transformation
 
@@ -149,6 +150,7 @@ This step automatically detects and fixes runtime errors in TLA+ specifications 
     # Run agent-based runtime correction
     ./tlagen runtime_corrector examples/etcd/spec/step3/Raft.tla examples/etcd/spec/step4/
 ```
+*   **Note**: For highly complex specifications or when using models with limited capabilities, the iterative correction process may not achieve full success, requiring manual intervention.
 
 ### Step 5: Trace Validation Framework
 
