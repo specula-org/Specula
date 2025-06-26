@@ -115,30 +115,8 @@ class RuntimeCorrector:
     
     def _extract_config_content(self, response: str) -> str:
         """Extract configuration content from LLM response"""
-        lines = response.split('\n')
-        config_lines = []
-        in_config_block = False
-        
-        for line in lines:
-            # Look for configuration file markers
-            if '```' in line and any(marker in line.lower() for marker in ['cfg', 'config', 'tlc']):
-                in_config_block = True
-                continue
-            elif line.strip() == '```' and in_config_block:
-                break
-            elif in_config_block:
-                config_lines.append(line)
-            # Also capture lines that look like configuration content
-            elif any(keyword in line for keyword in ['SPECIFICATION', 'CONSTANTS', 'INVARIANT', 'PROPERTY']):
-                config_lines.append(line)
-        
-        if not config_lines:
-            # If no code block found, try to extract configuration-like lines
-            for line in lines:
-                if any(keyword in line for keyword in ['SPECIFICATION', 'CONSTANTS', 'INVARIANT', 'PROPERTY']):
-                    config_lines.append(line)
-        
-        return '\n'.join(config_lines).strip()
+        # Simply return the entire response, as it should contain the complete config
+        return response.strip()
     
     def _extract_tla_code(self, response: str) -> str:
         """Extract TLA+ code from LLM response"""
