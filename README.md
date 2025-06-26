@@ -95,7 +95,11 @@ logging:
 
 ## The Pipeline: From Etcd Code to a Validated Specification
 
-The framework follows a multi-step process to progressively refine the TLA+ specification.
+The framework follows a multi-step process to progressively refine the TLA+ specification. First, set your API:
+*   **Command**:
+```
+export ANTHROPIC_API_KEY=YOUR_API_KEY
+```
 
 ### Step 1: Initial Intermediate Specification (IISpec) Generation
 
