@@ -69,8 +69,8 @@ if command_exists java; then
     JAVA_VERSION=$(java -version 2>&1 | head -n1 | cut -d'"' -f2)
     print_success "Java found: $JAVA_VERSION"
 else
-    print_error "Java 8+ is required but not found"
-    print_status "Please install Java 8 or higher:"
+    print_error "Java 11+ is required but not found"
+    print_status "Please install Java 11 or higher:"
     print_status "  Ubuntu/Debian: sudo apt update && sudo apt install openjdk-11-jdk"
     print_status "  macOS: brew install openjdk@11"
     exit 1
