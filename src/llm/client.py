@@ -44,7 +44,7 @@ class LLMClient:
         self.client = OpenAI(
             base_url=api_config.get('base_url'),
             api_key=api_key,
-            timeout=180.0  # 2 minutes timeout for large files
+            timeout=60.0  # 1 minutes timeout for large files
         )
         
         self.model = api_config.get('model', 'deepseek-reasoner')
@@ -69,39 +69,63 @@ class LLMClient:
                 logger.info(f"Starting API request, code block length: {len(content)} characters")
                 logger.debug(f"Using prompt prefix: {prompt[:50]}...")
                 
-                completion = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": prompt},
-                        {"role": "user", "content": content}
-                    ],
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                    stream=True
-                )
                 
-                full_response = ""
-                chunk_count = 0
-                start_time = time.time()
-                
-                for chunk in completion:
-                    chunk_count += 1
-                    if chunk_count % 1000 == 0:
-                        logger.debug(f"Received {chunk_count} chunks, elapsed time: {time.time()-start_time:.2f}s")
-                        
-                    if chunk.choices[0].delta.content is not None:
-                        full_response += chunk.choices[0].delta.content
-                
-                logger.info(f"Request completed, received {chunk_count} chunks total")
-                logger.debug(f"First line of response: {full_response.splitlines()[0][:50]}...")
-                return full_response
+                try:
+                    completion = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": content}
+                        ],
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens,
+                        stream=True,
+                        timeout=30  
+                    )
+                    
+                    full_response = ""
+                    chunk_count = 0
+                    start_time = time.time()
+                    
+                    for chunk in completion:
+                        chunk_count += 1
+                        if chunk_count % 1000 == 0:
+                            logger.debug(f"Received {chunk_count} chunks, elapsed time: {time.time()-start_time:.2f}s")
+                            
+                        if chunk.choices[0].delta.content is not None:
+                            full_response += chunk.choices[0].delta.content
+                    
+                    logger.info(f"Streaming request completed, received {chunk_count} chunks total")
+                    logger.debug(f"First line of response: {full_response.splitlines()[0][:50]}...")
+                    return full_response
+                    
+                except Exception as stream_error:
+                    logger.warning(f"Streaming request failed: {stream_error}, trying non-streaming...")
+                    
+                    # 流式失败，尝试非流式请求
+                    completion = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": content}
+                        ],
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens,
+                        stream=False,
+                        timeout=60  
+                    )
+                    
+                    full_response = completion.choices[0].message.content
+                    logger.info(f"Non-streaming request completed")
+                    logger.debug(f"First line of response: {full_response.splitlines()[0][:50]}...")
+                    return full_response
                 
             except Exception as e:
                 retry_count += 1
                 logger.error(f"API request failed (attempt {retry_count}/{max_retries}): {e}")
                 
                 if retry_count < max_retries:
-                    wait_time = min(60, 2 ** retry_count)  # Exponential backoff
+                    wait_time = min(30, 2 ** retry_count)  # 减少等待时间
                     logger.info(f"Waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
                 else:

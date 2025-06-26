@@ -108,7 +108,7 @@ This step generates an Initial Intermediate Specification (IISpec), a novel inte
     - A draft (`examples/etcd/spec/step1/draft_analysis.txt`)
 *   **Command**:
 ```bash
-    # Generate the initial specification from the source code
+    # Generate the initial specification from the source code 
     ./tlagen iispec_generator examples/etcd/source/raft.go examples/etcd/spec/step1/ --mode draft-based
 ```
 
