@@ -6,6 +6,8 @@ This document provides an overview of the TLAGEN framework, a pipeline for gener
 
 TLAGEN is designed to generate **code-level specifications** that accurately describe the core logic and behavior of existing software systems. Unlike high-level architectural specifications, our framework focuses on capturing the essential algorithmic details and control flow patterns present in the source code itself.
 
+![TLAGEN Workflow](docs/images/diagram.png)
+
 ### The Five-Step Pipeline
 
 The framework operates through a systematic five-step process:
