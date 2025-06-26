@@ -28,21 +28,27 @@ class TLCRunner:
     """TLC model checker runner"""
     
     def __init__(self, tla_tools_path: str):
-        self.tla_tools_path = tla_tools_path
+        # Convert to absolute path to handle cwd changes
+        self.tla_tools_path = str(Path(tla_tools_path).resolve())
         if not os.path.exists(self.tla_tools_path):
             raise FileNotFoundError(f"TLA+ tools not found at {self.tla_tools_path}")
     
     def run_tlc(self, spec_file: str, config_file: str, timeout: int = 60) -> Tuple[bool, str]:
         """Run TLC model checker on specification with configuration"""
         try:
+            # Convert all paths to absolute to handle cwd changes
+            spec_path = Path(spec_file).resolve()
+            config_path = Path(config_file).resolve()
+            working_dir = spec_path.parent
+            
             cmd = [
                 "java", "-cp", self.tla_tools_path,
-                "tlc2.TLC", "-config", config_file, spec_file
+                "tlc2.TLC", "-config", str(config_path), str(spec_path)
             ]
             
             result = subprocess.run(
                 cmd, capture_output=True, text=True, 
-                timeout=timeout, cwd=Path(spec_file).parent
+                timeout=timeout, cwd=working_dir
             )
             
             # TLC returns 0 for success, other codes for various types of errors
