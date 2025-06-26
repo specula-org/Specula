@@ -224,7 +224,9 @@ class RuntimeCorrector:
         
         # Step 2: Initial TLC run
         current_spec = spec_content
-        current_spec_file = output_path / f"{module_name}_initial.tla"
+        initial_dir = output_path / "initial"
+        initial_dir.mkdir(exist_ok=True)
+        current_spec_file = initial_dir / f"{module_name}.tla"
         
         with open(current_spec_file, 'w', encoding='utf-8') as f:
             f.write(current_spec)
@@ -249,8 +251,11 @@ class RuntimeCorrector:
                     # Fix the errors
                     corrected_spec = self.fix_runtime_errors(current_spec, config_content, tlc_output)
                     
-                    # Save corrected version
-                    corrected_spec_file = output_path / f"{module_name}_attempt_{correction_attempts}.tla"
+                    # Save corrected version in attempt directory
+                    corrected_module_name = self._extract_module_name(corrected_spec)
+                    attempt_dir = output_path / f"attempt_{correction_attempts}"
+                    attempt_dir.mkdir(exist_ok=True)
+                    corrected_spec_file = attempt_dir / f"{corrected_module_name}.tla"
                     with open(corrected_spec_file, 'w', encoding='utf-8') as f:
                         f.write(corrected_spec)
                     
@@ -288,6 +293,7 @@ class RuntimeCorrector:
             "input_file": input_spec_path,
             "output_directory": str(output_path),
             "config_file": str(config_file),
+            "initial_spec_file": str(current_spec_file),
             "final_spec_file": str(final_spec_file),
             "tlc_passed": success,
             "correction_attempts": correction_attempts,
@@ -360,6 +366,7 @@ def main():
         print("="*60)
         print(f"Input file: {summary['input_file']}")
         print(f"Output directory: {summary['output_directory']}")
+        print(f"Initial specification: {summary['initial_spec_file']}")
         print(f"Final specification: {summary['final_spec_file']}")
         print(f"TLC passed: {summary['tlc_passed']}")
         print(f"Correction attempts: {summary['correction_attempts']}")
