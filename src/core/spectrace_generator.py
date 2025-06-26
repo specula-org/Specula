@@ -380,9 +380,11 @@ def generate_config_from_tla(tla_file: str, cfg_file: str, prompt_file: str = No
     
     # Read prompt template
     if prompt_file is None:
-        # Use default prompt file
-        script_dir = Path(__file__).parent.parent
-        prompt_file = script_dir / "prompts" / "step5_trace_config_generation.txt"
+        # Use default prompt file from config
+        from ..utils.config import get_config
+        config = get_config(config_path)
+        prompts_dir = config.get('paths', {}).get('prompts_dir', 'src/prompts')
+        prompt_file = Path(prompts_dir) / "step5_trace_config_generation.txt"
     
     try:
         with open(prompt_file, 'r') as f:

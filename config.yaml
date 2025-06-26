@@ -8,7 +8,7 @@ llm:
   # API Parameters
   max_tokens: 32000        # Maximum output tokens (claude-3-5-sonnet-20241022 has a limit of 8192)
   temperature: 0.1        # Controls randomness of generation, 0.0-1.0, lower is more deterministic
-  timeout: 3000           # API request timeout (seconds)
+  timeout: 600           # API request timeout (seconds)
   
   # Streaming Configuration
   use_streaming: true     # Whether to use streaming
@@ -17,13 +17,19 @@ llm:
 # TLA+ Validator Configuration
 tla_validator:
   tools_path: "lib/tla2tools.jar"  # Path to TLA+ tools
-  timeout: 30                      # Validator timeout (seconds)
+  timeout: 300                      # Validator timeout (seconds)
 
 # Generation Configuration
 generation:
   max_correction_attempts: 1  # Maximum error correction attempts
   mode: "draft-based"              # Generation mode: "direct" or "draft-based"
   
+# CFA Tool Configuration
+cfa:
+  script_path: "tools/cfa/run.sh"      # Path to CFA tool script
+  input_dir: "tools/cfa/input"        # CFA input directory
+  timeout: 300                         # CFA execution timeout (seconds)
+
 # Path Configuration
 paths:
   prompts_dir: "src/prompts"

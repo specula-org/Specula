@@ -41,10 +41,12 @@ class LLMClient:
         if not api_key:
             raise ValueError("API key not found. Please set one of: API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or DEEPSEEK_API_KEY environment variable, or configure 'api_key' in config.yaml")
         
+        # Get timeout from config and store it
+        self.client_timeout = api_config.get('timeout', 3000) / 1000.0  # Convert ms to seconds
         self.client = OpenAI(
             base_url=api_config.get('base_url'),
             api_key=api_key,
-            timeout=60.0  # 1 minutes timeout for large files
+            timeout=self.client_timeout
         )
         
         self.model = api_config.get('model', 'deepseek-reasoner')
@@ -80,7 +82,7 @@ class LLMClient:
                         temperature=self.temperature,
                         max_tokens=self.max_tokens,
                         stream=True,
-                        timeout=30  
+                        timeout=30  # Shorter timeout for streaming requests  
                     )
                     
                     full_response = ""
@@ -112,7 +114,7 @@ class LLMClient:
                         temperature=self.temperature,
                         max_tokens=self.max_tokens,
                         stream=False,
-                        timeout=60  
+                        timeout=self.client_timeout  
                     )
                     
                     full_response = completion.choices[0].message.content

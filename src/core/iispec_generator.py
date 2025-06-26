@@ -255,7 +255,7 @@ class Phase1Generator:
 
         if self.use_rag and self.retriever is None:
             try:
-                error_db_path = 'src/rag/initial_errors.json'
+                error_db_path = config.get('paths.knowledge_base', 'src/rag/initial_errors.json')
                 self.retriever = ErrorRetriever(data_path=error_db_path)
                 logger.info("RAG error retriever initialized successfully.")
             except Exception as e:

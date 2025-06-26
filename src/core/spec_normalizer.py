@@ -29,8 +29,9 @@ class SpecNormalizer:
         self.llm_client = get_llm_client(config_path)
         self.logger = logging.getLogger(__name__)
         
-        # Load the normalization prompt
-        self.prompt_path = Path(__file__).parent.parent / "prompts" / "step3_spec_normalization.txt"
+        # Load the normalization prompt from config
+        prompts_dir = self.config.get('paths', {}).get('prompts_dir', 'src/prompts')
+        self.prompt_path = Path(prompts_dir) / "step3_spec_normalization.txt"
         if not self.prompt_path.exists():
             raise FileNotFoundError(f"Prompt file not found: {self.prompt_path}")
         
@@ -78,7 +79,8 @@ class SpecNormalizer:
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
             
-            cfa_input_dir = Path("tools/cfa/input")
+            # Get CFA input directory from config
+            cfa_input_dir = Path(self.config.get('cfa', {}).get('input_dir', 'tools/cfa/input'))
             cfa_input_dir.mkdir(parents=True, exist_ok=True)
             
             # Save normalized spec to CFA input directory
@@ -119,8 +121,8 @@ class SpecNormalizer:
         try:
             import subprocess
             
-            # Prepare CFA tool command
-            cfa_script = Path("tools/cfa/run.sh")
+            # Prepare CFA tool command from config
+            cfa_script = Path(self.config.get('cfa', {}).get('script_path', 'tools/cfa/run.sh'))
             if not cfa_script.exists():
                 self.logger.error(f"CFA script not found: {cfa_script}")
                 return False
@@ -137,11 +139,13 @@ class SpecNormalizer:
             cmd = [str(cfa_script), input_spec, str(output_file)]
             self.logger.info(f"Running command: {' '.join(cmd)}")
             
+            # Get timeout from config
+            timeout = self.config.get('cfa', {}).get('timeout', 300)
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minutes timeout
+                timeout=timeout
             )
             
             if result.returncode == 0:

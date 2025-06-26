@@ -668,8 +668,9 @@ class TLAProcessor:
             with open(spec_file, 'r', encoding='utf-8') as f:
                 spec_content = f.read()
             
-            # Read prompt
-            prompt_path = Path(__file__).parent.parent / "prompts" / "step5_trace_config_generation.txt"
+            # Read prompt from config
+            prompts_dir = self.paths_config.get('prompts_dir', 'src/prompts')
+            prompt_path = Path(prompts_dir) / "step5_trace_config_generation.txt"
             with open(prompt_path, 'r', encoding='utf-8') as f:
                 prompt = f.read()
             
