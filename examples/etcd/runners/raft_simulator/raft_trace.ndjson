@@ -238,3 +238,23 @@
 {"action":"tickElection","timestamp":1750834495599543291,"params":map[node_id:1 state:Leader term:2]}
 {"action":"tickHeartbeat","timestamp":1750834495799964593,"params":map[node_id:1 state:Leader term:2]}
 {"action":"tickHeartbeat","timestamp":1750834496000417286,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750996411117170672,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750996411317858214,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750996411518517975,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750996411719101404,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750996411919712873,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750996412120439476,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Follower term:1]}
+{"action":"tickElection","timestamp":1750996412320919821,"params":map[node_id:1 state:Follower term:1]}
+{"action":"Step","timestamp":1750996412521572962,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750996412722071398,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"tickElection","timestamp":1750996412922507272,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"tickHeartbeat","timestamp":1750996413122963647,"params":map[node_id:1 state:Candidate term:2]}
+{"action":"Step","timestamp":1750996413323461284,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Candidate term:2]}
+{"action":"tickElection","timestamp":1750996413523930139,"params":map[node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750996413724422435,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750996413924877490,"params":map[node_id:1 state:Leader term:2]}
+{"action":"Step","timestamp":1750996414125306034,"params":map[msg_from:2 msg_type:MsgVote node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750996414325824021,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750996414526286056,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickElection","timestamp":1750996414726723270,"params":map[node_id:1 state:Leader term:2]}
+{"action":"tickHeartbeat","timestamp":1750996414927161005,"params":map[node_id:1 state:Leader term:2]}

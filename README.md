@@ -115,7 +115,7 @@ This step generates an Initial Intermediate Specification (IISpec), a novel inte
 *   **Command**:
 ```bash
     # Generate the initial specification from the source code 
-    ./tlagen iispec_generator examples/etcd/source/raft.go examples/etcd/spec/step1/ --mode draft-based
+    ./tlagen iispec_generator examples/etcd/source/raft.go output/etcd/spec/step1/ --mode draft-based
 ```
 
 ### Step 2: Automated Syntax Correction
@@ -138,7 +138,7 @@ This step converts the imperative-style IISpec into a standard, structured TLA+ 
 *   **Command**:
 ```bash
     # Run the CFA transformation script.
-    ./tools/cfa/run.sh examples/etcd/spec/step2/Raft.tla examples/etcd/spec/step3/Raft.tla
+    ./tools/cfa/run.sh tools/cfa/input/example/Raft.tla output/etcd/spec/step3/Raft.tla
 ```
 *   **Note**: The CFA transformation tool is a work in progress. Its parser is not yet fully robust and may require manual adjustments to the input specification to run successfully. This will be improved in future work.
 
@@ -155,7 +155,7 @@ This step automatically detects and fixes runtime errors in TLA+ specifications 
 *   **Command**:
 ```bash
     # Run agent-based runtime correction
-    ./tlagen runtime_corrector examples/etcd/spec/step3/Raft.tla examples/etcd/spec/step4/
+    ./tlagen runtime_corrector examples/etcd/spec/step3/Raft.tla output/etcd/spec/step4/
 ```
 *   **Note**: For highly complex specifications or when using models with limited capabilities, the iterative correction process may not achieve full success, requiring manual intervention.
 
@@ -181,8 +181,8 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
     ./tlagen spectrace_generator \
         --tla examples/etcd/spec/step4/Raft.tla \
         --cfg examples/etcd/spec/step4/Raft.cfg \
-        --auto-config examples/etcd/spec/step5/raft_config.yaml \
-        examples/etcd/spec/step5/spec/
+        --auto-config output/etcd/spec/step5/raft_config.yaml \
+        output/etcd/spec/step5/spec/
 ```
 #### Step 5.2: Automated Instrumentation
 
@@ -213,7 +213,7 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
         spec/step5/spec/trace.ndjson \
         --servers n1 n2 n3
     # Step 5.2d: Validate traces with TLA+ model checker
-    cd examples/etcd/spec/step5/spec
+    cd spec/step5/spec
     export TRACE_PATH=trace.ndjson
     java -cp "../../../../../lib/tla2tools.jar" tlc2.TLC \
         -config specTrace.cfg specTrace.tla

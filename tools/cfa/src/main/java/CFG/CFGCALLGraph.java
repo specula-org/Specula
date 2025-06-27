@@ -161,10 +161,10 @@ public class CFGCALLGraph {
             }
         }
         // 打印拓扑排序结果
-        System.out.println("Topological Sort:");
-        for (CFGFuncNode node : result) {
-            System.out.println(node.getFuncName());
-        }
+        //  System.out.println("Topological Sort:");
+        // for (CFGFuncNode node : result) {
+        //     System.out.println(node.getFuncName());
+        // }
         
         return result;
     }

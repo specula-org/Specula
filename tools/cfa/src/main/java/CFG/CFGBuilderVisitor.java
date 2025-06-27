@@ -15,7 +15,7 @@ import org.antlr.v4.runtime.tree.*;
 import parser.TLAPlusParser;
 import parser.TLAPlusParserBaseVisitor;
 
-// 访问者类，用于遍历 ParseTree 并构建 CFG
+// Visitor class for traversing ParseTree and building CFG
 public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
     private static final String IGNORE_OPERATORS = "^(Init|Next|Spec|vars)";
     private List<String> constants = new ArrayList<>();
@@ -37,7 +37,7 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
 
     @Override
     public Void visitModule(TLAPlusParser.ModuleContext ctx) {
-        System.out.println("访问模块: " + getFullText(ctx));
+        // System.out.println("Visiting module: " + getFullText(ctx));
         for (TLAPlusParser.UnitContext unitCtx : ctx.unit()) {
             visitUnit(unitCtx);
         }
@@ -74,7 +74,7 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
         if (ctx.opDecl() != null) {
             for (var id : ctx.opDecl()) {
                 constants.add(id.getText());
-                System.out.println("常量: " + id.getText());
+                // System.out.println("常量: " + id.getText());
             }
         }
         return null;
@@ -85,7 +85,7 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
         if (ctx.Identifier() != null) {
             for (var id : ctx.Identifier()) {
                 variables.add(id.getText());
-                System.out.println("变量: " + id.getText());
+                // System.out.println("变量: " + id.getText());
             }
         }
         return null;
@@ -102,7 +102,7 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
             return null;
         }
 
-        System.out.println("访问操作符定义: " + text);
+        // System.out.println("访问操作符定义: " + text);
         // 处理 nonFixLHS EQUALS body 的情况
         if (ctx.nonFixLHS() != null) {
             // 访问 nonFixLHS 获取函数名和参数列表
@@ -130,14 +130,14 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
         }
         else {
             // 处理特殊情况
-            System.out.println("特殊情况: " + getFullText(ctx));
+            System.out.println("Special case: " + getFullText(ctx));
         }
         return null;
     }
 
     @Override
     public List<String> visitNonFixLHS(TLAPlusParser.NonFixLHSContext ctx) {
-        System.out.println("访问非固定左侧: " + getFullText(ctx));
+        // System.out.println("visitNonFixLHS: " + getFullText(ctx));
         List<String> funcInfo = new ArrayList<>();
         
         // 获取函数名(第一个标识符)
@@ -152,7 +152,7 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
                 }
             }
         }
-        System.out.println("函数信息: " + funcInfo);
+        // System.out.println("funcInfo: " + funcInfo);
         return funcInfo;
     }
 
@@ -160,9 +160,9 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
     @Override
     public CFGStmtNode visitBody(TLAPlusParser.BodyContext ctx) {
         indentationLevel++;
-        System.out.println("访问Body: " + ctx.getStart().getInputStream()
-        .getText(Interval.of(ctx.getStart().getStartIndex(), 
-                            ctx.getStop().getStopIndex())));
+        // System.out.println("访问Body: " + ctx.getStart().getInputStream()
+        // .getText(Interval.of(ctx.getStart().getStartIndex(), 
+        //                     ctx.getStop().getStopIndex())));
         // 如果只有一个表达式,直接返回访问结果
         // if (ctx.statement().size() == 1) {
         //     CFGStmtNode return_val = (CFGStmtNode) visit(ctx.statement(0));
@@ -261,7 +261,7 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
         } else if (ctx instanceof TLAPlusParser.AobodyStatementContext) {
             return visitAobodyStatement((TLAPlusParser.AobodyStatementContext) ctx);
         } else {
-            System.err.println("未知的aobody上下文类型: " + ctx.getClass().getName());
+            System.err.println("Unknown aobody context type: " + ctx.getClass().getName());
             return null;
         }
     }
@@ -353,9 +353,9 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
 
     @Override
     public CFGStmtNode visitStatement(TLAPlusParser.StatementContext ctx) {
-        System.out.println("访问Stmt: " + ctx.getStart().getInputStream()
-        .getText(Interval.of(ctx.getStart().getStartIndex(), 
-                            ctx.getStop().getStopIndex())));
+        // System.out.println("访问Stmt: " + ctx.getStart().getInputStream()
+        // .getText(Interval.of(ctx.getStart().getStartIndex(), 
+        //                     ctx.getStop().getStopIndex())));
         // 如果只有一个表达式,直接返回访问结果
         if (ctx.expression().size() == 1) {
             return (CFGStmtNode) visit(ctx.expression(0));
@@ -568,7 +568,7 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
                             content.append(getFullText((ParserRuleContext) ctx.children.get(i))).append("\n");
                         } else {
                             // 处理终端节点，直接获取其文本
-                            System.err.println("终端节点: " + ctx.children.get(i).getText());
+                            // System.err.println("终端节点: " + ctx.children.get(i).getText());
                             content.append(ctx.children.get(i).getText()).append("\n");
                             // 或者根据需要使用其他方法处理终端节点
                         }
@@ -576,7 +576,7 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
                         if (ctx.children.get(i) instanceof ParserRuleContext) {
                             content.append(" ".repeat((indentationLevel + 1) * 4) + getFullText((ParserRuleContext) ctx.children.get(i))).append("\n");
                         } else {
-                            System.err.println("终端节点: " + ctx.children.get(i).getText());
+                            // System.err.println("终端节点: " + ctx.children.get(i).getText());
                             content.append(" ".repeat((indentationLevel + 1) * 4) + ctx.children.get(i).getText()).append("\n");
                         }
                     }
@@ -594,7 +594,7 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
         // System.out.println("tempVars: " + tempVars);
         if (tempVars.isEmpty()){
             // 报错
-            System.err.println("LET 表达式中没有定义任何变量");
+            System.err.println("No variables are defined in the LET expression");
             System.exit(1);
         }
         CFGStmtNode body = visitBody(ctx.body());
@@ -638,122 +638,122 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
 
     @Override 
     public Void visitFunctionDefinition(TLAPlusParser.FunctionDefinitionContext ctx) {
-        System.out.println("访问函数定义: " + getFullText(ctx));
+        // System.out.println("访问函数定义: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitInstance(TLAPlusParser.InstanceContext ctx) {
-        System.out.println("访问实例: " + getFullText(ctx));
+        // System.out.println("访问实例: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitModuleDefinition(TLAPlusParser.ModuleDefinitionContext ctx) {
-        System.out.println("访问模块定义: " + getFullText(ctx));
+        // System.out.println("访问模块定义: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitAssumption(TLAPlusParser.AssumptionContext ctx) {
-        System.out.println("访问假设: " + getFullText(ctx));
+        // System.out.println("访问假设: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitTheorem(TLAPlusParser.TheoremContext ctx) {
-        System.out.println("访问定理: " + getFullText(ctx));
+        // System.out.println("访问定理: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitOpDecl(TLAPlusParser.OpDeclContext ctx) {
-        System.out.println("访问操作符声明: " + getFullText(ctx));
+        // System.out.println("访问操作符声明: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitQuantifierBound(TLAPlusParser.QuantifierBoundContext ctx) {
-        System.out.println("访问量词绑定: " + getFullText(ctx));
+        // System.out.println("访问量词绑定: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitSubstitution(TLAPlusParser.SubstitutionContext ctx) {
-        System.out.println("访问替换: " + getFullText(ctx));
+        // System.out.println("访问替换: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitArgument(TLAPlusParser.ArgumentContext ctx) {
-        System.out.println("访问参数: " + getFullText(ctx));
+        // System.out.println("访问参数: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitInstancePrefix(TLAPlusParser.InstancePrefixContext ctx) {
-        System.out.println("访问实例前缀: " + getFullText(ctx));
+        // System.out.println("
         return null;
     }
 
     @Override
     public Void visitGeneralIdentifier(TLAPlusParser.GeneralIdentifierContext ctx) {
-        System.out.println("访问通用标识符: " + getFullText(ctx));
+        // System.out.println("访问通用标识符: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitGeneralPrefixOp(TLAPlusParser.GeneralPrefixOpContext ctx) {
-        System.out.println("访问通用前缀操作符: " + getFullText(ctx));
+        // System.out.println("访问通用前缀操作符: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitGeneralInfixOp(TLAPlusParser.GeneralInfixOpContext ctx) {
-        System.out.println("访问通用中缀操作符: " + getFullText(ctx));
+        // System.out.println("访问通用中缀操作符: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitGeneralPostfixOp(TLAPlusParser.GeneralPostfixOpContext ctx) {
-        System.out.println("访问通用后缀操作符: " + getFullText(ctx));
+        // System.out.println("访问通用后缀操作符: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitRightExpression(TLAPlusParser.RightExpressionContext ctx) {
-        System.out.println("访问右表达式: " + getFullText(ctx));
+        // System.out.println("访问右表达式: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitIdentifierOrTuple(TLAPlusParser.IdentifierOrTupleContext ctx) {
-        System.out.println("访问标识符或元组: " + getFullText(ctx));
+        // System.out.println("访问标识符或元组: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitReservedWord(TLAPlusParser.ReservedWordContext ctx) {
-        System.out.println("访问保留字: " + getFullText(ctx));
+        // System.out.println("访问保留字: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitPrefixOp(TLAPlusParser.PrefixOpContext ctx) {
-        System.out.println("访问前缀操作符: " + getFullText(ctx));
+        // System.out.println("访问前缀操作符: " + getFullText(ctx));
         return null;
     }
 
 
     @Override
     public Void visitPostfixOp(TLAPlusParser.PostfixOpContext ctx) {
-        System.out.println("访问后缀操作符: " + getFullText(ctx));
+        // System.out.println("访问后缀操作符: " + getFullText(ctx));
         return null;
     }
 
     @Override
     public Void visitInfixOp(TLAPlusParser.InfixOpContext ctx) {
-        System.out.println("访问中缀操作符: " + getFullText(ctx));
+        // System.out.println("访问中缀操作符: " + getFullText(ctx));
         return null;
     }
 

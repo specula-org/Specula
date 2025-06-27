@@ -56,7 +56,7 @@ public class CFGVarChangeAnalyzer {
     }
 
     public void analyze() {
-        System.err.println("begin analyze");
+        // System.err.println("begin analyze");
         // 得到拓扑序列
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
         //反过来
@@ -224,8 +224,8 @@ public class CFGVarChangeAnalyzer {
 
     private void analyzeStmtPC(CFGFuncNode funcNode, CFGStmtNode stmt){
         Set<String> tempVarsThisFunc = new HashSet<>(tempVars);
-        System.err.println("tempVarsThisFunc: " + tempVarsThisFunc);
-        System.err.println("stmt: " + stmt.getContent());
+        // System.err.println("tempVarsThisFunc: " + tempVarsThisFunc);
+        // System.err.println("stmt: " + stmt.getContent());
         if (stmt.getType() == CFGStmtNode.StmtType.LET){
             tempVarsThisFunc.addAll(stmt.getTemporaryVariables());
         }
@@ -415,10 +415,8 @@ public class CFGVarChangeAnalyzer {
         Set<CFGStmtNode> stmtSet = new HashSet<>(parentMap.keySet());
         for (CFGStmtNode stmt : stmtSet) {
             if (parentMap.get(stmt).size() <= 1) {
-                System.err.println("stmt 没有多个父节点: " + stmt.getContent());
                 continue;
             }
-            System.err.println("stmt 有多个父节点: " + stmt.getContent());
             List<CFGStmtNode> parents = new ArrayList<>(parentMap.get(stmt));
             Iterator<CFGStmtNode> iterator = parents.iterator();
             while (iterator.hasNext()) {
@@ -453,11 +451,11 @@ public class CFGVarChangeAnalyzer {
         }
         // 控制流结束处处理
         Set<String> LeafVar = getAllLeafVar(stmtNode);
-        System.err.println("LeafVar: " + LeafVar);
+        // System.err.println("LeafVar: " + LeafVar);
         List<CFGStmtNode> LeafNode = getAllLeafNode(stmtNode);
-        for (CFGStmtNode leafNode : LeafNode) {
-            System.err.println("LeafNode: " + leafNode.OutVar + " " + leafNode.getContent());
-        }
+        // for (CFGStmtNode leafNode : LeafNode) {
+        //     System.err.println("LeafNode: " + leafNode.OutVar + " " + leafNode.getContent());
+        // }
         for (CFGStmtNode leafNode : LeafNode) {
             Set<String> diff = new HashSet<>(LeafVar);
             diff.removeAll(leafNode.OutVar);
@@ -625,9 +623,9 @@ public class CFGVarChangeAnalyzer {
     }
 
     private void traverseTreeHelper(CFGStmtNode stmtNode){
-        System.err.println("stmtNode: " + stmtNode.getContent());
-        System.err.println("IN: " + stmtNode.InVar);
-        System.err.println("OUT: " + stmtNode.OutVar);
+        // System.err.println("stmtNode: " + stmtNode.getContent());
+        // System.err.println("IN: " + stmtNode.InVar);
+        // System.err.println("OUT: " + stmtNode.OutVar);
         for (CFGStmtNode child : stmtNode.getChildren()){
             // 打印 IN 和 OUT
             traverseTreeHelper(child);
@@ -874,11 +872,11 @@ public class CFGVarChangeAnalyzer {
             for (String var : temp) {
                 String pattern = "(?<!\\w)(?<!info\\.temp\\.)" + var + "(?!\\w)";       // NEW, using var directly
 
-                System.err.println("content: " + content);
-                System.err.println("var: " + var);
+                // System.err.println("content: " + content);
+                // System.err.println("var: " + var);
                 // 在正则表达式的开头添加 (?s) 标志，使 . (点号) 可以匹配包括换行符在内的任意字符
                 if (content.matches("(?s).*" + pattern + ".*")) { 
-                    System.err.println("tempVars1111: " + temp);
+                    // System.err.println("tempVars1111: " + temp);
                     content = content.replaceAll(pattern, "info.temp." + var); 
                     stmt.setContent(content);
                 }
