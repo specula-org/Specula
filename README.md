@@ -110,8 +110,8 @@ This step generates an Initial Intermediate Specification (IISpec), a novel inte
 *   **Process**: The `iispec_generator` script uses an LLM to perform a "reverse formalization," converting the logic from the source code into an imperative, intermediate TLA+ specification (IISpec).
 *   **Input**: Go source code for Raft (`examples/etcd/source/raft.go`).
 *   **Output**: 
-    - An initial TLA+ specification (`examples/etcd/spec/step1/Raft.tla`).
-    - A draft (`examples/etcd/spec/step1/draft_analysis.txt`)
+    - An initial TLA+ specification (`output/etcd/spec/step1/Raft.tla`).
+    - A draft (`output/etcd/spec/step1/draft_analysis.txt`)
 *   **Command**:
 ```bash
     # Generate the initial specification from the source code 
@@ -124,7 +124,7 @@ The initial specification often contains syntax errors. This step automatically 
 
 *   **Process**: The generation script from Step 1 has a built-in correction loop. It repeatedly uses the TLA+ SANY parser to find syntax errors and leverages a simple Retrieval-Augmented Generation (RAG) mechanism to fix them. The process continues until the specification is syntactically valid.
 *   **Input**: The initial, potentially erroneous `Raft.tla` generated internally during Step 1.
-*   **Output**: A syntactically valid `examples/etcd/spec/step1/Raft.tla`.
+*   **Output**: A syntactically valid `output/etcd/spec/step1/Raft.tla`.
 *   **Command**: This step is automatically integrated into the command from Step 1. The final file `examples/etcd/spec/step2/Raft.tla` is the result of this correction process.
 *   **Note**: For highly complex specifications or when using models with limited capabilities, the iterative correction process may not achieve full success, requiring manual intervention.
 
@@ -134,7 +134,7 @@ This step converts the imperative-style IISpec into a standard, structured TLA+ 
 
 *   **Process**: The CFA tool parses the imperative control flow (e.g., labels, gotos) in the IISpec and transforms it into a declarative, state-based TLA+ format (`StructSpec`).
 *   **Input**: The syntactically valid IISpec (`examples/etcd/spec/step2/Raft.tla`).
-*   **Output**: A structured TLA+ specification (`examples/etcd/spec/step3/Raft.tla`).
+*   **Output**: A structured TLA+ specification (`output/etcd/spec/step3/Raft.tla`).
 *   **Command**:
 ```bash
     # Run the CFA transformation script.
@@ -149,9 +149,8 @@ This step automatically detects and fixes runtime errors in TLA+ specifications 
 *   **Process**: The `runtime_corrector` script generates a TLC configuration file, runs the TLC model checker to detect runtime errors, and uses LLM-based correction to iteratively fix the specification until all errors are resolved.
 *   **Input**: A syntactically valid TLA+ specification (e.g., `examples/etcd/spec/step3/Raft.tla` from Step 3).
 *   **Output**: 
-    - A TLC configuration file (`examples/etcd/spec/step4/Raft.cfg`)
-    - A runtime-corrected TLA+ specification (`examples/etcd/spec/step4/Raft.tla`)
-    - A trace configuration file (`examples/etcd/config/raft_config.yaml`) describing the specification structure.
+    - A TLC configuration file (`output/etcd/spec/step4/Raft.cfg`)
+    - A runtime-corrected TLA+ specification (`output/etcd/spec/step4/Raft.tla`)
 *   **Command**:
 ```bash
     # Run agent-based runtime correction
@@ -172,9 +171,9 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
 *   **Process**: The script uses an LLM to analyze the TLA+ specification from the previous step, automatically generating a YAML configuration file that describes the spec's structure (constants, variables, actions, and interactions). This configuration is then used to create the final trace validation driver.
 *   **Input**: The runtime-corrected specification from Step 4 (`examples/etcd/spec/step4/Raft.tla` and `Raft.cfg`).
 *   **Output**:
-    - An automatically generated trace configuration file (`examples/etcd/spec/step5/raft_config.yaml`).
-    - Trace validation TLA+ specification (`examples/etcd/spec/step5/spec/specTrace.tla`).
-    - Trace validation TLC configuration file (`examples/etcd/spec/step5/spec/specTrace.cfg`).
+    - An automatically generated trace configuration file (`output/etcd/spec/step5/raft_config.yaml`).
+    - Trace validation TLA+ specification (`output/etcd/spec/step5/spec/specTrace.tla`).
+    - Trace validation TLC configuration file (`output/etcd/spec/step5/spec/specTrace.cfg`).
 *   **Command**:
 ```bash
     # Auto-generate config and then the trace validation driver
