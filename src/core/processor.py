@@ -682,14 +682,24 @@ class TLAProcessor:
             yaml_content = self._extract_yaml_from_response(response)
             
             # Validate and parse YAML
+            if not yaml_content.strip():
+                logger.error("No YAML content extracted from LLM response")
+                return {
+                    'success': False,
+                    'error': "No YAML content extracted from LLM response",
+                    'raw_response': response
+                }
+            
             try:
                 config_data = yaml.safe_load(yaml_content)
             except yaml.YAMLError as e:
                 logger.error(f"Generated YAML format invalid: {e}")
+                logger.error(f"Extracted YAML content: {yaml_content[:500]}...")
                 return {
                     'success': False,
                     'error': f"YAML format error: {e}",
-                    'raw_response': response
+                    'raw_response': response,
+                    'extracted_yaml': yaml_content
                 }
             
             # Validate configuration structure
@@ -729,26 +739,38 @@ class TLAProcessor:
             }
     
     def _extract_yaml_from_response(self, response: str) -> str:
-        """Extract YAML content from LLM response"""
+        """Extract YAML content from LLM response, handling markdown code blocks"""
         lines = response.split('\n')
         yaml_lines = []
         in_yaml_block = False
         
         for line in lines:
-            # Look for YAML code block
+            # Look for YAML code block start
             if line.strip().startswith('```yaml') or line.strip().startswith('```yml'):
                 in_yaml_block = True
                 continue
+            # Look for code block end
             elif line.strip() == '```' and in_yaml_block:
                 break
+            # If we're in a YAML block, collect the line
             elif in_yaml_block:
                 yaml_lines.append(line)
-            # If no code block, look for YAML content start
+            # If no code block found, look for YAML content directly
             elif line.strip().startswith('spec_name:') and not in_yaml_block:
                 in_yaml_block = True
                 yaml_lines.append(line)
         
-        return '\n'.join(yaml_lines)
+        # If no YAML block was found, try to extract everything that looks like YAML
+        if not yaml_lines:
+            # Remove any leading/trailing markdown artifacts
+            content = response.strip()
+            # Remove multiple backticks patterns
+            import re
+            content = re.sub(r'^```+\w*\s*', '', content, flags=re.MULTILINE)
+            content = re.sub(r'```+\s*$', '', content, flags=re.MULTILINE)
+            return content.strip()
+        
+        return '\n'.join(yaml_lines).strip()
     
     def _validate_config_structure(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
         """Validate configuration file structure"""

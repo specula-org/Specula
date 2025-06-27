@@ -23,6 +23,41 @@ except ImportError:
     LLM_AVAILABLE = False
 
 
+def _extract_yaml_from_response(response: str) -> str:
+    """Extract YAML content from LLM response, handling markdown code blocks"""
+    lines = response.split('\n')
+    yaml_lines = []
+    in_yaml_block = False
+    
+    for line in lines:
+        # Look for YAML code block start
+        if line.strip().startswith('```yaml') or line.strip().startswith('```yml'):
+            in_yaml_block = True
+            continue
+        # Look for code block end
+        elif line.strip() == '```' and in_yaml_block:
+            break
+        # If we're in a YAML block, collect the line
+        elif in_yaml_block:
+            yaml_lines.append(line)
+        # If no code block found, look for YAML content directly
+        elif line.strip().startswith('spec_name:') and not in_yaml_block:
+            in_yaml_block = True
+            yaml_lines.append(line)
+    
+    # If no YAML block was found, try to extract everything that looks like YAML
+    if not yaml_lines:
+        # Remove any leading/trailing markdown artifacts
+        content = response.strip()
+        # Remove multiple backticks patterns
+        import re
+        content = re.sub(r'^```+\w*\s*', '', content, flags=re.MULTILINE)
+        content = re.sub(r'```+\s*$', '', content, flags=re.MULTILINE)
+        return content.strip()
+    
+    return '\n'.join(yaml_lines).strip()
+
+
 class TraceGenerator:
     def __init__(self, config_data: Dict[str, Any]):
         self.config = config_data
@@ -409,17 +444,19 @@ TLC Configuration (.cfg file):
         response = llm_client.get_completion(prompt_template, input_content)
         
         # Parse YAML response
-        # Remove any markdown code blocks if present
-        yaml_content = response.strip()
-        if yaml_content.startswith('```yaml'):
-            yaml_content = yaml_content[7:]
-        if yaml_content.startswith('```'):
-            yaml_content = yaml_content[3:]
-        if yaml_content.endswith('```'):
-            yaml_content = yaml_content[:-3]
+        # Extract YAML content from markdown code blocks
+        yaml_content = _extract_yaml_from_response(response)
         
-        config_data = yaml.safe_load(yaml_content)
-        return config_data
+        # Validate YAML content before parsing
+        if not yaml_content.strip():
+            raise Exception("No YAML content extracted from LLM response")
+        
+        try:
+            config_data = yaml.safe_load(yaml_content)
+            return config_data
+        except yaml.YAMLError as e:
+            # Provide more detailed error information
+            raise Exception(f"YAML parsing error: {e}\n\nExtracted YAML content:\n{yaml_content[:500]}...")
         
     except Exception as e:
         raise Exception(f"Error generating configuration with LLM: {e}")
