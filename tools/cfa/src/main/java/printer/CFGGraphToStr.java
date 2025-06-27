@@ -25,17 +25,17 @@ public class CFGGraphToStr {
 
     private static List<CFGFuncNode> sortNodeList(CFGCALLGraph cfg) {
         List<CFGFuncNode> sortedNodes = new ArrayList<>();
-        // 使用拓扑排序来确保调用关系正确
+        // Use topological sort to ensure correct call relationship
         Map<CFGFuncNode, Integer> inDegree = new HashMap<>();
         Map<CFGFuncNode, List<CFGFuncNode>> adjList = new HashMap<>();
         
-        // 初始化入度表和邻接表
+        // Initialize in-degree table and adjacency table
         for (CFGFuncNode node : cfg.getFuncNodes()) {
             inDegree.put(node, 0);
             adjList.put(node, new ArrayList<>());
         }
         
-        // 构建入度表和邻接表
+        // Build in-degree table and adjacency table
         for (CFGCALLEdge edge : cfg.getCallEdges()) {
             CFGFuncNode source = edge.getSourceFunc();
             CFGFuncNode target = edge.getTarget();
@@ -43,7 +43,7 @@ public class CFGGraphToStr {
             inDegree.put(target, inDegree.get(target) + 1);
         }
         
-        // 使用队列进行拓扑排序
+        // Use queue for topological sort
         Queue<CFGFuncNode> queue = new LinkedList<>();
         for (CFGFuncNode node : cfg.getFuncNodes()) {
             if (inDegree.get(node) == 0) {
@@ -51,7 +51,7 @@ public class CFGGraphToStr {
             }
         }
         
-        // 执行拓扑排序
+        // Execute topological sort
         while (!queue.isEmpty()) {
             CFGFuncNode current = queue.poll();
             sortedNodes.add(current);
@@ -64,13 +64,13 @@ public class CFGGraphToStr {
             }
         }
         
-        // 如果存在环，则添加剩余的节点
+        // If there is a cycle, add the remaining nodes
         for (CFGFuncNode node : cfg.getFuncNodes()) {
             if (!sortedNodes.contains(node)) {
                 sortedNodes.add(node);
             }
         }
-        // 反转 sortedNodes
+        // Reverse sortedNodes
         Collections.reverse(sortedNodes);
         return sortedNodes;
     }

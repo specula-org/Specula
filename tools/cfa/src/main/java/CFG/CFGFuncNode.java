@@ -7,13 +7,13 @@ import java.util.Map;
 import java.util.Set;
 
 public class CFGFuncNode {
-    private String funcName;  // 函数名
-    private List<String> parameters;  // 函数参数列表
-    private CFGStmtNode root;  // 函数体语句节点列表 
+    private String funcName;  // Function name
+    private List<String> parameters;  // Function parameter list
+    private CFGStmtNode root;  // Function body statement node list 
     private int id;
     private Map<CFGStmtNode, Boolean> arrived;
 
-    // 构造函数
+    // Constructor
     public CFGFuncNode(String funcName, List<String> parameters) {
         this.funcName = funcName;
         this.parameters = parameters;
@@ -70,7 +70,7 @@ public class CFGFuncNode {
         this.arrived.put(stmt, flag);
     }
 
-    // 添加参数
+    // Add parameter
     public void addParameter(String parameter) {
         parameters.add(parameter);
     }
@@ -94,7 +94,7 @@ public class CFGFuncNode {
         }
     }
 
-    // 单函数打印
+    // Print single function
     public void printSingleFunc() {
         System.out.println("Function: " + funcName);
         System.out.println("Parameters: " + parameters);

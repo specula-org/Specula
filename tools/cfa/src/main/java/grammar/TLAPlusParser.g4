@@ -4,7 +4,7 @@ package parser;
 }
 options { tokenVocab=TLAPlusLexer; }
 
-// 解析入口
+// Analysis entry
 module: AtLeast4Dash MODULE Identifier AtLeast4Dash LINE_BREAK
       (EXTENDS Identifier (COMMA Identifier)* LINE_BREAK)?
       (unit)*
@@ -147,7 +147,7 @@ elseExpression:
 
 identifierOrTuple: Identifier | DOUBLE_LESS Identifier (COMMA Identifier)* DOUBLE_GREATER ;
 
-// reservedWord 规则，匹配所有保留字
+
 reservedWord: 
     ASSUME | ASSUMPTION | AXIOM | CASE | CHOOSE | CONSTANT | CONSTANTS | DOMAIN |
     ELSE | ENABLED | EXCEPT | EXTENDS | IF | BIGIN | INSTANCE | LET |
@@ -155,12 +155,12 @@ reservedWord:
     UNION | VARIABLE | VARIABLES | WF_ | WITH
     ;
 
-// prefixOp 规则，匹配所有前缀操作符
+
 prefixOp: 
     MINUS | TILDE | LNOT | NEG | BRACKETS | ANGLE_BRACKETS | DOMAIN | ENABLED | SUBSET | UNCHANGED | UNION
     ;
 
-// infixOp 规则，匹配所有中缀操作符
+
 infixOp: 
     CARET_CARET | BANG_BANG | HASH | HASH_HASH | DOLLAR | DOLLAR_DOLLAR | PERCENT | PERCENT_PERCENT | AMPERSAND | AMPERSAND_AMPERSAND |
     PAREN_PLUS | PAREN_MINUS | PAREN_DOT | PAREN_SLASH | PAREN_BACKSLASH_X | STAR | STAR_STAR | PLUS | PLUS_PLUS | MINUS | MINUS_PLUS_ARROW |
@@ -200,7 +200,7 @@ statement:
 //     | specialExpression
 //     ;
 
-// // 基本表达式
+
 // primaryExpression
 //     : generalIdentifier
 //     | generalIdentifier LPAREN argument (COMMA argument)* RPAREN
@@ -212,7 +212,7 @@ statement:
 //     | AT
 //     ;
 
-// // 前缀表达式
+
 // prefixExpression
 //     : generalPrefixOp expression
 //     | FORALL quantifierBound (COMMA quantifierBound)* COLON expression
@@ -223,13 +223,13 @@ statement:
 //     | (WF_ | SF_) expression LPAREN expression RPAREN
 //     ;
 
-// // 中缀表达式
+
 // infixExpression
 //     : expression generalInfixOp expression
 //     | expression (PAREN_BACKSLASH_X | TIMES) expression
 //     ;
 
-// // 后缀表达式
+
 // postfixExpression
 //     : expression generalPostfixOp
 //     | expression LBRACKET expression (COMMA expression)* RBRACKET
@@ -237,7 +237,7 @@ statement:
 //     | DOUBLE_LESS expression DOUBLE_GREATER UNDERSCORE expression
 //     ;
 
-// // 特殊表达式
+
 // specialExpression
 //     : LBRACE identifierOrTuple IN expression COLON expression RBRACE
 //     | LBRACE expression COLON quantifierBound (COMMA quantifierBound)* RBRACE

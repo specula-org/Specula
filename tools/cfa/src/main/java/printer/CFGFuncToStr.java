@@ -30,31 +30,31 @@ public class CFGFuncToStr {
         funchead += " ==";
         res.add(funchead);
         CFGStmtNode root = node.getRoot();
-        // 对每个节点进行DFS遍历
+        // Perform DFS traversal on each node
         DFS(root, res, node);
         return res;
     }
 
     private void DFS(CFGStmtNode stmt, List<String> res, CFGFuncNode funcnode) {
-        // 如果节点已访问过则返回
+        // If node has been visited, return
         if (!arrived.containsKey(stmt)) {
             arrived.put(stmt, true);
         } else {
             return;
         }
-        // 获取节点内容和缩进深度
+        // Get node content and indentation depth
         String content = CFGNodeToStr.CFGStmtNodeToStr(stmt);
         int depth = stmt.getIndentation();
         
-        // 根据深度添加缩进空格
+        // Add indentation spaces based on depth
         String indentation = " ".repeat(depth * 4);
         if (content != "") {
             res.add(indentation + content);
         }
         
-        // 递归访问子节点
+        // Recursively visit child nodes
         if (stmt.getChildren().size() == 1 && funcnode.getAllparents(stmt.getChildren().get(0)).size() > 1) {
-            // 汇聚点，只有汇聚点前所有节点都被访问后才能继续访问
+            // Convergence point, can only continue visiting after all nodes before convergence point have been visited
             CFGStmtNode convergence_node = stmt.getChildren().get(0);
             Set<CFGStmtNode> parents = funcnode.getAllparents(convergence_node);
             int count = 0;
@@ -67,7 +67,7 @@ public class CFGFuncToStr {
                 DFS(convergence_node, res, funcnode);
             }
         } else {
-            //非汇聚点，继续 DFS 打印
+            // Non-convergence point, continue DFS printing
             for (CFGStmtNode child : stmt.getChildren()) {
                 DFS(child, res, funcnode);
             }

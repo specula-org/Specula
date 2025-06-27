@@ -57,16 +57,16 @@ public class CFGVarChangeAnalyzer {
 
     public void analyze() {
         // System.err.println("begin analyze");
-        // 得到拓扑序列
+        // Get topological sequence
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
-        //反过来
+        // Reverse
         Collections.reverse(topologicalSort);
         for (CFGFuncNode funcNode : topologicalSort) {
-            // 对每个函数进行分析
+            // Analyze each function
             analyzeFuncSA(funcNode);
         }
         //traverseTree();
-        // 计算 CallGraph 中未被调用的函数
+        // Calculate functions that are not called in CallGraph
         Set<String> uncalledFunc = getUncalledFunc();
         rootFunc = new HashSet<>(callGraph.getFuncNodes());
 
@@ -86,10 +86,10 @@ public class CFGVarChangeAnalyzer {
             }
         }
 
-        // 更新 funcVarChange
+        // Update funcVarChange
         updateFuncVarChange();
         List<CFGFuncNode> funclist = new ArrayList<>(callGraph.getFuncNodes());
-        // 生成 handle 函数
+        // Generate handle function
         for (CFGFuncNode funcNode : funclist){
             if (uncalledFunc.contains(funcNode.getFuncName())){
                 genHandleUncalledFunc(funcNode);
@@ -101,21 +101,21 @@ public class CFGVarChangeAnalyzer {
         analyzeUC();
         anlayzeUD();
     }
-    // 静态分析构建父亲节点映射关系和 IN 和 OUT
+    // Static analysis build parent node mapping relationship and IN and OUT
     private void analyzeFuncSA(CFGFuncNode funcNode){
         CFGStmtNode stmtNode = funcNode.getRoot();
         buildParentMap(stmtNode);
         for (CFGStmtNode stmt : stmtNode.getChildren()) {
             analyzeStmtSA(funcNode, stmt, stmtNode.OutVar);
         }
-        // 控制流汇聚点处理前，建立父亲关系
+        // Before handling control flow convergence point, build parent relationship
         funcVarChange.put(funcNode.getFuncName(), getAllLeafVar(stmtNode));
     }
 
 
     private void analyzeStmtSA(CFGFuncNode funcNode, CFGStmtNode stmt, Set<String> OutVar){
-        // 静态分析
-        // 遍历调用的函数，记录改变的变量，检测冲突
+        // Static analysis
+        // Traverse called functions, record changed variables, detect conflicts
         Set<String> INVar = stmt.InVar;
         INVar.addAll(OutVar);
         Set<String> VarDecl = new HashSet<>();
@@ -126,20 +126,20 @@ public class CFGVarChangeAnalyzer {
                 if (VarDecl.contains(var)){
                     // System.err.println("var: " + var);
                     // System.err.println("VarChanged: " + VarChanged);
-                    throw new RuntimeException("多函数调用变量修改冲突: " + VarDecl + " " + targetFuncNode.getFuncName() +  "  " + stmt.getContent() + "  " + funcNode.getFuncName());
+                    throw new RuntimeException("Multi-function call variable modification conflict: " + VarDecl + " " + targetFuncNode.getFuncName() +  "  " + stmt.getContent() + "  " + funcNode.getFuncName());
                 }
             }
             VarDecl.addAll(VarChanged);
         }
-        // Stmt 改变的变量，检测冲突
+        // Variables changed by Stmt, detect conflicts
         Set<String> VarChangedStmt = VarChangedOneStmt(stmt);
         Set<String> intersection = new HashSet<>(VarChangedStmt);
         intersection.retainAll(VarDecl);
         if (!intersection.isEmpty()){
-            // 报错时打印 VarChangedStmt 和 VarDecl
+            // Print VarChangedStmt and VarDecl when error
             // System.err.println("VarChangedStmt: " + VarChangedStmt);
             // System.err.println("VarDecl: " + VarDecl);
-            throw new RuntimeException("多函数调用变量修改冲突: " + intersection + " "+ stmt.getContent());
+            throw new RuntimeException("Multi-function call variable modification conflict: " + intersection + " "+ stmt.getContent());
         }
         Set<String> OUTVar = new HashSet<>();
         OUTVar.addAll(VarChangedStmt);
@@ -170,7 +170,7 @@ public class CFGVarChangeAnalyzer {
     }
 
     private void genHandleUncalledFunc(CFGFuncNode funcNode){
-        // uncalled 一定是 root
+        // uncalled must be root
         // HandleFunc(args) == 
         //      /\ pc = Nil
         //      /\ func(args)
@@ -192,14 +192,14 @@ public class CFGVarChangeAnalyzer {
     }
 
     private void genHandleCalledFunc(CFGFuncNode funcNode){
-        // Func 未被切割：直接返回
-        // Func 被切割：
+        // Func not cut: return directly
+        // Func cut:
         // HandleFunc(args) == 
         //      /\ pc = funcname
         //      /\ func(stack.args)
         //      /\ UNCHANGED <<vars - Vars_func>>
         if (cuttedFunc.contains(funcNode)){
-            // 被切割
+            // Cut
             CFGFuncNode newFuncNode = new CFGFuncNode("Handle" + funcNode.getFuncName(), new ArrayList<>(),0);            
             CFGStmtNode root = new CFGStmtNode(0, "root", null, CFGStmtNode.StmtType.ROOT);
             newFuncNode.setRoot(root);
@@ -243,16 +243,16 @@ public class CFGVarChangeAnalyzer {
         }
         declVar.addAll(VarChangedOneStmt(stmt));
         intersection.retainAll(declVar);
-        // 分情况讨论：
+        // Discuss by cases:
         if (flag) {
-            // 如果已经切分过，则需要切分本函数
+            // If already cut, need to cut this function
             int id = funcNode.getIDandADD();
             CFGFuncNode newFuncNode = new CFGFuncNode(funcNode.getFuncName() + "_" + id, funcNode.getParameters(), id);
             CFGStmtNode root = new CFGStmtNode(0, "root", null, CFGStmtNode.StmtType.ROOT);
             newFuncNode.setRoot(root);
             CFGStmtNode start_stmt = null;
             if (!stmt.getChildren().isEmpty()){
-                // 将 stmt 的子节点作为新函数的第一个节点，后续节点全部 copy 形成新函数
+                // Use the children of stmt as the first node of the new function, and copy all subsequent nodes to form a new function
                 start_stmt = stmt.getChildren().get(0).copyTree(callGraph, newFuncNode);
             } else {
                 start_stmt = new CFGStmtNode(1, "/\\ UNCHANGED <<vars>> ", null, CFGStmtNode.StmtType.NORMAL);
@@ -265,8 +265,8 @@ public class CFGVarChangeAnalyzer {
             if (targetFunc.size() == 1){
                 pc_jump = new CFGStmtNode(stmt.getIndentation(), "/\\ pc' = \"" + targetFunc.get(0).getFuncName() + "\"", null, CFGStmtNode.StmtType.NORMAL);
             } else {
-                // 报错：暂时不支持
-                throw new RuntimeException("多函数调用变量修改冲突: " + targetFunc);
+                // Error: temporarily not supported
+                throw new RuntimeException("Multi-function call variable modification conflict: " + targetFunc);
             }
             // pc' = name
             // info' = [args |-> <<>>, temp |-> [temp1 |-> temp1, temp2 |-> temp2, ...]]
@@ -274,16 +274,16 @@ public class CFGVarChangeAnalyzer {
             pc_jump.InVar = new HashSet<>(stmt.InVar);
             pc_jump.OutVar = new HashSet<>(stmt.InVar);
             pc_jump.OutVar.add("pc");
-            // 将 pc_jump 添加
+            // Add pc_jump
             for (CFGStmtNode parent : parents){
                 parent.deleteChild(stmt);
                 parent.addChild(pc_jump);
                 parentMap.computeIfAbsent(pc_jump, k -> new ArrayList<>()).add(parent);
             }
             updateNewFuncCallEdge(newFuncNode, root);
-            // 新生成的 InVar OutVar 清空
+            // New InVar OutVar is cleared
             resetInOutVar(root);
-            // 生成的函数同样需要分析，加到后续的 Worklist 中
+            // Generated function also needs to be analyzed, added to subsequent Worklist
             analyzeFuncSA(newFuncNode);
             WorkList.add(newFuncNode);
             cuttedFunc.add(newFuncNode);
@@ -300,12 +300,13 @@ public class CFGVarChangeAnalyzer {
             stack_node.OutVar.add("stack");
             pc_jump.addChild(stack_node);
             parentMap.computeIfAbsent(stack_node, k -> new ArrayList<>()).add(info_node);
-            // 将新函数中的临时变量改为 info 中的变量
+            // Change temporary variables in new function to variables in info
             updateNewFuncTempVars(newFuncNode, tempVarsThisFunc);
         } else {
-            //如果没有切分过，没冲突则不需要切割，有冲突仍需要切割
+            // If not cut, no conflict, no need to cut
+            // If conflict, still need to cut
             if (intersection.isEmpty()){
-                // 没冲突，不需要切割
+                // No conflict, no need to cut
                 List<CFGStmtNode> children = new ArrayList<>(stmt.getChildren());
                 if (!children.isEmpty()){
                     for (CFGStmtNode child : children){
@@ -313,7 +314,7 @@ public class CFGVarChangeAnalyzer {
                         analyzeStmtPC(funcNode, child);
                     }
                 } else {
-                    // 没有子节点，是返回的节点，那么需要退栈
+                    // No children, is return node, then need to pop stack
                     //     pc' = stack.backsite
                     //     info' = stack.info
                     //     stack' = Head(stack)
@@ -340,17 +341,17 @@ public class CFGVarChangeAnalyzer {
                     }
                 }
             } else {
-                // 有冲突，需要切割
-                // 初始化切割出的函数
+                // Conflict, need to cut
+                // Initialize the function cut out
                 int id = funcNode.getIDandADD();
                 CFGFuncNode newFuncNode = new CFGFuncNode(funcNode.getFuncName() + "_" + id, funcNode.getParameters(), id);
                 CFGStmtNode root = new CFGStmtNode(0, "root", null, CFGStmtNode.StmtType.ROOT);
                 newFuncNode.setRoot(root);
-                // 切割
+                // Cut
                 Set<CFGStmtNode> parents = funcNode.getAllparents(stmt);
                 CFGStmtNode pc_stmt_copy = stmt.copyTree(callGraph, newFuncNode);
                 root.addChild(pc_stmt_copy);
-                // 生成 pc' = <<name, args>>
+                // Generate pc' = <<name, args>>
                 String parameters = "[]";
                 Boolean first = true;
                 for (String parameter : funcNode.getParameters()){
@@ -362,25 +363,25 @@ public class CFGVarChangeAnalyzer {
                     }
                 }
                 CFGStmtNode pc_jump = new CFGStmtNode(stmt.getIndentation(), "/\\ pc' = \"" + funcNode.getFuncName() + "_" + id + "\"", null, CFGStmtNode.StmtType.NORMAL);
-                // 检查所有 parent 的 OutVar 是不是相同，否则报错
+                // Check if the OutVar of all parents is the same, otherwise error
                 // for (CFGStmtNode parent : parents){
                 //     if (!parent.OutVar.equals(stmt.InVar)){
-                //         throw new RuntimeException("多函数调用变量修改冲突: " + parent.OutVar + " " + stmt.InVar);
+                //         throw new RuntimeException("Multi-function call variable modification conflict: " + parent.OutVar + " " + stmt.InVar);
                 //     }
                 // }
                 pc_jump.InVar = new HashSet<>(stmt.InVar);
                 pc_jump.OutVar = new HashSet<>(stmt.InVar);
                 pc_jump.OutVar.add("pc");
-                // 将 pc_jump 添加
+                // Add pc_jump
                 for (CFGStmtNode parent : parents){
                     parent.deleteChild(stmt);
                     parent.addChild(pc_jump);
                     parentMap.computeIfAbsent(pc_jump, k -> new ArrayList<>()).add(parent);
                 }
                 updateNewFuncCallEdge(newFuncNode, root);
-                // 新生成的 InVar OutVar 清空
+                // New InVar OutVar is cleared
                 resetInOutVar(root);
-                // 生成的函数同样需要分析，加到后续的 Worklist 中
+                // Generated function also needs to be analyzed, added to subsequent Worklist
                 analyzeFuncSA(newFuncNode);
                 WorkList.add(newFuncNode);
                 cuttedFunc.add(newFuncNode);
@@ -396,21 +397,21 @@ public class CFGVarChangeAnalyzer {
                 info_node.OutVar.add("info");
                 pc_jump.addChild(info_node);
                 parentMap.computeIfAbsent(info_node, k -> new ArrayList<>()).add(pc_jump);
-                // 将新函数中的临时变量改为 info 中的变量
+                // Change temporary variables in new function to variables in info
                 updateNewFuncTempVars(newFuncNode, tempVarsThisFunc);
             }
         }
     }
 
     private void analyzeUC(){
-        // 遍历所有函数，进行分析
+        // Traverse all functions, analyze
         for (CFGFuncNode funcNode : callGraph.getFuncNodes()){
             analyzeFuncUC(funcNode);
         }
     }
  
     private void analyzeFuncUC(CFGFuncNode funcNode){
-        //遍历多个父节点的节点
+        // Traverse nodes with multiple parents
         CFGStmtNode stmtNode = funcNode.getRoot();
         Set<CFGStmtNode> stmtSet = new HashSet<>(parentMap.keySet());
         for (CFGStmtNode stmt : stmtSet) {
@@ -425,7 +426,7 @@ public class CFGVarChangeAnalyzer {
                 Set<String> diff = new HashSet<>(stmt.InVar);
                 diff.removeAll(parent.OutVar);
                 if (!diff.isEmpty()) {
-                    // 创建 CFGStmtNode 节点
+                    // Create CFGStmtNode node
                     String unchangedVar = "/\\ UNCHANGED <<";
                     boolean first = true;
                     for (String var : diff) {
@@ -442,14 +443,14 @@ public class CFGVarChangeAnalyzer {
                     parent.deleteChild(stmt);
                     parent.addChild(newStmt);
                     newStmt.addChild(stmt);
-                    // 更新 parentMap，将 stmt 的父节点去掉 parent,增加 newStmt
+                    // Update parentMap, remove parent of stmt, add newStmt
                     parentMap.computeIfAbsent(stmt, k -> new ArrayList<>()).remove(parent);
                     parentMap.computeIfAbsent(stmt, k -> new ArrayList<>()).add(newStmt);
                     parentMap.computeIfAbsent(newStmt, k -> new ArrayList<>()).add(parent);
                 }
             }
         }
-        // 控制流结束处处理
+        // Handle control flow end
         Set<String> LeafVar = getAllLeafVar(stmtNode);
         // System.err.println("LeafVar: " + LeafVar);
         List<CFGStmtNode> LeafNode = getAllLeafNode(stmtNode);
@@ -460,7 +461,7 @@ public class CFGVarChangeAnalyzer {
             Set<String> diff = new HashSet<>(LeafVar);
             diff.removeAll(leafNode.OutVar);
             if (!diff.isEmpty()) {
-                // 创建 CFGStmtNode 节点
+                // Create CFGStmtNode node
                 String unchangedVar = "/\\ UNCHANGED <<";
                 boolean first = true;
                 for (String var : diff) {
@@ -498,24 +499,23 @@ public class CFGVarChangeAnalyzer {
         }
         stmtUD.put(stmtNode, true);
         
-        // 处理当前节点的内容
+        // Handle the content of the current node
         String content = stmtNode.getContent();
         for (String var : stmtNode.InVar) {
             Set<String> skip_set = new HashSet<String>(Arrays.asList("info", "pc", "stack"));
             if (skip_set.contains(var)) {
                 continue;
             }
-            // 构建正则表达式：变量前后不能是字母数字下划线，且后面不能有'
+            // Build regular expression: variable cannot be letter, number, underscore, and cannot be followed by '
             String pattern = "(?<![\\w_])" + var + "(?!')(?![\\w_])";
             if (content.matches(".*" + pattern + ".*")) {
-                // 替换变量，在后面加上'
-
+                // Replace variable, add ' after
                 content = content.replaceAll(pattern, var + "'");
             }
         }
         stmtNode.setContent(content);
         
-        // 递归处理子节点
+        // Recursively process children
         for (CFGStmtNode child : stmtNode.getChildren()) {
             analyzeStmtUD(funcNode, child, stmtUD);
         }
@@ -529,9 +529,9 @@ public class CFGVarChangeAnalyzer {
                 result.add(var);
             }
         }
-        // 处理 UNCHANGED 语句
+        // Handle UNCHANGED statement
         if (stmt.getContent().contains("UNCHANGED")) {
-            // 提取 UNCHANGED << >> 中的变量
+            // Extract variables from UNCHANGED << >>
             if (stmt.getContent().contains("<<")){
                 int start = stmt.getContent().indexOf("<<");
                 int end = stmt.getContent().indexOf(">>");
@@ -546,7 +546,7 @@ public class CFGVarChangeAnalyzer {
                     }
                 }
             } else {
-                // 只有一个变量，将 UNCHANGED 后面的字符保存下来去掉空格即可
+                // Only one variable, save the characters after UNCHANGED and remove spaces
                 int start = stmt.getContent().indexOf("UNCHANGED");
                 String var = stmt.getContent().substring(start + 9).trim();
                 if (variables.contains(var)) {
@@ -568,7 +568,7 @@ public class CFGVarChangeAnalyzer {
     }
 
     private List<CFGStmtNode> getAllLeafNode(CFGStmtNode stmt) {
-        // 创建一个辅助方法，使用Set跟踪已访问节点
+        // Create a helper method, use Set to track visited nodes
         Set<CFGStmtNode> visited = new HashSet<>();
         List<CFGStmtNode> result = new ArrayList<>();
         getAllLeafNodeHelper(stmt, result, visited);
@@ -576,21 +576,21 @@ public class CFGVarChangeAnalyzer {
     }
 
     private void getAllLeafNodeHelper(CFGStmtNode stmt, List<CFGStmtNode> result, Set<CFGStmtNode> visited) {
-        // 如果已经访问过此节点，直接返回
+        // If already visited this node, return
         if (visited.contains(stmt)) {
             return;
         }
         
-        // 标记为已访问
+        // Mark as visited
         visited.add(stmt);
         
         if (!stmt.getChildren().isEmpty()) {
-            // 非叶子节点，递归处理其子节点
+            // Non-leaf node, recursively process its children
             for (CFGStmtNode child : stmt.getChildren()) {
                 getAllLeafNodeHelper(child, result, visited);
             }
         } else {
-            // 叶子节点，添加到结果列表
+            // Leaf node, add to result list
             result.add(stmt);
         }
     }
@@ -627,20 +627,20 @@ public class CFGVarChangeAnalyzer {
         // System.err.println("IN: " + stmtNode.InVar);
         // System.err.println("OUT: " + stmtNode.OutVar);
         for (CFGStmtNode child : stmtNode.getChildren()){
-            // 打印 IN 和 OUT
+            // Print IN and OUT
             traverseTreeHelper(child);
         }
     }
 
     private void updateNewFuncCallEdge(CFGFuncNode newFuncNode,CFGStmtNode stmt){
         if (stmt.getType() == CFGStmtNode.StmtType.CALL){
-            // 遍历所有函数名进行匹配
+            // Traverse all function names for matching
             for (String funcName : callGraph.getFuncNames()) {
-                // 构建正则表达式模式 - 函数名前后不能是字母数字下划线
+                // Build regular expression pattern - function name cannot be letter, number, underscore
                 String pattern = "(?<![\\w_])" + funcName + "(?![\\w_])";
-                // 如果找到匹配
+                // If find matching
                 if (stmt.getContent().matches(".*" + pattern + ".*")) {
-                    // 找到对应的目标函数节点
+                    // Find corresponding target function node
                     CFGFuncNode targetFunc = null;
                     for (CFGFuncNode fn : callGraph.getFuncNodes()) {
                         if (fn.getFuncName().equals(funcName)) {
@@ -649,16 +649,16 @@ public class CFGVarChangeAnalyzer {
                         }
                     }
                     if (targetFunc != null) {
-                        // 检查这条边是否已经存在
+                        // Check if this edge already exists
                         boolean edgeExists = false;
-                        // 假设 callGraph 有一个 getCallEdges() 方法返回 Collection<CFGCALLEdge>
-                        // 并且 CFGCALLEdge 有 getSourceNode(), getCallerFunc(), getCalledFunc() 方法
-                        if (callGraph.getCallEdges() != null) { // 防御性检查
+                        // Assume callGraph has a getCallEdges() method that returns Collection<CFGCALLEdge>
+                        // And CFGCALLEdge has getSourceNode(), getCallerFunc(), getCalledFunc() method
+                        if (callGraph.getCallEdges() != null) { // Defensive check
                             for (CFGCALLEdge existingEdge : callGraph.getCallEdges()) {
                                 if (existingEdge.getSource() == stmt &&
                                     existingEdge.getSourceFunc() == newFuncNode &&
                                     existingEdge.getTarget() == targetFunc) {
-                                    // 如果参数和返回值也可能变化并影响边的唯一性，也需要在这里比较
+                                    // If parameters and return values may also change and affect the uniqueness of the edge, also compare here
                                     edgeExists = true;
                                     break;
                                 }
@@ -666,7 +666,7 @@ public class CFGVarChangeAnalyzer {
                         }
 
                         if (!edgeExists) {
-                            // 创建新的调用边
+                            // Create new call edge
                             CFGCALLEdge callEdge = new CFGCALLEdge(stmt, newFuncNode, targetFunc, new String[0], null);
                             callGraph.addCallEdge(callEdge);
                         }
@@ -767,19 +767,19 @@ public class CFGVarChangeAnalyzer {
         }
         declVar.addAll(VarChangedOneStmt(stmt));
         intersection.retainAll(declVar);
-        // 分情况讨论：
+        // Discuss in different cases:
         if (flag) {
-            // 如果已经切分过，则需要切分本函数
+            // If already cut, need to cut this function
             cuttedFunc.add(funcNode);
         } else {
-            // 没有切分过，不需要切分
+            // If not cut, no need to cut
             if (intersection.isEmpty()){
-                // 没冲突，不需要切割
+                // No conflict, no need to cut
                 for (CFGStmtNode child : stmt.getChildren()){
                     checkCuttedFuncHelper(funcNode, child);
                 }
             } else {
-                // 有冲突，需要切割
+                // Conflict, need to cut
                 cuttedFunc.add(funcNode);
             }
         }
@@ -815,7 +815,7 @@ public class CFGVarChangeAnalyzer {
     }
 
     private String updateInfoStr(Set<String> temp){
-        // 若 tempVars 为 a, b, c
+        // If tempVars are a, b, c
         // info' = [temp |-> [a |-> a, b |-> b, c |-> c]] @@ info
         String infoStr = "/\\ info' = ";
         // tempStr = [temp |-> [a |-> a, b |-> b, c |-> c]] @@ info   OR    info
@@ -840,19 +840,19 @@ public class CFGVarChangeAnalyzer {
 
     private String updateStackStr(CFGFuncNode funcNode, String callsite){
         String arguments = "<< ";
-        // callsite = "func(args)" 将 args 提取出来写为 <<>>
+        // callsite = "func(args)" Extract args and write as <<>>
         int start = callsite.indexOf("(");
-        // 检查是否找到了 '('
+        // Check if '(' is found
         if (start != -1) {
-            // 查找最后一个 ')'
+            // Find last ')'
             int end = callsite.lastIndexOf(")");
-            // 确保找到了 ')' 并且它在 '(' 之后
+            // Ensure ')' is found and it is after '('
             if (end != -1 && end > start) {
                 arguments += callsite.substring(start + 1, end);
             }
-            // 如果没有找到匹配的 ')' 或者 ')' 在 '(' 之前，则参数部分为空字符串
+            // If no matching ')' or ')' is before '(', the parameter part is an empty string
         }
-        // 如果没有找到 '('，则参数部分为空字符串
+        // If no '(', the parameter part is an empty string
         arguments += ">>";
         String stackStr = "/\\ stack' = [backsite |-> \"" + funcNode.getFuncName() + "\", args |-> " + arguments + ", info |-> info']";
         return stackStr;
@@ -862,9 +862,9 @@ public class CFGVarChangeAnalyzer {
         if (temp.isEmpty()){
             return;
         }
-        // 检查 newFuncNode 中的所有 CFGStmtNode
-        // 如果有语句中使用了 tempVars 中的变量，则将该变量改为 info 中的变量，匹配规则是 var 字符串前后非字母数字下划线，则视为匹配成功
-        // Example: 使用了 a 变量，替换为 info.temp.a
+        // Check all CFGStmtNode in newFuncNode
+        // If a statement uses a variable in tempVars, replace it with a variable in info, the matching rule is that var string is not letter, number, underscore, then it is considered a match
+        // Example: uses a variable, replace with info.temp.a
         List<CFGStmtNode> StmtNodelist = new ArrayList<>(newFuncNode.getRoot().getChildren());
         while (!StmtNodelist.isEmpty()){
             CFGStmtNode stmt = StmtNodelist.remove(0);
@@ -874,7 +874,7 @@ public class CFGVarChangeAnalyzer {
 
                 // System.err.println("content: " + content);
                 // System.err.println("var: " + var);
-                // 在正则表达式的开头添加 (?s) 标志，使 . (点号) 可以匹配包括换行符在内的任意字符
+                // Add (?s) flag at the beginning of the regular expression, so that . (dot) can match any character including line breaks
                 if (content.matches("(?s).*" + pattern + ".*")) { 
                     // System.err.println("tempVars1111: " + temp);
                     content = content.replaceAll(pattern, "info.temp." + var); 
@@ -886,7 +886,7 @@ public class CFGVarChangeAnalyzer {
     }
     
     private void updateFuncVarChange(){
-        // TODO: 对于每个函数，将叶子结点的 OutVar 取并集则为该函数的 VarChange
+        // TODO: For each function, the union of the leaf nodes' OutVar is the VarChange of the function
         for (CFGFuncNode funcNode : callGraph.getFuncNodes()){
             Set<String> varChange = new HashSet<>();
             List<CFGStmtNode> leafNodes = getAllLeafNode(funcNode.getRoot());

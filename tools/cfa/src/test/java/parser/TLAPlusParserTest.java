@@ -23,18 +23,18 @@ public class TLAPlusParserTest {
     
     @Test
     public void testBasicModule() throws Exception {
-        // 测试基本的模块定义
+        // Test basic module definition
         String filePath = "src/test/java/parser/test.tla";
         String input = new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(filePath)));
         
-        // 创建词法分析器
+        // Create lexical analyzer
         CharStream stream = CharStreams.fromString(input);
         TLAPlusLexer lexer = new TLAPlusLexer(stream);
         
-        // 创建词符流
+        // Create token stream
         CommonTokenStream tokens = new CommonTokenStream(lexer);
                                             
-        // 打印词符流
+        // Print token stream
         tokens.fill();
         System.out.println("Tokens:");
         for (Token token : tokens.getTokens()) {
@@ -43,43 +43,43 @@ public class TLAPlusParserTest {
                 token.getText());
         }
 
-        // 创建语法分析器
+        // Create syntax analyzer
         TLAPlusParser parser = new TLAPlusParser(tokens);
         System.out.println("Start parsing...");
-        // 开始解析
+        // Begin parsing
         ParseTree tree = parser.module();
 
-        // 打印语法树
+        // Print syntax tree
         System.out.println(tree.toStringTree(parser));
         
-        // 检查是否需要显示语法树
+        // Check if syntax tree display is needed
         String showTree = System.getProperty("showTree");
         if ("true".equalsIgnoreCase(showTree)) {
-            // 可视化语法树
+            // Visualize syntax tree
             JFrame frame = new JFrame("ANTLR Parse Tree");
             JPanel panel = new JPanel();
             TreeViewer viewer = new TreeViewer(Arrays.asList(parser.getRuleNames()), tree);
-            viewer.setScale(1.5); // 缩放以适应窗口
+            viewer.setScale(1.5); // Scale to fit window
             panel.add(viewer);
 
-            // 将 TreeViewer 放入 JScrollPane 中
+            // Put TreeViewer into JScrollPane
             JScrollPane scrollPane = new JScrollPane(panel);
             frame.add(scrollPane);
             frame.setSize(800, 600);
 
-            // 使用 CountDownLatch 等待窗口关闭
+            // Use CountDownLatch to wait for window closure
             CountDownLatch latch = new CountDownLatch(1);
             frame.addWindowListener(new java.awt.event.WindowAdapter() {
                 @Override
                 public void windowClosing(java.awt.event.WindowEvent windowEvent) {
-                    latch.countDown(); // 窗口关闭时减少计数
+                    latch.countDown(); // Decrease count when window closes
                 }
             });
 
             frame.setVisible(true);
             System.out.println("Parsing finished.");
 
-            // 等待窗口关闭
+            // Wait for window closure
             latch.await();
         }
 
@@ -92,7 +92,7 @@ public class TLAPlusParserTest {
         callGraph.buildCallGraph();
         CFGVarChangeAnalyzer varChangeAnalyzer = new CFGVarChangeAnalyzer(callGraph);
         varChangeAnalyzer.analyze();
-        // 验证解析是否成功
+        // Verify if parsing is successful
         assert(parser.getNumberOfSyntaxErrors() == 0);
     }
 }

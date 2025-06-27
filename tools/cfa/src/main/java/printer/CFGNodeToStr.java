@@ -18,7 +18,7 @@ public class CFGNodeToStr {
             case LET: 
                 return LETCFGStmtNodeToStr(node);
             default:
-                System.err.println("不支持的语句类型: " + node.getType());
+                System.err.println("Unsupported statement type: " + node.getType());
                 return "";
         }
     }

@@ -1,11 +1,11 @@
 package CFG;
 
 public class CFGCALLEdge {
-    private CFGStmtNode source;  // 调用点
-    private CFGFuncNode sourceFunc;  // 调用点所在的函数
-    private CFGFuncNode target;  // 被调用的函数
-    private String[] arguments;  // 调用参数
-    private String returnTarget; // 返回值赋值目标
+    private CFGStmtNode source;  // Call point
+    private CFGFuncNode sourceFunc;  // Function containing call point
+    private CFGFuncNode target;  // Called function
+    private String[] arguments;  // Call arguments
+    private String returnTarget; // Return value assignment target
 
     public CFGCALLEdge(CFGStmtNode source, CFGFuncNode sourceFunc, CFGFuncNode target, String[] arguments, String returnTarget) {
         this.source = source;

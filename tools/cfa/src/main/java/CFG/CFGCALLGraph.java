@@ -9,8 +9,8 @@ import java.util.Queue;
 import java.util.Set;
 
 public class CFGCALLGraph {
-    // funcNodes 包括所有动作，funcNames 只包括未分割的和分割后的第一个函数名
-    private List<String> variables;
+    // funcNodes includes all actions, funcNames only includes the first function name of undivided and divided functions
+    private List<String> variables; 
     private List<String> constants;
     private List<CFGCALLEdge> callEdges;
     private List<CFGFuncNode> funcNodes;
@@ -59,10 +59,10 @@ public class CFGCALLGraph {
 
     public void buildCallGraph() {
         for (CFGFuncNode funcNode : funcNodes) {
-            // 使用HashSet记录已访问过的节点,避免重复遍历
+            // Use HashSet to record visited nodes to avoid repeated traversal
             Set<CFGStmtNode> visited = new java.util.HashSet<>();
             
-            // 从根节点开始深度优先遍历
+            // Start depth-first traversal from root node
             traverseStmtNode(funcNode.getRoot(), funcNode, visited);
         }
     }
@@ -72,33 +72,33 @@ public class CFGCALLGraph {
             return;
         }
         visited.add(stmtNode);
-        // 获取当前语句内容
+        // Get current statement content
         String content = stmtNode.getContent();
         
-        // 遍历所有函数名进行匹配
+        // Traverse all function names for matching
         for (String funcName : funcNames) {
-            // (推荐) 对 funcName 进行转义，以防其包含正则表达式元字符
+            // (Recommended) Escape funcName to prevent it from containing regular expression meta characters
             String quotedFuncName = java.util.regex.Pattern.quote(funcName);
 
-            // 构建核心的正则表达式模式 - 函数名前后不能是字母数字下划线
+            // Build core regular expression pattern - function name cannot be alphanumeric underscore
             String innerPatternString = "(?<![\\w_])" + quotedFuncName + "(?![\\w_])";
             
             java.util.regex.Pattern compiledPattern = java.util.regex.Pattern.compile(innerPatternString);
             java.util.regex.Matcher matcher = compiledPattern.matcher(content);
 
-            // 使用 matcher.find() 来查找匹配
+            // Use matcher.find() to find matching
             if (matcher.find()) {
-                // 找到对应的目标函数节点
+                // Find corresponding target function node
                 CFGFuncNode targetFunc = null;
                 for (CFGFuncNode fn : funcNodes) {
-                    if (fn.getFuncName().equals(funcName)) { // 比较原始的 funcName
+                    if (fn.getFuncName().equals(funcName)) { // Compare original funcName
                         targetFunc = fn;
                         break;
                     }
                 }
                 
                 if (targetFunc != null) {
-                    // 创建新的调用边
+                    // Create new call edge
                     CFGCALLEdge callEdge = new CFGCALLEdge(stmtNode, funcNode, targetFunc, new String[0], null);
                     addCallEdge(callEdge);
                     stmtNode.setType(CFGStmtNode.StmtType.CALL);
@@ -106,27 +106,27 @@ public class CFGCALLGraph {
             }
         }
         
-        // 递归遍历子节点
+        // Recurs
         if (stmtNode.getChildren() != null) {
             for (CFGStmtNode child : stmtNode.getChildren()) {
                 traverseStmtNode(child, funcNode, visited);
             }
         }
     }
-    // 获得拓函数节点的拓扑排序 (BFS)
+    // Get topological sort of function nodes (BFS)
     public List<CFGFuncNode> getTopologicalSort() {
-        // 创建入度表
+        // Create in-degree table
         Map<CFGFuncNode, Integer> inDegree = new HashMap<>();
-        // 创建邻接表
+        // Create adjacency table
         Map<CFGFuncNode, List<CFGFuncNode>> adjList = new HashMap<>();
         
-        // 初始化入度表和邻接表
+        // Initialize in-degree table and adjacency table
         for (CFGFuncNode node : funcNodes) {
             inDegree.put(node, 0);
             adjList.put(node, new ArrayList<>());
         }
         
-        // 构建入度表和邻接表
+        // Build in-degree table and adjacency table
         for (CFGCALLEdge edge : callEdges) {
             CFGFuncNode source = edge.getSourceFunc();
             CFGFuncNode target = edge.getTarget();
@@ -134,7 +134,7 @@ public class CFGCALLGraph {
             inDegree.put(target, inDegree.get(target) + 1);
         }
         
-        // 创建队列,将入度为0的节点加入队列
+        // Create queue, add nodes with in-degree 0 to queue
         Queue<CFGFuncNode> queue = new LinkedList<>();
         for (Map.Entry<CFGFuncNode, Integer> entry : inDegree.entrySet()) {
             if (entry.getValue() == 0) {
@@ -142,25 +142,25 @@ public class CFGCALLGraph {
             }
         }
         
-        // 存储结果的列表
+        // List to store results
         List<CFGFuncNode> result = new ArrayList<>();
         
-        // BFS遍历
+        // BFS traversal
         while (!queue.isEmpty()) {
             CFGFuncNode current = queue.poll();
             result.add(current);
             
-            // 遍历当前节点的所有邻接节点
+            // Traverse all adjacent nodes of current node
             for (CFGFuncNode neighbor : adjList.get(current)) {
-                // 将邻接节点的入度减1
+                // Decrease in-degree of adjacent node
                 inDegree.put(neighbor, inDegree.get(neighbor) - 1);
-                // 如果入度变为0,加入队列
+                // If in-degree becomes 0, add to queue
                 if (inDegree.get(neighbor) == 0) {
                     queue.offer(neighbor);
                 }
             }
         }
-        // 打印拓扑排序结果
+        // Print topological sort result
         //  System.out.println("Topological Sort:");
         // for (CFGFuncNode node : result) {
         //     System.out.println(node.getFuncName());

@@ -162,7 +162,7 @@ CARET_STAR: '^*';
 CARET_HASH: '^#';
 PRIME: '\'';
 
-// 基本符号
+
 LPAREN: '(';
 RPAREN: ')';
 EQUALS: '==';
@@ -179,13 +179,13 @@ AT: '@';
 COLON: ':';
 TIMES: '\\times';
 
-// 量词
+
 FORALL: '\\A';
 EXISTS: '\\E';
 AA: '\\AA';
 EE: '\\EE';
 
-// 特殊操作符
+
 MAPSTO: '|->';
 ARROW: '->';
 

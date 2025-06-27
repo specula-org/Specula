@@ -167,36 +167,36 @@ public class CFGStmtNode {
         }
     }
 
-    // 公共的 copyTree 方法，初始化复制过程
+    // Public copyTree method, initialize copy process
     public CFGStmtNode copyTree(CFGCALLGraph cfg, CFGFuncNode newfuncNode) {
-        // 使用一个 Map 来跟踪已复制的节点，键是原始节点，值是对应的副本节点
+        // Use a Map to track copied nodes, key is original node, value is corresponding copy node
         Map<CFGStmtNode, CFGStmtNode> copiedNodes = new HashMap<>();
         return copyTreeRecursive(copiedNodes, cfg, newfuncNode);
     }
 
-    // 私有的递归辅助方法
+    // Private recursive helper method
     private CFGStmtNode copyTreeRecursive(Map<CFGStmtNode, CFGStmtNode> copiedNodes, CFGCALLGraph cfg, CFGFuncNode newfuncNode) {
-        // 1. 检查此节点是否已经被复制过
+        // 1. Check if this node has been copied
         if (copiedNodes.containsKey(this)) {
-            // 如果是，则直接返回已存在的副本，以维护共享结构
+            // If so, return the existing copy to maintain shared structure
             return copiedNodes.get(this);
         }
 
-        // 2. 如果尚未复制，则创建新节点
+        // 2. If not copied, create new node
         CFGStmtNode newNode = new CFGStmtNode(this.getIndentation(), this.getContent(), this.getCtx(), this.getType());
         
-        // 3. 将新创建的副本放入映射中，以便后续引用可以找到它
-        // 这一步必须在递归复制子节点之前完成，以正确处理可能的循环（尽管树结构通常没有）和共享
+        // 3. Put the newly created copy into the map, so that subsequent references can find it
+        // This step must be completed before recursively copying child nodes, to correctly handle possible loops (although tree structures usually do not) and shared
         copiedNodes.put(this, newNode);
 
-        // 4. 复制特定类型的属性
+        // 4. Copy specific type attributes
         if (this.getType() == StmtType.LET) {
-            // 假设 getTemporaryVariables() 返回 Set<String>
-            // 创建一个新的 Set 实例，而不是共享原始 Set 的引用
+            // Assume getTemporaryVariables() returns Set<String>
+            // Create a new Set instance, rather than sharing the reference of the original Set
             newNode.setTemporaryVariables(this.getTemporaryVariables());
         }
-        // 您可能还需要在这里复制其他非子节点的属性，确保它们也被适当地深拷贝或浅拷贝
-        // 构造调用边
+        // You may also need to copy other non-child node attributes here, ensure they are appropriately deep copied or shallow copied
+        // Construct call edge
         if (this.getType() == StmtType.CALL) {
             List<CFGCALLEdge> edges = cfg.getCallEdgesFromStmt(this);
             for (CFGCALLEdge edge: edges){
@@ -205,10 +205,10 @@ public class CFGStmtNode {
             }
         }
 
-        // 5. 递归复制子节点
+        // 5. Recursively copy child nodes
         for (CFGStmtNode child : this.getChildren()) {
-            // 对每个子节点调用递归复制方法
-            // 这将确保如果子节点是共享的，我们会得到共享的副本
+            // Call recursive copy method for each child node
+            // This ensures that if child nodes are shared, we get shared copies
             newNode.addChild(child.copyTreeRecursive(copiedNodes, cfg, newfuncNode));
         }
         

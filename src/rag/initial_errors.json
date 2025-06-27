@@ -184,5 +184,17 @@
     "solution": "Add Indentation",
     "context": "msg' = [ a |-> b, c |-> d ]",
     "error_id": "E031"
+  },
+  {
+    "error_message": "Precedence conflict between ops = in block line 434, col 19 to line 434, col 19 of module Raft and \\in.",
+    "solution": "Add parentheses around expressions to clarify operator precedence. For expressions like 'a = b \\in c /\\ d', use '(a = b) \\in c /\\ d' or 'a = (b \\in c) /\\ d' depending on intended meaning.",
+    "context": "increaseUncommittedSize(entries) ==\n    LET size == 0\n    IN uncommittedSize + size <= MaxLogIndex",
+    "error_id": "E032"
+  },
+  {
+    "error_message": "Precedence conflict between ops \\in in block and /\\.",
+    "solution": "Add parentheses around \\in expressions when used with /\\ operator. Use '(id \\in DOMAIN progressMap) /\\ condition' instead of 'id \\in DOMAIN progressMap /\\ condition'.",
+    "context": "/\\ isLearner' = id \\in DOMAIN progressMap /\\ progressMap[id].isLearner",
+    "error_id": "E033"
   }
 ]
