@@ -14,7 +14,7 @@ import argparse
 import re
 from typing import Dict, List, Any
 from pathlib import Path
-
+import re
 # Import LLM client for automatic config generation
 try:
     from ..llm.client import get_llm_client
@@ -30,12 +30,16 @@ def _extract_yaml_from_response(response: str) -> str:
     in_yaml_block = False
     
     for line in lines:
-        # Look for YAML code block start
-        if line.strip().startswith('```yaml') or line.strip().startswith('```yml'):
+        # Look for YAML code block start - handle multiple backticks (3+ backticks)
+        stripped_line = line.strip()
+        if (stripped_line.startswith('```yaml') or stripped_line.startswith('```yml') or
+            stripped_line.startswith('``````yaml') or stripped_line.startswith('``````yml') or
+            re.match(r'^`{3,}ya?ml\s*$', stripped_line)):
             in_yaml_block = True
             continue
-        # Look for code block end
-        elif line.strip() == '```' and in_yaml_block:
+        # Look for code block end - handle multiple backticks
+        elif (stripped_line == '```' or stripped_line == '``````' or 
+              re.match(r'^`{3,}\s*$', stripped_line)) and in_yaml_block:
             break
         # If we're in a YAML block, collect the line
         elif in_yaml_block:
@@ -49,10 +53,9 @@ def _extract_yaml_from_response(response: str) -> str:
     if not yaml_lines:
         # Remove any leading/trailing markdown artifacts
         content = response.strip()
-        # Remove multiple backticks patterns
-        import re
-        content = re.sub(r'^```+\w*\s*', '', content, flags=re.MULTILINE)
-        content = re.sub(r'```+\s*$', '', content, flags=re.MULTILINE)
+        # Remove multiple backticks patterns - enhanced to handle 6+ backticks
+        content = re.sub(r'^`{3,}\w*\s*', '', content, flags=re.MULTILINE)
+        content = re.sub(r'`{3,}\s*$', '', content, flags=re.MULTILINE)
         return content.strip()
     
     return '\n'.join(yaml_lines).strip()
