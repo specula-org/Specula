@@ -2,7 +2,7 @@
 
 Specula is an automated framework for synthesizing TLA+ specifications that accurately describe the core logic and behavior of a software system implementation. Specula generates the specifications **directly from source code** and it **automatically validates the conformance** of specifications with the source code. The synthesized TLA+ specification can be used for formal verification of the system designs and for model-driven testing of the implementation.
 
-Specula leverages Large Language Models (LLMs) during the synthesis. We use claude-opus-4.0; the model is configurable (see [Configuration](https://github.com/specula-org/Specula?tab=readme-ov-file#configuration))
+Specula leverages Large Language Models (LLMs) during the synthesis. We use claude-opus-4.0 (can be [configured](https://github.com/specula-org/Specula?tab=readme-ov-file#configuration)).
 
 Specula is implemented as a multi-step workflow.
 
@@ -22,30 +22,23 @@ We have used Specula to synthesize the TLA+ specifications of [etcd’s Raft imp
 
 ### Prerequisites
 
-- **Java 11+** (for TLA+ tools)
-- **Python 3.8+** 
-- **Go 1.18+** (for etcd example)
-- **Linux/macOS** (tested on Ubuntu 20.04+)
+* Java 11+ (for TLA+ tools)
+* Python 3.8+ 
+* Linux and MacOS (tested on Ubuntu 20.04+)
+* Go 1.18+ (for etcd's Raft example)
 
 ### Push-Button Installation
 
 ```bash
-# Clone and setup everything
 bash scripts/setup.sh
 ```
 
-The setup script will:
-- Install required Python packages
-- Download TLA+ tools (tla2tools.jar, CommunityModules-deps.jar)
-- Verify Java installation
-- Set up the environment
-
 ### Configuration
 
-Specula uses a global configuration file `config.yaml` to control the framework behavior:
+Specula uses a global configuration file `config.yaml`.
 
 ```yaml
-# LLM Model Configuration
+# LLM model configuration
 llm:
   base_url: "https://api.openai.com"
   model: "claude-opus-4-20250514"  # Options: claude-3-5-sonnet-20241022, etc.
@@ -54,38 +47,31 @@ llm:
   timeout: 3000
   use_streaming: true
 
-# TLA+ Validator Configuration
+# TLA+ tools configuration for syntax and runtime validation
 tla_validator:
   tools_path: "lib/tla2tools.jar"
   timeout: 30
 
-# Generation Configuration
+# Generation configuration
 generation:
   max_correction_attempts: 3
   mode: "draft-based"  # "direct" or "draft-based"
   
-# Path Configuration
+# Directories for prompts and outputs
 paths:
   prompts_dir: "src/prompts"
   output_dir: "output"
   
-# Logging Configuration
+# Debugging and logging
 logging:
   level: "INFO"
   format: "[%(levelname)s] %(message)s"
 ...
 ```
 
-**Key sections:**
-- `llm`: LLM API configuration for Steps 1, 2, 4 (spec generation and correction)
-- `tla_validator`: TLA+ tools configuration for syntax and runtime validation
-- `generation`: Control generation behavior and error correction attempts
-- `paths`: Directory paths for prompts and outputs
-- `logging`: Debug and logging settings
-
 ## Usage
 
-For detailed usage instructions, command-line options, and comprehensive examples of each component, please refer to the [Usage Documentation](docs/Usage.md). The usage guide provides step-by-step instructions for all five pipeline stages and configuration management tips.
+Please refer to [Usage](https://github.com/specula-org/Specula/blob/main/docs/Usage.md) for detailed usage, which provides step-by-step instructions of the workflow and configuration tips.
 
 ## Demo
 
