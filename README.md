@@ -1,4 +1,4 @@
-# Specula: A Framework for Generating High-Quality TLA+ Specifications from Source Code
+# Specula: A Framework for Synthesizing High-Quality TLA+ Specifications from Source Code
 
 This document provides an overview of the Specula framework, a pipeline for generating, correcting, and analyzing TLA+ specifications derived directly from source code.
 
@@ -26,11 +26,7 @@ This approach ensures that the final TLA+ specifications not only compile and ru
 
 We will use the Go implementation of the Raft consensus algorithm from `etcd` as a running example to demonstrate the workflow, from raw source code to a high-quality, validated specification.
 
-## Documentation
-
-For detailed usage instructions, command-line options, and comprehensive examples of each component, please refer to the [Usage Documentation](docs/Usage.md). The usage guide provides step-by-step instructions for all five pipeline stages and configuration management tips.
-
-## Quick Setup
+## Setup
 
 ### Prerequisites
 
@@ -39,7 +35,7 @@ For detailed usage instructions, command-line options, and comprehensive example
 - **Go 1.18+** (for etcd example)
 - **Linux/macOS** (tested on Ubuntu 20.04+)
 
-### One-Step Setup
+### Push-Button Installation
 
 ```bash
 # Clone and setup everything
@@ -52,7 +48,7 @@ The setup script will:
 - Verify Java installation
 - Set up the environment
 
-## Configuration
+### Configuration
 
 Specula uses a global configuration file `config.yaml` to control the framework behavior:
 
@@ -95,17 +91,20 @@ logging:
 - `paths`: Directory paths for prompts and outputs
 - `logging`: Debug and logging settings
 
-## The Pipeline: From Etcd Code to a Validated Specification
+## Usage
 
-The framework follows a multi-step process to progressively refine the TLA+ specification. First, set your API:
-*   **Command**:
+For detailed usage instructions, command-line options, and comprehensive examples of each component, please refer to the [Usage Documentation](docs/Usage.md). The usage guide provides step-by-step instructions for all five pipeline stages and configuration management tips.
+
+## Demo
+
+We present an end-to-end demonstration of how to use Specula to generate TLA+ specification for etcd’s Raft implementation (in Go).
+
+### 0. Configure your API:
 ```
 export ANTHROPIC_API_KEY=YOUR_API_KEY
 ```
 
-### Step 1: Initial Intermediate Specification (IISpec) Generation
-
-This step generates an Initial Intermediate Specification (IISpec), a novel intermediate form between code and specification designed to improve generation accuracy. The IISpec uses valid TLA+ statements but models control flow exactly as in the source code. A draft is first generated for the LLM to assist in TLA+ specification creation.
+### 1. Code-to-Spec Translation
 
 *   **Process**: The `iispec_generator` script uses an LLM to perform a "reverse formalization," converting the logic from the source code into an imperative, intermediate TLA+ specification (IISpec).
 *   **Input**: Go source code for Raft (`examples/etcd/source/raft.go`).
@@ -118,9 +117,7 @@ This step generates an Initial Intermediate Specification (IISpec), a novel inte
     ./specula iispec_generator examples/etcd/source/raft.go output/etcd/spec/step1/ --mode draft-based
 ```
 
-### Step 2: Automated Syntax Correction
-
-The initial specification often contains syntax errors. This step automatically fixes them.
+### 1.1 Syntax Correction
 
 *   **Process**: The generation script from Step 1 has a built-in correction loop. It repeatedly uses the TLA+ SANY parser to find syntax errors and leverages a simple Retrieval-Augmented Generation (RAG) mechanism to fix them. The process continues until the specification is syntactically valid.
 *   **Input**: The initial, potentially erroneous `Raft.tla` generated internally during Step 1.
@@ -128,9 +125,7 @@ The initial specification often contains syntax errors. This step automatically 
 *   **Command**: This step is automatically integrated into the command from Step 1. The final file `examples/etcd/spec/step2/Raft.tla` is the result of this correction process.
 *   **Note**: For highly complex specifications or when using models with limited capabilities, the iterative correction process may not achieve full success, requiring manual intervention.
 
-### Step 3: Control Flow Analysis (CFA) Transformation
-
-This step converts the imperative-style IISpec into a standard, structured TLA+ specification.
+### 2. TLA+ Specification Transformation
 
 *   **Process**: The CFA tool parses the imperative control flow (e.g., labels, gotos) in the IISpec and transforms it into a declarative, state-based TLA+ format (`StructSpec`).
 *   **Input**: The syntactically valid IISpec (`examples/etcd/spec/step2/Raft.tla`).
@@ -142,9 +137,7 @@ This step converts the imperative-style IISpec into a standard, structured TLA+ 
 ```
 *   **Note**: The CFA transformation tool is a work in progress. Its parser is not yet fully robust and may require manual adjustments to the input specification to run successfully. This will be improved in future work.
 
-### Step 4: Agent-based Runtime Correction
-
-This step automatically detects and fixes runtime errors in TLA+ specifications using model checking.
+### 3. Agent-based Error Correction
 
 *   **Process**: The `runtime_corrector` script generates a TLC configuration file, runs the TLC model checker to detect runtime errors, and uses LLM-based correction to iteratively fix the specification until all errors are resolved.
 *   **Input**: A syntactically valid TLA+ specification (e.g., `examples/etcd/spec/step3/Raft.tla` from Step 3).
@@ -158,15 +151,11 @@ This step automatically detects and fixes runtime errors in TLA+ specifications 
 ```
 *   **Note**: For highly complex specifications or when using models with limited capabilities, the iterative correction process may not achieve full success, requiring manual intervention.
 
-### Step 5: Trace Validation Framework
+### 4. Trace Validation
 
-This step generates trace validation drivers that can validate TLA+ specifications against execution traces from the original system.
+Generate specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg`) that can validate execution traces against the synthesized spec. The `spectrace_generator.py` script orchestrates this:
 
-#### Step 5.1: Trace Validation Driver Generation
-
-This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg`) that can validate execution traces against the specification. The `spectrace_generator.py` script orchestrates this:
-
-**Automatic Configuration Generation**
+#### Configuration Generation
 
 *   **Process**: The script uses an LLM to analyze the TLA+ specification from the previous step, automatically generating a YAML configuration file that describes the spec's structure (constants, variables, actions, and interactions). This configuration is then used to create the final trace validation driver.
 *   **Input**: The runtime-corrected specification from Step 4 (`examples/etcd/spec/step4/Raft.tla` and `Raft.cfg`).
@@ -183,7 +172,7 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
         --auto-config output/etcd/spec/step5/raft_config.yaml \
         output/etcd/spec/step5/spec/
 ```
-#### Step 5.2: Automated Instrumentation
+#### Instrumentation
 
 *   **Process**: The `instrumentation` script automatically instruments the original source code to inject trace collection points. It supports multiple programming languages (Go, Python, Rust) and uses template-based code injection to generate execution traces that can be consumed by the trace validation driver generated in Step 5.1.
 *   **Input**: 
@@ -218,14 +207,15 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
         -config specTrace.cfg specTrace.tla
 ```
 
-#### Complete Workflow Example
-
-For a complete demonstration of the entire Step 5.2 from scratch:
+#### Putting It All Together 
 
 ```bash
 cd examples/etcd
 bash scripts/run_full_test_with_verification.sh  # Will auto-clone if needed
 ```
 
-The final, high-quality specification for etcd's Raft implementation, which has been refined through all the steps above, can be found at [Raft.tla](examples/etcd/spec/step5/spec/Raft.tla).
+### Final Output
+
+We put a generated TLA+ specification for etcd's Raft implementation at [Raft.tla](examples/etcd/spec/step5/spec/Raft.tla).
+You can generate yourself!
 
