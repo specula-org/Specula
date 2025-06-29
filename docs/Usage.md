@@ -1,6 +1,6 @@
-# Specula+ Usage Documentation
+# Specula Usage Documentation
 
-This document provides detailed usage instructions for each component of the Specula+ framework. The framework operates through a five-step pipeline, each with specific tools and configurations.
+This document provides detailed usage instructions for each component of the Specula framework. The framework operates through a five-step pipeline, each with specific tools and configurations.
 
 ## Table of Contents
 
@@ -14,7 +14,7 @@ This document provides detailed usage instructions for each component of the Spe
 
 ## Prerequisites
 
-Before using Specula+, ensure you have completed the setup process:
+Before using Specula, ensure you have completed the setup process:
 
 ```bash
 # Run the setup script
@@ -382,7 +382,7 @@ The framework requires API credentials and supports additional environment varia
 
 #### Required API Configuration
 
-Specula+ currently supports **Claude (Anthropic)** and **Deepseek** APIs. You must configure one of the following:
+Specula currently supports **Claude (Anthropic)** and **Deepseek** APIs. You must configure one of the following:
 
 **For Claude API:**
 ```bash

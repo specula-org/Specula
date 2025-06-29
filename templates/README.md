@@ -1,6 +1,6 @@
-# Specula+ Templates
+# Specula Templates
 
-This directory contains templates for various components of the Specula+ framework. Templates are designed to be customized for your specific use cases.
+This directory contains templates for various components of the Specula framework. Templates are designed to be customized for your specific use cases.
 
 ## 📁 Directory Structure
 

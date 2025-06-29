@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Specula+ Framework Setup Script
-# This script sets up the complete Specula+ environment with all dependencies
+# Specula Framework Setup Script
+# This script sets up the complete Specula environment with all dependencies
 
 set -e  # Exit on any error
 
-echo "Setting up Specula+ Framework..."
+echo "Setting up Specula Framework..."
 
 # Colors for output
 RED='\033[0;31m'
@@ -260,7 +260,7 @@ mkdir -p "$PROJECT_ROOT/examples/etcd/spec/step5/spec"
 if [ ! -f "$PROJECT_ROOT/examples/etcd/config/raft_config.yaml" ]; then
     print_status "Creating default raft_config.yaml..."
     cat > "$PROJECT_ROOT/examples/etcd/config/raft_config.yaml" << 'EOF'
-# Specula+ Configuration for etcd/raft
+# Specula Configuration for etcd/raft
 system_name: "etcd-raft"
 language: "go"
 
@@ -364,21 +364,21 @@ fi
 # Create convenience aliases/scripts
 print_status "Creating convenience scripts..."
 
-# Create specula+ command wrapper
-cat > "$PROJECT_ROOT/specula+" << 'EOF'
+# Create specula command wrapper
+cat > "$PROJECT_ROOT/specula" << 'EOF'
 #!/bin/bash
-# Specula+ command wrapper
+# Specula command wrapper
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PYTHONPATH="$SCRIPT_DIR/src:$PYTHONPATH"
 python3 -m src.core."$@"
 EOF
-chmod +x "$PROJECT_ROOT/specula+"
+chmod +x "$PROJECT_ROOT/specula"
 
 
 
 print_success "Setup completed successfully!"
 echo
-print_status "Specula+ is ready to use!"
+print_status "Specula is ready to use!"
 echo
 print_status "Verification tests:"
 print_status "  Test TLA+ tools: java -cp lib/tla2tools.jar tlc2.TLC -help"
@@ -393,7 +393,7 @@ print_status "  cd examples/etcd"
 print_status "  bash scripts/run_full_test_with_verification.sh"
 echo
 print_status "For help:"
-print_status "  ./specula+ --help"
+print_status "  ./specula --help"
 echo
 
 # Check if we're in examples/etcd and offer to run a test

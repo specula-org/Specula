@@ -1,4 +1,4 @@
-# Specula+ Configuration File
+# Specula Configuration File
 # LLM Model Configuration
 llm:
   base_url: "https://yunwu.ai/v1"

@@ -17,7 +17,7 @@ This step generates an Initial Intermediate Specification (IISpec), a novel inte
 *   **Command**:
 ```bash
     # Generate the initial specification from the source code
-    ./specula+ iispec_generator examples/etcd/source/raft.go examples/etcd/spec/step1/ --mode draft-based
+    ./specula iispec_generator examples/etcd/source/raft.go examples/etcd/spec/step1/ --mode draft-based
 ```
 
 ### Step 2: Automated Syntax Correction
@@ -56,7 +56,7 @@ This step automatically detects and fixes runtime errors in TLA+ specifications 
 *   **Command**:
 ```bash
     # Run agent-based runtime correction
-    ./specula+ runtime_corrector examples/etcd/spec/step3/Raft.tla examples/etcd/spec/step4/
+    ./specula runtime_corrector examples/etcd/spec/step3/Raft.tla examples/etcd/spec/step4/
 ```
 
 ### Step 5: Trace Validation Framework
@@ -78,7 +78,7 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
 *   **Command**:
 ```bash
     # Auto-generate config and then the trace validation driver
-    ./specula+ spectrace_generator \
+    ./specula spectrace_generator \
         --tla examples/etcd/spec/step4/Raft.tla \
         --cfg examples/etcd/spec/step4/Raft.cfg \
         --auto-config examples/etcd/spec/step5/raft_config.yaml \
@@ -97,7 +97,7 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
 *   **Commands**:
 ```bash
     # Step 5.2a: Instrument the source code
-    ./specula+ instrumentation \
+    ./specula instrumentation \
         examples/etcd/config/raft_config.yaml \
         examples/etcd/source/raft.go \
         --stub-template templates/instrumentation/go_trace_stub.template \
