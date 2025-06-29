@@ -7,7 +7,7 @@ Specula leverages Large Language Models (LLMs) during the synthesis. We use clau
 Specula is implemented as a multi-step workflow.
 
 1. **Code-to-Spec Translation.** Specula uses LLMs to translate source code into the TLA+ format, referred to as “translated spec”, which captures the logical structure of the source code. Note that the translated spec is not a typical specification, but an intermediate representation for subsequent transformation.
-   - **1.1 Syntax Correction.** The translated spec may contain syntax errors and thus fail compilation. Specula uses a Retrieval-Augmented Generation (RAG) mechanism to automatically detect and fix compilation errors. Specula includes a specialized knowledge base that encodes TLA+ syntax knowledge and error patterns.
+   - **1.a Syntax Correction.** The translated spec may contain syntax errors and thus fail compilation. Specula uses a Retrieval-Augmented Generation (RAG) mechanism to automatically detect and fix compilation errors. Specula includes a specialized knowledge base that encodes TLA+ syntax knowledge and error patterns.
 2. **TLA+ Spec Transformation.** Specula transforms the translated spec into structured, declarative TLA+ specs that are suitable for model checking and formal verification. Specula performs a customized control-flow analysis that transforms the imperative translated spec into the corresponding declarative TLA+ spec
 3. **Error Correction.** The TLA+ spec output from Step 2 may not be perfect. Specula employs tools to automatically detect and correct errors by attempting to run TLC-based model checking on the TLA+ spec. Any runtime error will be automatically fixed by Specula. 
 4. **Trace Validation.** Specula ensures that the synthesized TLA+ specs conforms with the source code to avoid model-code gaps. It automatically instruments the code during Step 2 (when translating code into the TLA+ format). Specula includes a deterministic execution engine to generate code-level traces which are used to validate the model-level traces and ensure their conformance.
@@ -17,6 +17,8 @@ The following figure illustrates the above workflow.
 ![Specula Workflow](docs/images/diagram.png)
 
 We have used Specula to synthesize the TLA+ specifications of [etcd’s Raft implementation](https://github.com/etcd-io/raft/blob/main/raft.go) (written in Go) and Asterinas’s [SpinLock implementation](https://github.com/asterinas/asterinas/blob/main/ostd/src/sync/spin.rs) (written in Rust). We are actively using Specula to synthesize more TLA+ specifications from source code.
+
+Specula is under active development. It may require some manual effort to tweak the TLA+ specification in certain steps of the workflow during error correction (Step 1.a and 3) and trace validation (Step 4). In practice, the amount of effort is small. For example, we changed approximately 20 lines of specifications during the entire workflow. 
 
 ## Setup
 
