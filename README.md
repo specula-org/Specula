@@ -84,66 +84,53 @@ export ANTHROPIC_API_KEY=YOUR_API_KEY
 
 ### 1. Code-to-Spec Translation
 
-*   **Process**: The `iispec_generator` script uses an LLM to perform a "reverse formalization," converting the logic from the source code into an imperative, intermediate TLA+ specification (IISpec).
 *   **Input**: Go source code for Raft (`examples/etcd/source/raft.go`).
 *   **Output**: 
     - An initial TLA+ specification (`output/etcd/spec/step1/Raft.tla`).
     - A draft (`output/etcd/spec/step1/draft_analysis.txt`)
-*   **Command**:
 ```bash
-    # Generate the initial specification from the source code 
     ./specula iispec_generator examples/etcd/source/raft.go output/etcd/spec/step1/ --mode draft-based
 ```
 
 ### 1.1 Syntax Correction
 
-*   **Process**: The generation script from Step 1 has a built-in correction loop. It repeatedly uses the TLA+ SANY parser to find syntax errors and leverages a simple Retrieval-Augmented Generation (RAG) mechanism to fix them. The process continues until the specification is syntactically valid.
-*   **Input**: The initial, potentially erroneous `Raft.tla` generated internally during Step 1.
-*   **Output**: A syntactically valid `output/etcd/spec/step1/Raft.tla`.
-*   **Command**: This step is automatically integrated into the command from Step 1. The final file `examples/etcd/spec/step2/Raft.tla` is the result of this correction process.
-*   **Note**: For highly complex specifications or when using models with limited capabilities, the iterative correction process may not achieve full success, requiring manual intervention.
+*   **Input**. The translated `Raft.tla` generated from last step.
+*   **Output**. A syntactically correct `output/etcd/spec/step1/Raft.tla`.
+This step is integrated in the command of Step 1. The final file `examples/etcd/spec/step2/Raft.tla` is the output.
+*   **Note**: This step may need manual effort to fix syntax errors (e.g., for highly complex specifications or weak models).
 
 ### 2. TLA+ Specification Transformation
 
-*   **Process**: The CFA tool parses the imperative control flow (e.g., labels, gotos) in the IISpec and transforms it into a declarative, state-based TLA+ format (`StructSpec`).
-*   **Input**: The syntactically valid IISpec (`examples/etcd/spec/step2/Raft.tla`).
-*   **Output**: A structured TLA+ specification (`output/etcd/spec/step3/Raft.tla`).
-*   **Command**:
+*   **Input**. The translated spec  (`examples/etcd/spec/step2/Raft.tla`).
+*   **Output**. A structured TLA+ specification (`output/etcd/spec/step3/Raft.tla`).
 ```bash
-    # Run the CFA transformation script.
     ./tools/cfa/run.sh tools/cfa/input/example/Raft.tla output/etcd/spec/step3/Raft.tla
 ```
 *   **Note**: The CFA transformation tool is a work in progress. Its parser is not yet fully robust and may require manual adjustments to the input specification to run successfully. This will be improved in future work.
 
 ### 3. Agent-based Error Correction
 
-*   **Process**: The `runtime_corrector` script generates a TLC configuration file, runs the TLC model checker to detect runtime errors, and uses LLM-based correction to iteratively fix the specification until all errors are resolved.
-*   **Input**: A syntactically valid TLA+ specification (e.g., `examples/etcd/spec/step3/Raft.tla` from Step 3).
-*   **Output**: 
+*   **Input**. A TLA+ specification (e.g., `examples/etcd/spec/step3/Raft.tla` from Step 2).
+*   **Output**.
     - A TLC configuration file (`output/etcd/spec/step4/Raft.cfg`)
     - A runtime-corrected TLA+ specification (`output/etcd/spec/step4/Raft.tla`)
-*   **Command**:
 ```bash
-    # Run agent-based runtime correction
     ./specula runtime_corrector examples/etcd/spec/step3/Raft.tla output/etcd/spec/step4/
 ```
-*   **Note**: For highly complex specifications or when using models with limited capabilities, the iterative correction process may not achieve full success, requiring manual intervention.
+*   **Note**: This step may need manual effort to fix syntax errors (e.g., for highly complex specifications or weak models).
 
 ### 4. Trace Validation
 
-Generate specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg`) that can validate execution traces against the synthesized spec. The `spectrace_generator.py` script orchestrates this:
+Generate TLA+ modules (`specTrace.tla` and `specTrace.cfg`) to validate execution traces against the synthesized TLA+ spec. 
 
 #### Configuration Generation
 
-*   **Process**: The script uses an LLM to analyze the TLA+ specification from the previous step, automatically generating a YAML configuration file that describes the spec's structure (constants, variables, actions, and interactions). This configuration is then used to create the final trace validation driver.
-*   **Input**: The runtime-corrected specification from Step 4 (`examples/etcd/spec/step4/Raft.tla` and `Raft.cfg`).
-*   **Output**:
+*   **Input**. The TLA+ specification from Step 3 (`examples/etcd/spec/step4/Raft.tla` and `Raft.cfg`).
+*   **Output**.
     - An automatically generated trace configuration file (`output/etcd/spec/step5/raft_config.yaml`).
     - Trace validation TLA+ specification (`output/etcd/spec/step5/spec/specTrace.tla`).
     - Trace validation TLC configuration file (`output/etcd/spec/step5/spec/specTrace.cfg`).
-*   **Command**:
 ```bash
-    # Auto-generate config and then the trace validation driver
     ./specula spectrace_generator \
         --tla examples/etcd/spec/step4/Raft.tla \
         --cfg examples/etcd/spec/step4/Raft.cfg \
@@ -152,15 +139,13 @@ Generate specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg`) that can
 ```
 #### Instrumentation
 
-*   **Process**: The `instrumentation` script automatically instruments the original source code to inject trace collection points. It supports multiple programming languages (Go, Python, Rust) and uses template-based code injection to generate execution traces that can be consumed by the trace validation driver generated in Step 5.1.
-*   **Input**: 
+*   **Input**.
     - Original source code from [etcd/raft repository](https://github.com/etcd-io/raft.git)
     - Configuration file (`examples/etcd/config/raft_config.yaml`) mapping TLA+ actions to source functions
     - Language-specific instrumentation template (`templates/instrumentation/go_trace_stub.template`)
-*   **Output**: 
+*   **Output**. 
     - Instrumented source code (`examples/etcd/output/instrumented_raft.go`)
     - System execution traces (`examples/etcd/runners/raft_simulator/raft_trace.ndjson`)
-*   **Commands**:
 ```bash
     # Step 5.2a: Instrument the source code
     ./specula instrumentation \
