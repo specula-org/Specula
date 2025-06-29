@@ -1,6 +1,6 @@
 # Specula: A Framework for Synthesizing High-Quality TLA+ Specifications from Source Code
 
-Specula is an automated framework for synthesizing TLA+ specifications that accurately describe the core logic and behavior of a software system implementation. Specula generates the specifications **directly from source code** and it **automatically validates the conformance** of specifications with the source code. The synthesized TLA+ specification can be used for formal verification of the system designs and for model-driven testing of the implementation.
+Specula is an automated framework for synthesizing TLA+ specifications that accurately describe the core logic and behavior of a software system implementation. Specula generates the specifications **directly from source code** and it **automatically validates the conformance** of specifications with the code. The synthesized TLA+ specification can be used for formal verification of the system designs and for model-driven testing of the implementation.
 
 Specula leverages Large Language Models (LLMs) during the synthesis. We use claude-opus-4.0 (can be [configured](https://github.com/specula-org/Specula?tab=readme-ov-file#configuration)).
 
@@ -29,7 +29,7 @@ Specula is under active development. It may require some manual effort to tweak 
 * Linux and MacOS (tested on Ubuntu 20.04+)
 * Go 1.18+ (for etcd's Raft example)
 
-### Push-Button Installation
+**Push-Button Installation**
 
 ```bash
 bash scripts/setup.sh
@@ -94,7 +94,7 @@ export ANTHROPIC_API_KEY=YOUR_API_KEY
     ./specula iispec_generator examples/etcd/source/raft.go output/etcd/spec/step1/ --mode draft-based
 ```
 
-### 1.1 Syntax Correction
+### 1.a Syntax Correction
 
 *   **Input**. The translated `Raft.tla` generated from last step.
 *   **Output**. A syntactically correct `output/etcd/spec/step1/Raft.tla`.
@@ -108,7 +108,7 @@ This step is integrated in the command of Step 1. The final file `examples/etcd/
 ```bash
     ./tools/cfa/run.sh tools/cfa/input/example/Raft.tla output/etcd/spec/step3/Raft.tla
 ```
-*   **Note**: The CFA transformation tool is a work in progress. Its parser is not yet fully robust and may require manual adjustments to the input specification to run successfully. This will be improved in future work.
+*   **Note**. The CFA transformation tool is a work in progress. Its parser is not yet fully robust and may require manual adjustments to the input specification to run successfully. This will be improved in future work.
 
 ### 3. Runtime Error Correction
 
