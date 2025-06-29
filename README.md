@@ -110,7 +110,7 @@ This step is integrated in the command of Step 1. The final file `examples/etcd/
 ```
 *   **Note**: The CFA transformation tool is a work in progress. Its parser is not yet fully robust and may require manual adjustments to the input specification to run successfully. This will be improved in future work.
 
-### 3. Agent-based Error Correction
+### 3. Runtime Error Correction
 
 *   **Input**. A TLA+ specification (e.g., `examples/etcd/spec/step3/Raft.tla` from Step 2).
 *   **Output**.
@@ -176,7 +176,7 @@ Generate TLA+ modules (`specTrace.tla` and `specTrace.cfg`) to validate executio
 
 ```bash
 cd examples/etcd
-bash scripts/run_full_test_with_verification.sh  # Will auto-clone if needed
+bash scripts/run_full_test_with_verification.sh 
 ```
 
 ### Final Output
