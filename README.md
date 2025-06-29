@@ -1,12 +1,12 @@
-# TLAGEN: A Framework for Generating High-Quality TLA+ Specifications from Source Code
+# Specula+: A Framework for Generating High-Quality TLA+ Specifications from Source Code
 
-This document provides an overview of the TLAGEN framework, a pipeline for generating, correcting, and analyzing TLA+ specifications derived directly from source code.
+This document provides an overview of the Specula+ framework, a pipeline for generating, correcting, and analyzing TLA+ specifications derived directly from source code.
 
 ## Overview
 
-TLAGEN is designed to generate **code-level specifications** that accurately describe the core logic and behavior of existing software systems. Unlike high-level architectural specifications, our framework focuses on capturing the essential algorithmic details and control flow patterns present in the source code itself.
+Specula+ is designed to generate **code-level specifications** that accurately describe the core logic and behavior of existing software systems. Unlike high-level architectural specifications, our framework focuses on capturing the essential algorithmic details and control flow patterns present in the source code itself.
 
-![TLAGEN Workflow](docs/images/diagram.png)
+![Specula+ Workflow](docs/images/diagram.png)
 
 ### The Five-Step Pipeline
 
@@ -54,7 +54,7 @@ The setup script will:
 
 ## Configuration
 
-TLAGEN uses a global configuration file `config.yaml` to control the framework behavior:
+Specula+ uses a global configuration file `config.yaml` to control the framework behavior:
 
 ```yaml
 # LLM Model Configuration
@@ -115,7 +115,7 @@ This step generates an Initial Intermediate Specification (IISpec), a novel inte
 *   **Command**:
 ```bash
     # Generate the initial specification from the source code 
-    ./tlagen iispec_generator examples/etcd/source/raft.go output/etcd/spec/step1/ --mode draft-based
+    ./specula+ iispec_generator examples/etcd/source/raft.go output/etcd/spec/step1/ --mode draft-based
 ```
 
 ### Step 2: Automated Syntax Correction
@@ -154,7 +154,7 @@ This step automatically detects and fixes runtime errors in TLA+ specifications 
 *   **Command**:
 ```bash
     # Run agent-based runtime correction
-    ./tlagen runtime_corrector examples/etcd/spec/step3/Raft.tla output/etcd/spec/step4/
+    ./specula+ runtime_corrector examples/etcd/spec/step3/Raft.tla output/etcd/spec/step4/
 ```
 *   **Note**: For highly complex specifications or when using models with limited capabilities, the iterative correction process may not achieve full success, requiring manual intervention.
 
@@ -177,7 +177,7 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
 *   **Command**:
 ```bash
     # Auto-generate config and then the trace validation driver
-    ./tlagen spectrace_generator \
+    ./specula+ spectrace_generator \
         --tla examples/etcd/spec/step4/Raft.tla \
         --cfg examples/etcd/spec/step4/Raft.cfg \
         --auto-config output/etcd/spec/step5/raft_config.yaml \
@@ -196,7 +196,7 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
 *   **Commands**:
 ```bash
     # Step 5.2a: Instrument the source code
-    ./tlagen instrumentation \
+    ./specula+ instrumentation \
         examples/etcd/config/raft_config.yaml \
         examples/etcd/source/raft.go \
         --stub-template templates/instrumentation/go_trace_stub.template \

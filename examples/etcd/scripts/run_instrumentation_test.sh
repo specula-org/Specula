@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# TLAGEN ETCD Example - Automated Instrumentation and Random Testing
+# Specula+ ETCD Example - Automated Instrumentation and Random Testing
 # This script demonstrates the complete workflow for the etcd/raft system
 
 set -e
 
-echo "=== TLAGEN ETCD Example - Automated Instrumentation and Testing ==="
+echo "=== Specula+ ETCD Example - Automated Instrumentation and Testing ==="
 echo
 
 # Get the script directory and project root

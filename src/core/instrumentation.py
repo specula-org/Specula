@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TLAGEN Instrumentation Tool
+Specula+ Instrumentation Tool
 Multi-language source code instrumentation for TLA+ trace generation
 
 Supports: Go, Python, Rust
@@ -346,7 +346,7 @@ class InstrumentationTool:
         return instrumentation_result
 
 def main():
-    parser = argparse.ArgumentParser(description='TLAGEN Multi-language Instrumentation Tool')
+    parser = argparse.ArgumentParser(description='Specula+ Multi-language Instrumentation Tool')
     parser.add_argument('config', help='TLA+ action configuration file (YAML/JSON)')
     parser.add_argument('source', help='Source code file to instrument')
     parser.add_argument('--language', help='Programming language (auto-detect if not specified)')

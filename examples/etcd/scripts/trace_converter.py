@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Trace Converter for TLAGEN ETCD Example
+Trace Converter for Specula+ ETCD Example
 Converts system-generated trace format to TLA+ specification format
 """
 

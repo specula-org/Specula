@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# TLAGEN ETCD Setup - Clone and prepare etcd/raft source code
+# Specula+ ETCD Setup - Clone and prepare etcd/raft source code
 # This script downloads the latest etcd/raft implementation from GitHub
 
 set -e
 
-echo "=== TLAGEN ETCD Setup - Preparing etcd/raft Source Code ==="
+echo "=== Specula+ ETCD Setup - Preparing etcd/raft Source Code ==="
 echo
 
 # Get directories

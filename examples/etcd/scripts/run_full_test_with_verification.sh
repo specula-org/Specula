@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# TLAGEN ETCD Example - Complete Workflow with TLA+ Verification
+# Specula+ ETCD Example - Complete Workflow with TLA+ Verification
 # This script demonstrates the complete workflow including trace conversion and verification
 
 set -e
 
-echo "=== TLAGEN ETCD Complete Workflow with TLA+ Verification ==="
+echo "=== Specula+ ETCD Complete Workflow with TLA+ Verification ==="
 echo
 
 # Get directories

@@ -13,7 +13,7 @@ class Config:
             config_path: Configuration file path, defaults to config.yaml in project root directory
         """
         if config_path is None:
-            # Get project root directory (TLAGEN/)
+            # Get project root directory (Specula+/)
             # Current file is src/utils/config.py, so we need to go up 2 levels
             project_root = Path(__file__).parent.parent.parent
             config_path = project_root / "config.yaml"
