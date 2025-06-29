@@ -23,7 +23,7 @@ func main() {
 
 	raft := &RaftState{
 		id:    1,
-		term:  1,
+		term:  0,
 		state: "Follower",
 	}
 

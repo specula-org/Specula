@@ -120,7 +120,9 @@ IsStep ==
     /\ IsEvent("Step")
     /\ \E s \in TraceServer :
         /\ \E m \in messages :
-            Step(s, m)
+            /\ pc # Nil
+            /\ Step(s, m)
+            /\ UNCHANGED <<pc, info, stack>>
 
 IsInter == 
     /\ pc # Nil

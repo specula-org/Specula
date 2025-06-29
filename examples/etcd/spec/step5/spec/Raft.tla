@@ -163,7 +163,7 @@ tickHeartbeat_1_2(s) ==
     /\ info' = stack[Len(stack)].info
 
 tickHeartbeat_1(s) ==
-    /\ IF electionElapsed[s] >= 10 
+    /\ IF electionElapsed[s] >= 0
         THEN /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
              /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "CheckQuorum", term |-> currentTerm[s]]}
              /\ IF state[s] = "Leader" /\ leadTransferee[s] # Nil
@@ -171,8 +171,8 @@ tickHeartbeat_1(s) ==
                ELSE UNCHANGED leadTransferee
         ELSE /\ UNCHANGED <<messages, leadTransferee, electionElapsed>>
     /\ IF state[s] = "Leader" THEN
-        /\ IF heartbeatElapsed[s] >= 1 THEN
-            /\ heartbeatElapsed' = [heartbeatElapsed' EXCEPT ![s] = 0]
+        /\ IF heartbeatElapsed[s] >= 0 THEN
+            /\ heartbeatElapsed' = [heartbeatElapsed EXCEPT ![s] = 0]
             /\ pc' = "tickHeartbeat_1_2"
             /\ info' = info
             /\ UNCHANGED stack
