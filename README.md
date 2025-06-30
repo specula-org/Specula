@@ -75,7 +75,7 @@ logging:
 
 Please refer to [Usage](https://github.com/specula-org/Specula/blob/main/docs/Usage.md) for detailed usage, which provides step-by-step instructions of the workflow and configuration tips.
 
-## Demo
+## Case Study (etcd Raft)
 
 We present an end-to-end demonstration of how to use Specula to generate TLA+ specification for etcd’s Raft implementation (in Go).
 
