@@ -34,7 +34,7 @@ VARIABLES
     info,
     stack
 
-vars == <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+vars == <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption, pc, info, stack>>
 
 TypeInvariant ==
     /\ currentTerm \in [Server -> Nat]
@@ -86,6 +86,11 @@ Init ==
     /\ info = [args |-> <<>>, temp |-> <<>>]
     /\ stack = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>]>>
 
+ServerToNum(s) == 
+    CASE s = "s1" -> 1
+      [] s = "s2" -> 2  
+      [] s = "s3" -> 3
+      [] OTHER -> 1
 
 Min(S) == CHOOSE x \in S : \A y \in S : x <= y
 
@@ -99,7 +104,7 @@ becomeFollower(s, term, leader) ==
     /\ leaderId' = [leaderId EXCEPT ![s] = leader]
     /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
     /\ heartbeatElapsed' = [heartbeatElapsed EXCEPT ![s] = 0]
-    /\ randomizedElectionTimeout' = [randomizedElectionTimeout EXCEPT ![s] = (10 + (s * 3)) % 10]
+    /\ randomizedElectionTimeout' = [randomizedElectionTimeout EXCEPT ![s] = (10 + (ServerToNum(s) * 3)) % 10]
     /\ leadTransferee' = [leadTransferee EXCEPT ![s] = Nil]
     /\ votesGranted' = [votesGranted EXCEPT ![s] = {}]
     /\ votesRejected' = [votesRejected EXCEPT ![s] = {}]
@@ -115,7 +120,7 @@ becomeCandidate(s) ==
     /\ leaderId' = [leaderId EXCEPT ![s] = Nil]
     /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
     /\ heartbeatElapsed' = [heartbeatElapsed EXCEPT ![s] = 0]
-    /\ randomizedElectionTimeout' = [randomizedElectionTimeout EXCEPT ![s] = (10 + (s * 3)) % 10]
+    /\ randomizedElectionTimeout' = [randomizedElectionTimeout EXCEPT ![s] = (10 + (ServerToNum(s) * 3)) % 10]
     /\ leadTransferee' = [leadTransferee EXCEPT ![s] = Nil]
     /\ votesGranted' = [votesGranted EXCEPT ![s] = {}]
     /\ votesRejected' = [votesRejected EXCEPT ![s] = {}]
@@ -151,18 +156,18 @@ becomeLeader(s) ==
 tickHeartbeat_1_2(s) ==
     /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "Beat"]}
     /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-    /\ pc' = stack.backsite
-    /\ stack' = Head(stack)
-    /\ info' = stack.info
+    /\ pc' = stack[Len(stack)].backsite
+    /\ stack' = Tail(stack)
+    /\ info' = stack[Len(stack)].info
 
 tickHeartbeat_1(s) ==
     /\ IF electionElapsed[s] >= 10 
         THEN /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-             /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "CheckQuorum"]}
+             /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "CheckQuorum", term |-> currentTerm[s]]}
              /\ IF state[s] = "Leader" /\ leadTransferee[s] # Nil
                THEN leadTransferee' = [leadTransferee EXCEPT ![s] = Nil]
                ELSE UNCHANGED leadTransferee
-        ELSE /\ UNCHANGED <<messages, leadTransferee>>
+        ELSE /\ UNCHANGED <<messages, leadTransferee, electionElapsed>>
     /\ IF state[s] = "Leader" THEN
         /\ IF heartbeatElapsed[s] >= 1 THEN
             /\ heartbeatElapsed' = [heartbeatElapsed' EXCEPT ![s] = 0]
@@ -171,25 +176,25 @@ tickHeartbeat_1(s) ==
             /\ UNCHANGED stack
             ELSE
             /\ UNCHANGED <<heartbeatElapsed>>
-            /\ pc' = stack.backsite
-            /\ stack' = Head(stack)
-            /\ info' = stack.info
+            /\ pc' = stack[Len(stack)].backsite
+            /\ stack' = Tail(stack)
+            /\ info' = stack[Len(stack)].info
         ELSE
         /\ UNCHANGED <<heartbeatElapsed>>
-        /\ pc' = stack.backsite
-        /\ stack' = Head(stack)
-        /\ info' = stack.info
-    /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+        /\ pc' = stack[Len(stack)].backsite
+        /\ stack' = Tail(stack)
+        /\ info' = stack[Len(stack)].info
+    /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, randomizedElectionTimeout, readStates, pendingReadIndexMessages, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
 
 tickElection_1(s) ==
-    /\ IF  (s \in Server /\ ~isLearner[s] /\ electionElapsed'[s] >= randomizedElectionTimeout[s])
-       THEN /\ electionElapsed' = [electionElapsed' EXCEPT ![s] = 0]
-            /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "Hup"]}
-       ELSE UNCHANGED messages
+    /\ IF  (s \in Server /\ ~isLearner[s] /\ electionElapsed[s] >= randomizedElectionTimeout[s])
+       THEN /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
+            /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "Hup", term |-> currentTerm[s]]}
+       ELSE UNCHANGED <<messages, electionElapsed>>
     /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-    /\ pc' = stack.backsite
-    /\ stack' = Head(stack)
-    /\ info' = stack.info
+    /\ pc' = stack[Len(stack)].backsite
+    /\ stack' = Tail(stack)
+    /\ info' = stack[Len(stack)].info
 
 tickHeartbeat(s) ==
     /\ heartbeatElapsed' = [heartbeatElapsed EXCEPT ![s] = heartbeatElapsed[s] + 1]
@@ -390,6 +395,8 @@ stepCandidate(s, m) ==
            /\ poll(s, m.from, m.type, ~m.reject)
        [] m.type = "TimeoutNow" -> 
            /\ UNCHANGED vars
+       [] m.type = "CheckQuorum" -> 
+           /\ UNCHANGED vars
 
 stepFollower(s, m) ==
     /\ CASE m.type = "Prop" -> 
@@ -415,6 +422,7 @@ stepFollower(s, m) ==
                 ELSE messages' = messages \cup {[from |-> s, to |-> leaderId[s], type |-> m.type]}
             /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
         [] m.type = "TimeoutNow" -> hup(s, "Transfer")
+        [] m.type = "Hup" -> hup(s, "Election")
         [] m.type = "ReadIndex" -> 
             /\ IF leaderId[s] = Nil
                 THEN /\ UNCHANGED vars
@@ -425,6 +433,8 @@ stepFollower(s, m) ==
                 THEN /\ readStates' = [readStates EXCEPT ![s] = Append(readStates[s], [index |-> m.index, requestCtx |-> m.entries[1].data])]
                 ELSE /\ UNCHANGED readStates
             /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+        [] m.type = "CheckQuorum" -> 
+            /\ UNCHANGED vars
 
 RECURSIVE Step(_, _)
 
@@ -507,11 +517,13 @@ HandletickElection_1 ==
 HandletickHeartbeat(s) ==
     /\ pc = Nil
     /\ tickHeartbeat(s)
-    /\ UNCHANGED <<votedFor, randomizedElectionTimeout, leadTransferee, log, nextIndex, pendingReadIndexMessages, leaderId, readStates, currentTerm, votesGranted, matchIndex, messages, state, readOnlyOption, pendingConfIndex, config, commitIndex, votesRejected, uncommittedSize, isLearner, stack>>
+    /\ stack' = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>]>>
+    /\ UNCHANGED <<votedFor, randomizedElectionTimeout, leadTransferee, log, nextIndex, pendingReadIndexMessages, leaderId, readStates, currentTerm, votesGranted, matchIndex, messages, state, readOnlyOption, pendingConfIndex, config, commitIndex, votesRejected, uncommittedSize, isLearner>>
 HandletickElection(s) ==
     /\ pc = Nil
     /\ tickElection(s)
-    /\ UNCHANGED <<votedFor, randomizedElectionTimeout, leadTransferee, log, nextIndex, pendingReadIndexMessages, leaderId, readStates, currentTerm, votesGranted, heartbeatElapsed, matchIndex, messages, state, readOnlyOption, pendingConfIndex, config, commitIndex, votesRejected, uncommittedSize, isLearner, stack>>
+    /\ stack' = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>]>>
+    /\ UNCHANGED <<votedFor, randomizedElectionTimeout, leadTransferee, log, nextIndex, pendingReadIndexMessages, leaderId, readStates, currentTerm, votesGranted, heartbeatElapsed, matchIndex, messages, state, readOnlyOption, pendingConfIndex, config, commitIndex, votesRejected, uncommittedSize, isLearner>>
 
 Next ==
     \/ \E s \in Server : HandletickElection(s)

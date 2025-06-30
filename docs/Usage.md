@@ -153,7 +153,7 @@ The CFA tool transforms imperative-style TLA+ specifications into structured, de
 ### Example
 
 ```bash
-./tools/cfa/run.sh examples/etcd/spec/step2/Raft.tla examples/etcd/spec/step3/Raft.tla
+./tools/cfa/run.sh examples/etcd/spec/step1/Raft.tla examples/etcd/spec/step3/Raft.tla
 ```
 
 ### Notes
