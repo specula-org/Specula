@@ -254,7 +254,7 @@ fi
 # Set up example directories
 print_status "Setting up example directories..."
 mkdir -p "$PROJECT_ROOT/examples/etcd/"{config,source,output,runners,spec,scripts}
-mkdir -p "$PROJECT_ROOT/examples/etcd/spec/step5/spec"
+mkdir -p "$PROJECT_ROOT/examples/etcd/spec/step4/spec"
 
 # Copy default config if not exists
 if [ ! -f "$PROJECT_ROOT/examples/etcd/config/raft_config.yaml" ]; then

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Trace Converter for Specula ETCD Example
-Converts system-generated trace format to TLA+ specification format with state variable updates
+Trace Converter for Specula+ ETCD Example
+Converts system-generated trace format to TLA+ specification format
 """
 
 import json
@@ -12,15 +12,15 @@ from typing import List, Dict, Any
 
 
 class TraceConverter:
-    """Convert system traces to TLA+ compatible format with state updates"""
+    """Convert system traces to TLA+ compatible format"""
     
     def __init__(self):
-        self.server_nodes = ["n1", "n2", "n3"]  # Default server configuration
+        self.server_nodes = ["n1", "n2", "n3"]  # Default server configuration (match TLA+ spec)
         self.values = [1, 2, 3]  # Default values
         
     def convert_system_trace_to_tla(self, system_trace_path: str, output_path: str) -> bool:
         """
-        Convert system-generated trace to TLA+ format with state variable updates
+        Convert system-generated trace to TLA+ format
         
         Args:
             system_trace_path: Path to system-generated NDJSON trace file
@@ -37,14 +37,15 @@ class TraceConverter:
                     line = line.strip()
                     if line:
                         # Parse the system trace format
+                        # Handle Go map format: map[key:value ...]
                         event = self._parse_system_event(line)
                         if event:
                             system_events.append(event)
             
             print(f"Parsed {len(system_events)} system events")
             
-            # Convert to TLA+ format with state updates
-            tla_trace = self._convert_to_tla_format_with_states(system_events)
+            # Convert to TLA+ format
+            tla_trace = self._convert_to_tla_format(system_events)
             
             # Write TLA+ trace
             with open(output_path, 'w') as f:
@@ -63,8 +64,9 @@ class TraceConverter:
     def _parse_system_event(self, line: str) -> Dict[str, Any]:
         """Parse a single system trace line"""
         try:
-            # Handle JSON format with Go map in params
+            # First try to parse as JSON
             if line.startswith('{"action"'):
+                # Handle JSON format with Go map in params
                 parts = line.split('"params":')
                 if len(parts) == 2:
                     prefix = parts[0] + '"params":'
@@ -123,8 +125,8 @@ class TraceConverter:
         
         return params
     
-    def _convert_to_tla_format_with_states(self, system_events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Convert system events to TLA+ format with state variable updates"""
+    def _convert_to_tla_format(self, system_events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Convert system events to TLA+ format"""
         tla_events = []
         
         # First event: configuration
@@ -136,88 +138,48 @@ class TraceConverter:
         }
         tla_events.append(config_event)
         
-        # Convert system events to TLA+ events with state updates
+        # Convert system events to TLA+ events
         for event in system_events:
-            tla_event = self._create_tla_event_with_states(event)
+            action = event.get('action', '')
+            
+            # Map system actions to TLA+ events
+            tla_event = self._map_action_to_tla_event(action, event)
             if tla_event:
                 tla_events.append(tla_event)
         
         return tla_events
     
-    def _create_tla_event_with_states(self, system_event: Dict[str, Any]) -> Dict[str, Any]:
-        """Create TLA+ event with minimal updates - let TLA+ actions handle state changes naturally"""
-        action = system_event.get('action', '')
-        params = system_event.get('params', {})
+    def _map_action_to_tla_event(self, action: str, system_event: Dict[str, Any]) -> Dict[str, Any]:
+        """Map system action to TLA+ event format"""
         
-        # Extract key information from params
-        node_id = params.get('node_id', 1)
-        state = params.get('state', 'Follower')
-        term = params.get('term', 0)
-        msg_from = params.get('msg_from')
-        msg_type = params.get('msg_type')
-        
-        # Convert node_id to server name
-        server_name = f"n{node_id}"
-        
-        # Create TLA+ event with minimal updates - let the action handle state changes
-        tla_event = {"event": action}
-        
-        # Only add messages when absolutely necessary, let TLA+ actions handle state/term changes
-        if action == "Step" and msg_from and msg_type:
-            # For Step events, we might need to ensure the message exists for processing
-            from_server = f"n{msg_from}"
-            # Convert MsgVote to TLA+ message format
-            if msg_type == "MsgVote":
-                processed_msg = {
-                    "from": from_server,
-                    "to": server_name,
-                    "type": "Vote",  # Convert to TLA+ format
-                    "term": term,
-                    "index": 0,
-                    "logTerm": 0
-                }
-                tla_event["messages"] = [
-                    {"op": "AddElement", "path": [], "args": [processed_msg]}
-                ]
-        
-        # For tickHeartbeat and tickElection, let them be mostly empty
-        # The TLA+ actions will handle all the necessary state changes
-        
-        return tla_event
-    
-    def _convert_msg_type(self, msg_type: str) -> str:
-        """Convert Go message type to TLA+ message type"""
-        type_mapping = {
-            'MsgVote': 'Vote',
-            'MsgVoteResp': 'VoteResp',
-            'MsgPreVote': 'PreVote',
-            'MsgPreVoteResp': 'PreVoteResp',
-            'MsgApp': 'App',
-            'MsgAppResp': 'AppResp',
-            'MsgHeartbeat': 'Heartbeat',
-            'MsgHeartbeatResp': 'HeartbeatResp',
-            'MsgSnap': 'Snap',
-            'MsgTimeoutNow': 'TimeoutNow',
-            'MsgTransferLeader': 'TransferLeader',
-            'MsgReadIndex': 'ReadIndex',
-            'MsgReadIndexResp': 'ReadIndexResp',
-            'MsgStorageAppend': 'StorageAppendResp',
-            'MsgStorageApply': 'StorageApplyResp'
+        # Basic mapping: action name to event name
+        action_mapping = {
+            'tickElection': 'tickElection',
+            'tickHeartbeat': 'tickHeartbeat', 
+            'Step': 'Step'
         }
-        return type_mapping.get(msg_type, msg_type)
+        
+        if action in action_mapping:
+            return {"action": action_mapping[action]}
+        
+        # If no mapping found, use the action name directly
+        if action:
+            return {"action": action}
+        
+        return None
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert system trace to TLA+ specification format with state updates",
+        description="Convert system trace to TLA+ specification format",
         formatter_class=argparse.RawTextHelpFormatter
     )
     
     parser.add_argument('input_trace', help="Input system trace file (NDJSON)")
     parser.add_argument('output_trace', help="Output TLA+ trace file (NDJSON)")
     
-    parser.add_argument('--servers', nargs='+', default=['n1', 'n2', 'n3'],
-                       help="Server node names (default: n1 n2 n3)")
+    parser.add_argument('--servers', nargs='+', default=['s1', 's2', 's3'],
+                       help="Server node names (default: s1 s2 s3)")
     
     parser.add_argument('--values', nargs='+', type=int, default=[1, 2, 3],
                        help="Value set (default: 1 2 3)")

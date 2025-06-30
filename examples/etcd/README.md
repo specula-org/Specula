@@ -110,10 +110,10 @@ This step generates specialized TLA+ modules (`specTrace.tla` and `specTrace.cfg
     cd ../..
     python3 scripts/trace_converter.py \
         runners/raft_simulator/raft_trace.ndjson \
-        spec/step5/spec/trace.ndjson \
+        spec/step4/spec/trace.ndjson \
         --servers n1 n2 n3
     # Step 5.2d: Validate traces with TLA+ model checker
-    cd examples/etcd/spec/step5/spec
+    cd /spec/step4/spec
     export TRACE_PATH=trace.ndjson
     java -cp "../../../../../lib/tla2tools.jar" tlc2.TLC \
         -config specTrace.cfg specTrace.tla

@@ -10,7 +10,7 @@ Specula is implemented as a multi-step workflow.
    - **1.a Syntax Correction.** The translated spec may contain syntax errors and thus fail compilation. Specula uses a Retrieval-Augmented Generation (RAG) mechanism to automatically detect and fix compilation errors. Specula includes a specialized knowledge base that encodes TLA+ syntax knowledge and error patterns.
 2. **TLA+ Spec Transformation.** Specula transforms the translated spec into structured, declarative TLA+ specs that are suitable for model checking and formal verification. Specula performs a customized control-flow analysis that transforms the imperative translated spec into the corresponding declarative TLA+ spec
 3. **Error Correction.** The TLA+ spec output from Step 2 may not be perfect. Specula employs tools to automatically detect and correct errors by attempting to run TLC-based model checking on the TLA+ spec. Any runtime error will be automatically fixed by Specula. 
-4. **Trace Validation.** Specula ensures that the synthesized TLA+ specs conforms with the source code to avoid model-code gaps. It automatically instruments the code during Step 2 (when translating code into the TLA+ format). Specula includes a deterministic execution engine to generate code-level traces which are used to validate the model-level traces and ensure their conformance.
+4. **Trace Validation.** Specula ensures that the synthesized TLA+ specs conforms with the source code to avoid model-code gaps. It automatically instruments the code. Specula includes a deterministic execution engine to generate code-level traces which are used to validate the model-level traces and ensure their conformance.
 
 The following figure illustrates the above workflow.
 
@@ -163,7 +163,7 @@ Generate TLA+ modules (`specTrace.tla` and `specTrace.cfg`) to validate executio
     cd ../..
     python3 scripts/trace_converter.py \
         runners/raft_simulator/raft_trace.ndjson \
-        spec/step5/spec/trace.ndjson \
+        spec/step4/spec/trace.ndjson \
         --servers n1 n2 n3
     # Step 4.2d: Validate traces with TLA+ model checker
     cd spec/step4/spec
