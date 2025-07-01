@@ -91,22 +91,22 @@ export ANTHROPIC_API_KEY=YOUR_API_KEY
     - An initial TLA+ specification (`output/etcd/spec/step1/Raft.tla`).
     - A draft (`output/etcd/spec/step1/draft_analysis.txt`)
 ```bash
-    ./specula iispec_generator examples/etcd/source/raft.go output/etcd/spec/step1/ --mode draft-based
+    ./specula step1 examples/etcd/source/raft.go output/etcd/spec/step1/ --mode draft-based
 ```
 
 ### 1.a Syntax Correction
 
 *   **Input**. The translated `Raft.tla` generated from last step.
 *   **Output**. A syntactically correct `output/etcd/spec/step1/corrected_spec/Raft.tla`.
-This step is integrated in the command of Step 1. The final file `examples/etcd/spec/step1/corrected_spec/Raft.tla` is the output.
+This step is integrated in the command of Step 1.
 *   **Note**: This step may need manual effort to fix syntax errors (e.g., for highly complex specifications or weak models).
 
 ### 2. TLA+ Specification Transformation
 
-*   **Input**. The translated spec  (`examples/etcd/spec/step1/Raft.tla`).
+*   **Input**. The translated spec  (`examples/etcd/spec/step1/corrected_spec/Raft.tla`).
 *   **Output**. A structured TLA+ specification (`output/etcd/spec/step2/Raft.tla`).
 ```bash
-    ./tools/cfa/run.sh tools/cfa/input/example/Raft.tla output/etcd/spec/step2/Raft.tla
+    ./specula step2 tools/cfa/input/example/Raft.tla output/etcd/spec/step2/Raft.tla
 ```
 *   **Note**. The CFA transformation tool is a work in progress. Its parser is not yet fully robust and may require manual adjustments to the input specification to run successfully. This will be improved in future work.
 
@@ -117,7 +117,7 @@ This step is integrated in the command of Step 1. The final file `examples/etcd/
     - A TLC configuration file (`output/etcd/spec/step3/Raft.cfg`)
     - A runtime-corrected TLA+ specification (`output/etcd/spec/step3/Raft.tla`)
 ```bash
-    ./specula runtime_corrector examples/etcd/spec/step2/Raft.tla output/etcd/spec/step3/
+    ./specula step3 examples/etcd/spec/step2/Raft.tla output/etcd/spec/step3/
 ```
 *   **Note**: This step may need manual effort to fix syntax errors (e.g., for highly complex specifications or weak models).
 
@@ -133,7 +133,7 @@ Generate TLA+ modules (`specTrace.tla` and `specTrace.cfg`) to validate executio
     - Trace validation TLA+ specification (`output/etcd/spec/step4/spec/specTrace.tla`).
     - Trace validation TLC configuration file (`output/etcd/spec/step4/spec/specTrace.cfg`).
 ```bash
-    ./specula spectrace_generator \
+    ./specula step4.1 \
         --tla examples/etcd/spec/step3/Raft.tla \
         --cfg examples/etcd/spec/step3/Raft.cfg \
         --auto-config output/etcd/spec/step4/raft_config.yaml \
@@ -150,7 +150,7 @@ Generate TLA+ modules (`specTrace.tla` and `specTrace.cfg`) to validate executio
     - System execution traces (`examples/etcd/runners/raft_simulator/raft_trace.ndjson`)
 ```bash
     # Step 4.2a: Instrument the source code
-    ./specula instrumentation \
+    ./specula step4.2 \
         examples/etcd/config/raft_config.yaml \
         examples/etcd/source/raft.go \
         --stub-template templates/instrumentation/go_trace_stub.template \

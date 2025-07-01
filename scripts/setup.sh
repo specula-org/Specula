@@ -367,10 +367,453 @@ print_status "Creating convenience scripts..."
 # Create specula command wrapper
 cat > "$PROJECT_ROOT/specula" << 'EOF'
 #!/bin/bash
-# Specula command wrapper
+# Specula Framework Command Wrapper
+# Unified interface for all Specula tools and steps
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PYTHONPATH="$SCRIPT_DIR/src:$PYTHONPATH"
-python3 -m src.core."$@"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+print_usage() {
+    echo "Specula Framework - Unified Command Interface"
+    echo
+    echo "Usage: $0 <command> [options]"
+    echo
+    echo "Commands:"
+    echo "  step1 <input> <output> [options]     Generate TLA+ specification from source code"
+    echo "  step2 <input> <output> [options]     Transform TLA+ spec using CFA tool"
+    echo "  step3 <spec_file> [options]          Verify TLA+ specification using TLC"
+    echo "  step4.1 <source> <config> [options] Instrument source code for tracing"
+    echo "  step4.2 <spec> <trace> [options]    Validate trace against specification"
+    echo "  cfa <input> <output> [options]       Alias for step2"
+    echo "  verify <spec_file> [options]         Alias for step3"
+    echo "  instrument <source> <config>         Alias for step4.1"
+    echo "  validate <spec> <trace>              Alias for step4.2"
+    echo "  help                                 Show this help message"
+    echo
+    echo "Step 1 Options:"
+    echo "  --mode <mode>          Generation mode: direct, draft-based, correct-only, etc."
+    echo "  --model <model>        Override LLM model"
+    echo "  --config <file>        Configuration file path"
+    echo "  --no-rag              Disable RAG-based error correction"
+    echo
+    echo "Step 2 Options:"
+    echo "  --config <file>        CFA configuration file"
+    echo "  --debug               Enable debug output"
+    echo
+    echo "Step 3 Options:"
+    echo "  --model-check         Run full model checking"
+    echo "  --deadlock            Check for deadlocks only"
+    echo "  --workers <n>         Number of worker threads"
+    echo "  --depth <n>           Maximum search depth"
+    echo
+    echo "Step 4.1 Options:"
+    echo "  --output <dir>        Output directory for instrumented code"
+    echo "  --template <file>     Custom instrumentation template"
+    echo
+    echo "Step 4.2 Options:"
+    echo "  --config <file>       Trace validation configuration"
+    echo "  --output <dir>        Output directory for validation results"
+    echo
+    echo "Examples:"
+    echo "  # Complete workflow:"
+    echo "  $0 step1 source/raft.go output/spec --mode draft-based"
+    echo "  $0 step2 output/spec/Raft.tla output/transformed/Raft.tla"
+    echo "  $0 step3 output/transformed/Raft.tla --model-check"
+    echo "  $0 step4.1 source/raft.go config/raft_config.yaml"
+    echo "  $0 step4.2 output/transformed/Raft.tla trace.ndjson"
+    echo
+    echo "  # Individual steps:"
+    echo "  $0 verify output/spec/Raft.tla --deadlock"
+    echo "  $0 instrument source/ config.yaml --output instrumented/"
+    echo "  $0 validate spec.tla trace.ndjson --config validation.cfg"
+}
+
+# Check if no arguments provided
+if [ $# -eq 0 ]; then
+    print_usage
+    exit 1
+fi
+
+COMMAND="$1"
+shift
+
+case "$COMMAND" in
+    "step1"|"p1")
+        if [ $# -lt 2 ]; then
+            echo -e "${RED}Error:${NC} step 1 requires input and output arguments"
+            echo "Usage: $0 step1 <input> <output> [options]"
+            exit 1
+        fi
+        
+        echo -e "${BLUE}[Specula step 1]${NC} TLA+ Specification Generation"
+        python3 -m src.core.iispec_generator "$@"
+        ;;
+        
+    "step2"|"p2"|"cfa")
+        if [ $# -lt 2 ]; then
+            echo -e "${RED}Error:${NC} step 2 requires input and output arguments"
+            echo "Usage: $0 step2 <input> <output> [options]"
+            exit 1
+        fi
+        
+        INPUT_FILE="$1"
+        OUTPUT_FILE="$2"
+        shift 2
+        
+        # Parse additional options
+        DEBUG_FLAG=""
+        CONFIG_FILE=""
+        
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --debug)
+                    DEBUG_FLAG="--debug"
+                    shift
+                    ;;
+                --config)
+                    CONFIG_FILE="$2"
+                    shift 2
+                    ;;
+                *)
+                    echo -e "${YELLOW}Warning:${NC} Unknown option: $1"
+                    shift
+                    ;;
+            esac
+        done
+        
+        echo -e "${BLUE}[Specula step 2]${NC} TLA+ Specification Transformation (CFA)"
+        echo "Input: $INPUT_FILE"
+        echo "Output: $OUTPUT_FILE"
+        
+        # Check if input file exists
+        if [ ! -f "$INPUT_FILE" ]; then
+            echo -e "${RED}Error:${NC} Input file not found: $INPUT_FILE"
+            exit 1
+        fi
+        
+        # Check if CFA tool exists
+        CFA_SCRIPT="$SCRIPT_DIR/tools/cfa/run.sh"
+        if [ ! -f "$CFA_SCRIPT" ]; then
+            echo -e "${RED}Error:${NC} CFA tool not found at: $CFA_SCRIPT"
+            echo "Please ensure the CFA tool is properly installed"
+            exit 1
+        fi
+        
+        # Create output directory if it doesn't exist
+        OUTPUT_DIR="$(dirname "$OUTPUT_FILE")"
+        mkdir -p "$OUTPUT_DIR"
+        
+        # Run CFA transformation
+        echo -e "${BLUE}[INFO]${NC} Running CFA transformation..."
+        if [ -n "$DEBUG_FLAG" ]; then
+            echo "Command: bash $CFA_SCRIPT $INPUT_FILE $OUTPUT_FILE $CONFIG_FILE"
+        fi
+        
+        if [ -n "$CONFIG_FILE" ]; then
+            bash "$CFA_SCRIPT" "$INPUT_FILE" "$OUTPUT_FILE" "$CONFIG_FILE"
+        else
+            bash "$CFA_SCRIPT" "$INPUT_FILE" "$OUTPUT_FILE"
+        fi
+        
+        CFA_EXIT_CODE=$?
+        if [ $CFA_EXIT_CODE -eq 0 ]; then
+            echo -e "${GREEN}[SUCCESS]${NC} CFA transformation completed successfully"
+            echo "Output saved to: $OUTPUT_FILE"
+        else
+            echo -e "${RED}[ERROR]${NC} CFA transformation failed with exit code: $CFA_EXIT_CODE"
+            exit $CFA_EXIT_CODE
+        fi
+        ;;
+        
+    "step3"|"p3"|"verify")
+        if [ $# -lt 1 ]; then
+            echo -e "${RED}Error:${NC} step 3 requires a TLA+ specification file"
+            echo "Usage: $0 step3 <spec_file> [options]"
+            exit 1
+        fi
+        
+        SPEC_FILE="$1"
+        shift
+        
+        echo -e "${BLUE}[Specula Step 3]${NC} TLA+ Specification Verification"
+        echo "Spec file: $SPEC_FILE"
+        
+        # Check if spec file exists
+        if [ ! -f "$SPEC_FILE" ]; then
+            echo -e "${RED}Error:${NC} Specification file not found: $SPEC_FILE"
+            exit 1
+        fi
+        
+        # Parse options
+        MODEL_CHECK=false
+        DEADLOCK_ONLY=false
+        WORKERS=""
+        DEPTH=""
+        
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --model-check)
+                    MODEL_CHECK=true
+                    shift
+                    ;;
+                --deadlock)
+                    DEADLOCK_ONLY=true
+                    shift
+                    ;;
+                --workers)
+                    WORKERS="-workers $2"
+                    shift 2
+                    ;;
+                --depth)
+                    DEPTH="-depth $2"
+                    shift 2
+                    ;;
+                *)
+                    echo -e "${YELLOW}Warning:${NC} Unknown option: $1"
+                    shift
+                    ;;
+            esac
+        done
+        
+        # Build TLC command
+        TLC_CMD="java -cp $SCRIPT_DIR/lib/tla2tools.jar tlc2.TLC"
+        
+        if [ "$DEADLOCK_ONLY" = true ]; then
+            TLC_CMD="$TLC_CMD -deadlock"
+        fi
+        
+        if [ -n "$WORKERS" ]; then
+            TLC_CMD="$TLC_CMD $WORKERS"
+        fi
+        
+        if [ -n "$DEPTH" ]; then
+            TLC_CMD="$TLC_CMD $DEPTH"
+        fi
+        
+        # Extract module name from file
+        MODULE_NAME=$(basename "$SPEC_FILE" .tla)
+        SPEC_DIR=$(dirname "$SPEC_FILE")
+        
+        echo -e "${BLUE}[INFO]${NC} Running TLC verification..."
+        echo "Command: $TLC_CMD $MODULE_NAME"
+        
+        # Change to spec directory and run TLC
+        cd "$SPEC_DIR"
+        eval "$TLC_CMD $MODULE_NAME"
+        
+        TLC_EXIT_CODE=$?
+        if [ $TLC_EXIT_CODE -eq 0 ]; then
+            echo -e "${GREEN}[SUCCESS]${NC} TLA+ verification completed successfully"
+        else
+            echo -e "${RED}[ERROR]${NC} TLA+ verification failed with exit code: $TLC_EXIT_CODE"
+            exit $TLC_EXIT_CODE
+        fi
+        ;;
+        
+    "step4.1"|"p4.1"|"instrument")
+        if [ $# -lt 2 ]; then
+            echo -e "${RED}Error:${NC} step 4.1 requires source and config arguments"
+            echo "Usage: $0 step4.1 <source> <config> [options]"
+            exit 1
+        fi
+        
+        SOURCE_PATH="$1"
+        CONFIG_FILE="$2"
+        shift 2
+        
+        echo -e "${BLUE}[Specula Step 4.1]${NC} Source Code Instrumentation"
+        echo "Source: $SOURCE_PATH"
+        echo "Config: $CONFIG_FILE"
+        
+        # Check if source exists
+        if [ ! -e "$SOURCE_PATH" ]; then
+            echo -e "${RED}Error:${NC} Source path not found: $SOURCE_PATH"
+            exit 1
+        fi
+        
+        # Check if config file exists
+        if [ ! -f "$CONFIG_FILE" ]; then
+            echo -e "${RED}Error:${NC} Config file not found: $CONFIG_FILE"
+            exit 1
+        fi
+        
+        # Parse options
+        OUTPUT_DIR=""
+        TEMPLATE_FILE=""
+        
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --output)
+                    OUTPUT_DIR="$2"
+                    shift 2
+                    ;;
+                --template)
+                    TEMPLATE_FILE="$2"
+                    shift 2
+                    ;;
+                *)
+                    echo -e "${YELLOW}Warning:${NC} Unknown option: $1"
+                    shift
+                    ;;
+            esac
+        done
+        
+        # Set default output directory
+        if [ -z "$OUTPUT_DIR" ]; then
+            OUTPUT_DIR="$(dirname "$SOURCE_PATH")/instrumented"
+        fi
+        
+        echo -e "${BLUE}[INFO]${NC} Running instrumentation..."
+        echo "Output directory: $OUTPUT_DIR"
+        
+        # Create output directory
+        mkdir -p "$OUTPUT_DIR"
+        
+        # Run instrumentation using Python module
+        INSTRUMENT_CMD="python3 -m src.instrumentation.instrument_code"
+        INSTRUMENT_CMD="$INSTRUMENT_CMD --source $SOURCE_PATH"
+        INSTRUMENT_CMD="$INSTRUMENT_CMD --config $CONFIG_FILE"
+        INSTRUMENT_CMD="$INSTRUMENT_CMD --output $OUTPUT_DIR"
+        
+        if [ -n "$TEMPLATE_FILE" ]; then
+            INSTRUMENT_CMD="$INSTRUMENT_CMD --template $TEMPLATE_FILE"
+        fi
+        
+        echo "Command: $INSTRUMENT_CMD"
+        eval "$INSTRUMENT_CMD"
+        
+        INSTRUMENT_EXIT_CODE=$?
+        if [ $INSTRUMENT_EXIT_CODE -eq 0 ]; then
+            echo -e "${GREEN}[SUCCESS]${NC} Source code instrumentation completed"
+            echo "Instrumented code saved to: $OUTPUT_DIR"
+        else
+            echo -e "${RED}[ERROR]${NC} Instrumentation failed with exit code: $INSTRUMENT_EXIT_CODE"
+            exit $INSTRUMENT_EXIT_CODE
+        fi
+        ;;
+        
+    "step4.2"|"p4.2"|"validate")
+        if [ $# -lt 2 ]; then
+            echo -e "${RED}Error:${NC} step 4.2 requires spec and trace arguments"
+            echo "Usage: $0 step4.2 <spec> <trace> [options]"
+            exit 1
+        fi
+        
+        SPEC_FILE="$1"
+        TRACE_FILE="$2"
+        shift 2
+        
+        echo -e "${BLUE}[Specula Step 4.2]${NC} Trace Validation"
+        echo "Spec file: $SPEC_FILE"
+        echo "Trace file: $TRACE_FILE"
+        
+        # Check if files exist
+        if [ ! -f "$SPEC_FILE" ]; then
+            echo -e "${RED}Error:${NC} Specification file not found: $SPEC_FILE"
+            exit 1
+        fi
+        
+        if [ ! -f "$TRACE_FILE" ]; then
+            echo -e "${RED}Error:${NC} Trace file not found: $TRACE_FILE"
+            exit 1
+        fi
+        
+        # Parse options
+        CONFIG_FILE=""
+        OUTPUT_DIR=""
+        
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --config)
+                    CONFIG_FILE="$2"
+                    shift 2
+                    ;;
+                --output)
+                    OUTPUT_DIR="$2"
+                    shift 2
+                    ;;
+                *)
+                    echo -e "${YELLOW}Warning:${NC} Unknown option: $1"
+                    shift
+                    ;;
+            esac
+        done
+        
+        # Set default output directory
+        if [ -z "$OUTPUT_DIR" ]; then
+            OUTPUT_DIR="$(dirname "$SPEC_FILE")/validation_results"
+        fi
+        
+        echo -e "${BLUE}[INFO]${NC} Running trace validation..."
+        echo "Output directory: $OUTPUT_DIR"
+        
+        # Create output directory
+        mkdir -p "$OUTPUT_DIR"
+        
+        # Determine the spec directory and trace spec file
+        SPEC_DIR=$(dirname "$SPEC_FILE")
+        MODULE_NAME=$(basename "$SPEC_FILE" .tla)
+        
+        # Look for corresponding specTrace.tla or TraceSpec.tla
+        TRACE_SPEC=""
+        if [ -f "$SPEC_DIR/specTrace.tla" ]; then
+            TRACE_SPEC="specTrace"
+        elif [ -f "$SPEC_DIR/TraceSpec.tla" ]; then
+            TRACE_SPEC="TraceSpec"
+        else
+            echo -e "${RED}Error:${NC} No trace specification found (specTrace.tla or TraceSpec.tla) in $SPEC_DIR"
+            exit 1
+        fi
+        
+        # Copy trace file to spec directory if not already there
+        TRACE_NAME=$(basename "$TRACE_FILE")
+        if [ "$SPEC_DIR/$TRACE_NAME" != "$TRACE_FILE" ]; then
+            cp "$TRACE_FILE" "$SPEC_DIR/$TRACE_NAME"
+            echo -e "${BLUE}[INFO]${NC} Copied trace file to spec directory"
+        fi
+        
+        # Build TLC command for trace validation
+        cd "$SPEC_DIR"
+        
+        # Check if config file exists
+        if [ -n "$CONFIG_FILE" ] && [ -f "$CONFIG_FILE" ]; then
+            TLC_CMD="java -cp $SCRIPT_DIR/lib/tla2tools.jar tlc2.TLC -config $CONFIG_FILE $TRACE_SPEC"
+        elif [ -f "specTrace.cfg" ]; then
+            TLC_CMD="java -cp $SCRIPT_DIR/lib/tla2tools.jar tlc2.TLC -config specTrace.cfg $TRACE_SPEC"
+        else
+            TLC_CMD="java -cp $SCRIPT_DIR/lib/tla2tools.jar tlc2.TLC $TRACE_SPEC"
+        fi
+        
+        echo "Command: $TLC_CMD"
+        eval "$TLC_CMD"
+        
+        VALIDATION_EXIT_CODE=$?
+        if [ $VALIDATION_EXIT_CODE -eq 0 ]; then
+            echo -e "${GREEN}[SUCCESS]${NC} Trace validation completed successfully"
+            echo "Results available in: $SPEC_DIR"
+        else
+            echo -e "${RED}[ERROR]${NC} Trace validation failed with exit code: $VALIDATION_EXIT_CODE"
+            exit $VALIDATION_EXIT_CODE
+        fi
+        ;;
+        
+    "help"|"-h"|"--help")
+        print_usage
+        ;;
+        
+    *)
+        echo -e "${RED}Error:${NC} Unknown command: $COMMAND"
+        echo "Use '$0 help' for usage information"
+        exit 1
+        ;;
+esac
 EOF
 chmod +x "$PROJECT_ROOT/specula"
 
@@ -384,16 +827,13 @@ print_status "Verification tests:"
 print_status "  Test TLA+ tools: java -cp lib/tla2tools.jar tlc2.TLC -help"
 print_status "  Test CFA tool: cd tools/cfa && mvn compile"
 echo
-print_status "Quick start:"
-print_status "  cd examples/etcd"
-print_status "  bash scripts/run_instrumentation_test.sh"
-echo
-print_status "For full workflow:"
-print_status "  cd examples/etcd" 
-print_status "  bash scripts/run_full_test_with_verification.sh"
-echo
-print_status "For help:"
-print_status "  ./specula --help"
+print_status "Unified Command Interface:"
+print_status "  ./specula help                    # Show all available commands"
+print_status "  ./specula step1 <input> <output> # Generate TLA+ specification"
+print_status "  ./specula step2 <input> <output> # Transform TLA+ specification"
+print_status "  ./specula step3 <spec_file>      # Verify TLA+ specification"
+print_status "  ./specula step4.1 <src> <config> # Instrument source code"
+print_status "  ./specula step4.2 <spec> <trace> # Validate trace"
 echo
 
 # Check if we're in examples/etcd and offer to run a test

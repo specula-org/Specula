@@ -338,7 +338,15 @@ class Phase1Generator:
             )
         
         final_module_name = self._extract_module_name(final_spec)
-        final_file = output_path / f"{final_module_name}.tla"
+        
+        # If corrections were made, save to corrected_spec directory
+        if correction_attempts > 0:
+            corrected_dir = output_path / "corrected_spec"
+            corrected_dir.mkdir(exist_ok=True)
+            final_file = corrected_dir / f"{final_module_name}.tla"
+        else:
+            final_file = output_path / f"{final_module_name}.tla"
+            
         if str(step1_file) != str(final_file):
             with open(final_file, 'w', encoding='utf-8') as f:
                 f.write(final_spec)
@@ -418,7 +426,15 @@ class Phase1Generator:
             )
         
         final_module_name = self._extract_module_name(final_spec)
-        final_file = output_path / f"{final_module_name}.tla"
+        
+        # If corrections were made, save to corrected_spec directory
+        if correction_attempts > 0:
+            corrected_dir = output_path / "corrected_spec"
+            corrected_dir.mkdir(exist_ok=True)
+            final_file = corrected_dir / f"{final_module_name}.tla"
+        else:
+            final_file = output_path / f"{final_module_name}.tla"
+            
         if str(step1_file) != str(final_file):
             with open(final_file, 'w', encoding='utf-8') as f:
                 f.write(final_spec)
@@ -464,7 +480,15 @@ class Phase1Generator:
             )
         
         final_module_name = self._extract_module_name(final_spec)
-        final_file = output_path / f"{final_module_name}.tla"
+        
+        # If corrections were made, save to corrected_spec directory
+        if correction_attempts > 0:
+            corrected_dir = output_path / "corrected_spec"
+            corrected_dir.mkdir(exist_ok=True)
+            final_file = corrected_dir / f"{final_module_name}.tla"
+        else:
+            final_file = output_path / f"{final_module_name}.tla"
+            
         with open(final_file, 'w', encoding='utf-8') as f:
             f.write(final_spec)
         
