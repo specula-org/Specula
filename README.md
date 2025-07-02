@@ -3,7 +3,7 @@
 Specula is an automated framework for synthesizing TLA+ specifications that accurately describe the core logic and behavior of a software system implementation. Specula generates the specifications **directly from source code** and it **automatically validates the conformance** of specifications with the code. The synthesized TLA+ specification can be used for formal verification of the system designs and for model-driven testing of the implementation.
 
 Specula leverages Large Language Models (LLMs) for synthesis. 
-We currently use claude-opus-4.0 (the model can be [configured](https://github.com/specula-org/Specula?tab=readme-ov-file#configuration)).
+We currently use claude-opus-4.0 and claude-sonnet-4.0 (the model can be [configured](https://github.com/specula-org/Specula?tab=readme-ov-file#configuration)).
 
 Specula is implemented as a multi-step workflow.
 
@@ -104,7 +104,9 @@ export ANTHROPIC_API_KEY=YOUR_API_KEY
 *   **Input**. The translated `Raft.tla` generated from last step.
 *   **Output**. A syntactically correct `output/etcd/spec/step1/corrected_spec/Raft.tla`.
 This step is integrated in the command of Step 1.
-*   **Note**: This step may need manual effort to fix syntax errors (e.g., for highly complex specifications or weak models).
+*   **Note**: 
+    - This step may need manual effort to fix syntax errors (e.g., for highly complex specifications or weak models).
+    - Please ensure that the size of the input specification does not exceed the token limit.
 
 ### 2. TLA+ Specification Transformation
 
@@ -124,8 +126,9 @@ This step is integrated in the command of Step 1.
 ```bash
     ./specula step3 examples/etcd/spec/step2/Raft.tla output/etcd/spec/step3/
 ```
-*   **Note**: This step may need manual effort to fix syntax errors (e.g., for highly complex specifications or weak models).
-
+*   **Note**: 
+    - This step may need manual effort to fix syntax errors (e.g., for highly complex specifications or weak models).
+    - Please ensure that the size of the input specification does not exceed the token limit.
 ### 4. Trace Validation
 
 Generate TLA+ modules (`specTrace.tla` and `specTrace.cfg`) to validate execution traces against the synthesized TLA+ spec. 
