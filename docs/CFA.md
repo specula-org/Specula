@@ -44,7 +44,7 @@ IF a < b
 
 The following control flow is obtained:
 
-<img src="./images/CFA_example.png" alt="Control Flow Example" style="zoom: 20%;" />
+<img src="./images/CFA_example.png" alt="Control Flow Example" width="300" />
 
 ## Control Flow Graph Construction
 
@@ -61,23 +61,23 @@ First, we need to perform lexical analysis and syntax analysis on TLA+ specifica
 
 **The rules in tla_sany are overly complex and convoluted. Although it is ready-made, if modifications are needed later, rewriting becomes extremely complex. Moreover, its syntax tree format is too bizarre and difficult to use for generating specs (this framework ultimately needs to output specs).**
 
-#### Tools
+### Tools
 
 We chose **ANTLR** as the parser generation and visualization tool, which has two advantages:
 1. **Code insertion capability**: Allows inserting code in parsing rules to provide more complex logic
 2. **Visualization interface**: Provides visual debugging capabilities
 
-#### Lexical and Syntax Rules
+### Lexical and Syntax Rules
 
 The rules are mainly referenced from Lamport's **"Specifying Systems"**.
 
-<img src="./images/tla_grammar.png" alt="TLA+ Grammar" style="zoom: 50%;" />
+<img src="./images/tla_grammar.png" alt="TLA+ Grammar" width="600" />
 
 **Challenges addressed:**
 - **Ambiguity issues**: Modified the original rules to resolve ambiguities. See [TLAPlusLexer.g4](../tools/cfa/src/main/java/grammar/TLAPlusLexer.g4) and [TLAPlusParser.g4](../tools/cfa/src/main/java/grammar/TLAPlusParser.g4)
 - **Indentation sensitivity**: Borrowed techniques from Python Documentation's ANTLR4-based Python syntax analyzer. By rewriting the CommonTokenStream after lexical analysis to match indentation-sensitive rules. See [TLAPlusLexerBase.java](../tools/cfa/src/main/java/parser/TLAPlusLexerBase.java)
 
-#### Control Flow Graph Construction
+### Control Flow Graph Construction
 
 After obtaining the AST, we **establish code blocks with statements as units**, building transfer relationships and calling relationships between code blocks by traversing the code blocks. See [CFGBuilderVisitor.java](../tools/cfa/src/main/java/CFG/CFGBuilderVisitor.java)
 
@@ -109,7 +109,7 @@ This is the **core transformation algorithm** that resolves the contradiction be
 
 **Example**:
 
-<img src="./images/pc_example.png" alt="Process Cutting Example" style="zoom: 20%;" />
+<img src="./images/pc_example.png" alt="Process Cutting Example" width="300" />
 
 ### UNCHANGED Convergence Algorithm
 
@@ -124,7 +124,7 @@ Solves the problem that TLA+ requires all variables in each atomic action to be 
 
 **Example**:
 
-<img src="./images/uc_example.png" alt="UNCHANGED Convergence Example" style="zoom: 20%;" />
+<img src="./images/uc_example.png" alt="UNCHANGED Convergence Example" width="300" />
 
 ### Variable State Update Algorithm
 
@@ -136,7 +136,7 @@ Handles the syntax requirements for current state and next state variables in TL
 
 **Example**:
 
-<img src="./images/ud_example.png" alt="Variable Update Example" style="zoom: 20%;" />
+<img src="./images/ud_example.png" alt="Variable Update Example" width="300" />
 
 ## TLA+ Specification Generation
 
