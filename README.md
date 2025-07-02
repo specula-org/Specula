@@ -4,6 +4,13 @@ Specula is an automated framework for synthesizing TLA+ specifications that accu
 
 Specula leverages Large Language Models (LLMs) during the synthesis. We use claude-opus-4.0 (can be [configured](https://github.com/specula-org/Specula?tab=readme-ov-file#configuration)).
 
+<a href="https://www.youtube.com/watch?v=b-QBO860zZY" title="Click to watch the demo on YouTube">
+  <img src="docs/images/specula_demo_thumbnail.png" alt="Specula Demo Video" width="120" align="right">
+</a>
+
+This video demonstrates how Specula automatically synthesizes a TLA+ specification from source code. Using etcd's Raft as a case study, we showcase the automated workflow from code translation to model validation. It's the quickest way to grasp the core power of our framework.
+
+
 Specula is implemented as a multi-step workflow.
 
 1. **Code-to-Spec Translation.** Specula uses LLMs to translate source code into the TLA+ format, referred to as “translated spec”, which captures the logical structure of the source code. Note that the translated spec is not a typical specification, but an intermediate representation for subsequent transformation.
