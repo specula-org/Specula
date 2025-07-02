@@ -153,7 +153,7 @@ class Phase1Generator:
         self.prompts_dir = Path(config.get('paths.prompts_dir'))
         self.max_correction_attempts = config.get('generation.max_correction_attempts')
         self.generation_mode = config.get('generation.mode', 'direct')
-        self.step2_prompt = self._load_prompt("step2_error_correction.txt")
+        self.step2_prompt = self._load_prompt("step1_error_correction.txt")
         self.use_rag = use_rag
         self.retriever = None
         if self.use_rag:

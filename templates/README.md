@@ -2,7 +2,7 @@
 
 This directory contains templates for various components of the Specula framework. Templates are designed to be customized for your specific use cases.
 
-## 📁 Directory Structure
+## Directory Structure
 
 ```
 templates/
@@ -12,7 +12,7 @@ templates/
     └── rust_trace_stub.template    # Rust language instrumentation template
 ```
 
-## 🎯 Instrumentation Templates
+## Instrumentation Templates
 
 Instrumentation templates define the code that gets injected into your source code functions to generate execution traces. Each template is language-specific and follows the conventions of that language.
 
@@ -65,7 +65,7 @@ trace_action("ACTION_NAME", &TraceParams {
 - Includes `.clone()` for owned values when needed
 - Follows Rust naming conventions
 
-## 🔧 Customization
+## Customization
 
 ### Creating Custom Templates
 
@@ -116,7 +116,7 @@ You can use these variables in your templates:
 - Language-specific conventions for accessing object state
 - Custom placeholders (modify the instrumentation tool to support more)
 
-## 🚀 Usage
+## Usage
 
 ### With the Instrumentation Tool
 
@@ -138,7 +138,7 @@ python3 src/core/instrumentation.py \
 
 The instrumentation tool can auto-detect the appropriate template based on the source file extension, or you can specify it explicitly.
 
-## 📋 Best Practices
+## Best Practices
 
 1. **Keep templates simple**: Focus on essential trace data
 2. **Match your system's conventions**: Use appropriate naming and data structures
@@ -146,7 +146,7 @@ The instrumentation tool can auto-detect the appropriate template based on the s
 4. **Test thoroughly**: Ensure instrumented code still functions correctly
 5. **Version control**: Keep templates under version control with your project
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 

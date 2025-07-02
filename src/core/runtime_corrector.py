@@ -259,9 +259,13 @@ class RuntimeCorrector:
                 logger.error(f"Failed to fix all errors after {self.max_correction_attempts} attempts")
                 final_spec = current_spec
         
-        # Save final specification
-        final_module_name = self._extract_module_name(final_spec)
-        final_spec_file = output_path / f"{final_module_name}_corrected.tla"
+        # Save final specification in corrected_spec subdirectory
+        corrected_spec_dir = output_path / "corrected_spec"
+        corrected_spec_dir.mkdir(exist_ok=True)
+        
+        # Keep original filename
+        original_filename = Path(input_spec_path).name
+        final_spec_file = corrected_spec_dir / original_filename
         
         with open(final_spec_file, 'w', encoding='utf-8') as f:
             f.write(final_spec)

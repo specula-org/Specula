@@ -41,34 +41,24 @@ bash scripts/setup.sh
 Specula uses a global configuration file `config.yaml`.
 
 ```yaml
-# LLM model configuration
+# Specula Configuration File
+# LLM Model Configuration
 llm:
-  base_url: "https://api.openai.com"
-  model: "claude-opus-4-20250514"  # Options: claude-3-5-sonnet-20241022, etc.
-  max_tokens: 32000
-  temperature: 0.1
-  timeout: 3000
-  use_streaming: true
-
-# TLA+ tools configuration for syntax and runtime validation
-tla_validator:
-  tools_path: "lib/tla2tools.jar"
-  timeout: 30
-
-# Generation configuration
-generation:
-  max_correction_attempts: 3
-  mode: "draft-based"  # "direct" or "draft-based"
+  # API Provider Configuration
+  provider: "anthropic"  # Options: "anthropic", "openai", "deepseek"
+  base_url: "https://api.anthropic.com"
+  # Model name - please choose a model appropriate for your API access
+  model: "claude-sonnet-4-20250514"  # Options: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022
   
-# Directories for prompts and outputs
-paths:
-  prompts_dir: "src/prompts"
-  output_dir: "output"
+  # API Parameters
+  max_tokens: 64000       # Maximum output tokens (claude-3-5-sonnet-20241022 has a limit of 8192)
+  temperature: 0.1        # Controls randomness of generation, 0.0-1.0, lower is more deterministic
+  timeout: 60000          # API request timeout (milliseconds) 
   
-# Debugging and logging
-logging:
-  level: "INFO"
-  format: "[%(levelname)s] %(message)s"
+  # Streaming Configuration
+  use_streaming: true     # Whether to use streaming
+  stream_chunk_size: 2000 # Progress display interval for streaming
+
 ...
 ```
 
@@ -122,7 +112,7 @@ This step is integrated in the command of Step 1.
 *   **Input**. A TLA+ specification (e.g., `examples/etcd/spec/step2/Raft.tla` from Step 2).
 *   **Output**.
     - A TLC configuration file (`output/etcd/spec/step3/Raft.cfg`)
-    - A runtime-corrected TLA+ specification (`output/etcd/spec/step3/Raft.tla`)
+    - A runtime-corrected TLA+ specification (`output/etcd/spec/step3/corrected_spec/Raft.tla`)
 ```bash
     ./specula step3 examples/etcd/spec/step2/Raft.tla output/etcd/spec/step3/
 ```
