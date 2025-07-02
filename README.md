@@ -192,3 +192,24 @@ bash scripts/run_full_test_with_verification.sh
 We put a generated TLA+ specification for etcd's Raft implementation at [Raft.tla](examples/etcd/spec/step4/spec/Raft.tla).
 You can generate yourself!
 
+## Cost Analysis
+
+The following table summarizes the cost breakdown for synthesizing TLA+ specifications from etcd's Raft implementation:
+
+| Step | Sub-step | LLM Model | Input Tokens | Output Tokens | LLM Cost (USD) | Manual Effort | Total Step Cost |
+|------|----------|-----------|--------------|---------------|----------------|---------------|-----------------|
+| **1. Code-to-Spec Translation** | Generation | Claude-Opus-4.0 | 50,000 | 12,000 | $1.65 | 0 min | **$1.65** |
+| | Syntax Correction | Claude-Sonnet-4.0 | 12,000 | 10,000 | $0.19* | < 10 min | **$0.19 * 5** |
+| **2. TLA+ Transformation** | CFA Processing | None | - | - | $0.00 | < 10 min | **$0.00** |
+| **3. Runtime Error Correction** | Error Fixing | Claude-Sonnet-4.0 | 10,000 | 10,000 | $0.18* | < 15 min |  **$0.18 * 5** |
+| **4. Trace Validation** | Config Generation | Claude-Sonnet-4.0 | 10,000 | 700 | $0.04 | 0 min | **$0.04** |
+| | Trace Validation | None | - | - | $0.00 | ~1 hours | |
+| **Total** | | | **170,000** | **112,700** |  | **~1.5 hours** | **$3.54** |
+
+**Notes:**
+- *Correction costs are per iteration. Multiple iterations may be required for complex specifications.
+- **LLM Pricing**: Claude-Opus-4.0 (\$15/M input, \$75/M output), Claude-Sonnet-4.0 (\$3/M input, \$15/M output)
+- **Manual effort** includes syntax error fixes, consistency validation, and trace alignment
+- **Total cost** represents a typical successful run; actual costs may vary based on specification complexity
+
+**Cost Efficiency**: The entire workflow costs approximately $3.5 in LLM usage and requires approximately 1.5 hours of manual effort to generate a complete, formally verified TLA+ specification from source code.
