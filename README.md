@@ -3,7 +3,7 @@
 Specula is an automated framework for synthesizing TLA+ specifications that accurately describe the core logic and behavior of a software system implementation. Specula generates the specifications **directly from source code** and it **automatically validates the conformance** of specifications with the code. The synthesized TLA+ specification can be used for formal verification of the system designs and for model-driven testing of the implementation.
 
 Specula leverages Large Language Models (LLMs) for synthesis. 
-We currently use claude-opus-4.0 and claude-sonnet-4.0 (the model can be [configured](https://github.com/specula-org/Specula?tab=readme-ov-file#configuration)).
+We currently use Claude-Opus-4.0 and Claude-Sonnet-4.0 (the models can be [configured](https://github.com/specula-org/Specula?tab=readme-ov-file#configuration)).
 
 Specula is implemented as a multi-step workflow.
 
