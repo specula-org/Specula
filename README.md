@@ -2,14 +2,8 @@
 
 Specula is an automated framework for synthesizing TLA+ specifications that accurately describe the core logic and behavior of a software system implementation. Specula generates the specifications **directly from source code** and it **automatically validates the conformance** of specifications with the code. The synthesized TLA+ specification can be used for formal verification of the system designs and for model-driven testing of the implementation.
 
-Specula leverages Large Language Models (LLMs) during the synthesis. We use claude-opus-4.0 (can be [configured](https://github.com/specula-org/Specula?tab=readme-ov-file#configuration)).
-
-<a href="https://www.youtube.com/watch?v=b-QBO860zZY" title="Click to watch the demo on YouTube">
-  <img src="docs/images/specula_demo_thumbnail.png" alt="Specula Demo Video" width="120" align="right">
-</a>
-
-This video demonstrates how Specula automatically synthesizes a TLA+ specification from source code. Using etcd's Raft as a case study, we showcase the automated workflow from code translation to model validation. It's the quickest way to grasp the core power of our framework.
-
+Specula leverages Large Language Models (LLMs) for synthesis. 
+We currently use claude-opus-4.0 (the model can be [configured](https://github.com/specula-org/Specula?tab=readme-ov-file#configuration)).
 
 Specula is implemented as a multi-step workflow.
 
@@ -85,6 +79,10 @@ Please refer to [Usage](https://github.com/specula-org/Specula/blob/main/docs/Us
 ## Case Study (etcd Raft)
 
 We present an end-to-end demonstration of how to use Specula to generate TLA+ specification for etcd’s Raft implementation (in Go).
+
+<a href="https://www.youtube.com/watch?v=b-QBO860zZY" title="Click to watch the demo on YouTube">
+  <img src="docs/images/specula_demo_thumbnail.png" alt="Specula Demo Video" width="750">
+</a>
 
 ### 0. Configure your API:
 ```
