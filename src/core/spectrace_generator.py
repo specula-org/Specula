@@ -422,7 +422,7 @@ def generate_config_from_tla(tla_file: str, cfg_file: str, prompt_file: str = No
         from ..utils.config import get_config
         config = get_config(config_path)
         prompts_dir = config.get('paths', {}).get('prompts_dir', 'src/prompts')
-        prompt_file = Path(prompts_dir) / "step5_trace_config_generation.txt"
+        prompt_file = Path(prompts_dir) / "step4_trace_config_generation.txt"
     
     try:
         with open(prompt_file, 'r') as f:

@@ -6,7 +6,7 @@ llm:
   model: "claude-sonnet-4-20250514"  # Options: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022
   
   # API Parameters
-  max_tokens: 32000        # Maximum output tokens (claude-3-5-sonnet-20241022 has a limit of 8192)
+  max_tokens: 64000        # Maximum output tokens (claude-3-5-sonnet-20241022 has a limit of 8192)
   temperature: 0.1        # Controls randomness of generation, 0.0-1.0, lower is more deterministic
   timeout: 600           # API request timeout (seconds)
   

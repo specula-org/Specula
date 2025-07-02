@@ -82,8 +82,8 @@ class RuntimeCorrector:
         self.tlc_timeout = self.config.get('tla_validator', {}).get('timeout', 60)
         
         # Load prompts
-        self.config_prompt = self._load_prompt("step3_config_generation.txt")
-        self.correction_prompt = self._load_prompt("step4_runtime_correction.txt")
+        self.config_prompt = self._load_prompt("step2_config_generation.txt")
+        self.correction_prompt = self._load_prompt("step3_runtime_correction.txt")
         
         logger.info("Runtime corrector initialized with unified LLM client")
     

@@ -31,7 +31,7 @@ class SpecNormalizer:
         
         # Load the normalization prompt from config
         prompts_dir = self.config.get('paths', {}).get('prompts_dir', 'src/prompts')
-        self.prompt_path = Path(prompts_dir) / "step3_spec_normalization.txt"
+        self.prompt_path = Path(prompts_dir) / "step2_spec_normalization.txt"
         if not self.prompt_path.exists():
             raise FileNotFoundError(f"Prompt file not found: {self.prompt_path}")
         
