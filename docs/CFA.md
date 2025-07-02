@@ -109,7 +109,7 @@ This is the **core transformation algorithm** that resolves the contradiction be
 
 **Example**:
 
-<img src="./images/pc_example.png" alt="Process Cutting Example" width="300" />
+<img src="./images/pc_example.png" alt="Process Cutting Example" width="800" />
 
 ### UNCHANGED Convergence Algorithm
 
@@ -124,7 +124,7 @@ Solves the problem that TLA+ requires all variables in each atomic action to be 
 
 **Example**:
 
-<img src="./images/uc_example.png" alt="UNCHANGED Convergence Example" width="300" />
+<img src="./images/uc_example.png" alt="UNCHANGED Convergence Example" width="600" />
 
 ### Variable State Update Algorithm
 
@@ -136,7 +136,7 @@ Handles the syntax requirements for current state and next state variables in TL
 
 **Example**:
 
-<img src="./images/ud_example.png" alt="Variable Update Example" width="300" />
+<img src="./images/ud_example.png" alt="Variable Update Example" width="500" />
 
 ## TLA+ Specification Generation
 
