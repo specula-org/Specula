@@ -150,11 +150,11 @@ becomeLeader(s) ==
     /\ nextIndex' = [nextIndex EXCEPT ![s] = [t \in Server |-> Len(log[s]) + 1]]
     /\ matchIndex' = [matchIndex EXCEPT ![s] = [t \in Server |-> IF t = s THEN Len(log[s]) ELSE 0]]
     /\ log' = [log EXCEPT ![s] = Append(log[s], [term |-> currentTerm[s], index |-> Len(log[s]) + 1, value |-> Nil, type |-> "Normal"])]
-    /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "AppResp", term |-> currentTerm[s], index |-> Len(log'[s])]}
+    /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "AppResp", term |-> 0, index |-> Len(log'[s])]}
     /\ UNCHANGED <<currentTerm, votedFor, commitIndex, randomizedElectionTimeout, readStates, pendingReadIndexMessages, isLearner, config, readOnlyOption>>
 
 tickHeartbeat_1_2(s) ==
-    /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "Beat"]}
+    /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "Beat", term |-> 0]}
     /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
     /\ pc' = stack[Len(stack)].backsite
     /\ stack' = Tail(stack)
@@ -163,7 +163,7 @@ tickHeartbeat_1_2(s) ==
 tickHeartbeat_1(s) ==
     /\ IF electionElapsed[s] >= 10 
         THEN /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-             /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "CheckQuorum", term |-> currentTerm[s]]}
+             /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "CheckQuorum", term |-> 0]}
              /\ IF state[s] = "Leader" /\ leadTransferee[s] # Nil
                THEN leadTransferee' = [leadTransferee EXCEPT ![s] = Nil]
                ELSE UNCHANGED leadTransferee
@@ -189,7 +189,7 @@ tickHeartbeat_1(s) ==
 tickElection_1(s) ==
     /\ IF  (s \in Server /\ ~isLearner[s] /\ electionElapsed[s] >= randomizedElectionTimeout[s])
        THEN /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-            /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "Hup", term |-> currentTerm[s]]}
+            /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "Hup", term |-> 0]}
        ELSE UNCHANGED <<messages, electionElapsed>>
     /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
     /\ pc' = stack[Len(stack)].backsite
@@ -251,7 +251,7 @@ appendEntry(s, entries) ==
           THEN UNCHANGED vars
           ELSE /\ log' = [log EXCEPT ![s] = log[s] \o newEntries]
                /\ uncommittedSize' = [uncommittedSize EXCEPT ![s] = uncommittedSize[s] + totalSize]
-               /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "AppResp", term |-> currentTerm[s], index |-> Len(log'[s])]}
+               /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "AppResp", term |-> 0, index |-> Len(log'[s])]}
                /\ UNCHANGED <<currentTerm, votedFor, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, isLearner, config, readOnlyOption>>
 
 
@@ -266,7 +266,7 @@ campaign(s, campaignType) ==
           /\ IF campaignType = "PreElection"
              THEN becomePreCandidate(s)
              ELSE becomeCandidate(s)
-          /\ messages' = messages \cup {[from |-> s, to |-> s, term |-> term, type |-> IF voteMsg = "Vote" THEN "VoteResp" ELSE "PreVoteResp"]} \cup {[from |-> s, to |-> to, term |-> term, type |-> voteMsg,index |-> lastIndex, logTerm |-> lastTerm,  context |-> IF campaignType = "Transfer" THEN "Transfer" ELSE ""] : to \in Server \ {s}}
+          /\ messages' = messages \cup {[from |-> s, to |-> s, term |-> 0, type |-> IF voteMsg = "Vote" THEN "VoteResp" ELSE "PreVoteResp"]} \cup {[from |-> s, to |-> to, term |-> term, type |-> voteMsg,index |-> lastIndex, logTerm |-> lastTerm,  context |-> IF campaignType = "Transfer" THEN "Transfer" ELSE ""] : to \in Server \ {s}}
           /\ UNCHANGED <<log, commitIndex, leaderId, nextIndex, matchIndex, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
 
 hup(s, campaignType) ==
@@ -439,7 +439,7 @@ stepFollower(s, m) ==
 RECURSIVE Step(_, _)
 
 Step(s, m) ==
-    \/ /\ m.term = 0
+    \/ /\ m.term = 0  
        /\ \/ /\ m.type = "Hup"
              /\ hup(s, "Election")
           \/ /\ m.type = "StorageAppendResp"

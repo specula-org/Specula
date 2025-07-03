@@ -1,3 +1,3 @@
 {"Server": ["n1", "n2", "n3"], "Value": [1, 2, 3], "Nil": ["Nil"], "NoLimit": ["NoLimit"]}
-{"currentTerm":[{"op": "Update", "path": [], "args": [{"n1": 1, "n2": 0, "n3": 0}]}], "event":"tickElection"}
-{"currentTerm":[{"op": "Update", "path": [], "args": [{"n1": 1, "n2": 1, "n3": 0}]}], "event":"Step"}
+{"currentTerm":[{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "event":"tickElection"}
+{"currentTerm":[{"op": "Update", "path": [], "args": [{"n1": 1, "n2": 0, "n3": 0}]}], "event":"Step"}
