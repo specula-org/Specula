@@ -11,8 +11,8 @@ Specula is implemented as a multi-step workflow.
    - **1.a Syntax Correction.** The translated spec may contain syntax errors and thus fail compilation. Specula uses a Retrieval-Augmented Generation (RAG) mechanism to automatically detect and fix compilation errors. Specula includes a specialized knowledge base that encodes TLA+ syntax knowledge and error patterns.
 2. **[TLA+ Spec Transformation](docs/CFA.md).** Specula transforms the translated spec into structured, declarative TLA+ specs that are suitable for model checking and formal verification. Specula performs a specialized Control Flow Analysis that transforms the imperative translated spec into the corresponding declarative TLA+ spec.
 Details can be found in [the CFA doc](docs/CFA.md).
-4. **Error Correction.** The TLA+ spec output from Step 2 may not be perfect. Specula employs tools to automatically detect and correct errors by attempting to run TLC-based model checking on the TLA+ spec. Any runtime error will be automatically fixed by Specula. 
-5. **Trace Validation.** Specula ensures that the synthesized TLA+ specs conforms with the source code to avoid model-code gaps. It automatically instruments the code. Specula includes a deterministic execution engine to generate code-level traces which are used to validate the model-level traces and ensure their conformance.
+3. **Error Correction.** The TLA+ spec output from Step 2 may not be perfect. Specula employs tools to automatically detect and correct errors by attempting to run TLC-based model checking on the TLA+ spec. Any runtime error will be automatically fixed by Specula. 
+4. **Trace Validation.** Specula ensures that the synthesized TLA+ specs conforms with the source code to avoid model-code gaps. It automatically instruments the code. Specula includes a deterministic execution engine to generate code-level traces which are used to validate the model-level traces and ensure their conformance.
 
 The following figure illustrates the above workflow.
 
@@ -49,12 +49,12 @@ llm:
   provider: "anthropic"  # Options: "anthropic", "openai", "deepseek"
   base_url: "https://api.anthropic.com"
   # Model name - please choose a model appropriate for your API access
-  model: "claude-sonnet-4-20250514"  # Options: claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022
+  model: "claude-sonnet-4-20250514"  # Options: claude-sonnet-4-20250514, claude-opus-4-20250514
   
   # API Parameters
-  max_tokens: 64000       # Maximum output tokens (claude-3-5-sonnet-20241022 has a limit of 8192)
+  max_tokens: 64000       # Maximum output tokens (claude-sonnet-4-20250514 has a limit of 64000)
   temperature: 0.1        # Controls randomness of generation, 0.0-1.0, lower is more deterministic
-  timeout: 60000          # API request timeout (milliseconds) 
+  timeout: 180000          # API request timeout (milliseconds) 
   
   # Streaming Configuration
   use_streaming: true     # Whether to use streaming
@@ -118,7 +118,7 @@ This step is integrated in the command of Step 1.
     ./specula step3 examples/etcd/spec/step2/Raft.tla output/etcd/spec/step3/
 ```
 *   **Note**: 
-    - This step may need manual effort to fix syntax errors (e.g., for highly complex specifications or weak models).
+    - This step may need manual effort to fix runtime errors (e.g., for highly complex specifications or weak models).
     - Please ensure that the size of the input specification does not exceed the token limit.
 ### 4. Trace Validation
 
@@ -169,13 +169,6 @@ Generate TLA+ modules (`specTrace.tla` and `specTrace.cfg`) to validate executio
     export TRACE_PATH=trace.ndjson
     java -cp "../../../../../lib/tla2tools.jar" tlc2.TLC \
         -config specTrace.cfg specTrace.tla
-```
-
-#### Putting It All Together 
-
-```bash
-cd examples/etcd
-bash scripts/run_full_test_with_verification.sh 
 ```
 
 ### Final Output

@@ -120,9 +120,7 @@ IsStep ==
     /\ IsEvent("Step")
     /\ \E s \in TraceServer :
         /\ \E m \in messages :
-            /\ pc # Nil
-            /\ Step(s, m)
-            /\ UNCHANGED <<pc, info, stack>>
+            /\ HandleStep(s, m)
 
 IsInter == 
     /\ pc # Nil
@@ -130,6 +128,7 @@ IsInter ==
     /\ \/ HandletickElection_1
        \/ HandletickHeartbeat_1
        \/ HandletickHeartbeat_1_2
+       \/ HandleStep_1
 
 (* State transition definition *)
 TraceNextImpl ==
