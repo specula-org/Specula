@@ -122,6 +122,11 @@ IsStep ==
         /\ \E m \in messages :
             /\ HandleStep(s, m)
 
+IsSendClientRequest ==
+    /\ IsEvent("SendClientRequest")
+    /\ \E s \in TraceServer :
+        SendClientRequest(s)
+
 IsInter == 
     /\ pc # Nil
     /\ UNCHANGED <<l>>
@@ -135,6 +140,7 @@ TraceNextImpl ==
     \/ IstickElection
     \/ IstickHeartbeat
     \/ IsStep
+    \/ IsSendClientRequest
     \/ IsInter
 
 

@@ -417,6 +417,7 @@ RECURSIVE Step(_, _)
 
 Step(s, m) ==
     \/ /\ m.term < currentTerm[s]
+       /\ m.term > 0
        /\ IF m.type \in {"Heartbeat", "App"}
           THEN /\ messages' = messages \cup {[from |-> s, to |-> m.from, type |-> "AppResp", term |-> currentTerm[s]]}
                /\ UNCHANGED <<commitIndex>>
@@ -430,37 +431,36 @@ Step(s, m) ==
                         ELSE UNCHANGED commitIndex
                     /\ UNCHANGED messages
        /\ UNCHANGED <<pc, info, currentTerm, votedFor, log, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-    \/ /\ m.term >= currentTerm[s]
-       /\ IF m.term > currentTerm[s]
+    \/ /\ (m.term >= currentTerm[s] \/ m.term = 0)
+       /\ IF (m.term > currentTerm[s]  \/ m.term = 0)
           THEN 
                IF m.type \in {"Vote", "PreVote"} THEN
                    LET force == m.context = "Transfer"
                        inLease == leaderId[s] # Nil /\ electionElapsed[s] < randomizedElectionTimeout[s]
                    IN IF ~force /\ inLease THEN
-                       UNCHANGED <<state, currentTerm, votedFor, leaderId, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, leadTransferee, votesGranted, votesRejected, pendingConfIndex, uncommittedSize>>
+                       /\ UNCHANGED <<state, currentTerm, votedFor, leaderId, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, leadTransferee, votesGranted, votesRejected, pendingConfIndex, uncommittedSize>>
                    ELSE
                        IF m.type = "PreVote" THEN
-                           UNCHANGED <<state, currentTerm, votedFor, leaderId, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, leadTransferee, votesGranted, votesRejected, pendingConfIndex, uncommittedSize>>
+                           /\ UNCHANGED <<state, currentTerm, votedFor, leaderId, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, leadTransferee, votesGranted, votesRejected, pendingConfIndex, uncommittedSize>>
                         ELSE IF m.type = "PreVoteResp" /\ ~m.reject THEN
-                           UNCHANGED <<state, currentTerm, votedFor, leaderId, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, leadTransferee, votesGranted, votesRejected, pendingConfIndex, uncommittedSize>>
+                           /\ UNCHANGED <<state, currentTerm, votedFor, leaderId, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, leadTransferee, votesGranted, votesRejected, pendingConfIndex, uncommittedSize>>
                         ELSE
                             IF m.type \in {"App", "Heartbeat", "Snap"} THEN
-                                becomeFollower(s, m.term, m.from)
-                            ELSE becomeFollower(s, m.term, Nil)
-               ELSE
-                   IF m.type = "PreVote" THEN
-                       UNCHANGED <<state, currentTerm, votedFor, leaderId, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, leadTransferee, votesGranted, votesRejected, pendingConfIndex, uncommittedSize>>
-                   ELSE IF m.type = "PreVoteResp" /\ ~m.reject THEN
-                       UNCHANGED <<state, currentTerm, votedFor, leaderId, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, leadTransferee, votesGranted, votesRejected, pendingConfIndex, uncommittedSize>>
-                   ELSE
-                       IF m.type \in {"App", "Heartbeat", "Snap"} THEN
-                           becomeFollower(s, m.term, m.from)
-                       ELSE
-                            IF m.type = "Prop" THEN
+                                /\ becomeFollower(s, m.term, m.from)
+                                ELSE /\ becomeFollower(s, m.term, Nil)
+                ELSE
+                    IF m.type = "PreVote" THEN
+                        /\ UNCHANGED <<state, currentTerm, votedFor, leaderId, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, leadTransferee, votesGranted, votesRejected, pendingConfIndex, uncommittedSize>>
+                        ELSE IF m.type = "PreVoteResp" /\ ~m.reject THEN
                                 /\ UNCHANGED <<state, currentTerm, votedFor, leaderId, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, leadTransferee, votesGranted, votesRejected, pendingConfIndex, uncommittedSize>>
-                            ELSE becomeFollower(s, m.term, Nil)
-          ELSE
-               UNCHANGED <<state, currentTerm, votedFor, leaderId, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, leadTransferee, votesGranted, votesRejected, pendingConfIndex, uncommittedSize>>
+                                ELSE
+                                    IF m.type \in {"App", "Heartbeat", "Snap"} THEN
+                                        /\ becomeFollower(s, m.term, m.from)
+                                        ELSE
+                                            IF m.type = "Prop" THEN
+                                                /\ UNCHANGED <<state, currentTerm, votedFor, leaderId, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, leadTransferee, votesGranted, votesRejected, pendingConfIndex, uncommittedSize>>
+                                            ELSE /\ becomeFollower(s, m.term, Nil)
+          ELSE /\ UNCHANGED <<state, currentTerm, votedFor, leaderId, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, leadTransferee, votesGranted, votesRejected, pendingConfIndex, uncommittedSize>>
        /\ pc' = "Step_1"
        /\ info' = [args |-> <<s, m>>, temp |-> <<>>]
        /\ UNCHANGED <<log, commitIndex,nextIndex, matchIndex, messages, readStates, pendingReadIndexMessages, isLearner, config, readOnlyOption>>
@@ -519,7 +519,7 @@ Step_1(s, m) ==
 
 SendClientRequest(s) ==
     /\ state[s] = "Leader"
-    /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "Prop", term |-> 10,  entries |-> <<[value |-> CHOOSE x \in Value : TRUE, type |-> "Normal"]>>]}
+    /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "Prop", term |-> 100,  entries |-> <<[value |-> CHOOSE x \in Value : TRUE, type |-> "Normal"]>>]}
     /\ UNCHANGED <<pc, info, stack,currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
 
 HandleStep_1 ==

@@ -160,10 +160,7 @@ Generate TLA+ modules (`specTrace.tla` and `specTrace.cfg`) to validate executio
     go run main.go
     # Step 4.2c: Convert system traces to TLA+ format
     cd ../..
-    python3 scripts/trace_converter.py \
-        runners/raft_simulator/raft_trace.ndjson \
-        spec/step4/spec/trace.ndjson \
-        --servers n1 n2 n3
+    python3 scripts/trace_converter.py -input ./runners/raft_simulator/trace.ndjson -output ./spec/step4/spec/ -mode simple
     # Step 4.2d: Validate traces with TLA+ model checker
     cd spec/step4/spec
     export TRACE_PATH=trace.ndjson

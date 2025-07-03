@@ -1,121 +1,23 @@
 {"Server": ["n1", "n2", "n3"], "Value": [1, 2, 3], "Nil": ["Nil"], "NoLimit": ["NoLimit"]}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "tickElection"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "Step"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "tickElection"}
-{"action": "Step"}
-{"action": "Step"}
-{"action": "tickElection"}
-{"action": "tickHeartbeat"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "tickHeartbeat"}
-{"action": "Step"}
-{"action": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 0, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Follower", "n2": "Follower", "n3": "Follower"}]}], "event": "Step"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 1, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Candidate", "n2": "Follower", "n3": "Follower"}]}], "event": "Step"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 1, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Candidate", "n2": "Follower", "n3": "Follower"}]}], "event": "Step"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 1, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Candidate", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 1, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Candidate", "n2": "Follower", "n3": "Follower"}]}], "event": "tickElection"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 1, "n2": 0, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Candidate", "n2": "Follower", "n3": "Follower"}]}], "event": "Step"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 1, "n2": 1, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Candidate", "n2": "Follower", "n3": "Follower"}]}], "event": "Step"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 1, "n2": 1, "n3": 0}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Candidate", "n2": "Follower", "n3": "Follower"}]}], "event": "Step"}
+{"currentTerm": [{"op": "Update", "path": [], "args": [{"n1": 1, "n2": 1, "n3": 1}]}], "state": [{"op": "Update", "path": [], "args": [{"n1": "Candidate", "n2": "Follower", "n3": "Follower"}]}], "event": "Step"}
