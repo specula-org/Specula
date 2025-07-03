@@ -17,7 +17,7 @@ import parser.TLAPlusParserBaseVisitor;
 
 // Visitor class for traversing ParseTree and building CFG
 public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
-    private static final String IGNORE_OPERATORS = "^(Init|Next|Spec|vars)";
+    private static final String IGNORE_OPERATORS = "^(Init|Next|Spec|vars|TypeOK|TypeInvariant)";
     private List<String> constants = new ArrayList<>();
     private List<String> variables = new ArrayList<>();
     private List<CFGFuncNode> cfgFuncNodes = new ArrayList<>();
