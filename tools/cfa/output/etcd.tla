@@ -157,9 +157,9 @@ BecomeFollower(r, currentTerm, currentLead) ==
 StepLeader(r, m) ==
     /\ CASE m.Type = MsgBeat ->
             /\ BcastHeartbeat(r)
-            /\ pc' = stack.backsite
-            /\ stack' = Head(stack)
-            /\ info' = stack.info
+            /\ pc' = stack[Len(stack)].backsite
+            /\ stack' = Tail(stack)
+            /\ info' = stack[Len(stack)].info
             /\ UNCHANGED <<leadTransferee, maxUncommittedSize, raftLog, term, electionElapsed, state, pendingConfIndex, uncommittedSize>>
         [] m.Type = MsgProp ->
             /\ Len(m.entries) > 0
@@ -170,17 +170,17 @@ StepLeader(r, m) ==
             /\ UNCHANGED <<stack, leadTransferee, msgsAfterAppend, term, electionElapsed, state, pendingConfIndex>>
         [] m.Type = MsgForgetLeader ->
             /\ UNCHANGED <<state, term>>
-            /\ pc' = stack.backsite
-            /\ stack' = Head(stack)
-            /\ info' = stack.info
+            /\ pc' = stack[Len(stack)].backsite
+            /\ stack' = Tail(stack)
+            /\ info' = stack[Len(stack)].info
             /\ UNCHANGED <<leadTransferee, maxUncommittedSize, msgsAfterAppend, raftLog, messages, electionElapsed, pendingConfIndex, uncommittedSize>>
         [] m.Type = MsgAppResp ->
             /\ IF m.reject THEN
                 /\ LET nextProbeIdx == m.RejectHint IN
                     /\ SendAppend(r, [Type |-> MsgApp, To |-> m.From])
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
                     /\ UNCHANGED <<leadTransferee, maxUncommittedSize, raftLog, term, electionElapsed, state, pendingConfIndex, uncommittedSize>>
                 ELSE
                 /\ IF MaybeCommit(r, m.entries) THEN
@@ -210,36 +210,36 @@ StepLeader(r, m) ==
                     /\ UNCHANGED <<stack, leadTransferee, maxUncommittedSize, raftLog, term, electionElapsed, state, uncommittedSize>>
                     ELSE
                     /\ UNCHANGED <<>>
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
                     /\ UNCHANGED <<leadTransferee, maxUncommittedSize, raftLog, term, electionElapsed, state, uncommittedSize>>
         [] m.Type = MsgHeartbeatResp ->
             /\ SendAppend(r, m.From)
-            /\ pc' = stack.backsite
-            /\ stack' = Head(stack)
-            /\ info' = stack.info
+            /\ pc' = stack[Len(stack)].backsite
+            /\ stack' = Tail(stack)
+            /\ info' = stack[Len(stack)].info
             /\ UNCHANGED <<leadTransferee, maxUncommittedSize, raftLog, term, electionElapsed, state, pendingConfIndex, uncommittedSize>>
         [] m.Type = MsgTransferLeader ->
             /\ IF /\ m.From # r THEN
                 /\ electionElapsed' = [electionElapsed EXCEPT ![r] = 0]
                 /\ leadTransferee' = [leadTransferee EXCEPT ![r] = m.From]
                 /\ Send(r, [Type |-> MsgTimeoutNow, To |-> m.From])
-                /\ pc' = stack.backsite
-                /\ stack' = Head(stack)
-                /\ info' = stack.info
+                /\ pc' = stack[Len(stack)].backsite
+                /\ stack' = Tail(stack)
+                /\ info' = stack[Len(stack)].info
                 /\ UNCHANGED <<maxUncommittedSize, raftLog, term, state, pendingConfIndex, uncommittedSize>>
                 ELSE
                 /\ UNCHANGED <<>>
-                /\ pc' = stack.backsite
-                /\ stack' = Head(stack)
-                /\ info' = stack.info
+                /\ pc' = stack[Len(stack)].backsite
+                /\ stack' = Tail(stack)
+                /\ info' = stack[Len(stack)].info
                 /\ UNCHANGED <<leadTransferee, maxUncommittedSize, msgsAfterAppend, raftLog, messages, term, electionElapsed, state, pendingConfIndex, uncommittedSize>>
         [] OTHER ->
             UNCHANGED <<state, term>>
-            /\ pc' = stack.backsite
-            /\ stack' = Head(stack)
-            /\ info' = stack.info
+            /\ pc' = stack[Len(stack)].backsite
+            /\ stack' = Tail(stack)
+            /\ info' = stack[Len(stack)].info
             /\ UNCHANGED <<leadTransferee, maxUncommittedSize, msgsAfterAppend, raftLog, messages, electionElapsed, pendingConfIndex, uncommittedSize>>
 StepFollower(r, m) ==
     \//\ m.Type = MsgProp
@@ -300,9 +300,9 @@ StepCandidate(r, m) ==
                 UNCHANGED <<state, term>>
                 /\ UNCHANGED <<raftLog_committed, Vote, msgsAfterAppend, trk_Votes, messages, raftLog_lastIndex, step, lead>>
         /\ UNCHANGED MaxInflightMsgs
-        /\ pc' = stack.backsite
-        /\ stack' = Head(stack)
-        /\ info' = stack.info
+        /\ pc' = stack[Len(stack)].backsite
+        /\ stack' = Tail(stack)
+        /\ info' = stack[Len(stack)].info
 RaftLog_isUpToDate(r, candLastID) ==
     /\ candLastID.Index > Len(raftLog[r])
     /\ candLastID.Term >= raftLog[r][Len(raftLog[r])].Term
@@ -357,23 +357,23 @@ Step(r, m) ==
             /\ IF m.Index /= 0 THEN
                 /\ stableIndex' = [stableIndex EXCEPT ![r] = m.Index]
                 /\ stableTerm' = [stableTerm EXCEPT ![r] = m.Term]
-                /\ pc' = stack.backsite
-                /\ stack' = Head(stack)
-                /\ info' = stack.info
+                /\ pc' = stack[Len(stack)].backsite
+                /\ stack' = Tail(stack)
+                /\ info' = stack[Len(stack)].info
                 /\ UNCHANGED <<Vote, electionElapsed>>
                 ELSE
                 /\ IF m.Snapshot /= None THEN
                     /\ stableIndex' = [stableIndex EXCEPT ![r] = m.Snapshot.Index]
                     /\ stableTerm' = [stableTerm EXCEPT ![r] = m.Snapshot.Term]
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
                     /\ UNCHANGED <<Vote, electionElapsed>>
                     ELSE
                     /\ UNCHANGED <<stableIndex, stableTerm>>
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
                     /\ UNCHANGED <<Vote, electionElapsed>>
         [] m.type = MsgStorageApplyResp ->
             /\ IF m.entries /= <<>> THEN
@@ -384,9 +384,9 @@ Step(r, m) ==
                 /\ UNCHANGED <<stableIndex, Vote, stableTerm, electionElapsed>>
                 ELSE
                 /\ UNCHANGED <<>>
-                /\ pc' = stack.backsite
-                /\ stack' = Head(stack)
-                /\ info' = stack.info
+                /\ pc' = stack[Len(stack)].backsite
+                /\ stack' = Tail(stack)
+                /\ info' = stack[Len(stack)].info
                 /\ UNCHANGED <<stableIndex, Vote, stableTerm, electionElapsed>>
         [] m.type \in {MsgVote, MsgPreVote} ->
             /\ LET canVote == IF Vote[r] = m.From THEN TRUE
@@ -431,29 +431,29 @@ IsEmptySnap(s) ==
     /\ s.Metadata.Term = 0
 StepLeader_2_3_4(r, m) ==
                     /\ Send(r, [Type |-> MsgTimeoutNow, To |-> m.From])
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
 TickHeartbeat_2_3(r) ==
     /\ UNCHANGED <<vars>> 
-    /\ pc' = stack.backsite
-    /\ stack' = Head(stack)
-    /\ info' = stack.info
+    /\ pc' = stack[Len(stack)].backsite
+    /\ stack' = Tail(stack)
+    /\ info' = stack[Len(stack)].info
 TickHeartbeat_1_2(r) ==
     /\ UNCHANGED <<vars>> 
-    /\ pc' = stack.backsite
-    /\ stack' = Head(stack)
-    /\ info' = stack.info
+    /\ pc' = stack[Len(stack)].backsite
+    /\ stack' = Tail(stack)
+    /\ info' = stack[Len(stack)].info
 StepLeader_3_4(r, m) ==
                     /\ Send(r, [Type |-> MsgTimeoutNow, To |-> m.From])
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
 StepLeader_2_4(r, m) ==
                     /\ Send(r, [Type |-> MsgTimeoutNow, To |-> m.From])
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
 StepLeader_2_3(r, m) ==
                     /\ Send(r, [Type |-> MsgTimeoutNow, To |-> m.From])
                 /\ IF m.From = leadTransferee[r] THEN
@@ -462,14 +462,14 @@ StepLeader_2_3(r, m) ==
                     /\ UNCHANGED <<stack>>
                     ELSE
                     /\ UNCHANGED <<>>
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
 StepCandidate_1_2(r, m) ==
         /\ UNCHANGED MaxInflightMsgs
-        /\ pc' = stack.backsite
-        /\ stack' = Head(stack)
-        /\ info' = stack.info
+        /\ pc' = stack[Len(stack)].backsite
+        /\ stack' = Tail(stack)
+        /\ info' = stack[Len(stack)].info
 TickHeartbeat_2(r) ==
         /\ UNCHANGED electionElapsed
         /\ UNCHANGED leadTransferee
@@ -482,14 +482,14 @@ TickHeartbeat_2(r) ==
             /\ stack' = [backsite |-> "TickHeartbeat_2_3", args |-> << r, [From |-> id[r], Type |-> MsgBeat]>>, info |-> info']
             ELSE
             /\ UNCHANGED heartbeatElapsed
-            /\ pc' = stack.backsite
-            /\ stack' = Head(stack)
-            /\ info' = stack.info
+            /\ pc' = stack[Len(stack)].backsite
+            /\ stack' = Tail(stack)
+            /\ info' = stack[Len(stack)].info
         ELSE
         /\ UNCHANGED heartbeatElapsed
-        /\ pc' = stack.backsite
-        /\ stack' = Head(stack)
-        /\ info' = stack.info
+        /\ pc' = stack[Len(stack)].backsite
+        /\ stack' = Tail(stack)
+        /\ info' = stack[Len(stack)].info
 TickHeartbeat_1(r) ==
         /\ electionElapsed' = [electionElapsed EXCEPT ![r] = 0]
         /\ IF state[r] = StateLeader /\ leadTransferee[r] /= None THEN
@@ -505,19 +505,19 @@ TickHeartbeat_1(r) ==
             /\ stack' = [backsite |-> "TickHeartbeat_1_2", args |-> << r, [From |-> id[r], Type |-> MsgBeat]>>, info |-> info']
             ELSE
             /\ UNCHANGED heartbeatElapsed
-            /\ pc' = stack.backsite
-            /\ stack' = Head(stack)
-            /\ info' = stack.info
+            /\ pc' = stack[Len(stack)].backsite
+            /\ stack' = Tail(stack)
+            /\ info' = stack[Len(stack)].info
         ELSE
         /\ UNCHANGED heartbeatElapsed
-        /\ pc' = stack.backsite
-        /\ stack' = Head(stack)
-        /\ info' = stack.info
+        /\ pc' = stack[Len(stack)].backsite
+        /\ stack' = Tail(stack)
+        /\ info' = stack[Len(stack)].info
 TickElection_1(r) ==
     /\ UNCHANGED <<vars>> 
-    /\ pc' = stack.backsite
-    /\ stack' = Head(stack)
-    /\ info' = stack.info
+    /\ pc' = stack[Len(stack)].backsite
+    /\ stack' = Tail(stack)
+    /\ info' = stack[Len(stack)].info
 Step_8(r, m) ==
     /\ CASE m.type = MsgHup ->
             /\ pc' = "Step_1"
@@ -527,23 +527,23 @@ Step_8(r, m) ==
             /\ IF m.Index /= 0 THEN
                 /\ stableIndex' = [stableIndex EXCEPT ![r] = m.Index]
                 /\ stableTerm' = [stableTerm EXCEPT ![r] = m.Term]
-                /\ pc' = stack.backsite
-                /\ stack' = Head(stack)
-                /\ info' = stack.info
+                /\ pc' = stack[Len(stack)].backsite
+                /\ stack' = Tail(stack)
+                /\ info' = stack[Len(stack)].info
                 /\ UNCHANGED <<Vote, electionElapsed>>
                 ELSE
                 /\ IF m.Snapshot /= None THEN
                     /\ stableIndex' = [stableIndex EXCEPT ![r] = m.Snapshot.Index]
                     /\ stableTerm' = [stableTerm EXCEPT ![r] = m.Snapshot.Term]
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
                     /\ UNCHANGED <<Vote, electionElapsed>>
                     ELSE
                     /\ UNCHANGED <<stableIndex, stableTerm>>
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
                     /\ UNCHANGED <<Vote, electionElapsed>>
         [] m.type = MsgStorageApplyResp ->
             /\ IF m.entries /= <<>> THEN
@@ -554,9 +554,9 @@ Step_8(r, m) ==
                 /\ UNCHANGED <<stableTerm, stableIndex, Vote, electionElapsed>>
                 ELSE
                 /\ UNCHANGED <<>>
-                /\ pc' = stack.backsite
-                /\ stack' = Head(stack)
-                /\ info' = stack.info
+                /\ pc' = stack[Len(stack)].backsite
+                /\ stack' = Tail(stack)
+                /\ info' = stack[Len(stack)].info
                 /\ UNCHANGED <<stableTerm, stableIndex, Vote, electionElapsed>>
         [] m.type \in {MsgVote, MsgPreVote} ->
             /\ LET canVote == IF Vote[r] = m.From THEN TRUE
@@ -598,45 +598,45 @@ Step_8(r, m) ==
                     /\ UNCHANGED <<stableTerm, stableIndex, Vote, electionElapsed>>
 Step_7(r, m) ==
     /\ UNCHANGED <<vars>> 
-    /\ pc' = stack.backsite
-    /\ stack' = Head(stack)
-    /\ info' = stack.info
+    /\ pc' = stack[Len(stack)].backsite
+    /\ stack' = Tail(stack)
+    /\ info' = stack[Len(stack)].info
 Step_6(r, m) ==
                     /\ StepFollower(r, m)
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
 Step_5(r, m) ==
     /\ UNCHANGED <<vars>> 
-    /\ pc' = stack.backsite
-    /\ stack' = Head(stack)
-    /\ info' = stack.info
+    /\ pc' = stack[Len(stack)].backsite
+    /\ stack' = Tail(stack)
+    /\ info' = stack[Len(stack)].info
 Step_4(r, m) ==
                     /\ Send(r, [Type |-> IF m.Type = "MsgVote" THEN "MsgVoteResp" ELSE "MsgPreVoteResp", To |-> m.From, Term |-> term[r], reject |-> TRUE])
                     /\ UNCHANGED <<electionElapsed, Vote>>
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
 Step_3(r, m) ==
                     /\ Send(r, [Type |-> IF m.Type = "MsgVote" THEN "MsgVoteResp" ELSE "MsgPreVoteResp", To |-> m.From, Term |-> m.Term, reject |-> FALSE])
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
 Step_2(r, m) ==
                 /\ ReduceUncommittedSize(r, Len(m.entries))
-                /\ pc' = stack.backsite
-                /\ stack' = Head(stack)
-                /\ info' = stack.info
+                /\ pc' = stack[Len(stack)].backsite
+                /\ stack' = Tail(stack)
+                /\ info' = stack[Len(stack)].info
 Step_1(r, m) ==
             /\ Hup(r, "CampaignPreElection")
-            /\ pc' = stack.backsite
-            /\ stack' = Head(stack)
-            /\ info' = stack.info
+            /\ pc' = stack[Len(stack)].backsite
+            /\ stack' = Tail(stack)
+            /\ info' = stack[Len(stack)].info
 StepLeader_4(r, m) ==
                     /\ Send(r, [Type |-> MsgTimeoutNow, To |-> m.From])
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
 StepLeader_3(r, m) ==
                     /\ Send(r, [Type |-> MsgTimeoutNow, To |-> m.From])
                 /\ IF m.From = leadTransferee[r] THEN
@@ -645,9 +645,9 @@ StepLeader_3(r, m) ==
                     /\ UNCHANGED <<stack>>
                     ELSE
                     /\ UNCHANGED <<>>
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
 StepLeader_2(r, m) ==
                     /\ MaybeSendAppend(r, m.From, FALSE)
                 /\ IF /\ m.From = leadTransferee[r] /\ m.Index = raftLog_lastIndex[r] THEN
@@ -662,25 +662,25 @@ StepLeader_2(r, m) ==
                     /\ UNCHANGED <<stack>>
                     ELSE
                     /\ UNCHANGED <<>>
-                    /\ pc' = stack.backsite
-                    /\ stack' = Head(stack)
-                    /\ info' = stack.info
+                    /\ pc' = stack[Len(stack)].backsite
+                    /\ stack' = Tail(stack)
+                    /\ info' = stack[Len(stack)].info
 StepLeader_1(r, m) ==
             /\ BcastAppend(r)
-            /\ pc' = stack.backsite
-            /\ stack' = Head(stack)
-            /\ info' = stack.info
+            /\ pc' = stack[Len(stack)].backsite
+            /\ stack' = Tail(stack)
+            /\ info' = stack[Len(stack)].info
 AppliedTo_1(index, r) ==
     /\ IF appliedTo'[r] >= pendingConfIndex[r] /\ state[r] = "StateLeader" THEN
         /\ messages' = Append(messages, [Type |-> "ConfChangeV2", Term |-> term[r], From |-> r])
-        /\ pc' = stack.backsite
-        /\ stack' = Head(stack)
-        /\ info' = stack.info
+        /\ pc' = stack[Len(stack)].backsite
+        /\ stack' = Tail(stack)
+        /\ info' = stack[Len(stack)].info
         ELSE
         /\ messages' = messages
-        /\ pc' = stack.backsite
-        /\ stack' = Head(stack)
-        /\ info' = stack.info
+        /\ pc' = stack[Len(stack)].backsite
+        /\ stack' = Tail(stack)
+        /\ info' = stack[Len(stack)].info
 StepCandidate_1(r, m) ==
                 /\ LET PollResult == Poll(r, m.from, m.type, ~m.reject) IN
                     /\ CASE PollResult.result = "VoteWon" ->
@@ -703,9 +703,9 @@ StepCandidate_1(r, m) ==
                             UNCHANGED <<state, term>>
                             /\ UNCHANGED <<Vote, msgsAfterAppend, messages, step, lead>>
         /\ UNCHANGED MaxInflightMsgs
-        /\ pc' = stack.backsite
-        /\ stack' = Head(stack)
-        /\ info' = stack.info
+        /\ pc' = stack[Len(stack)].backsite
+        /\ stack' = Tail(stack)
+        /\ info' = stack[Len(stack)].info
         /\ UNCHANGED <<stack, pc, info>>
 Campaign_2(r, t) ==
             /\ term' = [r |-> term[r]]
@@ -716,9 +716,9 @@ Campaign_2(r, t) ==
                     ELSE /\ Send(r, [To |-> id, Term |-> term'[r], Type |-> info.temp.voteMsg'[r], Index |-> raftLog[r][Len(raftLog[r])].Index, LogTerm |-> raftLog[r][Len(raftLog[r])].Term])
         
         /\ UNCHANGED <<MaxInflightMsgs>>
-        /\ pc' = stack.backsite
-        /\ stack' = Head(stack)
-        /\ info' = stack.info
+        /\ pc' = stack[Len(stack)].backsite
+        /\ stack' = Tail(stack)
+        /\ info' = stack[Len(stack)].info
 Campaign_1(r, t) ==
             /\ term' = [r |-> term[r] + 1]
         /\ LET ids == DOMAIN trk_Votes[r] IN
@@ -728,9 +728,9 @@ Campaign_1(r, t) ==
                     ELSE /\ Send(r, [To |-> id, Term |-> term'[r], Type |-> info.temp.voteMsg'[r], Index |-> raftLog[r][Len(raftLog[r])].Index, LogTerm |-> raftLog[r][Len(raftLog[r])].Term])
         
         /\ UNCHANGED <<MaxInflightMsgs>>
-        /\ pc' = stack.backsite
-        /\ stack' = Head(stack)
-        /\ info' = stack.info
+        /\ pc' = stack[Len(stack)].backsite
+        /\ stack' = Tail(stack)
+        /\ info' = stack[Len(stack)].info
 LoadState(r, state_Commit, state_Term, state_Vote) ==
     /\ state_Commit >= raftLog_committed[r]
     /\ state_Commit <= raftLog_lastIndex[r]

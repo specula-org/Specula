@@ -389,6 +389,10 @@ if [ $# -eq 0 ]; then
     echo "Examples:"
     echo "  $0 step1 examples/etcd/source/raft.go output/etcd/spec/step1/ --mode draft-based"
     echo "  $0 step2 output/etcd/spec/step1/corrected_spec/Raft.tla output/etcd/spec/step2/Raft.tla"
+    echo "  $0 step2 input.tla output.tla --algorithm sa  # Run static analysis only"
+    echo "  $0 step2 input.tla output.tla --algorithm uc  # Run unchanged variable analysis only"
+    echo "  $0 step2 input.tla output.tla --algorithm pc  # Run process cutting analysis only"
+    echo "  $0 step2 input.tla output.tla --show-tree     # Show parse tree GUI"
     echo "  $0 step3 output/etcd/spec/step2/Raft.tla --model-check"
     echo "  $0 step4.1 --tla examples/etcd/spec/step3/Raft.tla --cfg examples/etcd/spec/step3/Raft.cfg --auto-config output/etcd/spec/step4/raft_config.yaml output/etcd/spec/step4/spec/"
     echo "  $0 step4.2 examples/etcd/config/raft_config.yaml examples/etcd/source/raft.go --stub-template templates/instrumentation/go_trace_stub.template --output examples/etcd/output/instrumented_raft.go --verbose"
@@ -406,12 +410,14 @@ case "$COMMAND" in
     "step2")
         if [ $# -lt 2 ]; then
             echo "Error: step2 requires input and output arguments"
-            echo "Usage: $0 step2 <input> <output>"
+            echo "Usage: $0 step2 <input> <output> [--algorithm <algorithm>] [--show-tree]"
+            echo "Algorithm options: all (default), sa, uc, ud, pc"
             exit 1
         fi
         
         INPUT_FILE="$1"
         OUTPUT_FILE="$2"
+        shift 2
         
         # Check if CFA tool exists
         CFA_SCRIPT="$SCRIPT_DIR/tools/cfa/run.sh"
@@ -423,8 +429,8 @@ case "$COMMAND" in
         # Create output directory
         mkdir -p "$(dirname "$OUTPUT_FILE")"
         
-        # Run CFA transformation
-        bash "$CFA_SCRIPT" "$INPUT_FILE" "$OUTPUT_FILE"
+        # Run CFA transformation with remaining arguments
+        bash "$CFA_SCRIPT" "$INPUT_FILE" "$OUTPUT_FILE" "$@"
         ;;
         
     "step3")
@@ -461,7 +467,11 @@ echo
 print_status "Unified Command Interface:"
 print_status "  ./specula help                    # Show all available commands"
 print_status "  ./specula step1 <input> <output> # Generate TLA+ specification"
-print_status "  ./specula step2 <input> <output> # Transform TLA+ specification"
+print_status "  ./specula step2 <input> <output> # Transform TLA+ specification (all algorithms)"
+print_status "  ./specula step2 <input> <output> --algorithm sa # Static analysis only"
+print_status "  ./specula step2 <input> <output> --algorithm uc # Unchanged variable analysis only"
+print_status "  ./specula step2 <input> <output> --algorithm ud # Undefined variable analysis only"
+print_status "  ./specula step2 <input> <output> --algorithm pc # Process cutting analysis only"
 print_status "  ./specula step3 <spec_file>      # Verify TLA+ specification"
 print_status "  ./specula step4.1 <src> <config> # Instrument source code"
 print_status "  ./specula step4.2 <spec> <trace> # Validate trace"

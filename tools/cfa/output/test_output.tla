@@ -9,9 +9,9 @@ SubAction(m) ==
 Action_Call_SubAction_1_2 ==
         /\ z' = info.temp.temp
     /\ UNCHANGED <<x, y>>
-    /\ pc' = stack.backsite
-    /\ stack' = Head(stack)
-    /\ info' = stack.info
+    /\ pc' = stack[Len(stack)].backsite
+    /\ stack' = Tail(stack)
+    /\ info' = stack[Len(stack)].info
 Action_Call_SubAction_1 ==
         /\ SubAction(info.temp.temp)
         /\ pc' = "Action_Call_SubAction_1_2"

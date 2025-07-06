@@ -101,6 +101,34 @@ public class CFGVarChangeAnalyzer {
         analyzeUC();
         anlayzeUD();
     }
+
+    public void analyze_only_sa(){
+        List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
+        // Reverse
+        Collections.reverse(topologicalSort);
+        for (CFGFuncNode funcNode : topologicalSort) {
+            analyzeFuncSA(funcNode);
+        }
+    }
+
+    public void analyze_only_pc(){
+        List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
+        // Reverse
+        Collections.reverse(topologicalSort);
+        for (CFGFuncNode funcNode : topologicalSort) {
+            analyzeFuncPCCalled(funcNode);
+        }
+    }
+
+    public void analyze_only_ud(){
+        anlayzeUD();
+    }
+
+    public void analyze_only_uc(){
+
+        analyzeUC();
+    }
+
     // Static analysis build parent node mapping relationship and IN and OUT
     private void analyzeFuncSA(CFGFuncNode funcNode){
         CFGStmtNode stmtNode = funcNode.getRoot();

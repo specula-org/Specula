@@ -10,21 +10,31 @@ set -e
 
 # --- 1. Parse Arguments ---
 SHOW_TREE=false
+ALGORITHM="all"
 INPUT_FILE=""
 OUTPUT_FILE=""
 
 # Parse command line arguments
-for arg in "$@"; do
-    case $arg in
+while [[ $# -gt 0 ]]; do
+    case $1 in
         --show-tree|-show-tree)
             SHOW_TREE=true
             shift
             ;;
+        --algorithm|-algorithm)
+            if [[ -n "$2" && "$2" != --* ]]; then
+                ALGORITHM="$2"
+                shift 2
+            else
+                echo "ERROR: --algorithm requires a value"
+                exit 1
+            fi
+            ;;
         *)
             if [ -z "$INPUT_FILE" ]; then
-                INPUT_FILE="$arg"
+                INPUT_FILE="$1"
             elif [ -z "$OUTPUT_FILE" ]; then
-                OUTPUT_FILE="$arg"
+                OUTPUT_FILE="$1"
             fi
             shift
             ;;
@@ -34,10 +44,30 @@ done
 # --- 2. Argument Validation ---
 if [ -z "$INPUT_FILE" ] || [ -z "$OUTPUT_FILE" ]; then
     echo "ERROR: Invalid number of arguments."
-    echo "Usage: ./run.sh <input_file.tla> <output_file.tla> [--show-tree]"
+    echo "Usage: ./run.sh <input_file.tla> <output_file.tla> [--show-tree] [--algorithm <algorithm>]"
     echo "       ./run.sh --show-tree <input_file.tla> <output_file.tla>"
+    echo "       ./run.sh --algorithm sa <input_file.tla> <output_file.tla>"
+    echo "       ./run.sh --algorithm pc <input_file.tla> <output_file.tla>"
+    echo ""
+    echo "Algorithm options:"
+    echo "  --algorithm all    Run all algorithms (default)"
+    echo "  --algorithm sa     Run static analysis only"
+    echo "  --algorithm uc     Run unchanged variable analysis only"
+    echo "  --algorithm ud     Run undefined variable analysis only"
+    echo "  --algorithm pc     Run process cutting analysis only"
     exit 1
 fi
+
+# Validate algorithm parameter
+case "$ALGORITHM" in
+    all|sa|uc|ud|pc)
+        ;;
+    *)
+        echo "ERROR: Invalid algorithm: $ALGORITHM"
+        echo "Valid algorithms: all, sa, uc, ud, pc"
+        exit 1
+        ;;
+esac
 
 # Create output directory if it doesn't exist
 mkdir -p "$(dirname "$OUTPUT_FILE")"
@@ -63,6 +93,7 @@ echo "=== [Phase 2] Starting CFA Transformation ==="
 echo "Script directory: $SCRIPT_DIR"
 echo "Input file: $INPUT_FILE"
 echo "Output file: $OUTPUT_FILE"
+echo "Algorithm: $ALGORITHM"
 if [ "$SHOW_TREE" = true ]; then
     echo "Parse tree GUI will be displayed"
 fi
@@ -93,12 +124,17 @@ echo "Found executable JAR: $JAR_FILE"
 # --- 6. Run the Java Application ---
 echo "Running the CFA transformation logic..."
 
-# Build Java command with optional --show-tree parameter
+# Build Java command with optional parameters
+JAVA_ARGS=()
 if [ "$SHOW_TREE" = true ]; then
-    java -jar "$JAR_FILE" --show-tree "$INPUT_FILE" "$OUTPUT_FILE"
-else
-    java -jar "$JAR_FILE" "$INPUT_FILE" "$OUTPUT_FILE"
+    JAVA_ARGS+=(--show-tree)
 fi
+if [ "$ALGORITHM" != "all" ]; then
+    JAVA_ARGS+=(--algorithm "$ALGORITHM")
+fi
+JAVA_ARGS+=("$INPUT_FILE" "$OUTPUT_FILE")
+
+java -jar "$JAR_FILE" "${JAVA_ARGS[@]}"
 
 # Check if transformation was successful
 if [ $? -ne 0 ]; then

@@ -151,9 +151,9 @@ becomeLeader(s) ==
 tickHeartbeat_1_2(s) ==
     /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "Beat"]}
     /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-    /\ pc' = stack.backsite
-    /\ stack' = Head(stack)
-    /\ info' = stack.info
+    /\ pc' = stack[Len(stack)].backsite
+    /\ stack' = Tail(stack)
+    /\ info' = stack[Len(stack)].info
 
 tickHeartbeat_1(s) ==
     /\ IF electionElapsed[s] >= 10 
@@ -171,14 +171,14 @@ tickHeartbeat_1(s) ==
             /\ UNCHANGED stack
             ELSE
             /\ UNCHANGED <<heartbeatElapsed>>
-            /\ pc' = stack.backsite
-            /\ stack' = Head(stack)
-            /\ info' = stack.info
+            /\ pc' = stack[Len(stack)].backsite
+            /\ stack' = Tail(stack)
+            /\ info' = stack[Len(stack)].info
         ELSE
         /\ UNCHANGED <<heartbeatElapsed>>
-        /\ pc' = stack.backsite
-        /\ stack' = Head(stack)
-        /\ info' = stack.info
+        /\ pc' = stack[Len(stack)].backsite
+        /\ stack' = Tail(stack)
+        /\ info' = stack[Len(stack)].info
     /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
 
 tickElection_1(s) ==
@@ -187,9 +187,9 @@ tickElection_1(s) ==
             /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "Hup"]}
        ELSE UNCHANGED messages
     /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-    /\ pc' = stack.backsite
-    /\ stack' = Head(stack)
-    /\ info' = stack.info
+    /\ pc' = stack[Len(stack)].backsite
+    /\ stack' = Tail(stack)
+    /\ info' = stack[Len(stack)].info
 
 tickHeartbeat(s) ==
     /\ heartbeatElapsed' = [heartbeatElapsed EXCEPT ![s] = heartbeatElapsed[s] + 1]

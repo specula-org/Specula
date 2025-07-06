@@ -32,6 +32,8 @@ buildNumber.properties
 .m2/
 archive/
 lib/
+tools/cfa/input/test
+tools/cfa/output/test
 
 # Embedded git repositories
 systems/etcd/raft/
