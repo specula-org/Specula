@@ -270,7 +270,7 @@ public class CFGVarChangeAnalyzer {
             }
             // pc' = name
             // info' = [args |-> <<>>, temp |-> [temp1 |-> temp1, temp2 |-> temp2, ...]]
-            // stack'= [backsite |-> newfuncname, args |-> <<>>, info |-> info']
+            // stack'= Append(stack, [backsite |-> newfuncname, args |-> <<>>, info |-> info'])
             pc_jump.InVar = new HashSet<>(stmt.InVar);
             pc_jump.OutVar = new HashSet<>(stmt.InVar);
             pc_jump.OutVar.add("pc");
@@ -315,24 +315,24 @@ public class CFGVarChangeAnalyzer {
                     }
                 } else {
                     // No children, is return node, then need to pop stack
-                    //     pc' = stack.backsite
-                    //     info' = stack.info
-                    //     stack' = Head(stack)
+                    //     pc' = stack[Len(stack)].backsite
+                    //     info' = stack[Len(stack)].info
+                    //     stack' = Tail(stack)
                     Set<String> uncalledFunc = getUncalledFunc();
                     if ((cuttedFunc.contains(funcNode) && !uncalledFunc.contains(funcNode.getFuncName())) && !stmt.getContent().contains("/\\ info' =") && !stmt.getContent().contains("/\\ stack' =")){
-                        CFGStmtNode pc_stmt = new CFGStmtNode(stmt.getIndentation(), "/\\ pc' = stack.backsite", null, CFGStmtNode.StmtType.NORMAL);
+                        CFGStmtNode pc_stmt = new CFGStmtNode(stmt.getIndentation(), "/\\ pc' = stack[Len(stack)].backsite", null, CFGStmtNode.StmtType.NORMAL);
                         pc_stmt.InVar = new HashSet<>(stmt.OutVar);
                         pc_stmt.OutVar = new HashSet<>(stmt.OutVar);
                         pc_stmt.OutVar.add("pc");
                         stmt.addChild(pc_stmt);
                         parentMap.computeIfAbsent(pc_stmt, k -> new ArrayList<>()).add(stmt);
-                        CFGStmtNode stack_node = new CFGStmtNode(stmt.getIndentation(), "/\\ stack' = Head(stack)", null, CFGStmtNode.StmtType.NORMAL);
+                        CFGStmtNode stack_node = new CFGStmtNode(stmt.getIndentation(), "/\\ stack' = Tail(stack)", null, CFGStmtNode.StmtType.NORMAL);
                         stack_node.InVar = new HashSet<>(pc_stmt.OutVar);
                         stack_node.OutVar = new HashSet<>(pc_stmt.OutVar);
                         stack_node.OutVar.add("stack");
                         pc_stmt.addChild(stack_node);
                         parentMap.computeIfAbsent(stack_node, k -> new ArrayList<>()).add(pc_stmt);
-                        CFGStmtNode info_node = new CFGStmtNode(stmt.getIndentation(), "/\\ info' = stack.info", null, CFGStmtNode.StmtType.NORMAL);
+                        CFGStmtNode info_node = new CFGStmtNode(stmt.getIndentation(), "/\\ info' = stack[Len(stack)].info", null, CFGStmtNode.StmtType.NORMAL);
                         info_node.InVar = new HashSet<>(stack_node.OutVar);
                         info_node.OutVar = new HashSet<>(stack_node.OutVar);
                         info_node.OutVar.add("info");
@@ -854,7 +854,7 @@ public class CFGVarChangeAnalyzer {
         }
         // If no '(', the parameter part is an empty string
         arguments += ">>";
-        String stackStr = "/\\ stack' = [backsite |-> \"" + funcNode.getFuncName() + "\", args |-> " + arguments + ", info |-> info']";
+        String stackStr = "/\\ stack' = Append(stack, [backsite |-> \"" + funcNode.getFuncName() + "\", args |-> " + arguments + ", info |-> info'])";
         return stackStr;
     }
 
