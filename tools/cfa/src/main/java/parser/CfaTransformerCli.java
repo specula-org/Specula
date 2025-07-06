@@ -30,10 +30,11 @@ public class CfaTransformerCli {
         // We expect at least two arguments: input file and output file
         if (args.length < 2) {
             System.err.println("ERROR: Missing arguments.");
-            System.err.println("Usage: java -jar <jar_name>.jar <input_file.tla> <output_file.tla> [--show-tree] [--algorithm <algorithm>]");
+            System.err.println("Usage: java -jar <jar_name>.jar <input_file.tla> <output_file.tla> [--show-tree] [--algorithm <algorithm>] [--debug]");
             System.err.println("       java -jar <jar_name>.jar --show-tree <input_file.tla> <output_file.tla>");
             System.err.println("       java -jar <jar_name>.jar --algorithm sa <input_file.tla> <output_file.tla>");
             System.err.println("       java -jar <jar_name>.jar --algorithm pc <input_file.tla> <output_file.tla>");
+            System.err.println("       java -jar <jar_name>.jar --debug <input_file.tla> <output_file.tla>");
             System.err.println("");
             System.err.println("Algorithm options:");
             System.err.println("  --algorithm all    Run all algorithms (default)");
@@ -41,12 +42,16 @@ public class CfaTransformerCli {
             System.err.println("  --algorithm uc     Run unchanged variable analysis only");
             System.err.println("  --algorithm ud     Run undefined variable analysis only");
             System.err.println("  --algorithm pc     Run process cutting analysis only");
+            System.err.println("");
+            System.err.println("Debug options:");
+            System.err.println("  --debug            Print IN/OUT variables for each statement (for debugging)");
             System.exit(1); // Exit with error
         }
 
         // --- 2. Parse command line arguments ---
         // Support flexible argument order for --show-tree and --algorithm
         boolean showTree = false;
+        boolean debugMode = false;
         String algorithm = "all"; // Default to running all algorithms
         String inputFile = null;
         String outputFile = null;
@@ -55,6 +60,8 @@ public class CfaTransformerCli {
         for (int i = 0; i < args.length; i++) {
             if (args[i].equalsIgnoreCase("--show-tree") || args[i].equalsIgnoreCase("-show-tree")) {
                 showTree = true;
+            } else if (args[i].equalsIgnoreCase("--debug") || args[i].equalsIgnoreCase("-debug")) {
+                debugMode = true;
             } else if (args[i].equalsIgnoreCase("--algorithm") || args[i].equalsIgnoreCase("-algorithm")) {
                 if (i + 1 < args.length) {
                     algorithm = args[i + 1].toLowerCase();
@@ -80,7 +87,7 @@ public class CfaTransformerCli {
         // Validate that we have both input and output files
         if (inputFile == null || outputFile == null) {
             System.err.println("ERROR: Both input and output files must be specified.");
-            System.err.println("Usage: java -jar <jar_name>.jar <input_file.tla> <output_file.tla> [--show-tree] [--algorithm <algorithm>]");
+            System.err.println("Usage: java -jar <jar_name>.jar <input_file.tla> <output_file.tla> [--show-tree] [--algorithm <algorithm>] [--debug]");
             System.err.println("       java -jar <jar_name>.jar --show-tree <input_file.tla> <output_file.tla>");
             System.err.println("       java -jar <jar_name>.jar --algorithm sa <input_file.tla> <output_file.tla>");
             System.exit(1);
@@ -92,6 +99,9 @@ public class CfaTransformerCli {
         System.out.println("Processing input file: " + inputPath);
         if (showTree) {
             System.out.println("Parse tree GUI will be displayed");
+        }
+        if (debugMode) {
+            System.out.println("Debug mode enabled: IN/OUT variables will be printed");
         }
 
         // --- 3. Core logic copied from test file ---
@@ -168,6 +178,14 @@ public class CfaTransformerCli {
             default:
                 System.err.println("ERROR: Unknown algorithm: " + algorithm);
                 System.exit(1);
+        }
+        
+        // --- Print debug information if requested ---
+        if (debugMode) {
+            System.out.println("\n=== DEBUG MODE: Printing debug information ===");
+            cfgVarChangeAnalyzer.printInOutVars();
+            cfgVarChangeAnalyzer.printFuncVarChange();
+            cfgVarChangeAnalyzer.printCuttedFuncInfo();
         }
         
         // --- 6. Get result string ---

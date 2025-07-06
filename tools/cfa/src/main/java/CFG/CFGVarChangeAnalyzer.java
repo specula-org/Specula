@@ -111,6 +111,7 @@ public class CFGVarChangeAnalyzer {
         }
     }
 
+    // TODO
     public void analyze_only_pc(){
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
         // Reverse
@@ -125,7 +126,13 @@ public class CFGVarChangeAnalyzer {
     }
 
     public void analyze_only_uc(){
-
+        List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
+        // Reverse
+        Collections.reverse(topologicalSort);
+        for (CFGFuncNode funcNode : topologicalSort) {
+            // Analyze each function
+            analyzeFuncSA(funcNode);
+        }
         analyzeUC();
     }
 
@@ -551,20 +558,25 @@ public class CFGVarChangeAnalyzer {
 
     public Set<String> VarChangedOneStmt(CFGStmtNode stmt) {
         Set<String> result = new HashSet<>();
+        String content = stmt.getContent();
+        
         for (String var : variables) {
+            // Updated regex pattern to match TLA+ variable assignment patterns
+            // Matches: var' = ..., var' = [var EXCEPT ...], etc.
             String pattern = "(?<![\\w_])" + var + "'\\s*=";
-            if (stmt.getContent().matches(".*" + pattern + ".*")) {
+            if (content.matches(".*" + pattern + ".*")) {
                 result.add(var);
             }
         }
+        
         // Handle UNCHANGED statement
-        if (stmt.getContent().contains("UNCHANGED")) {
+        if (content.contains("UNCHANGED")) {
             // Extract variables from UNCHANGED << >>
-            if (stmt.getContent().contains("<<")){
-                int start = stmt.getContent().indexOf("<<");
-                int end = stmt.getContent().indexOf(">>");
+            if (content.contains("<<")){
+                int start = content.indexOf("<<");
+                int end = content.indexOf(">>");
                 if (start != -1 && end != -1) {
-                    String vars = stmt.getContent().substring(start + 2, end);
+                    String vars = content.substring(start + 2, end);
                     String[] varArray = vars.split(",");
                     for (String var : varArray) {
                         String trimmedVar = var.trim();
@@ -574,15 +586,19 @@ public class CFGVarChangeAnalyzer {
                     }
                 }
             } else {
-                // Only one variable, save the characters after UNCHANGED and remove spaces
-                int start = stmt.getContent().indexOf("UNCHANGED");
-                String var = stmt.getContent().substring(start + 9).trim();
-                if (variables.contains(var)) {
-                    result.add(var);
+                // Handle UNCHANGED vars pattern
+                String unchangedPattern = "UNCHANGED\\s+(\\w+)";
+                java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(unchangedPattern);
+                java.util.regex.Matcher matcher = pattern.matcher(content);
+                if (matcher.find()) {
+                    String var = matcher.group(1);
+                    if (variables.contains(var)) {
+                        result.add(var);
+                    }
                 }
             }
-            
         }
+        
         return result;
     }
 
@@ -923,5 +939,130 @@ public class CFGVarChangeAnalyzer {
             }
             funcVarChange.put(funcNode.getFuncName(), varChange);
         }
+    }
+
+    /**
+     * Print IN and OUT variable sets for each statement in each function for debugging
+     */
+    public void printInOutVars() {
+        System.err.println("=== DEBUG: Printing IN/OUT variable sets for each statement ===");
+        for (CFGFuncNode funcNode : callGraph.getFuncNodes()) {
+            System.err.println("\nFunction: " + funcNode.getFuncName());
+            System.err.println("Parameters: " + funcNode.getParameters());
+            System.err.println("---------------------------------------");
+            printStmtInOutVars(funcNode.getRoot(), 0);
+        }
+        System.err.println("\n=== DEBUG: Printing completed ===\n");
+    }
+
+    /**
+     * Recursively print IN and OUT variable sets for statement nodes
+     * @param stmt statement node
+     * @param depth indentation depth
+     */
+    private void printStmtInOutVars(CFGStmtNode stmt, int depth) {
+        // Generate indentation
+        String indent = "";
+        for (int i = 0; i < depth; i++) {
+            indent += "  ";
+        }
+        
+        // Print statement information
+        System.err.println(indent + "Statement [" + stmt.getType() + "]: " + 
+                          (stmt.getContent().length() > 80 ? 
+                           stmt.getContent().substring(0, 80) + "..." : 
+                           stmt.getContent()));
+        
+        // Print IN variable set
+        System.err.println(indent + "  IN:  " + formatVarSet(stmt.InVar));
+        
+        // Print OUT variable set
+        System.err.println(indent + "  OUT: " + formatVarSet(stmt.OutVar));
+        
+        // Print temporary variables if any
+        if (stmt.getTemporaryVariables() != null && !stmt.getTemporaryVariables().isEmpty()) {
+            Set<String> tempVarSet = new HashSet<>(stmt.getTemporaryVariables());
+            System.err.println(indent + "  TEMP: " + formatVarSet(tempVarSet));
+        }
+        
+        System.err.println(indent + "  ---");
+        
+        // Recursively print child nodes
+        for (CFGStmtNode child : stmt.getChildren()) {
+            printStmtInOutVars(child, depth + 1);
+        }
+    }
+
+    /**
+     * Format variable set as string for printing
+     * @param varSet variable set
+     * @return formatted string
+     */
+    private String formatVarSet(Set<String> varSet) {
+        if (varSet == null || varSet.isEmpty()) {
+            return "{}";
+        }
+        
+        List<String> sortedVars = new ArrayList<>(varSet);
+        Collections.sort(sortedVars);
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        for (int i = 0; i < sortedVars.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(sortedVars.get(i));
+        }
+        sb.append("}");
+        
+        return sb.toString();
+    }
+
+    /**
+     * Print function variable change information for debugging
+     */
+    public void printFuncVarChange() {
+        System.err.println("\n=== DEBUG: Printing function variable change information ===");
+        for (String funcName : callGraph.getFuncNames()) {
+            Set<String> varChange = funcVarChange.get(funcName);
+            System.err.println("Function " + funcName + " changed variables: " + formatVarSet(varChange));
+        }
+        System.err.println("=== DEBUG: Function variable change information completed ===\n");
+    }
+
+    /**
+     * Print cut function information for debugging
+     */
+    public void printCuttedFuncInfo() {
+        System.err.println("\n=== DEBUG: Printing cut function information ===");
+        System.err.println("Number of cut functions: " + cuttedFunc.size());
+        for (CFGFuncNode funcNode : cuttedFunc) {
+            System.err.println("  - " + funcNode.getFuncName());
+        }
+        
+        System.err.println("Number of root functions: " + (rootFunc != null ? rootFunc.size() : 0));
+        if (rootFunc != null) {
+            for (CFGFuncNode funcNode : rootFunc) {
+                System.err.println("  - " + funcNode.getFuncName());
+            }
+        }
+        
+        Set<String> uncalledFunc = getUncalledFunc();
+        System.err.println("Number of uncalled functions: " + uncalledFunc.size());
+        for (String funcName : uncalledFunc) {
+            System.err.println("  - " + funcName);
+        }
+        System.err.println("=== DEBUG: Cut function information completed ===\n");
+    }
+
+    /**
+     * Print detected variables for debugging
+     */
+    public void printDetectedVariables() {
+        System.err.println("\n=== DEBUG: Detected Variables ===");
+        System.err.println("Total variables detected: " + variables.size());
+        for (String var : variables) {
+            System.err.println("  - " + var);
+        }
+        System.err.println("=== DEBUG: Variables list completed ===\n");
     }
 }

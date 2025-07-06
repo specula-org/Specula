@@ -410,8 +410,9 @@ case "$COMMAND" in
     "step2")
         if [ $# -lt 2 ]; then
             echo "Error: step2 requires input and output arguments"
-            echo "Usage: $0 step2 <input> <output> [--algorithm <algorithm>] [--show-tree]"
+            echo "Usage: $0 step2 <input> <output> [--algorithm <algorithm>] [--show-tree] [--debug]"
             echo "Algorithm options: all (default), sa, uc, ud, pc"
+            echo "Debug options: --debug (print IN/OUT variables for debugging)"
             exit 1
         fi
         

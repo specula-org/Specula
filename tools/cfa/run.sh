@@ -11,6 +11,7 @@ set -e
 # --- 1. Parse Arguments ---
 SHOW_TREE=false
 ALGORITHM="all"
+DEBUG_MODE=false
 INPUT_FILE=""
 OUTPUT_FILE=""
 
@@ -19,6 +20,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --show-tree|-show-tree)
             SHOW_TREE=true
+            shift
+            ;;
+        --debug|-debug)
+            DEBUG_MODE=true
             shift
             ;;
         --algorithm|-algorithm)
@@ -44,10 +49,11 @@ done
 # --- 2. Argument Validation ---
 if [ -z "$INPUT_FILE" ] || [ -z "$OUTPUT_FILE" ]; then
     echo "ERROR: Invalid number of arguments."
-    echo "Usage: ./run.sh <input_file.tla> <output_file.tla> [--show-tree] [--algorithm <algorithm>]"
+    echo "Usage: ./run.sh <input_file.tla> <output_file.tla> [--show-tree] [--algorithm <algorithm>] [--debug]"
     echo "       ./run.sh --show-tree <input_file.tla> <output_file.tla>"
     echo "       ./run.sh --algorithm sa <input_file.tla> <output_file.tla>"
     echo "       ./run.sh --algorithm pc <input_file.tla> <output_file.tla>"
+    echo "       ./run.sh --debug <input_file.tla> <output_file.tla>"
     echo ""
     echo "Algorithm options:"
     echo "  --algorithm all    Run all algorithms (default)"
@@ -55,6 +61,9 @@ if [ -z "$INPUT_FILE" ] || [ -z "$OUTPUT_FILE" ]; then
     echo "  --algorithm uc     Run unchanged variable analysis only"
     echo "  --algorithm ud     Run undefined variable analysis only"
     echo "  --algorithm pc     Run process cutting analysis only"
+    echo ""
+    echo "Debug options:"
+    echo "  --debug            Print IN/OUT variables for each statement (for debugging)"
     exit 1
 fi
 
@@ -97,6 +106,9 @@ echo "Algorithm: $ALGORITHM"
 if [ "$SHOW_TREE" = true ]; then
     echo "Parse tree GUI will be displayed"
 fi
+if [ "$DEBUG_MODE" = true ]; then
+    echo "Debug mode enabled: IN/OUT variables will be printed"
+fi
 
 # --- 4. Build the Java Project with Maven ---
 echo "Building the Java project with Maven... (this may take a moment)"
@@ -128,6 +140,9 @@ echo "Running the CFA transformation logic..."
 JAVA_ARGS=()
 if [ "$SHOW_TREE" = true ]; then
     JAVA_ARGS+=(--show-tree)
+fi
+if [ "$DEBUG_MODE" = true ]; then
+    JAVA_ARGS+=(--debug)
 fi
 if [ "$ALGORITHM" != "all" ]; then
     JAVA_ARGS+=(--algorithm "$ALGORITHM")
