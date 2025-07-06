@@ -126,12 +126,16 @@ public class CFGCALLGraph {
             adjList.put(node, new ArrayList<>());
         }
         
-        // Build in-degree table and adjacency table
+        // Build in-degree table and adjacency table, ignoring self-recursive calls
         for (CFGCALLEdge edge : callEdges) {
             CFGFuncNode source = edge.getSourceFunc();
             CFGFuncNode target = edge.getTarget();
-            adjList.get(source).add(target);
-            inDegree.put(target, inDegree.get(target) + 1);
+            
+            // Ignore self-recursive calls (source calling itself)
+            if (!source.equals(target)) {
+                adjList.get(source).add(target);
+                inDegree.put(target, inDegree.get(target) + 1);
+            }
         }
         
         // Create queue, add nodes with in-degree 0 to queue
