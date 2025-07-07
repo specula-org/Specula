@@ -149,7 +149,7 @@ public class CfaTransformerCli {
         cfgBuilderVisitor.visit(tree);  
         CFGGraphToStr cfgGraphToStr = new CFGGraphToStr();
         CFGCALLGraph callGraph = new CFGCALLGraph(cfgBuilderVisitor.getCfgFuncNodes(), cfgBuilderVisitor.getVariables(), cfgBuilderVisitor.getConstants());
-        callGraph.buildCallGraph();
+        callGraph.buildCallGraph(debugMode);
         CFGVarChangeAnalyzer cfgVarChangeAnalyzer = new CFGVarChangeAnalyzer(callGraph);
         
         // Run selected algorithm(s)

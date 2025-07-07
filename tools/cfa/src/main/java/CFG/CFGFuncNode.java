@@ -12,6 +12,7 @@ public class CFGFuncNode {
     private CFGStmtNode root;  // Function body statement node list 
     private int id;
     private Map<CFGStmtNode, Boolean> arrived;
+    private boolean aliasOnly;  // Whether this function is only for alias definition
 
     // Constructor
     public CFGFuncNode(String funcName, List<String> parameters) {
@@ -20,6 +21,7 @@ public class CFGFuncNode {
         this.root = null;
         this.id = 0;
         this.arrived = new HashMap<>();
+        this.aliasOnly = false;
     }
 
     public CFGFuncNode(String funcName, List<String> parameters, int id) {
@@ -28,6 +30,7 @@ public class CFGFuncNode {
         this.root = null;
         this.id = id;
         this.arrived = new HashMap<>();
+        this.aliasOnly = false;
     }
 
     // Getters
@@ -57,6 +60,10 @@ public class CFGFuncNode {
         return arrived;
     }
 
+    public boolean isAliasOnly() {
+        return aliasOnly;
+    }
+
     // Setters
     public void setFuncName(String funcName) {
         this.funcName = funcName;
@@ -68,6 +75,10 @@ public class CFGFuncNode {
 
     public void setArrived(CFGStmtNode stmt, boolean flag){
         this.arrived.put(stmt, flag);
+    }
+
+    public void setAliasOnly(boolean aliasOnly) {
+        this.aliasOnly = aliasOnly;
     }
 
     // Add parameter

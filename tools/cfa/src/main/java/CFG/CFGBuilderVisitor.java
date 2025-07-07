@@ -17,7 +17,8 @@ import parser.TLAPlusParserBaseVisitor;
 
 // Visitor class for traversing ParseTree and building CFG
 public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
-    private static final String IGNORE_OPERATORS = "^(Init|Next|Spec|vars|TypeOK|TypeInvariant)";
+    private static final String IGNORE_OPERATORS = "^(Init|Next|Spec|TypeOK|TypeInvariant)";
+    private static final String ALIAS_ONLY_OPERATORS = ".*vars.*";
     private List<String> constants = new ArrayList<>();
     private List<String> variables = new ArrayList<>();
     private List<CFGFuncNode> cfgFuncNodes = new ArrayList<>();
@@ -94,13 +95,18 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
     @Override
     public Void visitOperatorDefinition(TLAPlusParser.OperatorDefinitionContext ctx) {
         String text = getFullText(ctx);
-        Pattern pattern = Pattern.compile(IGNORE_OPERATORS);
-        Matcher matcher = pattern.matcher(text);
+        Pattern ignorePattern = Pattern.compile(IGNORE_OPERATORS);
+        Pattern aliasPattern = Pattern.compile(ALIAS_ONLY_OPERATORS);
+        Matcher ignoreMatcher = ignorePattern.matcher(text);
+        Matcher aliasMatcher = aliasPattern.matcher(text);
 
-        if (matcher.find()) {
+        if (ignoreMatcher.find()) {
             // If string starts with specified keywords, ignore it
             return null;
         }
+
+        // Check if this is an alias-only operator (like vars)
+        boolean isAliasOnly = aliasMatcher.find();
 
         // System.out.println("Visiting operator definition: " + text);
         // Handle nonFixLHS EQUALS body case
@@ -124,8 +130,12 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
             root.addChild(bodyInfo);
             funcNode.setRoot(root);
             
+            // Mark as alias-only if needed
+            if (isAliasOnly) {
+                funcNode.setAliasOnly(true);
+            }
+            
             // Add function node to CFG
-
             cfgFuncNodes.add(funcNode);
         }
         else {
