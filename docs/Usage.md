@@ -156,19 +156,83 @@ The second step transforms the translated spec into structured, declarative TLA+
 ./specula step2 output/etcd/spec/step1/corrected_spec/Raft.tla output/etcd/spec/step2/Raft.tla
 ```
 
+### CFA Algorithm Modes
+
+The CFA tool supports different algorithm modes for specific analysis needs:
+
+#### Complete Analysis (Default)
+
+Runs all algorithms including static analysis, unchanged variable analysis, and undefined variable analysis:
+
+```bash
+./specula step2 input_spec.tla output_spec.tla
+# or explicitly:
+java -jar tools/cfa/target/cfa-transformer-1.0.jar input_spec.tla output_spec.tla --algorithm all
+```
+
+#### Static Analysis Only
+
+Performs only static analysis for single assignment constraints:
+
+```bash
+java -jar tools/cfa/target/cfa-transformer-1.0.jar input_spec.tla output_spec.tla --algorithm sa
+```
+
+#### Unchanged Variable Analysis Only
+
+Analyzes only unchanged variables and adds appropriate `UNCHANGED` statements:
+
+```bash
+java -jar tools/cfa/target/cfa-transformer-1.0.jar input_spec.tla output_spec.tla --algorithm uc
+```
+
+#### Undefined Variable Analysis Only
+
+Analyzes only undefined variables and adds necessary state annotations (using `'`):
+
+```bash
+java -jar tools/cfa/target/cfa-transformer-1.0.jar input_spec.tla output_spec.tla --algorithm ud
+```
+
+#### Process Cutting Analysis Only
+
+Performs only process cutting analysis for optimizing specifications:
+
+```bash
+java -jar tools/cfa/target/cfa-transformer-1.0.jar input_spec.tla output_spec.tla --algorithm pc
+```
+
+### CFA Tool Command-Line Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--algorithm` | Algorithm mode: `all`, `sa`, `uc`, `ud`, `pc` | `all` |
+| `--debug` | Print IN/OUT variables for debugging | False |
+| `--show-tree` | Display parse tree GUI | False |
+
+### Debug Mode
+
+Enable debug mode to view detailed analysis information:
+
+```bash
+java -jar tools/cfa/target/cfa-transformer-1.0.jar input_spec.tla output_spec.tla --debug
+```
+
 ### Functionality
 
-The CFA tool solves three main problems:
+The CFA tool solves four main problems:
 
-1. **Single Assignment Constraint**: In atomic actions, a variable can be assigned at most once
-2. **UNCHANGED Requirement**: Adds explicit `UNCHANGED` statements for unmodified variables
-3. **State Annotation**: Adds explicit annotations for variables using modified states (using `'`)
+1. **Single Assignment Constraint (SA)**: In atomic actions, a variable can be assigned at most once
+2. **UNCHANGED Requirement (UC)**: Adds explicit `UNCHANGED` statements for unmodified variables
+3. **State Annotation (UD)**: Adds explicit annotations for variables using modified states (using `'`)
+4. **Process Cutting (PC)**: Optimizes specifications by cutting unnecessary processes
 
 ### Notes
 
 - The CFA tool is implemented in Java and requires Maven compilation
 - Input specifications should use imperative control flow
 - Output specifications use declarative TLA+ constructs
+- Algorithm modes allow focusing on specific transformation aspects
 - This tool is currently in development and may require manual specification adjustments
 
 ### Manual CFA Tool Compilation
