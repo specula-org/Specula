@@ -8,16 +8,9 @@ Init ==
 
 ProcessData(input) ==
     /\ x' = input + 1
-    /\ y' = CalculateValue(x')  
-    /\ result' = FinalStep(y')  
+    /\ y' = x' * 2 + 3
+    /\ result' = y' + x'
 
-CalculateValue(val) ==
-    /\ val * 2 + 3
-
-FinalStep(intermediate) ==
-    /\ intermediate - 1
-
-\* 主要动作包含多个步骤和函数调用
 MainAction ==
     /\ ProcessData(5)
     /\ x' = x' + result'  

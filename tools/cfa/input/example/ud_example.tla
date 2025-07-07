@@ -8,21 +8,19 @@ Init ==
 
 UpdateSequence ==
     /\ counter' = counter + 1
-    /\ buffer' = Append(buffer, counter') 
-    /\ index' = Len(buffer') + 1           
-    /\ counter' = counter' * index'      
+    /\ buffer' = Append(buffer, counter) 
+    /\ index' = Len(buffer) + 1         
 
 ChainedUpdates ==
     /\ index' = index + 2
-    /\ counter' = counter + index'         
-    /\ buffer' = [i \in 1..counter' |-> i] 
-    /\ index' = Len(buffer')             
+    /\ counter' = counter + index'        
+    /\ buffer' = [i \in 1..counter |-> i]   
 
 ConditionalCheck ==
     /\ counter' = counter + 5
-    /\ IF counter' > 10                   
-       THEN /\ buffer' = <<counter'>>
-            /\ index' = counter' - 5
+    /\ IF counter > 10                   
+       THEN /\ buffer' = <<counter>>
+            /\ index' = counter - 5
        ELSE /\ buffer' = <<>>
             /\ index' = 0
 

@@ -191,19 +191,19 @@ We provide three concrete examples demonstrating each algorithm's effectiveness:
 [`pc_example.tla`](../tools/cfa/input/example/pc_example.tla) demonstrates complex function call chains that violate single assignment constraints. The algorithm transforms nested function calls into independent atomic actions.
 
 ```bash
-./specula step2 input/example/pc_example.tla output/pc_result.tla --algorithm pc
+./specula step2 ./tools/cfa/input/example/pc_example.tla ./tools/cfa/output/pc_result.tla --algorithm pc
 ```
 
 ### UNCHANGED Convergence (UC) Example  
 [`uc_example.tla`](../tools/cfa/input/example/uc_example.tla) showcases complex branching control flow where different paths modify different variables. The algorithm automatically adds appropriate `UNCHANGED` statements.
 
 ```bash
-./specula step2 input/example/uc_example.tla output/uc_result.tla --algorithm uc
+./specula step2 ./tools/cfa/input/example/uc_example.tla ./tools/cfa/output/uc_result.tla --algorithm uc
 ```
 
 ### Variable State Update (UD) Example
 [`ud_example.tla`](../tools/cfa/input/example/ud_example.tla) illustrates chained variable dependencies where modified variables are used in subsequent expressions. The algorithm correctly handles current vs. next state annotations.
 
 ```bash
-./specula step2 input/example/ud_example.tla output/ud_result.tla --algorithm ud
+./specula step2 ./tools/cfa/input/example/ud_example.tla ./tools/cfa/output/ud_result.tla --algorithm ud
 ```

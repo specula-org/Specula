@@ -395,7 +395,7 @@ stepFollower(s, m) ==
 
 
 Step(s, m) ==
-    \/ /\ m.term = 0
+    CASE m.term = 0 -> 
        /\ \/ /\ m.type = "Hup"
              /\ hup(s, "Election")
           \/ /\ m.type = "StorageAppendResp"
@@ -430,7 +430,7 @@ Step(s, m) ==
              /\ stepCandidate(s, m)
           \/ /\ state[s] = "Follower"
              /\ stepFollower(s, m)
-    \/ /\ m.term > currentTerm[s]
+    [] m.term > currentTerm[s] -> 
        /\ IF m.type \in {"Vote", "PreVote"}
           THEN /\ LET force == m.context = "Transfer"
                       inLease == leaderId[s] # Nil /\ electionElapsed[s] < randomizedElectionTimeout[s]
@@ -445,7 +445,7 @@ Step(s, m) ==
                             THEN becomeFollower(s, m.term, m.from)
                             ELSE becomeFollower(s, m.term, Nil)
                          /\ Step(s, [m EXCEPT !.term = 0])
-    \/ /\ m.term < currentTerm[s]
+    [] m.term < currentTerm[s] -> 
        /\ IF m.type \in {"Heartbeat", "App"}
           THEN messages' = messages \cup {[from |-> s, to |-> m.from, type |-> "AppResp", term |-> currentTerm[s]]}
           ELSE IF m.type = "PreVote"

@@ -11,7 +11,6 @@ ComplexBranching ==
     /\ IF x > 5
        THEN /\ y' = y + 1
             /\ status' = "processing"
-           
        ELSE IF y > 3
             THEN /\ z' = z * 2
                  /\ status' = "active" 

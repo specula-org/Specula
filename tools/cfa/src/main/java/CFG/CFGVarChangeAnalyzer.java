@@ -98,7 +98,7 @@ public class CFGVarChangeAnalyzer {
                 genHandleCalledFunc(funcNode);
             }
         }
-
+        
         analyzeUC();
         anlayzeUD();
     }
@@ -112,21 +112,64 @@ public class CFGVarChangeAnalyzer {
         }
     }
 
-    // TODO
     public void analyze_only_pc(){
+        // Get topological sequence
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
         // Reverse
         Collections.reverse(topologicalSort);
         for (CFGFuncNode funcNode : topologicalSort) {
-            analyzeFuncPCCalled(funcNode);
+            // Analyze each function
+            analyzeFuncSA(funcNode);
+        }
+        //traverseTree();
+        // Calculate functions that are not called in CallGraph
+        Set<String> uncalledFunc = getUncalledFunc();
+        rootFunc = new HashSet<>(callGraph.getFuncNodes());
+
+        for (CFGFuncNode funcNode : topologicalSort){
+            checkCuttedFunc(funcNode);
+        }
+
+        List<CFGFuncNode> funcNodes = new ArrayList<>(callGraph.getFuncNodes());
+        WorkList.addAll(funcNodes);
+        while (!WorkList.isEmpty()){
+            tempVars = new HashSet<>();
+            CFGFuncNode funcNode = WorkList.remove(0);
+            if (uncalledFunc.contains(funcNode.getFuncName())){
+                analyzeFuncPCUncalled(funcNode);
+            } else {
+                analyzeFuncPCCalled(funcNode);
+            }
+        }
+
+        // Update funcVarChange
+        updateFuncVarChange();
+        List<CFGFuncNode> funclist = new ArrayList<>(callGraph.getFuncNodes());
+        // Generate handle function
+        for (CFGFuncNode funcNode : funclist){
+            if (uncalledFunc.contains(funcNode.getFuncName())){
+                genHandleUncalledFunc(funcNode);
+            } else {
+                genHandleCalledFunc(funcNode);
+            }
         }
     }
 
     public void analyze_only_ud(){
+        clearUNCHANGED();
+        // Get topological sequence
+        List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
+        // Reverse
+        Collections.reverse(topologicalSort);
+        for (CFGFuncNode funcNode : topologicalSort) {
+            // Analyze each function
+            analyzeFuncSA(funcNode);
+        }
         anlayzeUD();
     }
 
     public void analyze_only_uc(){
+        clearUNCHANGED();
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
         // Reverse
         Collections.reverse(topologicalSort);
@@ -211,6 +254,7 @@ public class CFGVarChangeAnalyzer {
         //      /\ pc = Nil
         //      /\ func(args)
         //      /\ UNCHANGED <<vars - Vars_func>>
+        //      /\ stack' = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>]>>
         CFGFuncNode newFuncNode = new CFGFuncNode("Handle" + funcNode.getFuncName(), funcNode.getParameters(),0);            
         CFGStmtNode root = new CFGStmtNode(0, "root", null, CFGStmtNode.StmtType.ROOT);
         newFuncNode.setRoot(root);
@@ -225,6 +269,8 @@ public class CFGVarChangeAnalyzer {
         callGraph.addFuncNode(newFuncNode);
         CFGCALLEdge callEdge = new CFGCALLEdge(call_stmt, newFuncNode, funcNode, null, null);
         callGraph.addCallEdge(callEdge);
+        CFGStmtNode stack_stmt = new CFGStmtNode(1, "/\\ stack' = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>]>>", null, CFGStmtNode.StmtType.NORMAL);
+        call_stmt.addChild(stack_stmt);
     }
 
     private void genHandleCalledFunc(CFGFuncNode funcNode){
@@ -943,7 +989,6 @@ public class CFGVarChangeAnalyzer {
     }
     
     private void updateFuncVarChange(){
-        // TODO: For each function, the union of the leaf nodes' OutVar is the VarChange of the function
         for (CFGFuncNode funcNode : callGraph.getFuncNodes()){
             Set<String> varChange = new HashSet<>();
             List<CFGStmtNode> leafNodes = getAllLeafNode(funcNode.getRoot());
