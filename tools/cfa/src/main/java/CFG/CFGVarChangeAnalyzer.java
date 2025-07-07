@@ -57,6 +57,7 @@ public class CFGVarChangeAnalyzer {
 
     public void analyze() {
         // System.err.println("begin analyze");
+        clearUNCHANGED();
         // Get topological sequence
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
         // Reverse
@@ -569,7 +570,7 @@ public class CFGVarChangeAnalyzer {
             }
         }
         
-        // Handle UNCHANGED statement
+        // Handle UNCHANGED statement with alias support
         if (content.contains("UNCHANGED")) {
             // Extract variables from UNCHANGED << >>
             if (content.contains("<<")){
@@ -580,20 +581,32 @@ public class CFGVarChangeAnalyzer {
                     String[] varArray = vars.split(",");
                     for (String var : varArray) {
                         String trimmedVar = var.trim();
+                        // Check if it's a direct variable
                         if (variables.contains(trimmedVar)) {
                             result.add(trimmedVar);
+                        }
+                        // Check if it's an alias and resolve it
+                        else if (callGraph.isAlias(trimmedVar)) {
+                            List<String> resolvedVars = callGraph.resolveAlias(trimmedVar);
+                            result.addAll(resolvedVars);
                         }
                     }
                 }
             } else {
-                // Handle UNCHANGED vars pattern
+                // Handle UNCHANGED vars pattern (single variable or alias)
                 String unchangedPattern = "UNCHANGED\\s+(\\w+)";
                 java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(unchangedPattern);
                 java.util.regex.Matcher matcher = pattern.matcher(content);
                 if (matcher.find()) {
                     String var = matcher.group(1);
+                    // Check if it's a direct variable
                     if (variables.contains(var)) {
                         result.add(var);
+                    }
+                    // Check if it's an alias and resolve it
+                    else if (callGraph.isAlias(var)) {
+                        List<String> resolvedVars = callGraph.resolveAlias(var);
+                        result.addAll(resolvedVars);
                     }
                 }
             }
@@ -1064,5 +1077,51 @@ public class CFGVarChangeAnalyzer {
             System.err.println("  - " + var);
         }
         System.err.println("=== DEBUG: Variables list completed ===\n");
+    }
+
+    private void clearUNCHANGED(){
+        for (CFGFuncNode funcNode : callGraph.getAllFuncNodes()) {
+            clearUNCHANGEDHelper(funcNode.getRoot());
+        }
+    }
+    
+    /**
+     * Recursively traverse statement nodes, clear all UNCHANGED statements
+     * @param stmtNode statement node
+     */
+    private void clearUNCHANGEDHelper(CFGStmtNode stmtNode) {
+        if (stmtNode == null) {
+            return;
+        }
+        
+        // Check if the current statement contains UNCHANGED    
+        String content = stmtNode.getContent();
+        if (content != null && content.contains("UNCHANGED")) {
+            // Clear UNCHANGED statement to placeholder
+            String newContent = replaceUNCHANGEDContent(content);
+            stmtNode.setContent(newContent);
+        }
+        
+        // Recursively process all child nodes
+        if (stmtNode.getChildren() != null) {
+            for (CFGStmtNode child : stmtNode.getChildren()) {
+                clearUNCHANGEDHelper(child);
+            }
+        }
+    }
+    
+    /**
+     * Replace UNCHANGED content in statement
+     * @param content original statement content
+     * @return replaced statement content
+     */
+    private String replaceUNCHANGEDContent(String content) {
+        // Handle UNCHANGED << ... >> format
+        String result = content.replaceAll("UNCHANGED\\s*<<[^<>]*>>", "UNCHANGED <<>>");
+        
+        // Handle UNCHANGED var format (single variable or alias)
+        result = result.replaceAll("UNCHANGED\\s+\\w+", "UNCHANGED <<>>");
+        
+        return result;
     }
 }

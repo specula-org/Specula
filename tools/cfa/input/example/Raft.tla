@@ -238,21 +238,22 @@ hup(s, campaignType) ==
             ELSE campaign(s, campaignType)
 
 poll(s, from, msgType, granted) ==
-    /\ IF granted
-       THEN votesGranted' = [votesGranted EXCEPT ![s] = votesGranted[s] \cup {from}]
-       ELSE votesRejected' = [votesRejected EXCEPT ![s] = votesRejected[s] \cup {from}]
-    /\ LET grantedCount == Cardinality(votesGranted'[s])
-           rejectedCount == Cardinality(votesRejected'[s])
+    /\ LET grantedCount == Cardinality(votesGranted[s])
+           rejectedCount == Cardinality(votesRejected[s])
            voterCount == Cardinality(Server)
        IN 
-        /\ IF grantedCount * 2 > voterCount
+        /\ IF (grantedCount + 1) * 2 > voterCount /\ granted
           THEN IF state[s] = "PreCandidate"
                THEN campaign(s, "Election")
                ELSE /\ becomeLeader(s)
-                    /\ bcastAppend(s)
-          ELSE IF rejectedCount * 2 >= voterCount
-               THEN becomeFollower(s, currentTerm[s], Nil)
-               ELSE UNCHANGED vars
+                    /\ UNCHANGED <<currentTerm, votedFor, commitIndex, randomizedElectionTimeout, readStates, pendingReadIndexMessages, isLearner, config, readOnlyOption>>
+          ELSE /\ IF granted
+                THEN /\ votesGranted' = [votesGranted EXCEPT ![s] = votesGranted[s] \cup {from}]
+                     /\ votesRejected' = votesRejected
+                ELSE /\ votesRejected' = [votesRejected EXCEPT ![s] = votesRejected[s] \cup {from}]
+                     /\ votesGranted' = votesGranted
+               /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+
 
 stepLeader(s, m) ==
     CASE m.type = "Beat" -> 

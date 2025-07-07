@@ -18,7 +18,6 @@ import parser.TLAPlusParserBaseVisitor;
 // Visitor class for traversing ParseTree and building CFG
 public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
     private static final String IGNORE_OPERATORS = "^(Init|Next|Spec|TypeOK|TypeInvariant)";
-    private static final String ALIAS_ONLY_OPERATORS = ".*vars.*";
     private List<String> constants = new ArrayList<>();
     private List<String> variables = new ArrayList<>();
     private List<CFGFuncNode> cfgFuncNodes = new ArrayList<>();
@@ -96,17 +95,25 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
     public Void visitOperatorDefinition(TLAPlusParser.OperatorDefinitionContext ctx) {
         String text = getFullText(ctx);
         Pattern ignorePattern = Pattern.compile(IGNORE_OPERATORS);
-        Pattern aliasPattern = Pattern.compile(ALIAS_ONLY_OPERATORS);
         Matcher ignoreMatcher = ignorePattern.matcher(text);
-        Matcher aliasMatcher = aliasPattern.matcher(text);
 
         if (ignoreMatcher.find()) {
             // If string starts with specified keywords, ignore it
             return null;
         }
 
-        // Check if this is an alias-only operator (like vars)
-        boolean isAliasOnly = aliasMatcher.find();
+        // Check if this is an alias-only operator based on body content format
+        // Alias format: funcName == <<var1, var2, ...>> (with possible whitespace and newlines)
+        boolean isAliasOnly = false;
+        if (ctx.body() != null) {
+            String bodyText = getFullText(ctx.body()).trim();
+            // Remove all whitespace and newlines for pattern matching
+            String normalizedBody = bodyText.replaceAll("\\s+", "");
+            // Check if body matches the pattern: <<var1,var2,...>> (allowing empty spaces)
+            if (normalizedBody.matches("^<<[^<>]*>>$")) {
+                isAliasOnly = true;
+            }
+        }
 
         // System.out.println("Visiting operator definition: " + text);
         // Handle nonFixLHS EQUALS body case
