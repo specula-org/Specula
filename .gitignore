@@ -49,3 +49,6 @@ traces/
 generation_summary.json
 specula
 models/
+
+# claude
+CLAUDE.md
