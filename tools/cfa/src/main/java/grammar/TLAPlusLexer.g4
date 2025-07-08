@@ -163,18 +163,18 @@ CARET_HASH: '^#';
 PRIME: '\'';
 
 
-LPAREN: '(';
-RPAREN: ')';
+LPAREN: '(' {this.incParenLevel();};
+RPAREN: ')' {this.decParenLevel();};
 EQUALS: '==';
 UNDERSCORE: '_';
 ASSIGN: '<-';
 BANG: '!';
-LBRACKET: '[';
-RBRACKET: ']';
-LBRACE: '{';
-RBRACE: '}';
-DOUBLE_LESS: '<<';
-DOUBLE_GREATER: '>>';
+LBRACKET: '[' {this.incBracketLevel();};
+RBRACKET: ']' {this.decBracketLevel();};
+LBRACE: '{' {this.incBraceLevel();};
+RBRACE: '}' {this.decBraceLevel();};
+DOUBLE_LESS: '<<' {this.incAngleLevel();};
+DOUBLE_GREATER: '>>' {this.decAngleLevel();};
 AT: '@';
 COLON: ':';
 TIMES: '\\times';
