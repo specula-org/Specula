@@ -150,15 +150,13 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
         return null;
     }
 
-    // Enhanced body visitor: handles both logical expressions and legacy aobody
+    // Enhanced body visitor: handles junctionItem
     public CFGStmtNode visitBody(TLAPlusParser.BodyContext ctx) {
         indentationLevel++;
         CFGStmtNode result = null;
         
-        if (ctx.logicalExpression() != null) {
-            result = visitLogicalExpression(ctx.logicalExpression());
-        } else if (ctx.aobody() != null) {
-            result = visitAobody(ctx.aobody());
+        if (ctx.junctionItem() != null) {
+            result = visitJunctionItem(ctx.junctionItem());
         }
         
         indentationLevel--;
@@ -301,9 +299,13 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
             return visitConjunctionList((TLAPlusParser.ConjunctionListContext) ctx);
         } else if (ctx instanceof TLAPlusParser.DisjunctionListContext) {
             return visitDisjunctionList((TLAPlusParser.DisjunctionListContext) ctx);
+        } else if (ctx instanceof TLAPlusParser.StatementListContext) {
+            return visitStatementList((TLAPlusParser.StatementListContext) ctx);
         } else {
+            // Fallback for unhandled junction list types
             System.err.println("Unknown junction list context type: " + ctx.getClass().getName());
-            return null;
+            // Return a simple statement node for now
+            return new CFGStmtNode(indentationLevel, getFullText(ctx), ctx, CFGStmtNode.StmtType.NORMAL);
         }
     }
 
@@ -354,6 +356,11 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
         
         return firstItem;
     }
+
+    public CFGStmtNode visitStatementList(TLAPlusParser.StatementListContext ctx) {
+        return visitStatement(ctx.statement());
+    }
+
 
     public CFGStmtNode visitJunctionItem(TLAPlusParser.JunctionItemContext ctx) {
         if (ctx.statement() != null) {
