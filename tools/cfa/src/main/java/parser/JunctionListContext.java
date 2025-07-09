@@ -113,7 +113,9 @@ public class JunctionListContext {
      * @throws IllegalArgumentException if invalid junction list token.
      */
     public void startNewJunctionList(int column, int tokenType) throws IllegalArgumentException {
-        this.stack.push(new JunctionListInfo(asJunctionListType(tokenType), column));
+        JunctionListType type = asJunctionListType(tokenType);
+        System.out.println("DEBUG: Starting new junction list - column: " + column + ", type: " + type);
+        this.stack.push(new JunctionListInfo(type, column));
     }
 
     /**
@@ -123,7 +125,8 @@ public class JunctionListContext {
      * @throws NoSuchElementException if not inside a junction list.
      */
     public void terminateCurrentJunctionList() throws NoSuchElementException {
-        this.stack.pop();
+        JunctionListInfo terminated = this.stack.pop();
+        System.out.println("DEBUG: Terminating junction list - type: " + terminated.type + ", column: " + terminated.column);
     }
 
     /**
@@ -138,10 +141,16 @@ public class JunctionListContext {
      */
     public boolean isNewBullet(int column, int tokenType) {
         JunctionListInfo headOrNull = this.stack.peekFirst();
-        return headOrNull != null
+        boolean result = headOrNull != null
             && isJunctionListBulletToken(tokenType)
             && headOrNull.column == column
             && headOrNull.type == asJunctionListType(tokenType);
+        
+        System.out.println("DEBUG: isNewBullet check - column: " + column + ", tokenType: " + tokenType + 
+                          ", expected column: " + (headOrNull != null ? headOrNull.column : "null") + 
+                          ", expected type: " + (headOrNull != null ? headOrNull.type : "null") + 
+                          ", result: " + result);
+        return result;
     }
 
     /**
@@ -168,7 +177,14 @@ public class JunctionListContext {
      * @return True if we can start a new junction list.
      */
     public boolean canStartNewJunctionList(int column, int tokenType) {
-        return isJunctionListBulletToken(tokenType) && isAboveCurrent(column);
+        boolean isBulletToken = isJunctionListBulletToken(tokenType);
+        boolean isAbove = isAboveCurrent(column);
+        boolean result = isBulletToken && isAbove;
+        
+        System.out.println("DEBUG: canStartNewJunctionList - column: " + column + ", tokenType: " + tokenType + 
+                          ", isBulletToken: " + isBulletToken + ", isAbove: " + isAbove + 
+                          ", currentStackSize: " + stack.size() + ", result: " + result);
+        return result;
     }
 
     /**

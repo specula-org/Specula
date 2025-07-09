@@ -183,10 +183,7 @@ postfixOp:
 
 // Enhanced body structure: supports both logical expressions and legacy aobody
 body:
-    LINE_BREAK INDENT logicalExpression DEDENT        // Indented logical expression
-    | logicalExpression                                // Direct logical expression
-    | LINE_BREAK INDENT aobody DEDENT                  // Indented aobody (legacy)
-    | aobody                                           // Direct aobody (legacy)
+    LINE_BREAK? junctionItem
     ;
 
 // Logical expression: logical terms connected by operators
@@ -367,22 +364,43 @@ aobody:
     | statement # aobodyStatement
     ;
 
-// Junction list: simplified version without predicates for now
+// Junction list: unified TLC-style implementation
 junctionList:
-    // Conjunction list: /\ items
-    SLASH_BACKSLASH junctionItem 
-    (SLASH_BACKSLASH junctionItem)* # conjunctionList
+    // Conjunction list: /\ items with TLC-style column alignment
+    { getCurrentToken().getType() == 69 && junctionCtx.canStartNewJunctionList(getCurrentToken().getCharPositionInLine(), 69) }?
+    slashBackslash=SLASH_BACKSLASH { junctionCtx.startNewJunctionList($slashBackslash.getCharPositionInLine(), 69); }
+    junctionItem 
+    (
+        { junctionCtx.isNewBullet(getCurrentToken().getCharPositionInLine(), 69) }?
+        nextSlashBackslash=SLASH_BACKSLASH 
+        junctionItem
+    )* 
+    { junctionCtx.terminateCurrentJunctionList(); } # conjunctionList
     
-    // Disjunction list: \/ items  
-    | BACKSLASH_SLASH junctionItem 
-    (BACKSLASH_SLASH junctionItem)* # disjunctionList
+    // Disjunction list: \/ items with TLC-style column alignment  
+    | { getCurrentToken().getType() == 87 && junctionCtx.canStartNewJunctionList(getCurrentToken().getCharPositionInLine(), 87) }?
+    backslashSlash=BACKSLASH_SLASH { junctionCtx.startNewJunctionList($backslashSlash.getCharPositionInLine(), 87); }
+    junctionItem 
+    (
+        { junctionCtx.isNewBullet(getCurrentToken().getCharPositionInLine(), 87) }?
+        nextBackslashSlash=BACKSLASH_SLASH 
+        junctionItem
+    )* 
+    { junctionCtx.terminateCurrentJunctionList(); } # disjunctionList
+
+    | statement # statementList
     ;
 
-// Junction item: individual item in a junction list
+// Junction item: individual item in a junction list (TLC-style recursive)
 junctionItem:
-    LINE_BREAK? statement LINE_BREAK?
-    | LINE_BREAK? INDENT junctionList DEDENT LINE_BREAK?  // Nested junction list
-    | LINE_BREAK? INDENT statement DEDENT LINE_BREAK?     // Indented statement
+    // Try nested junction list first (both inline and indented)
+    { getCurrentToken().getType() == 69 || getCurrentToken().getType() == 87 }?
+    junctionList                                         // Recursive junction list
+    | INDENT 
+      { junctionCtx.clear(); }                           // Clear context for nested parsing
+      junctionList 
+      DEDENT                                             // Nested junction list with line breaks
+    | statement                                          // Simple statement - fallback
     ;
 
 // Enhanced statement with backward compatibility  
