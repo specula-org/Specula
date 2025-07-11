@@ -130,24 +130,20 @@ expression:
     | LBRACKET expression RBRACKET UNDERSCORE expression rightExpression  # BracketUnderscoreExpression
     | DOUBLE_LESS expression DOUBLE_GREATER UNDERSCORE expression  # DoubleLessUnderscoreExpression
     | (WF_ | SF_) expression LPAREN expression RPAREN rightExpression  # FairnessExpression
-    | IF expression thenExpression elseExpression DEDENT? # IfExpression
+    | IF expression (LINE_BREAK INDENT)? thenExpression elseExpression DEDENT? # IfExpression
     | CASE expression ARROW body (BRACKETS expression ARROW body)* (BRACKETS OTHER ARROW body)? # CaseExpression
-    | LET (( INDENT? operatorDefinition | functionDefinition | moduleDefinition)LINE_BREAK? DEDENT?)+  INDENT?  BIGIN body DEDENT? # LetExpression
-    | SLASH_BACKSLASH aobody # SlashBackslashExpression
-    | BACKSLASH_SLASH aobody # BackslashSlashExpression
+    | LET (( INDENT? operatorDefinition | functionDefinition | moduleDefinition) LINE_BREAK? DEDENT?)+  INDENT?  BIGIN body DEDENT? # LetExpression
     | Number rightExpression  # NumberExpression
     | String rightExpression  # StringExpression
     | AT rightExpression  # AtExpression
     ;
 
 thenExpression:
-    THEN LINE_BREAK INDENT aobody
-    | LINE_BREAK INDENT THEN LINE_BREAK? aobody ((INDENT aobody DEDENT)| aobody)*
-    | THEN aobody
+    THEN body                       
     ;
 
 elseExpression:
-    (LINE_BREAK? INDENT)? ELSE LINE_BREAK? aobody
+    ELSE body                         
     ;
 
 identifierOrTuple: Identifier | DOUBLE_LESS Identifier (COMMA Identifier)* DOUBLE_GREATER ;
@@ -181,292 +177,62 @@ postfixOp:
     CARET_PLUS | CARET_STAR | CARET_HASH | PRIME
     ;
 
-// Enhanced body structure: supports both logical expressions and legacy aobody
 body:
-    LINE_BREAK? junctionItem
+    junctionItem 
+    | LINE_BREAK INDENT junctionList DEDENT
+    | LINE_BREAK junctionList
     ;
 
-// Logical expression: logical terms connected by operators
-logicalExpression:
-    logicalTerm (logicalOperator logicalTerm)*
-    ;
 
-// Logical term: atomic statement or indented sub-expression
-logicalTerm:
-    atomicStatement                                    // Basic statement
-    | LPAREN logicalExpression RPAREN                 // Parenthesized expression
-    | LINE_BREAK INDENT logicalExpression DEDENT      // Indented sub-expression
-    ;
-
-// Logical operators: flexible forms of /\ and \/
-logicalOperator:
-    SLASH_BACKSLASH LINE_BREAK?                       // /\ with optional newline
-    | BACKSLASH_SLASH LINE_BREAK?                     // \/ with optional newline  
-    | LINE_BREAK SLASH_BACKSLASH                      // /\ after newline
-    | LINE_BREAK BACKSLASH_SLASH                      // \/ after newline
-    ;
-
-// Atomic statement definition - basic unit in logical expressions  
-atomicStatement:
-    expression                   // General expression (includes all basic expressions)
-    ;
-
-// Structural statements (IF-THEN-ELSE, CASE, LET, etc.)
-structuralStatement:
-    ifStatement
-    | caseStatement  
-    | letStatement
-    | quantifierStatement
-    | chooseStatement
-    ;
-
-// IF-THEN-ELSE with proper indentation handling
-ifStatement:
-    IF predicateExpression thenClause elseClause?
-    ;
-
-thenClause:
-    THEN LINE_BREAK? (INDENT logicalExpression DEDENT | logicalExpression)
-    ;
-
-elseClause:
-    ELSE LINE_BREAK? (INDENT logicalExpression DEDENT | logicalExpression)
-    ;
-
-// CASE statement
-caseStatement:
-    CASE predicateExpression ARROW logicalExpression
-    (LINE_BREAK? BRACKETS predicateExpression ARROW logicalExpression)*
-    (LINE_BREAK? BRACKETS OTHER ARROW logicalExpression)?
-    ;
-
-// LET statement
-letStatement:
-    LET LINE_BREAK? INDENT?
-    (operatorDefinition | functionDefinition | moduleDefinition) LINE_BREAK?
-    (LINE_BREAK? (operatorDefinition | functionDefinition | moduleDefinition))*
-    DEDENT? LINE_BREAK? BIGIN LINE_BREAK? (INDENT logicalExpression DEDENT | logicalExpression)
-    ;
-
-// Quantifier statements
-quantifierStatement:
-    (FORALL | EXISTS) quantifierBound (COMMA quantifierBound)* COLON logicalExpression
-    | (FORALL | EXISTS | AA | EE) Identifier (COMMA Identifier)* COLON logicalExpression
-    ;
-
-// Choose statements
-chooseStatement:
-    CHOOSE identifierOrTuple COLON logicalExpression
-    | CHOOSE identifierOrTuple IN predicateExpression COLON logicalExpression
-    ;
-
-// Assignment statements (primed and unprimed)
-assignmentStatement:
-    Identifier PRIME? EQUAL predicateExpression
-    | Identifier LBRACKET predicateExpression RBRACKET PRIME? EQUAL predicateExpression
-    | UNCHANGED DOUBLE_LESS (Identifier (COMMA Identifier)*)? DOUBLE_GREATER
-    | UNCHANGED Identifier
-    ;
-
-// Predicate expressions (boolean-valued expressions)
-predicateExpression:
-    relationalExpression
-    ;
-
-// Relational expressions (comparisons)
-relationalExpression:
-    arithmeticExpression (relationalOperator arithmeticExpression)?
-    ;
-
-relationalOperator:
-    EQUAL | SLASH_EQUAL | LESS | LESS_EQUAL | GREATER | GREATER_EQUAL
-    | IN | NOTIN | SUBSET_s | SUBSETEQ
-    ;
-
-// Arithmetic expressions
-arithmeticExpression:
-    multiplicativeExpression ((PLUS | MINUS) multiplicativeExpression)*
-    ;
-
-multiplicativeExpression:
-    powerExpression ((STAR | SLASH | DIV) powerExpression)*
-    ;
-
-powerExpression:
-    unaryExpression (CARET unaryExpression)*
-    ;
-
-// Unary expressions
-unaryExpression:
-    (MINUS | TILDE | LNOT | NEG | DOMAIN | ENABLED | SUBSET | UNCHANGED | UNION)? primaryExpression
-    ;
-
-// Primary expressions
-primaryExpression:
-    atomicExpression postfixExpression*
-    ;
-
-// Postfix expressions (function calls, array access, etc.)
-postfixExpression:
-    LPAREN (argument (COMMA argument)*)? RPAREN  # PostfixFunctionCall
-    | LBRACKET predicateExpression (COMMA predicateExpression)* RBRACKET  # ArrayAccess
-    | DOT Identifier  # FieldAccess
-    | PRIME  # PrimeExpression
-    ;
-
-// Atomic expressions (terminals and complex structures)
-atomicExpression:
-    generalIdentifier
-    | Number
-    | String  
-    | setExpression
-    | sequenceExpression
-    | recordExpression
-    | LPAREN predicateExpression RPAREN
-    ;
-
-// Set expressions
-setExpression:
-    LBRACE RBRACE  # EmptySetExpr
-    | LBRACE predicateExpression (COMMA predicateExpression)* RBRACE  # EnumeratedSet
-    | LBRACE identifierOrTuple IN predicateExpression COLON predicateExpression RBRACE  # SetComprehensionExpr
-    | LBRACE predicateExpression COLON quantifierBound (COMMA quantifierBound)* RBRACE  # SetOfMaps
-    ;
-
-// Sequence expressions
-sequenceExpression:
-    DOUBLE_LESS DOUBLE_GREATER  # EmptySequenceExpr
-    | DOUBLE_LESS predicateExpression (COMMA predicateExpression)* DOUBLE_GREATER  # EnumeratedSequence
-    ;
-
-// Record expressions
-recordExpression:
-    LBRACKET recordField (COMMA recordField)* RBRACKET
-    | LBRACKET predicateExpression EXCEPT recordUpdate (COMMA recordUpdate)* RBRACKET
-    ;
-
-recordField:
-    Identifier COLON predicateExpression
-    | Identifier MAPSTO predicateExpression
-    ;
-
-recordUpdate:
-    BANG recordSelector EQUAL predicateExpression
-    ;
-
-recordSelector:
-    (DOT Identifier | LBRACKET predicateExpression RBRACKET)+
-    ;
-
-// Enhanced aobody with junction list support - fixes indentation-sensitive parsing
-aobody:
-    junctionList # junctionListAobody
-    | statement # aobodyStatement
-    ;
-
-// Junction list: unified TLC-style implementation
 junctionList:
-    // Conjunction list: /\ items with TLC-style column alignment
-    { getCurrentToken().getType() == 69 && junctionCtx.canStartNewJunctionList(getCurrentToken().getCharPositionInLine(), 69) }?
-    slashBackslash=SLASH_BACKSLASH { junctionCtx.startNewJunctionList($slashBackslash.getCharPositionInLine(), 69); }
+    // Disjunction list: \/ items
+    BACKSLASH_SLASH 
     junctionItem 
     (
-        { junctionCtx.isNewBullet(getCurrentToken().getCharPositionInLine(), 69) }?
-        nextSlashBackslash=SLASH_BACKSLASH 
+        BACKSLASH_SLASH 
         junctionItem
-    )* 
-    { junctionCtx.terminateCurrentJunctionList(); } # conjunctionList
+    )* # disjunctionList
     
-    // Disjunction list: \/ items with TLC-style column alignment  
-    | { getCurrentToken().getType() == 87 && junctionCtx.canStartNewJunctionList(getCurrentToken().getCharPositionInLine(), 87) }?
-    backslashSlash=BACKSLASH_SLASH { junctionCtx.startNewJunctionList($backslashSlash.getCharPositionInLine(), 87); }
+    // Conjunction list: /\ items
+    | SLASH_BACKSLASH 
     junctionItem 
     (
-        { junctionCtx.isNewBullet(getCurrentToken().getCharPositionInLine(), 87) }?
-        nextBackslashSlash=BACKSLASH_SLASH 
+        SLASH_BACKSLASH 
         junctionItem
-    )* 
-    { junctionCtx.terminateCurrentJunctionList(); } # disjunctionList
-
+    )* # conjunctionList
+    
     | statement # statementList
     ;
 
-// Junction item: individual item in a junction list (TLC-style recursive)
 junctionItem:
-    // Try nested junction list first (both inline and indented)
-    { getCurrentToken().getType() == 69 || getCurrentToken().getType() == 87 }?
-    junctionList                                         // Recursive junction list
-    | INDENT 
-      { junctionCtx.clear(); }                           // Clear context for nested parsing
-      junctionList 
-      DEDENT                                             // Nested junction list with line breaks
-    | statement                                          // Simple statement - fallback
+    // Nested disjunction: \/ items (inline and indented)
+    BACKSLASH_SLASH 
+    junctionItem 
+    (
+        INDENT 
+        (
+            BACKSLASH_SLASH 
+            junctionItem
+        )+
+        DEDENT
+    )?
+    
+    // Nested conjunction: /\ items (inline and indented)  
+    | SLASH_BACKSLASH 
+    junctionItem 
+    (
+        INDENT 
+        (
+            SLASH_BACKSLASH 
+            junctionItem
+        )+
+        DEDENT
+    )?
+    
+    | statement                                         
     ;
 
-// Enhanced statement with backward compatibility  
 statement:
     expression+ LINE_BREAK?
     ;
 
-// expression
-//     : primaryExpression
-//     | prefixExpression
-//     | infixExpression
-//     | postfixExpression
-//     | specialExpression
-//     ;
-
-
-// primaryExpression
-//     : generalIdentifier
-//     | generalIdentifier LPAREN argument (COMMA argument)* RPAREN
-//     | LPAREN expression RPAREN
-//     | LBRACE RBRACE
-//     | LBRACE expression (COMMA expression)* RBRACE
-//     | Number
-//     | String
-//     | AT
-//     ;
-
-
-// prefixExpression
-//     : generalPrefixOp expression
-//     | FORALL quantifierBound (COMMA quantifierBound)* COLON expression
-//     | EXISTS quantifierBound (COMMA quantifierBound)* COLON expression
-//     | (FORALL | EXISTS | AA | EE) Identifier (COMMA Identifier)* COLON expression
-//     | CHOOSE identifierOrTuple COLON expression
-//     | CHOOSE identifierOrTuple IN expression COLON expression
-//     | (WF_ | SF_) expression LPAREN expression RPAREN
-//     ;
-
-
-// infixExpression
-//     : expression generalInfixOp expression
-//     | expression (PAREN_BACKSLASH_X | TIMES) expression
-//     ;
-
-
-// postfixExpression
-//     : expression generalPostfixOp
-//     | expression LBRACKET expression (COMMA expression)* RBRACKET
-//     | LBRACKET expression RBRACKET UNDERSCORE expression
-//     | DOUBLE_LESS expression DOUBLE_GREATER UNDERSCORE expression
-//     ;
-
-
-// specialExpression
-//     : LBRACE identifierOrTuple IN expression COLON expression RBRACE
-//     | LBRACE expression COLON quantifierBound (COMMA quantifierBound)* RBRACE
-//     | LBRACKET quantifierBound (COMMA quantifierBound)* MAPSTO expression RBRACKET
-//     | LBRACKET expression ARROW expression RBRACKET
-//     | LBRACKET (Identifier MAPSTO expression) (COMMA (Identifier MAPSTO expression))* RBRACKET
-//     | LBRACKET (Identifier COLON expression) (COMMA (Identifier COLON expression))* RBRACKET
-//     | LBRACKET expression EXCEPT (BANG (((DOT Identifier)| (LBRACKET expression (COMMA expression)* RBRACKET )))+ EQUAL expression) (COMMA (BANG (((DOT Identifier) | (LBRACKET expression (COMMA expression)* RBRACKET )))+ EQUAL expression))* RBRACKET
-//     | DOUBLE_LESS expression (COMMA expression)* DOUBLE_GREATER
-//     | IF expression THEN INDENT expression ELSE expression DEDENT
-//     | CASE INDENT expression ARROW expression RBRACKET LBRACKET expression ARROW expression DEDENT
-//     | CASE INDENT expression ARROW expression RBRACKET LBRACKET expression ARROW expression RBRACKET LBRACKET OTHER ARROW expression DEDENT
-//     | LET (operatorDefinition | functionDefinition | moduleDefinition)+ BIGIN INDENT expression DEDENT
-//     | INDENT SLASH_BACKSLASH expression+ DEDENT
-//     | INDENT BACKSLASH_SLASH expression+ DEDENT
-//     ;
