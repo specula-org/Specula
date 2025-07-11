@@ -163,75 +163,7 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
         return result;
     }
     
-    // New method for visiting logical expressions
-    public CFGStmtNode visitLogicalExpression(TLAPlusParser.LogicalExpressionContext ctx) {
-        List<TLAPlusParser.LogicalTermContext> terms = ctx.logicalTerm();
-        
-        if (terms.size() == 1) {
-            // Single term, no logical operators
-            return visitLogicalTerm(terms.get(0));
-        }
-        
-        // Multiple terms connected by logical operators
-        CFGStmtNode firstTerm = visitLogicalTerm(terms.get(0));
-        
-        List<CFGStmtNode> prevLeaves = new ArrayList<>();
-        findLeafNodes(firstTerm, prevLeaves);
-        
-        for (int i = 1; i < terms.size(); i++) {
-            CFGStmtNode termNode = visitLogicalTerm(terms.get(i));
-            
-            // Connect previous leaves to current term
-            for (CFGStmtNode leaf : prevLeaves) {
-                leaf.addChild(termNode);
-            }
-            
-            // Update leaves for next iteration
-            prevLeaves.clear();
-            findLeafNodes(termNode, prevLeaves);
-        }
-        
-        return firstTerm;
-    }
-    
-    // New method for visiting logical terms
-    public CFGStmtNode visitLogicalTerm(TLAPlusParser.LogicalTermContext ctx) {
-        if (ctx.atomicStatement() != null) {
-            return visitAtomicStatement(ctx.atomicStatement());
-        } else if (ctx.logicalExpression() != null) {
-            // Nested logical expression (parentheses or indented)
-            return visitLogicalExpression(ctx.logicalExpression());
-        }
-        return null;
-    }
-    
-    // Simplified atomic statement visitor
-    public CFGStmtNode visitAtomicStatement(TLAPlusParser.AtomicStatementContext ctx) {
-        if (ctx.expression() != null) {
-            return visitExpression(ctx.expression());
-        }
-        return null;
-    }
-    
-    // General expression visitor
-    public CFGStmtNode visitExpression(TLAPlusParser.ExpressionContext ctx) {
-        return new CFGStmtNode(indentationLevel, getFullText(ctx), ctx, CFGStmtNode.StmtType.NORMAL);
-    }
-    
-    // Placeholder for structural statements
-    public CFGStmtNode visitStructuralStatement(TLAPlusParser.StructuralStatementContext ctx) {
-        return new CFGStmtNode(indentationLevel, getFullText(ctx), ctx, CFGStmtNode.StmtType.NORMAL);
-    }
-    
-    // Placeholder for assignment statements  
-    public CFGStmtNode visitAssignmentStatement(TLAPlusParser.AssignmentStatementContext ctx) {
-        return new CFGStmtNode(indentationLevel, getFullText(ctx), ctx, CFGStmtNode.StmtType.NORMAL);
-    }
-    
-    // Placeholder for predicate expressions
-    public CFGStmtNode visitPredicateExpression(TLAPlusParser.PredicateExpressionContext ctx) {
-        return new CFGStmtNode(indentationLevel, getFullText(ctx), ctx, CFGStmtNode.StmtType.NORMAL);
-    }
+    // Removed methods that reference non-existent grammar classes
 
     // TODO: Future implementation for new grammar rules
     // These methods will be implemented when the new grammar rules are properly integrated
@@ -277,22 +209,7 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
     // Additional new grammar methods...
     */
 
-    // Enhanced aobody visitor for new junction list structure
-    public CFGStmtNode visitAobody(TLAPlusParser.AobodyContext ctx) {
-        if (ctx instanceof TLAPlusParser.JunctionListAobodyContext) {
-            return visitJunctionListAobody((TLAPlusParser.JunctionListAobodyContext) ctx);
-        } else if (ctx instanceof TLAPlusParser.AobodyStatementContext) {
-            return visitAobodyStatement((TLAPlusParser.AobodyStatementContext) ctx);
-        } else {
-            System.err.println("Unknown aobody context type: " + ctx.getClass().getName());
-            return null;
-        }
-    }
-
-    // New junction list visitor methods
-    public CFGStmtNode visitJunctionListAobody(TLAPlusParser.JunctionListAobodyContext ctx) {
-        return visitJunctionList(ctx.junctionList());
-    }
+    // Removed aobody methods that reference non-existent grammar classes
 
     public CFGStmtNode visitJunctionList(TLAPlusParser.JunctionListContext ctx) {
         if (ctx instanceof TLAPlusParser.ConjunctionListContext) {
@@ -365,18 +282,13 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
     public CFGStmtNode visitJunctionItem(TLAPlusParser.JunctionItemContext ctx) {
         if (ctx.statement() != null) {
             return visitStatement(ctx.statement());
-        } else if (ctx.junctionList() != null) {
-            return visitJunctionList(ctx.junctionList());
         } else {
             System.err.println("Unknown junction item context type");
             return null;
         }
     }
 
-    @Override
-    public CFGStmtNode visitAobodyStatement(TLAPlusParser.AobodyStatementContext ctx) {
-        return visitStatement(ctx.statement());
-    }
+    // Removed visitAobodyStatement method
 
     public CFGStmtNode visitStatement(TLAPlusParser.StatementContext ctx) {
         if (ctx.expression() != null && !ctx.expression().isEmpty()) {
