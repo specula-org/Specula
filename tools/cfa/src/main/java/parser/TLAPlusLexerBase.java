@@ -238,16 +238,31 @@ public abstract class TLAPlusLexerBase extends Lexer {
         }
 
         int previous = _indents.size() == 0 ? 0 : _indents.peek();
+        
+        // Debug: print indentation info
+        System.out.println("DEBUG ProcessNewLine: line=" + getLine() + ", indent=" + indent + ", previous=" + previous + ", stack=" + _indents);
 
         if (indent > previous) {
             _indents.push(indent);
             // Determine context for this indentation level
             IndentContext context = determineContext(indent);
             _indentContexts.push(context);
+            System.out.println("DEBUG: Emitting INDENT, new stack=" + _indents);
             emit(TLAPlusLexer.INDENT);
         } else if (indent < previous) {
-            // Smart indentation matching - handle complex /\ \/ structures
-            smartDedentMatching(indent);
+            // Standard DEDENT processing - generate DEDENT tokens until we reach the target indent
+            System.out.println("DEBUG: Standard DEDENT processing from " + previous + " to " + indent);
+            while (_indents.size() != 0 && _indents.peek() > indent) {
+                System.out.println("DEBUG: Emitting DEDENT, popping " + _indents.peek());
+                emit(TLAPlusLexer.DEDENT);
+                _indents.pop();
+                
+                // Also clean up context stacks
+                if (!_indentContexts.isEmpty()) {
+                    _indentContexts.pop();
+                }
+            }
+            System.out.println("DEBUG: Standard DEDENT finished: final stack=" + _indents);
         }
     }
     
@@ -256,8 +271,11 @@ public abstract class TLAPlusLexerBase extends Lexer {
         // Find the correct indentation level to match
         int targetLevel = findMatchingIndentLevel(targetIndent);
         
+        System.out.println("DEBUG smartDedentMatching: targetIndent=" + targetIndent + ", targetLevel=" + targetLevel + ", current stack=" + _indents);
+        
         // Emit DEDENT tokens until we reach the target level
         while (_indents.size() != 0 && _indents.peek() > targetLevel) {
+            System.out.println("DEBUG: Emitting DEDENT, popping " + _indents.peek());
             emit(TLAPlusLexer.DEDENT);
             int poppedIndent = _indents.pop();
             
@@ -267,6 +285,8 @@ public abstract class TLAPlusLexerBase extends Lexer {
                 cleanupLogicalOperatorStack(poppedIndent, poppedContext);
             }
         }
+        
+        System.out.println("DEBUG smartDedentMatching finished: final stack=" + _indents);
     }
     
     // Find the correct indentation level to match, considering logical operators
@@ -277,6 +297,7 @@ public abstract class TLAPlusLexerBase extends Lexer {
         // First, try to find a matching logical operator context
         LogicalOperatorContext matchingOp = findMatchingLogicalOperator(currentIndent);
         if (matchingOp != null) {
+            System.out.println("DEBUG: Found matching logical operator: " + matchingOp + ", returning indentLevel=" + matchingOp.indentLevel);
             return matchingOp.indentLevel;
         }
         
@@ -289,6 +310,7 @@ public abstract class TLAPlusLexerBase extends Lexer {
             }
         }
         
+        System.out.println("DEBUG: No logical operator match, using standard matching: bestMatch=" + bestMatch);
         return bestMatch;
     }
     
@@ -392,21 +414,14 @@ public abstract class TLAPlusLexerBase extends Lexer {
         }
     }
     
-    // Get current indentation level based on recent whitespace
+    // Get current indentation level based on the current line's indentation
     private int getCurrentIndentLevel() {
-        // Look for the most recent whitespace token to determine current indent
-        for (int i = _recentTokens.size() - 1; i >= 0; i--) {
-            Token[] tokens = _recentTokens.toArray(new Token[0]);
-            if (tokens[i].getType() == TLAPlusLexer.WS) {
-                String wsText = tokens[i].getText();
-                int indent = 0;
-                for (int j = 0; j < wsText.length(); j++) {
-                    indent += wsText.charAt(j) == '\t' ? TabSize - indent % TabSize : 1;
-                }
-                return indent;
-            }
-        }
-        return 0; // Default to no indentation
+        // Return the line's indentation level, not the token's character position
+        // This should be the number of spaces/tabs at the beginning of the line
+        
+        // Use the current stack state to determine the line's indentation
+        // The stack always reflects the current indentation level
+        return _indents.size() == 0 ? 0 : _indents.peek();
     }
     
     // Determine the context type for a new indentation level
