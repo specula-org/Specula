@@ -6,6 +6,9 @@ import org.antlr.v4.runtime.CharStream;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.tree.ParseTree;
+import org.antlr.v4.runtime.tree.TerminalNode;
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.Token;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -121,27 +124,9 @@ public class CfaTransformerCli {
 
         // --- 4. Display parse tree if requested ---
         if (showTree) {
-            System.out.println("Displaying parse tree GUI...");
-            // Note: GUI part may cause command line tool to hang until window is closed.
-            // This is an advanced issue, but acceptable for artifact purposes.
-            // A simple approach is to display GUI here and let user manually close it.
-            JFrame frame = new JFrame("ANTLR Parse Tree");
-            JPanel panel = new JPanel();
-            TreeViewer viewer = new TreeViewer(Arrays.asList(parser.getRuleNames()), tree);
-            viewer.setScale(1.5);
-            panel.add(viewer);
-            JScrollPane scrollPane = new JScrollPane(panel);
-            frame.add(scrollPane);
-            frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE); // Release resources when window is closed
-            frame.pack();
-            frame.setSize(800, 600);
-            frame.setVisible(true);
-            
-            // Wait for user to close the window before continuing
-            System.out.println("Close the parse tree window to continue processing...");
-            while (frame.isVisible()) {
-                Thread.sleep(100);
-            }
+            System.out.println("=== PARSE TREE (Text Format) ===");
+            printParseTree(tree, parser.getRuleNames(), 0);
+            System.out.println("=== END PARSE TREE ===");
         }
 
         // --- 5. Core analysis logic ---
@@ -196,5 +181,30 @@ public class CfaTransformerCli {
         Files.writeString(outputPath, resultString);
 
         System.out.println("Processing finished. Output written to: " + outputPath);
+    }
+    
+    // Helper method to print parse tree in text format
+    private static void printParseTree(ParseTree tree, String[] ruleNames, int indent) {
+        String indentStr = "  ".repeat(indent);
+        
+        if (tree instanceof TerminalNode) {
+            // Terminal node (token)
+            TerminalNode terminal = (TerminalNode) tree;
+            Token token = terminal.getSymbol();
+            System.out.println(indentStr + "TOKEN[" + token.getType() + "]: '" + token.getText() + "'");
+        } else if (tree instanceof ParserRuleContext) {
+            // Non-terminal node (rule)
+            ParserRuleContext ruleCtx = (ParserRuleContext) tree;
+            String ruleName = ruleNames[ruleCtx.getRuleIndex()];
+            System.out.println(indentStr + "RULE[" + ruleName + "]");
+            
+            // Print all children
+            for (int i = 0; i < tree.getChildCount(); i++) {
+                printParseTree(tree.getChild(i), ruleNames, indent + 1);
+            }
+        } else {
+            // Other types of nodes
+            System.out.println(indentStr + "NODE: " + tree.getClass().getSimpleName() + " - '" + tree.getText() + "'");
+        }
     }
 }
