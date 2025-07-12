@@ -137,21 +137,10 @@ public abstract class TLAPlusLexerBase extends Lexer {
     @Override
     public Token nextToken() {
         // Check if the end-of-file is ahead and there are still some DEDENTS expected.
-        if (_input.LA(1) == EOF && _indents.size() > 0)
-        {
-            if (_buffer[_lastTokenInd] == null || _buffer[_lastTokenInd].getType() != TLAPlusLexer.LINE_BREAK)
-            {
-                // First emit an extra line break that serves as the end of the statement.
-                emit(TLAPlusLexer.LINE_BREAK);
-            }
-
-            // Now emit as much DEDENT tokens as needed.
-            while (_indents.size() != 0)
-            {
-                emit(TLAPlusLexer.DEDENT);
-                _indents.pop();
-            }
-        }
+        // Simplified: no INDENT/DEDENT processing
+        // if (_input.LA(1) == EOF && _indents.size() > 0) {
+        //     // Previous INDENT/DEDENT logic removed
+        // }
 
         Token next = super.nextToken();
 
@@ -230,7 +219,8 @@ public abstract class TLAPlusLexerBase extends Lexer {
     }
 
     private void ProcessNewLine(int indent) {
-        emit(TLAPlusLexer.LINE_BREAK);
+        // Simplified: no LINE_BREAK token
+        // emit(TLAPlusLexer.LINE_BREAK);
         
         // Skip indentation processing if we are inside brackets
         if (isInsideBrackets()) {
@@ -248,13 +238,15 @@ public abstract class TLAPlusLexerBase extends Lexer {
             IndentContext context = determineContext(indent);
             _indentContexts.push(context);
             System.out.println("DEBUG: Emitting INDENT, new stack=" + _indents);
-            emit(TLAPlusLexer.INDENT);
+            // Simplified: no INDENT token
+            // emit(TLAPlusLexer.INDENT);
         } else if (indent < previous) {
             // Standard DEDENT processing - generate DEDENT tokens until we reach the target indent
             System.out.println("DEBUG: Standard DEDENT processing from " + previous + " to " + indent);
             while (_indents.size() != 0 && _indents.peek() > indent) {
                 System.out.println("DEBUG: Emitting DEDENT, popping " + _indents.peek());
-                emit(TLAPlusLexer.DEDENT);
+                // Simplified: no DEDENT token
+                // emit(TLAPlusLexer.DEDENT);
                 _indents.pop();
                 
                 // Also clean up context stacks
@@ -276,7 +268,8 @@ public abstract class TLAPlusLexerBase extends Lexer {
         // Emit DEDENT tokens until we reach the target level
         while (_indents.size() != 0 && _indents.peek() > targetLevel) {
             System.out.println("DEBUG: Emitting DEDENT, popping " + _indents.peek());
-            emit(TLAPlusLexer.DEDENT);
+            // Simplified: no DEDENT token
+            // emit(TLAPlusLexer.DEDENT);
             int poppedIndent = _indents.pop();
             
             // Remove corresponding context and clean up logical operator stack

@@ -155,8 +155,8 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
         indentationLevel++;
         CFGStmtNode result = null;
         
-        if (ctx.junctionItem() != null) {
-            result = visitJunctionItem(ctx.junctionItem());
+        if (ctx.junctionList() != null) {
+            result = visitJunctionList(ctx.junctionList());
         }
         
         indentationLevel--;
@@ -227,16 +227,16 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
     }
 
     public CFGStmtNode visitConjunctionList(TLAPlusParser.ConjunctionListContext ctx) {
-        List<TLAPlusParser.JunctionItemContext> items = ctx.junctionItem();
+        List<TLAPlusParser.StatementContext> statements = ctx.statement();
         
-        CFGStmtNode firstItem = visitJunctionItem(items.get(0));
+        CFGStmtNode firstItem = visitStatement(statements.get(0));
         addStrToContentHead(firstItem, "/\\ ");
         
         List<CFGStmtNode> prevLeaves = new ArrayList<>();
         findLeafNodes(firstItem, prevLeaves);
         
-        for (int i = 1; i < items.size(); i++) {
-            CFGStmtNode item = visitJunctionItem(items.get(i));
+        for (int i = 1; i < statements.size(); i++) {
+            CFGStmtNode item = visitStatement(statements.get(i));
             addStrToContentHead(item, "/\\ ");
             
             for (CFGStmtNode leaf : prevLeaves) {
@@ -251,16 +251,16 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
     }
 
     public CFGStmtNode visitDisjunctionList(TLAPlusParser.DisjunctionListContext ctx) {
-        List<TLAPlusParser.JunctionItemContext> items = ctx.junctionItem();
+        List<TLAPlusParser.StatementContext> statements = ctx.statement();
         
-        CFGStmtNode firstItem = visitJunctionItem(items.get(0));
+        CFGStmtNode firstItem = visitStatement(statements.get(0));
         addStrToContentHead(firstItem, "\\/ ");
         
         List<CFGStmtNode> prevLeaves = new ArrayList<>();
         findLeafNodes(firstItem, prevLeaves);
         
-        for (int i = 1; i < items.size(); i++) {
-            CFGStmtNode item = visitJunctionItem(items.get(i));
+        for (int i = 1; i < statements.size(); i++) {
+            CFGStmtNode item = visitStatement(statements.get(i));
             addStrToContentHead(item, "\\/ ");
             
             for (CFGStmtNode leaf : prevLeaves) {
@@ -279,14 +279,6 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
     }
 
 
-    public CFGStmtNode visitJunctionItem(TLAPlusParser.JunctionItemContext ctx) {
-        if (ctx.statement() != null) {
-            return visitStatement(ctx.statement());
-        } else {
-            System.err.println("Unknown junction item context type");
-            return null;
-        }
-    }
 
     // Removed visitAobodyStatement method
 
