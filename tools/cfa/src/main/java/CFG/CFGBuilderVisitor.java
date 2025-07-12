@@ -152,6 +152,10 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
 
     // Enhanced body visitor: handles junctionItem
     public CFGStmtNode visitBody(TLAPlusParser.BodyContext ctx) {
+        if (ctx == null) {
+            return null;
+        }
+        
         indentationLevel++;
         CFGStmtNode result = null;
         
@@ -227,48 +231,90 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
     }
 
     public CFGStmtNode visitConjunctionList(TLAPlusParser.ConjunctionListContext ctx) {
-        List<TLAPlusParser.StatementContext> statements = ctx.statement();
+        // 新语法中，conjunctionList包含多个junctionList，每个前面有SLASH_BACKSLASH
+        List<TLAPlusParser.JunctionListContext> junctionLists = ctx.junctionList();
         
-        CFGStmtNode firstItem = visitStatement(statements.get(0));
-        addStrToContentHead(firstItem, "/\\ ");
+        if (junctionLists.isEmpty()) {
+            return null;
+        }
         
-        List<CFGStmtNode> prevLeaves = new ArrayList<>();
-        findLeafNodes(firstItem, prevLeaves);
+        // 处理第一个项目
+        CFGStmtNode firstItem = visitJunctionList(junctionLists.get(0));
+        if (firstItem != null) {
+            addStrToContentHead(firstItem, "/\\ ");
+        }
         
-        for (int i = 1; i < statements.size(); i++) {
-            CFGStmtNode item = visitStatement(statements.get(i));
-            addStrToContentHead(item, "/\\ ");
-            
-            for (CFGStmtNode leaf : prevLeaves) {
-                leaf.addChild(item);
+        // 如果只有一个项目，直接返回
+        if (junctionLists.size() == 1) {
+            return firstItem;
+        }
+        
+        // 处理多个项目的链式连接
+        CFGStmtNode current = firstItem;
+        List<CFGStmtNode> currentLeaves = new ArrayList<>();
+        if (current != null) {
+            findLeafNodes(current, currentLeaves);
+        }
+        
+        for (int i = 1; i < junctionLists.size(); i++) {
+            CFGStmtNode nextItem = visitJunctionList(junctionLists.get(i));
+            if (nextItem != null) {
+                addStrToContentHead(nextItem, "/\\ ");
+                
+                // 将当前所有叶子节点连接到下一个项目
+                for (CFGStmtNode leaf : currentLeaves) {
+                    leaf.addChild(nextItem);
+                }
+                
+                // 更新当前叶子节点列表
+                currentLeaves.clear();
+                findLeafNodes(nextItem, currentLeaves);
             }
-            
-            prevLeaves.clear();
-            findLeafNodes(item, prevLeaves);
         }
         
         return firstItem;
     }
 
     public CFGStmtNode visitDisjunctionList(TLAPlusParser.DisjunctionListContext ctx) {
-        List<TLAPlusParser.StatementContext> statements = ctx.statement();
+        // 新语法中，disjunctionList包含多个junctionList，每个前面有BACKSLASH_SLASH
+        List<TLAPlusParser.JunctionListContext> junctionLists = ctx.junctionList();
         
-        CFGStmtNode firstItem = visitStatement(statements.get(0));
-        addStrToContentHead(firstItem, "\\/ ");
+        if (junctionLists.isEmpty()) {
+            return null;
+        }
         
-        List<CFGStmtNode> prevLeaves = new ArrayList<>();
-        findLeafNodes(firstItem, prevLeaves);
+        // 处理第一个项目
+        CFGStmtNode firstItem = visitJunctionList(junctionLists.get(0));
+        if (firstItem != null) {
+            addStrToContentHead(firstItem, "\\/ ");
+        }
         
-        for (int i = 1; i < statements.size(); i++) {
-            CFGStmtNode item = visitStatement(statements.get(i));
-            addStrToContentHead(item, "\\/ ");
-            
-            for (CFGStmtNode leaf : prevLeaves) {
-                leaf.addChild(item);
+        // 如果只有一个项目，直接返回
+        if (junctionLists.size() == 1) {
+            return firstItem;
+        }
+        
+        // 处理多个项目的链式连接
+        CFGStmtNode current = firstItem;
+        List<CFGStmtNode> currentLeaves = new ArrayList<>();
+        if (current != null) {
+            findLeafNodes(current, currentLeaves);
+        }
+        
+        for (int i = 1; i < junctionLists.size(); i++) {
+            CFGStmtNode nextItem = visitJunctionList(junctionLists.get(i));
+            if (nextItem != null) {
+                addStrToContentHead(nextItem, "\\/ ");
+                
+                // 将当前所有叶子节点连接到下一个项目
+                for (CFGStmtNode leaf : currentLeaves) {
+                    leaf.addChild(nextItem);
+                }
+                
+                // 更新当前叶子节点列表
+                currentLeaves.clear();
+                findLeafNodes(nextItem, currentLeaves);
             }
-            
-            prevLeaves.clear();
-            findLeafNodes(item, prevLeaves);
         }
         
         return firstItem;
@@ -283,10 +329,8 @@ public class CFGBuilderVisitor extends TLAPlusParserBaseVisitor<Object> {
     // Removed visitAobodyStatement method
 
     public CFGStmtNode visitStatement(TLAPlusParser.StatementContext ctx) {
-        if (ctx.expression() != null && !ctx.expression().isEmpty()) {
-            String content = ctx.expression().stream()
-                .map(this::getFullText)
-                .collect(Collectors.joining(" "));
+        if (ctx.expression() != null) {
+            String content = getFullText(ctx.expression());
             return new CFGStmtNode(indentationLevel, content, ctx, CFGStmtNode.StmtType.NORMAL);
         }
         return null;

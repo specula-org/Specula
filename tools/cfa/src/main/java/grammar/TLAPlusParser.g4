@@ -183,26 +183,23 @@ body:
 
 junctionList:
     // Disjunction list: \/ items
-    BACKSLASH_SLASH 
-    statement 
     (
         BACKSLASH_SLASH 
-        statement
-    )* # disjunctionList
+        junctionList
+    )+ # disjunctionList
     
     // Conjunction list: /\ items
-    | SLASH_BACKSLASH 
-    statement 
+    | 
     (
         SLASH_BACKSLASH 
-        statement
-    )* # conjunctionList
+        junctionList
+    )+ # conjunctionList
     
     | statement # statementList
     ;
 
 
 statement:
-    expression+
+    expression
     ;
 
