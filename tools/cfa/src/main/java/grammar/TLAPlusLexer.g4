@@ -9,9 +9,6 @@ package parser;
 }
 
 tokens {
-    INDENT,
-    DEDENT,
-    LINE_BREAK
 }
 
 AtLeast4Dash: '----' ('-')*;

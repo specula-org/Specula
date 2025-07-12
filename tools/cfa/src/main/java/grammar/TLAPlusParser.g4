@@ -10,8 +10,8 @@ options { tokenVocab=TLAPlusLexer; }
 }
 
 // Analysis entry
-module: AtLeast4Dash MODULE Identifier AtLeast4Dash LINE_BREAK
-      (EXTENDS Identifier (COMMA Identifier)* LINE_BREAK)?
+module: AtLeast4Dash MODULE Identifier AtLeast4Dash
+      (EXTENDS Identifier (COMMA Identifier)*)?
       (unit)*
       AtLeast4Equal
       ;
@@ -31,12 +31,11 @@ unit:
     | theorem
     | module
     | AtLeast4Dash
-    | LINE_BREAK
     ;
 
-variableDeclaration: (VARIABLE | VARIABLES) LINE_BREAK* INDENT? LINE_BREAK* Identifier (COMMA LINE_BREAK* INDENT? Identifier)* LINE_BREAK DEDENT?;
+variableDeclaration: (VARIABLE | VARIABLES) Identifier (COMMA Identifier)*;
 
-constantDeclaration: CONSTANTS LINE_BREAK* INDENT? LINE_BREAK* opDecl (COMMA LINE_BREAK* INDENT? opDecl)* LINE_BREAK* DEDENT?;
+constantDeclaration: CONSTANTS opDecl (COMMA opDecl)*;
 
 opDecl: 
     Identifier
@@ -67,8 +66,8 @@ quantifierBound:
     ;
 
 instance:
-    INSTANCE Identifier LINE_BREAK?
-    | INSTANCE Identifier WITH substitution (COMMA substitution)* LINE_BREAK?
+    INSTANCE Identifier
+    | INSTANCE Identifier WITH substitution (COMMA substitution)*
     ;
 
 substitution:
@@ -95,7 +94,7 @@ generalPrefixOp: instancePrefix prefixOp;
 generalInfixOp: instancePrefix infixOp;
 generalPostfixOp: instancePrefix postfixOp;
 
-moduleDefinition: nonFixLHS EQUALS instance LINE_BREAK?;
+moduleDefinition: nonFixLHS EQUALS instance;
 
 assumption: (ASSUME | ASSUMPTION | AXIOM) body;
 
@@ -130,9 +129,9 @@ expression:
     | LBRACKET expression RBRACKET UNDERSCORE expression rightExpression  # BracketUnderscoreExpression
     | DOUBLE_LESS expression DOUBLE_GREATER UNDERSCORE expression  # DoubleLessUnderscoreExpression
     | (WF_ | SF_) expression LPAREN expression RPAREN rightExpression  # FairnessExpression
-    | IF expression (LINE_BREAK INDENT)? thenExpression elseExpression DEDENT? # IfExpression
+    | IF expression thenExpression elseExpression # IfExpression
     | CASE expression ARROW body (BRACKETS expression ARROW body)* (BRACKETS OTHER ARROW body)? # CaseExpression
-    | LET (( INDENT? operatorDefinition | functionDefinition | moduleDefinition) LINE_BREAK? DEDENT?)+  INDENT?  BIGIN body DEDENT? # LetExpression
+    | LET (operatorDefinition | functionDefinition | moduleDefinition)+ BIGIN body # LetExpression
     | Number rightExpression  # NumberExpression
     | String rightExpression  # StringExpression
     | AT rightExpression  # AtExpression
@@ -178,61 +177,32 @@ postfixOp:
     ;
 
 body:
-    junctionItem 
-    | LINE_BREAK INDENT junctionList DEDENT
-    | LINE_BREAK junctionList
+    junctionList
     ;
 
 
 junctionList:
     // Disjunction list: \/ items
     BACKSLASH_SLASH 
-    junctionItem 
+    statement 
     (
         BACKSLASH_SLASH 
-        junctionItem
+        statement
     )* # disjunctionList
     
     // Conjunction list: /\ items
     | SLASH_BACKSLASH 
-    junctionItem 
+    statement 
     (
         SLASH_BACKSLASH 
-        junctionItem
+        statement
     )* # conjunctionList
     
     | statement # statementList
     ;
 
-junctionItem:
-    // Nested disjunction: \/ items (inline and indented)
-    BACKSLASH_SLASH 
-    junctionItem 
-    (
-        INDENT 
-        (
-            BACKSLASH_SLASH 
-            junctionItem
-        )+
-        DEDENT
-    )?
-    
-    // Nested conjunction: /\ items (inline and indented)  
-    | SLASH_BACKSLASH 
-    junctionItem 
-    (
-        INDENT 
-        (
-            SLASH_BACKSLASH 
-            junctionItem
-        )+
-        DEDENT
-    )?
-    
-    | statement                                         
-    ;
 
 statement:
-    expression+ LINE_BREAK?
+    expression+
     ;
 
