@@ -8,12 +8,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.antlr.v4.runtime.ParserRuleContext; // For optional printTree enhancement
+import tla2sany.st.TreeNode; // SANY AST node for context
 
 public class CFGStmtNode {
     private int indentation;
     private String content;
-    private ParserRuleContext ctx;
+    private TreeNode ctx;
     public Set<String> InVar;
     public Set<String> OutVar;
     private List<CFGStmtNode> children;
@@ -31,7 +31,7 @@ public class CFGStmtNode {
         LET
     }
 
-    public CFGStmtNode(int indentation, String content, ParserRuleContext ctx, StmtType type) {
+    public CFGStmtNode(int indentation, String content, TreeNode ctx, StmtType type) {
         this.indentation = indentation;
         this.content = content;
         this.ctx = ctx;
@@ -53,7 +53,7 @@ public class CFGStmtNode {
         return content;
     }
 
-    public ParserRuleContext getCtx() {
+    public TreeNode getCtx() {
         return ctx;
     }
 
@@ -81,7 +81,7 @@ public class CFGStmtNode {
         this.content = content;
     }
 
-    public void setCtx(ParserRuleContext ctx) {
+    public void setCtx(TreeNode ctx) {
         this.ctx = ctx;
     }
 
@@ -167,6 +167,10 @@ public class CFGStmtNode {
         }
     }
 
+    // TODO: Temporarily commented out copyTree methods that depend on CFGCALLGraph
+    // These will be restored when CFGCALLGraph integration is needed
+    
+    /*
     // Public copyTree method, initialize copy process
     public CFGStmtNode copyTree(CFGCALLGraph cfg, CFGFuncNode newfuncNode) {
         // Use a Map to track copied nodes, key is original node, value is corresponding copy node
@@ -214,4 +218,5 @@ public class CFGStmtNode {
         
         return newNode;
     }
+    */
 }
