@@ -53,10 +53,20 @@ models/
 CLAUDE.md
 TLA+Parser.md
 
+# Java compiled files
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+
 # Test files and debug files
 tools/cfa/Test*.java
-tools/cfa/Test*.class
+tools/cfa/*Test*.java
+tools/cfa/*Test*.class
 tools/cfa/classpath.txt
 tools/cfa/test_*.tla
+tools/cfa/*Test*.tla
 tools/cfa/input/debug_*.tla
 tools/cfa/input/test_*.tla
