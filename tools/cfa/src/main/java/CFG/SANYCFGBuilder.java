@@ -35,6 +35,18 @@ public class SANYCFGBuilder {
     private static final int N_IdentLHS = 366;
     private static final int N_ParenExpr = 393;
     
+    // Additional node types for complex expressions (corrected from AST analysis)
+    private static final int N_IfThenElse = 369;
+    private static final int N_Case = 336;
+    private static final int N_CaseArm = 337;
+    private static final int N_OtherArm = 390;
+    private static final int N_LetExpr = 379;
+    private static final int N_LetDef = 377;
+    private static final int N_ChooseExpr = 338;
+    private static final int N_SetExpr = 410;
+    private static final int N_ExistsExpr = 348;
+    private static final int N_ForallExpr = 355;
+    
     public List<String> getVariables() { return variables; }
     public List<String> getConstants() { return constants; }
     public List<CFGFuncNode> getCfgFuncNodes() { return cfgFuncNodes; }
@@ -136,6 +148,18 @@ public class SANYCFGBuilder {
                     return visitConjunctionList(stn);
                 } else if (stn.getKind() == N_DisjList) {
                     return visitDisjunctionList(stn);
+                } else if (stn.getKind() == N_IfThenElse) {
+                    return visitIfExpression(stn);
+                } else if (stn.getKind() == N_Case) {
+                    return visitCaseExpression(stn);
+                } else if (stn.getKind() == N_LetExpr) {
+                    return visitLetExpression(stn);
+                } else if (stn.getKind() == N_ChooseExpr) {
+                    return visitChooseExpression(stn);
+                } else if (stn.getKind() == N_SetExpr) {
+                    return visitSetExpression(stn);
+                } else if (stn.getKind() == N_ExistsExpr || stn.getKind() == N_ForallExpr) {
+                    return visitQuantifierExpression(stn);
                 } else if (stn.getKind() == N_InfixExpr || stn.getKind() == N_ParenExpr) {
                     // Single expression
                     String content = reconstructExpression(stn);
@@ -144,6 +168,309 @@ public class SANYCFGBuilder {
             }
         }
         
+        return null;
+    }
+    
+    /**
+     * Visit IF-THEN-ELSE expression
+     * Creates conditional branching: condition -> THEN branch, ELSE branch
+     * Based on actual SANY AST structure: IF, condition, THEN, then-body, ELSE, else-body
+     */
+    private CFGStmtNode visitIfExpression(SyntaxTreeNode ifExprNode) {
+        TreeNode[] children = ifExprNode.heirs();
+        if (children == null || children.length < 6) return null;
+        
+        // Based on AST analysis:
+        // children[0] = IF token
+        // children[1] = condition expression
+        // children[2] = THEN token
+        // children[3] = then-body expression  
+        // children[4] = ELSE token
+        // children[5] = else-body expression
+        
+        SyntaxTreeNode conditionNode = null;
+        SyntaxTreeNode thenBodyNode = null;
+        SyntaxTreeNode elseBodyNode = null;
+        
+        if (children[1] instanceof SyntaxTreeNode) {
+            conditionNode = (SyntaxTreeNode) children[1];
+        }
+        if (children[3] instanceof SyntaxTreeNode) {
+            thenBodyNode = (SyntaxTreeNode) children[3];
+        }
+        if (children[5] instanceof SyntaxTreeNode) {
+            elseBodyNode = (SyntaxTreeNode) children[5];
+        }
+        
+        // Create IF statement node
+        String conditionText = conditionNode != null ? reconstructExpression(conditionNode) : "unknown";
+        CFGStmtNode ifStmt = new CFGStmtNode(indentationLevel, "IF " + conditionText + " THEN", ifExprNode, CFGStmtNode.StmtType.IF_ELSE);
+        
+        indentationLevel++;
+        
+        // Process THEN branch
+        CFGStmtNode thenNode = new CFGStmtNode(indentationLevel, "THEN", null, CFGStmtNode.StmtType.SKIP);
+        if (thenBodyNode != null) {
+            CFGStmtNode thenBody = visitExpressionNode(thenBodyNode);
+            if (thenBody != null) {
+                thenNode.addChild(thenBody);
+            }
+        }
+        
+        // Process ELSE branch
+        CFGStmtNode elseNode = new CFGStmtNode(indentationLevel, "ELSE", null, CFGStmtNode.StmtType.NORMAL);
+        if (elseBodyNode != null) {
+            CFGStmtNode elseBody = visitExpressionNode(elseBodyNode);
+            if (elseBody != null) {
+                elseNode.addChild(elseBody);
+            }
+        }
+        
+        indentationLevel--;
+        
+        // Connect IF statement with both branches
+        ifStmt.addChild(thenNode);
+        ifStmt.addChild(elseNode);
+        
+        return ifStmt;
+    }
+    
+    /**
+     * Visit CASE expression
+     * Creates multi-way branching: condition1 -> body1, condition2 -> body2, OTHER -> default
+     * Based on actual SANY AST structure: CASE, CaseArm, [], CaseArm, [], OtherArm
+     */
+    private CFGStmtNode visitCaseExpression(SyntaxTreeNode caseExprNode) {
+        TreeNode[] children = caseExprNode.heirs();
+        if (children == null || children.length == 0) return null;
+        
+        // Create CASE root with SKIP type for branching
+        CFGStmtNode caseRoot = new CFGStmtNode(indentationLevel, "CASE", null, CFGStmtNode.StmtType.SKIP);
+        
+        indentationLevel++;
+        
+        // Process case arms and other arms
+        boolean isFirst = true;
+        for (TreeNode child : children) {
+            if (child instanceof SyntaxTreeNode) {
+                SyntaxTreeNode armNode = (SyntaxTreeNode) child;
+                
+                if (armNode.getKind() == N_CaseArm) {
+                    // Regular case arm: condition -> body
+                    CFGStmtNode caseArm = processCaseArm(armNode, isFirst);
+                    if (caseArm != null) {
+                        caseRoot.addChild(caseArm);
+                    }
+                    isFirst = false;
+                } else if (armNode.getKind() == N_OtherArm) {
+                    // OTHER arm: default case
+                    CFGStmtNode otherArm = processOtherArm(armNode);
+                    if (otherArm != null) {
+                        caseRoot.addChild(otherArm);
+                    }
+                }
+            }
+        }
+        
+        indentationLevel--;
+        
+        return caseRoot;
+    }
+    
+    /**
+     * Process a single case arm
+     * Based on AST structure: condition, ->, body
+     */
+    private CFGStmtNode processCaseArm(SyntaxTreeNode armNode, boolean isFirst) {
+        TreeNode[] children = armNode.heirs();
+        if (children == null || children.length < 3) return null;
+        
+        // Based on AST analysis:
+        // children[0] = condition expression
+        // children[1] = -> token
+        // children[2] = body expression
+        
+        SyntaxTreeNode conditionNode = null;
+        SyntaxTreeNode bodyNode = null;
+        
+        if (children[0] instanceof SyntaxTreeNode) {
+            conditionNode = (SyntaxTreeNode) children[0];
+        }
+        if (children[2] instanceof SyntaxTreeNode) {
+            bodyNode = (SyntaxTreeNode) children[2];
+        }
+        
+        String conditionText = conditionNode != null ? reconstructExpression(conditionNode) : "unknown";
+        String prefix = isFirst ? "CASE " : "[] ";
+        
+        CFGStmtNode caseNode = new CFGStmtNode(indentationLevel, prefix + conditionText + " ->", armNode, CFGStmtNode.StmtType.NORMAL);
+        
+        // Process body
+        if (bodyNode != null) {
+            CFGStmtNode body = visitExpressionNode(bodyNode);
+            if (body != null) {
+                caseNode.addChild(body);
+            }
+        }
+        
+        return caseNode;
+    }
+    
+    /**
+     * Process OTHER arm
+     * Based on AST structure: OTHER, ->, body
+     */
+    private CFGStmtNode processOtherArm(SyntaxTreeNode otherNode) {
+        TreeNode[] children = otherNode.heirs();
+        if (children == null || children.length < 3) return null;
+        
+        // Based on AST analysis:
+        // children[0] = OTHER token
+        // children[1] = -> token
+        // children[2] = body expression
+        
+        SyntaxTreeNode bodyNode = null;
+        if (children[2] instanceof SyntaxTreeNode) {
+            bodyNode = (SyntaxTreeNode) children[2];
+        }
+        
+        CFGStmtNode otherArm = new CFGStmtNode(indentationLevel, "[] OTHER ->", otherNode, CFGStmtNode.StmtType.NORMAL);
+        
+        // Process body
+        if (bodyNode != null) {
+            CFGStmtNode body = visitExpressionNode(bodyNode);
+            if (body != null) {
+                otherArm.addChild(body);
+            }
+        }
+        
+        return otherArm;
+    }
+    
+    /**
+     * Visit LET-IN expression
+     * Creates temporary variable scope: LET definitions IN body
+     */
+    private CFGStmtNode visitLetExpression(SyntaxTreeNode letExprNode) {
+        TreeNode[] children = letExprNode.heirs();
+        if (children == null || children.length < 2) return null;
+        
+        // Extract LET definitions and IN body
+        List<String> tempVars = new ArrayList<>();
+        StringBuilder letContent = new StringBuilder();
+        SyntaxTreeNode inBodyNode = null;
+        
+        boolean inDefinitions = true;
+        for (TreeNode child : children) {
+            if (child instanceof SyntaxTreeNode) {
+                SyntaxTreeNode stn = (SyntaxTreeNode) child;
+                
+                if (stn.getKind() == N_LetDef && inDefinitions) {
+                    // Process LET definition
+                    String defText = reconstructExpression(stn);
+                    letContent.append(defText).append(" ");
+                    
+                    // Extract temporary variable name
+                    String tempVar = extractTempVariableFromDef(stn);
+                    if (tempVar != null) {
+                        tempVars.add(tempVar);
+                    }
+                } else if (!inDefinitions) {
+                    // This is the IN body
+                    inBodyNode = stn;
+                    break;
+                } else {
+                    // Transition from definitions to IN body
+                    inDefinitions = false;
+                    inBodyNode = stn;
+                }
+            }
+        }
+        
+        // Create LET node
+        String cleanedContent = letContent.toString().trim();
+        CFGStmtNode letNode = new CFGStmtNode(indentationLevel, "LET " + cleanedContent + " IN", letExprNode, CFGStmtNode.StmtType.LET);
+        letNode.setTemporaryVariables(tempVars);
+        
+        // Process IN body
+        if (inBodyNode != null) {
+            CFGStmtNode inBody = visitExpressionNode(inBodyNode);
+            if (inBody != null) {
+                letNode.addChild(inBody);
+            }
+        }
+        
+        return letNode;
+    }
+    
+    /**
+     * Visit CHOOSE expression
+     * Creates non-deterministic choice: CHOOSE variable IN set : condition
+     */
+    private CFGStmtNode visitChooseExpression(SyntaxTreeNode chooseExprNode) {
+        String chooseText = reconstructExpression(chooseExprNode);
+        return new CFGStmtNode(indentationLevel, chooseText, chooseExprNode, CFGStmtNode.StmtType.NORMAL);
+    }
+    
+    /**
+     * Visit set expression
+     * Creates set operations: {elements} or {x \in S : P(x)}
+     */
+    private CFGStmtNode visitSetExpression(SyntaxTreeNode setExprNode) {
+        String setText = reconstructExpression(setExprNode);
+        return new CFGStmtNode(indentationLevel, setText, setExprNode, CFGStmtNode.StmtType.NORMAL);
+    }
+    
+    /**
+     * Visit quantifier expression
+     * Creates quantified expressions: \E x \in S : P(x) or \A x \in S : P(x)
+     */
+    private CFGStmtNode visitQuantifierExpression(SyntaxTreeNode quantExprNode) {
+        String quantText = reconstructExpression(quantExprNode);
+        return new CFGStmtNode(indentationLevel, quantText, quantExprNode, CFGStmtNode.StmtType.NORMAL);
+    }
+    
+    /**
+     * Generic expression node visitor - dispatches to appropriate handler
+     */
+    private CFGStmtNode visitExpressionNode(SyntaxTreeNode exprNode) {
+        if (exprNode == null) return null;
+        
+        switch (exprNode.getKind()) {
+            case N_ConjList:
+                return visitConjunctionList(exprNode);
+            case N_DisjList:
+                return visitDisjunctionList(exprNode);
+            case N_IfThenElse:
+                return visitIfExpression(exprNode);
+            case N_Case:
+                return visitCaseExpression(exprNode);
+            case N_LetExpr:
+                return visitLetExpression(exprNode);
+            case N_ChooseExpr:
+                return visitChooseExpression(exprNode);
+            case N_SetExpr:
+                return visitSetExpression(exprNode);
+            case N_ExistsExpr:
+            case N_ForallExpr:
+                return visitQuantifierExpression(exprNode);
+            default:
+                // Default: treat as normal expression
+                String content = reconstructExpression(exprNode);
+                return new CFGStmtNode(indentationLevel, content, exprNode, CFGStmtNode.StmtType.NORMAL);
+        }
+    }
+    
+    /**
+     * Extract temporary variable name from LET definition
+     */
+    private String extractTempVariableFromDef(SyntaxTreeNode defNode) {
+        // This is a simplified implementation
+        // In practice, you'd need to parse the definition structure more carefully
+        TreeNode[] children = defNode.heirs();
+        if (children != null && children.length > 0) {
+            return extractFirstIdentifier((SyntaxTreeNode) children[0]);
+        }
         return null;
     }
     
@@ -266,10 +593,20 @@ public class SANYCFGBuilder {
             } else if (contentStn.getKind() == N_DisjList) {
                 return visitDisjunctionList(contentStn);
             } else {
-                // Base case: regular expression
+                // Base case: might be a complex expression (IF, CASE, etc.) or simple expression
                 String operator = getOperatorFromItem(itemNode);
-                String content = operator + " " + reconstructExpression(contentStn);
-                return new CFGStmtNode(indentationLevel, content, null, CFGStmtNode.StmtType.NORMAL);
+                
+                // First try to process as complex expression (IF, CASE, LET, etc.)
+                CFGStmtNode complexResult = visitExpressionNode(contentStn);
+                if (complexResult != null) {
+                    // Add operator prefix to the complex result
+                    addOperatorPrefix(complexResult, operator);
+                    return complexResult;
+                } else {
+                    // Fallback: treat as simple expression
+                    String content = operator + " " + reconstructExpression(contentStn);
+                    return new CFGStmtNode(indentationLevel, content, null, CFGStmtNode.StmtType.NORMAL);
+                }
             }
         }
         
@@ -294,6 +631,35 @@ public class SANYCFGBuilder {
             return "\\/";
         }
         return "";
+    }
+    
+    /**
+     * Add operator prefix to a CFG subtree
+     * This recursively adds the operator prefix to the first non-SKIP, non-ROOT node
+     */
+    private void addOperatorPrefix(CFGStmtNode node, String operator) {
+        if (node == null || operator == null || operator.isEmpty()) return;
+        
+        // Use a queue for BFS to find the first content node
+        List<CFGStmtNode> queue = new ArrayList<>();
+        queue.add(node);
+        
+        while (!queue.isEmpty()) {
+            CFGStmtNode current = queue.remove(0);
+            
+            // Skip SKIP and ROOT nodes, look for the first content node
+            if (current.getType() != CFGStmtNode.StmtType.SKIP && 
+                current.getType() != CFGStmtNode.StmtType.ROOT) {
+                // Found the first content node, add operator prefix
+                current.setContent(operator + " " + current.getContent());
+                break;
+            }
+            
+            // Add children to queue
+            if (current.getChildren() != null) {
+                queue.addAll(current.getChildren());
+            }
+        }
     }
     
     /**
