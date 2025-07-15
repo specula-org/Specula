@@ -46,6 +46,7 @@ public class SANYCFGBuilder {
     private static final int N_SetExpr = 410;
     private static final int N_ExistsExpr = 348;
     private static final int N_ForallExpr = 355;
+    private static final int N_UnchangedExpr = 422;
     
     public List<String> getVariables() { return variables; }
     public List<String> getConstants() { return constants; }
@@ -350,45 +351,61 @@ public class SANYCFGBuilder {
     /**
      * Visit LET-IN expression
      * Creates temporary variable scope: LET definitions IN body
+     * Based on mature implementation from CFGBuilderVisitor
      */
     private CFGStmtNode visitLetExpression(SyntaxTreeNode letExprNode) {
         TreeNode[] children = letExprNode.heirs();
         if (children == null || children.length < 2) return null;
         
-        // Extract LET definitions and IN body
+        StringBuilder content = new StringBuilder();
         List<String> tempVars = new ArrayList<>();
-        StringBuilder letContent = new StringBuilder();
         SyntaxTreeNode inBodyNode = null;
         
-        boolean inDefinitions = true;
-        for (TreeNode child : children) {
-            if (child instanceof SyntaxTreeNode) {
-                SyntaxTreeNode stn = (SyntaxTreeNode) child;
+        // Process LET definitions - collect all definitions before IN
+        boolean foundIN = false;
+        for (int i = 0; i < children.length; i++) {
+            TreeNode child = children[i];
+            
+            // Skip LET token
+            if (child.toString().equals("LET")) {
+                continue;
+            }
+            
+            // Check for IN token
+            if (child.toString().equals("IN")) {
+                foundIN = true;
+                // Next child should be the IN body
+                if (i + 1 < children.length && children[i + 1] instanceof SyntaxTreeNode) {
+                    inBodyNode = (SyntaxTreeNode) children[i + 1];
+                }
+                break;
+            }
+            
+            // Process definitions before IN
+            if (child instanceof SyntaxTreeNode && !foundIN) {
+                SyntaxTreeNode defNode = (SyntaxTreeNode) child;
                 
-                if (stn.getKind() == N_LetDef && inDefinitions) {
-                    // Process LET definition
-                    String defText = reconstructExpression(stn);
-                    letContent.append(defText).append(" ");
+                // Check if this is a definition (operator, function, or module)
+                if (defNode.getKind() == N_LetDef || defNode.getKind() == N_OperatorDefinition) {
+                    // Extract definition content
+                    String defText = reconstructExpression(defNode);
+                    content.append(defText).append(" ");
                     
                     // Extract temporary variable name
-                    String tempVar = extractTempVariableFromDef(stn);
-                    if (tempVar != null) {
+                    String tempVar = extractTempVariableFromDef(defNode);
+                    if (tempVar != null && !tempVar.isEmpty()) {
                         tempVars.add(tempVar);
                     }
-                } else if (!inDefinitions) {
-                    // This is the IN body
-                    inBodyNode = stn;
-                    break;
-                } else {
-                    // Transition from definitions to IN body
-                    inDefinitions = false;
-                    inBodyNode = stn;
                 }
             }
         }
         
-        // Create LET node
-        String cleanedContent = letContent.toString().trim();
+        // Create LET node with collected definitions
+        String cleanedContent = content.toString().trim();
+        if (cleanedContent.isEmpty()) {
+            cleanedContent = "temp_def";
+        }
+        
         CFGStmtNode letNode = new CFGStmtNode(indentationLevel, "LET " + cleanedContent + " IN", letExprNode, CFGStmtNode.StmtType.LET);
         letNode.setTemporaryVariables(tempVars);
         
@@ -406,10 +423,29 @@ public class SANYCFGBuilder {
     /**
      * Visit CHOOSE expression
      * Creates non-deterministic choice: CHOOSE variable IN set : condition
+     * Based on mature implementation from CFGBuilderVisitor
      */
     private CFGStmtNode visitChooseExpression(SyntaxTreeNode chooseExprNode) {
         String chooseText = reconstructExpression(chooseExprNode);
-        return new CFGStmtNode(indentationLevel, chooseText, chooseExprNode, CFGStmtNode.StmtType.NORMAL);
+        CFGStmtNode chooseNode = new CFGStmtNode(indentationLevel, chooseText, chooseExprNode, CFGStmtNode.StmtType.CHOOSE);
+        
+        // Extract scope information from CHOOSE expression
+        TreeNode[] children = chooseExprNode.heirs();
+        if (children != null && children.length > 2) {
+            // Look for the condition/scope part
+            for (int i = 2; i < children.length; i++) {
+                if (children[i] instanceof SyntaxTreeNode) {
+                    SyntaxTreeNode scopeNode = (SyntaxTreeNode) children[i];
+                    CFGStmtNode scopeBody = visitExpressionNode(scopeNode);
+                    if (scopeBody != null) {
+                        chooseNode.addChild(scopeBody);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        return chooseNode;
     }
     
     /**
@@ -424,10 +460,32 @@ public class SANYCFGBuilder {
     /**
      * Visit quantifier expression
      * Creates quantified expressions: \E x \in S : P(x) or \A x \in S : P(x)
+     * Based on mature implementation from CFGBuilderVisitor
      */
     private CFGStmtNode visitQuantifierExpression(SyntaxTreeNode quantExprNode) {
         String quantText = reconstructExpression(quantExprNode);
-        return new CFGStmtNode(indentationLevel, quantText, quantExprNode, CFGStmtNode.StmtType.NORMAL);
+        CFGStmtNode.StmtType nodeType = quantExprNode.getKind() == N_ExistsExpr ? 
+            CFGStmtNode.StmtType.EXISTS : CFGStmtNode.StmtType.FORALL;
+        
+        CFGStmtNode quantNode = new CFGStmtNode(indentationLevel, quantText, quantExprNode, nodeType);
+        
+        // Extract scope information from quantifier expression
+        TreeNode[] children = quantExprNode.heirs();
+        if (children != null && children.length > 2) {
+            // Look for the condition/scope part (usually the last child)
+            for (int i = children.length - 1; i >= 0; i--) {
+                if (children[i] instanceof SyntaxTreeNode) {
+                    SyntaxTreeNode scopeNode = (SyntaxTreeNode) children[i];
+                    CFGStmtNode scopeBody = visitExpressionNode(scopeNode);
+                    if (scopeBody != null) {
+                        quantNode.addChild(scopeBody);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        return quantNode;
     }
     
     /**
@@ -455,23 +513,50 @@ public class SANYCFGBuilder {
             case N_ForallExpr:
                 return visitQuantifierExpression(exprNode);
             default:
-                // Default: treat as normal expression
+                // Check for UNCHANGED statements
                 String content = reconstructExpression(exprNode);
+                if (content.startsWith("UNCHANGED")) {
+                    return new CFGStmtNode(indentationLevel, content, exprNode, CFGStmtNode.StmtType.UNCHANGED);
+                }
+                
+                // Default: treat as normal expression
                 return new CFGStmtNode(indentationLevel, content, exprNode, CFGStmtNode.StmtType.NORMAL);
         }
     }
     
     /**
      * Extract temporary variable name from LET definition
+     * Based on mature implementation from CFGBuilderVisitor
      */
     private String extractTempVariableFromDef(SyntaxTreeNode defNode) {
-        // This is a simplified implementation
-        // In practice, you'd need to parse the definition structure more carefully
         TreeNode[] children = defNode.heirs();
-        if (children != null && children.length > 0) {
-            return extractFirstIdentifier((SyntaxTreeNode) children[0]);
+        if (children == null || children.length == 0) return null;
+        
+        // For operator definitions, look for IdentLHS
+        for (TreeNode child : children) {
+            if (child instanceof SyntaxTreeNode) {
+                SyntaxTreeNode stn = (SyntaxTreeNode) child;
+                
+                // Check for identifier in LHS
+                if (stn.getKind() == N_IdentLHS) {
+                    String identifier = extractFirstIdentifier(stn);
+                    if (identifier != null && !identifier.startsWith("N_")) {
+                        return identifier;
+                    }
+                }
+                
+                // Check for direct identifier
+                if (stn.getKind() == N_Identifier) {
+                    String identifier = stn.getImage();
+                    if (identifier != null && !identifier.startsWith("N_")) {
+                        return identifier;
+                    }
+                }
+            }
         }
-        return null;
+        
+        // Fallback: extract first identifier found
+        return extractFirstIdentifier(defNode);
     }
     
     /**
@@ -744,9 +829,34 @@ public class SANYCFGBuilder {
         return "unknown";
     }
     
+    /**
+     * Extract operator parameters from operator definition
+     * Based on mature implementation from CFGBuilderVisitor.visitNonFixLHS
+     */
     private List<String> extractOperatorParameters(SyntaxTreeNode opDefNode) {
-        // For now, return empty list - parameters extraction would need more complex logic
-        return new ArrayList<>();
+        List<String> parameters = new ArrayList<>();
+        TreeNode[] children = opDefNode.heirs();
+        if (children == null) return parameters;
+        
+        // Look for IdentLHS which contains function name and parameters
+        for (TreeNode child : children) {
+            if (child instanceof SyntaxTreeNode) {
+                SyntaxTreeNode stn = (SyntaxTreeNode) child;
+                
+                if (stn.getKind() == N_IdentLHS) {
+                    // Extract all identifiers from the LHS
+                    List<String> identifiers = extractIdentifiers(stn);
+                    
+                    // First identifier is function name, rest are parameters
+                    if (identifiers.size() > 1) {
+                        parameters.addAll(identifiers.subList(1, identifiers.size()));
+                    }
+                    break;
+                }
+            }
+        }
+        
+        return parameters;
     }
     
     private List<String> extractIdentifiers(SyntaxTreeNode node) {
