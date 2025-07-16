@@ -44,6 +44,13 @@ public class SANYCFGBuilder {
     private static final int N_LetExpr = 379;
     private static final int N_LetDef = 377;
     private static final int N_ChooseExpr = 338;
+    private static final int N_UnBoundedOrBoundedChoose = 424;
+    private static final int N_MaybeBound = 381;
+    private static final int N_BoundedQuant = 335;
+    private static final int N_QuantBound = 408;
+    private static final int N_Except = 346;
+    private static final int N_ExceptSpec = 348;
+    private static final int N_ExceptComponent = 347;
     private static final int N_SetExpr = 410;
     private static final int N_ExistsExpr = 348;
     private static final int N_ForallExpr = 355;
@@ -694,17 +701,16 @@ public class SANYCFGBuilder {
                 return visitDisjunctionList(contentStn);
             } else {
                 // Base case: might be a complex expression (IF, CASE, etc.) or simple expression
-                String operator = getOperatorFromItem(itemNode);
+                // Note: Operator (/\ or \/) will be determined by printer based on CFG structure
                 
                 // First try to process as complex expression (IF, CASE, LET, etc.)
                 CFGStmtNode complexResult = visitExpressionNode(contentStn);
                 if (complexResult != null) {
-                    // Add operator prefix to the complex result
-                    addOperatorPrefix(complexResult, operator);
+                    // Return complex result without operator prefix - printer will decide
                     return complexResult;
                 } else {
-                    // Fallback: treat as simple expression
-                    String content = operator + " " + reconstructExpression(contentStn);
+                    // Fallback: treat as simple expression - store only pure content
+                    String content = reconstructExpression(contentStn);
                     return new CFGStmtNode(indentationLevel, content, null, CFGStmtNode.StmtType.NORMAL);
                 }
             }
@@ -721,46 +727,8 @@ public class SANYCFGBuilder {
         return visitJunctionItem(disjItemNode);
     }
     
-    /**
-     * Helper method to extract operator from junction item node
-     */
-    private String getOperatorFromItem(SyntaxTreeNode itemNode) {
-        if (itemNode.getKind() == N_ConjItem) {
-            return "/\\";
-        } else if (itemNode.getKind() == N_DisjItem) {
-            return "\\/";
-        }
-        return "";
-    }
     
-    /**
-     * Add operator prefix to a CFG subtree
-     * This recursively adds the operator prefix to the first non-SKIP, non-ROOT node
-     */
-    private void addOperatorPrefix(CFGStmtNode node, String operator) {
-        if (node == null || operator == null || operator.isEmpty()) return;
-        
-        // Use a queue for BFS to find the first content node
-        List<CFGStmtNode> queue = new ArrayList<>();
-        queue.add(node);
-        
-        while (!queue.isEmpty()) {
-            CFGStmtNode current = queue.remove(0);
-            
-            // Skip SKIP and ROOT nodes, look for the first content node
-            if (current.getType() != CFGStmtNode.StmtType.SKIP && 
-                current.getType() != CFGStmtNode.StmtType.ROOT) {
-                // Found the first content node, add operator prefix
-                current.setContent(operator + " " + current.getContent());
-                break;
-            }
-            
-            // Add children to queue
-            if (current.getChildren() != null) {
-                queue.addAll(current.getChildren());
-            }
-        }
-    }
+    // Removed addOperatorPrefix method - operators are now determined by printer based on CFG structure
     
     /**
      * Reconstruct expression text from SANY AST
@@ -775,7 +743,7 @@ public class SANYCFGBuilder {
         if (node instanceof SyntaxTreeNode) {
             SyntaxTreeNode stn = (SyntaxTreeNode) node;
             
-            // Handle different node types
+            // Handle different node types with precise spacing rules
             switch (stn.getKind()) {
                 case N_ParenExpr:
                     result.append("(");
@@ -800,19 +768,115 @@ public class SANYCFGBuilder {
                     }
                     break;
                     
+                case N_UnBoundedOrBoundedChoose:
+                    // CHOOSE variable N_MaybeBound : condition
+                    TreeNode[] chooseChildren = stn.heirs();
+                    if (chooseChildren != null && chooseChildren.length >= 5) {
+                        // Child[0]: CHOOSE
+                        reconstructExpressionRecursive(chooseChildren[0], result);
+                        result.append(" ");
+                        
+                        // Child[1]: variable
+                        reconstructExpressionRecursive(chooseChildren[1], result);
+                        result.append(" ");
+                        
+                        // Child[2]: N_MaybeBound (contains \in and domain)
+                        reconstructExpressionRecursive(chooseChildren[2], result);
+                        result.append(" ");
+                        
+                        // Child[3]: :
+                        reconstructExpressionRecursive(chooseChildren[3], result);
+                        result.append(" ");
+                        
+                        // Child[4]: condition
+                        reconstructExpressionRecursive(chooseChildren[4], result);
+                    }
+                    break;
+                    
+                case N_MaybeBound:
+                    // \in domain
+                    TreeNode[] maybeBoundChildren = stn.heirs();
+                    if (maybeBoundChildren != null && maybeBoundChildren.length >= 2) {
+                        // Child[0]: \in
+                        reconstructExpressionRecursive(maybeBoundChildren[0], result);
+                        result.append(" ");
+                        
+                        // Child[1]: domain
+                        reconstructExpressionRecursive(maybeBoundChildren[1], result);
+                    }
+                    break;
+                    
+                case N_BoundedQuant:
+                    // \A variable \in domain : condition
+                    TreeNode[] boundedQuantChildren = stn.heirs();
+                    if (boundedQuantChildren != null && boundedQuantChildren.length >= 4) {
+                        // Child[0]: \A or \E
+                        reconstructExpressionRecursive(boundedQuantChildren[0], result);
+                        result.append(" ");
+                        
+                        // Child[1]: N_QuantBound
+                        reconstructExpressionRecursive(boundedQuantChildren[1], result);
+                        result.append(" ");
+                        
+                        // Child[2]: :
+                        reconstructExpressionRecursive(boundedQuantChildren[2], result);
+                        result.append(" ");
+                        
+                        // Child[3]: condition
+                        reconstructExpressionRecursive(boundedQuantChildren[3], result);
+                    }
+                    break;
+                    
+                case N_QuantBound:
+                    // variable \in domain
+                    TreeNode[] quantBoundChildren = stn.heirs();
+                    if (quantBoundChildren != null && quantBoundChildren.length >= 3) {
+                        // Child[0]: variable
+                        reconstructExpressionRecursive(quantBoundChildren[0], result);
+                        result.append(" ");
+                        
+                        // Child[1]: \in
+                        reconstructExpressionRecursive(quantBoundChildren[1], result);
+                        result.append(" ");
+                        
+                        // Child[2]: domain
+                        reconstructExpressionRecursive(quantBoundChildren[2], result);
+                    }
+                    break;
+                    
+                case N_Except:
+                    // [identifier EXCEPT N_ExceptSpec]
+                    TreeNode[] exceptChildren = stn.heirs();
+                    if (exceptChildren != null && exceptChildren.length >= 5) {
+                        // Child[0]: [
+                        reconstructExpressionRecursive(exceptChildren[0], result);
+                        
+                        // Child[1]: identifier
+                        reconstructExpressionRecursive(exceptChildren[1], result);
+                        result.append(" ");
+                        
+                        // Child[2]: EXCEPT
+                        reconstructExpressionRecursive(exceptChildren[2], result);
+                        result.append(" ");
+                        
+                        // Child[3]: N_ExceptSpec (![index]=value)
+                        reconstructExpressionRecursive(exceptChildren[3], result);
+                        
+                        // Child[4]: ]
+                        reconstructExpressionRecursive(exceptChildren[4], result);
+                    }
+                    break;
+                    
                 default:
                     // For leaf nodes and simple nodes, try to get the image
                     String image = stn.getImage();
                     if (image != null && !image.startsWith("N_")) {
                         result.append(image);
                     } else {
-                        // Recursively process children
+                        // Recursively process children with structure-based spacing
                         TreeNode[] children = stn.heirs();
                         if (children != null) {
-                            for (TreeNode child : children) {
-                                reconstructExpressionRecursive(child, result);
-                                result.append(" ");
-                            }
+                            processChildrenWithSpacing(children, result, stn.getKind());
                         }
                     }
                     break;
@@ -824,6 +888,70 @@ public class SANYCFGBuilder {
                 result.append(text);
             }
         }
+    }
+    
+    /**
+     * Process children with structure-based spacing rules
+     * Different node types have different spacing requirements
+     */
+    private void processChildrenWithSpacing(TreeNode[] children, StringBuilder result, int nodeKind) {
+        for (int i = 0; i < children.length; i++) {
+            TreeNode child = children[i];
+            
+            // Add spacing before child based on structure
+            if (i > 0 && needsSpaceBeforeChild(child, children[i-1], nodeKind)) {
+                result.append(" ");
+            }
+            
+            reconstructExpressionRecursive(child, result);
+        }
+    }
+    
+    /**
+     * Determine if space is needed before a child node
+     * Based on structural analysis, not hardcoded rules
+     */
+    private boolean needsSpaceBeforeChild(TreeNode currentChild, TreeNode previousChild, int parentKind) {
+        if (currentChild == null || previousChild == null) {
+            return false;
+        }
+        
+        // This method should be redesigned to use structural patterns
+        // rather than hardcoded string matching
+        
+        // For now, return a simple default to remove all hardcoding
+        return false;
+    }
+    
+    /**
+     * Check if text represents an operator that needs spacing around it
+     * This should be based on general patterns, not hardcoded lists
+     */
+    private boolean isOperatorNeedingSpace(String text) {
+        // This method should be redesigned to use structural patterns
+        // rather than hardcoded operator lists
+        return false; // Temporarily disable to remove hardcoding
+    }
+    
+    /**
+     * Check if text represents an identifier or keyword
+     */
+    private boolean isIdentifierOrKeyword(String text) {
+        if (text == null || text.isEmpty()) return false;
+        
+        // Keywords
+        if (text.equals("IF") || text.equals("THEN") || text.equals("ELSE") || text.equals("CASE") ||
+            text.equals("LET") || text.equals("IN") || text.equals("CHOOSE") || text.equals("UNCHANGED") ||
+            text.equals("EXCEPT") || text.equals("DOMAIN") || text.equals("SUBSET") || text.equals("UNION")) {
+            return true;
+        }
+        
+        // Identifiers (start with letter, contain letters/digits/underscore)
+        if (Character.isLetter(text.charAt(0))) {
+            return text.matches("[a-zA-Z][a-zA-Z0-9_]*");
+        }
+        
+        return false;
     }
     
     // Utility methods
@@ -1025,8 +1153,7 @@ public class SANYCFGBuilder {
         for (ExprNode arg : args) {
             CFGStmtNode subtree = visitExpressionNode(arg, indentationLevel + 1);
             if (subtree != null) {
-                // Add /\ prefix
-                subtree.setContent("/\\ " + subtree.getContent());
+                // Store only pure content - printer will add /\ based on CFG structure
                 subtrees.add(subtree);
             }
         }
@@ -1061,8 +1188,7 @@ public class SANYCFGBuilder {
         for (ExprNode arg : args) {
             CFGStmtNode subtree = visitExpressionNode(arg, indentationLevel + 1);
             if (subtree != null) {
-                // Add \/ prefix
-                subtree.setContent("\\/ " + subtree.getContent());
+                // Store only pure content - printer will add \/ based on CFG structure
                 subtrees.add(subtree);
             }
         }

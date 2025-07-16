@@ -133,6 +133,8 @@ public class SANYTransformerCli {
                 System.out.println("Module name: " + rootModule.getName());
                 System.out.println("Module location: " + rootModule.getLocation());
                 System.out.println("Tree node: " + rootModule.getTreeNode());
+                System.out.println("\n--- AST Tree Structure ---");
+                printASTTree(rootModule.getTreeNode(), 0);
             } else {
                 System.out.println("No root module found");
             }
@@ -253,5 +255,34 @@ public class SANYTransformerCli {
         result.append("\\* End of generated TLA+ specification\n");
         
         return result.toString();
+    }
+    
+    /**
+     * Print AST tree structure recursively
+     */
+    private static void printASTTree(tla2sany.st.TreeNode node, int depth) {
+        if (node == null) return;
+        
+        // Print indentation
+        String indent = "  ".repeat(depth);
+        
+        // Print current node information
+        if (node instanceof tla2sany.parser.SyntaxTreeNode) {
+            tla2sany.parser.SyntaxTreeNode stn = (tla2sany.parser.SyntaxTreeNode) node;
+            System.out.println(indent + "SyntaxTreeNode: kind=" + stn.getKind() + 
+                             ", image=" + stn.getImage() + 
+                             ", toString=" + stn.toString());
+        } else {
+            System.out.println(indent + "TreeNode: " + node.toString());
+        }
+        
+        // Print children recursively
+        tla2sany.st.TreeNode[] children = node.heirs();
+        if (children != null) {
+            for (int i = 0; i < children.length; i++) {
+                System.out.println(indent + "  Child[" + i + "]:");
+                printASTTree(children[i], depth + 2);
+            }
+        }
     }
 }
