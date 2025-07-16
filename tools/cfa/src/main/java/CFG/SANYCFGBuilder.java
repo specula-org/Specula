@@ -6,6 +6,7 @@ import java.util.regex.Pattern;
 
 import tla2sany.st.TreeNode;
 import tla2sany.parser.SyntaxTreeNode;
+import tla2sany.semantic.*;
 
 /**
  * CFG Builder using SANY AST instead of ANTLR
@@ -78,6 +79,9 @@ public class SANYCFGBuilder {
         }
     }
     
+    /**
+     * Visit module body - handles declarations (variables, constants, operators)
+     */
     private void visitBody(SyntaxTreeNode bodyNode) {
         TreeNode[] children = bodyNode.heirs();
         if (children == null) return;
@@ -90,6 +94,9 @@ public class SANYCFGBuilder {
                     case N_VariableDeclaration:
                         visitVariableDeclaration(stn);
                         break;
+                    case N_ConstantDeclaration:
+                        visitConstantDeclaration(stn);
+                        break;
                     case N_OperatorDefinition:
                         visitOperatorDefinition(stn);
                         break;
@@ -97,6 +104,15 @@ public class SANYCFGBuilder {
                 }
             }
         }
+    }
+    
+    /**
+     * Visit constant declaration and extract constant names
+     */
+    private void visitConstantDeclaration(SyntaxTreeNode constDeclNode) {
+        // Extract constant names from declaration
+        List<String> constNames = extractIdentifiers(constDeclNode);
+        constants.addAll(constNames);
     }
     
     private void visitVariableDeclaration(SyntaxTreeNode varDeclNode) {
@@ -135,41 +151,58 @@ public class SANYCFGBuilder {
         cfgFuncNodes.add(cfgFuncNode);
     }
     
+    /**
+     * Visit operator body - handles the actual logic statements in operator definitions
+     * This method looks for the expression part after the == token and processes it
+     */
     private CFGStmtNode visitOperatorBody(SyntaxTreeNode opDefNode) {
         TreeNode[] children = opDefNode.heirs();
         if (children == null) return null;
         
-        // Look for the expression part (usually the last child after == token)
+        // Look for the expression part (usually after == token)
+        // We need to find the actual body expression, not just the operator signature
+        boolean foundEquals = false;
+        for (TreeNode child : children) {
+            // Skip until we find the == token or equivalent
+            if (child.toString().equals("=") || child.toString().equals("==")) {
+                foundEquals = true;
+                continue;
+            }
+            
+            // Process the expression after ==
+            if (foundEquals && child instanceof SyntaxTreeNode) {
+                SyntaxTreeNode stn = (SyntaxTreeNode) child;
+                return visitExpressionNode(stn);
+            }
+        }
+        
+        // Fallback: if no == found, try to find any expression-like node
         for (TreeNode child : children) {
             if (child instanceof SyntaxTreeNode) {
                 SyntaxTreeNode stn = (SyntaxTreeNode) child;
                 
-                // Check if this is a junction list
-                if (stn.getKind() == N_ConjList) {
-                    return visitConjunctionList(stn);
-                } else if (stn.getKind() == N_DisjList) {
-                    return visitDisjunctionList(stn);
-                } else if (stn.getKind() == N_IfThenElse) {
-                    return visitIfExpression(stn);
-                } else if (stn.getKind() == N_Case) {
-                    return visitCaseExpression(stn);
-                } else if (stn.getKind() == N_LetExpr) {
-                    return visitLetExpression(stn);
-                } else if (stn.getKind() == N_ChooseExpr) {
-                    return visitChooseExpression(stn);
-                } else if (stn.getKind() == N_SetExpr) {
-                    return visitSetExpression(stn);
-                } else if (stn.getKind() == N_ExistsExpr || stn.getKind() == N_ForallExpr) {
-                    return visitQuantifierExpression(stn);
-                } else if (stn.getKind() == N_InfixExpr || stn.getKind() == N_ParenExpr) {
-                    // Single expression
-                    String content = reconstructExpression(stn);
-                    return new CFGStmtNode(indentationLevel, content, stn, CFGStmtNode.StmtType.NORMAL);
+                // Check if this looks like a statement or expression
+                if (isStatementOrExpression(stn)) {
+                    return visitExpressionNode(stn);
                 }
             }
         }
         
         return null;
+    }
+    
+    /**
+     * Check if a node represents a statement or expression
+     */
+    private boolean isStatementOrExpression(SyntaxTreeNode node) {
+        int kind = node.getKind();
+        return kind == N_ConjList || kind == N_DisjList || 
+               kind == N_IfThenElse || kind == N_Case || 
+               kind == N_LetExpr || kind == N_ChooseExpr || 
+               kind == N_SetExpr || kind == N_ExistsExpr || 
+               kind == N_ForallExpr || kind == N_InfixExpr || 
+               kind == N_ParenExpr || kind == N_GeneralId || 
+               kind == N_Number || kind == N_UnchangedExpr;
     }
     
     /**
@@ -422,30 +455,12 @@ public class SANYCFGBuilder {
     
     /**
      * Visit CHOOSE expression
-     * Creates non-deterministic choice: CHOOSE variable IN set : condition
-     * Based on mature implementation from CFGBuilderVisitor
+     * CHOOSE expressions are treated as normal expressions (like x + y)
+     * They don't need special tree structure, just text reconstruction
      */
     private CFGStmtNode visitChooseExpression(SyntaxTreeNode chooseExprNode) {
         String chooseText = reconstructExpression(chooseExprNode);
-        CFGStmtNode chooseNode = new CFGStmtNode(indentationLevel, chooseText, chooseExprNode, CFGStmtNode.StmtType.CHOOSE);
-        
-        // Extract scope information from CHOOSE expression
-        TreeNode[] children = chooseExprNode.heirs();
-        if (children != null && children.length > 2) {
-            // Look for the condition/scope part
-            for (int i = 2; i < children.length; i++) {
-                if (children[i] instanceof SyntaxTreeNode) {
-                    SyntaxTreeNode scopeNode = (SyntaxTreeNode) children[i];
-                    CFGStmtNode scopeBody = visitExpressionNode(scopeNode);
-                    if (scopeBody != null) {
-                        chooseNode.addChild(scopeBody);
-                        break;
-                    }
-                }
-            }
-        }
-        
-        return chooseNode;
+        return new CFGStmtNode(indentationLevel, chooseText, chooseExprNode, CFGStmtNode.StmtType.NORMAL);
     }
     
     /**
@@ -917,5 +932,243 @@ public class SANYCFGBuilder {
                 findLeafNodes(child, leaves);
             }
         }
+    }
+    
+    /**
+     * Visit semantic AST node (ExprNode from SANY)
+     * This method bridges between SANY's semantic AST and our CFG construction
+     */
+    public CFGStmtNode visitExpressionNode(ExprNode exprNode, int indentLevel) {
+        if (exprNode == null) return null;
+        
+        this.indentationLevel = indentLevel;
+        
+        try {
+            // Handle different types of expressions
+            if (exprNode instanceof OpApplNode) {
+                return visitOpApplNode((OpApplNode) exprNode);
+            } else if (exprNode instanceof NumeralNode) {
+                return new CFGStmtNode(indentLevel, exprNode.toString(), null, CFGStmtNode.StmtType.NORMAL);
+            } else if (exprNode instanceof StringNode) {
+                return new CFGStmtNode(indentLevel, exprNode.toString(), null, CFGStmtNode.StmtType.NORMAL);
+            } else if (exprNode instanceof DecimalNode) {
+                return new CFGStmtNode(indentLevel, exprNode.toString(), null, CFGStmtNode.StmtType.NORMAL);
+            } else {
+                // Generic expression handling
+                String content = exprNode.toString();
+                return new CFGStmtNode(indentLevel, content, null, CFGStmtNode.StmtType.NORMAL);
+            }
+        } catch (Exception e) {
+            System.err.println("Error processing expression node: " + e.getMessage());
+            return new CFGStmtNode(indentLevel, "ERROR: " + exprNode.toString(), null, CFGStmtNode.StmtType.NORMAL);
+        }
+    }
+    
+    /**
+     * Visit operator application node (function calls, operators, etc.)
+     */
+    private CFGStmtNode visitOpApplNode(OpApplNode opApplNode) {
+        SymbolNode operator = opApplNode.getOperator();
+        ExprOrOpArgNode[] opArgs = opApplNode.getArgs();
+        
+        // Convert ExprOrOpArgNode[] to ExprNode[]
+        ExprNode[] args = null;
+        if (opArgs != null) {
+            args = new ExprNode[opArgs.length];
+            for (int i = 0; i < opArgs.length; i++) {
+                if (opArgs[i] instanceof ExprNode) {
+                    args[i] = (ExprNode) opArgs[i];
+                }
+            }
+        }
+        
+        String opName = operator.getName().toString();
+        
+        // Handle special operators
+        switch (opName) {
+            case "/\\":
+                return visitConjunctionOp(args);
+            case "\\/":
+                return visitDisjunctionOp(args);
+            case "IF":
+                return visitIfThenElseOp(args);
+            case "CASE":
+                return visitCaseOp(args);
+            case "LET":
+                return visitLetOp(args);
+            case "CHOOSE":
+                return visitChooseOp(opApplNode);
+            case "UNCHANGED":
+                return visitUnchangedOp(args);
+            default:
+                // Regular operator application
+                StringBuilder content = new StringBuilder(opName);
+                if (args != null && args.length > 0) {
+                    content.append("(");
+                    for (int i = 0; i < args.length; i++) {
+                        if (i > 0) content.append(", ");
+                        content.append(args[i].toString());
+                    }
+                    content.append(")");
+                }
+                return new CFGStmtNode(indentationLevel, content.toString(), null, CFGStmtNode.StmtType.NORMAL);
+        }
+    }
+    
+    /**
+     * Visit conjunction operator (/\)
+     */
+    private CFGStmtNode visitConjunctionOp(ExprNode[] args) {
+        if (args == null || args.length == 0) return null;
+        
+        List<CFGStmtNode> subtrees = new ArrayList<>();
+        for (ExprNode arg : args) {
+            CFGStmtNode subtree = visitExpressionNode(arg, indentationLevel + 1);
+            if (subtree != null) {
+                // Add /\ prefix
+                subtree.setContent("/\\ " + subtree.getContent());
+                subtrees.add(subtree);
+            }
+        }
+        
+        if (subtrees.isEmpty()) return null;
+        if (subtrees.size() == 1) return subtrees.get(0);
+        
+        // Connect sequentially
+        CFGStmtNode firstTree = subtrees.get(0);
+        List<CFGStmtNode> currentLeaves = new ArrayList<>();
+        findLeafNodes(firstTree, currentLeaves);
+        
+        for (int i = 1; i < subtrees.size(); i++) {
+            CFGStmtNode nextTree = subtrees.get(i);
+            for (CFGStmtNode leaf : currentLeaves) {
+                leaf.addChild(nextTree);
+            }
+            currentLeaves.clear();
+            findLeafNodes(nextTree, currentLeaves);
+        }
+        
+        return firstTree;
+    }
+    
+    /**
+     * Visit disjunction operator (\/)
+     */
+    private CFGStmtNode visitDisjunctionOp(ExprNode[] args) {
+        if (args == null || args.length == 0) return null;
+        
+        List<CFGStmtNode> subtrees = new ArrayList<>();
+        for (ExprNode arg : args) {
+            CFGStmtNode subtree = visitExpressionNode(arg, indentationLevel + 1);
+            if (subtree != null) {
+                // Add \/ prefix
+                subtree.setContent("\\/ " + subtree.getContent());
+                subtrees.add(subtree);
+            }
+        }
+        
+        if (subtrees.isEmpty()) return null;
+        if (subtrees.size() == 1) return subtrees.get(0);
+        
+        // Create parallel branches
+        CFGStmtNode disjRoot = new CFGStmtNode(indentationLevel, "DISJUNCTION_BRANCHES", null, CFGStmtNode.StmtType.SKIP);
+        for (CFGStmtNode subtree : subtrees) {
+            disjRoot.addChild(subtree);
+        }
+        
+        return disjRoot;
+    }
+    
+    /**
+     * Visit IF-THEN-ELSE operator
+     */
+    private CFGStmtNode visitIfThenElseOp(ExprNode[] args) {
+        if (args == null || args.length < 3) return null;
+        
+        String condition = args[0].toString();
+        CFGStmtNode ifNode = new CFGStmtNode(indentationLevel, "IF " + condition + " THEN", null, CFGStmtNode.StmtType.IF_ELSE);
+        
+        // THEN branch
+        CFGStmtNode thenNode = new CFGStmtNode(indentationLevel + 1, "THEN", null, CFGStmtNode.StmtType.SKIP);
+        CFGStmtNode thenBody = visitExpressionNode(args[1], indentationLevel + 2);
+        if (thenBody != null) {
+            thenNode.addChild(thenBody);
+        }
+        
+        // ELSE branch
+        CFGStmtNode elseNode = new CFGStmtNode(indentationLevel + 1, "ELSE", null, CFGStmtNode.StmtType.NORMAL);
+        CFGStmtNode elseBody = visitExpressionNode(args[2], indentationLevel + 2);
+        if (elseBody != null) {
+            elseNode.addChild(elseBody);
+        }
+        
+        ifNode.addChild(thenNode);
+        ifNode.addChild(elseNode);
+        
+        return ifNode;
+    }
+    
+    /**
+     * Visit CASE operator
+     */
+    private CFGStmtNode visitCaseOp(ExprNode[] args) {
+        CFGStmtNode caseNode = new CFGStmtNode(indentationLevel, "CASE", null, CFGStmtNode.StmtType.CASE);
+        
+        // Process case arms
+        if (args != null) {
+            for (int i = 0; i < args.length; i += 2) {
+                if (i + 1 < args.length) {
+                    String condition = args[i].toString();
+                    CFGStmtNode armNode = new CFGStmtNode(indentationLevel + 1, condition + " ->", null, CFGStmtNode.StmtType.NORMAL);
+                    CFGStmtNode armBody = visitExpressionNode(args[i + 1], indentationLevel + 2);
+                    if (armBody != null) {
+                        armNode.addChild(armBody);
+                    }
+                    caseNode.addChild(armNode);
+                }
+            }
+        }
+        
+        return caseNode;
+    }
+    
+    /**
+     * Visit LET operator
+     */
+    private CFGStmtNode visitLetOp(ExprNode[] args) {
+        CFGStmtNode letNode = new CFGStmtNode(indentationLevel, "LET ... IN", null, CFGStmtNode.StmtType.LET);
+        
+        // Process LET body (usually the last argument)
+        if (args != null && args.length > 0) {
+            CFGStmtNode body = visitExpressionNode(args[args.length - 1], indentationLevel + 1);
+            if (body != null) {
+                letNode.addChild(body);
+            }
+        }
+        
+        return letNode;
+    }
+    
+    /**
+     * Visit CHOOSE operator
+     */
+    private CFGStmtNode visitChooseOp(OpApplNode chooseNode) {
+        String content = "CHOOSE " + chooseNode.toString();
+        return new CFGStmtNode(indentationLevel, content, null, CFGStmtNode.StmtType.NORMAL);
+    }
+    
+    /**
+     * Visit UNCHANGED operator
+     */
+    private CFGStmtNode visitUnchangedOp(ExprNode[] args) {
+        StringBuilder content = new StringBuilder("UNCHANGED");
+        if (args != null && args.length > 0) {
+            content.append(" ");
+            for (int i = 0; i < args.length; i++) {
+                if (i > 0) content.append(", ");
+                content.append(args[i].toString());
+            }
+        }
+        return new CFGStmtNode(indentationLevel, content.toString(), null, CFGStmtNode.StmtType.UNCHANGED);
     }
 }
