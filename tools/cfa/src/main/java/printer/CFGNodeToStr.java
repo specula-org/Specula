@@ -17,6 +17,16 @@ public class CFGNodeToStr {
                 return SKIPCFGStmtNodeToStr(node);
             case LET: 
                 return LETCFGStmtNodeToStr(node);
+            case UNCHANGED:
+                return UNCHANGEDCFGStmtNodeToStr(node);
+            case CASE:
+                return CASECFGStmtNodeToStr(node);
+            case CHOOSE:
+                return CHOOSECFGStmtNodeToStr(node);
+            case EXISTS:
+                return EXISTSCFGStmtNodeToStr(node);
+            case FORALL:
+                return FORALLCFGStmtNodeToStr(node);
             default:
                 System.err.println("Unsupported statement type: " + node.getType());
                 return "";
@@ -45,5 +55,25 @@ public class CFGNodeToStr {
 
     private static String SKIPCFGStmtNodeToStr(CFGStmtNode node){
         return "";
+    }
+    
+    private static String UNCHANGEDCFGStmtNodeToStr(CFGStmtNode node){
+        return node.getContent();
+    }
+    
+    private static String CASECFGStmtNodeToStr(CFGStmtNode node){
+        return node.getContent();
+    }
+    
+    private static String CHOOSECFGStmtNodeToStr(CFGStmtNode node){
+        return node.getContent();
+    }
+    
+    private static String EXISTSCFGStmtNodeToStr(CFGStmtNode node){
+        return node.getContent();
+    }
+    
+    private static String FORALLCFGStmtNodeToStr(CFGStmtNode node){
+        return node.getContent();
     }
 }
