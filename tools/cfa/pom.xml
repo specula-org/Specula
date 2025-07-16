@@ -38,6 +38,15 @@
            <version>4.13.2</version>
            <scope>test</scope> <!-- JUnit is correctly scoped to 'test' -->
        </dependency>
+       
+       <!-- TLA2tools for SANY parser -->
+       <dependency>
+           <groupId>org.tlaplus</groupId>
+           <artifactId>tla2tools</artifactId>
+           <version>1.0</version>
+           <scope>system</scope>
+           <systemPath>${basedir}/../../lib/tla2tools.jar</systemPath>
+       </dependency>
    </dependencies>
 
 <build>

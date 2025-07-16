@@ -1,4 +1,4 @@
----- MODULE test ----
+---- MODULE Raft ----
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
 CONSTANTS 
@@ -295,18 +295,18 @@ stepLeader(s, m) ==
         /\ IF m.from \in config[s].learners
            THEN /\ UNCHANGED vars
            ELSE /\ IF leadTransferee[s] # Nil
-             THEN IF leadTransferee[s] = m.from
-                  THEN /\ UNCHANGED vars
-                  ELSE /\ leadTransferee' = [leadTransferee EXCEPT ![s] = Nil]
-                       /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-             ELSE IF m.from = s
-                  THEN UNCHANGED vars
-                  ELSE /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-                       /\ leadTransferee' = [leadTransferee EXCEPT ![s] = m.from]
-                       /\ IF matchIndex[s][m.from] = Len(log[s])
-                          THEN messages' = messages \cup {[from |-> s, to |-> m.from, type |-> "TimeoutNow"]}
-                          ELSE sendAppend(s, m.from)
-                       /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+                    THEN IF leadTransferee[s] = m.from
+                            THEN /\ UNCHANGED vars
+                            ELSE /\ leadTransferee' = [leadTransferee EXCEPT ![s] = Nil]
+                                 /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+                    ELSE IF m.from = s
+                            THEN UNCHANGED vars
+                            ELSE /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
+                                 /\ leadTransferee' = [leadTransferee EXCEPT ![s] = m.from]
+                                 /\ IF matchIndex[s][m.from] = Len(log[s])
+                                        THEN messages' = messages \cup {[from |-> s, to |-> m.from, type |-> "TimeoutNow"]}
+                                        ELSE sendAppend(s, m.from)
+                                 /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
 
 handleAppendEntries(s, m) ==
     /\ IF m.index < commitIndex[s]
@@ -360,39 +360,40 @@ stepCandidate(s, m) ==
 
 stepFollower(s, m) ==
     /\ CASE m.type = "Prop" -> 
-        /\ IF leaderId[s] = Nil
-           THEN /\ UNCHANGED vars
-           ELSE /\ messages' = messages \cup {[from |-> s, to |-> leaderId[s], type |-> m.type, entries |-> m.entries]}
-        /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-    [] m.type = "App" -> 
-        /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-        /\ leaderId' = [leaderId EXCEPT ![s] = m.from]
-        /\ handleAppendEntries(s, m)
-    [] m.type = "Heartbeat" -> 
-        /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-        /\ leaderId' = [leaderId EXCEPT ![s] = m.from]
-        /\ handleHeartbeat(s, m)
-    [] m.type = "Snap" -> 
-        /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-        /\ leaderId' = [leaderId EXCEPT ![s] = m.from]
-        /\ handleSnapshot(s, m)
-    [] m.type = "TransferLeader" -> 
-        /\ IF leaderId[s] = Nil
-            THEN UNCHANGED vars
-            ELSE messages' = messages \cup {[from |-> s, to |-> leaderId[s], type |-> m.type]}
-        /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-    [] m.type = "TimeoutNow" -> hup(s, "Transfer")
-    [] m.type = "ReadIndex" -> 
-        /\ IF leaderId[s] = Nil
-            THEN /\ UNCHANGED vars
-            ELSE /\ messages' = messages \cup {[from |-> s, to |-> leaderId[s], type |-> m.type, entries |-> m.entries]}
-        /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-    [] m.type = "ReadIndexResp" -> 
-        /\ IF Len(m.entries) = 1
-            THEN /\ readStates' = [readStates EXCEPT ![s] = Append(readStates[s], [index |-> m.index, requestCtx |-> m.entries[1].data])]
-            ELSE /\ UNCHANGED readStates
-        /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+            /\ IF leaderId[s] = Nil
+                THEN /\ UNCHANGED vars
+                ELSE /\ messages' = messages \cup {[from |-> s, to |-> leaderId[s], type |-> m.type, entries |-> m.entries]}
+            /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+        [] m.type = "App" -> 
+            /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
+            /\ leaderId' = [leaderId EXCEPT ![s] = m.from]
+            /\ handleAppendEntries(s, m)
+        [] m.type = "Heartbeat" -> 
+            /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
+            /\ leaderId' = [leaderId EXCEPT ![s] = m.from]
+            /\ handleHeartbeat(s, m)
+        [] m.type = "Snap" -> 
+            /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
+            /\ leaderId' = [leaderId EXCEPT ![s] = m.from]
+            /\ handleSnapshot(s, m)
+        [] m.type = "TransferLeader" -> 
+            /\ IF leaderId[s] = Nil
+                THEN UNCHANGED vars
+                ELSE messages' = messages \cup {[from |-> s, to |-> leaderId[s], type |-> m.type]}
+            /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+        [] m.type = "TimeoutNow" -> hup(s, "Transfer")
+        [] m.type = "ReadIndex" -> 
+            /\ IF leaderId[s] = Nil
+                THEN /\ UNCHANGED vars
+                ELSE /\ messages' = messages \cup {[from |-> s, to |-> leaderId[s], type |-> m.type, entries |-> m.entries]}
+            /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+        [] m.type = "ReadIndexResp" -> 
+            /\ IF Len(m.entries) = 1
+                THEN /\ readStates' = [readStates EXCEPT ![s] = Append(readStates[s], [index |-> m.index, requestCtx |-> m.entries[1].data])]
+                ELSE /\ UNCHANGED readStates
+            /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
 
+RECURSIVE Step(_, _)
 
 Step(s, m) ==
     CASE m.term = 0 -> 
