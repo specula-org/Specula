@@ -100,8 +100,7 @@ public class CFGStmtNode {
 
     // Method to add a single temporary variable, for LET and other scoped nodes
     public void addTemporaryVariable(String varName) {
-        if (this.type != StmtType.LET && this.type != StmtType.CHOOSE && 
-            this.type != StmtType.EXISTS && this.type != StmtType.FORALL) {
+        if (this.type != StmtType.LET && this.type != StmtType.EXISTS && this.type != StmtType.FORALL) {
             throw new IllegalStateException("Cannot add temporary variables to a node of type: " + this.type);
         }
         if (varName == null || varName.trim().isEmpty()) {
@@ -112,8 +111,7 @@ public class CFGStmtNode {
 
     // Method to set all temporary variables at once, for LET and other scoped nodes
     public void setTemporaryVariables(List<String> vars) {
-        if (this.type != StmtType.LET && this.type != StmtType.CHOOSE && 
-            this.type != StmtType.EXISTS && this.type != StmtType.FORALL) {
+        if (this.type != StmtType.LET && this.type != StmtType.EXISTS && this.type != StmtType.FORALL) {
             throw new IllegalStateException("Cannot set temporary variables for a node of type: " + this.type);
         }
         if (vars == null) {
