@@ -41,7 +41,9 @@ public class SANYCFGBuilder {
     private static final int N_Case = 336;
     private static final int N_CaseArm = 337;
     private static final int N_OtherArm = 390;
-    private static final int N_LetExpr = 379;
+    private static final int N_LetIn = 380;
+    private static final int N_LetDefinitions = 379;
+    private static final int N_LetExpr = 379; // Keep for backward compatibility
     private static final int N_LetDef = 377;
     private static final int N_ChooseExpr = 338;
     private static final int N_UnBoundedOrBoundedChoose = 424;
@@ -56,6 +58,7 @@ public class SANYCFGBuilder {
     private static final int N_ForallExpr = 355;
     private static final int N_UnchangedExpr = 422;
     private static final int N_PrefixExpr = 399;
+    private static final int N_PostfixExpr = 395;
     private static final int N_GenPrefixOp = 362;
     
     public List<String> getVariables() { return variables; }
@@ -287,8 +290,8 @@ public class SANYCFGBuilder {
         TreeNode[] children = caseExprNode.heirs();
         if (children == null || children.length == 0) return null;
         
-        // Create CASE root with SKIP type for branching
-        CFGStmtNode caseRoot = new CFGStmtNode(indentationLevel, "CASE", null, CFGStmtNode.StmtType.SKIP);
+        // Create CASE root with CASE type as container for branches (empty content)
+        CFGStmtNode caseRoot = new CFGStmtNode(indentationLevel, "", null, CFGStmtNode.StmtType.CASE);
         
         indentationLevel++;
         
@@ -393,65 +396,57 @@ public class SANYCFGBuilder {
     /**
      * Visit LET-IN expression
      * Creates temporary variable scope: LET definitions IN body
-     * Based on mature implementation from CFGBuilderVisitor
+     * Based on actual SANY AST structure analysis
      */
     private CFGStmtNode visitLetExpression(SyntaxTreeNode letExprNode) {
         TreeNode[] children = letExprNode.heirs();
-        if (children == null || children.length < 2) return null;
+        if (children == null || children.length < 4) return null;
         
-        StringBuilder content = new StringBuilder();
-        List<String> tempVars = new ArrayList<>();
+        // Based on AST analysis:
+        // children[0] = LET token
+        // children[1] = N_LetDefinitions (contains all definitions)
+        // children[2] = IN token
+        // children[3] = body expression
+        
+        SyntaxTreeNode definitionsNode = null;
         SyntaxTreeNode inBodyNode = null;
         
-        // Process LET definitions - collect all definitions before IN
-        boolean foundIN = false;
-        for (int i = 0; i < children.length; i++) {
-            TreeNode child = children[i];
+        if (children[1] instanceof SyntaxTreeNode) {
+            definitionsNode = (SyntaxTreeNode) children[1];
+        }
+        if (children[3] instanceof SyntaxTreeNode) {
+            inBodyNode = (SyntaxTreeNode) children[3];
+        }
+        
+        // Build definitions text and extract temporary variables
+        String definitionsText = "";
+        List<String> tempVars = new ArrayList<>();
+        
+        if (definitionsNode != null) {
+            definitionsText = reconstructExpression(definitionsNode);
             
-            // Skip LET token
-            if (child.toString().equals("LET")) {
-                continue;
-            }
-            
-            // Check for IN token
-            if (child.toString().equals("IN")) {
-                foundIN = true;
-                // Next child should be the IN body
-                if (i + 1 < children.length && children[i + 1] instanceof SyntaxTreeNode) {
-                    inBodyNode = (SyntaxTreeNode) children[i + 1];
-                }
-                break;
-            }
-            
-            // Process definitions before IN
-            if (child instanceof SyntaxTreeNode && !foundIN) {
-                SyntaxTreeNode defNode = (SyntaxTreeNode) child;
-                
-                // Check if this is a definition (operator, function, or module)
-                if (defNode.getKind() == N_LetDef || defNode.getKind() == N_OperatorDefinition) {
-                    // Extract definition content
-                    String defText = reconstructExpression(defNode);
-                    content.append(defText).append(" ");
-                    
-                    // Extract temporary variable name
-                    String tempVar = extractTempVariableFromDef(defNode);
-                    if (tempVar != null && !tempVar.isEmpty()) {
-                        tempVars.add(tempVar);
+            // Extract temporary variable names from definitions
+            TreeNode[] defChildren = definitionsNode.heirs();
+            if (defChildren != null) {
+                for (TreeNode defChild : defChildren) {
+                    if (defChild instanceof SyntaxTreeNode) {
+                        SyntaxTreeNode defNode = (SyntaxTreeNode) defChild;
+                        if (defNode.getKind() == N_LetDef || defNode.getKind() == N_OperatorDefinition) {
+                            String tempVar = extractTempVariableFromDef(defNode);
+                            if (tempVar != null && !tempVar.isEmpty()) {
+                                tempVars.add(tempVar);
+                            }
+                        }
                     }
                 }
             }
         }
         
-        // Create LET node with collected definitions
-        String cleanedContent = content.toString().trim();
-        if (cleanedContent.isEmpty()) {
-            cleanedContent = "temp_def";
-        }
-        
-        CFGStmtNode letNode = new CFGStmtNode(indentationLevel, "LET " + cleanedContent + " IN", letExprNode, CFGStmtNode.StmtType.LET);
+        // Create LET node with definitions
+        CFGStmtNode letNode = new CFGStmtNode(indentationLevel, "LET " + definitionsText + " IN", letExprNode, CFGStmtNode.StmtType.LET);
         letNode.setTemporaryVariables(tempVars);
         
-        // Process IN body
+        // Process IN body recursively
         if (inBodyNode != null) {
             CFGStmtNode inBody = visitExpressionNode(inBodyNode);
             if (inBody != null) {
@@ -527,7 +522,7 @@ public class SANYCFGBuilder {
                 return visitIfExpression(exprNode);
             case N_Case:
                 return visitCaseExpression(exprNode);
-            case N_LetExpr:
+            case N_LetIn:
                 return visitLetExpression(exprNode);
             case N_ChooseExpr:
                 return visitChooseExpression(exprNode);
@@ -882,6 +877,55 @@ public class SANYCFGBuilder {
                     }
                     break;
                     
+                case N_IfThenElse:
+                    // Handle IF-THEN-ELSE based on actual AST structure
+                    TreeNode[] ifChildren = stn.heirs();
+                    if (ifChildren != null && ifChildren.length >= 6) {
+                        // Child[0]: IF, Child[1]: condition, Child[2]: THEN, 
+                        // Child[3]: then-expr, Child[4]: ELSE, Child[5]: else-expr
+                        for (int i = 0; i < ifChildren.length; i++) {
+                            if (i > 0) result.append(" ");
+                            reconstructExpressionRecursive(ifChildren[i], result);
+                        }
+                    }
+                    break;
+                    
+                case N_LetIn:
+                    // Handle LET-IN based on actual AST structure
+                    TreeNode[] letChildren = stn.heirs();
+                    if (letChildren != null && letChildren.length >= 4) {
+                        // Child[0]: LET, Child[1]: N_LetDefinitions, Child[2]: IN, Child[3]: body
+                        reconstructExpressionRecursive(letChildren[0], result); // LET
+                        result.append(" ");
+                        reconstructExpressionRecursive(letChildren[1], result); // definitions
+                        result.append(" ");
+                        reconstructExpressionRecursive(letChildren[2], result); // IN
+                        result.append(" ");
+                        reconstructExpressionRecursive(letChildren[3], result); // body
+                    }
+                    break;
+                    
+                case N_LetDefinitions:
+                    // Handle LET definitions with proper spacing
+                    TreeNode[] defChildren = stn.heirs();
+                    if (defChildren != null) {
+                        for (int i = 0; i < defChildren.length; i++) {
+                            if (i > 0) result.append(" ");
+                            reconstructExpressionRecursive(defChildren[i], result);
+                        }
+                    }
+                    break;
+                    
+                case N_PostfixExpr:
+                    // Handle postfix expressions without extra spaces (like y')
+                    TreeNode[] postfixChildren = stn.heirs();
+                    if (postfixChildren != null) {
+                        for (TreeNode child : postfixChildren) {
+                            reconstructExpressionRecursive(child, result);
+                        }
+                    }
+                    break;
+                    
                 default:
                     // For leaf nodes and simple nodes, try to get the image
                     String image = stn.getImage();
@@ -910,32 +954,103 @@ public class SANYCFGBuilder {
      * Different node types have different spacing requirements
      */
     private void processChildrenWithSpacing(TreeNode[] children, StringBuilder result, int nodeKind) {
+        TreeNode lastNonEmptyChild = null;
+        
         for (int i = 0; i < children.length; i++) {
             TreeNode child = children[i];
             
+            // Check if child produces any content
+            StringBuilder childContent = new StringBuilder();
+            reconstructExpressionRecursive(child, childContent);
+            String content = childContent.toString();
+            
+            // Skip empty children (like empty N_IdPrefix)
+            if (content.isEmpty()) {
+                continue;
+            }
+            
             // Add spacing before child based on structure
-            if (i > 0 && needsSpaceBeforeChild(child, children[i-1], nodeKind)) {
+            if (lastNonEmptyChild != null && needsSpaceBeforeChild(child, lastNonEmptyChild, nodeKind)) {
                 result.append(" ");
             }
             
-            reconstructExpressionRecursive(child, result);
+            result.append(content);
+            lastNonEmptyChild = child;
         }
     }
     
     /**
      * Determine if space is needed before a child node
-     * Based on structural analysis, not hardcoded rules
+     * Based on AST node types and TLA+ syntax structure
      */
     private boolean needsSpaceBeforeChild(TreeNode currentChild, TreeNode previousChild, int parentKind) {
         if (currentChild == null || previousChild == null) {
             return false;
         }
         
-        // This method should be redesigned to use structural patterns
-        // rather than hardcoded string matching
+        // Get node kinds for structural analysis
+        int currentKind = getNodeKind(currentChild);
+        int previousKind = getNodeKind(previousChild);
         
-        // For now, return a simple default to remove all hardcoding
-        return false;
+        // Check images for special tokens that don't need spaces
+        String currentImage = getNodeImage(currentChild);
+        String previousImage = getNodeImage(previousChild);
+        
+        // No space after opening brackets/parentheses
+        if ("(".equals(previousImage) || "[".equals(previousImage) || "{".equals(previousImage)) {
+            return false;
+        }
+        
+        // No space before closing brackets/parentheses  
+        if (")".equals(currentImage) || "]".equals(currentImage) || "}".equals(currentImage)) {
+            return false;
+        }
+        
+        // No space around operators that should be tight
+        if ("!".equals(previousImage) || "!".equals(currentImage)) {
+            return false;
+        }
+        
+        // No space around field access
+        if (".".equals(currentImage) || ".".equals(previousImage)) {
+            return false;
+        }
+        
+        // No space before postfix operators like ' (prime)
+        if ("'".equals(currentImage)) {
+            return false;
+        }
+        
+        // For IF-THEN-ELSE and LET-IN expressions, we need spaces between tokens
+        if (parentKind == N_IfThenElse || parentKind == N_LetExpr) {
+            return true;
+        }
+        
+        // Default: add space between most elements
+        return true;
+    }
+    
+    /**
+     * Get node kind safely
+     */
+    private int getNodeKind(TreeNode node) {
+        if (node instanceof SyntaxTreeNode) {
+            return ((SyntaxTreeNode) node).getKind();
+        }
+        return -1;
+    }
+    
+    /**
+     * Get node image safely
+     */
+    private String getNodeImage(TreeNode node) {
+        if (node instanceof SyntaxTreeNode) {
+            String image = ((SyntaxTreeNode) node).getImage();
+            if (image != null && !image.startsWith("N_")) {
+                return image;
+            }
+        }
+        return null;
     }
     
     /**
