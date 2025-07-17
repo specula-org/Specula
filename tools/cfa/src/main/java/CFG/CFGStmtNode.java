@@ -30,6 +30,8 @@ public class CFGStmtNode {
         SKIP,
         LET,
         CASE,
+        CASE_ARM,
+        DISJUNCTION,
         CHOOSE,
         EXISTS,
         FORALL,

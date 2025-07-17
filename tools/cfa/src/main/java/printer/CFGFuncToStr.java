@@ -59,6 +59,7 @@ public class CFGFuncToStr {
             return result;
         }
         
+        
         // Handle different node types
         switch (entry.getType()) {
             case ROOT:
@@ -76,7 +77,11 @@ public class CFGFuncToStr {
                 
             case IF_ELSE:
             case CASE:
+            case DISJUNCTION:
                 return handleBranchStatement(entry, exit);
+                
+            case CASE_ARM:
+                return handleCaseArmStatement(entry, exit);
                 
             default:
                 // Default: handle as NORMAL
@@ -127,29 +132,45 @@ public class CFGFuncToStr {
 
     /**
      * Handle branch statements (IF/CASE/\/)
-     * Find convergence points and format output
+     * Uniformly add /\ prefix to the first line of all branch statements
      */
     private List<String> handleBranchStatement(CFGStmtNode node, CFGStmtNode exit) {
         List<String> result = new ArrayList<>();
         
+        // Get branch content from specific handlers (without /\ prefix)
+        List<String> branchResult;
         if (node.getType() == CFGStmtNode.StmtType.IF_ELSE) {
-            return handleIfStatement(node, exit);
+            branchResult = handleIfStatement(node, exit);
         } else if (node.getType() == CFGStmtNode.StmtType.CASE) {
-            return handleCaseStatement(node, exit);
+            branchResult = handleCaseStatement(node, exit);
+        } else if (node.getType() == CFGStmtNode.StmtType.DISJUNCTION) {
+            branchResult = handleGenericBranchStatement(node, exit);
         } else {
-            // Handle disjunction (\/) and other complex branch types
-            return handleGenericBranchStatement(node, exit);
+            branchResult = handleGenericBranchStatement(node, exit);
         }
+        
+        // Uniformly add /\ prefix to the first line
+        if (!branchResult.isEmpty()) {
+            String firstLine = branchResult.get(0);
+            result.add("/\\ " + firstLine);
+            // Add remaining lines without modification
+            for (int i = 1; i < branchResult.size(); i++) {
+                result.add(branchResult.get(i));
+            }
+        }
+        
+        return result;
     }
     
     /**
      * Handle CASE statements with proper formatting:
-     * /\ CASE exp ->
-     *        body
-     *    [] exp ->
-     *        body
-     *    [] OTHER ->
-     *        body
+     * CASE exp ->
+     *     body
+     * [] exp ->
+     *     body
+     * [] OTHER ->
+     *     body
+     * Note: /\ prefix will be added by handleBranchStatement for the first CASE line
      */
     private List<String> handleCaseStatement(CFGStmtNode caseNode, CFGStmtNode exit) {
         List<String> result = new ArrayList<>();
@@ -157,36 +178,18 @@ public class CFGFuncToStr {
         // Find convergence point for all case branches
         CFGStmtNode convergencePoint = findConvergencePoint(caseNode, exit);
         
-        // CASE root node should have empty content, so no header line
-        
-        // Process each case branch using safe "/\ " prefix checking
+        // CASE root node should have empty content, process children directly
         List<CFGStmtNode> children = caseNode.getChildren();
         for (int i = 0; i < children.size(); i++) {
             CFGStmtNode child = children.get(i);
-            List<String> branchResult = DFS(child, exit);
-            
-            for (int j = 0; j < branchResult.size(); j++) {
-                String line = branchResult.get(j);
-                
-                // Safe approach: check if line starts with "/\ ", then decide what to do
-                if (line.startsWith("/\\ ")) {
-                    String content = line.substring(3); // Remove "/\ "
-                    
-                    // First line of each branch: check if it's [] or OTHER that should lose /\ prefix
-                    if (j == 0 && (content.startsWith("[]") || content.startsWith("OTHER"))) {
-                        // [] and OTHER branches align with CASE (3 spaces from start)
-                        result.add("   " + content);
-                    } else if (j == 0 && content.startsWith("CASE")) {
-                        // First CASE branch gets normal /\ prefix (4 spaces from start)
-                        result.add("/\\ " + content);
-                    } else {
-                        // Body content should be indented under CASE (7 spaces from start)
-                        result.add("       /\\ " + content);
-                    }
-                } else {
-                    // Unexpected: all lines should have /\ prefix in our system
-                    throw new RuntimeException("Unexpected line without /\\ prefix in CASE: " + line);
-                }
+            List<String> branchResult = DFS(child, convergencePoint);
+            if (i == 0) {
+                result.add(branchResult.get(0));
+            } else{
+                result.add("   " + branchResult.get(0));
+            }
+            for (int j = 1; j < branchResult.size(); j++) {
+                result.add("   " + branchResult.get(j));
             }
         }
         
@@ -198,12 +201,35 @@ public class CFGFuncToStr {
         
         return result;
     }
+
+    /**
+     * Handle CASE_ARM statements (CASE condition -> or [] condition ->)
+     * These should not have /\ prefix as they are branch headers
+     */
+    private List<String> handleCaseArmStatement(CFGStmtNode node, CFGStmtNode exit) {
+        List<String> result = new ArrayList<>();
+        
+        // Add the case arm content (e.g., "CASE x \in {1, 2} ->" or "[] x \in {3, 4} ->")
+        String content = CFGNodeToStr.CFGStmtNodeToStr(node);
+        if (!content.isEmpty()) {
+            result.add(content);
+        }
+        
+        // Recursively process children (case arm body) with indentation
+        List<String> childResult = handleChildren(node, exit);
+        for (String line : childResult) {
+            result.add("   " + line);
+        }
+        
+        return result;
+    }
     
     /**
      * Handle generic branch statements (disjunctions, etc.)
-     * Format with /\ prefix and \/ for each branch:
-     * /\ \/ stmt
-     *    \/ stmt
+     * Format with \/ for each branch:
+     * \/ stmt
+     * \/ stmt
+     * Note: /\ prefix will be added by handleBranchStatement for the first line
      */
     private List<String> handleGenericBranchStatement(CFGStmtNode node, CFGStmtNode exit) {
         List<String> result = new ArrayList<>();
@@ -219,17 +245,11 @@ public class CFGFuncToStr {
                 
                 if (!branchResult.isEmpty()) {
                     String firstLine = branchResult.get(0);
-                    if (i == 0) {
-                        // First branch: add /\ \/ prefix
-                        result.add("/\\ \\/ " + firstLine);
-                    } else {
-                        // Subsequent branches: add \/ prefix with alignment
-                        result.add("   \\/ " + firstLine);
-                    }
+                    result.add("\\/ " + firstLine);
                     
                     // Add remaining lines from this branch with proper indentation
                     for (int j = 1; j < branchResult.size(); j++) {
-                        result.add("      " + branchResult.get(j));
+                        result.add("   " + branchResult.get(j));
                     }
                 }
             }
@@ -238,7 +258,10 @@ public class CFGFuncToStr {
             List<String> childResult = handleChildren(node, convergencePoint);
             result.addAll(childResult);
         }
-        
+
+        for (int i = 1; i < result.size(); i++) {
+            result.set(i, "   " + result.get(i));
+        }
         // Continue from convergence point
         if (convergencePoint != null && convergencePoint != exit) {
             List<String> afterConvergence = DFS(convergencePoint, exit);
@@ -250,27 +273,31 @@ public class CFGFuncToStr {
 
     /**
      * Handle IF-THEN-ELSE statement with proper formatting:
-     * /\ IF exp THEN
-     *        body
-     *        ELSE
-     *        body
+     * IF exp THEN
+     *    body
+     *    ELSE
+     *    body
+     * Note: /\ prefix will be added by handleBranchStatement
      */
     private List<String> handleIfStatement(CFGStmtNode ifNode, CFGStmtNode exit) {
         List<String> result = new ArrayList<>();
         
-        // Get IF statement content (should be "IF condition THEN") with /\ prefix
+        // Get IF statement content (should be "IF condition THEN") without /\ prefix
         String ifContent = CFGNodeToStr.CFGStmtNodeToStr(ifNode);
         if (!ifContent.isEmpty()) {
-            result.add("/\\ " + ifContent);
+            result.add(ifContent);
         }
+        
+        // Find convergence point
+        CFGStmtNode convergencePoint = findConvergencePoint(ifNode, exit);
         
         List<CFGStmtNode> children = ifNode.getChildren();
         if (children.size() >= 2) {
             // First child should be THEN branch
             CFGStmtNode thenNode = children.get(0);
-            List<String> thenResult = DFS(thenNode, exit);
+            List<String> thenResult = DFS(thenNode, convergencePoint);
             for (String line : thenResult) {
-                result.add("       " + line);  // 7 spaces
+                result.add("   " + line);  // 3 spaces relative to IF
             }
             
             // Second child should be ELSE branch
@@ -280,19 +307,24 @@ public class CFGFuncToStr {
             String elseContent = CFGNodeToStr.CFGStmtNodeToStr(elseNode);
             if (elseContent.equals("ELSE")) {
                 // ELSE node is just the keyword, add it and process its children
-                result.add("       ELSE");  // 7 spaces
-                List<String> elseResult = handleChildren(elseNode, exit);
+                result.add("   ELSE");  // 3 spaces relative to IF
+                List<String> elseResult = handleChildren(elseNode, convergencePoint);
                 for (String line : elseResult) {
-                    result.add("       " + line);  // 7 spaces
+                    result.add("   " + line);  // 3 spaces relative to IF
                 }
             } else {
                 // ELSE node has content, add ELSE keyword separately
-                result.add("       ELSE");  // 7 spaces
-                List<String> elseResult = DFS(elseNode, exit);
+                result.add("   ELSE");  // 3 spaces relative to IF
+                List<String> elseResult = DFS(elseNode, convergencePoint);
                 for (String line : elseResult) {
-                    result.add("       " + line);  // 7 spaces
+                    result.add("   " + line);  // 3 spaces relative to IF
                 }
             }
+        }
+
+        if (convergencePoint != null && convergencePoint != exit) {
+            List<String> afterConvergence = DFS(convergencePoint, exit);
+            result.addAll(afterConvergence);
         }
         
         return result;
