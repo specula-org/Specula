@@ -55,6 +55,8 @@ public class SANYCFGBuilder {
     private static final int N_ExistsExpr = 348;
     private static final int N_ForallExpr = 355;
     private static final int N_UnchangedExpr = 422;
+    private static final int N_PrefixExpr = 399;
+    private static final int N_GenPrefixOp = 362;
     
     public List<String> getVariables() { return variables; }
     public List<String> getConstants() { return constants; }
@@ -864,6 +866,19 @@ public class SANYCFGBuilder {
                         
                         // Child[4]: ]
                         reconstructExpressionRecursive(exceptChildren[4], result);
+                    }
+                    break;
+                    
+                case N_PrefixExpr:
+                    // Handle all prefix expressions: operator operand
+                    TreeNode[] prefixChildren = stn.heirs();
+                    if (prefixChildren != null && prefixChildren.length >= 2) {
+                        // Child[0]: prefix operator (UNCHANGED, ~, [], <>, etc.)
+                        reconstructExpressionRecursive(prefixChildren[0], result);
+                        result.append(" ");
+                        
+                        // Child[1]: operand
+                        reconstructExpressionRecursive(prefixChildren[1], result);
                     }
                     break;
                     
