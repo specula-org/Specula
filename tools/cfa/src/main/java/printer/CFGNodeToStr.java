@@ -21,6 +21,10 @@ public class CFGNodeToStr {
                 return UNCHANGEDCFGStmtNodeToStr(node);
             case CASE:
                 return CASECFGStmtNodeToStr(node);
+            case CASE_ARM:
+                return CASE_ARMCFGStmtNodeToStr(node);
+            case DISJUNCTION:
+                return DISJUNCTIONCFGStmtNodeToStr(node);
             case CHOOSE:
                 return CHOOSECFGStmtNodeToStr(node);
             case EXISTS:
@@ -75,5 +79,13 @@ public class CFGNodeToStr {
     
     private static String FORALLCFGStmtNodeToStr(CFGStmtNode node){
         return node.getContent();
+    }
+    
+    private static String CASE_ARMCFGStmtNodeToStr(CFGStmtNode node){
+        return node.getContent();
+    }
+    
+    private static String DISJUNCTIONCFGStmtNodeToStr(CFGStmtNode node){
+        return ""; // DISJUNCTION nodes don't have content, only branches
     }
 }

@@ -349,7 +349,7 @@ public class SANYCFGBuilder {
         String conditionText = conditionNode != null ? reconstructExpression(conditionNode) : "unknown";
         String prefix = isFirst ? "CASE " : "[] ";
         
-        CFGStmtNode caseNode = new CFGStmtNode(indentationLevel, prefix + conditionText + " ->", armNode, CFGStmtNode.StmtType.NORMAL);
+        CFGStmtNode caseNode = new CFGStmtNode(indentationLevel, prefix + conditionText + " ->", armNode, CFGStmtNode.StmtType.CASE_ARM);
         
         // Process body
         if (bodyNode != null) {
@@ -380,7 +380,7 @@ public class SANYCFGBuilder {
             bodyNode = (SyntaxTreeNode) children[2];
         }
         
-        CFGStmtNode otherArm = new CFGStmtNode(indentationLevel, "[] OTHER ->", otherNode, CFGStmtNode.StmtType.NORMAL);
+        CFGStmtNode otherArm = new CFGStmtNode(indentationLevel, "[] OTHER ->", otherNode, CFGStmtNode.StmtType.CASE_ARM);
         
         // Process body
         if (bodyNode != null) {
@@ -667,7 +667,7 @@ public class SANYCFGBuilder {
         
         // For multiple subtrees, create a SKIP-type virtual root that branches to all subtrees
         // This represents true parallel execution branches
-        CFGStmtNode disjRoot = new CFGStmtNode(indentationLevel, "DISJUNCTION_BRANCHES", null, CFGStmtNode.StmtType.SKIP);
+        CFGStmtNode disjRoot = new CFGStmtNode(indentationLevel, "DISJUNCTION_BRANCHES", null, CFGStmtNode.StmtType.DISJUNCTION);
         
         // Add all subtrees as parallel branches (no sequential connection)
         for (CFGStmtNode subtree : subtrees) {
@@ -1327,7 +1327,7 @@ public class SANYCFGBuilder {
         if (subtrees.size() == 1) return subtrees.get(0);
         
         // Create parallel branches
-        CFGStmtNode disjRoot = new CFGStmtNode(indentationLevel, "DISJUNCTION_BRANCHES", null, CFGStmtNode.StmtType.SKIP);
+        CFGStmtNode disjRoot = new CFGStmtNode(indentationLevel, "DISJUNCTION_BRANCHES", null, CFGStmtNode.StmtType.DISJUNCTION);
         for (CFGStmtNode subtree : subtrees) {
             disjRoot.addChild(subtree);
         }
@@ -1368,6 +1368,7 @@ public class SANYCFGBuilder {
      * Visit CASE operator
      */
     private CFGStmtNode visitCaseOp(ExprNode[] args) {
+        System.out.println("DEBUG visitCaseOp: Creating CASE node with " + (args != null ? args.length : 0) + " args");
         CFGStmtNode caseNode = new CFGStmtNode(indentationLevel, "CASE", null, CFGStmtNode.StmtType.CASE);
         
         // Process case arms
@@ -1375,16 +1376,19 @@ public class SANYCFGBuilder {
             for (int i = 0; i < args.length; i += 2) {
                 if (i + 1 < args.length) {
                     String condition = args[i].toString();
-                    CFGStmtNode armNode = new CFGStmtNode(indentationLevel + 1, condition + " ->", null, CFGStmtNode.StmtType.NORMAL);
+                    System.out.println("DEBUG visitCaseOp: Creating CASE_ARM with condition: " + condition);
+                    CFGStmtNode armNode = new CFGStmtNode(indentationLevel + 1, condition + " ->", null, CFGStmtNode.StmtType.CASE_ARM);
                     CFGStmtNode armBody = visitExpressionNode(args[i + 1], indentationLevel + 2);
                     if (armBody != null) {
                         armNode.addChild(armBody);
                     }
                     caseNode.addChild(armNode);
+                    System.out.println("DEBUG visitCaseOp: Added CASE_ARM to caseNode, type = " + armNode.getType());
                 }
             }
         }
         
+        System.out.println("DEBUG visitCaseOp: Returning CASE node with " + caseNode.getChildren().size() + " children");
         return caseNode;
     }
     
