@@ -38,6 +38,67 @@ raft_vars == <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextInd
 
 vars == <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption, pc, info, stack>>
 
+(* Type Invariants *)
+TypeOK ==
+    /\ currentTerm \in [Server -> Nat]
+    /\ votedFor \in [Server -> Server \cup {Nil}]
+    /\ log \in [Server -> Seq(Record)]
+    /\ commitIndex \in [Server -> Nat]
+    /\ state \in [Server -> {"Follower", "Candidate", "Leader", "PreCandidate"}]
+    /\ leaderId \in [Server -> Server \cup {Nil}]
+    /\ nextIndex \in [Server -> [Server -> Nat]]
+    /\ matchIndex \in [Server -> [Server -> Nat]]
+    /\ votesGranted \in [Server -> SUBSET Server]
+    /\ votesRejected \in [Server -> SUBSET Server]
+    /\ electionElapsed \in [Server -> Nat]
+    /\ heartbeatElapsed \in [Server -> Nat]
+    /\ randomizedElectionTimeout \in [Server -> Nat]
+    /\ messages \in SUBSET Message
+    /\ readStates \in [Server -> Seq(Record)]
+    /\ pendingReadIndexMessages \in [Server -> Seq(Record)]
+    /\ leadTransferee \in [Server -> Server \cup {Nil}]
+    /\ pendingConfIndex \in [Server -> Nat]
+    /\ uncommittedSize \in [Server -> Nat]
+    /\ isLearner \in [Server -> BOOLEAN]
+    /\ config \in [Server -> Record]
+    /\ readOnlyOption \in [Server -> {"Safe", "LeaseBased"}]
+    /\ pc \in Server \cup {Nil}
+    /\ info \in Record
+    /\ stack \in Seq(Record)
+
+(* Safety Properties *)
+LeaderElectionSafety ==
+    \A s1, s2 \in Server :
+        \A t \in Nat :
+            (state[s1] = "Leader" /\ state[s2] = "Leader" /\ currentTerm[s1] = t /\ currentTerm[s2] = t) => (s1 = s2)
+
+LogMatching ==
+    \A s1, s2 \in Server :
+        \A i \in 1..Len(log[s1]) :
+            \A j \in 1..Len(log[s2]) :
+                (i = j /\ currentTerm[s1] = currentTerm[s2]) => (log[s1][i] = log[s2][j])
+
+LeaderCompleteness ==
+    \A s \in Server :
+        \A t \in Nat :
+            (state[s] = "Leader" /\ currentTerm[s] = t) =>
+                \A s2 \in Server :
+                    (currentTerm[s2] < t) => (state[s2] # "Leader")
+
+(* State Constraints *)
+StateConstraints ==
+    \A s \in Server :
+        /\ (state[s] = "Leader") => (leaderId[s] = s)
+        /\ (state[s] = "Follower") => (leaderId[s] # s)
+        /\ (state[s] = "Candidate") => (leaderId[s] = Nil)
+        /\ (state[s] = "PreCandidate") => (leaderId[s] = Nil)
+
+TermConstraints ==
+    \A s \in Server :
+        /\ currentTerm[s] >= 0
+        /\ (votedFor[s] # Nil) => (votedFor[s] \in Server)
+        /\ (state[s] = "Leader") => (electionElapsed[s] = 0)
+
 Init ==
     /\ currentTerm = [s \in Server |-> 0]
     /\ votedFor = [s \in Server |-> Nil]
@@ -63,7 +124,16 @@ Init ==
     /\ readOnlyOption = [s \in Server |-> "Safe"]
     /\ pc = Nil
     /\ info = [args |-> <<>>, temp |-> <<>>]
-    /\ stack = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>]>>
+    /\ stack = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>>>
+
+(* Invariants *)
+Invariants ==
+    /\ TypeOK
+    /\ LeaderElectionSafety
+    /\ LogMatching
+    /\ LeaderCompleteness
+    /\ StateConstraints
+    /\ TermConstraints
 
 ServerToNum(s) == 
     CASE s = "n1" -> 1

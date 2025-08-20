@@ -2,44 +2,45 @@
 # LLM Model Configuration
 llm:
   # API Provider Configuration
-  provider: "anthropic"  # Options: "anthropic", "openai", "deepseek"
-  base_url: "https://api.anthropic.com"
+  provider: "${LLM_PROVIDER:-anthropic}"  # Options: "anthropic", "openai", "deepseek"
+  base_url: "${LLM_BASE_URL:-https://api.anthropic.com}"
   # Model name - please choose a model appropriate for your API access
-  model: "claude-sonnet-4-20250514"  # Options: claude-sonnet-4-20250514, claude-opus-4-20250514
+  model: "${LLM_MODEL:-claude-3-5-sonnet-20241022}"  # Will be overridden by env var
   
   # API Parameters
-  max_tokens: 64000       # Maximum output tokens (claude-sonnet-4-20250514 has a limit of 64000)
-  temperature: 0.1        # Controls randomness of generation, 0.0-1.0, lower is more deterministic
-  timeout: 180000          # API request timeout (milliseconds) 
+  max_tokens: "${LLM_MAX_TOKENS:-64000}"       # Maximum output tokens
+  temperature: "${LLM_TEMPERATURE:-0.1}"        # Controls randomness of generation, 0.0-1.0, lower is more deterministic
+  timeout: "${LLM_TIMEOUT:-180000}"          # API request timeout (milliseconds) 
   
   # Streaming Configuration
-  use_streaming: true     # Whether to use streaming
-  stream_chunk_size: 2000 # Progress display interval for streaming
+  use_streaming: "${LLM_USE_STREAMING:-true}"     # Whether to use streaming
+  stream_chunk_size: "${LLM_STREAM_CHUNK_SIZE:-2000}" # Progress display interval for streaming
 
 # TLA+ Validator Configuration
 tla_validator:
-  tools_path: "lib/tla2tools.jar"  # Path to TLA+ tools
-  timeout: 300                      # Validator timeout (seconds)
+  tools_path: "${TLA_TOOLS_PATH:-lib/tla2tools.jar}"  # Path to TLA+ tools
+  timeout: "${TLA_TIMEOUT:-300}"                      # Validator timeout (seconds)
 
 # Generation Configuration
 generation:
-  max_correction_attempts: 1  # Maximum error correction attempts
-  mode: "draft-based"              # Generation mode: "direct" or "draft-based"
+  max_correction_attempts: "${MAX_CORRECTION_ATTEMPTS:-1}"  # Maximum error correction attempts
+  mode: "${GENERATION_MODE:-draft-based}"              # Generation mode: "direct" or "draft-based"
   
 # CFA Tool Configuration
 cfa:
-  script_path: "tools/cfa/run.sh"      # Path to CFA tool script
-  input_dir: "tools/cfa/input"        # CFA input directory
-  timeout: 300                         # CFA execution timeout (seconds)
+  script_path: "${CFA_SCRIPT_PATH:-tools/cfa/run.sh}"      # Path to CFA tool script
+  input_dir: "${CFA_INPUT_DIR:-tools/cfa/input}"        # CFA input directory
+  timeout: "${CFA_TIMEOUT:-300}"                         # CFA execution timeout (seconds)
 
 # Path Configuration
 paths:
-  prompts_dir: "src/prompts"
-  output_dir: "output"
-  knowledge_base: "src/rag/initial_errors.json"
-  local_embedding_model: "models/huggingface-MiniLM-L6-v2"
+  prompts_dir: "${PROMPTS_DIR:-src/prompts}"
+  output_dir: "${OUTPUT_DIR:-output}"
+  knowledge_base: "${KNOWLEDGE_BASE:-src/rag/initial_errors.json}"
+  local_embedding_model: "${LOCAL_EMBEDDING_MODEL:-models/huggingface-MiniLM-L6-v2}"
   
 # Logging Configuration
 logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
-  format: "[%(levelname)s] %(message)s" 
+  level: "${LOG_LEVEL:-INFO}"  # DEBUG, INFO, WARNING, ERROR
+  format: "${LOG_FORMAT:-[%(levelname)s] %(message)s}"
+  redact_sensitive: "${LOG_REDACT_SENSITIVE:-true}"  # Redact API keys and secrets 

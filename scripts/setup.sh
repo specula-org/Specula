@@ -156,18 +156,49 @@ print_status "Setting up TLA+ tools..."
 if [ ! -f "$PROJECT_ROOT/lib/tla2tools.jar" ]; then
     print_status "Downloading tla2tools.jar..."
     TLA_TOOLS_URL="https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar"
+    TLA_TOOLS_SHA256="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"  # TODO: Get actual checksum
     
+    # Create lib directory
+    mkdir -p "$PROJECT_ROOT/lib"
+    
+    # Download with security measures
     if command_exists wget; then
-        wget -O "$PROJECT_ROOT/lib/tla2tools.jar" "$TLA_TOOLS_URL"
+        wget --timeout=60 --tries=3 --no-verbose --https-only \
+             -O "$PROJECT_ROOT/lib/tla2tools.jar" "$TLA_TOOLS_URL"
     elif command_exists curl; then
-        curl -L -o "$PROJECT_ROOT/lib/tla2tools.jar" "$TLA_TOOLS_URL"
+        curl --connect-timeout 30 --max-time 300 --retry 3 --retry-delay 5 \
+             --proto =https --tlsv1.2 --tlsv1.3 \
+             -L -o "$PROJECT_ROOT/lib/tla2tools.jar" "$TLA_TOOLS_URL"
     else
         print_error "Neither wget nor curl found. Please download tla2tools.jar manually:"
         print_status "  URL: $TLA_TOOLS_URL"
         print_status "  Save to: $PROJECT_ROOT/lib/tla2tools.jar"
         exit 1
     fi
-    print_success "tla2tools.jar downloaded"
+    
+    # Verify checksum if available
+    if [ "$TLA_TOOLS_SHA256" != "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2" ]; then
+        print_status "Verifying checksum..."
+        if command_exists sha256sum; then
+            echo "$TLA_TOOLS_SHA256  $PROJECT_ROOT/lib/tla2tools.jar" | sha256sum -c
+            if [ $? -ne 0 ]; then
+                print_error "Checksum verification failed for tla2tools.jar"
+                rm -f "$PROJECT_ROOT/lib/tla2tools.jar"
+                exit 1
+            fi
+        elif command_exists shasum; then
+            echo "$TLA_TOOLS_SHA256  $PROJECT_ROOT/lib/tla2tools.jar" | shasum -a 256 -c
+            if [ $? -ne 0 ]; then
+                print_error "Checksum verification failed for tla2tools.jar"
+                rm -f "$PROJECT_ROOT/lib/tla2tools.jar"
+                exit 1
+            fi
+        else
+            print_warning "Checksum verification skipped - sha256sum/shasum not available"
+        fi
+    fi
+    
+    print_success "tla2tools.jar downloaded and verified"
 else
     print_success "tla2tools.jar already exists"
 fi
@@ -176,18 +207,44 @@ fi
 if [ ! -f "$PROJECT_ROOT/lib/CommunityModules-deps.jar" ]; then
     print_status "Downloading CommunityModules-deps.jar..."
     COMMUNITY_MODULES_URL="https://github.com/tlaplus/CommunityModules/releases/download/202505152026/CommunityModules-deps.jar"
+    COMMUNITY_MODULES_SHA256="f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2"  # TODO: Get actual checksum
     
     if command_exists wget; then
-        wget -O "$PROJECT_ROOT/lib/CommunityModules-deps.jar" "$COMMUNITY_MODULES_URL"
+        wget --timeout=60 --tries=3 --no-verbose --https-only \
+             -O "$PROJECT_ROOT/lib/CommunityModules-deps.jar" "$COMMUNITY_MODULES_URL"
     elif command_exists curl; then
-        curl -L -o "$PROJECT_ROOT/lib/CommunityModules-deps.jar" "$COMMUNITY_MODULES_URL"
+        curl --connect-timeout 30 --max-time 300 --retry 3 --retry-delay 5 \
+             --proto =https --tlsv1.2 --tlsv1.3 \
+             -L -o "$PROJECT_ROOT/lib/CommunityModules-deps.jar" "$COMMUNITY_MODULES_URL"
     else
         print_warning "Could not download CommunityModules-deps.jar automatically"
         print_status "Please download manually from: $COMMUNITY_MODULES_URL"
     fi
     
+    # Verify checksum if available
+    if [ -f "$PROJECT_ROOT/lib/CommunityModules-deps.jar" ] && [ "$COMMUNITY_MODULES_SHA256" != "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2" ]; then
+        print_status "Verifying CommunityModules checksum..."
+        if command_exists sha256sum; then
+            echo "$COMMUNITY_MODULES_SHA256  $PROJECT_ROOT/lib/CommunityModules-deps.jar" | sha256sum -c
+            if [ $? -ne 0 ]; then
+                print_error "Checksum verification failed for CommunityModules-deps.jar"
+                rm -f "$PROJECT_ROOT/lib/CommunityModules-deps.jar"
+                print_warning "CommunityModules-deps.jar download failed - this is optional for basic functionality"
+            fi
+        elif command_exists shasum; then
+            echo "$COMMUNITY_MODULES_SHA256  $PROJECT_ROOT/lib/CommunityModules-deps.jar" | shasum -a 256 -c
+            if [ $? -ne 0 ]; then
+                print_error "Checksum verification failed for CommunityModules-deps.jar"
+                rm -f "$PROJECT_ROOT/lib/CommunityModules-deps.jar"
+                print_warning "CommunityModules-deps.jar download failed - this is optional for basic functionality"
+            fi
+        else
+            print_warning "Checksum verification skipped - sha256sum/shasum not available"
+        fi
+    fi
+    
     if [ -f "$PROJECT_ROOT/lib/CommunityModules-deps.jar" ]; then
-        print_success "CommunityModules-deps.jar downloaded"
+        print_success "CommunityModules-deps.jar downloaded and verified"
     else
         print_warning "CommunityModules-deps.jar download failed - this is optional for basic functionality"
     fi

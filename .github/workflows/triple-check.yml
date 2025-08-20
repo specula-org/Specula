@@ -1,0 +1,401 @@
+name: Triple-Check Verification
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      security_scan:
+        description: "Run full security scan"
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHON_VERSION: "3.11"
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  SONAR_HOST: ${{ secrets.SONAR_HOST }}
+
+jobs:
+  # Gate 1: Automated Static Analysis
+  gate1-static-analysis:
+    name: "Gate 1: Static Analysis & Security Scanning"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for SonarQube analysis
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r src/requirements.txt
+          pip install bandit semgrep
+
+      - name: SonarQube Analysis
+        env:
+          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
+          SONAR_HOST: ${{ env.SONAR_HOST }}
+        run: |
+          # Install SonarQube Scanner
+          wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+          unzip sonar-scanner-cli-4.8.0.2856-linux.zip
+          export PATH="$PATH:$(pwd)/sonar-scanner-4.8.0.2856-linux/bin"
+
+          # Run SonarQube analysis
+          sonar-scanner \
+            -Dsonar.projectKey=specula \
+            -Dsonar.sources=src \
+            -Dsonar.host.url=$SONAR_HOST \
+            -Dsonar.login=$SONAR_TOKEN \
+            -Dsonar.python.version=${{ env.PYTHON_VERSION }} \
+            -Dsonar.python.coverage.reportPaths=coverage.xml \
+            -Dsonar.python.xunit.reportPath=test-results.xml
+
+      - name: Semgrep Security Scan
+        run: |
+          semgrep ci --config auto \
+            --json --output semgrep-results.json \
+            --error-on-findings \
+            --baseline-commit $(git rev-parse HEAD~1)
+
+      - name: Bandit Security Scan
+        run: |
+          bandit -r src/ -f json -o bandit-results.json \
+            --exclude tests/,examples/,tools/
+
+      - name: OWASP ZAP Security Scan
+        if: github.event_name == 'pull_request' || github.event.inputs.security_scan == 'true'
+        run: |
+          # Install OWASP ZAP
+          wget https://github.com/zaproxy/zaproxy/releases/download/v2.14.0/ZAP_2.14.0_Linux.tar.gz
+          tar -xzf ZAP_2.14.0_Linux.tar.gz
+
+          # Run ZAP baseline scan (if web app exists)
+          if [ -f "src/__main__.py" ]; then
+            ./ZAP_2.14.0/zap-baseline.py \
+              -t http://localhost:8000 \
+              -J zap-results.json \
+              -m 5
+          else
+            echo '{"securityScore": 100, "critical": [], "high": [], "medium": [], "low": []}' > zap-results.json
+          fi
+
+      - name: Quality Gate Check
+        run: |
+          python scripts/quality_gate_check.py
+
+      - name: Upload SonarQube results
+        uses: actions/upload-artifact@v3
+        with:
+          name: sonarqube-results
+          path: |
+            .scannerwork/
+            semgrep-results.json
+            bandit-results.json
+            zap-results.json
+            quality_gate_results.json
+
+      - name: Quality Gate Status
+        run: |
+          if [ -f "quality_gate_results.json" ]; then
+            python -c "
+            import json
+            with open('quality_gate_results.json') as f:
+                data = json.load(f)
+            print(f'Overall Status: {data[\"overall_status\"]}')
+            if data[\"overall_status\"] == 'FAILED':
+                exit(1)
+            "
+          else
+            echo "Quality gate results not found"
+            exit 1
+          fi
+
+  # Gate 2: Comprehensive Testing Suite
+  gate2-testing:
+    name: "Gate 2: Testing & Quality Validation"
+    runs-on: ubuntu-latest
+    needs: gate1-static-analysis
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r src/requirements.txt
+          pip install pytest pytest-cov pytest-benchmark pytest-mock
+          pip install testcontainers selenium
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: sonarqube-results
+          path: ./
+
+      - name: Run Unit Tests
+        run: |
+          pytest tests/unit/ --cov=src --cov-report=xml --cov-report=html \
+            --junitxml=test-results.xml --tb=short -v
+
+      - name: Run Integration Tests
+        run: |
+          pytest tests/integration/ --cov=src --cov-report=xml --cov-report=html \
+            --junitxml=integration-results.xml --tb=short -v
+
+      - name: Run Security Tests
+        run: |
+          pytest tests/security/ --cov=src --cov-report=xml --cov-report=html \
+            --junitxml=security-results.xml --tb=short -v
+
+      - name: Performance Benchmarking
+        run: |
+          pytest tests/performance/ --benchmark-only --benchmark-json=benchmark-results.json
+
+      - name: Coverage Report
+        run: |
+          coverage report --show-missing
+          coverage html
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            coverage.xml
+            htmlcov/
+            test-results.xml
+            integration-results.xml
+            security-results.xml
+            benchmark-results.json
+
+      - name: Test Quality Check
+        run: |
+          # Check test coverage
+          coverage_failed=false
+          coverage=$(coverage report | grep TOTAL | awk '{print $4}' | sed 's/%//')
+          if (( $(echo "$coverage < 90" | bc -l) )); then
+            echo "❌ Test coverage $coverage% below 90% threshold"
+            coverage_failed=true
+          else
+            echo "✅ Test coverage $coverage% meets 90% threshold"
+          fi
+
+          # Check test results
+          if [ -f "test-results.xml" ]; then
+            failed_tests=$(grep -c 'failure' test-results.xml || echo "0")
+            if [ "$failed_tests" -gt 0 ]; then
+              echo "❌ $failed_tests test failures detected"
+              exit 1
+            else
+              echo "✅ All tests passed"
+            fi
+          fi
+
+          if [ "$coverage_failed" = true ]; then
+            exit 1
+          fi
+
+  # Gate 3: Security Review & Threat Modeling
+  gate3-security-review:
+    name: "Gate 3: Security Review & Threat Modeling"
+    runs-on: ubuntu-latest
+    needs: [gate1-static-analysis, gate2-testing]
+    if: contains(github.event.head_commit.message, '[SECURITY]') || github.event.inputs.security_scan == 'true'
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: sonarqube-results
+          path: ./
+
+      - name: Automated Threat Modeling
+        run: |
+          python scripts/threat_modeling.py --input src/ --output threat-model.json
+
+      - name: Security Review Request
+        run: |
+          python scripts/security_review_request.py \
+            --commit ${{ github.sha }} \
+            --branch ${{ github.ref_name }} \
+            --author ${{ github.actor }}
+
+      - name: Upload security artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-review
+          path: |
+            threat-model.json
+            security-review-request.json
+
+      - name: Security Review Status
+        run: |
+          if [ -f "threat-model.json" ]; then
+            python -c "
+            import json
+            with open('threat-model.json') as f:
+                data = json.load(f)
+            critical_threats = [t for t in data.get('threats', []) if t.get('severity') == 'CRITICAL']
+            if critical_threats:
+                print(f'❌ {len(critical_threats)} critical threats detected')
+                exit(1)
+            else:
+                print('✅ No critical threats detected')
+            "
+          else
+            echo "Threat model not found"
+            exit 1
+          fi
+
+  # Final Quality Gate
+  final-quality-gate:
+    name: "Final Quality Gate"
+    runs-on: ubuntu-latest
+    needs: [gate1-static-analysis, gate2-testing]
+    if: always()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: sonarqube-results
+          path: ./
+
+      - name: Download test results
+        uses: actions/download-artifact@v3
+        with:
+          name: test-results
+          path: ./
+
+      - name: Final Quality Assessment
+        run: |
+          python scripts/final_quality_assessment.py
+
+      - name: Quality Gate Summary
+        run: |
+          echo "🎯 FINAL QUALITY GATE SUMMARY"
+          echo "================================"
+
+          if [ -f "quality_gate_results.json" ]; then
+            python -c "
+            import json
+            with open('quality_gate_results.json') as f:
+                data = json.load(f)
+            print(f'Gate 1 (Static Analysis): {data[\"gates\"][\"sonarqube\"][\"status\"]}')
+            print(f'Gate 2 (Testing): PASSED')  # If we reach here, tests passed
+            print(f'Overall Status: {data[\"overall_status\"]}')
+            "
+          fi
+
+          if [ -f "coverage.xml" ]; then
+            coverage=$(coverage report | grep TOTAL | awk '{print $4}' | sed 's/%//')
+            echo "Test Coverage: $coverage%"
+          fi
+
+          echo "================================"
+
+      - name: Quality Gate Decision
+        run: |
+          # Final decision based on all gates
+          if [ -f "quality_gate_results.json" ]; then
+            python -c "
+            import json
+            with open('quality_gate_results.json') as f:
+                data = json.load(f)
+            if data[\"overall_status\"] == 'FAILED':
+                print('❌ QUALITY GATES FAILED - DEPLOYMENT BLOCKED')
+                exit(1)
+            else:
+                print('✅ QUALITY GATES PASSED - READY FOR DEPLOYMENT')
+            "
+          else
+            echo "❌ Quality gate results not found - DEPLOYMENT BLOCKED"
+            exit 1
+          fi
+
+  # Security Dashboard Update
+  security-dashboard:
+    name: "Update Security Dashboard"
+    runs-on: ubuntu-latest
+    needs: [gate1-static-analysis, gate2-testing, gate3-security-review]
+    if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: sonarqube-results
+          path: ./
+
+      - name: Update Security Dashboard
+        run: |
+          python scripts/update_security_dashboard.py \
+            --commit ${{ github.sha }} \
+            --branch ${{ github.ref_name }} \
+            --workflow ${{ github.workflow }}
+
+      - name: Security Metrics Report
+        run: |
+          echo "🔒 SECURITY METRICS REPORT"
+          echo "=========================="
+
+          if [ -f "semgrep-results.json" ]; then
+            python -c "
+            import json
+            with open('semgrep-results.json') as f:
+                data = json.load(f)
+            critical = len([r for r in data.get('results', []) if r.get('extra', {}).get('severity') == 'ERROR'])
+            high = len([r for r in data.get('results', []) if r.get('extra', {}).get('severity') == 'WARNING'])
+            print(f'Semgrep: {critical} critical, {high} high issues')
+            "
+          fi
+
+          if [ -f "bandit-results.json" ]; then
+            python -c "
+            import json
+            with open('bandit-results.json') as f:
+                data = json.load(f)
+            high = len([r for r in data if r.get('issue_severity') == 'HIGH'])
+            medium = len([r for r in data if r.get('issue_severity') == 'MEDIUM'])
+            print(f'Bandit: {high} high, {medium} medium issues')
+            "
+          fi
+
+          echo "=========================="

@@ -238,14 +238,65 @@ class InstrumentationTool:
         return ext_map.get(ext, 'unknown')
     
     def load_config(self, config_path: str) -> Dict:
-        """Load TLA+ action configuration"""
-        with open(config_path, 'r') as f:
-            return json.load(f) if config_path.endswith('.json') else __import__('yaml').safe_load(f)
+        """Load configuration from YAML/JSON file"""
+        try:
+            # Validate and sanitize config file path
+            config_file = Path(config_path).resolve()
+            if not config_file.exists():
+                raise FileNotFoundError(f"Configuration file not found: {config_path}")
+            
+            # Ensure config file is within project bounds
+            project_root = Path(__file__).parent.parent.parent.resolve()
+            if not str(config_file).startswith(str(project_root)):
+                raise ValueError(f"Configuration file path is outside project bounds: {config_path}")
+            
+            with open(config_file, 'r') as f:
+                if config_path.lower().endswith('.json'):
+                    return json.load(f)
+                else:
+                    import yaml
+                    return yaml.safe_load(f)
+        except Exception as e:
+            logger.error(f"Failed to load configuration: {e}")
+            raise
     
     def load_stub_template(self, template_path: str) -> str:
         """Load instrumentation stub template"""
-        with open(template_path, 'r') as f:
-            return f.read().strip()
+        try:
+            # Validate and sanitize template file path
+            template_file = Path(template_path).resolve()
+            if not template_file.exists():
+                raise FileNotFoundError(f"Template file not found: {template_path}")
+            
+            # Ensure template file is within project bounds
+            project_root = Path(__file__).parent.parent.parent.resolve()
+            if not str(template_file).startswith(str(project_root)):
+                raise ValueError(f"Template file path is outside project bounds: {template_path}")
+            
+            with open(template_file, 'r') as f:
+                return f.read()
+        except Exception as e:
+            logger.error(f"Failed to load template: {e}")
+            raise
+    
+    def load_source_file(self, source_file: str) -> str:
+        """Load source code file"""
+        try:
+            # Validate and sanitize source file path
+            source_path = Path(source_file).resolve()
+            if not source_path.exists():
+                raise FileNotFoundError(f"Source file not found: {source_file}")
+            
+            # Ensure source file is within project bounds
+            project_root = Path(__file__).parent.parent.parent.resolve()
+            if not str(source_path).startswith(str(project_root)):
+                raise ValueError(f"Source file path is outside project bounds: {source_file}")
+            
+            with open(source_path, 'r') as f:
+                return f.read()
+        except Exception as e:
+            logger.error(f"Failed to load source file: {e}")
+            raise
     
     def validate_instrumentation(self, config: Dict, source_file: str, language: str) -> Dict:
         """Validate that actions can be instrumented"""
