@@ -5,12 +5,12 @@ llm:
   provider: "anthropic"  # Options: "anthropic", "openai", "deepseek"
   base_url: "https://api.anthropic.com"
   # Model name - please choose a model appropriate for your API access
-  model: "claude-sonnet-4-20250514"  # Options: claude-sonnet-4-20250514, claude-opus-4-20250514
+  model: "claude-opus-4-20250514"  # Options: claude-sonnet-4-20250514, claude-opus-4-20250514
   
   # API Parameters
-  max_tokens: 64000       # Maximum output tokens (claude-sonnet-4-20250514 has a limit of 64000)
-  temperature: 0.1        # Controls randomness of generation, 0.0-1.0, lower is more deterministic
-  timeout: 180000          # API request timeout (milliseconds) 
+  max_tokens: 32000       # Maximum output tokens (claude-sonnet-4-20250514 has a limit of 64000)
+  temperature: 0.1       # Controls randomness of generation, 0.0-1.0, lower is more deterministic
+  timeout: 900000          # API request timeout (milliseconds) 
   
   # Streaming Configuration
   use_streaming: true     # Whether to use streaming
