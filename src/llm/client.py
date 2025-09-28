@@ -2,6 +2,12 @@ import os
 import time
 import logging
 from typing import Optional
+
+try:
+    import google.generativeai as genai
+except ImportError:  # pragma: no cover - optional dependency until installed
+    genai = None
+
 from ..utils.config import get_config
 
 logger = logging.getLogger(__name__)
@@ -48,12 +54,15 @@ class LLMClient:
             return os.getenv('OPENAI_API_KEY')
         elif self.provider == 'deepseek':
             return os.getenv('DEEPSEEK_API_KEY')
+        elif self.provider == 'gemini':
+            return os.getenv('GEMINI_API_KEY')
         else:
             # Try common environment variables as fallback
             return (os.getenv('API_KEY') or 
                    os.getenv('ANTHROPIC_API_KEY') or 
                    os.getenv('OPENAI_API_KEY') or 
-                   os.getenv('DEEPSEEK_API_KEY'))
+                   os.getenv('DEEPSEEK_API_KEY') or 
+                   os.getenv('GEMINI_API_KEY'))
     
     def _get_default_model(self) -> str:
         """Get default model based on provider"""
@@ -63,6 +72,8 @@ class LLMClient:
             return 'gpt-4'
         elif self.provider == 'deepseek':
             return 'deepseek-chat'
+        elif self.provider == 'gemini':
+            return 'gemini-1.5-pro'
         else:
             return 'claude-3-5-sonnet-20241022'
     
@@ -89,7 +100,19 @@ class LLMClient:
                 )
             except ImportError:
                 raise ImportError("openai package not found. Please install it with: pip install openai")
-        
+
+        elif self.provider == 'gemini':
+            if genai is None:
+                raise ImportError("google-generativeai package not found. Please install it with: pip install google-generativeai")
+
+            configure_kwargs = {
+                "api_key": api_key,
+            }
+
+            # Configure the global client; per-call model construction happens in _get_gemini_completion.
+            genai.configure(**configure_kwargs)
+            self.client = genai
+
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
     
@@ -113,6 +136,8 @@ class LLMClient:
                 
                 if self.provider == 'anthropic':
                     return self._get_anthropic_completion(prompt, content)
+                elif self.provider == 'gemini':
+                    return self._get_gemini_completion(prompt, content)
                 else:
                     return self._get_openai_completion(prompt, content)
                 
@@ -209,6 +234,43 @@ class LLMClient:
                 
         except Exception as e:
             logger.error(f"OpenAI-compatible API request failed: {e}")
+            raise
+
+    def _get_gemini_completion(self, prompt: str, content: str) -> str:
+        """Get completion from Gemini API"""
+        if self.client is None:
+            raise RuntimeError("Gemini client not initialized")
+
+        try:
+            model = self.client.GenerativeModel(
+                model_name=self.model,
+                system_instruction=prompt,
+                generation_config={
+                    "temperature": self.temperature,
+                    "max_output_tokens": self.max_tokens,
+                }
+            )
+
+            response = model.generate_content(
+                [
+                    {
+                        "role": "user",
+                        "parts": [content]
+                    }
+                ],
+                request_options={"timeout": self.client_timeout}
+            )
+
+            full_response = getattr(response, "text", "") or ""
+            if not full_response.strip():
+                raise ValueError("Gemini API returned an empty response")
+
+            logger.info("Gemini request completed")
+            logger.debug(f"First line of response: {full_response.splitlines()[0][:50]}...")
+            return full_response
+
+        except Exception as e:
+            logger.error(f"Gemini API request failed: {e}")
             raise
 
 # Global client instance
