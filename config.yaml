@@ -2,7 +2,7 @@
 # LLM Model Configuration
 llm:
   # API Provider Configuration
-  provider: "anthropic"  # Options: "anthropic", "openai", "deepseek"
+  provider: "anthropic"  # Options: "anthropic", "openai", "deepseek", "gemini"
   base_url: "https://api.anthropic.com"
   # Model name - please choose a model appropriate for your API access
   model: "claude-sonnet-4-20250514"  # Options: claude-sonnet-4-20250514, claude-opus-4-20250514

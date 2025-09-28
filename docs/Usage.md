@@ -44,6 +44,9 @@ export ANTHROPIC_API_KEY="your-api-key"
 
 # For DeepSeek
 export DEEPSEEK_API_KEY="your-api-key"
+
+# For Gemini 
+export GEMINI_API_KEY="your-api-key"
 ```
 
 ## Step 1: Code-to-Spec Translation
