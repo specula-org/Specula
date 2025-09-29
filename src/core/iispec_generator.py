@@ -215,7 +215,7 @@ class Phase1Generator:
     def step1_translate_code(self, source_code: str, draft_analysis: str = "") -> str:
         """Step 1: Translate source code to a TLA+ specification"""
         logger.info("Step 1: Translating source code to TLA+ specification...")
-        if self.generation_mode == "draft-based":
+        if self.generation_mode in ["draft-based", "existing-draft"]:
             prompt_template = self._load_prompt("step1_code_translation_with_draft.txt")
             prompt = prompt_template.format(source_code=source_code, draft_analysis=draft_analysis)
         else:
