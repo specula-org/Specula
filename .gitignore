@@ -4,6 +4,7 @@
 *~
 .vscode/
 .idea/
+.env
 
 # Build output
 results/
