@@ -40,7 +40,8 @@ class LLMClient:
         self.model = api_config.get('model', self._get_default_model())
         self.temperature = api_config.get('temperature', 0.1)
         self.max_tokens = api_config.get('max_tokens', 8192)
-        
+        self.use_streaming = api_config.get('use_streaming', True)
+
         # Initialize the appropriate client based on provider
         self._init_client(api_config, api_key)
         
@@ -181,57 +182,45 @@ class LLMClient:
     def _get_openai_completion(self, prompt: str, content: str) -> str:
         """Get completion from OpenAI-compatible API"""
         try:
-            # Try streaming first
-            try:
-                completion = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": prompt},
-                        {"role": "user", "content": content}
-                    ],
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                    stream=True,
-                    timeout=30
-                )
-                
+            # Prepare API parameters based on streaming config
+            api_params = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": content}
+                ],
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "stream": self.use_streaming,
+                "timeout": self.client_timeout
+            }
+
+            completion = self.client.chat.completions.create(**api_params)
+
+            if self.use_streaming:
+                # Handle streaming response
                 full_response = ""
                 chunk_count = 0
                 start_time = time.time()
-                
+
                 for chunk in completion:
                     chunk_count += 1
                     if chunk_count % 1000 == 0:
                         logger.debug(f"Received {chunk_count} chunks, elapsed time: {time.time()-start_time:.2f}s")
-                        
+
                     if chunk.choices[0].delta.content is not None:
                         full_response += chunk.choices[0].delta.content
-                
+
                 logger.info(f"Streaming request completed, received {chunk_count} chunks total")
                 logger.debug(f"First line of response: {full_response.splitlines()[0][:50]}...")
                 return full_response
-                
-            except Exception as stream_error:
-                logger.warning(f"Streaming request failed: {stream_error}, trying non-streaming...")
-                
-                # Fallback to non-streaming
-                completion = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": prompt},
-                        {"role": "user", "content": content}
-                    ],
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                    stream=False,
-                    timeout=self.client_timeout
-                )
-                
+            else:
+                # Handle non-streaming response
                 full_response = completion.choices[0].message.content
                 logger.info(f"Non-streaming request completed")
                 logger.debug(f"First line of response: {full_response.splitlines()[0][:50]}...")
                 return full_response
-                
+
         except Exception as e:
             logger.error(f"OpenAI-compatible API request failed: {e}")
             raise
