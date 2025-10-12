@@ -182,6 +182,10 @@ class LLMClient:
     def _get_openai_completion(self, prompt: str, content: str) -> str:
         """Get completion from OpenAI-compatible API"""
         try:
+            # Determine if this is GPT-5 model which requires max_completion_tokens instead of max_tokens
+            is_gpt5_model = self.model.startswith("gpt-5")
+            max_tokens_param = "max_completion_tokens" if is_gpt5_model else "max_tokens"
+
             # Prepare API parameters based on streaming config
             api_params = {
                 "model": self.model,
@@ -190,7 +194,7 @@ class LLMClient:
                     {"role": "user", "content": content}
                 ],
                 "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
+                max_tokens_param: self.max_tokens,
                 "stream": self.use_streaming,
                 "timeout": self.client_timeout
             }
