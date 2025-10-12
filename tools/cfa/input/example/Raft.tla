@@ -2,470 +2,479 @@
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
 CONSTANTS 
-    Server,
-    Value,
-    Nil,
-    NoLimit
+    Nodes,           \* Set of node IDs
+    MaxTerm,         \* Maximum term number
+    MaxLogIndex,     \* Maximum log index
+    None,            \* Constant for no leader (0)
+    ElectionTimeout, \* Election timeout ticks
+    HeartbeatTimeout \* Heartbeat timeout ticks
 
-VARIABLES
-    currentTerm,
-    votedFor,
-    log,
-    commitIndex,
-    state,
-    leaderId,
-    nextIndex,
-    matchIndex,
-    votesGranted,
-    votesRejected,
-    electionElapsed,
-    heartbeatElapsed,
-    randomizedElectionTimeout,
-    messages,
-    readStates,
-    pendingReadIndexMessages,
-    leadTransferee,
-    pendingConfIndex,
-    uncommittedSize,
-    isLearner,
-    config,
-    readOnlyOption
+VARIABLES 
+    id,                          \* Node identifier
+    Term,                        \* Current term number
+    Vote,                        \* Node voted for in current term
+    state,                       \* Current role (follower/candidate/leader/precandidate)
+    lead,                        \* Current leader ID
+    raftLog,                     \* Log entries and commit/applied indices
+    msgs,                        \* Outgoing messages queue
+    msgsAfterAppend,            \* Messages to send after persistence
+    trk,                        \* Tracks replication progress for all nodes
+    electionElapsed,            \* Ticks since last election timeout reset
+    heartbeatElapsed,           \* Ticks since last heartbeat
+    randomizedElectionTimeout,  \* Current election timeout value
+    pendingConfIndex,           \* Index of pending configuration change
+    uncommittedSize,            \* Size of uncommitted entries
+    leadTransferee,             \* Target of leadership transfer
+    readStates,                 \* Read states
+    pendingReadIndexMessages,   \* Pending read index messages
+    isLearner,                  \* Whether node is a learner
+    preVote,                    \* Whether pre-vote is enabled
+    checkQuorum,                \* Whether check quorum is enabled
+    disableProposalForwarding,  \* Whether proposal forwarding is disabled
+    stepDownOnRemoval,          \* Whether to step down on removal
+    readOnly                    \* Read-only state
 
-vars == <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+vars == <<id, Term, Vote, state, lead, raftLog, msgs, msgsAfterAppend, trk, 
+          electionElapsed, heartbeatElapsed, randomizedElectionTimeout,
+          pendingConfIndex, uncommittedSize, leadTransferee, readStates,
+          pendingReadIndexMessages, isLearner, preVote, checkQuorum,
+          disableProposalForwarding, stepDownOnRemoval, readOnly>>
 
-TypeInvariant ==
-    /\ currentTerm \in [Server -> Nat]
-    /\ votedFor \in [Server -> Server \cup {Nil}]
-    /\ log \in [Server -> Seq([term: Nat, index: Nat, value: Value, type: STRING])]
-    /\ commitIndex \in [Server -> Nat]
-    /\ state \in [Server -> {"Follower", "Candidate", "Leader", "PreCandidate"}]
-    /\ leaderId \in [Server -> Server \cup {Nil}]
-    /\ nextIndex \in [Server -> [Server -> Nat]]
-    /\ matchIndex \in [Server -> [Server -> Nat]]
-    /\ votesGranted \in [Server -> SUBSET Server]
-    /\ votesRejected \in [Server -> SUBSET Server]
-    /\ electionElapsed \in [Server -> Nat]
-    /\ heartbeatElapsed \in [Server -> Nat]
-    /\ randomizedElectionTimeout \in [Server -> Nat]
-    /\ readStates \in [Server -> Seq([index: Nat, requestCtx: STRING])]
-    /\ pendingReadIndexMessages \in [Server -> Seq([from: Server, to: Server, type: STRING, entries: Seq([data: STRING])])]
-    /\ leadTransferee \in [Server -> Server \cup {Nil}]
-    /\ pendingConfIndex \in [Server -> Nat]
-    /\ uncommittedSize \in [Server -> Nat]
-    /\ isLearner \in [Server -> BOOLEAN]
-    /\ config \in [Server -> [voters: SUBSET Server, learners: SUBSET Server]]
-    /\ readOnlyOption \in [Server -> {"Safe", "LeaseBased"}]
+\* State type definitions
+StateFollower == "StateFollower"
+StateCandidate == "StateCandidate"
+StateLeader == "StateLeader"
+StatePreCandidate == "StatePreCandidate"
 
-Init ==
-    /\ currentTerm = [s \in Server |-> 0]
-    /\ votedFor = [s \in Server |-> Nil]
-    /\ log = [s \in Server |-> <<>>]
-    /\ commitIndex = [s \in Server |-> 0]
-    /\ state = [s \in Server |-> "Follower"]
-    /\ leaderId = [s \in Server |-> Nil]
-    /\ nextIndex = [s \in Server |-> [t \in Server |-> 1]]
-    /\ matchIndex = [s \in Server |-> [t \in Server |-> 0]]
-    /\ votesGranted = [s \in Server |-> {}]
-    /\ votesRejected = [s \in Server |-> {}]
-    /\ electionElapsed = [s \in Server |-> 0]
-    /\ heartbeatElapsed = [s \in Server |-> 0]
-    /\ randomizedElectionTimeout = [s \in Server |-> 10]
-    /\ messages = {}
-    /\ readStates = [s \in Server |-> <<>>]
-    /\ pendingReadIndexMessages = [s \in Server |-> <<>>]
-    /\ leadTransferee = [s \in Server |-> Nil]
-    /\ pendingConfIndex = [s \in Server |-> 0]
-    /\ uncommittedSize = [s \in Server |-> 0]
-    /\ isLearner = [s \in Server |-> FALSE]
-    /\ config = [s \in Server |-> [voters: Server, learners: {}]]
-    /\ readOnlyOption = [s \in Server |-> "Safe"]
+\* Message type definitions
+MsgHup == "MsgHup"
+MsgBeat == "MsgBeat"
+MsgProp == "MsgProp"
+MsgApp == "MsgApp"
+MsgAppResp == "MsgAppResp"
+MsgVote == "MsgVote"
+MsgVoteResp == "MsgVoteResp"
+MsgPreVote == "MsgPreVote"
+MsgPreVoteResp == "MsgPreVoteResp"
+MsgSnap == "MsgSnap"
+MsgHeartbeat == "MsgHeartbeat"
+MsgHeartbeatResp == "MsgHeartbeatResp"
+MsgCheckQuorum == "MsgCheckQuorum"
+MsgTransferLeader == "MsgTransferLeader"
+MsgTimeoutNow == "MsgTimeoutNow"
+MsgReadIndex == "MsgReadIndex"
+MsgReadIndexResp == "MsgReadIndexResp"
+MsgSnapStatus == "MsgSnapStatus"
 
+\* Campaign type definitions
+campaignPreElection == "CampaignPreElection"
+campaignElection == "CampaignElection"
+campaignTransfer == "CampaignTransfer"
 
-Min(S) == CHOOSE x \in S : \A y \in S : x <= y
+Init == 
+    /\ id \in Nodes
+    /\ Term = 0
+    /\ Vote = None
+    /\ state = StateFollower
+    /\ lead = None
+    /\ raftLog = [committed |-> 0, applied |-> 0, entries |-> <<>>, 
+                  lastIndex |-> 0, lastTerm |-> 0]
+    /\ msgs = <<>>
+    /\ msgsAfterAppend = <<>>
+    /\ trk = [n \in Nodes |-> [Match |-> 0, Next |-> 1, State |-> "StateProbe",
+                               RecentActive |-> FALSE, IsLearner |-> FALSE,
+                               Inflights |-> [start |-> 0, count |-> 0, buffer |-> <<>>]]]
+    /\ electionElapsed = 0
+    /\ heartbeatElapsed = 0
+    /\ randomizedElectionTimeout = ElectionTimeout
+    /\ pendingConfIndex = 0
+    /\ uncommittedSize = 0
+    /\ leadTransferee = None
+    /\ readStates = <<>>
+    /\ pendingReadIndexMessages = <<>>
+    /\ isLearner = FALSE
+    /\ preVote = TRUE
+    /\ checkQuorum = TRUE
+    /\ disableProposalForwarding = FALSE
+    /\ stepDownOnRemoval = TRUE
+    /\ readOnly = [option |-> "ReadOnlySafe", pendingReadIndex |-> <<>>]
 
-Max(S) == CHOOSE x \in S : \A y \in S : x >= y
+\* Helper functions
+send(m) ==
+    LET msg == IF m.From = None THEN [m EXCEPT !.From = id] ELSE m IN
+    IF msg.Type \in {MsgAppResp, MsgVoteResp, MsgPreVoteResp}
+    THEN msgsAfterAppend' = Append(msgsAfterAppend, msg)
+    ELSE msgs' = Append(msgs, msg)
 
+reset(term) ==
+    /\ IF Term # term 
+       THEN /\ Term' = term
+            /\ Vote' = None
+       ELSE UNCHANGED <<Term, Vote>>
+    /\ lead' = None
+    /\ electionElapsed' = 0
+    /\ heartbeatElapsed' = 0
+    /\ randomizedElectionTimeout' = ElectionTimeout + (term % ElectionTimeout)
+    /\ leadTransferee' = None
+    /\ trk' = [n \in Nodes |-> 
+               [Match |-> 0, 
+                Next |-> raftLog.lastIndex + 1,
+                State |-> "StateProbe",
+                RecentActive |-> FALSE,
+                IsLearner |-> trk[n].IsLearner,
+                Inflights |-> [start |-> 0, count |-> 0, buffer |-> <<>>]]]
+    /\ pendingConfIndex' = 0
+    /\ uncommittedSize' = 0
+    /\ readOnly' = [option |-> readOnly.option, pendingReadIndex |-> <<>>]
 
-becomeFollower(s, term, leader) ==
-    /\ state' = [state EXCEPT ![s] = "Follower"]
-    /\ currentTerm' = [currentTerm EXCEPT ![s] = term]
-    /\ votedFor' = [votedFor EXCEPT ![s] = Nil]
-    /\ leaderId' = [leaderId EXCEPT ![s] = leader]
-    /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-    /\ heartbeatElapsed' = [heartbeatElapsed EXCEPT ![s] = 0]
-    /\ randomizedElectionTimeout' = [randomizedElectionTimeout EXCEPT ![s] = (10 + (s * 3)) % 10]
-    /\ leadTransferee' = [leadTransferee EXCEPT ![s] = Nil]
-    /\ votesGranted' = [votesGranted EXCEPT ![s] = {}]
-    /\ votesRejected' = [votesRejected EXCEPT ![s] = {}]
-    /\ pendingConfIndex' = [pendingConfIndex EXCEPT ![s] = 0]
-    /\ uncommittedSize' = [uncommittedSize EXCEPT ![s] = 0]
-    /\ UNCHANGED <<log, commitIndex, nextIndex, matchIndex, messages, readStates, pendingReadIndexMessages, isLearner, config, readOnlyOption>>
+\* Core function: becomeFollower
+becomeFollower(term, leader) ==
+    /\ reset(term)
+    /\ state' = StateFollower
+    /\ lead' = leader
+    /\ UNCHANGED <<id, raftLog, msgs, msgsAfterAppend, readStates, 
+                   pendingReadIndexMessages, isLearner, preVote, checkQuorum,
+                   disableProposalForwarding, stepDownOnRemoval>>
 
-becomeCandidate(s) ==
-    /\ state[s] # "Leader"
-    /\ state' = [state EXCEPT ![s] = "Candidate"]
-    /\ currentTerm' = [currentTerm EXCEPT ![s] = currentTerm[s] + 1]
-    /\ votedFor' = [votedFor EXCEPT ![s] = s]
-    /\ leaderId' = [leaderId EXCEPT ![s] = Nil]
-    /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-    /\ heartbeatElapsed' = [heartbeatElapsed EXCEPT ![s] = 0]
-    /\ randomizedElectionTimeout' = [randomizedElectionTimeout EXCEPT ![s] = (10 + (s * 3)) % 10]
-    /\ leadTransferee' = [leadTransferee EXCEPT ![s] = Nil]
-    /\ votesGranted' = [votesGranted EXCEPT ![s] = {}]
-    /\ votesRejected' = [votesRejected EXCEPT ![s] = {}]
-    /\ pendingConfIndex' = [pendingConfIndex EXCEPT ![s] = 0]
-    /\ uncommittedSize' = [uncommittedSize EXCEPT ![s] = 0]
-    /\ UNCHANGED <<log, commitIndex, nextIndex, matchIndex, messages, readStates, pendingReadIndexMessages, isLearner, config, readOnlyOption>>
+\* Core function: becomeCandidate
+becomeCandidate ==
+    /\ state # StateLeader  \* Panic if transitioning from leader
+    /\ reset(Term + 1)
+    /\ state' = StateCandidate
+    /\ Vote' = id
+    /\ UNCHANGED <<id, raftLog, msgs, msgsAfterAppend, readStates,
+                   pendingReadIndexMessages, isLearner, preVote, checkQuorum,
+                   disableProposalForwarding, stepDownOnRemoval>>
 
-becomePreCandidate(s) ==
-    /\ state[s] # "Leader"
-    /\ state' = [state EXCEPT ![s] = "PreCandidate"]
-    /\ votesGranted' = [votesGranted EXCEPT ![s] = {}]
-    /\ votesRejected' = [votesRejected EXCEPT ![s] = {}]
-    /\ leaderId' = [leaderId EXCEPT ![s] = Nil]
-    /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, nextIndex, matchIndex, messages, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+\* Core function: becomePreCandidate
+becomePreCandidate ==
+    /\ state # StateLeader  \* Panic if transitioning from leader
+    /\ state' = StatePreCandidate
+    /\ trk' = [trk EXCEPT ![id].Match = 0, ![id].Next = raftLog.lastIndex + 1]
+    /\ lead' = None
+    /\ UNCHANGED <<id, Term, Vote, raftLog, msgs, msgsAfterAppend, 
+                   electionElapsed, heartbeatElapsed, randomizedElectionTimeout,
+                   pendingConfIndex, uncommittedSize, leadTransferee, readStates,
+                   pendingReadIndexMessages, isLearner, preVote, checkQuorum,
+                   disableProposalForwarding, stepDownOnRemoval, readOnly>>
 
-becomeLeader(s) ==
-    /\ state[s] # "Follower"
-    /\ state' = [state EXCEPT ![s] = "Leader"]
-    /\ leaderId' = [leaderId EXCEPT ![s] = s]
-    /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-    /\ heartbeatElapsed' = [heartbeatElapsed EXCEPT ![s] = 0]
-    /\ leadTransferee' = [leadTransferee EXCEPT ![s] = Nil]
-    /\ votesGranted' = [votesGranted EXCEPT ![s] = {}]
-    /\ votesRejected' = [votesRejected EXCEPT ![s] = {}]
-    /\ pendingConfIndex' = [pendingConfIndex EXCEPT ![s] = Len(log[s])]
-    /\ uncommittedSize' = [uncommittedSize EXCEPT ![s] = 0]
-    /\ nextIndex' = [nextIndex EXCEPT ![s] = [t \in Server |-> Len(log[s]) + 1]]
-    /\ matchIndex' = [matchIndex EXCEPT ![s] = [t \in Server |-> IF t = s THEN Len(log[s]) ELSE 0]]
-    /\ log' = [log EXCEPT ![s] = Append(log[s], [term |-> currentTerm[s], index |-> Len(log[s]) + 1, value |-> Nil, type |-> "Normal"])]
-    /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "AppResp", term |-> currentTerm[s], index |-> Len(log'[s])]}
-    /\ UNCHANGED <<currentTerm, votedFor, commitIndex, randomizedElectionTimeout, readStates, pendingReadIndexMessages, isLearner, config, readOnlyOption>>
+\* Core function: becomeLeader
+becomeLeader ==
+    /\ state # StateFollower  \* Panic if transitioning from follower
+    /\ reset(Term)
+    /\ state' = StateLeader
+    /\ lead' = id
+    /\ trk' = [trk EXCEPT ![id].State = "StateReplicate", 
+                          ![id].Match = raftLog.lastIndex,
+                          ![id].RecentActive = TRUE]
+    /\ pendingConfIndex' = raftLog.lastIndex
+    /\ LET emptyEntry == [Term |-> Term, Index |-> raftLog.lastIndex + 1, 
+                          Type |-> "EntryNormal", Data |-> <<>>] IN
+       /\ raftLog' = [raftLog EXCEPT !.entries = Append(raftLog.entries, emptyEntry),
+                                     !.lastIndex = raftLog.lastIndex + 1,
+                                     !.lastTerm = Term]
+       /\ send([To |-> id, Type |-> MsgAppResp, Index |-> raftLog.lastIndex + 1])
+    /\ UNCHANGED <<id, Vote, electionElapsed, heartbeatElapsed, 
+                   randomizedElectionTimeout, uncommittedSize, leadTransferee,
+                   readStates, pendingReadIndexMessages, isLearner, preVote,
+                   checkQuorum, disableProposalForwarding, stepDownOnRemoval>>
 
-tickElection(s) ==
-    /\ electionElapsed' = [electionElapsed EXCEPT ![s] = electionElapsed[s] + 1]
-    /\ IF  (s \in Server /\ ~isLearner[s] /\ electionElapsed'[s] >= randomizedElectionTimeout[s])
-       THEN /\ electionElapsed' = [electionElapsed' EXCEPT ![s] = 0]
-            /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "Hup"]}
-       ELSE UNCHANGED messages
-    /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+\* Core function: campaign
+campaign(t) ==
+    LET voteMsg == IF t = campaignPreElection THEN MsgPreVote ELSE MsgVote
+        term == IF t = campaignPreElection THEN Term + 1 ELSE Term
+        ctx == IF t = campaignTransfer THEN <<t>> ELSE <<>>
+    IN
+    /\ IF t = campaignPreElection 
+       THEN becomePreCandidate
+       ELSE becomeCandidate
+    /\ send([To |-> id, Term |-> term, Type |-> IF voteMsg = MsgVote 
+                                                 THEN MsgVoteResp 
+                                                 ELSE MsgPreVoteResp])
+    /\ \A n \in Nodes \ {id} :
+       send([To |-> n, Term |-> term, Type |-> voteMsg, 
+             Index |-> raftLog.lastIndex, LogTerm |-> raftLog.lastTerm,
+             Context |-> ctx])
 
-tickHeartbeat(s) ==
-    /\ heartbeatElapsed' = [heartbeatElapsed EXCEPT ![s] = heartbeatElapsed[s] + 1]
-    /\ electionElapsed' = [electionElapsed EXCEPT ![s] = electionElapsed[s] + 1]
-    /\ IF electionElapsed'[s] >= 10
-       THEN /\ electionElapsed' = [electionElapsed' EXCEPT ![s] = 0]
-            /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "CheckQuorum"]}
-            /\ IF state[s] = "Leader" /\ leadTransferee[s] # Nil
-               THEN leadTransferee' = [leadTransferee EXCEPT ![s] = Nil]
-               ELSE UNCHANGED leadTransferee
-       ELSE /\ UNCHANGED <<messages, leadTransferee>>
-    /\ IF state[s] = "Leader"
-       THEN IF heartbeatElapsed'[s] >= 1
-            THEN /\ heartbeatElapsed' = [heartbeatElapsed' EXCEPT ![s] = 0]
-                 /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "Beat"]}
-            ELSE UNCHANGED <<>>
-       ELSE UNCHANGED <<>>
-    /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, randomizedElectionTimeout, readStates, pendingReadIndexMessages, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+\* Core function: poll
+poll(nodeId, msgType, granted) ==
+    LET updatedTrk == IF granted 
+                      THEN [trk EXCEPT ![nodeId].Match = raftLog.lastIndex]
+                      ELSE trk
+        grantedCount == Cardinality({n \in Nodes : updatedTrk[n].Match > 0})
+        rejectedCount == Cardinality(Nodes) - grantedCount
+        majority == (Cardinality(Nodes) \div 2) + 1
+    IN
+    /\ trk' = updatedTrk
+    /\ IF grantedCount >= majority
+       THEN "VoteWon"
+       ELSE IF rejectedCount >= majority
+            THEN "VoteLost"
+            ELSE "VotePending"
 
-sendAppend(s, to) ==
-    /\ state[s] = "Leader"
-    /\ to # s
-    /\ LET prevIndex == nextIndex[s][to] - 1
-           prevTerm == IF prevIndex > 0 /\ prevIndex <= Len(log[s]) THEN log[s][prevIndex].term ELSE 0
-           entries == IF prevIndex >= 0 /\ prevIndex < Len(log[s]) THEN SubSeq(log[s], prevIndex + 1, Len(log[s])) ELSE <<>>
-       IN
-        /\ messages' = messages \cup {[from |-> s, to |-> to, type |-> "App", term |-> currentTerm[s], index |-> prevIndex, logTerm |-> prevTerm, entries |-> entries, commit |-> commitIndex[s]]}
-    /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+\* Core function: appendEntry
+appendEntry(entries) ==
+    LET li == raftLog.lastIndex
+        newEntries == [i \in 1..Len(entries) |-> 
+                       [entries[i] EXCEPT !.Term = Term, 
+                                          !.Index = li + i]]
+        totalSize == Len(entries)  \* Simplified size calculation
+    IN
+    /\ uncommittedSize + totalSize <= 1000  \* maxUncommittedSize check
+    /\ raftLog' = [raftLog EXCEPT !.entries = raftLog.entries \o newEntries,
+                                  !.lastIndex = li + Len(entries),
+                                  !.lastTerm = Term]
+    /\ uncommittedSize' = uncommittedSize + totalSize
+    /\ send([To |-> id, Type |-> MsgAppResp, Index |-> li + Len(entries)])
+    /\ UNCHANGED <<id, Term, Vote, state, lead, trk, electionElapsed,
+                   heartbeatElapsed, randomizedElectionTimeout, pendingConfIndex,
+                   leadTransferee, readStates, pendingReadIndexMessages, isLearner,
+                   preVote, checkQuorum, disableProposalForwarding, stepDownOnRemoval,
+                   readOnly>>
 
-sendHeartbeat(s, to) ==
-    /\ state[s] = "Leader"
-    /\ to # s
-    /\ LET commit == Min({matchIndex[s][to], commitIndex[s]})
-       IN 
-        /\ messages' = messages \cup {[from |-> s, to |-> to, type |-> "Heartbeat", term |-> currentTerm[s], commit |-> commit, context |-> ""]}
-        /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex,matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+\* Core function: maybeCommit
+maybeCommit ==
+    LET matchIndexes == {trk[n].Match : n \in Nodes}
+        sortedMatches == CHOOSE seq \in [1..Cardinality(matchIndexes) -> matchIndexes] :
+                         \A i,j \in 1..Len(seq) : i < j => seq[i] >= seq[j]
+        commitIndex == IF Len(sortedMatches) >= (Cardinality(Nodes) \div 2) + 1
+                       THEN sortedMatches[(Cardinality(Nodes) \div 2) + 1]
+                       ELSE raftLog.committed
+    IN
+    /\ commitIndex > raftLog.committed
+    /\ \E entry \in raftLog.entries : 
+       /\ entry.Index = commitIndex
+       /\ entry.Term = Term
+    /\ raftLog' = [raftLog EXCEPT !.committed = commitIndex]
+    /\ UNCHANGED <<id, Term, Vote, state, lead, msgs, msgsAfterAppend, trk,
+                   electionElapsed, heartbeatElapsed, randomizedElectionTimeout,
+                   pendingConfIndex, uncommittedSize, leadTransferee, readStates,
+                   pendingReadIndexMessages, isLearner, preVote, checkQuorum,
+                   disableProposalForwarding, stepDownOnRemoval, readOnly>>
 
-bcastAppend(s) ==
-    /\ state[s] = "Leader"
-    /\ \A to \in Server \ {s} : sendAppend(s, to)
+\* Core function: handleAppendEntries
+handleAppendEntries(m) ==
+    IF m.Index < raftLog.committed
+    THEN send([To |-> m.From, Type |-> MsgAppResp, Index |-> raftLog.committed])
+    ELSE IF \E entry \in raftLog.entries : 
+            /\ entry.Index = m.Index 
+            /\ entry.Term = m.LogTerm
+         THEN LET newEntries == m.Entries
+                  lastNewIndex == m.Index + Len(newEntries)
+              IN
+              /\ raftLog' = [raftLog EXCEPT 
+                            !.entries = SubSeq(raftLog.entries, 1, m.Index) \o newEntries,
+                            !.lastIndex = lastNewIndex,
+                            !.committed = IF m.Commit > raftLog.committed 
+                                          THEN Min(m.Commit, lastNewIndex)
+                                          ELSE raftLog.committed]
+              /\ send([To |-> m.From, Type |-> MsgAppResp, Index |-> lastNewIndex])
+         ELSE LET hintIndex == Min(m.Index, raftLog.lastIndex)
+                  hintTerm == IF \E e \in raftLog.entries : e.Index = hintIndex
+                              THEN CHOOSE e \in raftLog.entries : e.Index = hintIndex
+                              ELSE 0
+              IN
+              send([To |-> m.From, Type |-> MsgAppResp, Index |-> m.Index,
+                    Reject |-> TRUE, RejectHint |-> hintIndex, LogTerm |-> hintTerm.Term])
 
-bcastHeartbeat(s) ==
-    /\ state[s] = "Leader"
-    /\ \A to \in Server \ {s} : sendHeartbeat(s, to)
+\* Core function: Step - Main message processing
+Step(m) ==
+    \/ m.Term > Term /\ m.Type # MsgPreVote =>
+       IF m.Type \in {MsgApp, MsgHeartbeat, MsgSnap}
+       THEN becomeFollower(m.Term, m.From)
+       ELSE becomeFollower(m.Term, None)
+    \/ m.Term < Term =>
+       IF (checkQuorum \/ preVote) /\ m.Type \in {MsgHeartbeat, MsgApp}
+       THEN send([To |-> m.From, Type |-> MsgAppResp])
+       ELSE IF m.Type = MsgPreVote
+            THEN send([To |-> m.From, Term |-> Term, Type |-> MsgPreVoteResp, Reject |-> TRUE])
+            ELSE TRUE  \* Ignore other messages
+    \/ m.Term = Term =>
+       CASE m.Type = MsgHup ->
+            IF preVote 
+            THEN campaign(campaignPreElection)
+            ELSE campaign(campaignElection)
+       [] m.Type \in {MsgVote, MsgPreVote} ->
+            LET canVote == Vote = m.From \/ (Vote = None /\ lead = None) \/
+                           (m.Type = MsgPreVote /\ m.Term > Term)
+                lastID == [term |-> raftLog.lastTerm, index |-> raftLog.lastIndex]
+                candLastID == [term |-> m.LogTerm, index |-> m.Index]
+                upToDate == candLastID.term > lastID.term \/
+                            (candLastID.term = lastID.term /\ candLastID.index >= lastID.index)
+            IN
+            IF canVote /\ upToDate
+            THEN /\ send([To |-> m.From, Term |-> m.Term, 
+                          Type |-> IF m.Type = MsgVote THEN MsgVoteResp ELSE MsgPreVoteResp])
+                 /\ IF m.Type = MsgVote
+                    THEN /\ electionElapsed' = 0
+                         /\ Vote' = m.From
+                    ELSE UNCHANGED <<electionElapsed, Vote>>
+            ELSE send([To |-> m.From, Term |-> Term, 
+                       Type |-> IF m.Type = MsgVote THEN MsgVoteResp ELSE MsgPreVoteResp,
+                       Reject |-> TRUE])
+       [] OTHER ->
+            CASE state = StateLeader -> stepLeader(m)
+            [] state \in {StateCandidate, StatePreCandidate} -> stepCandidate(m)
+            [] state = StateFollower -> stepFollower(m)
 
-maybeCommit(s) ==
-    /\ state[s] = "Leader"
-    /\ LET newCommitIndex == CHOOSE i \in 0..Len(log[s]) :  (i > commitIndex[s] /\ log[s][i].term = currentTerm[s] /\ Cardinality({t \in Server : matchIndex[s][t] >= i}) * 2 > Cardinality(Server) /\ \A j \in (commitIndex[s] + 1)..i : TRUE)
-       IN 
-        /\ IF newCommitIndex > commitIndex[s]
-          THEN commitIndex' = [commitIndex EXCEPT ![s] = newCommitIndex]
-          ELSE UNCHANGED commitIndex
-        /\ UNCHANGED <<currentTerm, votedFor, log, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+\* Core function: stepLeader
+stepLeader(m) ==
+    CASE m.Type = MsgBeat ->
+         \A n \in Nodes \ {id} : 
+         send([To |-> n, Type |-> MsgHeartbeat, Commit |-> raftLog.committed])
+    [] m.Type = MsgCheckQuorum ->
+         LET activeNodes == {n \in Nodes : trk[n].RecentActive}
+             quorumActive == Cardinality(activeNodes) >= (Cardinality(Nodes) \div 2) + 1
+         IN
+         IF ~quorumActive
+         THEN becomeFollower(Term, None)
+         ELSE /\ trk' = [n \in Nodes |-> 
+                         IF n = id THEN trk[n] 
+                         ELSE [trk[n] EXCEPT !.RecentActive = FALSE]]
+              /\ UNCHANGED <<id, Term, Vote, state, lead, raftLog, msgs, msgsAfterAppend,
+                            electionElapsed, heartbeatElapsed, randomizedElectionTimeout,
+                            pendingConfIndex, uncommittedSize, leadTransferee, readStates,
+                            pendingReadIndexMessages, isLearner, preVote, checkQuorum,
+                            disableProposalForwarding, stepDownOnRemoval, readOnly>>
+    [] m.Type = MsgProp ->
+         IF leadTransferee # None
+         THEN TRUE  \* Drop proposal during transfer
+         ELSE appendEntry(m.Entries) /\ \A n \in Nodes \ {id} : 
+              send([To |-> n, Type |-> MsgApp, Index |-> raftLog.lastIndex - Len(m.Entries),
+                    LogTerm |-> raftLog.lastTerm, Entries |-> m.Entries,
+                    Commit |-> raftLog.committed])
+    [] m.Type = MsgAppResp ->
+         LET pr == trk[m.From] IN
+         /\ trk' = [trk EXCEPT ![m.From].RecentActive = TRUE]
+         /\ IF m.Reject
+            THEN LET nextIdx == m.RejectHint IN
+                 /\ trk' = [trk EXCEPT ![m.From].Next = nextIdx,
+                                       ![m.From].State = "StateProbe"]
+                 /\ send([To |-> m.From, Type |-> MsgApp, 
+                          Index |-> nextIdx - 1,
+                          LogTerm |-> IF \E e \in raftLog.entries : e.Index = nextIdx - 1
+                                      THEN (CHOOSE e \in raftLog.entries : e.Index = nextIdx - 1).Term
+                                      ELSE 0,
+                          Entries |-> <<>>,
+                          Commit |-> raftLog.committed])
+            ELSE /\ trk' = [trk EXCEPT ![m.From].Match = m.Index,
+                                       ![m.From].Next = m.Index + 1,
+                                       ![m.From].State = "StateReplicate"]
+                 /\ maybeCommit
+                 /\ IF m.From = leadTransferee /\ trk'[m.From].Match = raftLog.lastIndex
+                    THEN send([To |-> m.From, Type |-> MsgTimeoutNow])
+                    ELSE TRUE
+    [] m.Type = MsgHeartbeatResp ->
+         /\ trk' = [trk EXCEPT ![m.From].RecentActive = TRUE]
+         /\ IF trk[m.From].Match < raftLog.lastIndex
+            THEN send([To |-> m.From, Type |-> MsgApp,
+                       Index |-> trk[m.From].Next - 1,
+                       LogTerm |-> IF \E e \in raftLog.entries : e.Index = trk[m.From].Next - 1
+                                   THEN (CHOOSE e \in raftLog.entries : e.Index = trk[m.From].Next - 1).Term
+                                   ELSE 0,
+                       Entries |-> <<>>,
+                       Commit |-> raftLog.committed])
+            ELSE TRUE
+    [] OTHER -> TRUE
 
-appendEntry(s, entries) ==
-    /\ state[s] = "Leader"
-    /\ LET lastIndex == Len(log[s])
-           newEntries == [i \in 1..Len(entries) |-> [term |-> currentTerm[s], index |-> lastIndex + i, value |-> entries[i].value, type |-> entries[i].type]]
-           totalSize == IF Len(newEntries) > 0 THEN 1 ELSE 0
-       IN IF (uncommittedSize[s] > 0 /\ totalSize > 0 /\ uncommittedSize[s] + totalSize > NoLimit)
-          THEN UNCHANGED vars
-          ELSE /\ log' = [log EXCEPT ![s] = log[s] \o newEntries]
-               /\ uncommittedSize' = [uncommittedSize EXCEPT ![s] = uncommittedSize[s] + totalSize]
-               /\ messages' = messages \cup {[from |-> s, to |-> s, type |-> "AppResp", term |-> currentTerm[s], index |-> Len(log'[s])]}
-               /\ UNCHANGED <<currentTerm, votedFor, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, isLearner, config, readOnlyOption>>
+\* Core function: stepCandidate
+stepCandidate(m) ==
+    LET myVoteRespType == IF state = StatePreCandidate THEN MsgPreVoteResp ELSE MsgVoteResp IN
+    CASE m.Type = MsgProp ->
+         TRUE  \* Drop proposals when not leader
+    [] m.Type = MsgApp ->
+         /\ becomeFollower(m.Term, m.From)
+         /\ handleAppendEntries(m)
+    [] m.Type = MsgHeartbeat ->
+         /\ becomeFollower(m.Term, m.From)
+         /\ raftLog' = [raftLog EXCEPT !.committed = m.Commit]
+         /\ send([To |-> m.From, Type |-> MsgHeartbeatResp, Context |-> m.Context])
+    [] m.Type = MsgSnap ->
+         /\ becomeFollower(m.Term, m.From)
+         /\ TRUE  \* Handle snapshot
+    [] m.Type = myVoteRespType ->
+         LET result == poll(m.From, m.Type, ~m.Reject) IN
+         CASE result = "VoteWon" ->
+              IF state = StatePreCandidate
+              THEN campaign(campaignElection)
+              ELSE becomeLeader /\ \A n \in Nodes \ {id} :
+                   send([To |-> n, Type |-> MsgApp, Index |-> raftLog.lastIndex,
+                         LogTerm |-> raftLog.lastTerm, Entries |-> <<>>,
+                         Commit |-> raftLog.committed])
+         [] result = "VoteLost" ->
+              becomeFollower(Term, None)
+         [] OTHER -> TRUE
+    [] OTHER -> TRUE
 
+\* Core function: stepFollower
+stepFollower(m) ==
+    CASE m.Type = MsgProp ->
+         IF lead = None \/ disableProposalForwarding
+         THEN TRUE  \* Drop proposal
+         ELSE send([m EXCEPT !.To = lead])
+    [] m.Type = MsgApp ->
+         /\ electionElapsed' = 0
+         /\ lead' = m.From
+         /\ handleAppendEntries(m)
+    [] m.Type = MsgHeartbeat ->
+         /\ electionElapsed' = 0
+         /\ lead' = m.From
+         /\ raftLog' = [raftLog EXCEPT !.committed = m.Commit]
+         /\ send([To |-> m.From, Type |-> MsgHeartbeatResp, Context |-> m.Context])
+    [] m.Type = MsgSnap ->
+         /\ electionElapsed' = 0
+         /\ lead' = m.From
+         /\ TRUE  \* Handle snapshot
+    [] m.Type = MsgTimeoutNow ->
+         campaign(campaignTransfer)
+    [] m.Type = MsgReadIndex ->
+         IF lead = None
+         THEN TRUE  \* Drop
+         ELSE send([m EXCEPT !.To = lead])
+    [] m.Type = MsgReadIndexResp ->
+         readStates' = Append(readStates, 
+                              [Index |-> m.Index, RequestCtx |-> m.Entries[1].Data])
+    [] OTHER -> TRUE
 
-campaign(s, campaignType) ==
-    /\ s \in Server
-    /\ ~isLearner[s]
-    /\ LET voteMsg == IF campaignType = "PreElection" THEN "PreVote" ELSE "Vote"
-           term == IF campaignType = "PreElection" THEN currentTerm[s] + 1 ELSE currentTerm[s]
-           lastIndex == Len(log[s])
-           lastTerm == IF lastIndex > 0 THEN log[s][lastIndex].term ELSE 0
-       IN 
-          /\ IF campaignType = "PreElection"
-             THEN becomePreCandidate(s)
-             ELSE becomeCandidate(s)
-          /\ messages' = messages \cup {[from |-> s, to |-> s, term |-> term, type |-> IF voteMsg = "Vote" THEN "VoteResp" ELSE "PreVoteResp"]} \cup {[from |-> s, to |-> to, term |-> term, type |-> voteMsg,index |-> lastIndex, logTerm |-> lastTerm,  context |-> IF campaignType = "Transfer" THEN "Transfer" ELSE ""] : to \in Server \ {s}}
-          /\ UNCHANGED <<log, commitIndex, leaderId, nextIndex, matchIndex, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+\* Tick functions
+tickElection ==
+    /\ electionElapsed' = electionElapsed + 1
+    /\ electionElapsed' >= randomizedElectionTimeout =>
+       /\ electionElapsed' = 0
+       /\ Step([From |-> id, Type |-> MsgHup])
+    /\ UNCHANGED <<id, Term, Vote, state, lead, raftLog, msgs, msgsAfterAppend,
+                   trk, heartbeatElapsed, randomizedElectionTimeout, pendingConfIndex,
+                   uncommittedSize, leadTransferee, readStates, pendingReadIndexMessages,
+                   isLearner, preVote, checkQuorum, disableProposalForwarding,
+                   stepDownOnRemoval, readOnly>>
 
-hup(s, campaignType) ==
-    /\ IF state[s] = "Leader"
-       THEN UNCHANGED vars
-       ELSE IF ~(s \in Server) \/ isLearner[s]
-            THEN UNCHANGED vars
-            ELSE campaign(s, campaignType)
+tickHeartbeat ==
+    /\ heartbeatElapsed' = heartbeatElapsed + 1
+    /\ electionElapsed' = electionElapsed + 1
+    /\ electionElapsed' >= ElectionTimeout =>
+       IF checkQuorum
+       THEN Step([From |-> id, Type |-> MsgCheckQuorum])
+       ELSE IF state = StateLeader /\ leadTransferee # None
+            THEN leadTransferee' = None
+            ELSE TRUE
+    /\ state = StateLeader /\ heartbeatElapsed' >= HeartbeatTimeout =>
+       /\ heartbeatElapsed' = 0
+       /\ Step([From |-> id, Type |-> MsgBeat])
+    /\ UNCHANGED <<id, Term, Vote, raftLog, msgs, msgsAfterAppend, trk,
+                   randomizedElectionTimeout, pendingConfIndex, uncommittedSize,
+                   readStates, pendingReadIndexMessages, isLearner, preVote,
+                   checkQuorum, disableProposalForwarding, stepDownOnRemoval, readOnly>>
 
-poll(s, from, msgType, granted) ==
-    /\ LET grantedCount == Cardinality(votesGranted[s])
-           rejectedCount == Cardinality(votesRejected[s])
-           voterCount == Cardinality(Server)
-       IN 
-        /\ IF (grantedCount + 1) * 2 > voterCount /\ granted
-          THEN IF state[s] = "PreCandidate"
-               THEN campaign(s, "Election")
-               ELSE /\ becomeLeader(s)
-                    /\ UNCHANGED <<currentTerm, votedFor, commitIndex, randomizedElectionTimeout, readStates, pendingReadIndexMessages, isLearner, config, readOnlyOption>>
-          ELSE /\ IF granted
-                THEN /\ votesGranted' = [votesGranted EXCEPT ![s] = votesGranted[s] \cup {from}]
-                     /\ votesRejected' = votesRejected
-                ELSE /\ votesRejected' = [votesRejected EXCEPT ![s] = votesRejected[s] \cup {from}]
-                     /\ votesGranted' = votesGranted
-               /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
+Next == 
+    \/ \E m \in msgs : Step(m)
+    \/ \E m \in msgsAfterAppend : Step(m)
+    \/ state \in {StateFollower, StateCandidate, StatePreCandidate} /\ tickElection
+    \/ state = StateLeader /\ tickHeartbeat
+    \/ \E nodeId \in Nodes, t \in {campaignPreElection, campaignElection, campaignTransfer} :
+       campaign(t)
+    \/ \E entries \in SUBSET raftLog.entries : appendEntry(entries)
+    \/ maybeCommit
 
+Spec == Init /\ [][Next]_vars
 
-stepLeader(s, m) ==
-    CASE m.type = "Beat" -> 
-        /\ bcastHeartbeat(s)
-    [] m.type = "CheckQuorum" -> 
-        /\ IF Cardinality({t \in Server : t = s \/ matchIndex[s][t] > 0}) * 2 <= Cardinality(Server)
-           THEN becomeFollower(s, currentTerm[s], Nil)
-           ELSE UNCHANGED vars
-    [] m.type = "Prop" -> 
-        /\ m.from = s
-        /\ IF leadTransferee[s] # Nil
-            THEN /\ UNCHANGED vars
-            ELSE /\ appendEntry(s, m.entries)
-    [] m.type = "AppResp" -> 
-        /\ IF m.reject
-            THEN 
-            /\ nextIndex' = [nextIndex EXCEPT ![s][m.from] = Max({m.rejectHint, 1})]
-            /\ sendAppend(s, m.from)
-            /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-            ELSE 
-            /\ matchIndex' = [matchIndex EXCEPT ![s][m.from] = Max({matchIndex[s][m.from], m.index})]
-            /\ nextIndex' = [nextIndex EXCEPT ![s][m.from] = m.index + 1]
-            /\ IF maybeCommit(s)
-                THEN bcastAppend(s)
-                ELSE IF m.from # s
-                     THEN sendAppend(s, m.from)
-                     ELSE UNCHANGED messages
-            /\ IF m.from = leadTransferee[s] /\ matchIndex'[s][m.from] = Len(log[s])
-                THEN messages' = messages \cup {[from |-> s, to |-> m.from,  type |-> "TimeoutNow"]}
-                ELSE UNCHANGED <<>>
-            /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-    [] m.type = "HeartbeatResp" -> 
-        /\ matchIndex' = [matchIndex EXCEPT ![s][m.from] = matchIndex[s][m.from]]
-        /\ IF matchIndex[s][m.from] < Len(log[s])
-           THEN /\ sendAppend(s, m.from)
-           ELSE /\ UNCHANGED messages
-        /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-    [] m.type = "TransferLeader" -> 
-        /\ IF m.from \in config[s].learners
-           THEN /\ UNCHANGED vars
-           ELSE /\ IF leadTransferee[s] # Nil
-                    THEN IF leadTransferee[s] = m.from
-                            THEN /\ UNCHANGED vars
-                            ELSE /\ leadTransferee' = [leadTransferee EXCEPT ![s] = Nil]
-                                 /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-                    ELSE IF m.from = s
-                            THEN UNCHANGED vars
-                            ELSE /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-                                 /\ leadTransferee' = [leadTransferee EXCEPT ![s] = m.from]
-                                 /\ IF matchIndex[s][m.from] = Len(log[s])
-                                        THEN messages' = messages \cup {[from |-> s, to |-> m.from, type |-> "TimeoutNow"]}
-                                        ELSE sendAppend(s, m.from)
-                                 /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-
-handleAppendEntries(s, m) ==
-    /\ IF m.index < commitIndex[s]
-       THEN messages' = messages \cup {[from |-> s, to |-> m.from, type |-> "AppResp", term |-> currentTerm[s], index |-> commitIndex[s]]}
-       ELSE LET prevIndex == m.index
-                prevTerm == m.logTerm
-                logOk == (prevIndex = 0) \/ ( prevIndex <= Len(log[s]) /\ log[s][prevIndex].term = prevTerm)
-            IN IF logOk
-               THEN /\ log' = [log EXCEPT ![s] = SubSeq(log[s], 1, prevIndex) \o m.entries]
-                    /\ commitIndex' = [commitIndex EXCEPT ![s] = Min({m.commit, prevIndex + Len(m.entries)})]
-                    /\ messages' = messages \cup {[from |-> s, to |-> m.from, type |-> "AppResp", term |-> currentTerm[s], index |-> prevIndex + Len(m.entries)]}
-               ELSE LET hintIndex == Min({m.index, Len(log[s])})
-                        hintTerm == IF hintIndex > 0 /\ hintIndex <= Len(log[s]) THEN log[s][hintIndex].term ELSE 0
-                    IN messages' = messages \cup {[from |-> s, to |-> m.from, type |-> "AppResp", term |-> currentTerm[s], index |-> m.index, reject |-> TRUE, rejectHint |-> hintIndex, logTerm |-> hintTerm]}
-    /\ UNCHANGED <<currentTerm, votedFor, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-
-handleHeartbeat(s, m) ==
-    /\ commitIndex' = [commitIndex EXCEPT ![s] = Max({commitIndex[s], m.commit})]
-    /\ messages' = messages \cup {[from |-> s, to |-> m.from, type |-> "HeartbeatResp", term |-> currentTerm[s], context |-> m.context]}
-    /\ UNCHANGED <<currentTerm, votedFor, log, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-
-handleSnapshot(s, m) ==
-    /\ LET snap == m.snapshot
-           snapIndex == snap.metadata.index
-           snapTerm == snap.metadata.term
-       IN IF snapIndex <= commitIndex[s]
-          THEN messages' = messages \cup {[from |-> s, to |-> m.from, type |-> "AppResp", term |-> currentTerm[s], index |-> commitIndex[s]]}
-          ELSE /\ log' = [log EXCEPT ![s] = <<>>]
-               /\ commitIndex' = [commitIndex EXCEPT ![s] = snapIndex]
-               /\ messages' = messages \cup {[from |-> s, to |-> m.from, type |-> "AppResp", term |-> currentTerm[s], index |-> snapIndex]}
-    /\ UNCHANGED <<currentTerm, votedFor, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-
-stepCandidate(s, m) ==
-    LET myVoteRespType == IF state[s] = "PreCandidate" THEN "PreVoteResp" ELSE "VoteResp"
-     IN 
-      /\ CASE m.type = "Prop" -> 
-           /\ UNCHANGED vars
-       [] m.type = "App" -> 
-           /\ becomeFollower(s, m.term, m.from)
-           /\ handleAppendEntries(s, m)
-       [] m.type = "Heartbeat" -> 
-           /\ becomeFollower(s, m.term, m.from)
-           /\ handleHeartbeat(s, m)
-       [] m.type = "Snap" -> 
-           /\ becomeFollower(s, m.term, m.from)
-           /\ handleSnapshot(s, m)
-       [] m.type = myVoteRespType -> 
-           /\ poll(s, m.from, m.type, ~m.reject)
-       [] m.type = "TimeoutNow" -> 
-           /\ UNCHANGED vars
-
-stepFollower(s, m) ==
-    /\ CASE m.type = "Prop" -> 
-            /\ IF leaderId[s] = Nil
-                THEN /\ UNCHANGED vars
-                ELSE /\ messages' = messages \cup {[from |-> s, to |-> leaderId[s], type |-> m.type, entries |-> m.entries]}
-            /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-        [] m.type = "App" -> 
-            /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-            /\ leaderId' = [leaderId EXCEPT ![s] = m.from]
-            /\ handleAppendEntries(s, m)
-        [] m.type = "Heartbeat" -> 
-            /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-            /\ leaderId' = [leaderId EXCEPT ![s] = m.from]
-            /\ handleHeartbeat(s, m)
-        [] m.type = "Snap" -> 
-            /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-            /\ leaderId' = [leaderId EXCEPT ![s] = m.from]
-            /\ handleSnapshot(s, m)
-        [] m.type = "TransferLeader" -> 
-            /\ IF leaderId[s] = Nil
-                THEN UNCHANGED vars
-                ELSE messages' = messages \cup {[from |-> s, to |-> leaderId[s], type |-> m.type]}
-            /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-        [] m.type = "TimeoutNow" -> hup(s, "Transfer")
-        [] m.type = "ReadIndex" -> 
-            /\ IF leaderId[s] = Nil
-                THEN /\ UNCHANGED vars
-                ELSE /\ messages' = messages \cup {[from |-> s, to |-> leaderId[s], type |-> m.type, entries |-> m.entries]}
-            /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-        [] m.type = "ReadIndexResp" -> 
-            /\ IF Len(m.entries) = 1
-                THEN /\ readStates' = [readStates EXCEPT ![s] = Append(readStates[s], [index |-> m.index, requestCtx |-> m.entries[1].data])]
-                ELSE /\ UNCHANGED readStates
-            /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-
-RECURSIVE Step(_, _)
-
-Step(s, m) ==
-    CASE m.term = 0 -> 
-       /\ \/ /\ m.type = "Hup"
-             /\ hup(s, "Election")
-          \/ /\ m.type = "StorageAppendResp"
-             /\ IF m.index # 0
-                THEN log' = [log EXCEPT ![s] = log[s]]
-                ELSE UNCHANGED log
-             /\ UNCHANGED <<currentTerm, votedFor, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-          \/ /\ m.type = "StorageApplyResp"
-             /\ IF Len(m.entries) > 0
-                THEN /\ LET lastIndex == m.entries[Len(m.entries)].index
-                            size == Len(m.entries)
-                        IN /\ commitIndex' = [commitIndex EXCEPT ![s] = lastIndex]
-                           /\ uncommittedSize' = [uncommittedSize EXCEPT ![s] = Max({0, uncommittedSize[s] - size})]
-                ELSE UNCHANGED <<commitIndex, uncommittedSize>>
-             /\ UNCHANGED <<currentTerm, votedFor, log, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, messages, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, isLearner, config, readOnlyOption>>
-          \/ /\ m.type \in {"Vote", "PreVote"}
-             /\ LET canVote ==  (votedFor[s] = m.from) \/ (votedFor[s] = Nil /\ leaderId[s] = Nil) \/ (m.type = "PreVote" /\ m.term > currentTerm[s])
-                    lastIndex == Len(log[s])
-                    lastTerm == IF lastIndex > 0 THEN log[s][lastIndex].term ELSE 0
-                    logOk == (m.logTerm > lastTerm) \/ (m.logTerm = lastTerm /\ m.index >= lastIndex)
-                IN IF canVote /\ logOk
-                   THEN /\ messages' = messages \cup {[from |-> s, to |-> m.from, term |-> m.term, type |-> IF m.type = "Vote" THEN "VoteResp" ELSE "PreVoteResp"]}
-                        /\ IF m.type = "Vote"
-                           THEN /\ electionElapsed' = [electionElapsed EXCEPT ![s] = 0]
-                                /\ votedFor' = [votedFor EXCEPT ![s] = m.from]
-                           ELSE UNCHANGED <<electionElapsed, votedFor>>
-                   ELSE messages' = messages \cup {[from |-> s, to |-> m.from, term |-> currentTerm[s], type |-> IF m.type = "Vote" THEN "VoteResp" ELSE "PreVoteResp", reject |-> TRUE]}
-             /\ UNCHANGED <<currentTerm, log, commitIndex, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-          \/ /\ state[s] = "Leader"
-             /\ stepLeader(s, m)
-          \/ /\ state[s] \in {"Candidate", "PreCandidate"}
-             /\ stepCandidate(s, m)
-          \/ /\ state[s] = "Follower"
-             /\ stepFollower(s, m)
-    [] m.term > currentTerm[s] -> 
-       /\ IF m.type \in {"Vote", "PreVote"}
-          THEN /\ LET force == m.context = "Transfer"
-                      inLease == leaderId[s] # Nil /\ electionElapsed[s] < randomizedElectionTimeout[s]
-                  IN IF ~force /\ inLease
-                     THEN UNCHANGED vars
-                     ELSE Step(s, [m EXCEPT !.term = 0])
-          ELSE IF m.type = "PreVote"
-               THEN UNCHANGED vars
-               ELSE IF m.type = "PreVoteResp" /\ ~m.reject
-                    THEN UNCHANGED vars
-                    ELSE /\ IF m.type \in {"App", "Heartbeat", "Snap"}
-                            THEN becomeFollower(s, m.term, m.from)
-                            ELSE becomeFollower(s, m.term, Nil)
-                         /\ Step(s, [m EXCEPT !.term = 0])
-    [] m.term < currentTerm[s] -> 
-       /\ IF m.type \in {"Heartbeat", "App"}
-          THEN messages' = messages \cup {[from |-> s, to |-> m.from, type |-> "AppResp", term |-> currentTerm[s]]}
-          ELSE IF m.type = "PreVote"
-               THEN messages' = messages \cup {[from |-> s, to |-> m.from, term |-> currentTerm[s], type |-> "PreVoteResp", reject |-> TRUE]}
-               ELSE IF m.type = "StorageAppendResp"
-                    THEN IF m.snapshot # Nil
-                         THEN commitIndex' = [commitIndex EXCEPT ![s] = m.snapshot.metadata.index]
-                         ELSE UNCHANGED commitIndex
-                    ELSE UNCHANGED messages
-       /\ UNCHANGED <<currentTerm, votedFor, log, state, leaderId, nextIndex, matchIndex, votesGranted, votesRejected, electionElapsed, heartbeatElapsed, randomizedElectionTimeout, readStates, pendingReadIndexMessages, leadTransferee, pendingConfIndex, uncommittedSize, isLearner, config, readOnlyOption>>
-
-
-Next ==
-    \/ \E s \in Server : tickElection(s)
-    \/ \E s \in Server : tickHeartbeat(s)
-    \/ \E s \in Server : \E m \in messages : Step(s, m)
-
-Spec == Init /\ [][Next]_(vars)
-
-TypeOK == TypeInvariant
-
-====
+===
