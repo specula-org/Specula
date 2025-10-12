@@ -1,0 +1,46 @@
+# Specula Configuration File
+# LLM Model Configuration
+llm:
+  # API Provider Configuration
+  provider: "deepseek"  # Options: "anthropic", "openai", "deepseek"
+  base_url: "https://api.deepseek.com"
+  # Model name - please choose a model appropriate for your API access
+  model: "deepseek-reasoner"  # Options: gpt-4, gpt-4-turbo, gpt-3.5-turbo
+  
+  # API Parameters
+  max_tokens: 32000       # Maximum output tokens (claude-sonnet-4-20250514 has a limit of 64000)
+  temperature: 0.1        # Controls randomness of generation, 0.0-1.0, lower is more deterministic
+  timeout: 900000          # API request timeout (milliseconds) - 15 minutes 
+  
+  # Streaming Configuration
+  use_streaming: false     # Whether to use streaming
+  stream_chunk_size: 2000 # Progress display interval for streaming
+
+# TLA+ Validator Configuration
+tla_validator:
+  tools_path: "lib/tla2tools.jar"  # Path to TLA+ tools
+  timeout: 300                      # Validator timeout (seconds)
+
+# Generation Configuration
+generation:
+  max_correction_attempts: 2  # Maximum error correction attempts
+  mode: "draft-based"              # Generation mode: "direct" or "draft-based"
+  
+# CFA Tool Configuration
+cfa:
+  script_path: "tools/cfa/run.sh"      # Path to CFA tool script
+  input_dir: "tools/cfa/input"        # CFA input directory
+  timeout: 300                         # CFA execution timeout (seconds)
+
+# Path Configuration
+paths:
+  prompts_dir: "src/prompts"
+  output_dir: "output"
+  knowledge_base: "src/rag/initial_errors.json"
+  local_embedding_model: "models/huggingface-MiniLM-L6-v2"
+  
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "[%(levelname)s] %(message)s" 
+
