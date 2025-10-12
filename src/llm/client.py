@@ -2,12 +2,6 @@ import os
 import time
 import logging
 from typing import Optional
-
-try:
-    import google.generativeai as genai
-except ImportError:  # pragma: no cover - optional dependency until installed
-    genai = None
-
 from ..utils.config import get_config
 
 logger = logging.getLogger(__name__)
@@ -55,15 +49,16 @@ class LLMClient:
             return os.getenv('OPENAI_API_KEY')
         elif self.provider == 'deepseek':
             return os.getenv('DEEPSEEK_API_KEY')
-        elif self.provider == 'gemini':
-            return os.getenv('GEMINI_API_KEY')
+        elif self.provider == 'genai':
+            return os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_AI_API_KEY')
         else:
             # Try common environment variables as fallback
-            return (os.getenv('API_KEY') or 
-                   os.getenv('ANTHROPIC_API_KEY') or 
-                   os.getenv('OPENAI_API_KEY') or 
-                   os.getenv('DEEPSEEK_API_KEY') or 
-                   os.getenv('GEMINI_API_KEY'))
+            return (os.getenv('API_KEY') or
+                   os.getenv('ANTHROPIC_API_KEY') or
+                   os.getenv('OPENAI_API_KEY') or
+                   os.getenv('DEEPSEEK_API_KEY') or
+                   os.getenv('GEMINI_API_KEY') or
+                   os.getenv('GOOGLE_AI_API_KEY'))
     
     def _get_default_model(self) -> str:
         """Get default model based on provider"""
@@ -73,8 +68,8 @@ class LLMClient:
             return 'gpt-4'
         elif self.provider == 'deepseek':
             return 'deepseek-chat'
-        elif self.provider == 'gemini':
-            return 'gemini-1.5-pro'
+        elif self.provider == 'genai':
+            return 'gemini-2.5-flash'
         else:
             return 'claude-3-5-sonnet-20241022'
     
@@ -102,17 +97,14 @@ class LLMClient:
             except ImportError:
                 raise ImportError("openai package not found. Please install it with: pip install openai")
 
-        elif self.provider == 'gemini':
-            if genai is None:
-                raise ImportError("google-generativeai package not found. Please install it with: pip install google-generativeai")
-
-            configure_kwargs = {
-                "api_key": api_key,
-            }
-
-            # Configure the global client; per-call model construction happens in _get_gemini_completion.
-            genai.configure(**configure_kwargs)
-            self.client = genai
+        elif self.provider == 'genai':
+            try:
+                from google import genai
+                self.client = genai.Client(api_key=api_key)
+                # Store thinking budget if configured, default to 32768 for GenAI
+                self.thinking_budget = api_config.get('thinking_budget', 32768)
+            except ImportError:
+                raise ImportError("google-genai package not found. Please install it with: pip install google-genai")
 
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
@@ -137,8 +129,8 @@ class LLMClient:
                 
                 if self.provider == 'anthropic':
                     return self._get_anthropic_completion(prompt, content)
-                elif self.provider == 'gemini':
-                    return self._get_gemini_completion(prompt, content)
+                elif self.provider == 'genai':
+                    return self._get_genai_completion(prompt, content)
                 else:
                     return self._get_openai_completion(prompt, content)
                 
@@ -229,41 +221,67 @@ class LLMClient:
             logger.error(f"OpenAI-compatible API request failed: {e}")
             raise
 
-    def _get_gemini_completion(self, prompt: str, content: str) -> str:
-        """Get completion from Gemini API"""
-        if self.client is None:
-            raise RuntimeError("Gemini client not initialized")
-
+    def _get_genai_completion(self, prompt: str, content: str) -> str:
+        """Get completion from Google GenAI API"""
         try:
-            model = self.client.GenerativeModel(
-                model_name=self.model,
-                system_instruction=prompt,
-                generation_config={
-                    "temperature": self.temperature,
-                    "max_output_tokens": self.max_tokens,
-                }
-            )
+            from google.genai import types
 
-            response = model.generate_content(
-                [
-                    {
-                        "role": "user",
-                        "parts": [content]
-                    }
-                ],
-                request_options={"timeout": self.client_timeout}
-            )
+            # Format complete prompt - combine system prompt and user content
+            # Add random prefix to avoid Gemini caching/deduplication issues
+            import random
+            random_id = random.randint(100000, 999999)
+            complete_prompt = f"[REQ-{random_id}] Please ignore this prefix. {prompt}\n\n{content}"
 
-            full_response = getattr(response, "text", "") or ""
-            if not full_response.strip():
-                raise ValueError("Gemini API returned an empty response")
+            # Prepare generation config
+            config_params = {
+                "temperature": self.temperature,
+                "max_output_tokens": self.max_tokens,
+            }
 
-            logger.info("Gemini request completed")
+            # Add thinking config if configured
+            thinking_budget = getattr(self, 'thinking_budget', 32768)  # Default to 32768 as per config
+            if thinking_budget > 0:
+                config_params["thinking_config"] = types.ThinkingConfig(
+                    thinking_budget=thinking_budget
+                )
+                logger.debug(f"Using thinking mode with budget: {thinking_budget}")
+            # Note: Don't explicitly set thinking_budget=0 as it's invalid for models that require thinking mode
+
+            genai_config = types.GenerateContentConfig(**config_params)
+
+            # Use streaming for better responsiveness
+            if self.use_streaming:
+                logger.debug("Using streaming GenAI API")
+                stream = self.client.models.generate_content_stream(
+                    model=self.model,
+                    contents=complete_prompt,
+                    config=genai_config
+                )
+
+                # Collect streaming response
+                full_response = ""
+                for chunk in stream:
+                    if hasattr(chunk, 'text') and chunk.text:
+                        full_response += chunk.text
+
+            else:
+                logger.debug("Using non-streaming GenAI API")
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=complete_prompt,
+                    config=genai_config
+                )
+                full_response = response.text if hasattr(response, 'text') else str(response)
+
+            if not full_response:
+                raise Exception("Empty response from GenAI API")
+
+            logger.info(f"GenAI request completed")
             logger.debug(f"First line of response: {full_response.splitlines()[0][:50]}...")
-            return full_response
+            return full_response.strip()
 
         except Exception as e:
-            logger.error(f"Gemini API request failed: {e}")
+            logger.error(f"GenAI API request failed: {e}")
             raise
 
 # Global client instance
