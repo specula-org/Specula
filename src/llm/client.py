@@ -284,6 +284,128 @@ class LLMClient:
             logger.error(f"GenAI API request failed: {e}")
             raise
 
+    def get_completion_with_tools(self, messages: list, tools: list, max_retries: int = 3) -> dict:
+        """Get LLM completion with function calling / tool use
+
+        Args:
+            messages: List of message dicts [{"role": "...", "content": "..."}]
+            tools: List of tool schemas (OpenAI format)
+            max_retries: Maximum retry attempts
+
+        Returns:
+            Dict with:
+                - text: str (generated text if any)
+                - tool_calls: list (list of tool calls if any)
+                - stop_reason: str
+        """
+        retry_count = 0
+
+        while retry_count < max_retries:
+            try:
+                if self.provider == 'anthropic':
+                    return self._get_anthropic_completion_with_tools(messages, tools)
+                else:
+                    # OpenAI, DeepSeek support tool calling natively
+                    return self._get_openai_completion_with_tools(messages, tools)
+
+            except Exception as e:
+                retry_count += 1
+                logger.error(f"Tool calling API request failed (attempt {retry_count}/{max_retries}): {e}")
+
+                if retry_count < max_retries:
+                    wait_time = min(30, 2 ** retry_count)
+                    logger.info(f"Waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error("Maximum retry attempts reached, request failed")
+                    raise
+
+        raise Exception("API request with tools failed")
+
+    def _get_anthropic_completion_with_tools(self, messages: list, tools: list) -> dict:
+        """Get completion with tools from Anthropic API"""
+        try:
+            # Convert OpenAI-style tools to Anthropic format
+            anthropic_tools = [
+                {
+                    "name": tool["function"]["name"],
+                    "description": tool["function"]["description"],
+                    "input_schema": tool["function"]["parameters"]
+                }
+                for tool in tools
+            ]
+
+            # Extract system message if present
+            system_msg = None
+            user_messages = []
+            for msg in messages:
+                if msg["role"] == "system":
+                    system_msg = msg["content"]
+                else:
+                    user_messages.append(msg)
+
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                system=system_msg if system_msg else None,
+                messages=user_messages,
+                tools=anthropic_tools,
+                timeout=self.client_timeout
+            )
+
+            # Extract content
+            text_content = ""
+            tool_calls = []
+
+            for block in response.content:
+                if block.type == "text":
+                    text_content = block.text
+                elif block.type == "tool_use":
+                    tool_calls.append({
+                        "id": block.id,
+                        "name": block.name,
+                        "function": {
+                            "name": block.name,
+                            "arguments": block.input
+                        },
+                        "arguments": block.input
+                    })
+
+            return {
+                "text": text_content,
+                "tool_calls": tool_calls if tool_calls else None,
+                "stop_reason": response.stop_reason
+            }
+
+        except Exception as e:
+            logger.error(f"Anthropic tool calling failed: {e}")
+            raise
+
+    def _get_openai_completion_with_tools(self, messages: list, tools: list) -> dict:
+        """Get completion with tools from OpenAI-compatible API"""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=tools,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                timeout=self.client_timeout
+            )
+
+            message = response.choices[0].message
+
+            return {
+                "text": message.content or "",
+                "tool_calls": message.tool_calls if hasattr(message, 'tool_calls') else None,
+                "stop_reason": response.choices[0].finish_reason
+            }
+
+        except Exception as e:
+            logger.error(f"OpenAI tool calling failed: {e}")
+            raise
+
 # Global client instance
 _client = None
 
