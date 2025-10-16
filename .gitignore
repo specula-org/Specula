@@ -72,3 +72,4 @@ tools/cfa/*Test*.tla
 tools/cfa/input/debug_*.tla
 tools/cfa/input/test_*.tla
 experiments/syntax_phase/dataset
+experiments/syntax_phase/work_copies
