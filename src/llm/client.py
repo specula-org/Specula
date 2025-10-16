@@ -385,14 +385,21 @@ class LLMClient:
     def _get_openai_completion_with_tools(self, messages: list, tools: list) -> dict:
         """Get completion with tools from OpenAI-compatible API"""
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=tools,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                timeout=self.client_timeout
-            )
+            # Determine if this is GPT-5 model which requires max_completion_tokens
+            is_gpt5_model = self.model.startswith("gpt-5")
+            max_tokens_param = "max_completion_tokens" if is_gpt5_model else "max_tokens"
+
+            # Prepare API parameters
+            api_params = {
+                "model": self.model,
+                "messages": messages,
+                "tools": tools,
+                "temperature": self.temperature,
+                max_tokens_param: self.max_tokens,
+                "timeout": self.client_timeout
+            }
+
+            response = self.client.chat.completions.create(**api_params)
 
             message = response.choices[0].message
 
