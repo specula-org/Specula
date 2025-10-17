@@ -1,0 +1,212 @@
+---- MODULE etcdraft ----
+EXTENDS Naturals, Sequences, FiniteSets, TLC
+CONSTANTS Node, Key, Value, Client, NULL
+
+VARIABLES 
+  state, currentTerm, votedFor, log, commitIndex, lastApplied,
+  nextIndex, matchIndex, leaderId, store, messages,
+  clientRequests, clientResponses, pendingReadIndexMessages,
+  uncommittedSize, maxUncommittedSize, electionTimeout,
+  randomizedElectionTimeout, electionElapsed, heartbeatElapsed
+
+vars == <<state, currentTerm, votedFor, log, commitIndex, lastApplied,
+          nextIndex, matchIndex, leaderId, store, messages,
+          clientRequests, clientResponses, pendingReadIndexMessages,
+          uncommittedSize, maxUncommittedSize, electionTimeout,
+          randomizedElectionTimeout, electionElapsed, heartbeatElapsed>>
+
+StateType == {"Follower", "Candidate", "Leader"}
+MessageType == {"MsgHup", "MsgBeat", "MsgProp", "MsgApp", "MsgAppResp",
+                "MsgVote", "MsgVoteResp", "MsgSnap", "MsgHeartbeat",
+                "MsgHeartbeatResp", "MsgReadIndex", "MsgReadIndexResp"}
+
+Entry == [term : Nat, type : {"Normal", "ConfChange", "ConfChangeV2"}, 
+          data : [op: {"PUT", "GET", "DEL"}, key: Key, value: Value, client: Client]]
+
+Log == [entries : Seq(Entry), committed : Nat, applied : Nat]
+
+Message == [type : MessageType, from : Node, to : Node, term : Nat,
+            index : Nat, logTerm : Nat, entries : Seq(Entry), 
+            commit : Nat, reject : BOOLEAN, rejectHint : Nat,
+            snapshot : [data : Seq(Entry), metadata : [index : Nat, term : Nat]]]
+
+ClientRequest == [client : Client, op : {"PUT", "GET", "DEL"}, key : Key, value : Value]
+ClientResponse == [client : Client, success : BOOLEAN, value : Value]
+
+Init == 
+    /\ state = [n \in Node |-> "Follower"]
+    /\ currentTerm = [n \in Node |-> 0]
+    /\ votedFor = [n \in Node |-> NULL]
+    /\ log = [n \in Node |-> [entries |-> <<>>, committed |-> 0, applied |-> 0]]
+    /\ commitIndex = [n \in Node |-> 0]
+    /\ lastApplied = [n \in Node |-> 0]
+    /\ nextIndex = [n \in Node |-> [m \in Node |-> 1]]
+    /\ matchIndex = [n \in Node |-> [m \in Node |-> 0]]
+    /\ leaderId = [n \in Node |-> NULL]
+    /\ store = [n \in Node |-> [k \in Key |-> NULL]]
+    /\ messages = {}
+    /\ clientRequests = {}
+    /\ clientResponses = {}
+    /\ pendingReadIndexMessages = {}
+    /\ uncommittedSize = [n \in Node |-> 0]
+    /\ maxUncommittedSize = [n \in Node |-> 10]
+    /\ electionTimeout = [n \in Node |-> 10]
+    /\ randomizedElectionTimeout = [n \in Node |-> 15]
+    /\ electionElapsed = [n \in Node |-> 0]
+    /\ heartbeatElapsed = [n \in Node |-> 0]
+
+TermAt(log, index) == 
+    IF index > 0 /\ index <= Len(log.entries) THEN log.entries[index].term
+    ELSE 0
+
+LastEntry(log) == 
+    LET len == Len(log.entries) IN
+    IF len > 0 THEN [index |-> len, term |-> log.entries[len].term]
+    ELSE [index |-> 0, term |-> 0]
+
+AppendEntries(log, prevIndex, prevTerm, newEntries) ==
+    IF prevIndex > Len(log.entries) \/ (prevIndex > 0 /\ TermAt(log, prevIndex) # prevTerm)
+    THEN FALSE
+    ELSE LET 
+        newLog == [log EXCEPT !.entries = SubSeq(log.entries, 1, prevIndex) \o newEntries]
+    IN newLog
+
+ApplyEntry(store, entry) ==
+    IF entry.type = "Normal" THEN
+        CASE entry.data.op = "PUT" -> [store EXCEPT ![entry.data.key] = entry.data.value]
+        [] entry.data.op = "DEL" -> [store EXCEPT ![entry.data.key] = NULL]
+        [] OTHER -> store
+    ELSE store
+
+Quorum(nodes) == Cardinality(nodes) \div 2 + 1
+
+CanVote(self, candidate, lastLog, candidateLog) ==
+    \/ votedFor[self] = candidate
+    \/ (votedFor[self] = NULL /\ leaderId[self] = NULL)
+    \/ (candidateLog.term > lastLog.term) 
+    \/ (candidateLog.term = lastLog.term /\ candidateLog.index >= lastLog.index)
+
+BecomeFollower(node, term, leader) ==
+    /\ state' = [state EXCEPT ![node] = "Follower"]
+    /\ currentTerm' = [currentTerm EXCEPT ![node] = term]
+    /\ votedFor' = [votedFor EXCEPT ![node] = NULL]
+    /\ leaderId' = [leaderId EXCEPT ![node] = leader]
+    /\ electionElapsed' = [electionElapsed EXCEPT ![node] = 0]
+    /\ randomizedElectionTimeout' = [randomizedElectionTimeout EXCEPT ![node] = electionTimeout[node] + RandomInt(electionTimeout[node])]
+
+BecomeCandidate(node) ==
+    /\ state' = [state EXCEPT ![node] = "Candidate"]
+    /\ currentTerm' = [currentTerm EXCEPT ![node] = currentTerm[node] + 1]
+    /\ votedFor' = [votedFor EXCEPT ![node] = node]
+    /\ leaderId' = [leaderId EXCEPT ![node] = NULL]
+    /\ electionElapsed' = [electionElapsed EXCEPT ![node] = 0]
+    /\ randomizedElectionTimeout' = [randomizedElectionTimeout EXCEPT ![node] = electionTimeout[node] + RandomInt(electionTimeout[node])]
+
+BecomeLeader(node) ==
+    /\ state' = [state EXCEPT ![node] = "Leader"]
+    /\ leaderId' = [leaderId EXCEPT ![node] = node]
+    /\ nextIndex' = [nextIndex EXCEPT ![node] = [n \in Node |-> Len(log[node].entries) + 1]]
+    /\ matchIndex' = [matchIndex EXCEPT ![node] = [n \in Node |-> 0]]
+    /\ LET emptyEntry == [term |-> currentTerm[node], type |-> "Normal", data |-> NULL] IN
+        log' = [log EXCEPT ![node] = [entries |-> log[node].entries \o <<emptyEntry>>, 
+                                      committed |-> log[node].committed,
+                                      applied |-> log[node].applied]]
+
+SendMessage(msg) ==
+    messages' = messages \cup {msg}
+
+HandleAppendEntries(node, msg) ==
+    LET selfLog == log[node] IN
+    IF msg.term < currentTerm[node] THEN
+        SendMessage([type |-> "MsgAppResp", from |-> node, to |-> msg.from, 
+                     term |-> currentTerm[node], index |-> msg.index, reject |-> TRUE,
+                     rejectHint |-> Len(selfLog.entries)])
+    ELSE
+        /\ IF msg.term > currentTerm[node] THEN
+               BecomeFollower(node, msg.term, msg.from)
+        /\ LET newLog == AppendEntries(selfLog, msg.index, msg.logTerm, msg.entries) IN
+            IF newLog # FALSE THEN
+                /\ log' = [log EXCEPT ![node] = newLog]
+                /\ commitIndex' = [commitIndex EXCEPT ![node] = Min(msg.commit, Len(newLog.entries))]
+                /\ SendMessage([type |-> "MsgAppResp", from |-> node, to |-> msg.from, 
+                                term |-> currentTerm[node], index |-> Len(newLog.entries)])
+            ELSE
+                /\ SendMessage([type |-> "MsgAppResp", from |-> node, to |-> msg.from, 
+                                term |-> currentTerm[node], index |-> msg.index, reject |-> TRUE,
+                                rejectHint |-> Len(selfLog.entries)])
+
+HandleVoteRequest(node, msg) ==
+    LET lastLog == LastEntry(log[node]) IN
+    IF msg.term < currentTerm[node] THEN
+        SendMessage([type |-> "MsgVoteResp", from |-> node, to |-> msg.from, 
+                     term |-> currentTerm[node], reject |-> TRUE])
+    ELSE
+        /\ IF msg.term > currentTerm[node] THEN
+               BecomeFollower(node, msg.term, NULL)
+        /\ IF CanVote(node, msg.from, lastLog, [index |-> msg.index, term |-> msg.logTerm]) THEN
+               /\ votedFor' = [votedFor EXCEPT ![node] = msg.from]
+               /\ SendMessage([type |-> "MsgVoteResp", from |-> node, to |-> msg.from, 
+                               term |-> currentTerm[node]])
+        ELSE
+               /\ SendMessage([type |-> "MsgVoteResp", from |-> node, to |-> msg.from, 
+                               term |-> currentTerm[node], reject |-> TRUE])
+
+HandleClientRequest(node, msg) ==
+    IF state[node] = "Leader" THEN
+        LET newEntry == [term |-> currentTerm[node], type |-> "Normal", 
+                         data |-> [op |-> msg.op, key |-> msg.key, value |-> msg.value, client |-> msg.client]] IN
+        /\ log' = [log EXCEPT ![node] = [entries |-> log[node].entries \o <<newEntry>>, 
+                                         committed |-> log[node].committed,
+                                         applied |-> log[node].applied]]
+        /\ \/ \E n \in Node \ {node} : 
+                SendMessage([type |-> "MsgApp", from |-> node, to |-> n, term |-> currentTerm[node],
+                             index |-> Len(log[node].entries), logTerm |-> TermAt(log[node], Len(log[node].entries)),
+                             entries |-> <<newEntry>>, commit |-> log[node].committed])
+        /\ uncommittedSize' = [uncommittedSize EXCEPT ![node] = uncommittedSize[node] + 1]
+    ELSE
+        /\ IF leaderId[node] # NULL THEN
+               SendMessage([type |-> "ClientRequest", from |-> node, to |-> leaderId[node], 
+                            op |-> msg.op, key |-> msg.key, value |-> msg.value, client |-> msg.client])
+
+ApplyCommitted(node) ==
+    LET selfLog == log[node] IN
+    WHILE selfLog.applied < selfLog.committed DO
+        selfLog.applied := selfLog.applied + 1
+        store' = [store EXCEPT ![node] = ApplyEntry(store[node], selfLog.entries[selfLog.applied])]
+        IF selfLog.entries[selfLog.applied].type = "Normal" THEN
+            clientResponses' = clientResponses \cup 
+                {[client |-> selfLog.entries[selfLog.applied].data.client, 
+                  value |-> store[node][selfLog.entries[selfLog.applied].data.key]]}
+
+AdvanceCommitIndex(node) ==
+    LET selfLog == log[node] IN
+    /\ \E quorumSet \in SUBSET (Node) : 
+           Cardinality(quorumSet) >= Quorum(Node)
+           /\ \A n \in quorumSet : matchIndex[node][n] >= selfLog.committed
+    /\ commitIndex' = [commitIndex EXCEPT ![node] = selfLog.committed]
+    /\ ApplyCommitted(node)
+
+Next ==
+    \/ \E msg \in messages : 
+        \E node \in Node :
+            IF msg.to = node THEN
+                \/ /\ msg.type = "MsgApp"
+                   /\ HandleAppendEntries(node, msg)
+                \/ /\ msg.type = "MsgVote"
+                   /\ HandleVoteRequest(node, msg)
+                \/ /\ msg.type = "ClientRequest"
+                   /\ HandleClientRequest(node, msg)
+    \/ \E node \in Node :
+        \/ /\ state[node] = "Follower" \/ state[node] = "Candidate"
+           /\ electionElapsed[node] >= randomizedElectionTimeout[node]
+           /\ BecomeCandidate(node)
+        \/ /\ state[node] = "Leader"
+           /\ heartbeatElapsed[node] >= electionTimeout[node]
+           /\ \E n \in Node \ {node} : 
+                  SendMessage([type |-> "MsgHeartbeat", from |-> node, to |-> n, 
+                               term |-> currentTerm[node], commit |-> log[node].committed])
+        \/ /\ state[node] = "Leader"
+           /\ AdvanceCommitIndex(node)
+
+Spec == Init /\ [][Next]_vars
+====
