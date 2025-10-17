@@ -75,18 +75,49 @@ class AgenticLoopBase(BaseWorkflow):
         # Agent loop
         iterations = 0
         last_error_count = None
+        max_cleanup_iterations = 3  # After compilation limit, allow 3 more iterations
+        cleanup_iterations = 0
+        in_cleanup_phase = False
 
         while iterations < self.max_iterations:
             iterations += 1
-            print(f"\n--- Agent Iteration {iterations} ---")
 
-            # Check compilation limit
-            if self.compilation_count >= self.max_compilations:
-                print(f"⚠️  Compilation limit reached ({self.max_compilations})")
-                break
+            # Check if entered cleanup phase
+            if self.compilation_count >= self.max_compilations and not in_cleanup_phase:
+                in_cleanup_phase = True
+                print(f"\n⚠️  Compilation limit reached ({self.max_compilations}/{self.max_compilations})")
+                print(f"   Entering cleanup phase: {max_cleanup_iterations} more iterations allowed")
+                print(f"   Agent can still read/write/rag_search, but cannot compile anymore")
+
+            # Check cleanup limit
+            if in_cleanup_phase:
+                cleanup_iterations += 1
+                if cleanup_iterations > max_cleanup_iterations:
+                    print(f"\n⚠️  Cleanup iterations exhausted ({cleanup_iterations-1}/{max_cleanup_iterations})")
+                    break
+                print(f"\n--- Agent Iteration {iterations} [CLEANUP {cleanup_iterations}/{max_cleanup_iterations}] ---")
+            else:
+                print(f"\n--- Agent Iteration {iterations} ---")
+
+            # Add cleanup reminder to conversation if in cleanup phase
+            if in_cleanup_phase and cleanup_iterations == 1:
+                # Add a system message to remind LLM
+                cleanup_reminder = {
+                    "role": "user",
+                    "content": f"""IMPORTANT NOTICE: Compilation budget exhausted ({self.max_compilations}/{self.max_compilations} used).
+You have {max_cleanup_iterations} more iterations to make final fixes.
+- You CANNOT use tla_compile anymore (it will fail)
+- You CAN still use: read, write, rag_search
+- Make your best final attempt to fix the errors
+- After {max_cleanup_iterations} iterations, the process will stop"""
+                }
+                conversation.append(cleanup_reminder)
 
             # LLM decision
-            print(f"[LLM] Making decision (call #{self.llm_call_count + 1})...")
+            if in_cleanup_phase:
+                print(f"[LLM] Making decision (call #{self.llm_call_count + 1}) [Cleanup {cleanup_iterations}/{max_cleanup_iterations}]...")
+            else:
+                print(f"[LLM] Making decision (call #{self.llm_call_count + 1})...")
             try:
                 response = self.llm.get_completion_with_tools(
                     messages=conversation,
@@ -113,8 +144,12 @@ class AgenticLoopBase(BaseWorkflow):
                 tool_results.append(result)
 
                 # Check if compilation succeeded
-                tool_name = tool_call.get('function', {}).get('name') or tool_call.get('name')
-                if tool_name == 'tla_compile' and result.get('success'):
+                if hasattr(tool_call, 'function'):
+                    check_tool_name = tool_call.function.name
+                else:
+                    check_tool_name = tool_call.get('function', {}).get('name') or tool_call.get('name')
+
+                if check_tool_name == 'tla_compile' and result.get('success'):
                     error_count = result.get('error_count', 0)
                     if error_count == 0:
                         print("✓ Compilation successful! All errors fixed.")
@@ -142,36 +177,104 @@ class AgenticLoopBase(BaseWorkflow):
                         last_error_count = error_count
 
             # Add assistant response with tool uses
-            assistant_content = []
-            if response.get('text'):
-                assistant_content.append({"type": "text", "text": response.get('text')})
+            # Format depends on provider (OpenAI vs Anthropic)
+            if self.llm.provider == 'openai':
+                # OpenAI format: tool_calls at message level
+                assistant_message = {
+                    "role": "assistant",
+                    "content": response.get('text') or None,
+                    "tool_calls": []
+                }
 
-            for tool_call in tool_calls:
-                assistant_content.append({
-                    "type": "tool_use",
-                    "id": tool_call.get('id'),
-                    "name": tool_call.get('name'),
-                    "input": tool_call.get('arguments', {})
+                for tool_call in tool_calls:
+                    # Support both object and dict formats
+                    if hasattr(tool_call, 'function'):
+                        # Already in OpenAI format
+                        assistant_message["tool_calls"].append({
+                            "id": tool_call.id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_call.function.name,
+                                "arguments": tool_call.function.arguments if isinstance(tool_call.function.arguments, str) else json.dumps(tool_call.function.arguments)
+                            }
+                        })
+                    else:
+                        # Convert from dict format
+                        tool_id = tool_call.get('id')
+                        tool_name = tool_call.get('name')
+                        tool_args = tool_call.get('arguments', {})
+                        assistant_message["tool_calls"].append({
+                            "id": tool_id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "arguments": json.dumps(tool_args) if not isinstance(tool_args, str) else tool_args
+                            }
+                        })
+
+                conversation.append(assistant_message)
+
+                # Add tool results - OpenAI uses "tool" role
+                for tool_call, result in zip(tool_calls, tool_results):
+                    if hasattr(tool_call, 'id'):
+                        tool_call_id = tool_call.id
+                    else:
+                        tool_call_id = tool_call.get('id')
+
+                    conversation.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": json.dumps(result)
+                    })
+
+            else:
+                # Anthropic format: tool_use in content array
+                assistant_content = []
+                if response.get('text'):
+                    assistant_content.append({"type": "text", "text": response.get('text')})
+
+                for tool_call in tool_calls:
+                    # Support both object and dict formats
+                    if hasattr(tool_call, 'function'):
+                        tool_id = tool_call.id
+                        tool_name = tool_call.function.name
+                        tool_args = tool_call.function.arguments
+                    else:
+                        tool_id = tool_call.get('id')
+                        tool_name = tool_call.get('name')
+                        tool_args = tool_call.get('arguments', {})
+
+                    assistant_content.append({
+                        "type": "tool_use",
+                        "id": tool_id,
+                        "name": tool_name,
+                        "input": tool_args
+                    })
+
+                conversation.append({
+                    "role": "assistant",
+                    "content": assistant_content
                 })
 
-            conversation.append({
-                "role": "assistant",
-                "content": assistant_content
-            })
+                # Add tool results as user message - Anthropic format
+                tool_result_content = []
+                for tool_call, result in zip(tool_calls, tool_results):
+                    # Support both object and dict formats
+                    if hasattr(tool_call, 'id'):
+                        tool_use_id = tool_call.id
+                    else:
+                        tool_use_id = tool_call.get('id')
 
-            # Add tool results as user message
-            tool_result_content = []
-            for tool_call, result in zip(tool_calls, tool_results):
-                tool_result_content.append({
-                    "type": "tool_result",
-                    "tool_use_id": tool_call.get('id'),
-                    "content": json.dumps(result)
+                    tool_result_content.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": json.dumps(result)
+                    })
+
+                conversation.append({
+                    "role": "user",
+                    "content": tool_result_content
                 })
-
-            conversation.append({
-                "role": "user",
-                "content": tool_result_content
-            })
 
         # Failed to fix
         print(f"\n✗ Failed to fix all errors")
@@ -334,19 +437,30 @@ Begin by checking the compilation status."""
 
         return schemas
 
-    def _execute_tool_call(self, tool_call: Dict[str, Any], spec_path: str) -> Dict[str, Any]:
+    def _execute_tool_call(self, tool_call, spec_path: str) -> Dict[str, Any]:
         """
         Execute a tool call and return result as dict
 
         Args:
-            tool_call: Tool call from LLM
+            tool_call: Tool call from LLM (dict or object)
             spec_path: Spec path for context
 
         Returns:
             Dict with tool result
         """
-        tool_name = tool_call.get('function', {}).get('name') or tool_call.get('name')
-        arguments = tool_call.get('function', {}).get('arguments') or tool_call.get('arguments', {})
+        # Support both dict and object formats (OpenAI vs Anthropic)
+        if hasattr(tool_call, 'function'):
+            # OpenAI object format
+            tool_name = tool_call.function.name
+            arguments = tool_call.function.arguments
+            tool_id = tool_call.id
+        elif isinstance(tool_call, dict):
+            # Dict format (from Anthropic or our own processing)
+            tool_name = tool_call.get('function', {}).get('name') or tool_call.get('name')
+            arguments = tool_call.get('function', {}).get('arguments') or tool_call.get('arguments', {})
+            tool_id = tool_call.get('id')
+        else:
+            return {"success": False, "error": "Unknown tool_call format"}
 
         # Parse arguments if string
         if isinstance(arguments, str):
@@ -363,8 +477,9 @@ Begin by checking the compilation status."""
                 if self.compilation_count >= self.max_compilations:
                     return {
                         "success": False,
-                        "error": f"Compilation limit reached ({self.max_compilations} times)",
-                        "error_count": -1
+                        "error": f"❌ Compilation limit reached ({self.max_compilations}/{self.max_compilations} used). You CANNOT compile anymore. Please use read/write to make final fixes without compiling.",
+                        "error_count": -1,
+                        "compilations_remaining": 0
                     }
 
                 result = self.compile_with_limit(arguments['spec_path'])
