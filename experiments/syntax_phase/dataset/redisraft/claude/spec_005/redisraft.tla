@@ -1,0 +1,1 @@
+\/ \E n \in Nodes, idx \in Nat : LogDelete(n, idx)
