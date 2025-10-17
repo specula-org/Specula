@@ -132,8 +132,13 @@ Use this tool to validate TLA+ specs and get detailed error information."""
         compilation_time = time.time() - start_time
 
         # Parse errors from output
-        error_messages = self._extract_errors(output) if not success else []
-        error_count = len(error_messages)
+        # Don't try to be smart - just give LLM the full output
+        if not success:
+            error_messages = [output]  # Full output as single error message
+            error_count = 1  # Count as 1 error (full compilation failure)
+        else:
+            error_messages = []
+            error_count = 0
 
         # Build result
         if success:
