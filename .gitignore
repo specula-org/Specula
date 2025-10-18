@@ -46,6 +46,7 @@ systems/asterinas/asterinas/
 states/
 traces/
 **/output/
+output/autosave/
 generation_summary.json
 specula
 models/
