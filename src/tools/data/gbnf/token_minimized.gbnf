@@ -1,0 +1,117 @@
+ws ::= [ \n]*
+sp ::= [ ]
+nl ::= "\n"
+
+root ::= modu nl
+modu ::= (line sp "MODULE" sp name sp line ws (exte ws)? (unit ws)* dlin)
+exte ::= "EXTENDS" nL
+
+unit ::= oD|vD|cD
+oD ::= nl oN sp dE ws expr
+vD ::= ("VARIABLE"|"VARIABLES") nL
+cD ::= ("CONSTANT"|"CONSTANTS") nL
+
+line ::= "-"{4,78}
+dlin ::= "="{4,78}
+dE ::= "=="|"≜"
+sI ::= "\\in"|"∈"
+conj ::= "/\\"|"∧"
+disj ::= "\\/"|"∨"
+fora ::= "\\A"|"\\forall"|"∀"
+exis ::= "\\E"|"\\exists"|"∃"
+tF ::= "\\AA"
+tE ::= "\\EE"
+gets ::= "<-"|"←"
+aM ::= "|->"|"↦"
+mT ::= "->"|"→"
+lA ::= "<<"|"⟨"
+rA ::= ">>"|"⟩"
+cB ::= "[]"|"□"
+cA ::= "->"|"→"
+colo ::= ":"
+addr ::= "@"
+lAs ::= "::"|"∷"
+plac ::= "_"
+
+oN ::= name ( "(" nL ")" )?
+nL ::= wsna ("," wsna)*
+nT ::= lA ws nL ws rA
+eL ::= expr ws ("," ws expr ws)*
+boun ::= (nL|nT) ws sI ws expr
+
+expr ::= p1-o
+
+p1-o ::= p2-o (ws impl ws p2-o)?
+p2-o ::= p3-o (ws (lT|equi|iff|pA) ws p3-o)?
+p3-o ::= p4-o (ws (conj|disj) ws p4-o)*
+p4-o ::= (lnot ws)* p5-o|(alwa|even|enab|unch) ws fA
+p5-o ::= p6-o (ws (sI|equa|nE|lt) ws p6-o)?
+p6-o ::= p7-o
+p7-o ::= p8-o
+p8-o ::= p9-o (ws (sU|sIn) ws p9-o)* (ws sM ws p9-o)?
+p9-o ::= p10-o (ws dotd ws p10-o)?
+p10-o ::= ((powe|flat|doma) ws)? p14-o|
+  p11-o (ws (plus ws p11-o|cP ws p14-o))* (ws mod ws p12-o)?
+p11-o ::= p12-o (ws minu ws p12-o)*
+p12-o ::= (nega ws)? p13-o
+p13-o ::= p14-o (ws mult ws p14-o)* (ws divi ws p14-o)?
+p14-o ::= p15-o (ws power ws p15-o)?
+p15-o ::= fA (ws prime)?
+
+fA ::= prim
+
+prim ::= name|numb|stri|bool|kS|grou|oC|quan|choo|set|aS|conjl|disjl|rS|reco|tern
+
+wsna ::= ws name ws
+name ::= [0-9a-zA-Z_]*[a-zA-Z][0-9a-zA-Z_]*
+numb ::= [0-9]+
+stri ::= "\"" ([^"\n\r]|"\\" ["\\])* "\""
+bool ::= "TRUE"|"FALSE"
+kS ::= nS|bS|sS
+nS ::= "Nat"|"ℕ"|"Int"|"ℤ"|"Real"|"ℝ"
+bS ::= "BOOLEAN"
+sS ::= "STRING"
+
+grou ::= "(" ws expr ws ")"
+oC ::= name ws "(" expr ws ("," ws expr ws )* ")"
+quan ::= (fora|exis) ws boun ws ("," ws boun ws)* colo ws expr
+choo ::= "CHOOSE" ws (name|nT) ws sI ws expr ws colo ws expr
+set ::= "{" eL? "}"
+aS ::= "[" ws expr ws "]_" ws (name|nT)
+conjl ::= (conj ws expr ws)+
+disjl ::= (disj ws expr ws)+
+rS ::= "[" wsna colo ws expr ws ("," wsna colo ws expr)* "]"
+reco ::= "[" wsna aM ws expr ws ("," wsna aM ws expr)* "]"
+tern ::= "IF" ws expr ws "THEN" ws expr ws "ELSE" ws expr
+
+lnot ::= "\\lnot"|"\\neg"|"~"|"¬"
+alwa ::= "[]"|"□"
+even ::= "<>"|"◇"
+enab ::= "ENABLED"
+unch ::= "UNCHANGED"
+nega ::= "-"
+powe ::= "SUBSET"
+flat ::= "UNION"
+doma ::= "DOMAIN"
+
+impl ::= "=>"|"⇒"
+lT ::= "~>"|"↝"
+equi ::= "\\equiv"|"≡"
+iff ::= "<=>"|"⇔"
+pA ::= "-+->"|"⇸"
+equa ::= "="
+nE ::= "/="|"#"|"≠"
+lt ::= "<"
+sM ::= "\\"
+sU ::= "\\union"|"\\cup"|"∪"
+sIn ::= "\\intersect"|"\\cap"|"∩"
+dotd ::= ".."|"‥"
+cP ::= "\\times"|"\\X"|"×"
+plus ::= "+"
+mod ::= "%"
+minu ::= "-"
+divi ::= "/"
+mult ::= "*"
+power ::= "^"
+
+prime ::= "'"

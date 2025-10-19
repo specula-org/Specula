@@ -1,0 +1,130 @@
+ws      ::= [ \n]*
+sp      ::= [ ]
+nl      ::= "\n"
+
+root      ::= module nl
+module    ::= (
+    line sp "MODULE" sp name sp line ws
+    (extends ws)?
+    (unit ws)*
+    dline
+  )
+extends   ::= "EXTENDS" nameList
+
+unit      ::= opDef | varDef | constDef
+opDef     ::= nl opName sp defEq ws expr
+varDef    ::= ("VARIABLE" | "VARIABLES") nameList
+constDef    ::= ("CONSTANT" | "CONSTANTS") nameList
+
+line      ::= "-"{4,78}
+dline     ::= "="{4,78}
+defEq     ::= "==" | "≜"
+setIn     ::= "\\in" | "∈"
+conj      ::= "/\\" | "∧"
+disj      ::= "\\/" | "∨"
+forall    ::= "\\A" | "\\forall" | "∀"
+exists    ::= "\\E" | "\\exists" | "∃"
+tlForall  ::= "\\AA"
+tlExists  ::= "\\EE"
+gets      ::= "<-" | "←"
+allMapTo  ::= "|->" | "↦"
+mappedTo  ::= "->" | "→"
+lAngleBr  ::= "<<" | "⟨"
+rAngleBr  ::= ">>" | "⟩"
+caseBox   ::= "[]" | "□"
+caseArrow ::= "->" | "→"
+colon     ::= ":"
+address   ::= "@"
+labelAs   ::= "::" | "∷"
+placehold ::= "_"
+
+opName    ::= name ( "(" nameList ")" )?
+nameList  ::= wsname ("," wsname)*
+nameTuple ::= lAngleBr ws nameList ws rAngleBr
+exprList  ::= expr ws ("," ws expr ws)*
+bound     ::= (nameList | nameTuple) ws setIn ws expr
+
+expr      ::= p1-op 
+
+p1-op     ::= p2-op (ws implies ws p2-op)?
+p2-op     ::= p3-op (ws (leadsTo | equiv | iff | plusArrow) ws p3-op)?
+p3-op     ::= p4-op (ws (conj | disj) ws p4-op)*
+p4-op     ::= (lnot ws)* p5-op | (always | eventual | enabled | unchanged) ws fnApply
+p5-op     ::= p6-op (ws (setIn | equal | notEqual | lt) ws p6-op)?
+p6-op     ::= p7-op
+p7-op     ::= p8-op
+p8-op     ::= p9-op (ws (setUnion | setInters) ws p9-op)* (ws setMinus ws p9-op)? 
+p9-op     ::= p10-op (ws dotdot ws p10-op)?
+p10-op    ::= ((powerset | flatten | domain) ws)? p14-op |
+              p11-op (ws (
+                plus ws p11-op |
+                crossProd ws p14-op
+              ))* (ws mod ws p12-op)?
+p11-op    ::= p12-op (ws minus ws p12-op)*
+p12-op    ::= (negative ws)? p13-op
+p13-op    ::= p14-op (ws multiply ws p14-op)* (ws divide ws p14-op)?
+p14-op    ::= p15-op (ws power ws p15-op)?
+p15-op    ::= fnApply (ws prime)?
+
+fnApply   ::= primary
+
+primary   ::=
+    name | number | string | boolean | knownSet |
+    group | opCall | quantify | choose | set |
+    actionSq |
+    conjlist | disjlist |
+    recordSet | record | ternary
+
+wsname    ::= ws name ws
+name      ::= [0-9a-zA-Z_]*[a-zA-Z][0-9a-zA-Z_]*
+number    ::= [0-9]+
+string    ::= "\"" ([^"\n\r] | "\\" ["\\])* "\""
+boolean   ::= "TRUE" | "FALSE"
+knownSet  ::= numberSet | boolSet | stringSet
+numberSet ::= "Nat" | "ℕ" | "Int" | "ℤ" | "Real" | "ℝ"
+boolSet   ::= "BOOLEAN"
+stringSet ::= "STRING"
+
+group     ::= "(" ws expr ws ")"
+opCall    ::= name ws "(" expr ws ("," ws expr ws )* ")"
+quantify  ::= (forall | exists) ws bound ws ("," ws bound ws)* colon ws expr
+choose    ::= "CHOOSE" ws (name | nameTuple) ws setIn ws expr ws colon ws expr
+set       ::= "{" exprList? "}"
+actionSq  ::= "[" ws expr ws "]_" ws (name | nameTuple)
+conjlist  ::= (conj ws expr ws)+
+disjlist  ::= (disj ws expr ws)+
+recordSet ::= "[" wsname colon ws expr ws ("," wsname colon ws expr)* "]"
+record    ::= "[" wsname allMapTo ws expr ws ("," wsname allMapTo ws expr)* "]"
+ternary   ::= "IF" ws expr ws "THEN" ws expr ws "ELSE" ws expr
+
+lnot      ::= "\\lnot" | "\\neg" | "~" | "¬"
+always    ::= "[]" | "□"
+eventual  ::= "<>" | "◇"
+enabled   ::= "ENABLED"
+unchanged ::= "UNCHANGED"
+negative  ::= "-"
+powerset  ::= "SUBSET"
+flatten   ::= "UNION"
+domain    ::= "DOMAIN"
+
+implies   ::= "=>" | "⇒"
+leadsTo   ::= "~>" | "↝"
+equiv     ::= "\\equiv" | "≡"
+iff       ::= "<=>" | "⇔"
+plusArrow ::= "-+->" | "⇸"
+equal     ::= "="
+notEqual  ::= "/=" | "#" | "≠"
+lt        ::= "<"
+setMinus  ::= "\\"
+setUnion  ::= "\\union" | "\\cup" | "∪"
+setInters ::= "\\intersect" | "\\cap" | "∩"
+dotdot    ::= ".." | "‥"
+crossProd ::= "\\times" | "\\X" | "×"
+plus      ::= "+"
+mod       ::= "%"
+minus     ::= "-"
+divide    ::= "/"
+multiply  ::= "*"
+power     ::= "^"
+
+prime     ::= "'"
