@@ -1,7 +1,9 @@
 import os
 import time
 import logging
-from typing import Optional
+import json
+import uuid
+from typing import Optional, List, Dict, Any
 from ..utils.config import get_config
 
 logger = logging.getLogger(__name__)
@@ -101,8 +103,7 @@ class LLMClient:
             try:
                 from google import genai
                 self.client = genai.Client(api_key=api_key)
-                # Store thinking budget if configured, default to 32768 for GenAI
-                self.thinking_budget = api_config.get('thinking_budget', 32768)
+                self.thinking_budget = api_config.get('thinking_budget', 24000)
             except ImportError:
                 raise ImportError("google-genai package not found. Please install it with: pip install google-genai")
 
@@ -284,6 +285,93 @@ class LLMClient:
             logger.error(f"GenAI API request failed: {e}")
             raise
 
+    def _get_genai_completion_with_tools(self, messages: list, tools: list) -> dict:
+        """Get completion with tools from Google GenAI API"""
+        try:
+            from google.genai import types
+
+            prompt_text = " ".join(
+                str(msg.get("content", ""))
+                for msg in messages
+                if msg.get("content")
+            )
+
+            genai_tools = []
+            for tool in tools or []:
+                function_def = tool.get("function", {})
+                genai_tools.append(
+                    types.Tool(
+                        function_declarations=[
+                            types.FunctionDeclaration(
+                                name=function_def.get("name"),
+                                description=function_def.get("description"),
+                                parameters=function_def.get("parameters")
+                            )
+                        ]
+                    )
+                )
+
+            config = types.GenerateContentConfig(tools=genai_tools) if genai_tools else None
+
+            request_kwargs = {
+                "model": self.model,
+                "contents": prompt_text
+            }
+            if config:
+                request_kwargs["config"] = config
+
+            response = self.client.models.generate_content(**request_kwargs)
+
+            text_chunks = []
+            tool_calls: List[Dict[str, Any]] = []
+            stop_reason = None
+
+            candidates = getattr(response, "candidates", None) or []
+            if candidates:
+                candidate = candidates[0]
+                stop_reason = getattr(candidate, "finish_reason", None)
+                content = getattr(candidate, "content", None)
+                parts = getattr(content, "parts", None) or []
+
+                for part in parts:
+                    function_call = getattr(part, "function_call", None)
+                    if function_call:
+                        args = getattr(function_call, "args", {}) or {}
+                        if hasattr(args, "to_dict"):
+                            args = args.to_dict()
+                        elif not isinstance(args, dict):
+                            try:
+                                args = json.loads(args)
+                            except (TypeError, json.JSONDecodeError):
+                                args = {"raw": args}
+
+                        call_id = f"tool_call_{uuid.uuid4().hex}"
+                        tool_calls.append({
+                            "id": call_id,
+                            "name": function_call.name,
+                            "function": {
+                                "name": function_call.name,
+                                "arguments": args
+                            },
+                            "arguments": args
+                        })
+                        continue
+
+                    if hasattr(part, "text") and part.text:
+                        text_chunks.append(part.text)
+
+            text_output = "".join(text_chunks).strip()
+
+            return {
+                "text": text_output,
+                "tool_calls": tool_calls or None,
+                "stop_reason": stop_reason
+            }
+
+        except Exception as e:
+            logger.error(f"GenAI tool calling failed: {e}")
+            raise
+
     def get_completion_with_tools(self, messages: list, tools: list, max_retries: int = 3) -> dict:
         """Get LLM completion with function calling / tool use
 
@@ -304,6 +392,8 @@ class LLMClient:
             try:
                 if self.provider == 'anthropic':
                     return self._get_anthropic_completion_with_tools(messages, tools)
+                elif self.provider == 'genai':
+                    return self._get_genai_completion_with_tools(messages, tools)
                 else:
                     # OpenAI, DeepSeek support tool calling natively
                     return self._get_openai_completion_with_tools(messages, tools)
