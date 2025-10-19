@@ -39,7 +39,7 @@ class AgenticLoopBase(BaseWorkflow):
         Specify which tools are available to the agent
 
         Returns:
-            List of tool names (e.g., ['compile', 'read', 'write', 'rag'])
+            List of tool names (e.g., ['compile', 'read', 'gbnf', 'write', 'rag'])
         """
         pass
 
@@ -198,25 +198,43 @@ class AgenticLoopBase(BaseWorkflow):
         available_tools = self._get_available_tools()
 
         # Base tools description
-        tools_desc = """AVAILABLE TOOLS:
-1. tla_compile(spec_path): Check if spec compiles, get error messages
-   - IMPORTANT: Limited to {max_comp} uses total!
-   - Use wisely - compile only when you want to verify changes
+        tool_descriptions = []
 
-2. read(file_path): Read the current spec content
+        tool_descriptions.append(
+            f"""tla_compile(spec_path): Check if spec compiles, get error messages
+   - IMPORTANT: Limited to {self.max_compilations} uses total!
+   - Use wisely - compile only when you want to verify changes"""
+        )
 
-3. write(file_path, content): Write a new version of the spec
-   - OVERWRITES the entire file with provided content
-   - You MUST provide the COMPLETE file content (not a diff or patch)
-   - File must already exist""".format(max_comp=self.max_compilations)
+        if 'read' in available_tools:
+            tool_descriptions.append(
+                "read(file_path): Read the current spec content"
+            )
 
-        # Add RAG tool if available
+        if 'gbnf' in available_tools:
+            tool_descriptions.append(
+                "read_gbnf(): Return the configured TLA+ token grammar (useful for syntax fixes)\n"
+                "   - No arguments needed; uses config.yaml to choose minimized vs cleaned grammar"
+            )
+
+        if 'write' in available_tools:
+            tool_descriptions.append(
+                "write(file_path, content): Write a new version of the spec\n"
+                "   - OVERWRITES the entire file with provided content\n"
+                "   - You MUST provide the COMPLETE file content (not a diff or patch)\n"
+                "   - File must already exist"
+            )
+
         if 'rag' in available_tools:
-            tools_desc += """
+            tool_descriptions.append(
+                "rag_search(error_message, top_k): Search for similar errors and solutions\n"
+                "   - Use when you encounter unfamiliar error patterns\n"
+                "   - Returns examples of similar errors and how they were fixed"
+            )
 
-4. rag_search(error_message, top_k): Search for similar errors and solutions
-   - Use when you encounter unfamiliar error patterns
-   - Returns examples of similar errors and how they were fixed"""
+        tools_desc = "AVAILABLE TOOLS:\n" + "\n\n".join(
+            f"{idx}. {desc}" for idx, desc in enumerate(tool_descriptions, start=1)
+        )
 
         return f"""You are a TLA+ syntax expert helping to fix compilation errors.
 
@@ -304,6 +322,19 @@ Begin by checking the compilation status."""
                             }
                         },
                         "required": ["file_path", "content"]
+                    }
+                }
+            })
+
+        if 'gbnf' in available_tools:
+            schemas.append({
+                "type": "function",
+                "function": {
+                    "name": "read_gbnf",
+                    "description": "Return TLA+ Backus-Naur form grammar for correcting syntax errors",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
                     }
                 }
             })
@@ -403,6 +434,19 @@ Begin by checking the compilation status."""
                     "success": result.success,
                     "message": result.data if result.success else result.error
                 }
+
+            elif tool_name == "read_gbnf":
+                result = self.read_gbnf_grammar()
+                if result.success:
+                    return {
+                        "success": True,
+                        "grammar": result.data
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": result.error
+                    }
 
             elif tool_name == "rag_search":
                 # RAG search will be implemented by subclasses that need it

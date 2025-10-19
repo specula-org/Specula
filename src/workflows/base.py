@@ -15,6 +15,8 @@ import datetime
 from ..tools.read_tool import ReadTool
 from ..tools.write_tool import WriteTool
 from ..tools.tla_compile_tool import TLACompileTool
+from ..tools.gbnf_tool import GBNFGrammarTool
+from ..utils.config import get_config
 from ..utils.result_types import ToolResult
 
 
@@ -138,10 +140,14 @@ class BaseWorkflow(ABC):
         self.prompt_tokens = 0
         self.completion_tokens = 0
 
+        config = get_config()
+        self.gbnf_enabled = bool(config.get('gbnf.enabled', True))
+
         # Tools
         self.read_tool = ReadTool()
         self.write_tool = WriteTool()
         self.compile_tool = TLACompileTool()
+        self.gbnf_tool = GBNFGrammarTool() if self.gbnf_enabled else None
 
     def fix_spec(self, spec_path: str) -> WorkflowResult:
         """
@@ -222,6 +228,18 @@ class BaseWorkflow(ABC):
     def write_spec(self, spec_path: str, content: str) -> ToolResult:
         """Write spec with counting"""
         result = self.write_tool.run(spec_path, content)
+        self.tool_call_count += 1
+        return result
+
+    def read_gbnf_grammar(self) -> ToolResult:
+        """Return configured GBNF grammar with counting"""
+        if not self.gbnf_enabled or self.gbnf_tool is None:
+            return ToolResult(
+                success=False,
+                error="GBNF grammar tool disabled via configuration"
+            )
+
+        result = self.gbnf_tool.run()
         self.tool_call_count += 1
         return result
 

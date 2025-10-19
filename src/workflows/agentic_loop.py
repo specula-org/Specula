@@ -4,6 +4,7 @@ AgenticLoop Workflow - Function calling agent with basic tools
 This workflow gives the LLM autonomy to use basic tools:
 - tla_compile: Check compilation status
 - read: Read file content
+- read_gbnf: Fetch the configured TLA+ grammar for syntax reference
 - write: Write fixed content
 
 The agent decides when and how to use these tools.
@@ -16,7 +17,7 @@ from .agentic_loop_base import AgenticLoopBase
 
 class AgenticLoop(AgenticLoopBase):
     """
-    Agentic workflow with basic tools (compile, read, write)
+    Agentic workflow with basic tools (compile, read, read_gbnf, write)
     """
 
     def __init__(self, llm_client, max_compilations: int = 3):
@@ -27,5 +28,8 @@ class AgenticLoop(AgenticLoopBase):
         )
 
     def _get_available_tools(self) -> List[str]:
-        """Basic tool set: compile, read, write"""
-        return ['compile', 'read', 'write']
+        """Basic tool set: compile, read, optional read_gbnf, write"""
+        tools = ['compile', 'read', 'write']
+        if self.gbnf_enabled:
+            tools.append('gbnf')
+        return tools

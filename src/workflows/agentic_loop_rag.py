@@ -2,7 +2,7 @@
 AgenticLoop_RAG Workflow - Agentic workflow with RAG support
 
 This workflow extends AgenticLoop by adding RAG (Retrieval-Augmented Generation):
-- All basic tools (compile, read, write)
+- All basic tools (compile, read, optional read_gbnf, write)
 - rag_search: Search for similar errors and solutions
 
 The agent can autonomously decide when to search the knowledge base
@@ -49,8 +49,11 @@ class AgenticLoop_RAG(AgenticLoopBase):
         self.retriever = ErrorRetriever(str(kb_path))
 
     def _get_available_tools(self) -> List[str]:
-        """Extended tool set: compile, read, write, rag"""
-        return ['compile', 'read', 'write', 'rag']
+        """Extended tool set: compile, read, read_gbnf, write, rag"""
+        tools = ['compile', 'read', 'write', 'rag']
+        if self.gbnf_enabled:
+            tools.append('gbnf')
+        return tools
 
     def _execute_rag_search(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """

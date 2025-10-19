@@ -7,6 +7,7 @@ Contains all tools that agents can use.
 from .read_tool import ReadTool, read_file
 from .write_tool import WriteTool, write_file
 from .create_tool import CreateTool, create_file
+from .gbnf_tool import GBNFGrammarTool
 
 __all__ = [
     'ReadTool',
@@ -15,4 +16,5 @@ __all__ = [
     'write_file',
     'CreateTool',
     'create_file',
+    'GBNFGrammarTool',
 ]

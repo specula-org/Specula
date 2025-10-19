@@ -42,4 +42,9 @@ paths:
 # Logging Configuration
 logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR
-  format: "[%(levelname)s] %(message)s" 
+  format: "[%(levelname)s] %(message)s"
+
+# Grammar Configuration
+gbnf:
+  enabled: true        # Enable the grammar tool for syntax workflows
+  minimized: false     # When true, use token_minimized.gbnf instead of cleaned.gbnf
