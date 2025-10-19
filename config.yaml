@@ -2,10 +2,10 @@
 # LLM Model Configuration
 llm:
   # API Provider Configuration
-  provider: "anthropic"  # Options: "anthropic", "openai", "deepseek", "gemini"
-  base_url: "https://api.anthropic.com"
+  provider: "genai"  # Options: "anthropic", "openai", "deepseek", "genai"
+  # base_url: "https://api.anthropic.com"
   # Model name - please choose a model appropriate for your API access
-  model: "claude-opus-4-20250514"  # Options: claude-sonnet-4-20250514, claude-opus-4-20250514
+  model: "gemini-2.5-flash"  # Options: claude-sonnet-4-20250514, claude-opus-4-20250514
   
   # API Parameters
   max_tokens: 32000       # Maximum output tokens (claude-sonnet-4-20250514 has a limit of 64000)
