@@ -49,7 +49,8 @@ WaitQueueState == Seq(WaitEntry)
 \* expectedWakeUps: ghost set tracking threads that must observe a wake event.
 \* enqueueEpoch: ghost counter recording each thread's enqueue round.
 \* wakeEpoch: ghost counter recording successful wakes per thread.
-VARIABLES lock, waitQueue, threadState, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch
+\* upgradeEpoch: ghost counter limiting per-hold upgrade/downgrade cycles.
+VARIABLES lock, waitQueue, threadState, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch, upgradeEpoch
 
 \* ------------------------------------------------------------------------
 \* Helper predicates and initialisation
@@ -74,6 +75,7 @@ Init ==
     /\ expectedWakeUps = {}
     /\ enqueueEpoch = [t \in Threads |-> 0]
     /\ wakeEpoch = [t \in Threads |-> 0]
+    /\ upgradeEpoch = [t \in Threads |-> 0]
 
 ThreadStateOK(ts) ==
     /\ DOMAIN ts = Threads
@@ -116,6 +118,10 @@ EpochsOK(enq, wk) ==
         /\ wk[t] \in Nat
         /\ wk[t] <= enq[t]
 
+UpgradeEpochOK(upg) ==
+    /\ DOMAIN upg = Threads
+    /\ \A t \in Threads : upg[t] \in Nat
+
 TypeInvariant ==
     /\ LockStateOK(lock)
     /\ ThreadStateOK(threadState)
@@ -123,6 +129,7 @@ TypeInvariant ==
     /\ PendingWakeUpsOK(pendingWakeUps)
     /\ ExpectedWakeUpsOK(expectedWakeUps)
     /\ EpochsOK(enqueueEpoch, wakeEpoch)
+    /\ UpgradeEpochOK(upgradeEpoch)
 
 Min(S) ==
     CHOOSE m \in S : \A n \in S : m <= n
@@ -252,7 +259,7 @@ RequestRead(t) ==
         UpdateThreadState(threadState, t,
             [st EXCEPT !.phase = "ReadWaiting",
                        !.queuedOp = "None"])
-    /\ UNCHANGED << lock, waitQueue, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch >>
+    /\ UNCHANGED << lock, waitQueue, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch, upgradeEpoch >>
 
 RequestWrite(t) ==
     LET st == threadState[t] IN
@@ -262,7 +269,7 @@ RequestWrite(t) ==
         UpdateThreadState(threadState, t,
             [st EXCEPT !.phase = "WriteWaiting",
                        !.queuedOp = "None"])
-    /\ UNCHANGED << lock, waitQueue, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch >>
+    /\ UNCHANGED << lock, waitQueue, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch, upgradeEpoch >>
 
 RequestUpread(t) ==
     LET st == threadState[t] IN
@@ -272,7 +279,7 @@ RequestUpread(t) ==
         UpdateThreadState(threadState, t,
             [st EXCEPT !.phase = "UpreadWaiting",
                        !.queuedOp = "None"])
-    /\ UNCHANGED << lock, waitQueue, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch >>
+    /\ UNCHANGED << lock, waitQueue, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch, upgradeEpoch >>
 
 TryReadAcquireSuccess(t) ==
     LET st == threadState[t] IN
@@ -292,6 +299,7 @@ TryReadAcquireSuccess(t) ==
     /\ waitQueue' = waitQueue
     /\ enqueueEpoch' = enqueueEpoch
     /\ wakeEpoch' = wakeEpoch
+    /\ upgradeEpoch' = upgradeEpoch
 
 TryReadAcquireFail(t) ==
     LET st == threadState[t] IN
@@ -312,6 +320,7 @@ TryReadAcquireFail(t) ==
     /\ expectedWakeUps' = expectedWakeUps \ {t}
     /\ enqueueEpoch' = EnqueueEpochInc(enqueueEpoch, t)
     /\ wakeEpoch' = wakeEpoch
+    /\ upgradeEpoch' = upgradeEpoch
 
 ReadReleaseNonLast(t) ==
     LET st == threadState[t] IN
@@ -325,7 +334,7 @@ ReadReleaseNonLast(t) ==
             [st EXCEPT !.readHolds = st.readHolds - 1,
                        !.phase =
                         IF st.readHolds = 1 THEN "Idle" ELSE "ReadHolding"])
-    /\ UNCHANGED << waitQueue, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch >>
+    /\ UNCHANGED << waitQueue, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch, upgradeEpoch >>
 
 ReadReleaseLast(t) ==
     LET st == threadState[t] IN
@@ -346,6 +355,7 @@ ReadReleaseLast(t) ==
             IF res.found THEN expectedWakeUps \cup wset ELSE expectedWakeUps
         /\ enqueueEpoch' = enqueueEpoch
         /\ wakeEpoch' = WakeEpochUpdate(wakeEpoch, wset)
+        /\ upgradeEpoch' = upgradeEpoch
         /\ threadState' =
             IF res.found
                 THEN UpdateThreadState(
@@ -378,6 +388,7 @@ TryWriteAcquireSuccess(t) ==
     /\ waitQueue' = waitQueue
     /\ enqueueEpoch' = enqueueEpoch
     /\ wakeEpoch' = wakeEpoch
+    /\ upgradeEpoch' = upgradeEpoch
 
 TryWriteAcquireFail(t) ==
     LET st == threadState[t] IN
@@ -399,6 +410,7 @@ TryWriteAcquireFail(t) ==
     /\ expectedWakeUps' = expectedWakeUps \ {t}
     /\ enqueueEpoch' = EnqueueEpochInc(enqueueEpoch, t)
     /\ wakeEpoch' = wakeEpoch
+    /\ upgradeEpoch' = upgradeEpoch
 
 WriteRelease(t) ==
     LET st == threadState[t] IN
@@ -418,6 +430,7 @@ WriteRelease(t) ==
             UpdateThreadState(threadState, t,
                 [st EXCEPT !.phase = "Idle"]),
             targets)
+    /\ upgradeEpoch' = [upgradeEpoch EXCEPT ![t] = 0]
 
 TryUpreadAcquireSuccess(t) ==
     LET st == threadState[t] IN
@@ -435,6 +448,7 @@ TryUpreadAcquireSuccess(t) ==
     /\ waitQueue' = waitQueue
     /\ enqueueEpoch' = enqueueEpoch
     /\ wakeEpoch' = wakeEpoch
+    /\ upgradeEpoch' = [upgradeEpoch EXCEPT ![t] = 0]
 
 TryUpreadAcquireFail(t) ==
     LET st == threadState[t] IN
@@ -454,6 +468,7 @@ TryUpreadAcquireFail(t) ==
     /\ expectedWakeUps' = expectedWakeUps \ {t}
     /\ enqueueEpoch' = EnqueueEpochInc(enqueueEpoch, t)
     /\ wakeEpoch' = wakeEpoch
+    /\ upgradeEpoch' = upgradeEpoch
 
 
     \* LET awakenAll
@@ -488,6 +503,7 @@ UpreadRelease(t) ==
                     targets)
             ELSE UpdateThreadState(threadState, t,
                     [st EXCEPT !.phase = "Idle"])
+    /\ upgradeEpoch' = [upgradeEpoch EXCEPT ![t] = 0]
 
 UpgradeStart(t) ==
     LET st == threadState[t] IN
@@ -499,7 +515,7 @@ UpgradeStart(t) ==
     /\ threadState' =
         UpdateThreadState(threadState, t,
             [st EXCEPT !.phase = "UpgradeSpinning"])
-    /\ UNCHANGED << waitQueue, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch >>
+    /\ UNCHANGED << waitQueue, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch, upgradeEpoch >>
 
 UpgradeCommit(t) ==
     LET st == threadState[t] IN
@@ -521,13 +537,14 @@ UpgradeCommit(t) ==
     /\ waitQueue' = waitQueue
     /\ enqueueEpoch' = enqueueEpoch
     /\ wakeEpoch' = wakeEpoch
+    /\ upgradeEpoch' = [upgradeEpoch EXCEPT ![t] = upgradeEpoch[t] + 1]
 
 UpgradeSpinStutter(t) ==
     LET st == threadState[t] IN
     /\ t \in Threads
     /\ st.phase = "UpgradeSpinning"
     /\ (lock.readerCount # 0 \/ lock.writerOwner # NoThread)
-    /\ UNCHANGED << lock, waitQueue, threadState, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch >>
+    /\ UNCHANGED << lock, waitQueue, threadState, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch, upgradeEpoch >>
 
 DowngradeCommit(t) ==
     LET st == threadState[t] IN
@@ -549,6 +566,7 @@ DowngradeCommit(t) ==
             UpdateThreadState(threadState, t,
                 [st EXCEPT !.phase = "UpreadHolding"]),
             targets)
+    /\ upgradeEpoch' = upgradeEpoch
 
 DeliverWake(t) ==
     LET st == threadState[t] IN
@@ -559,10 +577,10 @@ DeliverWake(t) ==
             [st EXCEPT !.queuedOp = "None"])
     /\ pendingWakeUps' = pendingWakeUps \ {t}
     /\ expectedWakeUps' = expectedWakeUps \ {t}
-    /\ UNCHANGED << lock, waitQueue, enqueueEpoch, wakeEpoch >>
+    /\ UNCHANGED << lock, waitQueue, enqueueEpoch, wakeEpoch, upgradeEpoch >>
 
 
-vars == <<lock, waitQueue, threadState, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch>>
+vars == <<lock, waitQueue, threadState, pendingWakeUps, expectedWakeUps, enqueueEpoch, wakeEpoch, upgradeEpoch>>
 
 Next ==
     \E t \in Threads :
@@ -733,6 +751,9 @@ DowngradeUpgradeConstraint ==
         /\ threadState[t].queuedOp \in {"None", "Write"}
     /\ \A e \in SeqToSet(waitQueue) : e.op = "Write"
 
+SingleUpgradeCycleConstraint ==
+    \A t \in Threads : upgradeEpoch[t] <= 1
+
 HasWaiter ==
     waitQueue # << >>
     \/ pendingWakeUps # {}
@@ -757,6 +778,15 @@ AlwaysEventuallyReleases ==
     \A t \in Threads :
         [] (threadState[t].phase \in HoldingPhases
             => <> (threadState[t].phase = "Idle"))
+
+EventuallyIdle ==
+    <> (lock.writerOwner = NoThread
+        /\ lock.upgradableOwner = NoThread
+        /\ lock.upgradingOwner = NoThread
+        /\ lock.readerCount = 0
+        /\ waitQueue = << >>
+        /\ pendingWakeUps = {}
+        /\ \A t \in Threads : upgradeEpoch[t] = 0)
 
 
 =============================================================================
