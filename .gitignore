@@ -6,10 +6,9 @@
 .idea/
 .env
 
-# Build output
-results/
+# Build outpu
 target/
-
+experiments/syntax_phase/results/
 # Python
 __pycache__/
 *.pyc
