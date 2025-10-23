@@ -591,6 +591,10 @@ Progress(t) ==
     \/ TryUpreadAcquireSuccess(t)
     \/ UpgradeCommit(t)
     \/ DowngradeCommit(t)
+    \/ ReadReleaseNonLast(t)
+    \/ ReadReleaseLast(t)
+    \/ WriteRelease(t)
+    \/ UpreadRelease(t)
     \/ DeliverWake(t)
 
 Fairness ==
@@ -729,7 +733,30 @@ DowngradeUpgradeConstraint ==
         /\ threadState[t].queuedOp \in {"None", "Write"}
     /\ \A e \in SeqToSet(waitQueue) : e.op = "Write"
 
-EventuallyIdle ==
-    <> (lock.writerOwner = NoThread /\ lock.upgradableOwner = NoThread /\ lock.upgradingOwner = NoThread /\ lock.readerCount = 0)
+HasWaiter ==
+    waitQueue # << >>
+    \/ pendingWakeUps # {}
+    \/ \E t \in Threads :
+            threadState[t].phase \in {"ReadWaiting", "WriteWaiting", "UpreadWaiting", "UpgradeSpinning"}
+
+HasOwnerOrWake ==
+    lock.writerOwner # NoThread
+    \/ lock.readerCount > 0
+    \/ lock.upgradableOwner # NoThread
+    \/ pendingWakeUps # {}
+
+RWDeadAndLivelockFree ==
+    HasWaiter ~> HasOwnerOrWake
+
+ExpectedWakeLiveness ==
+    \A t \in Threads : (t \in expectedWakeUps) ~> (t \notin expectedWakeUps)
+
+HoldingPhases == {"ReadHolding", "WriteHolding", "UpreadHolding", "DowngradeInFlight", "UpgradeSpinning"}
+
+AlwaysEventuallyReleases ==
+    \A t \in Threads :
+        [] (threadState[t].phase \in HoldingPhases
+            => <> (threadState[t].phase = "Idle"))
+
 
 =============================================================================
