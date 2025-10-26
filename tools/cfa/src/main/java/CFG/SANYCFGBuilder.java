@@ -684,45 +684,124 @@ public class SANYCFGBuilder {
      */
     private CFGStmtNode visitJunctionItem(SyntaxTreeNode itemNode) {
         TreeNode[] children = itemNode.heirs();
-        if (children == null || children.length < 2) return null;
-        
-        // First child is the operator (/\\ or \\/), second is the content
-        TreeNode contentNode = children[1];
-        
-        if (contentNode instanceof SyntaxTreeNode) {
-            SyntaxTreeNode contentStn = (SyntaxTreeNode) contentNode;
-            
-            // Check if the content is itself a junction list (recursive case)
-            if (contentStn.getKind() == N_ConjList) {
-                return visitConjunctionList(contentStn);
-            } else if (contentStn.getKind() == N_DisjList) {
-                return visitDisjunctionList(contentStn);
-            } else {
-                // Base case: might be a complex expression (IF, CASE, etc.) or simple expression
-                // Note: Operator (/\ or \/) will be determined by printer based on CFG structure
-                
-                // First try to process as complex expression (IF, CASE, LET, etc.)
-                CFGStmtNode complexResult = visitExpressionNode(contentStn);
-                if (complexResult != null) {
-                    // Return complex result without operator prefix - printer will decide
-                    return complexResult;
-                } else {
-                    // Fallback: treat as simple expression - store only pure content
-                    String content = reconstructExpression(contentStn);
-                    return new CFGStmtNode(indentationLevel, content, null, CFGStmtNode.StmtType.NORMAL);
+        if (children == null || children.length == 0) return null;
+
+        int separatorIndex = findLabelSeparator(children);
+        String labelText = null;
+        List<SyntaxTreeNode> candidateExprNodes = new ArrayList<>();
+
+        if (separatorIndex >= 0) {
+            labelText = normalizeLabelText(reconstructRange(children, 0, separatorIndex));
+            for (int i = separatorIndex + 1; i < children.length; i++) {
+                if (children[i] instanceof SyntaxTreeNode) {
+                    candidateExprNodes.add((SyntaxTreeNode) children[i]);
                 }
             }
+        } else {
+            // Original behaviour for unlabeled items
+            if (children.length < 2) return null;
+
+            TreeNode contentNode = children[1];
+            if (contentNode instanceof SyntaxTreeNode) {
+                SyntaxTreeNode contentStn = (SyntaxTreeNode) contentNode;
+
+                if (contentStn.getKind() == N_ConjList) {
+                    return visitConjunctionList(contentStn);
+                } else if (contentStn.getKind() == N_DisjList) {
+                    return visitDisjunctionList(contentStn);
+                } else {
+                    CFGStmtNode complexResult = visitExpressionNode(contentStn);
+                    if (complexResult != null) {
+                        return complexResult;
+                    } else {
+                        String content = reconstructExpression(contentStn);
+                        return new CFGStmtNode(indentationLevel, content, null, CFGStmtNode.StmtType.NORMAL);
+                    }
+                }
+            }
+            return null;
         }
-        
-        return null;
+
+        CFGStmtNode result = null;
+        for (SyntaxTreeNode candidate : candidateExprNodes) {
+            if (candidate.getKind() == N_ConjList) {
+                result = visitConjunctionList(candidate);
+            } else if (candidate.getKind() == N_DisjList) {
+                result = visitDisjunctionList(candidate);
+            } else {
+                result = visitExpressionNode(candidate);
+            }
+            if (result != null) {
+                break;
+            }
+        }
+
+        if (result == null) {
+            // Fallback: preserve textual content and warn for future improvement
+            String rawText = reconstructExpression(itemNode);
+            System.err.println("WARNING: Falling back to raw text for junction item: \"" + rawText + "\"");
+            return new CFGStmtNode(indentationLevel, rawText, itemNode, CFGStmtNode.StmtType.NORMAL);
+        }
+
+        if (labelText != null) {
+            result.setLabel(labelText);
+        }
+
+        return result;
     }
     
     private CFGStmtNode visitConjunctionItem(SyntaxTreeNode conjItemNode) {
         return visitJunctionItem(conjItemNode);
     }
-    
+
     private CFGStmtNode visitDisjunctionItem(SyntaxTreeNode disjItemNode) {
         return visitJunctionItem(disjItemNode);
+    }
+
+    private int findLabelSeparator(TreeNode[] children) {
+        for (int i = 0; i < children.length; i++) {
+            if (isLabelSeparator(children[i])) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private boolean isLabelSeparator(TreeNode node) {
+        if (node == null) {
+            return false;
+        }
+        String text = node.toString();
+        return "==".equals(text);
+    }
+
+    private String normalizeLabelText(String label) {
+        if (label == null) {
+            return null;
+        }
+        String trimmed = label.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String reconstructRange(TreeNode[] nodes, int startInclusive, int endExclusive) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = startInclusive; i < endExclusive && i < nodes.length; i++) {
+            TreeNode node = nodes[i];
+            String fragment;
+            if (node instanceof SyntaxTreeNode) {
+                fragment = reconstructExpression((SyntaxTreeNode) node);
+            } else {
+                fragment = node != null ? node.toString() : "";
+            }
+            fragment = fragment == null ? "" : fragment.trim();
+            if (!fragment.isEmpty()) {
+                if (builder.length() > 0) {
+                    builder.append(" ");
+                }
+                builder.append(fragment);
+            }
+        }
+        return builder.toString();
     }
     
     
