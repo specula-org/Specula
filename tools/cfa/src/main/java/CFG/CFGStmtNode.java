@@ -18,6 +18,7 @@ public class CFGStmtNode {
     public Set<String> OutVar;
     private List<CFGStmtNode> children;
     private StmtType type;
+    private String label;
 
     // New field for LET statements
     private List<String> temporaryVariables; // Stores names of variables declared in a LET statement
@@ -49,6 +50,7 @@ public class CFGStmtNode {
         // Initialize temporaryVariables as an empty list for all node types.
         // It will only be populated for LET nodes.
         this.temporaryVariables = new ArrayList<>();
+        this.label = null;
     }
 
     // Getters
@@ -66,6 +68,19 @@ public class CFGStmtNode {
 
     public StmtType getType() {
         return type;
+    }
+
+    public String getLabel() {
+        return label;
+    }
+
+    public void setLabel(String label) {
+        if (label == null) {
+            this.label = null;
+        } else {
+            String trimmed = label.trim();
+            this.label = trimmed.isEmpty() ? null : trimmed;
+        }
     }
 
     // Getter for temporary variables
@@ -156,6 +171,9 @@ public class CFGStmtNode {
         sb.append(isLast ? "└── " : "├── ");
         sb.append(node.content);
 
+        if (node.label != null) {
+            sb.append(" [LABEL: ").append(node.label).append("]");
+        }
         // Optional: Display temporary variables for LET nodes
         if (node.getType() == StmtType.LET && !node.temporaryVariables.isEmpty()) {
             sb.append(" [DECLARES: ");

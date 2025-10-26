@@ -38,19 +38,19 @@ public class CFGNodeToStr {
     }
 
     private static String NORMALCFGStmtNodeToStr(CFGStmtNode node){
-        return node.getContent();
+        return applyLabel(node, node.getContent());
     }
 
     private static String IF_ELSECFGStmtNodeToStr(CFGStmtNode node){
-        return node.getContent();
+        return applyLabel(node, node.getContent());
     }
 
     private static String CALLCFGStmtNodeToStr(CFGStmtNode node){
-        return node.getContent();
+        return applyLabel(node, node.getContent());
     }   
 
     private static String LETCFGStmtNodeToStr(CFGStmtNode node){
-        return node.getContent();
+        return applyLabel(node, node.getContent());
     }
 
     private static String ROOTCFGStmtNodeToStr(CFGStmtNode node){
@@ -62,30 +62,49 @@ public class CFGNodeToStr {
     }
     
     private static String UNCHANGEDCFGStmtNodeToStr(CFGStmtNode node){
-        return node.getContent();
+        return applyLabel(node, node.getContent());
     }
     
     private static String CASECFGStmtNodeToStr(CFGStmtNode node){
-        return node.getContent();
+        return applyLabel(node, node.getContent());
     }
     
     private static String CHOOSECFGStmtNodeToStr(CFGStmtNode node){
-        return node.getContent();
+        return applyLabel(node, node.getContent());
     }
     
     private static String EXISTSCFGStmtNodeToStr(CFGStmtNode node){
-        return node.getContent();
+        return applyLabel(node, node.getContent());
     }
     
     private static String FORALLCFGStmtNodeToStr(CFGStmtNode node){
-        return node.getContent();
+        return applyLabel(node, node.getContent());
     }
     
     private static String CASE_ARMCFGStmtNodeToStr(CFGStmtNode node){
-        return node.getContent();
+        return applyLabel(node, node.getContent());
     }
     
     private static String DISJUNCTIONCFGStmtNodeToStr(CFGStmtNode node){
         return ""; // DISJUNCTION nodes don't have content, only branches
+    }
+
+    private static String applyLabel(CFGStmtNode node, String baseContent) {
+        String content = baseContent == null ? "" : baseContent.trim();
+        String label = node.getLabel();
+        if (label == null || label.isEmpty()) {
+            return content;
+        }
+
+        String prefix = label + " ==";
+        if (content.startsWith(prefix)) {
+            return content;
+        }
+
+        if (content.isEmpty()) {
+            return prefix;
+        }
+
+        return prefix + " " + content;
     }
 }
