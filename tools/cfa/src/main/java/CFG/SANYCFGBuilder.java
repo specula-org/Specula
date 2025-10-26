@@ -176,7 +176,8 @@ public class SANYCFGBuilder {
         boolean foundEquals = false;
         for (TreeNode child : children) {
             // Skip until we find the == token or equivalent
-            if (child.toString().equals("=") || child.toString().equals("==")) {
+            String tokenText = child.toString();
+            if ("=".equals(tokenText) || "==".equals(tokenText) || "≜".equals(tokenText)) {
                 foundEquals = true;
                 continue;
             }
