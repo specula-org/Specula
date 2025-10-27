@@ -66,6 +66,10 @@ public class SANYCFGBuilder {
     private static final int N_PrefixExpr = 399;
     private static final int N_PostfixExpr = 395;
     private static final int N_GenPrefixOp = 362;
+    private static final int N_ParamDeclaration = 392;
+    private static final int N_ConsDecl = 342;
+    private static final int N_IdentDecl = 363;
+    private static final int N_FunctionDefinition = 356;
     
     private static final String IMAGE_BEGIN_MODULE = "N_BeginModule";
     private static final String IMAGE_END_MODULE = "N_EndModule";
@@ -76,7 +80,16 @@ public class SANYCFGBuilder {
         "N_UseOrHide",
         "N_Instance",
         "N_NonLocalInstance",
-        "N_StructOp"
+        "N_StructOp",
+        "N_TempDecl"
+    ));
+
+    private static final Set<String> DECLARATION_PRESERVE_IMAGES = new HashSet<>(Arrays.asList(
+        "N_AssumeDecl",
+        "N_Assumption",
+        "N_ActDecl",
+        "N_Recursive",
+        "N_FunctionDefinition"
     ));
 
     private static final Set<String> PROOF_TOLERATED_IMAGES = new HashSet<>(Arrays.asList(
@@ -162,6 +175,10 @@ public class SANYCFGBuilder {
             } else if (image != null && PROOF_TOLERATED_IMAGES.contains(image)) {
                 ensureNoRejectedProofNodes(stn);
                 modulePrelude.add(extractSourceFragment(stn));
+            } else if ("N_ParamDeclaration".equals(image)) {
+                handleParamDeclaration(stn);
+            } else if (image != null && DECLARATION_PRESERVE_IMAGES.contains(image)) {
+                modulePrelude.add(extractSourceFragment(stn));
             } else if (stn.getKind() == N_Body) {
                 visitBody(stn);
             } else if (image != null && PROOF_REJECT_IMAGES.contains(image)) {
@@ -193,6 +210,14 @@ public class SANYCFGBuilder {
                 }
                 if (image != null && PROOF_REJECT_IMAGES.contains(image)) {
                     throw new UnsupportedOperationException("Proof constructs are not supported: " + image);
+                }
+                if ("N_ParamDeclaration".equals(image)) {
+                    handleParamDeclaration(stn);
+                    continue;
+                }
+                if (image != null && DECLARATION_PRESERVE_IMAGES.contains(image)) {
+                    modulePrelude.add(extractSourceFragment(stn));
+                    continue;
                 }
                 
                 switch (stn.getKind()) {
@@ -279,6 +304,51 @@ public class SANYCFGBuilder {
                 }
             }
         }
+    }
+
+    private void handleParamDeclaration(SyntaxTreeNode paramDeclNode) {
+        modulePrelude.add(extractSourceFragment(paramDeclNode));
+        collectConstantsFromParamDeclaration(paramDeclNode);
+    }
+
+    private void collectConstantsFromParamDeclaration(SyntaxTreeNode paramDeclNode) {
+        Deque<SyntaxTreeNode> stack = new ArrayDeque<>();
+        stack.push(paramDeclNode);
+        while (!stack.isEmpty()) {
+            SyntaxTreeNode current = stack.pop();
+            if (current.getKind() == N_IdentDecl) {
+                if (!identDeclHasPlaceholder(current)) {
+                    String constantName = extractFirstIdentifier(current);
+                    if (constantName != null && !constantName.isEmpty() && !constants.contains(constantName)) {
+                        constants.add(constantName);
+                    }
+                }
+            }
+            TreeNode[] children = current.heirs();
+            if (children != null) {
+                for (TreeNode child : children) {
+                    if (child instanceof SyntaxTreeNode) {
+                        stack.push((SyntaxTreeNode) child);
+                    }
+                }
+            }
+        }
+    }
+
+    private boolean identDeclHasPlaceholder(SyntaxTreeNode identDecl) {
+        TreeNode[] children = identDecl.heirs();
+        if (children == null) {
+            return false;
+        }
+        for (TreeNode child : children) {
+            if (child instanceof SyntaxTreeNode) {
+                String image = ((SyntaxTreeNode) child).getImage();
+                if ("(".equals(image) || ")".equals(image) || "_".equals(image)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
     
     /**
