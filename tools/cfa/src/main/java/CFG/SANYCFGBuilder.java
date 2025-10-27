@@ -78,6 +78,34 @@ public class SANYCFGBuilder {
         "N_NonLocalInstance",
         "N_StructOp"
     ));
+
+    private static final Set<String> PROOF_TOLERATED_IMAGES = new HashSet<>(Arrays.asList(
+        "N_Theorem",
+        "N_NumberedAssumeProve",
+        "N_AssumeProve"
+    ));
+
+    private static final Set<String> PROOF_REJECT_IMAGES = new HashSet<>(Arrays.asList(
+        "N_Proof",
+        "N_ProofStep",
+        "N_ProofStatement",
+        "N_ProofLet",
+        "N_ProofName",
+        "N_InnerProof",
+        "N_LeafProof",
+        "N_TerminalProof",
+        "N_QEDStep",
+        "N_DefStep",
+        "N_HaveStep",
+        "N_TakeStep",
+        "N_WitnessStep",
+        "N_PickStep",
+        "N_CaseStep",
+        "N_NumerableStep",
+        "N_AssertStep",
+        "N_CaseStatement",
+        "N_ChooseStatement"
+    ));
     
     public List<String> getVariables() { return variables; }
     public List<String> getConstants() { return constants; }
@@ -131,8 +159,13 @@ public class SANYCFGBuilder {
                 modulePostlude.add(extractSourceFragment(stn));
             } else if (image != null && MODULE_DIRECTIVE_IMAGES.contains(image)) {
                 modulePrelude.add(extractSourceFragment(stn));
+            } else if (image != null && PROOF_TOLERATED_IMAGES.contains(image)) {
+                ensureNoRejectedProofNodes(stn);
+                modulePrelude.add(extractSourceFragment(stn));
             } else if (stn.getKind() == N_Body) {
                 visitBody(stn);
+            } else if (image != null && PROOF_REJECT_IMAGES.contains(image)) {
+                throw new UnsupportedOperationException("Proof constructs are not supported: " + image);
             }
         }
     }
@@ -152,6 +185,14 @@ public class SANYCFGBuilder {
                 if (image != null && MODULE_DIRECTIVE_IMAGES.contains(image)) {
                     modulePrelude.add(extractSourceFragment(stn));
                     continue;
+                }
+                if (image != null && PROOF_TOLERATED_IMAGES.contains(image)) {
+                    ensureNoRejectedProofNodes(stn);
+                    modulePrelude.add(extractSourceFragment(stn));
+                    continue;
+                }
+                if (image != null && PROOF_REJECT_IMAGES.contains(image)) {
+                    throw new UnsupportedOperationException("Proof constructs are not supported: " + image);
                 }
                 
                 switch (stn.getKind()) {
@@ -211,6 +252,33 @@ public class SANYCFGBuilder {
         endIdx = Math.max(startIdx, Math.min(originalSource.length(), endIdx));
 
         return originalSource.substring(startIdx, endIdx);
+    }
+
+    private void ensureNoRejectedProofNodes(SyntaxTreeNode node) {
+        if (node == null) {
+            return;
+        }
+        Deque<TreeNode> stack = new ArrayDeque<>();
+        stack.push(node);
+        while (!stack.isEmpty()) {
+            TreeNode current = stack.pop();
+            if (!(current instanceof SyntaxTreeNode)) {
+                continue;
+            }
+            SyntaxTreeNode stn = (SyntaxTreeNode) current;
+            String image = stn.getImage();
+            if (image != null && PROOF_REJECT_IMAGES.contains(image)) {
+                throw new UnsupportedOperationException("Proof constructs are not supported: " + image);
+            }
+            TreeNode[] children = stn.heirs();
+            if (children != null) {
+                for (TreeNode child : children) {
+                    if (child != null) {
+                        stack.push(child);
+                    }
+                }
+            }
+        }
     }
     
     /**
