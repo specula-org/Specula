@@ -4,6 +4,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import tla2sany.st.Location;
 import tla2sany.st.TreeNode;
 import tla2sany.parser.SyntaxTreeNode;
 import tla2sany.semantic.*;
@@ -18,6 +19,11 @@ public class SANYCFGBuilder {
     private List<String> variables = new ArrayList<>();
     private List<CFGFuncNode> cfgFuncNodes = new ArrayList<>();
     private int indentationLevel = 0;
+    private String originalSource;
+    private int[] lineOffsets;
+    private List<String> modulePrelude = new ArrayList<>();
+    private List<String> modulePostlude = new ArrayList<>();
+    private String moduleName;
     
     // SANY AST node kind constants
     private static final int N_Module = 382;
@@ -61,14 +67,45 @@ public class SANYCFGBuilder {
     private static final int N_PostfixExpr = 395;
     private static final int N_GenPrefixOp = 362;
     
+    private static final String IMAGE_BEGIN_MODULE = "N_BeginModule";
+    private static final String IMAGE_END_MODULE = "N_EndModule";
+    private static final Set<String> MODULE_DIRECTIVE_IMAGES = new HashSet<>(Arrays.asList(
+        "N_Extends",
+        "N_ModuleDefinition",
+        "N_NewSymb",
+        "N_UseOrHide",
+        "N_Instance",
+        "N_NonLocalInstance",
+        "N_StructOp"
+    ));
+    
     public List<String> getVariables() { return variables; }
     public List<String> getConstants() { return constants; }
     public List<CFGFuncNode> getCfgFuncNodes() { return cfgFuncNodes; }
+    public List<String> getModulePrelude() { return Collections.unmodifiableList(modulePrelude); }
+    public List<String> getModulePostlude() { return Collections.unmodifiableList(modulePostlude); }
+    public String getModuleName() { return moduleName; }
     
     /**
      * Build CFG from SANY AST root node
      */
-    public void buildCFG(TreeNode rootNode) {
+    public void buildCFG(ModuleNode moduleNode, String sourceText) {
+        // Reset state
+        constants = new ArrayList<>();
+        variables = new ArrayList<>();
+        cfgFuncNodes = new ArrayList<>();
+        modulePrelude = new ArrayList<>();
+        modulePostlude = new ArrayList<>();
+        indentationLevel = 0;
+        moduleName = moduleNode != null ? moduleNode.getName().toString() : null;
+        originalSource = sourceText;
+        lineOffsets = computeLineOffsets(sourceText);
+
+        if (moduleNode == null) {
+            return;
+        }
+
+        TreeNode rootNode = moduleNode.getTreeNode();
         if (rootNode instanceof SyntaxTreeNode) {
             SyntaxTreeNode stn = (SyntaxTreeNode) rootNode;
             if (stn.getKind() == N_Module) {
@@ -82,11 +119,20 @@ public class SANYCFGBuilder {
         if (children == null) return;
         
         for (TreeNode child : children) {
-            if (child instanceof SyntaxTreeNode) {
-                SyntaxTreeNode stn = (SyntaxTreeNode) child;
-                if (stn.getKind() == N_Body) {
-                    visitBody(stn);
-                }
+            if (!(child instanceof SyntaxTreeNode)) {
+                continue;
+            }
+            SyntaxTreeNode stn = (SyntaxTreeNode) child;
+            String image = stn.getImage();
+
+            if (IMAGE_BEGIN_MODULE.equals(image)) {
+                modulePrelude.add(extractSourceFragment(stn));
+            } else if (IMAGE_END_MODULE.equals(image)) {
+                modulePostlude.add(extractSourceFragment(stn));
+            } else if (image != null && MODULE_DIRECTIVE_IMAGES.contains(image)) {
+                modulePrelude.add(extractSourceFragment(stn));
+            } else if (stn.getKind() == N_Body) {
+                visitBody(stn);
             }
         }
     }
@@ -102,6 +148,12 @@ public class SANYCFGBuilder {
             if (child instanceof SyntaxTreeNode) {
                 SyntaxTreeNode stn = (SyntaxTreeNode) child;
                 
+                String image = stn.getImage();
+                if (image != null && MODULE_DIRECTIVE_IMAGES.contains(image)) {
+                    modulePrelude.add(extractSourceFragment(stn));
+                    continue;
+                }
+                
                 switch (stn.getKind()) {
                     case N_VariableDeclaration:
                         visitVariableDeclaration(stn);
@@ -116,6 +168,49 @@ public class SANYCFGBuilder {
                 }
             }
         }
+    }
+    
+    private int[] computeLineOffsets(String source) {
+        if (source == null) {
+            return null;
+        }
+        List<Integer> offsets = new ArrayList<>();
+        offsets.add(0);
+        int length = source.length();
+        for (int i = 0; i < length; i++) {
+            if (source.charAt(i) == '\n') {
+                offsets.add(i + 1);
+            }
+        }
+        if (offsets.isEmpty() || offsets.get(offsets.size() - 1) != length) {
+            offsets.add(length);
+        }
+        return offsets.stream().mapToInt(Integer::intValue).toArray();
+    }
+
+    private String extractSourceFragment(SyntaxTreeNode node) {
+        if (node == null) {
+            return "";
+        }
+        if (originalSource == null || lineOffsets == null) {
+            return node.toString();
+        }
+        Location location = node.getLocation();
+        if (location == null) {
+            return node.toString();
+        }
+
+        int beginLine = Math.max(1, location.beginLine());
+        int endLine = Math.max(beginLine, location.endLine());
+        int lastLineIndex = Math.max(0, lineOffsets.length - 2);
+
+        int startIdx = lineOffsets[Math.min(lastLineIndex, Math.max(0, beginLine - 1))];
+        int endIdx = lineOffsets[Math.min(lineOffsets.length - 1, Math.max(0, endLine))];
+
+        startIdx = Math.max(0, Math.min(originalSource.length(), startIdx));
+        endIdx = Math.max(startIdx, Math.min(originalSource.length(), endIdx));
+
+        return originalSource.substring(startIdx, endIdx);
     }
     
     /**
