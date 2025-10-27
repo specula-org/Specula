@@ -105,7 +105,7 @@
                     <manifest>
                         <!-- IMPORTANT: Replace 'parser.CfaTransformerCli' with the -->
                         <!-- fully qualified name of your main class if it's different. -->
-                        <mainClass>parser.CfaTransformerCli</mainClass>
+                        <mainClass>CFG.SANYTransformerCli</mainClass>
                     </manifest>
                 </archive>
                 <descriptorRefs>

@@ -327,63 +327,7 @@ public class CFGVarChangeAnalyzer {
         intersection.retainAll(declVar);
         // Discuss by cases:
         if (flag) {
-            // If already cut, need to cut this function
-            int id = funcNode.getIDandADD();
-            CFGFuncNode newFuncNode = new CFGFuncNode(funcNode.getFuncName() + "_" + id, funcNode.getParameters(), id);
-            CFGStmtNode root = new CFGStmtNode(0, "root", null, CFGStmtNode.StmtType.ROOT);
-            newFuncNode.setRoot(root);
-            CFGStmtNode start_stmt = null;
-            if (!stmt.getChildren().isEmpty()){
-                // Use the children of stmt as the first node of the new function, and copy all subsequent nodes to form a new function
-                start_stmt = stmt.getChildren().get(0).copyTree(callGraph, newFuncNode);
-            } else {
-                start_stmt = new CFGStmtNode(1, "/\\ UNCHANGED <<vars>> ", null, CFGStmtNode.StmtType.NORMAL);
-            }
-            root.addChild(start_stmt);
-
-            Set<CFGStmtNode> parents = funcNode.getAllparents(stmt);
-            List<CFGFuncNode> targetFunc = callGraph.getTargetFunc(stmt);
-            CFGStmtNode pc_jump = null;
-            if (targetFunc.size() == 1){
-                pc_jump = new CFGStmtNode(stmt.getIndentation(), "/\\ pc' = \"" + targetFunc.get(0).getFuncName() + "\"", null, CFGStmtNode.StmtType.NORMAL);
-            } else {
-                // Error: temporarily not supported
-                throw new RuntimeException("Multi-function call variable modification conflict: " + targetFunc);
-            }
-            // pc' = name
-            // info' = [args |-> <<>>, temp |-> [temp1 |-> temp1, temp2 |-> temp2, ...]]
-            // stack'= Append(stack, [backsite |-> newfuncname, args |-> <<>>, info |-> info'])
-            pc_jump.InVar = new HashSet<>(stmt.InVar);
-            pc_jump.OutVar = new HashSet<>(stmt.InVar);
-            pc_jump.OutVar.add("pc");
-            // Add pc_jump
-            for (CFGStmtNode parent : parents){
-                parent.deleteChild(stmt);
-                parent.addChild(pc_jump);
-                parentMap.computeIfAbsent(pc_jump, k -> new ArrayList<>()).add(parent);
-            }
-            updateNewFuncCallEdge(newFuncNode, root);
-            // New InVar OutVar is cleared
-            resetInOutVar(root);
-            // Generated function also needs to be analyzed, added to subsequent Worklist
-            analyzeFuncSA(newFuncNode);
-            WorkList.add(newFuncNode);
-            cuttedFunc.add(newFuncNode);
-            callGraph.addFuncNode(newFuncNode);
-            CFGStmtNode info_node = new CFGStmtNode(stmt.getIndentation(), setInfoStr(funcNode.getParameters(), tempVarsThisFunc), null, CFGStmtNode.StmtType.NORMAL);
-            info_node.InVar = new HashSet<>(pc_jump.OutVar);
-            info_node.OutVar = new HashSet<>(pc_jump.OutVar);
-            info_node.OutVar.add("info");
-            pc_jump.addChild(info_node);
-            parentMap.computeIfAbsent(info_node, k -> new ArrayList<>()).add(pc_jump);
-            CFGStmtNode stack_node = new CFGStmtNode(stmt.getIndentation(), updateStackStr(newFuncNode, stmt.getContent()), null, CFGStmtNode.StmtType.NORMAL);
-            stack_node.InVar = new HashSet<>(info_node.OutVar);
-            stack_node.OutVar = new HashSet<>(info_node.OutVar);
-            stack_node.OutVar.add("stack");
-            pc_jump.addChild(stack_node);
-            parentMap.computeIfAbsent(stack_node, k -> new ArrayList<>()).add(info_node);
-            // Change temporary variables in new function to variables in info
-            updateNewFuncTempVars(newFuncNode, tempVarsThisFunc);
+            throw new UnsupportedOperationException("Process cutting requires CFGStmtNode.copyTree implementation");
         } else {
             // If not cut, no conflict, no need to cut
             // If conflict, still need to cut
@@ -431,8 +375,8 @@ public class CFGVarChangeAnalyzer {
                 newFuncNode.setRoot(root);
                 // Cut
                 Set<CFGStmtNode> parents = funcNode.getAllparents(stmt);
-                CFGStmtNode pc_stmt_copy = stmt.copyTree(callGraph, newFuncNode);
-                root.addChild(pc_stmt_copy);
+                throw new UnsupportedOperationException("Process cutting requires CFGStmtNode.copyTree implementation");
+                /*
                 // Generate pc' = <<name, args>>
                 String parameters = "[]";
                 Boolean first = true;
@@ -480,7 +424,8 @@ public class CFGVarChangeAnalyzer {
                 pc_jump.addChild(info_node);
                 parentMap.computeIfAbsent(info_node, k -> new ArrayList<>()).add(pc_jump);
                 // Change temporary variables in new function to variables in info
-                updateNewFuncTempVars(newFuncNode, tempVarsThisFunc);
+                */
+                // updateNewFuncTempVars(newFuncNode, tempVarsThisFunc);
             }
         }
     }
