@@ -5,8 +5,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -18,7 +18,6 @@ public class CFGVarChangeAnalyzer {
     Map<CFGStmtNode, List<CFGStmtNode>> parentMap;
     List<CFGFuncNode> WorkList;
     Set<CFGFuncNode> cuttedFunc;
-    Set<CFGFuncNode> rootFunc;
     Set<String> tempVars;
     public CFGVarChangeAnalyzer(CFGCALLGraph callGraph) {
         this.callGraph = callGraph;
@@ -67,10 +66,6 @@ public class CFGVarChangeAnalyzer {
             analyzeFuncSA(funcNode);
         }
         //traverseTree();
-        // Calculate functions that are not called in CallGraph
-        Set<String> uncalledFunc = getUncalledFunc();
-        rootFunc = new HashSet<>(callGraph.getFuncNodes());
-
         for (CFGFuncNode funcNode : topologicalSort){
             checkCuttedFunc(funcNode);
         }
@@ -80,7 +75,7 @@ public class CFGVarChangeAnalyzer {
         while (!WorkList.isEmpty()){
             tempVars = new HashSet<>();
             CFGFuncNode funcNode = WorkList.remove(0);
-            if (uncalledFunc.contains(funcNode.getFuncName())){
+            if (funcNode.isEntryPoint()){
                 analyzeFuncPCUncalled(funcNode);
             } else {
                 analyzeFuncPCCalled(funcNode);
@@ -92,7 +87,7 @@ public class CFGVarChangeAnalyzer {
         List<CFGFuncNode> funclist = new ArrayList<>(callGraph.getFuncNodes());
         // Generate handle function
         for (CFGFuncNode funcNode : funclist){
-            if (uncalledFunc.contains(funcNode.getFuncName())){
+            if (funcNode.isEntryPoint()){
                 genHandleUncalledFunc(funcNode);
             } else {
                 genHandleCalledFunc(funcNode);
@@ -123,11 +118,6 @@ public class CFGVarChangeAnalyzer {
             // Analyze each function
             analyzeFuncSA(funcNode);
         }
-        //traverseTree();
-        // Calculate functions that are not called in CallGraph
-        Set<String> uncalledFunc = getUncalledFunc();
-        rootFunc = new HashSet<>(callGraph.getFuncNodes());
-
         for (CFGFuncNode funcNode : topologicalSort){
             checkCuttedFunc(funcNode);
         }
@@ -137,7 +127,7 @@ public class CFGVarChangeAnalyzer {
         while (!WorkList.isEmpty()){
             tempVars = new HashSet<>();
             CFGFuncNode funcNode = WorkList.remove(0);
-            if (uncalledFunc.contains(funcNode.getFuncName())){
+            if (funcNode.isEntryPoint()){
                 analyzeFuncPCUncalled(funcNode);
             } else {
                 analyzeFuncPCCalled(funcNode);
@@ -149,7 +139,7 @@ public class CFGVarChangeAnalyzer {
         List<CFGFuncNode> funclist = new ArrayList<>(callGraph.getFuncNodes());
         // Generate handle function
         for (CFGFuncNode funcNode : funclist){
-            if (uncalledFunc.contains(funcNode.getFuncName())){
+            if (funcNode.isEntryPoint()){
                 genHandleUncalledFunc(funcNode);
             } else {
                 genHandleCalledFunc(funcNode);
@@ -260,21 +250,24 @@ public class CFGVarChangeAnalyzer {
         //      /\ func(args)
         //      /\ UNCHANGED <<vars - Vars_func>>
         //      /\ stack' = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>]>>
-        CFGFuncNode newFuncNode = new CFGFuncNode("Handle" + funcNode.getFuncName(), funcNode.getParameters(),0);            
+        CFGFuncNode newFuncNode = new CFGFuncNode("Handle" + funcNode.getFuncName(), funcNode.getParameters(),0);
+        newFuncNode.setInvocationKind(CFGFuncNode.InvocationKind.ENTRY);
         CFGStmtNode root = new CFGStmtNode(0, "root", null, CFGStmtNode.StmtType.ROOT);
         newFuncNode.setRoot(root);
-        CFGStmtNode pc_stmt = new CFGStmtNode(1, "/\\ pc = Nil", null, CFGStmtNode.StmtType.NORMAL);
+        funcVarChange.putIfAbsent(newFuncNode.getFuncName(), new HashSet<>());
+        CFGStmtNode pc_stmt = new CFGStmtNode(1, "pc = Nil", null, CFGStmtNode.StmtType.NORMAL);
         root.addChild(pc_stmt);
-        CFGStmtNode call_stmt = new CFGStmtNode(1, "/\\ " + Call_uncalled(funcNode), null, CFGStmtNode.StmtType.NORMAL);
+        CFGStmtNode call_stmt = new CFGStmtNode(1, Call_uncalled(funcNode), null, CFGStmtNode.StmtType.NORMAL);
         pc_stmt.addChild(call_stmt); 
         Set<String> unchangedVar = new HashSet<>(variables);
         unchangedVar.removeAll(funcVarChange.get(funcNode.getFuncName()));
         CFGStmtNode unchanged_stmt = new CFGStmtNode(1, getUnchangedVar(unchangedVar), null, CFGStmtNode.StmtType.NORMAL);
         call_stmt.addChild(unchanged_stmt);
         callGraph.addFuncNode(newFuncNode);
+        callGraph.addFuncName(newFuncNode.getFuncName());
         CFGCALLEdge callEdge = new CFGCALLEdge(call_stmt, newFuncNode, funcNode, null, null);
         callGraph.addCallEdge(callEdge);
-        CFGStmtNode stack_stmt = new CFGStmtNode(1, "/\\ stack' = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>]>>", null, CFGStmtNode.StmtType.NORMAL);
+        CFGStmtNode stack_stmt = new CFGStmtNode(1, "stack' = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>]>>", null, CFGStmtNode.StmtType.NORMAL);
         call_stmt.addChild(stack_stmt);
     }
 
@@ -287,23 +280,26 @@ public class CFGVarChangeAnalyzer {
         //      /\ UNCHANGED <<vars - Vars_func>>
         if (cuttedFunc.contains(funcNode)){
             // Cut
-            CFGFuncNode newFuncNode = new CFGFuncNode("Handle" + funcNode.getFuncName(), new ArrayList<>(),0);            
+            CFGFuncNode newFuncNode = new CFGFuncNode("Handle" + funcNode.getFuncName(), new ArrayList<>(),0);
+            newFuncNode.setInvocationKind(CFGFuncNode.InvocationKind.ENTRY);
             CFGStmtNode root = new CFGStmtNode(0, "root", null, CFGStmtNode.StmtType.ROOT);
             newFuncNode.setRoot(root);
-            CFGStmtNode pc_stmt = new CFGStmtNode(1, "/\\ pc = \"" + funcNode.getFuncName() + "\"", null, CFGStmtNode.StmtType.NORMAL);
+            funcVarChange.putIfAbsent(newFuncNode.getFuncName(), new HashSet<>());
+            CFGStmtNode pc_stmt = new CFGStmtNode(1, "pc = \"" + funcNode.getFuncName() + "\"", null, CFGStmtNode.StmtType.NORMAL);
             root.addChild(pc_stmt);
             CFGStmtNode call_stmt;
-            if (rootFunc.contains(funcNode)){
-                call_stmt = new CFGStmtNode(1, "/\\ " + Call_root_called(funcNode), null, CFGStmtNode.StmtType.NORMAL);
+            if (funcNode.isEntryPoint()){
+                call_stmt = new CFGStmtNode(1, Call_root_called(funcNode), null, CFGStmtNode.StmtType.NORMAL);
             } else {
-                call_stmt = new CFGStmtNode(1, "/\\ " + Call_nonroot_called(funcNode), null, CFGStmtNode.StmtType.NORMAL);
+                call_stmt = new CFGStmtNode(1, Call_nonroot_called(funcNode), null, CFGStmtNode.StmtType.NORMAL);
             }
             pc_stmt.addChild(call_stmt);
-            Set<String> unchangedVar = new HashSet<>(variables);
-            unchangedVar.removeAll(funcVarChange.get(funcNode.getFuncName()));
-            CFGStmtNode unchanged_stmt = new CFGStmtNode(1, getUnchangedVar(unchangedVar), null, CFGStmtNode.StmtType.NORMAL);
+        Set<String> unchangedVar = new HashSet<>(variables);
+        unchangedVar.removeAll(funcVarChange.get(funcNode.getFuncName()));
+        CFGStmtNode unchanged_stmt = new CFGStmtNode(1, getUnchangedVar(unchangedVar), null, CFGStmtNode.StmtType.NORMAL);
             call_stmt.addChild(unchanged_stmt);
             callGraph.addFuncNode(newFuncNode);
+            callGraph.addFuncName(newFuncNode.getFuncName());
             CFGCALLEdge callEdge = new CFGCALLEdge(call_stmt, newFuncNode, funcNode, null, null);
             callGraph.addCallEdge(callEdge);
         }
@@ -332,7 +328,75 @@ public class CFGVarChangeAnalyzer {
         intersection.retainAll(declVar);
         // Discuss by cases:
         if (flag) {
-            throw new UnsupportedOperationException("Process cutting requires CFGStmtNode.copyTree implementation");
+            // If already cut, need to cut this function
+            int id = funcNode.getIDandADD();
+            CFGFuncNode newFuncNode = new CFGFuncNode(funcNode.getFuncName() + "_" + id, funcNode.getParameters(), id);
+            newFuncNode.setInvocationKind(funcNode.getInvocationKind());
+            funcVarChange.putIfAbsent(newFuncNode.getFuncName(), new HashSet<>());
+            CFGStmtNode root = new CFGStmtNode(0, "root", null, CFGStmtNode.StmtType.ROOT);
+            newFuncNode.setRoot(root);
+
+            CFGStmtNode startStmt;
+            if (!stmt.getChildren().isEmpty()) {
+                startStmt = stmt.getChildren().get(0).copyTree(callGraph, newFuncNode);
+            } else {
+                startStmt = new CFGStmtNode(stmt.getIndentation(), "TRUE", null, CFGStmtNode.StmtType.NORMAL);
+                startStmt.setSynthetic(true);
+            }
+            root.addChild(startStmt);
+
+            Set<CFGStmtNode> parents = funcNode.getAllparents(stmt);
+            List<CFGFuncNode> targetFunc = callGraph.getTargetFunc(stmt);
+            CFGStmtNode pc_jump;
+            if (targetFunc.size() == 1){
+                pc_jump = new CFGStmtNode(stmt.getIndentation(), "pc' = \"" + targetFunc.get(0).getFuncName() + "\"", null, CFGStmtNode.StmtType.NORMAL);
+            } else {
+                throw new RuntimeException("Multi-function call variable modification conflict: " + targetFunc);
+            }
+            pc_jump.InVar = new HashSet<>(stmt.InVar);
+            pc_jump.OutVar = new HashSet<>(stmt.InVar);
+            pc_jump.OutVar.add("pc");
+            for (CFGStmtNode parent : parents){
+                int childIndex = parent.getChildren().indexOf(stmt);
+                parent.replaceChild(childIndex, pc_jump);
+                List<CFGStmtNode> parentList = parentMap.get(stmt);
+                if (parentList != null) {
+                    parentList.remove(parent);
+                    if (parentList.isEmpty()) {
+                        parentMap.remove(stmt);
+                    }
+                }
+                parentMap.computeIfAbsent(pc_jump, k -> new ArrayList<>()).add(parent);
+            }
+
+            callGraph.addFuncNode(newFuncNode);
+            callGraph.addFuncName(newFuncNode.getFuncName());
+            updateNewFuncCallEdge(newFuncNode, root);
+            resetInOutVar(root);
+            analyzeFuncSA(newFuncNode);
+            WorkList.add(newFuncNode);
+            cuttedFunc.add(newFuncNode);
+
+            CFGStmtNode info_node;
+            if (funcNode.isEntryPoint()){
+                info_node = new CFGStmtNode(stmt.getIndentation(), setInfoStr(funcNode.getParameters(), tempVarsThisFunc), null, CFGStmtNode.StmtType.NORMAL);
+            } else {
+                info_node = new CFGStmtNode(stmt.getIndentation(), updateInfoStr(tempVarsThisFunc), null, CFGStmtNode.StmtType.NORMAL);
+            }
+            info_node.InVar = new HashSet<>(pc_jump.OutVar);
+            info_node.OutVar = new HashSet<>(pc_jump.OutVar);
+            info_node.OutVar.add("info");
+            pc_jump.addChild(info_node);
+            parentMap.computeIfAbsent(info_node, k -> new ArrayList<>()).add(pc_jump);
+
+            CFGStmtNode stack_node = new CFGStmtNode(stmt.getIndentation(), updateStackStr(newFuncNode, stmt.getContent()), null, CFGStmtNode.StmtType.NORMAL);
+            stack_node.InVar = new HashSet<>(info_node.OutVar);
+            stack_node.OutVar = new HashSet<>(info_node.OutVar);
+            stack_node.OutVar.add("stack");
+            info_node.addChild(stack_node);
+            parentMap.computeIfAbsent(stack_node, k -> new ArrayList<>()).add(info_node);
+
+            updateNewFuncTempVars(newFuncNode, tempVarsThisFunc);
         } else {
             // If not cut, no conflict, no need to cut
             // If conflict, still need to cut
@@ -349,21 +413,20 @@ public class CFGVarChangeAnalyzer {
                     //     pc' = stack[Len(stack)].backsite
                     //     info' = stack[Len(stack)].info
                     //     stack' = Tail(stack)
-                    Set<String> uncalledFunc = getUncalledFunc();
-                    if ((cuttedFunc.contains(funcNode) && !uncalledFunc.contains(funcNode.getFuncName())) && !stmt.getContent().contains("/\\ info' =") && !stmt.getContent().contains("/\\ stack' =")){
-                        CFGStmtNode pc_stmt = new CFGStmtNode(stmt.getIndentation(), "/\\ pc' = stack[Len(stack)].backsite", null, CFGStmtNode.StmtType.NORMAL);
+                    if ((cuttedFunc.contains(funcNode) && funcNode.getInvocationKind() == CFGFuncNode.InvocationKind.CALLED) && !stmt.getContent().contains("info' =") && !stmt.getContent().contains("stack' =")){
+                        CFGStmtNode pc_stmt = new CFGStmtNode(stmt.getIndentation(), "pc' = stack[Len(stack)].backsite", null, CFGStmtNode.StmtType.NORMAL);
                         pc_stmt.InVar = new HashSet<>(stmt.OutVar);
                         pc_stmt.OutVar = new HashSet<>(stmt.OutVar);
                         pc_stmt.OutVar.add("pc");
                         stmt.addChild(pc_stmt);
                         parentMap.computeIfAbsent(pc_stmt, k -> new ArrayList<>()).add(stmt);
-                        CFGStmtNode stack_node = new CFGStmtNode(stmt.getIndentation(), "/\\ stack' = Tail(stack)", null, CFGStmtNode.StmtType.NORMAL);
+                        CFGStmtNode stack_node = new CFGStmtNode(stmt.getIndentation(), "stack' = Tail(stack)", null, CFGStmtNode.StmtType.NORMAL);
                         stack_node.InVar = new HashSet<>(pc_stmt.OutVar);
                         stack_node.OutVar = new HashSet<>(pc_stmt.OutVar);
                         stack_node.OutVar.add("stack");
                         pc_stmt.addChild(stack_node);
                         parentMap.computeIfAbsent(stack_node, k -> new ArrayList<>()).add(pc_stmt);
-                        CFGStmtNode info_node = new CFGStmtNode(stmt.getIndentation(), "/\\ info' = stack[Len(stack)].info", null, CFGStmtNode.StmtType.NORMAL);
+                        CFGStmtNode info_node = new CFGStmtNode(stmt.getIndentation(), "info' = stack[Len(stack)].info", null, CFGStmtNode.StmtType.NORMAL);
                         info_node.InVar = new HashSet<>(stack_node.OutVar);
                         info_node.OutVar = new HashSet<>(stack_node.OutVar);
                         info_node.OutVar.add("info");
@@ -376,12 +439,14 @@ public class CFGVarChangeAnalyzer {
                 // Initialize the function cut out
                 int id = funcNode.getIDandADD();
                 CFGFuncNode newFuncNode = new CFGFuncNode(funcNode.getFuncName() + "_" + id, funcNode.getParameters(), id);
+                newFuncNode.setInvocationKind(funcNode.getInvocationKind());
+                funcVarChange.putIfAbsent(newFuncNode.getFuncName(), new HashSet<>());
                 CFGStmtNode root = new CFGStmtNode(0, "root", null, CFGStmtNode.StmtType.ROOT);
                 newFuncNode.setRoot(root);
                 // Cut
                 Set<CFGStmtNode> parents = funcNode.getAllparents(stmt);
-                throw new UnsupportedOperationException("Process cutting requires CFGStmtNode.copyTree implementation");
-                /*
+                CFGStmtNode pc_stmt_copy = stmt.copyTree(callGraph, newFuncNode);
+                root.addChild(pc_stmt_copy);
                 // Generate pc' = <<name, args>>
                 String parameters = "[]";
                 Boolean first = true;
@@ -393,7 +458,7 @@ public class CFGVarChangeAnalyzer {
                         parameters += ", " + parameter;
                     }
                 }
-                CFGStmtNode pc_jump = new CFGStmtNode(stmt.getIndentation(), "/\\ pc' = \"" + funcNode.getFuncName() + "_" + id + "\"", null, CFGStmtNode.StmtType.NORMAL);
+                CFGStmtNode pc_jump = new CFGStmtNode(stmt.getIndentation(), "pc' = \"" + funcNode.getFuncName() + "_" + id + "\"", null, CFGStmtNode.StmtType.NORMAL);
                 // Check if the OutVar of all parents is the same, otherwise error
                 // for (CFGStmtNode parent : parents){
                 //     if (!parent.OutVar.equals(stmt.InVar)){
@@ -405,10 +470,19 @@ public class CFGVarChangeAnalyzer {
                 pc_jump.OutVar.add("pc");
                 // Add pc_jump
                 for (CFGStmtNode parent : parents){
-                    parent.deleteChild(stmt);
-                    parent.addChild(pc_jump);
+                    int childIndex = parent.getChildren().indexOf(stmt);
+                    parent.replaceChild(childIndex, pc_jump);
+                    List<CFGStmtNode> parentList = parentMap.get(stmt);
+                    if (parentList != null) {
+                        parentList.remove(parent);
+                        if (parentList.isEmpty()) {
+                            parentMap.remove(stmt);
+                        }
+                    }
                     parentMap.computeIfAbsent(pc_jump, k -> new ArrayList<>()).add(parent);
                 }
+                callGraph.addFuncNode(newFuncNode);
+                callGraph.addFuncName(newFuncNode.getFuncName());
                 updateNewFuncCallEdge(newFuncNode, root);
                 // New InVar OutVar is cleared
                 resetInOutVar(root);
@@ -416,9 +490,8 @@ public class CFGVarChangeAnalyzer {
                 analyzeFuncSA(newFuncNode);
                 WorkList.add(newFuncNode);
                 cuttedFunc.add(newFuncNode);
-                callGraph.addFuncNode(newFuncNode);
                 CFGStmtNode info_node;
-                if (rootFunc.contains(funcNode)){
+                if (funcNode.isEntryPoint()){
                     info_node = new CFGStmtNode(stmt.getIndentation(), setInfoStr(funcNode.getParameters(), tempVarsThisFunc), null, CFGStmtNode.StmtType.NORMAL);
                 } else {
                     info_node = new CFGStmtNode(stmt.getIndentation(), updateInfoStr(tempVarsThisFunc), null, CFGStmtNode.StmtType.NORMAL);
@@ -429,8 +502,7 @@ public class CFGVarChangeAnalyzer {
                 pc_jump.addChild(info_node);
                 parentMap.computeIfAbsent(info_node, k -> new ArrayList<>()).add(pc_jump);
                 // Change temporary variables in new function to variables in info
-                */
-                // updateNewFuncTempVars(newFuncNode, tempVarsThisFunc);
+                updateNewFuncTempVars(newFuncNode, tempVarsThisFunc);
             }
         }
     }
@@ -459,7 +531,7 @@ public class CFGVarChangeAnalyzer {
                 diff.removeAll(parent.OutVar);
                 if (!diff.isEmpty()) {
                     // Create CFGStmtNode node
-                    String unchangedVar = "/\\ UNCHANGED <<";
+                    String unchangedVar = "UNCHANGED <<";
                     boolean first = true;
                     for (String var : diff) {
                         if (!first) {
@@ -469,11 +541,12 @@ public class CFGVarChangeAnalyzer {
                         first = false;
                     }
                     unchangedVar += ">>";
-                    CFGStmtNode newStmt = new CFGStmtNode(parent.getIndentation(), unchangedVar, null, CFGStmtNode.StmtType.NORMAL);
+                    CFGStmtNode newStmt = new CFGStmtNode(parent.getIndentation(), unchangedVar, null, CFGStmtNode.StmtType.UNCHANGED);
+                    newStmt.setSynthetic(true);
                     newStmt.InVar = parent.OutVar;
                     newStmt.OutVar = stmt.InVar;
-                    parent.deleteChild(stmt);
-                    parent.addChild(newStmt);
+                    int childIndex = parent.getChildren().indexOf(stmt);
+                    parent.replaceChild(childIndex, newStmt);
                     newStmt.addChild(stmt);
                     // Update parentMap, remove parent of stmt, add newStmt
                     parentMap.computeIfAbsent(stmt, k -> new ArrayList<>()).remove(parent);
@@ -494,9 +567,9 @@ public class CFGVarChangeAnalyzer {
             diff.removeAll(leafNode.OutVar);
             if (!diff.isEmpty()) {
                 // Create CFGStmtNode node
-                String unchangedVar = "/\\ UNCHANGED <<";
-                boolean first = true;
-                for (String var : diff) {
+                    String unchangedVar = "UNCHANGED <<";
+                    boolean first = true;
+                    for (String var : diff) {
                     if (!first) {
                         unchangedVar += ", ";
                     }
@@ -504,7 +577,8 @@ public class CFGVarChangeAnalyzer {
                     first = false;
                 }
                 unchangedVar += ">>";
-                CFGStmtNode newStmt = new CFGStmtNode(leafNode.getIndentation(), unchangedVar, null, CFGStmtNode.StmtType.NORMAL);
+                CFGStmtNode newStmt = new CFGStmtNode(leafNode.getIndentation(), unchangedVar, null, CFGStmtNode.StmtType.UNCHANGED);
+                newStmt.setSynthetic(true);
                 newStmt.InVar = leafNode.OutVar;
                 newStmt.OutVar = LeafVar;
                 leafNode.addChild(newStmt);
@@ -738,7 +812,7 @@ public class CFGVarChangeAnalyzer {
     }
 
     private void prepareForSAPass() {
-        clearUNCHANGED();
+        clearSyntheticUNCHANGED();
         parentMap.clear();
         for (CFGFuncNode funcNode : callGraph.getAllFuncNodes()) {
             CFGStmtNode root = funcNode.getRoot();
@@ -752,15 +826,6 @@ public class CFGVarChangeAnalyzer {
         for (CFGStmtNode stmt : funcNode.getRoot().getChildren()){
             checkCuttedFuncHelper(funcNode, stmt);
         }
-    }
-
-    public Set<String> getUncalledFunc() {
-        Set<String> uncalledFunc = new HashSet<>(callGraph.getFuncNames());
-        List<CFGCALLEdge> edges = callGraph.getCallEdges();
-        for (CFGCALLEdge edge : edges){
-            uncalledFunc.remove(edge.getTarget().getFuncName());
-        }
-        return uncalledFunc;
     }
 
     private String Call_root_called(CFGFuncNode funcNode){
@@ -800,7 +865,7 @@ public class CFGVarChangeAnalyzer {
     }
 
     private String getUnchangedVar(Set<String> vars){
-        String unchangedVar = "/\\ UNCHANGED <<";
+        String unchangedVar = "UNCHANGED <<";
         boolean first = true;
         for (String var : vars) {
             if (!first) {
@@ -847,7 +912,7 @@ public class CFGVarChangeAnalyzer {
     }
 
     private String setInfoStr(List<String> args, Set<String> temp){
-        String infoStr = "/\\ info' = [";
+        String infoStr = "info' = [";
         String argsStr = "<<";
         if (!args.isEmpty()){
             argsStr += args.get(0);
@@ -878,7 +943,7 @@ public class CFGVarChangeAnalyzer {
     private String updateInfoStr(Set<String> temp){
         // If tempVars are a, b, c
         // info' = [temp |-> [a |-> a, b |-> b, c |-> c]] @@ info
-        String infoStr = "/\\ info' = ";
+        String infoStr = "info' = ";
         // tempStr = [temp |-> [a |-> a, b |-> b, c |-> c]] @@ info   OR    info
         String tempStr = "[temp |-> [";
         if (!temp.isEmpty()) {
@@ -915,7 +980,7 @@ public class CFGVarChangeAnalyzer {
         }
         // If no '(', the parameter part is an empty string
         arguments += ">>";
-        String stackStr = "/\\ stack' = Append(stack, [backsite |-> \"" + funcNode.getFuncName() + "\", args |-> " + arguments + ", info |-> info'])";
+        String stackStr = "stack' = Append(stack, [backsite |-> \"" + funcNode.getFuncName() + "\", args |-> " + arguments + ", info |-> info'])";
         return stackStr;
     }
 
@@ -1054,19 +1119,18 @@ public class CFGVarChangeAnalyzer {
         for (CFGFuncNode funcNode : cuttedFunc) {
             System.err.println("  - " + funcNode.getFuncName());
         }
-        
-        System.err.println("Number of root functions: " + (rootFunc != null ? rootFunc.size() : 0));
-        if (rootFunc != null) {
-            for (CFGFuncNode funcNode : rootFunc) {
-                System.err.println("  - " + funcNode.getFuncName());
+
+        int entryCount = 0;
+        int calledCount = 0;
+        for (CFGFuncNode funcNode : callGraph.getFuncNodes()) {
+            if (funcNode.isEntryPoint()) {
+                entryCount++;
+            } else {
+                calledCount++;
             }
         }
-        
-        Set<String> uncalledFunc = getUncalledFunc();
-        System.err.println("Number of uncalled functions: " + uncalledFunc.size());
-        for (String funcName : uncalledFunc) {
-            System.err.println("  - " + funcName);
-        }
+        System.err.println("Number of entry functions: " + entryCount);
+        System.err.println("Number of called functions: " + calledCount);
         System.err.println("=== DEBUG: Cut function information completed ===\n");
     }
 
@@ -1082,49 +1146,42 @@ public class CFGVarChangeAnalyzer {
         System.err.println("=== DEBUG: Variables list completed ===\n");
     }
 
-    private void clearUNCHANGED(){
+    private void clearSyntheticUNCHANGED() {
+        removeUNCHANGEDNodes(true);
+    }
+
+    public void clearAllUNCHANGEDStatements() {
+        removeUNCHANGEDNodes(false);
+    }
+
+    private void removeUNCHANGEDNodes(boolean syntheticOnly) {
         for (CFGFuncNode funcNode : callGraph.getAllFuncNodes()) {
-            clearUNCHANGEDHelper(funcNode.getRoot());
+            removeUNCHANGEDHelper(funcNode.getRoot(), syntheticOnly);
         }
     }
     
-    /**
-     * Recursively traverse statement nodes, clear all UNCHANGED statements
-     * @param stmtNode statement node
-     */
-    private void clearUNCHANGEDHelper(CFGStmtNode stmtNode) {
+    private void removeUNCHANGEDHelper(CFGStmtNode stmtNode, boolean syntheticOnly) {
         if (stmtNode == null) {
             return;
         }
-        
-        // Check if the current statement contains UNCHANGED    
-        String content = stmtNode.getContent();
-        if (content != null && content.contains("UNCHANGED")) {
-            // Clear UNCHANGED statement to placeholder
-            String newContent = replaceUNCHANGEDContent(content);
-            stmtNode.setContent(newContent);
+        List<CFGStmtNode> children = stmtNode.getChildren();
+        if (children == null || children.isEmpty()) {
+            return;
         }
-        
-        // Recursively process all child nodes
-        if (stmtNode.getChildren() != null) {
-            for (CFGStmtNode child : stmtNode.getChildren()) {
-                clearUNCHANGEDHelper(child);
+        for (int i = 0; i < children.size();) {
+            CFGStmtNode child = children.get(i);
+            boolean isTarget = child.getType() == CFGStmtNode.StmtType.UNCHANGED;
+            if (isTarget && (!syntheticOnly || child.isSynthetic())) {
+                List<CFGStmtNode> grandChildren = new ArrayList<>(child.getChildren());
+                children.remove(i);
+                if (!grandChildren.isEmpty()) {
+                    children.addAll(i, grandChildren);
+                }
+                // Do not increment i so we process newly inserted grandchildren (if any)
+                continue;
             }
+            removeUNCHANGEDHelper(child, syntheticOnly);
+            i++;
         }
-    }
-    
-    /**
-     * Replace UNCHANGED content in statement
-     * @param content original statement content
-     * @return replaced statement content
-     */
-    private String replaceUNCHANGEDContent(String content) {
-        // Handle UNCHANGED << ... >> format
-        String result = content.replaceAll("UNCHANGED\\s*<<[^<>]*>>", "UNCHANGED <<>>");
-        
-        // Handle UNCHANGED var format (single variable or alias)
-        result = result.replaceAll("UNCHANGED\\s+\\w+", "UNCHANGED <<>>");
-        
-        return result;
     }
 }

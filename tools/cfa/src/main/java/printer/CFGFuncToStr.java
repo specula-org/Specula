@@ -96,9 +96,9 @@ public class CFGFuncToStr {
         List<String> result = new ArrayList<>();
         
         // Add current statement content with /\ prefix
-        String content = CFGNodeToStr.CFGStmtNodeToStr(node);
+        String content = normalizeContent(CFGNodeToStr.CFGStmtNodeToStr(node));
         if (!content.isEmpty()) {
-            result.add("/\\ " + content);
+            result.add(content);
         }
         
         // Recursively process children
@@ -116,9 +116,9 @@ public class CFGFuncToStr {
         List<String> result = new ArrayList<>();
         
         // Add block statement header with /\ prefix
-        String content = CFGNodeToStr.CFGStmtNodeToStr(node);
+        String content = normalizeContent(CFGNodeToStr.CFGStmtNodeToStr(node));
         if (!content.isEmpty()) {
-            result.add("/\\ " + content);
+            result.add(content);
         }
         
         // Recursively process code block and add indentation
@@ -151,8 +151,8 @@ public class CFGFuncToStr {
         
         // Uniformly add /\ prefix to the first line
         if (!branchResult.isEmpty()) {
-            String firstLine = branchResult.get(0);
-            result.add("/\\ " + firstLine);
+            String firstLine = normalizeContent(branchResult.get(0));
+            result.add(firstLine);
             // Add remaining lines without modification
             for (int i = 1; i < branchResult.size(); i++) {
                 result.add(branchResult.get(i));
@@ -160,6 +160,20 @@ public class CFGFuncToStr {
         }
         
         return result;
+    }
+
+    private String normalizeContent(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String content = raw.trim();
+        if (content.isEmpty()) {
+            return "";
+        }
+        if (content.startsWith("/\\") || content.startsWith("\\/") || content.startsWith("CASE") || content.startsWith("LET") || content.startsWith("EXISTS") || content.startsWith("FORALL")) {
+            return content;
+        }
+        return "/\\ " + content;
     }
     
     /**

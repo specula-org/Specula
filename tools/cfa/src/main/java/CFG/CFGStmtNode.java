@@ -19,6 +19,7 @@ public class CFGStmtNode {
     private List<CFGStmtNode> children;
     private StmtType type;
     private String label;
+    private boolean synthetic;
 
     // New field for LET statements
     private List<String> temporaryVariables; // Stores names of variables declared in a LET statement
@@ -51,6 +52,7 @@ public class CFGStmtNode {
         // It will only be populated for LET nodes.
         this.temporaryVariables = new ArrayList<>();
         this.label = null;
+        this.synthetic = false;
     }
 
     // Getters
@@ -72,6 +74,10 @@ public class CFGStmtNode {
 
     public String getLabel() {
         return label;
+    }
+
+    public boolean isSynthetic() {
+        return synthetic;
     }
 
     public void setLabel(String label) {
@@ -115,6 +121,10 @@ public class CFGStmtNode {
         this.type = type;
     }
 
+    public void setSynthetic(boolean synthetic) {
+        this.synthetic = synthetic;
+    }
+
     // Method to add a single temporary variable, for LET and other scoped nodes
     public void addTemporaryVariable(String varName) {
         if (this.type != StmtType.LET && this.type != StmtType.EXISTS && this.type != StmtType.FORALL) {
@@ -143,6 +153,37 @@ public class CFGStmtNode {
             throw new RuntimeException("child is null");
         }
         children.add(child);
+        return this;
+    }
+
+    public CFGStmtNode addChild(int index, CFGStmtNode child) {
+        if (child == null) {
+            throw new RuntimeException("child is null");
+        }
+        if (index < 0 || index > children.size()) {
+            throw new IndexOutOfBoundsException("child index out of range: " + index);
+        }
+        children.add(index, child);
+        return this;
+    }
+
+    public CFGStmtNode replaceChild(int index, CFGStmtNode child) {
+        if (child == null) {
+            throw new RuntimeException("child is null");
+        }
+        if (index < 0 || index >= children.size()) {
+            throw new IndexOutOfBoundsException("child index out of range: " + index);
+        }
+        children.set(index, child);
+        return this;
+    }
+
+    public CFGStmtNode replaceChild(CFGStmtNode oldChild, CFGStmtNode newChild) {
+        int index = children.indexOf(oldChild);
+        if (index == -1) {
+            throw new RuntimeException("old child not found");
+        }
+        replaceChild(index, newChild);
         return this;
     }
 
@@ -192,10 +233,6 @@ public class CFGStmtNode {
         }
     }
 
-    // TODO: Temporarily commented out copyTree methods that depend on CFGCALLGraph
-    // These will be restored when CFGCALLGraph integration is needed
-    
-    /*
     // Public copyTree method, initialize copy process
     public CFGStmtNode copyTree(CFGCALLGraph cfg, CFGFuncNode newfuncNode) {
         // Use a Map to track copied nodes, key is original node, value is corresponding copy node
@@ -213,16 +250,19 @@ public class CFGStmtNode {
 
         // 2. If not copied, create new node
         CFGStmtNode newNode = new CFGStmtNode(this.getIndentation(), this.getContent(), this.getCtx(), this.getType());
+        newNode.InVar = new HashSet<>(this.InVar);
+        newNode.OutVar = new HashSet<>(this.OutVar);
+        newNode.setLabel(this.getLabel());
+        newNode.setSynthetic(this.isSynthetic());
         
         // 3. Put the newly created copy into the map, so that subsequent references can find it
         // This step must be completed before recursively copying child nodes, to correctly handle possible loops (although tree structures usually do not) and shared
         copiedNodes.put(this, newNode);
 
         // 4. Copy specific type attributes
-        if (this.getType() == StmtType.LET) {
-            // Assume getTemporaryVariables() returns Set<String>
-            // Create a new Set instance, rather than sharing the reference of the original Set
-            newNode.setTemporaryVariables(this.getTemporaryVariables());
+        List<String> tempVars = this.getTemporaryVariables();
+        if ((this.getType() == StmtType.LET || this.getType() == StmtType.EXISTS || this.getType() == StmtType.FORALL) && !tempVars.isEmpty()) {
+            newNode.setTemporaryVariables(tempVars);
         }
         // You may also need to copy other non-child node attributes here, ensure they are appropriately deep copied or shallow copied
         // Construct call edge
@@ -243,5 +283,4 @@ public class CFGStmtNode {
         
         return newNode;
     }
-    */
 }
