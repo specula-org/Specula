@@ -56,8 +56,8 @@ public class CFGVarChangeAnalyzer {
     }
 
     public void analyze() {
+        prepareForSAPass();
         // System.err.println("begin analyze");
-        clearUNCHANGED();
         // Get topological sequence
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
         // Reverse
@@ -104,6 +104,7 @@ public class CFGVarChangeAnalyzer {
     }
 
     public void analyze_only_sa(){
+        prepareForSAPass();
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
         // Reverse
         Collections.reverse(topologicalSort);
@@ -113,6 +114,7 @@ public class CFGVarChangeAnalyzer {
     }
 
     public void analyze_only_pc(){
+        prepareForSAPass();
         // Get topological sequence
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
         // Reverse
@@ -156,7 +158,7 @@ public class CFGVarChangeAnalyzer {
     }
 
     public void analyze_only_ud(){
-        clearUNCHANGED();
+        prepareForSAPass();
         // Get topological sequence
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
         // Reverse
@@ -169,7 +171,7 @@ public class CFGVarChangeAnalyzer {
     }
 
     public void analyze_only_uc(){
-        clearUNCHANGED();
+        prepareForSAPass();
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
         // Reverse
         Collections.reverse(topologicalSort);
@@ -183,6 +185,9 @@ public class CFGVarChangeAnalyzer {
     // Static analysis build parent node mapping relationship and IN and OUT
     private void analyzeFuncSA(CFGFuncNode funcNode){
         CFGStmtNode stmtNode = funcNode.getRoot();
+        if (stmtNode == null) {
+            return;
+        }
         buildParentMap(stmtNode);
         for (CFGStmtNode stmt : stmtNode.getChildren()) {
             analyzeStmtSA(funcNode, stmt, stmtNode.OutVar);
@@ -551,59 +556,57 @@ public class CFGVarChangeAnalyzer {
     public Set<String> VarChangedOneStmt(CFGStmtNode stmt) {
         Set<String> result = new HashSet<>();
         String content = stmt.getContent();
-        
+        if (content == null || content.isEmpty()) {
+            return result;
+        }
+
+        // Detect explicit next-state assignments such as x' = ..., x' \in ...
         for (String var : variables) {
-            // Updated regex pattern to match TLA+ variable assignment patterns
-            // Matches: var' = ..., var' = [var EXCEPT ...], etc.
-            String pattern = "(?<![\\w_])" + var + "'\\s*=";
-            if (content.matches(".*" + pattern + ".*")) {
+            String primePattern = "(?s)(?<![\\w_])" + Pattern.quote(var) + "'\\s*(=|\\\\in|\\\\subseteq)";
+            if (Pattern.compile(primePattern, Pattern.DOTALL).matcher(content).find()) {
                 result.add(var);
             }
         }
-        
-        // Handle UNCHANGED statement with alias support
+
+        // Handle UNCHANGED statements (treat as writing primes for SA purposes)
         if (content.contains("UNCHANGED")) {
-            // Extract variables from UNCHANGED << >>
-            if (content.contains("<<")){
-                int start = content.indexOf("<<");
-                int end = content.indexOf(">>");
-                if (start != -1 && end != -1) {
-                    String vars = content.substring(start + 2, end);
-                    String[] varArray = vars.split(",");
-                    for (String var : varArray) {
-                        String trimmedVar = var.trim();
-                        // Check if it's a direct variable
-                        if (variables.contains(trimmedVar)) {
-                            result.add(trimmedVar);
-                        }
-                        // Check if it's an alias and resolve it
-                        else if (callGraph.isAlias(trimmedVar)) {
-                            List<String> resolvedVars = callGraph.resolveAlias(trimmedVar);
-                            result.addAll(resolvedVars);
-                        }
+            // Match UNCHANGED << ... >> with possible newlines/spacing
+            Pattern unchangedListPattern = Pattern.compile("(?s)UNCHANGED\\s*<<([^<>]*)>>");
+            java.util.regex.Matcher listMatcher = unchangedListPattern.matcher(content);
+            while (listMatcher.find()) {
+                String varsSegment = listMatcher.group(1);
+                for (String candidate : varsSegment.split(",")) {
+                    String trimmed = candidate.trim();
+                    if (trimmed.isEmpty()) {
+                        continue;
                     }
+                    collectUnchangedTarget(trimmed, result);
                 }
-            } else {
-                // Handle UNCHANGED vars pattern (single variable or alias)
-                String unchangedPattern = "UNCHANGED\\s+(\\w+)";
-                java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(unchangedPattern);
-                java.util.regex.Matcher matcher = pattern.matcher(content);
-                if (matcher.find()) {
-                    String var = matcher.group(1);
-                    // Check if it's a direct variable
-                    if (variables.contains(var)) {
-                        result.add(var);
-                    }
-                    // Check if it's an alias and resolve it
-                    else if (callGraph.isAlias(var)) {
-                        List<String> resolvedVars = callGraph.resolveAlias(var);
-                        result.addAll(resolvedVars);
-                    }
+            }
+
+            // Match single-variable UNCHANGED (ensure not followed by <<)
+            Pattern unchangedSinglePattern = Pattern.compile("(?s)UNCHANGED\\s+(?!<<)([^\\s]+)");
+            java.util.regex.Matcher singleMatcher = unchangedSinglePattern.matcher(content);
+            while (singleMatcher.find()) {
+                String target = singleMatcher.group(1).trim();
+                if (!target.isEmpty()) {
+                    collectUnchangedTarget(target, result);
                 }
             }
         }
-        
+
         return result;
+    }
+
+    private void collectUnchangedTarget(String token, Set<String> result) {
+        if (variables.contains(token)) {
+            result.add(token);
+        } else if (callGraph.isAlias(token)) {
+            List<String> resolvedVars = callGraph.resolveAlias(token);
+            if (resolvedVars != null) {
+                result.addAll(resolvedVars);
+            }
+        }
     }
 
     private Set<String> getAllLeafVar(CFGStmtNode stmt) {
@@ -656,10 +659,9 @@ public class CFGVarChangeAnalyzer {
     }
 
     private void addParentMap(CFGStmtNode stmt, CFGStmtNode parent) {
-        if (parentMap.containsKey(stmt)) {
-            parentMap.get(stmt).add(parent);
-        } else {
-            parentMap.put(stmt, new ArrayList<>(Arrays.asList(parent)));
+        List<CFGStmtNode> parents = parentMap.computeIfAbsent(stmt, k -> new ArrayList<>());
+        if (!parents.contains(parent)) {
+            parents.add(parent);
         }
     }
 
@@ -732,6 +734,17 @@ public class CFGVarChangeAnalyzer {
         node.OutVar = new HashSet<>();
         for (CFGStmtNode child : node.getChildren()){
             resetInOutVar(child);
+        }
+    }
+
+    private void prepareForSAPass() {
+        clearUNCHANGED();
+        parentMap.clear();
+        for (CFGFuncNode funcNode : callGraph.getAllFuncNodes()) {
+            CFGStmtNode root = funcNode.getRoot();
+            if (root != null) {
+                resetInOutVar(root);
+            }
         }
     }
 
