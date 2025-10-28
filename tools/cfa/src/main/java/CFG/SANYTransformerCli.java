@@ -147,6 +147,7 @@ public class SANYTransformerCli {
         
         SANYCFGBuilder cfgBuilder = new SANYCFGBuilder();
         
+        CFGCALLGraph callGraph = null;
         try {
             ModuleNode rootModule = spec.getRootModule();
             if (rootModule != null) {
@@ -166,6 +167,9 @@ public class SANYTransformerCli {
                         System.out.println("  - " + func.getFuncName() + "(" + String.join(", ", func.getParameters()) + ")");
                     }
                 }
+
+                callGraph = new CFGCALLGraph(cfgBuilder.getCfgFuncNodes(), cfgBuilder.getVariables(), cfgBuilder.getConstants());
+                callGraph.buildCallGraph(debugMode);
                 
             } else {
                 System.err.println("ERROR: No root module found in parsed spec");
@@ -178,6 +182,14 @@ public class SANYTransformerCli {
                 e.printStackTrace();
             }
             System.exit(1);
+        }
+        
+        if (debugMode && callGraph != null) {
+            System.out.println("\n=== SA DEBUG: IN/OUT variable sets ===");
+            CFGVarChangeAnalyzer saAnalyzer = new CFGVarChangeAnalyzer(callGraph);
+            saAnalyzer.analyze_only_sa();
+            saAnalyzer.printInOutVars();
+            System.out.println("=== END SA DEBUG ===\n");
         }
         
         // --- 6. Run selected algorithm ---
