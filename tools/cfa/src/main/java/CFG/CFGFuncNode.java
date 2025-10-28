@@ -13,6 +13,11 @@ public class CFGFuncNode {
     private int id;
     private Map<CFGStmtNode, Boolean> arrived;
     private boolean aliasOnly;  // Whether this function is only for alias definition
+    public enum InvocationKind {
+        ENTRY,
+        CALLED
+    }
+    private InvocationKind invocationKind;
 
     // Constructor
     public CFGFuncNode(String funcName, List<String> parameters) {
@@ -22,6 +27,7 @@ public class CFGFuncNode {
         this.id = 0;
         this.arrived = new HashMap<>();
         this.aliasOnly = false;
+        this.invocationKind = InvocationKind.ENTRY;
     }
 
     public CFGFuncNode(String funcName, List<String> parameters, int id) {
@@ -31,6 +37,7 @@ public class CFGFuncNode {
         this.id = id;
         this.arrived = new HashMap<>();
         this.aliasOnly = false;
+        this.invocationKind = InvocationKind.ENTRY;
     }
 
     // Getters
@@ -64,6 +71,10 @@ public class CFGFuncNode {
         return aliasOnly;
     }
 
+    public InvocationKind getInvocationKind() {
+        return invocationKind;
+    }
+
     // Setters
     public void setFuncName(String funcName) {
         this.funcName = funcName;
@@ -79,6 +90,14 @@ public class CFGFuncNode {
 
     public void setAliasOnly(boolean aliasOnly) {
         this.aliasOnly = aliasOnly;
+    }
+
+    public void setInvocationKind(InvocationKind invocationKind) {
+        this.invocationKind = invocationKind;
+    }
+
+    public boolean isEntryPoint() {
+        return invocationKind == InvocationKind.ENTRY;
     }
 
     // Add parameter

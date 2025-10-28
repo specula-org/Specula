@@ -34,12 +34,14 @@ public class SANYTransformerCli {
             System.err.println("Debug options:");
             System.err.println("  --debug            Print detailed parsing information");
             System.err.println("  --show-tree        Show SANY AST information");
+            System.err.println("  --debug-uc         Run UC stage and dump synthesized UNCHANGED nodes");
             System.exit(1);
         }
         
         // --- 2. Parse command line arguments ---
         boolean showTree = false;
         boolean debugMode = false;
+        boolean debugUC = false;
         String algorithm = "print"; // Default to CFG + print
         String inputFile = null;
         String outputFile = null;
@@ -50,6 +52,8 @@ public class SANYTransformerCli {
                 showTree = true;
             } else if (args[i].equalsIgnoreCase("--debug") || args[i].equalsIgnoreCase("-debug")) {
                 debugMode = true;
+            } else if (args[i].equalsIgnoreCase("--debug-uc")) {
+                debugUC = true;
             } else if (args[i].equalsIgnoreCase("--algorithm") || args[i].equalsIgnoreCase("-algorithm")) {
                 if (i + 1 < args.length) {
                     algorithm = args[i + 1].toLowerCase();
@@ -190,10 +194,33 @@ public class SANYTransformerCli {
             saAnalyzer.analyze_only_sa();
             saAnalyzer.printInOutVars();
             System.out.println("=== END SA DEBUG ===\n");
+            
+            if (debugUC) {
+                System.out.println("=== UC DEBUG: inserting UNCHANGED statements ===");
+                saAnalyzer.analyze_only_uc();
+                saAnalyzer.printInOutVars();
+                for (CFGFuncNode func : callGraph.getFuncNodes()) {
+                    System.out.println("\nFunction CFG after UC: " + func.getFuncName());
+                    System.out.println(func.getRoot().printTree());
+                }
+                System.out.println("=== END UC DEBUG ===\n");
+            }
+        }
+        
+        if (!debugMode && debugUC && callGraph != null) {
+            CFGVarChangeAnalyzer ucAnalyzer = new CFGVarChangeAnalyzer(callGraph);
+            ucAnalyzer.analyze_only_uc();
         }
         
         // --- 6. Run selected algorithm ---
         String resultString = "";
+        CFGVarChangeAnalyzer fullAnalyzer = null;
+        
+        if (!algorithm.equals("cfg")) {
+            fullAnalyzer = new CFGVarChangeAnalyzer(callGraph);
+            fullAnalyzer.analyze();
+            cfgBuilder.setCfgFuncNodes(callGraph.getFuncNodes());
+        }
         
         System.out.println("Running algorithm: " + algorithm);
         switch (algorithm) {

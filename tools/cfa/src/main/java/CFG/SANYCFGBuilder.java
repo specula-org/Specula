@@ -123,6 +123,9 @@ public class SANYCFGBuilder {
     public List<String> getVariables() { return variables; }
     public List<String> getConstants() { return constants; }
     public List<CFGFuncNode> getCfgFuncNodes() { return cfgFuncNodes; }
+    public void setCfgFuncNodes(List<CFGFuncNode> nodes) {
+        this.cfgFuncNodes = new ArrayList<>(nodes);
+    }
     public List<String> getModulePrelude() { return Collections.unmodifiableList(modulePrelude); }
     public List<String> getModulePostlude() { return Collections.unmodifiableList(modulePostlude); }
     public String getModuleName() { return moduleName; }

@@ -10,6 +10,7 @@ import java.util.Set;
 
 
 public class CFGCALLGraph {
+
     // funcNodes includes all actions, funcNames only includes the first function name of undivided and divided functions
     private List<String> variables; 
     private List<String> constants;
@@ -226,6 +227,7 @@ public class CFGCALLGraph {
     }
     
     public void buildCallGraph(boolean debugMode) {
+        callEdges.clear();
         for (CFGFuncNode funcNode : getAllFuncNodes()) {
             // Skip alias-only functions from call graph construction
             if (funcNode.isAliasOnly()) {
@@ -241,10 +243,9 @@ public class CFGCALLGraph {
         
         // Automatically build alias mappings after CFG construction
         buildAliasMap();
+        initializeInvocationKinds();
         
-        // Print alias parsing details for debugging (only in debug mode)
         if (debugMode) {
-            printAliasParsingDetails();
             printAliasMap();
         }
     }
@@ -292,6 +293,21 @@ public class CFGCALLGraph {
         if (stmtNode.getChildren() != null) {
             for (CFGStmtNode child : stmtNode.getChildren()) {
                 traverseStmtNode(child, funcNode, visited);
+            }
+        }
+    }
+
+    private void initializeInvocationKinds() {
+        for (CFGFuncNode funcNode : getAllFuncNodes()) {
+            if (funcNode.isAliasOnly()) {
+                continue;
+            }
+            funcNode.setInvocationKind(CFGFuncNode.InvocationKind.ENTRY);
+        }
+        for (CFGCALLEdge edge : callEdges) {
+            CFGFuncNode target = edge.getTarget();
+            if (target != null && !target.isAliasOnly()) {
+                target.setInvocationKind(CFGFuncNode.InvocationKind.CALLED);
             }
         }
     }
