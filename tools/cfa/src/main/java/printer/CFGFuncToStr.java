@@ -36,6 +36,15 @@ public class CFGFuncToStr {
         funchead += " ==";
         res.add(funchead);
         
+        if (node.isPureExpression() && node.getOriginalExpression() != null) {
+            String expr = node.getOriginalExpression();
+            String[] lines = expr.split("\n", -1);
+            for (String line : lines) {
+                res.add("    " + line);
+            }
+            return res;
+        }
+
         // Call DFS to process function body and add 4-space indentation to each line
         CFGStmtNode root = node.getRoot();
         List<String> bodyLines = DFS(root, EXIT);

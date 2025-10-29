@@ -13,6 +13,8 @@ public class CFGFuncNode {
     private int id;
     private Map<CFGStmtNode, Boolean> arrived;
     private boolean aliasOnly;  // Whether this function is only for alias definition
+    private boolean pureExpression;
+    private String originalExpression;
     public enum InvocationKind {
         ENTRY,
         CALLED
@@ -28,6 +30,8 @@ public class CFGFuncNode {
         this.arrived = new HashMap<>();
         this.aliasOnly = false;
         this.invocationKind = InvocationKind.ENTRY;
+        this.pureExpression = false;
+        this.originalExpression = null;
     }
 
     public CFGFuncNode(String funcName, List<String> parameters, int id) {
@@ -38,6 +42,8 @@ public class CFGFuncNode {
         this.arrived = new HashMap<>();
         this.aliasOnly = false;
         this.invocationKind = InvocationKind.ENTRY;
+        this.pureExpression = false;
+        this.originalExpression = null;
     }
 
     // Getters
@@ -75,6 +81,14 @@ public class CFGFuncNode {
         return invocationKind;
     }
 
+    public boolean isPureExpression() {
+        return pureExpression;
+    }
+
+    public String getOriginalExpression() {
+        return originalExpression;
+    }
+
     // Setters
     public void setFuncName(String funcName) {
         this.funcName = funcName;
@@ -98,6 +112,14 @@ public class CFGFuncNode {
 
     public boolean isEntryPoint() {
         return invocationKind == InvocationKind.ENTRY;
+    }
+
+    public void setPureExpression(boolean pureExpression) {
+        this.pureExpression = pureExpression;
+    }
+
+    public void setOriginalExpression(String originalExpression) {
+        this.originalExpression = originalExpression;
     }
 
     // Add parameter
