@@ -95,7 +95,7 @@ public class CFGVarChangeAnalyzer {
         }
         
         analyzeUC();
-        anlayzeUD();
+        // UD pass temporarily disabled pending redesign.
     }
 
     public void analyze_only_sa(){
@@ -148,16 +148,7 @@ public class CFGVarChangeAnalyzer {
     }
 
     public void analyze_only_ud(){
-        prepareForSAPass();
-        // Get topological sequence
-        List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
-        // Reverse
-        Collections.reverse(topologicalSort);
-        for (CFGFuncNode funcNode : topologicalSort) {
-            // Analyze each function
-            analyzeFuncSA(funcNode);
-        }
-        anlayzeUD();
+        throw new UnsupportedOperationException("UD pass is temporarily disabled");
     }
 
     public void analyze_only_uc(){
@@ -1019,6 +1010,7 @@ public class CFGVarChangeAnalyzer {
                 varChange.addAll(leafNode.OutVar);
             }
             funcVarChange.put(funcNode.getFuncName(), varChange);
+            funcNode.setPureExpression(varChange.isEmpty());
         }
     }
 

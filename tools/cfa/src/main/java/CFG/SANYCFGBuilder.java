@@ -385,16 +385,19 @@ public class SANYCFGBuilder {
         
         indentationLevel++;
         
-        // Find and process the operator body
-        CFGStmtNode bodyNode = visitOperatorBody(opDefNode);
-        if (bodyNode != null) {
-            rootNode.addChild(bodyNode);
+        SyntaxTreeNode bodyExprNode = extractOperatorBodyNode(opDefNode);
+        CFGFuncNode cfgFuncNode = new CFGFuncNode(functionName, parameters);
+        if (bodyExprNode != null) {
+            cfgFuncNode.setOriginalExpression(reconstructExpression(bodyExprNode));
+            CFGStmtNode bodyNode = visitExpressionNode(bodyExprNode);
+            if (bodyNode != null) {
+                rootNode.addChild(bodyNode);
+            }
         }
         
         indentationLevel--;
         
         // Create CFGFuncNode
-        CFGFuncNode cfgFuncNode = new CFGFuncNode(functionName, parameters);
         cfgFuncNode.setRoot(rootNode);
         cfgFuncNodes.add(cfgFuncNode);
     }
@@ -403,7 +406,7 @@ public class SANYCFGBuilder {
      * Visit operator body - handles the actual logic statements in operator definitions
      * This method looks for the expression part after the == token and processes it
      */
-    private CFGStmtNode visitOperatorBody(SyntaxTreeNode opDefNode) {
+    private SyntaxTreeNode extractOperatorBodyNode(SyntaxTreeNode opDefNode) {
         TreeNode[] children = opDefNode.heirs();
         if (children == null) return null;
         
@@ -420,8 +423,7 @@ public class SANYCFGBuilder {
             
             // Process the expression after ==
             if (foundEquals && child instanceof SyntaxTreeNode) {
-                SyntaxTreeNode stn = (SyntaxTreeNode) child;
-                return visitExpressionNode(stn);
+                return (SyntaxTreeNode) child;
             }
         }
         
@@ -432,7 +434,7 @@ public class SANYCFGBuilder {
                 
                 // Check if this looks like a statement or expression
                 if (isStatementOrExpression(stn)) {
-                    return visitExpressionNode(stn);
+                    return stn;
                 }
             }
         }
