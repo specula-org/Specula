@@ -149,7 +149,7 @@ class Phase1Generator:
     """Main Phase 1 generator class"""
     
     def __init__(self, use_rag: bool = True, autosave: Optional[AutosaveManager] = None,
-                 enable_checkpoint_logging: bool = False):
+                 enable_checkpoints: bool = False):
         self.llm = LLMClientWrapper()
         self.validator = TLAValidator()
         self.prompts_dir = Path(config.get('paths.prompts_dir'))
@@ -157,6 +157,8 @@ class Phase1Generator:
         self.generation_mode = config.get('generation.mode', 'direct')
         self.step2_prompt_name = "step1_error_correction.txt"
         self.step2_prompt = self._load_prompt(self.step2_prompt_name)
+        self.checkpoint_summary_prompt_name = "step1_error_correction_summary.txt"
+        self.checkpoint_summary_prompt = self._load_prompt(self.checkpoint_summary_prompt_name)
         self.use_rag = use_rag
         self.retriever = None
         self.autosave = autosave if autosave is not None else AutosaveManager(
@@ -164,7 +166,7 @@ class Phase1Generator:
             enabled=False,
             config_path=config.config_path
         )
-        self.enable_checkpoint_logging = enable_checkpoint_logging
+        self.enable_checkpoints = enable_checkpoints
         if self.use_rag:
             logger.info("RAG-based error correction from knowledge base is enabled.")
         else:
@@ -275,11 +277,21 @@ class Phase1Generator:
             logger.error(f"Correction failed: {e}\n{traceback.format_exc()}")
             raise
     
-    def _run_correction_loop(self, initial_spec: str, initial_errors: str, output_path: Path) -> Tuple[str, bool, int, str]:
+    def _run_correction_loop(
+        self,
+        initial_spec: str,
+        initial_errors: str,
+        output_path: Path,
+        start_attempt: int = 0
+    ) -> Tuple[str, bool, int, str]:
         """Runs the iterative correction loop for a given spec."""
         current_spec = initial_spec
         error_output = initial_errors
         correction_attempts = 0
+        previous_error_output = initial_errors 
+        corrected_errors = set()
+        last_attempt_dir: Optional[Path] = None
+        last_attempt_file: Optional[Path] = None
 
         if self.use_rag and self.retriever is None:
             try:
@@ -292,9 +304,10 @@ class Phase1Generator:
         
         while correction_attempts < self.max_correction_attempts:
             correction_attempts += 1
-            logger.info(f"Correction attempt {correction_attempts}/{self.max_correction_attempts}")
-            if self.enable_checkpoint_logging and error_output:
-                logger.info("Checkpoint %d error output:\n%s", correction_attempts, error_output.strip())
+            attempt_index = start_attempt + correction_attempts
+            logger.info(f"Correction attempt {attempt_index} (cycle {attempt_index//self.max_correction_attempts})")
+            if self.enable_checkpoints and error_output:
+                logger.info("Checkpoint %d error output:\n%s", attempt_index, error_output.strip())
             
             knowledge_context = self._load_knowledge_context()
             
@@ -313,7 +326,7 @@ class Phase1Generator:
                 except Exception as e:
                     logger.warning(f"Error retrieval failed: {e}. Proceeding without retrieved context.")
             
-            attempt_label = f"{correction_attempts}"
+            attempt_label = f"{attempt_index}"
             corrected_spec = self.step2_correct_errors(
                 current_spec,
                 error_output,
@@ -322,29 +335,68 @@ class Phase1Generator:
             )
             
             module_name = self._extract_module_name(corrected_spec)
-            attempt_dir = output_path / f"attempt_{correction_attempts}"
+            attempt_dir = output_path / f"attempt_{attempt_index}"
             attempt_dir.mkdir(exist_ok=True)
             attempt_file = attempt_dir / f"{module_name}.tla"
             with open(attempt_file, 'w', encoding='utf-8') as f:
                 f.write(corrected_spec)
-            self.autosave.record_artifact(f"correction_attempt_{correction_attempts}", attempt_file)
+            last_attempt_dir = attempt_dir
+            last_attempt_file = attempt_file
             
             success, error_output = self.validator.validate(str(attempt_file))
             if success:
-                logger.info(f"Correction successful after {correction_attempts} attempt(s)!")
-                return corrected_spec, True, correction_attempts, ""
+                logger.info(f"Correction successful after {attempt_index} total attempt(s)!")
+                return corrected_spec, True, attempt_index, ""
             else:
-                logger.warning(f"Correction attempt {correction_attempts} failed. Retrying...")
+                if previous_error_output != error_output:
+                    corrected_errors.add(previous_error_output)
+                    previous_error_output = error_output
+                logger.warning(f"Correction attempt {attempt_index} failed. Retrying...")
                 current_spec = corrected_spec
         
-        logger.error(f"Failed to correct the specification after {self.max_correction_attempts} attempts.")
-        if self.enable_checkpoint_logging:
-            _, final_errors = self.validator.validate(str(attempt_file))
+        logger.error(f"Failed to correct the specification after {self.max_correction_attempts} attempts this cycle.")
+        if self.enable_checkpoints and last_attempt_file:
+            _, final_errors = self.validator.validate(str(last_attempt_file))
             error_output = final_errors
-            summary_file = attempt_dir / "errorSummary.txt"
-            with open(summary_file, 'w', encoding='utf-8') as f:
-                f.write(final_errors)
-        return current_spec, False, correction_attempts, error_output
+
+            # save recent iteration's errors
+            if error_output:
+                summary_file = last_attempt_dir / "remainingErrors.txt"
+                with open(summary_file, 'w', encoding='utf-8') as f:
+                    f.write(error_output)
+
+            # prompt LLM for summary of this cycle's corrections
+            corrected_errors_text = "\n\n".join(
+                err.strip() for err in corrected_errors if err.strip()
+            ) or "None"
+            prompt_content = self.checkpoint_summary_prompt.format(
+                errors=corrected_errors_text,
+                current_errors=error_output.strip(),
+                current_spec=current_spec.strip()
+            )
+            summary_response = self.llm.generate(prompt_content)
+
+            # log and display final summary
+            logger.info(f"Final correction summary (cycle {attempt_index//self.max_correction_attempts}):\n{summary_response.strip()}")
+            summary_path = output_path / "correctionSummary.txt"
+            existing = summary_path.exists()
+            with open(summary_path, 'a', encoding='utf-8') as f:
+                if existing and summary_path.stat().st_size > 0:
+                    f.write("\n\n" + "=" * 40 + "\n\n")
+                f.write(summary_response.strip() + "\n")
+
+            # HITL: wait for user decision to start or stop
+            user_input = input("Correction failed. Continue iterating? (y/n): ").strip().lower()
+            if user_input in {"y", "yes"}:
+                return self._run_correction_loop(
+                    current_spec,
+                    error_output,
+                    output_path,
+                    start_attempt=start_attempt + correction_attempts
+                )
+            else:
+                return current_spec, False, attempt_index, error_output
+
     
     def generate_specification(self, input_path: str, output_dir: str) -> Dict:
         """Generate TLA+ specification from source code"""
@@ -627,8 +679,8 @@ def main():
                         help="Override log level from config")
     parser.add_argument("--autosave", action="store_true",
                         help="Enable autosaving of prompts, logs, and outputs under output/autosave/")
-    parser.add_argument("--checkpoint-logging", action="store_true",
-                        help="Enable logging to summarize correction attempts.")
+    parser.add_argument("--checkpoints", action="store_true",
+                        help="Enable logging summaries and HITL checkpoints for correction attempts.")
     args = parser.parse_args()
 
     autosave_manager: Optional[AutosaveManager] = None
@@ -657,7 +709,7 @@ def main():
         if autosave_manager.enabled:
             autosave_manager.metadata["use_rag"] = use_rag
 
-        generator = Phase1Generator(use_rag=use_rag, autosave=autosave_manager, enable_checkpoint_logging=args.checkpoint_logging)
+        generator = Phase1Generator(use_rag=use_rag, autosave=autosave_manager, enable_checkpoints=args.checkpoints)
 
         # Apply command-line overrides
         if args.model:
