@@ -148,7 +148,8 @@ class TLAValidator:
 class Phase1Generator:
     """Main Phase 1 generator class"""
     
-    def __init__(self, use_rag: bool = True, autosave: Optional[AutosaveManager] = None):
+    def __init__(self, use_rag: bool = True, autosave: Optional[AutosaveManager] = None,
+                 enable_checkpoint_logging: bool = False):
         self.llm = LLMClientWrapper()
         self.validator = TLAValidator()
         self.prompts_dir = Path(config.get('paths.prompts_dir'))
@@ -163,6 +164,7 @@ class Phase1Generator:
             enabled=False,
             config_path=config.config_path
         )
+        self.enable_checkpoint_logging = enable_checkpoint_logging
         if self.use_rag:
             logger.info("RAG-based error correction from knowledge base is enabled.")
         else:
@@ -291,6 +293,8 @@ class Phase1Generator:
         while correction_attempts < self.max_correction_attempts:
             correction_attempts += 1
             logger.info(f"Correction attempt {correction_attempts}/{self.max_correction_attempts}")
+            if self.enable_checkpoint_logging and error_output:
+                logger.info("Checkpoint %d error output:\n%s", correction_attempts, error_output.strip())
             
             knowledge_context = self._load_knowledge_context()
             
@@ -334,6 +338,12 @@ class Phase1Generator:
                 current_spec = corrected_spec
         
         logger.error(f"Failed to correct the specification after {self.max_correction_attempts} attempts.")
+        if self.enable_checkpoint_logging:
+            _, final_errors = self.validator.validate(str(attempt_file))
+            error_output = final_errors
+            summary_file = attempt_dir / "errorSummary.txt"
+            with open(summary_file, 'w', encoding='utf-8') as f:
+                f.write(final_errors)
         return current_spec, False, correction_attempts, error_output
     
     def generate_specification(self, input_path: str, output_dir: str) -> Dict:
@@ -617,6 +627,8 @@ def main():
                         help="Override log level from config")
     parser.add_argument("--autosave", action="store_true",
                         help="Enable autosaving of prompts, logs, and outputs under output/autosave/")
+    parser.add_argument("--checkpoint-logging", action="store_true",
+                        help="Enable logging to summarize correction attempts.")
     args = parser.parse_args()
 
     autosave_manager: Optional[AutosaveManager] = None
@@ -645,7 +657,7 @@ def main():
         if autosave_manager.enabled:
             autosave_manager.metadata["use_rag"] = use_rag
 
-        generator = Phase1Generator(use_rag=use_rag, autosave=autosave_manager)
+        generator = Phase1Generator(use_rag=use_rag, autosave=autosave_manager, enable_checkpoint_logging=args.checkpoint_logging)
 
         # Apply command-line overrides
         if args.model:
