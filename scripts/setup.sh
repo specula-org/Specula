@@ -383,6 +383,7 @@ if [ $# -eq 0 ]; then
     echo "  step1 [args...]    Generate TLA+ specification from source code"
     echo "  step2 [args...]    Transform TLA+ spec using CFA tool"
     echo "  step3 [args...]    Verify TLA+ specification using TLC"
+    echo "  step4 [args...]    Run combined trace validation pipeline"
     echo "  step4.1 [args...]  Generate trace validation configuration"
     echo "  step4.2 [args...]  Instrument source code for tracing"
     echo
@@ -437,6 +438,10 @@ case "$COMMAND" in
     "step3")
         python3 -m src.core.runtime_corrector "$@"
         ;;
+
+    "step4")
+        python3 -m src.core.combined_step4 "$@"
+        ;;
         
     "step4.1")
         python3 -m src.core.spectrace_generator "$@"
@@ -474,6 +479,7 @@ print_status "  ./specula step2 <input> <output> --algorithm uc # Unchanged vari
 print_status "  ./specula step2 <input> <output> --algorithm ud # Undefined variable analysis only"
 print_status "  ./specula step2 <input> <output> --algorithm pc # Process cutting analysis only"
 print_status "  ./specula step3 <spec_file>      # Verify TLA+ specification"
+print_status "  ./specula step4 [args]           # Run combined trace validation pipeline"
 print_status "  ./specula step4.1 <src> <config> # Instrument source code"
 print_status "  ./specula step4.2 <spec> <trace> # Validate trace"
 echo

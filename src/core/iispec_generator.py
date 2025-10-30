@@ -11,13 +11,13 @@ import json
 import yaml
 import argparse
 import subprocess
-import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 import logging
 import traceback
 
 from ..rag.retriever import ErrorRetriever
+from .autosave import AutosaveManager
 
 class Config:
     """Configuration management class"""
@@ -87,6 +87,7 @@ class Config:
                 return default
         return value
 
+
 # Global config instance
 config = Config()
 logger = logging.getLogger(__name__)
@@ -147,15 +148,23 @@ class TLAValidator:
 class Phase1Generator:
     """Main Phase 1 generator class"""
     
-    def __init__(self, use_rag: bool = True):
+    def __init__(self, use_rag: bool = True, autosave: Optional[AutosaveManager] = None,
+                 enable_checkpoint_logging: bool = False):
         self.llm = LLMClientWrapper()
         self.validator = TLAValidator()
         self.prompts_dir = Path(config.get('paths.prompts_dir'))
         self.max_correction_attempts = config.get('generation.max_correction_attempts')
         self.generation_mode = config.get('generation.mode', 'direct')
-        self.step2_prompt = self._load_prompt("step1_error_correction.txt")
+        self.step2_prompt_name = "step1_error_correction.txt"
+        self.step2_prompt = self._load_prompt(self.step2_prompt_name)
         self.use_rag = use_rag
         self.retriever = None
+        self.autosave = autosave if autosave is not None else AutosaveManager(
+            base_dir=Path(config.get('paths.output_dir', 'output')) / 'autosave',
+            enabled=False,
+            config_path=config.config_path
+        )
+        self.enable_checkpoint_logging = enable_checkpoint_logging
         if self.use_rag:
             logger.info("RAG-based error correction from knowledge base is enabled.")
         else:
@@ -208,24 +217,38 @@ class Phase1Generator:
     def step0_generate_draft(self, source_code: str) -> str:
         """Step 0: Generate a natural language analysis draft"""
         logger.info("Step 0: Generating natural language analysis draft...")
-        prompt_template = self._load_prompt("step0_draft_generation.txt")
+        prompt_template_name = "step0_draft_generation.txt"
+        prompt_template = self._load_prompt(prompt_template_name)
         prompt = prompt_template.format(source_code=source_code)
-        return self.llm.generate(prompt)
+        prompt_id = self.autosave.record_prompt(
+            name="step0_draft_generation",
+            prompt_content=prompt
+        )
+        response = self.llm.generate(prompt)
+        self.autosave.record_response(prompt_id, response, suffix="draft_analysis")
+        return response
     
     def step1_translate_code(self, source_code: str, draft_analysis: str = "") -> str:
         """Step 1: Translate source code to a TLA+ specification"""
         logger.info("Step 1: Translating source code to TLA+ specification...")
         if self.generation_mode in ["draft-based", "existing-draft"]:
-            prompt_template = self._load_prompt("step1_code_translation_with_draft.txt")
+            prompt_template_name = "step1_code_translation_with_draft.txt"
+            prompt_template = self._load_prompt(prompt_template_name)
             prompt = prompt_template.format(source_code=source_code, draft_analysis=draft_analysis)
         else:
-            prompt_template = self._load_prompt("step1_code_translation.txt")
+            prompt_template_name = "step1_code_translation.txt"
+            prompt_template = self._load_prompt(prompt_template_name)
             prompt = prompt_template.format(source_code=source_code)
+        prompt_id = self.autosave.record_prompt(
+            name="step1_code_translation",
+            prompt_content=prompt
+        )
         response = self.llm.generate(prompt)
+        self.autosave.record_response(prompt_id, response, suffix="tla_translation")
         return self._extract_tla_code(response)
     
-    def step2_correct_errors(self, original_spec: str, error_messages: str, 
-                           knowledge_context: str = "") -> str:
+    def step2_correct_errors(self, original_spec: str, error_messages: str,
+                             knowledge_context: str = "", attempt_label: Optional[str] = None) -> str:
         """Step 2: Correct TLA+ specification based on SANY errors"""
         logger.info("Step 2: Correcting TLA+ specification errors...")
         
@@ -234,9 +257,14 @@ class Phase1Generator:
             error_messages=error_messages,
             knowledge_context=knowledge_context
         )
+        prompt_id = self.autosave.record_prompt(
+            name=f"step2_correction_{attempt_label or 'attempt'}",
+            prompt_content=prompt
+        )
         
         try:
             corrected_response = self.llm.generate(prompt)
+            self.autosave.record_response(prompt_id, corrected_response, suffix=f"correction_{attempt_label or 'attempt'}")
             corrected_spec = self._extract_tla_code(corrected_response)
             
             if not corrected_spec.strip():
@@ -265,6 +293,8 @@ class Phase1Generator:
         while correction_attempts < self.max_correction_attempts:
             correction_attempts += 1
             logger.info(f"Correction attempt {correction_attempts}/{self.max_correction_attempts}")
+            if self.enable_checkpoint_logging and error_output:
+                logger.info("Checkpoint %d error output:\n%s", correction_attempts, error_output.strip())
             
             knowledge_context = self._load_knowledge_context()
             
@@ -283,7 +313,13 @@ class Phase1Generator:
                 except Exception as e:
                     logger.warning(f"Error retrieval failed: {e}. Proceeding without retrieved context.")
             
-            corrected_spec = self.step2_correct_errors(current_spec, error_output, knowledge_context)
+            attempt_label = f"{correction_attempts}"
+            corrected_spec = self.step2_correct_errors(
+                current_spec,
+                error_output,
+                knowledge_context,
+                attempt_label=attempt_label
+            )
             
             module_name = self._extract_module_name(corrected_spec)
             attempt_dir = output_path / f"attempt_{correction_attempts}"
@@ -291,6 +327,7 @@ class Phase1Generator:
             attempt_file = attempt_dir / f"{module_name}.tla"
             with open(attempt_file, 'w', encoding='utf-8') as f:
                 f.write(corrected_spec)
+            self.autosave.record_artifact(f"correction_attempt_{correction_attempts}", attempt_file)
             
             success, error_output = self.validator.validate(str(attempt_file))
             if success:
@@ -301,6 +338,12 @@ class Phase1Generator:
                 current_spec = corrected_spec
         
         logger.error(f"Failed to correct the specification after {self.max_correction_attempts} attempts.")
+        if self.enable_checkpoint_logging:
+            _, final_errors = self.validator.validate(str(attempt_file))
+            error_output = final_errors
+            summary_file = attempt_dir / "errorSummary.txt"
+            with open(summary_file, 'w', encoding='utf-8') as f:
+                f.write(final_errors)
         return current_spec, False, correction_attempts, error_output
     
     def generate_specification(self, input_path: str, output_dir: str) -> Dict:
@@ -317,6 +360,7 @@ class Phase1Generator:
             with open(draft_file, 'w', encoding='utf-8') as f:
                 f.write(draft_analysis)
             logger.info(f"Draft analysis saved to {draft_file}")
+            self.autosave.record_artifact("draft_analysis", draft_file)
         
         step1_spec = self.step1_translate_code(source_code, draft_analysis)
         module_name = self._extract_module_name(step1_spec)
@@ -325,6 +369,7 @@ class Phase1Generator:
             f.write(step1_spec)
         
         logger.info(f"Step 1 output saved to {step1_file}")
+        self.autosave.record_artifact("step1_translation", step1_file)
         
         success, error_output = self.validator.validate(str(step1_file))
         if success:
@@ -350,6 +395,7 @@ class Phase1Generator:
         if str(step1_file) != str(final_file):
             with open(final_file, 'w', encoding='utf-8') as f:
                 f.write(final_spec)
+        self.autosave.record_artifact("final_spec", final_file)
         
         summary = self._create_summary(
             input_path=input_path, output_path=output_path, generation_mode=self.generation_mode,
@@ -357,6 +403,8 @@ class Phase1Generator:
             correction_attempts=correction_attempts, final_errors=error_output
         )
         self._save_summary(summary, output_path)
+        self.autosave.set_summary(summary)
+        self.autosave.record_artifact("generation_summary", output_path / "generation_summary.json")
         logger.info(f"Generation complete. Final specification: {final_file}")
         return summary
     
@@ -372,6 +420,7 @@ class Phase1Generator:
         with open(draft_file, 'w', encoding='utf-8') as f:
             f.write(draft_analysis)
         logger.info(f"Draft analysis saved to {draft_file}")
+        self.autosave.record_artifact("draft_analysis", draft_file)
         
         summary = {
             "input_file": input_path,
@@ -388,6 +437,8 @@ class Phase1Generator:
             }
         }
         self._save_summary(summary, output_path)
+        self.autosave.set_summary(summary)
+        self.autosave.record_artifact("generation_summary", output_path / "generation_summary.json")
         logger.info(f"Draft generation complete. Draft file: {draft_file}")
         return summary
     
@@ -405,14 +456,16 @@ class Phase1Generator:
         except FileNotFoundError:
             logger.error(f"Draft file not found: {draft_path}")
             raise
+        self.autosave.record_artifact("input_draft", Path(draft_path))
         
         step1_spec = self.step1_translate_code(source_code, draft_analysis)
         module_name = self._extract_module_name(step1_spec)
         step1_file = output_path / f"{module_name}.tla"
         with open(step1_file, 'w', encoding='utf-8') as f:
             f.write(step1_spec)
-        
+
         logger.info(f"Step 1 output saved to {step1_file}")
+        self.autosave.record_artifact("step1_translation", step1_file)
         
         success, error_output = self.validator.validate(str(step1_file))
         if success:
@@ -438,6 +491,7 @@ class Phase1Generator:
         if str(step1_file) != str(final_file):
             with open(final_file, 'w', encoding='utf-8') as f:
                 f.write(final_spec)
+        self.autosave.record_artifact("final_spec", final_file)
         
         summary = self._create_summary(
             input_path=input_path, output_path=output_path, generation_mode="existing-draft",
@@ -446,6 +500,8 @@ class Phase1Generator:
         )
         summary["draft_file"] = draft_path
         self._save_summary(summary, output_path)
+        self.autosave.set_summary(summary)
+        self.autosave.record_artifact("generation_summary", output_path / "generation_summary.json")
         logger.info(f"Generation complete. Final specification: {final_file}")
         return summary
 
@@ -460,6 +516,7 @@ class Phase1Generator:
         except FileNotFoundError:
             logger.error(f"Input specification file not found: {input_spec_path}")
             sys.exit(1)
+        self.autosave.record_artifact("input_spec", Path(input_spec_path))
         
         module_name = self._extract_module_name(initial_spec)
         initial_dir = output_path / "initial"
@@ -467,6 +524,7 @@ class Phase1Generator:
         initial_file = initial_dir / f"{module_name}.tla"
         with open(initial_file, 'w', encoding='utf-8') as f:
             f.write(initial_spec)
+        self.autosave.record_artifact("initial_spec", initial_file)
         
         success, error_output = self.validator.validate(str(initial_file))
         if success:
@@ -491,13 +549,16 @@ class Phase1Generator:
             
         with open(final_file, 'w', encoding='utf-8') as f:
             f.write(final_spec)
-        
+        self.autosave.record_artifact("final_spec", final_file)
+
         summary = self._create_summary(
             input_path=input_spec_path, output_path=output_path, generation_mode="correct-only",
             step1_file=initial_file, final_file=final_file, success=success,
             correction_attempts=correction_attempts, final_errors=error_output
         )
         self._save_summary(summary, output_path)
+        self.autosave.set_summary(summary)
+        self.autosave.record_artifact("generation_summary", output_path / "generation_summary.json")
         logger.info(f"Correction complete. Final specification: {final_file}")
         return summary
     
@@ -564,57 +625,84 @@ def main():
 - existing-draft: Existing Draft + Source code -> TLA+""")
     parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                         help="Override log level from config")
+    parser.add_argument("--autosave", action="store_true",
+                        help="Enable autosaving of prompts, logs, and outputs under output/autosave/")
+    parser.add_argument("--checkpoint-logging", action="store_true",
+                        help="Enable logging to summarize correction attempts.")
     args = parser.parse_args()
+
+    autosave_manager: Optional[AutosaveManager] = None
+    summary: Optional[Dict] = None
+    exit_code = 0
+    error_message: Optional[str] = None
 
     try:
         global config
         if args.config != "config.yaml":
             config = Config(args.config)
-        
+
         if args.log_level:
             logging.getLogger().setLevel(getattr(logging, args.log_level))
 
         use_rag = not args.no_rag
-        generator = Phase1Generator(use_rag=use_rag)
+        mode = args.mode or config.get('generation.mode', 'direct')
+
+        autosave_manager = AutosaveManager(
+            base_dir=Path(config.get('paths.output_dir', 'output')) / 'autosave',
+            enabled=args.autosave,
+            config_path=config.config_path
+        )
+        autosave_manager.start_session(input_path=args.input, output_dir=args.output)
+        autosave_manager.snapshot_config(config.config, label="base", source_path=config.config_path)
+        if autosave_manager.enabled:
+            autosave_manager.metadata["use_rag"] = use_rag
+
+        generator = Phase1Generator(use_rag=use_rag, autosave=autosave_manager, enable_checkpoint_logging=args.checkpoint_logging)
 
         # Apply command-line overrides
         if args.model:
             generator.llm.model = args.model
             logger.info(f"Using command-line override for model: {args.model}")
-        if args.max_tokens:
+            autosave_manager.record_override("model", args.model)
+        if args.max_tokens is not None:
             generator.llm.max_tokens = args.max_tokens
             logger.info(f"Using command-line override for max_tokens: {args.max_tokens}")
-        if args.temperature:
+            autosave_manager.record_override("max_tokens", args.max_tokens)
+        if args.temperature is not None:
             generator.llm.temperature = args.temperature
             logger.info(f"Using command-line override for temperature: {args.temperature}")
-        
+            autosave_manager.record_override("temperature", args.temperature)
+
         # Determine mode from args or config
-        mode = args.mode or generator.generation_mode
         generator.generation_mode = mode
         logger.info(f"Running in '{mode}' mode.")
-        
+
         # Execute the chosen mode
         if mode == 'correct-only':
             if not args.input.endswith('.tla'):
-                logger.error("Input for 'correct-only' mode must be a .tla file.")
-                sys.exit(1)
-            generator.correct_specification(args.input, args.output)
+                raise ValueError("Input for 'correct-only' mode must be a .tla file.")
+            summary = generator.correct_specification(args.input, args.output)
         elif mode == 'draft-only':
-            generator.generate_draft_only(args.input, args.output)
+            summary = generator.generate_draft_only(args.input, args.output)
         elif mode == 'existing-draft':
             if not args.draft:
-                logger.error("--draft parameter is required for 'existing-draft' mode.")
-                sys.exit(1)
+                raise ValueError("--draft parameter is required for 'existing-draft' mode.")
             if not os.path.exists(args.draft):
-                logger.error(f"Draft file not found: {args.draft}")
-                sys.exit(1)
-            generator.generate_from_existing_draft(args.input, args.draft, args.output)
+                raise FileNotFoundError(f"Draft file not found: {args.draft}")
+            summary = generator.generate_from_existing_draft(args.input, args.draft, args.output)
         else:
-            generator.generate_specification(args.input, args.output)
+            summary = generator.generate_specification(args.input, args.output)
 
     except Exception as e:
-        logger.error(f"An unexpected error occurred: {e}\n{traceback.format_exc()}")
-        sys.exit(1)
+        exit_code = 1
+        error_message = f"An unexpected error occurred: {e}\n{traceback.format_exc()}"
+        logger.error(error_message)
+    finally:
+        if autosave_manager:
+            autosave_manager.finalize(summary=summary, exit_code=exit_code, error=error_message)
+
+    if exit_code != 0:
+        sys.exit(exit_code)
 
 if __name__ == "__main__":
     main() 
