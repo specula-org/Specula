@@ -377,7 +377,7 @@ class Phase1Generator:
             summary_response = self.llm.generate(prompt_content)
 
             # log and display final summary
-            logger.info(f"Final correction summary (cycle {attempt_index//self.max_correction_attempts}):\n{summary_response.strip()}")
+            logger.info(f"Final correction summary (cycle {(attempt_index-1)//self.max_correction_attempts}):\n{summary_response.strip()}")
             summary_path = output_path / "correctionSummary.txt"
             existing = summary_path.exists()
             with open(summary_path, 'a', encoding='utf-8') as f:
