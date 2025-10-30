@@ -322,7 +322,7 @@ public class CFGVarChangeAnalyzer {
             // If already cut, need to cut this function
             int id = funcNode.getIDandADD();
             CFGFuncNode newFuncNode = new CFGFuncNode(funcNode.getFuncName() + "_" + id, funcNode.getParameters(), id);
-            newFuncNode.setInvocationKind(funcNode.getInvocationKind());
+            newFuncNode.setInvocationKind(CFGFuncNode.InvocationKind.CALLED);
             funcVarChange.putIfAbsent(newFuncNode.getFuncName(), new HashSet<>());
             CFGStmtNode root = new CFGStmtNode(0, "root", null, CFGStmtNode.StmtType.ROOT);
             newFuncNode.setRoot(root);
@@ -430,7 +430,7 @@ public class CFGVarChangeAnalyzer {
                 // Initialize the function cut out
                 int id = funcNode.getIDandADD();
                 CFGFuncNode newFuncNode = new CFGFuncNode(funcNode.getFuncName() + "_" + id, funcNode.getParameters(), id);
-                newFuncNode.setInvocationKind(funcNode.getInvocationKind());
+                newFuncNode.setInvocationKind(CFGFuncNode.InvocationKind.CALLED);
                 funcVarChange.putIfAbsent(newFuncNode.getFuncName(), new HashSet<>());
                 CFGStmtNode root = new CFGStmtNode(0, "root", null, CFGStmtNode.StmtType.ROOT);
                 newFuncNode.setRoot(root);

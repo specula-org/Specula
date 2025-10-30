@@ -263,11 +263,22 @@ public class SANYTransformerCli {
         StringBuilder result = new StringBuilder();
 
         List<String> modulePrelude = cfgBuilder.getModulePrelude();
+        boolean wrotePrelude = false;
         if (!modulePrelude.isEmpty()) {
             for (String snippet : modulePrelude) {
+                if (snippet == null) {
+                    continue;
+                }
+                String trimmed = snippet.trim();
+                if (trimmed.isEmpty() || "====".equals(trimmed)) {
+                    continue;
+                }
                 appendSnippet(result, snippet);
+                wrotePrelude = true;
             }
-            appendBlankLine(result);
+            if (wrotePrelude) {
+                appendBlankLine(result);
+            }
         }
 
         // Add header comment

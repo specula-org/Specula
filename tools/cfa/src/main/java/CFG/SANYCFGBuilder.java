@@ -1,7 +1,6 @@
 package CFG;
 
 import java.util.*;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import tla2sany.st.Location;
@@ -24,6 +23,7 @@ public class SANYCFGBuilder {
     private List<String> modulePrelude = new ArrayList<>();
     private List<String> modulePostlude = new ArrayList<>();
     private String moduleName;
+    private static final Pattern MODULE_END_LINE_PATTERN = Pattern.compile("(?m)^\\s*====\\s*$\\R?");
     
     // SANY AST node kind constants
     private static final int N_Module = 382;
@@ -170,7 +170,10 @@ public class SANYCFGBuilder {
             String image = stn.getImage();
 
             if (IMAGE_BEGIN_MODULE.equals(image)) {
-                modulePrelude.add(extractSourceFragment(stn));
+                String snippet = sanitizeModuleBeginSnippet(extractSourceFragment(stn));
+                if (snippet != null && !snippet.isEmpty()) {
+                    modulePrelude.add(snippet);
+                }
             } else if (IMAGE_END_MODULE.equals(image)) {
                 modulePostlude.add(extractSourceFragment(stn));
             } else if (image != null && MODULE_DIRECTIVE_IMAGES.contains(image)) {
@@ -280,6 +283,13 @@ public class SANYCFGBuilder {
         endIdx = Math.max(startIdx, Math.min(originalSource.length(), endIdx));
 
         return originalSource.substring(startIdx, endIdx);
+    }
+
+    private String sanitizeModuleBeginSnippet(String snippet) {
+        if (snippet == null || snippet.isEmpty()) {
+            return snippet;
+        }
+        return MODULE_END_LINE_PATTERN.matcher(snippet).replaceAll("");
     }
 
     private void ensureNoRejectedProofNodes(SyntaxTreeNode node) {
