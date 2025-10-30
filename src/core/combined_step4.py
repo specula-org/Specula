@@ -22,7 +22,10 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
 import yaml
+
+from src.systems.etcd.trace_generation.pipeline import EtcdTracePipeline
 
 
 class CombinedPhase4:
@@ -30,6 +33,7 @@ class CombinedPhase4:
         self.args = args
         self.project_root = Path(__file__).resolve().parents[2]
         self.specula = str(self.project_root / "specula")
+        self._generated_trace = None
 
     def run(self):
         if "raft_config" not in self.args.auto_config:
@@ -66,29 +70,33 @@ class CombinedPhase4:
         subprocess.run(cmd, check=True, cwd=self.project_root)
 
     def _run_step42(self):
-        cmd = [
-            self.specula,
-            "step4.2",
-            self.args.instrument_config,
-            self.args.source,
-        ]
-        if self.args.language:
-            cmd.extend(["--language", self.args.language])
-        if self.args.stub_template:
-            cmd.extend(["--stub-template", self.args.stub_template])
-        if self.args.output:
-            cmd.extend(["--output", self.args.output])
         if self.args.validate_only:
-            cmd.append("--validate-only")
-        if self.args.generate_template:
-            cmd.extend(["--generate-template", self.args.generate_template])
-        if self.args.verbose:
-            cmd.append("--verbose")
-        subprocess.run(cmd, check=True, cwd=self.project_root)
+            print("Validate-only mode selected; skipping instrumentation and trace generation.")
+            return
+
+        source_arg = Path(self.args.source)
+        if source_arg.exists():
+            source_rel = source_arg.name
+        else:
+            source_rel = self.args.source
+
+        pipeline_kwargs = {
+            "config_path": Path(self.args.instrument_config),
+            "source_rel_path": source_rel,
+        }
+        if self.args.stub_template:
+            pipeline_kwargs["stub_template"] = Path(self.args.stub_template)
+        pipeline = EtcdTracePipeline(**pipeline_kwargs)
+        self._generated_trace = pipeline.run()
 
     def _run_raft_trace_validation(self):
         if self.args.validate_only:
             print("Validate-only mode selected; skipping automated trace execution.")
+            return
+
+        if self._generated_trace:
+            print(f"Trace generated at: {self._generated_trace}")
+            print("Trace post-processing and validation pending additional instructions.")
             return
 
         # run Raft similar to generate trace.ndjson

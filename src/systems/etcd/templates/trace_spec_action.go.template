@@ -1,0 +1,26 @@
+//go:build with_tla
+
+package raft
+
+import (
+	"strconv"
+)
+
+// traceSpecAction emits a Specula-specific trace event compatible with etcd's TraceLogger.
+func traceSpecAction(actionName string, r *raft) {
+	if r == nil || r.traceLogger == nil {
+		return
+	}
+
+	r.traceLogger.TraceEvent(&TracingEvent{
+		Name:   actionName,
+		NodeID: strconv.FormatUint(r.id, 10),
+		State:  makeTracingState(r),
+		LogSize: r.raftLog.lastIndex(),
+		Conf: [2][]string{
+			formatConf(r.trk.Voters[0].Slice()),
+			formatConf(r.trk.Voters[1].Slice()),
+		},
+		Role: r.state.String(),
+	})
+}

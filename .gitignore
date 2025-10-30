@@ -36,6 +36,7 @@ archive/
 lib/
 tools/cfa/input/test
 tools/cfa/output/test
+data/
 
 # Embedded git repositories
 systems/etcd/raft/
