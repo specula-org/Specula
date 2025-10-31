@@ -66,7 +66,7 @@ class TLCRunner:
 class RuntimeCorrector:
     """Main runtime correction class"""
     
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = "config.yaml", enable_checkpoints: bool = False):
         # Load configuration using unified config system
         self.config = get_config(config_path)
         
@@ -84,6 +84,9 @@ class RuntimeCorrector:
         # Load prompts
         self.config_prompt = self._load_prompt("step2_config_generation.txt")
         self.correction_prompt = self._load_prompt("step3_runtime_correction.txt")
+        summary_prompt = self._load_prompt("step1_error_correction_summary.txt")
+        self.summary_prompt = summary_prompt.replace("SANY validation ", "")
+        self.enable_checkpoints = enable_checkpoints
         
         logger.info("Runtime corrector initialized with unified LLM client")
     
@@ -210,54 +213,110 @@ class RuntimeCorrector:
             f.write(current_spec)
         
         success, tlc_output = self.tlc.run_tlc(str(current_spec_file), str(config_file), self.tlc_timeout)
+        total_attempts = 0
         
         if success:
             logger.info("Specification passed TLC model checking! No corrections needed.")
             final_spec = current_spec
-            correction_attempts = 0
         else:
             logger.info("TLC found errors, starting correction process...")
             
-            # Step 3: Iterative correction loop
-            correction_attempts = 0
+            previous_output = tlc_output
+            corrected_outputs = set()
+            last_attempt_dir: Optional[Path] = None
             
-            while correction_attempts < self.max_correction_attempts and not success:
-                correction_attempts += 1
-                logger.info(f"Correction attempt {correction_attempts}/{self.max_correction_attempts}")
+            while not success:
+                cycle_attempts = 0
                 
-                try:
-                    # Fix the errors
-                    corrected_spec = self.fix_runtime_errors(current_spec, config_content, tlc_output)
+                while cycle_attempts < self.max_correction_attempts and not success:
+                    cycle_attempts += 1
+                    total_attempts += 1
+                    attempt_index = total_attempts
+                    logger.info(f"Correction attempt {attempt_index} (cycle {(attempt_index-1)//self.max_correction_attempts})")
                     
-                    # Save corrected version in attempt directory
-                    corrected_module_name = self._extract_module_name(corrected_spec)
-                    attempt_dir = output_path / f"attempt_{correction_attempts}"
-                    attempt_dir.mkdir(exist_ok=True)
-                    corrected_spec_file = attempt_dir / f"{corrected_module_name}.tla"
-                    with open(corrected_spec_file, 'w', encoding='utf-8') as f:
-                        f.write(corrected_spec)
-                    
-                    # Test the corrected specification
-                    success, tlc_output = self.tlc.run_tlc(str(corrected_spec_file), str(config_file), self.tlc_timeout)
-                    
-                    if success:
-                        logger.info(f"Correction successful after {correction_attempts} attempt(s)!")
-                        final_spec = corrected_spec
-                        break
-                    else:
-                        logger.warning(f"Correction attempt {correction_attempts} failed. Retrying...")
-                        current_spec = corrected_spec
+                    try:
+                        # Fix the errors
+                        corrected_spec = self.fix_runtime_errors(current_spec, config_content, tlc_output)
                         
-                except Exception as e:
-                    logger.error(f"Correction attempt {correction_attempts} failed with error: {e}")
-                    if correction_attempts == self.max_correction_attempts:
-                        final_spec = current_spec
-                        break
-                    continue
+                        # Save corrected version in attempt directory
+                        corrected_module_name = self._extract_module_name(corrected_spec)
+                        attempt_dir = output_path / f"attempt_{attempt_index}"
+                        attempt_dir.mkdir(exist_ok=True)
+                        corrected_spec_file = attempt_dir / f"{corrected_module_name}.tla"
+                        with open(corrected_spec_file, 'w', encoding='utf-8') as f:
+                            f.write(corrected_spec)
+                        last_attempt_dir = attempt_dir
+                        
+                        # Test the corrected specification
+                        success, tlc_output = self.tlc.run_tlc(
+                            str(corrected_spec_file), str(config_file), self.tlc_timeout
+                        )
+                        
+                        if success:
+                            logger.info(f"Correction successful after {attempt_index} attempt(s)!")
+                            final_spec = corrected_spec
+                            break
+                        else:
+                            if previous_output != tlc_output:
+                                corrected_outputs.add(previous_output)
+                                previous_output = tlc_output
+                            if tlc_output in corrected_outputs:
+                                corrected_outputs.remove(tlc_output)
+                            logger.warning(f"Correction attempt {attempt_index} unsuccessful. Retrying...")
+                            current_spec = corrected_spec
+                    except Exception as e:
+                        logger.error(f"Correction attempt {attempt_index} failed with error: {e}")
+                        if cycle_attempts == self.max_correction_attempts and not self.enable_checkpoints:
+                            final_spec = corrected_spec
+                            break
+                
+                if success:
+                    break
+                
+                if not self.enable_checkpoints:
+                    logger.warning(f"Could not address all errors after {total_attempts} attempt(s)")
+                    break
+                
+                # Construct checkpoint summary prompt
+                corrected_errors_text = "\n\n---\n\n".join(
+                    err.strip() for err in sorted(corrected_outputs) if err.strip()
+                ) or "None"
+                formatted_output = tlc_output.strip() if tlc_output.strip() else "No TLC output captured."
+                prompt_content = self.summary_prompt.format(
+                    errors=corrected_errors_text,
+                    current_errors=formatted_output,
+                    current_spec=current_spec.strip()
+                )
+                summary_response = self.llm.get_completion(
+                    "You are a TLA+ specification expert specializing in error correction and specification refinement.",
+                    prompt_content
+                )
+                logger.info("Final correction summary:\n%s", summary_response.strip())
+
+                # Save checkpoint progress and error summary 
+                summary_path = output_path / "runtimeFinalSummary.txt"
+                existing_summary = summary_path.exists()
+                with open(summary_path, 'a', encoding='utf-8') as f:
+                    if existing_summary and summary_path.stat().st_size > 0:
+                        f.write("\n\n" + "=" * 40 + "\n\n")
+                    f.write(summary_response.strip() + "\n")
+                
+                if last_attempt_dir is not None and formatted_output:
+                    remaining_path = last_attempt_dir / "remainingErrors.txt"
+                    with open(remaining_path, 'w', encoding='utf-8') as f:
+                        f.write(formatted_output)
+
+                # HITL continuation 
+                user_input = input("Correction incomplete. Continue iterating? (y/n): ").strip().lower()
+                if user_input not in {"y", "yes"}:
+                    logger.info(f"Failed to fix all errors after {total_attempts} attempt(s)")
+                    break
+                previous_output = tlc_output
             
             if not success:
-                logger.error(f"Failed to fix all errors after {self.max_correction_attempts} attempts")
                 final_spec = current_spec
+        
+        correction_attempts = total_attempts
         
         # Save final specification in corrected_spec subdirectory
         corrected_spec_dir = output_path / "corrected_spec"
@@ -311,6 +370,8 @@ def main():
     parser.add_argument("--tlc-timeout", type=int, help="TLC execution timeout in seconds")
     parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                         help="Override log level")
+    parser.add_argument("--checkpoints", action="store_true",
+                        help="Enable checkpoint summaries and HITL continuation for corrections.")
     
     args = parser.parse_args()
     
@@ -329,7 +390,7 @@ def main():
             logging.getLogger().setLevel(getattr(logging, args.log_level))
         
         # Create corrector
-        corrector = RuntimeCorrector(args.config)
+        corrector = RuntimeCorrector(args.config, enable_checkpoints=args.checkpoints)
         
         # Apply command-line overrides
         if args.max_attempts:
@@ -358,7 +419,7 @@ def main():
             logger.info("✅ Runtime correction completed successfully!")
             sys.exit(0)
         else:
-            logger.error("❌ Runtime correction failed - specification still has errors")
+            logger.warning("⚠️ Runtime correction could not fix all specification errors")
             sys.exit(1)
             
     except KeyboardInterrupt:
