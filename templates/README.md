@@ -1,6 +1,6 @@
 # Specula Templates
 
-This directory contains templates for various components of the Specula framework. Templates are designed to be customized for your specific use cases.
+This directory contains instrumentation templates, designed to be customized for your specific use cases.
 
 ## Directory Structure
 
@@ -16,8 +16,6 @@ templates/
 
 Instrumentation templates define the code that gets injected into your source code functions to generate execution traces. Each template is language-specific and follows the conventions of that language.
 
-### Template Format
-
 Templates use the placeholder `ACTION_NAME` which gets replaced with the actual TLA+ action name during instrumentation.
 
 ### Go Template (`go_trace_stub.template`)
@@ -30,11 +28,6 @@ traceAction("ACTION_NAME", map[string]interface{}{
 })
 ```
 
-**Features:**
-- Uses Go's `map[string]interface{}` for flexible data
-- Assumes receiver-based methods with `r` as receiver
-- Follows Go naming conventions
-
 ### Python Template (`python_trace_stub.template`)
 
 ```python
@@ -44,11 +37,6 @@ trace_action("ACTION_NAME", {
     "term": self.term
 })
 ```
-
-**Features:**
-- Uses Python dictionaries for data
-- Assumes class methods with `self` parameter
-- Follows Python naming conventions (snake_case)
 
 ### Rust Template (`rust_trace_stub.template`)
 
@@ -60,21 +48,17 @@ trace_action("ACTION_NAME", &TraceParams {
 });
 ```
 
-**Features:**
-- Uses struct-based parameters with references
-- Includes `.clone()` for owned values when needed
-- Follows Rust naming conventions
-
 ## Customization
 
-### Creating Custom Templates
+To create a custom template to integrate with an existing logging system:
+1. Copy an existing template as a starting point
+2. Modify the emitted data structure to match your system's state
+3. Update function calls to match your trace collection mechanism
 
-1. **Copy an existing template** as a starting point
-2. **Modify the data structure** to match your system's state
-3. **Update function calls** to match your trace collection mechanism
-4. **Adjust naming conventions** for your codebase
+> [!NOTE]  
+> Specula trace validation currently only supports high-level action information, or `state` and `term` trace data. We are actively adding support for finer-grained validation.
 
-### Example Customizations
+### Examples
 
 **Custom Go Template with JSON logging:**
 ```go
@@ -113,12 +97,11 @@ trace_logger.log(&trace_data);
 You can use these variables in your templates:
 
 - `ACTION_NAME`: Replaced with the actual TLA+ action name
-- Language-specific conventions for accessing object state
-- Custom placeholders (modify the instrumentation tool to support more)
+- Custom placeholders (for now, this requires modifying the instrumentation tool)
 
 ## Usage
 
-### With the Instrumentation Tool
+The instrumentation tool can auto-detect the appropriate template based on the source file extension, or you can specify it explicitly.
 
 ```bash
 # Use a built-in template
@@ -133,34 +116,16 @@ python3 src/core/instrumentation.py \
     --generate-template my_custom_template.txt \
     --language python
 ```
-
-### Template Selection
-
-The instrumentation tool can auto-detect the appropriate template based on the source file extension, or you can specify it explicitly.
-
 ## Best Practices
 
-1. **Keep templates simple**: Focus on essential trace data
-2. **Match your system's conventions**: Use appropriate naming and data structures
-3. **Consider performance**: Avoid expensive operations in trace code
-4. **Test thoroughly**: Ensure instrumented code still functions correctly
-5. **Version control**: Keep templates under version control with your project
+- Focus only on essential trace data to improve validation results
+- Use appropriate naming and data structures to cue LLM context
+- Avoid runtime-expensive operations in trace code
+- Keep templates under version control with your project
 
 ## Troubleshooting
 
-### Common Issues
-
-- **Compilation errors**: Check that template syntax matches your language
-- **Missing variables**: Ensure template variables exist in target functions
-- **Import requirements**: Some templates may require additional imports
-
-### Template Debugging
-
-1. **Start simple**: Begin with minimal trace data
-2. **Test incrementally**: Add complexity gradually
-3. **Use validation**: Run `--validate-only` before full instrumentation
-4. **Check output**: Examine instrumented code before execution
-
----
-
-**Remember**: Templates are the key to successful instrumentation. Take time to customize them properly for your specific system and requirements. 
+- Check that template syntax matches your language
+- Ensure template variables exist in target functions
+- Some templates may require additional library imports (e.g. `serde` or `logging`)
+- To debug custom templates: test incrementally, and run `--validate-only` before full instrumentation
