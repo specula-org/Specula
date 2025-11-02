@@ -1,9 +1,5 @@
 # Specula: A Framework for Synthesizing High-Quality TLA+ Specifications from Source Code
 
-<a href="https://www.youtube.com/watch?v=b-QBO860zZY" title="Click to watch the demo on YouTube">
-  <img src="docs/images/specula_demo_thumbnail.png" alt="Specula Demo Video" width="750">
-</a>
-
 Specula is an automated framework for synthesizing TLA+ specifications that accurately describe the core logic and behavior of a software system implementation. Specula:
 - generates specifications **directly from source code**
 - **automatically validates the conformance** of specifications with the code
@@ -11,13 +7,12 @@ Specula is an automated framework for synthesizing TLA+ specifications that accu
 
 Specula has synthesized TLA+ specifications for [etcd’s Raft implementation](https://github.com/etcd-io/raft/blob/main/raft.go) (written in Go) and Asterinas’s [SpinLock implementation](https://github.com/asterinas/asterinas/blob/main/ostd/src/sync/spin.rs) (written in Rust). See [below](#case-study-etcd-raft) for our Raft case study. We are actively applying Specula to new systems.
 
-Specula is under active development and output specs may currently require some manual tweaking. 
+Specula is a multi-step, agentic workflow. See below for an architecture diagram and expand the Architecture Details toggle for a detailled view.
+
+![Specula Workflow](docs/images/diagram.png)
 
 <details>
 <summary><b>Architecture Details</b></summary>
-Specula is implemented as a multi-step workflow.
-
-![Specula Workflow](docs/images/diagram.png)
 
 1. **Code-to-Spec Translation.** Specula uses LLMs to translate source code into the TLA+ format, referred to as “translated spec”, which captures the logical structure of the source code. Note that the translated spec is not a typical specification, but an intermediate representation for subsequent transformation.
    - **1.a Syntax Correction.** The translated spec may contain syntax errors and thus fail compilation. Specula uses a Retrieval-Augmented Generation (RAG) mechanism to automatically detect and fix compilation errors. Specula includes a specialized knowledge base that encodes TLA+ syntax knowledge and error patterns.
@@ -26,6 +21,8 @@ Details can be found in [the CFA doc](docs/CFA.md).
 3. **Error Correction.** The TLA+ spec output from Step 2 may not be perfect. Specula employs tools to automatically detect and correct errors by attempting to run TLC-based model checking on the TLA+ spec. Any runtime error will be automatically fixed by Specula. 
 4. **Trace Validation.** Specula ensures that the synthesized TLA+ specs conforms with the source code to avoid model-code gaps. It automatically instruments the code. Specula includes a deterministic execution engine to generate code-level traces which are used to validate the model-level traces and ensure their conformance.
 </details>
+
+See [here](#demo-video) for a demo walkthrough. Specula is under active development and output specs may currently require some manual tweaking.
 
 ## Quickstart
 
@@ -40,7 +37,7 @@ Please refer to [Usage](https://github.com/specula-org/Specula/blob/main/docs/Us
 
 ## Case Study (etcd Raft)
 
-We present an end-to-end demo of how to use Specula to generate a TLA+ specification for etcd’s Raft implementation. 
+We present an end-to-end demo of how to use Specula to generate a TLA+ specification for etcd’s Raft implementation. See [here](#demo-video) for a video walkthrough.
 
 ### 0. Configure LLM Access
 ```
@@ -207,3 +204,9 @@ The table summarizes the cost breakdown of synthesizing TLA+ specs for etcd's Ra
 - Manual effort includes syntax error fixes, consistency validation, and trace alignment.
 
 </details>
+
+## Demo Video
+
+<a href="https://www.youtube.com/watch?v=b-QBO860zZY" title="Click to watch the demo on YouTube">
+  <img src="docs/images/specula_demo_thumbnail.png" alt="Specula Demo Video" width="750">
+</a>
