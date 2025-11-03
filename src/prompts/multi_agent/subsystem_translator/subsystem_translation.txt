@@ -1,0 +1,1 @@
+Translate source code functions of a subsystem into complete TLA+ action implementations.

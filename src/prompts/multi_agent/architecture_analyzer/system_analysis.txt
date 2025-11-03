@@ -1,0 +1,1 @@
+Analyze source code to identify subsystems, functions, and their responsibilities.
