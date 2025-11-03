@@ -96,7 +96,7 @@ fi
 # --- 3. Path and Tool Setup ---
 # Find the directory where this script is located. This is robust.
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-PROJECT_ROOT="$SCRIPT_DIR/.." # The root is one level up
+PROJECT_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd) # Resolve to absolute project root
 
 echo "=== [Phase 2] Starting CFA Transformation ==="
 echo "Script directory: $SCRIPT_DIR"
@@ -122,7 +122,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# --- 5. Find the Executable JAR ---
+# --- 5. Find the JARs ---
 # The JAR file is usually in the 'target' directory. We find it dynamically.
 JAR_FILE=$(find "$SCRIPT_DIR/target" -name "*-jar-with-dependencies.jar" | head -n 1)
 
@@ -132,6 +132,15 @@ if [ -z "$JAR_FILE" ]; then
     exit 1
 fi
 echo "Found executable JAR: $JAR_FILE"
+
+# The tla2tools.jar is also needed, should be in lib/tla2tools.jar
+TLA2TOOLS_JAR="$PROJECT_ROOT/lib/tla2tools.jar"
+
+if [ -z "$TLA2TOOLS_JAR" ]; then
+    echo "ERROR: TLA2Tools JAR file not found. Please run scripts/setup.sh."
+    exit 1
+fi
+echo "Found TLA2Tools JAR: $TLA2TOOLS_JAR"
 
 # --- 6. Run the Java Application ---
 echo "Running the CFA transformation logic..."
@@ -149,7 +158,7 @@ if [ "$ALGORITHM" != "all" ]; then
 fi
 JAVA_ARGS+=("$INPUT_FILE" "$OUTPUT_FILE")
 
-java -jar "$JAR_FILE" "${JAVA_ARGS[@]}"
+java -cp "$TLA2TOOLS_JAR:$JAR_FILE" CFG.SANYTransformerCli "${JAVA_ARGS[@]}"
 
 # Check if transformation was successful
 if [ $? -ne 0 ]; then

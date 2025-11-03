@@ -234,16 +234,16 @@ The CFA tool solves four main problems:
 
 <details><summary><h3 style="display:inline-block">Debugging CFA and Development</h3></summary>
 
-Enable debug mode to view detailed analysis information:
-```bash
-java -jar tools/cfa/target/cfa-transformer-1.0.jar input_spec.tla output_spec.tla --debug
-```
-
 To manually compile CFA for development:
 ```bash
 cd tools/cfa
 mvn clean compile
 mvn package
+```
+
+After building, enable debug mode to view detailed analysis information:
+```bash
+./tools/cfa/run.sh input_spec.tla output_spec.tla --debug
 ```
 </details>
 
@@ -455,7 +455,7 @@ export SPECULA_LOG_LEVEL="DEBUG"
 
 ```bash
 # Verify TLA+ tools
-java -cp lib/tla2tools.jar tla2sany.SANY --help
+java -cp lib/tla2tools.jar tla2sany.SANY -help
 
 # If failed, re-run setup
 bash scripts/setup.sh
