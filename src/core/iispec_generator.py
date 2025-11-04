@@ -679,8 +679,8 @@ def main():
                         help="Override log level from config")
     parser.add_argument("--autosave", action="store_true",
                         help="Enable autosaving of prompts, logs, and outputs under output/autosave/")
-    parser.add_argument("--checkpoints", action="store_true",
-                        help="Enable logging summaries and HITL checkpoints for correction attempts.")
+    parser.add_argument("--interactive", action="store_true",
+                        help="Enable HITL checkpoints and logging summaries for correction attempts.")
     args = parser.parse_args()
 
     autosave_manager: Optional[AutosaveManager] = None
@@ -709,7 +709,7 @@ def main():
         if autosave_manager.enabled:
             autosave_manager.metadata["use_rag"] = use_rag
 
-        generator = Phase1Generator(use_rag=use_rag, autosave=autosave_manager, enable_checkpoints=args.checkpoints)
+        generator = Phase1Generator(use_rag=use_rag, autosave=autosave_manager, enable_checkpoints=args.interactive)
 
         # Apply command-line overrides
         if args.model:
