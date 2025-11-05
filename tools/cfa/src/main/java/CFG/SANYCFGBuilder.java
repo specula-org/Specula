@@ -672,7 +672,12 @@ public class SANYCFGBuilder {
         List<String> tempVars = new ArrayList<>();
         
         if (definitionsNode != null) {
-            definitionsText = reconstructExpression(definitionsNode);
+            definitionsText = extractSourceFragment(definitionsNode);
+            if (definitionsText != null) {
+                definitionsText = definitionsText.replaceAll("[ \\t\\f\\r\\n]+$", "");
+            } else {
+                definitionsText = "";
+            }
             
             // Extract temporary variable names from definitions
             TreeNode[] defChildren = definitionsNode.heirs();
@@ -692,7 +697,12 @@ public class SANYCFGBuilder {
         }
         
         // Create LET node with definitions
-        CFGStmtNode letNode = new CFGStmtNode(indentationLevel, "LET " + definitionsText + " IN", letExprNode, CFGStmtNode.StmtType.LET);
+        String letContent = "LET " + definitionsText;
+        if (!definitionsText.endsWith("\n")) {
+            letContent += "\n";
+        }
+        letContent += "IN";
+        CFGStmtNode letNode = new CFGStmtNode(indentationLevel, letContent, letExprNode, CFGStmtNode.StmtType.LET);
         letNode.setTemporaryVariables(tempVars);
         
         // Process IN body recursively

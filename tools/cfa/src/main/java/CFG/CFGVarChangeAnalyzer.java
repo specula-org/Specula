@@ -306,13 +306,18 @@ public class CFGVarChangeAnalyzer {
         boolean flag = false;
         Set<String> intersection = new HashSet<>(stmt.InVar);
         Set<String> declVar = new HashSet<>();
+        List<CFGFuncNode> targetFunc = Collections.emptyList();
+        String targetFuncName = null;
         if (stmt.getType() == CFGStmtNode.StmtType.CALL){
-            List<CFGFuncNode> targetFunc = callGraph.getTargetFunc(stmt);
+            targetFunc = callGraph.getTargetFunc(stmt);
             for (CFGFuncNode targetFuncNode : targetFunc){
                 declVar.addAll(funcVarChange.get(targetFuncNode.getFuncName()));
                 if (cuttedFunc.contains(targetFuncNode)){
                     flag = true;
                 }
+            }
+            if (targetFunc.size() == 1) {
+                targetFuncName = targetFunc.get(0).getFuncName();
             }
         }
         declVar.addAll(VarChangedOneStmt(stmt));
@@ -337,18 +342,18 @@ public class CFGVarChangeAnalyzer {
             root.addChild(startStmt);
 
             Set<CFGStmtNode> parents = funcNode.getAllparents(stmt);
-            List<CFGFuncNode> targetFunc = callGraph.getTargetFunc(stmt);
             CFGFuncNode pushFuncNode = null;
             String parentPcTarget;
+            targetFuncName = targetFunc.size() == 1 ? targetFunc.get(0).getFuncName() : null;
             if (funcNode.isEntryPoint()) {
-                if (targetFunc.size() != 1) {
+                if (targetFuncName == null) {
                     throw new RuntimeException("Multi-function call variable modification conflict: " + targetFunc);
                 }
-                pushFuncNode = createEntryPushFunction(funcNode, newFuncNode, stmt, tempVarsThisFunc, targetFunc.get(0).getFuncName());
+                pushFuncNode = createEntryPushFunction(funcNode, newFuncNode, targetFuncName, stmt, tempVarsThisFunc, targetFuncName);
                 parentPcTarget = pushFuncNode.getFuncName();
             } else {
-                if (targetFunc.size() == 1){
-                    parentPcTarget = targetFunc.get(0).getFuncName();
+                if (targetFuncName != null){
+                    parentPcTarget = targetFuncName;
                 } else {
                     throw new RuntimeException("Multi-function call variable modification conflict: " + targetFunc);
                 }
@@ -386,7 +391,7 @@ public class CFGVarChangeAnalyzer {
                 pc_jump.addChild(info_node);
                 parentMap.computeIfAbsent(info_node, k -> new ArrayList<>()).add(pc_jump);
 
-                CFGStmtNode stack_node = new CFGStmtNode(stmt.getIndentation(), updateStackStr(newFuncNode, stmt.getContent()), null, CFGStmtNode.StmtType.NORMAL);
+                CFGStmtNode stack_node = new CFGStmtNode(stmt.getIndentation(), updateStackStr(newFuncNode, stmt.getContent(), targetFuncName), null, CFGStmtNode.StmtType.NORMAL);
                 stack_node.InVar = new HashSet<>(info_node.OutVar);
                 stack_node.OutVar = new HashSet<>(info_node.OutVar);
                 stack_node.OutVar.add("stack");
@@ -457,7 +462,7 @@ public class CFGVarChangeAnalyzer {
                 CFGFuncNode pushFuncNode = null;
                 String parentPcTarget;
                 if (funcNode.isEntryPoint()) {
-                    pushFuncNode = createEntryPushFunction(funcNode, newFuncNode, stmt, tempVarsThisFunc, newFuncNode.getFuncName());
+                    pushFuncNode = createEntryPushFunction(funcNode, newFuncNode, targetFuncName, stmt, tempVarsThisFunc, newFuncNode.getFuncName());
                     parentPcTarget = pushFuncNode.getFuncName();
                 } else {
                     parentPcTarget = funcNode.getFuncName() + "_" + id;
@@ -501,7 +506,7 @@ public class CFGVarChangeAnalyzer {
                     info_node.OutVar.add("info");
                     pc_jump.addChild(info_node);
                     parentMap.computeIfAbsent(info_node, k -> new ArrayList<>()).add(pc_jump);
-                    CFGStmtNode stack_node = new CFGStmtNode(stmt.getIndentation(), updateStackStr(newFuncNode, stmt.getContent()), null, CFGStmtNode.StmtType.NORMAL);
+                    CFGStmtNode stack_node = new CFGStmtNode(stmt.getIndentation(), updateStackStr(newFuncNode, stmt.getContent(), targetFuncName), null, CFGStmtNode.StmtType.NORMAL);
                     stack_node.InVar = new HashSet<>(info_node.OutVar);
                     stack_node.OutVar = new HashSet<>(info_node.OutVar);
                     stack_node.OutVar.add("stack");
@@ -979,27 +984,46 @@ public class CFGVarChangeAnalyzer {
         return infoStr;
     }
 
-    private String updateStackStr(CFGFuncNode funcNode, String callsite){
+    private String updateStackStr(CFGFuncNode continuationNode, String callsite, String calleeName){
         String arguments = "<< ";
-        // callsite = "func(args)" Extract args and write as <<>>
-        int start = callsite.indexOf("(");
+        int start = -1;
+        int end = -1;
+        if (calleeName != null && !calleeName.isEmpty()) {
+            String pattern = calleeName + "(";
+            start = callsite.indexOf(pattern);
+            if (start != -1) {
+                start += pattern.length() - 1; // position of '('
+            }
+        }
+        if (start == -1) {
+            start = callsite.indexOf("(");
+        }
         // Check if '(' is found
         if (start != -1) {
-            // Find last ')'
-            int end = callsite.lastIndexOf(")");
-            // Ensure ')' is found and it is after '('
-            if (end != -1 && end > start) {
-                arguments += callsite.substring(start + 1, end);
+            int depth = 0;
+            for (int i = start; i < callsite.length(); i++) {
+                char c = callsite.charAt(i);
+                if (c == '(') {
+                    depth++;
+                } else if (c == ')') {
+                    depth--;
+                    if (depth == 0) {
+                        end = i;
+                        break;
+                    }
+                }
             }
-            // If no matching ')' or ')' is before '(', the parameter part is an empty string
+            if (end != -1 && end > start) {
+                arguments += callsite.substring(start + 1, end).trim();
+            }
         }
-        // If no '(', the parameter part is an empty string
+        // If parsing failed, arguments remain empty
         arguments += ">>";
-        String stackStr = "stack' = Append(stack, [backsite |-> \"" + funcNode.getFuncName() + "\", args |-> " + arguments + ", info |-> info'])";
+        String stackStr = "stack' = Append(stack, [backsite |-> \"" + continuationNode.getFuncName() + "\", args |-> " + arguments + ", info |-> info'])";
         return stackStr;
     }
 
-    private CFGFuncNode createEntryPushFunction(CFGFuncNode funcNode, CFGFuncNode continuationNode, CFGStmtNode originalStmt, Set<String> tempVarsThisFunc, String nextPc) {
+    private CFGFuncNode createEntryPushFunction(CFGFuncNode funcNode, CFGFuncNode continuationNode, String calleeName, CFGStmtNode originalStmt, Set<String> tempVarsThisFunc, String nextPc) {
         String pushFuncName = funcNode.getFuncName() + "_push_" + continuationNode.getID();
         CFGFuncNode pushFuncNode = new CFGFuncNode(pushFuncName, funcNode.getParameters(), continuationNode.getID());
         pushFuncNode.setInvocationKind(CFGFuncNode.InvocationKind.CALLED);
@@ -1008,7 +1032,7 @@ public class CFGVarChangeAnalyzer {
         pushFuncNode.setRoot(pushRoot);
 
         CFGStmtNode infoStmt = new CFGStmtNode(originalStmt.getIndentation(), setInfoStr(funcNode.getParameters(), tempVarsThisFunc), null, CFGStmtNode.StmtType.NORMAL);
-        CFGStmtNode stackStmt = new CFGStmtNode(originalStmt.getIndentation(), updateStackStr(continuationNode, originalStmt.getContent()), null, CFGStmtNode.StmtType.NORMAL);
+        CFGStmtNode stackStmt = new CFGStmtNode(originalStmt.getIndentation(), updateStackStr(continuationNode, originalStmt.getContent(), calleeName), null, CFGStmtNode.StmtType.NORMAL);
         CFGStmtNode pcStmt = new CFGStmtNode(originalStmt.getIndentation(), "pc' = \"" + nextPc + "\"", null, CFGStmtNode.StmtType.NORMAL);
 
         pushRoot.addChild(infoStmt);
