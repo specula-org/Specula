@@ -658,10 +658,14 @@ public class SANYCFGBuilder {
         // children[3] = body expression
         
         SyntaxTreeNode definitionsNode = null;
+        SyntaxTreeNode inTokenNode = null;
         SyntaxTreeNode inBodyNode = null;
-        
+
         if (children[1] instanceof SyntaxTreeNode) {
             definitionsNode = (SyntaxTreeNode) children[1];
+        }
+        if (children[2] instanceof SyntaxTreeNode) {
+            inTokenNode = (SyntaxTreeNode) children[2];
         }
         if (children[3] instanceof SyntaxTreeNode) {
             inBodyNode = (SyntaxTreeNode) children[3];
@@ -675,6 +679,35 @@ public class SANYCFGBuilder {
             definitionsText = extractSourceFragment(definitionsNode);
             if (definitionsText != null) {
                 definitionsText = definitionsText.replaceAll("[ \\t\\f\\r\\n]+$", "");
+
+                // Remove base indentation while preserving relative indentation
+                String[] lines = definitionsText.split("\n", -1);
+                if (lines.length > 0) {
+                    // Find minimum indentation (from first line)
+                    int minIndent = 0;
+                    for (int i = 0; i < lines[0].length(); i++) {
+                        if (lines[0].charAt(i) == ' ' || lines[0].charAt(i) == '\t') {
+                            minIndent++;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    // Remove minimum indentation from all lines
+                    StringBuilder normalized = new StringBuilder();
+                    for (int i = 0; i < lines.length; i++) {
+                        String line = lines[i];
+                        if (line.length() >= minIndent) {
+                            normalized.append(line.substring(minIndent));
+                        } else {
+                            normalized.append(line);
+                        }
+                        if (i < lines.length - 1) {
+                            normalized.append("\n");
+                        }
+                    }
+                    definitionsText = normalized.toString();
+                }
             } else {
                 definitionsText = "";
             }
@@ -697,13 +730,19 @@ public class SANYCFGBuilder {
         }
         
         // Create LET node with definitions
-        String letContent = "LET " + definitionsText;
+        // Note: definitionsText already contains "LET" keyword from source (base indentation removed)
+        String letContent = definitionsText;
         if (!definitionsText.endsWith("\n")) {
             letContent += "\n";
         }
-        letContent += "IN";
+        // IN should be indented 4 spaces more than LET
+        letContent += "    IN";
         CFGStmtNode letNode = new CFGStmtNode(indentationLevel, letContent, letExprNode, CFGStmtNode.StmtType.LET);
         letNode.setTemporaryVariables(tempVars);
+
+        if (letContent.contains("canVote")) {
+            System.err.println("DEBUG: Created LET node with type: " + letNode.getType());
+        }
         
         // Process IN body recursively
         if (inBodyNode != null) {

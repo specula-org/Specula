@@ -1054,14 +1054,17 @@ public class CFGVarChangeAnalyzer {
             CFGStmtNode stmt = StmtNodelist.remove(0);
             String content = stmt.getContent();
             for (String var : temp) {
-                String pattern = "(?<!\\w)(?<!info\\.temp\\.)" + var + "(?!\\w)";       // NEW, using var directly
+                // Pattern to match variable references but NOT record field names
+                // Field names in TLA+ records look like: [field |-> value] or , field |-> value
+                // We need to avoid replacing "term" in "term |->" but replace "term" in "-> term"
+                String pattern = "(?<!\\w)(?<!info\\.temp\\.)" + var + "(?!\\w)(?!\\s*\\|->)";
 
                 // System.err.println("content: " + content);
                 // System.err.println("var: " + var);
                 // Add (?s) flag at the beginning of the regular expression, so that . (dot) can match any character including line breaks
-                if (content.matches("(?s).*" + pattern + ".*")) { 
+                if (content.matches("(?s).*" + pattern + ".*")) {
                     // System.err.println("tempVars1111: " + temp);
-                    content = content.replaceAll(pattern, "info.temp." + var); 
+                    content = content.replaceAll(pattern, "info.temp." + var);
                     stmt.setContent(content);
                 }
             }

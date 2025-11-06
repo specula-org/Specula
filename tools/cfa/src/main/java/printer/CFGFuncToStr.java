@@ -63,12 +63,12 @@ public class CFGFuncToStr {
      */
     private List<String> DFS(CFGStmtNode entry, CFGStmtNode exit) {
         List<String> result = new ArrayList<>();
-        
+
         if (entry == null || entry == exit) {
             return result;
         }
-        
-        
+
+
         // Handle different node types
         switch (entry.getType()) {
             case ROOT:
@@ -103,17 +103,23 @@ public class CFGFuncToStr {
      */
     private List<String> handleNormalStatement(CFGStmtNode node, CFGStmtNode exit) {
         List<String> result = new ArrayList<>();
-        
+
         // Add current statement content with /\ prefix
         String content = normalizeContent(CFGNodeToStr.CFGStmtNodeToStr(node));
         if (!content.isEmpty()) {
-            result.add(content);
+            // Split multi-line content to handle each line separately
+            String[] contentLines = content.split("\n", -1);
+            for (int i = 0; i < contentLines.length; i++) {
+                if (i < contentLines.length - 1 || !contentLines[i].isEmpty()) {
+                    result.add(contentLines[i]);
+                }
+            }
         }
-        
+
         // Recursively process children
         List<String> childResult = handleChildren(node, exit);
         result.addAll(childResult);
-        
+
         return result;
     }
 
@@ -123,19 +129,25 @@ public class CFGFuncToStr {
      */
     private List<String> handleBlockStatement(CFGStmtNode node, CFGStmtNode exit) {
         List<String> result = new ArrayList<>();
-        
+
         // Add block statement header with /\ prefix
         String content = normalizeContent(CFGNodeToStr.CFGStmtNodeToStr(node));
         if (!content.isEmpty()) {
-            result.add(content);
+            // Split multi-line content to handle each line separately
+            String[] contentLines = content.split("\n", -1);
+            for (int i = 0; i < contentLines.length; i++) {
+                if (i < contentLines.length - 1 || !contentLines[i].isEmpty()) {
+                    result.add(contentLines[i]);
+                }
+            }
         }
-        
+
         // Recursively process code block and add indentation
         List<String> blockResult = handleChildren(node, exit);
         for (String line : blockResult) {
             result.add("    " + line);
         }
-        
+
         return result;
     }
 
@@ -171,6 +183,11 @@ public class CFGFuncToStr {
         return result;
     }
 
+    // Keywords that should not have /\ prefix
+    private static final java.util.Set<String> NO_PREFIX_KEYWORDS = new java.util.HashSet<>(
+        java.util.Arrays.asList("ELSE", "THEN", "IN")
+    );
+
     private String normalizeContent(String raw) {
         if (raw == null) {
             return "";
@@ -179,8 +196,17 @@ public class CFGFuncToStr {
         if (content.isEmpty()) {
             return "";
         }
-        if (content.startsWith("/\\") || content.startsWith("\\/") || content.startsWith("CASE") || content.startsWith("LET") || content.startsWith("EXISTS") || content.startsWith("FORALL")) {
+        // Check if starts with already-prefixed operators or special keywords
+        if (content.startsWith("/\\") || content.startsWith("\\/") ||
+            content.startsWith("CASE") || content.startsWith("LET") ||
+            content.startsWith("EXISTS") || content.startsWith("FORALL")) {
             return content;
+        }
+        // Check if starts with keywords that should not have /\ prefix
+        for (String keyword : NO_PREFIX_KEYWORDS) {
+            if (content.equals(keyword) || content.startsWith(keyword + " ")) {
+                return content;
+            }
         }
         return "/\\ " + content;
     }
@@ -320,27 +346,27 @@ public class CFGFuncToStr {
             CFGStmtNode thenNode = children.get(0);
             List<String> thenResult = DFS(thenNode, convergencePoint);
             for (String line : thenResult) {
-                result.add("   " + line);  // 3 spaces relative to IF
+                result.add("    " + line);  // 4 spaces: THEN body indented relative to IF
             }
-            
+
             // Second child should be ELSE branch
             CFGStmtNode elseNode = children.get(1);
-            
+
             // Check if ELSE node already contains "ELSE" keyword
             String elseContent = CFGNodeToStr.CFGStmtNodeToStr(elseNode);
             if (elseContent.equals("ELSE")) {
                 // ELSE node is just the keyword, add it and process its children
-                result.add("   ELSE");  // 3 spaces relative to IF
+                result.add("    ELSE");  // 4 spaces: ELSE at same level as THEN body
                 List<String> elseResult = handleChildren(elseNode, convergencePoint);
                 for (String line : elseResult) {
-                    result.add("   " + line);  // 3 spaces relative to IF
+                    result.add("    " + line);  // 4 spaces: ELSE body indented relative to IF
                 }
             } else {
                 // ELSE node has content, add ELSE keyword separately
-                result.add("   ELSE");  // 3 spaces relative to IF
+                result.add("    ELSE");  // 4 spaces: ELSE at same level as THEN body
                 List<String> elseResult = DFS(elseNode, convergencePoint);
                 for (String line : elseResult) {
-                    result.add("   " + line);  // 3 spaces relative to IF
+                    result.add("    " + line);  // 4 spaces: ELSE body indented relative to IF
                 }
             }
         }

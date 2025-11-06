@@ -284,7 +284,17 @@ public class CFGCALLGraph {
                     // Create new call edge (only for non-alias functions)
                     CFGCALLEdge callEdge = new CFGCALLEdge(stmtNode, funcNode, targetFunc, new String[0], null);
                     addCallEdge(callEdge);
-                    stmtNode.setType(CFGStmtNode.StmtType.CALL);
+
+                    // Only set to CALL if node type is not already a structured control flow type
+                    // Preserve IF_ELSE, CASE, LET, etc. types even if they contain function calls
+                    CFGStmtNode.StmtType originalType = stmtNode.getType();
+                    if (!isStructuredControlFlowType(originalType)) {
+                        stmtNode.setType(CFGStmtNode.StmtType.CALL);
+                    } else {
+                        if (stmtNode.getContent() != null && stmtNode.getContent().contains("canVote")) {
+                            System.err.println("DEBUG: Preserving type " + originalType + " for canVote node (not changing to CALL)");
+                        }
+                    }
                 }
             }
         }
@@ -295,6 +305,19 @@ public class CFGCALLGraph {
                 traverseStmtNode(child, funcNode, visited);
             }
         }
+    }
+
+    /**
+     * Check if the given type is a structured control flow type that should not be overridden to CALL
+     */
+    private boolean isStructuredControlFlowType(CFGStmtNode.StmtType type) {
+        return type == CFGStmtNode.StmtType.IF_ELSE ||
+               type == CFGStmtNode.StmtType.CASE ||
+               type == CFGStmtNode.StmtType.LET ||
+               type == CFGStmtNode.StmtType.EXISTS ||
+               type == CFGStmtNode.StmtType.FORALL ||
+               type == CFGStmtNode.StmtType.CHOOSE ||
+               type == CFGStmtNode.StmtType.DISJUNCTION;
     }
 
     private void initializeInvocationKinds() {
