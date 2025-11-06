@@ -156,6 +156,11 @@ public class SANYCFGBuilder {
                 visitModule(stn);
             }
         }
+
+        // Ensure Nil is in constants (required by CFA transformation)
+        if (!constants.contains("Nil")) {
+            constants.add("Nil");
+        }
     }
     
     private void visitModule(SyntaxTreeNode moduleNode) {
