@@ -1,0 +1,245 @@
+### FUNCTION CLASSIFICATION
+
+CORE FUNCTIONS (require detailed analysis):
+- Step: Central dispatcher enforcing term rules and routing messages to state-specific handlers.
+- stepLeader: Leader message handling for proposals, replication, heartbeats, and quorum checks.
+- stepFollower: Follower logic for message forwarding, append/heartbeat processing, and election triggers.
+- stepCandidate: Candidate/PreCandidate election flow reacting to votes and leader messages.
+- becomeFollower: Transition to follower state with term update and state reset.
+- becomeCandidate: Start new term, self-vote, and enter candidate state.
+- becomePreCandidate: Enter pre-vote phase without term increment.
+- becomeLeader: Become leader, initialize progress tracking, and append empty entry.
+- campaign: Broadcast vote requests for election or pre-election.
+- handleVote: Process vote requests with log comparison and grant/reject logic.
+- handleAppendEntries: Follower-side log reconciliation and conflict detection.
+- handleHeartbeat: Follower commit advancement from leader heartbeats.
+- handleAppResp: Leader processing of append responses with progress updates.
+- handleHeartbeatResp: Leader response to heartbeat acks triggering catch-up appends.
+- maybeCommit: Leader commit index advancement based on quorum replication.
+- poll: Vote tallying and state transition based on election results.
+
+SUPPORTING FUNCTIONS (brief summary):
+- LastLogIndex: Returns length of server's log - Model as Len(log[s]).
+- LastLogTerm: Returns term of last log entry - Model as log[s][Len(log[s])].term with zero default.
+- IsLogUpToDate: Compares candidate log with voter's log - Model as term comparison with index tiebreaker.
+- CountVotes: Tallies granted votes - Model as cardinality of votesGranted set.
+- Min/Max: Utility functions - Model directly as TLA+ IF-THEN-ELSE.
+
+INFRASTRUCTURE FUNCTIONS (to omit):
+- Logging and tracing functions - Omitted.
+- Network layer abstractions - Omitted; messages modeled abstractly.
+- Storage persistence callbacks - Omitted; persistence modeled as atomic state updates.
+- Metrics and monitoring - Omitted.
+
+---
+
+### DETAILED CORE FUNCTION ANALYSIS
+
+### Step
+- Signature: func (r *raft) Step(m pb.Message) error
+- Purpose: Main message dispatcher with term enforcement and delegation to state handlers.
+- Protocol Component: Consensus core (term management, state transitions).
+- Critical Logic:
+  • If m.Term > r.Term (except PreVote grant): becomeFollower(m.Term, leader) → reset term/vote.
+  • If m.Term < r.Term: send reject response for append/heartbeat/prevote; ignore others.
+  • MsgHup: trigger campaign.
+  • MsgVote/MsgPreVote: check canVote (votedFor matches, or none+no leader, or PreVote with higher term) and log up-to-date; grant or reject.
+  • Default: delegate to state-specific handler (stepLeader/stepFollower/stepCandidate).
+- Modeling Approach: Full. Model term comparison precisely; include vote granting logic with log comparison.
+
+### stepLeader
+- Signature: func stepLeader(r *raft, m pb.Message) error
+- Purpose: Leader-specific message handling for replication and heartbeats.
+- Protocol Component: Replication/Consensus.
+- Critical Logic:
+  • MsgBeat: broadcast heartbeat with commit index.
+  • MsgProp: append new entry and broadcast MsgApp; skip if leadership transfer active.
+  • MsgAppResp: if reject → update nextIndex with hint and retry; if accept → update matchIndex/nextIndex, maybeCommit, send more appends.
+  • MsgHeartbeatResp: if follower behind → send append to catch up.
+- Modeling Approach: Full for state transitions and commit logic; abstract message batching and size limits.
+
+### stepFollower
+- Signature: func stepFollower(r *raft, m pb.Message) error
+- Purpose: Follower message handling for replication and forwarding.
+- Protocol Component: Replication/Election.
+- Critical Logic:
+  • MsgProp: forward to leader if known; otherwise drop.
+  • MsgApp: reset election timer, update leader, call handleAppendEntries.
+  • MsgHeartbeat: reset election timer, update leader, call handleHeartbeat.
+  • MsgTimeoutNow: start immediate election.
+- Modeling Approach: Full for core transitions; abstract forwarding as simple message send.
+
+### stepCandidate
+- Signature: func stepCandidate(r *raft, m pb.Message) error
+- Purpose: Candidate election management and vote response handling.
+- Protocol Component: Election.
+- Critical Logic:
+  • MsgProp: drop (no leader).
+  • MsgApp/MsgHeartbeat: step down to follower with message term and sender as leader.
+  • MsgVoteResp/MsgPreVoteResp: tally votes; if won → PreCandidate starts real election, Candidate becomes leader; if lost → become follower.
+- Modeling Approach: Full.
+
+### becomeFollower
+- Signature: func (r *raft) becomeFollower(term uint64, lead uint64)
+- Purpose: Transition to follower role with term and leader updates.
+- Protocol Component: State transition.
+- Critical Logic:
+  • Set state = Follower, step = stepFollower.
+  • If term changed: reset term, vote to None, clear leader.
+  • Reset election timer, heartbeat timer, votes.
+  • Clear leadership transfer state.
+- Modeling Approach: Full.
+
+### becomeCandidate
+- Signature: func (r *raft) becomeCandidate()
+- Purpose: Begin election with term increment and self-vote.
+- Protocol Component: Election.
+- Critical Logic:
+  • Increment term, set vote to self.
+  • Set state = Candidate, step = stepCandidate.
+  • Initialize votesGranted with self-vote.
+  • Reset election timer.
+- Modeling Approach: Full.
+
+### becomePreCandidate
+- Signature: func (r *raft) becomePreCandidate()
+- Purpose: Enter pre-vote phase without term change.
+- Protocol Component: Election (PreVote).
+- Critical Logic:
+  • Set state = PreCandidate, step = stepCandidate.
+  • Clear votesGranted, reset election timer.
+  • No term increment (pre-vote doesn't bump term).
+- Modeling Approach: Full.
+
+### becomeLeader
+- Signature: func (r *raft) becomeLeader()
+- Purpose: Transition to leader and initialize replication state.
+- Protocol Component: Leadership/Replication.
+- Critical Logic:
+  • Set state = Leader, step = stepLeader, leaderId = self.
+  • Initialize nextIndex for all peers to lastIndex + 1.
+  • Initialize matchIndex: self = lastIndex, others = 0.
+  • Append empty entry with current term.
+  • Send self MsgAppResp to trigger commit logic.
+- Modeling Approach: Full.
+
+### campaign
+- Signature: func (r *raft) campaign(t CampaignType)
+- Purpose: Start election by broadcasting vote requests.
+- Protocol Component: Election.
+- Critical Logic:
+  • If PreElection: becomePreCandidate, send MsgPreVote with term+1.
+  • If Election: becomeCandidate (increments term), send MsgVote with current term.
+  • Include last log index/term in vote requests.
+- Modeling Approach: Full.
+
+### handleVote
+- Signature: func (r *raft) handleVote(m pb.Message)
+- Purpose: Process vote request with eligibility and log checks.
+- Protocol Component: Election.
+- Critical Logic:
+  • canVote = votedFor matches sender OR (votedFor=None AND leaderId=None) OR (PreVote AND m.term > currentTerm).
+  • If canVote AND log is up-to-date: grant vote, update votedFor if regular vote, reset election timer.
+  • Else: reject vote.
+- Modeling Approach: Full; include precise log comparison.
+
+### handleAppendEntries
+- Signature: func (r *raft) handleAppendEntries(m pb.Message)
+- Purpose: Follower log reconciliation with conflict detection.
+- Protocol Component: Replication/Consistency.
+- Critical Logic:
+  • If m.prevLogIndex < commitIndex: reply with commitIndex (already committed).
+  • If log matches at prevLogIndex/prevLogTerm: append entries, update commit, reply success.
+  • Else: find conflict hint (min of prevLogIndex and log length) and reply with reject + hint.
+- Modeling Approach: Full including conflict hint logic.
+
+### handleHeartbeat
+- Signature: func (r *raft) handleHeartbeat(m pb.Message)
+- Purpose: Update commit index from leader and acknowledge.
+- Protocol Component: Replication/Lease.
+- Critical Logic:
+  • Advance commitIndex to max(current, m.commit).
+  • Send MsgHeartbeatResp to leader.
+- Modeling Approach: Full.
+
+### handleAppResp
+- Signature: func handleAppResp(s, m)
+- Purpose: Leader processes follower append responses.
+- Protocol Component: Replication.
+- Critical Logic:
+  • If reject: update nextIndex using rejectHint, retry with MsgApp.
+  • If accept: update matchIndex and nextIndex, call maybeCommit.
+- Modeling Approach: Full.
+
+### handleHeartbeatResp
+- Signature: func handleHeartbeatResp(s, m)
+- Purpose: Leader responds to heartbeat acks.
+- Protocol Component: Replication.
+- Critical Logic:
+  • If follower matchIndex < leader lastIndex: send append to catch up.
+- Modeling Approach: Full.
+
+### maybeCommit
+- Signature: func (r *raft) maybeCommit() bool
+- Purpose: Advance commit index if quorum has replicated entries from current term.
+- Protocol Component: Consensus/Commitment.
+- Critical Logic:
+  • Find highest index i where: i > commitIndex, log[i].term = currentTerm, quorum has matchIndex >= i.
+  • Update commitIndex to i if found.
+- Modeling Approach: Full; enforce current-term commit rule.
+
+### poll
+- Signature: func poll(s, from, granted)
+- Purpose: Record vote and check for quorum or loss.
+- Protocol Component: Election.
+- Critical Logic:
+  • Update votesGranted for sender.
+  • Count total votes; if quorum → PreCandidate starts election, Candidate becomes leader.
+  • If lost (too many rejections) → become follower.
+- Modeling Approach: Full.
+
+---
+
+### ESSENTIAL STATE VARIABLES:
+- state: StateType - Node role: Follower/Candidate/Leader/PreCandidate.
+- currentTerm: uint64 - Current term; persisted.
+- votedFor: uint64 - Candidate voted for in current term; persisted.
+- log: []Entry - Log entries with term and data; persisted.
+- commitIndex: uint64 - Highest committed log index.
+- leaderId: uint64 - Known leader ID (None if unknown).
+- matchIndex: map[uint64]uint64 - For each server, highest known replicated index (leader only).
+- nextIndex: map[uint64]uint64 - For each server, next log index to send (leader only).
+- votesGranted: map[uint64]bool - Votes received in current election.
+- pendingConfIndex: uint64 - Index of pending configuration change.
+- uncommittedSize: uint64 - Size of uncommitted log tail.
+- leadTransferee: uint64 - Target of leadership transfer in progress.
+- isLearner: bool - Whether node is a learner (non-voting).
+- electionElapsed: int - Ticks since last election timeout reset or leader message.
+- heartbeatElapsed: int - Ticks since last heartbeat (leader).
+- randomizedElectionTimeout: int - Election timeout value for this epoch.
+- messages: set of Message - Messages in transit between nodes.
+
+---
+
+Validation Rules and Dependencies:
+- Step must enforce term rules before delegating to state-specific handlers.
+- State transitions (becomeFollower/Candidate/PreCandidate/Leader) must update state, term, vote, timers, and progress tracking consistently.
+- campaign depends on state and sends vote requests with last log index/term.
+- Replication pipeline:
+  • Leader uses nextIndex/matchIndex to track follower progress.
+  • Followers process AppendEntries with log matching at prevLogIndex/prevLogTerm; conflict detection uses hint-based backoff.
+  • Leader processes MsgAppResp to update progress and drive maybeCommit.
+- maybeCommit enforces current-term rule: only commit entries from current term when quorum replicates them.
+- Vote granting checks canVote (votedFor constraint) and log up-to-date (term then index comparison).
+- Election timer drives periodic campaign attempts for followers/candidates.
+- Heartbeat timer drives periodic leader heartbeats.
+
+Modeling Decisions:
+- Fully model state transitions, term management, vote logic, log replication with conflict hints, and commit advancement.
+- Abstract network as message set; messages delivered non-deterministically.
+- Abstract persistence as atomic state updates (no explicit storage callbacks).
+- Abstract message size limits and batching; preserve logical ordering constraints.
+- Omit snapshot/restore, configuration changes (switchToConfig), ReadIndex mechanisms for initial specification.
+- Focus on core safety properties: leader completeness, log matching, state machine safety.
+
+This summary captures the essential Raft consensus algorithm for direct TLA+ encoding with emphasis on election, replication, and commitment logic.

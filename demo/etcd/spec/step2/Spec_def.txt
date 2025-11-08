@@ -1,0 +1,48 @@
+Next == 
+    \/ \E s \in Server : 
+        /\ electionElapsed[s] >= randomizedElectionTimeout[s]
+        /\ HandleStep(s, [type |-> MsgHup, from |-> s, to |-> s, term |-> currentTerm[s]])
+    \/ \E s \in Server :
+        /\ state[s] = StateLeader
+        /\ heartbeatElapsed[s] >= 1
+        /\ messages' = messages \cup 
+           {[type |-> MsgBeat, from |-> s, to |-> s, term |-> currentTerm[s]]}
+        /\ heartbeatElapsed' = [heartbeatElapsed EXCEPT ![s] = 0]
+        /\ UNCHANGED <<state, currentTerm, votedFor, log, commitIndex, leaderId,
+                       matchIndex, nextIndex, votesGranted, pendingConfIndex,
+                       uncommittedSize, leadTransferee, isLearner, electionElapsed,
+                       randomizedElectionTimeout, pc, stack, info>>
+    \/ \E m \in messages, s \in Server :
+        /\ m.to = s
+        /\ HandleStep(s, m)
+    \/ \E s \in Server :
+        /\ electionElapsed' = [electionElapsed EXCEPT ![s] = electionElapsed[s] + 1]
+        /\ heartbeatElapsed' = [heartbeatElapsed EXCEPT ![s] = heartbeatElapsed[s] + 1]
+        /\ UNCHANGED <<state, currentTerm, votedFor, log, commitIndex, leaderId,
+                       matchIndex, nextIndex, votesGranted, pendingConfIndex,
+                       uncommittedSize, leadTransferee, isLearner, randomizedElectionTimeout,
+                       messages, pc, stack, info>>
+
+Init == 
+    /\ state = [s \in Server |-> StateFollower]
+    /\ currentTerm = [s \in Server |-> 0]
+    /\ votedFor = [s \in Server |-> None]
+    /\ log = [s \in Server |-> <<>>]
+    /\ commitIndex = [s \in Server |-> 0]
+    /\ leaderId = [s \in Server |-> None]
+    /\ matchIndex = [s \in Server |-> [t \in Server |-> 0]]
+    /\ nextIndex = [s \in Server |-> [t \in Server |-> 1]]
+    /\ votesGranted = [s \in Server |-> [t \in Server |-> FALSE]]
+    /\ pendingConfIndex = [s \in Server |-> 0]
+    /\ uncommittedSize = [s \in Server |-> 0]
+    /\ leadTransferee = [s \in Server |-> None]
+    /\ isLearner = [s \in Server |-> FALSE]
+    /\ electionElapsed = [s \in Server |-> 0]
+    /\ heartbeatElapsed = [s \in Server |-> 0]
+    /\ randomizedElectionTimeout = [s \in Server |-> 10]
+    /\ messages = {}
+    /\ pc = Nil
+    /\ stack = <<>>
+    /\ info = [args |-> <<>>, temp |-> <<>>]
+
+Spec == Init /\ [][Next]_<<vars, pc, stack, info>>
