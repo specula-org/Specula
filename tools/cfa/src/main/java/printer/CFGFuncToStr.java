@@ -197,7 +197,7 @@ public class CFGFuncToStr {
             return "";
         }
         // Check if starts with already-prefixed operators or special keywords
-        if (content.startsWith("/\\") || content.startsWith("\\/") ||
+        if (content.startsWith("/\\") ||
             content.startsWith("CASE") || content.startsWith("LET") ||
             content.startsWith("EXISTS") || content.startsWith("FORALL")) {
             return content;

@@ -93,7 +93,10 @@ public class CFGVarChangeAnalyzer {
                 genHandleCalledFunc(funcNode);
             }
         }
-        
+
+        // Note: Auxiliary variables (pc, stack, info) are already added to callGraph
+        // in SANYTransformerCli before constructing CFGVarChangeAnalyzer
+
         analyzeUC();
         // UD pass temporarily disabled pending redesign.
     }

@@ -33,6 +33,12 @@ public class CFGCALLGraph {
         return variables;
     }
 
+    public void addVariable(String variable) {
+        if (!variables.contains(variable)) {
+            variables.add(variable);
+        }
+    }
+
     public List<CFGCALLEdge> getCallEdges() {
         return callEdges;
     }

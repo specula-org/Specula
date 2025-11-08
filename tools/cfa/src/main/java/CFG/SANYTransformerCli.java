@@ -173,7 +173,14 @@ public class SANYTransformerCli {
                     }
                 }
 
-                callGraph = new CFGCALLGraph(cfgBuilder.getCfgFuncNodes(), cfgBuilder.getVariables(), cfgBuilder.getConstants());
+                // Add auxiliary variables used by PC algorithm before building call graph
+                // This ensures UC algorithm will include them in UNCHANGED statements
+                List<String> variables = cfgBuilder.getVariables();
+                variables.add("pc");
+                variables.add("stack");
+                variables.add("info");
+
+                callGraph = new CFGCALLGraph(cfgBuilder.getCfgFuncNodes(), variables, cfgBuilder.getConstants());
                 callGraph.buildCallGraph(debugMode);
                 
             } else {
@@ -305,10 +312,6 @@ public class SANYTransformerCli {
         // Add VARIABLES declaration (original variables + auxiliary variables pc, stack, info)
         result.append("VARIABLES\n");
         List<String> allVariables = new ArrayList<>(cfgBuilder.getVariables());
-        // Add auxiliary variables used by CFA transformation
-        allVariables.add("pc");
-        allVariables.add("stack");
-        allVariables.add("info");
 
         for (int i = 0; i < allVariables.size(); i++) {
             result.append("    ").append(allVariables.get(i));
