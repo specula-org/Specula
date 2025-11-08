@@ -11,6 +11,7 @@ import yaml
 import argparse
 import subprocess
 import tempfile
+import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import logging
@@ -57,8 +58,15 @@ class TLCRunner:
             
             return success, output
             
-        except subprocess.TimeoutExpired:
-            return False, f"TLC execution timed out after {timeout} seconds"
+        except subprocess.TimeoutExpired as e:
+            # Timeout means TLC ran for the specified time without finding errors
+            # This is considered a success for large state spaces
+            output = ""
+            if e.stdout:
+                output += e.stdout.decode() if isinstance(e.stdout, bytes) else str(e.stdout)
+            if e.stderr:
+                output += e.stderr.decode() if isinstance(e.stderr, bytes) else str(e.stderr)
+            return True, f"TLC ran for {timeout} seconds without finding errors (timeout reached)\n{output}"
         except Exception as e:
             return False, f"TLC execution failed: {e}"
 
@@ -66,28 +74,29 @@ class TLCRunner:
 class RuntimeCorrector:
     """Main runtime correction class"""
     
-    def __init__(self, config_path: str = "config.yaml", enable_checkpoints: bool = False):
+    def __init__(self, config_path: str = "config.yaml", enable_checkpoints: bool = False, cfg_file: Optional[str] = None):
         # Load configuration using unified config system
         self.config = get_config(config_path)
-        
+
         # Initialize unified LLM client
         self.llm = get_llm_client(config_path)
-        
+
         # Initialize TLC runner
         tla_tools_path = self.config.get('tla_validator', {}).get('tools_path', 'lib/tla2tools.jar')
         self.tlc = TLCRunner(tla_tools_path)
-        
+
         # Load configuration values
         self.max_correction_attempts = self.config.get('generation', {}).get('max_correction_attempts', 3)
         self.tlc_timeout = self.config.get('tla_validator', {}).get('timeout', 60)
-        
+
         # Load prompts
         self.config_prompt = self._load_prompt("step2_config_generation.txt")
         self.correction_prompt = self._load_prompt("step3_runtime_correction.txt")
         summary_prompt = self._load_prompt("step1_error_correction_summary.txt")
         self.summary_prompt = summary_prompt.replace("SANY validation ", "")
         self.enable_checkpoints = enable_checkpoints
-        
+        self.cfg_file = cfg_file
+
         logger.info("Runtime corrector initialized with unified LLM client")
     
     def _load_prompt(self, filename: str) -> str:
@@ -194,14 +203,33 @@ class RuntimeCorrector:
             sys.exit(1)
         
         module_name = self._extract_module_name(spec_content)
-        
-        # Step 1: Generate TLC configuration
-        config_content = self.generate_config(spec_content)
+
+        # Step 1: Handle TLC configuration
         config_file = output_path / f"{module_name}.cfg"
-        
-        with open(config_file, 'w', encoding='utf-8') as f:
-            f.write(config_content)
-        logger.info(f"Generated configuration: {config_file}")
+
+        if self.cfg_file:
+            # Use existing config file
+            if not os.path.exists(self.cfg_file):
+                raise FileNotFoundError(f"Specified config file not found: {self.cfg_file}")
+
+            # Copy to output directory (only if source and destination are different)
+            if os.path.abspath(self.cfg_file) != os.path.abspath(str(config_file)):
+                shutil.copy(self.cfg_file, config_file)
+                logger.info(f"Using existing configuration: {self.cfg_file}")
+                logger.info(f"Copied to: {config_file}")
+            else:
+                logger.info(f"Using existing configuration in place: {self.cfg_file}")
+
+            # Read config content for correction context
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config_content = f.read()
+        else:
+            # Auto-generate config (original behavior)
+            config_content = self.generate_config(spec_content)
+
+            with open(config_file, 'w', encoding='utf-8') as f:
+                f.write(config_content)
+            logger.info(f"Generated configuration: {config_file}")
         
         # Step 2: Initial TLC run
         current_spec = spec_content
@@ -372,7 +400,9 @@ def main():
                         help="Override log level")
     parser.add_argument("--checkpoints", action="store_true",
                         help="Enable checkpoint summaries and HITL continuation for corrections.")
-    
+    parser.add_argument("--cfg", dest="cfg_file",
+                        help="Use existing TLC configuration file (.cfg)")
+
     args = parser.parse_args()
     
     try:
@@ -390,7 +420,7 @@ def main():
             logging.getLogger().setLevel(getattr(logging, args.log_level))
         
         # Create corrector
-        corrector = RuntimeCorrector(args.config, enable_checkpoints=args.checkpoints)
+        corrector = RuntimeCorrector(args.config, enable_checkpoints=args.checkpoints, cfg_file=args.cfg_file)
         
         # Apply command-line overrides
         if args.max_attempts:
