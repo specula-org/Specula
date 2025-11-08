@@ -832,7 +832,7 @@ public class CFGVarChangeAnalyzer {
     }
 
     private void prepareForSAPass() {
-        clearSyntheticUNCHANGED();
+        clearAllUNCHANGEDStatements();  // Remove ALL UNCHANGED (both synthetic and from source)
         parentMap.clear();
         for (CFGFuncNode funcNode : callGraph.getAllFuncNodes()) {
             CFGStmtNode root = funcNode.getRoot();
@@ -1230,20 +1230,34 @@ public class CFGVarChangeAnalyzer {
         if (children == null || children.isEmpty()) {
             return;
         }
+
+        // Check if current node is a branch statement
+        boolean isBranchStatement = stmtNode.getType() == CFGStmtNode.StmtType.IF_ELSE ||
+                                   stmtNode.getType() == CFGStmtNode.StmtType.CASE ||
+                                   stmtNode.getType() == CFGStmtNode.StmtType.DISJUNCTION;
+
         for (int i = 0; i < children.size();) {
             CFGStmtNode child = children.get(i);
             boolean isTarget = child.getType() == CFGStmtNode.StmtType.UNCHANGED;
             if (isTarget && (!syntheticOnly || child.isSynthetic())) {
-                List<CFGStmtNode> grandChildren = new ArrayList<>(child.getChildren());
-                children.remove(i);
-                if (!grandChildren.isEmpty()) {
-                    children.addAll(i, grandChildren);
+                if (isBranchStatement) {
+                    // If parent is a branch statement, replace with empty UNCHANGED
+                    child.setContent("UNCHANGED <<>>");
+                    i++;
+                } else {
+                    // Otherwise, remove the node and promote its children
+                    List<CFGStmtNode> grandChildren = new ArrayList<>(child.getChildren());
+                    children.remove(i);
+                    if (!grandChildren.isEmpty()) {
+                        children.addAll(i, grandChildren);
+                    }
+                    // Do not increment i so we process newly inserted grandchildren (if any)
+                    continue;
                 }
-                // Do not increment i so we process newly inserted grandchildren (if any)
-                continue;
+            } else {
+                removeUNCHANGEDHelper(child, syntheticOnly);
+                i++;
             }
-            removeUNCHANGEDHelper(child, syntheticOnly);
-            i++;
         }
     }
 }
