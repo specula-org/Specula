@@ -1,0 +1,16 @@
+./specula step1 demo/etcd/spec/step1/Raft.tla demo/etcd/spec/step1/corrected/ --mode correct-only
+
+./specula step2 demo/etcd/spec/step1/corrected/corrected_spec/Raft.tla demo/etcd/spec/step2/Raft.tla
+
+./specula step3   demo/etcd/spec/step2/Raft.tla demo/etcd/spec/step3/ --cfg demo/etcd/spec/step3/Raft.cfg --tlc-timeout 10
+
+./specula step4 \
+--tla demo/etcd/spec/step3/initial/Raft.tla \
+--cfg demo/etcd/spec/step3/Raft.cfg\
+--auto-config demo/etcd/spec/step4/raft_config.yaml \
+--stub-template src/systems/etcd/templates/go_trace_stub.template \
+--output demo/etcd/output/instrumented_raft.go \
+--verbose \
+demo/etcd/spec/step4/spec/ \
+demo/etcd/config/step4/raft_config.yaml \
+examples/etcd/source/raft.go
