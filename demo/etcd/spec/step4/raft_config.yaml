@@ -1,17 +1,14 @@
 actions:
-- name: HandleStep
+- name: tickElection
+  go_function: tickElection
   parameters:
   - name: s
     source: Server
-  stmt: /\ electionElapsed[s] >= randomizedElectionTimeout[s] /\ HandleStep(s, [type
-    |-> MsgHup, from |-> s, to |-> s, term |-> currentTerm[s]])
-- name: HandleStep
+- name: Step
+  go_function: Step
   parameters:
   - name: m
     source: messages
-  - name: s
-    source: Server
-  stmt: /\ m.to = s /\ HandleStep(s, m)
 constants:
 - name: Server
   value: '{"1", "2", "3"}'
