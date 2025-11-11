@@ -44,7 +44,8 @@ class CombinedPhase4:
             return
 
         try:
-            self._run_step41()
+            if not self.args.with_exist_specTrace:
+                self._run_step41()
             self._run_step42()
             self._run_raft_trace_validation() # extend future systems here
         except subprocess.CalledProcessError as exc:
@@ -83,6 +84,7 @@ class CombinedPhase4:
         pipeline_kwargs = {
             "config_path": Path(self.args.instrument_config),
             "source_rel_path": source_rel,
+            "duration_seconds": self.args.duration,
         }
         if self.args.stub_template:
             pipeline_kwargs["stub_template"] = Path(self.args.stub_template)
@@ -94,37 +96,38 @@ class CombinedPhase4:
             print("Validate-only mode selected; skipping automated trace execution.")
             return
 
-        if self._generated_trace:
-            print(f"Trace generated at: {self._generated_trace}")
-            print("Trace post-processing and validation pending additional instructions.")
+        if not self._generated_trace:
+            print("No trace was generated. Cannot proceed with validation.")
             return
 
-        # run Raft similar to generate trace.ndjson
-        runner_dir = self.project_root / "examples" / "etcd" / "runners" / "raft_simulator"
-        subprocess.run(["go", "run", "main.go"], check=True, cwd=runner_dir)
+        print(f"Trace generated at: {self._generated_trace}")
 
-        # convert into TLA+ format
-        etcd_root = self.project_root / "examples" / "etcd"
+        # Convert trace to TLA+ format
+        converter_script = self.project_root / "demo" / "etcd" / "scripts" / "etcd_trace_converter.py"
+        output_trace = Path(self.args.output_dir).resolve() / "trace.ndjson"
+
+        print(f"Converting trace to TLA+ format...")
         subprocess.run(
             [
                 "python3",
-                "scripts/trace_converter.py",
-                "-input",
-                "./runners/raft_simulator/trace.ndjson",
-                "-output",
-                "./spec/step4/spec/",
-                "-mode",
-                "simple",
+                str(converter_script),
+                str(self._generated_trace),
+                str(output_trace),
             ],
             check=True,
-            cwd=etcd_root,
         )
+        print(f"Converted trace saved to: {output_trace}")
 
-        # run TLC for final trace validation
-        spec_dir = etcd_root / "spec" / "step4" / "spec"
+        # Run TLC for final trace validation
+        spec_dir = Path(self.args.output_dir).resolve()
         tla_jar = self.project_root / "lib" / "tla2tools.jar"
+
+        # Clear TRACE_PATH and CONFIG_PATH to use default trace.ndjson
         env = os.environ.copy()
-        env["TRACE_PATH"] = "trace.ndjson"
+        env.pop("TRACE_PATH", None)
+        env.pop("CONFIG_PATH", None)
+
+        print(f"Running TLC validation...")
         subprocess.run(
             [
                 "java",
@@ -139,6 +142,7 @@ class CombinedPhase4:
             cwd=spec_dir,
             env=env,
         )
+        print("Trace validation completed successfully!")
 
     def _read_spec_name(self):
         config_path = Path(self.args.instrument_config)
@@ -185,6 +189,8 @@ def main():
     parser.add_argument('--validate-only', action='store_true', help='Only validate, do not instrument')
     parser.add_argument('--generate-template', help='Generate template file for specified language')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    parser.add_argument('--with-exist-specTrace', action='store_true', help='Skip specTrace generation (step4.1), use existing files in output_dir')
+    parser.add_argument('--duration', type=int, default=10, help='Trace generation duration in seconds (default: 10)')
 
     args = parser.parse_args()
     runner = CombinedPhase4(args)
