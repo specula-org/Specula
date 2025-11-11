@@ -1,5 +1,0 @@
-trace_action("ACTION_NAME", &TraceParams {
-    node_id: self.node_id,
-    state: self.state.clone(),
-    term: self.term,
-}); 
