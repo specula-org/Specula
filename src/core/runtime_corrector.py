@@ -398,7 +398,7 @@ def main():
     parser.add_argument("--tlc-timeout", type=int, help="TLC execution timeout in seconds")
     parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                         help="Override log level")
-    parser.add_argument("--checkpoints", action="store_true",
+    parser.add_argument("--interactive", action="store_true",
                         help="Enable checkpoint summaries and HITL continuation for corrections.")
     parser.add_argument("--cfg", dest="cfg_file",
                         help="Use existing TLC configuration file (.cfg)")
@@ -420,7 +420,7 @@ def main():
             logging.getLogger().setLevel(getattr(logging, args.log_level))
         
         # Create corrector
-        corrector = RuntimeCorrector(args.config, enable_checkpoints=args.checkpoints, cfg_file=args.cfg_file)
+        corrector = RuntimeCorrector(args.config, enable_checkpoints=args.interactive, cfg_file=args.cfg_file)
         
         # Apply command-line overrides
         if args.max_attempts:

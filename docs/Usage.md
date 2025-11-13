@@ -131,7 +131,7 @@ Corrects an existing TLA+ specification:
 | `--temperature` | Override temperature from config | From config |
 | `--no-rag` | Disable RAG-enhanced error correction | False |
 | `--log-level` | Set logging level | INFO |
-| `--checkpoints` | Enable HITL checkpoints for syntax correction | False |
+| `--interactive` | Enable HITL checkpoints for syntax correction | False |
 
 </details>
 <details><summary><h3 style="display:inline-block">Output files</h3></summary>
@@ -141,7 +141,7 @@ Corrects an existing TLA+ specification:
 - `generation_summary.json`: Generation metadata and statistics
 - `corrected_spec/`: Directory containing syntax-corrected specifications
 - `attempt_N/`: Intermediate correction attempts
-- If `--checkpoints` is passed:
+- If `--interactive` is passed:
   - `correctionSummary.txt`: Natural-language summary of correction attempts
   - `remainingErrors.txt`: Unaddressed errors that aren't yet automatically fixed
 
@@ -279,6 +279,7 @@ Runtime error correction works by:
 | `--max-attempts` | Maximum correction attempts | From config |
 | `--tlc-timeout` | TLC execution timeout (seconds) | From config |
 | `--log-level` | Set logging level | INFO |
+| `--interactive` | Enable interactive HITL checkpoints correction | False |
 
 </details>
 
