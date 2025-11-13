@@ -397,7 +397,10 @@ class Phase1Generator:
             else:
                 return current_spec, False, attempt_index, error_output
 
-    
+        # If checkpoints are disabled, return the last attempt result
+        return current_spec, False, start_attempt + correction_attempts, error_output
+
+
     def generate_specification(self, input_path: str, output_dir: str) -> Dict:
         """Generate TLA+ specification from source code"""
         logger.info(f"Generating TLA+ specification from {input_path}")

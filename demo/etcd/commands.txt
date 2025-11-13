@@ -1,0 +1,14 @@
+Commands
+./specula step1 demo/etcd/spec/step1/Raft.tla demo/etcd/spec/step1/corrected/ --mode correct-only
+
+./specula step2 demo/etcd/spec/step1/corrected/corrected_spec/Raft.tla demo/etcd/spec/step2/Raft.tla
+
+./specula step3   demo/etcd/spec/step2/Raft.tla demo/etcd/spec/step3/ --cfg demo/etcd/spec/step3/Raft.cfg --tlc-timeout 10
+
+./specula step4 \
+    --auto-config demo/etcd/spec/step4/raft_config.yaml \
+    demo/etcd/spec/step4/spec/ \
+    demo/etcd/spec/step4/raft_config.yaml \
+    examples/etcd/source/raft.go --with-exist-specTrace
+
+tlc -config demo/etcd/spec/step4/spec/corrected_spec/specTrace.cfg demo/etcd/spec/step4/spec/corrected_spec/specTrace.tla

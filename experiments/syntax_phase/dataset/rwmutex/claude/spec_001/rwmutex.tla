@@ -1,1 +1,0 @@
-waitqueue' = Append(waitqueue', p)

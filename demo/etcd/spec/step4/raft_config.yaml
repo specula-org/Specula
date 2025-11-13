@@ -1,0 +1,59 @@
+actions:
+- name: tickElection
+  go_function: tickElection
+  parameters:
+  - name: s
+    source: Server
+- name: Step
+  go_function: Step
+  parameters:
+  - name: m
+    source: messages
+constants:
+- name: Server
+  value: '{"1", "2", "3"}'
+- name: MaxTerm
+  value: '3'
+- name: MaxLogLen
+  value: '3'
+- name: None
+  value: '0'
+- name: Nil
+  value: '"Nil"'
+interactions: []
+spec_name: Raft
+variables:
+- default_value: '[s \\in Server |-> StateFollower]'
+  name: state
+- default_value: '[s \\in Server |-> 0]'
+  name: currentTerm
+- default_value: '[s \\in Server |-> None]'
+  name: votedFor
+- default_value: '[s \\in Server |-> <<>>]'
+  name: log
+- default_value: '[s \\in Server |-> 0]'
+  name: commitIndex
+- default_value: '[s \\in Server |-> None]'
+  name: leaderId
+- default_value: '[s \\in Server |-> [t \\in Server |-> 0]]'
+  name: matchIndex
+- default_value: '[s \\in Server |-> [t \\in Server |-> 1]]'
+  name: nextIndex
+- default_value: '[s \\in Server |-> [t \\in Server |-> FALSE]]'
+  name: votesGranted
+- default_value: '[s \\in Server |-> 0]'
+  name: pendingConfIndex
+- default_value: '[s \\in Server |-> 0]'
+  name: uncommittedSize
+- default_value: '[s \\in Server |-> None]'
+  name: leadTransferee
+- default_value: '[s \\in Server |-> FALSE]'
+  name: isLearner
+- default_value: '[s \\in Server |-> 0]'
+  name: electionElapsed
+- default_value: '[s \\in Server |-> 0]'
+  name: heartbeatElapsed
+- default_value: '[s \\in Server |-> 10]'
+  name: randomizedElectionTimeout
+- default_value: '{}'
+  name: messages

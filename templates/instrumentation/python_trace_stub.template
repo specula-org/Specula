@@ -1,5 +1,0 @@
-trace_action("ACTION_NAME", {
-    "node_id": self.node_id,
-    "state": self.state,
-    "term": self.term
-}) 
