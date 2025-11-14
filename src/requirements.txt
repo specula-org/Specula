@@ -5,18 +5,16 @@ google-generativeai>=0.6.0
 pyyaml>=6.0
 requests>=2.25.0
 
-# ML and embedding dependencies
+# ML and embedding dependencies (for RAG functionality)
+# NOTE: Using CPU-only PyTorch to reduce download size by ~70% (200-300MB vs 800MB-1.5GB)
+# If you need GPU support, replace the line below with: torch>=1.9.0
+--extra-index-url https://download.pytorch.org/whl/cpu
 torch>=1.9.0
 sentence-transformers>=2.2.0
 numpy>=1.21.0
-scikit-learn>=1.0.0
-
-# Utility dependencies
-pathlib2>=2.3.5
-typing-extensions>=4.0.0
-argparse
 
 # Optional dependencies for development and testing
-pytest>=7.0.0
-black>=22.0.0
-flake8>=4.0.0 
+# Uncomment if you need these for development:
+# pytest>=7.0.0
+# black>=22.0.0
+# flake8>=4.0.0 

@@ -141,7 +141,8 @@ if [ -f "src/requirements.txt" ]; then
     print_success "Python dependencies installed"
 else
     print_warning "requirements.txt not found, installing common dependencies..."
-    pip3 install anthropic>=0.34.0 openai>=1.0.0 pyyaml>=6.0 requests>=2.25.0 torch>=1.9.0 sentence-transformers>=2.2.0 numpy>=1.21.0
+    pip3 install torch>=1.9.0 --index-url https://download.pytorch.org/whl/cpu
+    pip3 install anthropic>=0.34.0 openai>=1.0.0 google-generativeai>=0.6.0 pyyaml>=6.0 requests>=2.25.0 sentence-transformers>=2.2.0 numpy>=1.21.0
 fi
 
 # Create necessary directories
