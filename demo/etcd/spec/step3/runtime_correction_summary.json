@@ -1,0 +1,15 @@
+{
+  "input_file": "demo/etcd/spec/step2/Raft.tla",
+  "output_directory": "demo/etcd/spec/step3",
+  "config_file": "demo/etcd/spec/step3/Raft.cfg",
+  "initial_spec_file": "demo/etcd/spec/step3/initial/Raft.tla",
+  "final_spec_file": "demo/etcd/spec/step3/corrected_spec/Raft.tla",
+  "tlc_passed": true,
+  "correction_attempts": 0,
+  "final_tlc_output": "Model checking passed",
+  "config_used": {
+    "model": "gpt-5",
+    "temperature": 1,
+    "max_tokens": 64000
+  }
+}
