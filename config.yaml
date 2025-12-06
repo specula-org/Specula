@@ -42,4 +42,11 @@ paths:
 # Logging Configuration
 logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR
-  format: "[%(levelname)s] %(message)s" 
+  format: "[%(levelname)s] %(message)s"
+
+# Agent Configuration (optional). Uses llm.* defaults if fields are omitted.
+agent:
+  model: "claude-opus-4-20250514"
+  max_tokens: 32000
+  temperature: 0.1
+  timeout: 900000
