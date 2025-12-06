@@ -13,12 +13,17 @@ class Config:
             config_path: Configuration file path, defaults to config.yaml in project root directory
         """
         if config_path is None:
-            # Get project root directory (Specula/)
-            # Current file is src/utils/config.py, so we need to go up 2 levels
-            project_root = Path(__file__).parent.parent.parent
-            config_path = project_root / "config.yaml"
+            # Allow override via environment to avoid editing repo-tracked config.yaml
+            env_config = os.getenv("SPECULA_CONFIG_PATH")
+            if env_config:
+                config_path = env_config
+            else:
+                # Get project root directory (Specula/)
+                # Current file is src/utils/config.py, so we need to go up 2 levels
+                project_root = Path(__file__).parent.parent.parent
+                config_path = project_root / "config.yaml"
         
-        self.config_path = Path(config_path)
+        self.config_path = Path(config_path).expanduser()
         self.config = self._load_config()
         
     def _load_config(self) -> Dict[str, Any]:

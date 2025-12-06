@@ -5,6 +5,7 @@
 .vscode/
 .idea/
 .env
+.specula
 
 # Build output
 results/
