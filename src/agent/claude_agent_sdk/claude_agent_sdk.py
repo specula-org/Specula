@@ -29,7 +29,7 @@ class ClaudeAgentSDKClient:
         self.model = agent_cfg.get("model") or llm_cfg.get("model", "claude-3-5-sonnet-20241022")
         self.max_tokens = agent_cfg.get("max_tokens") or llm_cfg.get("max_tokens", 8192)
         self.temperature = agent_cfg.get("temperature") or llm_cfg.get("temperature", 0.1)
-        self.system_prompt = agent_cfg.get("system_prompt", "You are a helpful agent for Specula.")
+        self.system_prompt = agent_cfg.get("system_prompt", "You are a helpful agent.")
         self.base_url = agent_cfg.get("base_url") or llm_cfg.get("base_url")
         self.use_streaming = agent_cfg.get("use_streaming", llm_cfg.get("use_streaming", True))
         timeout_ms = agent_cfg.get("timeout") or llm_cfg.get("timeout")
