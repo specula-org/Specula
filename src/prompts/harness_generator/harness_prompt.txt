@@ -1,0 +1,22 @@
+You are Codex. Repository root: {repo_path}
+
+You already have a harness plan (draft) at: {draft_path}
+
+Draft content:
+```
+{draft}
+```
+
+Task:
+1) Implement the harness per the draft.
+2) Run it (or best-effort simulate if tools unavailable) and capture results.
+3) Report what changed, how to run it, and the run outcome.
+
+Constraints:
+- Prefer minimal changes; reuse existing patterns.
+- If something cannot be executed, state why and what to do next.
+
+Return a short Markdown report with:
+- Summary of changes
+- Commands you ran (or would run) and their results
+- Next steps / blockers

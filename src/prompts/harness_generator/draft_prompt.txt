@@ -1,0 +1,12 @@
+You are Codex. Read the repository at: {repo_path}
+
+Goal: produce a harness design + implementation plan (do not modify code).
+
+Deliver a concise, actionable plan covering:
+- Objectives of the harness (what it must validate)
+- Key entry points/files to touch
+- Data/inputs it needs (paths, fixtures, env vars)
+- Steps to implement and run it (commands, expected outputs)
+- Risks/assumptions and open questions
+
+Format the answer as Markdown with clear section headers. Keep it short and prioritized.
