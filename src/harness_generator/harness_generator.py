@@ -1,15 +1,19 @@
 """
-Harness generator workflow using Codex.
+Harness generator using Codex.
 
 Modes:
-- draft: generate a harness plan draft and save it.
-- full: generate draft, then use it to ask Codex to implement/run harness.
-- apply: use an existing draft to ask Codex to implement/run harness.
+- draft: generate a harness plan (non-interactive `codex exec`, no file writes).
+- full: draft + Codex run; use `--dangerous` to let Codex modify files.
+- apply: Codex run using an existing draft; use `--dangerous` to let Codex modify files.
+
+Danger mode uses `codex exec --dangerously-bypass-approvals-and-sandbox` (no pty).
+Use only in a trusted environment.
 """
 
 import argparse
 import datetime
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Tuple
 
@@ -73,6 +77,9 @@ def generate_draft(repo_path: Path, permission_mode: PermissionMode, codex_bin: 
     if stderr:
         meta_content.extend(["", "## Stderr", stderr])
     meta_path.write_text("\n".join(meta_content), encoding="utf-8")
+
+    if returncode != 0:
+        print(f"Warning: Codex (draft mode) finished with error code {returncode}. Check {meta_path} for details.")
     return draft_path, meta_path
 
 
@@ -104,6 +111,9 @@ def apply_harness(repo_path: Path, draft_path: Path, permission_mode: Permission
     if stderr:
         meta_content.extend(["", "## Stderr", stderr])
     meta_path.write_text("\n".join(meta_content), encoding="utf-8")
+
+    if returncode != 0:
+        print(f"Warning: Codex (apply mode) finished with error code {returncode}. Check {meta_path} for details.")
     return harness_path, meta_path
 
 
@@ -114,6 +124,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--draft-path", help="Existing draft path (required for mode=apply)")
     parser.add_argument("--codex-bin", default="codex", help="Codex CLI binary name or path")
     parser.add_argument("--permission", choices=["sandbox", "full_access"], default="sandbox", help="Codex permission mode")
+    parser.add_argument(
+        "--dangerous",
+        action="store_true",
+        help="Shortcut to force permission=full_access (dangerously bypass sandbox/approvals)",
+    )
     parser.add_argument("--workdir", help="Working directory for Codex (default: repo-path)")
     return parser.parse_args()
 
@@ -127,7 +142,7 @@ def main() -> None:
         raise FileNotFoundError(f"Codex binary '{args.codex_bin}' not found in PATH")
 
     mode: str = args.mode
-    permission_mode: PermissionMode = args.permission  # type: ignore[assignment]
+    permission_mode: PermissionMode = "full_access" if args.dangerous else args.permission  # type: ignore[assignment]
 
     if mode == "draft":
         draft_path, meta_path = generate_draft(repo_path, permission_mode, args.codex_bin, workdir)
