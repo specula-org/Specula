@@ -1,12 +1,70 @@
-You are Codex. Read the repository at: {repo_path}
+You are Codex, an expert in systems software and test harness design.
+Read the repository at: {repo_path}.
 
-Goal: produce a harness design + implementation plan (do not modify code).
+Goal:
+Design a **runtime execution + trace generation harness**
 
-Deliver a concise, actionable plan covering:
-- Objectives of the harness (what it must validate)
-- Key entry points/files to touch
-- Data/inputs it needs (paths, fixtures, env vars)
-- Steps to implement and run it (commands, expected outputs)
-- Risks/assumptions and open questions
+Clarifications:
+- This is NOT a fuzzing harness.
+- This is NOT a general instrumentation framework.
+- The harness should *drive* the existing system (or its libraries/tests),
+  run meaningful scenarios, and emit structured traces (e.g., NDJSON/JSONL).
 
-Format the answer as Markdown with clear section headers. Keep it short and prioritized.
+Your tasks:
+
+1. **Classify the system & harness archetype**
+   - Briefly describe what kind of system this repo is (library, service, OS kernel, etc.).
+   - Choose one primary harness style (and justify briefly):
+     - Library-level simulation harness (link to core library, simulate cluster/runtime).
+     - Full-process harness (start real binaries/daemons).
+     - Test-framework–based harness (reuse existing tests/CI, add trace export).
+     - Black-box harness (wrap CLI/tests, parse stdout/stderr/logs).
+
+2. **Reuse over reinvention**
+   - Identify existing tests, CI recipes, or scripts to reuse:
+     - e.g., `test/`, `tests/`, `.github/workflows/`, `Dockerfile`, `Makefile`,
+       existing benchmarks or integration tests.
+   - Identify any existing logging/tracing/callback APIs that can be hooked
+     instead of building everything from scratch.
+
+3. **Harness design & interface for Specula**
+   - Define the high-level API from Specula’s point of view, e.g.:
+     - a Python entry point or script (e.g., `specula_run_trace(...)`), or
+     - a CLI command (e.g., `./run_trace_scenario --scenario=...`).
+   - Specify:
+     - What the harness **validates** (protocol properties, component behavior, etc.).
+     - What it **produces** (trace file path, format, metadata).
+
+4. **Key entry points / files**
+   - List the key files and directories to **call or wrap** (do NOT modify them yet).
+   - Propose where new harness code should live (e.g., `tools/specula_harness/`,
+     `tla_eval/core/trace_generation/<system>/`, etc.).
+   - If minimal, safe code changes are needed (e.g., to add a logging hook),
+     describe them at a high level but do not write the code.
+
+5. **Data / inputs**
+   - Enumerate required inputs:
+     - binaries, libraries, configs, test data, containers, VMs, etc.
+     - env vars, feature flags, or build options.
+   - For each, say where it comes from in this repo and how the harness should use it.
+
+6. **Implementation & run steps**
+   - Provide a prioritized, step-by-step plan to:
+     - build the system and any needed artifacts,
+     - run the harness for one scenario,
+     - collect traces and other outputs.
+   - Include concrete example commands (shell, `make`, `cargo`, `go test`, etc.)
+     and the expected success criteria (e.g., success markers in logs,
+     existence of a trace file).
+
+7. **Risks, assumptions, and open questions**
+   - List major risks/unknowns (e.g., requires Docker/KVM, heavy build,
+     unclear logging API).
+   - Propose clarifying questions you would ask a human maintainer.
+   - Call out any design trade-offs (e.g., simulation vs. full system execution).
+
+Format your answer as **Markdown** with clear section headers.
+Keep the plan **concise but actionable**, prioritizing:
+1) reuse of existing infra,
+2) a minimal viable harness,
+3) optional extensions/improvements.

@@ -7,16 +7,40 @@ Draft content:
 {draft}
 ```
 
-Task:
-1) Implement the harness per the draft.
-2) Run it (or best-effort simulate if tools unavailable) and capture results.
-3) Report what changed, how to run it, and the run outcome.
+Your tasks:
 
-Constraints:
-- Prefer minimal changes; reuse existing patterns.
-- If something cannot be executed, state why and what to do next.
+### 1. Implement the harness according to the draft
+- Create only the files and code necessary to realize the draft’s design.
+- Follow the repository’s existing patterns, coding style, and directory structure.
+- Prefer additive changes; avoid modifying existing code unless explicitly required.
+- For any required modifications, apply only minimal, safe edits.
 
-Return a short Markdown report with:
-- Summary of changes
-- Commands you ran (or would run) and their results
-- Next steps / blockers
+### 2. Validate or simulate execution
+- If the environment allows execution, run the harness end-to-end.
+- Do not simulate execution, do not invent fake outputs, and do not describe hypothetical “would run” scenarios.
+- If execution is not possible (missing dependencies, VM/QEMU unavailable, sandbox limitations), simulate the expected workflow:
+  - Describe exactly which commands *would* be run.
+  - Describe expected outputs, artifacts, logs, and trace files.
+  - Explain assumptions clearly.
+
+### 3. Produce a final report
+Return a concise Markdown report containing:
+
+#### **Summary of What You Implemented**
+- New files created
+- Existing files modified (if any)
+- Key logic and how it fulfills the draft
+
+#### **Run Instructions & (Simulated) Results**
+- Exact commands run (or to be run)
+- Actual or expected outputs (e.g., trace.jsonl, logs, success markers)
+
+#### **Next Steps / Blockers**
+- Any missing information needed from maintainers
+- Any repository issues that prevent full execution
+- Recommended follow-up improvements to the harness
+
+### Constraints
+- Do not invent repository structure; infer from the repo.
+- Do not produce large placeholder code; write realistic and consistent code modules.
+- Keep the report short, structured, and actionable.
