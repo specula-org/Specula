@@ -40,7 +40,9 @@ def _load_prompt(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _render(template: str, values: dict) -> str:
+def _render(template: str, values: dict, hint: str = "") -> str:
+    if hint:
+        template = f"{template.strip()}\n\n[Additional hint]\n{hint}"
     rendered = template
     for key, val in values.items():
         rendered = rendered.replace("{" + key + "}", val)
@@ -54,8 +56,19 @@ def _run_codex(prompt: str, permission_mode: PermissionMode, codex_bin: str, wor
     return result.stdout, result.returncode, result.stderr
 
 
-def generate_draft(repo_path: Path, permission_mode: PermissionMode, codex_bin: str, workdir: Path) -> Tuple[Path, Path]:
-    prompt = _render(_load_prompt("draft_prompt.txt"), {"repo_path": str(repo_path)})
+def _read_hint(hint_path: str) -> str:
+    if not hint_path:
+        return ""
+    p = Path(hint_path)
+    if not p.is_file():
+        raise FileNotFoundError(f"Hint file not found: {hint_path}")
+    return p.read_text(encoding="utf-8")
+
+
+def generate_draft(
+    repo_path: Path, permission_mode: PermissionMode, codex_bin: str, workdir: Path, hint: str = ""
+) -> Tuple[Path, Path]:
+    prompt = _render(_load_prompt("draft_prompt.txt"), {"repo_path": str(repo_path)}, hint=hint)
     stdout, returncode, stderr = _run_codex(prompt, permission_mode, codex_bin, workdir)
 
     stamp = _timestamp()
@@ -83,11 +96,19 @@ def generate_draft(repo_path: Path, permission_mode: PermissionMode, codex_bin: 
     return draft_path, meta_path
 
 
-def apply_harness(repo_path: Path, draft_path: Path, permission_mode: PermissionMode, codex_bin: str, workdir: Path) -> Tuple[Path, Path]:
+def apply_harness(
+    repo_path: Path,
+    draft_path: Path,
+    permission_mode: PermissionMode,
+    codex_bin: str,
+    workdir: Path,
+    hint: str = "",
+) -> Tuple[Path, Path]:
     draft_text = draft_path.read_text(encoding="utf-8")
     prompt = _render(
         _load_prompt("harness_prompt.txt"),
         {"repo_path": str(repo_path), "draft_path": str(draft_path), "draft": draft_text},
+        hint=hint,
     )
     stdout, returncode, stderr = _run_codex(prompt, permission_mode, codex_bin, workdir)
 
@@ -129,6 +150,7 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Shortcut to force permission=full_access (dangerously bypass sandbox/approvals)",
     )
+    parser.add_argument("--hint", help="Optional path to a hint text file appended to prompts")
     parser.add_argument("--workdir", help="Working directory for Codex (default: repo-path)")
     return parser.parse_args()
 
@@ -144,8 +166,10 @@ def main() -> None:
     mode: str = args.mode
     permission_mode: PermissionMode = "full_access" if args.dangerous else args.permission  # type: ignore[assignment]
 
+    hint_text = _read_hint(args.hint) if args.hint else ""
+
     if mode == "draft":
-        draft_path, meta_path = generate_draft(repo_path, permission_mode, args.codex_bin, workdir)
+        draft_path, meta_path = generate_draft(repo_path, permission_mode, args.codex_bin, workdir, hint=hint_text)
         print(f"Draft written to {draft_path}")
         print(f"Draft metadata written to {meta_path}")
         return
@@ -154,14 +178,14 @@ def main() -> None:
         if not args.draft_path:
             raise ValueError("mode=apply requires --draft-path")
         draft_path = Path(args.draft_path).resolve()
-        harness_path, meta_path = apply_harness(repo_path, draft_path, permission_mode, args.codex_bin, workdir)
+        harness_path, meta_path = apply_harness(repo_path, draft_path, permission_mode, args.codex_bin, workdir, hint=hint_text)
         print(f"Harness run report written to {harness_path}")
         print(f"Harness metadata written to {meta_path}")
         return
 
     # mode == "full"
-    draft_path, draft_meta = generate_draft(repo_path, permission_mode, args.codex_bin, workdir)
-    harness_path, harness_meta = apply_harness(repo_path, draft_path, permission_mode, args.codex_bin, workdir)
+    draft_path, draft_meta = generate_draft(repo_path, permission_mode, args.codex_bin, workdir, hint=hint_text)
+    harness_path, harness_meta = apply_harness(repo_path, draft_path, permission_mode, args.codex_bin, workdir, hint=hint_text)
     print(f"Draft written to {draft_path}")
     print(f"Draft metadata written to {draft_meta}")
     print(f"Harness run report written to {harness_path}")
