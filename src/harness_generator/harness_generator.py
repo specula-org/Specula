@@ -22,9 +22,12 @@ DRAFT_DIR = OUTPUT_ROOT / "draft"
 HARNESS_DIR = OUTPUT_ROOT / "harness"
 
 
-def _timestamped_path(base_dir: Path, prefix: str, suffix: str = ".md") -> Path:
+def _timestamp() -> str:
+    return datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def _timestamped_path(base_dir: Path, prefix: str, stamp: str, suffix: str = ".md") -> Path:
     base_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     return base_dir / f"{prefix}-{stamp}{suffix}"
 
 
@@ -47,29 +50,33 @@ def _run_codex(prompt: str, permission_mode: PermissionMode, codex_bin: str, wor
     return result.stdout, result.returncode, result.stderr
 
 
-def generate_draft(repo_path: Path, permission_mode: PermissionMode, codex_bin: str, workdir: Path) -> Path:
+def generate_draft(repo_path: Path, permission_mode: PermissionMode, codex_bin: str, workdir: Path) -> Tuple[Path, Path]:
     prompt = _render(_load_prompt("draft_prompt.txt"), {"repo_path": str(repo_path)})
     stdout, returncode, stderr = _run_codex(prompt, permission_mode, codex_bin, workdir)
 
-    draft_path = _timestamped_path(DRAFT_DIR, "harness-draft")
-    content = [
-        "# Harness draft",
+    stamp = _timestamp()
+    draft_path = _timestamped_path(DRAFT_DIR, "harness-draft", stamp)
+    meta_path = _timestamped_path(DRAFT_DIR, "harness-draft-meta", stamp)
+
+    # Draft: only Codex stdout
+    draft_path.write_text(stdout, encoding="utf-8")
+
+    # Metadata/log: prompt + stderr + return code
+    meta_content = [
+        "# Harness draft metadata",
         f"Repo: {repo_path}",
         f"Return code: {returncode}",
         "",
         "## Prompt",
         prompt,
-        "",
-        "## Stdout",
-        stdout,
     ]
     if stderr:
-        content.extend(["", "## Stderr", stderr])
-    draft_path.write_text("\n".join(content), encoding="utf-8")
-    return draft_path
+        meta_content.extend(["", "## Stderr", stderr])
+    meta_path.write_text("\n".join(meta_content), encoding="utf-8")
+    return draft_path, meta_path
 
 
-def apply_harness(repo_path: Path, draft_path: Path, permission_mode: PermissionMode, codex_bin: str, workdir: Path) -> Path:
+def apply_harness(repo_path: Path, draft_path: Path, permission_mode: PermissionMode, codex_bin: str, workdir: Path) -> Tuple[Path, Path]:
     draft_text = draft_path.read_text(encoding="utf-8")
     prompt = _render(
         _load_prompt("harness_prompt.txt"),
@@ -77,23 +84,27 @@ def apply_harness(repo_path: Path, draft_path: Path, permission_mode: Permission
     )
     stdout, returncode, stderr = _run_codex(prompt, permission_mode, codex_bin, workdir)
 
-    harness_path = _timestamped_path(HARNESS_DIR, "harness-run")
-    content = [
-        "# Harness build/run",
+    stamp = _timestamp()
+    harness_path = _timestamped_path(HARNESS_DIR, "harness-run", stamp)
+    meta_path = _timestamped_path(HARNESS_DIR, "harness-run-meta", stamp)
+
+    # Harness report: Codex stdout only
+    harness_path.write_text(stdout, encoding="utf-8")
+
+    # Metadata/log: prompt + stderr + return code
+    meta_content = [
+        "# Harness run metadata",
         f"Repo: {repo_path}",
         f"Draft: {draft_path}",
         f"Return code: {returncode}",
         "",
         "## Prompt",
         prompt,
-        "",
-        "## Stdout",
-        stdout,
     ]
     if stderr:
-        content.extend(["", "## Stderr", stderr])
-    harness_path.write_text("\n".join(content), encoding="utf-8")
-    return harness_path
+        meta_content.extend(["", "## Stderr", stderr])
+    meta_path.write_text("\n".join(meta_content), encoding="utf-8")
+    return harness_path, meta_path
 
 
 def _parse_args() -> argparse.Namespace:
@@ -119,23 +130,27 @@ def main() -> None:
     permission_mode: PermissionMode = args.permission  # type: ignore[assignment]
 
     if mode == "draft":
-        draft_path = generate_draft(repo_path, permission_mode, args.codex_bin, workdir)
+        draft_path, meta_path = generate_draft(repo_path, permission_mode, args.codex_bin, workdir)
         print(f"Draft written to {draft_path}")
+        print(f"Draft metadata written to {meta_path}")
         return
 
     if mode == "apply":
         if not args.draft_path:
             raise ValueError("mode=apply requires --draft-path")
         draft_path = Path(args.draft_path).resolve()
-        harness_path = apply_harness(repo_path, draft_path, permission_mode, args.codex_bin, workdir)
+        harness_path, meta_path = apply_harness(repo_path, draft_path, permission_mode, args.codex_bin, workdir)
         print(f"Harness run report written to {harness_path}")
+        print(f"Harness metadata written to {meta_path}")
         return
 
     # mode == "full"
-    draft_path = generate_draft(repo_path, permission_mode, args.codex_bin, workdir)
-    harness_path = apply_harness(repo_path, draft_path, permission_mode, args.codex_bin, workdir)
+    draft_path, draft_meta = generate_draft(repo_path, permission_mode, args.codex_bin, workdir)
+    harness_path, harness_meta = apply_harness(repo_path, draft_path, permission_mode, args.codex_bin, workdir)
     print(f"Draft written to {draft_path}")
+    print(f"Draft metadata written to {draft_meta}")
     print(f"Harness run report written to {harness_path}")
+    print(f"Harness metadata written to {harness_meta}")
 
 
 if __name__ == "__main__":
