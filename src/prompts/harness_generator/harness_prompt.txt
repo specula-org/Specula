@@ -10,7 +10,7 @@ Draft content:
 Your tasks:
 
 ### 1. Implement the harness according to the draft
-- Create only the files and code necessary to realize the draft’s design.
+- Create only the files and code necessary to realize the draft’s design, with a focus on running the full system and collecting traces for consensus/raft flows and concurrency primitives (mutex, spinlocks, etc.).
 - Follow the repository’s existing patterns, coding style, and directory structure.
 - Prefer additive changes; avoid modifying existing code unless explicitly required.
 - For any required modifications, apply only minimal, safe edits.

@@ -2,7 +2,9 @@ You are Codex, an expert in systems software and test harness design.
 Read the repository at: {repo_path}.
 
 Goal:
-Design a **runtime execution + trace generation harness**
+Design a **runtime execution + trace generation harness** that:
+- Drives the system end-to-end.
+- Executes and collects traces for consensus/raft flows and concurrency primitives (mutex, spinlocks, etc.).
 
 Clarifications:
 - This is NOT a fuzzing harness.
