@@ -1,0 +1,186 @@
+You are Codex. Repository root: {repo_path}
+
+You already have a configuration plan (draft) at: {draft_path}
+
+Draft content:
+```
+{draft}
+```
+
+## Your Task
+
+Implement the complete OmniLink configuration according to the draft plan by **generating all required files**.
+
+## Files to Generate
+
+Based on the draft, you need to create:
+
+1. **workload/main.cpp** (if draft indicates uninstrumented) - Add OmniLink instrumentation to existing workload
+2. **MC<System>Validate.tla** - TLA+ module for trace validation
+3. **MC<System>Validate.cfg** - TLC configuration file
+4. **package.mill** - Mill build configuration
+5. **workload.nix** - Nix package definition
+6. **workload/CMakeLists.txt** - CMake build configuration
+
+## Implementation Guidelines
+
+### 1. Follow the Draft Plan
+- Generate files exactly as outlined in the draft
+- Use the system name, operations, and parameters identified in the draft
+- Reference the example patterns from similar systems mentioned in the draft
+
+### 2. Maintain Consistency with OmniLink Patterns
+- Study similar systems in the repository (e.g., `omnilink/concurrentqueue/`, `omnilink/atomic/`)
+- Copy standard patterns for common elements
+- Adapt system-specific parts based on the spec and workload
+
+### 3. File-Specific Instructions
+
+#### workload/main.cpp (if uninstrumented)
+
+**IMPORTANT**: Only modify this file if the draft indicates the workload is uninstrumented. If already instrumented, skip this step.
+
+**Instrumentation process**:
+1. **Add OmniLink headers**:
+   ```cpp
+   #include <omnilink/workload.hpp>
+   #include <omnilink/models/<System>.hpp>
+   ```
+
+2. **Modify WorkloadContext**:
+   - Change from: `struct WorkloadContext { ... }`
+   - To: `struct WorkloadContext : public omnilink::WorkloadContext<WorkloadContext, <System>::AnyOperation> { ... }`
+
+3. **Add RunnerDefns nested struct** (if using per-thread state):
+   ```cpp
+   struct RunnerDefns : public WorkloadContext::RunnerDefnsBase<RunnerDefns> {
+     // Thread-local state here
+     void perform_operation(Ctx<<System>::OperationName> &ctx) { ... }
+   };
+   ```
+
+4. **Wrap operations with OmniLink context**:
+   - For each operation function, change signature to accept `Ctx<Operation>` parameter
+   - Before the operation: call `ctx.refine_op_start()`
+   - Execute the actual operation
+   - After the operation: call `ctx.refine_op_end()`
+   - Assign operation parameters to `ctx.op.*` fields (matching TLA+ spec field names)
+   - For unsupported operation states: call `ctx.unsupported()` and return early
+
+5. **Example instrumentation pattern**:
+   ```cpp
+   void perform_operation(Ctx<Storage::TransactionWrite> &ctx) {
+     if (transactionId == -1) {
+       ctx.unsupported();  // Can't write without a transaction
+     }
+     auto key = find_random_kv();
+     auto value = transactionId;
+
+     ctx.refine_op_start();  // Mark operation start
+     int ret = do_actual_write(key, value);  // Original logic
+     ctx.refine_op_end();  // Mark operation end
+
+     // Assign to trace record
+     ctx.op.tid = transactionId;
+     ctx.op.k = key;
+     ctx.op.v = value;
+     ctx.op._did_abort = (ret != 0);
+     ctx.op._meta = std::map<std::string, int>{{"result_code", ret}};
+   }
+   ```
+
+6. **Update main() function**:
+   - Change to: `return WorkloadContext::main();`
+   - This integrates with OmniLink's trace collection framework
+
+7. **Study reference implementations**:
+   - Look at similar instrumented workloads in `omnilink/*/workload/main.cpp`
+   - Copy the general pattern, adapt operation-specific details
+
+#### MC<System>Validate.tla
+- EXTEND the appropriate modules (typically: `<System>Validate`, `TLC`, `TLCExt`)
+- Implement required constants (e.g., `ProducersImpl`, `ConsumersImpl`)
+  - Extract these from `__traces` structure
+  - Use `TLCCache` for optimization
+- Define `DebugAlias` and `PostCondition` using `__TraceOps!` operators
+- Add any system-specific optimizations (e.g., `PragmaticView`, `StopAtLevel`)
+
+#### MC<System>Validate.cfg
+- Set `INIT Init` and `NEXT Next`
+- Set `ALIAS DebugAlias`
+- Set `POSTCONDITION PostCondition`
+- Set `CHECK_DEADLOCK FALSE`
+
+#### package.mill
+- Use package name: `build.omnilink.<system>`
+- Define source paths using `Task.Source(os.sub / "...")`
+- Extend `build.omnilink.TracingConfigModule`
+- Configure `tracingExecutable` using `build.omnilink.buildPkg`
+- Add workload configurations (e.g., `defaultConfig`, `thinConfig`)
+  - Specify `threadCount` and `operationCount`
+
+#### workload.nix
+- Use system-appropriate `pname` (e.g., `"atomic-workload"`)
+- Set version to `"0.1.0"`
+- Set `src = ./workload`
+- Set `dontStrip = true`
+- Include in `buildInputs`:
+  - `omnilink.lib`
+  - `msgpack-cxx`
+  - `omnilink_models.<System>` (matches the spec name)
+  - Any system-specific libraries
+- Include in `nativeBuildInputs`:
+  - `cmake`
+- Add `postInstall` to make executable: `chmod a+x $out/bin/main`
+
+#### workload/CMakeLists.txt
+- Set `cmake_minimum_required(VERSION 4.1.1)`
+- Use project name: `<system>-stressor`
+- Set `CMAKE_BUILD_TYPE Debug`
+- Enable `CMAKE_EXPORT_COMPILE_COMMANDS`
+- Find required packages: `msgpack-cxx`, `OmniLink`
+- Create executable `main` from `main.cpp`
+- Link libraries: `msgpack-cxx`, `OmniLink::OmniLink`
+- Set C++ standard to 20
+- Install to `bin` directory
+
+### 4. Validation
+
+After generating files:
+- Verify syntax (e.g., TLA+ module structure, Scala syntax, Nix syntax)
+- Check consistency with reference systems
+- Ensure all placeholders are replaced with actual values
+
+## Output Format
+
+Provide a **concise Markdown report** with:
+
+### Summary of Implementation
+- List all files created
+- Confirm they match the draft plan
+- Note any deviations or adaptations made
+
+### Generated Files
+For each file, show:
+- File path
+- Complete file contents in a code block
+
+### Verification Steps
+- Commands to verify the configuration (if applicable)
+- Expected outcomes
+
+### Next Steps
+- Any remaining tasks or manual steps needed
+- Suggestions for testing the configuration
+
+## Important Notes
+
+- **Do NOT modify** the existing spec file (`<System>.tla`)
+- **Conditionally modify** `workload/main.cpp`:
+  - **If uninstrumented**: Add OmniLink instrumentation following the patterns above
+  - **If already instrumented**: Do NOT modify it
+- **Only create/modify** the files listed above as needed
+- **Use exact patterns** from reference systems when possible
+- **Adapt system-specific details** based on the draft analysis
+- Keep file contents **minimal and focused** - avoid unnecessary complexity
+- **Preserve core workload logic**: When instrumenting, only add OmniLink integration without changing the underlying behavior

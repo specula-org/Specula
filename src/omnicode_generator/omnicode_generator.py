@@ -1,8 +1,8 @@
 """
-Harness generator using Codex.
+OmniLink configuration generator using Codex.
 
 Modes:
-- draft: generate a harness plan (non-interactive `codex exec`, no file writes).
+- draft: analyze system and generate configuration plan (non-interactive `codex exec`, no file writes).
 - full: draft + Codex run; use `--dangerous` to let Codex modify files.
 - apply: Codex run using an existing draft; use `--dangerous` to let Codex modify files.
 
@@ -20,10 +20,10 @@ from typing import Tuple
 from src.agent.codex import CodexClient, CodexConfig, PermissionMode
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts" / "harness_generator"
+PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts" / "omnicode_generator"
 OUTPUT_ROOT = REPO_ROOT / "output" / "agent_results"
-DRAFT_DIR = OUTPUT_ROOT / "draft"
-HARNESS_DIR = OUTPUT_ROOT / "harness"
+DRAFT_DIR = OUTPUT_ROOT / "omnicode_draft"
+OMNICODE_DIR = OUTPUT_ROOT / "omnicode"
 
 
 def _timestamp() -> str:
@@ -72,15 +72,15 @@ def generate_draft(
     stdout, returncode, stderr = _run_codex(prompt, permission_mode, codex_bin, workdir)
 
     stamp = _timestamp()
-    draft_path = _timestamped_path(DRAFT_DIR, "harness-draft", stamp)
-    meta_path = _timestamped_path(DRAFT_DIR, "harness-draft-meta", stamp)
+    draft_path = _timestamped_path(DRAFT_DIR, "omnicode-draft", stamp)
+    meta_path = _timestamped_path(DRAFT_DIR, "omnicode-draft-meta", stamp)
 
     # Draft: only Codex stdout
     draft_path.write_text(stdout, encoding="utf-8")
 
     # Metadata/log: prompt + stderr + return code
     meta_content = [
-        "# Harness draft metadata",
+        "# OmniCode draft metadata",
         f"Repo: {repo_path}",
         f"Return code: {returncode}",
         "",
@@ -96,7 +96,7 @@ def generate_draft(
     return draft_path, meta_path
 
 
-def apply_harness(
+def apply_omnicode(
     repo_path: Path,
     draft_path: Path,
     permission_mode: PermissionMode,
@@ -106,22 +106,22 @@ def apply_harness(
 ) -> Tuple[Path, Path]:
     draft_text = draft_path.read_text(encoding="utf-8")
     prompt = _render(
-        _load_prompt("harness_prompt.txt"),
+        _load_prompt("omnicode_prompt.txt"),
         {"repo_path": str(repo_path), "draft_path": str(draft_path), "draft": draft_text},
         hint=hint,
     )
     stdout, returncode, stderr = _run_codex(prompt, permission_mode, codex_bin, workdir)
 
     stamp = _timestamp()
-    harness_path = _timestamped_path(HARNESS_DIR, "harness-run", stamp)
-    meta_path = _timestamped_path(HARNESS_DIR, "harness-run-meta", stamp)
+    omnicode_path = _timestamped_path(OMNICODE_DIR, "omnicode-run", stamp)
+    meta_path = _timestamped_path(OMNICODE_DIR, "omnicode-run-meta", stamp)
 
-    # Harness report: Codex stdout only
-    harness_path.write_text(stdout, encoding="utf-8")
+    # OmniCode report: Codex stdout only
+    omnicode_path.write_text(stdout, encoding="utf-8")
 
     # Metadata/log: prompt + stderr + return code
     meta_content = [
-        "# Harness run metadata",
+        "# OmniCode run metadata",
         f"Repo: {repo_path}",
         f"Draft: {draft_path}",
         f"Return code: {returncode}",
@@ -135,11 +135,11 @@ def apply_harness(
 
     if returncode != 0:
         print(f"Warning: Codex (apply mode) finished with error code {returncode}. Check {meta_path} for details.")
-    return harness_path, meta_path
+    return omnicode_path, meta_path
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Harness generator using Codex.")
+    parser = argparse.ArgumentParser(description="OmniLink configuration generator using Codex.")
     parser.add_argument("--mode", choices=["draft", "full", "apply"], required=True, help="draft only, full pipeline, or apply an existing draft")
     parser.add_argument("--repo-path", default=".", help="Path to the repository root for Codex context")
     parser.add_argument("--draft-path", help="Existing draft path (required for mode=apply)")
@@ -178,18 +178,18 @@ def main() -> None:
         if not args.draft_path:
             raise ValueError("mode=apply requires --draft-path")
         draft_path = Path(args.draft_path).resolve()
-        harness_path, meta_path = apply_harness(repo_path, draft_path, permission_mode, args.codex_bin, workdir, hint=hint_text)
-        print(f"Harness run report written to {harness_path}")
-        print(f"Harness metadata written to {meta_path}")
+        omnicode_path, meta_path = apply_omnicode(repo_path, draft_path, permission_mode, args.codex_bin, workdir, hint=hint_text)
+        print(f"OmniCode run report written to {omnicode_path}")
+        print(f"OmniCode metadata written to {meta_path}")
         return
 
     # mode == "full"
     draft_path, draft_meta = generate_draft(repo_path, permission_mode, args.codex_bin, workdir, hint=hint_text)
-    harness_path, harness_meta = apply_harness(repo_path, draft_path, permission_mode, args.codex_bin, workdir, hint=hint_text)
+    omnicode_path, omnicode_meta = apply_omnicode(repo_path, draft_path, permission_mode, args.codex_bin, workdir, hint=hint_text)
     print(f"Draft written to {draft_path}")
     print(f"Draft metadata written to {draft_meta}")
-    print(f"Harness run report written to {harness_path}")
-    print(f"Harness metadata written to {harness_meta}")
+    print(f"OmniCode run report written to {omnicode_path}")
+    print(f"OmniCode metadata written to {omnicode_meta}")
 
 
 if __name__ == "__main__":

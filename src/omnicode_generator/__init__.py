@@ -1,0 +1,1 @@
+"""OmniLink configuration generator package."""

@@ -1,1 +1,0 @@
-"""Harness generator package."""

@@ -1,0 +1,179 @@
+You are Codex, an expert in TLA+ specifications, build systems (Mill, Nix, CMake), and the OmniLink trace validation framework.
+
+Repository: {repo_path}
+
+## Task Overview
+
+Your goal is to **analyze an OmniLink system** and design a complete configuration plan for generating all required build and validation files.
+
+## Context: OmniLink Framework
+
+OmniLink is a framework for validating concurrent system implementations against TLA+ specifications through trace collection and validation. A complete OmniLink system requires:
+
+1. **TLA+ Specification Layer**:
+   - `<System>.tla` - The original TLA+ specification (provided as input)
+   - `MC<System>Validate.tla` - TLA+ module for trace validation
+   - `MC<System>Validate.cfg` - TLC configuration for trace validation
+
+2. **Implementation Layer**:
+   - `workload/main.cpp` - C++ workload code that may or may not be instrumented with OmniLink framework
+
+3. **Build Configuration Layer**:
+   - `package.mill` - Mill build configuration
+   - `workload.nix` - Nix package definition for the workload
+   - `workload/CMakeLists.txt` - CMake build configuration
+
+## Input (Already Provided)
+
+The repository contains:
+- A TLA+ specification file (e.g., `Atomic.tla`, `ConcurrentQueue.tla`)
+- A workload implementation in `workload/main.cpp`
+  - **May be uninstrumented**: Plain C++ code without OmniLink framework integration
+  - **May be instrumented**: Already uses OmniLink framework APIs (e.g., `omnilink::WorkloadContext`, `Ctx<Operation>`)
+
+## Output (To Be Generated)
+
+You need to design a plan for generating these files:
+
+1. **workload/main.cpp** (if uninstrumented): Add OmniLink instrumentation to the existing workload code
+2. **MC<System>Validate.tla**: TLA+ module for trace validation
+3. **MC<System>Validate.cfg**: TLC configuration file
+4. **package.mill**: Mill build configuration
+5. **workload.nix**: Nix package definition
+6. **workload/CMakeLists.txt**: CMake configuration
+
+## Reference Systems
+
+The repository likely contains other OmniLink systems you can reference as templates:
+- Look for directories like `omnilink/concurrentqueue/`, `omnilink/setbench/`, `omnilink/atomic/`
+- These contain complete, working configurations you should study and adapt
+
+## Your Tasks
+
+### 1. Analyze the System
+
+Examine the provided repository and identify:
+- **Spec file location and name** (e.g., `Atomic.tla`, `ConcurrentQueue.tla`)
+- **System name** (derived from the spec filename, e.g., "Atomic", "ConcurrentQueue")
+- **Workload structure**: What's in `workload/main.cpp`?
+  - **Is it instrumented?** Check for:
+    - `#include <omnilink/workload.hpp>` and `#include <omnilink/models/<System>.hpp>`
+    - Inheritance from `omnilink::WorkloadContext`
+    - Use of `Ctx<Operation>` parameters in functions
+    - Calls to `ctx.refine_op_start()`, `ctx.refine_op_end()`, `ctx.op.*` assignments
+  - **If uninstrumented**: What operations does the plain C++ code implement?
+  - **If instrumented**: What TLA+ operations are already mapped?
+  - What state variables does it use?
+
+### 2. Reference Similar Systems
+
+Find and analyze similar OmniLink systems in the repository:
+- List 2-3 reference systems (e.g., `omnilink/concurrentqueue/`, `omnilink/atomic/`)
+- For each reference, note:
+  - How `MC<System>Validate.tla` is structured
+  - What parameters are in `MC<System>Validate.cfg`
+  - How `package.mill` is organized
+  - What dependencies are in `workload.nix`
+  - What's in `CMakeLists.txt`
+
+### 3. Design Configuration Plan
+
+For each file to generate, provide:
+
+#### workload/main.cpp (if uninstrumented):
+- **Instrumentation strategy**: How to add OmniLink framework integration?
+  - What `#include` statements to add?
+  - How to modify `WorkloadContext` to inherit from `omnilink::WorkloadContext<...>`?
+  - Which operations need to be wrapped with `Ctx<Operation>` parameters?
+  - Where to add `ctx.refine_op_start()` and `ctx.refine_op_end()` calls?
+  - What operation parameters need to be assigned to `ctx.op.*` fields?
+  - How to handle unsupported operations with `ctx.unsupported()`?
+- **Mapping to TLA+ spec**: For each C++ operation, what TLA+ operation does it correspond to?
+- **Preservation of logic**: Ensure the core workload behavior remains unchanged
+
+#### MC<System>Validate.tla:
+- What should it EXTEND? (typically: `<System>Validate`, `TLC`, `TLCExt`)
+- What constants need implementation (e.g., `ProducersImpl`, `ConsumersImpl`)?
+- What aliases and conditions are needed (`DebugAlias`, `PostCondition`)?
+- Are there any special optimizations (e.g., `PragmaticView`, `StopAtLevel`)?
+
+#### MC<System>Validate.cfg:
+- What should `INIT`, `NEXT` be set to?
+- What `ALIAS` and `POSTCONDITION` should be used?
+- Should deadlock checking be enabled?
+
+#### package.mill:
+- What package name (e.g., `build.omnilink.atomic`)?
+- What are the source file paths (spec, validation spec, config)?
+- What should the Nix package name be?
+- What workload configs are needed (e.g., `defaultConfig`, `thinConfig`)?
+  - Thread counts and operation counts
+
+#### workload.nix:
+- What should `pname` and `version` be?
+- What `buildInputs` are required?
+  - Always: `omnilink.lib`, `msgpack-cxx`, `omnilink_models.<System>`
+  - System-specific libraries?
+- What `nativeBuildInputs`? (usually: `cmake`)
+- Any special `postInstall` steps?
+
+#### workload/CMakeLists.txt:
+- Project name
+- Executable name (usually `main`)
+- Required packages (`msgpack-cxx`, `OmniLink`)
+- C++ standard (usually 20)
+
+### 4. Identify Patterns and Variations
+
+Note:
+- **Common patterns** across all OmniLink systems (copy these directly)
+- **System-specific variations** that depend on:
+  - Number and type of operations in the spec
+  - State variables and their structure
+  - Concurrency patterns (producers/consumers, threads, etc.)
+
+### 5. Output Format
+
+Provide your analysis as a **structured Markdown document** with:
+
+# OmniLink Configuration Plan for <System>
+
+## System Analysis
+- **System name**: ...
+- **Spec file**: ...
+- **Workload instrumentation status**: [instrumented / uninstrumented]
+- **Operations**: ...
+- **State variables**: ...
+
+## Reference Systems
+- concurrentqueue: [key patterns observed]
+- atomic: [key patterns observed]
+
+## File Generation Plan
+
+### workload/main.cpp (if uninstrumented)
+[Instrumentation strategy and operation mapping]
+
+### MC<System>Validate.tla
+[Detailed structure and content plan]
+
+### MC<System>Validate.cfg
+[Content plan]
+
+### package.mill
+[Structure and parameters]
+
+### workload.nix
+[Dependencies and configuration]
+
+### workload/CMakeLists.txt
+[Build configuration]
+
+## Key Decisions
+- [Any important choices or trade-offs]
+- [System-specific adaptations needed]
+
+## Open Questions
+- [Anything unclear or requiring clarification]
+
+Keep the plan **concrete and actionable**, with specific parameter values and file contents outlined where possible.
