@@ -1,0 +1,131 @@
+diff --git a/quorum/majority.go b/quorum/majority.go
+index c206d57..85b296a 100644
+--- a/quorum/majority.go
++++ b/quorum/majority.go
+@@ -76,11 +76,9 @@ func (c MajorityConfig) Describe(l AckedIndexer) string {
+ 	})
+ 
+ 	// Populate .bar.
+-	for i := 1; i < len(info); i++ {
+-		if info[i-1].idx < info[i].idx {
++	for i := range info {
++		if i > 0 && info[i-1].idx < info[i].idx {
+ 			info[i].bar = i
+-		} else {
+-			info[i].bar = info[i-1].bar
+ 		}
+ 	}
+ 
+diff --git a/quorum/testdata/joint_commit.txt b/quorum/testdata/joint_commit.txt
+index 97e041c..12f19fb 100644
+--- a/quorum/testdata/joint_commit.txt
++++ b/quorum/testdata/joint_commit.txt
+@@ -357,7 +357,7 @@ committed cfg=(1,2,3) cfgj=(1,4,5) idx=(100,101,100,_,_)
+          idx
+ xx>      100    (id=1)
+ xxxx>    101    (id=2)
+-xx>      100    (id=3)
++>        100    (id=3)
+ ?          0    (id=4)
+ ?          0    (id=5)
+ 0
+@@ -380,7 +380,7 @@ committed cfg=(1,2,3) cfgj=(1,4,5) idx=(_,100,99,99,98)
+ ?          0    (id=1)
+ xxxx>    100    (id=2)
+ xx>       99    (id=3)
+-xx>       99    (id=4)
++>         99    (id=4)
+ x>        98    (id=5)
+ 98
+ 
+@@ -390,7 +390,7 @@ committed cfg=(1,2,3) cfgj=(1,4,5) idx=(1,100,99,99,98)
+ >          1    (id=1)
+ xxxx>    100    (id=2)
+ xx>       99    (id=3)
+-xx>       99    (id=4)
++>         99    (id=4)
+ x>        98    (id=5)
+ 98
+ 
+@@ -398,9 +398,9 @@ committed cfg=(1,2,3) cfgj=(1,4,5) idx=(100,100,99,99,98)
+ ----
+          idx
+ xxx>     100    (id=1)
+-xxx>     100    (id=2)
++>        100    (id=2)
+ x>        99    (id=3)
+-x>        99    (id=4)
++>         99    (id=4)
+ >         98    (id=5)
+ 99
+ 
+@@ -438,7 +438,7 @@ committed cfg=(1,2,3) cfgj=(2,3,4) idx=(100,100,99,_)
+ ----
+         idx
+ xx>     100    (id=1)
+-xx>     100    (id=2)
++>       100    (id=2)
+ x>       99    (id=3)
+ ?         0    (id=4)
+ 99
+@@ -447,7 +447,7 @@ committed cfg=(1,2,3) cfgj=(2,3,4) idx=(100,100,99,98)
+ ----
+         idx
+ xx>     100    (id=1)
+-xx>     100    (id=2)
++>       100    (id=2)
+ x>       99    (id=3)
+ >        98    (id=4)
+ 99
+diff --git a/quorum/testdata/majority_commit.txt b/quorum/testdata/majority_commit.txt
+index 3828996..6ff5d0b 100644
+--- a/quorum/testdata/majority_commit.txt
++++ b/quorum/testdata/majority_commit.txt
+@@ -104,7 +104,7 @@ committed cfg=(1,2,3) idx=(5,5,_)
+ ----
+        idx
+ x>       5    (id=1)
+-x>       5    (id=2)
++>        5    (id=2)
+ ?        0    (id=3)
+ 5
+ 
+@@ -136,7 +136,7 @@ committed cfg=(1, 2, 3, 4, 5) idx=(101, 104, 103, 103,_)
+ x>       101    (id=1)
+ xxxx>    104    (id=2)
+ xx>      103    (id=3)
+-xx>      103    (id=4)
++>        103    (id=4)
+ ?          0    (id=5)
+ 103
+ 
+@@ -148,6 +148,6 @@ committed cfg=(1, 2, 3, 4, 5) idx=(101, 102, 103, 103,_)
+ x>       101    (id=1)
+ xx>      102    (id=2)
+ xxx>     103    (id=3)
+-xxx>     103    (id=4)
++>        103    (id=4)
+ ?          0    (id=5)
+ 102
+diff --git a/state_trace.go b/state_trace.go
+index 8712dc6..1161ff1 100644
+--- a/state_trace.go
++++ b/state_trace.go
+@@ -295,9 +295,16 @@ func traceSendMessage(r *raft, m *raftpb.Message) {
+ 	switch m.Type {
+ 	case raftpb.MsgApp:
+ 		evt = rsmSendAppendEntriesRequest
+-		if p, exist := r.trk.Progress[m.From]; exist {
++		if p, exist := r.trk.Progress[m.To]; exist {
+ 			prop["match"] = p.Match
+ 			prop["next"] = p.Next
++			// Progress state machine and Inflights flow control fields
++			prop["state"] = p.State.String()
++			prop["paused"] = p.MsgAppFlowPaused
++			prop["inflights_count"] = p.Inflights.Count()
++			if p.State == tracker.StateSnapshot {
++				prop["pending_snapshot"] = p.PendingSnapshot
++			}
+ 		}
+ 
+ 	case raftpb.MsgHeartbeat, raftpb.MsgSnap:
