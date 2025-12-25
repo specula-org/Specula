@@ -1,0 +1,5223 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: cabb2d0)
+Running Random Simulation with seed -3872838041507091244 with 80 workers on 96 cores with 91022MB heap and 204800MB offheap memory [pid: 4102833] (Linux 6.8.0-1041-azure amd64, Ubuntu 25.0.1 x86_64).
+Parsing file /home/ubuntu/etcd-raft/tla/MC.tla
+Parsing file /home/ubuntu/etcd-raft/tla/etcdraft_progress.tla
+Parsing file /tmp/tlc-14634497541667811310/TLC.tla (jar:file:/home/ubuntu/tlc-cmd/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-14634497541667811310/_TLCTrace.tla (jar:file:/home/ubuntu/tlc-cmd/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-14634497541667811310/Naturals.tla (jar:file:/home/ubuntu/tlc-cmd/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-14634497541667811310/Integers.tla (jar:file:/home/ubuntu/tlc-cmd/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-14634497541667811310/Bags.tla (jar:file:/home/ubuntu/tlc-cmd/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-14634497541667811310/FiniteSets.tla (jar:file:/home/ubuntu/tlc-cmd/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-14634497541667811310/Sequences.tla (jar:file:/home/ubuntu/tlc-cmd/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-14634497541667811310/SequencesExt.tla (jar:file:/home/ubuntu/tlc-cmd/CommunityModules-deps.jar!/SequencesExt.tla)
+Parsing file /tmp/tlc-14634497541667811310/FiniteSetsExt.tla (jar:file:/home/ubuntu/tlc-cmd/CommunityModules-deps.jar!/FiniteSetsExt.tla)
+Parsing file /tmp/tlc-14634497541667811310/BagsExt.tla (jar:file:/home/ubuntu/tlc-cmd/CommunityModules-deps.jar!/BagsExt.tla)
+Parsing file /tmp/tlc-14634497541667811310/Folds.tla (jar:file:/home/ubuntu/tlc-cmd/CommunityModules-deps.jar!/Folds.tla)
+Parsing file /tmp/tlc-14634497541667811310/Functions.tla (jar:file:/home/ubuntu/tlc-cmd/CommunityModules-deps.jar!/Functions.tla)
+Parsing file /tmp/tlc-14634497541667811310/TLCExt.tla (jar:file:/home/ubuntu/tlc-cmd/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module Folds
+Semantic processing of module Functions
+Semantic processing of module FiniteSetsExt
+Semantic processing of module SequencesExt
+Semantic processing of module BagsExt
+Semantic processing of module etcdraft_progress
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module MC
+Linting of module Folds
+Linting of module Functions
+Linting of module FiniteSetsExt
+Linting of module SequencesExt
+Linting of module BagsExt
+Linting of module etcdraft_progress
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module MC
+Starting... (2025-12-24 14:07:43)
+Computed 1 initial states...
+Finished computing initial states: 1 distinct state generated at 2025-12-24 14:07:43.
+Error: Invariant ProgressSafety is violated.
+Error: The behavior up to this point is:
+State 1: <Init line 377, col 9 to line 385, col 26 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> Nil @@ s3 :> Nil)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Follower @@ s3 :> Follower)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 0,
+  timeout |-> 0,
+  stepDown |-> 0,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 2: <Timeout(s3) line 416, col 15 to line 425, col 103 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 1)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> Nil @@ s3 :> s3)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Follower @@ s3 :> Candidate)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 0,
+  timeout |-> 1,
+  stepDown |-> 0,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 3: <StepDownToFollower(s3) line 748, col 5 to line 752, col 108 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 1)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> Nil @@ s3 :> s3)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Follower @@ s3 :> Follower)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 0,
+  timeout |-> 1,
+  stepDown |-> 1,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 4: <Timeout(s3) line 416, col 15 to line 425, col 103 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 2)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> Nil @@ s3 :> s3)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Follower @@ s3 :> Candidate)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 0,
+  timeout |-> 2,
+  stepDown |-> 1,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 5: <Restart(s1) line 394, col 5 to line 412, col 58 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 2)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> Nil @@ s3 :> s3)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Follower @@ s3 :> Candidate)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 1,
+  timeout |-> 2,
+  stepDown |-> 1,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 6: <RequestVote(s3,s3) line 430, col 5 to line 444, col 130 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 2)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> Nil @@ s3 :> s3)
+/\ pendingMessages = ( [ msource |-> s3,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s3,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Follower @@ s3 :> Candidate)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 1,
+  timeout |-> 2,
+  stepDown |-> 1,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 7: <RequestVote(s3,s3) line 430, col 5 to line 444, col 130 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 2)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> Nil @@ s3 :> s3)
+/\ pendingMessages = ( [ msource |-> s3,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s3,
+    mvoteGranted |-> TRUE ] :>
+      2 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Follower @@ s3 :> Candidate)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 1,
+  timeout |-> 2,
+  stepDown |-> 1,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 8: <Timeout(s3) line 416, col 15 to line 425, col 103 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 3)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> Nil @@ s3 :> s3)
+/\ pendingMessages = ( [ msource |-> s3,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s3,
+    mvoteGranted |-> TRUE ] :>
+      2 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Follower @@ s3 :> Candidate)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 1,
+  timeout |-> 3,
+  stepDown |-> 1,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 9: <StepDownToFollower(s3) line 748, col 5 to line 752, col 108 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 3)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> Nil @@ s3 :> s3)
+/\ pendingMessages = ( [ msource |-> s3,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s3,
+    mvoteGranted |-> TRUE ] :>
+      2 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Follower @@ s3 :> Follower)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 1,
+  timeout |-> 3,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 10: <Timeout(s2) line 416, col 15 to line 425, col 103 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 1 @@ s3 :> 3)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> s2 @@ s3 :> s3)
+/\ pendingMessages = ( [ msource |-> s3,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s3,
+    mvoteGranted |-> TRUE ] :>
+      2 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 1,
+  timeout |-> 4,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 11: <RequestVote(s2,s1) line 430, col 5 to line 444, col 130 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 1 @@ s3 :> 3)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> s2 @@ s3 :> s3)
+/\ pendingMessages = ( [ msource |-> s3,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s3,
+    mvoteGranted |-> TRUE ] :>
+      2 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 1,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0,
+    mdest |-> s1 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 1,
+  timeout |-> 4,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 12: <Timeout(s2) line 416, col 15 to line 425, col 103 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 3)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> s2 @@ s3 :> s3)
+/\ pendingMessages = ( [ msource |-> s3,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s3,
+    mvoteGranted |-> TRUE ] :>
+      2 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 1,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0,
+    mdest |-> s1 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 1,
+  timeout |-> 5,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 13: <RequestVote(s2,s2) line 430, col 5 to line 444, col 130 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 3)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> s2 @@ s3 :> s3)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s3,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s3,
+    mvoteGranted |-> TRUE ] :>
+      2 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 1,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0,
+    mdest |-> s1 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 1,
+  timeout |-> 5,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 14: <Restart(s3) line 394, col 5 to line 412, col 58 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> Nil @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 1,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0,
+    mdest |-> s1 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 5,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 15: <Timeout(s1) line 416, col 15 to line 425, col 103 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 1 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 1,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0,
+    mdest |-> s1 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Candidate @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 16: <RequestVote(s2,s1) line 430, col 5 to line 444, col 130 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 1 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 1,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0,
+    mdest |-> s1 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 2,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0,
+    mdest |-> s1 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Candidate @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = <<>>
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 17: <Ready(s2) line 735, col 5 to line 737, col 106 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 1 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Candidate @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 1,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0,
+    mdest |-> s1 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 2,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0,
+    mdest |-> s1 ] :>
+      1 )
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 18: <NextAsync line 1106, col 8 to line 1106, col 44 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 1 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Candidate @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 2,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0,
+    mdest |-> s1 ] :>
+      1 )
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 19: <NextAsync line 1106, col 8 to line 1106, col 44 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 20: <Ready(s1) line 735, col 5 to line 737, col 106 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 21: <RequestVote(s2,s2) line 430, col 5 to line 444, col 130 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 22: <Ready(s2) line 735, col 5 to line 737, col 106 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      2 )
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {})
+
+State 23: <NextAsync line 1106, col 8 to line 1106, col 44 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      2 )
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1} @@ s3 :> {})
+
+State 24: <NextAsync line 1106, col 8 to line 1106, col 44 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 25: <BecomeLeader(s2) line 555, col 5 to line 575, col 142 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 26: <NextAsync line 1102, col 28 to line 1102, col 102 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = (s1 :> <<>> @@ s2 :> <<>> @@ s3 :> <<>>)
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 0,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 27: <ClientRequest(s2,v2) line 589, col 5 to line 592, col 124 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :> <<[term |-> 2, value |-> [val |-> v2], type |-> ValueEntry]>> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 1,
+  heartbeat |-> 0 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 28: <Heartbeat(s2,s3) line 520, col 5 to line 523, col 61 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :> <<[term |-> 2, value |-> [val |-> v2], type |-> ValueEntry]>> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 1,
+  heartbeat |-> 1 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 29: <NextAsync line 1102, col 28 to line 1102, col 102 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :> <<[term |-> 2, value |-> [val |-> v2], type |-> ValueEntry]>> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 1,
+  heartbeat |-> 1 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 30: <NextAsync line 1102, col 28 to line 1102, col 102 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :> <<[term |-> 2, value |-> [val |-> v2], type |-> ValueEntry]>> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 1,
+  heartbeat |-> 1 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 31: <ClientRequest(s2,v2) line 589, col 5 to line 592, col 124 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 2,
+  heartbeat |-> 1 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 32: <Ready(s2) line 735, col 5 to line 737, col 106 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 2,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 2,
+  heartbeat |-> 1 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 33: <ClientRequest(s2,v2) line 589, col 5 to line 592, col 124 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 2,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 3,
+  heartbeat |-> 1 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 34: <ClientRequest(s2,v1) line 589, col 5 to line 592, col 124 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 2,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 4,
+  heartbeat |-> 1 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 35: <NextAsync line 1102, col 28 to line 1102, col 102 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 2,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 4,
+  heartbeat |-> 1 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 36: <ClientRequest(s2,v1) line 589, col 5 to line 592, col 124 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 2,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 5,
+  heartbeat |-> 1 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 37: <Ready(s2) line 735, col 5 to line 737, col 106 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 5,
+  heartbeat |-> 1 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 38: <Heartbeat(s2,s3) line 520, col 5 to line 523, col 61 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 5,
+  heartbeat |-> 2 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 39: <NextAsync line 1102, col 28 to line 1102, col 102 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mdest |-> s2,
+    mvoteGranted |-> FALSE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 5,
+  heartbeat |-> 2 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 40: <NextAsync line 1106, col 8 to line 1106, col 44 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 5,
+  heartbeat |-> 2 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 41: <Heartbeat(s2,s3) line 520, col 5 to line 523, col 61 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      2 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 5,
+  heartbeat |-> 3 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 42: <Ready(s2) line 735, col 5 to line 737, col 106 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      3 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 5,
+  heartbeat |-> 3 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 43: <NextAsync line 1106, col 8 to line 1106, col 44 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = <<>>
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      3 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 5,
+  heartbeat |-> 3 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 44: <AppendEntriesToSelf(s2) line 506, col 5 to line 514, col 130 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 5 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      3 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 5,
+  heartbeat |-> 3 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 45: <ClientRequest(s2,v1) line 589, col 5 to line 592, col 124 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 5 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      3 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 6,
+  heartbeat |-> 3 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 46: <ClientRequest(s2,v2) line 589, col 5 to line 592, col 124 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 5 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      3 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 7,
+  heartbeat |-> 3 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 47: <NextAsync line 1106, col 8 to line 1106, col 44 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 2)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 5 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      3 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 7,
+  heartbeat |-> 3 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 48: <NextAsync line 1106, col 8 to line 1106, col 44 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 2)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 5 ] :>
+      1 @@
+  [ msource |-> s3,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      3 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 7,
+  heartbeat |-> 3 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 49: <ClientRequest(s2,v2) line 589, col 5 to line 592, col 124 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 2)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 5 ] :>
+      1 @@
+  [ msource |-> s3,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      3 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 8,
+  heartbeat |-> 3 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 50: <NextAsync line 1106, col 8 to line 1106, col 44 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 2)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s1,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> FALSE,
+    mmatchIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 5 ] :>
+      1 @@
+  [ msource |-> s3,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      3 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 8,
+  heartbeat |-> 3 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 51: <Ready(s1) line 735, col 5 to line 737, col 106 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 2)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 5 ] :>
+      1 @@
+  [ msource |-> s3,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s1,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> FALSE,
+    mmatchIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      3 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 8,
+  heartbeat |-> 3 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 52: <NextAsync line 1106, col 8 to line 1106, col 44 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 2)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 5 ] :>
+      1 @@
+  [ msource |-> s3,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      3 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 8,
+  heartbeat |-> 3 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 53: <Heartbeat(s2,s3) line 520, col 5 to line 523, col 61 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 2)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 5 ] :>
+      1 @@
+  [ msource |-> s3,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      3 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 8,
+  heartbeat |-> 4 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+State 54: <NextAsync line 1102, col 28 to line 1102, col 102 of module etcdraft_progress>
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s2 :> (s1 :> TRUE @@ s2 :> FALSE @@ s3 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE) )
+/\ progressState = ( s1 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) @@
+  s2 :> (s1 :> StateProbe @@ s2 :> StateReplicate @@ s3 :> StateProbe) @@
+  s3 :> (s1 :> StateProbe @@ s2 :> StateProbe @@ s3 :> StateProbe) )
+/\ config = ( s1 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s2 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] @@
+  s3 :> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] )
+/\ votesResponded = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+/\ reconfigCount = 0
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 2)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ votedFor = (s1 :> s2 @@ s2 :> s2 @@ s3 :> Nil)
+/\ pendingMessages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 5 ] :>
+      1 @@
+  [ msource |-> s3,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 2,
+    mdest |-> s2,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<[term |-> 2, value |-> [val |-> v2], type |-> ValueEntry]>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0) )
+/\ commitIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) @@
+  s2 :> (s1 :> {1, 3} @@ s2 :> {} @@ s3 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {}) )
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s2 :>
+      [ currentTerm |-> 2,
+        votedFor |-> s2,
+        log |-> 5,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        commitIndex |-> 0,
+        config |-> [jointConfig |-> <<{s1, s2, s3}, {}>>, learners |-> {}] ] )
+/\ state = (s1 :> Follower @@ s2 :> Leader @@ s3 :> Follower)
+/\ messages = ( [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s1,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |->
+        << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+           [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >>,
+    mcommitIndex |-> 0 ] :>
+      1 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "heartbeat",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      3 @@
+  [ msource |-> s2,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 2,
+    mdest |-> s3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 1,
+    mprevLogTerm |-> 2,
+    mentries |-> <<>>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = ( s1 :> <<>> @@
+  s2 :>
+      << [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v1], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry],
+         [term |-> 2, value |-> [val |-> v2], type |-> ValueEntry] >> @@
+  s3 :> <<>> )
+/\ stateConstraintCount = [ drop |-> 0,
+  dup |-> 0,
+  crash |-> 2,
+  timeout |-> 6,
+  stepDown |-> 2,
+  clientReq |-> 8,
+  heartbeat |-> 4 ]
+/\ votesGranted = (s1 :> {} @@ s2 :> {s1, s2} @@ s3 :> {})
+
+The number of states generated: 174852
+Simulation using seed -3872838041507091244 and aril 0
+Progress: 175169 states checked, 783 traces generated (trace length: mean=20, var(x)=6142, sd=78)
+Finished in 02s at (2025-12-24 14:07:45)
+Trace exploration spec path: ./MC_TTrace_1766556463.tla
