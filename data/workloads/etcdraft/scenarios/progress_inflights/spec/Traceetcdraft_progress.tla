@@ -233,6 +233,10 @@ ValidateProgressState(i, j) ==
     \/ /\ "prop" \in DOMAIN logline.event
        /\ "state" \in DOMAIN logline.event.prop
        /\ progressState[i][j] = logline.event.prop.state
+       /\ "match" \in DOMAIN logline.event.prop =>
+           matchIndex[i][j] = logline.event.prop.match
+       /\ "next" \in DOMAIN logline.event.prop =>
+           nextIndex[i][j] = logline.event.prop.next
        /\ "paused" \in DOMAIN logline.event.prop =>
            msgAppFlowPaused[i][j] = logline.event.prop.paused
        /\ "inflights_count" \in DOMAIN logline.event.prop =>

@@ -728,12 +728,35 @@ ApplySimpleConfChange(i) ==
        IN
             /\ k > 0
             /\ k <= commitIndex[i]
-            /\ config' = ApplyConfigUpdate(i, k)
-            /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] >= k THEN
-                /\ reconfigCount' = reconfigCount + 1
-                /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
-               ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
-            /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars>>
+            /\ LET oldConfig == GetConfig(i) \cup GetOutgoingConfig(i)  \* All nodes in old config
+                   newConfigFn == ApplyConfigUpdate(i, k)
+                   newConfig == newConfigFn[i].jointConfig[1] \cup newConfigFn[i].jointConfig[2]  \* All nodes in new config
+                   addedNodes == newConfig \ oldConfig  \* Newly added nodes
+               IN
+                /\ config' = newConfigFn
+                /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] >= k THEN
+                    /\ reconfigCount' = reconfigCount + 1
+                    /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
+                   ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
+                \* Initialize Progress for newly added nodes (if leader)
+                \* Reference: raft.go:1947-1967 applyConfChange() -> switchToConfig()
+                \* Reference: confchange/confchange.go:263 initProgress() uses max(lastIndex, 1) for Next
+                /\ IF state[i] = Leader /\ addedNodes # {}
+                   THEN /\ nextIndex' = [nextIndex EXCEPT ![i] =
+                               [j \in Server |-> IF j \in addedNodes THEN Max({Len(log[i]), 1}) ELSE nextIndex[i][j]]]
+                        /\ matchIndex' = [matchIndex EXCEPT ![i] =
+                               [j \in Server |-> IF j \in addedNodes THEN 0 ELSE matchIndex[i][j]]]
+                        /\ progressState' = [progressState EXCEPT ![i] =
+                               [j \in Server |-> IF j \in addedNodes THEN StateProbe ELSE progressState[i][j]]]
+                        /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i] =
+                               [j \in Server |-> IF j \in addedNodes THEN FALSE ELSE msgAppFlowPaused[i][j]]]
+                        /\ inflights' = [inflights EXCEPT ![i] =
+                               [j \in Server |-> IF j \in addedNodes THEN {} ELSE inflights[i][j]]]
+                        /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i] =
+                               [j \in Server |-> IF j \in addedNodes THEN 0 ELSE pendingSnapshot[i][j]]]
+                   ELSE /\ UNCHANGED progressVars
+                        /\ UNCHANGED matchIndex
+            /\ UNCHANGED <<messageVars, serverVars, candidateVars, logVars, durableState>>
     
 Ready(i) ==
     /\ PersistState(i)
