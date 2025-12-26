@@ -108,10 +108,10 @@ index 3828996..6ff5d0b 100644
  ?          0    (id=5)
  102
 diff --git a/state_trace.go b/state_trace.go
-index 8712dc6..1161ff1 100644
+index 8712dc6..e0c1288 100644
 --- a/state_trace.go
 +++ b/state_trace.go
-@@ -295,9 +295,16 @@ func traceSendMessage(r *raft, m *raftpb.Message) {
+@@ -295,13 +295,45 @@ func traceSendMessage(r *raft, m *raftpb.Message) {
  	switch m.Type {
  	case raftpb.MsgApp:
  		evt = rsmSendAppendEntriesRequest
@@ -128,4 +128,34 @@ index 8712dc6..1161ff1 100644
 +			}
  		}
  
- 	case raftpb.MsgHeartbeat, raftpb.MsgSnap:
+-	case raftpb.MsgHeartbeat, raftpb.MsgSnap:
++	case raftpb.MsgHeartbeat:
+ 		evt = rsmSendAppendEntriesRequest
++		// Also output Progress fields for Heartbeat for validation
++		if p, exist := r.trk.Progress[m.To]; exist {
++			prop["match"] = p.Match
++			prop["next"] = p.Next
++			prop["state"] = p.State.String()
++			prop["paused"] = p.MsgAppFlowPaused
++			prop["inflights_count"] = p.Inflights.Count()
++			if p.State == tracker.StateSnapshot {
++				prop["pending_snapshot"] = p.PendingSnapshot
++			}
++		}
++
++	case raftpb.MsgSnap:
++		evt = rsmSendAppendEntriesRequest
++		// Output Progress fields for Snapshot for validation
++		if p, exist := r.trk.Progress[m.To]; exist {
++			prop["match"] = p.Match
++			prop["next"] = p.Next
++			prop["state"] = p.State.String()
++			prop["paused"] = p.MsgAppFlowPaused
++			prop["inflights_count"] = p.Inflights.Count()
++			if p.State == tracker.StateSnapshot {
++				prop["pending_snapshot"] = p.PendingSnapshot
++			}
++		}
+ 	case raftpb.MsgAppResp, raftpb.MsgHeartbeatResp:
+ 		evt = rsmSendAppendEntriesResponse
+ 	case raftpb.MsgVote:
