@@ -150,6 +150,13 @@ VARIABLE
                      \* Meaningful only when progressState[i][j] = StateSnapshot
 
 VARIABLE
+    \* @type: Int -> (Int -> Int);
+    nextIndex        \* Next log index to send from Leader i to node j
+                     \* Reference: progress.go:34-40
+                     \* Invariant: Match < Next (matchIndex[i][j] < nextIndex[i][j])
+                     \* In StateSnapshot: Next == PendingSnapshot + 1
+
+VARIABLE
     \* @type: Int -> (Int -> Bool);
     msgAppFlowPaused \* Whether message flow from Leader i to node j is paused
                      \* This is a cached flag, updated at SentEntries
@@ -178,7 +185,7 @@ VARIABLE
                      \*
                      \* If more precision is needed: can be changed to Bag (multiset) or Seq (sequence)
 
-progressVars == <<progressState, pendingSnapshot, msgAppFlowPaused, inflights>>
+progressVars == <<progressState, pendingSnapshot, nextIndex, msgAppFlowPaused, inflights>>
 
 \* End of per server variables.
 ----
@@ -353,6 +360,7 @@ InitDurableState ==
 InitProgressVars ==
     /\ progressState = [i \in Server |-> [j \in Server |-> StateProbe]]
     /\ pendingSnapshot = [i \in Server |-> [j \in Server |-> 0]]
+    /\ nextIndex = [i \in Server |-> [j \in Server |-> 1]]
     /\ msgAppFlowPaused = [i \in Server |-> [j \in Server |-> FALSE]]
     /\ inflights = [i \in Server |-> [j \in Server |-> {}]]
 
@@ -387,6 +395,7 @@ Restart(i) ==
     /\ progressState' = [progressState EXCEPT ![i] = [j \in Server |-> StateProbe]]
     /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i] = [j \in Server |-> FALSE]]
     /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i] = [j \in Server |-> 0]]
+    /\ nextIndex' = [nextIndex EXCEPT ![i] = [j \in Server |-> 1]]
     /\ inflights' = [inflights EXCEPT ![i] = [j \in Server |-> {}]]
     /\ UNCHANGED <<messages, durableState, reconfigCount>>
 
@@ -452,8 +461,12 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
                         ELSE inflights[i][j]
         \* New: Calculate updated msgAppFlowPaused
         \* Reference: progress.go:165-185 SentEntries()
+        \* Reference: progress.go:197-200 SentCommit() does not modify MsgAppFlowPaused
+        \* Heartbeat calls SentCommit(), not SentEntries(), so does not change pause state
         newMsgAppFlowPaused ==
-            CASE progressState[i][j] = StateReplicate
+            CASE subtype = "heartbeat"
+                    -> msgAppFlowPaused[i][j]  \* Heartbeat doesn't change pause state
+              [] progressState[i][j] = StateReplicate
                     -> Cardinality(newInflights) >= MaxInflightMsgs
               [] progressState[i][j] = StateProbe /\ numEntries > 0
                     -> TRUE
@@ -468,11 +481,22 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
                     msource        |-> i,
                     mdest          |-> j])
           \* New: Update inflights (if entries were sent)
-          /\ IF lastEntry >= range[1]
+          \* Reference: raft.go:692-708 sendHeartbeat() only calls SentCommit(), not SentEntries()
+          \* Reference: raft.go:721 "bcastHeartbeat sends RPC, without entries"
+          \* Reference: tracker/progress.go:165-185 SentEntries() - Inflights.Add() ONLY in StateReplicate!
+          \* Heartbeat never adds to inflights (inflights is only for MsgApp with entries)
+          \* StateProbe does NOT add inflights (only sets MsgAppFlowPaused)
+          /\ IF lastEntry >= range[1] /\ subtype /= "heartbeat" /\ progressState[i][j] = StateReplicate
              THEN AddInflight(i, j, lastEntry)
              ELSE UNCHANGED inflights
           \* New: Update msgAppFlowPaused
           /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = newMsgAppFlowPaused]
+          \* New: Update nextIndex (Reference: progress.go:165-185 SentEntries())
+          \* In StateReplicate, pr.Next += entries; in StateProbe, Next unchanged
+          /\ nextIndex' = [nextIndex EXCEPT ![i][j] =
+              IF numEntries > 0 /\ progressState[i][j] = StateReplicate /\ subtype /= "heartbeat"
+              THEN @ + numEntries
+              ELSE @]
           \* New: Other Progress variables remain unchanged
           /\ UNCHANGED <<progressState, pendingSnapshot>>
           /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState>> 
@@ -500,6 +524,11 @@ SendSnapshot(i, j, index) ==
     /\ i /= j
     /\ state[i] = Leader
     /\ j \in GetConfig(i) \union GetLearners(i)
+    \* Fix: Snapshot index must be > matchIndex to maintain invariant Match < Next
+    \* Reference: raft.go:616-628 - maybeSendSnapshot only called when log truncated at >= pr.Next
+    \* Reference: raft.go:670 - snapshot index determined by storage, not arbitrary
+    \* Real constraint: snapshot.Metadata.Index >= firstIndex (after log compaction)
+    /\ index > matchIndex[i][j]
     /\ LET
         prevLogIndex == 0
         prevLogTerm == 0
@@ -515,11 +544,13 @@ SendSnapshot(i, j, index) ==
                     mcommitIndex   |-> commit,
                     msource        |-> i,
                     mdest          |-> j])
-          \* New: Transition to StateSnapshot, set pendingSnapshot
+          \* New: Transition to StateSnapshot, set pendingSnapshot and Next
           \* Reference: raft.go:684 sendSnapshot() -> pr.BecomeSnapshot()
+          \* Reference: tracker/progress.go:153-158 BecomeSnapshot()
           /\ progressState' = [progressState EXCEPT ![i][j] = StateSnapshot]
           /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
           /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = index]
+          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = index + 1]
           /\ ResetInflights(i, j)
           /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState>>
  
@@ -536,14 +567,17 @@ BecomeLeader(i) ==
     /\ matchIndex' = [matchIndex EXCEPT ![i] =
                          [j \in Server |-> IF j = i THEN Len(log[i]) ELSE 0]]
     \* New: Initialize Progress state
-    \* Reference: raft.go:903-934 becomeLeader()
-    \* Leader sets itself to StateReplicate, others to StateProbe
+    \* Reference: raft.go:933-950 becomeLeader() -> reset()
+    \* Reference: raft.go:784-810 reset() - initializes Match=0, Next=lastIndex+1 for all peers
+    \* Leader sets itself to StateReplicate (line 947), others to StateProbe
     /\ progressState' = [progressState EXCEPT ![i] =
                             [j \in Server |-> IF j = i THEN StateReplicate ELSE StateProbe]]
     /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i] =
                             [j \in Server |-> FALSE]]
     /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i] =
                             [j \in Server |-> 0]]
+    /\ nextIndex' = [nextIndex EXCEPT ![i] =
+                            [j \in Server |-> Len(log[i]) + 1]]
     /\ inflights' = [inflights EXCEPT ![i] =
                             [j \in Server |-> {}]]
     /\ UNCHANGED <<messageVars, currentTerm, votedFor, pendingConfChangeIndex, candidateVars, logVars, configVars, durableState>>
@@ -747,11 +781,12 @@ ProgressBecomeReplicate(i, j) ==
 
 \* BecomeSnapshot - transition to StateSnapshot
 \* Reference: progress.go:153-158
-\* Key: set pendingSnapshot, MsgAppFlowPaused is cleared but IsPaused() still returns true
+\* Key: set pendingSnapshot and Next, MsgAppFlowPaused is cleared but IsPaused() still returns true
 ProgressBecomeSnapshot(i, j, snapIndex) ==
     /\ progressState' = [progressState EXCEPT ![i][j] = StateSnapshot]
     /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
     /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = snapIndex]
+    /\ nextIndex' = [nextIndex EXCEPT ![i][j] = snapIndex + 1]
     /\ ResetInflights(i, j)
 
 \* ============================================================================
@@ -940,6 +975,10 @@ HandleAppendEntriesResponse(i, j, m) ==
     /\ \/ /\ m.msuccess \* successful
           /\ matchIndex' = [matchIndex EXCEPT ![i][j] = Max({@, m.mmatchIndex})]
           /\ UNCHANGED <<pendingConfChangeIndex>>
+          \* New: Update Next according to MaybeUpdate
+          \* Reference: progress.go:205-213 MaybeUpdate()
+          \* pr.Next = max(pr.Next, n+1) to maintain invariant Match < Next
+          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = Max({@, m.mmatchIndex + 1})]
           \* New: Free confirmed inflights, clear msgAppFlowPaused
           \* Reference: MaybeUpdate() call in raft.go:1260-1289 handleAppendEntries()
           /\ FreeInflightsLE(i, j, m.mmatchIndex)
@@ -961,12 +1000,15 @@ HandleAppendEntriesResponse(i, j, m) ==
        \/ /\ \lnot m.msuccess \* not successful
           /\ UNCHANGED <<leaderVars>>
           \* Fix: Explicitly expand macros to ensure StateReplicate -> StateProbe and Unpause works
+          \* Note: MaybeDecrTo (progress.go:226-252) updates Next, but not fully modeled here
+          \* Simplified: just keep Next unchanged for now (can be refined later)
           /\ IF progressState[i][j] = StateReplicate
              THEN /\ progressState' = [progressState EXCEPT ![i][j] = StateProbe]
                   /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
                   /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = 0]
                   /\ inflights' = [inflights EXCEPT ![i][j] = {}]
-             ELSE /\ UNCHANGED <<progressState, pendingSnapshot, inflights>>
+                  /\ UNCHANGED nextIndex
+             ELSE /\ UNCHANGED <<progressState, pendingSnapshot, inflights, nextIndex>>
                   /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
     /\ Discard(m)
     /\ UNCHANGED <<serverVars, candidateVars, logVars, configVars, durableState>>
@@ -1239,13 +1281,6 @@ CommittedIsDurableInv ==
 \* Verifies consistency between flow control pause mechanism (msgAppFlowPaused),
 \* Progress state, and Inflight counts.
 
-\* Invariant: ProbePauseInv
-\* In StateProbe, if flow is paused, implies we must have at least one inflight message.
-\* (Rationale: In Probe state, we pause after sending one message to wait for a response)
-ProbePauseInv ==
-    \A i \in Server : \A j \in Server :
-        (state[i] = Leader /\ progressState[i][j] = StateProbe /\ msgAppFlowPaused[i][j])
-            => InflightsCount(i, j) >= 1
 
 \* Invariant: ProbeLimitInv
 \* In StateProbe, inflight message count is strictly limited to 1.
@@ -1337,18 +1372,19 @@ SnapshotStateInv ==
             /\ pendingSnapshot[i][j] <= Len(log[i])  \* Snapshot index must be valid
 
 \* Invariant: InflightsMonotonicInv
-\* Checks monotonicity property of inflights indices
 \* Reference: inflights.go:45-57 Add() expects monotonically increasing indices
-\* State invariant: if inflights non-empty, indices should form a reasonable range
-\* (within MaxInflightMsgs span, since we can have at most MaxInflightMsgs in flight)
+\* Note: The real constraint is that consecutive Add() calls must provide monotonic indices,
+\* but this is a temporal property, not a state invariant. The state invariant is only that
+\* the count of inflights <= MaxInflightMsgs, which is already checked by InflightsInv.
+\* The indices can be sparse (e.g., {5, 9}) if different messages contain different numbers
+\* of entries, so we cannot bound maxIdx - minIdx by MaxInflightMsgs.
 InflightsMonotonicInv ==
     \A i \in Server : \A j \in Server :
         (state[i] = Leader /\ inflights[i][j] # {}) =>
             LET maxIdx == Max(inflights[i][j])
                 minIdx == Min(inflights[i][j])
             IN
-                /\ maxIdx >= minIdx
-                /\ maxIdx - minIdx < MaxInflightMsgs
+                maxIdx >= minIdx  \* Trivial sanity check
 
 \* ============================================================================
 \* NEW: Additional strong invariants based on code analysis
@@ -1380,14 +1416,27 @@ InflightsAboveMatchInv ==
         state[i] = Leader =>
             \A idx \in inflights[i][j] : idx > matchIndex[i][j]
 
-\* Invariant: SnapshotPendingAboveMatchInv
-\* In StateSnapshot: PendingSnapshot should be > matchIndex
-\* Reference: progress.go:40, 156 - Next == PendingSnapshot + 1, and Next > Match
-SnapshotPendingAboveMatchInv ==
+\* Invariant: MatchIndexLessThanNextInv (THE REAL INVARIANT!)
+\* Match < Next - the fundamental Progress invariant
+\* Reference: progress.go:37 "Invariant: 0 <= Match < Next"
+\* Reference: progress.go:40 "In StateSnapshot, Next == PendingSnapshot + 1"
+\* Note: The old SnapshotPendingAboveMatchInv (PendingSnapshot > Match) was WRONG!
+\*       MaybeUpdate can update Match while in StateSnapshot (raft.go:1519),
+\*       making PendingSnapshot < Match a LEGAL state.
+MatchIndexLessThanNextInv ==
+    \A i \in Server : \A j \in Server :
+        (state[i] = Leader /\ j /= i) =>
+            matchIndex[i][j] < nextIndex[i][j]
+
+\* Invariant: SnapshotNextInv
+\* In StateSnapshot: Next == PendingSnapshot + 1 (when BecomeSnapshot was called)
+\* Note: This only holds if Next hasn't been updated by MaybeUpdate since BecomeSnapshot
+\* Reference: progress.go:40, 156
+SnapshotNextInv ==
     \A i \in Server : \A j \in Server :
         (state[i] = Leader /\ progressState[i][j] = StateSnapshot
          /\ pendingSnapshot[i][j] > 0) =>
-            pendingSnapshot[i][j] > matchIndex[i][j]
+            nextIndex[i][j] >= pendingSnapshot[i][j] + 1
 
 \* Invariant: MsgAppFlowPausedConsistencyInv
 \* In StateReplicate: If not paused, inflights should not be full
@@ -1416,7 +1465,6 @@ SnapshotNoInflightsStrictInv ==
 
 \* Aggregate all Progress-related invariants
 ProgressSafety ==
-    /\ ProbePauseInv
     /\ ProbeLimitInv
     /\ ReplicatePauseInv
     /\ SnapshotInflightsInv
@@ -1433,7 +1481,8 @@ ProgressSafety ==
     /\ MatchIndexLessThanLogInv
     /\ MatchIndexNonNegativeInv
     /\ InflightsAboveMatchInv
-    /\ SnapshotPendingAboveMatchInv
+    /\ MatchIndexLessThanNextInv  \* THE REAL INVARIANT (replaced SnapshotPendingAboveMatchInv)
+    /\ SnapshotNextInv
     /\ MsgAppFlowPausedConsistencyInv
     /\ ProbeOneInflightMaxInv
     /\ SnapshotNoInflightsStrictInv
