@@ -12,9 +12,9 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
 def cmd_run(args):
-    debugger = TraceDebugger()
+    debugger = TraceDebugger(args.tla_jar, args.community_jar)
     
-    spec_path = os.path.abspath(args.spec)
+    spec_path = args.spec
     work_dir = os.path.dirname(spec_path)
     spec_name = os.path.basename(spec_path)
     config_name = spec_name.replace('.tla', '.cfg')
@@ -53,10 +53,8 @@ def cmd_run(args):
                 if args.inspect:
                     logger.info("Inspecting variables...")
                     vars_map = debugger.get_variables(frame['id'])
-                    for scope, vars in vars_map.items():
-                        print(f"--- {scope} ---")
-                        for name, val in vars.items():
-                            print(f"  {name} = {val}")
+                    for name, val in vars_map.items():
+                        print(f"  {name} = {val}")
                             
                 if args.step_in:
                     logger.info("Stepping In...")
@@ -72,65 +70,6 @@ def cmd_run(args):
     finally:
         debugger.stop()
 
-def cmd_test(args):
-    """Quick test command for development"""
-    work_dir = "/home/ubuntu/specula/data/workloads/etcdraft/scenarios/progress_inflights/spec"
-    spec_file = "Traceetcdraft_progress.tla"
-    spec_path = os.path.join(work_dir, spec_file)
-    trace_file = "../traces/basic.ndjson"
-
-    logger.info("=" * 60)
-    logger.info("Quick Test Mode")
-    logger.info("=" * 60)
-
-    debugger = TraceDebugger()
-
-    try:
-        logger.info("\n[1/5] Starting debugger...")
-        if not debugger.start(spec_file, f"{spec_file.replace('.tla', '.cfg')}", trace_file, cwd=work_dir):
-            logger.error("Failed to start")
-            return
-        logger.info("✓ Debugger started")
-
-        logger.info("\n[2/5] Setting breakpoint at line 513...")
-        if debugger.add_breakpoint(spec_path, 513):
-            logger.info("✓ Breakpoint set")
-        else:
-            logger.warning("Breakpoint may not have been set correctly")
-
-        logger.info(f"Breakpoints: {debugger.breakpoints}")
-
-        logger.info("\n[3/5] Continuing execution...")
-        debugger.continue_execution()
-
-        logger.info("\n[4/5] Waiting for stop (30 sec timeout)...")
-        stop_evt = debugger.wait_for_stop(timeout=30)
-
-        if stop_evt:
-            logger.info(f"✓✓✓ STOPPED!")
-            reason = stop_evt["body"]["reason"]
-            logger.info(f"Reason: {reason}")
-
-            frame = debugger.get_stack_frame()
-            if frame:
-                loc = f"{frame['source']['name']}:{frame['line']}"
-                logger.info(f"Location: {loc}")
-
-                logger.info("\n[5/5] Getting variables...")
-                vars_map = debugger.get_variables(frame['id'])
-                for scope_name, scope_vars in vars_map.items():
-                    logger.info(f"\n--- {scope_name} ({len(scope_vars)} vars) ---")
-                    # Print first 5 variables
-                    for i, (name, val) in enumerate(list(scope_vars.items())[:5]):
-                        logger.info(f"  {name} = {val}")
-                    if len(scope_vars) > 5:
-                        logger.info(f"  ... and {len(scope_vars) - 5} more")
-        else:
-            logger.error("Did not hit breakpoint within timeout")
-            logger.info(f"Event queue: {len(debugger.event_queue)} events")
-
-    finally:
-        debugger.stop()
 
 def main():
     parser = argparse.ArgumentParser(description="TLA+ Trace Debugger Tool")
@@ -143,15 +82,13 @@ def main():
     run_parser.add_argument('--breakpoint', help='Breakpoint "line:condition" (e.g. "522:TLCGet("level")=29")')
     run_parser.add_argument('--inspect', action='store_true', help='Dump variables upon stopping')
     run_parser.add_argument('--step-in', action='store_true', help='Perform one step-in after stopping')
-
-    test_parser = subparsers.add_parser('test', help='Quick test with default configuration')
+    run_parser.add_argument('--tla-jar', default='/home/ubuntu/specula/lib/tla2tools.jar', help='Path to tla2tools.jar')
+    run_parser.add_argument('--community-jar', default='/home/ubuntu/specula/lib/CommunityModules-deps.jar', help='Path to CommunityModules-deps.jar')
 
     args = parser.parse_args()
 
     if args.command == 'run':
         cmd_run(args)
-    elif args.command == 'test':
-        cmd_test(args)
     else:
         parser.print_help()
 
