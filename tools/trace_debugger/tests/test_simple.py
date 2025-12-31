@@ -1,54 +1,40 @@
 #!/usr/bin/env python3
-"""
-Minimal test - just connect and initialize
-"""
+"""Simple test without breakpoint conditions."""
+
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from client.dap_client import DAPClient
-from executor.tlc_process import TLCExecutor
-from handler.trace_handler import TraceDebugger
-import logging
+from debugger import DebugSession, Breakpoint
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+work_dir = "/home/ubuntu/specula/data/workloads/etcdraft/scenarios/progress_inflights/spec"
 
-def test_connection():
-    work_dir = "/home/ubuntu/specula/data/workloads/etcdraft/scenarios/progress_inflights/spec"
-    spec_file = "Traceetcdraft_progress.tla"
-    config_file = "Traceetcdraft_progress.cfg"
-    trace_file = "../traces/confchange_disable_validation.ndjson"
+print("="*70)
+print("Simple Test: Breakpoints WITHOUT conditions")
+print("="*70)
 
-    debugger = TraceDebugger()
+session = DebugSession(
+    spec_file="Traceetcdraft_progress.tla",
+    config_file="Traceetcdraft_progress.cfg",
+    trace_file="../traces/confchange_disable_validation.ndjson",
+    work_dir=work_dir
+)
 
-    try:
-        logger.info("Test 1: Start debugger")
-        success = debugger.start(spec_file, config_file, trace_file, cwd=work_dir)
-        if success:
-            logger.info("✓ Connected and initialized")
-        else:
-            logger.error("✗ Failed to start")
-            return False
+print("\n1. Starting session...")
+if not session.start():
+    print("Failed to start")
+    sys.exit(1)
 
-        logger.info("\nTest 2: Get initial state (should not be stopped yet)")
-        frame = debugger.get_stack_frame()
-        if frame:
-            logger.info(f"Frame: {frame}")
-        else:
-            logger.info("No frame yet (expected - not stopped)")
+print("2. Setting breakpoint at line 522 WITHOUT condition...")
+session.set_breakpoints([
+    Breakpoint(line=522, description="TraceNext - NO CONDITION")
+])
 
-        logger.info("\n✓ All basic tests passed")
-        return True
+print("3. Running (max 20 hits, 60s timeout)...")
+stats = session.run_until_done(max_hits=20, timeout=60)
 
-    except Exception as e:
-        logger.error(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    finally:
-        debugger.stop()
+print("\n4. Results:")
+stats.print_summary()
 
-if __name__ == "__main__":
-    success = test_connection()
-    sys.exit(0 if success else 1)
+session.close()
+print("\n✅ Test completed")

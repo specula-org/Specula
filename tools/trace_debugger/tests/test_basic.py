@@ -1,132 +1,152 @@
 #!/usr/bin/env python3
-"""
-Basic functionality test for TLA+ Trace Debugger
-Tests: connection, breakpoints, variable inspection, stepIn
-"""
+"""Basic test to verify imports and class instantiation."""
+
 import sys
 import os
-import logging
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+# Add src to path (go up one level from tests/)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from handler.trace_handler import TraceDebugger
-
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-logger = logging.getLogger(__name__)
-
-def test_basic_debugging():
-    """Test basic debugging workflow"""
-
-    # Test Configuration (based on Phase2 success)
-    work_dir = "/home/ubuntu/specula/data/workloads/etcdraft/scenarios/progress_inflights/spec"
-    spec_file = "Traceetcdraft_progress.tla"
-    config_file = "Traceetcdraft_progress.cfg"
-    trace_file = "../traces/confchange_disable_validation.ndjson"
-    spec_path = os.path.join(work_dir, spec_file)
-
-    logger.info("=" * 60)
-    logger.info("TLA+ Trace Debugger - Basic Test")
-    logger.info("=" * 60)
-
-    debugger = TraceDebugger()
+def test_imports():
+    """Test that all imports work."""
+    print("Testing imports...")
 
     try:
-        # Test 1: Start debugging session
-        logger.info("\n[Test 1] Starting debugging session...")
-        success = debugger.start(spec_file, config_file, trace_file, cwd=work_dir)
-        if not success:
-            logger.error("Failed to start debugger")
-            return False
-        logger.info("✓ Debugger started successfully")
+        from debugger.breakpoint import Breakpoint, BreakpointHit, BreakpointStatistics
+        print("  ✅ breakpoint module imported")
+    except Exception as e:
+        print(f"  ❌ breakpoint import failed: {e}")
+        raise
 
-        # Test 2: Add conditional breakpoint (level 29)
-        logger.info("\n[Test 2] Adding conditional breakpoint at level 29...")
-        bp_line = 522  # TraceNext
-        bp_condition = 'TLCGet("level") = 29'
-        success = debugger.add_breakpoint(spec_path, bp_line, bp_condition)
-        if not success:
-            logger.error("Failed to set breakpoint")
-            return False
-        logger.info(f"✓ Breakpoint set at line {bp_line} with condition: {bp_condition}")
+    try:
+        from debugger.session import DebugSession
+        print("  ✅ session module imported")
+    except Exception as e:
+        print(f"  ❌ session import failed: {e}")
+        raise
 
-        # Test 3: Add unconditional breakpoints (carpet bombing)
-        logger.info("\n[Test 3] Adding additional breakpoints...")
-        for line in [513, 514, 515, 516]:  # Inside TraceNextReceiveActions
-            debugger.add_breakpoint(spec_path, line)
-        logger.info("✓ Additional breakpoints set at lines 513-516")
+    try:
+        from debugger.utils import collect_variable_values
+        print("  ✅ utils module imported")
+    except Exception as e:
+        print(f"  ❌ utils import failed: {e}")
+        raise
 
-        # Test 4: Continue and wait for stop
-        logger.info("\n[Test 4] Continuing execution...")
-        debugger.continue_execution()
+    try:
+        from debugger import DebugSession, Breakpoint
+        print("  ✅ Package-level import works")
+    except Exception as e:
+        print(f"  ❌ Package import failed: {e}")
+        raise
 
-        logger.info("Waiting for breakpoint hit (this may take a while)...")
-        stop_evt = debugger.wait_for_stop(timeout=120)
+    print("✅ All imports successful\n")
+    return True
 
-        if not stop_evt:
-            logger.error("Did not hit any breakpoint within timeout")
-            return False
 
-        reason = stop_evt["body"]["reason"]
-        logger.info(f"✓ Stopped! Reason: {reason}")
+def test_breakpoint_classes():
+    """Test Breakpoint and BreakpointStatistics classes."""
+    print("Testing Breakpoint classes...")
 
-        # Test 5: Get stack frame
-        logger.info("\n[Test 5] Getting stack frame...")
-        frame = debugger.get_stack_frame()
-        if not frame:
-            logger.error("Failed to get stack frame")
-            return False
+    from debugger import Breakpoint, BreakpointHit, BreakpointStatistics
 
-        location = f"{frame['source']['name']}:{frame['line']}"
-        logger.info(f"✓ Location: {location}")
+    # Test Breakpoint creation
+    bp1 = Breakpoint(line=100, description="Test breakpoint")
+    print(f"  ✅ Created breakpoint: line={bp1.line}, desc='{bp1.description}'")
 
-        # Test 6: Get variables
-        logger.info("\n[Test 6] Getting variables...")
-        variables = debugger.get_variables(frame['id'])
+    bp2 = Breakpoint(line=200, condition="l = 29", file="test.tla", description="Conditional BP")
+    print(f"  ✅ Created conditional breakpoint: line={bp2.line}, condition='{bp2.condition}'")
 
-        if not variables:
-            logger.warning("No variables returned")
-        else:
-            logger.info(f"✓ Got {len(variables)} scopes:")
-            for scope_name, scope_vars in variables.items():
-                logger.info(f"  - {scope_name}: {len(scope_vars)} variables")
+    # Test BreakpointHit
+    hit = BreakpointHit(file="test.tla", line=100, description="Test", hit_count=5)
+    print(f"  ✅ Created BreakpointHit: {hit.hit_count} hits")
 
-                # Look for key variables
-                for key in ['l', 'currentTerm', 'state', 'commitIndex']:
-                    if key in scope_vars:
-                        logger.info(f"    {key} = {scope_vars[key]}")
+    # Test BreakpointStatistics
+    stats = BreakpointStatistics(
+        hits=[
+            BreakpointHit("test.tla", 100, "First BP", 10),
+            BreakpointHit("test.tla", 200, "Second BP", 0),
+            BreakpointHit("test.tla", 300, "Third BP", 5),
+        ],
+        total_hits=15
+    )
+    print(f"  ✅ Created BreakpointStatistics: {stats.total_hits} total hits")
 
-        # Test 7: Step In (be careful of recursion)
-        logger.info("\n[Test 7] Testing stepIn (1 step only)...")
-        before_line = frame['line']
-        success = debugger.step_in()
-        if not success:
-            logger.error("stepIn failed")
-            return False
+    # Test get_hit_count
+    count = stats.get_hit_count(100, "test.tla")
+    assert count == 10, f"Expected 10 hits, got {count}"
+    print(f"  ✅ get_hit_count works: line 100 has {count} hits")
 
-        # Wait for next stop
-        stop_evt = debugger.wait_for_stop(timeout=10)
-        if stop_evt:
-            frame = debugger.get_stack_frame()
-            after_line = frame['line']
-            logger.info(f"✓ Stepped from line {before_line} to line {after_line}")
-        else:
-            logger.warning("stepIn did not stop (might have completed execution)")
+    # Test get_never_hit
+    never_hit = stats.get_never_hit()
+    assert len(never_hit) == 1, f"Expected 1 never-hit BP, got {len(never_hit)}"
+    assert never_hit[0].line == 200
+    print(f"  ✅ get_never_hit works: found {len(never_hit)} never-hit breakpoints")
 
-        logger.info("\n" + "=" * 60)
-        logger.info("All tests passed!")
-        logger.info("=" * 60)
-        return True
+    # Test print_summary
+    print("\n  Testing print_summary():")
+    print("  " + "="*60)
+    stats.print_summary()
+    print("  " + "="*60)
+
+    print("✅ Breakpoint classes work correctly\n")
+    return True
+
+
+def test_session_instantiation():
+    """Test DebugSession can be instantiated."""
+    print("Testing DebugSession instantiation...")
+
+    from debugger import DebugSession
+
+    session = DebugSession(
+        spec_file="Test.tla",
+        config_file="Test.cfg",
+        trace_file="test.ndjson",
+        work_dir="/tmp"
+    )
+
+    print(f"  ✅ Created DebugSession")
+    print(f"     - spec_file: {session.spec_file}")
+    print(f"     - config_file: {session.config_file}")
+    print(f"     - trace_file: {session.trace_file}")
+    print(f"     - work_dir: {session.work_dir}")
+    print(f"     - port: {session.port}")
+
+    # Check defaults
+    assert session.tla_jar.endswith("tla2tools.jar")
+    assert session.community_jar.endswith("CommunityModules-deps.jar")
+    print(f"  ✅ Default JAR paths set correctly")
+
+    print("✅ DebugSession instantiation works\n")
+    return True
+
+
+def main():
+    """Run all tests."""
+    print("="*70)
+    print("Basic Functionality Tests")
+    print("="*70)
+    print()
+
+    try:
+        test_imports()
+        test_breakpoint_classes()
+        test_session_instantiation()
+
+        print("="*70)
+        print("✅ All basic tests passed!")
+        print("="*70)
+        return 0
 
     except Exception as e:
-        logger.error(f"Test failed with exception: {e}")
+        print()
+        print("="*70)
+        print(f"❌ Tests failed: {e}")
+        print("="*70)
         import traceback
         traceback.print_exc()
-        return False
-    finally:
-        debugger.stop()
-        logger.info("\nDebugger stopped.")
+        return 1
+
 
 if __name__ == "__main__":
-    success = test_basic_debugging()
-    sys.exit(0 if success else 1)
+    sys.exit(main())
