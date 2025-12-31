@@ -88,10 +88,10 @@ def test_coarse_grained_localization():
 
     # Run until done
     print("Step 4: Running trace validation with breakpoints...")
-    print("  (Collecting statistics, max 50 hits, 120s timeout)")
+    print("  (Collecting statistics, 120s timeout)")
     print()
 
-    stats = session.run_until_done(max_hits=50, timeout=120)
+    stats = session.run_until_done(timeout=120)
 
     print("Step 5: Analyzing results...")
     print()

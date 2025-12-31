@@ -157,12 +157,10 @@ class DebugSession:
 
         logger.info(f"Set {len(breakpoints)} breakpoint(s) across {len(breakpoints_by_file)} file(s)")
 
-    def run_until_done(self, max_hits: Optional[int] = None,
-                       timeout: Optional[int] = None) -> BreakpointStatistics:
-        """Run until termination or limit reached.
+    def run_until_done(self, timeout: Optional[int] = None) -> BreakpointStatistics:
+        """Run until termination or timeout.
 
         Args:
-            max_hits: Maximum breakpoint hits (None = unlimited)
             timeout: Timeout in seconds (None = no timeout)
 
         Returns:
@@ -180,11 +178,6 @@ class DebugSession:
             # Check timeout
             if timeout and (time.time() - start_time) > timeout:
                 logger.warning(f"Timeout reached after {timeout}s")
-                break
-
-            # Check max hits
-            if max_hits and total_hits >= max_hits:
-                logger.info(f"Max hits ({max_hits}) reached")
                 break
 
             # Get next event

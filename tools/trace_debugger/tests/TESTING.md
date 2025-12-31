@@ -45,7 +45,7 @@ What it tests:
 - Basic event loop
 - Hit counting
 
-Expected result: Reaches max_hits limit (20 hits)
+Expected result: Completes trace validation (timeout 60s)
 
 ### Example Scripts (../examples/demo/)
 Real-world debugging scenarios.

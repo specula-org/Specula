@@ -30,8 +30,8 @@ session.set_breakpoints([
     Breakpoint(line=522, description="TraceNext - NO CONDITION")
 ])
 
-print("3. Running (max 20 hits, 60s timeout)...")
-stats = session.run_until_done(max_hits=20, timeout=60)
+print("3. Running (60s timeout)...")
+stats = session.run_until_done(timeout=60)
 
 print("\n4. Results:")
 stats.print_summary()
