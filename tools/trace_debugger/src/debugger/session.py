@@ -34,14 +34,15 @@ class DebugSession:
         >>> session.set_breakpoints([
         ...     Breakpoint(line=522, condition="l = 29", description="TraceNext entry")
         ... ])
-        >>> stats = session.run_until_done(max_hits=50)
+        >>> stats = session.run_until_done(timeout=120)
         >>> stats.print_summary()
         >>> session.close()
     """
 
     def __init__(self, spec_file: str, config_file: str, trace_file: str,
                  work_dir: str, tla_jar: Optional[str] = None,
-                 community_jar: Optional[str] = None, port: int = 4712):
+                 community_jar: Optional[str] = None, port: int = 4712,
+                 host: str = '127.0.0.1'):
         """Initialize debug session.
 
         Args:
@@ -52,21 +53,39 @@ class DebugSession:
             tla_jar: Path to tla2tools.jar (optional, uses default if None)
             community_jar: Path to CommunityModules-deps.jar (optional)
             port: DAP server port (default: 4712)
+            host: DAP server host (default: '127.0.0.1')
         """
         self.spec_file = spec_file
         self.config_file = config_file
         self.trace_file = trace_file
         self.work_dir = os.path.abspath(work_dir)
         self.port = port
+        self.host = host
 
         # Use default JAR paths if not provided
-        default_lib = "/home/ubuntu/specula/lib"
+        # Try to find lib directory relative to this file or use environment variable
+        if tla_jar is None or community_jar is None:
+            # Try environment variable first
+            specula_root = os.environ.get('SPECULA_ROOT')
+            if specula_root:
+                default_lib = os.path.join(specula_root, 'lib')
+            else:
+                # Calculate relative to this file: tools/trace_debugger/src/debugger/session.py
+                # Go up to specula root: ../../../../lib
+                this_file = os.path.abspath(__file__)
+                debugger_src_dir = os.path.dirname(this_file)  # .../src/debugger
+                src_dir = os.path.dirname(debugger_src_dir)     # .../src
+                tool_dir = os.path.dirname(src_dir)             # .../trace_debugger
+                tools_dir = os.path.dirname(tool_dir)           # .../tools
+                specula_root = os.path.dirname(tools_dir)       # .../specula
+                default_lib = os.path.join(specula_root, 'lib')
+
         self.tla_jar = tla_jar or os.path.join(default_lib, "tla2tools.jar")
         self.community_jar = community_jar or os.path.join(default_lib, "CommunityModules-deps.jar")
 
         # Initialize components
         self.executor = TLCExecutor(self.tla_jar, self.community_jar)
-        self.client = DAPClient(port=port)
+        self.client = DAPClient(host=host, port=port)
 
         # Session state
         self.is_running = False

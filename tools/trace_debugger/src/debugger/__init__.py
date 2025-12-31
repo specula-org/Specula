@@ -19,7 +19,7 @@ Quick Start:
     ...     Breakpoint(line=489, condition="l = 29", description="SendAppendEntriesRequest"),
     ... ])
     >>>
-    >>> stats = session.run_until_done(max_hits=50)
+    >>> stats = session.run_until_done(timeout=120)
     >>> stats.print_summary()
     >>> session.close()
 
