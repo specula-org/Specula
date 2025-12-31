@@ -1,0 +1,7 @@
+# MCP Server dependencies
+
+# MCP SDK
+mcp>=1.0.0
+
+# Utilities
+jsonschema>=4.0.0
