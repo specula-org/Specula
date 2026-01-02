@@ -53,7 +53,7 @@ def test_breakpoint_classes():
     bp1 = Breakpoint(line=100, description="Test breakpoint")
     print(f"  ✅ Created breakpoint: line={bp1.line}, desc='{bp1.description}'")
 
-    bp2 = Breakpoint(line=200, condition="l = 29", file="test.tla", description="Conditional BP")
+    bp2 = Breakpoint(line=200, condition='TLCGet("level") = 29', file="test.tla", description="Conditional BP")
     print(f"  ✅ Created conditional breakpoint: line={bp2.line}, condition='{bp2.condition}'")
 
     # Test BreakpointHit

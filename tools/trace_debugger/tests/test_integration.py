@@ -58,22 +58,22 @@ def test_coarse_grained_localization():
     breakpoints = [
         Breakpoint(
             line=522,
-            condition="l = 29",
+            condition='TLCGet("level") = 29',
             description="TraceNext entry point"
         ),
         Breakpoint(
             line=489,
-            condition="l = 29",
+            condition='TLCGet("level") = 29',
             description="SendAppendEntriesRequest branch"
         ),
         Breakpoint(
             line=323,
-            condition="l = 29",
+            condition='TLCGet("level") = 29',
             description="AppendEntriesIfLogged entry"
         ),
         Breakpoint(
             line=327,
-            condition="l = 29",
+            condition='TLCGet("level") = 29',
             description="AppendEntries action call"
         ),
     ]
