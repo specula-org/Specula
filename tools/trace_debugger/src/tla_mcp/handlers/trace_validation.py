@@ -105,7 +105,8 @@ class TraceValidationHandler(BaseHandler):
             Dict with results:
             - statistics: Breakpoint statistics
             - execution_time: Time taken in seconds
-            - (Phase 3: evaluated_expressions, collected_variables)
+            - evaluated_expressions: (if evaluate specified) List of evaluation results
+            - collected_variables: (if collect_variables specified) List of variable samples
 
         Raises:
             ExecutionError: If validation fails
@@ -130,12 +131,81 @@ class TraceValidationHandler(BaseHandler):
             logger.info(f"Setting {len(breakpoints)} breakpoint(s)...")
             session.set_breakpoints(breakpoints)
 
-            # 4. Run trace validation
+            # 4. Prepare callback for evaluate/collect_variables (Phase 3)
+            evaluated_results = []
+            collected_vars = []
+
+            def normalize_filename(name: str) -> str:
+                """Normalize filename by removing .tla extension if present.
+
+                This allows flexible matching - users can specify filenames with
+                or without .tla extension, and it will match correctly.
+                """
+                if not name:
+                    return name
+                return name.replace('.tla', '')
+
+            def files_match(file1: str, file2: str) -> bool:
+                """Check if two filenames match, ignoring .tla extension."""
+                if file2 is None:
+                    return True
+                norm1 = normalize_filename(file1)
+                norm2 = normalize_filename(file2)
+                # Try exact match or endswith match (for cases like "etcdraft_progress" matching "Traceetcdraft_progress")
+                return norm1 == norm2 or norm1.endswith(norm2) or norm2.endswith(norm1)
+
+            def on_breakpoint_hit(file_name: str, line: int, frame_id: int):
+                """Called when any breakpoint is hit."""
+                # Handle evaluate
+                if "evaluate" in arguments:
+                    eval_config = arguments["evaluate"]
+                    target_file = eval_config.get("breakpoint_file")
+                    target_line = eval_config["breakpoint_line"]
+
+                    # Check if this is the target breakpoint
+                    if line == target_line and files_match(file_name, target_file):
+                        logger.info(f"Evaluating expressions at {file_name}:{line}")
+                        for expr in eval_config["expressions"]:
+                            result = session.evaluate_at_breakpoint(expr, frame_id)
+                            evaluated_results.append({
+                                "expression": expr,
+                                "result": result,
+                                "file": file_name,
+                                "line": line
+                            })
+
+                # Handle collect_variables
+                if "collect_variables" in arguments:
+                    collect_config = arguments["collect_variables"]
+                    target_file = collect_config.get("breakpoint_file")
+                    target_line = collect_config["breakpoint_line"]
+                    max_samples = collect_config.get("max_samples", 10)
+
+                    # Check if this is the target breakpoint and we haven't collected enough samples
+                    if line == target_line and len(collected_vars) < max_samples and files_match(file_name, target_file):
+                        logger.info(f"Collecting variables at {file_name}:{line} (sample {len(collected_vars)+1}/{max_samples})")
+                        vars_dict = session.get_variables_at_breakpoint(
+                            collect_config["variables"],
+                            frame_id
+                        )
+                        collected_vars.append({
+                            "sample_index": len(collected_vars),
+                            "file": file_name,
+                            "line": line,
+                            "variables": vars_dict
+                        })
+
+            # 5. Run trace validation with callback
             timeout = arguments.get("timeout", 300)
             logger.info(f"Running trace validation (timeout: {timeout}s)...")
-            stats = session.run_until_done(timeout=timeout)
 
-            # 5. Build result
+            # Only pass callback if evaluate or collect_variables is specified
+            if "evaluate" in arguments or "collect_variables" in arguments:
+                stats = session.run_until_done(timeout=timeout, on_breakpoint_hit=on_breakpoint_hit)
+            else:
+                stats = session.run_until_done(timeout=timeout)
+
+            # 6. Build result
             execution_time = time.time() - start_time
 
             result = {
@@ -143,10 +213,17 @@ class TraceValidationHandler(BaseHandler):
                 "execution_time": execution_time
             }
 
+            # Add Phase 3 results if available
+            if evaluated_results:
+                result["evaluated_expressions"] = evaluated_results
+                logger.info(f"Evaluated {len(evaluated_results)} expression(s)")
+
+            if collected_vars:
+                result["collected_variables"] = collected_vars
+                logger.info(f"Collected {len(collected_vars)} variable sample(s)")
+
             logger.info(f"Trace validation completed in {execution_time:.2f}s")
             logger.info(f"Total hits: {stats.total_hits}")
-
-            # Phase 3: Add evaluate and collect_variables here
 
             return result
 
