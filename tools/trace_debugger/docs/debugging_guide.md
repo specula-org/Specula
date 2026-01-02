@@ -1,26 +1,26 @@
-# Trace Validation 调试指南
+# Trace Validation Debugging Guide
 
-本文档描述如何系统化地调试 TLA+ Trace Validation 失败的问题。
+This document describes how to systematically debug TLA+ Trace Validation failures.
 
-## 核心原则
+## Core Principles
 
-**分层调试：从粗到细，逐层深入**
+**Layered Debugging: From Coarse to Fine, Layer by Layer**
 
-不要试图一次性找到根本原因。应该：
-1. 先粗粒度定位问题范围
-2. 再细粒度深入问题细节
-3. 最后检查具体的失败原因
+Don't try to find the root cause all at once. Instead:
+1. Start with coarse-grained localization of the problem scope
+2. Then dive into fine-grained problem details
+3. Finally examine the specific failure reason
 
-**工具使用原则：**
-- 工具不应该"自动分层"或"自动打断点"
-- Agent 应该根据当前的发现，主动决定下一步在哪里打断点
-- 每一层的调试都是为了回答一个具体的问题
+**Tool Usage Principles:**
+- Tools should NOT "auto-layer" or "auto-set breakpoints"
+- Agents should proactively decide where to set breakpoints based on current findings
+- Each layer of debugging answers a specific question
 
 ---
 
-## 第一步：理解问题
+## Step 1: Understand the Problem
 
-### 1.1 解读 TLC 输出
+### 1.1 Interpret TLC Output
 
 ```
 Example TLC output:
@@ -28,95 +28,95 @@ Example TLC output:
 Error: Invariant TraceMatched is violated
 ```
 
-**关键问题：**
-- TLC 生成了多少个状态？（例如：29 个）
-- 这意味着什么？
+**Key Questions:**
+- How many states did TLC generate? (e.g., 29)
+- What does this mean?
   - State 1: l=1
   - State 29: l=29
-  - 尝试从 l=29 生成 l=30 失败
-- **失败的是验证哪一行？**
-  - 答案：TraceLog[29]（不是 TraceLog[30]！）
+  - Failed to generate State 30 from l=29
+- **Which trace line failed validation?**
+  - Answer: TraceLog[29] (NOT TraceLog[30]!)
 
-### 1.2 检查 Trace 文件
+### 1.2 Check the Trace File
 
 ```bash
-# 查看失败的那一行（例如第 29 行）
+# View the failing line (e.g., line 29)
 sed -n '29p' trace.ndjson | jq .
 
-# 查看前后几行，了解上下文
+# View surrounding lines for context
 sed -n '27,31p' trace.ndjson | jq -c .
 ```
 
-**理解：**
-- 这一行的事件是什么？（SendAppendEntriesRequest, Commit, etc.）
-- 涉及哪些节点？（from, to）
-- 有什么关键参数？（index, entries, term）
+**Understand:**
+- What event is this line? (SendAppendEntriesRequest, Commit, etc.)
+- Which nodes are involved? (from, to)
+- What are the key parameters? (index, entries, term)
 
 ---
 
-## 第二步：粗粒度定位（找到相关的代码分支）
+## Step 2: Coarse-Grained Localization (Find the Relevant Code Branch)
 
-### 2.1 目标
+### 2.1 Goal
 
-回答问题：**在 Spec 中，是哪个分支/函数负责验证这一行？**
+Answer the question: **Which branch/function in the spec is responsible for validating this line?**
 
-### 2.2 方法
+### 2.2 Method
 
-**在关键的入口和分支打断点：**
+**Set breakpoints at key entry points and branches:**
 
 ```python
-# 示例：假设失败在 TraceLog[29] (TLC 生成了 29 个状态)
+# Example: Assuming failure at TraceLog[29] (TLC generated 29 states)
 breakpoints = [
-    (522, "TraceNext entry"),           # TraceNext 的入口
-    (480, "TraceNextNonReceiveActions"),  # 非接收消息分支
-    (512, "TraceNextReceiveActions"),     # 接收消息分支
+    (522, "TraceNext entry"),           # TraceNext entry point
+    (480, "TraceNextNonReceiveActions"),  # Non-receive message branch
+    (512, "TraceNextReceiveActions"),     # Receive message branch
 
-    # 具体的事件分支
+    # Specific event branches
     (489, "SendAppendEntriesRequest branch"),
     (487, "Commit branch"),
     (483, "BecomeLeader branch"),
 ]
 
-# 所有断点使用相同的条件
-# 重要：使用 TLCGet("level") 而不是 l，因为 l 可能在某些文件中不可见
+# All breakpoints use the same condition
+# Important: Use TLCGet("level") instead of l, as l may not be visible in some files
 condition = 'TLCGet("level") = 29'
 ```
 
-**运行后检查：**
-- 哪些断点被命中了？
-- 哪些断点没被命中？
+**After running, check:**
+- Which breakpoints were hit?
+- Which breakpoints were not hit?
 
-**结论：**
-- 被命中的分支 = 相关的代码路径
-- 没被命中的分支 = 不相关，可以忽略
+**Conclusion:**
+- Hit branches = relevant code paths
+- Unhit branches = irrelevant, can be ignored
 
-### 2.3 示例
+### 2.3 Example
 
 ```
-结果：
+Results:
   Line 522 (TraceNext entry):              1 hit  ✅
   Line 480 (TraceNextNonReceiveActions):   1 hit  ✅
   Line 489 (SendAppendEntriesRequest):     1 hit  ✅
   Line 487 (Commit branch):                0 hits ❌
   Line 512 (TraceNextReceiveActions):      0 hits ❌
 
-结论：
-  问题在 SendAppendEntriesRequest 分支中
+Conclusion:
+  Problem is in the SendAppendEntriesRequest branch
 ```
 
 ---
 
-## 第三步：细粒度定位（找到失败的具体条件）
+## Step 3: Fine-Grained Localization (Find the Failing Condition)
 
-### 3.1 目标
+### 3.1 Goal
 
-回答问题：**在相关的代码分支中，是哪个条件失败了？**
+Answer the question: **Within the relevant code branch, which condition failed?**
 
-### 3.2 方法
+### 3.2 Method
 
-**在相关分支的每个条件语句打断点：**
+**Set breakpoints at each condition statement in the relevant branch:**
 
-假设第二步确定问题在 `AppendEntriesIfLogged` 函数（Line 323-328）：
+Assuming Step 2 identified the problem in the `AppendEntriesIfLogged` function (Lines 323-328):
 
 ```tla
 AppendEntriesIfLogged(i, j, range) ==
@@ -128,7 +128,7 @@ AppendEntriesIfLogged(i, j, range) ==
     /\ ValidateAfterAppendEntries(i, j)                         -- 328
 ```
 
-**设置断点：**
+**Set breakpoints:**
 ```python
 breakpoints = [
     (323, 'TLCGet("level") = 29', "AppendEntriesIfLogged entry"),
@@ -137,40 +137,40 @@ breakpoints = [
 ]
 ```
 
-**运行后检查：**
+**After running, check:**
 ```
-结果：
+Results:
   Line 323: 18 hits  ✅
-  Line 327: 1 hit    ✅ ← Action 被调用了
+  Line 327: 1 hit    ✅ ← Action was called
   Line 328: 0 hits   ❌
 
-结论：
-  - Line 323 被调用了 18 次（18 种不同的 i,j,range 组合）
-  - Line 327 被命中 1 次（AppendEntries action 被调用/进入了）
-  - Line 328 从未执行（AppendEntries action 失败了）
-  - **关键：** Line 327 是 action 调用，即使 action 返回 FALSE 也会被 hit
-  - 问题在 AppendEntries action 内部
+Conclusion:
+  - Line 323 was called 18 times (18 different i,j,range combinations)
+  - Line 327 was hit 1 time (AppendEntries action was called/entered)
+  - Line 328 was never executed (AppendEntries action failed)
+  - **Key:** Line 327 is an action call, it gets hit even if the action returns FALSE
+  - Problem is inside the AppendEntries action
 ```
 
-**重要：** Line 327 是一个 action 调用（`AppendEntries(i, j, range)`）：
-- Action 调用会被 hit，即使 action 内部失败（返回 FALSE）
-- Line 327: 1 hit 说明 action 被进入了
-- Line 328: 0 hits 说明 action 失败，整个函数无法继续
-- **下一步：需要深入到 AppendEntries action 内部打断点**
+**Important:** Line 327 is an action call (`AppendEntries(i, j, range)`):
+- Action calls get hit even if the action fails internally (returns FALSE)
+- Line 327: 1 hit means the action was entered
+- Line 328: 0 hits means the action failed, the whole function cannot continue
+- **Next step: Need to set breakpoints inside the AppendEntries action**
 
 ---
 
-## 第四步：深入函数内部（如果需要）
+## Step 4: Dive Into Function Internals (If Needed)
 
-### 4.1 何时需要深入
+### 4.1 When to Dive Deeper
 
-如果第三步发现某个**函数调用**从未执行成功（如 Line 327 的 `AppendEntries(i, j, range)`），而前面的条件都满足，那么需要深入这个函数内部。
+If Step 3 finds that a **function call** never succeeded (e.g., Line 327's `AppendEntries(i, j, range)`), and all previous conditions are satisfied, then you need to dive into the function internals.
 
-### 4.2 方法
+### 4.2 Method
 
-**在被调用函数的内部打断点：**
+**Set breakpoints inside the called function:**
 
-假设 `AppendEntries` 调用 `AppendEntriesInRangeToPeer`（在 etcdraft_progress.tla 中）：
+Assuming `AppendEntries` calls `AppendEntriesInRangeToPeer` (in etcdraft_progress.tla):
 
 ```tla
 AppendEntriesInRangeToPeer(subtype, i, j, range) ==
@@ -182,10 +182,10 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
     /\ LET ... IN /\ Send(...) /\ ...                           -- 444-502
 ```
 
-**设置断点：**
+**Set breakpoints:**
 ```python
-# 注意：这个函数在不同的文件中（etcdraft_progress.tla）
-# 必须使用 TLCGet("level") 因为 l 在这个文件中不可见
+# Note: This function is in a different file (etcdraft_progress.tla)
+# Must use TLCGet("level") because l is not visible in this file
 condition = 'i = 1 /\\ j = 2 /\\ TLCGet("level") = 29'
 
 breakpoints = [
@@ -198,135 +198,135 @@ breakpoints = [
 ]
 ```
 
-**运行后检查：**
+**After running, check:**
 ```
-结果：
+Results:
   Line 436: 204 hits  ✅
   Line 437: 136 hits  ✅
   Line 438: 106 hits  ✅
-  Line 439: 0 hits    ❌  ← 第一个从未被命中的行
+  Line 439: 0 hits    ❌  ← First line never hit
   Line 443: 0 hits    ❌
   Line 474: 0 hits    ❌
 
-结论（利用短路求值规律）：
-  - Line 436 被求值 204 次（所有尝试都会检查这个条件）
-  - 68 次在 Line 436 失败（204 - 136 = 68）
-  - 30 次在 Line 437 失败（136 - 106 = 30）
-  - 106 次通过了 Line 438，但全部在 Line 439 失败
-  - **关键发现**：所有尝试都在 Line 439 停止（没有任何尝试通过 Line 439）
-  - 问题确定在 Line 439 的条件：j \in GetConfig(...)
+Conclusion (using short-circuit evaluation pattern):
+  - Line 436 was evaluated 204 times (all attempts check this condition)
+  - 68 attempts failed at Line 436 (204 - 136 = 68)
+  - 30 attempts failed at Line 437 (136 - 106 = 30)
+  - 106 attempts passed Line 438, but all failed at Line 439
+  - **Key finding**: All attempts stopped at Line 439 (no attempts passed Line 439)
+  - Problem is at Line 439's condition: j \in GetConfig(...)
 ```
 
-**重要理解：短路求值（Short-Circuit Evaluation）**
+**Important Understanding: Short-Circuit Evaluation**
 
-TLA+ 的 `/\` 操作符使用短路求值，就像 C++ 的 `&&`：
-- 只有前面的条件都为真时，后面的条件才会被求值
-- 命中次数递减 (204 → 136 → 106 → 0) 显示了这个过程
-- 第一个 0 hits 的行就是失败点
+TLA+'s `/\` operator uses short-circuit evaluation, like C++'s `&&`:
+- Later conditions are only evaluated if all previous conditions are TRUE
+- Decreasing hit counts (204 → 136 → 106 → 0) show this process
+- The first 0 hits line is the failure point
 
-### 4.3 关键规律：如何判断失败点
+### 4.3 Key Pattern: How to Identify the Failure Point
 
-**断点命中模式（短路求值）：**
+**Breakpoint Hit Pattern (Short-Circuit Evaluation):**
 ```
 Line A: 100 hits
 Line B: 50 hits
-Line C: 20 hits  ← 最后一个非零 hit
-Line D: 0 hits   ← 第一个 0 hits
+Line C: 20 hits  ← Last non-zero hit
+Line D: 0 hits   ← First 0 hits
 Line E: 0 hits
 Line F: 0 hits
 ```
 
-**判断方法：找到最后一个非零 hit 的行（Line C），判断它的类型**
+**Identification Method: Find the last non-zero hit line (Line C), determine its type**
 
-**情况 1：Line C 是 action 调用**
+**Case 1: Line C is an action call**
 ```tla
 /\ SomeCondition        -- Line B: 50 hits
-/\ SomeAction(i, j)     -- Line C: 20 hits  ← Action 调用
+/\ SomeAction(i, j)     -- Line C: 20 hits  ← Action call
 /\ AnotherCondition     -- Line D: 0 hits
 ```
 
-**特征：**
-- Line C 的代码类似 `SomeAction(params)` 或 `LET ... IN action`
-- 是一个函数/操作符调用，而不是简单的条件判断
+**Characteristics:**
+- Line C's code looks like `SomeAction(params)` or `LET ... IN action`
+- It's a function/operator call, not a simple condition check
 
-**结论：**
-- Action 被调用/进入了 20 次
-- 但所有 20 次调用都在 action 内部失败（返回 FALSE）
-- Line D 没有被执行，因为 Line C 失败了
+**Conclusion:**
+- Action was called/entered 20 times
+- All 20 calls failed internally (returned FALSE)
+- Line D was not executed because Line C failed
 
-**下一步：**
-- 在 action **内部**设置断点（使用相同的条件）
-- 找出 action 内部哪个条件失败
+**Next step:**
+- Set breakpoints **inside** the action (using the same condition)
+- Find which internal condition failed
 
-**情况 2：Line C 是条件语句**
+**Case 2: Line C is a condition statement**
 ```tla
 /\ SomeCondition        -- Line B: 50 hits
-/\ i /= j               -- Line C: 20 hits  ← 简单条件
+/\ i /= j               -- Line C: 20 hits  ← Simple condition
 /\ AnotherCondition     -- Line D: 0 hits
 ```
 
-**特征：**
-- Line C 是一个简单的条件判断（等号、不等号、集合成员等）
-- 不是函数调用
+**Characteristics:**
+- Line C is a simple condition check (equality, inequality, set membership, etc.)
+- Not a function call
 
-**结论：**
-- 20 次尝试通过了 Line C 的条件
-- 但所有 20 次在 Line D 的条件失败
+**Conclusion:**
+- 20 attempts passed Line C's condition
+- All 20 attempts failed at Line D's condition
 
-**下一步：**
-- 在 Line C 处设置断点（或在断点触发时）
-- 检查变量值，看为什么 Line D 的条件不满足
+**Next step:**
+- Set breakpoint at Line C (or when breakpoint triggers)
+- Check variable values to see why Line D's condition is not satisfied
 
-**如何区分 Action 调用和条件语句：**
+**How to Distinguish Action Calls from Condition Statements:**
 
-查看 TLA+ 源代码：
+Look at the TLA+ source code:
 ```tla
-/\ i /= j                                     -- 条件语句
-/\ range[1] <= range[2]                       -- 条件语句
-/\ state[i] = Leader                          -- 条件语句
-/\ AppendEntriesInRangeToPeer(i, j, range)    -- Action 调用 ← 注意首字母大写
-/\ Send([type |-> "MsgApp", ...])             -- Action 调用
+/\ i /= j                                     -- Condition statement
+/\ range[1] <= range[2]                       -- Condition statement
+/\ state[i] = Leader                          -- Condition statement
+/\ AppendEntriesInRangeToPeer(i, j, range)    -- Action call ← Note capitalization
+/\ Send([type |-> "MsgApp", ...])             -- Action call
 ```
 
-一般规律：
-- **条件语句**：比较、成员测试、布尔表达式
-- **Action 调用**：首字母大写的操作符、或明显的函数调用
+General rule:
+- **Condition statements**: Comparisons, membership tests, boolean expressions
+- **Action calls**: Capitalized operators, or obvious function calls
 
 ---
 
-## 第五步：检查失败原因
+## Step 5: Examine Failure Reasons
 
-### 5.1 目标
+### 5.1 Goal
 
-回答问题：**为什么这个条件失败了？相关变量的值是什么？**
+Answer the question: **Why did this condition fail? What are the values of related variables?**
 
-### 5.2 方法
+### 5.2 Method
 
-**在失败条件的前一行打断点，检查变量值：**
+**Set breakpoint at the line before the failing condition, check variable values:**
 
-假设第四步确定问题在 Line 439（`j \in GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i)`），我们应该在 Line 438 打断点：
+Assuming Step 4 identified the problem at Line 439 (`j \in GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i)`), we should set a breakpoint at Line 438:
 
 ```python
-# 在 Line 438 断点（Line 439 的前一行）
-# 使用 TLCGet("level") 和参数条件
+# Breakpoint at Line 438 (line before Line 439)
+# Use TLCGet("level") and parameter conditions
 breakpoint = {
     "file": "etcdraft_progress.tla",
     "line": 438,
     "condition": 'i = 1 /\\ j = 2 /\\ TLCGet("level") = 29'
 }
 
-# 当断点命中时，检查变量
+# When breakpoint hits, check variables
 i_val = get_variable_value(frame_id, "i")
 j_val = get_variable_value(frame_id, "j")
 
-# 评估 Line 439 的条件
+# Evaluate Line 439's condition
 config = evaluate_expression(frame_id, f'GetConfig({i_val})')
 outgoing = evaluate_expression(frame_id, f'GetOutgoingConfig({i_val})')
 learners = evaluate_expression(frame_id, f'GetLearners({i_val})')
 union = evaluate_expression(frame_id,
     f'GetConfig({i_val}) \\union GetOutgoingConfig({i_val}) \\union GetLearners({i_val})')
 
-# 检查 j 是否在集合中
+# Check if j is in the set
 j_in_set = evaluate_expression(frame_id,
     f'{j_val} \\in GetConfig({i_val}) \\union GetOutgoingConfig({i_val}) \\union GetLearners({i_val})')
 
@@ -338,7 +338,7 @@ print(f"Union = {union}")
 print(f"j in Union? {j_in_set}")
 ```
 
-### 5.3 示例输出
+### 5.3 Example Output
 
 ```
 i=1, j=2
@@ -348,122 +348,122 @@ GetLearners(1) = {}
 Union = {"1"}
 j in Union? FALSE  ❌
 
-问题：j=2 不在 Union 集合中！
+Problem: j=2 is not in the Union set!
 ```
 
-**发现根本原因：**
-- 当 l=29 时，GetConfig(1) 只包含节点 1 自己
-- j=2 不在集合中，所以条件失败
-- 这是配置状态的问题
+**Root cause discovered:**
+- When l=29, GetConfig(1) only contains node 1 itself
+- j=2 is not in the set, so the condition fails
+- This is a configuration state issue
 
 ---
 
-## 第六步：验证和扩展
+## Step 6: Verify and Expand
 
-### 6.1 验证假设
+### 6.1 Verify Assumptions
 
-找到一个可能的原因后，应该验证：
+After finding a potential cause, you should verify:
 
-**比对成功和失败的情况：**
+**Compare successful and failed cases:**
 ```python
-# 检查 l=28（成功）时的 GetConfig(1)
-# vs l=29（失败）时的 GetConfig(1)
+# Check GetConfig(1) at l=28 (success)
+# vs l=29 (failure)
 
-# 在 l=28 和 l=29 分别检查
+# Check at both l=28 and l=29
 for level in [28, 29]:
-    # 设置断点条件：l = level
-    # 检查 GetConfig(1) 的值
-    # 比较差异
+    # Set breakpoint condition: l = level
+    # Check GetConfig(1) value
+    # Compare differences
 ```
 
-**检查多个不同的 (i, j) 组合：**
+**Check multiple different (i, j) combinations:**
 ```python
-# 不只检查 i=1, j=2
-# 也检查 i=1, j=3; i=2, j=1 等
+# Don't just check i=1, j=2
+# Also check i=1, j=3; i=2, j=1, etc.
 
-# 看是否所有组合都失败
-# 还是只有特定组合失败
+# See if all combinations fail
+# Or only specific combinations fail
 ```
 
-### 6.2 扩展调查
+### 6.2 Expand Investigation
 
-如果需要了解"为什么 GetConfig(1) 只有 {1}"，可能需要：
-- 检查更早的状态（l=1, l=2, ...）
-- 查看配置是如何被修改的
-- 检查 ChangeConf, ApplyConfChange 等事件
+If you need to understand "why GetConfig(1) only has {1}", you may need to:
+- Check earlier states (l=1, l=2, ...)
+- See how the configuration was modified
+- Check ChangeConf, ApplyConfChange events
 
 ---
 
-## 方法学总结
+## Methodology Summary
 
-### 通用调试流程
+### General Debugging Flow
 
 ```
-1. 理解问题
-   ├─ 解读 TLC 输出（失败在哪个 l 值？）
-   ├─ 查看 Trace 文件（这一行是什么事件？）
-   └─ 明确要回答的问题
+1. Understand the Problem
+   ├─ Interpret TLC output (which l value failed?)
+   ├─ View trace file (what event is this line?)
+   └─ Clarify the question to answer
 
-2. 粗粒度定位
-   ├─ 在主要分支的入口打断点
-   ├─ 确定哪个分支被执行
-   └─ 缩小问题范围
+2. Coarse-Grained Localization
+   ├─ Set breakpoints at main branch entry points
+   ├─ Determine which branch was executed
+   └─ Narrow down the problem scope
 
-3. 细粒度定位
-   ├─ 在相关分支的每个条件打断点
-   ├─ 找到"最后一个成功"和"第一个失败"的行
-   └─ 确定具体的失败点
+3. Fine-Grained Localization
+   ├─ Set breakpoints at each condition in the relevant branch
+   ├─ Find "last success" and "first failure" lines
+   └─ Determine the specific failure point
 
-4. 深入函数（如果需要）
-   ├─ 如果失败点是函数调用，进入函数内部
-   ├─ 重复步骤 3（在函数内部打断点）
-   └─ 找到函数内部的失败点
+4. Dive Into Functions (if needed)
+   ├─ If failure point is a function call, enter the function
+   ├─ Repeat step 3 (set breakpoints inside the function)
+   └─ Find the internal failure point
 
-5. 检查失败原因
-   ├─ 在失败条件的前一行打断点
-   ├─ 检查所有相关变量的值
-   ├─ 评估失败条件的表达式
-   └─ 理解为什么条件为 FALSE
+5. Examine Failure Reasons
+   ├─ Set breakpoint at the line before the failing condition
+   ├─ Check all related variable values
+   ├─ Evaluate the failing condition's expression
+   └─ Understand why the condition is FALSE
 
-6. 验证和扩展
-   ├─ 比对成功和失败的情况
-   ├─ 检查多个不同的参数组合
-   └─ 如果需要，追溯更早的状态
+6. Verify and Expand
+   ├─ Compare successful and failed cases
+   ├─ Check multiple different parameter combinations
+   └─ If needed, trace back to earlier states
 ```
 
-### 关键技巧
+### Key Techniques
 
-#### 1. 使用断点统计而非单步执行
+#### 1. Use Breakpoint Statistics Instead of Single-Stepping
 
-**不推荐：**
+**Not Recommended:**
 ```python
-# 一步一步 step_in
+# Step through one by one
 for i in range(1000):
     step_in()
     check_location()
 ```
 
-**推荐：**
+**Recommended:**
 ```python
-# 一次性设置多个断点，运行，收集统计
+# Set multiple breakpoints at once, run, collect statistics
 breakpoints = [(323, ...), (327, ...), (328, ...)]
 run_and_collect_statistics()
 
-# 输出：
+# Output:
 # Line 323: 18 hits
-# Line 327: 0 hits   ← 直接看出问题在这里
+# Line 327: 0 hits   ← Directly see the problem here
 ```
 
-**原因：**
-- 单步执行太慢，信息密度低
-- 断点统计一次性给出全局视图
-- 更容易发现模式和规律
+**Reason:**
+- Single-stepping is too slow, low information density
+- Breakpoint statistics give a global view at once
+- Easier to spot patterns and regularities
 
-#### 2. 分层而不是一次性深入
+#### 2. Layer by Layer, Not All at Once
 
-**不要：**
+**Don't:**
 ```python
-# 一次性在所有可能的地方打断点
+# Set breakpoints everywhere at once
 breakpoints = [
     (323, ...), (327, ...), (328, ...),  # Layer 1
     (436, ...), (437, ...), (438, ...), (439, ...),  # Layer 2
@@ -471,61 +471,61 @@ breakpoints = [
 ]
 ```
 
-**应该：**
+**Should:**
 ```python
-# 第一轮：只在 Layer 1 打断点
+# Round 1: Only Layer 1 breakpoints
 breakpoints_layer1 = [(323, ...), (327, ...), (328, ...)]
 result1 = run_and_check()
 
-# 如果 Line 327 没命中，说明问题在 323-327 之间
-# 第二轮：深入到 Line 327 调用的函数内部（Layer 2）
+# If Line 327 not hit, problem is between 323-327
+# Round 2: Dive into function called at Line 327 (Layer 2)
 breakpoints_layer2 = [(436, ...), (437, ...), (438, ...), (439, ...)]
 result2 = run_and_check()
 
-# 如果 Line 439 没命中，说明问题在 438-439 之间
-# 第三轮：在 Line 438 检查变量
+# If Line 439 not hit, problem is between 438-439
+# Round 3: Check variables at Line 438
 ```
 
-**原因：**
-- 每一层回答一个明确的问题
-- 避免信息过载
-- 根据上一层的结果决定下一层的策略
+**Reason:**
+- Each layer answers a specific question
+- Avoid information overload
+- Decide next layer strategy based on previous layer results
 
-#### 3. 条件断点过滤噪音
+#### 3. Conditional Breakpoints Filter Noise
 
-**场景：**
-- 同一行代码在不同 trace 深度下执行
-- 同一函数用不同参数调用多次
+**Scenario:**
+- Same line executes at different trace depths
+- Same function called multiple times with different parameters
 
-**解决：**
+**Solution:**
 ```python
-# 只关注特定 trace 深度（推荐使用 TLCGet("level")）
+# Only focus on specific trace depth (recommended to use TLCGet("level"))
 condition = 'TLCGet("level") = 29'
 
-# 只关注特定参数组合
+# Only focus on specific parameter combinations
 condition = 'i = 1 /\\ j = 2 /\\ TLCGet("level") = 29'
 
-# 组合多个条件
+# Combine multiple conditions
 condition = 'i = 1 /\\ range[1] = 6 /\\ range[2] = 7 /\\ TLCGet("level") = 29'
 ```
 
-**重要：为什么使用 TLCGet("level") 而不是 l**
-- `l` 是在 Trace wrapper spec 中定义的变量
-- 当断点在 base spec（如 etcdraft_progress.tla）中时，`l` 可能不在作用域内
-- `TLCGet("level")` 是 TLC 内置函数，在所有文件和上下文中都可用
-- 在验证 TraceLog[N]（l=N）的转换期间，`TLCGet("level") = N`，所以用 TLCGet("level") 可以精确定位
+**Important: Why use TLCGet("level") instead of l**
+- `l` is a variable defined in the Trace wrapper spec
+- When breakpoints are in the base spec (e.g., etcdraft_progress.tla), `l` may not be in scope
+- `TLCGet("level")` is a TLC built-in function, available in all files and contexts
+- During the transition validating TraceLog[N] (l=N), `TLCGet("level") = N`, so TLCGet("level") can precisely locate
 
-#### 4. 检查变量而非假设
+#### 4. Check Variables, Don't Assume
 
-**不要假设：**
+**Don't assume:**
 ```python
-# "Line 438 被命中了，所以 state[i] = Leader 肯定是 TRUE"
-# ❌ 错误！断点命中不代表条件为 TRUE
+# "Line 438 was hit, so state[i] = Leader must be TRUE"
+# ❌ Wrong! Breakpoint hit doesn't mean condition is TRUE
 ```
 
-**应该验证：**
+**Should verify:**
 ```python
-# 在 Line 438 断点处
+# At Line 438 breakpoint
 i_val = get_variable_value(frame_id, "i")
 state_i = evaluate_expression(frame_id, f'state["{i_val}"]')
 condition = (state_i == "StateLeader")
@@ -535,84 +535,84 @@ print(f"state[{i_val}] = {state_i}, condition = {condition}")
 
 ---
 
-## 常见陷阱
+## Common Pitfalls
 
-### 陷阱 1：误解 l 的语义
+### Pitfall 1: Misunderstanding l Semantics
 
-❌ **错误理解：** "l=29 表示已经验证了 29 行，现在在验证第 30 行"
+❌ **Wrong understanding:** "l=29 means 29 lines have been validated, now validating line 30"
 
-✅ **正确理解：** "l=29 表示正在验证第 29 行（TraceLog[29]）"
+✅ **Correct understanding:** "l=29 means currently validating line 29 (TraceLog[29])"
 
-**后果：** 查看了错误的 trace 行，导致整个调试方向错误。
+**Consequence:** Looking at the wrong trace line, leading to debugging in the wrong direction.
 
-### 陷阱 2：混淆断点命中和条件满足
+### Pitfall 2: Confusing Breakpoint Hit with Condition Satisfaction
 
-❌ **错误理解：** "Line 323 命中了 18 次，说明条件通过了 18 次"
+❌ **Wrong understanding:** "Line 323 hit 18 times means the condition passed 18 times"
 
-✅ **正确理解：** "Line 323 命中了 18 次，说明 TLC 尝试了 18 次，但可能全部失败"
+✅ **Correct understanding:** "Line 323 hit 18 times means TLC **attempted** 18 times, but all may have failed"
 
-**后果：** 误以为条件满足，不去检查后续失败的原因。
+**Consequence:** Mistakenly believe the condition is satisfied, not checking subsequent failure reasons.
 
-### 陷阱 3：假设顺序执行
+### Pitfall 3: Assuming Sequential Execution
 
-❌ **错误理解：** "代码按顺序执行：Line 323 → 324 → 325 → 326 → 327"
+❌ **Wrong understanding:** "Code executes in order: Line 323 → 324 → 325 → 326 → 327"
 
-✅ **正确理解：** "所有行必须同时为 TRUE；TLC 使用短路求值（通常从上到下）"
+✅ **Correct understanding:** "All lines must be TRUE simultaneously; TLC uses short-circuit evaluation (typically top to bottom)"
 
-**后果：** 对执行流程的错误预期，导致设置错误的断点位置。
+**Consequence:** Wrong expectations about execution flow, leading to setting breakpoints in wrong positions.
 
-### 陷阱 4：过早深入细节
+### Pitfall 4: Diving Into Details Too Early
 
-❌ **错误做法：** 一开始就在函数内部的每一行打断点
+❌ **Wrong approach:** Setting breakpoints on every line inside functions from the start
 
-✅ **正确做法：** 先粗粒度定位到相关分支，再逐层深入
+✅ **Correct approach:** First coarse-grained localization to relevant branches, then layer by layer
 
-**后果：** 信息过载，无法抓住重点，浪费时间。
-
----
-
-## 实战检查清单
-
-开始调试前，确认你已经：
-
-- [ ] 理解了 l 的语义（l=N 表示正在验证 TraceLog[N]）
-- [ ] 知道 logline 是定义，不是变量
-- [ ] 知道 TraceLog 索引从 1 开始
-- [ ] 会解读 TLC 输出（"M states generated" 表示什么）
-- [ ] 理解合取是同时满足，不是顺序执行
-- [ ] 知道断点命中不代表条件为 TRUE
-- [ ] 准备好分层调试，而不是一次性深入
-
-每一层调试时，确认你：
-
-- [ ] 明确这一层要回答的问题
-- [ ] 设置了合适的条件断点（过滤掉噪音）
-- [ ] 收集了断点统计（而不是单步执行）
-- [ ] 识别出了"最后成功"和"第一个失败"的位置
-- [ ] 检查了相关变量的实际值（而不是假设）
-- [ ] 理解了为什么某个条件失败
-- [ ] 决定了下一步是深入还是扩展调查
+**Consequence:** Information overload, cannot focus on key points, waste time.
 
 ---
 
-## 总结
+## Debugging Checklist
 
-**核心思想：分层调试**
-- 不要试图一次性找到根本原因
-- 每一层回答一个明确的问题
-- 根据当前层的发现决定下一层的策略
+Before starting debugging, confirm you have:
 
-**关键工具：断点统计**
-- 一次性设置多个断点
-- 收集命中统计
-- 识别"第一个失败"的位置
+- [ ] Understood l semantics (l=N means currently validating TraceLog[N])
+- [ ] Know logline is a definition, not a variable
+- [ ] Know TraceLog indexing starts at 1
+- [ ] Can interpret TLC output (what "M states generated" means)
+- [ ] Understand conjunction is simultaneous satisfaction, not sequential execution
+- [ ] Know breakpoint hit doesn't mean condition is TRUE
+- [ ] Ready for layered debugging, not diving deep all at once
 
-**必备技能：变量检查**
-- 不要假设变量的值
-- 在关键位置检查实际值
-- 理解为什么条件为 FALSE
+For each layer of debugging, confirm you:
 
-**最重要的：**
-- 保持耐心，系统化地逐层深入
-- 一层层剥开，总会找到不一致的地方
-- 让数据（断点统计、变量值）指导你的下一步行动
+- [ ] Clearly defined the question this layer should answer
+- [ ] Set appropriate conditional breakpoints (filter out noise)
+- [ ] Collected breakpoint statistics (not single-stepping)
+- [ ] Identified "last success" and "first failure" positions
+- [ ] Checked actual values of related variables (not assuming)
+- [ ] Understood why a certain condition failed
+- [ ] Decided whether to dive deeper or expand investigation next
+
+---
+
+## Summary
+
+**Core Idea: Layered Debugging**
+- Don't try to find the root cause all at once
+- Each layer answers a specific question
+- Decide next layer strategy based on current layer findings
+
+**Key Tool: Breakpoint Statistics**
+- Set multiple breakpoints at once
+- Collect hit statistics
+- Identify "first failure" position
+
+**Essential Skill: Variable Inspection**
+- Don't assume variable values
+- Check actual values at key positions
+- Understand why conditions are FALSE
+
+**Most Important:**
+- Be patient, systematically dive layer by layer
+- Peel back layer by layer, you will eventually find the inconsistency
+- Let data (breakpoint statistics, variable values) guide your next action
