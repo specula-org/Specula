@@ -32,7 +32,7 @@ class DebugSession:
         ... )
         >>> session.start()
         >>> session.set_breakpoints([
-        ...     Breakpoint(line=522, condition="l = 29", description="TraceNext entry")
+        ...     Breakpoint(line=522, condition='TLCGet("level") = 29', description="TraceNext entry")
         ... ])
         >>> stats = session.run_until_done(timeout=120)
         >>> stats.print_summary()
@@ -159,6 +159,11 @@ class DebugSession:
                     bp_dict["condition"] = bp.condition
                 bp_list.append(bp_dict)
 
+            # DEBUG: Log what we're sending
+            logger.info(f"DEBUG: Setting breakpoints on file: {file_name}")
+            logger.info(f"DEBUG: file_path: {file_path}")
+            logger.info(f"DEBUG: breakpoints: {bp_list}")
+
             self.client.request("setBreakpoints", {
                 "source": {"name": file_name, "path": file_path},
                 "breakpoints": bp_list
@@ -210,6 +215,22 @@ class DebugSession:
                 continue
 
             event_type = event.get("event")
+
+            # DEBUG: Log all events to understand what TLC sends
+            logger.info(f"DEBUG: Received DAP event: {event_type}")
+            if event_type not in ["stopped", "terminated"]:
+                logger.info(f"DEBUG: Full event data: {event}")
+
+            # Check for TLC completion in output events
+            # TLC doesn't send "terminated" event, but sends "Finished in Xs at" message
+            if event_type == "output":
+                output_text = event.get("body", {}).get("output", "")
+                # Look for final completion message (not intermediate "Finished checking")
+                if "Finished in" in output_text and " at " in output_text:
+                    logger.info(f"TLC execution finished (detected from output)")
+                    # Give TLC a moment to send any remaining events
+                    time.sleep(0.1)
+                    break
 
             if event_type == "stopped":
                 # Get stack frame to find which breakpoint was hit
