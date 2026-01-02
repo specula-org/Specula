@@ -31,8 +31,8 @@ Error: Invariant TraceMatched is violated
 **关键问题：**
 - TLC 生成了多少个状态？（例如：29 个）
 - 这意味着什么？
-  - State 0: l=1
-  - State 28: l=29
+  - State 1: l=1
+  - State 29: l=29
   - 尝试从 l=29 生成 l=30 失败
 - **失败的是验证哪一行？**
   - 答案：TraceLog[29]（不是 TraceLog[30]！）
@@ -65,7 +65,7 @@ sed -n '27,31p' trace.ndjson | jq -c .
 **在关键的入口和分支打断点：**
 
 ```python
-# 示例：假设失败在 l=29
+# 示例：假设失败在 TraceLog[29] (TLC 生成了 29 个状态)
 breakpoints = [
     (522, "TraceNext entry"),           # TraceNext 的入口
     (480, "TraceNextNonReceiveActions"),  # 非接收消息分支
@@ -78,7 +78,8 @@ breakpoints = [
 ]
 
 # 所有断点使用相同的条件
-condition = "l = 29"
+# 重要：使用 TLCGet("level") 而不是 l，因为 l 可能在某些文件中不可见
+condition = 'TLCGet("level") = 29'
 ```
 
 **运行后检查：**
@@ -130,9 +131,9 @@ AppendEntriesIfLogged(i, j, range) ==
 **设置断点：**
 ```python
 breakpoints = [
-    (323, "AppendEntriesIfLogged entry"),
-    (327, "AppendEntries call"),
-    (328, "ValidateAfterAppendEntries call"),
+    (323, 'TLCGet("level") = 29', "AppendEntriesIfLogged entry"),
+    (327, 'TLCGet("level") = 29', "AppendEntries call"),
+    (328, 'TLCGet("level") = 29', "ValidateAfterAppendEntries call"),
 ]
 ```
 
@@ -140,18 +141,22 @@ breakpoints = [
 ```
 结果：
   Line 323: 18 hits  ✅
-  Line 327: 0 hits   ❌
+  Line 327: 1 hit    ✅ ← Action 被调用了
   Line 328: 0 hits   ❌
 
 结论：
   - Line 323 被调用了 18 次（18 种不同的 i,j,range 组合）
-  - Line 327 从未执行（所有 18 次尝试都在 Line 323-326 失败了）
-  - 问题在 Line 323-326 的某个条件中
+  - Line 327 被命中 1 次（AppendEntries action 被调用/进入了）
+  - Line 328 从未执行（AppendEntries action 失败了）
+  - **关键：** Line 327 是 action 调用，即使 action 返回 FALSE 也会被 hit
+  - 问题在 AppendEntries action 内部
 ```
 
-**重要：** 如果 Line 327 是一个函数调用（如 AppendEntries），而它从未被命中，这意味着：
-- 要么 Line 323-326 的条件失败
-- 要么需要进一步深入 Line 327 调用的函数内部
+**重要：** Line 327 是一个 action 调用（`AppendEntries(i, j, range)`）：
+- Action 调用会被 hit，即使 action 内部失败（返回 FALSE）
+- Line 327: 1 hit 说明 action 被进入了
+- Line 328: 0 hits 说明 action 失败，整个函数无法继续
+- **下一步：需要深入到 AppendEntries action 内部打断点**
 
 ---
 
@@ -180,50 +185,112 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
 **设置断点：**
 ```python
 # 注意：这个函数在不同的文件中（etcdraft_progress.tla）
+# 必须使用 TLCGet("level") 因为 l 在这个文件中不可见
+condition = 'i = 1 /\\ j = 2 /\\ TLCGet("level") = 29'
+
 breakpoints = [
-    ("etcdraft_progress.tla", 436, "i /= j"),
-    ("etcdraft_progress.tla", 437, "range[1] <= range[2]"),
-    ("etcdraft_progress.tla", 438, "state[i] = Leader"),
-    ("etcdraft_progress.tla", 439, "j in Config/Learners"),
-    ("etcdraft_progress.tla", 443, "heartbeat or ~IsPaused"),
-    ("etcdraft_progress.tla", 474, "Send operation"),
+    ("etcdraft_progress.tla", 436, condition, "i /= j"),
+    ("etcdraft_progress.tla", 437, condition, "range[1] <= range[2]"),
+    ("etcdraft_progress.tla", 438, condition, "state[i] = Leader"),
+    ("etcdraft_progress.tla", 439, condition, "j in Config/Learners"),
+    ("etcdraft_progress.tla", 443, condition, "heartbeat or ~IsPaused"),
+    ("etcdraft_progress.tla", 474, condition, "Send operation"),
 ]
 ```
 
 **运行后检查：**
 ```
 结果：
-  Line 436: 10 hits  ✅
-  Line 437: 5 hits   ✅
-  Line 438: 3 hits   ✅
-  Line 439: 0 hits   ❌  ← 第一个从未被命中的行
-  Line 443: 0 hits   ❌
-  Line 474: 0 hits   ❌
+  Line 436: 204 hits  ✅
+  Line 437: 136 hits  ✅
+  Line 438: 106 hits  ✅
+  Line 439: 0 hits    ❌  ← 第一个从未被命中的行
+  Line 443: 0 hits    ❌
+  Line 474: 0 hits    ❌
 
-结论：
-  - 有些尝试在 Line 436 失败（i = j）
-  - 有些尝试在 Line 437 失败（range[1] > range[2]）
-  - 有些尝试在 Line 438 失败（state[i] /= Leader）
-  - 所有尝试都在 Line 439 失败（没有任何尝试通过 Line 439）
-  - 问题在 Line 439
+结论（利用短路求值规律）：
+  - Line 436 被求值 204 次（所有尝试都会检查这个条件）
+  - 68 次在 Line 436 失败（204 - 136 = 68）
+  - 30 次在 Line 437 失败（136 - 106 = 30）
+  - 106 次通过了 Line 438，但全部在 Line 439 失败
+  - **关键发现**：所有尝试都在 Line 439 停止（没有任何尝试通过 Line 439）
+  - 问题确定在 Line 439 的条件：j \in GetConfig(...)
 ```
 
-### 4.3 关键规律
+**重要理解：短路求值（Short-Circuit Evaluation）**
 
-**断点命中模式：**
+TLA+ 的 `/\` 操作符使用短路求值，就像 C++ 的 `&&`：
+- 只有前面的条件都为真时，后面的条件才会被求值
+- 命中次数递减 (204 → 136 → 106 → 0) 显示了这个过程
+- 第一个 0 hits 的行就是失败点
+
+### 4.3 关键规律：如何判断失败点
+
+**断点命中模式（短路求值）：**
 ```
 Line A: 100 hits
 Line B: 50 hits
-Line C: 20 hits
-Line D: 0 hits   ← 第一个 0 hits 的行
+Line C: 20 hits  ← 最后一个非零 hit
+Line D: 0 hits   ← 第一个 0 hits
 Line E: 0 hits
 Line F: 0 hits
 ```
 
+**判断方法：找到最后一个非零 hit 的行（Line C），判断它的类型**
+
+**情况 1：Line C 是 action 调用**
+```tla
+/\ SomeCondition        -- Line B: 50 hits
+/\ SomeAction(i, j)     -- Line C: 20 hits  ← Action 调用
+/\ AnotherCondition     -- Line D: 0 hits
+```
+
+**特征：**
+- Line C 的代码类似 `SomeAction(params)` 或 `LET ... IN action`
+- 是一个函数/操作符调用，而不是简单的条件判断
+
 **结论：**
-- 问题在 Line C 和 Line D 之间
-- Line D 的条件从未满足
-- 应该在 Line C 处检查变量，看为什么 Line D 的条件不满足
+- Action 被调用/进入了 20 次
+- 但所有 20 次调用都在 action 内部失败（返回 FALSE）
+- Line D 没有被执行，因为 Line C 失败了
+
+**下一步：**
+- 在 action **内部**设置断点（使用相同的条件）
+- 找出 action 内部哪个条件失败
+
+**情况 2：Line C 是条件语句**
+```tla
+/\ SomeCondition        -- Line B: 50 hits
+/\ i /= j               -- Line C: 20 hits  ← 简单条件
+/\ AnotherCondition     -- Line D: 0 hits
+```
+
+**特征：**
+- Line C 是一个简单的条件判断（等号、不等号、集合成员等）
+- 不是函数调用
+
+**结论：**
+- 20 次尝试通过了 Line C 的条件
+- 但所有 20 次在 Line D 的条件失败
+
+**下一步：**
+- 在 Line C 处设置断点（或在断点触发时）
+- 检查变量值，看为什么 Line D 的条件不满足
+
+**如何区分 Action 调用和条件语句：**
+
+查看 TLA+ 源代码：
+```tla
+/\ i /= j                                     -- 条件语句
+/\ range[1] <= range[2]                       -- 条件语句
+/\ state[i] = Leader                          -- 条件语句
+/\ AppendEntriesInRangeToPeer(i, j, range)    -- Action 调用 ← 注意首字母大写
+/\ Send([type |-> "MsgApp", ...])             -- Action 调用
+```
+
+一般规律：
+- **条件语句**：比较、成员测试、布尔表达式
+- **Action 调用**：首字母大写的操作符、或明显的函数调用
 
 ---
 
@@ -241,9 +308,11 @@ Line F: 0 hits
 
 ```python
 # 在 Line 438 断点（Line 439 的前一行）
+# 使用 TLCGet("level") 和参数条件
 breakpoint = {
+    "file": "etcdraft_progress.tla",
     "line": 438,
-    "condition": "l = 29"
+    "condition": 'i = 1 /\\ j = 2 /\\ TLCGet("level") = 29'
 }
 
 # 当断点命中时，检查变量
@@ -251,15 +320,15 @@ i_val = get_variable_value(frame_id, "i")
 j_val = get_variable_value(frame_id, "j")
 
 # 评估 Line 439 的条件
-config = evaluate_expression(frame_id, f'GetConfig("{i_val}")')
-outgoing = evaluate_expression(frame_id, f'GetOutgoingConfig("{i_val}")')
-learners = evaluate_expression(frame_id, f'GetLearners("{i_val}")')
+config = evaluate_expression(frame_id, f'GetConfig({i_val})')
+outgoing = evaluate_expression(frame_id, f'GetOutgoingConfig({i_val})')
+learners = evaluate_expression(frame_id, f'GetLearners({i_val})')
 union = evaluate_expression(frame_id,
-    f'GetConfig("{i_val}") \\union GetOutgoingConfig("{i_val}") \\union GetLearners("{i_val}")')
+    f'GetConfig({i_val}) \\union GetOutgoingConfig({i_val}) \\union GetLearners({i_val})')
 
 # 检查 j 是否在集合中
 j_in_set = evaluate_expression(frame_id,
-    f'"{j_val}" \\in GetConfig("{i_val}") \\union ...')
+    f'{j_val} \\in GetConfig({i_val}) \\union GetOutgoingConfig({i_val}) \\union GetLearners({i_val})')
 
 print(f"i={i_val}, j={j_val}")
 print(f"GetConfig({i_val}) = {config}")
@@ -425,20 +494,26 @@ result2 = run_and_check()
 #### 3. 条件断点过滤噪音
 
 **场景：**
-- 同一行代码在不同 l 值下执行
+- 同一行代码在不同 trace 深度下执行
 - 同一函数用不同参数调用多次
 
 **解决：**
 ```python
-# 只关注 l=29 的情况
-condition = "l = 29"
+# 只关注特定 trace 深度（推荐使用 TLCGet("level")）
+condition = 'TLCGet("level") = 29'
 
 # 只关注特定参数组合
-condition = 'l = 29 /\\ i = "1" /\\ j = "2"'
+condition = 'i = 1 /\\ j = 2 /\\ TLCGet("level") = 29'
 
 # 组合多个条件
-condition = 'l = 29 /\\ i = "1" /\\ range = <<6, 7>>'
+condition = 'i = 1 /\\ range[1] = 6 /\\ range[2] = 7 /\\ TLCGet("level") = 29'
 ```
+
+**重要：为什么使用 TLCGet("level") 而不是 l**
+- `l` 是在 Trace wrapper spec 中定义的变量
+- 当断点在 base spec（如 etcdraft_progress.tla）中时，`l` 可能不在作用域内
+- `TLCGet("level")` 是 TLC 内置函数，在所有文件和上下文中都可用
+- 在验证 TraceLog[N]（l=N）的转换期间，`TLCGet("level") = N`，所以用 TLCGet("level") 可以精确定位
 
 #### 4. 检查变量而非假设
 
@@ -482,7 +557,7 @@ print(f"state[{i_val}] = {state_i}, condition = {condition}")
 
 ❌ **错误理解：** "代码按顺序执行：Line 323 → 324 → 325 → 326 → 327"
 
-✅ **正确理解：** "所有行必须同时为 TRUE；TLC 可能以任何顺序评估"
+✅ **正确理解：** "所有行必须同时为 TRUE；TLC 使用短路求值（通常从上到下）"
 
 **后果：** 对执行流程的错误预期，导致设置错误的断点位置。
 
