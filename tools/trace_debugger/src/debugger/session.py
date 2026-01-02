@@ -239,8 +239,11 @@ class DebugSession:
                     frames = stack_resp["body"].get("stackFrames", [])
                     if frames:
                         frame = frames[0]
+                        frame_id = frame.get("id", 0)
                         file_name = frame.get("source", {}).get("name", self.spec_file)
                         line = frame.get("line")
+
+                        logger.info(f"DEBUG: Stack frame: id={frame_id}, file={file_name}, line={line}")
 
                         # Update hit count (only for our breakpoints)
                         # Try exact match first, then with .tla extension
@@ -255,7 +258,7 @@ class DebugSession:
                         # Call user callback if provided
                         if on_breakpoint_hit:
                             try:
-                                on_breakpoint_hit(file_name, line, frame_id=0)
+                                on_breakpoint_hit(file_name, line, frame_id=frame_id)
                             except Exception as e:
                                 logger.error(f"Error in breakpoint callback: {e}")
 
@@ -301,8 +304,14 @@ class DebugSession:
                                     frame_id: int = 0) -> Dict[str, str]:
         """Get variable values at current breakpoint.
 
+        Supports:
+        - Simple variables: "l", "pl"
+        - Complex variables: "state" (returns string representation)
+        - Field access: "data.log" (accesses record field)
+        - Index access: "state[i]", "state[\"1\"]" (array/function indexing)
+
         Args:
-            var_names: List of variable names
+            var_names: List of variable names or expressions
             frame_id: Stack frame ID
 
         Returns:
@@ -310,23 +319,84 @@ class DebugSession:
         """
         result = {}
 
-        # Get all scopes
-        scopes_resp = self.client.request("scopes", {"frameId": frame_id})
-        if not scopes_resp or not scopes_resp.get("success"):
-            return result
+        # Separate simple variables from complex expressions
+        simple_vars = []
+        complex_exprs = []
 
-        # Search through scopes for requested variables
-        for scope in scopes_resp["body"]["scopes"]:
-            vref = scope["variablesReference"]
-            if vref > 0:
-                vars_resp = self.client.request("variables", {
-                    "variablesReference": vref
-                })
-                if vars_resp and vars_resp.get("success"):
-                    for v in vars_resp["body"]["variables"]:
-                        if v["name"] in var_names:
-                            result[v["name"]] = v["value"]
+        # Expressions contain: operators, function calls, field access, indexing
+        expression_indicators = ['.', '[', '+', '-', '*', '/', '(', ')', '=', '<', '>', '\\']
 
+        for var_name in var_names:
+            # Check if it's a complex expression
+            is_expr = any(char in var_name for char in expression_indicators)
+            # Also check if it has spaces (likely an expression like "l + 1")
+            is_expr = is_expr or ' ' in var_name
+
+            if is_expr:
+                complex_exprs.append(var_name)
+            else:
+                simple_vars.append(var_name)
+
+        # Handle complex expressions using evaluate API
+        if complex_exprs:
+            logger.info(f"DEBUG: Evaluating complex expressions: {complex_exprs}")
+            for expr in complex_exprs:
+                value = self.evaluate_at_breakpoint(expr, frame_id)
+                if value is not None:
+                    result[expr] = value
+                    logger.info(f"DEBUG: Evaluated '{expr}' = '{value}'")
+
+        # Handle simple variables using variables API (with one level of nesting)
+        if simple_vars:
+            logger.info(f"DEBUG: Looking for simple variables: {simple_vars}")
+            logger.info(f"DEBUG: Requesting scopes for frameId={frame_id}")
+
+            scopes_resp = self.client.request("scopes", {"frameId": frame_id})
+
+            if not scopes_resp or not scopes_resp.get("success"):
+                logger.warning(f"DEBUG: Failed to get scopes or request unsuccessful")
+                return result
+
+            logger.info(f"DEBUG: Available scopes: {[s['name'] for s in scopes_resp['body']['scopes']]}")
+
+            # Search through scopes for requested variables
+            for scope in scopes_resp["body"]["scopes"]:
+                scope_name = scope["name"]
+                vref = scope["variablesReference"]
+                logger.info(f"DEBUG: Checking scope '{scope_name}' (vref={vref})")
+
+                if vref > 0:
+                    vars_resp = self.client.request("variables", {
+                        "variablesReference": vref
+                    })
+                    if vars_resp and vars_resp.get("success"):
+                        variables = vars_resp["body"]["variables"]
+                        logger.info(f"DEBUG: Scope '{scope_name}' has {len(variables)} variable(s) at first level")
+
+                        for v in variables:
+                            var_ref = v.get("variablesReference", 0)
+
+                            # Only query containers (vref > 0), skip leaf nodes
+                            if var_ref > 0:
+                                logger.info(f"DEBUG:   Querying container '{v['name']}' (vref={var_ref})")
+                                nested_resp = self.client.request("variables", {
+                                    "variablesReference": var_ref
+                                })
+
+                                if nested_resp and nested_resp.get("success"):
+                                    nested_vars = nested_resp["body"]["variables"]
+                                    logger.info(f"DEBUG:   Container has {len(nested_vars)} nested variable(s)")
+
+                                    for nested_v in nested_vars:
+                                        nested_name = nested_v["name"]
+                                        nested_value = nested_v.get("value", "")
+
+                                        # Match against simple variable names
+                                        if nested_name in simple_vars:
+                                            result[nested_name] = nested_value
+                                            logger.info(f"DEBUG:   ✓ Found '{nested_name}' = '{nested_value}'")
+
+        logger.info(f"DEBUG: get_variables_at_breakpoint - Found {len(result)} variable(s): {list(result.keys())}")
         return result
 
     def close(self):

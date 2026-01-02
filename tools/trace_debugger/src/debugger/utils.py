@@ -47,7 +47,7 @@ def collect_variable_values(
         >>> values = collect_variable_values(
         ...     session,
         ...     breakpoint_line=438,
-        ...     condition="l = 29",
+        ...     condition='TLCGet("level") = 29',
         ...     variables=["i", "j", "GetConfig(i)"],
         ...     max_samples=10
         ... )

@@ -15,8 +15,8 @@ Quick Start:
     >>>
     >>> session.start()
     >>> session.set_breakpoints([
-    ...     Breakpoint(line=522, condition="l = 29", description="TraceNext entry"),
-    ...     Breakpoint(line=489, condition="l = 29", description="SendAppendEntriesRequest"),
+    ...     Breakpoint(line=522, condition='TLCGet("level") = 29', description="TraceNext entry"),
+    ...     Breakpoint(line=489, condition='TLCGet("level") = 29', description="SendAppendEntriesRequest"),
     ... ])
     >>>
     >>> stats = session.run_until_done(timeout=120)
