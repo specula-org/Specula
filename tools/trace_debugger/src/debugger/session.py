@@ -176,11 +176,15 @@ class DebugSession:
 
         logger.info(f"Set {len(breakpoints)} breakpoint(s) across {len(breakpoints_by_file)} file(s)")
 
-    def run_until_done(self, timeout: Optional[int] = None) -> BreakpointStatistics:
+    def run_until_done(self, timeout: Optional[int] = None,
+                       on_breakpoint_hit=None) -> BreakpointStatistics:
         """Run until termination or timeout.
 
         Args:
             timeout: Timeout in seconds (None = no timeout)
+            on_breakpoint_hit: Optional callback when breakpoint is hit.
+                Signature: on_breakpoint_hit(file_name, line, frame_id) -> None
+                Called after updating statistics, before continuing execution.
 
         Returns:
             BreakpointStatistics: Collected statistics
@@ -226,6 +230,13 @@ class DebugSession:
                         if key in self.breakpoint_hits:
                             self.breakpoint_hits[key].hit_count += 1
                             total_hits += 1
+
+                        # Call user callback if provided
+                        if on_breakpoint_hit:
+                            try:
+                                on_breakpoint_hit(file_name, line, frame_id=0)
+                            except Exception as e:
+                                logger.error(f"Error in breakpoint callback: {e}")
 
                 # Always continue execution after stopped
                 self.client.request("continue", {})
