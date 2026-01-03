@@ -399,6 +399,127 @@ class DebugSession:
         logger.info(f"DEBUG: get_variables_at_breakpoint - Found {len(result)} variable(s): {list(result.keys())}")
         return result
 
+    def step_over(self) -> Optional[Dict[str, str]]:
+        """Execute next line (step over function calls).
+
+        This executes the current TLA+ expression/statement and stops at the next line,
+        without entering any action/function calls.
+
+        Returns:
+            Dict with current location after step:
+            - file: File name
+            - line: Line number (as string)
+            - frame_id: Stack frame ID (as string)
+            Returns None if timeout or error.
+
+        Example:
+            >>> location = session.step_over()
+            >>> print(f"Now at {location['file']}:{location['line']}")
+        """
+        logger.info("Executing step over...")
+        self.client.request("next", {"threadId": 0})
+        location = self._wait_for_stop_event(timeout=10)
+        if location:
+            logger.info(f"Stepped to {location['file']}:{location['line']}")
+        return location
+
+    def step_into(self) -> Optional[Dict[str, str]]:
+        """Step into action/function calls.
+
+        In TLA+, this enters the definition of an action when it's called.
+        For example, if the current line calls AppendEntries(i, j, range),
+        this will step into the AppendEntries action definition.
+
+        Returns:
+            Dict with current location after step:
+            - file: File name
+            - line: Line number (as string)
+            - frame_id: Stack frame ID (as string)
+            Returns None if timeout or error.
+
+        Example:
+            >>> location = session.step_into()
+            >>> print(f"Inside action at {location['file']}:{location['line']}")
+        """
+        logger.info("Executing step into...")
+        self.client.request("stepIn", {"threadId": 0})
+        location = self._wait_for_stop_event(timeout=10)
+        if location:
+            logger.info(f"Stepped into {location['file']}:{location['line']}")
+        return location
+
+    def step_out(self) -> Optional[Dict[str, str]]:
+        """Step out of current action/function.
+
+        Returns to the caller of the current action. Useful when you've stepped
+        into an action and want to return to the calling context.
+
+        Returns:
+            Dict with current location after step:
+            - file: File name
+            - line: Line number (as string)
+            - frame_id: Stack frame ID (as string)
+            Returns None if timeout or error.
+
+        Example:
+            >>> location = session.step_out()
+            >>> print(f"Back to caller at {location['file']}:{location['line']}")
+        """
+        logger.info("Executing step out...")
+        self.client.request("stepOut", {"threadId": 0})
+        location = self._wait_for_stop_event(timeout=10)
+        if location:
+            logger.info(f"Stepped out to {location['file']}:{location['line']}")
+        return location
+
+    def _wait_for_stop_event(self, timeout: int = 10) -> Optional[Dict[str, str]]:
+        """Wait for stopped event and return current location.
+
+        This is a helper method for step operations. After sending a step request
+        (next, stepIn, stepOut), we need to wait for TLC to send a "stopped" event.
+
+        Args:
+            timeout: Timeout in seconds (default: 10)
+
+        Returns:
+            Dict with file, line, frame_id (all as strings), or None if timeout
+        """
+        import time
+        start_time = time.time()
+
+        while (time.time() - start_time) < timeout:
+            event = self.client.get_event()
+            if not event:
+                time.sleep(0.01)
+                continue
+
+            event_type = event.get("event")
+
+            # We're waiting for a "stopped" event
+            if event_type == "stopped":
+                reason = event.get("body", {}).get("reason", "")
+                logger.info(f"Stopped event received (reason: {reason})")
+
+                # Get current location from stack trace
+                stack_resp = self.client.request("stackTrace", {"threadId": 0})
+                if stack_resp and stack_resp.get("success"):
+                    frames = stack_resp["body"].get("stackFrames", [])
+                    if frames:
+                        frame = frames[0]
+                        return {
+                            "file": frame.get("source", {}).get("name", ""),
+                            "line": str(frame.get("line", 0)),
+                            "frame_id": str(frame.get("id", 0))
+                        }
+
+            # If TLC terminates during stepping, return None
+            elif event_type == "terminated":
+                logger.warning("TLC terminated during step operation")
+                return None
+
+        logger.warning(f"Timeout waiting for stopped event after {timeout}s")
+        return None
+
     def close(self):
         """Close connection and terminate TLC process."""
         try:
