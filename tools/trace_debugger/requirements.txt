@@ -1,0 +1,9 @@
+# TLA+ Trace Debugger Dependencies
+# Minimal dependencies for running the MCP server and debugging tools
+
+# MCP SDK - required for MCP server functionality
+mcp>=1.0.0
+
+# Note: All other dependencies are from Python standard library:
+# - socket, json, subprocess, threading, logging, time, os, sys
+# - dataclasses, typing, abc, collections
