@@ -30,7 +30,11 @@ CONSTANTS
     \* @type: Str;
     AppendEntriesRequest,
     \* @type: Str;
-    AppendEntriesResponse
+    AppendEntriesResponse,
+    \* @type: Str;
+    SnapshotRequest,
+    \* @type: Str;
+    SnapshotResponse
 
 \* New: Progress state constants
 \* Reference: tracker/state.go:20-33
@@ -91,13 +95,17 @@ serverVars == <<currentTerm, state, votedFor>>
 \* log entry. Unfortunately, the Sequence module defines Head(s) as the entry
 \* with index 1, so be careful not to use that!
 VARIABLE 
-    \* @type: Int -> [ entries: LOGT, len: Int ];
+    \* @type: Int -> [ offset: Int, entries: LOGT, snapshotIndex: Int, snapshotTerm: Int ];
     log
+\* Ghost variable for verification: keeps the full history of entries
+VARIABLE
+    \* @type: Int -> LOGT;
+    historyLog
 \* The index of the latest entry in the log the state machine may apply.
 VARIABLE 
     \* @type: Int -> Int;
     commitIndex
-logVars == <<log, commitIndex>>
+logVars == <<log, historyLog, commitIndex>>
 
 \* The following variables are used only on candidates:
 \* The set of servers from which the candidate has received a RequestVote
@@ -201,9 +209,39 @@ vars == <<messageVars, serverVars, candidateVars, leaderVars, logVars, configVar
 \* important property is that every quorum overlaps with every other.
 Quorum(c) == {i \in SUBSET(c) : Cardinality(i) * 2 > Cardinality(c)}
 
-\* The term of the last entry in a log, or 0 if the log is empty.
-\* @type: LOGT => Int;
-LastTerm(xlog) == IF xlog = <<>> THEN 0 ELSE xlog[Len(xlog)].term
+\* ============================================================================
+\* New: Virtual Log Helpers (Offset-aware)
+\* ============================================================================
+
+\* Get the logical index of the last entry in the log
+\* @type: [ offset: Int, entries: LOGT, snapshotIndex: Int, snapshotTerm: Int ] => Int;
+LastIndex(xlog) ==
+    xlog.offset + Len(xlog.entries) - 1
+
+\* Get the term of the last entry (or snapshot term if empty)
+\* @type: [ offset: Int, entries: LOGT, snapshotIndex: Int, snapshotTerm: Int ] => Int;
+LastTerm(xlog) ==
+    IF Len(xlog.entries) > 0 THEN xlog.entries[Len(xlog.entries)].term
+    ELSE xlog.snapshotTerm
+
+\* Check if a logical index is available in the memory log (not compacted)
+IsAvailable(i, index) ==
+    index >= log[i].offset
+
+\* Get the log entry at a logical index
+\* PRECONDITION: IsAvailable(i, index)
+LogEntry(i, index) ==
+    log[i].entries[index - log[i].offset + 1]
+
+\* Get the term at a logical index
+\* Returns 0 if index is 0.
+\* Returns snapshotTerm if index is snapshotIndex.
+\* Checks availability for other indices.
+LogTerm(i, index) ==
+    IF index = 0 THEN 0
+    ELSE IF index = log[i].snapshotIndex THEN log[i].snapshotTerm
+    ELSE IF IsAvailable(i, index) THEN LogEntry(i, index).term
+    ELSE 0
 
 \* Helper for Send and Reply. Given a message m and bag of messages, return a
 \* new bag of messages with one more m in it.
@@ -271,7 +309,7 @@ GetLearners(i) ==
 
 \* Apply conf change log entry to configuration
 ApplyConfigUpdate(i, k) ==
-    LET entry == log[i][k]
+    LET entry == LogEntry(i, k)
         newVoters == entry.value.newconf
         newLearners == entry.value.learners
         enterJoint == IF "enterJoint" \in DOMAIN entry.value THEN entry.value.enterJoint ELSE FALSE
@@ -288,7 +326,9 @@ PersistState(i) ==
     durableState' = [durableState EXCEPT ![i] = [
         currentTerm |-> currentTerm[i],
         votedFor |-> votedFor[i],
-        log |-> Len(log[i]),
+        log |-> LastIndex(log[i]),
+        snapshotIndex |-> log[i].snapshotIndex,
+        snapshotTerm |-> log[i].snapshotTerm,
         commitIndex |-> commitIndex[i],
         config |-> config[i]
     ]]
@@ -341,7 +381,8 @@ InitCandidateVars == /\ votesResponded = [i \in Server |-> {}]
                      /\ votesGranted   = [i \in Server |-> {}]
 InitLeaderVars == /\ matchIndex = [i \in Server |-> [j \in Server |-> 0]]
                   /\ pendingConfChangeIndex = [i \in Server |-> 0]
-InitLogVars == /\ log          = [i \in Server |-> <<>>]
+InitLogVars == /\ log          = [i \in Server |-> [offset |-> 1, entries |-> <<>>, snapshotIndex |-> 0, snapshotTerm |-> 0]]
+               /\ historyLog   = [i \in Server |-> <<>>]
                /\ commitIndex  = [i \in Server |-> 0]
 InitConfigVars == /\ config = [i \in Server |-> [ jointConfig |-> <<InitServer, {}>>, learners |-> {}]]
                   /\ reconfigCount = 0 
@@ -349,7 +390,9 @@ InitDurableState ==
     durableState = [ i \in Server |-> [
         currentTerm |-> currentTerm[i],
         votedFor |-> votedFor[i],
-        log |-> Len(log[i]),
+        log |-> 0,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
         commitIndex |-> commitIndex[i],
         config |-> config[i]
     ]]
@@ -389,7 +432,12 @@ Restart(i) ==
     /\ currentTerm' = [currentTerm EXCEPT ![i] = durableState[i].currentTerm]
     /\ commitIndex' = [commitIndex EXCEPT ![i] = durableState[i].commitIndex]
     /\ votedFor' = [votedFor EXCEPT ![i] = durableState[i].votedFor]
-    /\ log' = [log EXCEPT ![i] = SubSeq(@, 1, durableState[i].log)]
+    /\ log' = [log EXCEPT ![i] = [
+                    offset |-> @.offset, 
+                    entries |-> SubSeq(@.entries, 1, durableState[i].log - @.offset + 1), 
+                    snapshotIndex |-> durableState[i].snapshotIndex, 
+                    snapshotTerm |-> durableState[i].snapshotTerm
+       ]]
     /\ config' = [config EXCEPT ![i] = durableState[i].config]
     \* New: Reset Progress variables (volatile state, not persisted)
     /\ progressState' = [progressState EXCEPT ![i] = [j \in Server |-> StateProbe]]
@@ -397,7 +445,7 @@ Restart(i) ==
     /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i] = [j \in Server |-> 0]]
     /\ nextIndex' = [nextIndex EXCEPT ![i] = [j \in Server |-> 1]]
     /\ inflights' = [inflights EXCEPT ![i] = [j \in Server |-> {}]]
-    /\ UNCHANGED <<messages, durableState, reconfigCount>>
+    /\ UNCHANGED <<messages, durableState, reconfigCount, historyLog>>
 
 \* Server i times out and starts a new election.
 \* @type: Int => Bool;
@@ -419,7 +467,7 @@ RequestVote(i, j) ==
         THEN Send([mtype            |-> RequestVoteRequest,
                    mterm            |-> currentTerm[i],
                    mlastLogTerm     |-> LastTerm(log[i]),
-                   mlastLogIndex    |-> Len(log[i]),
+                   mlastLogIndex    |-> LastIndex(log[i]),
                    msource          |-> i,
                    mdest            |-> j])
         ELSE Send([mtype            |-> RequestVoteResponse,
@@ -445,13 +493,13 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
         prevLogIndex == range[1] - 1
         \* The following upper bound on prevLogIndex is unnecessary
         \* but makes verification substantially simpler.
-        prevLogTerm == IF prevLogIndex > 0 /\ prevLogIndex <= Len(log[i]) THEN
-                            log[i][prevLogIndex].term
+        prevLogTerm == IF prevLogIndex > 0 /\ prevLogIndex <= LastIndex(log[i]) THEN
+                            LogTerm(i, prevLogIndex)
                         ELSE
                             0
         \* Send the entries
-        lastEntry == Min({Len(log[i]), range[2]-1})
-        entries == SubSeq(log[i], range[1], lastEntry)
+        lastEntry == Min({LastIndex(log[i]), range[2]-1})
+        entries == SubSeq(log[i].entries, range[1] - log[i].offset + 1, lastEntry - log[i].offset + 1)
         commit == IF subtype = "heartbeat" THEN Min({commitIndex[i], matchIndex[i][j]}) ELSE Min({commitIndex[i], lastEntry})
         \* New: Calculate number of entries sent (for updating msgAppFlowPaused)
         numEntries == Len(entries)
@@ -508,7 +556,7 @@ AppendEntriesToSelf(i) ==
              msubtype        |-> "app",
              mterm           |-> currentTerm[i],
              msuccess        |-> TRUE,
-             mmatchIndex     |-> Len(log[i]),
+             mmatchIndex     |-> LastIndex(log[i]),
              msource         |-> i,
              mdest           |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars>>
@@ -520,39 +568,29 @@ Heartbeat(i, j) ==
     \* heartbeat is equivalent to an append-entry request with 0 entry index 1
     AppendEntriesInRangeToPeer("heartbeat", i, j, <<1,1>>)
 
-SendSnapshot(i, j, index) ==
+SendSnapshot(i, j) ==
     /\ i /= j
     /\ state[i] = Leader
     /\ j \in GetConfig(i) \union GetLearners(i)
-    \* Fix: Snapshot index must be > matchIndex to maintain invariant Match < Next
-    \* Reference: raft.go:616-628 - maybeSendSnapshot only called when log truncated at >= pr.Next
-    \* Reference: raft.go:670 - snapshot index determined by storage, not arbitrary
-    \* Real constraint: snapshot.Metadata.Index >= firstIndex (after log compaction)
-    /\ index > matchIndex[i][j]
-    /\ LET
-        prevLogIndex == 0
-        prevLogTerm == 0
-        lastEntry == index
-        entries == SubSeq(log[i], 1, lastEntry)
-        commit == Min({commitIndex[i], lastEntry})
-       IN /\ Send( [mtype          |-> AppendEntriesRequest,
-                    msubtype       |-> "snapshot",
-                    mterm          |-> currentTerm[i],
-                    mprevLogIndex  |-> prevLogIndex,
-                    mprevLogTerm   |-> prevLogTerm,
-                    mentries       |-> entries,
-                    mcommitIndex   |-> commit,
-                    msource        |-> i,
-                    mdest          |-> j])
-          \* New: Transition to StateSnapshot, set pendingSnapshot and Next
-          \* Reference: raft.go:684 sendSnapshot() -> pr.BecomeSnapshot()
-          \* Reference: tracker/progress.go:153-158 BecomeSnapshot()
-          /\ progressState' = [progressState EXCEPT ![i][j] = StateSnapshot]
-          /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
-          /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = index]
-          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = index + 1]
-          /\ ResetInflights(i, j)
-          /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState>>
+    \* Trigger: The previous log index required for AppendEntries is NOT available
+    /\ LET prevLogIndex == nextIndex[i][j] - 1 IN
+       ~IsAvailable(i, prevLogIndex)
+    /\ Send([mtype          |-> SnapshotRequest,
+             mterm          |-> currentTerm[i],
+             msnapshotIndex |-> log[i].snapshotIndex,
+             msnapshotTerm  |-> log[i].snapshotTerm,
+             mhistory       |-> SubSeq(historyLog[i], 1, log[i].snapshotIndex),
+             msource        |-> i,
+             mdest          |-> j])
+    \* Transition to StateSnapshot, set pendingSnapshot and Next
+    \* Reference: raft.go:684 sendSnapshot() -> pr.BecomeSnapshot()
+    \* Reference: tracker/progress.go:153-158 BecomeSnapshot()
+    /\ progressState' = [progressState EXCEPT ![i][j] = StateSnapshot]
+    /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
+    /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = log[i].snapshotIndex]
+    /\ nextIndex' = [nextIndex EXCEPT ![i][j] = log[i].snapshotIndex + 1]
+    /\ ResetInflights(i, j)
+    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState>>
  
 \* Candidate i transitions to leader.
 \* @type: Int => Bool;
@@ -565,7 +603,7 @@ BecomeLeader(i) ==
            votesGranted[i] \in Quorum(GetConfig(i))
     /\ state'      = [state EXCEPT ![i] = Leader]
     /\ matchIndex' = [matchIndex EXCEPT ![i] =
-                         [j \in Server |-> IF j = i THEN Len(log[i]) ELSE 0]]
+                         [j \in Server |-> IF j = i THEN LastIndex(log[i]) ELSE 0]]
     \* New: Initialize Progress state
     \* Reference: raft.go:933-950 becomeLeader() -> reset()
     \* Reference: raft.go:784-810 reset() - initializes Match=0, Next=lastIndex+1 for all peers
@@ -577,7 +615,7 @@ BecomeLeader(i) ==
     /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i] =
                             [j \in Server |-> 0]]
     /\ nextIndex' = [nextIndex EXCEPT ![i] =
-                            [j \in Server |-> Len(log[i]) + 1]]
+                            [j \in Server |-> LastIndex(log[i]) + 1]]
     /\ inflights' = [inflights EXCEPT ![i] =
                             [j \in Server |-> {}]]
     /\ UNCHANGED <<messageVars, currentTerm, votedFor, pendingConfChangeIndex, candidateVars, logVars, configVars, durableState>>
@@ -588,8 +626,9 @@ Replicate(i, v, t) ==
     /\ LET entry == [term  |-> currentTerm[i],
                      type  |-> t,
                      value |-> v]
-           newLog == Append(log[i], entry)
+           newLog == [log[i] EXCEPT !.entries = Append(@, entry)]
        IN  /\ log' = [log EXCEPT ![i] = newLog]
+           /\ historyLog' = [historyLog EXCEPT ![i] = Append(@, entry)]
 
 \* Leader i receives a client request to add v to the log.
 \* @type: (Int, Int) => Bool;
@@ -605,7 +644,7 @@ ClientRequestAndSend(i, v) ==
              msubtype    |-> "app",
              mterm       |-> currentTerm[i],
              msuccess    |-> TRUE,
-             mmatchIndex |-> Len(log'[i]),
+             mmatchIndex |-> LastIndex(log'[i]),
              msource     |-> i,
              mdest       |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars>>
@@ -620,7 +659,7 @@ AdvanceCommitIndex(i) ==
     /\ LET \* The set of servers that agree up through index.
            AllVoters == GetConfig(i) \union GetOutgoingConfig(i)
            Agree(index) == {k \in AllVoters : matchIndex[i][k] >= index}
-           logSize == Len(log[i])
+           logSize == LastIndex(log[i])
            \* logSize == MaxLogLength
            \* The maximum indexes for which a quorum agrees
            IsCommitted(index) == 
@@ -634,7 +673,7 @@ AdvanceCommitIndex(i) ==
            \* New value for commitIndex'[i]
            newCommitIndex ==
               IF /\ agreeIndexes /= {}
-                 /\ log[i][Max(agreeIndexes)].term = currentTerm[i]
+                 /\ LogTerm(i, Max(agreeIndexes)) = currentTerm[i]
               THEN
                   Max(agreeIndexes)
               ELSE
@@ -651,7 +690,7 @@ AddNewServer(i, j) ==
     /\ ~IsJointConfig(i)
     /\ IF pendingConfChangeIndex[i] = 0 THEN
             /\ Replicate(i, [newconf |-> GetConfig(i) \union {j}, learners |-> GetLearners(i)], ConfigEntry)
-            /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=Len(log'[i])]
+            /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=LastIndex(log'[i])]
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
@@ -664,7 +703,7 @@ AddLearner(i, j) ==
     /\ ~IsJointConfig(i)
     /\ IF pendingConfChangeIndex[i] = 0 THEN
             /\ Replicate(i, [newconf |-> GetConfig(i), learners |-> GetLearners(i) \union {j}], ConfigEntry)
-            /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=Len(log'[i])]
+            /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=LastIndex(log'[i])]
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
@@ -677,7 +716,7 @@ DeleteServer(i, j) ==
     /\ ~IsJointConfig(i)
     /\ IF pendingConfChangeIndex[i] = 0 THEN
             /\ Replicate(i, [newconf |-> GetConfig(i) \ {j}, learners |-> GetLearners(i) \ {j}], ConfigEntry)
-            /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=Len(log'[i])]
+            /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=LastIndex(log'[i])]
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
@@ -689,7 +728,7 @@ ChangeConf(i) ==
     /\ IF pendingConfChangeIndex[i] = 0 THEN
             \E newVoters \in SUBSET Server, newLearners \in SUBSET Server, enterJoint \in {TRUE, FALSE}:
                 /\ Replicate(i, [newconf |-> newVoters, learners |-> newLearners, enterJoint |-> enterJoint, oldconf |-> GetConfig(i)], ConfigEntry)
-                /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=Len(log'[i])]
+                /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=LastIndex(log'[i])]
                 \* Remove manual Send, rely on AppendEntriesToSelf in trace
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
@@ -703,12 +742,12 @@ ChangeConfAndSend(i) ==
     /\ IF pendingConfChangeIndex[i] = 0 THEN
             \E newVoters \in SUBSET Server, newLearners \in SUBSET Server, enterJoint \in {TRUE, FALSE}:
                 /\ Replicate(i, [newconf |-> newVoters, learners |-> newLearners, enterJoint |-> enterJoint, oldconf |-> GetConfig(i)], ConfigEntry)
-                /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=Len(log'[i])]
+                /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=LastIndex(log'[i])]
                 /\ Send([mtype       |-> AppendEntriesResponse,
                          msubtype    |-> "app",
                          mterm       |-> currentTerm[i],
                          msuccess    |-> TRUE,
-                         mmatchIndex |-> Len(log'[i]),
+                         mmatchIndex |-> LastIndex(log'[i]),
                          msource     |-> i,
                          mdest       |-> i])
        ELSE
@@ -718,45 +757,44 @@ ChangeConfAndSend(i) ==
                      msubtype    |-> "app",
                      mterm       |-> currentTerm[i],
                      msuccess    |-> TRUE,
-                     mmatchIndex |-> Len(log'[i]),
+                     mmatchIndex |-> LastIndex(log'[i]),
                      msource     |-> i,
                      mdest       |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
 
 ApplySimpleConfChange(i) ==
-    /\ LET k == SelectLastInSubSeq(log[i], 1, commitIndex[i], LAMBDA x: x.type = ConfigEntry)
+    LET validIndices == {x \in log[i].offset..commitIndex[i] : LogEntry(i, x).type = ConfigEntry}
+    IN
+    /\ validIndices /= {}
+    /\ LET k == Max(validIndices)
+           oldConfig == GetConfig(i) \cup GetOutgoingConfig(i)
+           newConfigFn == ApplyConfigUpdate(i, k)
+           newConfig == newConfigFn[i].jointConfig[1] \cup newConfigFn[i].jointConfig[2]
+           addedNodes == newConfig \ oldConfig
        IN
-            /\ k > 0
-            /\ k <= commitIndex[i]
-            /\ LET oldConfig == GetConfig(i) \cup GetOutgoingConfig(i)  \* All nodes in old config
-                   newConfigFn == ApplyConfigUpdate(i, k)
-                   newConfig == newConfigFn[i].jointConfig[1] \cup newConfigFn[i].jointConfig[2]  \* All nodes in new config
-                   addedNodes == newConfig \ oldConfig  \* Newly added nodes
-               IN
-                /\ config' = newConfigFn
-                /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] >= k THEN
-                    /\ reconfigCount' = reconfigCount + 1
-                    /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
-                   ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
-                \* Initialize Progress for newly added nodes (if leader)
-                \* Reference: raft.go:1947-1967 applyConfChange() -> switchToConfig()
-                \* Reference: confchange/confchange.go:263 initProgress() uses max(lastIndex, 1) for Next
-                /\ IF state[i] = Leader /\ addedNodes # {}
-                   THEN /\ nextIndex' = [nextIndex EXCEPT ![i] =
-                               [j \in Server |-> IF j \in addedNodes THEN Max({Len(log[i]), 1}) ELSE nextIndex[i][j]]]
-                        /\ matchIndex' = [matchIndex EXCEPT ![i] =
-                               [j \in Server |-> IF j \in addedNodes THEN 0 ELSE matchIndex[i][j]]]
-                        /\ progressState' = [progressState EXCEPT ![i] =
-                               [j \in Server |-> IF j \in addedNodes THEN StateProbe ELSE progressState[i][j]]]
-                        /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i] =
-                               [j \in Server |-> IF j \in addedNodes THEN FALSE ELSE msgAppFlowPaused[i][j]]]
-                        /\ inflights' = [inflights EXCEPT ![i] =
-                               [j \in Server |-> IF j \in addedNodes THEN {} ELSE inflights[i][j]]]
-                        /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i] =
-                               [j \in Server |-> IF j \in addedNodes THEN 0 ELSE pendingSnapshot[i][j]]]
-                   ELSE /\ UNCHANGED progressVars
-                        /\ UNCHANGED matchIndex
-            /\ UNCHANGED <<messageVars, serverVars, candidateVars, logVars, durableState>>
+        /\ k > 0
+        /\ k <= commitIndex[i]
+        /\ config' = newConfigFn
+        /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] >= k THEN
+            /\ reconfigCount' = reconfigCount + 1
+            /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
+           ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
+        /\ IF state[i] = Leader /\ addedNodes # {}
+           THEN /\ nextIndex' = [nextIndex EXCEPT ![i] =
+                       [j \in Server |-> IF j \in addedNodes THEN Max({LastIndex(log[i]), 1}) ELSE nextIndex[i][j]]]
+                /\ matchIndex' = [matchIndex EXCEPT ![i] =
+                       [j \in Server |-> IF j \in addedNodes THEN 0 ELSE matchIndex[i][j]]]
+                /\ progressState' = [progressState EXCEPT ![i] =
+                       [j \in Server |-> IF j \in addedNodes THEN StateProbe ELSE progressState[i][j]]]
+                /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i] =
+                       [j \in Server |-> IF j \in addedNodes THEN FALSE ELSE msgAppFlowPaused[i][j]]]
+                /\ inflights' = [inflights EXCEPT ![i] =
+                       [j \in Server |-> IF j \in addedNodes THEN {} ELSE inflights[i][j]]]
+                /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i] =
+                       [j \in Server |-> IF j \in addedNodes THEN 0 ELSE pendingSnapshot[i][j]]]
+           ELSE /\ UNCHANGED progressVars
+                /\ UNCHANGED matchIndex
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, logVars, durableState, historyLog>>
     
 Ready(i) ==
     /\ PersistState(i)
@@ -865,7 +903,7 @@ ClearMsgAppFlowPausedOnDecrTo(i, j) ==
 HandleRequestVoteRequest(i, j, m) ==
     LET logOk == \/ m.mlastLogTerm > LastTerm(log[i])
                  \/ /\ m.mlastLogTerm = LastTerm(log[i])
-                    /\ m.mlastLogIndex >= Len(log[i])
+                    /\ m.mlastLogIndex >= LastIndex(log[i])
         grant == /\ m.mterm = currentTerm[i]
                  /\ logOk
                  /\ votedFor[i] \in {Nil, j}
@@ -921,8 +959,8 @@ ReturnToFollowerState(i, m) ==
     /\ UNCHANGED <<messageVars, currentTerm, votedFor, logVars, configVars, durableState, progressVars>> 
 
 HasNoConflict(i, index, ents) ==
-    /\ index <= Len(log[i]) + 1
-    /\ \A k \in 1..Len(ents): index + k - 1 <= Len(log[i]) => log[i][index+k-1].term = ents[k].term
+    /\ index <= LastIndex(log[i]) + 1
+    /\ \A k \in 1..Len(ents): index + k - 1 <= LastIndex(log[i]) => LogTerm(i, index+k-1) = ents[k].term
 
 \* @type: (Int, Int, Int, AEREQT) => Bool;
 AppendEntriesAlreadyDone(i, j, index, m) ==
@@ -930,7 +968,7 @@ AppendEntriesAlreadyDone(i, j, index, m) ==
        \/ /\ index > commitIndex[i]
           /\ \/ m.mentries = << >>
              \/ /\ m.mentries /= << >>
-                /\ m.mprevLogIndex + Len(m.mentries) <= Len(log[i])
+                /\ m.mprevLogIndex + Len(m.mentries) <= LastIndex(log[i])
                 /\ HasNoConflict(i, index, m.mentries)          
     /\ IF index <= commitIndex[i] THEN 
             IF m.msubtype = "heartbeat" THEN CommitTo(i, m.mcommitIndex) ELSE UNCHANGED commitIndex
@@ -981,8 +1019,8 @@ AcceptAppendEntriesRequest(i, j, logOk, m) ==
 HandleAppendEntriesRequest(i, j, m) ==
     LET logOk == \/ m.mprevLogIndex = 0
                  \/ /\ m.mprevLogIndex > 0
-                    /\ m.mprevLogIndex <= Len(log[i])
-                    /\ m.mprevLogTerm = log[i][m.mprevLogIndex].term
+                    /\ m.mprevLogIndex <= LastIndex(log[i])
+                    /\ m.mprevLogTerm = LogTerm(i, m.mprevLogIndex)
     IN 
        /\ m.mterm <= currentTerm[i]
        /\ \/ RejectAppendEntriesRequest(i, j, m, logOk)
@@ -1036,6 +1074,69 @@ HandleAppendEntriesResponse(i, j, m) ==
     /\ Discard(m)
     /\ UNCHANGED <<serverVars, candidateVars, logVars, configVars, durableState>>
 
+\* Compacts the log of server i up to newStart (exclusive).
+\* newStart becomes the new offset.
+CompactLog(i, newStart) ==
+    /\ newStart > log[i].offset
+    /\ newStart <= commitIndex[i]
+    /\ log' = [log EXCEPT ![i] = [
+          offset  |-> newStart,
+          entries |-> SubSeq(@.entries, newStart - @.offset + 1, Len(@.entries)),
+          snapshotIndex |-> newStart - 1,
+          snapshotTerm  |-> LogTerm(i, newStart - 1)
+       ]]
+    /\ UNCHANGED <<messages, pendingMessages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog>>
+
+\* Server i receives a SnapshotRequest.
+\* Simulates raft.restore()
+HandleSnapshotRequest(i, j, m) ==
+    /\ m.mterm >= currentTerm[i]
+    /\ IF m.msnapshotIndex <= commitIndex[i] THEN
+           \* Case 1: Stale snapshot (Index <= Committed). Ignore.
+           \* Reference: raft.go:1858 restore() returns false
+           /\ Reply([mtype       |-> AppendEntriesResponse, 
+                     msubtype    |-> "app",
+                     mterm       |-> currentTerm[i],
+                     msuccess    |-> TRUE,
+                     mmatchIndex |-> commitIndex[i],
+                     msource     |-> i, 
+                     mdest       |-> j], 
+                     m)
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+       ELSE IF LogTerm(i, m.msnapshotIndex) = m.msnapshotTerm THEN
+           \* Case 2: Fast-forward (Log contains snapshot index/term).
+           \* Reference: raft.go:1907 matchTerm check returns false after commitTo
+           /\ commitIndex' = [commitIndex EXCEPT ![i] = m.msnapshotIndex]
+           /\ Reply([mtype       |-> AppendEntriesResponse, 
+                     msubtype    |-> "app",
+                     mterm       |-> currentTerm[i],
+                     msuccess    |-> TRUE, 
+                     mmatchIndex |-> m.msnapshotIndex,
+                     msource     |-> i, 
+                     mdest       |-> j], 
+                     m)
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, log, configVars, durableState, progressVars, historyLog>>
+       ELSE
+           \* Case 3: Actual Restore. Wipe log.
+           \* Reference: raft.go:1846 restore() returns true
+           /\ log' = [log EXCEPT ![i] = [
+                 offset  |-> m.msnapshotIndex + 1,
+                 entries |-> <<>>,
+                 snapshotIndex |-> m.msnapshotIndex,
+                 snapshotTerm  |-> m.msnapshotTerm
+              ]]
+           /\ historyLog' = [historyLog EXCEPT ![i] = m.mhistory]
+           /\ commitIndex' = [commitIndex EXCEPT ![i] = m.msnapshotIndex]
+           /\ Reply([mtype       |-> AppendEntriesResponse, 
+                     msubtype    |-> "snapshot",
+                     mterm       |-> currentTerm[i],
+                     msuccess    |-> TRUE, 
+                     mmatchIndex |-> m.msnapshotIndex,
+                     msource     |-> i, 
+                     mdest       |-> j], 
+                     m)
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars>>
+
 \* Any RPC with a newer term causes the recipient to advance its term first.
 \* @type: (Int, Int, MSG) => Bool;
 UpdateTerm(i, j, m) ==
@@ -1059,7 +1160,7 @@ UpdateTermAndHandleRequestVote(i, j, m) ==
     /\ m.mterm > currentTerm[i]
     /\ LET logOk == \/ m.mlastLogTerm > LastTerm(log[i])
                     \/ /\ m.mlastLogTerm = LastTerm(log[i])
-                       /\ m.mlastLogIndex >= Len(log[i])
+                       /\ m.mlastLogIndex >= LastIndex(log[i])
            grant == logOk \* Term is equal (after update), Vote is Nil (after update)
        IN
            /\ Reply([mtype        |-> RequestVoteResponse,
@@ -1092,6 +1193,8 @@ ReceiveDirect(m) ==
     \/  /\ m.mtype = AppendEntriesResponse
         /\ \/ DropStaleResponse(i, j, m)
            \/ HandleAppendEntriesResponse(i, j, m)
+    \/  /\ m.mtype = SnapshotRequest
+        /\ HandleSnapshotRequest(i, j, m)
 
 Receive(m) == ReceiveDirect(m)
 
@@ -1128,10 +1231,13 @@ NextAsync ==
     \/ \E i \in Server: ClientRequest(i, 0)
     \/ \E i \in Server: ClientRequestAndSend(i, 0)
     \/ \E i \in Server : AdvanceCommitIndex(i)
-    \/ \E i,j \in Server : \E b,e \in matchIndex[i][j]+1..Len(log[i])+1 : AppendEntries(i, j, <<b,e>>)
+    \/ \E i,j \in Server : \E b,e \in matchIndex[i][j]+1..LastIndex(log[i])+1 : AppendEntries(i, j, <<b,e>>)
     \/ \E i \in Server : AppendEntriesToSelf(i)
     \/ \E i,j \in Server : Heartbeat(i, j)
-    \/ \E i,j \in Server : \E index \in 1..commitIndex[i] : SendSnapshot(i, j, index)
+    \/ \E i,j \in Server : SendSnapshot(i, j)
+    \* Optimization: Only allow compacting to the commitIndex to reduce state space explosion.
+    \* This provides the most aggressive compaction scenario for testing Snapshots.
+    \/ \E i \in Server : IF log[i].offset < commitIndex[i] THEN CompactLog(i, commitIndex[i]) ELSE FALSE
     \/ \E m \in DOMAIN messages : Receive(m)
     \/ \E i \in Server : Timeout(i)
     \/ \E i \in Server : Ready(i)
@@ -1187,12 +1293,21 @@ ASSUME DistinctMessageTypes == /\ RequestVoteRequest /= AppendEntriesRequest
                                /\ AppendEntriesRequest /= RequestVoteResponse
                                /\ AppendEntriesRequest /= AppendEntriesResponse
                                /\ RequestVoteResponse /= AppendEntriesResponse
+                               /\ SnapshotRequest /= RequestVoteRequest
+                               /\ SnapshotRequest /= AppendEntriesRequest
+                               /\ SnapshotRequest /= RequestVoteResponse
+                               /\ SnapshotRequest /= AppendEntriesResponse
+                               /\ SnapshotResponse /= RequestVoteRequest
+                               /\ SnapshotResponse /= AppendEntriesRequest
+                               /\ SnapshotResponse /= RequestVoteResponse
+                               /\ SnapshotResponse /= AppendEntriesResponse
+                               /\ SnapshotRequest /= SnapshotResponse
 
 ----
 \* Correctness invariants
 
 \* The prefix of the log of server i that has been committed
-Committed(i) == SubSeq(log[i],1,commitIndex[i])
+Committed(i) == SubSeq(historyLog[i],1,commitIndex[i])
 
 \* The current term of any server is at least the term
 \* of any message sent by that server
@@ -1224,15 +1339,15 @@ ElectionSafetyInv ==
     \A i \in Server :
         state[i] = Leader =>
         \A j \in Server :
-            MaxOrZero({n \in DOMAIN log[i] : log[i][n].term = currentTerm[i]}) >=
-            MaxOrZero({n \in DOMAIN log[j] : log[j][n].term = currentTerm[i]})
+            MaxOrZero({n \in log[i].offset..LastIndex(log[i]) : LogTerm(i, n) = currentTerm[i]}) >=
+            MaxOrZero({n \in log[j].offset..LastIndex(log[j]) : LogTerm(j, n) = currentTerm[i]})
 
 \* Every (index, term) pair determines a log prefix
 LogMatchingInv ==
     \A i, j \in Server :
-        \A n \in (1..Len(log[i])) \cap (1..Len(log[j])) :
-            log[i][n].term = log[j][n].term =>
-            SubSeq(log[i],1,n) = SubSeq(log[j],1,n)
+        \A n \in (1..Len(historyLog[i])) \cap (1..Len(historyLog[j])) :
+            historyLog[i][n].term = historyLog[j][n].term =>
+            SubSeq(historyLog[i],1,n) = SubSeq(historyLog[j],1,n)
 
 \* When two candidates competes in a campaign, if a follower voted to
 \* a candidate that did not win in the end, the follower's votedFor will 
@@ -1262,7 +1377,7 @@ QuorumLogInv ==
     \A i \in Server :
     \A S \in Quorum(GetConfig(i)) :
         \E j \in S :
-            IsPrefix(Committed(i), log[j])
+            IsPrefix(Committed(i), historyLog[j])
 
 \* The "up-to-date" check performed by servers
 \* before issuing a vote implies that i receives
@@ -1272,8 +1387,8 @@ MoreUpToDateCorrectInv ==
     \A i, j \in Server :
        (\/ LastTerm(log[i]) > LastTerm(log[j])
         \/ /\ LastTerm(log[i]) = LastTerm(log[j])
-           /\ Len(log[i]) >= Len(log[j])) =>
-       IsPrefix(Committed(j), log[i])
+           /\ LastIndex(log[i]) >= LastIndex(log[j])) =>
+       IsPrefix(Committed(j), historyLog[i])
 
 \* If a log entry is committed in a given term, then that
 \* entry will be present in the logs of the leaders
@@ -1283,13 +1398,13 @@ LeaderCompletenessInv ==
     \A i \in Server :
         LET committed == Committed(i) IN
         \A idx \in 1..Len(committed) :
-            LET entry == log[i][idx] IN 
+            LET entry == historyLog[i][idx] IN 
             \* if the entry is committed 
             \A l \in CurrentLeaders :
                 \* all leaders with higher-number terms
                 currentTerm[l] > entry.term =>
                 \* have the entry at the same log position
-                log[l][idx] = entry
+                historyLog[l][idx] = entry
 
 \* Any entry committed by leader shall be persisted already
 CommittedIsDurableInv ==
@@ -1339,7 +1454,7 @@ SnapshotInflightsInv ==
 InflightsLogIndexInv ==
     \A i \in Server : \A j \in Server :
         state[i] = Leader =>
-            \A idx \in inflights[i][j] : idx <= Len(log[i])
+            \A idx \in inflights[i][j] : idx <= LastIndex(log[i])
 
 \* Invariant: InflightsMatchIndexInv
 \* Inflight indices must be strictly greater than what Follower has already Matched.
@@ -1392,7 +1507,7 @@ SnapshotStateInv ==
         (state[i] = Leader /\ progressState[i][j] = StateSnapshot) =>
             /\ InflightsCount(i, j) = 0              \* Inflights must be empty
             /\ pendingSnapshot[i][j] > 0             \* Must have pending snapshot
-            /\ pendingSnapshot[i][j] <= Len(log[i])  \* Snapshot index must be valid
+            /\ pendingSnapshot[i][j] <= LastIndex(log[i])  \* Snapshot index must be valid
 
 \* Invariant: InflightsMonotonicInv
 \* Reference: inflights.go:45-57 Add() expects monotonically increasing indices
@@ -1417,12 +1532,12 @@ InflightsMonotonicInv ==
 \* Invariant: MatchIndexLessThanLogInv
 \* THE FUNDAMENTAL INVARIANT: Match < Next in progress.go
 \* In TLA+: matchIndex represents Match, and Next is implicitly tracked
-\* We verify: matchIndex[i][j] <= Len(log[i]) for active replication
+\* We verify: matchIndex[i][j] <= LastIndex(log[i]) for active replication
 \* Reference: progress.go:37 "Invariant: 0 <= Match < Next"
 MatchIndexLessThanLogInv ==
     \A i \in Server : \A j \in Server :
         (state[i] = Leader /\ j /= i) =>
-            matchIndex[i][j] <= Len(log[i])
+            matchIndex[i][j] <= LastIndex(log[i])
 
 \* Invariant: MatchIndexNonNegativeInv
 \* Match is always non-negative (0 <= Match)
@@ -1535,43 +1650,43 @@ MessageIndexValidInv ==
 StateMachineConsistency ==
     \A i, j \in Server :
         \A idx \in 1..Min({commitIndex[i], commitIndex[j]}) :
-            log[i][idx] = log[j][idx]
+            historyLog[i][idx] = historyLog[j][idx]
 
 \* Commit index should never exceed log length
 CommitIndexBoundInv ==
     \A i \in Server :
-        commitIndex[i] <= Len(log[i])
+        commitIndex[i] <= LastIndex(log[i])
 
 \* All committed entries should have valid (positive) terms
 CommittedEntriesTermInv ==
     \A i \in Server :
         \A idx \in 1..commitIndex[i] :
-            log[i][idx].term > 0
+            historyLog[i][idx].term
 
 \* Configuration change index should not exceed log length
 PendingConfigBoundInv ==
     \A i \in Server :
         state[i] = Leader =>
-            pendingConfChangeIndex[i] <= Len(log[i])
+            pendingConfChangeIndex[i] <= LastIndex(log[i])
 
 \* Leader-specific: log should be at least as long as commitIndex
 LeaderLogLengthInv ==
     \A i \in Server :
         state[i] = Leader =>
-            commitIndex[i] <= Len(log[i])
+            commitIndex[i] <= LastIndex(log[i])
 
 \* Term should be monotonic in the log (newer entries have >= terms)
 LogTermMonotonic ==
     \A i \in Server :
-        \A idx1, idx2 \in 1..Len(log[i]) :
+        \A idx1, idx2 \in 1..LastIndex(log[i]) :
             idx1 < idx2 =>
-                log[i][idx1].term <= log[i][idx2].term
+                LogTerm(i, idx1) <= LogTerm(i, idx2)
 
 \* Current term should be at least as large as any log entry term
 CurrentTermAtLeastLogTerm ==
     \A i \in Server :
-        \A idx \in 1..Len(log[i]) :
-            currentTerm[i] >= log[i][idx].term
+        \A idx \in 1..LastIndex(log[i]) :
+            currentTerm[i] >= LogTerm(i, idx)
 
 \* If voted for someone, that node should be in the configuration
 VotedForInConfigInv ==
@@ -1589,7 +1704,7 @@ CandidateVotedForSelfInv ==
 DurableStateConsistency ==
     \A i \in Server :
         /\ durableState[i].currentTerm <= currentTerm[i]
-        /\ durableState[i].log <= Len(log[i])
+        /\ durableState[i].log <= LastIndex(log[i])
         /\ durableState[i].commitIndex <= commitIndex[i]
 
 \* All messages should have valid endpoints
