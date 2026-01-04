@@ -1,4 +1,4 @@
--------------------------- MODULE etcdraft_progress --------------------------
+-------------------------- MODULE etcdraft --------------------------
 EXTENDS Naturals, Integers, Bags, FiniteSets, Sequences, SequencesExt, FiniteSetsExt, BagsExt, TLC
 
 \* The initial and global set of server IDs.

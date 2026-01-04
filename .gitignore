@@ -77,3 +77,6 @@ tools/cfa/*Test*.tla
 tools/cfa/input/debug_*.tla
 tools/cfa/input/test_*.tla
 tools/cfa/tests
+
+*.mcp.json
+.gemini/*

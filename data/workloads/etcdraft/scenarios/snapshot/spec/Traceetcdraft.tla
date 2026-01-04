@@ -15,7 +15,7 @@
 *
 * Trace validation specification for etcdraft_progress.tla (Snapshot version)
 
-EXTENDS etcdraft_progress, Json, IOUtils, Sequences, TLC
+EXTENDS etcdraft, Json, IOUtils, Sequences, TLC
 
 * raft.pb.go enum MessageType
 RaftMsgType ==
@@ -571,7 +571,7 @@ ASSUME TLCGet("config").worker = 1
 TraceMatched ==
     [](l <= Len(TraceLog) => [](TLCGet("queue") = 1 \/ l > Len(TraceLog)))
 
-etcd_progress == INSTANCE etcdraft_progress
-etcdProgressSpec == etcd_progress!Init /\ [][etcd_progress!NextDynamic]_etcd_progress!vars
+etcd == INSTANCE etcdraft
+etcdSpec == etcd!Init /\ [][etcd!NextDynamic]_etcd!vars
 
 ==================================================================================
