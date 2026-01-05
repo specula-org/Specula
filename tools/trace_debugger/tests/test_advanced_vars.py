@@ -5,12 +5,14 @@ import asyncio
 import json
 import sys
 import os
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from tla_mcp.handlers.trace_validation import TraceValidationHandler
 
 
+@pytest.mark.asyncio
 async def test_advanced_features():
     """Test field access, indexing, and expressions."""
     print("=" * 70)
