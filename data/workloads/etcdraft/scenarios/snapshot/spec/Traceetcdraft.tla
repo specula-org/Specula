@@ -1,19 +1,4 @@
 ---------------------------- MODULE Traceetcdraft --------------------------
-\* Copyright 2024 The etcd Authors
-\*
-\* Licensed under the Apache License, Version 2.0 (the "License");
-\* you may not use this file except in compliance with the License.
-\* You may obtain a copy of the License at
-\*
-\*     http://www.apache.org/licenses/LICENSE-2.0
-\*
-\* Unless required by applicable law or agreed to in writing, software
-\* distributed under the License is distributed on an "AS IS" BASIS,
-\* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-\* See the License for the specific language governing permissions and
-\* limitations under the License.
-\*
-\* Trace validation specification for etcdraft.tla (Snapshot version)
 
 EXTENDS etcdraft, Json, IOUtils, Sequences, TLC
 
@@ -51,23 +36,19 @@ TraceLog ==
 TraceServer == TLCEval(FoldSeq(
     LAMBDA x, y: y \cup
         {x.event.nid} \cup
-        (IF "msg" \in DOMAIN x.event /\ "to" \in DOMAIN x.event.msg THEN {x.event.msg.to} ELSE {})
-        \cup
+        (IF "msg" \in DOMAIN x.event /\ "to" \in DOMAIN x.event.msg THEN {x.event.msg.to} ELSE {}) \cup
         (IF x.event.name = "ChangeConf" /\ "changes" \in DOMAIN x.event.prop.cc
          THEN { x.event.prop.cc.changes[k].nid : k \in 1..Len(x.event.prop.cc.changes) }
-         ELSE {})
-        \cup
-        (IF x.event.name = "ApplyConfChange" /\ "newconf" \in DOMAIN x.event.prop.cc THEN ToSet(x.event.prop.cc.newconf) ELSE {})
-    , {},
-    TraceLog))
+         ELSE {}) \cup
+        (IF x.event.name = "ApplyConfChange" /\ "newconf" \in DOMAIN x.event.prop.cc THEN ToSet(x.event.prop.cc.newconf) ELSE {}),
+    {}, TraceLog))
 
 AllChangeConfNids == TLCEval(FoldSeq(
     LAMBDA x, y: y \cup
         IF x.event.name = "ChangeConf" /\ "changes" \in DOMAIN x.event.prop.cc
         THEN { x.event.prop.cc.changes[k].nid : k \in 1..Len(x.event.prop.cc.changes) }
         ELSE {},
-    {},
-    TraceLog))
+    {}, TraceLog))
 
 BootstrapLogIndicesForServer(i) ==
     LET
@@ -98,7 +79,7 @@ TraceInitServerVars ==
     /\ currentTerm = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN 0 ELSE LastBootstrapLog[i].event.state.term]
     /\ state = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN Follower ELSE LastBootstrapLog[i].event.role]
     /\ votedFor = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN "0" ELSE LastBootstrapLog[i].event.state.vote]
-\* Updated for Record Log
+
 TraceInitLogVars    == 
     /\ log          = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} 
                        THEN [offset |-> 1, entries |-> <<>>, snapshotIndex |-> 0, snapshotTerm |-> 0]
@@ -187,9 +168,6 @@ LoglineIsAppendEntriesRequest(m) ==
 LoglineIsSnapshotRequest(m) ==
     /\ m.mtype = SnapshotRequest
     /\ m.mtype = RaftMsgType[logline.event.msg.type]
-    \* MsgSnap structure in spec: [mtype, msubtype, mterm, msnapshotIndex, msnapshotTerm, mhistory, msource, mdest]
-    \* Trace structure: msg.index (snapshot index), msg.logTerm (snapshot term)
-    \* Note: msg.index in MsgSnap trace is the snapshot index (not prevLogIndex)
     /\ m.mdest   = logline.event.msg.to
     /\ m.msource = logline.event.msg.from
     /\ m.mterm = logline.event.msg.term
@@ -206,9 +184,6 @@ LoglineIsAppendEntriesResponse(m) ==
     /\ m.msource = logline.event.msg.from
     /\ m.mterm = logline.event.msg.term
     /\ m.msuccess = ~logline.event.msg.reject
-    \* In Snapshot spec, fast-forward or restore success returns mmatchIndex = snapshotIndex.
-    \* Failure returns commitIndex.
-    \* Trace validation simply checks if the response matches what was sent.
     /\ (~logline.event.msg.reject /\ m.msubtype /= "heartbeat") => m.mmatchIndex = logline.event.msg.index
 
 LoglineIsRequestVoteRequest(m) ==
@@ -228,6 +203,10 @@ LoglineIsRequestVoteResponse(m) ==
     /\ m.mterm = logline.event.msg.term
     /\ m.mvoteGranted = ~logline.event.msg.reject
 
+\* Helper to access log entry at specific logical index from a log record
+LogEntryAt(xlog, index) ==
+    xlog.entries[index - xlog.offset + 1]
+
 ValidatePreStates(i) ==
     pl = l - 1 =>
         /\ currentTerm[i] = logline.event.state.term
@@ -239,7 +218,7 @@ ValidatePostStates(i) ==
     /\ currentTerm'[i] = logline.event.state.term
     /\ state'[i] = logline.event.role
     /\ votedFor'[i] = logline.event.state.vote
-    /\ LastIndex(log'[i]) = logline.event.log  \* Updated Len -> LastIndex
+    /\ LastIndex(log'[i]) = logline.event.log
     /\ commitIndex'[i] = logline.event.state.commit
     /\ config'[i].jointConfig = ConfFromLog(logline)
 
@@ -247,9 +226,9 @@ ValidatePostStates(i) ==
 \* Progress-specific validation helpers
 
 ValidateProgressState(i, j) ==
-    /\ \/ /\ "prop" \notin DOMAIN logline.event
+    \/ /\ "prop" \notin DOMAIN logline.event
        /\ TRUE
-    /\ /\ "prop" \in DOMAIN logline.event
+    \/ /\ "prop" \in DOMAIN logline.event
        /\ "state" \in DOMAIN logline.event.prop
        /\ progressState[i][j] = logline.event.prop.state
        /\ "match" \in DOMAIN logline.event.prop =>
@@ -284,7 +263,6 @@ ValidateAfterBecomeLeader(i) ==
     /\ ValidatePostStates(i)
     /\ logline.event.role = "StateLeader"
     /\ state'[i] = Leader
-    \* Validate Progress initialization: all followers should be in StateProbe
     /\ \A j \in Server: j /= i => progressState'[i][j] = StateProbe
 
 BecomeLeaderIfLogged(i) ==
@@ -313,7 +291,6 @@ ValidateAfterAppendEntries(i, j) ==
     /\ \E msg \in DOMAIN pendingMessages':
         /\ LoglineIsAppendEntriesRequest(msg)
         /\ OneMoreMessage(msg)
-        \* NEW: Validate Progress state when sending AppendEntries
         /\ ValidateProgressState(i, j)
 
 ValidateAfterHeartbeat(i, j) ==
@@ -321,7 +298,6 @@ ValidateAfterHeartbeat(i, j) ==
     /\ \E msg \in DOMAIN pendingMessages':
         /\ LoglineIsAppendEntriesRequest(msg)
         /\ OneMoreMessage(msg)
-        \* NEW: Validate Progress state when sending Heartbeat
         /\ ValidateProgressState(i, j)
 
 ValidateAfterAppendEntriesToSelf(i) ==
@@ -329,7 +305,6 @@ ValidateAfterAppendEntriesToSelf(i) ==
     /\ \E msg \in DOMAIN pendingMessages':
         /\ LoglineIsAppendEntriesResponse(msg)
         /\ msg.msource = msg.mdest
-        \* There is now one more message of this type.
         /\ OneMoreMessage(msg)
 
 AppendEntriesIfLogged(i, j, range) ==
@@ -357,7 +332,7 @@ CompactForSnapshot(i, snapshotIndex) ==
 \* In etcd, nextIndex is updated to snapshotIndex + 1 AFTER sending snapshot.
 \* BEFORE sending, nextIndex might be something else.
 \* BUT SendSnapshot logic in Spec uses nextIndex to determine PREV log index availability.
-\* Actually, SendSnapshot in Spec: 
+\* Actually, SendSnapshot in Spec:
 \*    LET prevLogIndex == nextIndex[i][j] - 1
 \*    ~IsAvailable(i, prevLogIndex)
 \* This means the follower needs 'prevLogIndex' but we don't have it.
@@ -366,12 +341,12 @@ CompactForSnapshot(i, snapshotIndex) ==
 SendSnapshotIfLogged(i, j, index) ==
     /\ LoglineIsMessageEvent("SendAppendEntriesRequest", i, j)
     /\ logline.event.msg.type = "MsgSnap"
-    /\ index = logline.event.msg.index \* MsgSnap index
+    /\ index = logline.event.msg.index
     \* Ensure log is compacted enough to simulate "missing log entry" condition
     \* Actually, if we see MsgSnap in trace, it means system DID compact.
     \* We force the model to compact to 'index' if it hasn't already.
     /\ CompactForSnapshot(i, index)
-    /\ SendSnapshot(i, j) \* This action uses nextIndex[i][j]
+    /\ SendSnapshot(i, j)
     /\ ValidateAfterAppendEntries(i, j)
     \* NEW: Validate StateSnapshot transition
     /\ progressState'[i][j] = StateSnapshot
@@ -419,6 +394,8 @@ LoglineIsReceivedMessage(m) ==
        /\ LoglineIsRequestVoteRequest(m)
     \/ /\ LoglineIsEvent("ReceiveRequestVoteResponse")
        /\ LoglineIsRequestVoteResponse(m)
+    \* ReceiveSnapshot is actually covered by ReceiveAppendEntriesRequest in state_trace.go,
+    \* but if trace uses ReceiveSnapshot explicit tag, we handle it here.
     \/ /\ LoglineIsEvent("ReceiveSnapshot")
        /\ LoglineIsSnapshotRequest(m)
 
@@ -463,10 +440,10 @@ ChangeConfIfLogged(i) ==
            enterJoint == Len(changes) > 1 
        IN
            /\ ChangeConf(i)
-           /\ LogEntry(i, LastIndex(log'[i])).value.newconf = finalConf.voters
-           /\ LogEntry(i, LastIndex(log'[i])).value.learners = finalConf.learners
-           /\ LogEntry(i, LastIndex(log'[i])).value.enterJoint = enterJoint
-           /\ LogEntry(i, LastIndex(log'[i])).value.oldconf = GetConfig(i)
+           /\ LogEntryAt(log'[i], LastIndex(log'[i])).value.newconf = finalConf.voters
+           /\ LogEntryAt(log'[i], LastIndex(log'[i])).value.learners = finalConf.learners
+           /\ LogEntryAt(log'[i], LastIndex(log'[i])).value.enterJoint = enterJoint
+           /\ LogEntryAt(log'[i], LastIndex(log'[i])).value.oldconf = GetConfig(i)
            /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
 
 ApplySimpleConfChangeIfLogged(i) ==
@@ -491,7 +468,7 @@ LoglineIsBecomeFollowerInUpdateTermOrReturnToFollower ==
             /\ \/ /\ TraceLog[k].event.name \in ReceiveMessageTraceNames
                   /\ TraceLog[k].event.state.term < TraceLog[k].event.msg.term
                   /\ TraceLog[k].event.msg.term = logline.event.state.term
-               /\ /\ TraceLog[k].event.name = "ReceiveAppendEntriesRequest"
+               \/ /\ TraceLog[k].event.name = "ReceiveAppendEntriesRequest"
                   /\ TraceLog[k].event.state.term = TraceLog[k].event.msg.term
                   /\ TraceLog[k].event.msg.term = logline.event.state.term
                   /\ TraceLog[k].event.role = Candidate
