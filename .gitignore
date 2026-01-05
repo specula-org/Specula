@@ -42,7 +42,7 @@ data/repositories
 # Embedded git repositories
 systems/etcd/raft/
 systems/asterinas/asterinas/
-data/workloads/etcdraft/scenarios/progress_inflights/spec/*_TTrace_*
+data/workloads/etcdraft/scenarios/*/spec/*_TTrace_*
 
 # TLA+ generated files
 *.st

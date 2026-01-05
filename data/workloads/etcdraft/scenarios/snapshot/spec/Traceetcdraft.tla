@@ -1,23 +1,23 @@
 ---------------------------- MODULE Traceetcdraft --------------------------
-* Copyright 2024 The etcd Authors
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*
-* Trace validation specification for etcdraft_progress.tla (Snapshot version)
+\* Copyright 2024 The etcd Authors
+\*
+\* Licensed under the Apache License, Version 2.0 (the "License");
+\* you may not use this file except in compliance with the License.
+\* You may obtain a copy of the License at
+\*
+\*     http://www.apache.org/licenses/LICENSE-2.0
+\*
+\* Unless required by applicable law or agreed to in writing, software
+\* distributed under the License is distributed on an "AS IS" BASIS,
+\* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+\* See the License for the specific language governing permissions and
+\* limitations under the License.
+\*
+\* Trace validation specification for etcdraft.tla (Snapshot version)
 
 EXTENDS etcdraft, Json, IOUtils, Sequences, TLC
 
-* raft.pb.go enum MessageType
+\* raft.pb.go enum MessageType
 RaftMsgType ==
     "MsgApp" :> AppendEntriesRequest @@ "MsgAppResp" :> AppendEntriesResponse @@
     "MsgVote" :> RequestVoteRequest @@ "MsgVoteResp" :> RequestVoteResponse @@
@@ -34,22 +34,22 @@ RaftRole ==
 
 -------------------------------------------------------------------------------------
 
-* Trace validation has been designed for TLC running in default model-checking
- * mode, i.e., breadth-first search.
+\* Trace validation has been designed for TLC running in default model-checking
+\* mode, i.e., breadth-first search.
 ASSUME TLCGet("config").mode = "bfs"
 
 JsonFile ==
     IF "JSON" \in DOMAIN IOEnv THEN IOEnv.JSON ELSE "./example.ndjson"
 
- OriginTraceLog ==
-    * Deserialize the System log as a sequence of records from the log file.
+OriginTraceLog ==
+    \* Deserialize the System log as a sequence of records from the log file.
     SelectSeq(ndJsonDeserialize(JsonFile), LAMBDA l: "event" \in DOMAIN l)
 
 TraceLog ==
     TLCEval(IF "MAX_TRACE" \in DOMAIN IOEnv THEN SubSeq(OriginTraceLog, 1, atoi(IOEnv.MAX_TRACE)) ELSE OriginTraceLog)
 
 TraceServer == TLCEval(FoldSeq(
-    LAMBDA x, y: y \cup 
+    LAMBDA x, y: y \cup
         {x.event.nid} \cup
         (IF "msg" \in DOMAIN x.event /\ "to" \in DOMAIN x.event.msg THEN {x.event.msg.to} ELSE {})
         \cup
@@ -62,14 +62,14 @@ TraceServer == TLCEval(FoldSeq(
     TraceLog))
 
 AllChangeConfNids == TLCEval(FoldSeq(
-    LAMBDA x, y: y \cup 
+    LAMBDA x, y: y \cup
         IF x.event.name = "ChangeConf" /\ "changes" \in DOMAIN x.event.prop.cc
         THEN { x.event.prop.cc.changes[k].nid : k \in 1..Len(x.event.prop.cc.changes) }
         ELSE {},
     {},
     TraceLog))
 
- BootstrapLogIndicesForServer(i) ==
+BootstrapLogIndicesForServer(i) ==
     LET
         FirstBootstrapLogIndex == SelectInSeq(TraceLog, LAMBDA x: x.event.nid = i /\ x.event.name \in {"InitState", "BecomeFollower", "ApplyConfChange"})
         FirstNonBootstrapLogIndex == SelectInSeq(TraceLog, LAMBDA x: x.event.nid = i /\ x.event.name \notin {"InitState", "BecomeFollower", "ApplyConfChange"})
@@ -79,7 +79,7 @@ AllChangeConfNids == TLCEval(FoldSeq(
         ELSE
         { k \in FirstBootstrapLogIndex..LastBootstrapLogIndexUpperBound: TraceLog[k].event.nid = i }
 
- BootstrapLogIndices == UNION { BootstrapLogIndicesForServer(i): i \in Server }
+BootstrapLogIndices == UNION { BootstrapLogIndicesForServer(i): i \in Server }
 
 LastBootstrapLog == [ i \in Server |-> IF BootstrapLogIndicesForServer(i) = {} THEN TraceLog[1] ELSE TraceLog[Max(BootstrapLogIndicesForServer(i))] ]
 
@@ -94,11 +94,11 @@ ASSUME TraceInitServer \subseteq TraceServer
 
 ImplicitLearners == TraceServer \ (TraceInitServer \cup AllChangeConfNids)
 
-TraceInitServerVars == /
-    currentTerm = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN 0 ELSE LastBootstrapLog[i].event.state.term]
+TraceInitServerVars == 
+    /\ currentTerm = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN 0 ELSE LastBootstrapLog[i].event.state.term]
     /\ state = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN Follower ELSE LastBootstrapLog[i].event.role]
     /\ votedFor = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN "0" ELSE LastBootstrapLog[i].event.state.vote]
-* Updated for Record Log
+\* Updated for Record Log
 TraceInitLogVars    == 
     /\ log          = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} 
                        THEN [offset |-> 1, entries |-> <<>>, snapshotIndex |-> 0, snapshotTerm |-> 0]
@@ -117,7 +117,7 @@ TraceInitConfigVars ==
 
 
 -------------------------------------------------------------------------------------
- ConfFromLog(l) == << ToSet(l.event.conf[1]), ToSet(l.event.conf[2]) >>
+ConfFromLog(l) == << ToSet(l.event.conf[1]), ToSet(l.event.conf[2]) >>
 
 OneMoreMessage(msg) ==
     \/ msg \notin DOMAIN pendingMessages /\ msg \in DOMAIN pendingMessages' /\ pendingMessages'[msg] = 1
@@ -187,9 +187,9 @@ LoglineIsAppendEntriesRequest(m) ==
 LoglineIsSnapshotRequest(m) ==
     /\ m.mtype = SnapshotRequest
     /\ m.mtype = RaftMsgType[logline.event.msg.type]
-    * MsgSnap structure in spec: [mtype, msubtype, mterm, msnapshotIndex, msnapshotTerm, mhistory, msource, mdest]
-    * Trace structure: msg.index (snapshot index), msg.logTerm (snapshot term)
-    * Note: msg.index in MsgSnap trace is the snapshot index (not prevLogIndex)
+    \* MsgSnap structure in spec: [mtype, msubtype, mterm, msnapshotIndex, msnapshotTerm, mhistory, msource, mdest]
+    \* Trace structure: msg.index (snapshot index), msg.logTerm (snapshot term)
+    \* Note: msg.index in MsgSnap trace is the snapshot index (not prevLogIndex)
     /\ m.mdest   = logline.event.msg.to
     /\ m.msource = logline.event.msg.from
     /\ m.mterm = logline.event.msg.term
@@ -200,15 +200,16 @@ LoglineIsAppendEntriesResponse(m) ==
     /\ m.mtype = AppendEntriesResponse
     /\ m.mtype = RaftMsgType[logline.event.msg.type]
     /\ \/ m.msubtype = RaftMsgSubtype[logline.event.msg.type]
-       /\ m.msubtype = "snapshot"
+       \/ /\ logline.event.msg.type = "MsgAppResp"
+          /\ m.msubtype = "snapshot"
     /\ m.mdest   = logline.event.msg.to
     /\ m.msource = logline.event.msg.from
     /\ m.mterm = logline.event.msg.term
     /\ m.msuccess = ~logline.event.msg.reject
-    * In Snapshot spec, fast-forward or restore success returns mmatchIndex = snapshotIndex.
-    * Failure returns commitIndex.
-    * Trace validation simply checks if the response matches what was sent.
-    /\ (lnot logline.event.msg.reject /\ m.msubtype /= "heartbeat") => m.mmatchIndex = logline.event.msg.index
+    \* In Snapshot spec, fast-forward or restore success returns mmatchIndex = snapshotIndex.
+    \* Failure returns commitIndex.
+    \* Trace validation simply checks if the response matches what was sent.
+    /\ (~logline.event.msg.reject /\ m.msubtype /= "heartbeat") => m.mmatchIndex = logline.event.msg.index
 
 LoglineIsRequestVoteRequest(m) ==
     /\ m.mtype = RequestVoteRequest
@@ -238,17 +239,17 @@ ValidatePostStates(i) ==
     /\ currentTerm'[i] = logline.event.state.term
     /\ state'[i] = logline.event.role
     /\ votedFor'[i] = logline.event.state.vote
-    /\ LastIndex(log'[i]) = logline.event.log  * Updated Len -> LastIndex
+    /\ LastIndex(log'[i]) = logline.event.log  \* Updated Len -> LastIndex
     /\ commitIndex'[i] = logline.event.state.commit
     /\ config'[i].jointConfig = ConfFromLog(logline)
 
 -------------------------------------------------------------------------------------
-* Progress-specific validation helpers
+\* Progress-specific validation helpers
 
 ValidateProgressState(i, j) ==
-    \/ /\ "prop" \notin DOMAIN logline.event
+    /\ \/ /\ "prop" \notin DOMAIN logline.event
        /\ TRUE
-    \/ /\ "prop" \in DOMAIN logline.event
+    /\ /\ "prop" \in DOMAIN logline.event
        /\ "state" \in DOMAIN logline.event.prop
        /\ progressState[i][j] = logline.event.prop.state
        /\ "match" \in DOMAIN logline.event.prop =>
@@ -268,13 +269,13 @@ ValidateAfterRequestVote(i, j) ==
     /\ ValidatePostStates(i)
     /\ \E m \in DOMAIN pendingMessages':
        /\ \/ LoglineIsRequestVoteRequest(m)
-          /\ LoglineIsRequestVoteResponse(m)
+          \/ /\ LoglineIsRequestVoteResponse(m)
              /\ m.msource = m.mdest
        /\ OneMoreMessage(m)
 
 RequestVoteIfLogged(i, j) ==
     /\ \/ LoglineIsMessageEvent("SendRequestVoteRequest", i, j)
-       /\ LoglineIsMessageEvent("SendRequestVoteResponse", i, j)
+       \/ /\ LoglineIsMessageEvent("SendRequestVoteResponse", i, j)
           /\ i = j
     /\ RequestVote(i, j)
     /\ ValidateAfterRequestVote(i, j)
@@ -283,6 +284,7 @@ ValidateAfterBecomeLeader(i) ==
     /\ ValidatePostStates(i)
     /\ logline.event.role = "StateLeader"
     /\ state'[i] = Leader
+    \* Validate Progress initialization: all followers should be in StateProbe
     /\ \A j \in Server: j /= i => progressState'[i][j] = StateProbe
 
 BecomeLeaderIfLogged(i) ==
@@ -311,6 +313,7 @@ ValidateAfterAppendEntries(i, j) ==
     /\ \E msg \in DOMAIN pendingMessages':
         /\ LoglineIsAppendEntriesRequest(msg)
         /\ OneMoreMessage(msg)
+        \* NEW: Validate Progress state when sending AppendEntries
         /\ ValidateProgressState(i, j)
 
 ValidateAfterHeartbeat(i, j) ==
@@ -318,6 +321,7 @@ ValidateAfterHeartbeat(i, j) ==
     /\ \E msg \in DOMAIN pendingMessages':
         /\ LoglineIsAppendEntriesRequest(msg)
         /\ OneMoreMessage(msg)
+        \* NEW: Validate Progress state when sending Heartbeat
         /\ ValidateProgressState(i, j)
 
 ValidateAfterAppendEntriesToSelf(i) ==
@@ -325,6 +329,7 @@ ValidateAfterAppendEntriesToSelf(i) ==
     /\ \E msg \in DOMAIN pendingMessages':
         /\ LoglineIsAppendEntriesResponse(msg)
         /\ msg.msource = msg.mdest
+        \* There is now one more message of this type.
         /\ OneMoreMessage(msg)
 
 AppendEntriesIfLogged(i, j, range) ==
@@ -341,34 +346,34 @@ HeartbeatIfLogged(i, j) ==
     /\ Heartbeat(i, j)
     /\ ValidateAfterAppendEntries(i, j)
 
-* Helper: Force Compaction if necessary to enable SendSnapshot
+\* Helper: Force Compaction if necessary to enable SendSnapshot
 CompactForSnapshot(i, snapshotIndex) ==
-    * If log offset is <= snapshotIndex, we need to compact to allow SendSnapshot to trigger (requires ~IsAvailable) 
+    \* If log offset is <= snapshotIndex, we need to compact to allow SendSnapshot to trigger (requires ~IsAvailable) 
     IF log[i].offset <= snapshotIndex
     THEN CompactLog(i, snapshotIndex + 1)
     ELSE UNCHANGED <<messages, pendingMessages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog>>
 
-* SendSnapshot in Spec requires: ~IsAvailable(i, nextIndex - 1)
-* In etcd, nextIndex is updated to snapshotIndex + 1 AFTER sending snapshot.
-* BEFORE sending, nextIndex might be something else.
-* BUT SendSnapshot logic in Spec uses nextIndex to determine PREV log index availability.
-* Actually, SendSnapshot in Spec: 
-*    LET prevLogIndex == nextIndex[i][j] - 1
-*    ~IsAvailable(i, prevLogIndex)
-* This means the follower needs 'prevLogIndex' but we don't have it.
-* The trace says we sent a snapshot with index 'index'.
-* Usually, 'index' IS the compacted index.
+\* SendSnapshot in Spec requires: ~IsAvailable(i, nextIndex - 1)
+\* In etcd, nextIndex is updated to snapshotIndex + 1 AFTER sending snapshot.
+\* BEFORE sending, nextIndex might be something else.
+\* BUT SendSnapshot logic in Spec uses nextIndex to determine PREV log index availability.
+\* Actually, SendSnapshot in Spec: 
+\*    LET prevLogIndex == nextIndex[i][j] - 1
+\*    ~IsAvailable(i, prevLogIndex)
+\* This means the follower needs 'prevLogIndex' but we don't have it.
+\* The trace says we sent a snapshot with index 'index'.
+\* Usually, 'index' IS the compacted index.
 SendSnapshotIfLogged(i, j, index) ==
     /\ LoglineIsMessageEvent("SendAppendEntriesRequest", i, j)
     /\ logline.event.msg.type = "MsgSnap"
-    /\ index = logline.event.msg.index * MsgSnap index
-    * Ensure log is compacted enough to simulate "missing log entry" condition
-    * Actually, if we see MsgSnap in trace, it means system DID compact.
-    * We force the model to compact to 'index' if it hasn't already.
+    /\ index = logline.event.msg.index \* MsgSnap index
+    \* Ensure log is compacted enough to simulate "missing log entry" condition
+    \* Actually, if we see MsgSnap in trace, it means system DID compact.
+    \* We force the model to compact to 'index' if it hasn't already.
     /\ CompactForSnapshot(i, index)
-    /\ SendSnapshot(i, j) * This action uses nextIndex[i][j]
+    /\ SendSnapshot(i, j) \* This action uses nextIndex[i][j]
     /\ ValidateAfterAppendEntries(i, j)
-    * NEW: Validate StateSnapshot transition
+    \* NEW: Validate StateSnapshot transition
     /\ progressState'[i][j] = StateSnapshot
 
 ImplicitReplicateAndSend(i) ==
@@ -383,7 +388,7 @@ ImplicitReplicateAndSend(i) ==
            entry == [term  |-> currentTerm[i],
                      type  |-> entryType,
                      value |-> entryValue]
-           newLog == [log[i] EXCEPT !.entries = Append(@.entries, entry)]
+           newLog == [log[i] EXCEPT !.entries = Append(@, entry)]
        IN  /\ log' = [log EXCEPT ![i] = newLog]
            /\ historyLog' = [historyLog EXCEPT ![i] = Append(@, entry)]
            /\ IF isJoint THEN pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=LastIndex(newLog)] ELSE UNCHANGED pendingConfChangeIndex
@@ -403,10 +408,11 @@ AppendEntriesToSelfIfLogged(i) ==
        ELSE AppendEntriesToSelf(i) /\ ValidateAfterAppendEntriesToSelf(i)
 
 ReceiveMessageTraceNames == { "ReceiveAppendEntriesRequest", "ReceiveAppendEntriesResponse", "ReceiveRequestVoteRequest", "ReceiveRequestVoteResponse", "ReceiveSnapshot" }
-* perform Receive transition if logline indicates so
+\* perform Receive transition if logline indicates so
 LoglineIsReceivedMessage(m) ==
     \/ /\ LoglineIsEvent("ReceiveAppendEntriesRequest")
-       /\ LoglineIsAppendEntriesRequest(m)
+       /\ \/ LoglineIsAppendEntriesRequest(m)
+          \/ LoglineIsSnapshotRequest(m)
     \/ /\ LoglineIsEvent("ReceiveAppendEntriesResponse")
        /\ LoglineIsAppendEntriesResponse(m)
     \/ /\ LoglineIsEvent("ReceiveRequestVoteRequest")
@@ -421,7 +427,7 @@ ReceiveIfLogged(m) ==
     /\ ValidatePreStates(m.mdest)
     /\ Receive(m)
 
-* perform Timeout transition if logline indicates so
+\* perform Timeout transition if logline indicates so
 ValidateAfterTimeout(i) ==
     /\ logline.event.role = "StateCandidate"
     /\ logline.event.nid = i
@@ -451,9 +457,9 @@ ChangeConfIfLogged(i) ==
     /\ LET changes == logline.event.prop.cc.changes
            initialConf == [voters |-> GetConfig(i), learners |-> GetLearners(i)]
            finalConf == FoldSeq(ApplyChange, initialConf, changes)
-           * Heuristic: if multiple changes or resulting voters differ in size/content significantly, assume Joint.
-           * For leader_transfer trace, we know it's Joint.
-           * For confchange_add_remove, it's Simple.
+           \* Heuristic: if multiple changes or resulting voters differ in size/content significantly, assume Joint.
+           \* For leader_transfer trace, we know it's Joint.
+           \* For confchange_add_remove, it's Simple.
            enterJoint == Len(changes) > 1 
        IN
            /\ ChangeConf(i)
@@ -496,49 +502,49 @@ StepDownToFollowerIfLogged(i) ==
     /\ StepDownToFollower(i)
     /\ ValidatePostStates(i)
 
-* skip unused logs
+\* skip unused logs
 SkipUnusedLogline ==
     /\ \/ /\ LoglineIsEvent("SendAppendEntriesResponse")
           /\ logline.event.msg.from # logline.event.msg.to
-       /\ /\ LoglineIsEvent("SendRequestVoteResponse")
+       \/ /\ LoglineIsEvent("SendRequestVoteResponse")
           /\ logline.event.msg.from # logline.event.msg.to
-       /\ LoglineIsBecomeFollowerInUpdateTermOrReturnToFollower
-       /\ LoglineIsEvent("ReduceNextIndex") * shall not be necessary when this is removed from raft
-       /\ LoglineIsEvent("CompactLog") * We treat compaction as implicit/helper, not a main step unless explicitly handled
+       \/ LoglineIsBecomeFollowerInUpdateTermOrReturnToFollower
+       \/ LoglineIsEvent("ReduceNextIndex") \* shall not be necessary when this is removed from raft
+       \/ LoglineIsEvent("CompactLog") \* We treat compaction as implicit/helper, not a main step unless explicitly handled
     /\ UNCHANGED <<vars>>
     /\ StepToNextTrace
 
 TraceNextNonReceiveActions ==
     /\ \/ /\ LoglineIsEvents({"SendRequestVoteRequest", "SendRequestVoteResponse"})
           /\ \E i,j \in Server : RequestVoteIfLogged(i, j)
-       /\ /\ LoglineIsEvent("BecomeLeader")
+       \/ /\ LoglineIsEvent("BecomeLeader")
           /\ \E i \in Server : BecomeLeaderIfLogged(i)
-       /\ /\ LoglineIsEvent("Replicate")
+       \/ /\ LoglineIsEvent("Replicate")
           /\ \E i \in Server : ClientRequestIfLogged(i, 0)
-       /\ /\ LoglineIsEvent("Commit")
+       \/ /\ LoglineIsEvent("Commit")
           /\ \E i \in Server : AdvanceCommitIndexIfLogged(i)
-       /\ /\ LoglineIsEvent("SendAppendEntriesRequest") /\ logline.event.msg.type = "MsgApp"
+       \/ /\ LoglineIsEvent("SendAppendEntriesRequest") /\ logline.event.msg.type = "MsgApp"
           /\ \E i,j \in Server : \E b,e \in matchIndex[i][j]+1..LastIndex(log[i])+1 : AppendEntriesIfLogged(i, j, <<b,e>>)
-       /\ /\ LoglineIsEvent("SendAppendEntriesResponse")
+       \/ /\ LoglineIsEvent("SendAppendEntriesResponse")
           /\ \E i \in Server : AppendEntriesToSelfIfLogged(i)
-       /\ /\ LoglineIsEvent("SendAppendEntriesRequest")
+       \/ /\ LoglineIsEvent("SendAppendEntriesRequest")
           /\ \E i,j \in Server : HeartbeatIfLogged(i, j) /\ logline.event.msg.type = "MsgHeartbeat"
-       /\ /\ LoglineIsEvent("SendAppendEntriesRequest") /\ logline.event.msg.type = "MsgSnap"
-          * Fix: Pass msg.index as snapshot index
+       \/ /\ LoglineIsEvent("SendAppendEntriesRequest") /\ logline.event.msg.type = "MsgSnap"
+          \* Fix: Pass msg.index as snapshot index
           /\ \E i,j \in Server : SendSnapshotIfLogged(i, j, logline.event.msg.index)
-       /\ /\ LoglineIsEvent("BecomeCandidate")
+       \/ /\ LoglineIsEvent("BecomeCandidate")
           /\ \E i \in Server : TimeoutIfLogged(i)
-       /\ /\ LoglineIsEvent("ChangeConf")
+       \/ /\ LoglineIsEvent("ChangeConf")
           /\ \E i \in Server: ChangeConfIfLogged(i)
-       /\ /\ LoglineIsEvent("ApplyConfChange")
+       \/ /\ LoglineIsEvent("ApplyConfChange")
           /\ \E i \in Server: ApplySimpleConfChangeIfLogged(i)
-       /\ /\ LoglineIsEvent("Ready")
+       \/ /\ LoglineIsEvent("Ready")
           /\ \E i \in Server: ReadyIfLogged(i)
-       /\ /\ LoglineIsEvent("InitState")
+       \/ /\ LoglineIsEvent("InitState")
           /\ \E i \in Server: RestartIfLogged(i)
-       /\ /\ LoglineIsEvent("BecomeFollower")
+       \/ /\ LoglineIsEvent("BecomeFollower")
           /\ \E i \in Server: StepDownToFollowerIfLogged(i)
-       /\ SkipUnusedLogline
+       \/ SkipUnusedLogline
     /\ StepToNextTrace
 
 TraceNextReceiveActions ==
@@ -553,7 +559,7 @@ TraceNext ==
        /\ StepToNextTrace
     \/ /\ l \notin BootstrapLogIndices
        /\ \/ TraceNextNonReceiveActions
-          /\ TraceNextReceiveActions
+          \/ TraceNextReceiveActions
 
 TraceSpec ==
     TraceInit /\ [][TraceNext]_<<l, pl, vars>>
@@ -565,7 +571,7 @@ TraceView ==
 
 -------------------------------------------------------------------------------------
 
-* The property TraceMatched below will be violated if TLC runs with more than a single worker.
+\* The property TraceMatched below will be violated if TLC runs with more than a single worker.
 ASSUME TLCGet("config").worker = 1
 
 TraceMatched ==
