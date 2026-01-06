@@ -12,6 +12,9 @@ class TLCExecutor:
         self.tla_jar_path = tla_jar_path
         self.community_jar_path = community_jar_path
         self.ready_event = threading.Event()
+        # Signal when TLC exits before debugger readiness
+        self.failed_event = threading.Event()
+        self.exit_code = None
 
     def _cleanup_zombie_processes(self, port=4712):
         """Kill any existing TLC debugger processes to prevent port conflicts."""
@@ -66,35 +69,72 @@ class TLCExecutor:
         self.process = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
 
         def drain_and_watch():
-            # Using a simpler iteration to ensure we don't miss lines
+            """Drain TLC stdout and signal readiness or failure.
+
+            - Sets ready_event when debugger announces readiness.
+            - If the process terminates before readiness, sets failed_event
+              and records the exit_code to allow the main thread to react
+              immediately instead of timing out.
+            """
             while True:
                 line = self.process.stdout.readline()
-                if not line: break
-                
+                if not line:
+                    break
+
                 # REAL-TIME LOGGING: See exactly what TLC is doing
-                print(f"  [TLC] {line.strip()}")
-                
+                logger.debug(f"  [TLC] {line.strip()}")
+
                 if "Debugger is listening" in line:
                     logger.info(">>> SUCCESS: TLC Debugger is now listening.")
                     self.ready_event.set()
+
+            # EOF reached, capture exit status and signal failure if not ready
+            try:
+                self.exit_code = self.process.poll()
+            except Exception:
+                self.exit_code = None
+
             self.process.stdout.close()
+
+            if not self.ready_event.is_set():
+                logger.error("TLC process terminated before debugger became ready")
+                self.failed_event.set()
 
         t = threading.Thread(target=drain_and_watch, daemon=True)
         t.start()
 
-        # 30 second timeout for TLC debugger to start
-        is_ready = self.ready_event.wait(timeout=30)
-        if not is_ready:
-            logger.error("Timed out waiting for TLC signal after 30s. TLC might be struggling with spec complexity.")
-            return False
-        return True
+        # Robust wait loop: respond to readiness or immediate failure
+        start_time = time.time()
+        timeout = 60
+
+        while time.time() - start_time < timeout:
+            if self.ready_event.is_set():
+                return True
+
+            # If drain thread detected premature termination, fail fast
+            if self.failed_event.is_set():
+                if self.exit_code is not None:
+                    logger.error(f"TLC process exited prematurely with code {self.exit_code}")
+                else:
+                    logger.error("TLC process exited prematurely before debugger was ready")
+                return False
+
+            # Defensive: also check process status in case drain thread hasn't signaled yet
+            if self.process.poll() is not None:
+                self.exit_code = self.process.returncode
+                self.failed_event.set()
+
+            time.sleep(0.1)
+
+        logger.error(f"Timed out waiting for TLC debugger readiness after {timeout}s")
+        return False
 
     def stop(self):
         if self.process:
             self.process.terminate()
             try:
-                # Wait up to 5 seconds for graceful termination
-                self.process.wait(timeout=5)
+                # Wait up to 1 second for graceful termination
+                self.process.wait(timeout=1)
                 logger.info("TLC process terminated gracefully")
             except subprocess.TimeoutExpired:
                 # Force kill if process doesn't respond

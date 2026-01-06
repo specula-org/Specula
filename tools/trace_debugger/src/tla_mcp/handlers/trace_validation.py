@@ -1,5 +1,6 @@
 """Handler for run_trace_validation tool."""
 
+import asyncio
 import os
 import sys
 import time
@@ -200,10 +201,13 @@ class TraceValidationHandler(BaseHandler):
             logger.info(f"Running trace validation (timeout: {timeout}s)...")
 
             # Only pass callback if evaluate or collect_variables is specified
+            # Use asyncio.to_thread to avoid blocking the event loop
             if "evaluate" in arguments or "collect_variables" in arguments:
-                stats = session.run_until_done(timeout=timeout, on_breakpoint_hit=on_breakpoint_hit)
+                stats = await asyncio.to_thread(
+                    session.run_until_done, timeout=timeout, on_breakpoint_hit=on_breakpoint_hit
+                )
             else:
-                stats = session.run_until_done(timeout=timeout)
+                stats = await asyncio.to_thread(session.run_until_done, timeout=timeout)
 
             # 6. Build result
             execution_time = time.time() - start_time

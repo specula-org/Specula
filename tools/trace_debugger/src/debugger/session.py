@@ -216,10 +216,11 @@ class DebugSession:
 
             event_type = event.get("event")
 
-            # DEBUG: Log all events to understand what TLC sends
-            logger.info(f"DEBUG: Received DAP event: {event_type}")
-            if event_type not in ["stopped", "terminated"]:
+            # Only log important events to avoid flooding MCP stdio with massive state dumps
+            if event_type in ["stopped", "terminated", "initialized", "breakpoint"]:
+                logger.info(f"DEBUG: Received DAP event: {event_type}")
                 logger.info(f"DEBUG: Full event data: {event}")
+            # Skip logging verbose "output" events that contain massive state dumps
 
             # Check for TLC completion in output events
             # TLC doesn't send "terminated" event, but sends "Finished in Xs at" message

@@ -79,7 +79,7 @@ class DAPClient:
                 self.event_queue.append(msg)
                 # Heartbeat for UI
                 if msg.get("event") == "output":
-                    print(".", end="", flush=True)
+                    pass
             elif msg.get("type") == "response":
                 self.pending_responses[msg.get("request_seq")] = msg
             

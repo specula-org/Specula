@@ -182,7 +182,12 @@ class TLADebuggerMCPServer:
         @self.server.call_tool()
         async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             """Handle tool calls."""
-            logger.info(f"Tool called: {name}")
+            logger.info(f"========== MCP TOOL CALLED: {name} ==========")
+            logger.info(f"Arguments keys: {list(arguments.keys())}")
+
+            # Force flush to ensure log is written immediately
+            for handler in logger.handlers:
+                handler.flush()
 
             if name not in self.handlers:
                 error_msg = f"Unknown tool: {name}"
@@ -196,7 +201,21 @@ class TLADebuggerMCPServer:
             handler = self.handlers[name]
             result = await handler.handle(arguments)
 
-            return [types.TextContent(type="text", text=result)]
+            logger.info(f"Handler returned result, length: {len(result)} chars")
+            logger.info(f"About to return TextContent to MCP client...")
+
+            # Force flush before return
+            for h in logger.handlers:
+                h.flush()
+
+            return_value = [types.TextContent(type="text", text=result)]
+            logger.info(f"Returning {len(return_value)} TextContent item(s)")
+
+            # Force flush after creating return value
+            for h in logger.handlers:
+                h.flush()
+
+            return return_value
 
     async def run(self):
         """Run the MCP server using stdio transport."""
