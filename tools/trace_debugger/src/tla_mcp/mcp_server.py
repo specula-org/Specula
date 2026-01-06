@@ -4,7 +4,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp import types
 
-from .utils.logger import logger
+from .utils.logger import logger, setup_logging
 
 
 class TLADebuggerMCPServer:
@@ -17,6 +17,9 @@ class TLADebuggerMCPServer:
 
     def __init__(self):
         """Initialize the MCP server."""
+        # Initialize logging
+        setup_logging()
+        
         self.server = Server("tla-trace-debugger")
         self.handlers = {}
         self._register_tools()
