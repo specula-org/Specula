@@ -1,0 +1,205 @@
+name: TLA+ PR Validation
+on: [pull_request]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tlatools-build-and-test:
+    name: TLA+ Tools Build & Test
+    runs-on: ${{ matrix.operating-system }}
+    strategy:
+      matrix:
+        operating-system: [ubuntu-latest, macos-latest]
+    steps:
+    - name: Clone tlaplus/tlaplus
+      uses: actions/checkout@v4
+      with:
+        # Number of commits to fetch. 0 indicates all history.
+        # jgit task nested in customBuild.xml fails without history.
+        fetch-depth: 0
+    - name: Set up JDK 11
+      uses: actions/setup-java@v4
+      with:
+        distribution: adopt
+        java-version: 11
+    - name: Check tla+.jj grammar/code sync
+      run: |
+        ant -f tlatools/org.lamport.tlatools/customBuild.xml generate
+        git status
+        diff_count=$(git status --porcelain=v1 2>/dev/null | wc -l)
+        exit $diff_count
+    ##
+    ## The following process first compiles and packages (dist) the tla2tools.jar file. Next, it 
+    ## runs the test suite in parallel, aborting the run and failing the workflow upon the first
+    ## test failure (test.halt=true). Regardless of any test failures, a JUnitReport is generated.
+    ## Both the report and the test results (in XML format) are uploaded as workflow artifacts for
+    ## potential local download and further analysis. Additionally, mikepenz/action-junit-report
+    ## publishes the stack traces from the test results. If desired, the test.halt setting can be
+    ## removed to allow the test suite to run to completion.
+    ## (The same sequence of steps is executed by main.yml)
+    ## 
+    - name: Build tools and unit tests
+      run: ant -f tlatools/org.lamport.tlatools/customBuild.xml info compile compile-test dist
+    - name: Run unit tests
+      run: ant -f tlatools/org.lamport.tlatools/customBuild.xml info test -Dtest.halt=true
+    - name: Generate JUnitReport
+      if: always()
+      run: ant -f tlatools/org.lamport.tlatools/customBuild.xml test-report
+    - name: Upload raw unit test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+          ## Name of the artifact to upload (discriminated by os to prevent name conflicts).
+          name: testresults-${{ matrix.operating-system }}
+          path: |
+            tlatools/org.lamport.tlatools/target/surefire-reports/TEST-*.xml
+            tlatools/org.lamport.tlatools/target/surefire-reports/TESTS-TestSuites.xml
+            tlatools/org.lamport.tlatools/target/surefire-reports/junit-noframes.html
+    - name: Publish unit test results
+      uses: mikepenz/action-junit-report@v4
+      if: always()
+      with:
+          check_name: JUnit Test Report on ${{ matrix.operating-system }}
+          report_paths: 'tlatools/org.lamport.tlatools/target/surefire-reports/TEST-*.xml'
+    - name: Clone tlaplus/CommunityModules
+      uses: actions/checkout@v4
+      with:
+        repository: tlaplus/CommunityModules
+        path: communitymodules/
+        # Number of commits to fetch. 0 indicates all history.
+        # jgit task nested in customBuild.xml fails without history.
+        fetch-depth: 0
+    - name: Build Community Modules as Integration Test
+      run: |
+        mkdir -p communitymodules/tlc
+        cp tlatools/org.lamport.tlatools/dist/tla2tools.jar communitymodules/tlc/
+        ant -f communitymodules/build.xml -Dskip.download=true   
+
+  toolbox-build-and-test:
+    name: Eclipse Toolbox Build & Test
+    runs-on: ${{ matrix.operating-system }}
+    strategy:
+      matrix:
+        include:
+          - operating-system: ubuntu-latest
+            MVN_COMMAND: xvfb-run mvn -Dtest.skip=true -Dmaven.test.failure.ignore=true 
+          - operating-system: macos-latest
+            MVN_COMMAND: mvn -Dmaven.test.skip=true
+      fail-fast: false
+    steps:
+    - name: Clone tlaplus/tlaplus
+      uses: actions/checkout@v4
+      with:
+        # Number of commits to fetch. 0 indicates all history.
+        # jgit task nested in customBuild.xml fails without history.
+        fetch-depth: 0
+    - name: Set up JDK 11
+      uses: actions/setup-java@v4
+      with:
+        distribution: adopt
+        java-version: 11
+    - name: Build & Test Eclipse Toolbox with Maven
+      run: |
+        ${{ matrix.MVN_COMMAND }}                                                                     \
+          -Dtycho.disableP2Mirrors=true                                                               \
+          -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn  \
+          -fae -B verify --file pom.xml
+
+  examples-tests:
+    name: Examples Integration Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - unicode: true
+          - unicode: false
+    env:
+      EXAMPLES_DIR: "examples"
+      SCRIPT_DIR: "examples/.github/scripts"
+      DEPS_DIR: "examples/deps"
+      DIST_DIR: "tlatools/org.lamport.tlatools/dist"
+    steps:
+    - name: Clone tlaplus/tlaplus
+      uses: actions/checkout@v4
+      with:
+        # Number of commits to fetch. 0 indicates all history.
+        # jgit task nested in customBuild.xml fails without history.
+        fetch-depth: 0
+    - name: Clone tlaplus/examples
+      uses: actions/checkout@v4
+      with:
+        repository: tlaplus/examples
+        path: ${{ env.EXAMPLES_DIR }}
+    - name: Set up JDK 11
+      uses: actions/setup-java@v4
+      with:
+        distribution: adopt
+        java-version: 11
+    - name: Build tla2tools.jar
+      run: ant -f tlatools/org.lamport.tlatools/customBuild.xml compile compile-test dist
+    - name: Download dependencies
+      run: |
+        "$SCRIPT_DIR/linux-setup.sh" "$SCRIPT_DIR" "$DEPS_DIR" false
+    - name: Convert specs to unicode
+      if: matrix.unicode
+      run: |
+        python "$SCRIPT_DIR/unicode_conversion.py"  \
+          --tlauc_path "$DEPS_DIR/tlauc/tlauc"      \
+          --manifest_path "$EXAMPLES_DIR/manifest.json"
+    - name: Add unicode shims
+      if: matrix.unicode
+      run: |
+        python "$SCRIPT_DIR/unicode_number_set_shim.py" \
+          --manifest_path "$EXAMPLES_DIR/manifest.json"
+    - name: Translate PlusCal
+      run: |
+        python $SCRIPT_DIR/translate_pluscal.py         \
+          --tools_jar_path "$DIST_DIR/tla2tools.jar"    \
+          --manifest_path "$EXAMPLES_DIR/manifest.json" \
+          --enable_assertions
+    - name: Parse tlaplus/examples modules
+      run: |
+        python "$SCRIPT_DIR/parse_modules.py"                             \
+          --tools_jar_path "$DIST_DIR/tla2tools.jar"                      \
+          --apalache_path "$DEPS_DIR/apalache"                            \
+          --tlapm_lib_path "$DEPS_DIR/tlapm/library"                      \
+          --community_modules_jar_path "$DEPS_DIR/community/modules.jar"  \
+          --manifest_path "$EXAMPLES_DIR/manifest.json"                   \
+          --enable_assertions
+    - name: Model-check small tlaplus/examples models
+      run: |
+        SKIP=(
+          # https://github.com/tlaplus/Examples/issues/134
+          "specifications/ewd998/EWD998ChanTrace.cfg"
+          # https://github.com/tlaplus/tlaplus/issues/1045
+          "specifications/FiniteMonotonic/MCDistributedReplicatedLog.cfg"
+        )
+        if [ ${{ matrix.unicode }} ]; then
+          # Apalache does not yet support Unicode
+          SKIP+=("specifications/EinsteinRiddle/Einstein.cfg")
+        fi
+        python "$SCRIPT_DIR/check_small_models.py"                        \
+          --verbose                                                       \
+          --tools_jar_path "$DIST_DIR/tla2tools.jar"                      \
+          --apalache_path "$DEPS_DIR/apalache"                            \
+          --tlapm_lib_path "$DEPS_DIR/tlapm/library"                      \
+          --community_modules_jar_path "$DEPS_DIR/community/modules.jar"  \
+          --manifest_path "$EXAMPLES_DIR/manifest.json"                   \
+          --enable_assertions                                             \
+          --skip "${SKIP[@]}"
+    - name: Smoke-test large tlaplus/examples models
+      run: |
+        # SimKnuthYao requires certain number of states to have been generated
+        # before termination or else it fails. This makes it not amenable to
+        # smoke testing.
+        python "$SCRIPT_DIR/smoke_test_large_models.py"                   \
+          --verbose                                                       \
+          --tools_jar_path "$DIST_DIR/tla2tools.jar"                      \
+          --apalache_path "$DEPS_DIR/apalache"                            \
+          --tlapm_lib_path "$DEPS_DIR/tlapm/library"                      \
+          --community_modules_jar_path "$DEPS_DIR/community/modules.jar"  \
+          --manifest_path "$EXAMPLES_DIR/manifest.json"                   \
+          --enable_assertions                                             \
+          --skip "specifications/KnuthYao/SimKnuthYao.cfg"
+

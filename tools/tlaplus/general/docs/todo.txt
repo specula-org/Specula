@@ -1,0 +1,298 @@
+1. NEW FEATURE
+5. NEW FEATURE (Locking Models)
+9. MINOR MISSING FEATURES (TLC Model)
+13. BUG (PlusCal Translator Errors)
+15. POSSIBLE CHANGE (Handling Unparsed Spec)
+17. MINOR BUG (Definition Override)
+18. SIGNIFICANT BUG (parsing large specs)
+19. MINOR MISSING FEATURE (Exit)
+20. MISSING FEATURE (PlusCal)
+27. MINOR BUG  (Parse Spec/Module Commands)
+28. MINOR BUG  (Reset Window Layout)
+29. FEATURE (Module Editor Keybindings)
+32. MINOR BUG (What to parse when)
+36. FEATURE (Action Fairness)
+39. MINOR FEATURE (Constant Assignment)
+46. BUG (Model reports bogus "TLC still running")
+51. VERY MINOR BUG (Re-creating a spec)
+53. MINOR BUG (Eclipse resource saving?)
+54. MINOR BUG (Open Module)
+57. BUG (Pluscal Translator preferences)
+63. MISSING FEATURE (TLC Progress)
+64. TLC BUG (Liveness checkin in Simulation mode)
+66. MINOR MISSING FEATURE (Results page/Simulation mode)
+67. MISSING FEATURE (saved spec files)
+68. TRIVIAL CHANGE ("MC" file name)
+71. BUG/MISSING FEATURE (MC file parsing error bubbles.)
+76. MINOR BUG (Model Editor Error Blobs)
+-----------------------------------------------------------------------------------------
+1. NEW FEATURE
+   Add way to tell if spec on which a model was last run is the same as the current
+   spec.
+   
+5. NEW FEATURE (Locking Models)
+   If the user adds or removes a declared CONSTANT from the spec while a model is
+   being run by TLC, that changes the model.  For example, if the spec is run with
+   a constant N instantiated with 42 and N is removed from the spec, then the N <- 42
+   disappears from the model and the user has no way of telling what N was instantiated
+   with during the current run.
+   
+   This particular problem was solved on 1 Oct 2009 by Simon with LL looking on.  
+   However, we still have the problem that TLC might be running for weeks, and the
+   user in the meantime changed the spec.  When TLC stops running, the model gets
+   revalidated and stuff that was in the model configuration gets lost.
+   Here is a possible solution:  Add the notion of a model being LOCKED, meaning that
+   it cannot be changed in any way, meaning that it is read only and it doesn't 
+   change to conform to the current spec.  (This state actually exists in the
+   toolbox now: it is called "model in use".)  In particular, it conforms to the copy of
+   the spec that's salted away with the model.  Running the spec locks the model.
+   There will also be a menu item that the use can select to lock the spec himself.
+   (This will allow the user to protect himself from accidentally modifying or re-running
+   a spec by mistake--perhaps losing a trace that took weeks for TLC to produce.)
+   We must decide what should happen to the lock state when a TLC run completes.
+   Should the user have to explicitly unlock it?  I suggest that it be unlocked when
+   the run completes if and only if that run did not take too long--where "too long" is
+   a user-settable preference. 
+   
+9. MINOR MISSING FEATURES (TLC Model)
+   a. There is no reason why the user cannot use the same model value in two
+   different constant instantiations or in a constant instantiation and a 
+   definition override.  Or uses a model value declared on the advanced
+   page as a model value in a constant instantiation.  This requires
+   checking that a model value is declared elsewhere before adding a
+   CONSTANT declaration for it.  
+   
+   b. The correct order in which things should be written in the MC file are:
+       - Declaration of advanced model values.
+       - Declaration of the sets of model values that instantiate constants.
+       - New User Definitions.
+       - Everything Else, which is all of the form 
+         newId_1234567 == some expression.
+   However, the current structure of the toolbox makes it a nuisance to do
+   this, and the current validator will disallow the models that this order
+   is designed to allow.  
+    
+13. BUG (PlusCal Translator Errors)
+    Suppose the user starts to write a PlusCal algorithm,
+    translates it and gets a PlusCal error, and then decides to delete the PlusCal
+    code and just write the spec in TLA+.  There's no way for him to get rid of
+    the PlusCal error message in the Parse Errors window.  In fact, even if I
+    run the translator on another module, the PlusCal
+    error remains in the Parse Error window--whether or not the other
+    translation produces an error. (The only way to get rid of it is to go
+    back to the original module, correct the PlusCall error, and re-run the
+    translator.)  The best thing to do 
+    is probably to create a separate PlusCal Error Window.  Running the
+    translator should first clear this window and remove all PlusCal
+    error markers in the module on which the translator is run.  (I believe that
+    if running the PlusCal translator creates a PlusCal error, then the file is
+    not re-parsed, so only the PlusCal error window would need to be popped up.)
+    
+15. POSSIBLE CHANGE (Handling Unparsed Spec)
+    We need to re-think what the user 
+    should be able to do to the model when the spec is unparsed; and see that anything he
+    shouldn't be able to do is disabled and that anything he should be able to do works.
+    
+17. MINOR BUG (Definition Override)
+    The Definitions Override menu allows the user to override the same definition multiple
+    times.
+    
+18. SIGNIFICANT BUG (parsing large specs)
+    For a big spec--in particular, for the farsite spec, after Parse the parse spec
+    command gets disabled.  But parse module file still works.  Simon thinks it may be
+    that the build infrastructure of Eclipse is deactivating builders under some
+    conditions--for example, if a builder dies with an exception, it is deactivated.
+    Perhaps it's also deactivated on a time-out.  The list of builders is attached to the
+    project, so one can query the project or the project nature to find this out.  So,
+    Simon assumes that for some reason, the builder is deactivated.
+
+    The parser is being launched in a separate thread, but Simon thinks
+    that perhaps he's not doing it in the right way.
+    
+19. MINOR MISSING FEATURE (Exit)
+    Closing the toolbox simply kills any running TLC.  Instead, 
+    it should warn the user that this will kill TLC and give him
+    the option of canceling.  To do this, need to modify to 
+    CloseSpecHandler.execute() so it checks if editors have been closed
+    successfully before exiting.  The model editor's method that
+    gets called by the closeAllEditors method should return false.
+    Another approach is to register another handler in place of
+    this one when TLC is running, and having that handler call the 
+    current one only if the user says it's OK to stop TLC.
+    
+20. MISSING FEATURE (PlusCal)
+    PlusCal translation needs to be examined.  Here are some things
+    that need to be fixed: 
+     - There should be a more user-friendly way to specify translation
+       options.  This involves:
+       (a) Providing check-boxes or radio buttons for the common options.
+       (b) Finding a more convenient way to add them than the current
+           one (right-clicking in the Toolbox Explorer) and selecting
+           properties.
+     - Translation options are now attached to the spec; they should
+       be attached to an individual module.  (It's possible for a
+       single spec to have PlusCal algorithms in two different 
+       modules.)
+          
+27. MINOR BUG  (Parse Spec/Module Commands)
+    If I select Parse spec from the file menu when the file is dirty,
+    a popup asks me if I want to save the resource.  If I say yes, it 
+    doesn't save the file and parses the spec that's on disk.  If I 
+    select Parse Module from the file menu when the module is dirty,
+    it doesn't ask me if I want to save it.  I expect it should.
+     
+28. MINOR BUG  (Reset Window Layout)
+    If I select window / reset window layout in the Welcome Perspective,
+    it produces a blank window instead of the Welcome View.
+    
+29. FEATURE (Module Editor Keybindings)
+    Here are some thoughts on enhancements to the Module Editor.
+    - Add a preference to choose an Emacs-like keybinding.  This requires
+      adding new commands that appear in the General/Editors/Keys, and
+      options that choose from among sets of bindings.
+    - Add editing commands (and invent bindings) for comments.  Perhaps
+      copy the commands I use for boxing comments.
+    Note that Simon has bound toggle comments to Control-/, but that command
+    doesn't appear either when I type Ctl-Shift-L or in tthe preferences
+    keybinding options.
+  
+32. MINOR BUG (What to parse when)
+    The toolbox doesn't seem to be doing the right thing when deciding what
+    to parse when the user requests that a module be parsed.  This needs to
+    be re-examined and specified precisely, and then we need to make sure that
+    the implementation does what it's supposed to.
+    
+36. FEATURE (Action Fairness)
+    Enhance the Init/Next method of writing the spec to add lists of weakly
+    and strongly fair actions.
+        
+39. MINOR FEATURE (Constant Assignment)
+    When the user has chosen assigned a set of model values to a constant
+    and specified symmetry, the default on the next page of the wizard should
+    be to make the values untyped.  This may be hard to do because the
+    second wizard page is created before the first page of the wizard is
+    raised.  If it's hard, perhaps we should change the default to
+    be to make the values untyped.  This is done in TypingWizardPage.createControl.
+    
+46. BUG (Model reports bogus "TLC still running")
+    Sometimes when restarting the toolbox after it was closed with a model
+    open, the model says that TLC is still running.  The "stop TLC" button
+    in the upper right is red, but clicking it does nothing.  The Toolbox
+    The last time this happened, the Toolbox Explorer said that the model
+    has crashed, and clicking on repair solved the problem.
+
+51. VERY MINOR BUG (Re-creating a spec)
+    When creating a new spec, the Import Existing spec option is always
+    checked and disabled.  It should be unchecked and disabled if the
+    .toolbox directory does not already exist.  However, if the .toolbox 
+    directory does exist, its present behavior of checking and enabling
+    the box is the correct one.  If it's hard to have both behaviors,
+    forget about this.
+ 
+53. MINOR BUG (Eclipse resource saving?)  [same as 27]
+    If I have automatic parse turned off, modify a file, and then try
+    to parse it, the Toolbox pops up a dialog saying I have a modified
+    resource and asking if I want to save it.  When I say yes, it
+    closes the dialog and goes ahead and parses the spec without saving
+    the file. 
+    
+54. MINOR BUG (Open Module)
+    When the user clicks on File/Open Module/Choose TLA+ Module, the
+    file browser that pops up should show the specification's directory.
+ 
+57. BUG (Pluscal Translator preferences)
+	The PlusCal preference page has been removed for the time being.
+	When I figure out how to make the preferences actually do something,
+	I can put the page back.
+	
+    The PlusCal translator preferences seem to be no-ops.  The 
+    "Re-translate on module save" option should be made to work.  This
+    should cause the PlusCal translator to be called whenever a module
+    is saved that contains the string "--algorithm".
+    
+    The "Popup problem window on translator errors" is currently
+    redundant, since translator errors are shown in the Parsing
+    Errors view, which has its own preference for controlling that.
+
+63. MISSING FEATURE (TLC Progress)
+    The Model Checking Results page should list in the General section
+    the information about probability of fingerprint collision that
+    TLC prints after a run that finishes computing the reachable
+    states.  (I think it prints it out in the event of a liveness
+    error.)  It should say approximately something like:
+      Probability of fingerprint collision:
+         theoretical: 4.3E-15  pragmatic: 8.7E-15
+
+64. TLC BUG (Liveness checking in Simulation mode)
+    TLC's liveness checking in simulation mode is seriously buggy.
+    Unless Yuan volunteers to find the fix quickly (which seems unlikely),
+    we'll have to tell users not to check liveness properties in simulation
+    mode.  If Yuan does find the fix, we will probably have to fix a
+    bug introduced by Simon that causes TLC to produce an error trace
+    ending with
+      State 5: <Action line 12, col 9 to line 12, col 20 of module Test2>
+      x = 4
+
+      State 6: Stuttering
+      Back to state 1.
+    
+66. MINOR MISSING FEATURE (Results page/Simulation mode)
+    When TLC finds an error in simulation mode, it prints out a "seed"
+    and "aril" that can be used to re-create the error.  It would be nice
+    if the Toolbox reported those values in the General section of the
+    results page.  This is not very important because the Trace Explorer
+    should make it unnecessary for the user to want to use them.
+    
+67. MISSING FEATURE (saved spec files)
+    It should be possible for the user to open in a read-only editor
+    window the copies of the module files saved when a model is run.
+    The menu raised by right-clicking on the model in the Spec Explorer
+    should have an "open saved module" option.  Clicking on it should raise
+    a file browser on the model's directory that shows all the tla files
+    there. (It wouldn't hurt to allow the user to browse the MC.tla 
+    and even the MC.cfg file as well.) 
+    
+68. TRIVIAL CHANGE ("MC" file name)
+    We should probably use a file name that the user is less likely to
+    use as part of his spec than MC.tla.  Perhaps _MC.tla?  Or M_C.tla? 
+    I presume this just requires changing one constant somewhere. 
+    ----
+    On second thought, this seems like a bad idea because the user
+    is probably going to be aware of the MC file.  Instead, let's
+    change the model validator to check if the spec contains a
+    module named MC and to pop up an error window if it does
+    saying that the spec can't be model checked.     
+    
+71. BUG/MISSING FEATURE (MC file parsing error bubbles.)
+    Putting the mouse cursor over a model error bubble produced by a 
+    parsing error in the MC file produces a message that mentions
+    the location in the MC file.  It needs to be translated to
+    a location in the model.
+    
+    This has now probably been implemented by Dan 29 Oct 2009. It may
+    be that the code does not check for all ways in which the parse errors
+    on the MC file can be reported, so the MC location may still appear
+    in some error messages.
+
+76. MINOR BUG (Model Editor Error Blobs)
+    In at least one place, the Toolbox marks an error when the user starts entering
+    a value, but doesn't remove the error marker when the user's typing removes
+    the error.  Here are the cases I've found:
+    - Write a model specifying Init and Next, leaving Temporal Formula empty.  
+      Then select Temporal Formula.  This produces an error because the Temporal
+      Formula field is empty.  However, typing into that field doesn't make the
+      error marker go away.
+    - In TLC Options on the Advanced Options page, choose simulation node.  Then:
+       (a) Enter a non-number.  Then delete that and enter a number.  Or
+       (b) Enter a non-numeric seed or aril, then delete it or change it to a number.
+      or else choose Model-checking mode and depth-first mode, then do the same thing
+      with the depth field.  (Incidentally, there's no reason to check those fields
+      at all when the appropriate option isn't chosen.)  
+    - In the constant assignment section of the main model page, specify the value
+      of a constant to be a set of model values one of which is SPECIFICATION.
+      This produces an error marker which remains after that constant assignment
+      is changed.
+   This isn't a big deal, because the errors go away when the model is validated.
+    
+    A similar case occurs if one first enters a Temporal Formula and then
+    chooses "Initial predicate and next-state relation".

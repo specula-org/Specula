@@ -1,0 +1,682 @@
+To Fix Eclipse if it can't find a bunch of imported classes:
+   Try re-setting the target platform.  To do so, open the
+   org.lamport.tla.toolbox.product.product/TLAToolbox.target file  
+   and click the "Set as Target Platform"
+   label in the right upper corner.  After a while (Eclipse might
+   download stuff), it should re-compile your workspace.
+   If that doesn't work, select all the URLs shown in that window
+   and click on Update.
+
+To tell Eclipse where to find a new JRE:
+   Go to  Window > Preferences > Java > Installed JREs you can add it
+   
+To find the methods that Eclipse is using to implement something:
+   Alt-Shift-F1:
+     Brings up information about active editor of view or dialog.
+   Alt-Shift-F2 + click on menu & click on menu item:
+     Brings up information about implementation of some menu items.
+     
+org.lamport.tla.toolbox.tool.tlc.ui
+ ui/editor
+  ModelEditor 
+    Sets up the Model Editor, including its pages.  The individual
+    pages are set up by the  
+      MainModelPage, AdvancedModelPage, and ResultPage;
+
+   loadData() initializes the editor.  
+   validate() is called through some plug-in magic whenever 
+     the spec is parsed (but probably only if the parse is correct)
+     and probably when the user has made some change in the model editor.
+     It is also run when the model editor is initialized.
+
+Various pieces of code are notified when the spec is opened, parsed,
+and closed by listeners registered to the extension point
+org.lamport.tla.toolbox.spec of the plugin org.lamport.tla.toolbox.
+This extension point interacts via a class that extends the class
+SpecLifecycleParticipant.  So, finding all classes that extend this
+should permit one to find every place that gets notified when the spec
+is opened, closed, or parsed.  However, this is all done by so many 
+levels of indirection that we have not succeeded in doing this.
+For example, ModelEditor.validate() is called when the module is parsed,
+and this must be through that extension point.  But we have not discovered
+the path from the extension point to that method.
+
+-------
+
+The spec status indicator in the lower-right corner is apparently
+set by  ParseStatusContributionItem . update().
+
+
+----------
+How to create a distribution -- This is obsolete.  See the file 
+general/docs/microsoft-release.txt
+
+Go to org....product.standalone
+   This contains no functionality, but "builds application stuff".
+   
+The following stuff needs to be done just once for each computer.
+   
+Open standalone.product / Overview tab
+  Need to specify target platform.
+  By default, Eclipse uses itself as the target
+     platform.
+  Need to define a separate copy of the distribution
+    as the target platform.
+  
+ 
+ 1. Unzip Eclipse platform from eclipse-rcp-galileo-win32.zip into somewhere as the
+     the target platform.  I've put it in tla/target-platform
+ 
+ 2. Go to Eclipse download page, download 
+     Eclipse delta pack.  Usually in
+     "Other Downloads".  (search for "delta")
+     Extract it to a new directory.  I've put it in tla/delta-pack, merging
+     with the stuff extracted above. 
+     
+ 3. Go to Window/ preferences/Plug-in Development/Target Platform
+    
+   Hit Add.
+   Choose "nothing" & hit next
+   In Target Contact
+     Enter name, like "Galileo 3.5"
+     Location hit add:
+        select Installation & hit next
+        Select target-platform directory .../tla/target-platform/eclipse 
+          and hit finish [included 487 of 487]
+     Hit add again
+       select Directory and hit next
+       select .../delta-pack/eclipse directory and hit
+          finish [61 of 61]
+     Hit finish.
+  Check "Galileo 3.5" in Target Platform to make it active.
+  Hit OK, and watch it rebuild.
+       
+The following stuff needs to be done for each release.
+
+  1. Open standalone product / overview page
+  1a. Select New button next to Product: and set
+         Application to org.lamport.tla.toolbox.application      
+        
+  2. Hit Synchronizing on the Testing section
+  3. Hit on Eclipse Product Export Wizard
+     (export to windows, linux stk/x86, macosx cocoa/x86)
+-----------------------------------------------------------------------------
+How to put a new version up on the MSR-INRIA Web site.  (This is also obsolete.)
+
+1. Go to the web site's project page.
+2. Login
+3. Select "contents", right-click on the html release page, and open it.
+4. Select edit, and choose "html" on the editing panel to get a reasonable
+   format.
+5. Make any necessary changes to the page and save them.
+6. Go back to the "contents" page and use it to upload the new versions.
+   They will appear in the same directory as the html page, with the
+   name by which they were uploaded.
+7. If you created a new file, go to Properties and click the box that
+   makes it not appear in the navigation pane.  Save.
+
+The current preliminary release web page is reachable from the outside
+world at:
+
+http://www.msr-inria.inria.fr/Projects/tools-for-formal-specs/preliminary-release/
+
+------------------------------------------------------------------------------
+HELP
+
+INTRO
+Intro page in : org.lamport.tla.toolbox.product.standalone / intro/root.xhtml.
+   Source page for each topic is in org.lamport.tla.toolbox.product.standalone /intro/*.xhtml
+   Each such topic page has an href link whose id field must be registered (linking
+       it to the page) by adding the appropriate stuff to 
+       org.lamport.tla.toolbox.product.standalone /intro/introContent.xml
+       
+ATTACHING A PAGE TO THE HELP BUTTON
+
+org.lamport.tla.toolbox.editor.basic/helpContexts.xml contains a <context> entry with
+ id "main_editor_window" : 
+   	<context id="main_editor_window">
+		<description>This is a the basic editor. It is used to edit the TLA+ module files.</description>
+		<topic label="Understanding Problems" href="../org.lamport.tla.toolbox.doc/html/reference/maintopic.html" />
+	</context>
+   
+The constructor of TLAEditor contains
+  setHelpContextId("org.lamport.tla.toolbox.editor.basic.main_editor_window");
+  
+ org.lamport.tla.toolbox.editor.basic/plugin.xml contains this relevant extensions:
+ 
+   <extension
+         point="org.eclipse.help.contexts">
+      <contexts
+            file="helpContexts.xml"
+            plugin="org.lamport.tla.toolbox.editor.basic">
+      </contexts>
+   </extension>
+ 
+PUTTING A PAGE IN THE TABLE OF CONTENTS
+ 
+To add a top-level section in the toc, add something like
+
+   <topic label="Concepts">
+      <anchor id="concepts"/>
+   </topic>
+   
+to  org.lamport.tla.toolbox.doc/toc.xml .  The label is the toc entry.  The anchor
+is used to attach things to that entry.  Also, add to 
+org.lamport.tla.toolbox.doc/plugin.xml  the indicated <toc> ... </toc> entry:
+
+  <plugin>
+   <extension
+         point="org.eclipse.help.toc">
+      ...
+      <toc
+            file="tocconcepts.xml">
+      </toc>
+      ...
+   </extension>
+  </plugin>
+
+Subtopics are attached in
+    org.lamport.tla.toolbox.doc/tocconcepts.xml, which contains
+    
+    <toc label="Concepts" link_to="toc.xml#concepts"> 
+	<topic label="Model"  href="html/concepts/model.html"> 
+	</topic>
+	<topic href="html/concepts/specification.html" label="Specification">
+	</topic>
+    <topic href="html/concepts/module.html" label="Module">
+    </topic> 
+   </toc>
+
+The toc label seems to be irrelevant.  The topic labels specify the TOC subtopics.
+
+To get a subtopic, put a <topic label=... href=... /> inside a topic
+
+
+
+ATTACHING A HELP BUTTON TO AN EDITOR/PAGE/DIALOGUE    
+
+The help button on the Eclipse plug.xml editor uses lines 82-91 of
+PDEFormPage class in package org.eclipse.pde.internal.ui.editor to attach the button.
+This was found by trying  Shift-Alt-F1 on the page in the Eclipse editor and going to
+the ExtensionsPage, which extends PDEFormPage.
+
+--------------------------------------------------------------
+GETTING NOTIFIED WHEN A MODULE IS SAVED
+
+When a module is saved, the performSave() of the org.tla.toolbox.editor.basic.TLAEditor object
+is called.  There's a default method in a superclass, but one can override it to
+do whatever else you want to do on a save.  There's also a performSaveAs() method.
+--------------------------------------------------------------
+RAISING AN ERROR OR WARNING WINDOW
+
+ MessageDialog.openWarning(UIHelper.getShellProvider().getShell(), window-title, message)
+ 
+If that doesn't work (probably throwing a null-pointer exception), see
+ResourceHelper.ErrorMessageRunnable.
+------------------------------------------------------------
+LOGGING AN ERROR ON THE TOOLBOX'S LOG
+
+   Activator.getDefault().logError
+------------------------------------------------------------
+ADDING A BUTTON TO A MENU
+
+In the Extensions tab of the appropriate plugin.xml file:
+
+- Under org.eclipse.ui.menus, add a command to the appropriate 
+  menuContribution item for the menu item's group.  The commandId 
+  ties the menu item to its handler.
+  
+- Under org.eclipse.ui.handlers, add a handler that extends 
+  AbstractHandler and implements IHandler, where the execute method
+  specifies what selecting the item should do. 
+------------------------------------------------------------
+
+ASSIGNMENT OBJECTS AND WIZARDS
+
+An assignment object:
+ - Is used for constant assignments and for definition overrides.
+ - For the constant assignments, it is constructed by the loadData
+   method of MainModlePage in the call of
+   FormHelper.setSerializedInput, which puts it into the TableViewer
+   MainModelPage.constantTable
+
+The user can edit an Assignment object with an AssignmentWizard.  When
+he clicks on the Add or Edit button of the Constant Assignments
+section, it will create an AssignmentWizard.
+
+The button is added in the ValidateableTableSectionPart object (the
+super for Validateable...), and fSelectionListener is added to it.
+Note that the doAdd and doEdit methods are overridden by the methods
+in the subclass ValidateableConstant.  These methods call
+doEditFormula, which creates the AssignmentWizard.
+
+(See www.eclipse.org about dialogs and wizards)
+
+The AssignmentWizard has two AssignmentWizardPages that are created in
+the addPages() method.  In AssignmentWizardPages there is the
+createControl method, which is called when the page is added to the
+Wizard.  Note: createControl is constructing the widgets that form the
+wizard page.  They are children of container, which is a child of the
+parent argument.  The last line, setControl(container), sets the
+container as the control associated with the wizard page.
+
+To implement the help button on the dialog, we need to set the help on
+the container.
+
+Further information on how definition overrides are managed can be
+found in the comments for 
+FilteredDefinitionSelectionDialog.fillContentProvider.
+
+-------------------------------------------------------------------
+Explanation of various items in no particular order by DR
+
+SANY is executed in the private method parseModule in
+ModuleParserLauncher.  This method is the place to access all modules
+that are ever parsed.  The method itself will not necessarily be
+called on every modules that is parsed, but within the method, an
+Enumerate object is generated by the SANY java code.  This object
+contains all modules that were ultimately parsed because SANY parsed
+the module for which parseModule() is called.  These modules are
+either extended or instanced by the module for which parseModule() is
+called.
+
+There is a good explanation of resource change listeners in the
+article "How You've Changed!" on www.eclipse.org/articles.  In short,
+the method resourceChanged in any implementation of a resource change
+listener is called when a resource change event for which that
+listener is registered occurs.  That method can access an
+IResourceDelta tree which gives all resources in the workspace that
+have changed.  This tree can be traversed using an implementation of
+IResourceDeltaVisitor.
+
+ParserDependancyStorage gives access to all user modules that are
+relevant to the spec based on the most recent parse.  If the most
+recent parse resulted in an error, then ParserDependancyStorage will
+not contain the modules on which the root module depends or the root
+module itself.  This makes sense because without a successful parse,
+it cannot be determined on which modules the root module depends.
+
+An IResource is the class that represents a resource in the
+workspace.  There is a good explanation of resources in the Eclipse
+Help Platform Plug-in Developer Guide Programmer's Guide.  A IResource
+allows setting persistent and session properties.  Persistent
+properties will last over startup and shutdowns of the toolbox while
+session properties will be erased when the toolbox is shut down.
+Right now, the time of the last build for a resource is set as a
+persistent property in the private parseModule method in
+ModuleParserLauncher.
+
+The basic principle behind designing the widgets in the toolbox is to
+have three components: a viewer, a content provider, and a class
+that represents the data to appear.  The viewer does not know how the
+data is represented that it is to present.  The content provider takes
+instances of the class (Assignment for example) that represents the
+data and adds it to the viewer.  An ILabelProvider is used to
+determine how these instances are displayed in a viewer.
+-------------------------------------------------------------------
+STRUCTURE OF THE prover plugin
+
+Command handlers that launch a proof construct and schedule a 
+
+ProverJob.
+  The running ProverJob streams the prover's output to a
+  
+BroadcastStreamListener.
+   This calls the constructors to create
+      ConsoleProverProcessOutputSink and TagBasedTLAPMOutputIncrementalParser
+   objects and calls their initializeSink methods to initialize them
+   and then calls appendText methods when prover's input arrives.
+   
+TagBasedTLAPMOutputIncrementalParser
+    The appendText() method creates TLAPMMessage objects and calls
+    appropriate methods in ProverHelper to process the messages, according
+    to their type, which is one of:
+      ObligationNumberMessage: reports total number of obligations.
+      ObligationStatusMessage: reports status of obligation, starting with
+                               status TO_BE_PROVED
+      StepStatusMessage: Reports status of a step.
+      
+Specifying color preferences is done through two extension points:
+(This may be somewhat obsolete with the introduction of ColorPredicate
+objects.)
+  org.eclipse.core.resources.marker 
+     specifies the type of a marker (by declaring a new type)
+  org.eclipse.ui.editors.annotationTypes 
+     declares a new type of annotation and maps it to a marker type
+  org.eclipse.ui.editors.markerAnnotationSpecification
+    Have field for the annotationTypes, and a bunch of fields
+    for declaring the default appearance of an annotation in the editor.
+    
+The status of a proof is maintained with a tree of StepTuple objects.
+ 
+------------------------------------------------------------------------
+PARSE LISTENERS
+
+There are two ways to listen for new parse results.
+
+1. Listen for spec parses.  This requires extending the class
+   SpecLifecycleParticipant and declaring the extending class to the
+   extension point org.lamport.tla.toolbox.spec.
+
+2. Listen for any new parse results.  This requires implementing the
+   interface IParseResultListener and adding the listener to the
+   singleton instance of the class ParseResultBroadcaster using the
+   method ParseResultBroadcaster.addParseResultListener().  The singleton
+   instance of ParseResultBroadcaster can be obtained by calling
+   ParseResultBroadcaster.getParseResultBroadcaster() .
+-----------------------------------------------------------------------------
+GOTO vs. OPEN DECLARATION
+  On 25 Jun 2010, LL renamed the Open Declaration command to be
+  Goto Declaration.  However, the classes and methods are still
+  named as if the command were called Open Declaration.  It doesn't
+  seem to be worth the effort to refactor everything.
+-------------------------------------------------------------------------------
+PREFERENCES
+
+Defining a New Preference Page
+------------------------------
+Use the extension org.eclipse.ui.preferencePages.  The category specifies
+the preference page within which is appears in the hierarchical
+preferences menu.  The top-level TLA+ preference pages have
+category toolbox.ui.preferences.GeneralPreferencePage.  The class
+needs to implement IWorkbenchPreferencePage.  All the Toolbox preference
+pages also extend FieldEditorPreferencePage.
+
+
+Defining a New Preference  
+--------------------------
+1. In IXPreferenceConstants, for
+
+     X = Editor, TLA2TeX, ...
+
+   give the preference a name that is a string and then give that name 
+   a name such as
+
+      public static final String PREFERENCE_NAME = "preferenceName";
+
+   For the Editor, there is no IXPreferenceConstants page, and
+   the name is defined in EditorPreferencePage
+
+2. In XPreferencePage 
+   
+   add the appropriate Field editor in the createFieldEditors() method by
+
+      addField(new YFieldEditor(IXPreferenceConstants.PREFERENCE_NAME,
+                                "&Text on preference page", 
+                                 getFieldEditorFParent()))
+
+   for Y = Boolean, String, Double, etc.  For some values of Y, there
+   are additional arguments to the constructor.
+
+3. In XPreferenceInitializer, set its default value by adding
+
+       store.setDefault(PREFERENCE_NAME, default value)
+ 
+    to the initializeDefaultPreferences() method, where
+    store is the IPreferenceStore object obtained by calling
+
+      Activator.getDefault().getPreferenceStore()
+
+   or the equivalent
+
+      PreferenceStoreHelper.getInstancePreferenceStore()
+
+  For the editor, there is no EditorInitializer, and the 
+  initializeDefaultPreferences() method is in PreferenceInitializer
+
+Getting the Value of a Preference
+---------------------------------
+   store.getY(IXPreferenceConstants.PREFERENCE_NAME);
+
+-----
+
+NOTE: The following email from Dan gives some additional information about
+preferences
+
+The initializeDefaultPreferences() method for a particular plugin
+should be called the first time the preference store for that plugin
+is created.  Remember that each plugin automatically has its own
+preference store.  I believe that the preference store for a plugin is
+not created when the plugin is loaded.  I think that instead, the
+preference store is created the first time that it is needed.  For the
+prover plugin preference store, the creation of the launch prover
+dialog is the first time that it is needed because that store is used
+to store the value of the widgets in that dialog.  I would guess, and
+correct me if I'm wrong, that the initializeDefaultPreferences()
+method of TLCPreferenceInitializer would be called if you launch TLC
+before ever opening the TLC preference page.  In general, search for
+when the method getPreferenceStore() is called for a particular
+plugin's activator.  I think that the first time this is called, the
+preference store is created and initializeDefaultPreferences() will be
+called for that plugin's preference initializer.
+ 
+The ProverUIActivator is used to initialize default values for the
+prover preference page for a different reason.  The prover preference
+page must use the preference store from the class EditorUI (I think
+this is the class, but check the constructor for ProverPreferencePage
+to be sure).  It must use thid preference store because the eclipse
+editors know to look there for the colors of markers.  This is a
+different preference store than the one provided by the prover plugin.
+Since the preferences on ProverPreferencePage are not stored in the
+prover plugin preference store, the prover preference store may not
+have been created before the prover is launched from the toolbox.  As
+a result, the initializeDefaultPreferences() method of
+ProverPreferenceInitializer may not be called before the prover is
+launched.  We need to initialize the default values for the
+ProverPreferencePage elsewhere.  Since the prover cannot be launched
+until after the start method of ProverUIActivator is called, that
+method seems like a reasonable place to initialize the default
+preferences for ProverPreferencePage.
+ 
+If you put additional TLAPM preferences on a subpage of
+ProverPreferencePage, then you can use the preference store provided
+by the prover plugin.  Then you can initialize the default preferences
+in the initializeDefaultPreferences() method of
+ProverPreferenceInitializer.  This is a confusing design.  I should
+have noted all of this in comments.
+
+------
+
+NOTE: Prover color preferences are done differently.  See Dan's comments
+in the start method of ProverUIActivator.  Also, here is what Dan wrote
+about it in an email about a bug that was undiagnosed when he wrote it:
+
+The problem seems to be that the editor is not being notified when the
+color of a leaf step marker is restored to the default value.  I think
+that when you restore default values, the editor is notified that the
+color of non leaf steps has changed but is not notified that the color
+of leaf steps has changed.  Closing and reopening the editor forces
+the editor to check the preferences for the correct color of leaf and
+non leaf steps so that the correct color is displayed.  I thought I
+had fixed this problem, but apparently not.
+ 
+The step coloring markers are set up in the following way.  There are
+two marker types for each logical color.  One marker type for a given
+logical color is put on leaf steps that should have that logical
+color.  The other marker type is put on non leaf steps that should
+have that logical color.  Each marker type has a key in the editor
+preference store that maps to the physical color that the marker
+should take.
+ 
+The color field editor for logical color x on the TLAPS preference
+page corresponds to the color preference key for the non leaf marker
+type for logical color x.  This means that when the value of that
+field editor is changed, the value of the color preference key for the
+non leaf marker type for logical color x is changed in the preference
+store.  Listeners are notified of such a change.  The editor is
+automatically one of the listeners, so it is notified that non leaf
+markers for logical color x should change physical colors.
+ 
+However, this does not yet change the physical color value of the
+color preference key for the leaf steps of logical color x.  We do
+this by making the ProverPreferencePage a listener to changes to
+preference values.  When ProverPreferencePage is notified of a change
+to the value of the non leaf color for logical color x, it changes the
+value of the leaf color for logical color x.  The editor should again
+be notified, so that the value of leaf markers changes.  However,
+there is something strange that occurs when restoring default values.
+It sounds like the editor is not being notified.  Much of this is
+explained in the class comments for ProverPreferencePage and the
+comments for the method propertyChange(), which is called when a
+preference value in the editor preference store changes.  These
+comments should explain what I thought the fix was.  Perhaps that
+could provide some evidence into what is really going on.
+
+------------------------------------------------------------------------
+MARKERS
+  To see how the Show Uses marker type is declared, see
+  org.lamport.tla.tool.editor.basic/plugin.xml and search backwards
+  from the end for showUse.  You can then go to the Extensions to see
+  where those declarations appear.
+  
+  The properties of the Show Uses marker are specified in its entry
+  under org.eclipse.ui.editors.markerAnnotationSpecification.  In 
+  addition to the color, note the overviewRulerPreferenceValue.  Setting
+  that true makes the markers appear in the right-hand overview
+  column.
+  
+  See HowUsesHandler for the code needed to create and display
+  the markers.  Note that for some unknown reason, you have to
+  use the IMarker.setAttributes(Map) method to set the location.
+  Just using the methods to set a single attribute at a time
+  sets those attributes but doesn't cause the marker to be shown. 
+  Note also the EditorUtil.getMarkerPosition(IMarker) method to
+  find the current location of a marker.
+  
+  Here's how to make markers persistent (so they are remembered
+  when the Toolbox is closed):
+  On the extension point org.eclipse.core.resources.markers, which
+  declares a new marker type, you can right click to select New >
+  persistent.  Set the value to be true to make that type persistent.
+  Note that this value is not inherited by subtypes of markers.
+  
+HANDLING OF PARSING ERRORS WITH MARKERS
+
+The handling of parsing errors and the hyperlinking of TLC errors is
+fairly simple.  Parsing errors are handled using IMarkers that are
+specified in the main plugin's plugin.xml file.  Hyperlinking of TLC
+errors is done using all of the static methods in the class
+TLCUIHelper (except for setHelp()). 
+
+------------------------------------------------------------------
+THE TRACE EXPLORER AND TLC ERROR WINDOW
+
+Some information about how error information is generated is contained
+in an email from Dan Ricketts to LL on 11 Jan 2011.
+
+------------------------------------------------------------------
+PLATFORM-DEPENDENT CODE
+
+To put in platform dependent code, you use the method
+org.eclipse.core.runtime.Platform.getOS().  It returns one of the
+string constants in the Platform class.  That method is used elsewhere
+in the Toolbox.  I cannot remember where off the top of my head, so
+just search for it if you want to look at examples.
+-----------------------------------------------------------------------
+HOW TO IMPLEMENT LIBRARY DIRECTORIES
+
+The system property "TLA-Library" specifies an additional list 
+of directories, separated by a path-separator (";" on Windows, ":" on Unix),
+in which SANY looks for modules (besides the spec's directory and the
+standard modules' directory).  The order of search seems to be (i) spec's
+directory, (ii) library directories, in the order listed, (iii) standard modules' 
+directory.
+
+The Toolbox seems to call the parser from one of the multiple parseModule
+methods in ModuleParserLauncher.  It should be possible to add a list
+of library directories by calling System.setProperty before calling
+the Parser.
+
+To add a user-specifiable list of libraries (in particular for a
+TLAPS library), add both a global and a spec-specific preference
+to specify the library folder.   To add a global preference, see the
+"Defining a New Preference" note above.  To add a spec preference, copy
+what's done in SpecPropertyPage for the "PlusCal call arguments" to
+create a field editor with which the user sets the preference named
+
+   IPreferenceConstants.SOME_NAME_FOR_THE_PREFERENCE
+
+To get the spec-specific preference, it looks like one first gets the project
+with
+
+  IProject project = Activator.getSpecManager().getSpecLoaded().getProject()
+
+and then calls
+ 
+   PreferenceStoreHelper.getProjectPreferenceStore(project).
+      getString(IPreferenceConstants.SOME_NAME_FOR_THE_PREFERENCE);  
+
+If this doesn't work, see the TranslatorJob constructor.
+
+Note: The method ...toolbox.spec.Module.isStandardModule is currently used 
+to determine if something is a standard module, and to eliminate it from 
+some things shown to the user if it isn't.  I suspect that many things will 
+break if the Toolbox tries to access any file not in the spec's directory--which
+includes library files.  I think that this will have to be modified
+to return true for a library module.  Figuring out how to do that
+will probably require debugging to see what path names are returned
+by the class's getAbsolutePath method and how they compare with
+the library folder names.
+----------------------------------------------------------------------
+SYNTAX COLORING (KEYWORDS, COMMENTS, ETC.)
+
+Setting the Colors.
+------------------
+See TLASourceViewerConfiguration and TLAColorProvider.  It should be easy
+to make the colors settable by preferences, but probably only if you have to
+restart the Toolbox to change the preferences.
+
+Partitioning a TLA+ Document.
+------------------------
+Done by the TLAFastPartitioner calling TLAPartitionScanner methods.
+See comments in TLAFastPartitioner.
+
+-------------------------------------------------------------------------
+HOW TO GET A...
+  SpecObj
+     From IFile: ResourceHelper.getValidParseResult(iFile).getSpecObj()
+  Spec
+     From nothing (the current spec):
+       Activator.getSpecManager().getSpecLoaded()
+          Has not been tested; don't know if it really works.
+     From the name: Activator.getSpecManager().getSpecByName(specName)
+  IFile
+     From TLAEditor: ((FileEditorInput) tlaEditor.getEditorInput()).getFile()
+     From String moduleName (IFile) ResourceHelper.getResourceByModuleName(moduleName)
+  ModuleNode
+     From String moduleName: ResourceHelper.getModuleNode(moduleName)
+  String moduleName
+     From TLAEditor: tlaEditor.getModuleName()
+     From ModuleNode: moduleNode.getName()
+     ResourceHelper.getModuleNames() returns all user-module names
+  TLAEditor
+     with focus: EditorUtil.getTLAEditorWithFocus()
+     from IFile: See the comments preceding 
+                   IEditorPart editor = UIHelper...
+                 in UIHelper.
+  Shell
+    Of the currently active window: UIHelper.getShellProvider().getShell)  
+-------------------------------------------------------------------
+INDEX TO USEFUL COMMENTS IN THE CODE
+
+Open Declaration Command 
+  Its implementation is described in TLAEditor$OpenDeclarationHandler.
+  This also describes the implementation of hyperlinks displayed by
+    holding Control key and moving over the module.
+  
+Attaching a Listener to Something
+  The implementation of the graphing of columns of the "State space 
+  progress" section of the Model Checking Results page adds the listeners 
+  in ResultPage.createTableColumns.  The listener and interesting
+  stuff is documented in ResultPageColumnListener subclass of 
+  ResultPage.
+
+Popping up a dialog.
+  - For a simple yes/no choice dialog, see DeleteSpecHandler.
+    (No comments, but the code is obvious.)
+    
+  - For a yes/no choice dialog with an extra input that sets
+    a preference, see ForgetSpecHandler.
+    
+  - For a pop-up that handles typed input (and modifies what
+    it shows based on the input), see ShowDeclarationsHandler.

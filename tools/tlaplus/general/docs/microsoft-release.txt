@@ -1,0 +1,366 @@
+TO MAKE Revert to HEAD WORK
+  After doing revert to HEAD, Eclipse reverts the file but still marks it as
+  changed.  To unmark it, open a Cygwin shell, cd to ~/git/tlaplus2, and perform the command
+
+      git checkout FileName
+
+  where FileName is the path to the file name Eclipse shows, which should be a copy
+  of the file in the branch currently selected in Eclipse.
+  
+  
+OBSOLETE TO START SVC-LAMPORT-7 AS A TESTBED
+  https://tla.msr-inria.inria.fr/build/computer/svc/
+  log in as lamport/g...
+  Start the slave.
+  
+  Note: To set up a new machine to replace SVC-LAMPORT-7,
+        must install Java jdk and add the environment variable JAVA_HOME 
+        and set it to something like C:\Program Files\Java\jdk1.6.0_26
+
+
+TO PREPARE THE ZIP FILES FOR THE TOOLBOX RELEASE
+
+Notes: 0. Run Ant on tlatools/src/customBuild.xml
+
+       1. To get tlatools.jar file copied to the right place for the distributed version of TLC, 
+          after running Ant, run "mvn install" in the directory
+      
+            C:\lamport\tla\newtools\tla2-inria-workspace\tla2-inria\org.lamport.tla.toolbox.jnlp
+            
+       2. If maven doesn't produce a good build, try running `mvn clean' before
+          running `mvn install'
+          
+       3. The file .../newtools/tla2-inria/pom.xml is not automatically updated
+          by SVN inside Eclipse, and must be updated by running 'svn up pom.xml'
+          in a Cygwin shell.  Running `svn up' in a Cygwin shell might not be a bad
+          idea, because it seems to update some things that Eclipse doesn't.
+
+Step 1: Get the right version numbers to appear:
+
+
+-- In org.lamport.tla.toolbox.product.standalone 
+   plugin.xml : line 32 (the "aboutText" property), update date and version 
+               and other stuff that appears in the Help/About window.  
+
+-- standalone.product: 
+    As of 24 Jun 2011, standalone.product has moved to:
+    org.lamport.tla.toolbox.product.product.product
+     Branding tab: update date and version (This is used in Help > About and used to
+        create zip file names.)
+     Overview: update version.  (I don't know if this is used anywhere.)
+
+-- In org.lamport.tla.toolbox/src/org/lamport/tla/toolbox/ui/view/ToolboxWelcomeView.java
+   Update date and version
+
+-- In org.lamport.tla.toolbox.product.product/pom.xml around line 22 change the property
+   product.version to the product version.
+
+-- In org.lamport.tla.toolbox.doc/META-INF/MANIFEST.MF, update the version (major.minor.micro).
+   But do _not_ replace the last (".qualifier") segment. It is automatically replaced by the build.
+
+-- Also, the version number in the pom.xml file in the same directory (and only in the same 
+   directory???) has to be made the same (but leave the "-SNAPSHOT" unchanged).  Note that 
+   explicitly replacing ".qualifier" with e.g. ".f" breaks the build with:
+
+"Failed to execute goal org.eclipse.tycho:tycho-packaging-plugin:0.14.0-SNAPSHOT:validate-version 
+(default-validate-version) on project org.lamport.tla.toolbox.doc: OSGi version 1.4.3.f must have .qualifier qualifier for SNAPSHOT builds"
+
+(If one absolutely has to set the ".qualifier" segment explicitly, do not forget to update 
+the version (not parent version!) org.lamport.tla.toolbox.doc/pom.xml
+correspondingly. It has to match the MANIFEST.MF version verbatim.  However, 3 levels of version numbers
+are enough and we should abandon the .a, .b, ...)
+
+OBSOLETE:
+In toolbox.product.standalone/intro/root.xhtml: 
+  update version information.
+
+Step 2: Build the .zip files:
+Method 1: 
+Note: org.lamport.tla.toolbox.product.product.product
+       before June 2011 was named
+   org.lamport.tla.toolbox.product.standalone.product
+   
+  Go to the Overview tab of org.lamport.tla.toolbox.product.product.product   
+  Synchronize and use Eclipse Product export wizard
+  In the first menu, give
+    Product Configuration: 
+      Configuration:
+        /org.lamport.tla.toolbox.product.product/org.lamport.tla.toolbox.product.product.product
+      Root directory: toolbox
+    Synchronization:
+      Synchronize before exporting
+    Destination:
+      Archive file:
+        c:\lamport\tla\toolbox-release\toolbox-i.j.k  or
+        c:\users\lamport\tla\toolbox-release\toolbox-i.j.k on svc-lamport-4
+        
+    Export Options
+      Generate metadata repository
+      Export for muliple platforms
+      Allow for binary cycles in target platform
+  In Cross-platform export menu, select
+    linux (gtk/x86 & x86_64)
+    macosx (cocoa/x86 & x86_64
+    win32 (win32/x86 & x86_64)
+
+ Hitting Finish then puts the zip files into:
+     c:\users\lamport\tla\toolbox-release
+ The repository/ directory in c:\users\lamport\tla\ contains the content for the update site (p2)
+
+Method 2. Using Maven
+ NOTE:  ~/tla/newtools/tla2-inria-workspace/tla2-inria has been changed to
+      ~/tla/newtools/tla-workspace on SVC-LAMPORT-2 and to ~/tla/newtools/tla2-workspace
+      on SVC-LAMPORT-1.
+  Run svn update on  pom.xml in ~/tla/newtools/tla2-inria-workspace/tla2-inria. 
+  Set the version number in ...product.product/pom.xml.
+  (The target platforms to build for are specified in tla2-inria/pom.xml.  This file also specifies
+   what version of the Eclipse libraries to build with.)
+  In a Cygwin shell, 
+   - cd to ~/tla/newtools/tla2-inria-workspace/tla2-inria
+   - run:  mvn install
+  This might fail because the right versions of things aren't installed.
+    It it does, try running "mvn clean" first.
+  Running "mvn install" runs tests, which could fail--especially if
+     I'm using the machine while it's running the tests.  I should probably
+     run mvn on a window that I'm not using, but mouse movements could
+     probably still cause the tests to fail.  If I want to run the tests,
+     I probably shouldn't do anything else at the same time.
+  To not run the tests, instead run
+     mvn install -Dmaven.test.skip=true
+  To have it do the tests but continue if it fails, run
+     mvn install -Dmaven.test.failure.ignore=true
+    However, failure of a test seems capable of hanging up Maven.
+  The .zip files are in
+       C:\lamport\tla\newtools\tla-workspace\org.lamport.tla.toolbox.product.product\target\products
+  They also appear with weird names in:
+       C:\Users\lamport\.m2\repository\tlatoolbox\org.lamport.tla.toolbox.product.product\version-number-SNAPSHOT
+       This will keep accumulating new versions.  To delete an old version, delete the
+          C:\Users\lamport\.m2\repository\tlatoolbox\
+       directory.
+
+Method 3. Using tla.msr-inria.inria.fr
+  - In browser, goto https://tla.msr-inria.inria.fr/build
+  - login
+  - before making a release, check that there are no problems by checking
+    in all changes, and going to M-HEAD-Toolbox.product.standalone
+    IF THERE IS A FAILURE, click on the "default" button under "Configurations"
+    (which will add "/os=master" to the URL), then
+    click on the appropriate version, then click on "Console Output" (not "raw").
+    The error may appear in red at the bottom.
+  - to make a new release: click on the button to the right of
+       Release-HEAD-Toolbox.product.standalone  
+       This isn't released publicly until I do the release step, below
+       
+  - to get the release zip files, 
+       * To get the last promoted (publicly available) release, go to: 
+            - goto https://tla.msr-inria.inria.fr/build
+            - click on Release-HEAD-Toolbox.product.standalone 
+            - click on "Latest product zips" to get the Toolbox zips
+              click on "TLA+ distribution zip" to get to the stand-alone 
+                TLA tools release zip file, which is in tla.zip.
+       * To get the last created (but not necessarily promoted) release, go to:
+            https://tla.msr-inria.inria.fr/tlatoolbox/staged
+              /products = toolbox zip files
+              /dist = tools distribution
+         an alternative is:
+               https://tla.msr-inria.inria.fr/build/job/M-HEAD-Toolbox.product.standalone/os=master/lastSuccessfulBuild/artifact/org.lamport.tla.toolbox.product.product/target/
+               * click on products
+               * you can get the 6 Toolbox zip files from /products and tla.zip from /dist
+     Another alternate way to get to the https://...target/ page:
+      On https://tla.msr-inria.inria.fr/build
+       1. click on Release-HEAD-Toolbox.product.standalone 
+       2. click on Latest product zips
+      to get to the stand-alone TLA tools release zip file, in step 2
+      click on "TLA+ distribution zip".  The release is in tla.zip.
+  - To release this:
+     Click on Release-HEAD-Toolbox.product.standalone (direct link https://tla.msr-inria.inria.fr/build/job/Release-HEAD-Toolbox.product.standalone/)
+     Click on most recent build in build history.
+     Click on Promotion Status.
+     Click on Approve.
+     
+  Note: The Toolbox tries to update itself by looking for the files at  lamport.org/tlatoolbox/toolboxUpdate/.
+        This is redirected to the right place by putting in my lamport.org/ top-level directory a file named .htaccess containing
+        the line
+                  Redirect /tlatoolbox http://tla.msr-inria.inria.fr/tlatoolbox
+
+TO PREPARE THE STAND-ALONE TLA TOOLS RELEASE ZIP FILE (IN 
+Methods 1 and 2)
+  Run the Ant default-release option.  This will put the release in
+     C:\lamport\tla\newtools\tla2-inria\tlatools\dist\tla.zip
+
+TO GENERATE THE RELEASE:
+  In Feb 2013, the following became obsolete.  Perhaps I can do it
+  by going to 
+  
+     https://microsoft.sharepoint.com/teams/MSRrelease/Pages/default.aspx
+     
+  probably I will need help.  In Feb 2013, I was helped by 
+  John Ransier (Aditi Technologies Private LTD) <v-jorans@microsoft.com>.
+  
+  OBSOLETE:
+  Go to  Code Posting Tool - My Requests
+    http://msrredtools/tools/publish/cpt_v26/research/list.aspx
+  Click on the version:
+  Click on Upgrade Installation
+     Indicate new version number
+  Note: when uploading the file, wait for progress bar at bottom
+    of screen to indicate it's done (and for new file name to
+    appear in Installation field)
+  Queries to msrcpx or Chuck Needham (chuckne)
+
+-------------------------------------------------------------
+Version 1.5.2 - 21 December 2015
+  - Quick access dialog to make models easily accessible to users (Ctrl+Shift-A). Additionally shows a spec's modules and (optionally) closed specs.
+  - Upon spec safe, automatically keep a file revision/history. Let users restore revision from history view.
+  - Do not offer to use built-in PDF viewer on Mac OS X. It is fundamentally broken and Mac's PDF viewer is more powerful anyway.
+  - Parse and size status line item's height too small.
+  - Limit the trace length to a fixed number of 1000 states by default. User can easily load more by clicking "Load more" in trace explorer.
+  - Show corresponding action for "back-to-state" cycle marker upon double click.
+  - Remove any symmetry definition when model is run in TraceExplorer.
+  - Allow users to add free-form comments to their models.
+  - Show warnings when modelchecking terminated with unexplored states left.
+  - Result page better indicates liveness checking stage (final vs. run on incomplete liveness graph).
+  - Stop NumberFormatException in "per minute" statistics.
+  - Fix bug where Toolbox reports a bogus invariant violation.
+  - Show Modules (files in spec dir) and Models as children of the root specification in the SpecExplorer. Group both under a virtual "modules" and "models" tree item.
+  - Show progress when opening a model from an existing log file. Supports cancellation if log file is large.
+  - Toolbox hangs on large TLC outputs during model checking and at startup. Now several orders of magnitude faster.
+  - Only reflect address part instead of full URL back on distributed TLC's setup webpage. (SECURITY)
+  - Allow only one Toolbox instance to be running.
+  - Open Module can open modules from foreign specs.
+  - Upgrade to Eclipse Foundation 4.5.
+  - Run liveness checking based on runtime ratio between safety and liveness checking.
+  - Add -userFile parameter to redirect Print/PrintT/... output to dedicated file instead of sysout.
+  - Show time it took to model check and to check liveness.
+  - Simulator (and DFIDChecker) now support TLCSet/TLCGet.
+  - Distributed TLC does not support TLCGet/TLCSet. Prints a warning upon startup.
+  - The ordering of records in TLC.Print and PrintT statement outputs can be wrong.
+  - Report Java assertion violations as such. Don't blame it on the user's spec or model.
+  - Do not throw a NullPointerException on action-less spec when coverage requested.
+  - Incorrect cmdline parameters cause NullPointerException.
+  - Race condition when printing the trace of an invariant violation.
+  - Delay adding successor states *after* corresponding invariants and implied actions have been checked. Previously, the early addition could potentially lead to multiple invariant/implied action violations being reported simultaneously iff TLC uses multiple workers (i.e. worker 1 adds a successor to the StateQueue *before* checking the invariants. Worker 2 would explore this state and find a invariant violation concurrently with worker 1).
+  - TLC never deletes old states from state queue causing the disk to fill up.
+  - Fixed minor PlusCal translator bug.
+  - Application Bundle packaging on Mac (Existing installations
+    have to be manually updated).
+  - Ended support for 32 bit Toolbox releases on Mac OSX.
+Version 1.5.1 - 1 June 2015
+  - Fix intermittent "Fingerprint is already on disk" TLC crash. 
+  - Fix conditions in state queue that can deadlock TLC.
+  - Fix NullPointer bug during distributed TLC startup when
+    action or model constraints are defined. 
+  - Fix broken trace exploration in Toolbox after loading
+    externally written TLC output. 
+
+Version 1.5.0 - 11 May 2015
+  - Distributed TLC in the Cloud--significantly improves 
+    distributed TLC.
+  - Significantly speeds ups TLC's liveness checking.
+  - Improvements to the Decompose Proof command.
+  - Improvements to the TLC Errors view, including ability to
+    show trace in reverse order.
+  - Has some changes to the way the Toolbox handles its subwindows.
+  - Fixes all known bugs in TLC's liveness checking.
+  - Fixes bug in TLC that caused infinite looping if a recursively
+    defined operator is used as an operator argument in its own
+    definition.
+
+Version 1.4.8 - 25 February 2014
+  - Made module names case sensitive, so they must exactly match
+    the name of the file containing them.
+  - Disallowed <*> and <+> in names of named proof steps. 
+  - Fixed bug which caused GotoDeclaration command not to work
+    for a symbol inside a labeled expression.
+  - Modified standard Reals module so TLC produces errors when
+    it tries to evaluate the operators it defines.
+  - Fixed pcal translator bug that reported a bug instead of an
+    error when the algorithm calls a non-existant procedure.
+  - Tiny fix to tla2tex.TeX -info output.
+  - Bug fixes to TLC and SANY
+  - Fixed "Re-parse specification on spec module save" option.
+  - Added options for the RenumberProof command to the Module Editor
+    preferences page, made the command attempt to preserve indentation, 
+    and made it do nothing in the presence of tabs. 
+  - Added warnings about using tabs to the help pages.
+  - Fixed bug added in Oct 2012 that some TLC errors not to produce
+    error window.
+  - Added some tests for non-stuttering-insensitive formulas.
+    
+Version 1.4.7 of 24 April 2013
+  - Fixed serious bug and a not so serious bug in Toolbox's Decompose 
+    Proof Step command.
+  
+Version 1.4.6
+  - Fixed bug in PlusCal translator's generating of fairness formulas in 
+    algorithms with procedures.
+  - Fixed TLATeX bug
+  - Added handling of strings to TLC's handling of Tail and SubSeq
+    operators of Sequences module.
+    
+Version 1.4.5
+  - Added Decompose Proof command
+  - Fixed minor parsing bug in USE statement.
+  - Fixed bug in handling operator arguments like _(+)_ in definitions
+  
+Version 1.4.4 of 30 November 2012
+  - Markus made quite a few changes to distributed TLC and its Toolbox UI.
+  - Fixed bug in Find Declaration and other commands that caused problems
+    recognizing an identifier containing a "_".
+  - Fixed a couple of minor bugs in TLC error messages in Version 2.05 of 18 May
+  - Added ONLY and COROLLARY as an editor keyword.
+  - Markus fixed bug in Toolbox update that caused the new version of the Toolbox
+    to call the old version of the tools.
+  - New version of TLATeX that pretty-prints PlusCal algorithms properly.
+  - Fixed minor PlusCal bug.
+  - Toolbox now does syntax coloring of PlusCal algorithms.
+  
+Version 1.4.3 of 10 April 2012
+  - Adds a "Cardinality of largest enumerable set" TLC parameter.
+  - Fixed the order of definitions and declarations in the MC.tla file.
+  - Includes TLC version 2.05 of 17 Mar 2012, which adds the aforementioned
+    parameter, adds the TLCEval operator to the standard TLC module 
+    and fixes a few minor bugs--including the unnecessary repeated re-evaluation of
+    declared constants.
+  - Includes PlusCal Verion 1.8 of 30 March 2012
+Version 1.4.2 of 17 February 2012
+  - Selecting a location in an error report and control-clicking jumps to its source in PlusCal code.
+  - Supports library folders (directories) for modules used in multiple specs.
+  - Provides a built-in pdf viewer that can be used for viewing pretty-printed modules. 
+Version 1.4.1 of 19 January 2012
+    Includes PlusCal Version 1.6 of 5 October 2011
+    Includes TLC version 2.04 of 19 January 2012
+Version 1.4.0 of 16 September 2011
+    Includes a method for obtaining new releases from
+      inside the Toolbox.
+    Added the Forget Specification command.
+    Includes a first release of the distributed version of TLC.
+    Includes fix to SANY to support binary, octal, and hex numbers.
+    Includes PlusCal Version 1.6.
+    Added default overriding of definitions like Foo == CHOOSE v : v \notin S.
+    Made advanced model page open with definition overriding section opened  
+      if there are overrides.
+    Fixed TLC bug in overriding instantiated definitions.
+    Handles prover's new "reason" message field to display timeout as reason
+      for prover failure. 
+Version 1.3.1 of 5 April 2011
+    Includes PlusCal Version 1.5, which adds fairness and improved translation.
+    Contains a number of minor bug fixes.
+Version 1.2.1 of 2 October 2010
+    Added a sophisticated interface for running the TLAPS proof checker.
+    Added a command for displaying all globally defined symbols.
+    Added commands for displaying all uses of a symbol.
+    The Goto Declaration command now works for locally defined symbols.
+    Added commands for formatting boxed comments.
+    Made some additional minor changes.
+ Version 1.1.2 - 6 May 2010
+    Added trace Explorer, which evaluates expressions on an error trace.
+    Added folding of proofs to permit reading them hierarchically.
+    Added TLA Proof Manager menu item that currently does nothing. 
+ Version 1.1.1 - 22 Mar 2010 : 
+    Fixes TLC bug that made restarting from a checkpoint not work,
+    plus minor fixes.
+ Version 1.1.0 -  5 Feb 2010 : 
+    initial release
+
+ 

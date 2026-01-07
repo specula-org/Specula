@@ -1,0 +1,13 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Consumer
+Bundle-SymbolicName: org.lamport.tlatools.consumer.distributed
+Bundle-Version: 1.0.0.qualifier
+Require-Bundle: org.lamport.tlatools.api;bundle-version="1.0.0"
+Bundle-RequiredExecutionEnvironment: JavaSE-1.8
+Service-Component: OSGi-INF/workerConsumer.xml,
+ OSGi-INF/fpsetConsumer.xml
+Import-Package: org.osgi.framework;version="1.6.0",
+ org.osgi.service.packageadmin
+Automatic-Module-Name: org.lamport.tlatools.consumer.distributed
+Bundle-ActivationPolicy: lazy

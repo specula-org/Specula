@@ -1,0 +1,348 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"
+	xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>tlatoolbox</groupId>
+	<artifactId>parent</artifactId>
+	<name>TLA+ Tools and TLA Toolbox</name>
+	<version>0.0.1-SNAPSHOT</version>
+	<packaging>pom</packaging>
+
+	<organization>
+		<name>Microsoft Research Inria Joint Centre</name>
+		<url>http://msr-inria.inria.fr/</url>
+	</organization>
+
+	<issueManagement>
+		<system>GitHub</system>
+		<url>https://github.com/tlaplus/tlaplus/issues</url>
+	</issueManagement>
+
+	<scm>
+		<connection>scm:git:https://github.com/tlaplus/tlaplus</connection>
+		<developerConnection>scm:git:https://github.com/tlaplus/tlaplus</developerConnection>
+		<tag>HEAD</tag>
+	</scm>
+
+	<modules>
+		<!-- non-OSGi jars -->
+		<module>tlatools/org.lamport.tlatools</module>
+
+		<!-- OSGi based multi invocation worker (model check > 1 spec in a single runtime -->
+		<module>tlatools/org.lamport.tlatools.api</module>
+		<module>tlatools/org.lamport.tlatools.impl.distributed</module>
+		<module>tlatools/org.lamport.tlatools.consumer.distributed</module>
+
+		<!-- bundles -->
+		<module>toolbox/org.lamport.tla.toolbox.rss</module>
+		<module>toolbox/org.lamport.tla.toolbox</module>
+		<module>toolbox/org.lamport.tla.toolbox.jclouds</module>
+		<module>toolbox/org.lamport.tla.toolbox.jnlp</module>
+		<module>toolbox/org.lamport.tla.toolbox.doc</module>
+		<module>toolbox/org.lamport.tla.toolbox.editor.basic</module>
+		<module>toolbox/org.lamport.tla.toolbox.tool.prover</module>
+		<module>toolbox/org.lamport.tla.toolbox.tool.tla2tex</module>
+		<module>toolbox/org.lamport.tla.toolbox.tool.tlc</module>
+		<module>toolbox/org.lamport.tla.toolbox.tool.tlc.ui</module>
+		<module>toolbox/org.lamport.tla.toolbox.product.standalone</module>
+
+		<!-- Junit tests -->
+		<module>toolbox/org.lamport.tla.toolbox.test</module>
+		<module>toolbox/org.lamport.tla.toolbox.tool.tlc.test</module>
+		<module>toolbox/org.lamport.tla.toolbox.tool.tlc.ui.test</module>
+
+		<!-- SWTBot tests -->
+		<module>toolbox/org.lamport.tla.toolbox.uitest</module>
+		<module>toolbox/org.lamport.tla.toolbox.tool.tla2tex.uitest</module>
+		<module>toolbox/org.lamport.tla.toolbox.tool.tlc.ui.uitest</module>
+
+		<!-- features -->
+		<module>tlatools/org.lamport.tlatools.feature</module>
+		<module>toolbox/org.lamport.tla.toolbox.feature.base</module>
+		<module>toolbox/org.lamport.tla.toolbox.feature.editor</module>
+		<module>toolbox/org.lamport.tla.toolbox.feature.jnlp</module>
+		<module>toolbox/org.lamport.tla.toolbox.feature.jclouds</module>
+		<module>toolbox/org.lamport.tla.toolbox.feature.help</module>
+		<module>toolbox/org.lamport.tla.toolbox.feature.prover</module>
+		<module>toolbox/org.lamport.tla.toolbox.feature.tla2tex</module>
+		<module>toolbox/org.lamport.tla.toolbox.feature.tlc</module>
+		<module>toolbox/org.lamport.tla.toolbox.feature.uitest</module>
+		<module>toolbox/org.lamport.tla.toolbox.feature.branding</module>
+		<module>toolbox/org.lamport.tla.toolbox.feature.standalone</module>
+
+		<!-- p2 repository for updates -->
+		<module>toolbox/org.lamport.tla.toolbox.p2repository</module>
+
+		<!-- product related -->
+		<module>toolbox/org.lamport.tla.toolbox.product.product</module>
+
+		<!-- Finally run UI tests on fully built product (AUT) -->
+<!--		<module>toolbox/org.lamport.tla.toolbox.product.uitest</module>-->
+	</modules>
+
+	<!-- tycho requires maven >= 3.0 -->
+	<prerequisites>
+		<maven>3.0</maven>
+	</prerequisites>
+
+	<!-- Minimum tycho version build work with -->
+	<properties>
+		<!-- http://maven.apache.org/general.html#encoding-warning  -->
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+		<!-- https://wiki.eclipse.org/Tycho/Release_Notes/1.4 -->
+		<tycho-version>1.5.1</tycho-version>
+
+		<!-- no default here -->
+		<tycho.test.vm.argline>-Xmx500m -Xdebug -Xrunjdwp:transport=dt_socket,address=1044,server=y,suspend=n</tycho.test.vm.argline>
+		<tycho.test.vm.useUiThread>false</tycho.test.vm.useUiThread>
+
+        <!-- These properties define a dummy certificate store that is used unless the developer passes overwrites to maven -->
+        <!-- see http://stackoverflow.com/a/3620575 for how such an overwrite would look like. -->
+  	    <keystore.path>${project.basedir}/../../keystore</keystore.path>
+	    <keystore.alias>msr</keystore.alias>
+        <keystore.store.password>secret</keystore.store.password>
+        <keystore.key.password>secret</keystore.key.password>
+        <!--
+          Set to the values below if the signature should include a timestamp. You want this for a release build
+          because a timestamp makes sure the signature remains valid after the certificate expired.
+          If you activate RFC3161, make sure the machine running the build has sufficient entropy available. Otherwise
+          expect to see intermittent hangs when the build attempts to sign a jar. On Linux the haveged and rng-tools
+          can help to collect entropy.
+          <tsa.flag>-tsa</tsa.flag>
+          <tsa.server>http://timestamp.comodoca.com</tsa.server>
+		 -->
+        <tsa.flag></tsa.flag>
+        <tsa.server></tsa.server>
+
+		<!-- Report into the tlaplus organization at SonarQube. -->
+		<!-- Organizations support reporting different branches. -->
+		<sonar.organization>tlaplus</sonar.organization>
+
+		<!-- Align toolbox.version with the version in
+			 org.lamport.tla.toolbox.product.product.product
+			 product.version. -->
+		<toolbox.version>1.8.0</toolbox.version>
+
+		<!-- This is used in org.lamport.tla.toolbox.product.uitest but
+			has been placed at the top level should it need be referenced
+			in other POMs. This property is only referenced during the AUT
+			unpacking if it is occurring on mac - the AUT unpacks out of
+			the ZIP ok on Linux and Windows-->
+		<jdk-bundle-plugin-version>14.0.1.7</jdk-bundle-plugin-version>
+	</properties>
+
+	<build>
+		<plugins>
+			<!-- Fail the build early and with a clear error message if the Java 11
+				dependency isn't satisfied. https://github.com/tlaplus/tlaplus/issues/278 -->
+		    <plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-enforcer-plugin</artifactId>
+				<version>3.0.0-M2</version>
+				<executions>
+					<execution>
+						<id>enforce-java</id>
+						<goals>
+							<goal>enforce</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<requireJavaVersion>
+									<version>11</version>
+								</requireJavaVersion>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
+		    </plugin>
+			<!-- enable tycho build extension -->
+			<plugin>
+				<groupId>org.eclipse.tycho</groupId>
+				<artifactId>tycho-maven-plugin</artifactId>
+				<version>${tycho-version}</version>
+				<extensions>true</extensions>
+			</plugin>
+			<!-- Compress Toolbox plugins -->
+			<plugin>
+				<groupId>org.eclipse.tycho.extras</groupId>
+				<artifactId>tycho-pack200a-plugin</artifactId>
+				<version>${tycho-version}</version>
+				<executions>
+					<execution>
+						<id>pack200-pack</id>
+						<goals>
+							<goal>normalize</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+			<groupId>org.eclipse.tycho</groupId>
+	        	<artifactId>tycho-compiler-plugin</artifactId>
+	        	<version>${tycho-version}</version>
+			    <configuration>
+			    	<source>1.7</source>
+			    	<target>1.7</target>
+					<encoding>UTF-8</encoding>
+			    </configuration>
+			</plugin>
+			<plugin>
+		        <groupId>org.eclipse.tycho</groupId>
+	        	<artifactId>tycho-packaging-plugin</artifactId>
+	        	<version>${tycho-version}</version>
+			    <configuration>
+				    <archive>
+				    	<addMavenDescriptor>false</addMavenDescriptor>
+				    </archive>
+			    </configuration>
+			</plugin>
+			<plugin>
+			    <groupId>org.apache.maven.plugins</groupId>
+			    <artifactId>maven-jarsigner-plugin</artifactId>
+			    <version>1.4</version>
+			        <configuration>
+				        <keystore>${keystore.path}</keystore>
+				        <alias>${keystore.alias}</alias>
+				        <storepass>${keystore.store.password}</storepass>
+				        <keypass>${keystore.key.password}</keypass>
+			           	<verbose>false</verbose>
+			           	<arguments>
+			 			  <!-- Embed a current timestamp in the signed content (file). With this timestamp,
+							the signature of the content remains valid *after* the signing certificate
+							expired. -->
+			              <argument>${tsa.flag}</argument>
+			              <argument>${tsa.server}</argument>
+			            </arguments>
+			        </configuration>
+			        <executions>
+			            <execution>
+			                <id>sign</id>
+			                <goals>
+			                    <goal>sign</goal>
+			                    <goal>verify</goal>
+			                </goals>
+			            </execution>
+			         </executions>
+			</plugin>
+			<!-- Compress Toolbox plugins -->
+			<plugin>
+				<groupId>org.eclipse.tycho.extras</groupId>
+				<artifactId>tycho-pack200b-plugin</artifactId>
+				<version>${tycho-version}</version>
+				<executions>
+					<execution>
+						<id>pack200-pack</id>
+						<goals>
+							<goal>pack</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<!-- Then, alter p2-metadata to make the .pack.gz
+			artifact visible from other modules -->
+			<plugin>
+				<groupId>org.eclipse.tycho</groupId>
+				<artifactId>tycho-p2-plugin</artifactId>
+				<version>${tycho-version}</version>
+				<executions>
+					<execution>
+						<id>p2-metadata</id>
+						<goals>
+							<goal>p2-metadata</goal>
+						</goals>
+						<phase>package</phase>
+					</execution>
+				</executions>
+				<configuration>
+					<defaultP2Metadata>false</defaultP2Metadata>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.eclipse.tycho</groupId>
+				<artifactId>target-platform-configuration</artifactId>
+				<version>${tycho-version}</version>
+				<configuration>
+				    <!-- Some dependencies such as jline referenced by org.lamport.tlatools   -->
+				    <!-- cannot be found in the Toolbox's target platform (TLAToolbox.target) -->
+				    <!-- because the dependencies are not made available in p2 repositories.  -->
+				    <!-- However, sometimes OSGi-fied dependencies are made available on      -->
+				    <!-- Maven Central.  'pomDependencies' makes this build look there too.    -->
+				    <!-- https://wiki.eclipse.org/Tycho/Target_Platform#.22POM_dependencies_consider.22 -->
+                    <pomDependencies>consider</pomDependencies>
+					<!-- recommended: use p2-based target platform resolver -->
+					<resolver>p2</resolver>
+					<ignoreTychoRepositories>true</ignoreTychoRepositories>
+					<!-- Include the pack200 artifacts in the p2 repository. This increases
+						the size of the p2 repository (jars + pack.gz), but reduces the load on the
+						server hosting the repository as clients download the compressed pack.gz files. -->
+					<includePackedArtifacts>true</includePackedArtifacts>
+					<!-- use existing target platform definition -->
+					<target>
+					 <artifact>
+					    <groupId>tlatoolbox</groupId>
+					    <artifactId>org.lamport.tla.toolbox.product.product</artifactId>
+					    <version>1.4.0-SNAPSHOT</version>
+					    <classifier>TLAToolbox</classifier>
+					 </artifact>
+					</target>
+
+					<!-- Need to specify mininum Java version. This defines what
+					     java.* packages are available during dependency resolution.
+					     Java 1.4, e.g. does not come with "java.security.sasl", a
+					     package that is indirectly referenced by the toolbox (indirectly via
+					     org.apache.mina.core).
+					     see http://dev.eclipse.org/mhonarc/lists/cbi-dev/msg00166.html -->
+		 			<executionEnvironment>JavaSE-11</executionEnvironment>
+
+					<!-- configure the p2 target environments for multi-platform build -->
+					<environments>
+
+						<!-- Linux -->
+						<environment>
+							<os>linux</os>
+							<ws>gtk</ws>
+							<arch>x86_64</arch>
+						</environment>
+
+						<!-- Windows -->
+						<environment>
+							<os>win32</os>
+							<ws>win32</ws>
+							<arch>x86_64</arch>
+						</environment>
+
+						<!-- Mac -->
+						<environment>
+							<os>macosx</os>
+							<ws>cocoa</ws>
+							<arch>x86_64</arch>
+						</environment>
+
+					</environments>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+
+	<!-- pass mac specific SWT properties on ...drum roll... mac -->
+	<profiles>
+		<profile>
+			<id>macosx</id>
+			<activation>
+				<property>
+					<name>os.name</name>
+					<value>Mac OS X</value>
+				</property>
+			</activation>
+			<properties>
+				<!-- On Mac OS X, /tmp is a symbolic link pointing to /private/tmp. Thus, make sure unit tests -->
+				<!-- use the /private/tmp to make path comparison work. -->
+				<!-- See org.lamport.tla.toolbox.spec.SpecTest.testCreateSpecStoreRelativePath() -->
+				<tycho.test.vm.argline>-Dosgi.ws=cocoa -Djava.io.tmpdir=/private/tmp/ -XstartOnFirstThread</tycho.test.vm.argline>
+				<tycho.test.vm.useUiThread>false</tycho.test.vm.useUiThread>
+			</properties>
+		</profile>
+	</profiles>
+</project>

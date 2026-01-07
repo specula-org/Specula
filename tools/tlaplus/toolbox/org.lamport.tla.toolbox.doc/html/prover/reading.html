@@ -1,0 +1,142 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<!-- This is file org.lamport.tla.toobox.doc/html/prover/prover.html -->
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+ <LINK href="../style.css" rel="stylesheet" type="text/css">
+
+	<title>Viewing and Editing Structured Proofs</title>
+</head>
+<!-- a comment -->
+
+<body>
+<h1>Viewing and Editing Structured Proofs</h1>
+
+<pre>
+Contents
+  <a href="#viewing">Viewing proofs</a>
+  <a href="#editing">Editing proofs</a>
+</pre>
+
+<h2><a name="viewing">Viewing Proofs</a></h2>
+<p> When you open in the module editor a module containing a theorem
+wth a proof, you will see a &nbsp;<samp>(-)</samp>&nbsp; next to the
+theorem and next to each step that has a subproof.&nbsp; To avoid
+repeatedly saying <em>step or theorem</em>, we here take a
+<em>step</em> to be either a theorem or a step of a theorem's
+proof.&nbsp;
+
+Clicking on the &nbsp;<samp>(-)</samp>&nbsp; next to a step hides the
+step's proof and changes the &nbsp;<samp>(-)</samp>&nbsp; to a
+&nbsp;<samp>(+)</samp>&nbsp;.
+
+Clicking on the &nbsp;<samp>(+)</samp>&nbsp; undoes the effect of
+clicking on the &nbsp;<samp>(-)</samp>&nbsp;.
+</p>
+
+Right-clicking on a step provides a menu with a section containing
+the following commands for
+hiding and revealing parts of the proof of the step at which the
+cursor is positioned.&nbsp;  These commands can also be executed
+with the indicated pair of keystrokes.&nbsp;
+
+If you just type <samp>Ctl+G</samp> (the first keystroke) and wait
+a second, you will see a list of all the commands telling you what
+keystroke you should type next.
+
+<p>
+
+<dl>
+
+<dt> <b>Show Current Subtree</b> &nbsp; &nbsp; <samp>Ctl+G Ctl+S</samp> </dt>
+<dd> Reveals the proof of the step.</dd>
+<p> </p>
+
+<dt> <b>Hide Current Subtree</b> &nbsp; &nbsp; <samp>Ctl+G Ctl+H</samp> </dt>
+<dd> Hides the proof of the step.</dd>
+<p> </p>
+
+<dt> <b>Show Children Only</b> &nbsp; &nbsp; <samp>Ctl+G Ctl+C</samp> </dt>
+<dd> Reveals the top level of the step's proof.</dd>
+<p> </p>
+
+<dt> <b>Focus on Step</b> &nbsp; &nbsp; <samp>Ctl+G Ctl+F</samp> </dt>
+<dd> Hides everything except the top level of the step's proof and
+the siblings (steps at the same level as) of the step and
+of every ancestor of that step in the proof.</dd>
+</dl>
+
+The following commands can be performed by right-clicking anywhere
+in the module.
+
+<dl>
+<dt> <b>Show All Proofs</b> &nbsp; &nbsp; <samp>Ctl+G Ctl+A</samp> </dt>
+<dd> Reveals the complete proof of every theorem in the module.</dd>
+<p> </p>
+
+<dt> <b>Hide All Proofs</b> &nbsp; &nbsp; <samp>Ctl+G Ctl+N</samp> </dt>
+<dd> Hides the proof of every theorem in the module.</dd>
+</dl>
+The <em>Focus on Step</em> command performed outside a proof
+is equivalent to <em>Hide All Proofs</em>
+
+<h2><a name="editing">Editing Proofs</a></h2>
+
+There are two commands especially for editing proofs:
+<dl>
+<dt><b>Decompose Proof</b> &nbsp; &nbsp; <samp>Ctl+G Ctl+D</samp> </dt>
+<dd> To use this command, put the cursor in a theorem or proof step that
+has either no proof or else a leaf proof (a <code>BY</code> or <code>OBVIOUS</code>
+proof) that TLAPS can't verify.&nbsp;  This command raises a dialog window that allows
+you to decompose the proof of the theorem or step into simpler steps.&nbsp;
+The dialog contains a 
+   <IMG SRC=../gettingstarted/question-mark.gif align=bottom>
+button that raises <a href="decompose.html">this help page</a>, which explains
+what you can do with this dialog.
+
+</dd>
+
+<p> </p>
+<dt><b><a name="renumber-proof">Renumber Proof</a></b> &nbsp; &nbsp; <samp>Ctl+G Ctl+R</samp> </dt>
+<dd>
+A proof step is either <i>named</i> or <i>unnamed</i>.&nbsp;  
+
+An unnamed step begins with just a level number, like <code><4></code>.&nbsp;
+
+A named step begins with a level number and a name, like <code><4>7</code>
+or <code><4>xy2</code> (optionally followed by a period).&nbsp;
+
+Putting the cursor on a proof step and executing the <i>Renumber Proof</i>
+command causes all the named top-level steps of its proof to be renamed with
+consecutive numbers, like <code><4>1</code>, <code><4>2</code>, etc.&nbsp;
+
+However, you might want to use some meaningful step names like <code><2>NextImpliesInv1</code>
+that you don't want to be turned into numbers.&nbsp;
+
+A <a href="../gettingstarted/module-editor-preferences.html">module editor
+preference</a> provides options to control what step names don't get turned 
+into numbers.&nbsp;
+
+There is also a preference that determines whether the module should be saved 
+after executing the command.
+
+</dd>
+</dl>
+The Toolbox editor's 
+<a href="../spec/editing-modules.html#block-selection">block-selection
+mode</a> can help in formatting proofs.&nbsp;
+
+We would like to create additional editor commands to make it easier to write
+and edit proofs, but we don't know what commands would be useful.&nbsp;  
+
+Please tell us what commands <i>you</i> would like.&nbsp;
+
+
+
+</p>
+<hr>
+<a href = "prover.html">&uarr; Proofs</a>
+</hr>
+
+</body>
+</html>
