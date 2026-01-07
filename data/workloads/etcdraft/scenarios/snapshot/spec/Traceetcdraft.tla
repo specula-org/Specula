@@ -15,7 +15,7 @@ RaftMsgSubtype ==
     "MsgSnap" :> "snapshot"
 
 RaftRole ==
-    "StateFollower" :> Follower @@ "StateCandidate" :> Candidate @@ "StateLeader" :> Leader
+    "StateFollower" :> Follower @@ "StateCandidate" :> Candidate @@ "StatePreCandidate" :> Candidate @@ "StateLeader" :> Leader
 
 -------------------------------------------------------------------------------------
 
@@ -154,6 +154,7 @@ LoglineIsNodeEvent(e, i) ==
     /\ logline.event.nid = i
 
 LoglineIsAppendEntriesRequest(m) ==
+    /\ "msg" \in DOMAIN logline.event
     /\ m.mtype = AppendEntriesRequest
     /\ m.mtype = RaftMsgType[logline.event.msg.type]
     /\ m.msubtype = RaftMsgSubtype[logline.event.msg.type]
@@ -166,6 +167,7 @@ LoglineIsAppendEntriesRequest(m) ==
     /\ Len(m.mentries) = logline.event.msg.entries
 
 LoglineIsSnapshotRequest(m) ==
+    /\ "msg" \in DOMAIN logline.event
     /\ m.mtype = SnapshotRequest
     /\ m.mtype = RaftMsgType[logline.event.msg.type]
     /\ m.mdest   = logline.event.msg.to
@@ -175,6 +177,7 @@ LoglineIsSnapshotRequest(m) ==
     /\ m.msnapshotTerm = logline.event.msg.logTerm
 
 LoglineIsAppendEntriesResponse(m) ==
+    /\ "msg" \in DOMAIN logline.event
     /\ m.mtype = AppendEntriesResponse
     /\ m.mtype = RaftMsgType[logline.event.msg.type]
     /\ \/ m.msubtype = RaftMsgSubtype[logline.event.msg.type]
@@ -187,6 +190,7 @@ LoglineIsAppendEntriesResponse(m) ==
     /\ (~logline.event.msg.reject /\ m.msubtype /= "heartbeat") => m.mmatchIndex = logline.event.msg.index
 
 LoglineIsRequestVoteRequest(m) ==
+    /\ "msg" \in DOMAIN logline.event
     /\ m.mtype = RequestVoteRequest
     /\ m.mtype = RaftMsgType[logline.event.msg.type]
     /\ m.mdest = logline.event.msg.to
@@ -196,6 +200,7 @@ LoglineIsRequestVoteRequest(m) ==
     /\ m.mlastLogTerm = logline.event.msg.logTerm
 
 LoglineIsRequestVoteResponse(m) ==
+    /\ "msg" \in DOMAIN logline.event
     /\ m.mtype = RequestVoteResponse
     /\ m.mtype = RaftMsgType[logline.event.msg.type]
     /\ m.mdest = logline.event.msg.to
