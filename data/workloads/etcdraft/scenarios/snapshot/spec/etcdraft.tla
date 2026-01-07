@@ -456,7 +456,7 @@ Timeout(i) == /\ state[i] \in {Follower, Candidate}
               /\ votedFor' = [votedFor EXCEPT ![i] = i]
               /\ votesResponded' = [votesResponded EXCEPT ![i] = {}]
               /\ votesGranted'   = [votesGranted EXCEPT ![i] = {}]
-              /\ UNCHANGED <<messageVars, leaderVars, logVars, configVars, durableState, progressVars>>
+              /\ UNCHANGED <<messageVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* Candidate i sends j a RequestVote request.
 \* @type: (Int, Int) => Bool;
@@ -475,7 +475,7 @@ RequestVote(i, j) ==
                    mvoteGranted     |-> TRUE,
                    msource          |-> i,
                    mdest            |-> i])
-    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* Leader i sends j an AppendEntries request containing entries in [b,e) range.
 \* N.B. range is right open
@@ -559,7 +559,7 @@ AppendEntriesToSelf(i) ==
              mmatchIndex     |-> LastIndex(log[i]),
              msource         |-> i,
              mdest           |-> i])
-    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 AppendEntries(i, j, range) ==
     AppendEntriesInRangeToPeer("app", i, j, range)
@@ -647,7 +647,7 @@ ClientRequestAndSend(i, v) ==
              mmatchIndex |-> LastIndex(log'[i]),
              msource     |-> i,
              mdest       |-> i])
-    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog>>
 
 \* Leader i advances its commitIndex.
 \* This is done as a separate step from handling AppendEntries responses,
@@ -680,7 +680,7 @@ AdvanceCommitIndex(i) ==
                   commitIndex[i]
        IN
         /\ CommitTo(i, newCommitIndex)
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, log, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, log, configVars, durableState, progressVars, historyLog>>
 
     
 \* Leader i adds a new server j or promote learner j
@@ -694,7 +694,7 @@ AddNewServer(i, j) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, historyLog>>
 
 \* Leader i adds a leaner j to the cluster.
 AddLearner(i, j) ==
@@ -707,7 +707,7 @@ AddLearner(i, j) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, historyLog>>
 
 \* Leader i removes a server j (possibly itself) from the cluster.
 DeleteServer(i, j) ==
@@ -720,7 +720,7 @@ DeleteServer(i, j) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, historyLog>>
 
 \* Leader i proposes an arbitrary configuration change (compound changes supported).
 ChangeConf(i) ==
@@ -733,7 +733,7 @@ ChangeConf(i) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, historyLog>>
 
 \* Leader i proposes an arbitrary configuration change AND sends MsgAppResp.
 \* Used for implicit replication in Trace Validation.
@@ -760,7 +760,7 @@ ChangeConfAndSend(i) ==
                      mmatchIndex |-> LastIndex(log'[i]),
                      msource     |-> i,
                      mdest       |-> i])
-    /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, historyLog>>
 
 ApplySimpleConfChange(i) ==
     LET validIndices == {x \in log[i].offset..commitIndex[i] : LogEntry(i, x).type = ConfigEntry}
@@ -799,7 +799,7 @@ ApplySimpleConfChange(i) ==
 Ready(i) ==
     /\ PersistState(i)
     /\ SendPendingMessages(i)
-    /\ UNCHANGED <<serverVars, leaderVars, candidateVars, logVars, configVars, progressVars>>
+    /\ UNCHANGED <<serverVars, leaderVars, candidateVars, logVars, configVars, progressVars, historyLog>>
 
 BecomeFollowerOfTerm(i, t) ==
     /\ currentTerm'    = [currentTerm EXCEPT ![i] = t]
@@ -812,7 +812,7 @@ BecomeFollowerOfTerm(i, t) ==
 StepDownToFollower(i) ==
     /\ state[i] \in {Leader, Candidate}
     /\ BecomeFollowerOfTerm(i, currentTerm[i])
-    /\ UNCHANGED <<messageVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* ============================================================================
 \* New: Progress state transition helper functions
@@ -916,7 +916,7 @@ HandleRequestVoteRequest(i, j, m) ==
                  msource      |-> i,
                  mdest        |-> j],
                  m)
-       /\ UNCHANGED <<state, currentTerm, candidateVars, leaderVars, logVars, configVars, durableState, progressVars>>
+       /\ UNCHANGED <<state, currentTerm, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* Server i receives a RequestVote response from server j with
 \* m.mterm = currentTerm[i].
@@ -933,7 +933,7 @@ HandleRequestVoteResponse(i, j, m) ==
        \/ /\ ~m.mvoteGranted
           /\ UNCHANGED <<votesGranted>>
     /\ Discard(m)
-    /\ UNCHANGED <<serverVars, votedFor, leaderVars, logVars, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<serverVars, votedFor, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* @type: (Int, Int, AEREQT, Bool) => Bool;
 RejectAppendEntriesRequest(i, j, m, logOk) ==
@@ -949,14 +949,14 @@ RejectAppendEntriesRequest(i, j, m, logOk) ==
               msource         |-> i,
               mdest           |-> j],
               m)
-    /\ UNCHANGED <<serverVars, logVars, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<serverVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* @type: (Int, MSG) => Bool;
 ReturnToFollowerState(i, m) ==
     /\ m.mterm = currentTerm[i]
     /\ state[i] = Candidate
     /\ state' = [state EXCEPT ![i] = Follower]
-    /\ UNCHANGED <<messageVars, currentTerm, votedFor, logVars, configVars, durableState, progressVars>> 
+    /\ UNCHANGED <<messageVars, currentTerm, votedFor, logVars, configVars, durableState, progressVars, historyLog>> 
 
 HasNoConflict(i, index, ents) ==
     /\ index <= LastIndex(log[i]) + 1
@@ -982,23 +982,23 @@ AppendEntriesAlreadyDone(i, j, index, m) ==
                 msource         |-> i,
                 mdest           |-> j],
                 m)
-    /\ UNCHANGED <<serverVars, log, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<serverVars, log, configVars, durableState, progressVars, historyLog>>
 
 \* @type: (Int, Int, AEREQT) => Bool;
 ConflictAppendEntriesRequest(i, index, m) ==
     /\ m.mentries /= << >>
     /\ index > commitIndex[i]
     /\ ~HasNoConflict(i, index, m.mentries)
-    /\ log' = [log EXCEPT ![i] = SubSeq(@, 1, Len(@) - 1)]
-    /\ UNCHANGED <<messageVars, serverVars, commitIndex, durableState, progressVars>>
+    /\ log' = [log EXCEPT ![i].entries = SubSeq(@, 1, Len(@) - 1)]
+    /\ UNCHANGED <<messageVars, serverVars, commitIndex, durableState, progressVars, historyLog>>
 
 \* @type: (Int, AEREQT) => Bool;
 NoConflictAppendEntriesRequest(i, index, m) ==
     /\ m.mentries /= << >>
     /\ index > commitIndex[i]
     /\ HasNoConflict(i, index, m.mentries)
-    /\ log' = [log EXCEPT ![i] = @ \o SubSeq(m.mentries, Len(@)-index+2, Len(m.mentries))]
-    /\ UNCHANGED <<messageVars, serverVars, commitIndex, durableState, progressVars>>
+    /\ log' = [log EXCEPT ![i].entries = @ \o SubSeq(m.mentries, Len(@)-index+2, Len(m.mentries))]
+    /\ UNCHANGED <<messageVars, serverVars, commitIndex, durableState, progressVars, historyLog>>
 
 \* @type: (Int, Int, Bool, AEREQT) => Bool;
 AcceptAppendEntriesRequest(i, j, logOk, m) ==
@@ -1026,7 +1026,7 @@ HandleAppendEntriesRequest(i, j, m) ==
        /\ \/ RejectAppendEntriesRequest(i, j, m, logOk)
           \/ ReturnToFollowerState(i, m)
           \/ AcceptAppendEntriesRequest(i, j, logOk, m)
-       /\ UNCHANGED <<candidateVars, leaderVars, configVars, durableState, progressVars>>
+       /\ UNCHANGED <<candidateVars, leaderVars, configVars, durableState, progressVars, historyLog>>
 
 \* Server i receives an AppendEntries response from server j with
 \* m.mterm = currentTerm[i].
@@ -1135,7 +1135,7 @@ HandleSnapshotRequest(i, j, m) ==
                      msource     |-> i, 
                      mdest       |-> j], 
                      m)
-           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars>>
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars, historyLog>>
 
 \* Any RPC with a newer term causes the recipient to advance its term first.
 \* @type: (Int, Int, MSG) => Bool;
@@ -1143,14 +1143,14 @@ UpdateTerm(i, j, m) ==
     /\ m.mterm > currentTerm[i]
     /\ BecomeFollowerOfTerm(i, m.mterm)
        \* messages is unchanged so m can be processed further.
-    /\ UNCHANGED <<messageVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* Responses with stale terms are ignored.
 \* @type: (Int, Int, MSG) => Bool;
 DropStaleResponse(i, j, m) ==
     /\ m.mterm < currentTerm[i]
     /\ Discard(m)
-    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* Combined action: Update term AND handle RequestVoteRequest atomically.
 \* This is needed because raft.go handles term update and vote processing in a single Step call,
@@ -1172,7 +1172,7 @@ UpdateTermAndHandleRequestVote(i, j, m) ==
            /\ currentTerm' = [currentTerm EXCEPT ![i] = m.mterm]
            /\ state'       = [state       EXCEPT ![i] = Follower]
            /\ votedFor'    = [votedFor    EXCEPT ![i] = IF grant THEN j ELSE Nil]
-           /\ UNCHANGED <<candidateVars, leaderVars, logVars, configVars, durableState, progressVars>>
+           /\ UNCHANGED <<candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* Receive a message.
 ReceiveDirect(m) ==
@@ -1212,7 +1212,7 @@ NextAppendEntriesResponse == \E m \in DOMAIN messages : m.mtype = AppendEntriesR
 DuplicateMessage(m) ==
     /\ m \in DOMAIN messages
     /\ messages' = WithMessage(m, messages)
-    /\ UNCHANGED <<pendingMessages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<pendingMessages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* The network drops a message
 \* @type: MSG => Bool;
@@ -1220,7 +1220,7 @@ DropMessage(m) ==
     \* Do not drop loopback messages
     \* /\ m.msource /= m.mdest
     /\ Discard(m)
-    /\ UNCHANGED <<pendingMessages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<pendingMessages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 ----
 
