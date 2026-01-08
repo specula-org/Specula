@@ -1,4 +1,4 @@
-"""Handler for run_trace_validation tool."""
+"""Handler for run_trace_debugging tool."""
 
 import asyncio
 import os
@@ -18,19 +18,16 @@ if _src_dir not in sys.path:
 from debugger import DebugSession, Breakpoint
 
 
-class TraceValidationHandler(BaseHandler):
-    """Handler for run_trace_validation tool.
+class TraceDebuggingHandler(BaseHandler):
+    """Handler for run_trace_debugging tool.
 
     This is the core tool for TLA+ trace debugging. It runs trace validation
     with breakpoints and collects statistics about which breakpoints were hit.
-
-    Phase 2: Basic functionality (breakpoint statistics only)
-    Phase 3: Will add evaluate and collect_variables features
     """
 
     @property
     def tool_name(self) -> str:
-        return "run_trace_validation"
+        return "run_trace_debugging"
 
     @property
     def argument_schema(self) -> Dict[str, Any]:

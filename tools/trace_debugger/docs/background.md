@@ -371,6 +371,8 @@ Before debugging trace validation, an agent should know:
 - [ ] Existential quantifiers cause multiple breakpoint hits with different parameter values
 - [ ] Must inspect variable values to determine why a condition failed
 - [ ] Never assume variables have expected values; always verify
+- [ ] **Use `evaluate` (not `collect_variables`) to access operator parameters**
+- [ ] **Set breakpoints inside operator definitions to access parameters**
 
 ## 7. Quick Reference
 
@@ -467,3 +469,137 @@ Interpretation:
 - All 20 failed at Line D's condition
 - Next step: At Line C, inspect variables to see why Line D fails
 ```
+
+## 8. Debugger Architecture
+
+### 8.1 System Components
+
+The trace debugger consists of three layers:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    MCP Tool (Python)                     │
+│              tools/trace_debugger/                       │
+│   - Provides run_trace_debugging API                    │
+│   - Manages breakpoints and expression evaluation        │
+│   - Communicates via DAP protocol                        │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           │ DAP (Debug Adapter Protocol)
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                  TLC Debugger (Java)                     │
+│              tools/tlaplus/                              │
+│   - tlc2.debug.TLCStackFrame                             │
+│   - tlc2.debug.TLCDebuggerExpression                     │
+│   - tlc2.debug.TLCSourceBreakpoint                       │
+│   - Handles expression evaluation and variable lookup    │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                    TLC Model Checker                     │
+│   - Evaluates TLA+ specifications                        │
+│   - Generates states and checks invariants               │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 8.2 Key Java Classes
+
+| Class | Location | Purpose |
+|-------|----------|---------|
+| `TLCStackFrame` | `tlc2/debug/` | Manages stack frames, variable scopes, and expression evaluation |
+| `TLCDebuggerExpression` | `tlc2/debug/` | Parses and processes debug expressions, identifies scoped identifiers |
+| `TLCSourceBreakpoint` | `tlc2/debug/` | Handles breakpoint matching and condition evaluation |
+| `Context` | `tlc2/util/` | Linked list storing variable bindings at each scope |
+
+### 8.3 Expression Evaluation Flow
+
+When you call `evaluate` with an expression like `currentTerm[i]`:
+
+1. **MCP Tool** sends DAP `evaluate` request to TLC debugger
+2. **TLCStackFrame.getWatch()** receives the expression
+3. **TLCDebuggerExpression.process()** creates a temporary TLA+ module:
+   ```tla
+   ---- MODULE __DebuggerModule__xxx ----
+   EXTENDS OriginalSpec
+   __DebuggerExpr__xxx(i, j, range) == currentTerm[i]
+   ====
+   ```
+4. **TLCStackFrame** builds evaluation context from the stack frame's Context chain
+5. **Tool.eval()** evaluates the expression body with the built context
+6. Result is returned to MCP Tool
+
+## 9. Evaluate vs Collect Variables
+
+### 9.1 Key Differences
+
+| Feature | `collect_variables` | `evaluate` |
+|---------|---------------------|------------|
+| **Method** | Passive - shows predefined scopes | Active - evaluates arbitrary expressions |
+| **Data Source** | DAP `variables` request (Scopes) | DAP `evaluate` request |
+| **Global Variables** | ✅ currentTerm, state, log, etc. | ✅ |
+| **Operator Parameters** | ❌ Not included in Scopes | ✅ Resolved from Context chain |
+| **Arbitrary Expressions** | ❌ | ✅ `Len(log[i].entries) > 5` |
+| **Compound Expressions** | ❌ | ✅ `i = j /\ range[1] < range[2]` |
+
+### 9.2 When to Use Each
+
+**Use `collect_variables` when:**
+- You want a quick overview of all global state variables
+- You don't know which variables to inspect
+- You're at the beginning of debugging
+
+**Use `evaluate` when:**
+- You need to access operator parameters (i, j, range)
+- You want to compute complex expressions
+- You want to verify specific conditions
+- You're debugging inside an operator definition
+
+### 9.3 Example Comparison
+
+**collect_variables output:**
+```json
+{
+  "collected_variables": [{
+    "variables": {
+      "currentTerm": "(\"1\" :> 1 @@ \"2\" :> 1 @@ \"3\" :> 1)",
+      "state": "(\"1\" :> \"StateLeader\" @@ \"2\" :> \"StateFollower\" ...)"
+    }
+  }]
+}
+```
+Note: `i`, `j`, `range` are NOT included.
+
+**evaluate output:**
+```json
+{
+  "evaluated_expressions": [
+    {"expression": "i", "result": "1"},
+    {"expression": "j", "result": "2"},
+    {"expression": "range", "result": "<<3, 4>>"},
+    {"expression": "currentTerm[i]", "result": "1"},
+    {"expression": "matchIndex[i][j]", "result": "0"}
+  ]
+}
+```
+Note: Can access parameters and compute expressions.
+
+### 9.4 Limitations
+
+**Breakpoint location matters for `evaluate`:**
+
+- ✅ Breakpoint **inside** operator definition → Can access operator parameters
+- ❌ Breakpoint at operator **call site** → Parameters may not be accessible
+
+**Example:**
+```tla
+\* Line 504: Call site - parameters bound by \E quantifier
+/\ \E i,j \in Server : AppendEntriesIfLogged(i, j, range)
+
+\* Line 315: Inside operator definition - parameters are in scope
+AppendEntriesIfLogged(i, j, range) ==
+    /\ AppendEntries(i, j, range)  \* ← Set breakpoint here
+```
+
+Set breakpoints at line 315 (inside the operator), not line 504 (call site)

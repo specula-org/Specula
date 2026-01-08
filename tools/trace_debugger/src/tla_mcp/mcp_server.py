@@ -30,13 +30,13 @@ class TLADebuggerMCPServer:
         Tools are registered using decorators. Handlers are imported
         lazily when needed to avoid import-time dependencies.
         """
-        from .handlers.trace_validation import TraceValidationHandler
+        from .handlers.trace_debugging import TraceDebuggingHandler
         from .handlers.trace_info import TraceInfoHandler
         from .handlers.spec_validation import SpecValidationHandler
 
         # Initialize handlers
         self.handlers = {
-            "run_trace_validation": TraceValidationHandler(),
+            "run_trace_debugging": TraceDebuggingHandler(),
             "get_trace_info": TraceInfoHandler(),
             "validate_spec_syntax": SpecValidationHandler(),
         }
@@ -47,7 +47,7 @@ class TLADebuggerMCPServer:
             """List available tools."""
             return [
                 types.Tool(
-                    name="run_trace_validation",
+                    name="run_trace_debugging",
                     description=(
                         "Run TLC trace validation with breakpoints and collect statistics. "
                         "Supports optional expression evaluation and variable collection at breakpoints. "

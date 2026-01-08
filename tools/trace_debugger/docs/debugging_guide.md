@@ -356,6 +356,82 @@ Problem: j=2 is not in the Union set!
 - j=2 is not in the set, so the condition fails
 - This is a configuration state issue
 
+### 5.4 Using the Evaluate Feature
+
+The MCP tool's `evaluate` parameter allows you to evaluate arbitrary TLA+ expressions at breakpoints. This is more powerful than `collect_variables`.
+
+**Capabilities:**
+
+| Feature | `collect_variables` | `evaluate` |
+|---------|---------------------|------------|
+| Global state variables | ✅ | ✅ |
+| Operator parameters (i, j, range) | ❌ | ✅ |
+| Arbitrary expressions | ❌ | ✅ |
+| Complex conditions | ❌ | ✅ |
+
+**Example Usage:**
+
+```python
+# Using evaluate to inspect operator parameters and compute expressions
+result = run_trace_debugging(
+    spec_file="Traceetcdraft.tla",
+    config_file="Traceetcdraft.cfg",
+    trace_file="../traces/basic.ndjson",
+    work_dir="/path/to/spec",
+    breakpoints=[
+        {"line": 315, "description": "AppendEntries call"}
+    ],
+    evaluate={
+        "breakpoint_line": 315,
+        "expressions": [
+            "i",                    # Operator parameter
+            "j",                    # Operator parameter
+            "range",                # Operator parameter
+            "currentTerm[i]",       # Expression using parameter
+            "matchIndex[i][j]",     # Complex expression
+            "i = j",                # Boolean expression
+            "Len(log[i].entries)"   # Function call
+        ]
+    }
+)
+```
+
+**Example Output:**
+
+```json
+{
+  "evaluated_expressions": [
+    {"expression": "i", "result": "1"},
+    {"expression": "j", "result": "2"},
+    {"expression": "range", "result": "<<3, 4>>"},
+    {"expression": "currentTerm[i]", "result": "1"},
+    {"expression": "matchIndex[i][j]", "result": "0"},
+    {"expression": "i = j", "result": "FALSE"},
+    {"expression": "Len(log[i].entries)", "result": "3"}
+  ]
+}
+```
+
+**Best Practices:**
+
+1. **Set breakpoints inside operator definitions** - Parameters are accessible when the breakpoint is inside the operator body (e.g., line 315 inside `AppendEntriesIfLogged`), not at the call site.
+
+2. **Use expressions to verify conditions** - Instead of guessing why a condition failed, evaluate it directly:
+   ```python
+   expressions=[
+       "j \\in GetConfig(i)",           # Check the failing condition
+       "GetConfig(i)",                   # See the actual set
+       "GetOutgoingConfig(i)",           # Check related values
+   ]
+   ```
+
+3. **Combine with conditional breakpoints** - Focus on specific scenarios:
+   ```python
+   breakpoints=[
+       {"line": 315, "condition": 'i = 1 /\\ j = 2 /\\ TLCGet("level") = 29'}
+   ]
+   ```
+
 ---
 
 ## Step 6: Verify and Expand
