@@ -318,6 +318,21 @@ ApplyConfigUpdate(i, k) ==
     IN
     [config EXCEPT ![i]= [jointConfig |-> << newVoters, outgoing >>, learners |-> newLearners]]
 
+\* Apply a single config change to a config record
+\* Used for processing ChangeConf events with multiple changes
+\* @type: ([nid: Str, action: Str], [voters: Set(Str), learners: Set(Str)]) => [voters: Set(Str), learners: Set(Str)];
+ApplyChange(change, conf) ==
+    CASE change.action = "AddNewServer" ->
+            [voters   |-> conf.voters \union {change.nid},
+             learners |-> conf.learners \ {change.nid}]
+      [] change.action = "RemoveServer" ->
+            [voters   |-> conf.voters \ {change.nid},
+             learners |-> conf.learners \ {change.nid}]
+      [] change.action = "AddLearner" ->
+            [voters   |-> conf.voters \ {change.nid},
+             learners |-> conf.learners \union {change.nid}]
+      [] OTHER -> conf
+
 CommitTo(i, c) ==
     commitIndex' = [commitIndex EXCEPT ![i] = Max({@, c})]
 
@@ -592,7 +607,43 @@ SendSnapshot(i, j) ==
     /\ nextIndex' = [nextIndex EXCEPT ![i][j] = log[i].snapshotIndex + 1]
     /\ ResetInflights(i, j)
     /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState>>
- 
+
+\* Send snapshot with optional log compaction.
+\* Combines CompactLog + SendSnapshot for trace validation where compaction
+\* happens implicitly before sending snapshot.
+\* Reference: In etcd, application compacts log independently, then maybeSendSnapshot() sends it.
+SendSnapshotWithCompaction(i, j, snapshoti) ==
+    /\ i /= j
+    /\ state[i] = Leader
+    /\ j \in GetConfig(i) \union GetLearners(i)
+    /\ LET needsCompact == log[i].offset <= snapshoti
+           newOffset == snapshoti + 1
+           snapTerm == LogTerm(i, snapshoti)
+       IN
+       \* CompactLog precondition: newStart <= commitIndex + 1
+       /\ (needsCompact => (newOffset <= commitIndex[i] + 1))
+       /\ log' = IF needsCompact
+                 THEN [log EXCEPT ![i] = [
+                           offset |-> newOffset,
+                           entries |-> SubSeq(@.entries, newOffset - @.offset + 1, Len(@.entries)),
+                           snapshotIndex |-> snapshoti,
+                           snapshotTerm |-> snapTerm
+                       ]]
+                 ELSE log
+       /\ SendDirect([mtype          |-> SnapshotRequest,
+                      mterm          |-> currentTerm[i],
+                      msnapshotIndex |-> snapshoti,
+                      msnapshotTerm  |-> LogTerm(i, snapshoti),
+                      mhistory       |-> SubSeq(historyLog[i], 1, snapshoti),
+                      msource        |-> i,
+                      mdest          |-> j])
+       /\ progressState' = [progressState EXCEPT ![i][j] = StateSnapshot]
+       /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
+       /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = snapshoti]
+       /\ nextIndex' = [nextIndex EXCEPT ![i][j] = snapshoti + 1]
+       /\ inflights' = [inflights EXCEPT ![i][j] = {}]
+       /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, historyLog>>
+
 \* Candidate i transitions to leader.
 \* @type: Int => Bool;
 BecomeLeader(i) ==
@@ -649,6 +700,46 @@ ClientRequestAndSend(i, v) ==
              msource     |-> i,
              mdest       |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog>>
+
+\* Leader replicates an entry and sends MsgAppResp to itself.
+\* Generic version that accepts any entry value and type.
+\* Reference: In etcd raft, leader handles its own log entries as self-messages.
+ReplicateAndSendToSelf(i, v, t) ==
+    /\ Replicate(i, v, t)
+    /\ Send([mtype       |-> AppendEntriesResponse,
+             msubtype    |-> "app",
+             mterm       |-> currentTerm[i],
+             msuccess    |-> TRUE,
+             mmatchIndex |-> LastIndex(log'[i]),
+             msource     |-> i,
+             mdest       |-> i])
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars>>
+
+\* Leader replicates an implicit entry (for self-message response in trace).
+\* In joint config: creates a leave-joint config entry
+\* Otherwise: creates a normal value entry
+\* Reference: This models the implicit replication when leader sends MsgAppResp to itself.
+ReplicateImplicitEntry(i) ==
+    /\ state[i] = Leader
+    /\ LET isJoint == IsJointConfig(i)
+           oldConf == GetConfig(i)
+           entryType == IF isJoint THEN ConfigEntry ELSE ValueEntry
+           entryValue == IF isJoint
+                         THEN [newconf |-> GetConfig(i), learners |-> GetLearners(i), enterJoint |-> FALSE, oldconf |-> oldConf]
+                         ELSE [val |-> 0]
+       IN
+       /\ Replicate(i, entryValue, entryType)
+       /\ Send([mtype       |-> AppendEntriesResponse,
+                msubtype    |-> "app",
+                mterm       |-> currentTerm[i],
+                msuccess    |-> TRUE,
+                mmatchIndex |-> LastIndex(log'[i]),
+                msource     |-> i,
+                mdest       |-> i])
+       /\ IF isJoint
+          THEN pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log'[i])]
+          ELSE UNCHANGED pendingConfChangeIndex
+    /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
 
 \* Leader i advances its commitIndex.
 \* This is done as a separate step from handling AppendEntries responses,
@@ -796,7 +887,31 @@ ApplySimpleConfChange(i) ==
            ELSE /\ UNCHANGED progressVars
                 /\ UNCHANGED matchIndex
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, logVars, durableState, historyLog>>
-    
+
+\* Leave joint consensus - transition from joint config to single config
+\* Reference: confchange/confchange.go LeaveJoint()
+LeaveJoint(i) ==
+    /\ IsJointConfig(i)
+    /\ LET newVoters == GetConfig(i)  \* Keep incoming config (jointConfig[1])
+       IN config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, {}>>]]
+    /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] > 0 THEN
+        /\ reconfigCount' = reconfigCount + 1
+        /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
+       ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars>>
+
+\* Apply configuration from snapshot
+\* When a follower receives a snapshot, it applies the config directly
+ApplySnapshotConfChange(i, newVoters) ==
+    /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, {}>>]]
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex>>
+
+\* Follower advances commit index (e.g., from AppendEntries leaderCommit)
+FollowerAdvanceCommitIndex(i, newCommit) ==
+    /\ state[i] /= Leader
+    /\ commitIndex' = [commitIndex EXCEPT ![i] = newCommit]
+    /\ UNCHANGED <<messages, pendingMessages, serverVars, candidateVars, matchIndex, pendingConfChangeIndex, log, configVars, durableState, progressVars, historyLog>>
+
 Ready(i) ==
     /\ PersistState(i)
     /\ SendPendingMessages(i)

@@ -288,8 +288,7 @@ AdvanceCommitIndexIfLogged(i) ==
     /\ LoglineIsNodeEvent("Commit", i)
     /\ IF state[i] = Leader
        THEN AdvanceCommitIndex(i) /\ ValidateAfterAdvanceCommitIndex(i)
-       ELSE /\ commitIndex' = [commitIndex EXCEPT ![i] = logline.event.state.commit]
-            /\ UNCHANGED <<messages, pendingMessages, serverVars, candidateVars, matchIndex, pendingConfChangeIndex, log, configVars, durableState, progressVars, historyLog>>
+       ELSE FollowerAdvanceCommitIndex(i, logline.event.state.commit)  \* Call action from etcdraft.tla
 
 ValidateAfterAppendEntries(i, j) ==
     /\ ValidatePostStates(i)
@@ -350,87 +349,18 @@ HeartbeatIfLogged(i, j) ==
     /\ Heartbeat(i, j)
     /\ ValidateAfterAppendEntries(i, j)
 
-\* SendSnapshot combined with compaction for trace validation.
-\* In etcd:
-\*   - Application compacts log independently, creating a snapshot
-\*   - maybeSendSnapshot() fetches snapshot from storage and sends it
-\*   - BecomeSnapshot(snapshoti) updates progress:
-\*       State = StateSnapshot
-\*       MsgAppFlowPaused = false
-\*       PendingSnapshot = snapshoti
-\*       Next = snapshoti + 1
-\*       Inflights = empty
-\*
-\* For trace validation, we combine compaction and sending since the trace
-\* shows the state after both operations.
-SendSnapshotWithCompaction(i, j, snapshoti) ==
-    /\ i /= j
-    /\ state[i] = Leader
-    /\ j \in GetConfig(i) \union GetLearners(i)
-    \* Compact log to create snapshot at snapshoti if needed
-    /\ LET needsCompact == log[i].offset <= snapshoti
-           newOffset == snapshoti + 1
-           snapTerm == LogTerm(i, snapshoti)
-       IN
-       \* CompactLog precondition: newStart <= commitIndex + 1
-       /\ (needsCompact => (newOffset <= commitIndex[i] + 1))
-       /\ log' = IF needsCompact
-                 THEN [log EXCEPT ![i] = [
-                           offset |-> newOffset,
-                           entries |-> SubSeq(@.entries, newOffset - @.offset + 1, Len(@.entries)),
-                           snapshotIndex |-> snapshoti,
-                           snapshotTerm |-> snapTerm
-                       ]]
-                 ELSE log
-       \* Send snapshot message (uses SendDirect to add to pendingMessages)
-       /\ SendDirect([mtype          |-> SnapshotRequest,
-                      mterm          |-> currentTerm[i],
-                      msnapshotIndex |-> snapshoti,
-                      msnapshotTerm  |-> LogTerm(i, snapshoti),
-                      mhistory       |-> SubSeq(historyLog[i], 1, snapshoti),
-                      msource        |-> i,
-                      mdest          |-> j])
-       \* BecomeSnapshot(snapshoti) updates progress state
-       /\ progressState' = [progressState EXCEPT ![i][j] = StateSnapshot]
-       /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
-       /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = snapshoti]
-       /\ nextIndex' = [nextIndex EXCEPT ![i][j] = snapshoti + 1]
-       /\ inflights' = [inflights EXCEPT ![i][j] = {}]
-       /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, historyLog>>
-
+\* SendSnapshot - uses SendSnapshotWithCompaction from etcdraft.tla
 SendSnapshotIfLogged(i, j, index) ==
     /\ LoglineIsMessageEvent("SendAppendEntriesRequest", i, j)
     /\ logline.event.msg.type = "MsgSnap"
     /\ index = logline.event.msg.index
-    /\ SendSnapshotWithCompaction(i, j, index)
+    /\ SendSnapshotWithCompaction(i, j, index)  \* Call action from etcdraft.tla
     /\ ValidateAfterSnapshot(i, j)
-    \* NEW: Validate StateSnapshot transition
     /\ progressState'[i][j] = StateSnapshot
 
+\* ImplicitReplicateAndSend - uses ReplicateImplicitEntry from etcdraft.tla
 ImplicitReplicateAndSend(i) ==
-    /\ state[i] = Leader
-    /\ LET 
-           isJoint == IsJointConfig(i)
-           oldConf == GetConfig(i)
-           entryType == IF isJoint THEN ConfigEntry ELSE ValueEntry
-           entryValue == IF isJoint 
-                         THEN [newconf |-> GetConfig(i), learners |-> GetLearners(i), enterJoint |-> FALSE, oldconf |-> oldConf]
-                         ELSE [val |-> 0]
-           entry == [term  |-> currentTerm[i],
-                     type  |-> entryType,
-                     value |-> entryValue]
-           newLog == [log[i] EXCEPT !.entries = Append(@, entry)]
-       IN  /\ log' = [log EXCEPT ![i] = newLog]
-           /\ historyLog' = [historyLog EXCEPT ![i] = Append(@, entry)]
-           /\ IF isJoint THEN pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=LastIndex(newLog)] ELSE UNCHANGED pendingConfChangeIndex
-    /\ Send([mtype           |-> AppendEntriesResponse,
-             msubtype        |-> "app",
-             mterm           |-> currentTerm[i],
-             msuccess        |-> TRUE,
-             mmatchIndex     |-> LastIndex(log'[i]),
-             msource         |-> i,
-             mdest           |-> i])
-    /\ UNCHANGED <<serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, messages>>
+    ReplicateImplicitEntry(i)  \* Call action from etcdraft.tla
 
 AppendEntriesToSelfIfLogged(i) ==
     /\ LoglineIsMessageEvent("SendAppendEntriesResponse", i, i)
@@ -472,17 +402,7 @@ TimeoutIfLogged(i) ==
     /\ Timeout(i)
     /\ ValidateAfterTimeout(i)
 
-ApplyChange(change, conf) ==
-    CASE change.action = "AddNewServer" ->
-            [voters   |-> conf.voters \union {change.nid},
-             learners |-> conf.learners \ {change.nid}]
-      [] change.action = "RemoveServer" ->
-            [voters   |-> conf.voters \ {change.nid},
-             learners |-> conf.learners \ {change.nid}]
-      [] change.action = "AddLearner" ->
-            [voters   |-> conf.voters \ {change.nid},
-             learners |-> conf.learners \union {change.nid}]
-      [] OTHER -> conf
+\* Note: ApplyChange helper is now defined in etcdraft.tla
 
 ChangeConfIfLogged(i) ==
     /\ LoglineIsNodeEvent("ChangeConf", i)
@@ -507,32 +427,20 @@ ApplySimpleConfChangeIfLogged(i) ==
     /\ ~IsJointConfig(i)  \* If we're in joint, we should be using LeaveJointIfLogged instead
     /\ ApplySimpleConfChange(i)
 
-\* Leave joint consensus - when we're in joint consensus (jointConfig[2] != {})
-\* and ApplyConfChange is called, we exit joint consensus
+\* Leave joint consensus - calls LeaveJoint from etcdraft.tla
 LeaveJointIfLogged(i) ==
     /\ LoglineIsNodeEvent("ApplyConfChange", i)
     /\ "newconf" \in DOMAIN logline.event.prop.cc
     /\ IsJointConfig(i)  \* We're currently in joint consensus
-    /\ LET newVoters == ToSet(logline.event.prop.cc.newconf)
-       IN
-       \* When leaving joint, we keep the incoming config (jointConfig[1]) and clear outgoing
-       /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, {}>>]]
-       /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] > 0 THEN
-           /\ reconfigCount' = reconfigCount + 1
-           /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
-          ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
-       /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars>>
+    /\ LeaveJoint(i)     \* Call action from etcdraft.tla
 
-\* Apply configuration from snapshot - when log.offset > commitIndex,
-\* the config came from snapshot, not from log entries
+\* Apply configuration from snapshot - calls ApplySnapshotConfChange from etcdraft.tla
 ApplySnapshotConfChangeIfLogged(i) ==
     /\ LoglineIsNodeEvent("ApplyConfChange", i)
     /\ "newconf" \in DOMAIN logline.event.prop.cc
     /\ log[i].offset > commitIndex[i]  \* Indicates snapshot was applied
     /\ LET newVoters == ToSet(logline.event.prop.cc.newconf)
-       IN
-       /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, {}>>]]
-       /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex>>
+       IN ApplySnapshotConfChange(i, newVoters)  \* Call action from etcdraft.tla
 
 ReadyIfLogged(i) ==
     /\ LoglineIsNodeEvent("Ready", i)
