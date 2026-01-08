@@ -312,6 +312,13 @@ ValidateAfterAppendEntriesToSelf(i) ==
         /\ msg.msource = msg.mdest
         /\ OneMoreMessage(msg)
 
+ValidateAfterSnapshot(i, j) ==
+    /\ ValidatePostStates(i)
+    /\ \E msg \in DOMAIN pendingMessages':
+        /\ LoglineIsSnapshotRequest(msg)
+        /\ OneMoreMessage(msg)
+        /\ ValidateProgressState(i, j)
+
 AppendEntriesIfLogged(i, j, range) ==
     /\ LoglineIsMessageEvent("SendAppendEntriesRequest", i, j)
     /\ logline.event.msg.type = "MsgApp"
@@ -352,7 +359,7 @@ SendSnapshotIfLogged(i, j, index) ==
     \* We force the model to compact to 'index' if it hasn't already.
     /\ CompactForSnapshot(i, index)
     /\ SendSnapshot(i, j)
-    /\ ValidateAfterAppendEntries(i, j)
+    /\ ValidateAfterSnapshot(i, j)
     \* NEW: Validate StateSnapshot transition
     /\ progressState'[i][j] = StateSnapshot
 

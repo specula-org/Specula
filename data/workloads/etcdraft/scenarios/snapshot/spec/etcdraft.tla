@@ -733,7 +733,7 @@ ChangeConf(i) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
 
 \* Leader i proposes an arbitrary configuration change AND sends MsgAppResp.
 \* Used for implicit replication in Trace Validation.
@@ -767,9 +767,9 @@ ApplySimpleConfChange(i) ==
     IN
     /\ validIndices /= {}
     /\ LET k == Max(validIndices)
-           oldConfig == GetConfig(i) \cup GetOutgoingConfig(i)
+           oldConfig == GetConfig(i) \cup GetOutgoingConfig(i) \cup GetLearners(i)
            newConfigFn == ApplyConfigUpdate(i, k)
-           newConfig == newConfigFn[i].jointConfig[1] \cup newConfigFn[i].jointConfig[2]
+           newConfig == newConfigFn[i].jointConfig[1] \cup newConfigFn[i].jointConfig[2] \cup newConfigFn[i].learners
            addedNodes == newConfig \ oldConfig
        IN
         /\ k > 0
@@ -1076,9 +1076,11 @@ HandleAppendEntriesResponse(i, j, m) ==
 
 \* Compacts the log of server i up to newStart (exclusive).
 \* newStart becomes the new offset.
+\* In etcd, Compact() only checks index <= lastIndex. The commitIndex check
+\* is the application's responsibility. We allow snapshotIndex <= commitIndex.
 CompactLog(i, newStart) ==
     /\ newStart > log[i].offset
-    /\ newStart <= commitIndex[i]
+    /\ newStart <= commitIndex[i] + 1
     /\ log' = [log EXCEPT ![i] = [
           offset  |-> newStart,
           entries |-> SubSeq(@.entries, newStart - @.offset + 1, Len(@.entries)),
