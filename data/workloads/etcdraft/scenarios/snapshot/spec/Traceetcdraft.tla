@@ -312,12 +312,29 @@ ValidateAfterAppendEntriesToSelf(i) ==
         /\ msg.msource = msg.mdest
         /\ OneMoreMessage(msg)
 
+ValidateProgressStatePrimed(i, j) ==
+    \/ /\ "prop" \notin DOMAIN logline.event
+       /\ TRUE
+    \/ /\ "prop" \in DOMAIN logline.event
+       /\ "state" \in DOMAIN logline.event.prop
+       /\ progressState'[i][j] = logline.event.prop.state
+       /\ "match" \in DOMAIN logline.event.prop =>
+           matchIndex'[i][j] = logline.event.prop.match
+       /\ "next" \in DOMAIN logline.event.prop =>
+           nextIndex'[i][j] = logline.event.prop.next
+       /\ "paused" \in DOMAIN logline.event.prop =>
+           msgAppFlowPaused'[i][j] = logline.event.prop.paused
+       /\ "inflights_count" \in DOMAIN logline.event.prop =>
+           Cardinality(inflights'[i][j]) = logline.event.prop.inflights_count
+       /\ (progressState'[i][j] = StateSnapshot /\ "pending_snapshot" \in DOMAIN logline.event.prop) =>
+           pendingSnapshot'[i][j] = logline.event.prop.pending_snapshot
+
 ValidateAfterSnapshot(i, j) ==
     /\ ValidatePostStates(i)
     /\ \E msg \in DOMAIN pendingMessages':
         /\ LoglineIsSnapshotRequest(msg)
         /\ OneMoreMessage(msg)
-        /\ ValidateProgressState(i, j)
+        /\ ValidateProgressStatePrimed(i, j)
 
 AppendEntriesIfLogged(i, j, range) ==
     /\ LoglineIsMessageEvent("SendAppendEntriesRequest", i, j)
@@ -333,32 +350,59 @@ HeartbeatIfLogged(i, j) ==
     /\ Heartbeat(i, j)
     /\ ValidateAfterAppendEntries(i, j)
 
-\* Helper: Force Compaction if necessary to enable SendSnapshot
-CompactForSnapshot(i, snapshotIndex) ==
-    \* If log offset is <= snapshotIndex, we need to compact to allow SendSnapshot to trigger (requires ~IsAvailable) 
-    IF log[i].offset <= snapshotIndex
-    THEN CompactLog(i, snapshotIndex + 1)
-    ELSE UNCHANGED <<messages, pendingMessages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog>>
+\* SendSnapshot combined with compaction for trace validation.
+\* In etcd:
+\*   - Application compacts log independently, creating a snapshot
+\*   - maybeSendSnapshot() fetches snapshot from storage and sends it
+\*   - BecomeSnapshot(snapshoti) updates progress:
+\*       State = StateSnapshot
+\*       MsgAppFlowPaused = false
+\*       PendingSnapshot = snapshoti
+\*       Next = snapshoti + 1
+\*       Inflights = empty
+\*
+\* For trace validation, we combine compaction and sending since the trace
+\* shows the state after both operations.
+SendSnapshotWithCompaction(i, j, snapshoti) ==
+    /\ i /= j
+    /\ state[i] = Leader
+    /\ j \in GetConfig(i) \union GetLearners(i)
+    \* Compact log to create snapshot at snapshoti if needed
+    /\ LET needsCompact == log[i].offset <= snapshoti
+           newOffset == snapshoti + 1
+           snapTerm == LogTerm(i, snapshoti)
+       IN
+       \* CompactLog precondition: newStart <= commitIndex + 1
+       /\ (needsCompact => (newOffset <= commitIndex[i] + 1))
+       /\ log' = IF needsCompact
+                 THEN [log EXCEPT ![i] = [
+                           offset |-> newOffset,
+                           entries |-> SubSeq(@.entries, newOffset - @.offset + 1, Len(@.entries)),
+                           snapshotIndex |-> snapshoti,
+                           snapshotTerm |-> snapTerm
+                       ]]
+                 ELSE log
+       \* Send snapshot message (uses SendDirect to add to pendingMessages)
+       /\ SendDirect([mtype          |-> SnapshotRequest,
+                      mterm          |-> currentTerm[i],
+                      msnapshotIndex |-> snapshoti,
+                      msnapshotTerm  |-> LogTerm(i, snapshoti),
+                      mhistory       |-> SubSeq(historyLog[i], 1, snapshoti),
+                      msource        |-> i,
+                      mdest          |-> j])
+       \* BecomeSnapshot(snapshoti) updates progress state
+       /\ progressState' = [progressState EXCEPT ![i][j] = StateSnapshot]
+       /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
+       /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = snapshoti]
+       /\ nextIndex' = [nextIndex EXCEPT ![i][j] = snapshoti + 1]
+       /\ inflights' = [inflights EXCEPT ![i][j] = {}]
+       /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, historyLog>>
 
-\* SendSnapshot in Spec requires: ~IsAvailable(i, nextIndex - 1)
-\* In etcd, nextIndex is updated to snapshotIndex + 1 AFTER sending snapshot.
-\* BEFORE sending, nextIndex might be something else.
-\* BUT SendSnapshot logic in Spec uses nextIndex to determine PREV log index availability.
-\* Actually, SendSnapshot in Spec:
-\*    LET prevLogIndex == nextIndex[i][j] - 1
-\*    ~IsAvailable(i, prevLogIndex)
-\* This means the follower needs 'prevLogIndex' but we don't have it.
-\* The trace says we sent a snapshot with index 'index'.
-\* Usually, 'index' IS the compacted index.
 SendSnapshotIfLogged(i, j, index) ==
     /\ LoglineIsMessageEvent("SendAppendEntriesRequest", i, j)
     /\ logline.event.msg.type = "MsgSnap"
     /\ index = logline.event.msg.index
-    \* Ensure log is compacted enough to simulate "missing log entry" condition
-    \* Actually, if we see MsgSnap in trace, it means system DID compact.
-    \* We force the model to compact to 'index' if it hasn't already.
-    /\ CompactForSnapshot(i, index)
-    /\ SendSnapshot(i, j)
+    /\ SendSnapshotWithCompaction(i, j, index)
     /\ ValidateAfterSnapshot(i, j)
     \* NEW: Validate StateSnapshot transition
     /\ progressState'[i][j] = StateSnapshot
@@ -460,7 +504,35 @@ ChangeConfIfLogged(i) ==
 
 ApplySimpleConfChangeIfLogged(i) ==
     /\ LoglineIsNodeEvent("ApplyConfChange", i)
+    /\ ~IsJointConfig(i)  \* If we're in joint, we should be using LeaveJointIfLogged instead
     /\ ApplySimpleConfChange(i)
+
+\* Leave joint consensus - when we're in joint consensus (jointConfig[2] != {})
+\* and ApplyConfChange is called, we exit joint consensus
+LeaveJointIfLogged(i) ==
+    /\ LoglineIsNodeEvent("ApplyConfChange", i)
+    /\ "newconf" \in DOMAIN logline.event.prop.cc
+    /\ IsJointConfig(i)  \* We're currently in joint consensus
+    /\ LET newVoters == ToSet(logline.event.prop.cc.newconf)
+       IN
+       \* When leaving joint, we keep the incoming config (jointConfig[1]) and clear outgoing
+       /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, {}>>]]
+       /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] > 0 THEN
+           /\ reconfigCount' = reconfigCount + 1
+           /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
+          ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
+       /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars>>
+
+\* Apply configuration from snapshot - when log.offset > commitIndex,
+\* the config came from snapshot, not from log entries
+ApplySnapshotConfChangeIfLogged(i) ==
+    /\ LoglineIsNodeEvent("ApplyConfChange", i)
+    /\ "newconf" \in DOMAIN logline.event.prop.cc
+    /\ log[i].offset > commitIndex[i]  \* Indicates snapshot was applied
+    /\ LET newVoters == ToSet(logline.event.prop.cc.newconf)
+       IN
+       /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, {}>>]]
+       /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex>>
 
 ReadyIfLogged(i) ==
     /\ LoglineIsNodeEvent("Ready", i)
@@ -526,7 +598,9 @@ TraceNextNonReceiveActions ==
        \/ /\ LoglineIsEvent("ChangeConf")
           /\ \E i \in Server: ChangeConfIfLogged(i)
        \/ /\ LoglineIsEvent("ApplyConfChange")
-          /\ \E i \in Server: ApplySimpleConfChangeIfLogged(i)
+          /\ \E i \in Server: \/ ApplySimpleConfChangeIfLogged(i)
+                              \/ ApplySnapshotConfChangeIfLogged(i)
+                              \/ LeaveJointIfLogged(i)
        \/ /\ LoglineIsEvent("Ready")
           /\ \E i \in Server: ReadyIfLogged(i)
        \/ /\ LoglineIsEvent("InitState")

@@ -226,7 +226,8 @@ LastTerm(xlog) ==
 
 \* Check if a logical index is available in the memory log (not compacted)
 IsAvailable(i, index) ==
-    index >= log[i].offset
+    /\ index >= log[i].offset
+    /\ index <= LastIndex(log[i])
 
 \* Get the log entry at a logical index
 \* PRECONDITION: IsAvailable(i, index)
@@ -1137,7 +1138,7 @@ HandleSnapshotRequest(i, j, m) ==
                      msource     |-> i, 
                      mdest       |-> j], 
                      m)
-           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars, historyLog>>
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars>>
 
 \* Any RPC with a newer term causes the recipient to advance its term first.
 \* @type: (Int, Int, MSG) => Bool;
