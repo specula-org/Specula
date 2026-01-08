@@ -31,11 +31,13 @@ class TLADebuggerMCPServer:
         lazily when needed to avoid import-time dependencies.
         """
         from .handlers.trace_debugging import TraceDebuggingHandler
+        from .handlers.trace_validation import TraceValidationHandler
         from .handlers.trace_info import TraceInfoHandler
         from .handlers.spec_validation import SpecValidationHandler
 
         # Initialize handlers
         self.handlers = {
+            "run_trace_validation": TraceValidationHandler(),
             "run_trace_debugging": TraceDebuggingHandler(),
             "get_trace_info": TraceInfoHandler(),
             "validate_spec_syntax": SpecValidationHandler(),
@@ -46,6 +48,48 @@ class TLADebuggerMCPServer:
         async def list_tools() -> list[types.Tool]:
             """List available tools."""
             return [
+                types.Tool(
+                    name="run_trace_validation",
+                    description=(
+                        "Run TLC trace validation directly (without debugger). "
+                        "Returns concise feedback: success, trace mismatch with debugging suggestion, or error. "
+                        "\n\nUse this for initial validation. If it fails, use run_trace_debugging for detailed debugging."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "spec_file": {
+                                "type": "string",
+                                "description": "TLA+ spec file name (e.g., 'Traceetcdraft.tla')"
+                            },
+                            "config_file": {
+                                "type": "string",
+                                "description": "TLC config file name (e.g., 'Traceetcdraft.cfg')"
+                            },
+                            "trace_file": {
+                                "type": "string",
+                                "description": "Trace file path (relative to work_dir or absolute)"
+                            },
+                            "work_dir": {
+                                "type": "string",
+                                "description": "Working directory (absolute path)"
+                            },
+                            "timeout": {
+                                "type": "integer",
+                                "description": "Timeout in seconds (default: 300)"
+                            },
+                            "tla_jar": {
+                                "type": "string",
+                                "description": "Path to tla2tools.jar (optional)"
+                            },
+                            "community_jar": {
+                                "type": "string",
+                                "description": "Path to CommunityModules-deps.jar (optional)"
+                            }
+                        },
+                        "required": ["spec_file", "config_file", "trace_file", "work_dir"]
+                    }
+                ),
                 types.Tool(
                     name="run_trace_debugging",
                     description=(
