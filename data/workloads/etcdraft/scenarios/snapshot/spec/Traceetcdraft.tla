@@ -166,6 +166,11 @@ LoglineIsAppendEntriesRequest(m) ==
                                    /\ m.mprevLogIndex = logline.event.msg.index
     /\ Len(m.mentries) = logline.event.msg.entries
 
+SnapshotIndexFromLogline ==
+    IF logline.event.msg.type = "MsgSnap" /\ logline.event.msg.index = 0 /\ logline.event.msg.entries > 0
+    THEN logline.event.msg.entries
+    ELSE logline.event.msg.index
+
 LoglineIsSnapshotRequest(m) ==
     /\ "msg" \in DOMAIN logline.event
     /\ m.mtype = SnapshotRequest
@@ -173,8 +178,8 @@ LoglineIsSnapshotRequest(m) ==
     /\ m.mdest   = logline.event.msg.to
     /\ m.msource = logline.event.msg.from
     /\ m.mterm = logline.event.msg.term
-    /\ m.msnapshotIndex = logline.event.msg.index
-    /\ m.msnapshotTerm = logline.event.msg.logTerm
+    /\ m.msnapshotIndex = SnapshotIndexFromLogline
+    /\ logline.event.msg.logTerm = 0 \/ m.msnapshotTerm = logline.event.msg.logTerm
 
 LoglineIsAppendEntriesResponse(m) ==
     /\ "msg" \in DOMAIN logline.event
@@ -353,7 +358,7 @@ HeartbeatIfLogged(i, j) ==
 SendSnapshotIfLogged(i, j, index) ==
     /\ LoglineIsMessageEvent("SendAppendEntriesRequest", i, j)
     /\ logline.event.msg.type = "MsgSnap"
-    /\ index = logline.event.msg.index
+    /\ index = SnapshotIndexFromLogline
     /\ SendSnapshotWithCompaction(i, j, index)  \* Call action from etcdraft.tla
     /\ ValidateAfterSnapshot(i, j)
     /\ progressState'[i][j] = StateSnapshot
@@ -425,6 +430,7 @@ ChangeConfIfLogged(i) ==
 ApplySimpleConfChangeIfLogged(i) ==
     /\ LoglineIsNodeEvent("ApplyConfChange", i)
     /\ ~IsJointConfig(i)  \* If we're in joint, we should be using LeaveJointIfLogged instead
+    /\ log[i].offset <= commitIndex[i]  \* Avoid overlap with snapshot apply path
     /\ ApplySimpleConfChange(i)
 
 \* Leave joint consensus - calls LeaveJoint from etcdraft.tla
@@ -499,8 +505,8 @@ TraceNextNonReceiveActions ==
        \/ /\ LoglineIsEvent("SendAppendEntriesRequest")
           /\ \E i,j \in Server : HeartbeatIfLogged(i, j) /\ logline.event.msg.type = "MsgHeartbeat"
        \/ /\ LoglineIsEvent("SendAppendEntriesRequest") /\ logline.event.msg.type = "MsgSnap"
-          \* Fix: Pass msg.index as snapshot index
-          /\ \E i,j \in Server : SendSnapshotIfLogged(i, j, logline.event.msg.index)
+          \* Fix: Pass snapshot index from logline
+          /\ \E i,j \in Server : SendSnapshotIfLogged(i, j, SnapshotIndexFromLogline)
        \/ /\ LoglineIsEvent("BecomeCandidate")
           /\ \E i \in Server : TimeoutIfLogged(i)
        \/ /\ LoglineIsEvent("ChangeConf")
