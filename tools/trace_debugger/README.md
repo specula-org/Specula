@@ -97,6 +97,41 @@ Used with `run_trace_debugging` to collect variable values when a specific break
 
 ### Tool Responses
 
+#### run_trace_validation Response
+
+**Success:**
+```json
+{
+  "status": "success",
+  "states_generated": 40,
+  "message": "Trace validation passed",
+  "success": true
+}
+```
+
+**Trace Mismatch:**
+```json
+{
+  "status": "trace_mismatch",
+  "last_state_number": 112,
+  "failed_trace_line": 107,
+  "states_generated": 116,
+  "last_state": "State 112: <TraceNext...>\n/\\ l = 107\n...",
+  "suggestion": "Trace validation failed at trace line 107. Use run_trace_debugging with breakpoint condition 'TLCGet(\"level\") = 112' to debug.",
+  "success": true
+}
+```
+
+**Error:**
+```json
+{
+  "status": "error",
+  "message": "TLC reported an error",
+  "raw_output": "... full TLC output ...",
+  "success": true
+}
+```
+
 #### run_trace_debugging Response
 
 ```json
@@ -586,8 +621,8 @@ See `requirements.txt`:
 
 ## Documentation
 
-- **[debugging_guide.md](docs/debugging_guide.md)**: Comprehensive debugging methodology (Chinese)
-- **[debugging_guide_en.md](docs/debugging_guide_en.md)**: Comprehensive debugging methodology (English)
+- **[trace_validation_guide.md](docs/trace_validation_guide.md)**: Guide for `run_trace_validation` tool - quick validation and workflow
+- **[debugging_guide.md](docs/debugging_guide.md)**: Comprehensive debugging methodology with `run_trace_debugging`
 - **[background.md](docs/background.md)**: Essential background knowledge on TLA+ trace validation, TLCGet("level"), and debugger semantics
 
 ## Architecture
