@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 WORKDIR="$(mktemp -d)"
-TOOLDIR="${WORKDIR}/tool"
+TOOLDIR="${TOOLDIR:-${WORKDIR}/tool}"
 STATEDIR="${WORKDIR}/state"
 FAILFAST=false
 LOG_TO_FILE=false
