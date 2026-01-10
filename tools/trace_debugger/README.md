@@ -222,7 +222,9 @@ Used with `run_trace_debugging` to collect variable values when a specific break
 
 ## Debug Best Practices
 
-The TLA+ Trace Debugger follows systematic debugging practices based on the **layered debugging methodology** (from coarse-grained to fine-grained localization). For detailed methodology, see [debugging_guide.md](docs/debugging_guide.md) and [debugging_guide_en.md](docs/debugging_guide_en.md).
+The TLA+ Trace Debugger follows systematic debugging practices based on the **layered debugging methodology** (from coarse-grained to fine-grained localization).
+
+**For AI Agents:** See the [Agent Skill](skills/tla-trace-workflow/SKILL.md) for structured guidance on the complete workflow (Validation → Debugging → Fix).
 
 ### Core Debugging Methodology
 
@@ -444,6 +446,55 @@ Step 3 - Root cause analysis:
 - [ ] Compare variable values with trace file expectations
 - [ ] Determine WHY the condition is FALSE (spec bug vs trace bug)
 
+### Fix Phase
+
+After identifying the root cause, you need to fix the issue. **First, classify the error type:**
+
+| Error Type | Description | Fix Strategy |
+|------------|-------------|--------------|
+| **Inconsistency Error** | Spec is objectively wrong about system behavior | Fix the spec based on system code evidence |
+| **Abstraction Gap** | Spec is correct but at different abstraction level | Requires design decision - ask for guidance |
+
+#### Fixing Inconsistency Errors
+
+1. **Read system source code** to understand the actual behavior
+2. **Find the corresponding code location** as evidence for your fix
+3. **Fix the base spec** (e.g., `etcdraft.tla`) - avoid modifying trace comparison logic (`Trace*.tla`) as this may cause false positives
+4. **Verify** with `run_trace_validation`
+5. **Document** in `fix_log.md` in the spec directory
+
+#### Handling Abstraction Gaps
+
+When you identify an abstraction gap (spec models behavior at a different level than the system), multiple fix strategies exist:
+- Modify spec logic to support system's behavior
+- Modify trace comparison logic to bridge the gap
+- Modify system instrumentation to change trace generation
+
+**This requires a design decision** about abstraction granularity. Consult with the user before proceeding.
+
+#### fix_log.md Format
+
+Document each fix in `fix_log.md`:
+
+```markdown
+## [YYYY-MM-DD] - [Brief Title]
+
+**Trace:** `path/to/trace.ndjson`
+**Error Type:** Inconsistency Error / Abstraction Gap
+
+**Issue:**
+[Brief description of what was inconsistent]
+
+**Root Cause:**
+[What caused the inconsistency - reference system code if applicable]
+
+**Fix:**
+[What was changed and why]
+
+**Files Modified:**
+- `filename.tla`: [brief description of change]
+```
+
 ## Installation
 
 ### Prerequisites
@@ -621,9 +672,11 @@ See `requirements.txt`:
 
 ## Documentation
 
-- **[trace_validation_guide.md](docs/trace_validation_guide.md)**: Guide for `run_trace_validation` tool - quick validation and workflow
-- **[debugging_guide.md](docs/debugging_guide.md)**: Comprehensive debugging methodology with `run_trace_debugging`
-- **[background.md](docs/background.md)**: Essential background knowledge on TLA+ trace validation, TLCGet("level"), and debugger semantics
+**For AI Agents:**
+- **[SKILL.md](skills/tla-trace-workflow/SKILL.md)**: Core concepts and workflow overview
+- **[validation.md](skills/tla-trace-workflow/references/validation.md)**: Phase 1 - Trace validation guidance
+- **[debugging.md](skills/tla-trace-workflow/references/debugging.md)**: Phase 2 - Debugging methodology
+- **[fix.md](skills/tla-trace-workflow/references/fix.md)**: Phase 3 - Fix strategies and documentation
 
 ## Architecture
 
