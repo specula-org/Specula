@@ -56,16 +56,20 @@ Before making any changes, determine which type of error you're dealing with:
 2. **If uncertain:** Read the system code to understand the actual behavior
 3. **Classify correctly** before proceeding - wrong classification leads to wrong fixes
 
+**If still uncertain about error type:** Treat it as an Abstraction Gap and ask the user for clarification.
+
 ### Principle 2: For Inconsistency Errors - Fix the Spec
 
 **Fix location priority:**
 1. **Base spec** (e.g., `etcdraft.tla`) - modeling logic
-2. **Avoid modifying** trace comparison logic (e.g., `Traceetcdraft.tla`) unless absolutely necessary
+2. **Trace comparison logic** (e.g., `Traceetcdraft.tla`) - only when absolutely necessary
 
 **Why avoid modifying trace comparison logic?**
 - Modifying comparison logic may cause **false positives** (validation passes but spec is still wrong)
 - Our goal is to get a **high-quality spec** that can find bugs
 - The spec itself should accurately model the system
+
+**Only modify trace comparison logic when there is no other option.** When you do, document the reason clearly.
 
 **Before modifying:**
 1. **Read the system source code** to understand the actual behavior
@@ -172,7 +176,7 @@ Before making any changes, determine which type of error you're dealing with:
 Create or append to `fix_log.md` in the spec directory:
 
 ```markdown
-## [Date] - [Brief Title]
+## [YYYY-MM-DD] - [Brief Title]
 
 **Trace:** `path/to/trace.ndjson`
 **Error Type:** Inconsistency Error / Abstraction Gap
@@ -193,7 +197,7 @@ Create or append to `fix_log.md` in the spec directory:
 **Example:**
 
 ```markdown
-## 2024-01-15 - Incorrect term comparison in RequestVote
+## YYYY-MM-DD - Incorrect term comparison in RequestVote
 
 **Trace:** `../traces/leader_election.ndjson`
 **Error Type:** Inconsistency Error

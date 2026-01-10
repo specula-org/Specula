@@ -137,6 +137,8 @@ Action ==
 | **Inconsistency Error** | Spec is objectively wrong about system behavior | Fix spec, read system code for evidence |
 | **Abstraction Gap** | Spec is correct but at different abstraction level | **STOP and ask user for guidance** |
 
+**If uncertain about error type:** Treat it as an Abstraction Gap and ask the user.
+
 **For Inconsistency Errors:**
 1. Read system source code to understand actual behavior
 2. Find corresponding code location as evidence for your fix
