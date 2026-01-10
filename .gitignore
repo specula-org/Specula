@@ -80,6 +80,7 @@ tools/cfa/tests
 
 *.mcp.json
 .gemini/*
+.claude/skills
 
 .venv/
 venv/

@@ -34,7 +34,9 @@ CONSTANTS
     \* @type: Str;
     SnapshotRequest,
     \* @type: Str;
-    SnapshotResponse
+    SnapshotResponse,
+    \* @type: Str;
+    SnapshotStatus      \* MsgSnapStatus: application reports snapshot result to raft
 
 \* New: Progress state constants
 \* Reference: tracker/state.go:20-33
@@ -1152,28 +1154,49 @@ HandleAppendEntriesResponse(i, j, m) ==
     /\ \/ /\ m.msuccess \* successful
           /\ matchIndex' = [matchIndex EXCEPT ![i][j] = Max({@, m.mmatchIndex})]
           /\ UNCHANGED <<pendingConfChangeIndex>>
-          \* New: Update Next according to MaybeUpdate
-          \* Reference: progress.go:205-213 MaybeUpdate()
-          \* pr.Next = max(pr.Next, n+1) to maintain invariant Match < Next
-          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = Max({@, m.mmatchIndex + 1})]
-          \* New: Free confirmed inflights, clear msgAppFlowPaused
+          \* Free confirmed inflights, clear msgAppFlowPaused
           \* Reference: MaybeUpdate() call in raft.go:1260-1289 handleAppendEntries()
           /\ FreeInflightsLE(i, j, m.mmatchIndex)
           /\ ClearMsgAppFlowPausedOnUpdate(i, j)
-          \* New: StateProbe → StateReplicate state transition
-          \* Reference: BecomeReplicate() call in progress.go:186-204 MaybeUpdate()
-          \* Reference: condition check in raft.go:1519-1522 handleAppendEntriesResponse()
-          \* Key: only transition when MaybeUpdate returns true (i.e., matchIndex actually updated)
-          \*      or matchIndex already equals response index
+          \* State transition logic for successful MsgAppResp
+          \* Reference: raft.go:1519-1540 handleAppendEntriesResponse()
+          \* Key conditions:
+          \*   - MaybeUpdate returns true (matchIndex updated), OR
+          \*   - matchIndex already equals response index AND state is StateProbe
           /\ LET maybeUpdated == m.mmatchIndex > matchIndex[i][j]
                  alreadyMatched == m.mmatchIndex = matchIndex[i][j]
-             IN IF progressState[i][j] \in {StateProbe, StateSnapshot}
-                   /\ (maybeUpdated \/ (alreadyMatched /\ progressState[i][j] = StateProbe))
-                THEN progressState' = [progressState EXCEPT ![i][j] = StateReplicate]
-                ELSE UNCHANGED progressState
-          /\ IF progressState[i][j] = StateSnapshot
-             THEN pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = 0]
-             ELSE UNCHANGED pendingSnapshot
+                 \* For StateSnapshot: check if follower caught up to leader's firstIndex
+                 \* Reference: raft.go:1523 "pr.Match+1 >= r.raftLog.firstIndex()"
+                 \* Use updated matchIndex for this check
+                 newMatchIndex == Max({matchIndex[i][j], m.mmatchIndex})
+                 canResumeFromSnapshot == newMatchIndex + 1 >= log[i].offset
+             IN CASE \* Case 1: StateProbe -> StateReplicate
+                     \* Reference: raft.go:1521-1522
+                     progressState[i][j] = StateProbe
+                     /\ (maybeUpdated \/ alreadyMatched) ->
+                        /\ progressState' = [progressState EXCEPT ![i][j] = StateReplicate]
+                        /\ nextIndex' = [nextIndex EXCEPT ![i][j] = Max({@, m.mmatchIndex + 1})]
+                        /\ UNCHANGED pendingSnapshot
+                  \* Case 2: StateSnapshot -> StateReplicate (via BecomeProbe + BecomeReplicate)
+                  \* Reference: raft.go:1523-1537
+                  \* Condition: MaybeUpdate returns true AND Match+1 >= firstIndex
+                  [] progressState[i][j] = StateSnapshot
+                     /\ maybeUpdated
+                     /\ canResumeFromSnapshot ->
+                        /\ progressState' = [progressState EXCEPT ![i][j] = StateReplicate]
+                        \* BecomeProbe sets Next = max(Match+1, PendingSnapshot+1)
+                        \* BecomeReplicate sets Next = Match+1
+                        \* Final result: Next = Match+1 = m.mmatchIndex+1
+                        \* (Since canResumeFromSnapshot implies Match+1 >= offset,
+                        \*  and typically m.mmatchIndex >= pendingSnapshot when this path is taken)
+                        /\ nextIndex' = [nextIndex EXCEPT ![i][j] = m.mmatchIndex + 1]
+                        /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = 0]
+                  \* Case 3: StateReplicate or conditions not met
+                  \* Reference: raft.go:1538-1539 for StateReplicate (FreeLE handled separately)
+                  [] OTHER ->
+                        /\ UNCHANGED <<progressState, pendingSnapshot>>
+                        \* Still update nextIndex per MaybeUpdate logic
+                        /\ nextIndex' = [nextIndex EXCEPT ![i][j] = Max({@, m.mmatchIndex + 1})]
        \/ /\ \lnot m.msuccess \* not successful
           /\ UNCHANGED <<leaderVars>>
           \* Fix: Explicitly expand macros to ensure StateReplicate -> StateProbe and Unpause works
@@ -1255,6 +1278,30 @@ HandleSnapshotRequest(i, j, m) ==
                      m)
            /\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars>>
 
+\* Handle MsgSnapStatus from application layer
+\* Reference: raft.go:1606-1623
+\* Application reports whether snapshot was successfully sent/applied
+\* @type: (Int, Int, MSG) => Bool;
+HandleSnapshotStatus(i, j, m) ==
+    /\ m.mterm = currentTerm[i]
+    /\ state[i] = Leader
+    /\ progressState[i][j] = StateSnapshot
+    /\ LET success == m.msuccess
+           \* BecomeProbe from StateSnapshot saves pendingSnapshot before ResetState clears it
+           \* Reference: progress.go:130-137
+           \* Success: Next = max(Match+1, PendingSnapshot+1)
+           \* Failure: PendingSnapshot cleared first, so Next = max(Match+1, 0+1) = Match+1
+           oldPendingSnapshot == IF success THEN pendingSnapshot[i][j] ELSE 0
+           newNext == Max({matchIndex[i][j] + 1, oldPendingSnapshot + 1})
+       IN /\ progressState' = [progressState EXCEPT ![i][j] = StateProbe]
+          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = newNext]
+          /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = 0]
+          \* ResetState sets MsgAppFlowPaused=false, then raft.go:1622 sets it to true
+          /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = TRUE]
+          /\ inflights' = [inflights EXCEPT ![i][j] = {}]
+    /\ Discard(m)
+    /\ UNCHANGED <<serverVars, candidateVars, logVars, configVars, durableState, matchIndex, historyLog>>
+
 \* Any RPC with a newer term causes the recipient to advance its term first.
 \* @type: (Int, Int, MSG) => Bool;
 UpdateTerm(i, j, m) ==
@@ -1313,6 +1360,8 @@ ReceiveDirect(m) ==
            \/ HandleAppendEntriesResponse(i, j, m)
     \/  /\ m.mtype = SnapshotRequest
         /\ HandleSnapshotRequest(i, j, m)
+    \/  /\ m.mtype = SnapshotStatus
+        /\ HandleSnapshotStatus(i, j, m)
 
 Receive(m) == ReceiveDirect(m)
 
