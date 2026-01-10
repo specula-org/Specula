@@ -1,0 +1,143 @@
+diff --git a/go.mod b/go.mod
+index abf24ce..a11eb2a 100644
+--- a/go.mod
++++ b/go.mod
+@@ -1,8 +1,8 @@
+ module go.etcd.io/raft/v3
+ 
+-go 1.24
++go 1.23
+ 
+-toolchain go1.24.11
++toolchain go1.23.2
+ 
+ require (
+ 	github.com/cockroachdb/datadriven v1.0.2
+diff --git a/state_trace.go b/state_trace.go
+index 8712dc6..7b1116c 100644
+--- a/state_trace.go
++++ b/state_trace.go
+@@ -140,9 +140,9 @@ func makeTracingMessage(m *raftpb.Message) *TracingMessage {
+ 	entries := len(m.Entries)
+ 	index := m.Index
+ 	if m.Type == raftpb.MsgSnap {
+-		index = 0
+-		logTerm = 0
+-		entries = int(m.Snapshot.Metadata.Index)
++		index = m.Snapshot.Metadata.Index
++		logTerm = m.Snapshot.Metadata.Term
++		entries = 0
+ 	}
+ 	return &TracingMessage{
+ 		Type:        m.Type.String(),
+@@ -293,15 +293,19 @@ func traceSendMessage(r *raft, m *raftpb.Message) {
+ 
+ 	var evt stateMachineEventType
+ 	switch m.Type {
+-	case raftpb.MsgApp:
++	case raftpb.MsgApp, raftpb.MsgHeartbeat, raftpb.MsgSnap:
+ 		evt = rsmSendAppendEntriesRequest
+-		if p, exist := r.trk.Progress[m.From]; exist {
++		if p, exist := r.trk.Progress[m.To]; exist {
++			// Specula: Enhanced Progress state tracing
++			prop["state"] = p.State.String()
+ 			prop["match"] = p.Match
+ 			prop["next"] = p.Next
++			prop["paused"] = p.MsgAppFlowPaused
++			prop["inflights_count"] = p.Inflights.Count()
++			if p.State == tracker.StateSnapshot {
++				prop["pending_snapshot"] = p.PendingSnapshot
++			}
+ 		}
+-
+-	case raftpb.MsgHeartbeat, raftpb.MsgSnap:
+-		evt = rsmSendAppendEntriesRequest
+ 	case raftpb.MsgAppResp, raftpb.MsgHeartbeatResp:
+ 		evt = rsmSendAppendEntriesResponse
+ 	case raftpb.MsgVote:
+diff --git a/tla/validate.sh b/tla/validate.sh
+index 9de0254..c37b0fc 100755
+--- a/tla/validate.sh
++++ b/tla/validate.sh
+@@ -1,10 +1,9 @@
+ #!/usr/bin/env bash
+ 
++# Use fixed tool directory to avoid re-downloading
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++TOOLDIR="${TOOLDIR:-$(cd "$SCRIPT_DIR/../../../../.." && pwd)/lib}"
+ WORKDIR="$(mktemp -d)"
+-TOOLDIR="${WORKDIR}/tool"
+-STATEDIR="${WORKDIR}/state"
+-WORKDIR="$(mktemp -d)"
+-TOOLDIR="${WORKDIR}/tool"
+ STATEDIR="${WORKDIR}/state"
+ FAILFAST=false
+ PARALLEL=$(nproc)
+@@ -14,10 +13,15 @@ function show_usage {
+ }
+ 
+ function install_tlaplus {
+-    echo -n "Downloading TLA+ tools ... "
+-    wget -qN https://nightly.tlapl.us/dist/tla2tools.jar -P ${TOOLDIR}
+-    wget -qN https://github.com/tlaplus/CommunityModules/releases/latest/download/CommunityModules-deps.jar -P ${TOOLDIR}
+-    echo "done."
++    if [ -f "${TOOLDIR}/tla2tools.jar" ] && [ -f "${TOOLDIR}/CommunityModules-deps.jar" ]; then
++        echo "Using existing TLA+ tools from ${TOOLDIR}"
++    else
++        echo -n "Downloading TLA+ tools ... "
++        mkdir -p ${TOOLDIR}
++        wget -qN https://nightly.tlapl.us/dist/tla2tools.jar -P ${TOOLDIR}
++        wget -qN https://github.com/tlaplus/CommunityModules/releases/latest/download/CommunityModules-deps.jar -P ${TOOLDIR}
++        echo "done."
++    fi
+ }
+ PARALLEL=$(nproc)
+ 
+diff --git a/INSTRUMENTATION_PLAN.md b/INSTRUMENTATION_PLAN.md
+new file mode 100644
+index 0000000..2a3fd4d
+--- /dev/null
++++ b/INSTRUMENTATION_PLAN.md
+@@ -0,0 +1,42 @@
++# Instrumentation Plan for Etcd Raft Snapshot Scenario
++
++This document outlines the modifications required for `state_trace.go` to support trace validation of the Snapshot scenario (`data/workloads/etcdraft/scenarios/snapshot/spec/Traceetcdraft.tla`).
++
++## 1. Trace Message Enrichment (Progress State)
++
++The `traceSendMessage` function needs to be updated to include full Progress state details when sending `MsgApp` and `MsgSnap` (mapped to `SendAppendEntriesRequest`).
++
++**Target Properties:**
++*   `state`: Current Progress state string (`StateProbe`, `StateReplicate`, `StateSnapshot`).
++*   `match`: `pr.Match` index.
++*   `next`: `pr.Next` index.
++*   `paused`: `pr.MsgAppFlowPaused` (boolean). Note: Spec models `MsgAppFlowPaused` explicitly.
++*   `inflights_count`: `pr.Inflights.Count()`.
++*   `pending_snapshot`: `pr.PendingSnapshot` (only relevant in `StateSnapshot`).
++
++**Implementation:**
++Retrieve `tracker.Progress` for the destination node (`m.To`). If it exists, populate the properties map.
++
++## 2. MsgSnap Content Correction
++
++The `makeTracingMessage` function currently maps `MsgSnap` properties incorrectly for our validation logic.
++
++**Current:**
++*   `Entries` = Snapshot Index
++*   `Index` = 0
++*   `LogTerm` = 0
++
++**Target:**
++*   `Index` = Snapshot Index (`m.Snapshot.Metadata.Index`)
++*   `LogTerm` = Snapshot Term (`m.Snapshot.Metadata.Term`)
++*   `EntryLength` = 0 (Empty entries list)
++
++This aligns with `Traceetcdraft.tla` expectations where `msg.index` is used as the snapshot index.
++
++## 3. Files to Modify
++
++*   `data/workloads/etcdraft/scenarios/snapshot/raft/state_trace.go`
++
++## 4. Verification
++
++After instrumentation, generated traces should contain `MsgSnap` events with correct `index` and `SendAppendEntriesRequest` events with detailed `prop` fields reflecting the internal Progress state machine.
