@@ -1,1 +1,0 @@
-# This is a snapshot of the tlaplus folder of the repository at https://github.com/Vanlightly/bookkeeper-tlaplus - released under the MIT license - from which we copied the spec for TLC performance testing! We claim no authorship of this specification.

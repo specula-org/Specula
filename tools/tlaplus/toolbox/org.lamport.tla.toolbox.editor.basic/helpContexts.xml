@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<contexts>
-	<context id="main_editor_window">
-		<description>This is the module editor.  It is used to edit a TLA+ module.  You can also produce a separate tab with view showing a pretty-printed version of the module.</description>
-		<topic label="Editing Modules" href="../org.lamport.tla.toolbox.doc/html/spec/editing-modules.html" />
-		<topic label="Pretty-Printing Modules" href="../org.lamport.tla.toolbox.doc/html/spec/pretty-printing.html" />
-
-	</context>
-</contexts>
