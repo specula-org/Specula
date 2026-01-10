@@ -178,33 +178,62 @@ Results:
 ```
 Line A: 100 hits
 Line B: 50 hits   ← 50 failed at A
-Line C: 20 hits   ← 30 failed at B
-Line D: 0 hits    ← First zero = failure point
+Line C: 20 hits   ← LAST LINE WITH HITS
+Line D: 0 hits    ← FIRST LINE WITH ZERO HITS
+Line E: 0 hits
 ```
 
-**Case 1: Last hit is an ACTION CALL**
+**Key: Identify two lines**
+- **Line N**: The last line with hits (Line C in example above)
+- **Line N+1**: The first line with zero hits (Line D in example above)
+
+**Then determine what type Line N is:**
+
+---
+
+**Case 1: Line N is an ACTION CALL**
 
 ```tla
 /\ SomeCondition        -- Line B: 50 hits
-/\ SomeAction(i, j)     -- Line C: 20 hits  ← ACTION CALL (capitalized)
-/\ AnotherCondition     -- Line D: 0 hits
+/\ SomeAction(i, j)     -- Line C: 20 hits  ← Last with hits, is ACTION CALL
+/\ AnotherCondition     -- Line D: 0 hits   ← First with 0 hits
 ```
 
-**Meaning:** The action was called 20 times but failed internally every time.
+**Meaning:**
+- `SomeAction` was called 20 times
+- Every call failed **internally** (returned FALSE)
+- Line D was not executed because Line C's action failed
 
-**Next step:** Set breakpoints INSIDE `SomeAction` to find internal failure.
+**Next step: Go INSIDE `SomeAction` and set breakpoints there to find internal failure**
 
-**Case 2: Last hit is a CONDITION**
+```
+Do NOT inspect variables at Line D!
+The problem is inside SomeAction, not in Line D's condition.
+```
+
+---
+
+**Case 2: Line N is a CONDITION (not an action call)**
 
 ```tla
 /\ SomeCondition        -- Line B: 50 hits
-/\ i /= j               -- Line C: 20 hits  ← CONDITION
-/\ AnotherCondition     -- Line D: 0 hits
+/\ i /= j               -- Line C: 20 hits  ← Last with hits, is CONDITION
+/\ AnotherCondition     -- Line D: 0 hits   ← First with 0 hits = ERROR POINT
 ```
 
-**Meaning:** 20 attempts satisfied Line C, all failed at Line D.
+**Meaning:**
+- Line C's condition was satisfied 20 times
+- All 20 attempts failed at Line D's condition
+- **Line D is where the error occurs**
 
-**Next step:** At Line C, inspect variables to understand why Line D fails.
+**Next step: Set breakpoint at Line C, inspect variables to understand why Line D's condition fails**
+
+```
+Set breakpoint at Line C (last line with hits) + use evaluate
+Check the variable values involved in Line D's condition
+```
+
+---
 
 ### How to Distinguish Action Calls from Conditions
 

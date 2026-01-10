@@ -130,12 +130,29 @@ Action ==
 
 **Goal:** Fix the spec or trace to resolve inconsistency
 
-**After identifying root cause in Phase 2:**
-- If spec bug: Fix the TLA+ specification
-- If trace bug: Fix the trace generation
-- If mapping issue: Adjust how trace events map to spec actions
+**First, identify the error type:**
 
-**Read `references/fix.md` for fix patterns.**
+| Error Type | Description | Action |
+|------------|-------------|--------|
+| **Inconsistency Error** | Spec is objectively wrong about system behavior | Fix spec, read system code for evidence |
+| **Abstraction Gap** | Spec is correct but at different abstraction level | **STOP and ask user for guidance** |
+
+**For Inconsistency Errors:**
+1. Read system source code to understand actual behavior
+2. Find corresponding code location as evidence for your fix
+3. Fix the **base spec** (e.g., `etcdraft.tla`), avoid modifying trace comparison logic
+4. Verify with `run_trace_validation`
+5. Document in `fix_log.md` in the spec directory
+
+**For Abstraction Gaps:**
+1. Understand what the spec models vs what the system does
+2. **STOP and ask user** - explain the gap and list possible strategies:
+   - Option A: Modify spec to support system's behavior
+   - Option B: Modify trace comparison logic
+   - Option C: Modify system instrumentation
+3. Wait for user guidance before proceeding
+
+**Read `references/fix.md` for detailed workflow and fix_log.md format.**
 
 ---
 

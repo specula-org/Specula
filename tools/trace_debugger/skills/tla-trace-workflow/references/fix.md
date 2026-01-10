@@ -2,8 +2,6 @@
 
 This document provides guidance for fixing issues identified during debugging.
 
-> **Note:** This is a placeholder document. Detailed fix patterns will be added as common issues are identified and documented.
-
 ## Overview
 
 After Phase 2 (Debugging), you should know:
@@ -11,98 +9,219 @@ After Phase 2 (Debugging), you should know:
 2. Which specific condition in the spec failed
 3. What the actual variable values were vs expected values
 
-The fix depends on the root cause:
-
-| Root Cause | Fix Location |
-|------------|--------------|
-| Spec bug | TLA+ specification |
-| Trace bug | Trace generation code |
-| Mapping issue | Event-to-action mapping |
-| Missing handling | Add new case to spec |
+**Before fixing, you must first identify the error type.** Different error types require different fix strategies.
 
 ---
 
-## Common Fix Patterns
+## Error Classification
 
-### Pattern 1: Missing Action Branch
+### Type 1: Inconsistency Error (Spec Bug)
 
-**Symptom:** Trace event has no matching action in spec.
+**Definition:** The spec and the system are genuinely inconsistent. The spec has incorrect modeling.
 
-**Fix:**
-1. Add a new disjunct to `TraceNext` for the event type
-2. Define the corresponding action
-3. Ensure action matches trace event semantics
+**Examples:**
+- A condition uses `< 1` but the system uses `<= 1`
+- An action branch is missing or incorrectly structured
+- State transitions don't match system behavior
+- Field mappings are wrong
 
-### Pattern 2: Incorrect Field Mapping
+**Characteristics:**
+- The spec is objectively wrong about how the system works
+- The spec needs to be fixed to match the system's actual behavior
 
-**Symptom:** Field name in trace doesn't match spec expectation.
+### Type 2: Abstraction Gap
 
-**Fix:**
-1. Check trace JSON field names
-2. Update spec to use correct field path (e.g., `logline.event.msg.index` vs `logline.event.index`)
+**Definition:** The spec is not wrong, but there's a gap between the abstraction level of the spec and the system, making trace validation fail.
 
-### Pattern 3: Index Off-by-One
+**Examples:**
+- System supports multi-node config changes in one log entry; spec only supports one node at a time
+- System has optimizations that combine multiple operations; spec models them separately
+- System has implementation details not modeled in spec
+- Timing or ordering differences due to abstraction
 
-**Symptom:** Index validation fails, values differ by 1.
+**Characteristics:**
+- The spec is correct at its abstraction level
+- The gap exists because spec and system operate at different granularities
+- Multiple valid fix strategies exist
 
-**Fix:**
-1. Determine if trace uses 0-based or 1-based indexing
-2. Adjust spec accordingly (add/subtract 1 in mapping)
+---
 
-### Pattern 4: State Precondition Not Met
+## Fix Principles
 
-**Symptom:** State check fails (e.g., `state[i] = Leader` is FALSE).
+### Principle 1: Identify Error Type First
 
-**Investigation:**
-1. Check if earlier trace events should have updated state
-2. May need to add/fix state update in earlier action
+Before making any changes, determine which type of error you're dealing with:
 
-### Pattern 5: Configuration Mismatch
+1. **Ask yourself:** Is the spec objectively wrong about system behavior, or is it just at a different abstraction level?
+2. **If uncertain:** Read the system code to understand the actual behavior
+3. **Classify correctly** before proceeding - wrong classification leads to wrong fixes
 
-**Symptom:** Node membership check fails (e.g., `j \in GetConfig(i)`).
+### Principle 2: For Inconsistency Errors - Fix the Spec
 
-**Investigation:**
-1. Check if configuration change events are handled
-2. Verify config update timing in trace vs spec
+**Fix location priority:**
+1. **Base spec** (e.g., `etcdraft.tla`) - modeling logic
+2. **Avoid modifying** trace comparison logic (e.g., `Traceetcdraft.tla`) unless absolutely necessary
+
+**Why avoid modifying trace comparison logic?**
+- Modifying comparison logic may cause **false positives** (validation passes but spec is still wrong)
+- Our goal is to get a **high-quality spec** that can find bugs
+- The spec itself should accurately model the system
+
+**Before modifying:**
+1. **Read the system source code** to understand the actual behavior
+2. **Find the corresponding code location** that proves your fix is correct
+3. **Document the evidence** (file path, line number, code snippet)
+
+### Principle 3: For Abstraction Gaps - Ask for Guidance
+
+**When you identify an abstraction gap, STOP and ask the user.**
+
+**Why?**
+- Multiple valid fix strategies exist:
+  - Modify spec logic to support the system's behavior
+  - Modify trace comparison logic to bridge the gap
+  - Modify system instrumentation to change trace generation
+- The choice depends on **design decisions about abstraction granularity**
+- Agent lacks the experience to make these architectural decisions
+
+**How to report to user:**
+1. Describe the gap clearly
+2. Explain what the spec models vs what the system does
+3. List possible fix strategies
+4. Ask for guidance on which approach to take
+
+### Principle 4: Document Every Fix
+
+**After each fix, write to `fix_log.md` in the spec directory.**
+
+**Content should include:**
+- Date and trace file that revealed the issue
+- Error type (Inconsistency Error or Abstraction Gap)
+- Brief description of the inconsistency
+- Fix strategy chosen
+- Files modified
+
+**Keep it concise** - just enough for the user to review.
 
 ---
 
 ## Fix Workflow
 
-### Step 1: Confirm Root Cause
+### For Inconsistency Errors
 
-Before fixing, verify your hypothesis:
-- Re-run debugging with additional breakpoints if needed
-- Check multiple similar trace events
-- Ensure the issue is consistent
+```
+1. Identify Error Type
+   └── Confirm it's an inconsistency error (spec is objectively wrong)
 
-### Step 2: Make Minimal Fix
+2. Understand Root Cause
+   ├── Which spec condition/action is wrong?
+   └── What is the correct behavior?
 
-- Fix only what's needed
-- Don't refactor unrelated code
-- Keep changes focused
+3. Read System Code
+   ├── Find the corresponding system code
+   ├── Understand the actual implementation
+   └── Identify evidence for your fix
 
-### Step 3: Verify Fix
+4. Make the Fix
+   ├── Modify base spec (preferred) or trace comparison logic (if necessary)
+   ├── Make minimal, focused changes
+   └── Don't refactor unrelated code
 
-After making changes:
-1. Run `validate_spec_syntax` to check for syntax errors
-2. Run `run_trace_validation` on the original failing trace
-3. Test with other traces to ensure no regression
+5. Verify
+   ├── Run validate_spec_syntax
+   ├── Run run_trace_validation on failing trace
+   └── Test with other traces for regression
 
-### Step 4: Document
+6. Document
+   └── Write to fix_log.md
+```
 
-If the fix reveals a common pattern:
-- Document it in this file
-- Include example symptoms and solutions
+### For Abstraction Gaps
+
+```
+1. Identify Error Type
+   └── Confirm it's an abstraction gap (spec is correct but at different level)
+
+2. Understand the Gap
+   ├── What does the spec model?
+   ├── What does the system do?
+   └── Why is there a gap?
+
+3. Read System Code
+   ├── Understand the system's actual behavior
+   └── Identify what creates the gap
+
+4. STOP and Ask User
+   ├── Report the gap clearly
+   ├── List possible fix strategies:
+   │   ├── Option A: Modify spec to support system's behavior
+   │   ├── Option B: Modify trace comparison logic
+   │   └── Option C: Modify system instrumentation
+   └── Wait for user guidance
+
+5. After User Guidance
+   ├── Implement the chosen strategy
+   ├── Verify the fix
+   └── Document in fix_log.md
+```
 
 ---
 
-## To Be Added
+## fix_log.md Format
 
-The following sections will be added as patterns are identified:
+Create or append to `fix_log.md` in the spec directory:
 
-- [ ] Detailed examples of each fix pattern
-- [ ] Common etcdraft-specific fixes
-- [ ] Raft protocol inconsistency patterns
-- [ ] Trace generation guidelines
-- [ ] Spec writing best practices for trace validation
+```markdown
+## [Date] - [Brief Title]
+
+**Trace:** `path/to/trace.ndjson`
+**Error Type:** Inconsistency Error / Abstraction Gap
+
+**Issue:**
+[Brief description of what was inconsistent]
+
+**Root Cause:**
+[What caused the inconsistency - reference system code if applicable]
+
+**Fix:**
+[What was changed and why]
+
+**Files Modified:**
+- `filename.tla`: [brief description of change]
+```
+
+**Example:**
+
+```markdown
+## 2024-01-15 - Incorrect term comparison in RequestVote
+
+**Trace:** `../traces/leader_election.ndjson`
+**Error Type:** Inconsistency Error
+
+**Issue:**
+RequestVote rejected valid votes because term comparison used `>` instead of `>=`.
+
+**Root Cause:**
+System code in `raft/raft.go:1234` accepts votes when `msg.Term >= r.Term`, but spec used `msg.term > currentTerm[i]`.
+
+**Fix:**
+Changed condition from `msg.term > currentTerm[i]` to `msg.term >= currentTerm[i]`.
+
+**Files Modified:**
+- `etcdraft.tla`: Line 456, fixed term comparison in HandleRequestVoteRequest
+```
+
+---
+
+## Summary
+
+| Error Type | Fix Location | Action |
+|------------|--------------|--------|
+| Inconsistency Error | Base spec (preferred) | Fix spec to match system, document evidence |
+| Abstraction Gap | Depends on user guidance | STOP and ask user for direction |
+
+**Remember:**
+- Always identify error type first
+- For inconsistency errors: read system code, fix spec, document
+- For abstraction gaps: stop and ask user
+- Document every fix in fix_log.md
