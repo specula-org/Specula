@@ -164,7 +164,12 @@ type traceLine struct {
 	Timestamp time.Time          `json:"ts"`
 	Scenario  string             `json:"scenario"`
 	Tag       string             `json:"tag"`
-	Event     *raft.TracingEvent `json:"event"`
+	Event     *raft.TracingEvent `json:"event,omitempty"`
+	Config    *traceConfig       `json:"config,omitempty"`
+}
+
+type traceConfig struct {
+	MaxInflightMsgs int `json:"MaxInflightMsgs"`
 }
 
 func newNDJSONLogger(path, scenario string) (raft.TraceLogger, func() error, error) {
@@ -197,6 +202,19 @@ func (l *ndjsonLogger) TraceEvent(evt *raft.TracingEvent) {
 		Event:     evt,
 	}); err != nil {
 		log.Printf("state trace encode error: %v", err)
+	}
+}
+
+func (l *ndjsonLogger) WriteConfig(maxInflightMsgs int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.enc.Encode(traceLine{
+		Timestamp: time.Now().UTC(),
+		Scenario:  l.scenario,
+		Tag:       "config",
+		Config:    &traceConfig{MaxInflightMsgs: maxInflightMsgs},
+	}); err != nil {
+		log.Printf("config encode error: %v", err)
 	}
 }
 

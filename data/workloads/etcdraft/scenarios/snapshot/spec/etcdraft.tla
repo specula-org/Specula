@@ -1302,6 +1302,20 @@ HandleSnapshotStatus(i, j, m) ==
     /\ Discard(m)
     /\ UNCHANGED <<serverVars, candidateVars, logVars, configVars, durableState, matchIndex, historyLog>>
 
+\* Handle ReportUnreachable from application layer
+\* Reference: raft.go:1624-1632
+\* Application reports that a peer is unreachable, causing StateReplicate -> StateProbe
+\* @type: (Int, Int) => Bool;
+ReportUnreachable(i, j) ==
+    /\ state[i] = Leader
+    /\ i # j
+    /\ IF progressState[i][j] = StateReplicate
+       THEN progressState' = [progressState EXCEPT ![i][j] = StateProbe]
+       ELSE UNCHANGED progressState
+    /\ UNCHANGED <<serverVars, candidateVars, messageVars, logVars, configVars,
+                   durableState, leaderVars, nextIndex, pendingSnapshot,
+                   msgAppFlowPaused, inflights, historyLog>>
+
 \* Any RPC with a newer term causes the recipient to advance its term first.
 \* @type: (Int, Int, MSG) => Bool;
 UpdateTerm(i, j, m) ==

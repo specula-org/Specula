@@ -174,9 +174,18 @@ func run(cfg runConfig) error {
 		_ = closeTrace()
 	}()
 
+	// Track if we've written config yet (write on first node creation)
+	configWritten := false
+	ndjsonTracer := tracer.(*ndjsonLogger)
+
 	env := rafttest.NewInteractionEnv(&rafttest.InteractionOpts{
-		OnConfig: func(cfg *raft.Config) {
-			cfg.TraceLogger = tracer
+		OnConfig: func(raftCfg *raft.Config) {
+			raftCfg.TraceLogger = tracer
+			// Write config on first node creation
+			if !configWritten {
+				ndjsonTracer.WriteConfig(raftCfg.MaxInflightMsgs)
+				configWritten = true
+			}
 		},
 		SetRandomizedElectionTimeout: func(node *raft.RawNode, timeout int) {
 			if err := setRandomizedElectionTimeout(node, timeout); err != nil {

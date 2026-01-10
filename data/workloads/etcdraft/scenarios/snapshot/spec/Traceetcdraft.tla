@@ -75,6 +75,15 @@ ASSUME TraceInitServer \subseteq TraceServer
 
 ImplicitLearners == TraceServer \ (TraceInitServer \cup AllChangeConfNids)
 
+\* Extract MaxInflightMsgs from trace config line (tag="config")
+\* If no config line exists, use default 256
+TraceMaxInflightMsgs == TLCEval(
+    LET configLines == SelectSeq(ndJsonDeserialize(JsonFile), LAMBDA x: "tag" \in DOMAIN x /\ x.tag = "config")
+    IN IF Len(configLines) > 0 /\ "config" \in DOMAIN configLines[1] /\ "MaxInflightMsgs" \in DOMAIN configLines[1].config
+       THEN configLines[1].config.MaxInflightMsgs
+       ELSE 256
+)
+
 TraceInitServerVars == 
     /\ currentTerm = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN 0 ELSE LastBootstrapLog[i].event.state.term]
     /\ state = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN Follower ELSE LastBootstrapLog[i].event.role]
@@ -471,6 +480,17 @@ StepDownToFollowerIfLogged(i) ==
     /\ StepDownToFollower(i)
     /\ ValidatePostStates(i)
 
+\* Handle ReportUnreachable event - application reports a peer as unreachable
+\* Reference: raft.go:1624-1632
+ReportUnreachableIfLogged(i, j) ==
+    /\ LoglineIsNodeEvent("ReportUnreachable", i)
+    /\ "prop" \in DOMAIN logline.event
+    /\ "target" \in DOMAIN logline.event.prop
+    /\ j = logline.event.prop.target
+    /\ ReportUnreachable(i, j)
+    \* Use Primed version since trace records state AFTER the transition
+    /\ ValidateProgressStatePrimed(i, j)
+
 \* skip unused logs
 SkipUnusedLogline ==
     /\ \/ /\ LoglineIsEvent("SendAppendEntriesResponse")
@@ -515,6 +535,8 @@ TraceNextNonReceiveActions ==
           /\ \E i \in Server: RestartIfLogged(i)
        \/ /\ LoglineIsEvent("BecomeFollower")
           /\ \E i \in Server: StepDownToFollowerIfLogged(i)
+       \/ /\ LoglineIsEvent("ReportUnreachable")
+          /\ \E i,j \in Server: ReportUnreachableIfLogged(i, j)
        \/ SkipUnusedLogline
     /\ StepToNextTrace
 
