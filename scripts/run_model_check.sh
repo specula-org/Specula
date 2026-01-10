@@ -107,12 +107,10 @@ COMMUNITY_MODULES="$PROJECT_ROOT/lib/CommunityModules-deps.jar"
 
 # Check for alternative paths
 if [ ! -f "$JAR_PATH" ]; then
-    # Try tlc-cmd path
-    if [ -f "/home/ubuntu/tlc-cmd/CommunityModules-deps.jar" ]; then
-        COMMUNITY_MODULES="/home/ubuntu/tlc-cmd/CommunityModules-deps.jar"
-    fi
-    if [ -f "/home/ubuntu/specula/lib/tla2tools.jar" ]; then
-        JAR_PATH="/home/ubuntu/specula/lib/tla2tools.jar"
+    # Try SPECULA_ROOT environment variable
+    if [ -n "$SPECULA_ROOT" ] && [ -f "$SPECULA_ROOT/lib/tla2tools.jar" ]; then
+        JAR_PATH="$SPECULA_ROOT/lib/tla2tools.jar"
+        COMMUNITY_MODULES="$SPECULA_ROOT/lib/CommunityModules-deps.jar"
     fi
 fi
 

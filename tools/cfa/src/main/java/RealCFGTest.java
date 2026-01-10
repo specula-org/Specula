@@ -17,7 +17,16 @@ public class RealCFGTest {
         System.out.println("=================================");
         System.out.println();
 
-        String fileName = args.length > 0 ? args[0] : "/home/ubuntu/specula/tools/cfa/input/test/SimpleCounter.tla";
+        // Get default path relative to project structure
+        String speculaRoot = System.getenv("SPECULA_ROOT");
+        String defaultPath;
+        if (speculaRoot != null && !speculaRoot.isEmpty()) {
+            defaultPath = speculaRoot + "/tools/cfa/input/test/SimpleCounter.tla";
+        } else {
+            // Assume running from project root or tools/cfa directory
+            defaultPath = "tools/cfa/input/test/SimpleCounter.tla";
+        }
+        String fileName = args.length > 0 ? args[0] : defaultPath;
         
         try {
             // Step 1: Input spec

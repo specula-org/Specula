@@ -2,9 +2,21 @@
 Unit tests for TLACompileTool
 """
 
+import os
 import pytest
 from pathlib import Path
 from src.tools.tla_compile_tool import TLACompileTool, check_tla_compilation
+
+
+def get_specula_root():
+    """Auto-detect Specula root directory."""
+    specula_root = os.environ.get('SPECULA_ROOT')
+    if specula_root:
+        return Path(specula_root)
+    # Calculate relative to this file: tests/unit/tools/xxx.py
+    this_file = Path(__file__).resolve()
+    tests_dir = this_file.parent.parent.parent  # .../tests
+    return tests_dir.parent  # .../Specula
 
 
 class TestTLACompileTool:
@@ -123,7 +135,8 @@ Spec == Init /\ [][Next]_x
     def test_real_dataset_spec(self):
         """Test on a real spec from the dataset"""
         # Test on the spin spec if it exists
-        spec_path = Path("/home/ubuntu/specula/experiments/syntax_phase/dataset/spin/test/spec_001/spin.tla")
+        specula_root = get_specula_root()
+        spec_path = specula_root / "experiments/syntax_phase/dataset/spin/test/spec_001/spin.tla"
 
         if spec_path.exists():
             tool = TLACompileTool()

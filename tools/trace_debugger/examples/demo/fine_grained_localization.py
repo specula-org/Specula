@@ -61,10 +61,26 @@ class DebugClient:
             if msg.get("type") == "response" and msg.get("request_seq") == req_seq:
                 return msg
 
+def get_specula_root():
+    """Auto-detect Specula root directory."""
+    # Try environment variable first
+    specula_root = os.environ.get('SPECULA_ROOT')
+    if specula_root:
+        return specula_root
+    # Calculate relative to this file: tools/trace_debugger/examples/demo/xxx.py
+    # Go up to specula root: ../../../../
+    this_file = os.path.abspath(__file__)
+    demo_dir = os.path.dirname(this_file)           # .../demo
+    examples_dir = os.path.dirname(demo_dir)        # .../examples
+    trace_debugger_dir = os.path.dirname(examples_dir)  # .../trace_debugger
+    tools_dir = os.path.dirname(trace_debugger_dir)     # .../tools
+    return os.path.dirname(tools_dir)                   # .../Specula
+
 def run_inspection():
-    work_dir = "/home/ubuntu/specula/data/workloads/etcdraft/scenarios/progress_inflights/spec"
-    tla_jar = "/home/ubuntu/specula/lib/tla2tools.jar"
-    community_jar = "/home/ubuntu/specula/lib/CommunityModules-deps.jar"
+    specula_root = get_specula_root()
+    work_dir = os.path.join(specula_root, "data/workloads/etcdraft/scenarios/progress_inflights/spec")
+    tla_jar = os.path.join(specula_root, "lib/tla2tools.jar")
+    community_jar = os.path.join(specula_root, "lib/CommunityModules-deps.jar")
     classpath = f"{tla_jar}:{community_jar}"
     spec_file = "Traceetcdraft_progress.tla"
     cfg_file = "Traceetcdraft_progress.cfg"

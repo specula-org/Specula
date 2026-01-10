@@ -63,7 +63,26 @@ def get_variable_value(client, frame_id, var_name):
                             return v["value"]
     return None
 
-work_dir = "/home/ubuntu/specula/data/workloads/etcdraft/scenarios/progress_inflights/spec"
+def get_specula_root():
+    """Auto-detect Specula root directory."""
+    # Try environment variable first
+    specula_root = os.environ.get('SPECULA_ROOT')
+    if specula_root:
+        return specula_root
+    # Calculate relative to this file: tools/trace_debugger/examples/demo/xxx.py
+    # Go up to specula root: ../../../../
+    this_file = os.path.abspath(__file__)
+    demo_dir = os.path.dirname(this_file)           # .../demo
+    examples_dir = os.path.dirname(demo_dir)        # .../examples
+    trace_debugger_dir = os.path.dirname(examples_dir)  # .../trace_debugger
+    tools_dir = os.path.dirname(trace_debugger_dir)     # .../tools
+    return os.path.dirname(tools_dir)                   # .../Specula
+
+specula_root = get_specula_root()
+work_dir = os.path.join(specula_root, "data/workloads/etcdraft/scenarios/progress_inflights/spec")
+tla_jar = os.path.join(specula_root, "lib/tla2tools.jar")
+community_jar = os.path.join(specula_root, "lib/CommunityModules-deps.jar")
+
 env = os.environ.copy()
 env["JSON"] = "../traces/confchange_disable_validation.ndjson"
 
@@ -71,7 +90,7 @@ print("检查 Line 438 处，i 和 j 的值，以及 Line 439 条件是否满足
 
 proc = subprocess.Popen([
     "java", "-XX:+UseParallelGC", "-Xmx4G",
-    "-cp", f"{work_dir}/../../../../../../lib/tla2tools.jar:{work_dir}/../../../../../../lib/CommunityModules-deps.jar",
+    "-cp", f"{tla_jar}:{community_jar}",
     "tlc2.TLC", "-debugger", "port=4712",
     "-config", "Traceetcdraft_progress.cfg", "Traceetcdraft_progress.tla"
 ], cwd=work_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)

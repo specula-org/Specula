@@ -80,3 +80,8 @@ tools/cfa/tests
 
 *.mcp.json
 .gemini/*
+
+.venv/
+venv/
+env/
+.envrc
