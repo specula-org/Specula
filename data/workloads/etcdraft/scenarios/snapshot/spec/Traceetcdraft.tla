@@ -104,13 +104,13 @@ TraceInitServerVars ==
     /\ state = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN Follower ELSE LastBootstrapLog[i].event.role]
     /\ votedFor = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN "0" ELSE LastBootstrapLog[i].event.state.vote]
 
-TraceInitLogVars    == 
-    /\ log          = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} 
+TraceInitLogVars    ==
+    /\ log          = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={}
                        THEN [offset |-> 1, entries |-> <<>>, snapshotIndex |-> 0, snapshotTerm |-> 0]
-                       ELSE [offset |-> 1, 
+                       ELSE [offset |-> 1,
                              entries |-> [j \in 1..LastBootstrapLog[i].event.log |-> [ term |-> 1, type |-> "ConfigEntry", value |-> [newconf |-> BootstrappedConfig(i), learners |-> ImplicitLearners]]],
-                             snapshotIndex |-> 0,
-                             snapshotTerm |-> 0
+                             snapshotIndex |-> LastBootstrapLog[i].event.state.snapshotIndex,
+                             snapshotTerm |-> LastBootstrapLog[i].event.state.snapshotTerm
                             ]
                       ]
     /\ historyLog   = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN <<>> ELSE [j \in 1..LastBootstrapLog[i].event.log |-> [ term |-> 1, type |-> "ConfigEntry", value |-> [newconf |-> BootstrappedConfig(i), learners |-> ImplicitLearners]]]]
@@ -211,11 +211,12 @@ LoglineIsAppendEntriesResponse(m) ==
     /\ m.msource = logline.event.msg.from
     /\ m.mterm = logline.event.msg.term
     /\ m.msuccess = ~logline.event.msg.reject
-    \* For success: mmatchIndex = index, mrejectHint = 0
-    \* For reject: mmatchIndex = rejected index, mrejectHint = rejectHint from trace
+    \* For success: mmatchIndex = index, mrejectHint = 0, mlogTerm = 0
+    \* For reject: mmatchIndex = rejected index, mrejectHint/mlogTerm from trace
     /\ (~logline.event.msg.reject /\ m.msubtype /= "heartbeat") => m.mmatchIndex = logline.event.msg.index
     /\ logline.event.msg.reject => /\ m.mmatchIndex = logline.event.msg.index
                                    /\ m.mrejectHint = logline.event.msg.rejectHint
+                                   /\ m.mlogTerm = logline.event.msg.logTerm
 
 LoglineIsRequestVoteRequest(m) ==
     /\ "msg" \in DOMAIN logline.event
@@ -254,6 +255,8 @@ ValidatePostStates(i) ==
     /\ LastIndex(log'[i]) = logline.event.log
     /\ commitIndex'[i] = logline.event.state.commit
     /\ config'[i].jointConfig = ConfFromLog(logline)
+    /\ log'[i].snapshotIndex = logline.event.state.snapshotIndex
+    /\ log'[i].snapshotTerm = logline.event.state.snapshotTerm
 
 -------------------------------------------------------------------------------------
 \* Progress-specific validation helpers
@@ -318,6 +321,23 @@ AdvanceCommitIndexIfLogged(i) ==
        THEN AdvanceCommitIndex(i) /\ ValidateAfterAdvanceCommitIndex(i)
        ELSE FollowerAdvanceCommitIndex(i, logline.event.state.commit)  \* Call action from etcdraft.tla
 
+ValidateProgressStatePrimed(i, j) ==
+    \/ /\ "prop" \notin DOMAIN logline.event
+       /\ TRUE
+    \/ /\ "prop" \in DOMAIN logline.event
+       /\ "state" \in DOMAIN logline.event.prop
+       /\ progressState'[i][j] = logline.event.prop.state
+       /\ "match" \in DOMAIN logline.event.prop =>
+           matchIndex'[i][j] = logline.event.prop.match
+       /\ "next" \in DOMAIN logline.event.prop =>
+           nextIndex'[i][j] = logline.event.prop.next
+       /\ "paused" \in DOMAIN logline.event.prop =>
+           msgAppFlowPaused'[i][j] = logline.event.prop.paused
+       /\ "inflights_count" \in DOMAIN logline.event.prop =>
+           Cardinality(inflights'[i][j]) = logline.event.prop.inflights_count
+       /\ (progressState'[i][j] = StateSnapshot /\ "pending_snapshot" \in DOMAIN logline.event.prop) =>
+           pendingSnapshot'[i][j] = logline.event.prop.pending_snapshot
+
 ValidateAfterAppendEntries(i, j) ==
     /\ ValidatePostStates(i)
     /\ \E msg \in DOMAIN pendingMessages':
@@ -338,23 +358,6 @@ ValidateAfterAppendEntriesToSelf(i) ==
         /\ LoglineIsAppendEntriesResponse(msg)
         /\ msg.msource = msg.mdest
         /\ OneMoreMessage(msg)
-
-ValidateProgressStatePrimed(i, j) ==
-    \/ /\ "prop" \notin DOMAIN logline.event
-       /\ TRUE
-    \/ /\ "prop" \in DOMAIN logline.event
-       /\ "state" \in DOMAIN logline.event.prop
-       /\ progressState'[i][j] = logline.event.prop.state
-       /\ "match" \in DOMAIN logline.event.prop =>
-           matchIndex'[i][j] = logline.event.prop.match
-       /\ "next" \in DOMAIN logline.event.prop =>
-           nextIndex'[i][j] = logline.event.prop.next
-       /\ "paused" \in DOMAIN logline.event.prop =>
-           msgAppFlowPaused'[i][j] = logline.event.prop.paused
-       /\ "inflights_count" \in DOMAIN logline.event.prop =>
-           Cardinality(inflights'[i][j]) = logline.event.prop.inflights_count
-       /\ (progressState'[i][j] = StateSnapshot /\ "pending_snapshot" \in DOMAIN logline.event.prop) =>
-           pendingSnapshot'[i][j] = logline.event.prop.pending_snapshot
 
 ValidateAfterSnapshot(i, j) ==
     /\ ValidatePostStates(i)
@@ -519,15 +522,22 @@ ReportUnreachableIfLogged(i, j) ==
 
 \* skip unused logs
 SkipUnusedLogline ==
-    /\ \/ /\ LoglineIsEvent("SendAppendEntriesResponse")
+    /\ \/ /\ LoglineIsEvent("SendRequestVoteResponse")
           /\ logline.event.msg.from # logline.event.msg.to
-       \/ /\ LoglineIsEvent("SendRequestVoteResponse")
-          /\ logline.event.msg.from # logline.event.msg.to
+       \/ /\ LoglineIsEvent("SendAppendEntriesResponse")
+          /\ logline.event.msg.from # logline.event.msg.to  \* Non-self response already handled by HandleAppendEntriesRequest
        \/ LoglineIsBecomeFollowerInUpdateTermOrReturnToFollower
        \/ LoglineIsEvent("ReduceNextIndex") \* shall not be necessary when this is removed from raft
-       \/ LoglineIsEvent("CompactLog") \* We treat compaction as implicit/helper, not a main step unless explicitly handled
     /\ UNCHANGED <<vars>>
     /\ StepToNextTrace
+
+\* Handler for log compaction
+CompactLogIfLogged(i) ==
+    /\ LoglineIsNodeEvent("CompactLog", i)
+    /\ LET newStart == logline.event.prop.compactIndex + 1  \* compactIndex is snapshotIndex, newStart = snapshotIndex + 1
+       IN CompactLog(i, newStart)
+    /\ ValidatePostStates(i)
+    \* Note: StepToNextTrace is handled by TraceNextNonReceiveActions
 
 TraceNextNonReceiveActions ==
     /\ \/ /\ LoglineIsEvents({"SendRequestVoteRequest", "SendRequestVoteResponse"})
@@ -566,6 +576,8 @@ TraceNextNonReceiveActions ==
           /\ \E i \in Server: StepDownToFollowerIfLogged(i)
        \/ /\ LoglineIsEvent("ReportUnreachable")
           /\ \E i,j \in Server: ReportUnreachableIfLogged(i, j)
+       \/ /\ LoglineIsEvent("CompactLog")
+          /\ \E i \in Server: CompactLogIfLogged(i)
        \/ SkipUnusedLogline
     /\ StepToNextTrace
 

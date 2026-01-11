@@ -67,7 +67,7 @@ VARIABLE
     \* @typeAlias: RVREQT = [mtype: Str, mterm: Int, mlastLogTerm: Int, mlastLogIndex: Int, msource: Int, mdest: Int];
     \* @typeAlias: RVRESPT = [mtype: Str, mterm: Int, mvoteGranted: Bool, msource: Int, mdest: Int ];
     \* @typeAlias: AEREQT = [mtype: Str, mterm: Int, mprevLogIndex: Int, mprevLogTerm: Int, mentries: LOGT, mcommitIndex: Int, msource: Int, mdest: Int ];
-    \* @typeAlias: AERESPT = [mtype: Str, mterm: Int, msuccess: Bool, mmatchIndex: Int, mrejectHint: Int, msource: Int, mdest: Int ];
+    \* @typeAlias: AERESPT = [mtype: Str, mterm: Int, msuccess: Bool, mmatchIndex: Int, mrejectHint: Int, mlogTerm: Int, msource: Int, mdest: Int ];
     \* @typeAlias: MSG = [ wrapped: Bool, mtype: Str, mterm: Int, msource: Int, mdest: Int, RVReq: RVREQT, RVResp: RVRESPT, AEReq: AEREQT, AEResp: AERESPT ];
     \* @type: MSG -> Int;
     messages
@@ -245,6 +245,27 @@ LogTerm(i, index) ==
     ELSE IF index = log[i].snapshotIndex THEN log[i].snapshotTerm
     ELSE IF IsAvailable(i, index) THEN LogEntry(i, index).term
     ELSE 0
+
+\* Reference: raft.go findConflictByTerm
+\* Find the largest index in [firstIndex-1, index] where term <= given term.
+\* This is used for fast log backtracking during rejection handling.
+FindConflictByTerm(i, index, targetTerm) ==
+    LET firstIdx == log[i].offset
+        \* Valid range includes firstIdx-1 (for snapshot term check)
+        validRange == (firstIdx - 1)..index
+        \* Find indices where term <= targetTerm
+        matchingIndices == {k \in validRange : LogTerm(i, k) <= targetTerm}
+    IN IF index = 0 \/ matchingIndices = {} THEN 0 ELSE Max(matchingIndices)
+
+\* Reference: raft.go handleAppendEntries rejection logic
+\* Compute the rejection hint using findConflictByTerm optimization.
+\* The optimization uses the LEADER's prevLogTerm to find the last index
+\* where the follower's log has term <= prevLogTerm.
+\* This helps the leader skip over conflicting entries faster.
+\* Parameters: i = follower, rejectedIndex = m.mprevLogIndex, leaderTerm = m.mprevLogTerm
+ComputeRejectHint(i, rejectedIndex, leaderTerm) ==
+    LET hintIndex == Min({rejectedIndex, LastIndex(log[i])})
+    IN FindConflictByTerm(i, hintIndex, leaderTerm)
 
 \* Helper for Send and Reply. Given a message m and bag of messages, return a
 \* new bag of messages with one more m in it.
@@ -583,6 +604,7 @@ AppendEntriesToSelf(i) ==
              msuccess        |-> TRUE,
              mmatchIndex     |-> LastIndex(log[i]),
              mrejectHint     |-> 0,
+             mlogTerm        |-> 0,
              msource         |-> i,
              mdest           |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
@@ -730,6 +752,7 @@ ClientRequestAndSend(i, v) ==
              msuccess    |-> TRUE,
              mmatchIndex |-> LastIndex(log'[i]),
              mrejectHint |-> 0,
+             mlogTerm    |-> 0,
              msource     |-> i,
              mdest       |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog>>
@@ -745,6 +768,7 @@ ReplicateAndSendToSelf(i, v, t) ==
              msuccess    |-> TRUE,
              mmatchIndex |-> LastIndex(log'[i]),
              mrejectHint |-> 0,
+             mlogTerm    |-> 0,
              msource     |-> i,
              mdest       |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars>>
@@ -769,6 +793,7 @@ ReplicateImplicitEntry(i) ==
                 msuccess    |-> TRUE,
                 mmatchIndex |-> LastIndex(log'[i]),
                 mrejectHint |-> 0,
+                mlogTerm    |-> 0,
                 msource     |-> i,
                 mdest       |-> i])
        /\ IF isJoint
@@ -876,6 +901,7 @@ ChangeConfAndSend(i) ==
                          msuccess    |-> TRUE,
                          mmatchIndex |-> LastIndex(log'[i]),
                          mrejectHint |-> 0,
+                         mlogTerm    |-> 0,
                          msource     |-> i,
                          mdest       |-> i])
        ELSE
@@ -887,6 +913,7 @@ ChangeConfAndSend(i) ==
                      msuccess    |-> TRUE,
                      mmatchIndex |-> LastIndex(log'[i]),
                      mrejectHint |-> 0,
+                     mlogTerm    |-> 0,
                      msource     |-> i,
                      mdest       |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, historyLog>>
@@ -1104,17 +1131,23 @@ RejectAppendEntriesRequest(i, j, m, logOk) ==
        \/ /\ m.mterm = currentTerm[i]
           /\ state[i] = Follower
           /\ \lnot logOk
-    \* For rejections: mmatchIndex = rejected index (m.mprevLogIndex), mrejectHint = follower's last index
-    \* Reference: raft.go sends Index = m.Index, RejectHint = r.raftLog.lastIndex()
-    /\ Reply([mtype           |-> AppendEntriesResponse,
-              msubtype        |-> "app",
-              mterm           |-> currentTerm[i],
-              msuccess        |-> FALSE,
-              mmatchIndex     |-> m.mprevLogIndex,
-              mrejectHint     |-> LastIndex(log[i]),
-              msource         |-> i,
-              mdest           |-> j],
-              m)
+    \* For rejections: mmatchIndex = rejected index (m.mprevLogIndex)
+    \* mrejectHint = computed using findConflictByTerm optimization
+    \* mlogTerm = follower's term at hintIndex (used by leader for fast backtracking)
+    \* Reference: raft.go handleAppendEntries() rejection with findConflictByTerm
+    /\ LET hintIndex == Min({m.mprevLogIndex, LastIndex(log[i])})
+           rejectHint == FindConflictByTerm(i, hintIndex, m.mprevLogTerm)
+           logTerm == LogTerm(i, rejectHint)
+       IN Reply([mtype           |-> AppendEntriesResponse,
+                 msubtype        |-> "app",
+                 mterm           |-> currentTerm[i],
+                 msuccess        |-> FALSE,
+                 mmatchIndex     |-> m.mprevLogIndex,
+                 mrejectHint     |-> rejectHint,
+                 mlogTerm        |-> logTerm,
+                 msource         |-> i,
+                 mdest           |-> j],
+                 m)
     /\ UNCHANGED <<serverVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* @type: (Int, MSG) => Bool;
@@ -1146,6 +1179,7 @@ AppendEntriesAlreadyDone(i, j, index, m) ==
                 msuccess        |-> TRUE,
                 mmatchIndex     |-> IF m.msubtype = "heartbeat" \/ index > commitIndex[i] THEN m.mprevLogIndex+Len(m.mentries) ELSE commitIndex[i],
                 mrejectHint     |-> 0,
+                mlogTerm        |-> 0,
                 msource         |-> i,
                 mdest           |-> j],
                 m)
@@ -1159,8 +1193,8 @@ ConflictAppendEntriesRequest(i, index, m) ==
     /\ log' = [log EXCEPT ![i].entries = SubSeq(@, 1, Len(@) - 1)]
     /\ UNCHANGED <<messageVars, serverVars, commitIndex, durableState, progressVars, historyLog>>
 
-\* @type: (Int, AEREQT) => Bool;
-NoConflictAppendEntriesRequest(i, index, m) ==
+\* @type: (Int, Int, Int, AEREQT) => Bool;
+NoConflictAppendEntriesRequest(i, j, index, m) ==
     /\ m.mentries /= << >>
     /\ index > commitIndex[i]
     /\ HasNoConflict(i, index, m.mentries)
@@ -1169,7 +1203,19 @@ NoConflictAppendEntriesRequest(i, index, m) ==
     \* Start position in m.mentries for new entries: LastIndex(log[i]) - m.mprevLogIndex + 1
     \* = LastIndex(log[i]) - index + 2 (since index = m.mprevLogIndex + 1)
     /\ log' = [log EXCEPT ![i].entries = @ \o SubSeq(m.mentries, LastIndex(log[i])-index+2, Len(m.mentries))]
-    /\ UNCHANGED <<messageVars, serverVars, commitIndex, durableState, progressVars, historyLog>>
+    \* Commit and send response after appending
+    /\ CommitTo(i, Min({m.mcommitIndex, m.mprevLogIndex + Len(m.mentries)}))
+    /\ Reply([mtype           |-> AppendEntriesResponse,
+              msubtype        |-> m.msubtype,
+              mterm           |-> currentTerm[i],
+              msuccess        |-> TRUE,
+              mmatchIndex     |-> m.mprevLogIndex + Len(m.mentries),
+              mrejectHint     |-> 0,
+              mlogTerm        |-> 0,
+              msource         |-> i,
+              mdest           |-> j],
+              m)
+    /\ UNCHANGED <<serverVars, durableState, progressVars, historyLog>>
 
 \* @type: (Int, Int, Bool, AEREQT) => Bool;
 AcceptAppendEntriesRequest(i, j, logOk, m) ==
@@ -1180,7 +1226,7 @@ AcceptAppendEntriesRequest(i, j, logOk, m) ==
     /\ LET index == m.mprevLogIndex + 1
        IN \/ AppendEntriesAlreadyDone(i, j, index, m)
           \/ ConflictAppendEntriesRequest(i, index, m)
-          \/ NoConflictAppendEntriesRequest(i, index, m)
+          \/ NoConflictAppendEntriesRequest(i, j, index, m)
 
 \* Server i receives an AppendEntries request from server j with
 \* m.mterm <= currentTerm[i]. This just handles m.entries of length 0 or 1, but
@@ -1280,8 +1326,17 @@ HandleAppendEntriesResponse(i, j, m) ==
                      THEN \* Stale rejection, just unpause
                           /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
                           /\ UNCHANGED <<progressState, pendingSnapshot, inflights, nextIndex, matchIndex, pendingConfChangeIndex>>
-                     ELSE \* Valid rejection: Next = max(min(rejected, matchHint+1), Match+1)
-                          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = Max({Min({rejected, matchHint + 1}), matchIndex[i][j] + 1})]
+                     ELSE \* Valid rejection: use leader-side findConflictByTerm optimization
+                          \* Reference: raft.go matchTermAndIndex + MaybeDecrTo
+                          \* Search leader's log for last index with term <= follower's logTerm
+                          LET leaderMatchIdx == FindConflictByTerm(i, matchHint, m.mlogTerm)
+                              \* If leaderMatchIdx > Match, use it as next probe point
+                              \* Otherwise, fall back to basic MaybeDecrTo formula
+                              newNext == IF leaderMatchIdx > matchIndex[i][j]
+                                         THEN leaderMatchIdx + 1
+                                         ELSE Max({Min({rejected, matchHint + 1}), matchIndex[i][j] + 1})
+                          IN
+                          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = newNext]
                           /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
                           /\ UNCHANGED <<progressState, pendingSnapshot, inflights, matchIndex, pendingConfChangeIndex>>
     /\ Discard(m)
@@ -1296,9 +1351,11 @@ HandleHeartbeatResponse(i, j, m) ==
     \* Only clear MsgAppFlowPaused, do NOT transition state
     \* Reference: raft.go:1495 pr.MsgAppFlowPaused = false
     /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
-    \* If StateReplicate and inflights full, free one (edge case)
+    \* If StateReplicate and inflights over capacity, free one (edge case)
     \* Reference: raft.go:1497-1499
-    /\ IF progressState[i][j] = StateReplicate /\ Cardinality(inflights[i][j]) >= MaxInflightMsgs
+    \* Note: Use > instead of >= because FreeFirstOne only matters when truly over capacity
+    \* In normal flow, heartbeat response doesn't free inflights if at exactly MaxInflightMsgs
+    /\ IF progressState[i][j] = StateReplicate /\ Cardinality(inflights[i][j]) > MaxInflightMsgs
        THEN inflights' = [inflights EXCEPT ![i][j] = @ \ {Min(@)}]
        ELSE UNCHANGED inflights
     /\ Discard(m)
@@ -1333,6 +1390,7 @@ HandleSnapshotRequest(i, j, m) ==
                      msuccess    |-> TRUE,
                      mmatchIndex |-> commitIndex[i],
                      mrejectHint |-> 0,
+                     mlogTerm    |-> 0,
                      msource     |-> i,
                      mdest       |-> j],
                      m)
@@ -1347,6 +1405,7 @@ HandleSnapshotRequest(i, j, m) ==
                      msuccess    |-> TRUE,
                      mmatchIndex |-> m.msnapshotIndex,
                      mrejectHint |-> 0,
+                     mlogTerm    |-> 0,
                      msource     |-> i,
                      mdest       |-> j],
                      m)
@@ -1368,6 +1427,7 @@ HandleSnapshotRequest(i, j, m) ==
                      msuccess    |-> TRUE,
                      mmatchIndex |-> m.msnapshotIndex,
                      mrejectHint |-> 0,
+                     mlogTerm    |-> 0,
                      msource     |-> i,
                      mdest       |-> j], 
                      m)
