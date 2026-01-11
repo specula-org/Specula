@@ -58,6 +58,11 @@ class TraceValidationHandler(BaseHandler):
                 "community_jar": {
                     "type": "string",
                     "description": "Path to CommunityModules-deps.jar (optional)"
+                },
+                "include_last_state": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Include full content of the last matched state (default: false). This state is rarely useful for debugging since it's the last SUCCESSFUL match before failure."
                 }
             },
             "required": ["spec_file", "config_file", "trace_file", "work_dir"]
@@ -88,7 +93,8 @@ class TraceValidationHandler(BaseHandler):
         output = await self._run_tlc(cmd, arguments)
 
         # Parse output
-        return self._parse_output(output)
+        include_last_state = arguments.get("include_last_state", False)
+        return self._parse_output(output, include_last_state)
 
     def _get_jar_paths(self, args: Dict[str, Any]) -> Tuple[str, str]:
         """Get TLA+ JAR paths."""
@@ -164,7 +170,7 @@ class TraceValidationHandler(BaseHandler):
                 details={"command": ' '.join(cmd)}
             )
 
-    def _parse_output(self, output: str) -> Dict[str, Any]:
+    def _parse_output(self, output: str, include_last_state: bool = False) -> Dict[str, Any]:
         """Parse TLC output and return structured result."""
         # Check for success
         if "Model checking completed. No error has been found." in output:
@@ -180,7 +186,7 @@ class TraceValidationHandler(BaseHandler):
 
         # Check for temporal property violation (trace mismatch)
         if "Error: Temporal properties were violated." in output:
-            return self._parse_trace_mismatch(output)
+            return self._parse_trace_mismatch(output, include_last_state)
 
         # Other error - return raw output
         return {
@@ -189,7 +195,7 @@ class TraceValidationHandler(BaseHandler):
             "raw_output": output
         }
 
-    def _parse_trace_mismatch(self, output: str) -> Dict[str, Any]:
+    def _parse_trace_mismatch(self, output: str, include_last_state: bool = False) -> Dict[str, Any]:
         """Parse trace mismatch output."""
         # Find all states with their l values
         # Pattern: "State N: <...>" followed by "/\ l = M"
@@ -207,25 +213,27 @@ class TraceValidationHandler(BaseHandler):
         last_state_number = int(states[-1][0])
         failed_trace_line = int(states[-1][1])
 
-        # Extract last state content
-        last_state_content = self._extract_last_state(output, last_state_number)
-
         # Extract states generated
         states_match = re.search(r'(\d+) states generated', output)
         states_generated = int(states_match.group(1)) if states_match else last_state_number
 
-        return {
+        result = {
             "status": "trace_mismatch",
             "last_state_number": last_state_number,
             "failed_trace_line": failed_trace_line,
             "states_generated": states_generated,
-            "last_state": last_state_content,
             "suggestion": (
                 f"Trace validation failed at trace line {failed_trace_line}. "
                 f"Use run_trace_debugging with breakpoint condition "
                 f"'TLCGet(\"level\") = {last_state_number}' to debug."
             )
         }
+
+        # Only include last_state if explicitly requested
+        if include_last_state:
+            result["last_state"] = self._extract_last_state(output, last_state_number)
+
+        return result
 
     def _extract_last_state(self, output: str, state_number: int) -> str:
         """Extract the content of the last state."""

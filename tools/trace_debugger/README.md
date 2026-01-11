@@ -30,7 +30,7 @@ The TLA+ Trace Debugger provides a systematic approach to debugging trace valida
 
 | Tool | Description | Required Parameters | Optional Parameters | Example Request |
 |------|-------------|---------------------|---------------------|-----------------|
-| **run_trace_validation** | Run TLC trace validation directly (without debugger). Returns concise feedback: success, trace mismatch with debugging suggestion, or error. **Use this first** before debugging. | `spec_file` (string): TLA+ spec file name<br>`config_file` (string): TLC config file name<br>`trace_file` (string): Trace file path (relative or absolute)<br>`work_dir` (string): Working directory (absolute path) | `timeout` (integer, default: 300): Timeout in seconds<br>`tla_jar` (string): Path to tla2tools.jar<br>`community_jar` (string): Path to CommunityModules-deps.jar | Quick validation check before detailed debugging |
+| **run_trace_validation** | Run TLC trace validation directly (without debugger). Returns concise feedback: success, trace mismatch with debugging suggestion, or error. **Use this first** before debugging. | `spec_file` (string): TLA+ spec file name<br>`config_file` (string): TLC config file name<br>`trace_file` (string): Trace file path (relative or absolute)<br>`work_dir` (string): Working directory (absolute path) | `timeout` (integer, default: 300): Timeout in seconds<br>`tla_jar` (string): Path to tla2tools.jar<br>`community_jar` (string): Path to CommunityModules-deps.jar<br>`include_last_state` (boolean, default: false): Include full last matched state (rarely needed) | Quick validation check before detailed debugging |
 | **run_trace_debugging** | Run trace validation with breakpoints and collect hit statistics. This is the core debugging tool. | `spec_file` (string): TLA+ spec file name<br>`config_file` (string): TLC config file name<br>`trace_file` (string): Trace file path (relative or absolute)<br>`work_dir` (string): Working directory (absolute path)<br>`breakpoints` (array): List of breakpoint objects | `timeout` (integer, default: 300): Timeout in seconds<br>`tla_jar` (string): Path to tla2tools.jar<br>`community_jar` (string): Path to CommunityModules-deps.jar<br>`host` (string, default: "127.0.0.1"): DAP server host<br>`port` (integer, default: 4712): DAP server port<br>`evaluate` (object): Expression evaluation config<br>`collect_variables` (object): Variable collection config | Run validation with breakpoints at lines 522, 489, 323 with condition `TLCGet("level") = 29` to debug trace line 29 |
 | **validate_spec_syntax** | Validate TLA+ spec syntax without running full trace validation. Fast syntax check. | `spec_file` (string): TLA+ spec file name<br>`config_file` (string): TLC config file name<br>`work_dir` (string): Working directory (absolute path) | `tla_jar` (string): Path to tla2tools.jar | Validate syntax of Traceetcdraft_progress.tla before running full validation |
 | **get_trace_info** | Get basic information about a trace file (line count, size, first/last lines) without running TLC. | `trace_file` (string): Path to trace file (absolute or relative) | None | Check how many lines are in the trace file to understand validation scope |
@@ -116,11 +116,12 @@ Used with `run_trace_debugging` to collect variable values when a specific break
   "last_state_number": 112,
   "failed_trace_line": 107,
   "states_generated": 116,
-  "last_state": "State 112: <TraceNext...>\n/\\ l = 107\n...",
   "suggestion": "Trace validation failed at trace line 107. Use run_trace_debugging with breakpoint condition 'TLCGet(\"level\") = 112' to debug.",
   "success": true
 }
 ```
+
+*Note: Set `include_last_state=true` to include full `last_state` content. Rarely needed since it's the last successful match, not the failure point.*
 
 **Error:**
 ```json

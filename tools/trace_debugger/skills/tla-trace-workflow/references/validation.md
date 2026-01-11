@@ -19,6 +19,7 @@ This document provides detailed guidance for the validation phase.
 | `timeout` | No | Timeout in seconds (default: 300) |
 | `tla_jar` | No | Path to tla2tools.jar (auto-detected) |
 | `community_jar` | No | Path to CommunityModules-deps.jar (auto-detected) |
+| `include_last_state` | No | Include full last matched state in output (default: false). Rarely needed since it's the last successful match before failure. |
 
 ## Response Types
 
@@ -42,7 +43,6 @@ This document provides detailed guidance for the validation phase.
   "last_state_number": 112,
   "failed_trace_line": 107,
   "states_generated": 116,
-  "last_state": "State 112: <TraceNext...>\n/\\ l = 107\n...",
   "suggestion": "Trace validation failed at trace line 107. Use run_trace_debugging with breakpoint condition 'TLCGet(\"level\") = 112' to debug."
 }
 ```
@@ -50,8 +50,9 @@ This document provides detailed guidance for the validation phase.
 **Key fields:**
 - `failed_trace_line`: The `l` value - the trace line that failed validation
 - `last_state_number`: Use this for breakpoint condition
-- `last_state`: Full variable values at failure point
 - `suggestion`: Ready-to-use debugging instruction
+
+**Note:** Set `include_last_state=true` to include full `last_state` content (all variable values). This is rarely needed since it's the last successful match, not the failure point.
 
 **Important:** `last_state_number` and `failed_trace_line` may differ because TLC can generate multiple states for the same trace line (e.g., when processing pending messages).
 
@@ -104,7 +105,7 @@ result = run_trace_validation(
 From the `trace_mismatch` response:
 1. Note `failed_trace_line` - this is which line in the trace file failed
 2. Note `last_state_number` - use this for breakpoint conditions
-3. Read `last_state` to see all variable values at failure
+3. Use `suggestion` to proceed to debugging
 
 ### Step 2: Check the Trace File
 
@@ -202,7 +203,7 @@ print(f"First line: {info['first_lines'][0]}")
 1. **Always start with `run_trace_validation`** - It's faster and gives you the exact failure point
 2. **Use the `suggestion` field** - It provides ready-to-use debugging instructions
 3. **Check the trace file** - Understand what event failed before debugging
-4. **Inspect `last_state`** - Variable values often reveal the issue directly
+4. **Proceed to debugging** - Use `run_trace_debugging` to inspect variable values at failure point
 
 ## Decision Tree
 
@@ -215,7 +216,6 @@ run_trace_validation
     ├─ status == "trace_mismatch"
     │      ├─ Note failed_trace_line and last_state_number
     │      ├─ Check trace file at failed_trace_line
-    │      ├─ Inspect last_state for clues
     │      └─ Proceed to Phase 2 (debugging.md)
     │
     └─ status == "error"
