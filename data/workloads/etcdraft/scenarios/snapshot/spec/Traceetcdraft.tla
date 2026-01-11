@@ -386,6 +386,15 @@ SendSnapshotIfLogged(i, j, index) ==
     /\ ValidateAfterSnapshot(i, j)
     /\ progressState'[i][j] = StateSnapshot
 
+\* ManualSendSnapshot - handles send-snapshot command which bypasses normal raft send path
+\* This does NOT modify progress state (no StateSnapshot transition)
+\* Reference: rafttest/interaction_env_handler_send_snapshot.go
+ManualSendSnapshotIfLogged(i, j) ==
+    /\ LoglineIsMessageEvent("ManualSendSnapshot", i, j)
+    /\ logline.event.msg.type = "MsgSnap"
+    /\ ManualSendSnapshot(i, j)  \* Call action from etcdraft.tla
+    \* No progress state validation - ManualSendSnapshot doesn't change it
+
 \* ImplicitReplicateAndSend - uses ReplicateImplicitEntry from etcdraft.tla
 ImplicitReplicateAndSend(i) ==
     ReplicateImplicitEntry(i)  \* Call action from etcdraft.tla
@@ -538,6 +547,9 @@ TraceNextNonReceiveActions ==
        \/ /\ LoglineIsEvent("SendAppendEntriesRequest") /\ logline.event.msg.type = "MsgSnap"
           \* Fix: Pass msg.index as snapshot index
           /\ \E i,j \in Server : SendSnapshotIfLogged(i, j, logline.event.msg.index)
+       \/ /\ LoglineIsEvent("ManualSendSnapshot")
+          \* Manual snapshot send bypasses progress state management
+          /\ \E i,j \in Server : ManualSendSnapshotIfLogged(i, j)
        \/ /\ LoglineIsEvent("BecomeCandidate")
           /\ \E i \in Server : TimeoutIfLogged(i)
        \/ /\ LoglineIsEvent("ChangeConf")

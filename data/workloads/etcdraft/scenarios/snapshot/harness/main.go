@@ -192,6 +192,8 @@ func run(cfg runConfig) error {
 				log.Printf("set randomized election timeout: %v", err)
 			}
 		},
+		// Pass TraceLogger for manually injected messages (e.g., send-snapshot)
+		TraceLogger: tracer,
 	})
 
 	stopRuntimeTrace, err := startRuntimeTrace(cfg.RuntimeTrace)

@@ -518,7 +518,14 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
         \* Send the entries
         lastEntry == Min({LastIndex(log[i]), range[2]-1})
         entries == SubSeq(log[i].entries, range[1] - log[i].offset + 1, lastEntry - log[i].offset + 1)
-        commit == IF subtype = "heartbeat" THEN Min({commitIndex[i], matchIndex[i][j]}) ELSE Min({commitIndex[i], lastEntry})
+        \* Commit calculation:
+        \* - Heartbeat: Min(commitIndex, matchIndex) - bounded by what follower has
+        \* - Empty append (no entries): commitIndex directly - just updating commit
+        \* - Regular append: Min(commitIndex, lastEntry) - bounded by entries being sent
+        \* Reference: raft.go sendAppend() calculates commit based on entries
+        commit == CASE subtype = "heartbeat"  -> Min({commitIndex[i], matchIndex[i][j]})
+                    [] lastEntry < range[1]   -> commitIndex[i]
+                    [] OTHER                  -> Min({commitIndex[i], lastEntry})
         \* New: Calculate number of entries sent (for updating msgAppFlowPaused)
         numEntries == Len(entries)
         \* New: Calculate updated inflights (if entries were sent)
@@ -612,40 +619,62 @@ SendSnapshot(i, j) ==
     /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState>>
 
 \* Send snapshot with optional log compaction.
-\* Combines CompactLog + SendSnapshot for trace validation where compaction
-\* happens implicitly before sending snapshot.
-\* Reference: In etcd, application compacts log independently, then maybeSendSnapshot() sends it.
+\* SendSnapshot without compacting the log.
+\* In etcd, the application compacts log independently via a separate Compact() call.
+\* The raft library's maybeSendSnapshot() only sends the snapshot message.
+\* Reference: raft.go:680-689 maybeSendSnapshot()
+\*
+\* Note: Previously this action combined compaction with snapshot sending, but
+\* this caused issues in scenarios where the leader needs to send log entries
+\* after sending a snapshot (e.g., snapshot_succeed_via_app_resp_behind).
 SendSnapshotWithCompaction(i, j, snapshoti) ==
     /\ i /= j
     /\ state[i] = Leader
     /\ j \in GetConfig(i) \union GetLearners(i)
-    /\ LET needsCompact == log[i].offset <= snapshoti
-           newOffset == snapshoti + 1
-           snapTerm == LogTerm(i, snapshoti)
-       IN
-       \* CompactLog precondition: newStart <= commitIndex + 1
-       /\ (needsCompact => (newOffset <= commitIndex[i] + 1))
-       /\ log' = IF needsCompact
-                 THEN [log EXCEPT ![i] = [
-                           offset |-> newOffset,
-                           entries |-> SubSeq(@.entries, newOffset - @.offset + 1, Len(@.entries)),
-                           snapshotIndex |-> snapshoti,
-                           snapshotTerm |-> snapTerm
-                       ]]
-                 ELSE log
-       /\ SendDirect([mtype          |-> SnapshotRequest,
-                      mterm          |-> currentTerm[i],
-                      msnapshotIndex |-> snapshoti,
-                      msnapshotTerm  |-> LogTerm(i, snapshoti),
-                      mhistory       |-> SubSeq(historyLog[i], 1, snapshoti),
-                      msource        |-> i,
-                      mdest          |-> j])
-       /\ progressState' = [progressState EXCEPT ![i][j] = StateSnapshot]
-       /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
-       /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = snapshoti]
-       /\ nextIndex' = [nextIndex EXCEPT ![i][j] = snapshoti + 1]
-       /\ inflights' = [inflights EXCEPT ![i][j] = {}]
-       /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, historyLog>>
+    /\ snapshoti <= commitIndex[i]  \* Can only snapshot committed entries
+    /\ SendDirect([mtype          |-> SnapshotRequest,
+                   mterm          |-> currentTerm[i],
+                   msnapshotIndex |-> snapshoti,
+                   msnapshotTerm  |-> LogTerm(i, snapshoti),
+                   mhistory       |-> SubSeq(historyLog[i], 1, snapshoti),
+                   msource        |-> i,
+                   mdest          |-> j])
+    /\ progressState' = [progressState EXCEPT ![i][j] = StateSnapshot]
+    /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
+    /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = snapshoti]
+    /\ nextIndex' = [nextIndex EXCEPT ![i][j] = snapshoti + 1]
+    /\ inflights' = [inflights EXCEPT ![i][j] = {}]
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, historyLog>>
+
+\* ManualSendSnapshot - Send snapshot without modifying progress state
+\* This models the send-snapshot command in the test harness which bypasses
+\* the normal raft send path and directly injects a snapshot message.
+\* Reference: rafttest/interaction_env_handler_send_snapshot.go:34-50
+\*           rafttest/interaction_env_handler_add_nodes.go:106-108
+\*
+\* Key differences from SendSnapshot:
+\* - Does NOT transition progressState to StateSnapshot
+\* - Does NOT set pendingSnapshot
+\* - Does NOT update nextIndex
+\* - Creates snapshot from applied state (commitIndex), NOT from snapshotIndex
+\*
+\* The test harness's Snapshot() returns the last entry from History, which
+\* tracks the applied state up to commitIndex (not a persisted snapshot).
+ManualSendSnapshot(i, j) ==
+    /\ i /= j
+    /\ state[i] = Leader
+    /\ j \in GetConfig(i) \union GetLearners(i)
+    \* Must have committed entries to create a snapshot from
+    /\ commitIndex[i] > 0
+    /\ Send([mtype          |-> SnapshotRequest,
+             mterm          |-> currentTerm[i],
+             msnapshotIndex |-> commitIndex[i],
+             msnapshotTerm  |-> LogTerm(i, commitIndex[i]),
+             mhistory       |-> SubSeq(historyLog[i], 1, commitIndex[i]),
+             msource        |-> i,
+             mdest          |-> j])
+    \* Key: Do NOT modify progress state!
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* Candidate i transitions to leader.
 \* @type: Int => Bool;
@@ -910,8 +939,18 @@ LeaveJoint(i) ==
 
 \* Apply configuration from snapshot
 \* When a follower receives a snapshot, it applies the config directly
+\* Must check historyLog for joint config info since snapshot may contain joint config
 ApplySnapshotConfChange(i, newVoters) ==
-    /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, {}>>]]
+    \* Find the last config entry in historyLog to determine joint config
+    LET configIndices == {k \in 1..Len(historyLog[i]) : historyLog[i][k].type = ConfigEntry}
+        lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
+        \* Check if last config entry has enterJoint=TRUE
+        hasEnterJoint == lastConfigIdx > 0 /\ "enterJoint" \in DOMAIN historyLog[i][lastConfigIdx].value
+        enterJoint == IF hasEnterJoint THEN historyLog[i][lastConfigIdx].value.enterJoint ELSE FALSE
+        hasOldconf == enterJoint /\ "oldconf" \in DOMAIN historyLog[i][lastConfigIdx].value
+        oldconf == IF hasOldconf THEN historyLog[i][lastConfigIdx].value.oldconf ELSE {}
+    IN
+    /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, oldconf>>]]
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex>>
 
 \* Follower advances commit index (e.g., from AppendEntries leaderCommit)
@@ -1162,9 +1201,11 @@ HandleAppendEntriesRequest(i, j, m) ==
 
 \* Server i receives an AppendEntries response from server j with
 \* m.mterm = currentTerm[i].
+\* Note: Heartbeat responses are handled separately by HandleHeartbeatResponse.
 \* @type: (Int, Int, AERESPT) => Bool;
 HandleAppendEntriesResponse(i, j, m) ==
     /\ m.mterm = currentTerm[i]
+    /\ m.msubtype /= "heartbeat"  \* Heartbeat responses handled by HandleHeartbeatResponse
     /\ \/ /\ m.msuccess \* successful
           /\ matchIndex' = [matchIndex EXCEPT ![i][j] = Max({@, m.mmatchIndex})]
           /\ UNCHANGED <<pendingConfChangeIndex>>
@@ -1183,7 +1224,13 @@ HandleAppendEntriesResponse(i, j, m) ==
                  \* Reference: raft.go:1523 "pr.Match+1 >= r.raftLog.firstIndex()"
                  \* Use updated matchIndex for this check
                  newMatchIndex == Max({matchIndex[i][j], m.mmatchIndex})
-                 canResumeFromSnapshot == newMatchIndex + 1 >= log[i].offset
+                 \* Note: The spec compacts log during SendSnapshotWithCompaction, but the
+                 \* system compacts asynchronously. So firstIndex in the system might still
+                 \* be lower than log[i].offset. We also check against pendingSnapshot to
+                 \* handle cases where compaction in spec advanced offset beyond what
+                 \* the system's firstIndex would be.
+                 canResumeFromSnapshot == \/ newMatchIndex + 1 >= log[i].offset
+                                          \/ newMatchIndex + 1 >= pendingSnapshot[i][j]
              IN CASE \* Case 1: StateProbe -> StateReplicate
                      \* Reference: raft.go:1521-1522
                      progressState[i][j] = StateProbe
@@ -1239,6 +1286,24 @@ HandleAppendEntriesResponse(i, j, m) ==
                           /\ UNCHANGED <<progressState, pendingSnapshot, inflights, matchIndex, pendingConfChangeIndex>>
     /\ Discard(m)
     /\ UNCHANGED <<serverVars, candidateVars, logVars, configVars, durableState>>
+
+\* Server i receives a heartbeat response from server j.
+\* Heartbeat responses do NOT cause state transitions (unlike MsgAppResp).
+\* Reference: raft.go:1493-1509 stepLeader case pb.MsgHeartbeatResp
+HandleHeartbeatResponse(i, j, m) ==
+    /\ m.mterm = currentTerm[i]
+    /\ m.msubtype = "heartbeat"
+    \* Only clear MsgAppFlowPaused, do NOT transition state
+    \* Reference: raft.go:1495 pr.MsgAppFlowPaused = false
+    /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
+    \* If StateReplicate and inflights full, free one (edge case)
+    \* Reference: raft.go:1497-1499
+    /\ IF progressState[i][j] = StateReplicate /\ Cardinality(inflights[i][j]) >= MaxInflightMsgs
+       THEN inflights' = [inflights EXCEPT ![i][j] = @ \ {Min(@)}]
+       ELSE UNCHANGED inflights
+    /\ Discard(m)
+    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState,
+                   matchIndex, nextIndex, progressState, pendingSnapshot>>
 
 \* Compacts the log of server i up to newStart (exclusive).
 \* newStart becomes the new offset.
@@ -1401,6 +1466,7 @@ ReceiveDirect(m) ==
         /\ HandleAppendEntriesRequest(i, j, m)
     \/  /\ m.mtype = AppendEntriesResponse
         /\ \/ DropStaleResponse(i, j, m)
+           \/ HandleHeartbeatResponse(i, j, m)
            \/ HandleAppendEntriesResponse(i, j, m)
     \/  /\ m.mtype = SnapshotRequest
         /\ HandleSnapshotRequest(i, j, m)
