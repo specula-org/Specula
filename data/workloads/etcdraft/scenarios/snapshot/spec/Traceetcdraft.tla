@@ -73,7 +73,22 @@ BootstrappedConfig(i) ==
 TraceInitServer == BootstrappedConfig(TraceLog[1].event.nid)
 ASSUME TraceInitServer \subseteq TraceServer
 
-ImplicitLearners == TraceServer \ (TraceInitServer \cup AllChangeConfNids)
+\* Extract learners from the FIRST ApplyConfChange event in trace (used for initialization)
+\* Only use learners if they exist in the initial bootstrap config
+\* If the first ApplyConfChange doesn't have learners, return {} (learners added later dynamically)
+TraceLearners ==
+    LET firstApplyConf == SelectSeq(TraceLog, LAMBDA x: x.event.name = "ApplyConfChange")
+    IN IF Len(firstApplyConf) > 0 /\
+          "learners" \in DOMAIN firstApplyConf[1].event.prop.cc /\
+          firstApplyConf[1].event.prop.cc.learners /= <<>>
+       THEN ToSet(firstApplyConf[1].event.prop.cc.learners)
+       ELSE {}
+
+\* Use TraceLearners if available, otherwise fall back to implicit calculation
+ImplicitLearners ==
+    IF TraceLearners /= {}
+    THEN TraceLearners
+    ELSE TraceServer \ (TraceInitServer \cup AllChangeConfNids)
 
 \* Extract MaxInflightMsgs from trace config line (tag="config")
 \* If no config line exists, use default 256
@@ -196,7 +211,11 @@ LoglineIsAppendEntriesResponse(m) ==
     /\ m.msource = logline.event.msg.from
     /\ m.mterm = logline.event.msg.term
     /\ m.msuccess = ~logline.event.msg.reject
+    \* For success: mmatchIndex = index, mrejectHint = 0
+    \* For reject: mmatchIndex = rejected index, mrejectHint = rejectHint from trace
     /\ (~logline.event.msg.reject /\ m.msubtype /= "heartbeat") => m.mmatchIndex = logline.event.msg.index
+    /\ logline.event.msg.reject => /\ m.mmatchIndex = logline.event.msg.index
+                                   /\ m.mrejectHint = logline.event.msg.rejectHint
 
 LoglineIsRequestVoteRequest(m) ==
     /\ "msg" \in DOMAIN logline.event

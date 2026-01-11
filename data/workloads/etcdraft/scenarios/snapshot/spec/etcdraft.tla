@@ -67,7 +67,7 @@ VARIABLE
     \* @typeAlias: RVREQT = [mtype: Str, mterm: Int, mlastLogTerm: Int, mlastLogIndex: Int, msource: Int, mdest: Int];
     \* @typeAlias: RVRESPT = [mtype: Str, mterm: Int, mvoteGranted: Bool, msource: Int, mdest: Int ];
     \* @typeAlias: AEREQT = [mtype: Str, mterm: Int, mprevLogIndex: Int, mprevLogTerm: Int, mentries: LOGT, mcommitIndex: Int, msource: Int, mdest: Int ];
-    \* @typeAlias: AERESPT = [mtype: Str, mterm: Int, msuccess: Bool, mmatchIndex: Int, msource: Int, mdest: Int ];
+    \* @typeAlias: AERESPT = [mtype: Str, mterm: Int, msuccess: Bool, mmatchIndex: Int, mrejectHint: Int, msource: Int, mdest: Int ];
     \* @typeAlias: MSG = [ wrapped: Bool, mtype: Str, mterm: Int, msource: Int, mdest: Int, RVReq: RVREQT, RVResp: RVRESPT, AEReq: AEREQT, AEResp: AERESPT ];
     \* @type: MSG -> Int;
     messages
@@ -575,6 +575,7 @@ AppendEntriesToSelf(i) ==
              mterm           |-> currentTerm[i],
              msuccess        |-> TRUE,
              mmatchIndex     |-> LastIndex(log[i]),
+             mrejectHint     |-> 0,
              msource         |-> i,
              mdest           |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
@@ -699,6 +700,7 @@ ClientRequestAndSend(i, v) ==
              mterm       |-> currentTerm[i],
              msuccess    |-> TRUE,
              mmatchIndex |-> LastIndex(log'[i]),
+             mrejectHint |-> 0,
              msource     |-> i,
              mdest       |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog>>
@@ -713,6 +715,7 @@ ReplicateAndSendToSelf(i, v, t) ==
              mterm       |-> currentTerm[i],
              msuccess    |-> TRUE,
              mmatchIndex |-> LastIndex(log'[i]),
+             mrejectHint |-> 0,
              msource     |-> i,
              mdest       |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars>>
@@ -736,6 +739,7 @@ ReplicateImplicitEntry(i) ==
                 mterm       |-> currentTerm[i],
                 msuccess    |-> TRUE,
                 mmatchIndex |-> LastIndex(log'[i]),
+                mrejectHint |-> 0,
                 msource     |-> i,
                 mdest       |-> i])
        /\ IF isJoint
@@ -842,6 +846,7 @@ ChangeConfAndSend(i) ==
                          mterm       |-> currentTerm[i],
                          msuccess    |-> TRUE,
                          mmatchIndex |-> LastIndex(log'[i]),
+                         mrejectHint |-> 0,
                          msource     |-> i,
                          mdest       |-> i])
        ELSE
@@ -852,6 +857,7 @@ ChangeConfAndSend(i) ==
                      mterm       |-> currentTerm[i],
                      msuccess    |-> TRUE,
                      mmatchIndex |-> LastIndex(log'[i]),
+                     mrejectHint |-> 0,
                      msource     |-> i,
                      mdest       |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, historyLog>>
@@ -1059,11 +1065,14 @@ RejectAppendEntriesRequest(i, j, m, logOk) ==
        \/ /\ m.mterm = currentTerm[i]
           /\ state[i] = Follower
           /\ \lnot logOk
+    \* For rejections: mmatchIndex = rejected index (m.mprevLogIndex), mrejectHint = follower's last index
+    \* Reference: raft.go sends Index = m.Index, RejectHint = r.raftLog.lastIndex()
     /\ Reply([mtype           |-> AppendEntriesResponse,
               msubtype        |-> "app",
               mterm           |-> currentTerm[i],
               msuccess        |-> FALSE,
-              mmatchIndex     |-> 0,
+              mmatchIndex     |-> m.mprevLogIndex,
+              mrejectHint     |-> LastIndex(log[i]),
               msource         |-> i,
               mdest           |-> j],
               m)
@@ -1097,6 +1106,7 @@ AppendEntriesAlreadyDone(i, j, index, m) ==
                 mterm           |-> currentTerm[i],
                 msuccess        |-> TRUE,
                 mmatchIndex     |-> IF m.msubtype = "heartbeat" \/ index > commitIndex[i] THEN m.mprevLogIndex+Len(m.mentries) ELSE commitIndex[i],
+                mrejectHint     |-> 0,
                 msource         |-> i,
                 mdest           |-> j],
                 m)
@@ -1202,18 +1212,31 @@ HandleAppendEntriesResponse(i, j, m) ==
                         \* Still update nextIndex per MaybeUpdate logic
                         /\ nextIndex' = [nextIndex EXCEPT ![i][j] = Max({@, m.mmatchIndex + 1})]
        \/ /\ \lnot m.msuccess \* not successful
-          /\ UNCHANGED <<leaderVars>>
-          \* Fix: Explicitly expand macros to ensure StateReplicate -> StateProbe and Unpause works
-          \* Note: MaybeDecrTo (progress.go:226-252) updates Next, but not fully modeled here
-          \* Simplified: just keep Next unchanged for now (can be refined later)
-          /\ IF progressState[i][j] = StateReplicate
-             THEN /\ progressState' = [progressState EXCEPT ![i][j] = StateProbe]
-                  /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
-                  /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = 0]
-                  /\ inflights' = [inflights EXCEPT ![i][j] = {}]
-                  /\ UNCHANGED nextIndex
-             ELSE /\ UNCHANGED <<progressState, pendingSnapshot, inflights, nextIndex>>
-                  /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
+          \* Implement MaybeDecrTo (progress.go:226-252)
+          \* rejected = m.mmatchIndex, matchHint = m.mrejectHint
+          /\ LET rejected == m.mmatchIndex
+                 matchHint == m.mrejectHint
+             IN IF progressState[i][j] = StateReplicate
+                THEN \* StateReplicate: if rejected > Match, set Next = Match + 1
+                     IF rejected <= matchIndex[i][j]
+                     THEN \* Stale rejection, ignore
+                          /\ UNCHANGED <<leaderVars, progressVars>>
+                     ELSE \* Valid rejection: transition to Probe, set Next = Match + 1
+                          /\ progressState' = [progressState EXCEPT ![i][j] = StateProbe]
+                          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = matchIndex[i][j] + 1]
+                          /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
+                          /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = 0]
+                          /\ inflights' = [inflights EXCEPT ![i][j] = {}]
+                          /\ UNCHANGED <<matchIndex, pendingConfChangeIndex>>
+                ELSE \* StateProbe/StateSnapshot: check if Next-1 = rejected
+                     IF nextIndex[i][j] - 1 /= rejected
+                     THEN \* Stale rejection, just unpause
+                          /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
+                          /\ UNCHANGED <<progressState, pendingSnapshot, inflights, nextIndex, matchIndex, pendingConfChangeIndex>>
+                     ELSE \* Valid rejection: Next = max(min(rejected, matchHint+1), Match+1)
+                          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = Max({Min({rejected, matchHint + 1}), matchIndex[i][j] + 1})]
+                          /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
+                          /\ UNCHANGED <<progressState, pendingSnapshot, inflights, matchIndex, pendingConfChangeIndex>>
     /\ Discard(m)
     /\ UNCHANGED <<serverVars, candidateVars, logVars, configVars, durableState>>
 
@@ -1239,26 +1262,28 @@ HandleSnapshotRequest(i, j, m) ==
     /\ IF m.msnapshotIndex <= commitIndex[i] THEN
            \* Case 1: Stale snapshot (Index <= Committed). Ignore.
            \* Reference: raft.go:1858 restore() returns false
-           /\ Reply([mtype       |-> AppendEntriesResponse, 
+           /\ Reply([mtype       |-> AppendEntriesResponse,
                      msubtype    |-> "app",
                      mterm       |-> currentTerm[i],
                      msuccess    |-> TRUE,
                      mmatchIndex |-> commitIndex[i],
-                     msource     |-> i, 
-                     mdest       |-> j], 
+                     mrejectHint |-> 0,
+                     msource     |-> i,
+                     mdest       |-> j],
                      m)
            /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
        ELSE IF LogTerm(i, m.msnapshotIndex) = m.msnapshotTerm THEN
            \* Case 2: Fast-forward (Log contains snapshot index/term).
            \* Reference: raft.go:1907 matchTerm check returns false after commitTo
            /\ commitIndex' = [commitIndex EXCEPT ![i] = m.msnapshotIndex]
-           /\ Reply([mtype       |-> AppendEntriesResponse, 
+           /\ Reply([mtype       |-> AppendEntriesResponse,
                      msubtype    |-> "app",
                      mterm       |-> currentTerm[i],
-                     msuccess    |-> TRUE, 
+                     msuccess    |-> TRUE,
                      mmatchIndex |-> m.msnapshotIndex,
-                     msource     |-> i, 
-                     mdest       |-> j], 
+                     mrejectHint |-> 0,
+                     msource     |-> i,
+                     mdest       |-> j],
                      m)
            /\ UNCHANGED <<serverVars, candidateVars, leaderVars, log, configVars, durableState, progressVars, historyLog>>
        ELSE
@@ -1272,12 +1297,13 @@ HandleSnapshotRequest(i, j, m) ==
               ]]
            /\ historyLog' = [historyLog EXCEPT ![i] = m.mhistory]
            /\ commitIndex' = [commitIndex EXCEPT ![i] = m.msnapshotIndex]
-           /\ Reply([mtype       |-> AppendEntriesResponse, 
+           /\ Reply([mtype       |-> AppendEntriesResponse,
                      msubtype    |-> "snapshot",
                      mterm       |-> currentTerm[i],
-                     msuccess    |-> TRUE, 
+                     msuccess    |-> TRUE,
                      mmatchIndex |-> m.msnapshotIndex,
-                     msource     |-> i, 
+                     mrejectHint |-> 0,
+                     msource     |-> i,
                      mdest       |-> j], 
                      m)
            /\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars>>
