@@ -900,7 +900,7 @@ LeaveJoint(i) ==
         /\ reconfigCount' = reconfigCount + 1
         /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
        ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars>>
 
 \* Apply configuration from snapshot
 \* When a follower receives a snapshot, it applies the config directly
@@ -1115,7 +1115,11 @@ NoConflictAppendEntriesRequest(i, index, m) ==
     /\ m.mentries /= << >>
     /\ index > commitIndex[i]
     /\ HasNoConflict(i, index, m.mentries)
-    /\ log' = [log EXCEPT ![i].entries = @ \o SubSeq(m.mentries, Len(@)-index+2, Len(m.mentries))]
+    \* Ensure there are actually new entries to append (not all entries already exist)
+    /\ m.mprevLogIndex + Len(m.mentries) > LastIndex(log[i])
+    \* Start position in m.mentries for new entries: LastIndex(log[i]) - m.mprevLogIndex + 1
+    \* = LastIndex(log[i]) - index + 2 (since index = m.mprevLogIndex + 1)
+    /\ log' = [log EXCEPT ![i].entries = @ \o SubSeq(m.mentries, LastIndex(log[i])-index+2, Len(m.mentries))]
     /\ UNCHANGED <<messageVars, serverVars, commitIndex, durableState, progressVars, historyLog>>
 
 \* @type: (Int, Int, Bool, AEREQT) => Bool;

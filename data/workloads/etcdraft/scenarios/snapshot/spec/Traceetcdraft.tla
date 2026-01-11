@@ -419,10 +419,8 @@ ChangeConfIfLogged(i) ==
     /\ LET changes == logline.event.prop.cc.changes
            initialConf == [voters |-> GetConfig(i), learners |-> GetLearners(i)]
            finalConf == FoldSeq(ApplyChange, initialConf, changes)
-           \* Heuristic: if multiple changes or resulting voters differ in size/content significantly, assume Joint.
-           \* For leader_transfer trace, we know it's Joint.
-           \* For confchange_add_remove, it's Simple.
-           enterJoint == Len(changes) > 1 
+           \* Read enterJoint directly from trace event
+           enterJoint == logline.event.prop.enterJoint
        IN
            /\ ChangeConf(i)
            /\ LogEntryAt(log'[i], LastIndex(log'[i])).value.newconf = finalConf.voters
