@@ -757,21 +757,6 @@ ClientRequestAndSend(i, v) ==
              mdest       |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog>>
 
-\* Leader replicates an entry and sends MsgAppResp to itself.
-\* Generic version that accepts any entry value and type.
-\* Reference: In etcd raft, leader handles its own log entries as self-messages.
-ReplicateAndSendToSelf(i, v, t) ==
-    /\ Replicate(i, v, t)
-    /\ Send([mtype       |-> AppendEntriesResponse,
-             msubtype    |-> "app",
-             mterm       |-> currentTerm[i],
-             msuccess    |-> TRUE,
-             mmatchIndex |-> LastIndex(log'[i]),
-             mrejectHint |-> 0,
-             mlogTerm    |-> 0,
-             msource     |-> i,
-             mdest       |-> i])
-    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars>>
 
 \* Leader replicates an implicit entry (for self-message response in trace).
 \* In joint config: creates a leave-joint config entry
@@ -1004,58 +989,11 @@ StepDownToFollower(i) ==
     /\ BecomeFollowerOfTerm(i, currentTerm[i])
     /\ UNCHANGED <<messageVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
-\* ============================================================================
-\* New: Progress state transition helper functions
-\* Reference: progress.go:119-158
-\* ============================================================================
 
-\* ResetState - common logic for state transitions
-\* Reference: progress.go:121-126 ResetState()
-\* Clear MsgAppFlowPaused, PendingSnapshot and Inflights
-ResetProgressState(i, j, newState) ==
-    /\ progressState' = [progressState EXCEPT ![i][j] = newState]
-    /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
-    /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = 0]
-    /\ ResetInflights(i, j)
-
-\* BecomeProbe - transition to StateProbe
-\* Reference: progress.go:130-143
-\* Key: clear MsgAppFlowPaused to allow flow control recovery
-ProgressBecomeProbe(i, j) ==
-    ResetProgressState(i, j, StateProbe)
-
-\* BecomeReplicate - transition to StateReplicate
-\* Reference: progress.go:146-149
-\* Key: clear MsgAppFlowPaused to allow flow control recovery
-ProgressBecomeReplicate(i, j) ==
-    ResetProgressState(i, j, StateReplicate)
-
-\* BecomeSnapshot - transition to StateSnapshot
-\* Reference: progress.go:153-158
-\* Key: set pendingSnapshot and Next, MsgAppFlowPaused is cleared but IsPaused() still returns true
-ProgressBecomeSnapshot(i, j, snapIndex) ==
-    /\ progressState' = [progressState EXCEPT ![i][j] = StateSnapshot]
-    /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
-    /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = snapIndex]
-    /\ nextIndex' = [nextIndex EXCEPT ![i][j] = snapIndex + 1]
-    /\ ResetInflights(i, j)
 
 \* ============================================================================
 \* New: MsgAppFlowPaused update functions - critical flow control recovery paths
 \* ============================================================================
-
-\* UpdateMsgAppFlowPausedOnSent - update MsgAppFlowPaused when sending messages
-\* Reference: progress.go:165-185 SentEntries()
-\* StateReplicate: MsgAppFlowPaused = Inflights.Full()
-\* StateProbe: MsgAppFlowPaused = true (if entries were sent)
-UpdateMsgAppFlowPausedOnSent(i, j, sentEntries) ==
-    msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] =
-        CASE progressState[i][j] = StateReplicate
-                -> InflightsFull(i, j)  \* Note: uses updated inflights
-          [] progressState[i][j] = StateProbe /\ sentEntries > 0
-                -> TRUE
-          [] OTHER -> @
-    ]
 
 \* ClearMsgAppFlowPausedOnUpdate - clear on successful response
 \* Reference: progress.go:205-213 MaybeUpdate()
@@ -1063,11 +1001,6 @@ UpdateMsgAppFlowPausedOnSent(i, j, sentEntries) ==
 ClearMsgAppFlowPausedOnUpdate(i, j) ==
     msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
 
-\* ClearMsgAppFlowPausedOnDecrTo - clear on rejected response
-\* Reference: progress.go:226-254 MaybeDecrTo()
-\* Note: only clears in StateProbe, not in StateReplicate
-ClearMsgAppFlowPausedOnDecrTo(i, j) ==
-    msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
 
 \* ============================================================================
 \* MsgAppFlowPaused lifecycle summary
@@ -1998,7 +1931,7 @@ CommitIndexBoundInv ==
 CommittedEntriesTermInv ==
     \A i \in Server :
         \A idx \in 1..commitIndex[i] :
-            historyLog[i][idx].term
+            historyLog[i][idx].term > 0
 
 \* Configuration change index should not exceed log length
 PendingConfigBoundInv ==
