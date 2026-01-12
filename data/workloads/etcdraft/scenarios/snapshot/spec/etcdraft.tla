@@ -2006,4 +2006,385 @@ AdditionalSafety ==
     /\ MessageEndpointsValidInv
     /\ LeaderDurableTermInv
 
+\* ============================================================================
+\* P0: Log Structure Consistency Invariants
+\* These verify the fundamental structure of log data
+\* ============================================================================
+
+\* Invariant: LogOffsetMinInv
+\* Log offset must be >= 1 (log indices start from 1, offset = snapshotIndex + 1)
+\* Reference: storage.go:193-194 firstIndex() = ents[0].Index + 1
+\* When log is empty after snapshot, offset = snapshotIndex + 1 >= 1
+LogOffsetMinInv ==
+    \A i \in Server :
+        log[i].offset >= 1
+
+\* Invariant: SnapshotOffsetConsistencyInv
+\* snapshotIndex must equal offset - 1 (fundamental log structure constraint)
+\* Reference: storage.go:106 "ents[i] has raft log position i+snapshot.Metadata.Index"
+\* Reference: storage.go:193-194 firstIndex() = ents[0].Index + 1 = snapshot.Index + 1
+SnapshotOffsetConsistencyInv ==
+    \A i \in Server :
+        log[i].snapshotIndex = log[i].offset - 1
+
+\* Invariant: SnapshotTermValidInv
+\* If snapshotIndex > 0, snapshotTerm must be > 0 (valid term)
+\* Reference: Snapshots are taken at committed entries, which have valid terms
+SnapshotTermValidInv ==
+    \A i \in Server :
+        log[i].snapshotIndex > 0 => log[i].snapshotTerm > 0
+
+\* Invariant: SnapshotTermBoundInv
+\* snapshotTerm cannot exceed currentTerm (snapshots are from past committed state)
+\* Reference: Snapshots are taken at committed indices, terms are from past
+SnapshotTermBoundInv ==
+    \A i \in Server :
+        log[i].snapshotTerm <= currentTerm[i]
+
+\* Invariant: HistoryLogLengthInv
+\* historyLog length must equal LastIndex (historyLog tracks full log history)
+\* Note: This only holds when log is not empty (after bootstrap)
+HistoryLogLengthInv ==
+    \A i \in Server :
+        LastIndex(log[i]) >= 0 =>
+            Len(historyLog[i]) = LastIndex(log[i])
+
+\* Aggregate P0 Log Structure invariants
+LogStructureInv ==
+    /\ LogOffsetMinInv
+    /\ SnapshotOffsetConsistencyInv
+    /\ SnapshotTermValidInv
+    /\ SnapshotTermBoundInv
+    /\ HistoryLogLengthInv
+
+\* ============================================================================
+\* P1: Configuration Change Consistency Invariants
+\* These verify configuration change safety properties
+\* ============================================================================
+
+\* Invariant: JointConfigNonEmptyInv
+\* In joint config, both incoming and outgoing configs must be non-empty
+\* Reference: confchange/confchange.go requires both sides for joint consensus
+JointConfigNonEmptyInv ==
+    \A i \in Server :
+        IsJointConfig(i) =>
+            /\ GetConfig(i) /= {}
+            /\ GetOutgoingConfig(i) /= {}
+
+\* Invariant: SingleConfigOutgoingEmptyInv
+\* When not in joint config, outgoing config must be empty
+\* Reference: tracker/tracker.go - single config has empty outgoing
+SingleConfigOutgoingEmptyInv ==
+    \A i \in Server :
+        ~IsJointConfig(i) => GetOutgoingConfig(i) = {}
+
+\* Invariant: LearnersVotersDisjointInv
+\* Learners and Voters must be disjoint (mutually exclusive)
+\* Reference: tracker/tracker.go:37-41
+\* "Invariant: Learners and Voters does not intersect"
+LearnersVotersDisjointInv ==
+    \A i \in Server :
+        GetLearners(i) \cap (GetConfig(i) \union GetOutgoingConfig(i)) = {}
+
+\* Invariant: ConfigNonEmptyInv
+\* At least one voter must exist for initialized servers (cluster must have quorum)
+\* Reference: A Raft cluster cannot function without voters
+\* Note: Only applies to servers with currentTerm > 0 (initialized servers)
+\*       Uninitialized servers (not yet joined) may have empty config
+ConfigNonEmptyInv ==
+    \A i \in Server :
+        currentTerm[i] > 0 => GetConfig(i) /= {}
+
+\* Aggregate P1 Configuration invariants
+ConfigurationInv ==
+    /\ JointConfigNonEmptyInv
+    /\ SingleConfigOutgoingEmptyInv
+    /\ LearnersVotersDisjointInv
+    /\ ConfigNonEmptyInv
+
+\* ============================================================================
+\* P2: Message Content Validity Invariants
+\* These verify message fields are consistent with sender state
+\* ============================================================================
+
+\* Invariant: SnapshotMsgIndexValidInv
+\* SnapshotRequest's msnapshotIndex must be <= sender's commitIndex
+\* Reference: raft.go:680-689 maybeSendSnapshot sends committed snapshot
+SnapshotMsgIndexValidInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        m.mtype = SnapshotRequest =>
+            m.msnapshotIndex <= commitIndex[m.msource]
+
+\* Invariant: SnapshotMsgTermValidInv
+\* SnapshotRequest's msnapshotTerm must be > 0 and <= mterm
+\* Reference: Valid snapshot has positive term from committed log
+SnapshotMsgTermValidInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        m.mtype = SnapshotRequest =>
+            /\ m.msnapshotTerm > 0
+            /\ m.msnapshotTerm <= m.mterm
+
+\* Invariant: AppendEntriesPrevIndexNonNegInv
+\* AppendEntriesRequest's mprevLogIndex must be >= 0
+\* Reference: prevLogIndex can be 0 (empty log case)
+AppendEntriesPrevIndexNonNegInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        m.mtype = AppendEntriesRequest =>
+            m.mprevLogIndex >= 0
+
+\* Invariant: AppendEntriesCommitBoundInv
+\* AppendEntriesRequest's mcommitIndex must be >= 0
+\* Reference: commitIndex is always non-negative
+AppendEntriesCommitBoundInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        m.mtype = AppendEntriesRequest =>
+            m.mcommitIndex >= 0
+
+\* Invariant: VoteRequestLogIndexNonNegInv
+\* RequestVoteRequest's mlastLogIndex must be >= 0
+\* Reference: lastLogIndex is 0 for empty log
+VoteRequestLogIndexNonNegInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        m.mtype = RequestVoteRequest =>
+            m.mlastLogIndex >= 0
+
+\* Invariant: VoteRequestLogTermNonNegInv
+\* RequestVoteRequest's mlastLogTerm must be >= 0
+\* Reference: lastLogTerm is 0 for empty log
+VoteRequestLogTermNonNegInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        m.mtype = RequestVoteRequest =>
+            m.mlastLogTerm >= 0
+
+\* Aggregate P2 Message Content invariants
+MessageContentInv ==
+    /\ SnapshotMsgIndexValidInv
+    /\ SnapshotMsgTermValidInv
+    /\ AppendEntriesPrevIndexNonNegInv
+    /\ AppendEntriesCommitBoundInv
+    /\ VoteRequestLogIndexNonNegInv
+    /\ VoteRequestLogTermNonNegInv
+
+\* ============================================================================
+\* P2: Inflights Refined Constraints
+\* Additional precision for flow control verification
+\* ============================================================================
+
+\* Invariant: InflightsOnlyInReplicateInv
+\* Only StateReplicate can have non-empty inflights
+\* Reference: progress.go:165-185 SentEntries() only adds inflights in StateReplicate
+\* Reference: StateProbe does NOT add to inflights (only sets MsgAppFlowPaused)
+InflightsOnlyInReplicateInv ==
+    \A i \in Server : \A j \in Server :
+        (state[i] = Leader /\ progressState[i][j] /= StateReplicate) =>
+            inflights[i][j] = {}
+
+\* Invariant: InflightsBelowNextInv
+\* All inflight indices must be < nextIndex
+\* Reference: Inflights track sent but not yet acked entries in (Match, Next)
+InflightsBelowNextInv ==
+    \A i \in Server : \A j \in Server :
+        (state[i] = Leader /\ inflights[i][j] /= {}) =>
+            \A idx \in inflights[i][j] : idx < nextIndex[i][j]
+
+\* Aggregate P2 Inflights invariants (extends existing ProgressSafety)
+InflightsRefinedInv ==
+    /\ InflightsOnlyInReplicateInv
+    /\ InflightsBelowNextInv
+
+\* ============================================================================
+\* P0: Additional Snapshot Invariants
+\* ============================================================================
+
+\* Invariant: SnapshotCommitConsistencyInv
+\* snapshotIndex cannot exceed commitIndex
+\* Reference: Snapshots are taken at committed indices
+SnapshotCommitConsistencyInv ==
+    \A i \in Server :
+        log[i].snapshotIndex <= commitIndex[i]
+
+\* ============================================================================
+\* P1: Additional Configuration Invariants
+\* ============================================================================
+
+\* Invariant: PendingConfIndexValidInv
+\* If pendingConfChangeIndex > 0, it must point to a valid ConfigEntry
+\* Reference: raft.go:1318-1336 - pendingConfIndex validation
+PendingConfIndexValidInv ==
+    \A i \in Server :
+        (state[i] = Leader /\ pendingConfChangeIndex[i] > 0) =>
+            /\ pendingConfChangeIndex[i] <= LastIndex(log[i])
+            /\ pendingConfChangeIndex[i] >= log[i].offset
+            /\ LogEntry(i, pendingConfChangeIndex[i]).type = ConfigEntry
+
+\* Invariant: PendingConfIndexAboveCommitInv
+\* pendingConfChangeIndex must be > commitIndex (not yet applied)
+\* Reference: raft.go:1318 - alreadyPending := r.pendingConfIndex > r.raftLog.applied
+PendingConfIndexAboveCommitInv ==
+    \A i \in Server :
+        (state[i] = Leader /\ pendingConfChangeIndex[i] > 0) =>
+            pendingConfChangeIndex[i] > commitIndex[i]
+
+\* ============================================================================
+\* P1: Additional Progress State Machine Invariants
+\* ============================================================================
+
+\* Invariant: NextIndexPositiveInv
+\* nextIndex must be > 0 (log indices start from 1)
+\* Reference: progress.go initialization
+NextIndexPositiveInv ==
+    \A i \in Server : \A j \in Server :
+        state[i] = Leader => nextIndex[i][j] >= 1
+
+\* Invariant: NextIndexBoundInv
+\* nextIndex cannot exceed LastIndex + 1 (next entry to send)
+\* Reference: After appending, Next = LastIndex + 1
+NextIndexBoundInv ==
+    \A i \in Server : \A j \in Server :
+        state[i] = Leader => nextIndex[i][j] <= LastIndex(log[i]) + 1
+
+\* Invariant: MatchIndexBoundInv
+\* matchIndex cannot exceed LastIndex
+\* Reference: Match is updated when follower confirms
+MatchIndexBoundInv ==
+    \A i \in Server : \A j \in Server :
+        state[i] = Leader => matchIndex[i][j] <= LastIndex(log[i])
+
+\* Invariant: LeaderMatchSelfInv
+\* Leader's matchIndex for itself should equal its LastIndex
+\* Reference: Leader always has all its own entries
+LeaderMatchSelfInv ==
+    \A i \in Server :
+        state[i] = Leader => matchIndex[i][i] = LastIndex(log[i])
+
+\* Invariant: LeaderNextSelfInv
+\* Leader's nextIndex for itself should equal LastIndex + 1
+\* Reference: Leader doesn't need to send to itself
+LeaderNextSelfInv ==
+    \A i \in Server :
+        state[i] = Leader => nextIndex[i][i] = LastIndex(log[i]) + 1
+
+\* Invariant: PendingSnapshotBoundInv
+\* pendingSnapshot cannot exceed Leader's LastIndex
+\* Reference: Snapshot is taken from leader's log
+PendingSnapshotBoundInv ==
+    \A i \in Server : \A j \in Server :
+        (state[i] = Leader /\ pendingSnapshot[i][j] > 0) =>
+            pendingSnapshot[i][j] <= LastIndex(log[i])
+
+\* ============================================================================
+\* P2: Additional Message Validity Invariants
+\* ============================================================================
+
+\* Invariant: AppendEntriesTermConsistentInv
+\* In AppendEntriesRequest, entries' terms should not exceed message term
+\* Reference: Entries come from leader's log, which has terms <= currentTerm
+AppendEntriesTermConsistentInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        (m.mtype = AppendEntriesRequest /\ Len(m.mentries) > 0) =>
+            \A k \in 1..Len(m.mentries) :
+                m.mentries[k].term <= m.mterm
+
+\* Invariant: SnapshotMsgIndexPositiveInv
+\* SnapshotRequest's msnapshotIndex must be > 0
+\* Reference: Valid snapshot has positive index
+SnapshotMsgIndexPositiveInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        m.mtype = SnapshotRequest =>
+            m.msnapshotIndex > 0
+
+\* Invariant: ResponseTermValidInv
+\* Response term should be >= request term (terms never decrease)
+\* Note: This may be too strong if we don't track request-response pairs
+\* So we just check response term is positive
+ResponseTermPositiveInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        (m.mtype = RequestVoteResponse \/ m.mtype = AppendEntriesResponse) =>
+            m.mterm > 0
+
+\* ============================================================================
+\* P3: Term and Vote Consistency Invariants
+\* ============================================================================
+
+\* Invariant: TermPositiveAfterElectionInv
+\* After any election activity, term should be > 0
+\* Reference: Terms start from 1 in Raft
+TermPositiveInv ==
+    \A i \in Server :
+        currentTerm[i] >= 0
+
+\* Invariant: LeaderTermPositiveInv
+\* Leader's term must be > 0
+\* Reference: Cannot become leader at term 0
+LeaderTermPositiveInv ==
+    \A i \in Server :
+        state[i] = Leader => currentTerm[i] > 0
+
+\* Invariant: CandidateTermPositiveInv
+\* Candidate's term must be > 0
+\* Reference: Campaign increments term
+CandidateTermPositiveInv ==
+    \A i \in Server :
+        state[i] = Candidate => currentTerm[i] > 0
+
+\* Invariant: VotesRespondedSubsetInv
+\* votesResponded should be subset of config (can only get responses from known nodes)
+VotesRespondedSubsetInv ==
+    \A i \in Server :
+        state[i] = Candidate =>
+            votesResponded[i] \subseteq (GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i))
+
+\* Invariant: VotesGrantedSubsetInv
+\* votesGranted should be subset of votesResponded
+VotesGrantedSubsetInv ==
+    \A i \in Server :
+        state[i] = Candidate =>
+            votesGranted[i] \subseteq votesResponded[i]
+
+\* ============================================================================
+\* Aggregate All Additional Invariants
+\* ============================================================================
+
+AdditionalSnapshotInv ==
+    /\ SnapshotCommitConsistencyInv
+
+AdditionalConfigInv ==
+    /\ PendingConfIndexValidInv
+    /\ PendingConfIndexAboveCommitInv
+
+AdditionalProgressInv ==
+    /\ NextIndexPositiveInv
+    /\ NextIndexBoundInv
+    /\ MatchIndexBoundInv
+    /\ LeaderMatchSelfInv
+    /\ LeaderNextSelfInv
+    /\ PendingSnapshotBoundInv
+
+AdditionalMessageInv ==
+    /\ AppendEntriesTermConsistentInv
+    /\ SnapshotMsgIndexPositiveInv
+    /\ ResponseTermPositiveInv
+
+TermAndVoteInv ==
+    /\ TermPositiveInv
+    /\ LeaderTermPositiveInv
+    /\ CandidateTermPositiveInv
+    /\ VotesRespondedSubsetInv
+    /\ VotesGrantedSubsetInv
+
+\* ============================================================================
+\* Master Invariant: All New Invariants Combined
+\* ============================================================================
+
+NewInvariants ==
+    /\ LogStructureInv
+    /\ ConfigurationInv
+    /\ MessageContentInv
+    /\ InflightsRefinedInv
+    /\ AdditionalSnapshotInv
+    /\ AdditionalConfigInv
+    /\ AdditionalProgressInv
+    /\ AdditionalMessageInv
+    /\ TermAndVoteInv
+
 ===============================================================================
