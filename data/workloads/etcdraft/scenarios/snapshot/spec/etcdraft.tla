@@ -864,10 +864,16 @@ DeleteServer(i, j) ==
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
 
 \* Leader i proposes an arbitrary configuration change (compound changes supported).
+\* Reference: confchange/confchange.go - joint consensus requires proper sequencing:
+\*   - enterJoint=TRUE (enter joint) only allowed when NOT in joint config
+\*   - enterJoint=FALSE (leave joint) only allowed when IN joint config
 ChangeConf(i) ==
     /\ state[i] = Leader
     /\ IF pendingConfChangeIndex[i] = 0 THEN
             \E newVoters \in SUBSET Server, newLearners \in SUBSET Server, enterJoint \in {TRUE, FALSE}:
+                \* Joint consensus constraint: must follow proper sequencing
+                /\ (enterJoint = TRUE) => ~IsJointConfig(i)   \* Can only enter joint if not already in joint
+                /\ (enterJoint = FALSE) => IsJointConfig(i)   \* Can only leave joint if currently in joint
                 /\ Replicate(i, [newconf |-> newVoters, learners |-> newLearners, enterJoint |-> enterJoint, oldconf |-> GetConfig(i)], ConfigEntry)
                 /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=LastIndex(log'[i])]
                 \* Remove manual Send, rely on AppendEntriesToSelf in trace
@@ -878,10 +884,14 @@ ChangeConf(i) ==
 
 \* Leader i proposes an arbitrary configuration change AND sends MsgAppResp.
 \* Used for implicit replication in Trace Validation.
+\* Reference: confchange/confchange.go - joint consensus requires proper sequencing
 ChangeConfAndSend(i) ==
     /\ state[i] = Leader
     /\ IF pendingConfChangeIndex[i] = 0 THEN
             \E newVoters \in SUBSET Server, newLearners \in SUBSET Server, enterJoint \in {TRUE, FALSE}:
+                \* Joint consensus constraint: must follow proper sequencing
+                /\ (enterJoint = TRUE) => ~IsJointConfig(i)   \* Can only enter joint if not already in joint
+                /\ (enterJoint = FALSE) => IsJointConfig(i)   \* Can only leave joint if currently in joint
                 /\ Replicate(i, [newconf |-> newVoters, learners |-> newLearners, enterJoint |-> enterJoint, oldconf |-> GetConfig(i)], ConfigEntry)
                 /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=LastIndex(log'[i])]
                 /\ Send([mtype       |-> AppendEntriesResponse,
