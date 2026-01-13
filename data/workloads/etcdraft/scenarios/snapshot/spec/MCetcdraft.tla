@@ -264,8 +264,9 @@ MCNextAsync ==
     \/ /\ \E i \in Server: MCClientRequestAndSend(i, 0)
     \/ /\ \E i \in Server : etcd!AdvanceCommitIndex(i)
        /\ UNCHANGED faultVars
-    \* NOTE: Range must start at max(matchIndex+1, log.offset) to handle compacted logs
-    \/ /\ \E i,j \in Server : \E b,e \in Max({matchIndex[i][j]+1, log[i].offset})..LastIndex(log[i])+1 : etcd!AppendEntries(i, j, <<b,e>>)
+    \* NOTE: Entries must be sent starting from nextIndex (per raft.go:638)
+    \* Implementation always sends from pr.Next, not from arbitrary positions
+    \/ /\ \E i,j \in Server : \E e \in nextIndex[i][j]..LastIndex(log[i])+1 : etcd!AppendEntries(i, j, <<nextIndex[i][j], e>>)
        /\ UNCHANGED faultVars
     \/ /\ \E i \in Server : etcd!AppendEntriesToSelf(i)
        /\ UNCHANGED faultVars
@@ -282,10 +283,9 @@ MCNextAsync ==
     \* ReplicateImplicitEntry: For joint config, leader creates implicit entry
     \/ /\ \E i \in Server : etcd!ReplicateImplicitEntry(i)
        /\ UNCHANGED faultVars
-    \* FollowerAdvanceCommitIndex: Follower advances commit (e.g., from test harness)
-    \/ /\ \E i \in Server : \E c \in commitIndex[i]+1..LastIndex(log[i]) :
-           etcd!FollowerAdvanceCommitIndex(i, c)
-       /\ UNCHANGED faultVars
+    \* NOTE: FollowerAdvanceCommitIndex removed - it allows invalid states where
+    \* a follower advances commitIndex beyond what has been quorum-committed.
+    \* In real Raft, followers only advance commitIndex based on leader messages.
     \* Optimization: Only allow compacting to the commitIndex to reduce state space explosion.
     \* This provides the most aggressive compaction scenario for testing Snapshots.
     \/ \E i \in Server :
@@ -333,6 +333,7 @@ MCNextDynamic ==
        /\ UNCHANGED faultVars
     \* ApplySnapshotConfChange: Apply configuration from snapshot's historyLog
     \* Key constraint: voters must come from historyLog, not arbitrary
+    \* Key constraint: only apply committed config entries (per node.go:179-183)
     \/ /\ \E i \in Server :
            LET configIndices == {k \in 1..Len(historyLog[i]) : historyLog[i][k].type = ConfigEntry}
                lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
@@ -341,6 +342,7 @@ MCNextDynamic ==
                             ELSE {}
            IN /\ newVoters /= {}
               /\ newVoters /= GetConfig(i)  \* Only apply if config differs
+              /\ lastConfigIdx <= commitIndex[i]  \* Only apply committed configs
               /\ etcd!ApplySnapshotConfChange(i, newVoters)
        /\ UNCHANGED faultVars
 

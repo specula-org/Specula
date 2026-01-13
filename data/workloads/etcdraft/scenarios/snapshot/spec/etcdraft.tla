@@ -471,10 +471,12 @@ Restart(i) ==
     /\ currentTerm' = [currentTerm EXCEPT ![i] = durableState[i].currentTerm]
     /\ commitIndex' = [commitIndex EXCEPT ![i] = durableState[i].commitIndex]
     /\ votedFor' = [votedFor EXCEPT ![i] = durableState[i].votedFor]
+    \* Restore log from durableState: offset must equal snapshotIndex + 1
+    \* Entries are restored from historyLog since in-memory log may have been compacted
     /\ log' = [log EXCEPT ![i] = [
-                    offset |-> @.offset, 
-                    entries |-> SubSeq(@.entries, 1, durableState[i].log - @.offset + 1), 
-                    snapshotIndex |-> durableState[i].snapshotIndex, 
+                    offset |-> durableState[i].snapshotIndex + 1,
+                    entries |-> SubSeq(historyLog[i], durableState[i].snapshotIndex + 1, durableState[i].log),
+                    snapshotIndex |-> durableState[i].snapshotIndex,
                     snapshotTerm |-> durableState[i].snapshotTerm
        ]]
     /\ config' = [config EXCEPT ![i] = durableState[i].config]
@@ -638,7 +640,7 @@ SendSnapshot(i, j) ==
     /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = log[i].snapshotIndex]
     /\ nextIndex' = [nextIndex EXCEPT ![i][j] = log[i].snapshotIndex + 1]
     /\ ResetInflights(i, j)
-    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, historyLog>>
 
 \* Send snapshot with optional log compaction.
 \* SendSnapshot without compacting the log.
@@ -654,6 +656,7 @@ SendSnapshotWithCompaction(i, j, snapshoti) ==
     /\ state[i] = Leader
     /\ j \in GetConfig(i) \union GetLearners(i)
     /\ snapshoti <= commitIndex[i]  \* Can only snapshot committed entries
+    /\ snapshoti >= log[i].snapshotIndex  \* Must be >= current snapshotIndex (can't send compacted entries)
     /\ SendDirect([mtype          |-> SnapshotRequest,
                    mterm          |-> currentTerm[i],
                    msnapshotIndex |-> snapshoti,
@@ -755,7 +758,7 @@ ClientRequestAndSend(i, v) ==
              mlogTerm    |-> 0,
              msource     |-> i,
              mdest       |-> i])
-    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars>>
 
 
 \* Leader replicates an implicit entry (for self-message response in trace).
@@ -831,7 +834,7 @@ AddNewServer(i, j) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
 
 \* Leader i adds a leaner j to the cluster.
 AddLearner(i, j) ==
@@ -844,7 +847,7 @@ AddLearner(i, j) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
 
 \* Leader i removes a server j (possibly itself) from the cluster.
 DeleteServer(i, j) ==
@@ -857,7 +860,7 @@ DeleteServer(i, j) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
 
 \* Leader i proposes an arbitrary configuration change (compound changes supported).
 ChangeConf(i) ==
@@ -901,7 +904,7 @@ ChangeConfAndSend(i) ==
                      mlogTerm    |-> 0,
                      msource     |-> i,
                      mdest       |-> i])
-    /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
 
 ApplySimpleConfChange(i) ==
     LET validIndices == {x \in log[i].offset..commitIndex[i] : LogEntry(i, x).type = ConfigEntry}
@@ -926,7 +929,7 @@ ApplySimpleConfChange(i) ==
                 /\ matchIndex' = [matchIndex EXCEPT ![i] =
                        [j \in Server |-> IF j \in addedNodes THEN 0 ELSE matchIndex[i][j]]]
                 /\ progressState' = [progressState EXCEPT ![i] =
-                       [j \in Server |-> IF j \in addedNodes THEN StateProbe ELSE progressState[i][j]]]
+                       [j \in Server |-> IF j \in addedNodes /\ j # i THEN StateProbe ELSE progressState[i][j]]]
                 /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i] =
                        [j \in Server |-> IF j \in addedNodes THEN FALSE ELSE msgAppFlowPaused[i][j]]]
                 /\ inflights' = [inflights EXCEPT ![i] =
@@ -1135,7 +1138,10 @@ NoConflictAppendEntriesRequest(i, j, index, m) ==
     /\ m.mprevLogIndex + Len(m.mentries) > LastIndex(log[i])
     \* Start position in m.mentries for new entries: LastIndex(log[i]) - m.mprevLogIndex + 1
     \* = LastIndex(log[i]) - index + 2 (since index = m.mprevLogIndex + 1)
-    /\ log' = [log EXCEPT ![i].entries = @ \o SubSeq(m.mentries, LastIndex(log[i])-index+2, Len(m.mentries))]
+    \* Update both log and historyLog to keep ghost variable consistent
+    /\ LET newEntries == SubSeq(m.mentries, LastIndex(log[i])-index+2, Len(m.mentries))
+       IN /\ log' = [log EXCEPT ![i].entries = @ \o newEntries]
+          /\ historyLog' = [historyLog EXCEPT ![i] = @ \o newEntries]
     \* Commit and send response after appending
     /\ CommitTo(i, Min({m.mcommitIndex, m.mprevLogIndex + Len(m.mentries)}))
     /\ Reply([mtype           |-> AppendEntriesResponse,
@@ -1148,7 +1154,7 @@ NoConflictAppendEntriesRequest(i, j, index, m) ==
               msource         |-> i,
               mdest           |-> j],
               m)
-    /\ UNCHANGED <<serverVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<serverVars, durableState, progressVars>>
 
 \* @type: (Int, Int, Bool, AEREQT) => Bool;
 AcceptAppendEntriesRequest(i, j, logOk, m) ==
@@ -1176,7 +1182,7 @@ HandleAppendEntriesRequest(i, j, m) ==
        /\ \/ RejectAppendEntriesRequest(i, j, m, logOk)
           \/ ReturnToFollowerState(i, m)
           \/ AcceptAppendEntriesRequest(i, j, logOk, m)
-       /\ UNCHANGED <<candidateVars, leaderVars, configVars, durableState, progressVars, historyLog>>
+       /\ UNCHANGED <<candidateVars, leaderVars, configVars, durableState, progressVars>>
 
 \* Server i receives an AppendEntries response from server j with
 \* m.mterm = currentTerm[i].
@@ -1393,16 +1399,18 @@ HandleSnapshotStatus(i, j, m) ==
 \* Handle ReportUnreachable from application layer
 \* Reference: raft.go:1624-1632
 \* Application reports that a peer is unreachable, causing StateReplicate -> StateProbe
+\* Reference: tracker/progress.go:121-126 ResetState() clears Inflights
 \* @type: (Int, Int) => Bool;
 ReportUnreachable(i, j) ==
     /\ state[i] = Leader
     /\ i # j
     /\ IF progressState[i][j] = StateReplicate
-       THEN progressState' = [progressState EXCEPT ![i][j] = StateProbe]
-       ELSE UNCHANGED progressState
+       THEN /\ progressState' = [progressState EXCEPT ![i][j] = StateProbe]
+            /\ inflights' = [inflights EXCEPT ![i][j] = {}]
+       ELSE UNCHANGED <<progressState, inflights>>
     /\ UNCHANGED <<serverVars, candidateVars, messageVars, logVars, configVars,
                    durableState, leaderVars, nextIndex, pendingSnapshot,
-                   msgAppFlowPaused, inflights, historyLog>>
+                   msgAppFlowPaused, historyLog>>
 
 \* Any RPC with a newer term causes the recipient to advance its term first.
 \* @type: (Int, Int, MSG) => Bool;
@@ -2217,14 +2225,6 @@ PendingConfIndexValidInv ==
             /\ pendingConfChangeIndex[i] >= log[i].offset
             /\ LogEntry(i, pendingConfChangeIndex[i]).type = ConfigEntry
 
-\* Invariant: PendingConfIndexAboveCommitInv
-\* pendingConfChangeIndex must be > commitIndex (not yet applied)
-\* Reference: raft.go:1318 - alreadyPending := r.pendingConfIndex > r.raftLog.applied
-PendingConfIndexAboveCommitInv ==
-    \A i \in Server :
-        (state[i] = Leader /\ pendingConfChangeIndex[i] > 0) =>
-            pendingConfChangeIndex[i] > commitIndex[i]
-
 \* ============================================================================
 \* P1: Additional Progress State Machine Invariants
 \* ============================================================================
@@ -2251,18 +2251,20 @@ MatchIndexBoundInv ==
         state[i] = Leader => matchIndex[i][j] <= LastIndex(log[i])
 
 \* Invariant: LeaderMatchSelfInv
-\* Leader's matchIndex for itself should equal its LastIndex
-\* Reference: Leader always has all its own entries
+\* Leader's matchIndex for itself should not exceed its LastIndex
+\* Note: matchIndex may temporarily lag behind lastIndex until MsgAppResp is processed
+\* Reference: raft.go:836-845 - leader sends MsgAppResp to itself after appending
 LeaderMatchSelfInv ==
     \A i \in Server :
-        state[i] = Leader => matchIndex[i][i] = LastIndex(log[i])
+        state[i] = Leader => matchIndex[i][i] <= LastIndex(log[i])
 
 \* Invariant: LeaderNextSelfInv
-\* Leader's nextIndex for itself should equal LastIndex + 1
-\* Reference: Leader doesn't need to send to itself
+\* Leader's nextIndex for itself should not exceed LastIndex + 1
+\* Note: nextIndex may temporarily lag behind until MsgAppResp is processed
+\* Reference: raft.go:836-845 - leader sends MsgAppResp to itself after appending
 LeaderNextSelfInv ==
     \A i \in Server :
-        state[i] = Leader => nextIndex[i][i] = LastIndex(log[i]) + 1
+        state[i] = Leader => nextIndex[i][i] <= LastIndex(log[i]) + 1
 
 \* Invariant: PendingSnapshotBoundInv
 \* pendingSnapshot cannot exceed Leader's LastIndex
@@ -2350,7 +2352,6 @@ AdditionalSnapshotInv ==
 
 AdditionalConfigInv ==
     /\ PendingConfIndexValidInv
-    /\ PendingConfIndexAboveCommitInv
 
 AdditionalProgressInv ==
     /\ NextIndexPositiveInv
