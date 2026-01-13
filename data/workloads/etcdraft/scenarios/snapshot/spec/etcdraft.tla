@@ -657,6 +657,7 @@ SendSnapshotWithCompaction(i, j, snapshoti) ==
     /\ j \in GetConfig(i) \union GetLearners(i)
     /\ snapshoti <= commitIndex[i]  \* Can only snapshot committed entries
     /\ snapshoti >= log[i].snapshotIndex  \* Must be >= current snapshotIndex (can't send compacted entries)
+    /\ snapshoti >= matchIndex[i][j]   \* Only send snapshot for entries follower doesn't have
     /\ SendDirect([mtype          |-> SnapshotRequest,
                    mterm          |-> currentTerm[i],
                    msnapshotIndex |-> snapshoti,
