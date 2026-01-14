@@ -752,3 +752,80 @@ The implementation explicitly checks that LeaveJoint can only be called when cur
 - User Feedback: Approved
 
 ---
+
+## Record #17 - 2026-01-14
+
+### Counterexample Summary
+76-step counterexample:
+1. s1 became Leader in term 2 with config `{s1, s2, s3}`
+2. `ChangeConf(s1)` appended a joint config entry at index 4 with `enterJoint = TRUE`, changing to `{s1, s3, s4, s5}` with old config `{s1, s2, s3}`
+3. s1 committed index 4 using old config's quorum `{s1, s2}` (both had matchIndex >= 4)
+4. `ApplySimpleConfChange` applied the committed config, s1 entered joint config `<<{s1, s3, s4, s5}, {s1, s2, s3}>>`
+5. `QuorumLogInv` failed: for quorum `{s3, s4, s5}` in the new (incoming) config, none have index 4 in historyLog
+   - s3, s4, s5 have empty or shorter historyLog
+   - But old config's quorum `{s1, s2}` DOES have index 4
+
+### Analysis Conclusion
+- **Type**: A: Invariant Too Strong
+- **Violated Property**: QuorumLogInv
+- **Root Cause**: The invariant only checked the incoming config (`GetConfig(i)` = `jointConfig[1]`), ignoring the outgoing config in joint consensus. However, in joint consensus, safety is guaranteed as long as EITHER the incoming OR outgoing quorum holds the committed data, because:
+  - Election requires majority from BOTH configs simultaneously
+  - If the outgoing quorum blocks (has data), no candidate without data can win
+  - The committed entry will eventually propagate to incoming quorum nodes
+
+### Evidence from Implementation
+From `quorum/joint.go:27-41`:
+```go
+func (c JointConfig) CommittedIndex(l AckedIndexer) Index {
+    idx0 := c[0].CommittedIndex(l)  // incoming
+    idx1 := c[1].CommittedIndex(l)  // outgoing
+    if idx0 < idx1 {
+        return idx0
+    }
+    return idx1
+}
+```
+
+Election in joint config requires both quorums. From `quorum/joint.go:45-55`:
+```go
+func (c JointConfig) VoteResult(votes map[uint64]bool) VoteResult {
+    r0 := c[0].VoteResult(votes)  // incoming must agree
+    r1 := c[1].VoteResult(votes)  // outgoing must agree
+    // Both must succeed for election to win
+}
+```
+
+This means: if outgoing quorum has the data, any candidate without data cannot get votes from outgoing quorum, so cannot become leader.
+
+### Modifications Made
+- **File**: etcdraft.tla
+- **Before (lines 1665-1669)**:
+```tla
+\* All committed entries are contained in the log
+\* of at least one server in every quorum
+QuorumLogInv ==
+    \A i \in Server :
+    \A S \in Quorum(GetConfig(i)) :
+        \E j \in S :
+            IsPrefix(Committed(i), historyLog[j])
+```
+- **After**:
+```tla
+\* All committed entries are contained in the log
+\* of at least one server in every quorum.
+\* In joint config, it's safe if EITHER incoming OR outgoing quorums hold the data,
+\* because election requires both quorums, so one blocking is enough.
+QuorumLogInv ==
+    \A i \in Server :
+        \/ \A S \in Quorum(GetConfig(i)) :
+               \E j \in S : IsPrefix(Committed(i), historyLog[j])
+        \/ (IsJointConfig(i) /\
+            \A S \in Quorum(GetOutgoingConfig(i)) :
+                \E j \in S : IsPrefix(Committed(i), historyLog[j]))
+```
+
+### User Confirmation
+- Confirmation Time: 2026-01-14
+- User Feedback: Approved
+
+---
