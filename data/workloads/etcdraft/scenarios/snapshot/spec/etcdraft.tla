@@ -202,7 +202,7 @@ progressVars == <<progressState, pendingSnapshot, nextIndex, msgAppFlowPaused, i
 
 \* All variables; used for stuttering (asserting state hasn't changed).
 vars == <<messageVars, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars>>
-
+view_vars == <<messageVars, serverVars, candidateVars, leaderVars, log, commitIndex, config, durableState, progressVars>>
 
 ----
 \* Helpers
@@ -874,6 +874,9 @@ ChangeConf(i) ==
                 \* Joint consensus constraint: must follow proper sequencing
                 /\ (enterJoint = TRUE) => ~IsJointConfig(i)   \* Can only enter joint if not already in joint
                 /\ (enterJoint = FALSE) => IsJointConfig(i)   \* Can only leave joint if currently in joint
+                \* Configuration validity constraints (Reference: confchange/confchange.go)
+                /\ newVoters \cap newLearners = {}            \* checkInvariants: Learners and voters must be disjoint
+                /\ newVoters /= {}                            \* apply(): "removed all voters" check
                 /\ Replicate(i, [newconf |-> newVoters, learners |-> newLearners, enterJoint |-> enterJoint, oldconf |-> GetConfig(i)], ConfigEntry)
                 /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=LastIndex(log'[i])]
                 \* Remove manual Send, rely on AppendEntriesToSelf in trace
@@ -892,6 +895,9 @@ ChangeConfAndSend(i) ==
                 \* Joint consensus constraint: must follow proper sequencing
                 /\ (enterJoint = TRUE) => ~IsJointConfig(i)   \* Can only enter joint if not already in joint
                 /\ (enterJoint = FALSE) => IsJointConfig(i)   \* Can only leave joint if currently in joint
+                \* Configuration validity constraints (Reference: confchange/confchange.go)
+                /\ newVoters \cap newLearners = {}            \* checkInvariants: Learners and voters must be disjoint
+                /\ newVoters /= {}                            \* apply(): "removed all voters" check
                 /\ Replicate(i, [newconf |-> newVoters, learners |-> newLearners, enterJoint |-> enterJoint, oldconf |-> GetConfig(i)], ConfigEntry)
                 /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=LastIndex(log'[i])]
                 /\ Send([mtype       |-> AppendEntriesResponse,
@@ -937,8 +943,10 @@ ApplySimpleConfChange(i) ==
         /\ IF state[i] = Leader /\ addedNodes # {}
            THEN /\ nextIndex' = [nextIndex EXCEPT ![i] =
                        [j \in Server |-> IF j \in addedNodes THEN Max({LastIndex(log[i]), 1}) ELSE nextIndex[i][j]]]
+                \* Reference: confchange/confchange.go makeVoter() - only init Match=0 for truly new nodes
+                \* Existing nodes (including leader itself) keep their Match value (pr != nil check)
                 /\ matchIndex' = [matchIndex EXCEPT ![i] =
-                       [j \in Server |-> IF j \in addedNodes THEN 0 ELSE matchIndex[i][j]]]
+                       [j \in Server |-> IF j \in addedNodes /\ j # i THEN 0 ELSE matchIndex[i][j]]]
                 /\ progressState' = [progressState EXCEPT ![i] =
                        [j \in Server |-> IF j \in addedNodes /\ j # i THEN StateProbe ELSE progressState[i][j]]]
                 /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i] =
@@ -1108,6 +1116,17 @@ HasNoConflict(i, index, ents) ==
     /\ index <= LastIndex(log[i]) + 1
     /\ \A k \in 1..Len(ents): index + k - 1 <= LastIndex(log[i]) => LogTerm(i, index+k-1) = ents[k].term
 
+\* Reference: log.go:152-165 findConflict
+\* Find the index of the first conflicting entry.
+\* Returns 0 if no conflict (all entries match or are new).
+\* Returns the first index where term differs.
+\* @type: (Int, Int, Seq(ENTRY)) => Int;
+FindFirstConflict(i, index, ents) ==
+    LET conflicting == {k \in 1..Len(ents):
+            /\ index + k - 1 <= LastIndex(log[i])
+            /\ LogTerm(i, index + k - 1) /= ents[k].term}
+    IN IF conflicting = {} THEN 0 ELSE index + Min(conflicting) - 1
+
 \* @type: (Int, Int, Int, AEREQT) => Bool;
 AppendEntriesAlreadyDone(i, j, index, m) ==
     /\ \/ index <= commitIndex[i]
@@ -1132,13 +1151,36 @@ AppendEntriesAlreadyDone(i, j, index, m) ==
                 m)
     /\ UNCHANGED <<serverVars, log, configVars, durableState, progressVars, historyLog>>
 
-\* @type: (Int, Int, AEREQT) => Bool;
-ConflictAppendEntriesRequest(i, index, m) ==
+\* @type: (Int, Int, Int, AEREQT) => Bool;
+ConflictAppendEntriesRequest(i, j, index, m) ==
     /\ m.mentries /= << >>
     /\ index > commitIndex[i]
     /\ ~HasNoConflict(i, index, m.mentries)
-    /\ log' = [log EXCEPT ![i].entries = SubSeq(@, 1, Len(@) - 1)]
-    /\ UNCHANGED <<messageVars, serverVars, commitIndex, durableState, progressVars, historyLog>>
+    \* Reference: log.go:115-128 maybeAppend + log.go:152-165 findConflict
+    \* etcd behavior: find conflict point, truncate to it, append new entries (atomic operation)
+    /\ LET ci == FindFirstConflict(i, index, m.mentries)
+           \* Entries to append start from conflict point: ci - index + 1 in mentries
+           entsOffset == ci - index + 1
+           newEntries == SubSeq(m.mentries, entsOffset, Len(m.mentries))
+           \* Truncate log to conflict point - 1
+           truncatePoint == ci - log[i].offset
+       IN /\ ci > commitIndex[i]  \* Safety: conflict must be after committed index
+          \* Reference: log_unstable.go:196-218 truncateAndAppend
+          /\ log' = [log EXCEPT ![i].entries = SubSeq(@, 1, truncatePoint - 1) \o newEntries]
+          /\ historyLog' = [historyLog EXCEPT ![i] = SubSeq(@, 1, ci - 1) \o newEntries]
+    \* Commit and send response (same as NoConflictAppendEntriesRequest)
+    /\ CommitTo(i, Min({m.mcommitIndex, m.mprevLogIndex + Len(m.mentries)}))
+    /\ Reply([mtype           |-> AppendEntriesResponse,
+              msubtype        |-> m.msubtype,
+              mterm           |-> currentTerm[i],
+              msuccess        |-> TRUE,
+              mmatchIndex     |-> m.mprevLogIndex + Len(m.mentries),
+              mrejectHint     |-> 0,
+              mlogTerm        |-> 0,
+              msource         |-> i,
+              mdest           |-> j],
+              m)
+    /\ UNCHANGED <<serverVars, durableState, progressVars>>
 
 \* @type: (Int, Int, Int, AEREQT) => Bool;
 NoConflictAppendEntriesRequest(i, j, index, m) ==
@@ -1175,7 +1217,7 @@ AcceptAppendEntriesRequest(i, j, logOk, m) ==
     /\ logOk
     /\ LET index == m.mprevLogIndex + 1
        IN \/ AppendEntriesAlreadyDone(i, j, index, m)
-          \/ ConflictAppendEntriesRequest(i, index, m)
+          \/ ConflictAppendEntriesRequest(i, j, index, m)
           \/ NoConflictAppendEntriesRequest(i, j, index, m)
 
 \* Server i receives an AppendEntries request from server j with
@@ -1314,11 +1356,12 @@ HandleHeartbeatResponse(i, j, m) ==
 
 \* Compacts the log of server i up to newStart (exclusive).
 \* newStart becomes the new offset.
-\* In etcd, Compact() only checks index <= lastIndex. The commitIndex check
-\* is the application's responsibility. We allow snapshotIndex <= commitIndex.
+\* Reference: storage.go:249-250 - "It is the application's responsibility to not
+\* attempt to compact an index greater than raftLog.applied."
+\* We use durableState.log as applied index (set by PersistState in Ready).
 CompactLog(i, newStart) ==
     /\ newStart > log[i].offset
-    /\ newStart <= commitIndex[i] + 1
+    /\ newStart <= durableState[i].log + 1
     /\ log' = [log EXCEPT ![i] = [
           offset  |-> newStart,
           entries |-> SubSeq(@.entries, newStart - @.offset + 1, Len(@.entries)),
@@ -1329,9 +1372,16 @@ CompactLog(i, newStart) ==
 
 \* Server i receives a SnapshotRequest.
 \* Simulates raft.restore()
+\* Reference: raft.go Step() - term check happens first, then stepFollower/handleSnapshot
+\* If m.mterm > currentTerm[i], UpdateTerm must be applied first (via ReceiveDirect)
 HandleSnapshotRequest(i, j, m) ==
-    /\ m.mterm >= currentTerm[i]
-    /\ IF m.msnapshotIndex <= commitIndex[i] THEN
+    /\ m.mterm <= currentTerm[i]  \* Changed from >= to <=, matching HandleAppendEntriesRequest pattern
+    /\ IF m.mterm < currentTerm[i] THEN
+           \* Stale term: ignore snapshot message entirely
+           \* Reference: raft.go:1173-1177 - "ignored a %s message with lower term"
+           /\ Discard(m)
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+       ELSE IF m.msnapshotIndex <= commitIndex[i] THEN
            \* Case 1: Stale snapshot (Index <= Committed). Ignore.
            \* Reference: raft.go:1858 restore() returns false
            /\ Reply([mtype       |-> AppendEntriesResponse,
@@ -1994,12 +2044,13 @@ CandidateVotedForSelfInv ==
             votedFor[i] = i
 
 \* Durable state should be consistent with volatile state
+\* Note: durableState.log check removed - only term and commitIndex need comparison
+\* (log can temporarily exceed LastIndex after truncation, before Ready sync)
 DurableStateConsistency ==
     \A i \in Server :
         /\ durableState[i].currentTerm <= currentTerm[i]
-        /\ durableState[i].log <= LastIndex(log[i])
         /\ durableState[i].commitIndex <= commitIndex[i]
-
+        \* /\ durableState[i].log <= LastIndex(log[i]) 
 \* All messages should have valid endpoints
 MessageEndpointsValidInv ==
     \A m \in DOMAIN messages \union DOMAIN pendingMessages :
@@ -2402,5 +2453,30 @@ NewInvariants ==
     /\ AdditionalProgressInv
     /\ AdditionalMessageInv
     /\ TermAndVoteInv
+
+\* \* ============================================================================
+\* \* Monotonicity Properties
+\* \* ============================================================================
+
+\* \* Each server's commit index is monotonically increasing
+\* \* This is weaker form of CommittedLogAppendOnlyProp so it is not checked by default
+\* MonotonicCommitIndexProp ==
+\*     [][\A i \in Server :
+\*         commitIndex'[i] >= commitIndex[i]]_vars
+
+\* \* Each server's term is monotonically increasing
+\* MonotonicTermProp ==
+\*     [][\A i \in Server :
+\*         currentTerm'[i] >= currentTerm[i]]_vars
+
+\* \* Match index never decrements unless the current action is a node becoming leader
+\* \* Figure 2, page 4 in the raft paper:
+\* \* "Volatile state on leaders, reinitialized after election. For each server,
+\* \*  index of the highest log entry known to be replicated on server. Initialized
+\* \*  to 0, increases monotonically".  In other words, matchIndex never decrements
+\* \* unless the current action is a node becoming leader.
+\* MonotonicMatchIndexProp ==
+\*     [][(~ \E i \in Server: BecomeLeader(i)) => 
+\*             (\A i,j \in Server : matchIndex'[i][j] >= matchIndex[i][j])]_vars
 
 ===============================================================================

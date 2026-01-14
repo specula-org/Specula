@@ -272,7 +272,11 @@ MCNextAsync ==
        /\ UNCHANGED faultVars
     \* NOTE: Entries must be sent starting from nextIndex (per raft.go:638)
     \* Implementation always sends from pr.Next, not from arbitrary positions
-    \/ /\ \E i,j \in Server : \E e \in nextIndex[i][j]..LastIndex(log[i])+1 : etcd!AppendEntries(i, j, <<nextIndex[i][j], e>>)
+    \* IMPORTANT: Only send AppendEntries if entries are available (not compacted)
+    \* If nextIndex < log.offset, must send snapshot instead (handled by SendSnapshot)
+    \/ /\ \E i,j \in Server :
+           /\ nextIndex[i][j] >= log[i].offset  \* Entries must be available
+           /\ \E e \in nextIndex[i][j]..LastIndex(log[i])+1 : etcd!AppendEntries(i, j, <<nextIndex[i][j], e>>)
        /\ UNCHANGED faultVars
     \/ /\ \E i \in Server : etcd!AppendEntriesToSelf(i)
        /\ UNCHANGED faultVars
@@ -367,6 +371,33 @@ Symmetry == Permutations(Server) \union Permutations(Value)
 
 \* View used for state space reduction.
 \* It excludes 'constraintCounters' so that states differing only in counters are considered identical.
-ModelView == << vars >>
+ModelView == << view_vars >>
+
+\* ============================================================================
+\* MONOTONICITY PROPERTIES
+\* ============================================================================
+
+\* Each server's commit index is monotonically increasing
+\* This is weaker form of CommittedLogAppendOnlyProp so it is not checked by default
+MonotonicCommitIndexProp ==
+    [][\A i \in Server :
+        commitIndex'[i] >= commitIndex[i]]_mc_vars
+
+\* Each server's term is monotonically increasing
+\* Note: Excludes Restart action since nodes recover from durableState,
+\*       which may have an older term if not yet persisted before crash
+MonotonicTermProp ==
+    [][(~\E i \in Server: Restart(i)) =>
+        \A i \in Server : currentTerm'[i] >= currentTerm[i]]_mc_vars
+
+\* Match index never decrements unless the current action is a node becoming leader
+\* Figure 2, page 4 in the raft paper:
+\* "Volatile state on leaders, reinitialized after election. For each server,
+\*  index of the highest log entry known to be replicated on server. Initialized
+\*  to 0, increases monotonically".  In other words, matchIndex never decrements
+\* unless the current action is a node becoming leader.
+MonotonicMatchIndexProp ==
+    [][(~ \E i \in Server: etcd!BecomeLeader(i)) => 
+            (\A i,j \in Server : matchIndex'[i][j] >= matchIndex[i][j])]_mc_vars
 
 =============================================================================
