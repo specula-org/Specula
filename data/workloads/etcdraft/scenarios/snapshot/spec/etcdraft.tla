@@ -1661,12 +1661,16 @@ LogMatchingInv ==
 \*             IsPrefix(Committed(i), log[j])
 
 \* All committed entries are contained in the log
-\* of at least one server in every quorum
+\* of at least one server in every quorum.
+\* In joint config, it's safe if EITHER incoming OR outgoing quorums hold the data,
+\* because election requires both quorums, so one blocking is enough.
 QuorumLogInv ==
     \A i \in Server :
-    \A S \in Quorum(GetConfig(i)) :
-        \E j \in S :
-            IsPrefix(Committed(i), historyLog[j])
+        \/ \A S \in Quorum(GetConfig(i)) :
+               \E j \in S : IsPrefix(Committed(i), historyLog[j])
+        \/ (IsJointConfig(i) /\
+            \A S \in Quorum(GetOutgoingConfig(i)) :
+                \E j \in S : IsPrefix(Committed(i), historyLog[j]))
 
 \* The "up-to-date" check performed by servers
 \* before issuing a vote implies that i receives
