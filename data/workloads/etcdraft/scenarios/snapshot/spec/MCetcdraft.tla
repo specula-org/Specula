@@ -59,6 +59,14 @@ ASSUME ConfChangeLimit \in Nat
 CONSTANT ReportUnreachableLimit
 ASSUME ReportUnreachableLimit \in Nat
 
+\* Message buffer limit for state space pruning
+CONSTANT MaxMsgBufferLimit
+ASSUME MaxMsgBufferLimit \in Nat
+
+\* Pending messages buffer limit for state space pruning
+CONSTANT MaxPendingMsgLimit
+ASSUME MaxPendingMsgLimit \in Nat
+
 \* ============================================================================
 \* CONSTRAINT VARIABLES
 \* ============================================================================
@@ -372,6 +380,29 @@ Symmetry == Permutations(Server) \union Permutations(Value)
 \* View used for state space reduction.
 \* It excludes 'constraintCounters' so that states differing only in counters are considered identical.
 ModelView == << view_vars >>
+
+\* ============================================================================
+\* STATE SPACE PRUNING CONSTRAINTS
+\* ============================================================================
+
+\* Constraint to limit network messages buffer size for state space pruning
+\* Returns FALSE when message count exceeds limit, causing TLC to prune that state
+\* If MaxMsgBufferLimit = 0, no limit is applied (always returns TRUE)
+MsgBufferConstraint ==
+    \/ MaxMsgBufferLimit = 0
+    \/ BagCardinality(messages) <= MaxMsgBufferLimit
+
+\* Constraint to limit pending messages buffer size for state space pruning
+\* Returns FALSE when pending message count exceeds limit, causing TLC to prune that state
+\* If MaxPendingMsgLimit = 0, no limit is applied (always returns TRUE)
+PendingMsgBufferConstraint ==
+    \/ MaxPendingMsgLimit = 0
+    \/ BagCardinality(pendingMessages) <= MaxPendingMsgLimit
+
+\* Combined constraint for convenience (can use either or both in cfg)
+AllMsgBufferConstraint ==
+    /\ MsgBufferConstraint
+    /\ PendingMsgBufferConstraint
 
 \* ============================================================================
 \* MONOTONICITY PROPERTIES
