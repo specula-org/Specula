@@ -136,10 +136,17 @@ leaderVars == <<matchIndex, pendingConfChangeIndex>>
 \* @type: Int -> [jointConfig: Seq(Set(int)), learners: Set(int)]
 VARIABLE 
     config
-VARIABLE 
+VARIABLE
     reconfigCount
 
-configVars == <<config, reconfigCount>>
+\* Track the index of the last applied config entry per server
+\* Reference: etcd processes CommittedEntries sequentially, applying configs as encountered
+\* This ensures config is applied before commit can advance past it
+VARIABLE
+    \* @type: Int -> Int;
+    appliedConfigIndex
+
+configVars == <<config, reconfigCount, appliedConfigIndex>>
 
 VARIABLE
     durableState
@@ -428,7 +435,8 @@ InitLogVars == /\ log          = [i \in Server |-> [offset |-> 1, entries |-> <<
                /\ historyLog   = [i \in Server |-> <<>>]
                /\ commitIndex  = [i \in Server |-> 0]
 InitConfigVars == /\ config = [i \in Server |-> [ jointConfig |-> <<InitServer, {}>>, learners |-> {}, autoLeave |-> FALSE]]
-                  /\ reconfigCount = 0 
+                  /\ reconfigCount = 0
+                  /\ appliedConfigIndex = [i \in Server |-> 0] 
 InitDurableState ==
     durableState = [ i \in Server |-> [
         currentTerm |-> currentTerm[i],
@@ -484,6 +492,8 @@ Restart(i) ==
                     snapshotTerm |-> durableState[i].snapshotTerm
        ]]
     /\ config' = [config EXCEPT ![i] = durableState[i].config]
+    \* After restart, consider all committed configs as applied (durableState.config reflects this)
+    /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = durableState[i].commitIndex]
     \* New: Reset Progress variables (volatile state, not persisted)
     /\ progressState' = [progressState EXCEPT ![i] = [j \in Server |-> StateProbe]]
     /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i] = [j \in Server |-> FALSE]]
@@ -798,6 +808,16 @@ ReplicateImplicitEntry(i) ==
 \* This is done as a separate step from handling AppendEntries responses,
 \* in part to minimize atomic regions, and in part so that leaders of
 \* single-server clusters are able to mark entries committed.
+\*
+\* Reference: raft.go maybeCommit() uses r.trk.Committed() which calculates
+\* the committed index based on the CURRENT APPLIED config's quorum.
+\* Config changes are applied later when processing CommittedEntries.
+\* The safety of joint consensus ensures that:
+\* - EnterJoint entry is committed using old config's quorum
+\* - After EnterJoint is applied, we're in joint config requiring both quorums
+\* - LeaveJoint can only be committed when BOTH quorums agree
+\* - So by the time we leave joint, the new config's quorum has all entries
+\*
 \* @type: Int => Bool;
 AdvanceCommitIndex(i) ==
     /\ state[i] = Leader
@@ -805,16 +825,20 @@ AdvanceCommitIndex(i) ==
            AllVoters == GetConfig(i) \union GetOutgoingConfig(i)
            Agree(index) == {k \in AllVoters : matchIndex[i][k] >= index}
            logSize == LastIndex(log[i])
-           \* logSize == MaxLogLength
            \* The maximum indexes for which a quorum agrees
-           IsCommitted(index) == 
+           \* Uses the CURRENT APPLIED config (config[i]) for quorum calculation
+           \* Reference: raft.go maybeCommit() -> trk.Committed() uses r.trk.Config
+           IsCommitted(index) ==
                IF IsJointConfig(i) THEN
                    /\ (Agree(index) \cap GetConfig(i)) \in Quorum(GetConfig(i))
                    /\ (Agree(index) \cap GetOutgoingConfig(i)) \in Quorum(GetOutgoingConfig(i))
                ELSE
                    Agree(index) \in Quorum(GetConfig(i))
 
-           agreeIndexes == {index \in 1..logSize : IsCommitted(index)}
+           \* commitIndex can advance to any index that the current applied config's
+           \* quorum agrees on. Config entries are committed using the old config's quorum,
+           \* then applied later when processing CommittedEntries.
+           agreeIndexes == {index \in (commitIndex[i]+1)..logSize : IsCommitted(index)}
            \* New value for commitIndex'[i]
            newCommitIndex ==
               IF /\ agreeIndexes /= {}
@@ -937,11 +961,17 @@ ChangeConfAndSend(i) ==
                      mdest       |-> i])
     /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
 
+\* Apply the next committed config entry in order
+\* Reference: etcd processes CommittedEntries sequentially (for _, entry := range rd.CommittedEntries)
+\* and calls ApplyConfChange for each config entry as it's encountered
+\* This ensures configs are applied one at a time, in log order
 ApplySimpleConfChange(i) ==
-    LET validIndices == {x \in log[i].offset..commitIndex[i] : LogEntry(i, x).type = ConfigEntry}
+    \* Find config entries that are committed but not yet applied
+    LET validIndices == {x \in Max({log[i].offset, appliedConfigIndex[i]+1})..commitIndex[i] :
+                          LogEntry(i, x).type = ConfigEntry}
     IN
     /\ validIndices /= {}
-    /\ LET k == Max(validIndices)
+    /\ LET k == Min(validIndices)  \* Apply the NEXT config entry, not MAX
            oldConfig == GetConfig(i) \cup GetOutgoingConfig(i) \cup GetLearners(i)
            newConfigFn == ApplyConfigUpdate(i, k)
            newConfig == newConfigFn[i].jointConfig[1] \cup newConfigFn[i].jointConfig[2] \cup newConfigFn[i].learners
@@ -950,6 +980,7 @@ ApplySimpleConfChange(i) ==
         /\ k > 0
         /\ k <= commitIndex[i]
         /\ config' = newConfigFn
+        /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = k]  \* Track applied config
         /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] >= k THEN
             /\ reconfigCount' = reconfigCount + 1
             /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
@@ -984,7 +1015,7 @@ LeaveJoint(i) ==
         /\ reconfigCount' = reconfigCount + 1
         /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
        ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars, appliedConfigIndex>>
 
 \* Leader proposes LeaveJoint entry when autoLeave=TRUE and config entry is applied
 \* Reference: raft.go:745-760 - AutoLeave mechanism
@@ -1018,7 +1049,7 @@ ApplySnapshotConfChange(i, newVoters) ==
         newAutoLeave == enterJoint /\ oldconf /= {}
     IN
     /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex, appliedConfigIndex>>
 
 \* Follower advances commit index (e.g., from AppendEntries leaderCommit)
 FollowerAdvanceCommitIndex(i, newCommit) ==
@@ -1477,6 +1508,8 @@ HandleSnapshotRequest(i, j, m) ==
            /\ historyLog' = [historyLog EXCEPT ![i] = m.mhistory]
            /\ commitIndex' = [commitIndex EXCEPT ![i] = m.msnapshotIndex]
            /\ config' = [config EXCEPT ![i] = [learners |-> newLearners, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
+           \* All config entries up to snapshot index are considered applied
+           /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = m.msnapshotIndex]
            /\ Reply([mtype       |-> AppendEntriesResponse,
                      msubtype    |-> "snapshot",
                      mterm       |-> currentTerm[i],

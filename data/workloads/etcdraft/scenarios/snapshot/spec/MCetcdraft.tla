@@ -104,6 +104,8 @@ etcdInitLogVars == /\ log = [i \in Server |-> IF i \in InitServer
 
 etcdInitConfigVars == /\ config = [i \in Server |-> [ jointConfig |-> IF i \in InitServer THEN <<InitServer, {}>> ELSE <<{}, {}>>, learners |-> {}, autoLeave |-> FALSE]]
                       /\ reconfigCount = 0 \* the bootstrap configurations are not counted
+                      \* Bootstrap config entries are already applied (committed at Cardinality(InitServer))
+                      /\ appliedConfigIndex = [i \in Server |-> IF i \in InitServer THEN Cardinality(InitServer) ELSE 0]
 
 \* Bootstrap durable state: log length must match the actual bootstrap log
 etcdInitDurableState ==
