@@ -95,25 +95,24 @@ class SpecValidationHandler(BaseHandler):
                 details={"work_dir": work_dir, "exists": False}
             )
 
-        # Build TLC command for syntax check
-        # Use -deadlock to avoid state exploration (just parse)
+        # Build SANY command for syntax check
+        # SANY is the TLA+ syntax analyzer - it only parses and checks semantics,
+        # without doing any state exploration (much faster than TLC)
         cmd = [
             "java",
             "-cp", tla_jar,
-            "tlc2.TLC",
-            "-deadlock",  # Skip deadlock checking
-            "-config", config_file,
+            "tla2sany.SANY",
             spec_file
         ]
 
         try:
-            # Run TLC with short timeout (syntax check should be fast)
+            # Run SANY with short timeout (syntax check should be very fast, < 1 second)
             result = subprocess.run(
                 cmd,
                 cwd=work_dir,
                 capture_output=True,
                 text=True,
-                timeout=30  # 30 seconds should be enough for syntax check
+                timeout=10  # 10 seconds is more than enough for syntax check
             )
 
             output = result.stdout + result.stderr
@@ -138,10 +137,10 @@ class SpecValidationHandler(BaseHandler):
 
         except subprocess.TimeoutExpired:
             raise ExecutionError(
-                "Syntax validation timed out after 30 seconds",
+                "Syntax validation timed out after 10 seconds",
                 details={
                     "spec_file": spec_file,
-                    "timeout": 30
+                    "timeout": 10
                 }
             )
         except FileNotFoundError:
