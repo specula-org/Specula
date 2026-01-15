@@ -6,6 +6,7 @@ from typing import Dict, Any, List
 
 from .base import BaseHandler
 from ..utils.errors import ExecutionError
+from ..utils.logger import logger
 
 
 class CleanTracesHandler(BaseHandler):
@@ -60,10 +61,25 @@ class CleanTracesHandler(BaseHandler):
         pattern = os.path.join(spec_dir, f"{spec_basename}_TTrace_*")
         matched_files = sorted(glob.glob(pattern))
 
+        deleted_files: List[str] = []
+        failed_files: List[str] = []
+
         for file_path in matched_files:
             try:
                 os.remove(file_path)
-            except OSError:
-                pass
+                deleted_files.append(os.path.basename(file_path))
+                logger.info(f"Deleted: {file_path}")
+            except OSError as e:
+                failed_files.append(os.path.basename(file_path))
+                logger.warning(f"Failed to delete {file_path}: {e}")
 
-        return {}
+        result = {
+            "deleted_count": len(deleted_files),
+            "deleted_files": deleted_files,
+        }
+
+        if failed_files:
+            result["failed_count"] = len(failed_files)
+            result["failed_files"] = failed_files
+
+        return result

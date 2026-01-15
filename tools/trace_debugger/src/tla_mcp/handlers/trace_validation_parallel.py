@@ -88,10 +88,16 @@ class ParallelTraceValidationHandler(TraceValidationHandler):
 
                 try:
                     result = await TraceValidationHandler.execute(self, args)
+                    condensed = self._condense_result(result)
+                except Exception as e:
+                    logger.error(f"Validation failed for {trace_file}: {e}")
+                    condensed = {
+                        "status": "error",
+                        "suggestion": f"Validation error: {e}. Run run_trace_validation on this trace for details."
+                    }
                 finally:
                     shutil.rmtree(metadir, ignore_errors=True)
 
-                condensed = self._condense_result(result)
                 condensed["trace_file"] = trace_file
                 return condensed
 

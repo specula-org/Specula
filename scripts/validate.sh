@@ -3,9 +3,9 @@
 # Use fixed tool directory to avoid re-downloading
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLDIR="${TOOLDIR:-$(cd "$SCRIPT_DIR/.." && pwd)/lib}"
+STATEDIR="$(mktemp -d)"
+trap 'rm -rf "$STATEDIR"' EXIT
 
-WORKDIR="$(mktemp -d)"
-FAILFAST=false
 LOG_TO_FILE=false
 PARALLEL=$(nproc)
 
@@ -24,7 +24,6 @@ function install_tlaplus {
         echo "done."
     fi
 }
-PARALLEL=$(nproc)
 
 function colored_text {
     color=$1
