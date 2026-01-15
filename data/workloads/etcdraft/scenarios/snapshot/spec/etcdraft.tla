@@ -1170,11 +1170,14 @@ ConflictAppendEntriesRequest(i, j, index, m) ==
            \* Entries to append start from conflict point: ci - index + 1 in mentries
            entsOffset == ci - index + 1
            newEntries == SubSeq(m.mentries, entsOffset, Len(m.mentries))
-           \* Truncate log to conflict point - 1
-           truncatePoint == ci - log[i].offset
+           \* Local index for ci-1 (the last entry to keep before appending)
+           \* LogEntry(i, idx) = entries[idx - offset + 1], so for idx=ci-1:
+           \* local_index = (ci-1) - offset + 1 = ci - offset
+           keepUntil == ci - log[i].offset
        IN /\ ci > commitIndex[i]  \* Safety: conflict must be after committed index
           \* Reference: log_unstable.go:196-218 truncateAndAppend
-          /\ log' = [log EXCEPT ![i].entries = SubSeq(@, 1, truncatePoint - 1) \o newEntries]
+          \* Keep entries[1..keepUntil] (indices offset..ci-1), then append newEntries
+          /\ log' = [log EXCEPT ![i].entries = SubSeq(@, 1, keepUntil) \o newEntries]
           /\ historyLog' = [historyLog EXCEPT ![i] = SubSeq(@, 1, ci - 1) \o newEntries]
     \* Commit and send response (same as NoConflictAppendEntriesRequest)
     /\ CommitTo(i, Min({m.mcommitIndex, m.mprevLogIndex + Len(m.mentries)}))
