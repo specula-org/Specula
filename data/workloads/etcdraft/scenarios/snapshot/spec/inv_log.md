@@ -1345,3 +1345,162 @@ Same change applied to `ChangeConfAndSend` (lines 907-909).
 - User Feedback: Approved
 
 ---
+
+## Record #28 - 2026-01-15
+
+### Counterexample Summary
+80-step counterexample:
+1. s4 is a new node (not in InitServer), starts with `currentTerm = 0` and empty config
+2. Leader s2 has config `{s1, s2, s4}` (s4 was added via config change)
+3. s2 sends heartbeat to s4 (mterm=4, mentries=empty)
+4. s4 receives the heartbeat via `MCNextAsyncWithReady(s4)`
+5. s4's `currentTerm` updated from 0 to 4 via `UpdateTerm`
+6. s4 still has empty config and empty log (no entries received yet)
+7. `ConfigNonEmptyInv` violated: `currentTerm[s4] = 4 > 0` but `GetConfig(s4) = {}`
+
+### Analysis Conclusion
+- **Type**: A: Invariant Too Strong
+- **Violated Property**: ConfigNonEmptyInv
+- **Root Cause**: The invariant `currentTerm > 0 => GetConfig /= {}` is too strong. A new node joining a cluster can have its term updated via `UpdateTerm` (from receiving messages) before it receives any log entries. This is valid behavior in the actual system.
+
+### Evidence from Implementation
+From `raft.go:1085-1122` (Step function):
+```go
+func (r *raft) Step(m pb.Message) error {
+    // ...
+    case m.Term > r.Term:
+        // ...
+        default:
+            if m.Type == pb.MsgApp || m.Type == pb.MsgHeartbeat || m.Type == pb.MsgSnap {
+                r.becomeFollower(m.Term, m.From)  // Updates term, no config check
+            }
+    // ...
+}
+```
+
+From `confchange/restore.go:119-131`:
+- When a node starts with empty ConfState, `Restore` returns empty config
+- The node can receive messages and update term before receiving log entries
+
+Scenario in actual system:
+1. New node created (not bootstrapped) → empty config
+2. Leader (who has new node in config) sends heartbeat
+3. New node receives heartbeat, updates term
+4. New node still has no log entries or config
+
+### Modifications Made
+- **File**: etcdraft.tla
+- **Before** (lines 2181-2183):
+```tla
+\* Note: Only applies to servers with currentTerm > 0 (initialized servers)
+\*       Uninitialized servers (not yet joined) may have empty config
+ConfigNonEmptyInv ==
+    \A i \in Server :
+        currentTerm[i] > 0 => GetConfig(i) /= {}
+```
+- **After**:
+```tla
+\* Note: Only applies to servers with log entries (has received data)
+\*       A new node can have term updated via UpdateTerm before receiving log entries
+\*       Reference: raft.go:Step - no config check before processing messages
+ConfigNonEmptyInv ==
+    \A i \in Server :
+        LastIndex(log[i]) > 0 => GetConfig(i) /= {}
+```
+
+### User Confirmation
+- Confirmation Time: 2026-01-15
+- User Feedback: Approved
+
+---
+
+## Record #29 - 2026-01-15
+
+### Counterexample Summary
+75-step counterexample:
+1. State 74: s2 是 Leader，配置为 `<<{s2}, {}>>`（只有 s2 在配置中）
+2. `matchIndex[s2][s1] = 4`（s1 之前在配置中时的遗留值）
+3. State 75: s2 执行 ApplySimpleConfChange，进入 joint config
+4. s2 的配置变为 `<<{s2}, {s1, s2}>>, learners |-> {s1}]`（s1 被重新添加）
+5. 因为 s1 不在旧配置中，被识别为 `addedNodes`
+6. `matchIndex[s2][s1]` 被重置为 0
+7. MonotonicMatchIndexProp 违反：matchIndex 从 4 降到 0
+
+### Analysis Conclusion
+- **Type**: A: Property Too Strong
+- **Violated Property**: MonotonicMatchIndexProp
+- **Root Cause**: 原性质要求 matchIndex 永远不能下降（除了 BecomeLeader），但当节点被移除后重新加入配置时，其 matchIndex 重置为 0 是 etcd 的正常行为。
+
+### Evidence from Implementation
+From `confchange/confchange.go:231-243` (remove function):
+```go
+func (c Changer) remove(cfg *tracker.Config, trk tracker.ProgressMap, id uint64) {
+    if _, ok := trk[id]; !ok {
+        return
+    }
+    delete(incoming(cfg.Voters), id)
+    nilAwareDelete(&cfg.Learners, id)
+    nilAwareDelete(&cfg.LearnersNext, id)
+    // If the peer is still a voter in the outgoing config, keep the Progress.
+    if _, onRight := outgoing(cfg.Voters)[id]; !onRight {
+        delete(trk, id)  // Progress entry is deleted when node is removed
+    }
+}
+```
+
+From `confchange/confchange.go:204-207` (makeLearner function):
+```go
+func (c Changer) makeLearner(cfg *tracker.Config, trk tracker.ProgressMap, id uint64) {
+    pr := trk[id]
+    if pr == nil {
+        c.initProgress(cfg, trk, id, true /* isLearner */)  // New Progress with Match=0
+        return
+    }
+    ...
+}
+```
+
+From `confchange/confchange.go:262` (initProgress function):
+```go
+trk[id] = &tracker.Progress{
+    Match: 0,  // Always initialized to 0 for new/re-added nodes
+    ...
+}
+```
+
+When a node is removed and later re-added:
+1. `remove()` deletes the Progress entry (if not in outgoing config)
+2. `makeLearner()`/`makeVoter()` sees `pr == nil` and calls `initProgress`
+3. `initProgress` creates new Progress with `Match=0`
+
+This is intentional - the leader cannot assume the returning node still has its previous logs.
+
+### Modifications Made
+- **File**: MCetcdraft.tla
+- **Before** (lines 498-500):
+```tla
+MonotonicMatchIndexProp ==
+    [][(~ \E i \in Server: etcd!BecomeLeader(i)) =>
+            (\A i,j \in Server : matchIndex'[i][j] >= matchIndex[i][j])]_mc_vars
+```
+- **After** (lines 504-515):
+```tla
+MonotonicMatchIndexProp ==
+    [][(~ \E i \in Server: etcd!BecomeLeader(i)) =>
+            (\A i,j \in Server :
+                LET
+                    \* Pre-state: nodes tracked by leader i
+                    preConfig == config[i].jointConfig[1] \cup config[i].jointConfig[2] \cup config[i].learners
+                    \* Post-state: nodes tracked by leader i after transition
+                    postConfig == config'[i].jointConfig[1] \cup config'[i].jointConfig[2] \cup config'[i].learners
+                IN
+                \* Only check monotonicity for nodes that are continuously tracked
+                \* (in config in both pre and post states)
+                (j \in preConfig /\ j \in postConfig) => matchIndex'[i][j] >= matchIndex[i][j])]_mc_vars
+```
+
+### User Confirmation
+- Confirmation Time: 2026-01-15
+- User Feedback: Approved
+
+---

@@ -332,14 +332,18 @@ GetLearners(i) ==
     config[i].learners
 
 \* Apply conf change log entry to configuration
+\* Reference: raft.go applyConfChange() - enterJoint sets autoLeave=TRUE, leaveJoint clears it
 ApplyConfigUpdate(i, k) ==
     LET entry == LogEntry(i, k)
-        newVoters == entry.value.newconf
-        newLearners == entry.value.learners
+        isLeaveJoint == "leaveJoint" \in DOMAIN entry.value /\ entry.value.leaveJoint = TRUE
+        newVoters == IF isLeaveJoint THEN GetConfig(i) ELSE entry.value.newconf
+        newLearners == IF isLeaveJoint THEN {} ELSE entry.value.learners
         enterJoint == IF "enterJoint" \in DOMAIN entry.value THEN entry.value.enterJoint ELSE FALSE
         outgoing == IF enterJoint THEN entry.value.oldconf ELSE {}
+        \* AutoLeave: Set TRUE when entering joint, clear when leaving joint
+        newAutoLeave == IF isLeaveJoint THEN FALSE ELSE enterJoint
     IN
-    [config EXCEPT ![i]= [jointConfig |-> << newVoters, outgoing >>, learners |-> newLearners]]
+    [config EXCEPT ![i]= [jointConfig |-> << newVoters, outgoing >>, learners |-> newLearners, autoLeave |-> newAutoLeave]]
 
 \* Apply a single config change to a config record
 \* Used for processing ChangeConf events with multiple changes
@@ -423,7 +427,7 @@ InitLeaderVars == /\ matchIndex = [i \in Server |-> [j \in Server |-> 0]]
 InitLogVars == /\ log          = [i \in Server |-> [offset |-> 1, entries |-> <<>>, snapshotIndex |-> 0, snapshotTerm |-> 0]]
                /\ historyLog   = [i \in Server |-> <<>>]
                /\ commitIndex  = [i \in Server |-> 0]
-InitConfigVars == /\ config = [i \in Server |-> [ jointConfig |-> <<InitServer, {}>>, learners |-> {}]]
+InitConfigVars == /\ config = [i \in Server |-> [ jointConfig |-> <<InitServer, {}>>, learners |-> {}, autoLeave |-> FALSE]]
                   /\ reconfigCount = 0 
 InitDurableState ==
     durableState = [ i \in Server |-> [
@@ -970,16 +974,33 @@ ApplySimpleConfChange(i) ==
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, logVars, durableState, historyLog>>
 
 \* Leave joint consensus - transition from joint config to single config
+\* This action is called when applying a LeaveJoint config entry (via ApplySimpleConfChange)
 \* Reference: confchange/confchange.go LeaveJoint()
 LeaveJoint(i) ==
     /\ IsJointConfig(i)
     /\ LET newVoters == GetConfig(i)  \* Keep incoming config (jointConfig[1])
-       IN config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, {}>>]]
+       IN config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, {}>>, autoLeave |-> FALSE]]
     /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] > 0 THEN
         /\ reconfigCount' = reconfigCount + 1
         /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
        ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars>>
+
+\* Leader proposes LeaveJoint entry when autoLeave=TRUE and config entry is applied
+\* Reference: raft.go:745-760 - AutoLeave mechanism
+\* When r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex && r.state == StateLeader,
+\* the leader automatically proposes an empty ConfChangeV2 to leave joint config.
+\* This empty ConfChangeV2 must be committed with joint config's two quorums before applying.
+ProposeLeaveJoint(i) ==
+    /\ state[i] = Leader
+    /\ IsJointConfig(i)
+    /\ config[i].autoLeave = TRUE
+    /\ pendingConfChangeIndex[i] = 0  \* Previous config change has been applied
+    \* Propose a LeaveJoint config entry - represented as ConfigEntry with leaveJoint=TRUE
+    \* This entry must be committed with joint quorum before being applied
+    /\ Replicate(i, [leaveJoint |-> TRUE, newconf |-> GetConfig(i), learners |-> {}], ConfigEntry)
+    /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log'[i])]
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
 
 \* Apply configuration from snapshot
 \* When a follower receives a snapshot, it applies the config directly
@@ -993,8 +1014,10 @@ ApplySnapshotConfChange(i, newVoters) ==
         enterJoint == IF hasEnterJoint THEN historyLog[i][lastConfigIdx].value.enterJoint ELSE FALSE
         hasOldconf == enterJoint /\ "oldconf" \in DOMAIN historyLog[i][lastConfigIdx].value
         oldconf == IF hasOldconf THEN historyLog[i][lastConfigIdx].value.oldconf ELSE {}
+        \* AutoLeave is TRUE when entering joint config (snapshot may contain joint config)
+        newAutoLeave == enterJoint /\ oldconf /= {}
     IN
-    /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, oldconf>>]]
+    /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex>>
 
 \* Follower advances commit index (e.g., from AppendEntries leaderCommit)
@@ -1625,6 +1648,7 @@ NextDynamic ==
     \/ \E i \in Server : ChangeConf(i)
     \/ \E i \in Server : ChangeConfAndSend(i)
     \/ \E i \in Server : ApplySimpleConfChange(i)
+    \/ \E i \in Server : ProposeLeaveJoint(i)
 
 \* The specification must start with the initial state and transition according
 \* to Next.
@@ -2176,11 +2200,12 @@ LearnersVotersDisjointInv ==
 \* Invariant: ConfigNonEmptyInv
 \* At least one voter must exist for initialized servers (cluster must have quorum)
 \* Reference: A Raft cluster cannot function without voters
-\* Note: Only applies to servers with currentTerm > 0 (initialized servers)
-\*       Uninitialized servers (not yet joined) may have empty config
+\* Note: Only applies to servers with log entries (has received data)
+\*       A new node can have term updated via UpdateTerm before receiving log entries
+\*       Reference: raft.go:Step - no config check before processing messages
 ConfigNonEmptyInv ==
     \A i \in Server :
-        currentTerm[i] > 0 => GetConfig(i) /= {}
+        LastIndex(log[i]) > 0 => GetConfig(i) /= {}
 
 \* Aggregate P1 Configuration invariants
 ConfigurationInv ==

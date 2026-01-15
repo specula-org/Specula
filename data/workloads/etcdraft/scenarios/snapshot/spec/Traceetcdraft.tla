@@ -117,7 +117,7 @@ TraceInitLogVars    ==
     /\ commitIndex  = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN 0 ELSE LastBootstrapLog[i].event.state.commit]
 
 TraceInitConfigVars ==
-    /\ config = [i \in Server |-> [ jointConfig |-> <<BootstrappedConfig(i), {}>>, learners |-> ImplicitLearners] ]
+    /\ config = [i \in Server |-> [ jointConfig |-> <<BootstrappedConfig(i), {}>>, learners |-> ImplicitLearners, autoLeave |-> FALSE] ]
     /\ reconfigCount = 0
 
 

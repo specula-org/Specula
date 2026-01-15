@@ -102,7 +102,7 @@ etcdInitLogVars == /\ log = [i \in Server |-> IF i \in InitServer
                    /\ historyLog = [i \in Server |-> IF i \in InitServer THEN BootstrapLog ELSE <<>>]
                    /\ commitIndex = [i \in Server |-> IF i \in InitServer THEN Cardinality(InitServer) ELSE 0]
 
-etcdInitConfigVars == /\ config = [i \in Server |-> [ jointConfig |-> IF i \in InitServer THEN <<InitServer, {}>> ELSE <<{}, {}>>, learners |-> {}]]
+etcdInitConfigVars == /\ config = [i \in Server |-> [ jointConfig |-> IF i \in InitServer THEN <<InitServer, {}>> ELSE <<{}, {}>>, learners |-> {}, autoLeave |-> FALSE]]
                       /\ reconfigCount = 0 \* the bootstrap configurations are not counted
 
 \* Bootstrap durable state: log length must match the actual bootstrap log
@@ -114,7 +114,7 @@ etcdInitDurableState ==
         snapshotIndex |-> 0,
         snapshotTerm |-> 0,
         commitIndex |-> IF i \in InitServer THEN Cardinality(InitServer) ELSE 0,
-        config |-> [ jointConfig |-> IF i \in InitServer THEN <<InitServer, {}>> ELSE <<{}, {}>>, learners |-> {}]
+        config |-> [ jointConfig |-> IF i \in InitServer THEN <<InitServer, {}>> ELSE <<{}, {}>>, learners |-> {}, autoLeave |-> FALSE]
     ]]
 
 \* ============================================================================
@@ -381,8 +381,9 @@ MCNextDynamic ==
     \/ /\ \E i \in Server : MCChangeConfAndSend(i)
     \/ /\ \E i \in Server : etcd!ApplySimpleConfChange(i)
        /\ UNCHANGED faultVars
-    \* LeaveJoint: Leave joint consensus configuration
-    \/ /\ \E i \in Server : etcd!LeaveJoint(i)
+    \* ProposeLeaveJoint: Leader proposes empty ConfChangeV2 to leave joint config
+    \* Reference: raft.go:745-760 - AutoLeave mechanism requires log entry commitment
+    \/ /\ \E i \in Server : etcd!ProposeLeaveJoint(i)
        /\ UNCHANGED faultVars
     \* ApplySnapshotConfChange: Apply configuration from snapshot's historyLog
     \* Key constraint: voters must come from historyLog, not arbitrary
@@ -412,7 +413,8 @@ MCNextDynamicWithReady ==
     \/ /\ \E i \in Server : MCChangeConfAndSend(i)
     \/ /\ \E i \in Server : etcd!ApplySimpleConfChange(i)
        /\ UNCHANGED faultVars
-    \/ /\ \E i \in Server : etcd!LeaveJoint(i)
+    \* ProposeLeaveJoint: Leader proposes empty ConfChangeV2 to leave joint config
+    \/ /\ \E i \in Server : etcd!ProposeLeaveJoint(i)
        /\ UNCHANGED faultVars
     \/ /\ \E i \in Server :
            LET configIndices == {k \in 1..Len(historyLog[i]) : historyLog[i][k].type = ConfigEntry}
@@ -495,8 +497,23 @@ MonotonicTermProp ==
 \*  index of the highest log entry known to be replicated on server. Initialized
 \*  to 0, increases monotonically".  In other words, matchIndex never decrements
 \* unless the current action is a node becoming leader.
+\*
+\* Additional exception: When a node is re-added to the config after being removed,
+\* its matchIndex is reset to 0. This is correct behavior per confchange.go:
+\* - remove() deletes Progress when node leaves config (line 242)
+\* - makeLearner()/makeVoter() calls initProgress with Match=0 for new nodes (line 262)
+\* Reference: confchange/confchange.go:231-243 (remove), 246-270 (initProgress)
 MonotonicMatchIndexProp ==
-    [][(~ \E i \in Server: etcd!BecomeLeader(i)) => 
-            (\A i,j \in Server : matchIndex'[i][j] >= matchIndex[i][j])]_mc_vars
+    [][(~ \E i \in Server: etcd!BecomeLeader(i)) =>
+            (\A i,j \in Server :
+                LET
+                    \* Pre-state: nodes tracked by leader i
+                    preConfig == config[i].jointConfig[1] \cup config[i].jointConfig[2] \cup config[i].learners
+                    \* Post-state: nodes tracked by leader i after transition
+                    postConfig == config'[i].jointConfig[1] \cup config'[i].jointConfig[2] \cup config'[i].learners
+                IN
+                \* Only check monotonicity for nodes that are continuously tracked
+                \* (in config in both pre and post states)
+                (j \in preConfig /\ j \in postConfig) => matchIndex'[i][j] >= matchIndex[i][j])]_mc_vars
 
 =============================================================================
