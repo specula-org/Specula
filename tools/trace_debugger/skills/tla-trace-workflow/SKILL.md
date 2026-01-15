@@ -156,6 +156,10 @@ Action ==
 
 **Read `references/fix.md` for detailed workflow and fix_log.md format.**
 
+### Phase 4: Cleanup
+
+The user may request not to clean up the generated files. Otherwise, if any trace validation steps failed, run `clean_traces`.
+
 ---
 
 ## Quick Reference
