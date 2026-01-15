@@ -20,6 +20,7 @@ SIMULATE_FILE=""
 SIMULATE_DEPTH=0
 DEADLOCK_CHECK=false
 CONTINUE_ON_ERROR=false
+CDOT_MODE=false
 
 # Help function
 usage() {
@@ -42,6 +43,7 @@ usage() {
     echo "  -k MIN     Checkpoint interval (default: 10)"
     echo "  -D         Enable deadlock checking"
     echo "  -C         Continue after finding errors (find all violations)"
+    echo "  -A         Enable action composition (cdot) support"
     echo ""
     echo "Simulation Mode Options:"
     echo "  -S         Enable simulation mode (random trace generation)"
@@ -62,7 +64,7 @@ usage() {
 }
 
 # Parse arguments
-while getopts "s:c:m:M:w:t:d:k:o:SDCn:f:p:h" opt; do
+while getopts "s:c:m:M:w:t:d:k:o:SDCAn:f:p:h" opt; do
     case $opt in
         s) SPEC_FILE="$OPTARG" ;;
         c) CONFIG_FILE="$OPTARG" ;;
@@ -76,6 +78,7 @@ while getopts "s:c:m:M:w:t:d:k:o:SDCn:f:p:h" opt; do
         S) SIMULATE_MODE=true ;;
         D) DEADLOCK_CHECK=true ;;
         C) CONTINUE_ON_ERROR=true ;;
+        A) CDOT_MODE=true ;;
         n) SIMULATE_NUM="$OPTARG" ;;
         f) SIMULATE_FILE="$OPTARG" ;;
         p) SIMULATE_DEPTH="$OPTARG" ;;
@@ -172,6 +175,11 @@ TLC_CMD="java -XX:+UseParallelGC"
 TLC_CMD="$TLC_CMD -Dtlc2.tool.fp.FPSet.impl=tlc2.tool.fp.OffHeapDiskFPSet"
 TLC_CMD="$TLC_CMD -XX:MaxDirectMemorySize=${OFFHEAP_MEMORY}"
 TLC_CMD="$TLC_CMD -Xmx${MEMORY} -Xms${MEMORY}"
+
+# Add cdot support if enabled
+if [ "$CDOT_MODE" = true ]; then
+    TLC_CMD="$TLC_CMD -Dtlc2.tool.impl.Tool.cdot=true"
+fi
 
 # Add classpath
 CP="$JAR_PATH"
