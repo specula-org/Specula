@@ -473,3 +473,63 @@ This ensures CompactLog events are consistent with all other events, as they now
 
 **Files Modified:**
 - `raft/rafttest/interaction_env_handler_compact.go`: Read snapshotIndex/snapshotTerm from storage after compaction
+
+---
+
+## 2026-01-15 - Fix ChangeConf joint consensus constraint for V1 simple config changes
+
+**Trace:** `../traces/confchange_v1_add_single.ndjson`, `../traces/confchange_add_remove.ndjson`, etc.
+**Error Type:** Incorrect Spec Constraint (introduced by inv checking fix)
+
+**Issue:**
+After invariant checking fixes, 6 trace validations failed. The `ChangeConf` action rejected valid V1-style single-node config changes because of incorrect constraints added in inv_log.md Record #16.
+
+**Root Cause:**
+Record #16 in inv_log.md incorrectly interpreted the `enterJoint` flag:
+- **Wrong interpretation:** `enterJoint=FALSE` means "leave joint" (requires being in joint config)
+- **Correct interpretation:** `enterJoint=FALSE` means "Simple() change" (V1-style, single-node change)
+
+According to `confchange/confchange.go`, there are THREE paths for config changes:
+1. **EnterJoint()** (line 51): Enter joint config, can change multiple voters. Requires NOT in joint.
+2. **LeaveJoint()** (line 94): Leave joint config. Requires IN joint. This is a SEPARATE action (empty ConfChangeV2).
+3. **Simple()** (line 128): Simple single-node change. Requires NOT in joint AND `symdiff(old, new) <= 1`.
+
+The constraint added in Record #16:
+```tla
+/\ (enterJoint = TRUE) => ~IsJointConfig(i)
+/\ (enterJoint = FALSE) => IsJointConfig(i)  \* WRONG!
+```
+
+This prevented V1 API usage (AddNode, RemoveNode) which uses `enterJoint=FALSE` when NOT in joint config.
+
+**Evidence from confchange/confchange.go:128-144:**
+```go
+func (c Changer) Simple(ccs ...pb.ConfChangeSingle) (tracker.Config, tracker.ProgressMap, error) {
+    if joint(cfg) {
+        err := errors.New("can't apply simple config change in joint config")
+        return c.err(err)
+    }
+    // ...
+    if n := symdiff(incoming(c.Tracker.Voters), incoming(cfg.Voters)); n > 1 {
+        return tracker.Config{}, nil, errors.New("more than one voter changed without entering joint config")
+    }
+}
+```
+
+**Fix:**
+Changed constraints in `ChangeConf` and `ChangeConfAndSend`:
+```tla
+\* Before (Record #16 - WRONG):
+/\ (enterJoint = TRUE) => ~IsJointConfig(i)
+/\ (enterJoint = FALSE) => IsJointConfig(i)
+
+\* After (CORRECT):
+/\ ~IsJointConfig(i)  \* Both EnterJoint and Simple require NOT being in joint
+/\ (enterJoint = FALSE) =>
+   Cardinality((GetConfig(i) \ newVoters) \union (newVoters \ GetConfig(i))) <= 1
+   \* Simple change: symdiff must be <= 1 (only one voter can change)
+```
+
+**Files Modified:**
+- `spec/etcdraft.tla:866-892`: Fixed ChangeConf constraints
+- `spec/etcdraft.tla:894-919`: Fixed ChangeConfAndSend constraints

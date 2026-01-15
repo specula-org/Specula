@@ -871,9 +871,13 @@ ChangeConf(i) ==
     /\ state[i] = Leader
     /\ IF pendingConfChangeIndex[i] = 0 THEN
             \E newVoters \in SUBSET Server, newLearners \in SUBSET Server, enterJoint \in {TRUE, FALSE}:
-                \* Joint consensus constraint: must follow proper sequencing
-                /\ (enterJoint = TRUE) => ~IsJointConfig(i)   \* Can only enter joint if not already in joint
-                /\ (enterJoint = FALSE) => IsJointConfig(i)   \* Can only leave joint if currently in joint
+                \* Both EnterJoint and Simple require NOT being in joint config
+                \* Reference: confchange.go:56 "config is already joint" and confchange.go:133
+                /\ ~IsJointConfig(i)
+                \* Simple change constraint: can only change ONE voter (symdiff <= 1)
+                \* Reference: confchange.go:140-142 "more than one voter changed without entering joint config"
+                /\ (enterJoint = FALSE) =>
+                   Cardinality((GetConfig(i) \ newVoters) \union (newVoters \ GetConfig(i))) <= 1
                 \* Configuration validity constraints (Reference: confchange/confchange.go)
                 /\ newVoters \cap newLearners = {}            \* checkInvariants: Learners and voters must be disjoint
                 /\ newVoters /= {}                            \* apply(): "removed all voters" check
@@ -892,9 +896,13 @@ ChangeConfAndSend(i) ==
     /\ state[i] = Leader
     /\ IF pendingConfChangeIndex[i] = 0 THEN
             \E newVoters \in SUBSET Server, newLearners \in SUBSET Server, enterJoint \in {TRUE, FALSE}:
-                \* Joint consensus constraint: must follow proper sequencing
-                /\ (enterJoint = TRUE) => ~IsJointConfig(i)   \* Can only enter joint if not already in joint
-                /\ (enterJoint = FALSE) => IsJointConfig(i)   \* Can only leave joint if currently in joint
+                \* Both EnterJoint and Simple require NOT being in joint config
+                \* Reference: confchange.go:56 "config is already joint" and confchange.go:133
+                /\ ~IsJointConfig(i)
+                \* Simple change constraint: can only change ONE voter (symdiff <= 1)
+                \* Reference: confchange.go:140-142 "more than one voter changed without entering joint config"
+                /\ (enterJoint = FALSE) =>
+                   Cardinality((GetConfig(i) \ newVoters) \union (newVoters \ GetConfig(i))) <= 1
                 \* Configuration validity constraints (Reference: confchange/confchange.go)
                 /\ newVoters \cap newLearners = {}            \* checkInvariants: Learners and voters must be disjoint
                 /\ newVoters /= {}                            \* apply(): "removed all voters" check
