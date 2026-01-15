@@ -84,6 +84,8 @@ Action ==
 | `run_trace_debugging` | Set breakpoints, collect statistics | After validation fails |
 | `get_trace_info` | Check trace file info | Before validation |
 | `validate_spec_syntax` | Check spec syntax | If TLC reports syntax errors |
+| `run_trace_validation_parallel` | Check against multiple traces | After proposed bug fix |
+| `clean_traces` | Delete generated files | Final cleanup |
 
 ---
 
@@ -143,7 +145,7 @@ Action ==
 1. Read system source code to understand actual behavior
 2. Find corresponding code location as evidence for your fix
 3. Fix the **base spec** (e.g., `etcdraft.tla`), avoid modifying trace comparison logic
-4. Verify with `run_trace_validation`
+4. Verify with `run_trace_validation_parallel`
 5. Document in `fix_log.md` in the spec directory
 
 **For Abstraction Gaps:**
@@ -155,6 +157,10 @@ Action ==
 3. Wait for user guidance before proceeding
 
 **Read `references/fix.md` for detailed workflow and fix_log.md format.**
+
+### Phase 4: Cleanup
+
+The user may request not to clean up the generated files. Otherwise, run `clean_traces`.
 
 ---
 
@@ -207,6 +213,19 @@ run_trace_debugging(
     {"expression": "i", "result": "1"},
     {"expression": "j", "result": "2"}
   ]
+}
+```
+
+### run_trace_validation_parallel Response (trace_mismatch)
+
+```json
+{
+  "status": "trace_mismatch",
+  "passed": 5,
+  "failed": 1,
+  "failures": {
+    "trace_1.ndjson": "Use run_trace_debugging with condition 'TLCGet(\"level\") = 112'"
+  }
 }
 ```
 

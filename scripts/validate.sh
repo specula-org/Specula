@@ -2,7 +2,7 @@
 
 # Use fixed tool directory to avoid re-downloading
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TOOLDIR="${TOOLDIR:-$(cd "$SCRIPT_DIR/../.." && pwd)/lib}"
+TOOLDIR="${TOOLDIR:-$(cd "$SCRIPT_DIR/.." && pwd)/lib}"
 
 WORKDIR="$(mktemp -d)"
 FAILFAST=false

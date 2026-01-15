@@ -124,6 +124,7 @@ class TraceValidationHandler(BaseHandler):
     def _build_command(self, args: Dict[str, Any], tla_jar: str, community_jar: str) -> list:
         """Build TLC command."""
         classpath = f"{tla_jar}:{community_jar}"
+        metadir = args.get("metadir", "/tmp/tlc_validation")
         return [
             "java", "-XX:+UseParallelGC", "-Xmx4G",
             "-cp", classpath,
@@ -131,7 +132,7 @@ class TraceValidationHandler(BaseHandler):
             "-config", args["config_file"],
             args["spec_file"],
             "-lncheck", "final",
-            "-metadir", "/tmp/tlc_validation",
+            "-metadir", metadir,
             "-fpmem", "0.9"
         ]
 
