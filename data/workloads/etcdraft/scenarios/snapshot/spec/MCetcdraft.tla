@@ -269,52 +269,82 @@ MCInit ==
 \* NEXT STATE RELATIONS
 \* ============================================================================
 
-MCNextAsync ==
-    \/ /\ \E i,j \in Server : etcd!RequestVote(i, j)
+\* MCNextAsync(i) - All async actions for a single server i
+\* This allows external quantification: \E i \in Server : MCNextAsync(i)
+MCNextAsync(i) ==
+    \/ /\ \E j \in Server : etcd!RequestVote(i, j)
        /\ UNCHANGED faultVars
-    \/ /\ \E i \in Server : etcd!BecomeLeader(i)
+    \/ /\ etcd!BecomeLeader(i)
        /\ UNCHANGED faultVars
-    \/ \E i \in Server: \E v \in Value: MCClientRequest(i, v)
-    \* \/ \E i \in Server: \E v \in Value: MCClientRequestAndSend(i, v)
-    \/ /\ \E i \in Server : etcd!AdvanceCommitIndex(i)
+    \/ \E v \in Value: MCClientRequest(i, v)
+    \* \/ \E v \in Value: MCClientRequestAndSend(i, v)
+    \/ /\ etcd!AdvanceCommitIndex(i)
        /\ UNCHANGED faultVars
     \* NOTE: Entries must be sent starting from nextIndex (per raft.go:638)
     \* Implementation always sends from pr.Next, not from arbitrary positions
     \* IMPORTANT: Only send AppendEntries if entries are available (not compacted)
     \* If nextIndex < log.offset, must send snapshot instead (handled by SendSnapshot)
-    \/ /\ \E i,j \in Server :
+    \/ /\ \E j \in Server :
            /\ nextIndex[i][j] >= log[i].offset  \* Entries must be available
            /\ \E e \in nextIndex[i][j]..LastIndex(log[i])+1 : etcd!AppendEntries(i, j, <<nextIndex[i][j], e>>)
        /\ UNCHANGED faultVars
-    \/ /\ \E i \in Server : etcd!AppendEntriesToSelf(i)
+    \/ /\ etcd!AppendEntriesToSelf(i)
        /\ UNCHANGED faultVars
-    \/ /\ \E i,j \in Server : MCHeartbeat(i, j)
-    \/ /\ \E i,j \in Server : MCSendSnapshot(i, j)
+    \/ /\ \E j \in Server : MCHeartbeat(i, j)
+    \/ /\ \E j \in Server : MCSendSnapshot(i, j)
     \* ManualSendSnapshot: Test harness sends snapshot without modifying progress state
-    \/ /\ \E i,j \in Server : MCManualSendSnapshot(i, j)
+    \/ /\ \E j \in Server : MCManualSendSnapshot(i, j)
     \* SendSnapshotWithCompaction: Snapshot with custom index
-    \/ /\ \E i,j \in Server : \E idx \in 1..commitIndex[i] :
+    \/ /\ \E j \in Server : \E idx \in 1..commitIndex[i] :
            /\ idx > 0
            /\ MCSendSnapshotWithCompaction(i, j, idx)
     \* ReportUnreachable: Leader detects follower unreachable, transitions Replicate->Probe
-    \/ /\ \E i,j \in Server : MCReportUnreachable(i, j)
+    \/ /\ \E j \in Server : MCReportUnreachable(i, j)
     \* ReplicateImplicitEntry: For joint config, leader creates implicit entry
-    \/ /\ \E i \in Server : etcd!ReplicateImplicitEntry(i)
+    \/ /\ etcd!ReplicateImplicitEntry(i)
        /\ UNCHANGED faultVars
     \* NOTE: FollowerAdvanceCommitIndex removed - it allows invalid states where
     \* a follower advances commitIndex beyond what has been quorum-committed.
     \* In real Raft, followers only advance commitIndex based on leader messages.
     \* Optimization: Only allow compacting to the commitIndex to reduce state space explosion.
     \* This provides the most aggressive compaction scenario for testing Snapshots.
-    \/ \E i \in Server :
-        /\ log[i].offset < commitIndex[i]
-        /\ MCCompactLog(i, commitIndex[i])
-    \/ /\ \E m \in DOMAIN messages : etcd!Receive(m)
+    \/ /\ log[i].offset < commitIndex[i]
+       /\ MCCompactLog(i, commitIndex[i])
+    \/ MCTimeout(i)
+    \* Ready is handled separately via composition with MCReady
+    \* \/ /\ etcd!Ready(i)
+    \*    /\ UNCHANGED faultVars
+    \/ MCStepDown(i)
+    \* Message receive: only receive messages destined for server i
+    \/ /\ \E m \in DOMAIN messages : 
+           /\ m.mdest = i
+           /\ etcd!Receive(m)
        /\ UNCHANGED faultVars
-    \/ \E i \in Server : MCTimeout(i)
-    \/ /\ \E i \in Server : etcd!Ready(i)
+
+\* MCReady(i) - Ready action for server i, used for composition
+\* Implements: IF ENABLED Ready(i) THEN Ready(i) ELSE UNCHANGED vars
+MCReady(i) ==
+    IF ENABLED etcd!Ready(i)
+    THEN /\ etcd!Ready(i)
+         /\ UNCHANGED faultVars
+    ELSE UNCHANGED <<vars, faultVars>>
+
+\* Combined action: MCNextAsync(i) followed by MCReady(i)
+\* This reduces state space by atomically combining async action with Ready
+MCNextAsyncWithReady(i) ==
+    MCNextAsync(i) \cdot MCReady(i)
+
+\* MCNextAsync for all servers (uses external quantification)
+\* Includes Ready as a separate disjunct for non-composed version
+MCNextAsyncAll ==
+    \/ \E i \in Server : MCNextAsync(i)
+    \/ \E i \in Server : 
+       /\ etcd!Ready(i)
        /\ UNCHANGED faultVars
-    \/ /\ \E i \in Server : MCStepDown(i)
+
+\* MCNextAsync with Ready composition for all servers
+MCNextAsyncWithReadyAll ==
+    \E i \in Server : MCNextAsyncWithReady(i)
 
 MCNextCrash == \E i \in Server : MCRestart(i)
 
@@ -329,7 +359,13 @@ MCNextUnreliable ==
         /\ MCDropMessage(m)
 
 MCNext ==
-    \/ MCNextAsync
+    \/ MCNextAsyncAll
+    \/ MCNextCrash
+    \/ MCNextUnreliable
+
+\* MCNext with Ready composition - reduces state space
+MCNextWithReady ==
+    \/ MCNextAsyncWithReadyAll
     \/ MCNextCrash
     \/ MCNextUnreliable
 
@@ -363,11 +399,43 @@ MCNextDynamic ==
               /\ etcd!ApplySnapshotConfChange(i, newVoters)
        /\ UNCHANGED faultVars
 
+\* MCNextDynamic with Ready composition - reduces state space
+MCNextDynamicWithReady ==
+    \/ MCNextWithReady
+    \/ /\ \E i, j \in Server : MCAddNewServer(i, j)
+       /\ UNCHANGED faultVars
+    \/ /\ \E i, j \in Server : MCAddLearner(i, j)
+       /\ UNCHANGED faultVars
+    \/ /\ \E i, j \in Server : MCDeleteServer(i, j)
+       /\ UNCHANGED faultVars
+    \/ /\ \E i \in Server : MCChangeConf(i)
+    \/ /\ \E i \in Server : MCChangeConfAndSend(i)
+    \/ /\ \E i \in Server : etcd!ApplySimpleConfChange(i)
+       /\ UNCHANGED faultVars
+    \/ /\ \E i \in Server : etcd!LeaveJoint(i)
+       /\ UNCHANGED faultVars
+    \/ /\ \E i \in Server :
+           LET configIndices == {k \in 1..Len(historyLog[i]) : historyLog[i][k].type = ConfigEntry}
+               lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
+               newVoters == IF lastConfigIdx > 0
+                            THEN historyLog[i][lastConfigIdx].value.newconf
+                            ELSE {}
+           IN /\ newVoters /= {}
+              /\ newVoters /= GetConfig(i)
+              /\ lastConfigIdx <= commitIndex[i]
+              /\ etcd!ApplySnapshotConfChange(i, newVoters)
+       /\ UNCHANGED faultVars
+
 mc_vars == <<vars, faultVars>>
 
 mc_etcdSpec ==
     /\ MCInit
     /\ [][MCNextDynamic]_mc_vars
+
+\* Spec with Ready composition for reduced state space
+mc_etcdSpecWithReady ==
+    /\ MCInit
+    /\ [][MCNextDynamicWithReady]_mc_vars
 
 \* ============================================================================
 \* SYMMETRY AND VIEW DEFINITIONS
