@@ -878,8 +878,9 @@ ChangeConf(i) ==
                 \* Reference: confchange.go:140-142 "more than one voter changed without entering joint config"
                 /\ (enterJoint = FALSE) =>
                    Cardinality((GetConfig(i) \ newVoters) \union (newVoters \ GetConfig(i))) <= 1
-                \* Configuration validity constraints (Reference: confchange/confchange.go)
-                /\ newVoters \cap newLearners = {}            \* checkInvariants: Learners and voters must be disjoint
+                \* Configuration validity constraints (Reference: confchange/confchange.go:305-312)
+                /\ newVoters \cap newLearners = {}            \* checkInvariants: Learners disjoint from incoming voters
+                /\ (enterJoint = TRUE) => (GetConfig(i) \cap newLearners = {})  \* checkInvariants: Learners disjoint from outgoing voters
                 /\ newVoters /= {}                            \* apply(): "removed all voters" check
                 /\ Replicate(i, [newconf |-> newVoters, learners |-> newLearners, enterJoint |-> enterJoint, oldconf |-> GetConfig(i)], ConfigEntry)
                 /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=LastIndex(log'[i])]
@@ -903,8 +904,9 @@ ChangeConfAndSend(i) ==
                 \* Reference: confchange.go:140-142 "more than one voter changed without entering joint config"
                 /\ (enterJoint = FALSE) =>
                    Cardinality((GetConfig(i) \ newVoters) \union (newVoters \ GetConfig(i))) <= 1
-                \* Configuration validity constraints (Reference: confchange/confchange.go)
-                /\ newVoters \cap newLearners = {}            \* checkInvariants: Learners and voters must be disjoint
+                \* Configuration validity constraints (Reference: confchange/confchange.go:305-312)
+                /\ newVoters \cap newLearners = {}            \* checkInvariants: Learners disjoint from incoming voters
+                /\ (enterJoint = TRUE) => (GetConfig(i) \cap newLearners = {})  \* checkInvariants: Learners disjoint from outgoing voters
                 /\ newVoters /= {}                            \* apply(): "removed all voters" check
                 /\ Replicate(i, [newconf |-> newVoters, learners |-> newLearners, enterJoint |-> enterJoint, oldconf |-> GetConfig(i)], ConfigEntry)
                 /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i]=LastIndex(log'[i])]

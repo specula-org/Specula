@@ -829,3 +829,519 @@ QuorumLogInv ==
 - User Feedback: Approved
 
 ---
+
+## Record #18 - 2026-01-14
+
+### Counterexample Summary
+4-step counterexample:
+1. State 1: MCInit - s3.currentTerm = 1, s3.durableState.currentTerm = 1
+2. State 2: MCTimeout(s3) - s3.currentTerm = 2, but durableState.currentTerm = 1 (not persisted yet)
+3. State 3: MCRestart(s4)
+4. State 4: MCRestart(s3) - s3 recovers from durableState, currentTerm reverts to 1
+
+### Analysis Conclusion
+- **Type**: A: Property Too Strong
+- **Violated Property**: MonotonicTermProp
+- **Root Cause**: The property expected `currentTerm` to be monotonically increasing, but didn't account for restart recovery from durable state. When a node crashes before persisting a term increment, it loses that increment on restart. This is normal Raft behavior.
+
+### Evidence from Implementation
+When s3 times out (state 2), it increments `currentTerm` to 2 but hasn't persisted this change yet (`durableState.currentTerm` is still 1). When s3 restarts (state 4), it recovers from `durableState`, so `currentTerm` reverts to 1.
+
+### Modifications Made
+- **File**: MCetcdraft.tla
+- **Before**:
+```tla
+MonotonicTermProp ==
+    [][\A i \in Server :
+        currentTerm'[i] >= currentTerm[i]]_mc_vars
+```
+- **After**:
+```tla
+MonotonicTermProp ==
+    [][(~\E i \in Server: Restart(i)) =>
+        \A i \in Server : currentTerm'[i] >= currentTerm[i]]_mc_vars
+```
+
+### User Confirmation
+- Confirmation Time: 2026-01-14
+- User Feedback: Approved
+
+---
+
+## Record #19 - 2026-01-14
+
+### Counterexample Summary
+123-step counterexample: s2's config showed:
+```
+config[s2] = [
+    learners: {s3, s5},
+    jointConfig: [{s5}, {s1, s2, s3}]
+]
+```
+- s5 is in both `learners` AND `jointConfig[0]` (incoming voters)
+- s3 is in both `learners` AND `jointConfig[1]` (outgoing voters)
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Error
+- **Violated Property**: LearnersVotersDisjointInv
+- **Root Cause**: The `ChangeConf` action (etcdraft.tla:874) allowed arbitrary selection of `newVoters` and `newLearners` without the constraint `newVoters \cap newLearners = {}`.
+
+### Evidence from Implementation
+From `tracker/tracker.go:37-41`:
+> Invariant: Learners and Voters does not intersect, i.e. if a peer is in either half of the joint config, it can't be a learner
+
+From `confchange/confchange.go:305-316`, `checkInvariants()` enforces this:
+```go
+for id := range cfg.Learners {
+    if _, ok := outgoing(cfg.Voters)[id]; ok {
+        return fmt.Errorf("%d is in Learners and Voters[1]", id)
+    }
+    if _, ok := incoming(cfg.Voters)[id]; ok {
+        return fmt.Errorf("%d is in Learners and Voters[0]", id)
+    }
+}
+```
+
+### Modifications Made
+- **File**: etcdraft.tla
+- **Changes**: Added constraints to `ChangeConf` and `ChangeConfAndSend` (lines 879-880, 900-901):
+```tla
+\E newVoters \in SUBSET Server, newLearners \in SUBSET Server, enterJoint \in {TRUE, FALSE}:
+    /\ (enterJoint = TRUE) => ~IsJointConfig(i)
+    /\ (enterJoint = FALSE) => IsJointConfig(i)
+    \* Configuration validity constraints (Reference: confchange/confchange.go)
+    /\ newVoters \cap newLearners = {}            \* checkInvariants: Learners and voters must be disjoint
+    /\ newVoters /= {}                            \* apply(): "removed all voters" check
+    /\ Replicate(...)
+```
+
+**Note**: This fix also resolves Violations #4 (ConfigNonEmptyInv) and #6 (JointConfigNonEmptyInv) via the `newVoters /= {}` constraint.
+
+### User Confirmation
+- Confirmation Time: 2026-01-14
+- User Feedback: Approved
+
+---
+
+## Record #20 - 2026-01-14
+
+### Counterexample Summary
+139-step counterexample:
+1. State 137: s3 is Leader, `matchIndex[s3][s3] = 19`
+2. State 138: s3 remains Leader
+3. State 139: `matchIndex[s3][s3] = 0` (dropped from 19 to 0!)
+
+s3 remained Leader (no BecomeLeader), but its own matchIndex was reset.
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Error
+- **Violated Property**: MonotonicMatchIndexProp
+- **Root Cause**: In `ApplySimpleConfChange`, when s3 (Leader) enters joint config, the outgoing config members (including s3 itself) are added to `addedNodes`, causing s3's own matchIndex to be reset to 0. The `progressState` update correctly excluded `j # i`, but `matchIndex` did not.
+
+### Evidence from Implementation
+From `confchange/confchange.go`, the `makeVoter()` function (lines 178-189):
+```go
+func (c Changer) makeVoter(cfg *tracker.Config, trk tracker.ProgressMap, id uint64) {
+    pr := trk[id]
+    if pr == nil {
+        c.initProgress(cfg, trk, id, false /* isLearner */)  // Only new nodes get Match=0
+        return
+    }
+    // Existing nodes (including leader) keep their Match value!
+    pr.IsLearner = false
+    ...
+}
+```
+etcd only initializes `Match=0` for nodes not already in the ProgressMap (`pr == nil`). The leader is always in the ProgressMap, so its Match is never reset.
+
+### Modifications Made
+- **File**: etcdraft.tla
+- **Before**:
+```tla
+/\ matchIndex' = [matchIndex EXCEPT ![i] =
+       [j \in Server |-> IF j \in addedNodes THEN 0 ELSE matchIndex[i][j]]]
+```
+- **After** (lines 946-949):
+```tla
+\* Reference: confchange/confchange.go makeVoter() - only init Match=0 for truly new nodes
+\* Existing nodes (including leader itself) keep their Match value (pr != nil check)
+/\ matchIndex' = [matchIndex EXCEPT ![i] =
+       [j \in Server |-> IF j \in addedNodes /\ j # i THEN 0 ELSE matchIndex[i][j]]]
+```
+
+### User Confirmation
+- Confirmation Time: 2026-01-14
+- User Feedback: Approved
+
+---
+
+## Record #21 - 2026-01-14
+
+### Counterexample Summary
+143-step counterexample causing TLC crash:
+```
+The second argument of SubSeq must be in the domain of its first argument:
+<< ... (8 elements) >>
+, but instead it is -16
+```
+
+State 143 key data:
+- s2 is Leader with `log[s2].offset = 22`, entries = 8 elements → LastIndex = 29
+- `nextIndex[s2][s1] = 5`, `matchIndex[s2][s1] = 4`
+
+When calculating `SubSeq` in `AppendEntriesInRangeToPeer`:
+- `startIndex = 5 - 22 + 1 = -16` (Invalid!)
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Error
+- **Violated Property**: N/A (TLC runtime error - SubSeq domain violation)
+- **Root Cause**: `MCetcdraft.tla:275` had no check that `nextIndex[i][j] >= log[i].offset`. When the leader's log is compacted (`offset = 22`) but `nextIndex[j] = 5`, the spec tried to send entries starting from index 5, which no longer exists. In real etcd, when `nextIndex < log.offset`, the leader sends a snapshot instead.
+
+### Evidence from Implementation
+The `SendSnapshot` action correctly models this:
+```tla
+SendSnapshot(i, j) ==
+    ...
+    \* Trigger: The previous log index required for AppendEntries is NOT available
+    /\ LET prevLogIndex == nextIndex[i][j] - 1 IN
+       ~IsAvailable(i, prevLogIndex)
+```
+
+### Modifications Made
+- **File**: MCetcdraft.tla
+- **Before**:
+```tla
+\/ /\ \E i,j \in Server : \E e \in nextIndex[i][j]..LastIndex(log[i])+1 :
+       etcd!AppendEntries(i, j, <<nextIndex[i][j], e>>)
+```
+- **After** (line 275):
+```tla
+\* NOTE: Entries must be sent starting from nextIndex (per raft.go:638)
+\* IMPORTANT: Only send AppendEntries if entries are available (not compacted)
+\* If nextIndex < log.offset, must send snapshot instead (handled by SendSnapshot)
+\/ /\ \E i,j \in Server :
+       /\ nextIndex[i][j] >= log[i].offset  \* Entries must be available
+       /\ \E e \in nextIndex[i][j]..LastIndex(log[i])+1 :
+              etcd!AppendEntries(i, j, <<nextIndex[i][j], e>>)
+   /\ UNCHANGED faultVars
+```
+
+### User Confirmation
+- Confirmation Time: 2026-01-14
+- User Feedback: Approved
+
+---
+
+## Record #22 - 2026-01-14
+
+### Counterexample Summary
+86-step counterexample:
+- s2 is Leader with `pendingConfChangeIndex[s2] = 3`
+- `log[s2].offset = 7`
+- Invariant requires `pendingConfChangeIndex >= log.offset`
+- But `3 < 7` - the entry at index 3 has been compacted!
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Error
+- **Violated Property**: PendingConfIndexValidInv
+- **Root Cause**: The `CompactLog` action allowed compacting up to `commitIndex + 1`, but etcd's application layer (etcdserver) only compacts applied entries.
+
+### Evidence from Implementation
+From `storage.go:249-250`:
+```go
+// It is the application's responsibility to not attempt to compact an index
+// greater than raftLog.applied.
+```
+
+### Modifications Made
+- **File**: etcdraft.tla
+- **Before**:
+```tla
+CompactLog(i, newStart) ==
+    /\ newStart > log[i].offset
+    /\ newStart <= commitIndex[i] + 1
+    ...
+```
+- **After**:
+```tla
+\* Reference: storage.go:249-250 - "It is the application's responsibility to not
+\* attempt to compact an index greater than raftLog.applied."
+\* We use durableState.log as applied index (set by PersistState in Ready).
+CompactLog(i, newStart) ==
+    /\ newStart > log[i].offset
+    /\ newStart <= durableState[i].log + 1  \* Changed from commitIndex[i] + 1
+    ...
+```
+
+### User Confirmation
+- Confirmation Time: 2026-01-14
+- User Feedback: Approved
+
+---
+
+## Record #23 - 2026-01-14
+
+### Counterexample Summary
+112-step counterexample:
+- s3: `durableState[s3].log = 12`
+- s3: `LastIndex(log[s3]) = 11` (offset=3, entries=9)
+- Invariant required `durableState.log <= LastIndex(log)`
+- But `12 > 11`
+
+### Analysis Conclusion
+- **Type**: A: Invariant Too Strong
+- **Violated Property**: DurableStateConsistency
+- **Root Cause**: When log is truncated (e.g., due to conflict resolution), `durableState.log` temporarily exceeds `LastIndex(log)` until the next Ready/PersistState sync. Per review:
+  - etcd's HardState only contains `Term`, `Vote`, `Commit` - NOT `lastIndex`
+  - The `durableState.log` in spec is an abstraction
+  - Only `currentTerm` and `commitIndex` consistency matters for correctness
+
+### Modifications Made
+- **File**: etcdraft.tla
+- **Before**:
+```tla
+DurableStateConsistency ==
+    \A i \in Server :
+        /\ durableState[i].currentTerm <= currentTerm[i]
+        /\ durableState[i].log <= LastIndex(log[i])
+        /\ durableState[i].commitIndex <= commitIndex[i]
+```
+- **After** (lines 2042-2045):
+```tla
+\* Note: durableState.log check removed - only term and commitIndex need comparison
+DurableStateConsistency ==
+    \A i \in Server :
+        /\ durableState[i].currentTerm <= currentTerm[i]
+        /\ durableState[i].commitIndex <= commitIndex[i]
+```
+
+### User Confirmation
+- Confirmation Time: 2026-01-14
+- User Feedback: Approved
+
+---
+
+## Record #24 - 2026-01-14
+
+### Counterexample Summary
+124-step counterexample:
+- s3: `LastIndex(log[s3]) = 3` (offset=3, entries=1)
+- s3: `Len(historyLog[s3]) = 4`
+- Invariant requires `Len(historyLog) = LastIndex(log)`
+- But `4 > 3` - historyLog has an extra entry
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Error
+- **Violated Property**: HistoryLogLengthInv
+- **Root Cause**: `ConflictAppendEntriesRequest` truncated `log` but left `historyLog` unchanged. In etcd, `log.go:138` calls `truncateAndAppend` which removes conflicting entries entirely. The ghost variable `historyLog` must mirror this.
+
+### Modifications Made
+- **File**: etcdraft.tla
+- **Before**:
+```tla
+ConflictAppendEntriesRequest(i, index, m) ==
+    ...
+    /\ log' = [log EXCEPT ![i].entries = SubSeq(@, 1, Len(@) - 1)]
+    /\ UNCHANGED <<..., historyLog>>
+```
+- **After** (lines 1148-1152):
+```tla
+ConflictAppendEntriesRequest(i, index, m) ==
+    ...
+    \* Truncate both log and historyLog to keep ghost variable consistent
+    \* Reference: log.go:138 truncateAndAppend - conflicting entries are removed
+    /\ log' = [log EXCEPT ![i].entries = SubSeq(@, 1, Len(@) - 1)]
+    /\ historyLog' = [historyLog EXCEPT ![i] = SubSeq(@, 1, Len(@) - 1)]
+    /\ UNCHANGED <<messageVars, serverVars, commitIndex, durableState, progressVars>>
+```
+
+### User Confirmation
+- Confirmation Time: 2026-01-14
+- User Feedback: Approved
+
+---
+
+## Record #25 - 2026-01-14
+
+### Counterexample Summary
+138-step counterexample causing `LogMatchingInv` violation:
+- s2 and s3 have same term at index 4, but different entries
+- s2: `historyLog[4] = term=5, ConfigEntry {s1,s2,s3,s4}`
+- s3: `historyLog[4] = term=4, ConfigEntry {s1,s2,s3,s5}`
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Error
+- **Violated Property**: LogMatchingInv (CRITICAL - core Raft safety property)
+- **Root Cause**: The original `ConflictAppendEntriesRequest` only truncated ONE entry at a time and didn't consume the message. etcd's `maybeAppend` + `truncateAndAppend` performs an atomic truncate-to-conflict-point AND append operation.
+
+### Evidence from Implementation
+From `log.go:115-128` + `log.go:152-165`:
+1. `findConflict()` finds the FIRST conflicting index
+2. `truncateAndAppend()` truncates to conflict point AND appends new entries
+3. This is an atomic operation - truncate + append + respond
+
+### Modifications Made
+- **File**: etcdraft.tla
+- **Changes**: Added `FindFirstConflict` helper and rewrote `ConflictAppendEntriesRequest` (lines 1119-1183):
+
+```tla
+\* Reference: log.go:152-165 findConflict
+FindFirstConflict(i, index, ents) ==
+    LET conflicting == {k \in 1..Len(ents):
+            /\ index + k - 1 <= LastIndex(log[i])
+            /\ LogTerm(i, index + k - 1) /= ents[k].term}
+    IN IF conflicting = {} THEN 0 ELSE index + Min(conflicting) - 1
+
+\* Reference: log.go:115-128 maybeAppend + log_unstable.go:196-218 truncateAndAppend
+ConflictAppendEntriesRequest(i, j, index, m) ==
+    /\ m.mentries /= << >>
+    /\ index > commitIndex[i]
+    /\ ~HasNoConflict(i, index, m.mentries)
+    /\ LET ci == FindFirstConflict(i, index, m.mentries)
+           entsOffset == ci - index + 1
+           newEntries == SubSeq(m.mentries, entsOffset, Len(m.mentries))
+           truncatePoint == ci - log[i].offset
+       IN /\ ci > commitIndex[i]
+          \* ATOMIC: truncate to conflict point AND append new entries
+          /\ log' = [log EXCEPT ![i].entries = SubSeq(@, 1, truncatePoint - 1) \o newEntries]
+          /\ historyLog' = [historyLog EXCEPT ![i] = SubSeq(@, 1, ci - 1) \o newEntries]
+    \* Send response (consuming the message)
+    /\ CommitTo(i, Min({m.mcommitIndex, m.mprevLogIndex + Len(m.mentries)}))
+    /\ Reply([mtype |-> AppendEntriesResponse, msuccess |-> TRUE, ...], m)
+```
+
+| Aspect | Original (Wrong) | Fixed (Matches etcd) |
+|--------|------------------|----------------------|
+| Truncation | Only last entry | To conflict point |
+| Append | Not done | Atomic with truncate |
+| Response | Not sent | Sent immediately |
+| Message | Stays in queue | Consumed |
+
+### User Confirmation
+- Confirmation Time: 2026-01-14
+- User Feedback: Approved
+
+---
+
+## Record #26 - 2026-01-14
+
+### Counterexample Summary
+125-step counterexample:
+- s4: `currentTerm[s4] = 0`
+- s4: `log[s4].snapshotTerm = 1`
+- Invariant requires `currentTerm >= snapshotTerm`
+- But `0 < 1`
+
+s4 received a snapshot with term 1, but its currentTerm is still 0.
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Error
+- **Violated Property**: CurrentTermAtLeastLogTerm
+- **Root Cause**: `HandleSnapshotRequest` had condition `m.mterm >= currentTerm[i]`, which is inconsistent with all other handlers that use `m.mterm <= currentTerm[i]`. This allowed processing a higher-term snapshot without first calling `UpdateTerm`.
+
+### Evidence from Implementation
+etcd's `Step()` function control flow (raft.go:1085-1179):
+```
+Step(m):
+├── m.Term > r.Term:
+│   └── Others (MsgSnap included): becomeFollower(m.Term) → continue processing
+├── m.Term == r.Term: continue processing directly
+└── m.Term < r.Term:
+    └── Others (MsgSnap included): ignore, return
+```
+
+When `m.Term > r.Term`, etcd first updates term via `becomeFollower()`, then continues. The spec's `ReceiveDirect` handles this via `UpdateTerm` action, which requires handlers to have `m.mterm <= currentTerm[i]`.
+
+### Modifications Made
+- **File**: etcdraft.tla
+- **Before**:
+```tla
+HandleSnapshotRequest(i, j, m) ==
+    /\ m.mterm >= currentTerm[i]  \* WRONG
+    ...
+```
+- **After** (lines 1377-1383):
+```tla
+HandleSnapshotRequest(i, j, m) ==
+    /\ m.mterm <= currentTerm[i]  \* Changed from >= to <=
+    /\ IF m.mterm < currentTerm[i] THEN
+           \* Stale term: ignore snapshot message entirely
+           \* Reference: raft.go:1173-1177 - "ignored a %s message with lower term"
+           /\ Discard(m)
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, ...>>
+       ELSE IF m.msnapshotIndex <= commitIndex[i] THEN
+           \* Case 1: Stale snapshot...
+       ELSE IF LogTerm(i, m.msnapshotIndex) = m.msnapshotTerm THEN
+           \* Case 2: Fast-forward...
+       ELSE
+           \* Case 3: Actual Restore...
+```
+
+**Correct flow after fix:**
+1. s4 has `currentTerm = 0`
+2. Snapshot message arrives with `m.mterm = 1`
+3. `HandleSnapshotRequest` condition `1 <= 0` is NOT satisfied
+4. `UpdateTerm` condition `1 > 0` is satisfied → updates `currentTerm = 1`
+5. Next step: `HandleSnapshotRequest` condition `1 <= 1` is satisfied → process snapshot
+6. Result: Both `snapshotTerm = 1` and `currentTerm = 1` → Invariant satisfied
+
+### User Confirmation
+- Confirmation Time: 2026-01-14
+- User Feedback: Approved
+
+---
+
+## Record #27 - 2026-01-15
+
+### Counterexample Summary
+135-step counterexample:
+1. s1 became Leader in term 5 with config `{s1, s2, s3}` (simple config)
+2. `ChangeConf(s1)` executed with `enterJoint = TRUE`:
+   - `newVoters = {s5}` (incoming config)
+   - `newLearners = {s2, s3}`
+   - `oldconf = {s1, s2, s3}` (becomes outgoing config)
+3. s1's config changed to joint config `<<{s5}, {s1, s2, s3}>>` with `learners = {s2, s3}`
+4. `LearnersVotersDisjointInv` violated: s2 and s3 are in both learners and outgoing voters (`jointConfig[1]`)
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Issue
+- **Violated Property**: LearnersVotersDisjointInv
+- **Root Cause**: The previous fix (ANALYSIS_REPORT.md Violation #3) only added `newVoters \cap newLearners = {}`, which checks learners against **incoming** voters. However, when entering joint config (`enterJoint = TRUE`), the old config becomes the **outgoing** voters, and learners must also not intersect with those.
+
+### Evidence from Implementation
+From `confchange/confchange.go:305-312`:
+```go
+// Conversely Learners and Voters doesn't intersect at all.
+for id := range cfg.Learners {
+    if _, ok := outgoing(cfg.Voters)[id]; ok {
+        return fmt.Errorf("%d is in Learners and Voters[1]", id)  // OUTGOING check
+    }
+    if _, ok := incoming(cfg.Voters)[id]; ok {
+        return fmt.Errorf("%d is in Learners and Voters[0]", id)  // INCOMING check
+    }
+}
+```
+
+The implementation checks learners against BOTH incoming AND outgoing voters. The spec was missing the outgoing check.
+
+### Modifications Made
+- **File**: etcdraft.tla
+- **Before** (lines 881-882):
+```tla
+\* Configuration validity constraints (Reference: confchange/confchange.go)
+/\ newVoters \cap newLearners = {}            \* checkInvariants: Learners and voters must be disjoint
+```
+- **After** (lines 881-883):
+```tla
+\* Configuration validity constraints (Reference: confchange/confchange.go:305-312)
+/\ newVoters \cap newLearners = {}            \* checkInvariants: Learners disjoint from incoming voters
+/\ (enterJoint = TRUE) => (GetConfig(i) \cap newLearners = {})  \* checkInvariants: Learners disjoint from outgoing voters
+```
+
+Same change applied to `ChangeConfAndSend` (lines 907-909).
+
+### User Confirmation
+- Confirmation Time: 2026-01-15
+- User Feedback: Approved
+
+---

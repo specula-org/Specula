@@ -533,3 +533,64 @@ Changed constraints in `ChangeConf` and `ChangeConfAndSend`:
 **Files Modified:**
 - `spec/etcdraft.tla:866-892`: Fixed ChangeConf constraints
 - `spec/etcdraft.tla:894-919`: Fixed ChangeConfAndSend constraints
+
+---
+
+## 2026-01-15 - Fix ConflictAppendEntriesRequest off-by-one error in log truncation
+
+**Trace:** `../traces/probe_and_replicate.ndjson`
+**Error Type:** Inconsistency Error
+
+**Issue:**
+Trace validation failed at line 497 (ReceiveAppendEntriesResponse from node "1" to node "6"). The spec expected `m.msuccess = FALSE` but the trace showed `reject = false` (meaning success). Tracing back, node 2's log state was incorrect after processing an AppendEntriesRequest with conflict resolution.
+
+**Root Cause:**
+At trace line 453-454, node 2 receives an AppendEntries that triggers conflict resolution. The expected behavior is:
+- Log should truncate from index 16 to 13 (removing conflicting entries)
+- Then append one new entry, resulting in log length 14
+
+However, the spec's `ConflictAppendEntriesRequest` action had an off-by-one error:
+```tla
+\* WRONG:
+truncatePoint == ci - log[i].offset
+/\ log' = [log EXCEPT ![i].entries = SubSeq(@, 1, truncatePoint - 1) \o newEntries]
+```
+
+For `ci = 14`, `offset = 1`:
+- `truncatePoint = 14 - 1 = 13`
+- `truncatePoint - 1 = 12`
+- Result: `SubSeq(@, 1, 12)` keeps only entries[1..12] (indices offset..12 = 1..12)
+- Log goes from 16 → 13 (wrong - should be 14)
+
+The `-1` was incorrect. The truncation should keep entries up to index `ci - 1`, which in local terms is `ci - offset` (not `ci - offset - 1`).
+
+**Evidence from raft/log.go:maybeAppend:**
+```go
+func (l *raftLog) maybeAppend(a logSliceRange, committed uint64) (lastnewi uint64, ok bool) {
+    ci := l.findConflict(a.entries)
+    // ci is the first index where log conflicts with entries
+    // l.append will truncate from ci and append
+    l.append(a.entries[ci-offset:]...)  // truncate + append atomic
+}
+```
+
+The implementation does `l.append(entries[ci-offset:]...)` which keeps entries[1..ci-1] (local indices) and appends new entries starting at ci.
+
+**Fix:**
+Renamed variable for clarity and corrected the index calculation:
+```tla
+\* CORRECT:
+/\ LET ci == FindFirstConflict(i, index, m.mentries)
+       entsOffset == ci - index + 1
+       newEntries == SubSeq(m.mentries, entsOffset, Len(m.mentries))
+       \* Local index for ci-1 (the last entry to keep before appending)
+       \* LogEntry(i, idx) = entries[idx - offset + 1], so for idx=ci-1:
+       \* local_index = (ci-1) - offset + 1 = ci - offset
+       keepUntil == ci - log[i].offset
+   IN /\ ci > commitIndex[i]
+      /\ log' = [log EXCEPT ![i].entries = SubSeq(@, 1, keepUntil) \o newEntries]
+      /\ historyLog' = [historyLog EXCEPT ![i] = SubSeq(@, 1, ci - 1) \o newEntries]
+```
+
+**Files Modified:**
+- `spec/etcdraft.tla:1169-1181`: Fixed ConflictAppendEntriesRequest truncation calculation
