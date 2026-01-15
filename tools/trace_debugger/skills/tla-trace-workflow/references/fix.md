@@ -134,7 +134,7 @@ Before making any changes, determine which type of error you're dealing with:
 5. Verify
    ├── Run validate_spec_syntax
    ├── Run run_trace_validation on failing trace
-   └── Test with other traces for regression
+   └── Run run_trace_validation_parallel on other traces for regression
 
 6. Document
    └── Write to fix_log.md

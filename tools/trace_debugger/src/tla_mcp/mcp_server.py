@@ -32,6 +32,7 @@ class TLADebuggerMCPServer:
         """
         from .handlers.trace_debugging import TraceDebuggingHandler
         from .handlers.trace_validation import TraceValidationHandler
+        from .handlers.trace_validation_parallel import ParallelTraceValidationHandler
         from .handlers.trace_info import TraceInfoHandler
         from .handlers.spec_validation import SpecValidationHandler
         from .handlers.clean_traces import CleanTracesHandler
@@ -39,6 +40,7 @@ class TLADebuggerMCPServer:
         # Initialize handlers
         self.handlers = {
             "run_trace_validation": TraceValidationHandler(),
+            "run_trace_validation_parallel": ParallelTraceValidationHandler(),
             "run_trace_debugging": TraceDebuggingHandler(),
             "get_trace_info": TraceInfoHandler(),
             "validate_spec_syntax": SpecValidationHandler(),
@@ -183,6 +185,49 @@ class TLADebuggerMCPServer:
                             }
                         },
                         "required": ["spec_file", "config_file", "trace_file", "work_dir", "breakpoints"]
+                    }
+                ),
+                types.Tool(
+                    name="run_trace_validation_parallel",
+                    description=(
+                        "Run TLC trace validation for **multiple traces**. "
+                        "Returns a concise summary of pass/fail counts and failing traces for further debugging. "
+                        "\n\nUse this only when finalizing a fix after debugging."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "spec_file": {
+                                "type": "string",
+                                "description": "TLA+ spec file name (e.g., 'Traceetcdraft.tla')"
+                            },
+                            "config_file": {
+                                "type": "string",
+                                "description": "TLC config file name (e.g., 'Traceetcdraft.cfg')"
+                            },
+                            "trace_files": {
+                                "type": "array",
+                                "description": "List of trace file paths (relative to work_dir or absolute)",
+                                "items": {"type": "string"}
+                            },
+                            "work_dir": {
+                                "type": "string",
+                                "description": "Working directory (absolute path)"
+                            },
+                            "timeout": {
+                                "type": "integer",
+                                "description": "Timeout in seconds (default: 300)"
+                            },
+                            "tla_jar": {
+                                "type": "string",
+                                "description": "Path to tla2tools.jar (optional)"
+                            },
+                            "community_jar": {
+                                "type": "string",
+                                "description": "Path to CommunityModules-deps.jar (optional)"
+                            }
+                        },
+                        "required": ["spec_file", "config_file", "trace_files", "work_dir"]
                     }
                 ),
                 types.Tool(
