@@ -370,8 +370,8 @@ MCNextWithReady ==
     \/ MCNextUnreliable
 
 \* Note: MCAddNewServer, MCAddLearner, MCDeleteServer removed - they bypass ChangeConf constraints
-MCNextDynamic ==
-    \/ MCNext
+\* Dynamic config change actions (shared by MCNextDynamic and MCNextDynamicWithReady)
+MCDynamicConfigActions ==
     \/ /\ \E i \in Server : MCChangeConf(i)
     \/ /\ \E i \in Server : MCChangeConfAndSend(i)
     \/ /\ \E i \in Server : etcd!ApplySimpleConfChange(i)
@@ -395,27 +395,14 @@ MCNextDynamic ==
               /\ etcd!ApplySnapshotConfChange(i, newVoters)
        /\ UNCHANGED faultVars
 
+MCNextDynamic ==
+    \/ MCNext
+    \/ MCDynamicConfigActions
+
 \* MCNextDynamic with Ready composition - reduces state space
 MCNextDynamicWithReady ==
     \/ MCNextWithReady
-    \/ /\ \E i \in Server : MCChangeConf(i)
-    \/ /\ \E i \in Server : MCChangeConfAndSend(i)
-    \/ /\ \E i \in Server : etcd!ApplySimpleConfChange(i)
-       /\ UNCHANGED faultVars
-    \* ProposeLeaveJoint: Leader proposes empty ConfChangeV2 to leave joint config
-    \/ /\ \E i \in Server : etcd!ProposeLeaveJoint(i)
-       /\ UNCHANGED faultVars
-    \/ /\ \E i \in Server :
-           LET configIndices == {k \in 1..Len(historyLog[i]) : historyLog[i][k].type = ConfigEntry}
-               lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
-               newVoters == IF lastConfigIdx > 0
-                            THEN historyLog[i][lastConfigIdx].value.newconf
-                            ELSE {}
-           IN /\ newVoters /= {}
-              /\ newVoters /= GetConfig(i)
-              /\ lastConfigIdx <= commitIndex[i]
-              /\ etcd!ApplySnapshotConfChange(i, newVoters)
-       /\ UNCHANGED faultVars
+    \/ MCDynamicConfigActions
 
 mc_vars == <<vars, faultVars>>
 
