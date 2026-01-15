@@ -2,6 +2,7 @@
 ################################################################################
 # Generic Model Check Script
 # Usage: ./run_model_check.sh -s SPEC_FILE -c CONFIG_FILE [options]
+# ex: nohup ../../../../../../scripts/run_model_check.sh -s MCetcdraft.tla -c MCetcdraft.cfg -m 50G -w 90 -t 120 -D -S -p 200 -n 99999999 -A -o nohup.out & 
 ################################################################################
 
 # Default Defaults

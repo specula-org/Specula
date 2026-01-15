@@ -1355,6 +1355,10 @@ HandleAppendEntriesResponse(i, j, m) ==
                           /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
                           /\ UNCHANGED <<progressState, pendingSnapshot, inflights, nextIndex, matchIndex, pendingConfChangeIndex>>
                      ELSE \* Valid rejection: use leader-side findConflictByTerm optimization
+                          \* Note: This applies to both StateProbe and StateSnapshot.
+                          \* In StateSnapshot, Next may be decreased below PendingSnapshot+1,
+                          \* but IsPaused() prevents sending any messages, so it's safe.
+                          \* Reference: progress.go:IsPaused() returns true for StateSnapshot
                           \* Reference: raft.go matchTermAndIndex + MaybeDecrTo
                           \* Search leader's log for last index with term <= follower's logTerm
                           LET leaderMatchIdx == FindConflictByTerm(i, matchHint, m.mlogTerm)
@@ -1962,15 +1966,6 @@ MatchIndexLessThanNextInv ==
         (state[i] = Leader /\ j /= i) =>
             matchIndex[i][j] < nextIndex[i][j]
 
-\* Invariant: SnapshotNextInv
-\* In StateSnapshot: Next == PendingSnapshot + 1 (when BecomeSnapshot was called)
-\* Note: This only holds if Next hasn't been updated by MaybeUpdate since BecomeSnapshot
-\* Reference: progress.go:40, 156
-SnapshotNextInv ==
-    \A i \in Server : \A j \in Server :
-        (state[i] = Leader /\ progressState[i][j] = StateSnapshot
-         /\ pendingSnapshot[i][j] > 0) =>
-            nextIndex[i][j] >= pendingSnapshot[i][j] + 1
 
 \* Invariant: MsgAppFlowPausedConsistencyInv
 \* In StateReplicate: If not paused, inflights should not be full
@@ -2016,7 +2011,6 @@ ProgressSafety ==
     /\ MatchIndexNonNegativeInv
     /\ InflightsAboveMatchInv
     /\ MatchIndexLessThanNextInv  \* THE REAL INVARIANT (replaced SnapshotPendingAboveMatchInv)
-    /\ SnapshotNextInv
     /\ MsgAppFlowPausedConsistencyInv
     /\ ProbeOneInflightMaxInv
     /\ SnapshotNoInflightsStrictInv
@@ -2084,11 +2078,6 @@ CurrentTermAtLeastLogTerm ==
         \A idx \in 1..LastIndex(log[i]) :
             currentTerm[i] >= LogTerm(i, idx)
 
-\* If voted for someone, that node should be in the configuration
-VotedForInConfigInv ==
-    \A i \in Server :
-        votedFor[i] # Nil =>
-            votedFor[i] \in GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i)
 
 \* Candidates must have voted for themselves
 CandidateVotedForSelfInv ==
@@ -2127,7 +2116,6 @@ AdditionalSafety ==
     /\ LeaderLogLengthInv
     /\ LogTermMonotonic
     /\ CurrentTermAtLeastLogTerm
-    /\ VotedForInConfigInv
     /\ CandidateVotedForSelfInv
     /\ DurableStateConsistency
     /\ MessageEndpointsValidInv

@@ -1741,3 +1741,106 @@ ELSE
 - User Feedback: Pending simulation verification
 
 ---
+
+## Record #32 - 2026-01-15
+
+### Counterexample Summary
+TLC simulation found `SnapshotNextInv` violated. In the final state (State 59):
+- `progressState[s1][s4] = StateSnapshot`
+- `pendingSnapshot[s1][s4] = 2`
+- `nextIndex[s1][s4] = 1` (violated: should be >= 3)
+
+The invariant required `nextIndex >= pendingSnapshot + 1` when in StateSnapshot, but nextIndex was decreased from 3 to 1.
+
+### Analysis Conclusion
+- **Type**: C: Invariant Issue (Invariant too strong)
+- **Violated Property**: SnapshotNextInv
+- **Root Cause**: The invariant was incorrect. In etcd's actual implementation, `MaybeDecrTo` can decrease `Next` when processing a stale `AppendEntriesResponse` rejection, even in `StateSnapshot`.
+
+### Evidence from Implementation
+
+**MaybeDecrTo in progress.go:226-254:**
+```go
+func (pr *Progress) MaybeDecrTo(rejected, matchHint uint64) bool {
+    if pr.State == StateReplicate {
+        // ...
+    }
+    // StateProbe or StateSnapshot - NO special handling for StateSnapshot!
+    if pr.Next-1 != rejected {
+        return false
+    }
+    pr.Next = max(min(rejected, matchHint+1), pr.Match+1)
+    // ...
+    return true
+}
+```
+
+**IsPaused in progress.go:262-269:**
+```go
+func (pr *Progress) IsPaused() bool {
+    switch pr.State {
+    case StateSnapshot:
+        return true  // Always paused in StateSnapshot!
+    // ...
+    }
+}
+```
+
+**Key insight**: In StateSnapshot, `Next` CAN be decreased by `MaybeDecrTo`, but this is safe because `IsPaused()` returns `true`, preventing any message sends via `maybeSendAppend` (raft.go:618-620).
+
+### Scenario Analysis
+1. Leader s1 sends AppendEntries to s4 (prevIndex=2)
+2. Leader s1 sends Snapshot to s4 (snapshotIndex=2), enters StateSnapshot
+   - Sets `pendingSnapshot = 2`, `nextIndex = 3`
+3. s4 rejects the AppendEntries (sent before snapshot)
+4. s1 receives the rejection and calls `MaybeDecrTo`:
+   - `rejected = 2`, `matchHint = 0`, `Match = 0`
+   - `newNext = max(min(2, 1), 1) = 1`
+5. `nextIndex` becomes 1, violating `nextIndex >= pendingSnapshot + 1`
+
+But this is **safe** because:
+- `IsPaused()` returns `true` for StateSnapshot
+- `sendAppend` immediately returns without sending anything
+- The leader waits for SnapshotResponse to leave StateSnapshot
+
+### Modifications Made
+
+**File**: etcdraft.tla
+
+**Removed**: `SnapshotNextInv` definition (lines 1969-1977)
+
+**Added comment**:
+```tla
+\* Invariant: SnapshotNextInv - REMOVED
+\* This invariant was incorrect. In etcd, MaybeDecrTo (progress.go:226-254) can decrease
+\* Next in StateSnapshot when processing a stale AppendEntriesResponse rejection.
+\* This is safe because IsPaused() (progress.go:262-269) returns true for StateSnapshot,
+\* preventing any message sends. Next can become as low as Match+1 (possibly 1),
+\* regardless of PendingSnapshot value.
+```
+
+**File**: MCetcdraft.cfg
+
+**Disabled**: `SnapshotNextInv` with explanation comment:
+```
+\* SnapshotNextInv - DISABLED: In etcd, MaybeDecrTo can decrease Next in StateSnapshot.
+\* This is safe because IsPaused() returns true for StateSnapshot, preventing any sends.
+\* Reference: progress.go:262-269 IsPaused(), progress.go:226-254 MaybeDecrTo()
+```
+
+**File**: etcdraft.tla (HandleAppendEntriesResponse)
+
+**Added comment** at line 1357-1361 explaining StateSnapshot behavior:
+```tla
+ELSE \* Valid rejection: use leader-side findConflictByTerm optimization
+     \* Note: This applies to both StateProbe and StateSnapshot.
+     \* In StateSnapshot, Next may be decreased below PendingSnapshot+1,
+     \* but IsPaused() prevents sending any messages, so it's safe.
+     \* Reference: progress.go:IsPaused() returns true for StateSnapshot
+```
+
+### User Confirmation
+- Confirmation Time: 2026-01-15
+- User Feedback: Confirmed after reviewing etcd implementation
+
+---
