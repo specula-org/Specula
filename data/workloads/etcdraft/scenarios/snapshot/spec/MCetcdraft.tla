@@ -369,14 +369,9 @@ MCNextWithReady ==
     \/ MCNextCrash
     \/ MCNextUnreliable
 
+\* Note: MCAddNewServer, MCAddLearner, MCDeleteServer removed - they bypass ChangeConf constraints
 MCNextDynamic ==
     \/ MCNext
-    \/ /\ \E i, j \in Server : MCAddNewServer(i, j)
-       /\ UNCHANGED faultVars
-    \/ /\ \E i, j \in Server : MCAddLearner(i, j)
-       /\ UNCHANGED faultVars
-    \/ /\ \E i, j \in Server : MCDeleteServer(i, j)
-       /\ UNCHANGED faultVars
     \/ /\ \E i \in Server : MCChangeConf(i)
     \/ /\ \E i \in Server : MCChangeConfAndSend(i)
     \/ /\ \E i \in Server : etcd!ApplySimpleConfChange(i)
@@ -403,12 +398,6 @@ MCNextDynamic ==
 \* MCNextDynamic with Ready composition - reduces state space
 MCNextDynamicWithReady ==
     \/ MCNextWithReady
-    \/ /\ \E i, j \in Server : MCAddNewServer(i, j)
-       /\ UNCHANGED faultVars
-    \/ /\ \E i, j \in Server : MCAddLearner(i, j)
-       /\ UNCHANGED faultVars
-    \/ /\ \E i, j \in Server : MCDeleteServer(i, j)
-       /\ UNCHANGED faultVars
     \/ /\ \E i \in Server : MCChangeConf(i)
     \/ /\ \E i \in Server : MCChangeConfAndSend(i)
     \/ /\ \E i \in Server : etcd!ApplySimpleConfChange(i)

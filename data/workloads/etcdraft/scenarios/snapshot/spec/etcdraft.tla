@@ -1449,6 +1449,21 @@ HandleSnapshotRequest(i, j, m) ==
        ELSE
            \* Case 3: Actual Restore. Wipe log.
            \* Reference: raft.go:1846 restore() returns true
+           \* Must also restore config from snapshot metadata
+           LET \* Find the last config entry in snapshot's history
+               configIndices == {k \in 1..Len(m.mhistory) : m.mhistory[k].type = ConfigEntry}
+               lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
+               \* Extract config from last config entry
+               lastConfigEntry == IF lastConfigIdx > 0 THEN m.mhistory[lastConfigIdx] ELSE [value |-> [newconf |-> {}, learners |-> {}]]
+               hasEnterJoint == lastConfigIdx > 0 /\ "enterJoint" \in DOMAIN lastConfigEntry.value
+               enterJoint == IF hasEnterJoint THEN lastConfigEntry.value.enterJoint ELSE FALSE
+               hasOldconf == enterJoint /\ "oldconf" \in DOMAIN lastConfigEntry.value
+               oldconf == IF hasOldconf THEN lastConfigEntry.value.oldconf ELSE {}
+               newVoters == lastConfigEntry.value.newconf
+               newLearners == IF "learners" \in DOMAIN lastConfigEntry.value THEN lastConfigEntry.value.learners ELSE {}
+               \* AutoLeave is TRUE when in joint config
+               newAutoLeave == enterJoint /\ oldconf /= {}
+           IN
            /\ log' = [log EXCEPT ![i] = [
                  offset  |-> m.msnapshotIndex + 1,
                  entries |-> <<>>,
@@ -1457,6 +1472,7 @@ HandleSnapshotRequest(i, j, m) ==
               ]]
            /\ historyLog' = [historyLog EXCEPT ![i] = m.mhistory]
            /\ commitIndex' = [commitIndex EXCEPT ![i] = m.msnapshotIndex]
+           /\ config' = [config EXCEPT ![i] = [learners |-> newLearners, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
            /\ Reply([mtype       |-> AppendEntriesResponse,
                      msubtype    |-> "snapshot",
                      mterm       |-> currentTerm[i],
@@ -1465,9 +1481,9 @@ HandleSnapshotRequest(i, j, m) ==
                      mrejectHint |-> 0,
                      mlogTerm    |-> 0,
                      msource     |-> i,
-                     mdest       |-> j], 
+                     mdest       |-> j],
                      m)
-           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars>>
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, reconfigCount, pendingConfChangeIndex, durableState, progressVars>>
 
 \* Handle MsgSnapStatus from application layer
 \* Reference: raft.go:1606-1623
@@ -1640,11 +1656,11 @@ Next == \/ NextAsync
         \/ NextUnreliable
 
 \* Membership changes
+\* Note: AddNewServer, AddLearner, DeleteServer are removed from NextDynamic.
+\* They bypass ChangeConf constraints and can cause QuorumLogInv violations.
+\* Use ChangeConf with enterJoint parameter instead.
 NextDynamic ==
     \/ Next
-    \/ \E i, j \in Server : AddNewServer(i, j)
-    \/ \E i, j \in Server : AddLearner(i, j)
-    \/ \E i, j \in Server : DeleteServer(i, j)
     \/ \E i \in Server : ChangeConf(i)
     \/ \E i \in Server : ChangeConfAndSend(i)
     \/ \E i \in Server : ApplySimpleConfChange(i)

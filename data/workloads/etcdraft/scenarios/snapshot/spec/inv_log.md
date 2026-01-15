@@ -1504,3 +1504,240 @@ MonotonicMatchIndexProp ==
 - User Feedback: Approved
 
 ---
+
+## Record #30 - 2026-01-15
+
+### Counterexample Summary
+TLC simulation found `QuorumLogInv` violated. In the final state:
+- s1's config was `{s3}` (single-node config after LeaveJoint)
+- s1's commitIndex was 7
+- s3's historyLog was empty
+
+The violation occurred because LeaveJoint executed directly without requiring a log entry to be committed with joint quorum.
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Issue
+- **Violated Property**: QuorumLogInv
+- **Root Cause**: Two issues identified:
+
+**Issue 1: LeaveJoint bypasses log commitment**
+The spec's `LeaveJoint` action directly modified config without requiring a log entry:
+```tla
+LeaveJoint(i) ==
+    /\ IsJointConfig(i)
+    /\ LET newVoters == GetConfig(i)
+       IN config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, {}>>]]
+```
+
+In etcd's actual implementation (raft.go:745-760), LeaveJoint requires:
+1. Leader proposes an empty ConfChangeV2 when `autoLeave=TRUE`
+2. This empty config change must be committed with joint quorum (both incoming and outgoing)
+3. Only after commitment can LeaveJoint be applied
+
+**Issue 2: AddNewServer/AddLearner/DeleteServer bypass ChangeConf constraints**
+These legacy actions from the original etcd spec allowed configuration changes without proper joint consensus constraints, potentially adding multiple nodes consecutively before they sync logs.
+
+### Evidence from Implementation
+From `raft.go:745-760` (AutoLeave mechanism):
+```go
+if r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex && r.state == StateLeader {
+    // Propose an empty ConfChangeV2 to leave joint config
+    m, err := confChangeToMsg(nil)
+    // ... submit for replication and commitment
+}
+```
+
+From `confchange/confchange.go:51-76`:
+```go
+func (c Changer) EnterJoint(autoLeave bool, ccs ...pb.ConfChangeSingle) {
+    cfg.AutoLeave = autoLeave  // Set autoLeave flag
+}
+
+func (c Changer) LeaveJoint() {
+    *outgoingPtr(&cfg.Voters) = nil  // Clear outgoing config
+    cfg.AutoLeave = false
+}
+```
+
+### Modifications Made
+
+**1. Added `autoLeave` field to config structure**
+- **Files**: etcdraft.tla (line 426), MCetcdraft.tla (lines 105, 117), Traceetcdraft.tla (line 120)
+- Config structure changed from:
+```tla
+[jointConfig |-> <<voters, {}>>, learners |-> {}]
+```
+- To:
+```tla
+[jointConfig |-> <<voters, {}>>, learners |-> {}, autoLeave |-> FALSE]
+```
+
+**2. Modified `ApplyConfigUpdate` to handle autoLeave**
+- **File**: etcdraft.tla (lines 336-346)
+- Added detection of `leaveJoint` flag and `autoLeave` management:
+```tla
+ApplyConfigUpdate(i, k) ==
+    LET entry == LogEntry(i, k)
+        isLeaveJoint == "leaveJoint" \in DOMAIN entry.value /\ entry.value.leaveJoint = TRUE
+        newVoters == IF isLeaveJoint THEN GetConfig(i) ELSE entry.value.newconf
+        newLearners == IF isLeaveJoint THEN {} ELSE entry.value.learners
+        enterJoint == IF "enterJoint" \in DOMAIN entry.value THEN entry.value.enterJoint ELSE FALSE
+        outgoing == IF enterJoint THEN entry.value.oldconf ELSE {}
+        newAutoLeave == IF isLeaveJoint THEN FALSE ELSE enterJoint
+    IN
+    [config EXCEPT ![i]= [jointConfig |-> <<newVoters, outgoing>>, learners |-> newLearners, autoLeave |-> newAutoLeave]]
+```
+
+**3. Added `ProposeLeaveJoint` action**
+- **File**: etcdraft.tla (lines 989-1003)
+```tla
+ProposeLeaveJoint(i) ==
+    /\ state[i] = Leader
+    /\ IsJointConfig(i)
+    /\ config[i].autoLeave = TRUE
+    /\ pendingConfChangeIndex[i] = 0  \* Previous config change has been applied
+    /\ Replicate(i, [leaveJoint |-> TRUE, newconf |-> GetConfig(i), learners |-> {}], ConfigEntry)
+    /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log'[i])]
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, ...>>
+```
+
+**4. Replaced direct LeaveJoint with ProposeLeaveJoint in MCNextDynamic**
+- **File**: MCetcdraft.tla (lines 372-396, 398-418)
+- Changed from `etcd!LeaveJoint(i)` to `etcd!ProposeLeaveJoint(i)`
+
+**5. Removed redundant configuration change actions**
+- **Files**: etcdraft.tla (lines 1643-1651), MCetcdraft.tla (lines 372-396, 398-418)
+- Removed `AddNewServer`, `AddLearner`, `DeleteServer` from `NextDynamic`
+- These actions bypassed `ChangeConf` constraints and could cause QuorumLogInv violations
+- `ChangeConf` with `enterJoint` parameter provides complete functionality with proper constraints
+
+### User Confirmation
+- Confirmation Time: 2026-01-15 (In Progress)
+- User Feedback: Modifications approved, debugging additional violations in progress
+- Debug Log: violations/debug_ConfigNonEmptyInv.log
+
+---
+
+## Record #31 - 2026-01-15
+
+### Counterexample Summary
+TLC simulation found `ConfigNonEmptyInv` violated. In the final state:
+- s3 received a snapshot: `log[s3] = [offset |-> 2, entries |-> <<>>, snapshotIndex |-> 1, snapshotTerm |-> 1]`
+- s3's historyLog contained config entry: `historyLog[s3] = << [value |-> [newconf |-> {s1}, learners |-> {}], term |-> 1, type |-> ConfigEntry] >>`
+- But s3's config was empty: `config[s3] = [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE]`
+
+s3 received and processed a snapshot, updating its log and historyLog, but its config remained empty.
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Issue
+- **Violated Property**: ConfigNonEmptyInv
+- **Root Cause**: `HandleSnapshotRequest` Case 3 (Actual Restore) only updated `log`, `historyLog`, and `commitIndex`, but did NOT update `config`. The original code had `configVars` in its UNCHANGED clause:
+
+```tla
+\* Original (line 1470):
+/\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars>>
+```
+
+In etcd's actual implementation, when a follower restores from a snapshot, it also restores the config from the snapshot metadata.
+
+### Evidence from Implementation
+From `raft.go:1846-1880` (restore function):
+```go
+func (r *raft) restore(s pb.Snapshot) bool {
+    // ...
+    r.raftLog.restore(s)  // Restore log
+
+    // Restore config from snapshot metadata
+    r.trk = tracker.MakeProgressTracker(r.trk.MaxInflight, r.trk.MaxInflightBytes)
+    cfg, trk, err := confchange.Restore(confchange.Changer{
+        Tracker:   r.trk,
+        LastIndex: r.raftLog.lastIndex(),
+    }, cs)
+    // ...
+    r.trk.Config = cfg    // Config is restored from snapshot!
+    r.trk.Progress = trk
+}
+```
+
+From `confchange/restore.go:27-131` (Restore function):
+- Parses ConfState from snapshot metadata
+- Reconstructs the Config (Voters, Learners, AutoLeave) from ConfState
+- This is called during snapshot restoration
+
+### Modifications Made
+
+**File**: etcdraft.tla (lines 1449-1486)
+
+**Before**:
+```tla
+ELSE
+    \* Case 3: Actual Restore. Wipe log.
+    \* Reference: raft.go:1846 restore() returns true
+    /\ log' = [log EXCEPT ![i] = [
+          offset  |-> m.msnapshotIndex + 1,
+          entries |-> <<>>,
+          snapshotIndex |-> m.msnapshotIndex,
+          snapshotTerm  |-> m.msnapshotTerm
+       ]]
+    /\ historyLog' = [historyLog EXCEPT ![i] = m.mhistory]
+    /\ commitIndex' = [commitIndex EXCEPT ![i] = m.msnapshotIndex]
+    /\ Reply([...], m)
+    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars>>
+```
+
+**After**:
+```tla
+ELSE
+    \* Case 3: Actual Restore. Wipe log.
+    \* Reference: raft.go:1846 restore() returns true
+    \* Must also restore config from snapshot metadata
+    LET \* Find the last config entry in snapshot's history
+        configIndices == {k \in 1..Len(m.mhistory) : m.mhistory[k].type = ConfigEntry}
+        lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
+        \* Extract config from last config entry
+        lastConfigEntry == IF lastConfigIdx > 0 THEN m.mhistory[lastConfigIdx]
+                           ELSE [value |-> [newconf |-> {}, learners |-> {}]]
+        hasEnterJoint == lastConfigIdx > 0 /\ "enterJoint" \in DOMAIN lastConfigEntry.value
+        enterJoint == IF hasEnterJoint THEN lastConfigEntry.value.enterJoint ELSE FALSE
+        hasOldconf == enterJoint /\ "oldconf" \in DOMAIN lastConfigEntry.value
+        oldconf == IF hasOldconf THEN lastConfigEntry.value.oldconf ELSE {}
+        newVoters == lastConfigEntry.value.newconf
+        newLearners == IF "learners" \in DOMAIN lastConfigEntry.value
+                       THEN lastConfigEntry.value.learners ELSE {}
+        \* AutoLeave is TRUE when in joint config
+        newAutoLeave == enterJoint /\ oldconf /= {}
+    IN
+    /\ log' = [log EXCEPT ![i] = [
+          offset  |-> m.msnapshotIndex + 1,
+          entries |-> <<>>,
+          snapshotIndex |-> m.msnapshotIndex,
+          snapshotTerm  |-> m.msnapshotTerm
+       ]]
+    /\ historyLog' = [historyLog EXCEPT ![i] = m.mhistory]
+    /\ commitIndex' = [commitIndex EXCEPT ![i] = m.msnapshotIndex]
+    \* NEW: Restore config from snapshot history
+    /\ config' = [config EXCEPT ![i] = [
+           learners |-> newLearners,
+           jointConfig |-> <<newVoters, oldconf>>,
+           autoLeave |-> newAutoLeave]]
+    /\ Reply([...], m)
+    \* Changed: removed configVars from UNCHANGED, added specific config-related vars
+    /\ UNCHANGED <<serverVars, candidateVars, leaderVars,
+                   reconfigCount, pendingConfChangeIndex,
+                   durableState, progressVars>>
+```
+
+### Key Changes Summary
+
+| Aspect | Before | After |
+|--------|--------|-------|
+| Config update | Not updated (in UNCHANGED) | Extracted from snapshot history |
+| Config source | N/A | Last ConfigEntry in m.mhistory |
+| Joint config | N/A | Correctly handles enterJoint/oldconf |
+| AutoLeave | N/A | Set based on joint config state |
+
+### User Confirmation
+- Confirmation Time: 2026-01-15 (Pending verification)
+- User Feedback: Pending simulation verification
+
+---
