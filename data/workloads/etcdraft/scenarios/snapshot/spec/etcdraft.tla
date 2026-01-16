@@ -56,6 +56,11 @@ CONSTANT
 
 ASSUME MaxInflightMsgs \in Nat /\ MaxInflightMsgs > 0
 
+\* FIFO message ordering control
+\* When TRUE, messages are tagged with sequence numbers and must be received in order
+CONSTANT MsgNoReorder
+ASSUME MsgNoReorder \in BOOLEAN
+
 ----
 \* Global variables
 
@@ -73,7 +78,16 @@ VARIABLE
     messages
 VARIABLE 
     pendingMessages
-messageVars == <<messages, pendingMessages>>
+
+\* Sequence counter for FIFO message ordering (used when MsgNoReorder = TRUE)
+VARIABLE
+    msgSeqCounter
+
+\* Tuple for pending messages and sequence counter (these change together when sending)
+\* msgSeqCounter is incremented when messages are added to pendingMessages
+pendingMsgVars == <<pendingMessages, msgSeqCounter>>
+
+messageVars == <<messages, pendingMessages, msgSeqCounter>>
 
 ----
 \* The following variables are all per server (functions with domain Server).
@@ -278,8 +292,13 @@ WithMessage(m, msgs) == msgs (+) SetToBag({m})
 WithoutMessage(m, msgs) == msgs (-) SetToBag({m})
 
 \* Add a message to the bag of pendingMessages.
+\* When MsgNoReorder is TRUE, add sequence number for FIFO ordering.
 SendDirect(m) == 
-    pendingMessages' = WithMessage(m, pendingMessages)
+    IF MsgNoReorder
+    THEN /\ pendingMessages' = WithMessage(m @@ [mseq |-> msgSeqCounter], pendingMessages)
+         /\ msgSeqCounter' = msgSeqCounter + 1
+    ELSE /\ pendingMessages' = WithMessage(m, pendingMessages)
+         /\ UNCHANGED msgSeqCounter
 
 \* All pending messages sent from node i
 PendingMessages(i) ==
@@ -298,21 +317,34 @@ SendPendingMessages(i) ==
 \* Remove a message from the bag of messages OR pendingMessages. Used when a server is done
 DiscardDirect(m) ==
     IF m \in DOMAIN messages 
-    THEN messages' = WithoutMessage(m, messages) /\ UNCHANGED pendingMessages
-    ELSE pendingMessages' = WithoutMessage(m, pendingMessages) /\ UNCHANGED messages
+    THEN messages' = WithoutMessage(m, messages) /\ UNCHANGED <<pendingMessages, msgSeqCounter>>
+    ELSE pendingMessages' = WithoutMessage(m, pendingMessages) /\ UNCHANGED <<messages, msgSeqCounter>>
 
 \* Combination of Send and Discard
+\* When MsgNoReorder is TRUE, add sequence number to response for FIFO ordering.
 ReplyDirect(response, request) ==
-    IF request \in DOMAIN messages
-    THEN /\ messages' = WithoutMessage(request, messages)
-         /\ pendingMessages' = WithMessage(response, pendingMessages)
-    ELSE /\ pendingMessages' = WithMessage(response, WithoutMessage(request, pendingMessages))
-         /\ UNCHANGED messages
+    LET resp == IF MsgNoReorder THEN response @@ [mseq |-> msgSeqCounter] ELSE response
+    IN IF request \in DOMAIN messages
+       THEN /\ messages' = WithoutMessage(request, messages)
+            /\ pendingMessages' = WithMessage(resp, pendingMessages)
+            /\ IF MsgNoReorder THEN msgSeqCounter' = msgSeqCounter + 1 ELSE UNCHANGED msgSeqCounter
+       ELSE /\ pendingMessages' = WithMessage(resp, WithoutMessage(request, pendingMessages))
+            /\ UNCHANGED messages
+            /\ IF MsgNoReorder THEN msgSeqCounter' = msgSeqCounter + 1 ELSE UNCHANGED msgSeqCounter
 
 \* Default: change when needed
  Send(m) == SendDirect(m)
  Reply(response, request) == ReplyDirect(response, request) 
  Discard(m) == DiscardDirect(m)
+
+\* FIFO ordering predicate: check if message m is the first message from its source to its dest
+\* A message is FIFO-first if no other message with lower sequence number exists for the same pair
+IsFifoFirst(m) ==
+    IF ~MsgNoReorder THEN TRUE
+    ELSE ~\E other \in DOMAIN messages:
+            /\ other.msource = m.msource
+            /\ other.mdest = m.mdest
+            /\ other.mseq < m.mseq
      
 MaxOrZero(s) == IF s = {} THEN 0 ELSE Max(s)
 
@@ -417,6 +449,7 @@ ResetInflights(i, j) ==
 \* Define initial values for all variables
 InitMessageVars == /\ messages = EmptyBag
                    /\ pendingMessages = EmptyBag
+                   /\ msgSeqCounter = 0
 InitServerVars == /\ currentTerm = [i \in Server |-> 0]
                   /\ state       = [i \in Server |-> Follower]
                   /\ votedFor    = [i \in Server |-> Nil]
@@ -490,7 +523,7 @@ Restart(i) ==
     /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i] = [j \in Server |-> 0]]
     /\ nextIndex' = [nextIndex EXCEPT ![i] = [j \in Server |-> 1]]
     /\ inflights' = [inflights EXCEPT ![i] = [j \in Server |-> {}]]
-    /\ UNCHANGED <<messages, durableState, reconfigCount, historyLog>>
+    /\ UNCHANGED <<messages, msgSeqCounter, durableState, reconfigCount, historyLog>>
 
 \* Server i times out and starts a new election.
 \* @type: Int => Bool;
@@ -1024,12 +1057,12 @@ ApplySnapshotConfChange(i, newVoters) ==
 FollowerAdvanceCommitIndex(i, newCommit) ==
     /\ state[i] /= Leader
     /\ commitIndex' = [commitIndex EXCEPT ![i] = newCommit]
-    /\ UNCHANGED <<messages, pendingMessages, serverVars, candidateVars, matchIndex, pendingConfChangeIndex, log, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, pendingConfChangeIndex, log, configVars, durableState, progressVars, historyLog>>
 
 Ready(i) ==
     /\ PersistState(i)
     /\ SendPendingMessages(i)
-    /\ UNCHANGED <<serverVars, leaderVars, candidateVars, logVars, configVars, progressVars, historyLog>>
+    /\ UNCHANGED <<msgSeqCounter, serverVars, leaderVars, candidateVars, logVars, configVars, progressVars, historyLog>>
 
 BecomeFollowerOfTerm(i, t) ==
     /\ currentTerm'    = [currentTerm EXCEPT ![i] = t]
@@ -1408,7 +1441,7 @@ CompactLog(i, newStart) ==
           snapshotIndex |-> newStart - 1,
           snapshotTerm  |-> LogTerm(i, newStart - 1)
        ]]
-    /\ UNCHANGED <<messages, pendingMessages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog>>
 
 \* Server i receives a SnapshotRequest.
 \* Simulates raft.restore()
@@ -1567,29 +1600,31 @@ UpdateTermAndHandleRequestVote(i, j, m) ==
            /\ UNCHANGED <<candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* Receive a message.
+\* When MsgNoReorder is TRUE, enforce FIFO ordering per (source, dest) pair.
 ReceiveDirect(m) ==
     LET i == m.mdest
         j == m.msource
-    IN \* Any RPC with a newer term causes the recipient to advance
-       \* its term first. Responses with stale terms are ignored.
-    \/ UpdateTermAndHandleRequestVote(i, j, m)
-    \/ /\ m.mtype /= RequestVoteRequest
-       /\ UpdateTerm(i, j, m)
-    \/  /\ m.mtype = RequestVoteRequest
-        /\ HandleRequestVoteRequest(i, j, m)
-    \/  /\ m.mtype = RequestVoteResponse
-        /\  \/ DropStaleResponse(i, j, m)
-            \/ HandleRequestVoteResponse(i, j, m)
-    \/  /\ m.mtype = AppendEntriesRequest
-        /\ HandleAppendEntriesRequest(i, j, m)
-    \/  /\ m.mtype = AppendEntriesResponse
-        /\ \/ DropStaleResponse(i, j, m)
-           \/ HandleHeartbeatResponse(i, j, m)
-           \/ HandleAppendEntriesResponse(i, j, m)
-    \/  /\ m.mtype = SnapshotRequest
-        /\ HandleSnapshotRequest(i, j, m)
-    \/  /\ m.mtype = SnapshotStatus
-        /\ HandleSnapshotStatus(i, j, m)
+    IN /\ IsFifoFirst(m)  \* FIFO constraint: only receive if first in order
+       /\ \* Any RPC with a newer term causes the recipient to advance
+          \* its term first. Responses with stale terms are ignored.
+          \/ UpdateTermAndHandleRequestVote(i, j, m)
+          \/ /\ m.mtype /= RequestVoteRequest
+             /\ UpdateTerm(i, j, m)
+          \/ /\ m.mtype = RequestVoteRequest
+             /\ HandleRequestVoteRequest(i, j, m)
+          \/ /\ m.mtype = RequestVoteResponse
+             /\ \/ DropStaleResponse(i, j, m)
+                \/ HandleRequestVoteResponse(i, j, m)
+          \/ /\ m.mtype = AppendEntriesRequest
+             /\ HandleAppendEntriesRequest(i, j, m)
+          \/ /\ m.mtype = AppendEntriesResponse
+             /\ \/ DropStaleResponse(i, j, m)
+                \/ HandleHeartbeatResponse(i, j, m)
+                \/ HandleAppendEntriesResponse(i, j, m)
+          \/ /\ m.mtype = SnapshotRequest
+             /\ HandleSnapshotRequest(i, j, m)
+          \/ /\ m.mtype = SnapshotStatus
+             /\ HandleSnapshotStatus(i, j, m)
 
 Receive(m) == ReceiveDirect(m)
 
@@ -1607,7 +1642,7 @@ NextAppendEntriesResponse == \E m \in DOMAIN messages : m.mtype = AppendEntriesR
 DuplicateMessage(m) ==
     /\ m \in DOMAIN messages
     /\ messages' = WithMessage(m, messages)
-    /\ UNCHANGED <<pendingMessages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<pendingMessages, msgSeqCounter, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 \* The network drops a message
 \* @type: MSG => Bool;
