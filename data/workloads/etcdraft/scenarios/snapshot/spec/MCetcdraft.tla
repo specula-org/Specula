@@ -67,6 +67,10 @@ ASSUME MaxMsgBufferLimit \in Nat
 CONSTANT MaxPendingMsgLimit
 ASSUME MaxPendingMsgLimit \in Nat
 
+\* Network partition limits
+CONSTANT PartitionLimit  \* Maximum number of partition/heal cycles
+ASSUME PartitionLimit \in Nat
+
 \* ============================================================================
 \* CONSTRAINT VARIABLES
 \* ============================================================================
@@ -258,12 +262,28 @@ MCSend(msg) ==
     /\ etcd!Send(msg)
 
 \* ============================================================================
+\* NETWORK PARTITION ACTIONS
+\* ============================================================================
+
+\* Create a simple two-way partition: servers in group1 vs servers not in group1
+MCCreatePartition(group1) ==
+    /\ constraintCounters.partition < PartitionLimit
+    /\ LET partitionAssignment == [i \in Server |-> IF i \in group1 THEN 1 ELSE 2]
+       IN etcd!CreatePartition(partitionAssignment)
+    /\ constraintCounters' = [constraintCounters EXCEPT !.partition = @ + 1]
+
+\* Heal the network partition
+MCHealPartition ==
+    /\ etcd!HealPartition
+    /\ UNCHANGED constraintCounters
+
+\* ============================================================================
 \* INITIALIZATION
 \* ============================================================================
 
 MCInit ==
     /\ etcd!Init
-    /\ constraintCounters = [restart |-> 0, drop |-> 0, duplicate |-> 0, stepDown |-> 0, heartbeat |-> 0, snapshot |-> 0, compact |-> 0, confChange |-> 0, reportUnreachable |-> 0, timeout |-> 0, request |-> 0]
+    /\ constraintCounters = [restart |-> 0, drop |-> 0, duplicate |-> 0, stepDown |-> 0, heartbeat |-> 0, snapshot |-> 0, compact |-> 0, confChange |-> 0, reportUnreachable |-> 0, timeout |-> 0, request |-> 0, partition |-> 0]
 
 \* ============================================================================
 \* NEXT STATE RELATIONS
@@ -358,16 +378,29 @@ MCNextUnreliable ==
         /\ messages[m] = 1
         /\ MCDropMessage(m)
 
+\* Network partition actions
+MCNextPartition ==
+    \* Create a partition by splitting servers into two groups
+    \* We enumerate possible non-empty subsets as partition group 1
+    \/ \E group1 \in SUBSET(Server) :
+        /\ group1 /= {}
+        /\ group1 /= Server  \* Must have servers in both groups
+        /\ MCCreatePartition(group1)
+    \* Heal an existing partition
+    \/ MCHealPartition
+
 MCNext ==
     \/ MCNextAsyncAll
     \/ MCNextCrash
     \/ MCNextUnreliable
+    \/ MCNextPartition
 
 \* MCNext with Ready composition - reduces state space
 MCNextWithReady ==
     \/ MCNextAsyncWithReadyAll
     \/ MCNextCrash
     \/ MCNextUnreliable
+    \/ MCNextPartition
 
 \* Note: MCAddNewServer, MCAddLearner, MCDeleteServer removed - they bypass ChangeConf constraints
 \* Dynamic config change actions (shared by MCNextDynamic and MCNextDynamicWithReady)
