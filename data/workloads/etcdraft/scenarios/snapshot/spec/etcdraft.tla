@@ -783,10 +783,10 @@ ClientRequestAndSend(i, v) ==
 ReplicateImplicitEntry(i) ==
     /\ state[i] = Leader
     /\ LET isJoint == IsJointConfig(i)
-           oldConf == GetConfig(i)
            entryType == IF isJoint THEN ConfigEntry ELSE ValueEntry
+           \* For LeaveJoint, use leaveJoint |-> TRUE format to match ApplyConfigUpdate
            entryValue == IF isJoint
-                         THEN [newconf |-> GetConfig(i), learners |-> GetLearners(i), enterJoint |-> FALSE, oldconf |-> oldConf]
+                         THEN [leaveJoint |-> TRUE, newconf |-> GetConfig(i), learners |-> GetLearners(i)]
                          ELSE [val |-> 0]
        IN
        /\ Replicate(i, entryValue, entryType)
@@ -1017,6 +1017,25 @@ LeaveJoint(i) ==
        ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars, appliedConfigIndex>>
 
+\* Implicit LeaveJoint - leave joint config when autoLeave=TRUE but no LeaveJoint log entry exists
+\* This can happen when an implicit entry was created before EnterJoint was applied,
+\* resulting in a ValueEntry at the next log index instead of a LeaveJoint ConfigEntry.
+\* In this case, the system leaves joint config without a dedicated log entry.
+\* Reference: This is an edge case in etcd raft's autoLeave mechanism.
+ImplicitLeaveJoint(i, newVoters, newLearners) ==
+    /\ IsJointConfig(i)
+    /\ config[i].autoLeave = TRUE
+    \* No unapplied config entries exist
+    /\ LET validIndices == {x \in Max({log[i].offset, appliedConfigIndex[i]+1})..commitIndex[i] :
+                              LogEntry(i, x).type = ConfigEntry}
+       IN validIndices = {}
+    /\ config' = [config EXCEPT ![i] = [learners |-> newLearners, jointConfig |-> <<newVoters, {}>>, autoLeave |-> FALSE]]
+    /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] > 0 THEN
+        /\ reconfigCount' = reconfigCount + 1
+        /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
+       ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars, appliedConfigIndex>>
+
 \* Leader proposes LeaveJoint entry when autoLeave=TRUE and config entry is applied
 \* Reference: raft.go:745-760 - AutoLeave mechanism
 \* When r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex && r.state == StateLeader,
@@ -1049,7 +1068,8 @@ ApplySnapshotConfChange(i, newVoters) ==
         newAutoLeave == enterJoint /\ oldconf /= {}
     IN
     /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex, appliedConfigIndex>>
+    /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = lastConfigIdx]
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex>>
 
 \* Follower advances commit index (e.g., from AppendEntries leaderCommit)
 FollowerAdvanceCommitIndex(i, newCommit) ==
@@ -1430,9 +1450,17 @@ HandleHeartbeatResponse(i, j, m) ==
 \* Reference: storage.go:249-250 - "It is the application's responsibility to not
 \* attempt to compact an index greater than raftLog.applied."
 \* We use durableState.log as applied index (set by PersistState in Ready).
+\*
+\* Additional constraint: Cannot compact past pendingConfChangeIndex.
+\* Reference: raft.go:1318 - pendingConfIndex > applied means config change is pending.
+\* Since compaction should only go up to applied, we cannot compact past pendingConfChangeIndex.
 CompactLog(i, newStart) ==
     /\ newStart > log[i].offset
     /\ newStart <= durableState[i].log + 1
+    \* Cannot compact past pending config entry that hasn't been applied
+    \* If pendingConfChangeIndex > 0, the entry at that index must remain in the log
+    /\ (state[i] = Leader /\ pendingConfChangeIndex[i] > 0) =>
+           newStart <= pendingConfChangeIndex[i]
     /\ log' = [log EXCEPT ![i] = [
           offset  |-> newStart,
           entries |-> SubSeq(@.entries, newStart - @.offset + 1, Len(@.entries)),
@@ -1483,22 +1511,12 @@ HandleSnapshotRequest(i, j, m) ==
            /\ UNCHANGED <<serverVars, candidateVars, leaderVars, log, configVars, durableState, progressVars, historyLog>>
        ELSE
            \* Case 3: Actual Restore. Wipe log.
-           \* Reference: raft.go:1846 restore() returns true
-           \* Must also restore config from snapshot metadata
-           LET \* Find the last config entry in snapshot's history
-               configIndices == {k \in 1..Len(m.mhistory) : m.mhistory[k].type = ConfigEntry}
-               lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
-               \* Extract config from last config entry
-               lastConfigEntry == IF lastConfigIdx > 0 THEN m.mhistory[lastConfigIdx] ELSE [value |-> [newconf |-> {}, learners |-> {}]]
-               hasEnterJoint == lastConfigIdx > 0 /\ "enterJoint" \in DOMAIN lastConfigEntry.value
-               enterJoint == IF hasEnterJoint THEN lastConfigEntry.value.enterJoint ELSE FALSE
-               hasOldconf == enterJoint /\ "oldconf" \in DOMAIN lastConfigEntry.value
-               oldconf == IF hasOldconf THEN lastConfigEntry.value.oldconf ELSE {}
-               newVoters == lastConfigEntry.value.newconf
-               newLearners == IF "learners" \in DOMAIN lastConfigEntry.value THEN lastConfigEntry.value.learners ELSE {}
-               \* AutoLeave is TRUE when in joint config
-               newAutoLeave == enterJoint /\ oldconf /= {}
-           IN
+           \* Reference: raft.go:1919 r.raftLog.restore(s) - restores log first
+           \* Config is NOT updated here - it will be updated by ApplySnapshotConfChange
+           \* when the subsequent ApplyConfChange event is processed.
+           \* This matches the code behavior where:
+           \*   1. restore() calls r.raftLog.restore(s) to restore log
+           \*   2. restore() calls switchToConfig() which emits ApplyConfChange event
            /\ log' = [log EXCEPT ![i] = [
                  offset  |-> m.msnapshotIndex + 1,
                  entries |-> <<>>,
@@ -1507,9 +1525,7 @@ HandleSnapshotRequest(i, j, m) ==
               ]]
            /\ historyLog' = [historyLog EXCEPT ![i] = m.mhistory]
            /\ commitIndex' = [commitIndex EXCEPT ![i] = m.msnapshotIndex]
-           /\ config' = [config EXCEPT ![i] = [learners |-> newLearners, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
-           \* All config entries up to snapshot index are considered applied
-           /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = m.msnapshotIndex]
+           \* Don't update config here - let ApplySnapshotConfChange handle it
            /\ Reply([mtype       |-> AppendEntriesResponse,
                      msubtype    |-> "snapshot",
                      mterm       |-> currentTerm[i],
@@ -1520,7 +1536,7 @@ HandleSnapshotRequest(i, j, m) ==
                      msource     |-> i,
                      mdest       |-> j],
                      m)
-           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, reconfigCount, pendingConfChangeIndex, durableState, progressVars>>
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars>>
 
 \* Handle MsgSnapStatus from application layer
 \* Reference: raft.go:1606-1623
@@ -1702,6 +1718,8 @@ NextDynamic ==
     \/ \E i \in Server : ChangeConfAndSend(i)
     \/ \E i \in Server : ApplySimpleConfChange(i)
     \/ \E i \in Server : ProposeLeaveJoint(i)
+    \/ \E i \in Server, newVoters \in SUBSET Server, newLearners \in SUBSET Server :
+        ImplicitLeaveJoint(i, newVoters, newLearners)
 
 \* The specification must start with the initial state and transition according
 \* to Next.
@@ -1804,13 +1822,27 @@ LogMatchingInv ==
 \* of at least one server in every quorum.
 \* In joint config, it's safe if EITHER incoming OR outgoing quorums hold the data,
 \* because election requires both quorums, so one blocking is enough.
+\*
+\* Note: Only check servers whose config is up-to-date (applied all committed config entries).
+\* A follower may have a stale config while having received committed entries from the leader.
+\* This is normal behavior during config change processing - the follower trusts the leader's
+\* commitIndex but hasn't applied the config entries yet.
 QuorumLogInv ==
     \A i \in Server :
-        \/ \A S \in Quorum(GetConfig(i)) :
-               \E j \in S : IsPrefix(Committed(i), historyLog[j])
-        \/ (IsJointConfig(i) /\
-            \A S \in Quorum(GetOutgoingConfig(i)) :
-                \E j \in S : IsPrefix(Committed(i), historyLog[j]))
+        \* Find config entries within the committed range
+        LET configIndicesInCommitted == {k \in 1..commitIndex[i] :
+                k <= Len(historyLog[i]) /\ historyLog[i][k].type = ConfigEntry}
+            \* Check if server's config is up-to-date (applied all committed config entries)
+            configUpToDate == configIndicesInCommitted = {} \/
+                              appliedConfigIndex[i] >= Max(configIndicesInCommitted)
+        IN
+        \* Only check servers with up-to-date config
+        configUpToDate =>
+            (\/ \A S \in Quorum(GetConfig(i)) :
+                   \E j \in S : IsPrefix(Committed(i), historyLog[j])
+             \/ (IsJointConfig(i) /\
+                 \A S \in Quorum(GetOutgoingConfig(i)) :
+                     \E j \in S : IsPrefix(Committed(i), historyLog[j])))
 
 \* The "up-to-date" check performed by servers
 \* before issuing a vote implies that i receives
@@ -2237,12 +2269,18 @@ LearnersVotersDisjointInv ==
 \* Invariant: ConfigNonEmptyInv
 \* At least one voter must exist for initialized servers (cluster must have quorum)
 \* Reference: A Raft cluster cannot function without voters
-\* Note: Only applies to servers with log entries (has received data)
-\*       A new node can have term updated via UpdateTerm before receiving log entries
+\* Note: Only applies to servers with log entries AND applied config
+\*       A server may have received log/snapshot but not yet applied config
+\*       (HandleSnapshotRequest and ApplySnapshotConfChange are separate actions)
 \*       Reference: raft.go:Step - no config check before processing messages
 ConfigNonEmptyInv ==
     \A i \in Server :
-        LastIndex(log[i]) > 0 => GetConfig(i) /= {}
+        LET configIndices == {k \in 1..Len(historyLog[i]) : historyLog[i][k].type = ConfigEntry}
+            lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
+            \* Config is considered applied if no config entries exist or appliedConfigIndex >= last config
+            configApplied == lastConfigIdx = 0 \/ appliedConfigIndex[i] >= lastConfigIdx
+        IN
+        (LastIndex(log[i]) > 0 /\ configApplied) => GetConfig(i) /= {}
 
 \* Aggregate P1 Configuration invariants
 ConfigurationInv ==
