@@ -1844,3 +1844,510 @@ ELSE \* Valid rejection: use leader-side findConflictByTerm optimization
 - User Feedback: Confirmed after reviewing etcd implementation
 
 ---
+
+## Record #33 - 2026-01-15
+
+### Counterexample Summary
+TLC simulation found `QuorumLogInv` violated. Key state transitions:
+- State 111 → 112: s1 is Leader with config `{s1}`, `commitIndex[s1]` jumped from 5 to 19
+- State 112 → 113: s1's config changed from `{s1}` to `{s1, s2, s4}` via `ApplySimpleConfChange`
+- After config change: Quorum `{s2, s4}` didn't have all committed entries
+  - s2 only had 8 entries in historyLog
+  - s4 had 0 entries in historyLog
+  - But s1 had committed up to index 19!
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Issue
+- **Violated Property**: QuorumLogInv
+- **Root Cause**: Two related issues in the spec:
+
+**Issue 1: ApplySimpleConfChange used Max instead of Min**
+The spec's `ApplySimpleConfChange` used `Max(validIndices)` to jump to the last config entry, but etcd processes committed entries sequentially, applying each config as encountered.
+
+**Issue 2: AdvanceCommitIndex could advance past unapplied configs**
+The spec allowed `commitIndex` to advance past config entries that hadn't been applied yet. In etcd, configs are applied as part of processing `Ready.CommittedEntries`, so a leader cannot commit past an unapplied config entry.
+
+### Evidence from Implementation
+From `doc.go:133-140` (Ready processing pattern):
+```go
+for _, entry := range rd.CommittedEntries {
+    switch entry.Type {
+    case raftpb.EntryNormal:
+        // process normal entry
+    case raftpb.EntryConfChange:
+        // MUST apply config change here, one at a time
+        cc := raftpb.ConfChange{}
+        cc.Unmarshal(entry.Data)
+        n.ApplyConfChange(cc)  // Apply each config as encountered
+    }
+}
+```
+
+This shows that:
+1. Entries are processed sequentially via `for _, entry := range`
+2. Config changes are applied immediately when encountered via `ApplyConfChange`
+3. A config cannot be skipped - each must be applied in order
+
+From `quorum/joint.go:49-56` (JointConfig.CommittedIndex):
+```go
+func (c JointConfig) CommittedIndex(l AckedIndexer) Index {
+    idx0 := c[0].CommittedIndex(l)  // incoming
+    idx1 := c[1].CommittedIndex(l)  // outgoing
+    if idx0 < idx1 {
+        return idx0
+    }
+    return idx1
+}
+```
+
+Joint config requires min of both quorums - once config is applied, the new quorum constraints take effect.
+
+### Modifications Made
+
+**1. Added `appliedConfigIndex` variable**
+- **File**: etcdraft.tla (lines 142-149)
+```tla
+\* Track the index of the last applied config entry per server
+\* Reference: etcd processes CommittedEntries sequentially, applying configs as encountered
+\* This ensures config is applied before commit can advance past it
+VARIABLE
+    \* @type: Int -> Int;
+    appliedConfigIndex
+
+configVars == <<config, reconfigCount, appliedConfigIndex>>
+```
+
+**2. Updated InitConfigVars**
+- **File**: etcdraft.tla (line 439)
+```tla
+InitConfigVars == /\ config = [i \in Server |-> [ jointConfig |-> <<InitServer, {}>>, learners |-> {}, autoLeave |-> FALSE]]
+                  /\ reconfigCount = 0
+                  /\ appliedConfigIndex = [i \in Server |-> 0]
+```
+
+**3. Modified AdvanceCommitIndex to respect config application order**
+- **File**: etcdraft.tla (lines 810-848)
+```tla
+AdvanceCommitIndex(i) ==
+    /\ state[i] = Leader
+    /\ LET AllVoters == GetConfig(i) \union GetOutgoingConfig(i)
+           Agree(index) == {k \in AllVoters : matchIndex[i][k] >= index}
+           logSize == LastIndex(log[i])
+           IsCommitted(index) ==
+               IF IsJointConfig(i) THEN
+                   /\ (Agree(index) \cap GetConfig(i)) \in Quorum(GetConfig(i))
+                   /\ (Agree(index) \cap GetOutgoingConfig(i)) \in Quorum(GetOutgoingConfig(i))
+               ELSE
+                   Agree(index) \in Quorum(GetConfig(i))
+
+           \* Find the next unapplied config entry (if any)
+           \* Cannot commit past a config entry until it's applied
+           nextUnappliedConfigIndices == {x \in Max({log[i].offset, appliedConfigIndex[i]+1})..logSize :
+                                           LogEntry(i, x).type = ConfigEntry}
+           maxCommitBound == IF nextUnappliedConfigIndices = {}
+                            THEN logSize
+                            ELSE Min(nextUnappliedConfigIndices)
+
+           agreeIndexes == {index \in (commitIndex[i]+1)..maxCommitBound : IsCommitted(index)}
+           newCommitIndex ==
+              IF /\ agreeIndexes /= {}
+                 /\ LogTerm(i, Max(agreeIndexes)) = currentTerm[i]
+              THEN Max(agreeIndexes)
+              ELSE commitIndex[i]
+       IN
+        /\ newCommitIndex > commitIndex[i]
+        /\ CommitTo(i, newCommitIndex)
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, log, configVars, durableState, progressVars, historyLog>>
+```
+
+**4. Modified ApplySimpleConfChange to apply configs sequentially**
+- **File**: etcdraft.tla (lines 960-1003)
+```tla
+ApplySimpleConfChange(i) ==
+    \* Find config entries that are committed but not yet applied
+    LET validIndices == {x \in Max({log[i].offset, appliedConfigIndex[i]+1})..commitIndex[i] :
+                          LogEntry(i, x).type = ConfigEntry}
+    IN
+    /\ validIndices /= {}
+    /\ LET k == Min(validIndices)  \* Apply the NEXT config entry, not MAX
+           ...
+       IN
+        /\ k > 0
+        /\ k <= commitIndex[i]
+        /\ config' = newConfigFn
+        /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = k]  \* Track applied config
+        ...
+```
+
+**5. Updated Restart to restore appliedConfigIndex**
+- **File**: etcdraft.tla (lines 494-496)
+```tla
+/\ config' = [config EXCEPT ![i] = durableState[i].config]
+\* After restart, consider all committed configs as applied (durableState.config reflects this)
+/\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = durableState[i].commitIndex]
+```
+
+**6. Updated HandleSnapshotRequest to set appliedConfigIndex**
+- **File**: etcdraft.tla (lines 1508-1510)
+```tla
+/\ config' = [config EXCEPT ![i] = [learners |-> newLearners, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
+\* All config entries up to snapshot index are considered applied
+/\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = m.msnapshotIndex]
+```
+
+**7. Updated MCetcdraft.tla etcdInitConfigVars**
+- **File**: MCetcdraft.tla (lines 105-108)
+```tla
+etcdInitConfigVars == /\ config = [i \in Server |-> [ jointConfig |-> IF i \in InitServer THEN <<InitServer, {}>> ELSE <<{}, {}>>, learners |-> {}, autoLeave |-> FALSE]]
+                      /\ reconfigCount = 0 \* the bootstrap configurations are not counted
+                      \* Bootstrap config entries are already applied (committed at Cardinality(InitServer))
+                      /\ appliedConfigIndex = [i \in Server |-> IF i \in InitServer THEN Cardinality(InitServer) ELSE 0]
+```
+
+### Key Behavior Changes
+
+| Aspect | Before | After |
+|--------|--------|-------|
+| Config application | Jump to MAX config entry | Apply MIN (next) config entry |
+| Commit advancement | No config boundary check | Uses current applied config's quorum |
+| Config tracking | None | `appliedConfigIndex` variable |
+| Sequential order | Not enforced | Enforced via Min in ApplySimpleConfChange |
+
+### User Confirmation
+- Confirmation Time: 2026-01-15
+- User Feedback: Approved ("同意，请严格按照代码逻辑修复 spec")
+
+### Correction (2026-01-15)
+
+The initial fix was **too restrictive**. It prevented `commitIndex` from advancing past unapplied config entries via `maxCommitBound`. However, etcd's actual behavior is:
+
+1. `maybeCommit()` uses the **current applied config's quorum** (via `r.trk.Committed()`)
+2. `commitIndex` CAN advance past config entries using the old config's quorum
+3. Config entries are applied later when processing `CommittedEntries`
+
+**Safety mechanism in etcd:**
+- EnterJoint entry is committed using old config's quorum
+- After EnterJoint is applied, we're in joint config requiring BOTH quorums
+- LeaveJoint can only be committed when BOTH quorums agree
+- So by the time we leave joint, the new config's quorum has all entries
+
+**Corrected AdvanceCommitIndex** (removed `maxCommitBound` constraint):
+```tla
+AdvanceCommitIndex(i) ==
+    /\ state[i] = Leader
+    /\ LET AllVoters == GetConfig(i) \union GetOutgoingConfig(i)
+           Agree(index) == {k \in AllVoters : matchIndex[i][k] >= index}
+           logSize == LastIndex(log[i])
+           \* Uses the CURRENT APPLIED config (config[i]) for quorum calculation
+           IsCommitted(index) ==
+               IF IsJointConfig(i) THEN
+                   /\ (Agree(index) \cap GetConfig(i)) \in Quorum(GetConfig(i))
+                   /\ (Agree(index) \cap GetOutgoingConfig(i)) \in Quorum(GetOutgoingConfig(i))
+               ELSE
+                   Agree(index) \in Quorum(GetConfig(i))
+
+           \* commitIndex can advance to any index that the current applied config's
+           \* quorum agrees on. No maxCommitBound constraint needed.
+           agreeIndexes == {index \in (commitIndex[i]+1)..logSize : IsCommitted(index)}
+           newCommitIndex == ...
+       IN ...
+```
+
+**What remains:**
+- `appliedConfigIndex` variable - still needed to track applied configs
+- `ApplySimpleConfChange` using `Min(validIndices)` - ensures sequential config application
+- `pendingConfChangeIndex` constraint - prevents proposing multiple config changes
+
+| Aspect | Initial Fix | Corrected Fix |
+|--------|-------------|---------------|
+| commitIndex advancement | Bounded by unapplied configs | No bound, uses applied config's quorum |
+| Matches etcd behavior | No (too restrictive) | Yes |
+
+---
+
+## Record #20 - 2026-01-15
+
+### Counterexample Summary
+77-step counterexample:
+1. s2 is Leader with commitIndex = 8, config `jointConfig = [[s2], []]` (only s2 is voter)
+2. s2 sends AppendEntries to s3 with entries 2-6 (including config entry at index 3) and `mcommitIndex = 6`
+3. s3 receives message, appends entries 2-6, sets `commitIndex = 6`
+4. But s3's `appliedConfigIndex = 1` (hasn't applied config entry at index 3 yet)
+5. s3's config is still the OLD config: `jointConfig = [[s1], []]` (only s1 is voter)
+6. QuorumLogInv fails: from s3's old config view, quorum is `{{s1}}`, but s1 only has 3 entries in historyLog
+7. `IsPrefix(Committed(s3), historyLog[s1])` = `IsPrefix(6 entries, 3 entries)` = FALSE
+
+### Analysis Conclusion
+- **Type**: A: Invariant Too Strong
+- **Violated Property**: QuorumLogInv
+- **Root Cause**: QuorumLogInv checks from each server's perspective using that server's current config. During config changes:
+  1. Follower receives AppendEntries and updates commitIndex
+  2. Config entries are applied later in `ApplySimpleConfChange`
+  3. **Between these two steps**, follower has stale config but updated commitIndex
+  
+  In this case:
+  - Leader (s2) committed using NEW config (only s2 as voter)
+  - Follower (s3) accepted leader's commitIndex but still has OLD config
+  - From s3's old config view, s1 should have all committed entries, but doesn't
+  
+  **This is NOT a safety issue** because:
+  - Leader committed using the correct (new) config
+  - Leader has all committed entries
+  - Follower's stale config view is temporary
+
+### Evidence from Implementation
+etcd's actual behavior:
+```go
+// raft.go: Follower receives AppendEntries
+// 1. Append entries to log
+// 2. Update commitIndex from leaderCommit
+// 3. Config entries applied later when processing CommittedEntries
+
+// The follower trusts the leader's commitIndex without verifying
+// against its own (possibly stale) config
+```
+
+### Modifications Made
+- **File**: etcdraft.tla
+- **Before (lines 1803-1813)**:
+```tla
+\* All committed entries are contained in the log
+\* of at least one server in every quorum.
+\* In joint config, it's safe if EITHER incoming OR outgoing quorums hold the data,
+\* because election requires both quorums, so one blocking is enough.
+QuorumLogInv ==
+    \A i \in Server :
+        \/ \A S \in Quorum(GetConfig(i)) :
+               \E j \in S : IsPrefix(Committed(i), historyLog[j])
+        \/ (IsJointConfig(i) /\
+            \A S \in Quorum(GetOutgoingConfig(i)) :
+                \E j \in S : IsPrefix(Committed(i), historyLog[j]))
+```
+- **After**:
+```tla
+\* All committed entries are contained in the log
+\* of at least one server in every quorum.
+\* In joint config, it's safe if EITHER incoming OR outgoing quorums hold the data,
+\* because election requires both quorums, so one blocking is enough.
+\*
+\* Note: Only check servers whose config is up-to-date (applied all committed config entries).
+\* A follower may have a stale config while having received committed entries from the leader.
+\* This is normal behavior during config change processing - the follower trusts the leader's
+\* commitIndex but hasn't applied the config entries yet.
+QuorumLogInv ==
+    \A i \in Server :
+        \* Find config entries within the committed range
+        LET configIndicesInCommitted == {k \in 1..commitIndex[i] :
+                k <= Len(historyLog[i]) /\ historyLog[i][k].type = ConfigEntry}
+            \* Check if server's config is up-to-date (applied all committed config entries)
+            configUpToDate == configIndicesInCommitted = {} \/
+                              appliedConfigIndex[i] >= Max(configIndicesInCommitted)
+        IN
+        \* Only check servers with up-to-date config
+        configUpToDate =>
+            (\/ \A S \in Quorum(GetConfig(i)) :
+                   \E j \in S : IsPrefix(Committed(i), historyLog[j])
+             \/ (IsJointConfig(i) /\
+                 \A S \in Quorum(GetOutgoingConfig(i)) :
+                     \E j \in S : IsPrefix(Committed(i), historyLog[j])))
+```
+
+### User Confirmation
+- Confirmation Time: 2026-01-15
+- User Feedback: Approved
+
+---
+
+## Record #21 - 2026-01-16 (Supplementary fix to Record #22)
+
+### Counterexample Summary
+73-step counterexample:
+1. s1 is Leader with `pendingConfChangeIndex[s1] = 3`, `appliedConfigIndex[s1] = 2`
+2. s1 has log entries up to index 12, `durableState[s1].log = 12`, commitIndex = 4
+3. `CompactLog(s1, 4)` is executed, setting `log.offset = 4`, `snapshotIndex = 3`
+4. After compaction: `pendingConfChangeIndex[s1] = 3` but `log[s1].offset = 4`
+5. `PendingConfIndexValidInv` violated: `pendingConfChangeIndex[s1] >= log[s1].offset` (3 >= 4) is FALSE
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Issue
+- **Violated Property**: PendingConfIndexValidInv
+- **Root Cause**: Record #22 fixed `CompactLog` by changing constraint from `commitIndex + 1` to `durableState.log + 1`. However, this is insufficient because:
+  - `durableState.log` tracks **persisted** log index (= 12)
+  - `appliedConfigIndex` tracks **applied** config index (= 2)
+  - `pendingConfChangeIndex` (= 3) points to a config entry that is persisted but **not yet applied**
+  - The constraint `newStart <= 13` allowed compacting index 3, but that config entry hasn't been applied yet
+
+### Why Record #22's Fix Was Incomplete
+
+| Variable | Meaning | Value in Counterexample |
+|----------|---------|------------------------|
+| `durableState[s1].log` | Persisted log index | 12 |
+| `appliedConfigIndex[s1]` | Applied config index | 2 |
+| `pendingConfChangeIndex[s1]` | Pending config index | 3 |
+| `commitIndex[s1]` | Committed index | 4 |
+
+Record #22's constraint `newStart <= durableState.log + 1 = 13` allows compacting up to index 12, but the config entry at index 3 hasn't been applied yet!
+
+### Evidence from Implementation
+From `storage.go:249-250`:
+```go
+// Compact discards all log entries prior to compactIndex.
+// It is the application's responsibility to not attempt to compact an index
+// greater than raftLog.applied.
+```
+
+From `raft.go:1318`:
+```go
+alreadyPending := r.pendingConfIndex > r.raftLog.applied
+```
+
+The implementation logic:
+1. Compaction should only go up to `applied`, not past it
+2. `pendingConfIndex > applied` means the config change is pending (not yet applied)
+3. Therefore, if `pendingConfChangeIndex > 0`, compaction cannot include that index
+4. Note: `storage.go` comment is a **soft constraint** (documentation), not enforced by code
+
+### Modifications Made
+- **File**: etcdraft.tla
+- **Before (after Record #22's fix)**:
+```tla
+CompactLog(i, newStart) ==
+    /\ newStart > log[i].offset
+    /\ newStart <= durableState[i].log + 1  \* Record #22's fix
+    /\ log' = [log EXCEPT ![i] = [
+          offset  |-> newStart,
+          ...
+       ]]
+    /\ UNCHANGED <<...>>
+```
+- **After (supplementary constraint)**:
+```tla
+\* Additional constraint: Cannot compact past pendingConfChangeIndex.
+\* Reference: raft.go:1318 - pendingConfIndex > applied means config change is pending.
+\* Since compaction should only go up to applied, we cannot compact past pendingConfChangeIndex.
+CompactLog(i, newStart) ==
+    /\ newStart > log[i].offset
+    /\ newStart <= durableState[i].log + 1  \* Record #22's fix (persisted constraint)
+    \* NEW: Cannot compact past pending config entry that hasn't been applied
+    \* If pendingConfChangeIndex > 0, the entry at that index must remain in the log
+    /\ (state[i] = Leader /\ pendingConfChangeIndex[i] > 0) =>
+           newStart <= pendingConfChangeIndex[i]
+    /\ log' = [log EXCEPT ![i] = [
+          offset  |-> newStart,
+          entries |-> SubSeq(@.entries, newStart - @.offset + 1, Len(@.entries)),
+          snapshotIndex |-> newStart - 1,
+          snapshotTerm  |-> LogTerm(i, newStart - 1)
+       ]]
+    /\ UNCHANGED <<...>>
+```
+
+### Relationship to Record #22
+- **Record #22**: Changed `commitIndex + 1` → `durableState.log + 1` (persisted constraint)
+- **Record #21**: Added `pendingConfChangeIndex` constraint (applied constraint for config entries)
+- Both constraints are needed together to correctly model the implementation's behavior
+
+### User Confirmation
+- Confirmation Time: 2026-01-16
+- User Feedback: Approved (补充 Record #22 的修复)
+
+---
+
+## Record #34 - 2026-01-16
+
+### Counterexample Summary
+62-step counterexample:
+1. s4 is a new node that received log via snapshot (`historyLog[s4]` contains 2 ConfigEntry entries)
+2. `HandleSnapshotRequest` updated s4's `log`, `historyLog`, `commitIndex`
+3. But `config[s4]` is still empty `<<{}, {}>>` (requires separate `ApplySnapshotConfChange` call)
+4. Before `ApplySnapshotConfChange` executes, invariant check finds: `LastIndex(log[s4]) = 2 > 0` but `GetConfig(s4) = {}`
+5. `ConfigNonEmptyInv` violated
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Issue
+- **Violated Property**: ConfigNonEmptyInv
+- **Root Cause**: `ApplySnapshotConfChange` updates `config` but did not update `appliedConfigIndex`. This prevents invariants like `QuorumLogInv` that depend on `appliedConfigIndex` from correctly determining whether config has been applied.
+
+In the actual system, config application state is tracked via `applied` index (`pendingConfIndex > applied` determines if config is pending). `ApplySimpleConfChange` already correctly updates `appliedConfigIndex`, but `ApplySnapshotConfChange` was missing this update.
+
+### Evidence from Implementation
+From `raft.go:1318`:
+```go
+alreadyPending := r.pendingConfIndex > r.raftLog.applied
+```
+
+This shows that config application state is tracked by comparing indices. In our Spec, `appliedConfigIndex` serves the same purpose.
+
+### Modifications Made
+- **File**: etcdraft.tla (lines 1050-1053)
+- **Before**:
+```tla
+    IN
+    /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex, appliedConfigIndex>>
+```
+- **After**:
+```tla
+    IN
+    /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
+    /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = lastConfigIdx]
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex>>
+```
+
+### Key Change
+`ApplySnapshotConfChange` now also updates `appliedConfigIndex` to `lastConfigIdx` (the index of the last ConfigEntry in historyLog). This ensures consistency with `ApplySimpleConfChange` and correctly tracks config application state.
+
+### User Confirmation
+- Confirmation Time: 2026-01-16
+- User Feedback: Approved
+
+---
+
+## Record #35 - 2026-01-16 (Continuation of Record #34)
+
+### Counterexample Summary
+52-step counterexample (same root cause as Record #34):
+1. s4 received snapshot (`snapshotIndex = 1`, `historyLog[s4]` has 1 ConfigEntry with `newconf = {s1}`)
+2. `HandleSnapshotRequest` updated s4's log: `offset = 2`, so `LastIndex = 1`
+3. `config[s4]` is still empty (waiting for `ApplySnapshotConfChange`)
+4. `appliedConfigIndex[s4] = 0` (config not yet applied)
+5. `ConfigNonEmptyInv` violated: `LastIndex > 0` but `GetConfig = {}`
+
+### Analysis Conclusion
+- **Type**: A: Invariant Too Strong
+- **Violated Property**: ConfigNonEmptyInv
+- **Root Cause**: Record #34 fixed `ApplySnapshotConfChange` to update `appliedConfigIndex`, but `ConfigNonEmptyInv` still didn't account for the intermediate state between `HandleSnapshotRequest` and `ApplySnapshotConfChange`.
+
+The invariant needs to check whether config has been applied before asserting that config is non-empty.
+
+### Modifications Made
+- **File**: etcdraft.tla (lines 2248-2262)
+- **Before**:
+```tla
+ConfigNonEmptyInv ==
+    \A i \in Server :
+        LastIndex(log[i]) > 0 => GetConfig(i) /= {}
+```
+- **After**:
+```tla
+ConfigNonEmptyInv ==
+    \A i \in Server :
+        LET configIndices == {k \in 1..Len(historyLog[i]) : historyLog[i][k].type = ConfigEntry}
+            lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
+            \* Config is considered applied if no config entries exist or appliedConfigIndex >= last config
+            configApplied == lastConfigIdx = 0 \/ appliedConfigIndex[i] >= lastConfigIdx
+        IN
+        (LastIndex(log[i]) > 0 /\ configApplied) => GetConfig(i) /= {}
+```
+
+### Key Change
+`ConfigNonEmptyInv` now only checks config non-emptiness when:
+1. `LastIndex(log[i]) > 0` (server has log entries), AND
+2. `configApplied` is TRUE (all config entries in historyLog have been applied)
+
+This accounts for the intermediate state where a server has received log/snapshot but hasn't yet applied the config via `ApplySnapshotConfChange`.
+
+### User Confirmation
+- Confirmation Time: 2026-01-16
+- User Feedback: Pending
+
+---

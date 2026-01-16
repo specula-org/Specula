@@ -119,6 +119,8 @@ TraceInitLogVars    ==
 TraceInitConfigVars ==
     /\ config = [i \in Server |-> [ jointConfig |-> <<BootstrappedConfig(i), {}>>, learners |-> ImplicitLearners, autoLeave |-> FALSE] ]
     /\ reconfigCount = 0
+    \* Bootstrap config entries are already applied (committed at initial commitIndex)
+    /\ appliedConfigIndex = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN 0 ELSE LastBootstrapLog[i].event.state.commit]
 
 
 -------------------------------------------------------------------------------------
@@ -463,14 +465,31 @@ ChangeConfIfLogged(i) ==
 ApplySimpleConfChangeIfLogged(i) ==
     /\ LoglineIsNodeEvent("ApplyConfChange", i)
     /\ ~IsJointConfig(i)  \* If we're in joint, we should be using LeaveJointIfLogged instead
+    \* Exclude LeaveJoint events (they have leaveJoint flag)
+    /\ ~("leaveJoint" \in DOMAIN logline.event.prop.cc /\ logline.event.prop.cc.leaveJoint = TRUE)
     /\ ApplySimpleConfChange(i)
 
-\* Leave joint consensus - calls LeaveJoint from etcdraft.tla
+\* Leave joint consensus - applies the LeaveJoint config entry via ApplySimpleConfChange
+\* This ensures appliedConfigIndex is updated correctly
+\* Detects LeaveJoint via the leaveJoint flag in trace OR by being in joint config
 LeaveJointIfLogged(i) ==
     /\ LoglineIsNodeEvent("ApplyConfChange", i)
     /\ "newconf" \in DOMAIN logline.event.prop.cc
-    /\ IsJointConfig(i)  \* We're currently in joint consensus
-    /\ LeaveJoint(i)     \* Call action from etcdraft.tla
+    /\ \/ IsJointConfig(i)  \* We're currently in joint consensus
+       \/ ("leaveJoint" \in DOMAIN logline.event.prop.cc /\ logline.event.prop.cc.leaveJoint = TRUE)
+    /\ ApplySimpleConfChange(i)  \* Use ApplySimpleConfChange to update appliedConfigIndex
+
+\* Implicit LeaveJoint - for cases where autoLeave=TRUE but no LeaveJoint log entry exists
+\* This happens when the implicit entry was created before EnterJoint was applied
+\* Routes to ImplicitLeaveJoint action in etcdraft.tla
+ImplicitLeaveJointIfLogged(i) ==
+    /\ LoglineIsNodeEvent("ApplyConfChange", i)
+    /\ "newconf" \in DOMAIN logline.event.prop.cc
+    /\ LET newVoters == ToSet(logline.event.prop.cc.newconf)
+           newLearners == IF "learners" \in DOMAIN logline.event.prop.cc
+                          THEN ToSet(logline.event.prop.cc.learners)
+                          ELSE GetLearners(i)
+       IN ImplicitLeaveJoint(i, newVoters, newLearners)  \* Call action from etcdraft.tla
 
 \* Apply configuration from snapshot - calls ApplySnapshotConfChange from etcdraft.tla
 ApplySnapshotConfChangeIfLogged(i) ==
@@ -568,6 +587,7 @@ TraceNextNonReceiveActions ==
           /\ \E i \in Server: \/ ApplySimpleConfChangeIfLogged(i)
                               \/ ApplySnapshotConfChangeIfLogged(i)
                               \/ LeaveJointIfLogged(i)
+                              \/ ImplicitLeaveJointIfLogged(i)
        \/ /\ LoglineIsEvent("Ready")
           /\ \E i \in Server: ReadyIfLogged(i)
        \/ /\ LoglineIsEvent("InitState")

@@ -594,3 +594,44 @@ Renamed variable for clarity and corrected the index calculation:
 
 **Files Modified:**
 - `spec/etcdraft.tla:1169-1181`: Fixed ConflictAppendEntriesRequest truncation calculation
+
+---
+
+## 2026-01-15 - Remove incorrect newCommitIndex > commitIndex precondition
+
+**Trace:** `../traces/basic.ndjson` and 23 other traces
+**Error Type:** Incorrect Spec Constraint
+
+**Issue:**
+After adding `appliedConfigIndex` tracking for QuorumLogInv fix, 24 of 25 trace validations failed. The `AdvanceCommitIndex` action was rejecting valid Commit events where `commitIndex` didn't need to increase.
+
+**Root Cause:**
+An incorrect precondition was added to `AdvanceCommitIndex`:
+```tla
+/\ newCommitIndex > commitIndex[i]  \* WRONG - too restrictive
+/\ CommitTo(i, newCommitIndex)
+```
+
+In etcd, `maybeCommit()` can be called even when there are no new entries to commit. The trace records a `Commit` event whenever `maybeCommit()` is called, regardless of whether `commitIndex` actually changes. The `CommitTo` helper already handles this correctly by using `Max({@, c})`, so no explicit guard is needed.
+
+**Evidence from trace:**
+```json
+{"name":"Commit","nid":"1","state":{"commit":2,...},"log":3,...}
+```
+The Commit event has `commit=2`, which is the SAME as the current `commitIndex`. This is valid - the leader checked for new commits but found none.
+
+**Fix:**
+Removed the incorrect precondition:
+```tla
+\* Before (WRONG):
+       IN
+        /\ newCommitIndex > commitIndex[i]
+        /\ CommitTo(i, newCommitIndex)
+
+\* After (CORRECT):
+       IN
+        /\ CommitTo(i, newCommitIndex)
+```
+
+**Files Modified:**
+- `spec/etcdraft.tla:850-851`: Removed `/\ newCommitIndex > commitIndex[i]` precondition
