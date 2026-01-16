@@ -56,6 +56,20 @@ CONSTANT
 
 ASSUME MaxInflightMsgs \in Nat /\ MaxInflightMsgs > 0
 
+\* FIFO message ordering control
+\* When TRUE, messages are tagged with sequence numbers and must be received in order
+CONSTANT MsgNoReorder
+ASSUME MsgNoReorder \in BOOLEAN
+
+\* Network partition configuration
+\* MaxPartitions: maximum number of partitions that can be created (2 = split into 2 groups)
+CONSTANT MaxPartitions
+ASSUME MaxPartitions \in Nat /\ MaxPartitions >= 1
+
+\* When TRUE, Restart action drops all messages to/from the restarting node
+CONSTANT RestartDropsMessages
+ASSUME RestartDropsMessages \in BOOLEAN
+
 ----
 \* Global variables
 
@@ -73,7 +87,25 @@ VARIABLE
     messages
 VARIABLE 
     pendingMessages
-messageVars == <<messages, pendingMessages>>
+
+\* Sequence counter for FIFO message ordering (used when MsgNoReorder = TRUE)
+VARIABLE
+    msgSeqCounter
+
+\* Network partition state: a function from Server to partition ID (1..MaxPartitions)
+\* Servers in the same partition can communicate; servers in different partitions cannot
+\* partitions[i] = 0 means no partition (all servers can communicate)
+VARIABLE
+    partitions
+
+\* Tuple for pending messages and sequence counter (these change together when sending)
+\* msgSeqCounter is incremented when messages are added to pendingMessages
+pendingMsgVars == <<pendingMessages, msgSeqCounter>>
+
+messageVars == <<messages, pendingMessages, msgSeqCounter>>
+
+\* Network partition variables
+partitionVars == <<partitions>>
 
 ----
 \* The following variables are all per server (functions with domain Server).
@@ -208,8 +240,8 @@ progressVars == <<progressState, pendingSnapshot, nextIndex, msgAppFlowPaused, i
 ----
 
 \* All variables; used for stuttering (asserting state hasn't changed).
-vars == <<messageVars, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars>>
-view_vars == <<messageVars, serverVars, candidateVars, leaderVars, log, commitIndex, config, durableState, progressVars>>
+vars == <<messageVars, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, partitionVars>>
+view_vars == <<messageVars, serverVars, candidateVars, leaderVars, log, commitIndex, config, durableState, progressVars, partitionVars>>
 
 ----
 \* Helpers
@@ -217,6 +249,45 @@ view_vars == <<messageVars, serverVars, candidateVars, leaderVars, log, commitIn
 \* The set of all quorums. This just calculates simple majorities, but the only
 \* important property is that every quorum overlaps with every other.
 Quorum(c) == {i \in SUBSET(c) : Cardinality(i) * 2 > Cardinality(c)}
+
+\* ============================================================================
+\* Network Partition Helpers
+\* ============================================================================
+
+\* Check if there is currently a network partition active
+IsPartitioned == \E i \in Server : partitions[i] /= 0
+
+\* Check if two servers can communicate (in the same partition or no partition)
+CanCommunicate(i, j) ==
+    \/ partitions[i] = 0  \* No partition active for i
+    \/ partitions[j] = 0  \* No partition active for j
+    \/ partitions[i] = partitions[j]  \* Same partition
+
+\* Get all messages that cross partition boundaries (to be dropped)
+CrossPartitionMessages ==
+    {m \in DOMAIN messages : 
+        /\ partitions[m.msource] /= 0 
+        /\ partitions[m.mdest] /= 0
+        /\ partitions[m.msource] /= partitions[m.mdest]}
+
+\* Get all pending messages that cross partition boundaries
+CrossPartitionPendingMessages ==
+    {m \in DOMAIN pendingMessages : 
+        /\ partitions[m.msource] /= 0 
+        /\ partitions[m.mdest] /= 0
+        /\ partitions[m.msource] /= partitions[m.mdest]}
+
+\* Drop all messages between two servers
+DropMessagesBetween(i, j) ==
+    {m \in DOMAIN messages : (m.msource = i /\ m.mdest = j) \/ (m.msource = j /\ m.mdest = i)}
+
+\* Drop all messages to/from a specific server
+MessagesToOrFrom(i) ==
+    {m \in DOMAIN messages : m.msource = i \/ m.mdest = i}
+
+\* Drop all pending messages to/from a specific server
+PendingMessagesToOrFrom(i) ==
+    {m \in DOMAIN pendingMessages : m.msource = i \/ m.mdest = i}
 
 \* ============================================================================
 \* New: Virtual Log Helpers (Offset-aware)
@@ -285,8 +356,13 @@ WithMessage(m, msgs) == msgs (+) SetToBag({m})
 WithoutMessage(m, msgs) == msgs (-) SetToBag({m})
 
 \* Add a message to the bag of pendingMessages.
+\* When MsgNoReorder is TRUE, add sequence number for FIFO ordering.
 SendDirect(m) == 
-    pendingMessages' = WithMessage(m, pendingMessages)
+    IF MsgNoReorder
+    THEN /\ pendingMessages' = WithMessage(m @@ [mseq |-> msgSeqCounter], pendingMessages)
+         /\ msgSeqCounter' = msgSeqCounter + 1
+    ELSE /\ pendingMessages' = WithMessage(m, pendingMessages)
+         /\ UNCHANGED msgSeqCounter
 
 \* All pending messages sent from node i
 PendingMessages(i) ==
@@ -305,21 +381,34 @@ SendPendingMessages(i) ==
 \* Remove a message from the bag of messages OR pendingMessages. Used when a server is done
 DiscardDirect(m) ==
     IF m \in DOMAIN messages 
-    THEN messages' = WithoutMessage(m, messages) /\ UNCHANGED pendingMessages
-    ELSE pendingMessages' = WithoutMessage(m, pendingMessages) /\ UNCHANGED messages
+    THEN messages' = WithoutMessage(m, messages) /\ UNCHANGED <<pendingMessages, msgSeqCounter>>
+    ELSE pendingMessages' = WithoutMessage(m, pendingMessages) /\ UNCHANGED <<messages, msgSeqCounter>>
 
 \* Combination of Send and Discard
+\* When MsgNoReorder is TRUE, add sequence number to response for FIFO ordering.
 ReplyDirect(response, request) ==
-    IF request \in DOMAIN messages
-    THEN /\ messages' = WithoutMessage(request, messages)
-         /\ pendingMessages' = WithMessage(response, pendingMessages)
-    ELSE /\ pendingMessages' = WithMessage(response, WithoutMessage(request, pendingMessages))
-         /\ UNCHANGED messages
+    LET resp == IF MsgNoReorder THEN response @@ [mseq |-> msgSeqCounter] ELSE response
+    IN IF request \in DOMAIN messages
+       THEN /\ messages' = WithoutMessage(request, messages)
+            /\ pendingMessages' = WithMessage(resp, pendingMessages)
+            /\ IF MsgNoReorder THEN msgSeqCounter' = msgSeqCounter + 1 ELSE UNCHANGED msgSeqCounter
+       ELSE /\ pendingMessages' = WithMessage(resp, WithoutMessage(request, pendingMessages))
+            /\ UNCHANGED messages
+            /\ IF MsgNoReorder THEN msgSeqCounter' = msgSeqCounter + 1 ELSE UNCHANGED msgSeqCounter
 
 \* Default: change when needed
  Send(m) == SendDirect(m)
  Reply(response, request) == ReplyDirect(response, request) 
  Discard(m) == DiscardDirect(m)
+
+\* FIFO ordering predicate: check if message m is the first message from its source to its dest
+\* A message is FIFO-first if no other message with lower sequence number exists for the same pair
+IsFifoFirst(m) ==
+    IF ~MsgNoReorder THEN TRUE
+    ELSE ~\E other \in DOMAIN messages:
+            /\ other.msource = m.msource
+            /\ other.mdest = m.mdest
+            /\ other.mseq < m.mseq
      
 MaxOrZero(s) == IF s = {} THEN 0 ELSE Max(s)
 
@@ -424,6 +513,7 @@ ResetInflights(i, j) ==
 \* Define initial values for all variables
 InitMessageVars == /\ messages = EmptyBag
                    /\ pendingMessages = EmptyBag
+                   /\ msgSeqCounter = 0
 InitServerVars == /\ currentTerm = [i \in Server |-> 0]
                   /\ state       = [i \in Server |-> Follower]
                   /\ votedFor    = [i \in Server |-> Nil]
@@ -458,6 +548,10 @@ InitProgressVars ==
     /\ msgAppFlowPaused = [i \in Server |-> [j \in Server |-> FALSE]]
     /\ inflights = [i \in Server |-> [j \in Server |-> {}]]
 
+\* Network partition initialization: no partition active (all servers in partition 0)
+InitPartitionVars ==
+    /\ partitions = [i \in Server |-> 0]
+
 Init == /\ InitMessageVars
         /\ InitServerVars
         /\ InitCandidateVars
@@ -466,12 +560,14 @@ Init == /\ InitMessageVars
         /\ InitConfigVars
         /\ InitDurableState
         /\ InitProgressVars
+        /\ InitPartitionVars
 
 ----
 \* Define state transitions
 
 \* Server i restarts from stable storage.
 \* It loses everything but its currentTerm, commitIndex, votedFor, log, and config in durable state.
+\* When RestartDropsMessages is TRUE, all messages to/from the restarting node are dropped.
 \* @type: Int => Bool;
 Restart(i) ==
     /\ state'          = [state EXCEPT ![i] = Follower]
@@ -500,7 +596,11 @@ Restart(i) ==
     /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i] = [j \in Server |-> 0]]
     /\ nextIndex' = [nextIndex EXCEPT ![i] = [j \in Server |-> 1]]
     /\ inflights' = [inflights EXCEPT ![i] = [j \in Server |-> {}]]
-    /\ UNCHANGED <<messages, durableState, reconfigCount, historyLog>>
+    \* When RestartDropsMessages is TRUE, drop all messages to/from this node
+    /\ IF RestartDropsMessages 
+       THEN messages' = messages (-) SetToBag(MessagesToOrFrom(i))
+       ELSE UNCHANGED messages
+    /\ UNCHANGED <<msgSeqCounter, durableState, reconfigCount, historyLog, partitions>>
 
 \* Server i times out and starts a new election.
 \* @type: Int => Bool;
@@ -511,7 +611,7 @@ Timeout(i) == /\ state[i] \in {Follower, Candidate}
               /\ votedFor' = [votedFor EXCEPT ![i] = i]
               /\ votesResponded' = [votesResponded EXCEPT ![i] = {}]
               /\ votesGranted'   = [votesGranted EXCEPT ![i] = {}]
-              /\ UNCHANGED <<messageVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+              /\ UNCHANGED <<messageVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* Candidate i sends j a RequestVote request.
 \* @type: (Int, Int) => Bool;
@@ -530,7 +630,7 @@ RequestVote(i, j) ==
                    mvoteGranted     |-> TRUE,
                    msource          |-> i,
                    mdest            |-> i])
-    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* Leader i sends j an AppendEntries request containing entries in [b,e) range.
 \* N.B. range is right open
@@ -609,7 +709,7 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
               ELSE @]
           \* New: Other Progress variables remain unchanged
           /\ UNCHANGED <<progressState, pendingSnapshot>>
-          /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState>> 
+          /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, partitions>> 
 
 \* etcd leader sends MsgAppResp to itself immediately after appending log entry
 AppendEntriesToSelf(i) ==
@@ -623,7 +723,7 @@ AppendEntriesToSelf(i) ==
              mlogTerm        |-> 0,
              msource         |-> i,
              mdest           |-> i])
-    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
 AppendEntries(i, j, range) ==
     AppendEntriesInRangeToPeer("app", i, j, range)
@@ -654,7 +754,7 @@ SendSnapshot(i, j) ==
     /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = log[i].snapshotIndex]
     /\ nextIndex' = [nextIndex EXCEPT ![i][j] = log[i].snapshotIndex + 1]
     /\ ResetInflights(i, j)
-    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, historyLog>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, historyLog, partitions>>
 
 \* Send snapshot with optional log compaction.
 \* SendSnapshot without compacting the log.
@@ -684,7 +784,7 @@ SendSnapshotWithCompaction(i, j, snapshoti) ==
     /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = snapshoti]
     /\ nextIndex' = [nextIndex EXCEPT ![i][j] = snapshoti + 1]
     /\ inflights' = [inflights EXCEPT ![i][j] = {}]
-    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, historyLog>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, historyLog, partitions>>
 
 \* ManualSendSnapshot - Send snapshot without modifying progress state
 \* This models the send-snapshot command in the test harness which bypasses
@@ -714,7 +814,7 @@ ManualSendSnapshot(i, j) ==
              msource        |-> i,
              mdest          |-> j])
     \* Key: Do NOT modify progress state!
-    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* Candidate i transitions to leader.
 \* @type: Int => Bool;
@@ -742,7 +842,7 @@ BecomeLeader(i) ==
                             [j \in Server |-> LastIndex(log[i]) + 1]]
     /\ inflights' = [inflights EXCEPT ![i] =
                             [j \in Server |-> {}]]
-    /\ UNCHANGED <<messageVars, currentTerm, votedFor, pendingConfChangeIndex, candidateVars, logVars, configVars, durableState>>
+    /\ UNCHANGED <<messageVars, currentTerm, votedFor, pendingConfChangeIndex, candidateVars, logVars, configVars, durableState, partitions>>
     
 Replicate(i, v, t) == 
     /\ t \in {ValueEntry, ConfigEntry}
@@ -758,7 +858,7 @@ Replicate(i, v, t) ==
 \* @type: (Int, Int) => Bool;
 ClientRequest(i, v) ==
     /\ Replicate(i, [val |-> v], ValueEntry)
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, partitions>>
 
 \* Leader i receives a client request AND sends MsgAppResp immediately (mimicking atomic behavior).
 \* Used for implicit replication in Trace Validation.
@@ -773,7 +873,7 @@ ClientRequestAndSend(i, v) ==
              mlogTerm    |-> 0,
              msource     |-> i,
              mdest       |-> i])
-    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, partitions>>
 
 
 \* Leader replicates an implicit entry (for self-message response in trace).
@@ -802,7 +902,7 @@ ReplicateImplicitEntry(i) ==
        /\ IF isJoint
           THEN pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log'[i])]
           ELSE UNCHANGED pendingConfChangeIndex
-    /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
 
 \* Leader i advances its commitIndex.
 \* This is done as a separate step from handling AppendEntries responses,
@@ -849,7 +949,7 @@ AdvanceCommitIndex(i) ==
                   commitIndex[i]
        IN
         /\ CommitTo(i, newCommitIndex)
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, log, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, log, configVars, durableState, progressVars, historyLog, partitions>>
 
     
 \* Leader i adds a new server j or promote learner j
@@ -863,7 +963,7 @@ AddNewServer(i, j) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
 
 \* Leader i adds a leaner j to the cluster.
 AddLearner(i, j) ==
@@ -876,7 +976,7 @@ AddLearner(i, j) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
 
 \* Leader i removes a server j (possibly itself) from the cluster.
 DeleteServer(i, j) ==
@@ -889,7 +989,7 @@ DeleteServer(i, j) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
 
 \* Leader i proposes an arbitrary configuration change (compound changes supported).
 \* Reference: confchange/confchange.go - joint consensus requires proper sequencing:
@@ -916,7 +1016,7 @@ ChangeConf(i) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
 
 \* Leader i proposes an arbitrary configuration change AND sends MsgAppResp.
 \* Used for implicit replication in Trace Validation.
@@ -959,7 +1059,7 @@ ChangeConfAndSend(i) ==
                      mlogTerm    |-> 0,
                      msource     |-> i,
                      mdest       |-> i])
-    /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
 
 \* Apply the next committed config entry in order
 \* Reference: etcd processes CommittedEntries sequentially (for _, entry := range rd.CommittedEntries)
@@ -1002,7 +1102,7 @@ ApplySimpleConfChange(i) ==
                        [j \in Server |-> IF j \in addedNodes THEN 0 ELSE pendingSnapshot[i][j]]]
            ELSE /\ UNCHANGED progressVars
                 /\ UNCHANGED matchIndex
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, logVars, durableState, historyLog>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, logVars, durableState, historyLog, partitions>>
 
 \* Leave joint consensus - transition from joint config to single config
 \* This action is called when applying a LeaveJoint config entry (via ApplySimpleConfChange)
@@ -1015,7 +1115,7 @@ LeaveJoint(i) ==
         /\ reconfigCount' = reconfigCount + 1
         /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
        ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars, appliedConfigIndex>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars, appliedConfigIndex, partitions>>
 
 \* Implicit LeaveJoint - leave joint config when autoLeave=TRUE but no LeaveJoint log entry exists
 \* This can happen when an implicit entry was created before EnterJoint was applied,
@@ -1034,7 +1134,7 @@ ImplicitLeaveJoint(i, newVoters, newLearners) ==
         /\ reconfigCount' = reconfigCount + 1
         /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
        ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars, appliedConfigIndex>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars, appliedConfigIndex, partitions>>
 
 \* Leader proposes LeaveJoint entry when autoLeave=TRUE and config entry is applied
 \* Reference: raft.go:745-760 - AutoLeave mechanism
@@ -1050,7 +1150,7 @@ ProposeLeaveJoint(i) ==
     \* This entry must be committed with joint quorum before being applied
     /\ Replicate(i, [leaveJoint |-> TRUE, newconf |-> GetConfig(i), learners |-> {}], ConfigEntry)
     /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log'[i])]
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
 
 \* Apply configuration from snapshot
 \* When a follower receives a snapshot, it applies the config directly
@@ -1069,18 +1169,18 @@ ApplySnapshotConfChange(i, newVoters) ==
     IN
     /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
     /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = lastConfigIdx]
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex, partitions>>
 
 \* Follower advances commit index (e.g., from AppendEntries leaderCommit)
 FollowerAdvanceCommitIndex(i, newCommit) ==
     /\ state[i] /= Leader
     /\ commitIndex' = [commitIndex EXCEPT ![i] = newCommit]
-    /\ UNCHANGED <<messages, pendingMessages, serverVars, candidateVars, matchIndex, pendingConfChangeIndex, log, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, pendingConfChangeIndex, log, configVars, durableState, progressVars, historyLog, partitions>>
 
 Ready(i) ==
     /\ PersistState(i)
     /\ SendPendingMessages(i)
-    /\ UNCHANGED <<serverVars, leaderVars, candidateVars, logVars, configVars, progressVars, historyLog>>
+    /\ UNCHANGED <<msgSeqCounter, serverVars, leaderVars, candidateVars, logVars, configVars, progressVars, historyLog, partitions>>
 
 BecomeFollowerOfTerm(i, t) ==
     /\ currentTerm'    = [currentTerm EXCEPT ![i] = t]
@@ -1093,7 +1193,7 @@ BecomeFollowerOfTerm(i, t) ==
 StepDownToFollower(i) ==
     /\ state[i] \in {Leader, Candidate}
     /\ BecomeFollowerOfTerm(i, currentTerm[i])
-    /\ UNCHANGED <<messageVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messageVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
 
 
@@ -1145,7 +1245,7 @@ HandleRequestVoteRequest(i, j, m) ==
                  msource      |-> i,
                  mdest        |-> j],
                  m)
-       /\ UNCHANGED <<state, currentTerm, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+       /\ UNCHANGED <<state, currentTerm, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* Server i receives a RequestVote response from server j with
 \* m.mterm = currentTerm[i].
@@ -1162,7 +1262,7 @@ HandleRequestVoteResponse(i, j, m) ==
        \/ /\ ~m.mvoteGranted
           /\ UNCHANGED <<votesGranted>>
     /\ Discard(m)
-    /\ UNCHANGED <<serverVars, votedFor, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<serverVars, votedFor, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* @type: (Int, Int, AEREQT, Bool) => Bool;
 RejectAppendEntriesRequest(i, j, m, logOk) ==
@@ -1187,14 +1287,14 @@ RejectAppendEntriesRequest(i, j, m, logOk) ==
                  msource         |-> i,
                  mdest           |-> j],
                  m)
-    /\ UNCHANGED <<serverVars, logVars, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<serverVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* @type: (Int, MSG) => Bool;
 ReturnToFollowerState(i, m) ==
     /\ m.mterm = currentTerm[i]
     /\ state[i] = Candidate
     /\ state' = [state EXCEPT ![i] = Follower]
-    /\ UNCHANGED <<messageVars, currentTerm, votedFor, logVars, configVars, durableState, progressVars, historyLog>> 
+    /\ UNCHANGED <<messageVars, currentTerm, votedFor, logVars, configVars, durableState, progressVars, historyLog, partitions>> 
 
 HasNoConflict(i, index, ents) ==
     /\ index <= LastIndex(log[i]) + 1
@@ -1233,7 +1333,7 @@ AppendEntriesAlreadyDone(i, j, index, m) ==
                 msource         |-> i,
                 mdest           |-> j],
                 m)
-    /\ UNCHANGED <<serverVars, log, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<serverVars, log, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* @type: (Int, Int, Int, AEREQT) => Bool;
 ConflictAppendEntriesRequest(i, j, index, m) ==
@@ -1267,7 +1367,7 @@ ConflictAppendEntriesRequest(i, j, index, m) ==
               msource         |-> i,
               mdest           |-> j],
               m)
-    /\ UNCHANGED <<serverVars, durableState, progressVars>>
+    /\ UNCHANGED <<serverVars, durableState, progressVars, partitions>>
 
 \* @type: (Int, Int, Int, AEREQT) => Bool;
 NoConflictAppendEntriesRequest(i, j, index, m) ==
@@ -1294,7 +1394,7 @@ NoConflictAppendEntriesRequest(i, j, index, m) ==
               msource         |-> i,
               mdest           |-> j],
               m)
-    /\ UNCHANGED <<serverVars, durableState, progressVars>>
+    /\ UNCHANGED <<serverVars, durableState, progressVars, partitions>>
 
 \* @type: (Int, Int, Bool, AEREQT) => Bool;
 AcceptAppendEntriesRequest(i, j, logOk, m) ==
@@ -1322,7 +1422,7 @@ HandleAppendEntriesRequest(i, j, m) ==
        /\ \/ RejectAppendEntriesRequest(i, j, m, logOk)
           \/ ReturnToFollowerState(i, m)
           \/ AcceptAppendEntriesRequest(i, j, logOk, m)
-       /\ UNCHANGED <<candidateVars, leaderVars, configVars, durableState, progressVars>>
+       /\ UNCHANGED <<candidateVars, leaderVars, configVars, durableState, progressVars, partitions>>
 
 \* Server i receives an AppendEntries response from server j with
 \* m.mterm = currentTerm[i].
@@ -1392,7 +1492,7 @@ HandleAppendEntriesResponse(i, j, m) ==
                 THEN \* StateReplicate: if rejected > Match, set Next = Match + 1
                      IF rejected <= matchIndex[i][j]
                      THEN \* Stale rejection, ignore
-                          /\ UNCHANGED <<leaderVars, progressVars>>
+                          /\ UNCHANGED <<leaderVars, progressVars, partitions>>
                      ELSE \* Valid rejection: transition to Probe, set Next = Match + 1
                           /\ progressState' = [progressState EXCEPT ![i][j] = StateProbe]
                           /\ nextIndex' = [nextIndex EXCEPT ![i][j] = matchIndex[i][j] + 1]
@@ -1423,7 +1523,7 @@ HandleAppendEntriesResponse(i, j, m) ==
                           /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
                           /\ UNCHANGED <<progressState, pendingSnapshot, inflights, matchIndex, pendingConfChangeIndex>>
     /\ Discard(m)
-    /\ UNCHANGED <<serverVars, candidateVars, logVars, configVars, durableState>>
+    /\ UNCHANGED <<serverVars, candidateVars, logVars, configVars, durableState, partitions>>
 
 \* Server i receives a heartbeat response from server j.
 \* Heartbeat responses do NOT cause state transitions (unlike MsgAppResp).
@@ -1443,7 +1543,7 @@ HandleHeartbeatResponse(i, j, m) ==
        ELSE UNCHANGED inflights
     /\ Discard(m)
     /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState,
-                   matchIndex, nextIndex, progressState, pendingSnapshot>>
+                   matchIndex, nextIndex, progressState, pendingSnapshot, partitions>>
 
 \* Compacts the log of server i up to newStart (exclusive).
 \* newStart becomes the new offset.
@@ -1467,7 +1567,7 @@ CompactLog(i, newStart) ==
           snapshotIndex |-> newStart - 1,
           snapshotTerm  |-> LogTerm(i, newStart - 1)
        ]]
-    /\ UNCHANGED <<messages, pendingMessages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* Server i receives a SnapshotRequest.
 \* Simulates raft.restore()
@@ -1479,7 +1579,7 @@ HandleSnapshotRequest(i, j, m) ==
            \* Stale term: ignore snapshot message entirely
            \* Reference: raft.go:1173-1177 - "ignored a %s message with lower term"
            /\ Discard(m)
-           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
        ELSE IF m.msnapshotIndex <= commitIndex[i] THEN
            \* Case 1: Stale snapshot (Index <= Committed). Ignore.
            \* Reference: raft.go:1858 restore() returns false
@@ -1493,7 +1593,7 @@ HandleSnapshotRequest(i, j, m) ==
                      msource     |-> i,
                      mdest       |-> j],
                      m)
-           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
        ELSE IF LogTerm(i, m.msnapshotIndex) = m.msnapshotTerm THEN
            \* Case 2: Fast-forward (Log contains snapshot index/term).
            \* Reference: raft.go:1907 matchTerm check returns false after commitTo
@@ -1508,7 +1608,7 @@ HandleSnapshotRequest(i, j, m) ==
                      msource     |-> i,
                      mdest       |-> j],
                      m)
-           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, log, configVars, durableState, progressVars, historyLog>>
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, log, configVars, durableState, progressVars, historyLog, partitions>>
        ELSE
            \* Case 3: Actual Restore. Wipe log.
            \* Reference: raft.go:1919 r.raftLog.restore(s) - restores log first
@@ -1536,7 +1636,7 @@ HandleSnapshotRequest(i, j, m) ==
                      msource     |-> i,
                      mdest       |-> j],
                      m)
-           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars>>
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars, partitions>>
 
 \* Handle MsgSnapStatus from application layer
 \* Reference: raft.go:1606-1623
@@ -1560,7 +1660,7 @@ HandleSnapshotStatus(i, j, m) ==
           /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = TRUE]
           /\ inflights' = [inflights EXCEPT ![i][j] = {}]
     /\ Discard(m)
-    /\ UNCHANGED <<serverVars, candidateVars, logVars, configVars, durableState, matchIndex, historyLog>>
+    /\ UNCHANGED <<serverVars, candidateVars, logVars, configVars, durableState, matchIndex, historyLog, partitions>>
 
 \* Handle ReportUnreachable from application layer
 \* Reference: raft.go:1624-1632
@@ -1576,7 +1676,7 @@ ReportUnreachable(i, j) ==
        ELSE UNCHANGED <<progressState, inflights>>
     /\ UNCHANGED <<serverVars, candidateVars, messageVars, logVars, configVars,
                    durableState, leaderVars, nextIndex, pendingSnapshot,
-                   msgAppFlowPaused, historyLog>>
+                   msgAppFlowPaused, historyLog, partitions>>
 
 \* Any RPC with a newer term causes the recipient to advance its term first.
 \* @type: (Int, Int, MSG) => Bool;
@@ -1584,14 +1684,14 @@ UpdateTerm(i, j, m) ==
     /\ m.mterm > currentTerm[i]
     /\ BecomeFollowerOfTerm(i, m.mterm)
        \* messages is unchanged so m can be processed further.
-    /\ UNCHANGED <<messageVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<messageVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* Responses with stale terms are ignored.
 \* @type: (Int, Int, MSG) => Bool;
 DropStaleResponse(i, j, m) ==
     /\ m.mterm < currentTerm[i]
     /\ Discard(m)
-    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* Combined action: Update term AND handle RequestVoteRequest atomically.
 \* This is needed because raft.go handles term update and vote processing in a single Step call,
@@ -1613,32 +1713,36 @@ UpdateTermAndHandleRequestVote(i, j, m) ==
            /\ currentTerm' = [currentTerm EXCEPT ![i] = m.mterm]
            /\ state'       = [state       EXCEPT ![i] = Follower]
            /\ votedFor'    = [votedFor    EXCEPT ![i] = IF grant THEN j ELSE Nil]
-           /\ UNCHANGED <<candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+           /\ UNCHANGED <<candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* Receive a message.
+\* When MsgNoReorder is TRUE, enforce FIFO ordering per (source, dest) pair.
+\* When partition is active, only receive if source and dest are in the same partition.
 ReceiveDirect(m) ==
     LET i == m.mdest
         j == m.msource
-    IN \* Any RPC with a newer term causes the recipient to advance
-       \* its term first. Responses with stale terms are ignored.
-    \/ UpdateTermAndHandleRequestVote(i, j, m)
-    \/ /\ m.mtype /= RequestVoteRequest
-       /\ UpdateTerm(i, j, m)
-    \/  /\ m.mtype = RequestVoteRequest
-        /\ HandleRequestVoteRequest(i, j, m)
-    \/  /\ m.mtype = RequestVoteResponse
-        /\  \/ DropStaleResponse(i, j, m)
-            \/ HandleRequestVoteResponse(i, j, m)
-    \/  /\ m.mtype = AppendEntriesRequest
-        /\ HandleAppendEntriesRequest(i, j, m)
-    \/  /\ m.mtype = AppendEntriesResponse
-        /\ \/ DropStaleResponse(i, j, m)
-           \/ HandleHeartbeatResponse(i, j, m)
-           \/ HandleAppendEntriesResponse(i, j, m)
-    \/  /\ m.mtype = SnapshotRequest
-        /\ HandleSnapshotRequest(i, j, m)
-    \/  /\ m.mtype = SnapshotStatus
-        /\ HandleSnapshotStatus(i, j, m)
+    IN /\ CanCommunicate(j, i)  \* Partition check: source and dest must be able to communicate
+       /\ IsFifoFirst(m)  \* FIFO constraint: only receive if first in order
+       /\ \* Any RPC with a newer term causes the recipient to advance
+          \* its term first. Responses with stale terms are ignored.
+          \/ UpdateTermAndHandleRequestVote(i, j, m)
+          \/ /\ m.mtype /= RequestVoteRequest
+             /\ UpdateTerm(i, j, m)
+          \/ /\ m.mtype = RequestVoteRequest
+             /\ HandleRequestVoteRequest(i, j, m)
+          \/ /\ m.mtype = RequestVoteResponse
+             /\ \/ DropStaleResponse(i, j, m)
+                \/ HandleRequestVoteResponse(i, j, m)
+          \/ /\ m.mtype = AppendEntriesRequest
+             /\ HandleAppendEntriesRequest(i, j, m)
+          \/ /\ m.mtype = AppendEntriesResponse
+             /\ \/ DropStaleResponse(i, j, m)
+                \/ HandleHeartbeatResponse(i, j, m)
+                \/ HandleAppendEntriesResponse(i, j, m)
+          \/ /\ m.mtype = SnapshotRequest
+             /\ HandleSnapshotRequest(i, j, m)
+          \/ /\ m.mtype = SnapshotStatus
+             /\ HandleSnapshotStatus(i, j, m)
 
 Receive(m) == ReceiveDirect(m)
 
@@ -1656,7 +1760,7 @@ NextAppendEntriesResponse == \E m \in DOMAIN messages : m.mtype = AppendEntriesR
 DuplicateMessage(m) ==
     /\ m \in DOMAIN messages
     /\ messages' = WithMessage(m, messages)
-    /\ UNCHANGED <<pendingMessages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<pendingMessages, msgSeqCounter, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* The network drops a message
 \* @type: MSG => Bool;
@@ -1664,7 +1768,36 @@ DropMessage(m) ==
     \* Do not drop loopback messages
     \* /\ m.msource /= m.mdest
     /\ Discard(m)
-    /\ UNCHANGED <<pendingMessages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+    /\ UNCHANGED <<pendingMessages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
+
+\* ============================================================================
+\* Network Partition Actions
+\* ============================================================================
+
+\* Create a network partition: assign each server to a partition group
+\* partitionAssignment is a function from Server to partition ID (1..MaxPartitions)
+\* All cross-partition messages are dropped when partition is created
+CreatePartition(partitionAssignment) ==
+    \* Only create partition if not already partitioned
+    /\ ~IsPartitioned
+    \* Ensure valid partition assignment
+    /\ \A i \in Server : partitionAssignment[i] \in 1..MaxPartitions
+    \* Must have at least 2 different partition groups (otherwise it's not a real partition)
+    \* /\ Cardinality({partitionAssignment[i] : i \in Server}) >= 2
+    \* Apply the partition
+    /\ partitions' = partitionAssignment
+    \* Drop all cross-partition messages
+    /\ messages' = messages (-) SetToBag(CrossPartitionMessages)
+    /\ pendingMessages' = pendingMessages (-) SetToBag(CrossPartitionPendingMessages)
+    /\ UNCHANGED <<msgSeqCounter, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
+
+\* Heal the network partition: all servers can communicate again
+HealPartition ==
+    \* Only heal if partitioned
+    /\ IsPartitioned
+    \* Reset all partitions to 0 (no partition)
+    /\ partitions' = [i \in Server |-> 0]
+    /\ UNCHANGED <<messages, pendingMessages, msgSeqCounter, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog>>
 
 ----
 
