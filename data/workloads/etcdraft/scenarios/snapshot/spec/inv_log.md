@@ -2351,3 +2351,129 @@ This accounts for the intermediate state where a server has received log/snapsho
 - User Feedback: Pending
 
 ---
+
+## Record #36 - 2026-01-16
+
+### Counterexample Summary
+`confchange_disable_validation.ndjson` trace validation failed at line 35. The trace shows:
+1. Line 26: `SendAppendEntriesResponse` - A ValueEntry was created at log index 6 (before EnterJoint was applied at line 28)
+2. Line 28: `ApplyConfChange` - EnterJoint applied, creating joint config `[[\"1\"],[\"1\"]]`
+3. Line 35: `ApplyConfChange` - Attempted to apply LeaveJoint, but there was no LeaveJoint ConfigEntry in the log
+
+**Root Cause**: At line 26, log index 6 already held a ValueEntry (implicit entry created before EnterJoint). When the system tried to leave joint config at line 35, the spec expected a LeaveJoint ConfigEntry at that index, but found only the ValueEntry.
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Issue
+- **Violated Property**: Trace validation - missing action for implicit LeaveJoint
+- **Root Cause**: The spec did not model the edge case where `autoLeave=TRUE` but no LeaveJoint log entry exists. In etcd raft's autoLeave mechanism, when an implicit entry (ValueEntry) is created before the EnterJoint config is applied, the next log index gets a ValueEntry instead of a LeaveJoint ConfigEntry. The system must still leave the joint config, but without a dedicated log entry.
+
+### Evidence from Implementation
+From `state_trace.go:299-316` (traceConfChangeEvent):
+```go
+func traceConfChangeEvent(cfg tracker.Config, r *raft) {
+    // Detect LeaveJoint: old config is joint (Voters[1] non-empty), new config is not joint (Voters[1] empty)
+    isLeaveJoint := len(r.trk.Config.Voters[1]) > 0 && len(cfg.Voters[1]) == 0
+
+    cc := &TracingConfChange{
+        Changes:    []SingleConfChange{},
+        NewConf:    formatConf(cfg.Voters[0].Slice()),
+        Learners:   formatLearners(cfg.Learners),
+        LeaveJoint: isLeaveJoint,
+    }
+    ...
+}
+```
+This shows that LeaveJoint can occur even without a dedicated log entry - it's detected by configuration state change (joint → non-joint).
+
+### Modifications Made
+
+#### File 1: etcdraft.tla (lines 1020-1037) - Added ImplicitLeaveJoint action
+```tla
+\* Implicit LeaveJoint - leave joint config when autoLeave=TRUE but no LeaveJoint log entry exists
+\* This can happen when an implicit entry was created before EnterJoint was applied,
+\* resulting in a ValueEntry at the next log index instead of a LeaveJoint ConfigEntry.
+\* In this case, the system leaves joint config without a dedicated log entry.
+\* Reference: This is an edge case in etcd raft's autoLeave mechanism.
+ImplicitLeaveJoint(i, newVoters, newLearners) ==
+    /\ IsJointConfig(i)
+    /\ config[i].autoLeave = TRUE
+    \* No unapplied config entries exist
+    /\ LET validIndices == {x \in Max({log[i].offset, appliedConfigIndex[i]+1})..commitIndex[i] :
+                              LogEntry(i, x).type = ConfigEntry}
+       IN validIndices = {}
+    /\ config' = [config EXCEPT ![i] = [learners |-> newLearners, jointConfig |-> <<newVoters, {}>>, autoLeave |-> FALSE]]
+    /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] > 0 THEN
+        /\ reconfigCount' = reconfigCount + 1
+        /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
+       ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars, appliedConfigIndex>>
+```
+
+#### File 2: etcdraft.tla (lines 1715-1722) - Added to NextDynamic
+- **Before**:
+```tla
+NextDynamic ==
+    \/ Next
+    \/ \E i \in Server : ChangeConf(i)
+    \/ \E i \in Server : ChangeConfAndSend(i)
+    \/ \E i \in Server : ApplySimpleConfChange(i)
+    \/ \E i \in Server : ProposeLeaveJoint(i)
+```
+- **After**:
+```tla
+NextDynamic ==
+    \/ Next
+    \/ \E i \in Server : ChangeConf(i)
+    \/ \E i \in Server : ChangeConfAndSend(i)
+    \/ \E i \in Server : ApplySimpleConfChange(i)
+    \/ \E i \in Server : ProposeLeaveJoint(i)
+    \/ \E i \in Server, newVoters \in SUBSET Server, newLearners \in SUBSET Server :
+        ImplicitLeaveJoint(i, newVoters, newLearners)
+```
+
+#### File 3: Traceetcdraft.tla (lines 482-492) - Added routing action
+```tla
+\* Implicit LeaveJoint - for cases where autoLeave=TRUE but no LeaveJoint log entry exists
+\* This happens when the implicit entry was created before EnterJoint was applied
+\* Routes to ImplicitLeaveJoint action in etcdraft.tla
+ImplicitLeaveJointIfLogged(i) ==
+    /\ LoglineIsNodeEvent("ApplyConfChange", i)
+    /\ "newconf" \in DOMAIN logline.event.prop.cc
+    /\ LET newVoters == ToSet(logline.event.prop.cc.newconf)
+           newLearners == IF "learners" \in DOMAIN logline.event.prop.cc
+                          THEN ToSet(logline.event.prop.cc.learners)
+                          ELSE GetLearners(i)
+       IN ImplicitLeaveJoint(i, newVoters, newLearners)
+```
+
+#### File 4: Traceetcdraft.tla (lines 586-590) - Added to ApplyConfChange handling
+- **Before**:
+```tla
+   \/ /\ LoglineIsEvent("ApplyConfChange")
+      /\ \E i \in Server: \/ ApplySimpleConfChangeIfLogged(i)
+                          \/ ApplySnapshotConfChangeIfLogged(i)
+                          \/ LeaveJointIfLogged(i)
+```
+- **After**:
+```tla
+   \/ /\ LoglineIsEvent("ApplyConfChange")
+      /\ \E i \in Server: \/ ApplySimpleConfChangeIfLogged(i)
+                          \/ ApplySnapshotConfChangeIfLogged(i)
+                          \/ LeaveJointIfLogged(i)
+                          \/ ImplicitLeaveJointIfLogged(i)
+```
+
+### Key Design Decision
+Per user feedback, the logic was placed in:
+1. **etcdraft.tla** (spec): Defines what the system can do (ImplicitLeaveJoint action)
+2. **Traceetcdraft.tla** (trace spec): Handles event routing (ImplicitLeaveJointIfLogged calls the spec action)
+
+This separation ensures:
+- Model checking can explore the ImplicitLeaveJoint behavior via NextDynamic
+- Trace validation correctly routes ApplyConfChange events to the appropriate action
+
+### User Confirmation
+- Confirmation Time: 2026-01-16
+- User Feedback: Pending
+
+---

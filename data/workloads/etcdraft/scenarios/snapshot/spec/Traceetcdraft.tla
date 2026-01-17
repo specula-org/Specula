@@ -73,18 +73,20 @@ BootstrappedConfig(i) ==
 TraceInitServer == BootstrappedConfig(TraceLog[1].event.nid)
 ASSUME TraceInitServer \subseteq TraceServer
 
-\* Extract learners from the FIRST ApplyConfChange event in trace (used for initialization)
-\* Only use learners if they exist in the initial bootstrap config
-\* If the first ApplyConfChange doesn't have learners, return {} (learners added later dynamically)
-TraceLearners ==
-    LET firstApplyConf == SelectSeq(TraceLog, LAMBDA x: x.event.name = "ApplyConfChange")
-    IN IF Len(firstApplyConf) > 0 /\
-          "learners" \in DOMAIN firstApplyConf[1].event.prop.cc /\
-          firstApplyConf[1].event.prop.cc.learners /= <<>>
-       THEN ToSet(firstApplyConf[1].event.prop.cc.learners)
-       ELSE {}
+\* Extract learners from BOOTSTRAP events only (InitState, BecomeFollower, BecomeCandidate)
+\* These events have learners field only if learners existed at node startup
+\* Do NOT extract from later events like ApplyConfChange which may add learners dynamically
+TraceLearners == TLCEval(
+    LET bootstrapEvents == SelectSeq(TraceLog, LAMBDA x:
+            x.event.name \in {"InitState", "BecomeFollower", "BecomeCandidate"} /\
+            "learners" \in DOMAIN x.event /\ x.event.learners /= <<>>)
+    IN IF Len(bootstrapEvents) > 0
+       THEN ToSet(bootstrapEvents[1].event.learners)
+       ELSE {})
 
-\* Use TraceLearners if available, otherwise fall back to implicit calculation
+\* Use TraceLearners (from bootstrap event.learners field) if available,
+\* otherwise fall back to implicit calculation
+\* Note: Do NOT use ApplyConfChange learners as fallback - those are dynamic additions
 ImplicitLearners ==
     IF TraceLearners /= {}
     THEN TraceLearners

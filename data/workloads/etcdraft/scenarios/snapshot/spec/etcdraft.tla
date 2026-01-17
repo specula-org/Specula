@@ -427,13 +427,50 @@ IsJointConfig(i) ==
 GetLearners(i) ==
     config[i].learners
 
+\* Compute ConfState from a history sequence (for snapshot)
+\* This simulates what the real system stores in Snapshot.Metadata.ConfState
+\* The ConfState contains the configuration at the snapshot index.
+\* Reference: raftpb.ConfState contains Voters, Learners, VotersOutgoing, LearnersNext, AutoLeave
+\* @type: Seq([value: a, term: Int, type: Str]) => [voters: Set(Str), learners: Set(Str), outgoing: Set(Str), autoLeave: Bool];
+ComputeConfStateFromHistory(history) ==
+    LET configIndices == {k \in 1..Len(history) : history[k].type = ConfigEntry}
+        lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
+    IN
+    IF lastConfigIdx = 0 THEN
+        \* No config entry, return empty config
+        [voters |-> {}, learners |-> {}, outgoing |-> {}, autoLeave |-> FALSE]
+    ELSE
+        LET entry == history[lastConfigIdx]
+            isLeaveJoint == "leaveJoint" \in DOMAIN entry.value /\ entry.value.leaveJoint = TRUE
+        IN
+        IF isLeaveJoint THEN
+            \* LeaveJoint: voters come from newconf, learners from entry, no outgoing
+            [voters |-> entry.value.newconf,
+             learners |-> IF "learners" \in DOMAIN entry.value THEN entry.value.learners ELSE {},
+             outgoing |-> {},
+             autoLeave |-> FALSE]
+        ELSE
+            \* Regular config entry (including enterJoint)
+            LET hasEnterJoint == "enterJoint" \in DOMAIN entry.value
+                enterJoint == IF hasEnterJoint THEN entry.value.enterJoint ELSE FALSE
+                hasOldconf == enterJoint /\ "oldconf" \in DOMAIN entry.value
+                oldconf == IF hasOldconf THEN entry.value.oldconf ELSE {}
+            IN
+            [voters |-> entry.value.newconf,
+             learners |-> IF "learners" \in DOMAIN entry.value THEN entry.value.learners ELSE {},
+             outgoing |-> oldconf,
+             autoLeave |-> enterJoint /\ oldconf /= {}]
+
 \* Apply conf change log entry to configuration
 \* Reference: raft.go applyConfChange() - enterJoint sets autoLeave=TRUE, leaveJoint clears it
+\* Reference: confchange.go:103-107 LeaveJoint() - preserves Learners and adds LearnersNext to Learners
 ApplyConfigUpdate(i, k) ==
     LET entry == LogEntry(i, k)
         isLeaveJoint == "leaveJoint" \in DOMAIN entry.value /\ entry.value.leaveJoint = TRUE
         newVoters == IF isLeaveJoint THEN GetConfig(i) ELSE entry.value.newconf
-        newLearners == IF isLeaveJoint THEN {} ELSE entry.value.learners
+        \* FIX: For LeaveJoint, learners are preserved (stored in entry.value.learners by ProposeLeaveJoint)
+        \* Previously this was hardcoded to {} which was incorrect
+        newLearners == IF "learners" \in DOMAIN entry.value THEN entry.value.learners ELSE {}
         enterJoint == IF "enterJoint" \in DOMAIN entry.value THEN entry.value.enterJoint ELSE FALSE
         outgoing == IF enterJoint THEN entry.value.oldconf ELSE {}
         \* AutoLeave: Set TRUE when entering joint, clear when leaving joint
@@ -739,13 +776,17 @@ SendSnapshot(i, j) ==
     \* Trigger: The previous log index required for AppendEntries is NOT available
     /\ LET prevLogIndex == nextIndex[i][j] - 1 IN
        ~IsAvailable(i, prevLogIndex)
-    /\ Send([mtype          |-> SnapshotRequest,
-             mterm          |-> currentTerm[i],
-             msnapshotIndex |-> log[i].snapshotIndex,
-             msnapshotTerm  |-> log[i].snapshotTerm,
-             mhistory       |-> SubSeq(historyLog[i], 1, log[i].snapshotIndex),
-             msource        |-> i,
-             mdest          |-> j])
+    /\ LET snapshotHistory == SubSeq(historyLog[i], 1, log[i].snapshotIndex)
+       IN Send([mtype          |-> SnapshotRequest,
+                mterm          |-> currentTerm[i],
+                msnapshotIndex |-> log[i].snapshotIndex,
+                msnapshotTerm  |-> log[i].snapshotTerm,
+                mhistory       |-> snapshotHistory,
+                \* NEW: Include ConfState in snapshot message (like real system)
+                \* Reference: raftpb.Snapshot.Metadata.ConfState
+                mconfState     |-> ComputeConfStateFromHistory(snapshotHistory),
+                msource        |-> i,
+                mdest          |-> j])
     \* Transition to StateSnapshot, set pendingSnapshot and Next
     \* Reference: raft.go:684 sendSnapshot() -> pr.BecomeSnapshot()
     \* Reference: tracker/progress.go:153-158 BecomeSnapshot()
@@ -772,13 +813,16 @@ SendSnapshotWithCompaction(i, j, snapshoti) ==
     /\ snapshoti <= commitIndex[i]  \* Can only snapshot committed entries
     /\ snapshoti >= log[i].snapshotIndex  \* Must be >= current snapshotIndex (can't send compacted entries)
     /\ snapshoti >= matchIndex[i][j]   \* Only send snapshot for entries follower doesn't have
-    /\ SendDirect([mtype          |-> SnapshotRequest,
-                   mterm          |-> currentTerm[i],
-                   msnapshotIndex |-> snapshoti,
-                   msnapshotTerm  |-> LogTerm(i, snapshoti),
-                   mhistory       |-> SubSeq(historyLog[i], 1, snapshoti),
-                   msource        |-> i,
-                   mdest          |-> j])
+    /\ LET snapshotHistory == SubSeq(historyLog[i], 1, snapshoti)
+       IN SendDirect([mtype          |-> SnapshotRequest,
+                      mterm          |-> currentTerm[i],
+                      msnapshotIndex |-> snapshoti,
+                      msnapshotTerm  |-> LogTerm(i, snapshoti),
+                      mhistory       |-> snapshotHistory,
+                      \* NEW: Include ConfState in snapshot message
+                      mconfState     |-> ComputeConfStateFromHistory(snapshotHistory),
+                      msource        |-> i,
+                      mdest          |-> j])
     /\ progressState' = [progressState EXCEPT ![i][j] = StateSnapshot]
     /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
     /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = snapshoti]
@@ -806,13 +850,16 @@ ManualSendSnapshot(i, j) ==
     /\ j \in GetConfig(i) \union GetLearners(i)
     \* Must have committed entries to create a snapshot from
     /\ commitIndex[i] > 0
-    /\ Send([mtype          |-> SnapshotRequest,
-             mterm          |-> currentTerm[i],
-             msnapshotIndex |-> commitIndex[i],
-             msnapshotTerm  |-> LogTerm(i, commitIndex[i]),
-             mhistory       |-> SubSeq(historyLog[i], 1, commitIndex[i]),
-             msource        |-> i,
-             mdest          |-> j])
+    /\ LET snapshotHistory == SubSeq(historyLog[i], 1, commitIndex[i])
+       IN Send([mtype          |-> SnapshotRequest,
+                mterm          |-> currentTerm[i],
+                msnapshotIndex |-> commitIndex[i],
+                msnapshotTerm  |-> LogTerm(i, commitIndex[i]),
+                mhistory       |-> snapshotHistory,
+                \* NEW: Include ConfState in snapshot message
+                mconfState     |-> ComputeConfStateFromHistory(snapshotHistory),
+                msource        |-> i,
+                mdest          |-> j])
     \* Key: Do NOT modify progress state!
     /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
@@ -1106,11 +1153,14 @@ ApplySimpleConfChange(i) ==
 
 \* Leave joint consensus - transition from joint config to single config
 \* This action is called when applying a LeaveJoint config entry (via ApplySimpleConfChange)
-\* Reference: confchange/confchange.go LeaveJoint()
+\* Reference: confchange/confchange.go:94-121 LeaveJoint()
+\* LeaveJoint preserves Learners and moves LearnersNext into Learners
 LeaveJoint(i) ==
     /\ IsJointConfig(i)
     /\ LET newVoters == GetConfig(i)  \* Keep incoming config (jointConfig[1])
-       IN config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, {}>>, autoLeave |-> FALSE]]
+       \* FIX: Preserve learners instead of hardcoding to {}
+       \* Reference: confchange.go:103-107 - LearnersNext are added to Learners
+       IN config' = [config EXCEPT ![i] = [learners |-> GetLearners(i), jointConfig |-> <<newVoters, {}>>, autoLeave |-> FALSE]]
     /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] > 0 THEN
         /\ reconfigCount' = reconfigCount + 1
         /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
@@ -1148,26 +1198,36 @@ ProposeLeaveJoint(i) ==
     /\ pendingConfChangeIndex[i] = 0  \* Previous config change has been applied
     \* Propose a LeaveJoint config entry - represented as ConfigEntry with leaveJoint=TRUE
     \* This entry must be committed with joint quorum before being applied
-    /\ Replicate(i, [leaveJoint |-> TRUE, newconf |-> GetConfig(i), learners |-> {}], ConfigEntry)
+    \* Reference: confchange.go:103-107 - LeaveJoint preserves Learners and adds LearnersNext
+    /\ Replicate(i, [leaveJoint |-> TRUE, newconf |-> GetConfig(i), learners |-> GetLearners(i)], ConfigEntry)
     /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log'[i])]
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
 
 \* Apply configuration from snapshot
 \* When a follower receives a snapshot, it applies the config directly
 \* Must check historyLog for joint config info since snapshot may contain joint config
+\* Reference: confchange/restore.go - Restore() uses ConfState which contains Voters, Learners, VotersOutgoing, AutoLeave
 ApplySnapshotConfChange(i, newVoters) ==
     \* Find the last config entry in historyLog to determine joint config
     LET configIndices == {k \in 1..Len(historyLog[i]) : historyLog[i][k].type = ConfigEntry}
         lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
+        entry == IF lastConfigIdx > 0 THEN historyLog[i][lastConfigIdx] ELSE [value |-> [newconf |-> {}, learners |-> {}]]
+        \* Check if this is a leaveJoint entry
+        isLeaveJoint == "leaveJoint" \in DOMAIN entry.value /\ entry.value.leaveJoint = TRUE
         \* Check if last config entry has enterJoint=TRUE
-        hasEnterJoint == lastConfigIdx > 0 /\ "enterJoint" \in DOMAIN historyLog[i][lastConfigIdx].value
-        enterJoint == IF hasEnterJoint THEN historyLog[i][lastConfigIdx].value.enterJoint ELSE FALSE
-        hasOldconf == enterJoint /\ "oldconf" \in DOMAIN historyLog[i][lastConfigIdx].value
-        oldconf == IF hasOldconf THEN historyLog[i][lastConfigIdx].value.oldconf ELSE {}
+        hasEnterJoint == ~isLeaveJoint /\ "enterJoint" \in DOMAIN entry.value
+        enterJoint == IF hasEnterJoint THEN entry.value.enterJoint ELSE FALSE
+        hasOldconf == enterJoint /\ "oldconf" \in DOMAIN entry.value
+        oldconf == IF hasOldconf THEN entry.value.oldconf ELSE {}
+        \* FIX: Read learners from historyLog entry instead of hardcoding {}
+        \* Reference: confchange/restore.go:82-87 - Learners are added from cs.Learners
+        hasLearners == lastConfigIdx > 0 /\ "learners" \in DOMAIN entry.value
+        newLearners == IF hasLearners THEN entry.value.learners ELSE {}
         \* AutoLeave is TRUE when entering joint config (snapshot may contain joint config)
-        newAutoLeave == enterJoint /\ oldconf /= {}
+        \* For leaveJoint, autoLeave should be FALSE
+        newAutoLeave == ~isLeaveJoint /\ enterJoint /\ oldconf /= {}
     IN
-    /\ config' = [config EXCEPT ![i] = [learners |-> {}, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
+    /\ config' = [config EXCEPT ![i] = [learners |-> newLearners, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
     /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = lastConfigIdx]
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex, partitions>>
 
@@ -1610,13 +1670,16 @@ HandleSnapshotRequest(i, j, m) ==
                      m)
            /\ UNCHANGED <<serverVars, candidateVars, leaderVars, log, configVars, durableState, progressVars, historyLog, partitions>>
        ELSE
-           \* Case 3: Actual Restore. Wipe log.
-           \* Reference: raft.go:1919 r.raftLog.restore(s) - restores log first
-           \* Config is NOT updated here - it will be updated by ApplySnapshotConfChange
-           \* when the subsequent ApplyConfChange event is processed.
-           \* This matches the code behavior where:
-           \*   1. restore() calls r.raftLog.restore(s) to restore log
-           \*   2. restore() calls switchToConfig() which emits ApplyConfChange event
+           \* Case 3: Actual Restore. Wipe log AND restore config atomically.
+           \* Reference: raft.go:1919 r.raftLog.restore(s) then r.switchToConfig()
+           \* These two operations happen in the same restore() function call,
+           \* and no other messages can be processed in between (single-threaded).
+           \* So we model them as a single atomic action.
+           LET confState == m.mconfState
+               \* Calculate lastConfigIdx for appliedConfigIndex
+               configIndices == {k \in 1..Len(m.mhistory) : m.mhistory[k].type = ConfigEntry}
+               lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
+           IN
            /\ log' = [log EXCEPT ![i] = [
                  offset  |-> m.msnapshotIndex + 1,
                  entries |-> <<>>,
@@ -1625,7 +1688,14 @@ HandleSnapshotRequest(i, j, m) ==
               ]]
            /\ historyLog' = [historyLog EXCEPT ![i] = m.mhistory]
            /\ commitIndex' = [commitIndex EXCEPT ![i] = m.msnapshotIndex]
-           \* Don't update config here - let ApplySnapshotConfChange handle it
+           \* Atomically update config from snapshot's ConfState
+           \* Reference: raft.go:1923-1934 confchange.Restore() then switchToConfig()
+           /\ config' = [config EXCEPT ![i] = [
+                 jointConfig |-> <<confState.voters, confState.outgoing>>,
+                 learners    |-> confState.learners,
+                 autoLeave   |-> confState.autoLeave
+              ]]
+           /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = lastConfigIdx]
            /\ Reply([mtype       |-> AppendEntriesResponse,
                      msubtype    |-> "snapshot",
                      mterm       |-> currentTerm[i],
@@ -1636,7 +1706,7 @@ HandleSnapshotRequest(i, j, m) ==
                      msource     |-> i,
                      mdest       |-> j],
                      m)
-           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, configVars, durableState, progressVars, partitions>>
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex, partitions>>
 
 \* Handle MsgSnapStatus from application layer
 \* Reference: raft.go:1606-1623

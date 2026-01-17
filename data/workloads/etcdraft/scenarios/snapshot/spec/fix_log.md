@@ -635,3 +635,185 @@ Removed the incorrect precondition:
 
 **Files Modified:**
 - `spec/etcdraft.tla:850-851`: Removed `/\ newCommitIndex > commitIndex[i]` precondition
+
+---
+
+## 2026-01-17 - Make HandleSnapshotRequest atomic (log + config update together)
+
+**Trace:** `../traces/confchange_v2_add_single_explicit.ndjson` and 4 other traces
+**Error Type:** Abstraction Gap
+
+**Issue:**
+5 trace validations failed after previous fixes. The spec modeled snapshot restore as two separate steps:
+1. `HandleSnapshotRequest` - updates log
+2. `ApplySnapshotConfChange` - updates config
+
+But in actual etcd raft, `restore()` atomically updates both log and config in a single operation.
+
+**Root Cause:**
+In etcd raft's `raft.go:restore()`, the configuration is restored atomically with the log:
+```go
+func (r *raft) restore(s pb.Snapshot) bool {
+    // ... log restoration ...
+    r.raftLog.restore(s)
+    // ... config restoration (atomic) ...
+    r.trk.Config = cfg
+    r.trk.Progress = trk
+}
+```
+
+The trace shows this as a single event, but the spec had two separate actions, causing state mismatch.
+
+**Fix:**
+1. Added `ComputeConfStateFromHistory(i)` helper function to extract config from historyLog
+2. Modified `HandleSnapshotRequest` to atomically update both log and config:
+   - Computes new config from snapshot's historyLog using `ComputeConfStateFromHistory`
+   - Updates `config[i]` in the same action that updates the log
+3. Updated all snapshot-sending actions to include `mconfState` in the message
+
+**Files Modified:**
+- `spec/etcdraft.tla`: Added `ComputeConfStateFromHistory`, modified `HandleSnapshotRequest` to be atomic
+- `spec/etcdraft.tla`: Modified `SendSnapshot`, `SendSnapshotWithCompaction`, `ManualSendSnapshot` to include mconfState
+
+---
+
+## 2026-01-17 - Skip ApplyConfChange trace for snapshot restore in Go code
+
+**Trace:** `../traces/confchange_v2_add_single_explicit.ndjson` and 4 other traces
+**Error Type:** Abstraction Gap (continued from above)
+
+**Issue:**
+After making HandleSnapshotRequest atomic in the spec, trace validation still failed because the Go trace code was emitting a separate `ApplyConfChange` event for snapshot restore.
+
+**Root Cause:**
+The `switchToConfig()` function in raft.go always called `traceConfChangeEvent()`, including when called from `restore()` (snapshot restore) or `newRaft()` (initialization). This created extra trace events that the spec couldn't match.
+
+**Fix:**
+Added `skipTrace bool` parameter to `switchToConfig()`:
+```go
+func (r *raft) switchToConfig(cfg tracker.Config, trk tracker.ProgressMap, skipTrace bool) pb.ConfState {
+    if !skipTrace {
+        traceConfChangeEvent(cfg, r)
+    }
+    // ... rest of function
+}
+```
+
+Call sites:
+- `restore()` (snapshot): pass `skipTrace=true`
+- `newRaft()` (initialization): pass `skipTrace=true`
+- `applyConfChange()` (normal config change): pass `skipTrace=false`
+
+**Files Modified:**
+- `raft/raft.go:1977-1982`: Added `skipTrace` parameter to `switchToConfig`
+- `raft/raft.go:477`: Call with `skipTrace=true` from newRaft
+- `raft/raft.go:1934`: Call with `skipTrace=true` from restore
+- `raft/raft.go:1968`: Call with `skipTrace=false` from applyConfChange
+
+---
+
+## 2026-01-17 - Add Learners field to TracingEvent for accurate learner tracking
+
+**Trace:** `../traces/campaign_learner_must_vote.ndjson`
+**Error Type:** Abstraction Gap
+
+**Issue:**
+Trace validation failed because the spec couldn't correctly identify which nodes were learners at bootstrap. The trace's `conf` field only contained `[Voters[0], Voters[1]]` (incoming/outgoing voters for joint consensus), not learners.
+
+**Root Cause:**
+The `TracingEvent.Conf` field was defined as `[2][]string` storing only voters:
+```go
+Conf: [2][]string{formatConf(r.trk.Voters[0].Slice()), formatConf(r.trk.Voters[1].Slice())}
+```
+
+Learners were stored in `r.trk.Learners` but not included in trace events. The spec's `ImplicitLearners` calculation failed when learners were later promoted to voters.
+
+**Fix:**
+1. Added `Learners []string` field to `TracingEvent` struct
+2. Modified `traceEvent()` to include learners from `r.trk.Learners`:
+```go
+r.traceLogger.TraceEvent(&TracingEvent{
+    // ... other fields ...
+    Learners: formatLearners(r.trk.Learners),
+})
+```
+
+3. Updated `TraceLearners` in spec to read from `event.learners` field
+
+**Files Modified:**
+- `raft/state_trace.go:91`: Added `Learners []string` field to TracingEvent
+- `raft/state_trace.go:188`: Added `Learners` to traceEvent output
+- `spec/Traceetcdraft.tla:78-83`: Updated TraceLearners to read from event.learners
+
+---
+
+## 2026-01-17 - Fix TraceLearners to only extract from bootstrap events
+
+**Trace:** `../traces/confchange_disable_validation.ndjson`
+**Error Type:** Inconsistency Error
+
+**Issue:**
+Trace validation failed because the spec incorrectly initialized learners at startup. The trace started with no learners (single node) but added learners dynamically via ChangeConf.
+
+**Root Cause:**
+The `TraceLearnersFallback` function searched for the first `ApplyConfChange` event and extracted its learners:
+```tla
+TraceLearnersFallback ==
+    LET firstApplyConf == SelectSeq(TraceLog, LAMBDA x: x.event.name = "ApplyConfChange")
+    IN ... firstApplyConf[1].event.prop.cc.learners ...
+```
+
+This was wrong for scenarios that dynamically add learners - the first ApplyConfChange adds learners, but they shouldn't be in the initial config.
+
+**Fix:**
+Changed `TraceLearners` to only extract from bootstrap events (InitState, BecomeFollower, BecomeCandidate):
+```tla
+TraceLearners == TLCEval(
+    LET bootstrapEvents == SelectSeq(TraceLog, LAMBDA x:
+            x.event.name \in {"InitState", "BecomeFollower", "BecomeCandidate"} /\
+            "learners" \in DOMAIN x.event /\ x.event.learners /= <<>>)
+    IN IF Len(bootstrapEvents) > 0
+       THEN ToSet(bootstrapEvents[1].event.learners)
+       ELSE {})
+```
+
+Removed `TraceLearnersFallback` entirely - it was causing incorrect initialization for dynamic learner scenarios.
+
+**Files Modified:**
+- `spec/Traceetcdraft.tla:76-102`: Rewrote TraceLearners and ImplicitLearners
+
+---
+
+## 2026-01-17 - Fix maybeCommit to only trace when commitIndex actually changes
+
+**Trace:** `../traces/confchange_disable_validation.ndjson`
+**Error Type:** Abstraction Gap
+
+**Issue:**
+Trace validation failed because the Go code emitted Commit events even when commitIndex didn't change. After ApplyConfChange, `maybeCommit()` was called but commitIndex couldn't advance (no quorum for new entries yet), yet a Commit event was still traced.
+
+**Root Cause:**
+The `maybeCommit()` function used `defer traceCommit(r)` which unconditionally traced:
+```go
+func (r *raft) maybeCommit() bool {
+    defer traceCommit(r)  // Always executes!
+    return r.raftLog.maybeCommit(...)
+}
+```
+
+The spec's `AdvanceCommitIndex` requires `newCommitIndex > commitIndex[i]`, so it couldn't match these no-op Commit events.
+
+**Fix:**
+Changed `maybeCommit()` to only trace when commitIndex actually changes:
+```go
+func (r *raft) maybeCommit() bool {
+    changed := r.raftLog.maybeCommit(entryID{term: r.Term, index: r.trk.Committed()})
+    if changed {
+        traceCommit(r)
+    }
+    return changed
+}
+```
+
+**Files Modified:**
+- `raft/raft.go:778-782`: Conditional traceCommit based on actual commit change
