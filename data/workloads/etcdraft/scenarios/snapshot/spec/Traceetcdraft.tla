@@ -73,10 +73,17 @@ BootstrappedConfig(i) ==
 TraceInitServer == BootstrappedConfig(TraceLog[1].event.nid)
 ASSUME TraceInitServer \subseteq TraceServer
 
-\* Extract learners from the FIRST ApplyConfChange event in trace (used for initialization)
-\* Only use learners if they exist in the initial bootstrap config
-\* If the first ApplyConfChange doesn't have learners, return {} (learners added later dynamically)
-TraceLearners ==
+\* Extract learners from the first event that has a learners field
+\* Now that trace events include learners directly, we can read it from the bootstrap events
+TraceLearners == TLCEval(
+    LET eventsWithLearners == SelectSeq(TraceLog, LAMBDA x:
+            "learners" \in DOMAIN x.event /\ x.event.learners /= <<>>)
+    IN IF Len(eventsWithLearners) > 0
+       THEN ToSet(eventsWithLearners[1].event.learners)
+       ELSE {})
+
+\* Fallback: Extract learners from ApplyConfChange event (for backward compatibility)
+TraceLearnersFallback ==
     LET firstApplyConf == SelectSeq(TraceLog, LAMBDA x: x.event.name = "ApplyConfChange")
     IN IF Len(firstApplyConf) > 0 /\
           "learners" \in DOMAIN firstApplyConf[1].event.prop.cc /\
@@ -84,10 +91,14 @@ TraceLearners ==
        THEN ToSet(firstApplyConf[1].event.prop.cc.learners)
        ELSE {}
 
-\* Use TraceLearners if available, otherwise fall back to implicit calculation
+\* Use TraceLearners (from event.learners field) if available,
+\* then fallback to ApplyConfChange learners,
+\* then fall back to implicit calculation
 ImplicitLearners ==
     IF TraceLearners /= {}
     THEN TraceLearners
+    ELSE IF TraceLearnersFallback /= {}
+    THEN TraceLearnersFallback
     ELSE TraceServer \ (TraceInitServer \cup AllChangeConfNids)
 
 \* Extract MaxInflightMsgs from trace config line (tag="config")
