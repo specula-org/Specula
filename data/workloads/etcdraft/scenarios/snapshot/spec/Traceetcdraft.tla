@@ -73,32 +73,23 @@ BootstrappedConfig(i) ==
 TraceInitServer == BootstrappedConfig(TraceLog[1].event.nid)
 ASSUME TraceInitServer \subseteq TraceServer
 
-\* Extract learners from the first event that has a learners field
-\* Now that trace events include learners directly, we can read it from the bootstrap events
+\* Extract learners from BOOTSTRAP events only (InitState, BecomeFollower, BecomeCandidate)
+\* These events have learners field only if learners existed at node startup
+\* Do NOT extract from later events like ApplyConfChange which may add learners dynamically
 TraceLearners == TLCEval(
-    LET eventsWithLearners == SelectSeq(TraceLog, LAMBDA x:
+    LET bootstrapEvents == SelectSeq(TraceLog, LAMBDA x:
+            x.event.name \in {"InitState", "BecomeFollower", "BecomeCandidate"} /\
             "learners" \in DOMAIN x.event /\ x.event.learners /= <<>>)
-    IN IF Len(eventsWithLearners) > 0
-       THEN ToSet(eventsWithLearners[1].event.learners)
+    IN IF Len(bootstrapEvents) > 0
+       THEN ToSet(bootstrapEvents[1].event.learners)
        ELSE {})
 
-\* Fallback: Extract learners from ApplyConfChange event (for backward compatibility)
-TraceLearnersFallback ==
-    LET firstApplyConf == SelectSeq(TraceLog, LAMBDA x: x.event.name = "ApplyConfChange")
-    IN IF Len(firstApplyConf) > 0 /\
-          "learners" \in DOMAIN firstApplyConf[1].event.prop.cc /\
-          firstApplyConf[1].event.prop.cc.learners /= <<>>
-       THEN ToSet(firstApplyConf[1].event.prop.cc.learners)
-       ELSE {}
-
-\* Use TraceLearners (from event.learners field) if available,
-\* then fallback to ApplyConfChange learners,
-\* then fall back to implicit calculation
+\* Use TraceLearners (from bootstrap event.learners field) if available,
+\* otherwise fall back to implicit calculation
+\* Note: Do NOT use ApplyConfChange learners as fallback - those are dynamic additions
 ImplicitLearners ==
     IF TraceLearners /= {}
     THEN TraceLearners
-    ELSE IF TraceLearnersFallback /= {}
-    THEN TraceLearnersFallback
     ELSE TraceServer \ (TraceInitServer \cup AllChangeConfNids)
 
 \* Extract MaxInflightMsgs from trace config line (tag="config")
