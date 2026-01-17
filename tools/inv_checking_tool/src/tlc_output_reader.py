@@ -25,11 +25,16 @@ Example usage:
 """
 
 import io
+import json
+import logging
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass, field
 
 from .trace_reader import TraceReader
+
+logger = logging.getLogger(__name__)
 from .utils.preprocessing import (
     preprocess_tlc_output,
     convert_to_trace_format,
@@ -81,11 +86,20 @@ class TLCOutputReader:
     # Pattern to extract action name from action detail
     ACTION_NAME_PATTERN = re.compile(r'<(\w+)(?:\([^)]*\))?')
 
-    def __init__(self, file_path: str, save_action_name: bool = True):
+    def __init__(
+        self,
+        file_path: str,
+        format: str = "json",
+        save_action_name: bool = True,
+    ):
         """Initialize the reader with a TLC output file.
 
         Args:
             file_path: Path to the TLC output file.
+            format: Trace format to use. Options:
+                - "json": Parse JSON from -dumptrace json output (default)
+                - "tla": Parse TLA+ syntax from -dumptrace tla output
+                - "text": Use legacy text-scraping parser
             save_action_name: Whether to extract action names from states.
 
         Raises:
@@ -93,26 +107,108 @@ class TLCOutputReader:
             ValueError: If the file does not contain a valid TLC trace.
         """
         self.file_path = file_path
+        self.requested_format = format
+        self._save_action_name = save_action_name
         self._states: List[Dict[str, Any]] = []
         self._metadata: Dict[str, Any] = {}
         self._action_details: List[str] = []
 
-        self._load_and_parse(save_action_name)
+        # Set up paths for different trace formats
+        # Handle case where user passes the trace file directly
+        path = Path(file_path)
+        parent = path.parent
+        name = path.name
 
-    def _load_and_parse(self, save_action_name: bool) -> None:
-        """Load and parse the TLC output file.
+        if name.endswith('_trace.json'):
+            # User passed JSON trace file directly
+            self._json_path = path
+            base = name[:-len('_trace.json')]
+            self._tla_path = parent / f"{base}_trace.tla"
+            self._text_path = parent / f"{base}.out"
+        elif name.endswith('_trace.tla'):
+            # User passed TLA+ trace file directly
+            self._tla_path = path
+            base = name[:-len('_trace.tla')]
+            self._json_path = parent / f"{base}_trace.json"
+            self._text_path = parent / f"{base}.out"
+        else:
+            # User passed base output file (e.g., nohup.out)
+            base = path.stem
+            self._json_path = parent / f"{base}_trace.json"
+            self._tla_path = parent / f"{base}_trace.tla"
+            self._text_path = path
+
+        self._load_trace()
+
+    def _get_format_chain(self) -> List[str]:
+        """Return ordered list of formats to try based on requested format.
+
+        Returns:
+            List of format strings in order of preference.
+        """
+        if self.requested_format == "json":
+            return ["json", "tla", "text"]
+        elif self.requested_format == "tla":
+            return ["tla", "json", "text"]
+        else:  # text
+            return ["text"]
+
+    def _load_trace(self) -> None:
+        """Load trace using requested format with fallback.
+
+        Tries formats in order based on requested_format, falling back
+        to alternatives if the preferred format is unavailable.
+        """
+        formats_to_try = self._get_format_chain()
+        last_error = None
+        used_format = None
+
+        for fmt in formats_to_try:
+            try:
+                if fmt == "json" and self._json_path.exists():
+                    self._parse_json(self._json_path)
+                    used_format = "json"
+                    break
+                elif fmt == "tla" and self._tla_path.exists():
+                    self._parse_tla_syntax(self._tla_path)
+                    used_format = "tla"
+                    break
+                elif fmt == "text" and self._text_path.exists():
+                    self._parse_text(self._text_path)
+                    used_format = "text"
+                    break
+            except Exception as e:
+                logger.warning(f"Failed to parse {fmt} format: {e}")
+                last_error = e
+                continue
+
+        if used_format is None:
+            if last_error:
+                raise ValueError(f"Could not parse trace in any format. Last error: {last_error}")
+            else:
+                raise FileNotFoundError(f"No trace file found for {self.file_path}")
+
+        # Log if we fell back from the requested format
+        if used_format != self.requested_format:
+            logger.warning(
+                f"Requested format '{self.requested_format}' not available, "
+                f"using '{used_format}' instead"
+            )
+
+    def _parse_text(self, text_path: Path) -> None:
+        """Parse trace from legacy text format (TLC stdout).
 
         Args:
-            save_action_name: Whether to save action names.
+            text_path: Path to the TLC output file.
         """
         # Preprocess the file
-        preprocessed, self._metadata = preprocess_tlc_output(self.file_path)
+        preprocessed, self._metadata = preprocess_tlc_output(str(text_path))
 
         # Convert to trace format
         trace_content = convert_to_trace_format(preprocessed)
 
         # Parse using TraceReader
-        tr = TraceReader(save_action_name=save_action_name)
+        tr = TraceReader(save_action_name=self._save_action_name)
         f = io.StringIO(trace_content)
 
         # Use trace_reader_with_state_str to get action details
@@ -126,6 +222,188 @@ class TLCOutputReader:
                     action_detail = line.strip()[2:].strip()  # Remove \* prefix
                     break
             self._action_details.append(action_detail)
+
+    def _parse_json(self, json_path: Path) -> None:
+        """Parse trace from TLC's JSON dump format (-dumptrace json).
+
+        Args:
+            json_path: Path to the JSON trace file.
+        """
+        with open(json_path) as f:
+            data = json.load(f)
+
+        for state_data in data.get("states", []):
+            # Build state dict from variables
+            state = dict(state_data.get("variables", {}))
+
+            # Extract action name
+            action_info = state_data.get("action", {})
+            if isinstance(action_info, dict):
+                state["_action"] = action_info.get("name", "Unknown")
+            else:
+                state["_action"] = str(action_info) if action_info else "Unknown"
+
+            self._states.append(state)
+
+            # Build action detail string for compatibility
+            action_detail = None
+            if isinstance(action_info, dict) and "name" in action_info:
+                action_detail = f"<{action_info['name']}>"
+            self._action_details.append(action_detail)
+
+        # Extract metadata if available
+        if "metadata" in data:
+            self._metadata = data["metadata"]
+
+    def _parse_tla_syntax(self, tla_path: Path) -> None:
+        """Parse trace from TLC's TLA+ syntax dump format (-dumptrace tla).
+
+        Args:
+            tla_path: Path to the TLA+ trace file.
+        """
+        content = tla_path.read_text()
+
+        # Extract the Trace sequence
+        trace_block = self._extract_tla_definition(content, "Trace")
+        if trace_block is None:
+            raise ValueError("Could not find 'Trace ==' definition in TLA+ file")
+
+        # Extract the TraceActions sequence (optional)
+        actions_block = self._extract_tla_definition(content, "TraceActions")
+
+        # Use TraceReader to parse TLA+ values
+        tr = TraceReader(save_action_name=self._save_action_name)
+
+        # Parse the trace sequence - it's a <<...>> containing records
+        # Need to convert TLA+ syntax: replace << with < and >> with $
+        # Also normalize whitespace - TraceReader expects compact format
+        trace_normalized = trace_block.replace('<<', '<').replace('>>', '$')
+        trace_normalized = self._normalize_tla_whitespace(trace_normalized)
+        states_list = tr._variable_converter(trace_normalized)
+
+        # Parse actions if available
+        actions_list = []
+        if actions_block:
+            actions_normalized = actions_block.replace('<<', '<').replace('>>', '$')
+            actions_normalized = self._normalize_tla_whitespace(actions_normalized)
+            actions_list = tr._variable_converter(actions_normalized)
+
+        # Build states with actions
+        for i, state_data in enumerate(states_list):
+            if isinstance(state_data, dict):
+                state = dict(state_data)
+            else:
+                state = {"_value": state_data}
+
+            # Add action name
+            if i < len(actions_list):
+                state["_action"] = actions_list[i]
+            else:
+                state["_action"] = "Unknown"
+
+            self._states.append(state)
+
+            # Build action detail for compatibility
+            action_detail = f"<{state.get('_action', 'Unknown')}>"
+            self._action_details.append(action_detail)
+
+    def _extract_tla_definition(self, content: str, name: str) -> Optional[str]:
+        """Extract a TLA+ definition value from module content.
+
+        Args:
+            content: Full TLA+ module content.
+            name: Name of the definition to extract (e.g., "Trace").
+
+        Returns:
+            The value part of the definition, or None if not found.
+        """
+        # Look for pattern: Name ==\n  <<...>> or Name == <<...>>
+        pattern = rf'{name}\s*==\s*'
+        match = re.search(pattern, content)
+        if not match:
+            return None
+
+        # Find the start of the value
+        start = match.end()
+
+        # Skip whitespace
+        while start < len(content) and content[start] in ' \t\n':
+            start += 1
+
+        if start >= len(content):
+            return None
+
+        # Find the balanced end of the expression
+        # Handle <<...>>, [...], {...}, etc.
+        return self._extract_balanced_expr(content, start)
+
+    def _extract_balanced_expr(self, content: str, start: int) -> Optional[str]:
+        """Extract a balanced TLA+ expression starting at given position.
+
+        Args:
+            content: Full content string.
+            start: Starting position.
+
+        Returns:
+            The balanced expression, or None if invalid.
+        """
+        if start >= len(content):
+            return None
+
+        # Map opening to closing brackets
+        brackets = {'<': '>', '[': ']', '{': '}', '(': ')'}
+
+        # Handle << specially (TLA+ sequence)
+        if content[start:start+2] == '<<':
+            # Find matching >>
+            depth = 0
+            pos = start
+            while pos < len(content):
+                if content[pos:pos+2] == '<<':
+                    depth += 1
+                    pos += 2
+                elif content[pos:pos+2] == '>>':
+                    depth -= 1
+                    pos += 2
+                    if depth == 0:
+                        return content[start:pos]
+                else:
+                    pos += 1
+            return None
+
+        # Handle single-char brackets
+        if content[start] in brackets:
+            open_char = content[start]
+            close_char = brackets[open_char]
+            depth = 0
+            pos = start
+            while pos < len(content):
+                if content[pos] == open_char:
+                    depth += 1
+                elif content[pos] == close_char:
+                    depth -= 1
+                    if depth == 0:
+                        return content[start:pos+1]
+                pos += 1
+            return None
+
+        return None
+
+    def _normalize_tla_whitespace(self, content: str) -> str:
+        """Normalize whitespace in TLA+ content for TraceReader compatibility.
+
+        TraceReader expects compact format without newlines between elements.
+        This method collapses whitespace while preserving structure.
+
+        Args:
+            content: TLA+ content with potential newlines and extra whitespace.
+
+        Returns:
+            Normalized content with collapsed whitespace.
+        """
+        # Replace newlines and multiple spaces with single space
+        normalized = ' '.join(content.split())
+        return normalized
 
     @property
     def trace_length(self) -> int:
