@@ -1,3 +1,3 @@
 [submodule "tools/tlaplus"]
 	path = tools/tlaplus
-	url = https://github.com/Qian-Cheng-nju/tlaplus.git
+	url = https://github.com/tlaplus/tlaplus.git
