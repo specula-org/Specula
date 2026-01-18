@@ -136,10 +136,16 @@ VARIABLE
     \* @type: Int -> LOGT;
     historyLog
 \* The index of the latest entry in the log the state machine may apply.
-VARIABLE 
+VARIABLE
     \* @type: Int -> Int;
     commitIndex
-logVars == <<log, historyLog, commitIndex>>
+\* The index of the last entry applied to the state machine.
+\* Reference: raft/log.go:41-47 - applied is the highest log position successfully applied
+\* Invariant: applied <= committed
+VARIABLE
+    \* @type: Int -> Int;
+    applied
+logVars == <<log, historyLog, commitIndex, applied>>
 
 \* The following variables are used only on candidates:
 \* The set of servers from which the candidate has received a RequestVote
@@ -561,6 +567,7 @@ InitLeaderVars == /\ matchIndex = [i \in Server |-> [j \in Server |-> 0]]
 InitLogVars == /\ log          = [i \in Server |-> [offset |-> 1, entries |-> <<>>, snapshotIndex |-> 0, snapshotTerm |-> 0]]
                /\ historyLog   = [i \in Server |-> <<>>]
                /\ commitIndex  = [i \in Server |-> 0]
+               /\ applied      = [i \in Server |-> 0]
 InitConfigVars == /\ config = [i \in Server |-> [ jointConfig |-> <<InitServer, {}>>, learners |-> {}, autoLeave |-> FALSE]]
                   /\ reconfigCount = 0
                   /\ appliedConfigIndex = [i \in Server |-> 0] 
@@ -624,6 +631,8 @@ Restart(i) ==
                     snapshotIndex |-> durableState[i].snapshotIndex,
                     snapshotTerm |-> durableState[i].snapshotTerm
        ]]
+    \* On restart, applied is reset to snapshotIndex (all entries up to snapshot are applied)
+    /\ applied' = [applied EXCEPT ![i] = durableState[i].snapshotIndex]
     /\ config' = [config EXCEPT ![i] = durableState[i].config]
     \* After restart, consider all committed configs as applied (durableState.config reflects this)
     /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = durableState[i].commitIndex]
@@ -910,7 +919,7 @@ Replicate(i, v, t) ==
 \* @type: (Int, Int) => Bool;
 ClientRequest(i, v) ==
     /\ Replicate(i, [val |-> v], ValueEntry)
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, partitions>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, commitIndex, applied, configVars, durableState, progressVars, partitions>>
 
 \* Leader i receives a client request AND sends MsgAppResp immediately (mimicking atomic behavior).
 \* Used for implicit replication in Trace Validation.
@@ -925,7 +934,7 @@ ClientRequestAndSend(i, v) ==
              mlogTerm    |-> 0,
              msource     |-> i,
              mdest       |-> i])
-    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, partitions>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex, applied, configVars, durableState, progressVars, partitions>>
 
 
 \* Leader replicates an implicit entry (for self-message response in trace).
@@ -940,9 +949,9 @@ ReplicateImplicitEntry(i) ==
        IN
        \* FIX: When in joint config, must check auto-leave preconditions per raft.go:745
        \* 1. config[i].autoLeave = TRUE (corresponds to r.trk.Config.AutoLeave)
-       \* 2. pendingConfChangeIndex[i] = 0 (corresponds to newApplied >= r.pendingConfIndex,
-       \*    since pendingConfChangeIndex is cleared to 0 when config change is applied)
-       /\ (isJoint => (config[i].autoLeave = TRUE /\ pendingConfChangeIndex[i] = 0))
+       \* 2. applied[i] >= pendingConfChangeIndex[i] (corresponds to newApplied >= r.pendingConfIndex)
+       \* Reference: raft.go:745 "if r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex"
+       /\ (isJoint => (config[i].autoLeave = TRUE /\ applied[i] >= pendingConfChangeIndex[i]))
        /\ LET entryType == IF isJoint THEN ConfigEntry ELSE ValueEntry
               \* For LeaveJoint, use leaveJoint |-> TRUE format to match ApplyConfigUpdate
               entryValue == IF isJoint
@@ -962,7 +971,7 @@ ReplicateImplicitEntry(i) ==
           /\ IF isJoint
              THEN pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log'[i])]
              ELSE UNCHANGED pendingConfChangeIndex
-    /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, applied, configVars, durableState, progressVars, partitions>>
 
 \* Leader i advances its commitIndex.
 \* This is done as a separate step from handling AppendEntries responses,
@@ -1009,7 +1018,7 @@ AdvanceCommitIndex(i) ==
                   commitIndex[i]
        IN
         /\ CommitTo(i, newCommitIndex)
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, log, configVars, durableState, progressVars, historyLog, partitions>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, log, applied, configVars, durableState, progressVars, historyLog, partitions>>
 
     
 \* Leader i adds a new server j or promote learner j
@@ -1023,7 +1032,7 @@ AddNewServer(i, j) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, applied, configVars, durableState, progressVars, partitions>>
 
 \* Leader i adds a leaner j to the cluster.
 AddLearner(i, j) ==
@@ -1036,7 +1045,7 @@ AddLearner(i, j) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, applied, configVars, durableState, progressVars, partitions>>
 
 \* Leader i removes a server j (possibly itself) from the cluster.
 DeleteServer(i, j) ==
@@ -1049,7 +1058,7 @@ DeleteServer(i, j) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, applied, configVars, durableState, progressVars, partitions>>
 
 \* Leader i proposes an arbitrary configuration change (compound changes supported).
 \* Reference: confchange/confchange.go - joint consensus requires proper sequencing:
@@ -1057,7 +1066,9 @@ DeleteServer(i, j) ==
 \*   - enterJoint=FALSE (leave joint) only allowed when IN joint config
 ChangeConf(i) ==
     /\ state[i] = Leader
-    /\ IF pendingConfChangeIndex[i] = 0 THEN
+    \* Reference: raft.go:1320 alreadyPending := r.pendingConfIndex > r.raftLog.applied
+    \* Config change is allowed when pendingConfChangeIndex <= applied
+    /\ IF pendingConfChangeIndex[i] <= applied[i] THEN
             \E newVoters \in SUBSET Server, newLearners \in SUBSET Server, enterJoint \in {TRUE, FALSE}:
                 \* Both EnterJoint and Simple require NOT being in joint config
                 \* Reference: confchange.go:56 "config is already joint" and confchange.go:133
@@ -1076,7 +1087,7 @@ ChangeConf(i) ==
        ELSE
             /\ Replicate(i, <<>>, ValueEntry)
             /\ UNCHANGED <<pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, applied, configVars, durableState, progressVars, partitions>>
 
 \* Leader i proposes an arbitrary configuration change AND sends MsgAppResp.
 \* Used for implicit replication in Trace Validation.
@@ -1119,7 +1130,7 @@ ChangeConfAndSend(i) ==
                      mlogTerm    |-> 0,
                      msource     |-> i,
                      mdest       |-> i])
-    /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, applied, configVars, durableState, progressVars, partitions>>
 
 \* Apply the next committed config entry in order
 \* Reference: etcd processes CommittedEntries sequentially (for _, entry := range rd.CommittedEntries)
@@ -1214,7 +1225,7 @@ ProposeLeaveJoint(i) ==
     \* Reference: confchange.go:103-107 - LeaveJoint preserves Learners and adds LearnersNext
     /\ Replicate(i, [leaveJoint |-> TRUE, newconf |-> GetConfig(i), learners |-> GetLearners(i)], ConfigEntry)
     /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log'[i])]
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, applied, configVars, durableState, progressVars, partitions>>
 
 \* Apply configuration from snapshot
 \* When a follower receives a snapshot, it applies the config directly
@@ -1248,7 +1259,7 @@ ApplySnapshotConfChange(i, newVoters) ==
 FollowerAdvanceCommitIndex(i, newCommit) ==
     /\ state[i] /= Leader
     /\ commitIndex' = [commitIndex EXCEPT ![i] = newCommit]
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, pendingConfChangeIndex, log, configVars, durableState, progressVars, historyLog, partitions>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, pendingConfChangeIndex, log, applied, configVars, durableState, progressVars, historyLog, partitions>>
 
 Ready(i) ==
     /\ PersistState(i)
@@ -1406,7 +1417,7 @@ AppendEntriesAlreadyDone(i, j, index, m) ==
                 msource         |-> i,
                 mdest           |-> j],
                 m)
-    /\ UNCHANGED <<serverVars, log, configVars, durableState, progressVars, historyLog, partitions>>
+    /\ UNCHANGED <<serverVars, log, applied, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* @type: (Int, Int, Int, AEREQT) => Bool;
 ConflictAppendEntriesRequest(i, j, index, m) ==
@@ -1440,7 +1451,7 @@ ConflictAppendEntriesRequest(i, j, index, m) ==
               msource         |-> i,
               mdest           |-> j],
               m)
-    /\ UNCHANGED <<serverVars, durableState, progressVars, partitions>>
+    /\ UNCHANGED <<serverVars, applied, durableState, progressVars, partitions>>
 
 \* @type: (Int, Int, Int, AEREQT) => Bool;
 NoConflictAppendEntriesRequest(i, j, index, m) ==
@@ -1467,7 +1478,7 @@ NoConflictAppendEntriesRequest(i, j, index, m) ==
               msource         |-> i,
               mdest           |-> j],
               m)
-    /\ UNCHANGED <<serverVars, durableState, progressVars, partitions>>
+    /\ UNCHANGED <<serverVars, applied, durableState, progressVars, partitions>>
 
 \* @type: (Int, Int, Bool, AEREQT) => Bool;
 AcceptAppendEntriesRequest(i, j, logOk, m) ==
@@ -1636,7 +1647,7 @@ CompactLog(i, newStart) ==
           snapshotIndex |-> newStart - 1,
           snapshotTerm  |-> LogTerm(i, newStart - 1)
        ]]
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, commitIndex, configVars, durableState, progressVars, historyLog, partitions>>
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, commitIndex, applied, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* Server i receives a SnapshotRequest.
 \* Simulates raft.restore()
@@ -1677,7 +1688,7 @@ HandleSnapshotRequest(i, j, m) ==
                      msource     |-> i,
                      mdest       |-> j],
                      m)
-           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, log, configVars, durableState, progressVars, historyLog, partitions>>
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, log, applied, configVars, durableState, progressVars, historyLog, partitions>>
        ELSE
            \* Case 3: Actual Restore. Wipe log AND restore config atomically.
            \* Reference: raft.go:1919 r.raftLog.restore(s) then r.switchToConfig()
@@ -1697,6 +1708,8 @@ HandleSnapshotRequest(i, j, m) ==
               ]]
            /\ historyLog' = [historyLog EXCEPT ![i] = m.mhistory]
            /\ commitIndex' = [commitIndex EXCEPT ![i] = m.msnapshotIndex]
+           \* Snapshot represents fully applied state machine up to snapshotIndex
+           /\ applied' = [applied EXCEPT ![i] = m.msnapshotIndex]
            \* Atomically update config from snapshot's ConfState
            \* Reference: raft.go:1923-1934 confchange.Restore() then switchToConfig()
            /\ config' = [config EXCEPT ![i] = [

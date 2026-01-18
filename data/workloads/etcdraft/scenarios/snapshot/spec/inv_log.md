@@ -2477,3 +2477,165 @@ This separation ensures:
 - User Feedback: Pending
 
 ---
+
+## Record #NEW - 2026-01-18
+
+### Counterexample Summary
+TLC simulation found a violation of `AppendEntriesCommitSafeInv` after checking ~49,000 states. The violating message was a heartbeat with:
+- `mprevLogIndex = 0`
+- `mprevLogTerm = 0`
+- `mentries = <<>>`
+- `mcommitIndex = 2`
+
+The invariant check `mcommitIndex (2) <= mprevLogIndex (0) + Len(mentries) (0)` failed.
+
+### Analysis Conclusion
+- **Type**: A: Invariant Too Strong
+- **Violated Property**: `AppendEntriesCommitSafeInv`
+- **Root Cause**: The invariant was incorrectly designed. It checked that `mcommitIndex <= mprevLogIndex + Len(mentries)`, but this is not a valid constraint because:
+  1. **Heartbeat messages** don't include entries, and their `commitIndex` can be any valid value
+  2. **Normal MsgApp messages** can also have `Commit > Index + len(Entries)` due to `maxMsgSize` limiting the number of entries sent
+  
+  In the implementation (`raft.go:638`), entries are limited by `maxMsgSize`, so a leader might send only partial entries while advertising a higher `commitIndex`. The receiver handles this correctly by setting `commitIndex = min(leaderCommit, lastNewEntry)`.
+
+  The correct invariant for detecting Bug 76f1249 is `AppendEntriesPrevLogTermValidInv`, which checks that `prevLogTerm > 0` when `prevLogIndex > 0`.
+
+### Modifications Made
+- **File**: `etcdraft.tla`
+- **Change**: Removed `AppendEntriesCommitSafeInv` definition and removed it from `BugDetectionInv` aggregate
+
+- **File**: `MCetcdraft.cfg`
+- **Change**: Removed `AppendEntriesCommitSafeInv` from INVARIANTS section
+
+### User Confirmation
+- Confirmation Time: 2026-01-18
+- User Feedback: Agreed to delete the invariant
+
+---
+
+## Record #NEW2 - 2026-01-18
+
+### Summary
+Comprehensive review of bug detection invariants. Removed invalid invariants and fixed spec modeling issues.
+
+### Analysis of Bug Detection Invariants
+
+#### 1. `UncommittedEntriesBoundInv` (Bug a370b6f) - **DELETED**
+- **Reason**: Bug a370b6f is about **byte counter** tracking, not entry count
+- **Problem**: Spec doesn't model byte counting, only entry count
+- **Conclusion**: Cannot detect the real bug, removed
+
+#### 2. `InflightsCountConsistentInv` (Bug e419ba5) - **DELETED**
+- **Reason**: Invariant is **trivially true**
+- **Code**:
+```tla
+InflightsCount(i, j) == Cardinality(inflights[i][j])  \* Definition
+
+InflightsCountConsistentInv ==
+    Cardinality(inflights[i][j]) = InflightsCount(i, j)  \* Always true!
+```
+- **Conclusion**: Meaningless check, removed
+
+#### 3. `ReplicateImplicitEntry` - **FIXED**
+- **Problem**: Missing preconditions for auto-leave in joint config
+- **Implementation** (raft.go:745):
+```go
+if r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex && r.state == StateLeader {
+    // initiate auto-leave
+}
+```
+- **Old Spec**: Only checked `state[i] = Leader`
+- **New Spec**: Added check `(isJoint => (config[i].autoLeave = TRUE /\ pendingConfChangeIndex[i] = 0))`
+
+### Modifications Made
+
+#### File 1: etcdraft.tla
+- **Deleted**: `UncommittedEntriesBoundInv` definition (lines 2833-2850)
+- **Deleted**: `InflightsCountConsistentInv` definition (lines 2853-2863)
+- **Modified**: `BugDetectionInv` aggregate to remove deleted invariants
+- **Modified**: `ReplicateImplicitEntry` to add auto-leave preconditions
+
+#### File 2: MCetcdraft.cfg
+- **Removed**: `UncommittedEntriesBoundInv` from INVARIANTS section
+- **Removed**: `InflightsCountConsistentInv` from INVARIANTS section
+
+### Code Reference for ReplicateImplicitEntry Fix
+
+**Implementation (raft.go:745)**:
+```go
+if r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex && r.state == StateLeader {
+```
+
+**Fixed Spec**:
+```tla
+ReplicateImplicitEntry(i) ==
+    /\ state[i] = Leader
+    /\ LET isJoint == IsJointConfig(i)
+       IN
+       \* FIX: When in joint config, must check auto-leave preconditions per raft.go:745
+       /\ (isJoint => (config[i].autoLeave = TRUE /\ pendingConfChangeIndex[i] = 0))
+       /\ ...
+```
+
+### User Confirmation
+- Confirmation Time: 2026-01-18
+- User Feedback: Approved deletion of invalid invariants and fix of ReplicateImplicitEntry
+
+---
+
+## Record #NEW3 - 2026-01-18
+
+### Summary
+Fixed BecomeLeader action to correctly set `pendingConfChangeIndex` per implementation.
+
+### Analysis
+
+**Problem Identified**: During the review of Bug bd3c759 (auto-transitioning out of joint config), user noticed that the `BecomeLeader` action had `UNCHANGED pendingConfChangeIndex`, but the implementation sets this field.
+
+### Evidence from Implementation
+
+**Implementation (raft.go:955-960)**:
+```go
+func (r *raft) becomeLeader() {
+    // ...
+    r.tick = r.tickHeartbeat
+    r.lead = r.id
+    r.state = StateLeader
+    r.pendingConfIndex = r.raftLog.lastIndex()  // <-- Sets pendingConfIndex!
+    // ...
+}
+```
+
+The implementation explicitly sets `pendingConfIndex = lastIndex()` when a node becomes leader. This is critical for the auto-leave mechanism to work correctly because:
+1. It prevents auto-leave from firing until at least one entry is applied after becoming leader
+2. It ensures `newApplied >= r.pendingConfIndex` check (raft.go:745) works correctly
+
+### Modifications Made
+
+**File**: etcdraft.tla
+
+**Before**:
+```tla
+BecomeLeader(i) ==
+    /\ ...
+    /\ UNCHANGED <<messageVars, currentTerm, votedFor, pendingConfChangeIndex, 
+                   candidateVars, logVars, configVars, durableState, partitions>>
+```
+
+**After**:
+```tla
+BecomeLeader(i) ==
+    /\ ...
+    \* FIX: Set pendingConfChangeIndex to lastIndex per raft.go:955-960
+    /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log[i])]
+    /\ UNCHANGED <<messageVars, currentTerm, votedFor, candidateVars, logVars, configVars, durableState, partitions>>
+```
+
+### Verification
+- SANY syntax check passed (only warnings, no errors)
+
+### User Confirmation
+- Confirmation Time: 2026-01-18
+- User Feedback: Approved after user identified the issue during review
+
+---

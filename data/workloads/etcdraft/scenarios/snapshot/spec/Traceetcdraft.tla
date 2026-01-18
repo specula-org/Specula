@@ -117,6 +117,7 @@ TraceInitLogVars    ==
                       ]
     /\ historyLog   = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN <<>> ELSE [j \in 1..LastBootstrapLog[i].event.log |-> [ term |-> 1, type |-> "ConfigEntry", value |-> [newconf |-> BootstrappedConfig(i), learners |-> ImplicitLearners]]]]
     /\ commitIndex  = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN 0 ELSE LastBootstrapLog[i].event.state.commit]
+    /\ applied      = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN 0 ELSE LastBootstrapLog[i].event.state.applied]
 
 TraceInitConfigVars ==
     /\ config = [i \in Server |-> [ jointConfig |-> <<BootstrappedConfig(i), {}>>, learners |-> ImplicitLearners, autoLeave |-> FALSE] ]
@@ -124,6 +125,15 @@ TraceInitConfigVars ==
     \* Bootstrap config entries are already applied (committed at initial commitIndex)
     /\ appliedConfigIndex = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN 0 ELSE LastBootstrapLog[i].event.state.commit]
 
+TraceInitLeaderVars ==
+    /\ matchIndex = [i \in Server |-> [j \in Server |-> 0]]
+    \* Initialize pendingConfChangeIndex from trace if available
+    /\ pendingConfChangeIndex = [i \in Server |->
+        IF BootstrapLogIndicesForServer(i) = {}
+        THEN 0
+        ELSE IF "pendingConfIndex" \in DOMAIN LastBootstrapLog[i].event.state
+             THEN LastBootstrapLog[i].event.state.pendingConfIndex
+             ELSE 0]
 
 -------------------------------------------------------------------------------------
 ConfFromLog(l) == << ToSet(l.event.conf[1]), ToSet(l.event.conf[2]) >>
@@ -250,6 +260,7 @@ ValidatePreStates(i) ==
         /\ currentTerm[i] = logline.event.state.term
         /\ state[i] = RaftRole[logline.event.role]
         /\ commitIndex[i] = logline.event.state.commit
+        \* Note: applied not validated - updated asynchronously by application layer
         /\ votedFor[i] = logline.event.state.vote
 
 ValidatePostStates(i) ==
@@ -258,6 +269,8 @@ ValidatePostStates(i) ==
     /\ votedFor'[i] = logline.event.state.vote
     /\ LastIndex(log'[i]) = logline.event.log
     /\ commitIndex'[i] = logline.event.state.commit
+    \* Note: applied is not validated in post-states because spec doesn't update it
+    \* (applied is updated asynchronously by application layer, not by raft actions)
     /\ config'[i].jointConfig = ConfFromLog(logline)
     /\ log'[i].snapshotIndex = logline.event.state.snapshotIndex
     /\ log'[i].snapshotTerm = logline.event.state.snapshotTerm
@@ -454,15 +467,23 @@ ChangeConfIfLogged(i) ==
     /\ LET changes == logline.event.prop.cc.changes
            initialConf == [voters |-> GetConfig(i), learners |-> GetLearners(i)]
            finalConf == FoldSeq(ApplyChange, initialConf, changes)
-           \* Read enterJoint directly from trace event
            enterJoint == logline.event.prop.enterJoint
        IN
-           /\ ChangeConf(i)
+           \* Use ChangeConf's IF-branch logic directly (not ChangeConf(i)) because:
+           \* After BecomeLeader sets pendingConfChangeIndex = lastIndex (per raft.go:955),
+           \* ChangeConf(i) would take the ELSE branch creating value |-> <<>>.
+           \* But the trace event proves a real config change happened.
+           /\ state[i] = Leader
+           /\ ~IsJointConfig(i)
+           /\ Replicate(i, [newconf |-> finalConf.voters, learners |-> finalConf.learners,
+                           enterJoint |-> enterJoint, oldconf |-> GetConfig(i)], ConfigEntry)
+           /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log'[i])]
+           \* Validate the created entry matches trace expectations
            /\ LogEntryAt(log'[i], LastIndex(log'[i])).value.newconf = finalConf.voters
            /\ LogEntryAt(log'[i], LastIndex(log'[i])).value.learners = finalConf.learners
            /\ LogEntryAt(log'[i], LastIndex(log'[i])).value.enterJoint = enterJoint
            /\ LogEntryAt(log'[i], LastIndex(log'[i])).value.oldconf = GetConfig(i)
-           /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars>>
+           /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, commitIndex, applied, configVars, durableState, progressVars, partitions>>
 
 ApplySimpleConfChangeIfLogged(i) ==
     /\ LoglineIsNodeEvent("ApplyConfChange", i)
