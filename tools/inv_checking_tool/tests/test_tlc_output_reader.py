@@ -414,6 +414,257 @@ The number of states generated: 100
                 os.unlink(f.name)
 
 
+class TestJsonParsing:
+    """Tests for JSON trace format parsing."""
+
+    def test_parse_json_basic(self):
+        """Test parsing a basic JSON trace."""
+        json_content = json.dumps({
+            "states": [
+                {"num": 1, "action": {"name": "Init"},
+                 "variables": {"x": 1, "y": 2}},
+                {"num": 2, "action": {"name": "Next"},
+                 "variables": {"x": 2, "y": 3}}
+            ]
+        })
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='_trace.json', delete=False
+        ) as f:
+            f.write(json_content)
+            f.flush()
+            try:
+                reader = TLCOutputReader(f.name, format="json")
+                assert reader.trace_length == 2
+
+                state1 = reader.get_state(1)
+                assert state1.variables["x"] == 1
+                assert state1.variables["y"] == 2
+                assert state1.action == "Init"
+
+                state2 = reader.get_state(2)
+                assert state2.variables["x"] == 2
+                assert state2.variables["y"] == 3
+                assert state2.action == "Next"
+            finally:
+                os.unlink(f.name)
+
+    def test_parse_json_nested_structures(self):
+        """Test JSON with nested records and sequences."""
+        json_content = json.dumps({
+            "states": [
+                {
+                    "num": 1,
+                    "action": {"name": "Init"},
+                    "variables": {
+                        "config": {"s1": {"a": 1, "b": 2}, "s2": {"a": 3, "b": 4}},
+                        "log": [{"term": 1, "value": "x"}, {"term": 2, "value": "y"}]
+                    }
+                }
+            ]
+        })
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='_trace.json', delete=False
+        ) as f:
+            f.write(json_content)
+            f.flush()
+            try:
+                reader = TLCOutputReader(f.name, format="json")
+                assert reader.trace_length == 1
+
+                # Test nested dict access
+                val = reader.get_variable_at_path(1, "config.s1.a")
+                assert val == 1
+
+                # Test array access
+                val = reader.get_variable_at_path(1, "log[0].term")
+                assert val == 1
+
+                val = reader.get_variable_at_path(1, "log[1].value")
+                assert val == "y"
+            finally:
+                os.unlink(f.name)
+
+    def test_parse_json_with_metadata(self):
+        """Test JSON with metadata field."""
+        json_content = json.dumps({
+            "states": [
+                {"num": 1, "action": {"name": "Init"}, "variables": {"x": 1}}
+            ],
+            "metadata": {
+                "violation_type": "invariant",
+                "violation_name": "TestInv"
+            }
+        })
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='_trace.json', delete=False
+        ) as f:
+            f.write(json_content)
+            f.flush()
+            try:
+                reader = TLCOutputReader(f.name, format="json")
+                summary = reader.get_summary()
+                assert summary.violation_type == "invariant"
+                assert summary.violation_name == "TestInv"
+            finally:
+                os.unlink(f.name)
+
+
+class TestTlaSyntaxParsing:
+    """Tests for TLA+ syntax trace format parsing."""
+
+    def test_parse_tla_basic(self):
+        """Test parsing a basic TLA+ trace module."""
+        tla_content = """---- MODULE Trace ----
+EXTENDS TLC, Sequences, Integers
+
+TraceLen == 2
+
+Trace ==
+  <<
+    [x |-> 1, y |-> 2],
+    [x |-> 2, y |-> 3]
+  >>
+
+TraceActions ==
+  <<"Init", "Next">>
+====
+"""
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='_trace.tla', delete=False
+        ) as f:
+            f.write(tla_content)
+            f.flush()
+            try:
+                reader = TLCOutputReader(f.name, format="tla")
+                assert reader.trace_length == 2
+
+                state1 = reader.get_state(1)
+                assert state1.variables["x"] == 1
+                assert state1.variables["y"] == 2
+                assert state1.action == "Init"
+
+                state2 = reader.get_state(2)
+                assert state2.variables["x"] == 2
+                assert state2.variables["y"] == 3
+                assert state2.action == "Next"
+            finally:
+                os.unlink(f.name)
+
+    def test_parse_tla_nested_records(self):
+        """Test TLA+ records with |-> notation and nested structures."""
+        tla_content = """---- MODULE Trace ----
+Trace ==
+  <<
+    [config |-> [s1 |-> [a |-> 1, b |-> 2]], log |-> <<[term |-> 1]>>]
+  >>
+
+TraceActions ==
+  <<"Init">>
+====
+"""
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='_trace.tla', delete=False
+        ) as f:
+            f.write(tla_content)
+            f.flush()
+            try:
+                reader = TLCOutputReader(f.name, format="tla")
+                assert reader.trace_length == 1
+
+                # Test nested record access
+                val = reader.get_variable_at_path(1, "config.s1.a")
+                assert val == 1
+
+                # Test sequence access
+                val = reader.get_variable_at_path(1, "log[0].term")
+                assert val == 1
+            finally:
+                os.unlink(f.name)
+
+    def test_parse_tla_without_actions(self):
+        """Test TLA+ trace without TraceActions definition."""
+        tla_content = """---- MODULE Trace ----
+Trace ==
+  <<
+    [x |-> 1],
+    [x |-> 2]
+  >>
+====
+"""
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='_trace.tla', delete=False
+        ) as f:
+            f.write(tla_content)
+            f.flush()
+            try:
+                reader = TLCOutputReader(f.name, format="tla")
+                assert reader.trace_length == 2
+
+                state1 = reader.get_state(1)
+                assert state1.variables["x"] == 1
+                assert state1.action == "Unknown"
+            finally:
+                os.unlink(f.name)
+
+
+class TestFormatFallback:
+    """Tests for format fallback behavior."""
+
+    def test_json_fallback_to_text(self):
+        """Test fallback from JSON to text when JSON file doesn't exist."""
+        # Create a text format file (legacy format)
+        content = """Error: Invariant TestInv is violated.
+Error: The behavior up to this point is:
+State 1: <Init line 1, col 1 to line 1, col 10 of module Test>
+/\\ x = 1
+
+State 2: <Next line 2, col 1 to line 2, col 10 of module Test>
+/\\ x = 2
+
+The number of states generated: 100
+"""
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.log', delete=False
+        ) as f:
+            f.write(content)
+            f.flush()
+            try:
+                # Request JSON format, but only text file exists
+                reader = TLCOutputReader(f.name, format="json")
+                assert reader.trace_length == 2
+
+                state1 = reader.get_state(1)
+                assert state1.variables["x"] == 1
+            finally:
+                os.unlink(f.name)
+
+    def test_text_format_explicit(self):
+        """Test explicit text format selection."""
+        content = """Error: Invariant TestInv is violated.
+Error: The behavior up to this point is:
+State 1: <Init line 1, col 1 to line 1, col 10 of module Test>
+/\\ x = 1
+
+The number of states generated: 100
+"""
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.log', delete=False
+        ) as f:
+            f.write(content)
+            f.flush()
+            try:
+                reader = TLCOutputReader(f.name, format="text")
+                assert reader.trace_length == 1
+                assert reader.get_state(1).variables["x"] == 1
+            finally:
+                os.unlink(f.name)
+
+    def test_file_not_found_any_format(self):
+        """Test that FileNotFoundError is raised when no file exists."""
+        with pytest.raises(FileNotFoundError):
+            TLCOutputReader("/nonexistent/path/to/file.log", format="json")
+
+
 def run_tests():
     """Run tests without pytest."""
     import traceback
@@ -423,6 +674,9 @@ def run_tests():
         TestPreprocessing,
         TestTLCOutputReader,
         TestTLCOutputReaderEdgeCases,
+        TestJsonParsing,
+        TestTlaSyntaxParsing,
+        TestFormatFallback,
     ]
 
     passed = 0
