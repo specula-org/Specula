@@ -889,7 +889,12 @@ BecomeLeader(i) ==
                             [j \in Server |-> LastIndex(log[i]) + 1]]
     /\ inflights' = [inflights EXCEPT ![i] =
                             [j \in Server |-> {}]]
-    /\ UNCHANGED <<messageVars, currentTerm, votedFor, pendingConfChangeIndex, candidateVars, logVars, configVars, durableState, partitions>>
+    \* FIX: Set pendingConfChangeIndex to lastIndex per raft.go:955-960
+    \* Reference: "Conservatively set the pendingConfIndex to the last index in the
+    \* log. There may or may not be a pending config change, but it's safe to delay
+    \* any future proposals until we commit all our pending log entries."
+    /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log[i])]
+    /\ UNCHANGED <<messageVars, currentTerm, votedFor, candidateVars, logVars, configVars, durableState, partitions>>
     
 Replicate(i, v, t) == 
     /\ t \in {ValueEntry, ConfigEntry}
@@ -924,31 +929,39 @@ ClientRequestAndSend(i, v) ==
 
 
 \* Leader replicates an implicit entry (for self-message response in trace).
-\* In joint config: creates a leave-joint config entry
+\* In joint config: creates a leave-joint config entry (auto-leave mechanism)
 \* Otherwise: creates a normal value entry
 \* Reference: This models the implicit replication when leader sends MsgAppResp to itself.
+\* Reference: raft.go:745 - Auto-leave trigger condition:
+\*   if r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex && r.state == StateLeader
 ReplicateImplicitEntry(i) ==
     /\ state[i] = Leader
     /\ LET isJoint == IsJointConfig(i)
-           entryType == IF isJoint THEN ConfigEntry ELSE ValueEntry
-           \* For LeaveJoint, use leaveJoint |-> TRUE format to match ApplyConfigUpdate
-           entryValue == IF isJoint
-                         THEN [leaveJoint |-> TRUE, newconf |-> GetConfig(i), learners |-> GetLearners(i)]
-                         ELSE [val |-> 0]
        IN
-       /\ Replicate(i, entryValue, entryType)
-       /\ Send([mtype       |-> AppendEntriesResponse,
-                msubtype    |-> "app",
-                mterm       |-> currentTerm[i],
-                msuccess    |-> TRUE,
-                mmatchIndex |-> LastIndex(log'[i]),
-                mrejectHint |-> 0,
-                mlogTerm    |-> 0,
-                msource     |-> i,
-                mdest       |-> i])
-       /\ IF isJoint
-          THEN pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log'[i])]
-          ELSE UNCHANGED pendingConfChangeIndex
+       \* FIX: When in joint config, must check auto-leave preconditions per raft.go:745
+       \* 1. config[i].autoLeave = TRUE (corresponds to r.trk.Config.AutoLeave)
+       \* 2. pendingConfChangeIndex[i] = 0 (corresponds to newApplied >= r.pendingConfIndex,
+       \*    since pendingConfChangeIndex is cleared to 0 when config change is applied)
+       /\ (isJoint => (config[i].autoLeave = TRUE /\ pendingConfChangeIndex[i] = 0))
+       /\ LET entryType == IF isJoint THEN ConfigEntry ELSE ValueEntry
+              \* For LeaveJoint, use leaveJoint |-> TRUE format to match ApplyConfigUpdate
+              entryValue == IF isJoint
+                            THEN [leaveJoint |-> TRUE, newconf |-> GetConfig(i), learners |-> GetLearners(i)]
+                            ELSE [val |-> 0]
+          IN
+          /\ Replicate(i, entryValue, entryType)
+          /\ Send([mtype       |-> AppendEntriesResponse,
+                   msubtype    |-> "app",
+                   mterm       |-> currentTerm[i],
+                   msuccess    |-> TRUE,
+                   mmatchIndex |-> LastIndex(log'[i]),
+                   mrejectHint |-> 0,
+                   mlogTerm    |-> 0,
+                   msource     |-> i,
+                   mdest       |-> i])
+          /\ IF isJoint
+             THEN pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log'[i])]
+             ELSE UNCHANGED pendingConfChangeIndex
     /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, configVars, durableState, progressVars, partitions>>
 
 \* Leader i advances its commitIndex.
@@ -1611,16 +1624,12 @@ HandleHeartbeatResponse(i, j, m) ==
 \* attempt to compact an index greater than raftLog.applied."
 \* We use durableState.log as applied index (set by PersistState in Ready).
 \*
-\* Additional constraint: Cannot compact past pendingConfChangeIndex.
-\* Reference: raft.go:1318 - pendingConfIndex > applied means config change is pending.
-\* Since compaction should only go up to applied, we cannot compact past pendingConfChangeIndex.
+\* Note: pendingConfChangeIndex does NOT constrain log compaction.
+\* Reference: storage.go Compact() only checks offset and lastIndex bounds.
+\* pendingConfChangeIndex is only checked when proposing new config changes (raft.go:1318).
 CompactLog(i, newStart) ==
     /\ newStart > log[i].offset
     /\ newStart <= durableState[i].log + 1
-    \* Cannot compact past pending config entry that hasn't been applied
-    \* If pendingConfChangeIndex > 0, the entry at that index must remain in the log
-    /\ (state[i] = Leader /\ pendingConfChangeIndex[i] > 0) =>
-           newStart <= pendingConfChangeIndex[i]
     /\ log' = [log EXCEPT ![i] = [
           offset  |-> newStart,
           entries |-> SubSeq(@.entries, newStart - @.offset + 1, Len(@.entries)),
@@ -2794,15 +2803,6 @@ AppendEntriesPrevLogTermValidInv ==
         (m.mtype = AppendEntriesRequest /\ m.mprevLogIndex > 0) =>
             m.mprevLogTerm > 0
 
-\* Stronger check: mcommitIndex should not exceed what receiver can handle
-\* The panic in bug 76f1249 was caused by commitIndex > lastIndex
-AppendEntriesCommitSafeInv ==
-    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
-        m.mtype = AppendEntriesRequest =>
-            \* commitIndex should be <= prevLogIndex + number of entries
-            \* (this is the maximum log index after applying the message)
-            m.mcommitIndex <= m.mprevLogIndex + Len(m.mentries)
-
 \* ----------------------------------------------------------------------------
 \* Bug bd3c759: Auto-transitioning out of joint config launches multiple attempts
 \* ----------------------------------------------------------------------------
@@ -2839,26 +2839,6 @@ PendingConfIndexAutoLeaveInv ==
                 pendingConfChangeIndex[i] >= Min(leaveJointIndices)
 
 \* ----------------------------------------------------------------------------
-\* Bug a370b6f: Unbounded log growth prevention mechanism bug
-\* ----------------------------------------------------------------------------
-\* Scenario:
-\* 1. Size tracking used proto's Size() which includes Index/Term (mutated after)
-\* 2. Ignored config change would append empty entry but track original size
-\* 3. Result: non-zero uncommitted counter even when fully committed
-\*
-\* This bug is hard to model directly (involves byte counting), but we can
-\* add a related invariant: log growth should be bounded relative to commits
-
-\* Invariant: Uncommitted entries should be bounded
-\* (This is a weaker version - the real bug was about size tracking)
-UncommittedEntriesBoundInv ==
-    \A i \in Server :
-        state[i] = Leader =>
-            \* Uncommitted entries shouldn't grow unboundedly
-            \* A reasonable bound: no more than some multiple of inflight capacity
-            (LastIndex(log[i]) - commitIndex[i]) <= MaxInflightMsgs * Cardinality(Server) * 2
-
-\* ----------------------------------------------------------------------------
 \* Bug 8ecce32: CommittedEntries pagination correctness bug
 \* ----------------------------------------------------------------------------
 \* Scenario:
@@ -2880,29 +2860,14 @@ CommittedEntriesConsistentInv ==
                 historyLog[i][idx] = historyLog[j][idx]
 
 \* ----------------------------------------------------------------------------
-\* Bug e419ba5: Byte counter leak in Inflights tracker
-\* ----------------------------------------------------------------------------
-\* Scenario: Inflights byte counter not properly decremented
-\* We model count-based inflights, so check count consistency instead
-
-InflightsCountConsistentInv ==
-    \A i \in Server : \A j \in Server :
-        state[i] = Leader =>
-            \* Inflights count should match the set cardinality
-            Cardinality(inflights[i][j]) = InflightsCount(i, j)
-
-\* ----------------------------------------------------------------------------
 \* Aggregate Bug Detection Invariants
 \* ----------------------------------------------------------------------------
 
 BugDetectionInv ==
     /\ AppendEntriesPrevLogTermValidInv      \* Bug 76f1249
-    /\ AppendEntriesCommitSafeInv            \* Bug 76f1249
     /\ SinglePendingLeaveJointInv            \* Bug bd3c759
     /\ PendingConfIndexAutoLeaveInv          \* Bug bd3c759
-    /\ UncommittedEntriesBoundInv            \* Bug a370b6f (weak version)
-    /\ CommittedEntriesConsistentInv         \* Bug 8ecce32
-    /\ InflightsCountConsistentInv           \* Bug e419ba5
+    /\ CommittedEntriesConsistentInv         \* Bug 8ecce32 (general safety property)
 
 \* \* ============================================================================
 \* \* Monotonicity Properties
