@@ -19,6 +19,8 @@ public class CFGVarChangeAnalyzer {
     List<CFGFuncNode> WorkList;
     Set<CFGFuncNode> cuttedFunc;
     Set<String> tempVars;
+    // Track which functions are pure (no state modifications)
+    Set<String> pureFunctions;
     public CFGVarChangeAnalyzer(CFGCALLGraph callGraph) {
         this.callGraph = callGraph;
         this.funcVarChange = new HashMap<>();
@@ -27,6 +29,7 @@ public class CFGVarChangeAnalyzer {
         this.WorkList = new ArrayList<>();
         this.cuttedFunc = new HashSet<>();
         this.tempVars = new HashSet<>();
+        this.pureFunctions = new HashSet<>();
         for (String funcName : callGraph.getFuncNames()) {
             this.funcVarChange.put(funcName, new HashSet<>());
         }
@@ -44,6 +47,7 @@ public class CFGVarChangeAnalyzer {
         this.WorkList = new ArrayList<>();
         this.cuttedFunc = new HashSet<>();
         this.tempVars = new HashSet<>();
+        this.pureFunctions = new HashSet<>();
         this.funcVarChange = new HashMap<>();
         for (String funcName : callGraph.getFuncNames()) {
             this.funcVarChange.put(funcName, new HashSet<>());
@@ -54,8 +58,67 @@ public class CFGVarChangeAnalyzer {
         return callGraph;
     }
 
+    /**
+     * Detect and mark pure functions (functions that don't modify state variables).
+     * A pure function has no var' = ... assignments and no UNCHANGED statements.
+     */
+    private void detectPureFunctions() {
+        pureFunctions.clear();
+        for (CFGFuncNode funcNode : callGraph.getFuncNodes()) {
+            if (!hasPrimeAssignment(funcNode.getRoot())) {
+                pureFunctions.add(funcNode.getFuncName());
+                funcNode.setPureExpression(true);
+                // Pure functions don't modify any variables
+                funcVarChange.put(funcNode.getFuncName(), new HashSet<>());
+            }
+        }
+    }
+
+    /**
+     * Check if a statement tree contains any prime (') assignments or UNCHANGED statements.
+     * Returns true if there are state modifications, false if it's a pure expression.
+     */
+    private boolean hasPrimeAssignment(CFGStmtNode node) {
+        if (node == null) {
+            return false;
+        }
+
+        String content = node.getContent();
+        if (content != null && !content.isEmpty()) {
+            // Check for var' = ... or var' \in ... patterns
+            for (String var : variables) {
+                String primePattern = "(?<![\\w_])" + Pattern.quote(var) + "'\\s*(=|\\\\in|\\\\subseteq)";
+                if (Pattern.compile(primePattern).matcher(content).find()) {
+                    return true;
+                }
+            }
+            // Check for UNCHANGED statements
+            if (content.contains("UNCHANGED")) {
+                return true;
+            }
+        }
+
+        // Recursively check children
+        for (CFGStmtNode child : node.getChildren()) {
+            if (hasPrimeAssignment(child)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if a function is pure (no state modifications).
+     */
+    public boolean isPureFunction(String funcName) {
+        return pureFunctions.contains(funcName);
+    }
+
     public void analyze() {
         prepareForSAPass();
+        // Detect pure functions before SA analysis to avoid false conflicts
+        detectPureFunctions();
         // System.err.println("begin analyze");
         // Get topological sequence
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
@@ -103,6 +166,8 @@ public class CFGVarChangeAnalyzer {
 
     public void analyze_only_sa(){
         prepareForSAPass();
+        // Detect pure functions before SA analysis to avoid false conflicts
+        detectPureFunctions();
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
         // Reverse
         Collections.reverse(topologicalSort);
@@ -113,6 +178,8 @@ public class CFGVarChangeAnalyzer {
 
     public void analyze_only_pc(){
         prepareForSAPass();
+        // Detect pure functions before SA analysis to avoid false conflicts
+        detectPureFunctions();
         // Get topological sequence
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
         // Reverse
@@ -156,6 +223,8 @@ public class CFGVarChangeAnalyzer {
 
     public void analyze_only_uc(){
         prepareForSAPass();
+        // Detect pure functions before SA analysis to avoid false conflicts
+        detectPureFunctions();
         List<CFGFuncNode> topologicalSort = callGraph.getTopologicalSort();
         // Reverse
         Collections.reverse(topologicalSort);
@@ -168,6 +237,10 @@ public class CFGVarChangeAnalyzer {
 
     // Static analysis build parent node mapping relationship and IN and OUT
     private void analyzeFuncSA(CFGFuncNode funcNode){
+        // Skip pure functions - they don't modify any variables
+        if (pureFunctions.contains(funcNode.getFuncName())) {
+            return;
+        }
         CFGStmtNode stmtNode = funcNode.getRoot();
         if (stmtNode == null) {
             return;
