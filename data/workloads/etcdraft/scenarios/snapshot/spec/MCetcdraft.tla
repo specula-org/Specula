@@ -105,6 +105,7 @@ etcdInitLogVars == /\ log = [i \in Server |-> IF i \in InitServer
                                               ELSE [offset |-> 1, entries |-> <<>>, snapshotIndex |-> 0, snapshotTerm |-> 0]]
                    /\ historyLog = [i \in Server |-> IF i \in InitServer THEN BootstrapLog ELSE <<>>]
                    /\ commitIndex = [i \in Server |-> IF i \in InitServer THEN Cardinality(InitServer) ELSE 0]
+                   /\ applied = [i \in Server |-> IF i \in InitServer THEN Cardinality(InitServer) ELSE 0]
 
 etcdInitConfigVars == /\ config = [i \in Server |-> [ jointConfig |-> IF i \in InitServer THEN <<InitServer, {}>> ELSE <<{}, {}>>, learners |-> {}, autoLeave |-> FALSE]]
                       /\ reconfigCount = 0 \* the bootstrap configurations are not counted
