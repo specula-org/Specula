@@ -1770,6 +1770,24 @@ ReportUnreachable(i, j) ==
                    durableState, leaderVars, nextIndex, pendingSnapshot,
                    msgAppFlowPaused, historyLog, partitions>>
 
+\* Handle ReportSnapshot from application layer (trace validation version)
+\* This is used when trace reports snapshot status via ReportSnapshotStatus event
+\* rather than through message handling.
+\* Reference: raft.go:1608-1625
+\* @type: (Int, Int, Bool) => Bool;
+ReportSnapshotStatus(i, j, success) ==
+    /\ state[i] = Leader
+    /\ progressState[i][j] = StateSnapshot
+    /\ LET oldPendingSnapshot == IF success THEN pendingSnapshot[i][j] ELSE 0
+           newNext == Max({matchIndex[i][j] + 1, oldPendingSnapshot + 1})
+       IN /\ progressState' = [progressState EXCEPT ![i][j] = StateProbe]
+          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = newNext]
+          /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = 0]
+          /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = TRUE]
+          /\ inflights' = [inflights EXCEPT ![i][j] = {}]
+    /\ UNCHANGED <<serverVars, candidateVars, messageVars, logVars, configVars,
+                   durableState, matchIndex, pendingConfChangeIndex, historyLog, partitions>>
+
 \* Any RPC with a newer term causes the recipient to advance its term first.
 \* @type: (Int, Int, MSG) => Bool;
 UpdateTerm(i, j, m) ==
@@ -1911,7 +1929,11 @@ NextAsync ==
     \/ \E i \in Server : Timeout(i)
     \/ \E i \in Server : Ready(i)
     \/ \E i \in Server : StepDownToFollower(i)
-        
+    \* Application layer reports
+    \/ \E i,j \in Server : ReportUnreachable(i, j)
+    \/ \E i,j \in Server : ReportSnapshotStatus(i, j, TRUE)
+    \/ \E i,j \in Server : ReportSnapshotStatus(i, j, FALSE)
+
 NextCrash == \E i \in Server : Restart(i)
 
 NextAsyncCrash ==
@@ -2881,6 +2903,318 @@ BugDetectionInv ==
     /\ SinglePendingLeaveJointInv            \* Bug bd3c759
     /\ PendingConfIndexAutoLeaveInv          \* Bug bd3c759
     /\ CommittedEntriesConsistentInv         \* Bug 8ecce32 (general safety property)
+
+\* ============================================================================
+\* P0: CRITICAL INVARIANTS - Known to cause panics in etcd
+\* These directly correspond to panic conditions in the code
+\* ============================================================================
+
+\* ----------------------------------------------------------------------------
+\* Invariant: AppliedBoundInv
+\* Reference: log.go:46 "Invariant: applied <= committed"
+\* Reference: log.go:331-332 appliedTo() panics if committed < i || i < applied
+\* Bug: Issue #10166, #17081 - tocommit/applied out of range panics
+\* ----------------------------------------------------------------------------
+AppliedBoundInv ==
+    \A i \in Server :
+        applied[i] <= commitIndex[i]
+
+\* ----------------------------------------------------------------------------
+\* NOTE: CommitIndexBoundInv is defined above (line ~2336)
+\* Reference: log.go:324 "tocommit(%d) is out of range [lastIndex(%d)]"
+\* This is the famous "Was the raft log corrupted, truncated, or lost?" panic
+\* Bug: Issue #10166, #17081
+
+\* ----------------------------------------------------------------------------
+\* Invariant: MessageDestinationValidInv
+\* Reference: Issue #17081 - etcd didn't validate To field in messages
+\* Fix: PR #17078 added validation to "ignore raft messages if member id mismatch"
+\* ----------------------------------------------------------------------------
+MessageDestinationValidInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        /\ m.mdest \in Server
+        /\ m.msource \in Server
+
+\* ============================================================================
+\* P1: HIGH PRIORITY INVARIANTS - Prevent data corruption and logic bugs
+\* ============================================================================
+
+\* ----------------------------------------------------------------------------
+\* Invariant: LeaderNextIndexValidInv
+\* Reference: Bug 76f1249 - MsgApp after log truncation causes panic
+\* After leader compacts log, nextIndex must still be >= log.offset
+\* Otherwise, leader tries to send entries that no longer exist
+\* ----------------------------------------------------------------------------
+LeaderNextIndexValidInv ==
+    \A i \in Server : \A j \in Server :
+        state[i] = Leader =>
+            nextIndex[i][j] >= log[i].offset
+
+\* ----------------------------------------------------------------------------
+\* Invariant: SnapshotAppliedConsistencyInv
+\* Reference: Snapshot is taken from applied state machine
+\* snapshotIndex represents data that has been applied, so it must be <= applied
+\* Note: After restart, applied is reset to snapshotIndex, so this holds
+\* ----------------------------------------------------------------------------
+SnapshotAppliedConsistencyInv ==
+    \A i \in Server :
+        log[i].snapshotIndex <= applied[i]
+
+\* ============================================================================
+\* P2: DETAILED INVARIANTS - Catch subtle message/state inconsistencies
+\* ============================================================================
+
+\* ----------------------------------------------------------------------------
+\* Invariant: AppendEntriesSourceValidInv
+\* Leader can only send entries that exist in its log
+\* Entries in MsgApp must be within [offset, lastIndex]
+\* ----------------------------------------------------------------------------
+AppendEntriesSourceValidInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        (m.mtype = AppendEntriesRequest /\ Len(m.mentries) > 0) =>
+            LET firstEntryIdx == m.mprevLogIndex + 1
+                lastEntryIdx == m.mprevLogIndex + Len(m.mentries)
+            IN /\ firstEntryIdx >= log[m.msource].offset
+               /\ lastEntryIdx <= LastIndex(log[m.msource])
+
+\* ----------------------------------------------------------------------------
+\* Invariant: HeartbeatCommitBoundInv
+\* Heartbeat's mcommitIndex should not exceed leader's actual commitIndex
+\* (Heartbeats are MsgApp with empty entries)
+\* ----------------------------------------------------------------------------
+HeartbeatCommitBoundInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        m.mtype = AppendEntriesRequest =>
+            m.mcommitIndex <= commitIndex[m.msource]
+
+\* ----------------------------------------------------------------------------
+\* Invariant: AppliedConfigBoundInv
+\* appliedConfigIndex cannot exceed commitIndex (can only apply committed configs)
+\* ----------------------------------------------------------------------------
+AppliedConfigBoundInv ==
+    \A i \in Server :
+        appliedConfigIndex[i] <= commitIndex[i]
+
+\* ----------------------------------------------------------------------------
+\* Aggregate P0 Critical Invariants
+\* ----------------------------------------------------------------------------
+CriticalInv ==
+    /\ AppliedBoundInv
+    /\ CommitIndexBoundInv
+    /\ MessageDestinationValidInv
+
+\* ----------------------------------------------------------------------------
+\* Aggregate P1 High Priority Invariants
+\* ----------------------------------------------------------------------------
+HighPriorityInv ==
+    /\ LeaderNextIndexValidInv
+    /\ SnapshotAppliedConsistencyInv
+
+\* ----------------------------------------------------------------------------
+\* Aggregate P2 Detailed Invariants
+\* ----------------------------------------------------------------------------
+DetailedInv ==
+    /\ AppendEntriesSourceValidInv
+    /\ HeartbeatCommitBoundInv
+    /\ AppliedConfigBoundInv
+
+\* ============================================================================
+\* P3: CODE-DERIVED INVARIANTS - Directly from raft source code
+\* ============================================================================
+
+\* ----------------------------------------------------------------------------
+\* Invariant: StateSnapshotNextInv
+\* Reference: progress.go:40 "In StateSnapshot, Next == PendingSnapshot + 1"
+\* Reference: progress.go:156 BecomeSnapshot() sets Next = snapshoti + 1
+\* ----------------------------------------------------------------------------
+StateSnapshotNextInv ==
+    \A i \in Server : \A j \in Server :
+        (state[i] = Leader /\ progressState[i][j] = StateSnapshot) =>
+            nextIndex[i][j] = pendingSnapshot[i][j] + 1
+
+\* ----------------------------------------------------------------------------
+\* Invariant: HeartbeatCommitMatchBoundInv
+\* Reference: raft.go:698-700 "The leader MUST NOT forward the follower's commit
+\*            to an unmatched index. commit := min(pr.Match, r.raftLog.committed)"
+\* This is the HEARTBEAT specific constraint - for MsgHeartbeat messages
+\* Note: This is a strong invariant that might not hold for all MsgApp
+\* ----------------------------------------------------------------------------
+\* HeartbeatCommitMatchBoundInv ==
+\*     \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+\*         \* Only for heartbeat messages (empty MsgApp or MsgHeartbeat)
+\*         (m.mtype = AppendEntriesRequest /\ Len(m.mentries) = 0) =>
+\*             m.mcommitIndex <= matchIndex[m.msource][m.mdest]
+
+\* ----------------------------------------------------------------------------
+\* Invariant: ConfigChangePendingInv
+\* Reference: raft.go:1320 "alreadyPending := r.pendingConfIndex > r.raftLog.applied"
+\* If there's a pending config change, pendingConfIndex must be > applied
+\* ----------------------------------------------------------------------------
+ConfigChangePendingInv ==
+    \A i \in Server :
+        (state[i] = Leader /\ pendingConfChangeIndex[i] > 0) =>
+            pendingConfChangeIndex[i] > applied[i]
+
+\* ----------------------------------------------------------------------------
+\* Invariant: JointConfigMustLeaveInv
+\* Reference: raft.go:1327-1328 "must transition out of joint config first"
+\* If in joint config, the next config change must be a leave-joint (empty changes)
+\* This is enforced by the spec but we verify it here
+\* ----------------------------------------------------------------------------
+\* Note: This is more of a behavioral constraint than a state invariant
+\* The actual invariant is that we can't have multiple non-leave-joint pending
+\* which is already covered by SinglePendingLeaveJointInv
+
+\* ----------------------------------------------------------------------------
+\* Invariant: MatchIndexBelowNextInv
+\* Reference: progress.go:37 "Invariant: 0 <= Match < Next"
+\* matchIndex must always be strictly less than nextIndex
+\* Note: This is already covered by MatchIndexLessThanNextInv
+\* ----------------------------------------------------------------------------
+
+\* ----------------------------------------------------------------------------
+\* Aggregate P3 Code-Derived Invariants
+\* ----------------------------------------------------------------------------
+CodeDerivedInv ==
+    /\ StateSnapshotNextInv
+    /\ ConfigChangePendingInv
+
+\* ============================================================================
+\* P4: VERDI-RAFT INSPIRED INVARIANTS
+\* Source: https://github.com/uwplse/verdi-raft
+\* These invariants come from the Coq proof of Raft safety
+\* ============================================================================
+
+\* ----------------------------------------------------------------------------
+\* Invariant: VotedForConsistencyInv
+\* Source: Verdi-raft VotesCorrect - votes_currentTerm_votedFor_correct
+\* If a server has votedFor = j (not Nil), then j was a candidate in that term
+\* Note: This is weaker than Verdi-raft since we don't track vote history
+\* ----------------------------------------------------------------------------
+VotedForConsistencyInv ==
+    \A i \in Server :
+        votedFor[i] /= Nil =>
+            \* If votedFor is set, it should be a valid server
+            votedFor[i] \in Server
+
+\* ----------------------------------------------------------------------------
+\* Invariant: LeaderCurrentTermEntriesInv
+\* Source: Verdi-raft LeaderSublogInterface - leader_sublog_host
+\* "If a node is leader and any entry in any host's log has the same term as
+\*  the leader's current term, that entry must exist in the leader's log."
+\* This is a key safety property ensuring leaders don't "lose" their own entries
+\* ----------------------------------------------------------------------------
+LeaderCurrentTermEntriesInv ==
+    \A leader \in Server :
+        state[leader] = Leader =>
+            \A other \in Server :
+                \A idx \in log[other].offset..(LastIndex(log[other])) :
+                    (IsAvailable(other, idx) /\ LogEntry(other, idx).term = currentTerm[leader]) =>
+                        \* Entry must exist in leader's log
+                        /\ idx <= LastIndex(log[leader])
+                        /\ IsAvailable(leader, idx)
+                        /\ LogEntry(leader, idx).term = currentTerm[leader]
+
+\* ----------------------------------------------------------------------------
+\* Invariant: RequestVoteTermBoundInv
+\* Source: Verdi-raft sorted_invariant + common sense
+\* RequestVote messages should have consistent term info
+\* ----------------------------------------------------------------------------
+RequestVoteTermBoundInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        m.mtype = RequestVoteRequest =>
+            \* The message term should be positive
+            /\ m.mterm > 0
+            \* Log term in request should be <= message term
+            /\ m.mlastLogTerm <= m.mterm
+
+\* ----------------------------------------------------------------------------
+\* Invariant: AppendEntriesResponseTermInv
+\* Source: Verdi-raft - responses carry consistent term info
+\* AppendEntries responses should have matching term semantics
+\* ----------------------------------------------------------------------------
+AppendEntriesResponseTermInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        m.mtype = AppendEntriesResponse =>
+            \* Response term is positive
+            m.mterm > 0
+
+\* ----------------------------------------------------------------------------
+\* Invariant: LeaderLogContainsAllCommittedInv
+\* Source: Verdi-raft StateMachineSafetyProof - commit_invariant
+\* Combined with Raft paper's Leader Completeness property
+\* A leader's log must contain all committed entries
+\* ----------------------------------------------------------------------------
+LeaderLogContainsAllCommittedInv ==
+    \A i \in Server :
+        state[i] = Leader =>
+            \* Leader's commitIndex should be achievable from its log
+            /\ commitIndex[i] <= LastIndex(log[i])
+            \* All entries up to commitIndex should be available
+            /\ \A idx \in 1..commitIndex[i] :
+                IsAvailable(i, idx)
+
+\* ----------------------------------------------------------------------------
+\* Invariant: SnapshotResponseTermValidInv
+\* Snapshot responses should have valid terms
+\* ----------------------------------------------------------------------------
+SnapshotResponseTermValidInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        m.mtype = SnapshotResponse =>
+            m.mterm > 0
+
+\* ----------------------------------------------------------------------------
+\* Aggregate P4 Verdi-raft Inspired Invariants
+\* ----------------------------------------------------------------------------
+VerdiRaftInspiredInv ==
+    /\ VotedForConsistencyInv
+    /\ LeaderCurrentTermEntriesInv
+    /\ RequestVoteTermBoundInv
+    /\ AppendEntriesResponseTermInv
+    /\ LeaderLogContainsAllCommittedInv
+    /\ SnapshotResponseTermValidInv
+
+\* ============================================================================
+\* P5: GIT HISTORY BUG PREVENTION INVARIANTS
+\* Source: etcd/raft git commit history analysis
+\* ============================================================================
+
+\* ----------------------------------------------------------------------------
+\* Invariant: TermNeverZeroInLogInv
+\* Source: Multiple bugs related to term=0 causing issues
+\* Entries in log should never have term 0
+\* ----------------------------------------------------------------------------
+TermNeverZeroInLogInv ==
+    \A i \in Server :
+        \A idx \in log[i].offset..LastIndex(log[i]) :
+            IsAvailable(i, idx) =>
+                LogEntry(i, idx).term > 0
+
+\* ----------------------------------------------------------------------------
+\* Invariant: SnapshotTermNeverZeroInv
+\* Source: Related to Bug 76f1249 - term=0 confusion
+\* If snapshotIndex > 0, snapshotTerm must be > 0
+\* ----------------------------------------------------------------------------
+SnapshotTermNeverZeroInv ==
+    \A i \in Server :
+        log[i].snapshotIndex > 0 =>
+            log[i].snapshotTerm > 0
+
+\* ----------------------------------------------------------------------------
+\* Invariant: LeaderCommitNotExceedMatchQuorumInv
+\* Source: raft.go maybeCommit() logic
+\* Leader's commitIndex should not exceed what a quorum has matched
+\* Note: This is a soft check - the commitIndex could temporarily be ahead
+\*       after quorum calculation if no updates have happened yet
+\* ----------------------------------------------------------------------------
+\* This is already implicitly covered by how we commit in the spec
+
+\* ----------------------------------------------------------------------------
+\* Aggregate P5 Git History Bug Prevention Invariants
+\* ----------------------------------------------------------------------------
+GitHistoryBugPreventionInv ==
+    /\ TermNeverZeroInLogInv
+    /\ SnapshotTermNeverZeroInv
 
 \* \* ============================================================================
 \* \* Monotonicity Properties

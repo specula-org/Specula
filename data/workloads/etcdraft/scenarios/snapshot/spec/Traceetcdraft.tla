@@ -562,6 +562,18 @@ ReportUnreachableIfLogged(i, j) ==
     \* Use Primed version since trace records state AFTER the transition
     /\ ValidateProgressStatePrimed(i, j)
 
+\* Handle ReportSnapshotStatus event - application reports snapshot send result
+\* Reference: raft.go:1608-1625
+ReportSnapshotStatusIfLogged(i, j) ==
+    /\ LoglineIsNodeEvent("ReportSnapshotStatus", i)
+    /\ "prop" \in DOMAIN logline.event
+    /\ "target" \in DOMAIN logline.event.prop
+    /\ "success" \in DOMAIN logline.event.prop
+    /\ j = logline.event.prop.target
+    /\ ReportSnapshotStatus(i, j, logline.event.prop.success)
+    \* Use Primed version since trace records state AFTER the transition
+    /\ ValidateProgressStatePrimed(i, j)
+
 \* skip unused logs
 SkipUnusedLogline ==
     /\ \/ /\ LoglineIsEvent("SendRequestVoteResponse")
@@ -619,6 +631,8 @@ TraceNextNonReceiveActions ==
           /\ \E i \in Server: StepDownToFollowerIfLogged(i)
        \/ /\ LoglineIsEvent("ReportUnreachable")
           /\ \E i,j \in Server: ReportUnreachableIfLogged(i, j)
+       \/ /\ LoglineIsEvent("ReportSnapshotStatus")
+          /\ \E i,j \in Server: ReportSnapshotStatusIfLogged(i, j)
        \/ /\ LoglineIsEvent("CompactLog")
           /\ \E i \in Server: CompactLogIfLogged(i)
        \/ SkipUnusedLogline
