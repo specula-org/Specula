@@ -304,10 +304,12 @@ MCNextAsync(i) ==
        /\ UNCHANGED faultVars
     \* NOTE: Entries must be sent starting from nextIndex (per raft.go:638)
     \* Implementation always sends from pr.Next, not from arbitrary positions
-    \* IMPORTANT: Only send AppendEntries if entries are available (not compacted)
-    \* If nextIndex < log.offset, must send snapshot instead (handled by SendSnapshot)
+    \* BUG DETECTION MODE: Removed constraint "nextIndex[i][j] >= log[i].offset"
+    \* This allows exploring scenarios like bug 76f1249 where leader sends MsgApp
+    \* with prevLogTerm=0 after log truncation (instead of sending snapshot).
+    \* The correct behavior is enforced by invariants, not by action constraints.
     \/ /\ \E j \in Server :
-           /\ nextIndex[i][j] >= log[i].offset  \* Entries must be available
+           \* REMOVED: /\ nextIndex[i][j] >= log[i].offset  \* Allow bug scenario exploration
            /\ \E e \in nextIndex[i][j]..LastIndex(log[i])+1 : etcd!AppendEntries(i, j, <<nextIndex[i][j], e>>)
        /\ UNCHANGED faultVars
     \/ /\ etcd!AppendEntriesToSelf(i)

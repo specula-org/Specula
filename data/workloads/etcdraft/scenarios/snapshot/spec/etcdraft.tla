@@ -2770,6 +2770,140 @@ NewInvariants ==
     /\ AdditionalMessageInv
     /\ TermAndVoteInv
 
+\* ============================================================================
+\* BUG DETECTION INVARIANTS
+\* These invariants are designed to detect specific known bugs in etcd/raft.
+\* Reference: git history of etcd/raft bug fixes
+\* ============================================================================
+
+\* ----------------------------------------------------------------------------
+\* Bug 76f1249: MsgApp after log truncation causes panic
+\* ----------------------------------------------------------------------------
+\* Scenario:
+\* 1. Leader's log is compacted/truncated beyond what's in-flight to slow follower
+\* 2. Follower rejects MsgApp, leader resets Next = Match + 1
+\* 3. Leader sends MsgApp with prevLogTerm = 0 (because entry is compacted)
+\* 4. Follower wrongly passes matchTerm check (both return 0 for missing entry)
+\* 5. Follower tries to bump commitIndex beyond its log -> PANIC
+\*
+\* Detection: prevLogTerm should never be 0 when prevLogIndex > 0
+\* (prevLogTerm = 0 only valid when prevLogIndex = 0, i.e., empty log)
+
+AppendEntriesPrevLogTermValidInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        (m.mtype = AppendEntriesRequest /\ m.mprevLogIndex > 0) =>
+            m.mprevLogTerm > 0
+
+\* Stronger check: mcommitIndex should not exceed what receiver can handle
+\* The panic in bug 76f1249 was caused by commitIndex > lastIndex
+AppendEntriesCommitSafeInv ==
+    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
+        m.mtype = AppendEntriesRequest =>
+            \* commitIndex should be <= prevLogIndex + number of entries
+            \* (this is the maximum log index after applying the message)
+            m.mcommitIndex <= m.mprevLogIndex + Len(m.mentries)
+
+\* ----------------------------------------------------------------------------
+\* Bug bd3c759: Auto-transitioning out of joint config launches multiple attempts
+\* ----------------------------------------------------------------------------
+\* Scenario:
+\* 1. Leader is in joint config with autoLeave = TRUE
+\* 2. When conf change is not the last element in log, multiple leave-joint
+\*    proposals could be launched
+\* 3. Also: auto-leave proposal didn't bump pendingConfIndex
+\*
+\* Detection: At most one pending leave-joint entry in uncommitted log
+
+SinglePendingLeaveJointInv ==
+    \A i \in Server :
+        (state[i] = Leader /\ IsJointConfig(i) /\ config[i].autoLeave) =>
+            LET \* Find all uncommitted leave-joint entries
+                uncommittedLeaveJoints == {k \in (commitIndex[i]+1)..LastIndex(log[i]) :
+                    /\ IsAvailable(i, k)
+                    /\ LogEntry(i, k).type = ConfigEntry
+                    /\ "leaveJoint" \in DOMAIN LogEntry(i, k).value
+                    /\ LogEntry(i, k).value.leaveJoint = TRUE}
+            IN Cardinality(uncommittedLeaveJoints) <= 1
+
+\* Additional check: pendingConfIndex should be updated when auto-leave is proposed
+\* If there's a pending leave-joint entry, pendingConfIndex should point to it
+PendingConfIndexAutoLeaveInv ==
+    \A i \in Server :
+        (state[i] = Leader /\ IsJointConfig(i)) =>
+            LET leaveJointIndices == {k \in (commitIndex[i]+1)..LastIndex(log[i]) :
+                    /\ IsAvailable(i, k)
+                    /\ LogEntry(i, k).type = ConfigEntry
+                    /\ "leaveJoint" \in DOMAIN LogEntry(i, k).value
+                    /\ LogEntry(i, k).value.leaveJoint = TRUE}
+            IN leaveJointIndices /= {} =>
+                pendingConfChangeIndex[i] >= Min(leaveJointIndices)
+
+\* ----------------------------------------------------------------------------
+\* Bug a370b6f: Unbounded log growth prevention mechanism bug
+\* ----------------------------------------------------------------------------
+\* Scenario:
+\* 1. Size tracking used proto's Size() which includes Index/Term (mutated after)
+\* 2. Ignored config change would append empty entry but track original size
+\* 3. Result: non-zero uncommitted counter even when fully committed
+\*
+\* This bug is hard to model directly (involves byte counting), but we can
+\* add a related invariant: log growth should be bounded relative to commits
+
+\* Invariant: Uncommitted entries should be bounded
+\* (This is a weaker version - the real bug was about size tracking)
+UncommittedEntriesBoundInv ==
+    \A i \in Server :
+        state[i] = Leader =>
+            \* Uncommitted entries shouldn't grow unboundedly
+            \* A reasonable bound: no more than some multiple of inflight capacity
+            (LastIndex(log[i]) - commitIndex[i]) <= MaxInflightMsgs * Cardinality(Server) * 2
+
+\* ----------------------------------------------------------------------------
+\* Bug 8ecce32: CommittedEntries pagination correctness bug
+\* ----------------------------------------------------------------------------
+\* Scenario:
+\* 1. CommittedEntries limited by MaxCommittedSizePerReady
+\* 2. HardState.Commit was truncated to match limited entries
+\* 3. If user's Entries() implementation differs slightly from Raft's,
+\*    this could regress HardState.Commit or skip applying entries
+\*
+\* Detection: Applied entries should be consistent with what's committed
+\* Note: We don't model MaxCommittedSizePerReady, but we ensure consistency
+
+\* The committed entries in historyLog should be consistent across all servers
+\* (This is already covered by StateMachineConsistency, but we add explicit check)
+CommittedEntriesConsistentInv ==
+    \A i, j \in Server :
+        LET minCommit == Min({commitIndex[i], commitIndex[j]})
+        IN \A idx \in 1..minCommit :
+            (idx <= Len(historyLog[i]) /\ idx <= Len(historyLog[j])) =>
+                historyLog[i][idx] = historyLog[j][idx]
+
+\* ----------------------------------------------------------------------------
+\* Bug e419ba5: Byte counter leak in Inflights tracker
+\* ----------------------------------------------------------------------------
+\* Scenario: Inflights byte counter not properly decremented
+\* We model count-based inflights, so check count consistency instead
+
+InflightsCountConsistentInv ==
+    \A i \in Server : \A j \in Server :
+        state[i] = Leader =>
+            \* Inflights count should match the set cardinality
+            Cardinality(inflights[i][j]) = InflightsCount(i, j)
+
+\* ----------------------------------------------------------------------------
+\* Aggregate Bug Detection Invariants
+\* ----------------------------------------------------------------------------
+
+BugDetectionInv ==
+    /\ AppendEntriesPrevLogTermValidInv      \* Bug 76f1249
+    /\ AppendEntriesCommitSafeInv            \* Bug 76f1249
+    /\ SinglePendingLeaveJointInv            \* Bug bd3c759
+    /\ PendingConfIndexAutoLeaveInv          \* Bug bd3c759
+    /\ UncommittedEntriesBoundInv            \* Bug a370b6f (weak version)
+    /\ CommittedEntriesConsistentInv         \* Bug 8ecce32
+    /\ InflightsCountConsistentInv           \* Bug e419ba5
+
 \* \* ============================================================================
 \* \* Monotonicity Properties
 \* \* ============================================================================
@@ -2792,7 +2926,7 @@ NewInvariants ==
 \* \*  to 0, increases monotonically".  In other words, matchIndex never decrements
 \* \* unless the current action is a node becoming leader.
 \* MonotonicMatchIndexProp ==
-\*     [][(~ \E i \in Server: BecomeLeader(i)) => 
+\*     [][(~ \E i \in Server: BecomeLeader(i)) =>
 \*             (\A i,j \in Server : matchIndex'[i][j] >= matchIndex[i][j])]_vars
 
 ===============================================================================
