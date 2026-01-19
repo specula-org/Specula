@@ -342,5 +342,8 @@ func scenarioMap() map[string]string {
 		"single_node":                           filepath.Join("testdata", "single_node.txt"),
 		"slow_follower_after_compaction":        filepath.Join("testdata", "slow_follower_after_compaction.txt"),
 		"snapshot_succeed_via_app_resp_behind":  filepath.Join("testdata", "snapshot_succeed_via_app_resp_behind.txt"),
+		"snapshot_status_report":                filepath.Join("testdata", "snapshot_status_report.txt"),
+		"snapshot_status_report_failure":        filepath.Join("testdata", "snapshot_status_report_failure.txt"),
+		"report_unreachable":                    filepath.Join("testdata", "report_unreachable.txt"),
 	}
 }

@@ -2711,3 +2711,267 @@ CompactLog(i, newStart) ==
 - User Feedback: Approved
 
 ---
+
+## Record #15 - 2026-01-19
+
+### Counterexample Summary
+Execution path (43 states, showing key states):
+- State 43: s1 is Candidate with enough votes
+- State 44 (BecomeLeader): s1 becomes Leader
+  - `pendingConfChangeIndex[s1] = 2` (set to LastIndex by BecomeLeader)
+  - `applied[s1] = 2`
+  - **Invariant violated**: `ConfigChangePendingInv` requires `pendingConfChangeIndex > applied`, but `2 > 2` is false
+
+### Analysis Conclusion
+- **Type**: A: Invariant Too Strong
+- **Violated Property**: ConfigChangePendingInv
+- **Root Cause**: The invariant assumed `pendingConfChangeIndex > 0` implies a pending config change. However, `BecomeLeader` conservatively sets `pendingConfChangeIndex = lastIndex` even when all entries have been applied. When `pendingConfChangeIndex == applied`, it means there's NO pending config change (valid state).
+
+### Evidence from Implementation
+
+**Implementation (raft.go:955-960)**:
+```go
+// Conservatively set the pendingConfIndex to the last index in the
+// log. There may or may not be a pending config change, but it's
+// safe to delay any future proposals until we commit all our
+// pending log entries, and scanning the entire tail of the log
+// could be expensive.
+r.pendingConfIndex = r.raftLog.lastIndex()
+```
+
+**Implementation (raft.go:1320)**:
+```go
+alreadyPending := r.pendingConfIndex > r.raftLog.applied
+```
+
+When `pendingConfIndex == applied`, `alreadyPending = FALSE`, indicating no pending config change. This is a valid state.
+
+### Modifications Made
+
+**File**: MCetcdraft.cfg
+
+**Before**:
+```
+INVARIANTS
+    \* StateSnapshot => Next == PendingSnapshot + 1 (progress.go:40)
+    StateSnapshotNextInv
+    \* pendingConfIndex > 0 => pendingConfIndex > applied (raft.go:1320)
+    ConfigChangePendingInv
+```
+
+**After**:
+```
+INVARIANTS
+    \* StateSnapshot => Next == PendingSnapshot + 1 (progress.go:40)
+    StateSnapshotNextInv
+    \* REMOVED: ConfigChangePendingInv - invariant too strong
+    \* pendingConfChangeIndex can equal applied after BecomeLeader when all entries
+    \* have been applied. This is valid (no pending config change).
+    \* Reference: raft.go:1320 "alreadyPending := r.pendingConfIndex > r.raftLog.applied"
+    \* When pendingConfIndex == applied, alreadyPending = FALSE (valid state)
+```
+
+### User Confirmation
+- Confirmation Time: 2026-01-19
+- User Feedback: Approved removal
+
+---
+
+## Record #16 - 2026-01-19
+
+### Counterexample Summary
+Execution path (33 states):
+- State 33: s2 becomes Leader
+  - `commitIndex[s2] = 2`
+  - `log[s2].offset = 2` (entry 1 compacted)
+  - `log[s2].snapshotIndex = 1` (entry 1 covered by snapshot)
+  - **Invariant violated**: `LeaderLogContainsAllCommittedInv` requires `IsAvailable(s2, 1)`, but entry 1 is compacted
+
+### Analysis Conclusion
+- **Type**: A: Invariant Too Strong
+- **Violated Property**: LeaderLogContainsAllCommittedInv
+- **Root Cause**: The invariant required ALL committed entries to be in-memory available. However, entries can be compacted into a snapshot. When a leader needs to send compacted entries, it sends a snapshot instead (valid behavior).
+
+### Evidence from Implementation
+
+**Implementation (raft.go:622-627 maybeSendAppend)**:
+```go
+prevTerm, err := r.raftLog.term(prevIndex)
+if err != nil {
+    // The log probably got truncated at >= pr.Next, so we can't catch up the
+    // follower log anymore. Send a snapshot instead.
+    return r.maybeSendSnapshot(to, pr)
+}
+```
+
+**Implementation (raft.go:644-645)**:
+```go
+if err != nil { // send a snapshot if we failed to get the entries
+    return r.maybeSendSnapshot(to, pr)
+}
+```
+
+Leaders handle compacted entries by sending snapshots instead. The invariant should allow entries covered by snapshot.
+
+### Modifications Made
+
+**File**: etcdraft.tla
+
+**Before**:
+```tla
+LeaderLogContainsAllCommittedInv ==
+    \A i \in Server :
+        state[i] = Leader =>
+            /\ commitIndex[i] <= LastIndex(log[i])
+            /\ \A idx \in 1..commitIndex[i] :
+                IsAvailable(i, idx)
+```
+
+**After**:
+```tla
+LeaderLogContainsAllCommittedInv ==
+    \A i \in Server :
+        state[i] = Leader =>
+            /\ commitIndex[i] <= LastIndex(log[i])
+            \* All entries up to commitIndex should be available or covered by snapshot
+            /\ \A idx \in 1..commitIndex[i] :
+                idx <= log[i].snapshotIndex \/ IsAvailable(i, idx)
+```
+
+### Verification
+- SANY syntax check passed
+
+### User Confirmation
+- Confirmation Time: 2026-01-19
+- User Feedback: Approved after implementation code review
+
+---
+
+## Record #17 - 2026-01-19
+
+### Counterexample Summary
+Execution path (117 states):
+- State 117: s2 is Leader
+  - `nextIndex[s2][s4] = 1`
+  - `log[s2].offset = 2` (entry 1 compacted)
+  - **Invariant violated**: `LeaderNextIndexValidInv` requires `nextIndex >= offset`, but `1 >= 2` is false
+
+### Analysis Conclusion
+- **Type**: A: Invariant Too Strong
+- **Violated Property**: LeaderNextIndexValidInv
+- **Root Cause**: The invariant was based on old behavior before Bug 76f1249 was fixed. After the fix, when `nextIndex < offset`, the leader gracefully handles this by sending a snapshot instead of panicking. Log compaction doesn't automatically update `nextIndex` - the leader discovers the compaction when trying to send entries and falls back to snapshot.
+
+### Evidence from Implementation
+
+**Implementation (raft.go:622-627 maybeSendAppend)**:
+```go
+prevIndex := pr.Next - 1
+prevTerm, err := r.raftLog.term(prevIndex)
+if err != nil {
+    // The log probably got truncated at >= pr.Next, so we can't catch up the
+    // follower log anymore. Send a snapshot instead.
+    return r.maybeSendSnapshot(to, pr)
+}
+```
+
+**Implementation (raft.go:644-645)**:
+```go
+if err != nil { // send a snapshot if we failed to get the entries
+    return r.maybeSendSnapshot(to, pr)
+}
+```
+
+The implementation explicitly handles `nextIndex < offset` by sending snapshots. This is the intended behavior.
+
+### Modifications Made
+
+**File**: etcdraft.tla
+
+Commented out `LeaderNextIndexValidInv` definition and removed from `HighPriorityInv` aggregate.
+
+**File**: MCetcdraft.cfg
+
+Removed `LeaderNextIndexValidInv` from INVARIANTS section.
+
+### Verification
+- SANY syntax check passed
+
+### User Confirmation
+- Confirmation Time: 2026-01-19
+- User Feedback: Approved after implementation code review
+
+---
+
+## Record #18 - 2026-01-19
+
+### Error Summary
+TLC threw an EvalException during simulation:
+```
+The second argument of SubSeq must be in the domain of its first argument:
+<<...14 entry sequence...>>
+, but instead it is
+0
+```
+
+Execution path:
+- State 112: s2 is Leader with compacted log
+  - `log[s2].offset = 2` (snapshotIndex = 1)
+  - `matchIndex[s2][s1] = 7`, but s1 restarted with `matchIndex` reset
+  - TLC tried to evaluate `AppendEntries(s2, s1, <<1, ...>>)`
+  - SubSeq calculation: `range[1] - offset + 1 = 1 - 2 + 1 = 0` (invalid index)
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Issue
+- **Root Cause**: `AppendEntriesInRangeToPeer` lacked a guard to ensure entries in the range are available (not compacted). When `range[1] < log[i].offset`, the SubSeq index calculation becomes 0 or negative.
+
+### Evidence from Implementation
+
+**Implementation (raft.go:622-627, 644-645)**:
+The implementation checks if entries are available before sending AppendEntries. If entries are compacted (not available), it falls back to sending a snapshot:
+```go
+prevTerm, err := r.raftLog.term(prevIndex)
+if err != nil {
+    return r.maybeSendSnapshot(to, pr)
+}
+// ...
+if err != nil { // send a snapshot if we failed to get the entries
+    return r.maybeSendSnapshot(to, pr)
+}
+```
+
+### Modifications Made
+
+**File**: etcdraft.tla
+
+**Before**:
+```tla
+AppendEntriesInRangeToPeer(subtype, i, j, range) ==
+    /\ i /= j
+    /\ range[1] <= range[2]
+    /\ state[i] = Leader
+    /\ j \in GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i)
+    \* New: Check flow control state; cannot send when paused (except heartbeat)
+```
+
+**After**:
+```tla
+AppendEntriesInRangeToPeer(subtype, i, j, range) ==
+    /\ i /= j
+    /\ range[1] <= range[2]
+    /\ state[i] = Leader
+    /\ j \in GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i)
+    \* Guard: Entries in range must be available (not compacted)
+    \* If range[1] > LastIndex, we're sending an empty append (allowed)
+    \* Otherwise, the first entry must be in the available range
+    /\ (range[1] > LastIndex(log[i]) \/ range[1] >= log[i].offset)
+    \* New: Check flow control state; cannot send when paused (except heartbeat)
+```
+
+### Verification
+- SANY syntax check passed
+
+### User Confirmation
+- Confirmation Time: 2026-01-19
+- User Feedback: Pending
+
+---

@@ -684,6 +684,10 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
     /\ range[1] <= range[2]
     /\ state[i] = Leader
     /\ j \in GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i)
+    \* Guard: If sending entries (non-empty range), they must be available (not compacted)
+    \* Reference: raft.go:623-627 maybeSendAppend() - if term(prevIndex) fails, send snapshot
+    \* Heartbeat (range[1] = range[2]) doesn't send entries, so no check needed
+    /\ (range[1] = range[2] \/ range[1] >= log[i].offset)
     \* New: Check flow control state; cannot send when paused (except heartbeat)
     \* Reference: IsPaused check in raft.go:407-410, 652-655 maybeSendAppend()
     \* Note: heartbeat is sent directly via bcastHeartbeat(), bypassing maybeSendAppend()
@@ -817,7 +821,7 @@ SendSnapshotWithCompaction(i, j, snapshoti) ==
     /\ i /= j
     /\ state[i] = Leader
     /\ j \in GetConfig(i) \union GetLearners(i)
-    /\ snapshoti <= commitIndex[i]  \* Can only snapshot committed entries
+    /\ snapshoti <= applied[i]  \* Can only snapshot applied entries (not just committed)
     /\ snapshoti >= log[i].snapshotIndex  \* Must be >= current snapshotIndex (can't send compacted entries)
     /\ snapshoti >= matchIndex[i][j]   \* Only send snapshot for entries follower doesn't have
     /\ LET snapshotHistory == SubSeq(historyLog[i], 1, snapshoti)
@@ -847,21 +851,22 @@ SendSnapshotWithCompaction(i, j, snapshoti) ==
 \* - Does NOT transition progressState to StateSnapshot
 \* - Does NOT set pendingSnapshot
 \* - Does NOT update nextIndex
-\* - Creates snapshot from applied state (commitIndex), NOT from snapshotIndex
+\* - Creates snapshot from applied state, NOT from snapshotIndex
 \*
 \* The test harness's Snapshot() returns the last entry from History, which
-\* tracks the applied state up to commitIndex (not a persisted snapshot).
+\* tracks the applied state (not a persisted snapshot).
+\* Reference: raft_test.go:2652 CreateSnapshot(lead.raftLog.applied, ...)
 ManualSendSnapshot(i, j) ==
     /\ i /= j
     /\ state[i] = Leader
     /\ j \in GetConfig(i) \union GetLearners(i)
-    \* Must have committed entries to create a snapshot from
-    /\ commitIndex[i] > 0
-    /\ LET snapshotHistory == SubSeq(historyLog[i], 1, commitIndex[i])
+    \* Must have applied entries to create a snapshot from
+    /\ applied[i] > 0
+    /\ LET snapshotHistory == SubSeq(historyLog[i], 1, applied[i])
        IN Send([mtype          |-> SnapshotRequest,
                 mterm          |-> currentTerm[i],
-                msnapshotIndex |-> commitIndex[i],
-                msnapshotTerm  |-> LogTerm(i, commitIndex[i]),
+                msnapshotIndex |-> applied[i],
+                msnapshotTerm  |-> LogTerm(i, applied[i]),
                 mhistory       |-> snapshotHistory,
                 \* NEW: Include ConfState in snapshot message
                 mconfState     |-> ComputeConfStateFromHistory(snapshotHistory),
@@ -1258,6 +1263,17 @@ FollowerAdvanceCommitIndex(i, newCommit) ==
     /\ state[i] /= Leader
     /\ commitIndex' = [commitIndex EXCEPT ![i] = newCommit]
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, pendingConfChangeIndex, log, applied, configVars, durableState, progressVars, historyLog, partitions>>
+
+\* Apply committed entries to state machine
+\* Reference: raft/node.go - application layer retrieves CommittedEntries from Ready()
+\*            and calls Advance() after applying them
+\* This advances 'applied' from its current value up to any point <= commitIndex
+\* Invariant: applied <= commitIndex (AppliedBoundInv)
+ApplyEntries(i, newApplied) ==
+    /\ newApplied > applied[i]           \* Must make progress
+    /\ newApplied <= commitIndex[i]      \* Cannot apply beyond committed
+    /\ applied' = [applied EXCEPT ![i] = newApplied]
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, log, commitIndex, configVars, durableState, progressVars, historyLog, partitions>>
 
 Ready(i) ==
     /\ PersistState(i)
@@ -1707,8 +1723,10 @@ HandleSnapshotRequest(i, j, m) ==
               ]]
            /\ historyLog' = [historyLog EXCEPT ![i] = m.mhistory]
            /\ commitIndex' = [commitIndex EXCEPT ![i] = m.msnapshotIndex]
-           \* Snapshot represents fully applied state machine up to snapshotIndex
-           /\ applied' = [applied EXCEPT ![i] = m.msnapshotIndex]
+           \* Note: applied is NOT updated here. In actual etcd raft code,
+           \* applied is updated later via appliedSnap() -> appliedTo() when
+           \* MsgStorageAppendResp is processed. We model this with ApplyEntries action.
+           /\ UNCHANGED applied
            \* Atomically update config from snapshot's ConfState
            \* Reference: raft.go:1923-1934 confchange.Restore() then switchToConfig()
            /\ config' = [config EXCEPT ![i] = [
@@ -1895,9 +1913,12 @@ NextAsync ==
     \/ \E i \in Server : AppendEntriesToSelf(i)
     \/ \E i,j \in Server : Heartbeat(i, j)
     \/ \E i,j \in Server : SendSnapshot(i, j)
-    \* Optimization: Only allow compacting to the commitIndex to reduce state space explosion.
-    \* This provides the most aggressive compaction scenario for testing Snapshots.
-    \/ \E i \in Server : IF log[i].offset < commitIndex[i] THEN CompactLog(i, commitIndex[i]) ELSE FALSE
+    \* Application layer applies committed entries to state machine
+    \* Reference: raft/node.go - app retrieves CommittedEntries, then calls Advance()
+    \/ \E i \in Server : IF applied[i] < commitIndex[i] THEN ApplyEntries(i, commitIndex[i]) ELSE FALSE
+    \* Optimization: Only allow compacting to applied to reduce state space explosion.
+    \* Can only compact entries that have been applied to state machine.
+    \/ \E i \in Server : IF log[i].offset < applied[i] THEN CompactLog(i, applied[i]) ELSE FALSE
     \/ \E m \in DOMAIN messages : Receive(m)
     \/ \E i \in Server : Timeout(i)
     \/ \E i \in Server : Ready(i)
@@ -2515,12 +2536,13 @@ ConfigurationInv ==
 \* ============================================================================
 
 \* Invariant: SnapshotMsgIndexValidInv
-\* SnapshotRequest's msnapshotIndex must be <= sender's commitIndex
-\* Reference: raft.go:680-689 maybeSendSnapshot sends committed snapshot
+\* SnapshotRequest's msnapshotIndex must be <= sender's applied
+\* Reference: raft_test.go:2652 CreateSnapshot(lead.raftLog.applied, ...)
+\* Snapshots are created from applied state, not just committed state
 SnapshotMsgIndexValidInv ==
     \A m \in DOMAIN messages \union DOMAIN pendingMessages :
         m.mtype = SnapshotRequest =>
-            m.msnapshotIndex <= commitIndex[m.msource]
+            m.msnapshotIndex <= applied[m.msource]
 
 \* Invariant: SnapshotMsgTermValidInv
 \* SnapshotRequest's msnapshotTerm must be > 0 and <= mterm
@@ -2615,11 +2637,14 @@ SnapshotCommitConsistencyInv ==
 \* ============================================================================
 
 \* Invariant: PendingConfIndexValidInv
-\* If pendingConfChangeIndex > 0, it must point to a valid ConfigEntry
-\* Reference: raft.go:1318-1336 - pendingConfIndex validation
+\* If there's a pending config change (pendingConfChangeIndex > applied),
+\* it must point to a valid ConfigEntry in the log.
+\* Reference: raft.go:1320 - alreadyPending := r.pendingConfIndex > r.raftLog.applied
+\* Note: pendingConfChangeIndex can point to a compacted entry if it has been applied.
+\*       Only when pendingConfChangeIndex > applied do we have a true pending change.
 PendingConfIndexValidInv ==
     \A i \in Server :
-        (state[i] = Leader /\ pendingConfChangeIndex[i] > 0) =>
+        (state[i] = Leader /\ pendingConfChangeIndex[i] > applied[i]) =>
             /\ pendingConfChangeIndex[i] <= LastIndex(log[i])
             /\ pendingConfChangeIndex[i] >= log[i].offset
             /\ LogEntry(i, pendingConfChangeIndex[i]).type = ConfigEntry
@@ -2913,15 +2938,19 @@ MessageDestinationValidInv ==
 \* ============================================================================
 
 \* ----------------------------------------------------------------------------
-\* Invariant: LeaderNextIndexValidInv
+\* REMOVED: LeaderNextIndexValidInv - Invariant too strong
 \* Reference: Bug 76f1249 - MsgApp after log truncation causes panic
-\* After leader compacts log, nextIndex must still be >= log.offset
-\* Otherwise, leader tries to send entries that no longer exist
+\*
+\* This invariant was based on old behavior before Bug 76f1249 was fixed.
+\* After the fix, when nextIndex < offset, the leader gracefully handles this
+\* by sending a snapshot instead (see raft.go:624-627 maybeSendAppend).
+\* Log compaction doesn't update nextIndex - the leader discovers the compaction
+\* when trying to send entries and falls back to snapshot.
 \* ----------------------------------------------------------------------------
-LeaderNextIndexValidInv ==
-    \A i \in Server : \A j \in Server :
-        state[i] = Leader =>
-            nextIndex[i][j] >= log[i].offset
+\* LeaderNextIndexValidInv ==
+\*     \A i \in Server : \A j \in Server :
+\*         state[i] = Leader =>
+\*             nextIndex[i][j] >= log[i].offset
 
 \* ----------------------------------------------------------------------------
 \* Invariant: SnapshotAppliedConsistencyInv
@@ -2980,7 +3009,7 @@ CriticalInv ==
 \* Aggregate P1 High Priority Invariants
 \* ----------------------------------------------------------------------------
 HighPriorityInv ==
-    /\ LeaderNextIndexValidInv
+    \* /\ LeaderNextIndexValidInv  \* REMOVED - invariant too strong
     /\ SnapshotAppliedConsistencyInv
 
 \* ----------------------------------------------------------------------------
@@ -3019,14 +3048,18 @@ StateSnapshotNextInv ==
 \*             m.mcommitIndex <= matchIndex[m.msource][m.mdest]
 
 \* ----------------------------------------------------------------------------
-\* Invariant: ConfigChangePendingInv
+\* REMOVED: ConfigChangePendingInv - Invariant too strong
 \* Reference: raft.go:1320 "alreadyPending := r.pendingConfIndex > r.raftLog.applied"
-\* If there's a pending config change, pendingConfIndex must be > applied
+\*
+\* This invariant was incorrect because BecomeLeader conservatively sets
+\* pendingConfChangeIndex = lastIndex even when all entries have been applied.
+\* When pendingConfChangeIndex == applied, it means NO pending config change
+\* (alreadyPending = FALSE in the implementation), which is a valid state.
 \* ----------------------------------------------------------------------------
-ConfigChangePendingInv ==
-    \A i \in Server :
-        (state[i] = Leader /\ pendingConfChangeIndex[i] > 0) =>
-            pendingConfChangeIndex[i] > applied[i]
+\* ConfigChangePendingInv ==
+\*     \A i \in Server :
+\*         (state[i] = Leader /\ pendingConfChangeIndex[i] > 0) =>
+\*             pendingConfChangeIndex[i] > applied[i]
 
 \* ----------------------------------------------------------------------------
 \* Invariant: JointConfigMustLeaveInv
@@ -3050,7 +3083,7 @@ ConfigChangePendingInv ==
 \* ----------------------------------------------------------------------------
 CodeDerivedInv ==
     /\ StateSnapshotNextInv
-    /\ ConfigChangePendingInv
+    \* /\ ConfigChangePendingInv  \* REMOVED - invariant too strong
 
 \* ============================================================================
 \* P4: VERDI-RAFT INSPIRED INVARIANTS
@@ -3116,16 +3149,18 @@ AppendEntriesResponseTermInv ==
 \* Invariant: LeaderLogContainsAllCommittedInv
 \* Source: Verdi-raft StateMachineSafetyProof - commit_invariant
 \* Combined with Raft paper's Leader Completeness property
-\* A leader's log must contain all committed entries
+\* A leader's log must contain all committed entries (or have them in snapshot)
+\* Reference: raft.go:624-627 maybeSendAppend - if entries are compacted,
+\*            leader sends snapshot instead via maybeSendSnapshot()
 \* ----------------------------------------------------------------------------
 LeaderLogContainsAllCommittedInv ==
     \A i \in Server :
         state[i] = Leader =>
             \* Leader's commitIndex should be achievable from its log
             /\ commitIndex[i] <= LastIndex(log[i])
-            \* All entries up to commitIndex should be available
+            \* All entries up to commitIndex should be available or covered by snapshot
             /\ \A idx \in 1..commitIndex[i] :
-                IsAvailable(i, idx)
+                idx <= log[i].snapshotIndex \/ IsAvailable(i, idx)
 
 \* ----------------------------------------------------------------------------
 \* Invariant: SnapshotResponseTermValidInv

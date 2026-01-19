@@ -585,6 +585,17 @@ SkipUnusedLogline ==
     /\ UNCHANGED <<vars>>
     /\ StepToNextTrace
 
+\* Handler for ApplyEntries event - application applied entries up to newApplied
+\* Reference: raft.go appliedTo() - called when application finishes applying entries
+ApplyEntriesIfLogged(i) ==
+    /\ LoglineIsNodeEvent("ApplyEntries", i)
+    /\ "prop" \in DOMAIN logline.event
+    /\ "applied" \in DOMAIN logline.event.prop
+    /\ LET newApplied == logline.event.prop.applied
+       IN ApplyEntries(i, newApplied)
+    /\ ValidatePostStates(i)
+    \* Note: StepToNextTrace is handled by TraceNextNonReceiveActions
+
 \* Handler for log compaction
 CompactLogIfLogged(i) ==
     /\ LoglineIsNodeEvent("CompactLog", i)
@@ -633,6 +644,8 @@ TraceNextNonReceiveActions ==
           /\ \E i,j \in Server: ReportUnreachableIfLogged(i, j)
        \/ /\ LoglineIsEvent("ReportSnapshotStatus")
           /\ \E i,j \in Server: ReportSnapshotStatusIfLogged(i, j)
+       \/ /\ LoglineIsEvent("ApplyEntries")
+          /\ \E i \in Server: ApplyEntriesIfLogged(i)
        \/ /\ LoglineIsEvent("CompactLog")
           /\ \E i \in Server: CompactLogIfLogged(i)
        \/ SkipUnusedLogline
