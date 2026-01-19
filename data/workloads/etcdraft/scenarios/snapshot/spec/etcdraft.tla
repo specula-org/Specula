@@ -694,7 +694,8 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
     \*   (1) prevLogIndex = 0 (empty log case, term = 0 is valid), or
     \*   (2) prevLogIndex = snapshotIndex (term from snapshot metadata), or
     \*   (3) prevLogIndex >= offset (entry is available in log)
-    /\ (range[1] = range[2] \/ range[1] = 1 \/ range[1] - 1 = log[i].snapshotIndex \/ range[1] - 1 >= log[i].offset)
+    \* NOTE: This applies to ALL AppendEntries including heartbeats - heartbeats also need valid prevLogTerm
+    /\ (range[1] = 1 \/ range[1] - 1 = log[i].snapshotIndex \/ range[1] - 1 >= log[i].offset)
     \* New: Check flow control state; cannot send when paused (except heartbeat)
     \* Reference: IsPaused check in raft.go:407-410, 652-655 maybeSendAppend()
     \* Note: heartbeat is sent directly via bcastHeartbeat(), bypassing maybeSendAppend()
@@ -1264,12 +1265,6 @@ ApplySnapshotConfChange(i, newVoters) ==
     /\ config' = [config EXCEPT ![i] = [learners |-> newLearners, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
     /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = lastConfigIdx]
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex, partitions>>
-
-\* Follower advances commit index (e.g., from AppendEntries leaderCommit)
-FollowerAdvanceCommitIndex(i, newCommit) ==
-    /\ state[i] /= Leader
-    /\ commitIndex' = [commitIndex EXCEPT ![i] = newCommit]
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, pendingConfChangeIndex, log, applied, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* Apply committed entries to state machine
 \* Reference: raft/node.go - application layer retrieves CommittedEntries from Ready()
