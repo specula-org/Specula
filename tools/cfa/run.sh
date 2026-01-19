@@ -61,6 +61,7 @@ if [ -z "$INPUT_FILE" ] || [ -z "$OUTPUT_FILE" ]; then
     echo "  --algorithm uc     Run unchanged variable analysis only"
     echo "  --algorithm ud     Run undefined variable analysis only"
     echo "  --algorithm pc     Run process cutting analysis only"
+    echo "  --algorithm vav    Variable Assignment Validation - check for missing/duplicate assignments"
     echo ""
     echo "Debug options:"
     echo "  --debug            Print IN/OUT variables for each statement (for debugging)"
@@ -69,11 +70,11 @@ fi
 
 # Validate algorithm parameter
 case "$ALGORITHM" in
-    all|sa|uc|ud|pc)
+    all|sa|uc|ud|pc|vav)
         ;;
     *)
         echo "ERROR: Invalid algorithm: $ALGORITHM"
-        echo "Valid algorithms: all, sa, uc, ud, pc"
+        echo "Valid algorithms: all, sa, uc, ud, pc, vav"
         exit 1
         ;;
 esac

@@ -71,9 +71,9 @@ public class SANYTransformerCli {
         }
         
         // Validate algorithm parameter
-        if (!algorithm.equals("all") && !algorithm.equals("cfg") && !algorithm.equals("print")) {
+        if (!algorithm.equals("all") && !algorithm.equals("cfg") && !algorithm.equals("print") && !algorithm.equals("vav")) {
             System.err.println("ERROR: Invalid algorithm: " + algorithm);
-            System.err.println("Valid algorithms: all, cfg, print");
+            System.err.println("Valid algorithms: all, cfg, print, vav");
             System.exit(1);
         }
         
@@ -196,13 +196,15 @@ public class SANYTransformerCli {
             System.exit(1);
         }
         
-        if (debugMode && callGraph != null) {
+        // Note: Skip debug SA/UC analysis when running VAV algorithm, as VAV has its own analysis
+        // and the debug analysis modifies CFG state (InVar/OutVar) which would corrupt VAV results
+        if (debugMode && callGraph != null && !algorithm.equals("vav")) {
             System.out.println("\n=== SA DEBUG: IN/OUT variable sets ===");
             CFGVarChangeAnalyzer saAnalyzer = new CFGVarChangeAnalyzer(callGraph);
             saAnalyzer.analyze_only_sa();
             saAnalyzer.printInOutVars();
             System.out.println("=== END SA DEBUG ===\n");
-            
+
             if (debugUC) {
                 System.out.println("=== UC DEBUG: inserting UNCHANGED statements ===");
                 saAnalyzer.analyze_only_uc();
@@ -214,8 +216,8 @@ public class SANYTransformerCli {
                 System.out.println("=== END UC DEBUG ===\n");
             }
         }
-        
-        if (!debugMode && debugUC && callGraph != null) {
+
+        if (!debugMode && debugUC && callGraph != null && !algorithm.equals("vav")) {
             CFGVarChangeAnalyzer ucAnalyzer = new CFGVarChangeAnalyzer(callGraph);
             ucAnalyzer.analyze_only_uc();
         }
@@ -224,7 +226,7 @@ public class SANYTransformerCli {
         String resultString = "";
         CFGVarChangeAnalyzer fullAnalyzer = null;
         
-        if (!algorithm.equals("cfg")) {
+        if (!algorithm.equals("cfg") && !algorithm.equals("vav")) {
             fullAnalyzer = new CFGVarChangeAnalyzer(callGraph);
             fullAnalyzer.analyze();
             cfgBuilder.setCfgFuncNodes(callGraph.getFuncNodes());
@@ -247,7 +249,14 @@ public class SANYTransformerCli {
                 resultString = buildFormattedOutput(cfgBuilder, debugMode);
                 // TODO: Add more analysis algorithms here when implemented
                 break;
-                
+
+            case "vav":
+                System.out.println("Running Variable Assignment Validation...");
+                VAVAnalyzer vavAnalyzer = new VAVAnalyzer(callGraph);
+                vavAnalyzer.printResults(debugMode);
+                resultString = "% Variable Assignment Validation completed\n";
+                break;
+
             default:
                 System.err.println("ERROR: Unknown algorithm: " + algorithm);
                 System.exit(1);
