@@ -2638,16 +2638,19 @@ SnapshotCommitConsistencyInv ==
 
 \* Invariant: PendingConfIndexValidInv
 \* If there's a pending config change (pendingConfChangeIndex > applied),
-\* it must point to a valid ConfigEntry in the log.
+\* the index must be within valid log bounds.
 \* Reference: raft.go:1320 - alreadyPending := r.pendingConfIndex > r.raftLog.applied
 \* Note: pendingConfChangeIndex can point to a compacted entry if it has been applied.
 \*       Only when pendingConfChangeIndex > applied do we have a true pending change.
+\* IMPORTANT: We do NOT require the entry to be ConfigEntry because:
+\*   - In BecomeLeader (raft.go:959-965), pendingConfIndex is set conservatively to lastIndex()
+\*   - This is done regardless of whether the last entry is a ConfigEntry
+\*   - Purpose: prevent proposing new config changes until leader confirms no pending ones
 PendingConfIndexValidInv ==
     \A i \in Server :
         (state[i] = Leader /\ pendingConfChangeIndex[i] > applied[i]) =>
             /\ pendingConfChangeIndex[i] <= LastIndex(log[i])
             /\ pendingConfChangeIndex[i] >= log[i].offset
-            /\ LogEntry(i, pendingConfChangeIndex[i]).type = ConfigEntry
 
 \* ============================================================================
 \* P1: Additional Progress State Machine Invariants

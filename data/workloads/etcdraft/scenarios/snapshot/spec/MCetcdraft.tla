@@ -530,4 +530,14 @@ MonotonicMatchIndexProp ==
                 \* (in config in both pre and post states)
                 (j \in preConfig /\ j \in postConfig) => matchIndex'[i][j] >= matchIndex[i][j])]_mc_vars
 
+\* Leader can only commit entries from its current term
+\* Reference: Raft paper §5.4.2 - "Raft never commits log entries from previous terms by counting replicas"
+\* This prevents the Figure 8 safety issue where a leader might incorrectly commit entries from previous terms
+LeaderCommitCurrentTermLogsProp ==
+    [][
+        \A i \in Server :
+            (state'[i] = Leader /\ commitIndex[i] /= commitIndex'[i]) =>
+                historyLog'[i][commitIndex'[i]].term = currentTerm'[i]
+    ]_mc_vars
+
 =============================================================================
