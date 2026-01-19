@@ -688,6 +688,13 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
     \* Reference: raft.go:623-627 maybeSendAppend() - if term(prevIndex) fails, send snapshot
     \* Heartbeat (range[1] = range[2]) doesn't send entries, so no check needed
     /\ (range[1] = range[2] \/ range[1] >= log[i].offset)
+    \* NEW Guard (Bug 76f1249 fix): prevLogIndex must have retrievable term
+    \* Reference: raft.go:622-628 - if term(prevIndex) fails, send snapshot instead
+    \* prevLogIndex = range[1] - 1 can have valid term if:
+    \*   (1) prevLogIndex = 0 (empty log case, term = 0 is valid), or
+    \*   (2) prevLogIndex = snapshotIndex (term from snapshot metadata), or
+    \*   (3) prevLogIndex >= offset (entry is available in log)
+    /\ (range[1] = range[2] \/ range[1] = 1 \/ range[1] - 1 = log[i].snapshotIndex \/ range[1] - 1 >= log[i].offset)
     \* New: Check flow control state; cannot send when paused (except heartbeat)
     \* Reference: IsPaused check in raft.go:407-410, 652-655 maybeSendAppend()
     \* Note: heartbeat is sent directly via bcastHeartbeat(), bypassing maybeSendAppend()
