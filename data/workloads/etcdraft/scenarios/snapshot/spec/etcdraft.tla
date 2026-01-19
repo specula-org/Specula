@@ -34,9 +34,7 @@ CONSTANTS
     \* @type: Str;
     SnapshotRequest,
     \* @type: Str;
-    SnapshotResponse,
-    \* @type: Str;
-    SnapshotStatus      \* MsgSnapStatus: application reports snapshot result to raft
+    SnapshotResponse
 
 \* New: Progress state constants
 \* Reference: tracker/state.go:20-33
@@ -1633,14 +1631,15 @@ HandleHeartbeatResponse(i, j, m) ==
 \* newStart becomes the new offset.
 \* Reference: storage.go:249-250 - "It is the application's responsibility to not
 \* attempt to compact an index greater than raftLog.applied."
-\* We use durableState.log as applied index (set by PersistState in Ready).
+\* We check against the actual applied index, not durableState.log, because after
+\* restart applied is reset to snapshotIndex while durableState.log retains its value.
 \*
 \* Note: pendingConfChangeIndex does NOT constrain log compaction.
 \* Reference: storage.go Compact() only checks offset and lastIndex bounds.
 \* pendingConfChangeIndex is only checked when proposing new config changes (raft.go:1318).
 CompactLog(i, newStart) ==
     /\ newStart > log[i].offset
-    /\ newStart <= durableState[i].log + 1
+    /\ newStart <= applied[i] + 1
     /\ log' = [log EXCEPT ![i] = [
           offset  |-> newStart,
           entries |-> SubSeq(@.entries, newStart - @.offset + 1, Len(@.entries)),
@@ -1729,30 +1728,6 @@ HandleSnapshotRequest(i, j, m) ==
                      mdest       |-> j],
                      m)
            /\ UNCHANGED <<serverVars, candidateVars, leaderVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex, partitions>>
-
-\* Handle MsgSnapStatus from application layer
-\* Reference: raft.go:1606-1623
-\* Application reports whether snapshot was successfully sent/applied
-\* @type: (Int, Int, MSG) => Bool;
-HandleSnapshotStatus(i, j, m) ==
-    /\ m.mterm = currentTerm[i]
-    /\ state[i] = Leader
-    /\ progressState[i][j] = StateSnapshot
-    /\ LET success == m.msuccess
-           \* BecomeProbe from StateSnapshot saves pendingSnapshot before ResetState clears it
-           \* Reference: progress.go:130-137
-           \* Success: Next = max(Match+1, PendingSnapshot+1)
-           \* Failure: PendingSnapshot cleared first, so Next = max(Match+1, 0+1) = Match+1
-           oldPendingSnapshot == IF success THEN pendingSnapshot[i][j] ELSE 0
-           newNext == Max({matchIndex[i][j] + 1, oldPendingSnapshot + 1})
-       IN /\ progressState' = [progressState EXCEPT ![i][j] = StateProbe]
-          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = newNext]
-          /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = 0]
-          \* ResetState sets MsgAppFlowPaused=false, then raft.go:1622 sets it to true
-          /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = TRUE]
-          /\ inflights' = [inflights EXCEPT ![i][j] = {}]
-    /\ Discard(m)
-    /\ UNCHANGED <<serverVars, candidateVars, logVars, configVars, durableState, matchIndex, historyLog, partitions>>
 
 \* Handle ReportUnreachable from application layer
 \* Reference: raft.go:1624-1632
@@ -1851,8 +1826,6 @@ ReceiveDirect(m) ==
                 \/ HandleAppendEntriesResponse(i, j, m)
           \/ /\ m.mtype = SnapshotRequest
              /\ HandleSnapshotRequest(i, j, m)
-          \/ /\ m.mtype = SnapshotStatus
-             /\ HandleSnapshotStatus(i, j, m)
 
 Receive(m) == ReceiveDirect(m)
 

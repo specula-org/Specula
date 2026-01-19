@@ -2639,3 +2639,75 @@ BecomeLeader(i) ==
 - User Feedback: Approved after user identified the issue during review
 
 ---
+
+## Record #14 - 2026-01-19
+
+### Counterexample Summary
+Execution path:
+1. State 1 (Init): s2 has `applied = 2`, `durableState.snapshotIndex = 0`, `durableState.log = 2`
+2. State 2 (Restart s2): `applied[s2]` is reset to `durableState.snapshotIndex = 0`, but `durableState` unchanged
+3. State 3 (Compact s2): `CompactLog(s2, 2)` succeeds because `2 <= durableState.log + 1 = 3`
+   - Results in `snapshotIndex = 1`, but `applied = 0`
+   - **Invariant `SnapshotAppliedConsistencyInv` violated**: `snapshotIndex > applied`
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Issue
+- **Violated Property**: SnapshotAppliedConsistencyInv
+- **Root Cause**: The `CompactLog` action checked `newStart <= durableState[i].log + 1`, but after restart, `applied` is reset to `snapshotIndex` while `durableState.log` retains its pre-restart value. This allowed compaction beyond the actual applied index.
+
+### Evidence from Implementation
+
+**Implementation (storage.go:248-250)**:
+```go
+// Compact discards all log entries prior to compactIndex.
+// It is the application's responsibility to not attempt to compact an index
+// greater than raftLog.applied.
+```
+
+The implementation clearly states compaction should not exceed `raftLog.applied`. The spec should enforce this constraint using the actual `applied` variable, not `durableState.log`.
+
+### Modifications Made
+
+**File**: etcdraft.tla (lines 1630-1641)
+
+**Before**:
+```tla
+\* Compacts the log of server i up to newStart (exclusive).
+\* newStart becomes the new offset.
+\* Reference: storage.go:249-250 - "It is the application's responsibility to not
+\* attempt to compact an index greater than raftLog.applied."
+\* We use durableState.log as applied index (set by PersistState in Ready).
+\*
+\* Note: pendingConfChangeIndex does NOT constrain log compaction.
+\* Reference: storage.go Compact() only checks offset and lastIndex bounds.
+\* pendingConfChangeIndex is only checked when proposing new config changes (raft.go:1318).
+CompactLog(i, newStart) ==
+    /\ newStart > log[i].offset
+    /\ newStart <= durableState[i].log + 1
+```
+
+**After**:
+```tla
+\* Compacts the log of server i up to newStart (exclusive).
+\* newStart becomes the new offset.
+\* Reference: storage.go:249-250 - "It is the application's responsibility to not
+\* attempt to compact an index greater than raftLog.applied."
+\* We check against the actual applied index, not durableState.log, because after
+\* restart applied is reset to snapshotIndex while durableState.log retains its value.
+\*
+\* Note: pendingConfChangeIndex does NOT constrain log compaction.
+\* Reference: storage.go Compact() only checks offset and lastIndex bounds.
+\* pendingConfChangeIndex is only checked when proposing new config changes (raft.go:1318).
+CompactLog(i, newStart) ==
+    /\ newStart > log[i].offset
+    /\ newStart <= applied[i] + 1
+```
+
+### Verification
+- SANY syntax check passed
+
+### User Confirmation
+- Confirmation Time: 2026-01-19
+- User Feedback: Approved
+
+---
