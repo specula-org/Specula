@@ -2975,3 +2975,88 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
 - User Feedback: Pending
 
 ---
+
+## Record #19 - 2026-01-19
+
+### Error Summary
+TLC simulation found `AppendEntriesPrevLogTermValidInv` violation in MC_run5.out:
+
+```
+State 171:
+log[s3].offset = 4
+log[s3].snapshotIndex = 3
+nextIndex[s3][s2] = 3
+
+AppendEntriesRequest message with:
+  mprevLogIndex = 2
+  mprevLogTerm = 0  ← VIOLATION: should not be 0 when mprevLogIndex > 0
+```
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Issue
+- **Root Cause**: Leader s3 had compacted log (offset=4, snapshotIndex=3) and tried to send AppendEntries with prevLogIndex=2. Since prevLogIndex=2 is neither 0, nor equal to snapshotIndex(3), nor >= offset(4), the LogTerm function returns 0 (invalid). The spec allowed this message, but the implementation would send a snapshot instead.
+
+### Evidence from Implementation
+
+**Implementation (raft.go:622-628)**:
+```go
+prevIndex := pr.Next - 1
+prevTerm, err := r.raftLog.term(prevIndex)
+if err != nil {
+    // The log probably got truncated at >= pr.Next, so we can't catch up the
+    // follower log anymore. Send a snapshot instead.
+    return r.maybeSendSnapshot(to, pr)
+}
+```
+
+When `term(prevIndex)` fails (returns error), the implementation sends a snapshot instead of AppendEntries. The spec must match this behavior.
+
+**Bug Reference**: Bug 76f1249 - MsgApp after log truncation causes panic when prevLogTerm is 0 but prevLogIndex > 0.
+
+### Modifications Made
+
+**File**: etcdraft.tla
+
+Added new guard to `AppendEntriesInRangeToPeer` to ensure prevLogIndex can have valid term:
+
+**Before**:
+```tla
+AppendEntriesInRangeToPeer(subtype, i, j, range) ==
+    /\ i /= j
+    /\ range[1] <= range[2]
+    /\ state[i] = Leader
+    /\ j \in GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i)
+    \* Guard: If sending entries (non-empty range), they must be available (not compacted)
+    \* Reference: raft.go:623-627 maybeSendAppend() - if term(prevIndex) fails, send snapshot
+    \* Heartbeat (range[1] = range[2]) doesn't send entries, so no check needed
+    /\ (range[1] = range[2] \/ range[1] >= log[i].offset)
+```
+
+**After**:
+```tla
+AppendEntriesInRangeToPeer(subtype, i, j, range) ==
+    /\ i /= j
+    /\ range[1] <= range[2]
+    /\ state[i] = Leader
+    /\ j \in GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i)
+    \* Guard: If sending entries (non-empty range), they must be available (not compacted)
+    \* Reference: raft.go:623-627 maybeSendAppend() - if term(prevIndex) fails, send snapshot
+    \* Heartbeat (range[1] = range[2]) doesn't send entries, so no check needed
+    /\ (range[1] = range[2] \/ range[1] >= log[i].offset)
+    \* NEW Guard (Bug 76f1249 fix): prevLogIndex must have retrievable term
+    \* Reference: raft.go:622-628 - if term(prevIndex) fails, send snapshot instead
+    \* prevLogIndex = range[1] - 1 can have valid term if:
+    \*   (1) prevLogIndex = 0 (empty log case, term = 0 is valid), or
+    \*   (2) prevLogIndex = snapshotIndex (term from snapshot metadata), or
+    \*   (3) prevLogIndex >= offset (entry is available in log)
+    /\ (range[1] = range[2] \/ range[1] = 1 \/ range[1] - 1 = log[i].snapshotIndex \/ range[1] - 1 >= log[i].offset)
+```
+
+### Verification
+- SANY syntax check passed
+
+### User Confirmation
+- Confirmation Time: 2026-01-19
+- User Feedback: 确认 (Approved)
+
+---

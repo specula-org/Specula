@@ -795,6 +795,9 @@ SendSnapshot(i, j) ==
     \* Trigger: The previous log index required for AppendEntries is NOT available
     /\ LET prevLogIndex == nextIndex[i][j] - 1 IN
        ~IsAvailable(i, prevLogIndex)
+    \* Must have a snapshot to send (snapshotIndex > 0)
+    \* Reference: raft.go:677-682 - maybeSendSnapshot checks r.raftLog.snapshot()
+    /\ log[i].snapshotIndex > 0
     /\ LET snapshotHistory == SubSeq(historyLog[i], 1, log[i].snapshotIndex)
        IN Send([mtype          |-> SnapshotRequest,
                 mterm          |-> currentTerm[i],
