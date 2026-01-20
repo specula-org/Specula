@@ -2372,9 +2372,8 @@ CommitIndexBoundInv ==
 \* Term should be monotonic in the log (newer entries have >= terms)
 LogTermMonotonic ==
     \A i \in Server :
-        \A idx1, idx2 \in 1..LastIndex(log[i]) :
-            idx1 < idx2 =>
-                LogTerm(i, idx1) <= LogTerm(i, idx2)
+        \A idx \in 1..(LastIndex(log[i]) - 1) :
+            LogTerm(i, idx) <= LogTerm(i, idx + 1)
 
 \* All committed entries should have valid (positive) terms
 CommittedEntriesTermInv ==
