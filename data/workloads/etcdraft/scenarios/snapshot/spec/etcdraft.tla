@@ -644,7 +644,10 @@ Restart(i) ==
     /\ IF RestartDropsMessages 
        THEN messages' = messages (-) SetToBag(MessagesToOrFrom(i))
        ELSE UNCHANGED messages
-    /\ UNCHANGED <<msgSeqCounter, durableState, reconfigCount, historyLog, partitions>>
+    \* historyLog must also be restored to durable state length
+    \* (entries beyond durableState.log are lost on crash)
+    /\ historyLog' = [historyLog EXCEPT ![i] = SubSeq(@, 1, durableState[i].log)]
+    /\ UNCHANGED <<msgSeqCounter, durableState, reconfigCount, partitions>>
 
 \* Server i times out and starts a new election.
 \* @type: Int => Bool;
