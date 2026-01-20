@@ -3060,3 +3060,183 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
 - User Feedback: 确认 (Approved)
 
 ---
+
+## Record #20 - 2026-01-20
+
+### Error Summary
+TLC simulation found `AppendEntriesPrevLogTermValidInv` violation in MC_run6.out:
+
+```
+State 120:
+Leader s3:
+  log[s3].offset = 4
+  log[s3].snapshotIndex = 3
+  nextIndex[s3][s4] = 3
+
+Message (heartbeat):
+  mprevLogIndex = 2
+  mprevLogTerm = 0  ← VIOLATION
+  mentries = <<>>   ← This is a heartbeat
+```
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Issue
+- **Root Cause**: The previous fix (Record #19) incorrectly exempted heartbeats from the prevLogIndex validity check using `range[1] = range[2]`. However, heartbeats also need valid prevLogTerm - the implementation sends snapshot instead of heartbeat when `term(prevIndex)` fails.
+
+### Evidence from Implementation
+
+**Implementation (raft.go:622-628)**:
+```go
+prevIndex := pr.Next - 1
+prevTerm, err := r.raftLog.term(prevIndex)
+if err != nil {
+    // The log probably got truncated at >= pr.Next, so we can't catch up the
+    // follower log anymore. Send a snapshot instead.
+    return r.maybeSendSnapshot(to, pr)
+}
+```
+
+This applies to ALL AppendEntries messages including heartbeats.
+
+### Modifications Made
+
+**File**: etcdraft.tla
+
+Removed heartbeat exemption from the prevLogIndex validity guard:
+
+**Before**:
+```tla
+/\ (range[1] = range[2] \/ range[1] = 1 \/ range[1] - 1 = log[i].snapshotIndex \/ range[1] - 1 >= log[i].offset)
+```
+
+**After**:
+```tla
+\* NOTE: This applies to ALL AppendEntries including heartbeats - heartbeats also need valid prevLogTerm
+/\ (range[1] = 1 \/ range[1] - 1 = log[i].snapshotIndex \/ range[1] - 1 >= log[i].offset)
+```
+
+### Verification
+- SANY syntax check passed
+
+### User Confirmation
+- Confirmation Time: 2026-01-20
+- User Feedback: 确认
+
+---
+
+## Record #21 - 2026-01-20
+
+### Error Summary
+TLC simulation found `AppendEntriesSourceValidInv` violation in MC_run6_2.out:
+
+```
+State 120:
+Message in network:
+  msource = s2, mterm = 4
+  mprevLogIndex = 3
+  mentries = 7 entries (indices 4-10)
+
+Current state:
+  currentTerm[s2] = 6 (upgraded)
+  state[s2] = Follower (stepped down)
+  log[s2] only has entries 1-4 (overwritten by new leader s3)
+```
+
+### Analysis Conclusion
+- **Type**: A: Invariant Too Strong (Design Issue)
+- **Root Cause**: The invariant checks if message entries exist in sender's CURRENT log, but messages are sent from PAST state. In async systems, sender's log can change after sending (e.g., stepping down and having log overwritten by new leader).
+
+The spec structure already guarantees entries exist at send time (SubSeq would fail otherwise). Stale messages are safe because receivers validate via mterm and prevLogIndex/prevLogTerm checks.
+
+### Modifications Made
+
+**File**: MCetcdraft.cfg
+
+Removed `AppendEntriesSourceValidInv` from INVARIANTS section with explanation comment.
+
+### Verification
+- N/A (invariant removal)
+
+### User Confirmation
+- Confirmation Time: 2026-01-20
+- User Feedback: 移除吧
+
+---
+
+## Record #22 - 2026-01-20
+
+### Error Summary
+TLC simulation found `SnapshotPendingInv` violation in MC_run6_3.out:
+
+```
+State 169:
+  state[s2] = Leader
+  progressState[s2][s5] = StateSnapshot
+  pendingSnapshot[s2][s5] = 0  ← VIOLATION: should be > 0
+
+State 168 → 169 transition:
+  progressState[s2][s5]: StateProbe → StateSnapshot
+  pendingSnapshot[s2][s5]: 0 → 0 (not updated!)
+  constraintCounters.snapshot: 2 → 3
+  log[s2].snapshotIndex = 0  ← No snapshot exists!
+```
+
+### Analysis Conclusion
+- **Type**: B: Spec Modeling Issue
+- **Root Cause**: `SendSnapshot` sets `pendingSnapshot = log[i].snapshotIndex`. If `snapshotIndex = 0` (no snapshot created), `pendingSnapshot` becomes 0, violating `SnapshotPendingInv`.
+
+### Evidence from Implementation
+
+**Implementation (raft.go:678-679)**:
+```go
+if IsEmptySnap(snapshot) {
+    panic("need non-empty snapshot")
+}
+```
+
+**Implementation (node.go:127-128)**:
+```go
+func IsEmptySnap(sp pb.Snapshot) bool {
+    return sp.Metadata.Index == 0
+}
+```
+
+The implementation panics if attempting to send an empty snapshot. The spec must prevent this case.
+
+### Modifications Made
+
+**File**: etcdraft.tla
+
+Added precondition to `SendSnapshot`:
+
+**Before**:
+```tla
+SendSnapshot(i, j) ==
+    /\ i /= j
+    /\ state[i] = Leader
+    /\ j \in GetConfig(i) \union GetLearners(i)
+    /\ LET prevLogIndex == nextIndex[i][j] - 1 IN
+       ~IsAvailable(i, prevLogIndex)
+```
+
+**After**:
+```tla
+SendSnapshot(i, j) ==
+    /\ i /= j
+    /\ state[i] = Leader
+    /\ j \in GetConfig(i) \union GetLearners(i)
+    /\ LET prevLogIndex == nextIndex[i][j] - 1 IN
+       ~IsAvailable(i, prevLogIndex)
+    \* Must have a snapshot to send (snapshotIndex > 0)
+    \* Reference: raft.go:677-682 - maybeSendSnapshot checks r.raftLog.snapshot()
+    /\ log[i].snapshotIndex > 0
+```
+
+### Verification
+- SANY syntax check passed
+
+### User Confirmation
+- Confirmation Time: 2026-01-20
+- User Feedback: 确认
+
+---

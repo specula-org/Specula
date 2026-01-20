@@ -334,9 +334,9 @@ ValidateAfterAdvanceCommitIndex(i) ==
 
 AdvanceCommitIndexIfLogged(i) ==
     /\ LoglineIsNodeEvent("Commit", i)
-    /\ IF state[i] = Leader
-       THEN AdvanceCommitIndex(i) /\ ValidateAfterAdvanceCommitIndex(i)
-       ELSE FollowerAdvanceCommitIndex(i, logline.event.state.commit)  \* Call action from etcdraft.tla
+    /\ state[i] = Leader  \* All Commit events in trace are from Leader
+    /\ AdvanceCommitIndex(i)
+    /\ ValidateAfterAdvanceCommitIndex(i)
 
 ValidateProgressStatePrimed(i, j) ==
     \/ /\ "prop" \notin DOMAIN logline.event
