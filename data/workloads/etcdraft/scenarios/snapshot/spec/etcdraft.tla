@@ -507,8 +507,10 @@ PersistState(i) ==
         currentTerm |-> currentTerm[i],
         votedFor |-> votedFor[i],
         log |-> LastIndex(log[i]),
+        entries |-> log[i].entries,    \* Persist actual log entries
         snapshotIndex |-> log[i].snapshotIndex,
         snapshotTerm |-> log[i].snapshotTerm,
+        snapshotHistory |-> @.snapshotHistory,  \* Preserve existing snapshot history
         commitIndex |-> commitIndex[i],
         config |-> config[i]
     ]]
@@ -574,8 +576,10 @@ InitDurableState ==
         currentTerm |-> currentTerm[i],
         votedFor |-> votedFor[i],
         log |-> 0,
+        entries |-> <<>>,              \* Persisted log entries (from offset to lastIndex)
         snapshotIndex |-> 0,
         snapshotTerm |-> 0,
+        snapshotHistory |-> <<>>,      \* History covered by snapshot (1 to snapshotIndex)
         commitIndex |-> commitIndex[i],
         config |-> config[i]
     ]]
@@ -622,10 +626,10 @@ Restart(i) ==
     /\ commitIndex' = [commitIndex EXCEPT ![i] = durableState[i].commitIndex]
     /\ votedFor' = [votedFor EXCEPT ![i] = durableState[i].votedFor]
     \* Restore log from durableState: offset must equal snapshotIndex + 1
-    \* Entries are restored from historyLog since in-memory log may have been compacted
+    \* Entries are restored from durableState.entries (persisted log)
     /\ log' = [log EXCEPT ![i] = [
                     offset |-> durableState[i].snapshotIndex + 1,
-                    entries |-> SubSeq(historyLog[i], durableState[i].snapshotIndex + 1, durableState[i].log),
+                    entries |-> durableState[i].entries,
                     snapshotIndex |-> durableState[i].snapshotIndex,
                     snapshotTerm |-> durableState[i].snapshotTerm
        ]]
@@ -644,9 +648,9 @@ Restart(i) ==
     /\ IF RestartDropsMessages 
        THEN messages' = messages (-) SetToBag(MessagesToOrFrom(i))
        ELSE UNCHANGED messages
-    \* historyLog must also be restored to durable state length
+    \* historyLog (ghost variable) must also be restored to durable state
     \* (entries beyond durableState.log are lost on crash)
-    /\ historyLog' = [historyLog EXCEPT ![i] = SubSeq(@, 1, durableState[i].log)]
+    /\ historyLog' = [historyLog EXCEPT ![i] = durableState[i].snapshotHistory \o durableState[i].entries]
     /\ UNCHANGED <<msgSeqCounter, durableState, reconfigCount, partitions>>
 
 \* Server i times out and starts a new election.
@@ -801,7 +805,8 @@ SendSnapshot(i, j) ==
     \* Must have a snapshot to send (snapshotIndex > 0)
     \* Reference: raft.go:677-682 - maybeSendSnapshot checks r.raftLog.snapshot()
     /\ log[i].snapshotIndex > 0
-    /\ LET snapshotHistory == SubSeq(historyLog[i], 1, log[i].snapshotIndex)
+    \* Use persisted snapshotHistory instead of ghost variable historyLog
+    /\ LET snapshotHistory == durableState[i].snapshotHistory
        IN Send([mtype          |-> SnapshotRequest,
                 mterm          |-> currentTerm[i],
                 msnapshotIndex |-> log[i].snapshotIndex,
@@ -838,7 +843,11 @@ SendSnapshotWithCompaction(i, j, snapshoti) ==
     /\ snapshoti <= applied[i]  \* Can only snapshot applied entries (not just committed)
     /\ snapshoti >= log[i].snapshotIndex  \* Must be >= current snapshotIndex (can't send compacted entries)
     /\ snapshoti >= matchIndex[i][j]   \* Only send snapshot for entries follower doesn't have
-    /\ LET snapshotHistory == SubSeq(historyLog[i], 1, snapshoti)
+    \* Use snapshotHistory for compacted part, log.entries for available part
+    /\ LET snapshotHistory == IF snapshoti <= durableState[i].snapshotIndex
+                              THEN SubSeq(durableState[i].snapshotHistory, 1, snapshoti)
+                              ELSE durableState[i].snapshotHistory \o
+                                   SubSeq(log[i].entries, 1, snapshoti - log[i].offset + 1)
        IN SendDirect([mtype          |-> SnapshotRequest,
                       mterm          |-> currentTerm[i],
                       msnapshotIndex |-> snapshoti,
@@ -876,7 +885,11 @@ ManualSendSnapshot(i, j) ==
     /\ j \in GetConfig(i) \union GetLearners(i)
     \* Must have applied entries to create a snapshot from
     /\ applied[i] > 0
-    /\ LET snapshotHistory == SubSeq(historyLog[i], 1, applied[i])
+    \* Use snapshotHistory for compacted part, log.entries for available part
+    /\ LET snapshotHistory == IF applied[i] <= durableState[i].snapshotIndex
+                              THEN SubSeq(durableState[i].snapshotHistory, 1, applied[i])
+                              ELSE durableState[i].snapshotHistory \o
+                                   SubSeq(log[i].entries, 1, applied[i] - log[i].offset + 1)
        IN Send([mtype          |-> SnapshotRequest,
                 mterm          |-> currentTerm[i],
                 msnapshotIndex |-> applied[i],
@@ -1246,13 +1259,14 @@ ProposeLeaveJoint(i) ==
 
 \* Apply configuration from snapshot
 \* When a follower receives a snapshot, it applies the config directly
-\* Must check historyLog for joint config info since snapshot may contain joint config
+\* Use persisted snapshotHistory instead of ghost variable historyLog
 \* Reference: confchange/restore.go - Restore() uses ConfState which contains Voters, Learners, VotersOutgoing, AutoLeave
 ApplySnapshotConfChange(i, newVoters) ==
-    \* Find the last config entry in historyLog to determine joint config
-    LET configIndices == {k \in 1..Len(historyLog[i]) : historyLog[i][k].type = ConfigEntry}
+    \* Find the last config entry in persisted snapshotHistory to determine joint config
+    LET snapshotHist == durableState[i].snapshotHistory
+        configIndices == {k \in 1..Len(snapshotHist) : snapshotHist[k].type = ConfigEntry}
         lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
-        entry == IF lastConfigIdx > 0 THEN historyLog[i][lastConfigIdx] ELSE [value |-> [newconf |-> {}, learners |-> {}]]
+        entry == IF lastConfigIdx > 0 THEN snapshotHist[lastConfigIdx] ELSE [value |-> [newconf |-> {}, learners |-> {}]]
         \* Check if this is a leaveJoint entry
         isLeaveJoint == "leaveJoint" \in DOMAIN entry.value /\ entry.value.leaveJoint = TRUE
         \* Check if last config entry has enterJoint=TRUE
@@ -1260,7 +1274,7 @@ ApplySnapshotConfChange(i, newVoters) ==
         enterJoint == IF hasEnterJoint THEN entry.value.enterJoint ELSE FALSE
         hasOldconf == enterJoint /\ "oldconf" \in DOMAIN entry.value
         oldconf == IF hasOldconf THEN entry.value.oldconf ELSE {}
-        \* FIX: Read learners from historyLog entry instead of hardcoding {}
+        \* FIX: Read learners from entry instead of hardcoding {}
         \* Reference: confchange/restore.go:82-87 - Learners are added from cs.Learners
         hasLearners == lastConfigIdx > 0 /\ "learners" \in DOMAIN entry.value
         newLearners == IF hasLearners THEN entry.value.learners ELSE {}
@@ -1664,13 +1678,24 @@ HandleHeartbeatResponse(i, j, m) ==
 CompactLog(i, newStart) ==
     /\ newStart > log[i].offset
     /\ newStart <= applied[i] + 1
-    /\ log' = [log EXCEPT ![i] = [
-          offset  |-> newStart,
-          entries |-> SubSeq(@.entries, newStart - @.offset + 1, Len(@.entries)),
-          snapshotIndex |-> newStart - 1,
-          snapshotTerm  |-> LogTerm(i, newStart - 1)
-       ]]
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, commitIndex, applied, configVars, durableState, progressVars, historyLog, partitions>>
+    /\ LET \* Entries being compacted: from current offset to newStart-1
+           \* In log[i].entries, this is entries[1..newStart-offset]
+           compactedEntries == SubSeq(log[i].entries, 1, newStart - log[i].offset)
+       IN
+       /\ log' = [log EXCEPT ![i] = [
+             offset  |-> newStart,
+             entries |-> SubSeq(@.entries, newStart - @.offset + 1, Len(@.entries)),
+             snapshotIndex |-> newStart - 1,
+             snapshotTerm  |-> LogTerm(i, newStart - 1)
+          ]]
+       \* Update durableState: merge old snapshotHistory with compacted entries
+       /\ durableState' = [durableState EXCEPT ![i] = [
+             @ EXCEPT !.snapshotHistory = @ \o compactedEntries,
+                      !.snapshotIndex = newStart - 1,
+                      !.snapshotTerm = LogTerm(i, newStart - 1),
+                      !.entries = SubSeq(log[i].entries, newStart - log[i].offset + 1, Len(log[i].entries))
+          ]]
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, commitIndex, applied, configVars, progressVars, historyLog, partitions>>
 
 \* Server i receives a SnapshotRequest.
 \* Simulates raft.restore()
@@ -1743,6 +1768,16 @@ HandleSnapshotRequest(i, j, m) ==
                  autoLeave   |-> confState.autoLeave
               ]]
            /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = lastConfigIdx]
+           \* Update durableState: snapshot history from message, empty entries
+           /\ durableState' = [durableState EXCEPT ![i] = [
+                 @ EXCEPT !.log = m.msnapshotIndex,
+                          !.entries = <<>>,
+                          !.snapshotIndex = m.msnapshotIndex,
+                          !.snapshotTerm = m.msnapshotTerm,
+                          !.snapshotHistory = m.mhistory,
+                          !.commitIndex = m.msnapshotIndex,
+                          !.config = config'[i]
+              ]]
            /\ Reply([mtype       |-> AppendEntriesResponse,
                      msubtype    |-> "snapshot",
                      mterm       |-> currentTerm[i],
@@ -1753,7 +1788,7 @@ HandleSnapshotRequest(i, j, m) ==
                      msource     |-> i,
                      mdest       |-> j],
                      m)
-           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex, partitions>>
+           /\ UNCHANGED <<serverVars, candidateVars, leaderVars, progressVars, reconfigCount, pendingConfChangeIndex, partitions>>
 
 \* Handle ReportUnreachable from application layer
 \* Reference: raft.go:1624-1632
