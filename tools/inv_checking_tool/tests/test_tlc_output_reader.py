@@ -33,9 +33,9 @@ from inv_checking_tool.src.utils.preprocessing import (
 )
 
 
-# Path to test data
-TEST_DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
-SAMPLE_OUTPUT_FILE = TEST_DATA_DIR / "workloads/etcdraft/scenarios/snapshot/spec/nohup.out"
+# Path to test data - use local test data file that ships with the tests
+TEST_DATA_DIR = Path(__file__).parent / "test_data"
+SAMPLE_OUTPUT_FILE = TEST_DATA_DIR / "sample_tlc_output.txt"
 
 
 class TestPathParser:
@@ -136,7 +136,6 @@ class TestPreprocessing:
         assert vname is None
 
 
-@pytest.mark.skipif(not SAMPLE_OUTPUT_FILE.exists(), reason="Sample file not found")
 class TestTLCOutputReader:
     """Tests for TLCOutputReader class."""
 
@@ -152,15 +151,15 @@ class TestTLCOutputReader:
 
     def test_trace_length(self, reader):
         """Test trace length is correct."""
-        assert reader.trace_length == 76
+        assert reader.trace_length == 10
 
     def test_get_summary(self, reader):
         """Test getting trace summary."""
         summary = reader.get_summary()
         assert summary.violation_type == "invariant"
         assert summary.violation_name == "QuorumLogInv"
-        assert summary.trace_length == 76
-        assert len(summary.actions) == 76
+        assert summary.trace_length == 10
+        assert len(summary.actions) == 10
 
     def test_get_summary_statistics(self, reader):
         """Test that summary includes statistics."""
@@ -177,15 +176,15 @@ class TestTLCOutputReader:
     def test_get_state_last(self, reader):
         """Test getting last state by 'last' keyword."""
         state = reader.get_state("last")
-        assert state.index == 76
+        assert state.index == 10
 
     def test_get_state_negative_index(self, reader):
         """Test getting state by negative index."""
         state = reader.get_state(-1)
-        assert state.index == 76
+        assert state.index == 10
 
         state2 = reader.get_state(-2)
-        assert state2.index == 75
+        assert state2.index == 9
 
     def test_get_state_first_keyword(self, reader):
         """Test getting first state by 'first' keyword."""
@@ -227,7 +226,7 @@ class TestTLCOutputReader:
         """Test getting last N states."""
         states = reader.get_states("-3:")
         assert len(states) == 3
-        assert [s.index for s in states] == [74, 75, 76]
+        assert [s.index for s in states] == [8, 9, 10]
 
     def test_get_states_first_n(self, reader):
         """Test getting first N states."""
@@ -279,7 +278,7 @@ class TestTLCOutputReader:
     def test_get_actions_list(self, reader):
         """Test getting action sequence."""
         actions = reader.get_actions_list()
-        assert len(actions) == 76
+        assert len(actions) == 10
         assert actions[0]["action"] == "MCInit"
         assert actions[0]["index"] == 1
 
@@ -294,8 +293,8 @@ class TestTLCOutputReader:
     def test_compare_states_last_two(self, reader):
         """Test comparing last two states."""
         diff = reader.compare_states(-2, -1)
-        assert diff["state1_index"] == 75
-        assert diff["state2_index"] == 76
+        assert diff["state1_index"] == 9
+        assert diff["state2_index"] == 10
 
     def test_find_variable_changes(self, reader):
         """Test finding where a variable changes."""
@@ -332,13 +331,13 @@ class TestTLCOutputReader:
         """Test formatting summary for display."""
         formatted = reader.format_summary()
         assert "QuorumLogInv" in formatted
-        assert "76 states" in formatted
+        assert "10 states" in formatted
 
     def test_repr(self, reader):
         """Test string representation."""
         repr_str = repr(reader)
         assert "TLCOutputReader" in repr_str
-        assert "76" in repr_str
+        assert "10" in repr_str
 
 
 class TestTLCOutputReaderEdgeCases:
