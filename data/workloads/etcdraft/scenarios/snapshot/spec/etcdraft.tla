@@ -2366,6 +2366,13 @@ CommitIndexBoundInv ==
     \A i \in Server :
         commitIndex[i] <= LastIndex(log[i])
 
+\* Term should be monotonic in the log (newer entries have >= terms)
+LogTermMonotonic ==
+    \A i \in Server :
+        \A idx1, idx2 \in 1..LastIndex(log[i]) :
+            idx1 < idx2 =>
+                LogTerm(i, idx1) <= LogTerm(i, idx2)
+
 \* All committed entries should have valid (positive) terms
 CommittedEntriesTermInv ==
     \A i \in Server :
@@ -2386,7 +2393,7 @@ LeaderLogLengthInv ==
 
 \* Current term should be at least as large as any log entry term
 \* Optimized: Only check the last entry (newest has highest term due to monotonicity)
-\* and snapshotTerm. Full history checked implicitly via LogTermMonotonicProp.
+\* and snapshotTerm.
 CurrentTermAtLeastLogTerm ==
     \A i \in Server :
         \* Check snapshot term

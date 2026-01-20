@@ -595,29 +595,4 @@ CommittedEntriesPersistProp ==
             SubSeq(historyLog[i], 1, commitIndex[i])
     ]_mc_vars
 
-\* ============================================================================
-\* LOG TERM MONOTONICITY PROPERTY
-\* ============================================================================
-
-\* Log Term Monotonicity Property
-\* "Terms in the log are monotonically non-decreasing."
-\* Reference: Raft paper - entries are appended with leader's current term,
-\*            which can only increase over time.
-\*
-\* This temporal property is MUCH more efficient than the state invariant LogTermMonotonic
-\* which checks O(n²) pairs on every state. Instead, we only check when historyLog grows:
-\* - If a new entry is appended, its term must be >= the previous entry's term
-\*
-\* This captures the essence of term monotonicity without expensive state invariant checks.
-LogTermMonotonicProp ==
-    [][
-        \A i \in Server :
-            \* If historyLog grows (new entry appended)
-            LET oldLen == Len(historyLog[i])
-                newLen == Len(historyLog'[i])
-            IN (newLen > oldLen /\ oldLen > 0) =>
-                \* New entry's term must be >= previous entry's term
-                historyLog'[i][newLen].term >= historyLog[i][oldLen].term
-    ]_mc_vars
-
 =============================================================================
