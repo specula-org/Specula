@@ -453,6 +453,15 @@ mc_etcdSpecWithReady ==
     /\ MCInit
     /\ [][MCNextDynamicWithReady]_mc_vars
 
+mc_etcdSpec_no_conf_change ==
+    /\ MCInit
+    /\ [][MCNext]_mc_vars
+
+\* Spec with Ready composition for reduced state space
+mc_etcdSpecWithReady_no_conf_change ==
+    /\ MCInit
+    /\ [][MCNextWithReady]_mc_vars
+
 \* ============================================================================
 \* SYMMETRY AND VIEW DEFINITIONS
 \* ============================================================================
@@ -538,6 +547,77 @@ LeaderCommitCurrentTermLogsProp ==
         \A i \in Server :
             (state'[i] = Leader /\ commitIndex[i] /= commitIndex'[i]) =>
                 historyLog'[i][commitIndex'[i]].term = currentTerm'[i]
+    ]_mc_vars
+
+\* ============================================================================
+\* RAFT PAPER CORE PROPERTIES
+\* ============================================================================
+
+\* Leader Append-Only Property (Raft Paper Figure 3, Property 2)
+\* "A leader never overwrites or deletes entries in its log; it only appends new entries."
+\* Reference: Raft paper §5.3 - Leaders only append, never modify existing entries
+\* 
+\* This property verifies:
+\* 1. Log length never decreases for a leader
+\* 2. Existing entries are never modified (using historyLog for full history)
+\*
+\* Note: We exclude Restart action since a leader that crashes loses leadership.
+\* After restart, it becomes a Follower (state'[i] = Follower in Restart action).
+LeaderAppendOnlyProp ==
+    [][
+        \A i \in Server :
+            state[i] = Leader =>
+                \* Log only grows (or stays same)
+                /\ LastIndex(log'[i]) >= LastIndex(log[i])
+                \* All existing entries remain unchanged (prefix comparison)
+                \* Using SubSeq equality is more efficient than \A idx check
+                /\ SubSeq(historyLog'[i], 1, LastIndex(log[i])) = 
+                   SubSeq(historyLog[i], 1, LastIndex(log[i]))
+    ]_mc_vars
+
+\* Committed Entries Are Never Truncated Property
+\* "Once an entry is committed, it will never be removed from any server's log."
+\* Reference: This is a consequence of Log Matching + Leader Completeness properties
+\*
+\* This property explicitly verifies that committed entries persist across all transitions.
+\* It's stronger than MonotonicCommitIndexProp (which only checks index, not content).
+\*
+\* Note: We exclude Restart action because:
+\* 1. After restart, committed entries are restored from durableState
+\* 2. The historyLog ghost variable is not modified by Restart
+\* 3. What matters is that durableState preserves committed entries
+CommittedEntriesPersistProp ==
+    [][(~\E i \in Server: etcd!Restart(i)) =>
+        \A i \in Server :
+            \* All entries up to commitIndex remain unchanged (prefix comparison)
+            \* Using SubSeq equality is more efficient than \A idx check
+            SubSeq(historyLog'[i], 1, commitIndex[i]) = 
+            SubSeq(historyLog[i], 1, commitIndex[i])
+    ]_mc_vars
+
+\* ============================================================================
+\* LOG TERM MONOTONICITY PROPERTY
+\* ============================================================================
+
+\* Log Term Monotonicity Property
+\* "Terms in the log are monotonically non-decreasing."
+\* Reference: Raft paper - entries are appended with leader's current term,
+\*            which can only increase over time.
+\*
+\* This temporal property is MUCH more efficient than the state invariant LogTermMonotonic
+\* which checks O(n²) pairs on every state. Instead, we only check when historyLog grows:
+\* - If a new entry is appended, its term must be >= the previous entry's term
+\*
+\* This captures the essence of term monotonicity without expensive state invariant checks.
+LogTermMonotonicProp ==
+    [][
+        \A i \in Server :
+            \* If historyLog grows (new entry appended)
+            LET oldLen == Len(historyLog[i])
+                newLen == Len(historyLog'[i])
+            IN (newLen > oldLen /\ oldLen > 0) =>
+                \* New entry's term must be >= previous entry's term
+                historyLog'[i][newLen].term >= historyLog[i][oldLen].term
     ]_mc_vars
 
 =============================================================================

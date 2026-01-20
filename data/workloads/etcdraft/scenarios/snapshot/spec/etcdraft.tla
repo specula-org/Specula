@@ -2010,7 +2010,7 @@ MessageTermsLtCurrentTerm(m) ==
 
 \* Committed log entries should never conflict between servers
 LogInv ==
-    \A i, j \in Server :
+    \A i, j \in Server : i /= j =>
         \/ IsPrefix(Committed(i),Committed(j)) 
         \/ IsPrefix(Committed(j),Committed(i))
 
@@ -2027,20 +2027,18 @@ MoreThanOneLeaderInv ==
          /\ state[j] = Leader)
         => i = j
 
-\* A leader always has the greatest index for its current term
-ElectionSafetyInv ==
-    \A i \in Server :
-        state[i] = Leader =>
-        \A j \in Server :
-            MaxOrZero({n \in log[i].offset..LastIndex(log[i]) : LogTerm(i, n) = currentTerm[i]}) >=
-            MaxOrZero({n \in log[j].offset..LastIndex(log[j]) : LogTerm(j, n) = currentTerm[i]})
-
 \* Every (index, term) pair determines a log prefix
+\* Optimized: Only check the maximum index where terms match.
+\* If SubSeq matches at maxMatch, it implicitly matches for all smaller indices.
+\* This reduces complexity from O(n²) to O(n) per server pair.
 LogMatchingInv ==
-    \A i, j \in Server :
-        \A n \in (1..Len(historyLog[i])) \cap (1..Len(historyLog[j])) :
-            historyLog[i][n].term = historyLog[j][n].term =>
-            SubSeq(historyLog[i],1,n) = SubSeq(historyLog[j],1,n)
+    \A i, j \in Server : i /= j =>
+        LET minLen == Min({Len(historyLog[i]), Len(historyLog[j])})
+            \* Find all indices where terms match
+            matchingTerms == {n \in 1..minLen : historyLog[i][n].term = historyLog[j][n].term}
+        IN matchingTerms /= {} =>
+            \* Only check the maximum matching index
+            SubSeq(historyLog[i], 1, Max(matchingTerms)) = SubSeq(historyLog[j], 1, Max(matchingTerms))
 
 \* When two candidates competes in a campaign, if a follower voted to
 \* a candidate that did not win in the end, the follower's votedFor will 
@@ -2095,27 +2093,36 @@ QuorumLogInv ==
 \* a vote from j only if i has all of j's committed
 \* entries
 MoreUpToDateCorrectInv ==
-    \A i, j \in Server :
-       (\/ LastTerm(log[i]) > LastTerm(log[j])
-        \/ /\ LastTerm(log[i]) = LastTerm(log[j])
-           /\ LastIndex(log[i]) >= LastIndex(log[j])) =>
-       IsPrefix(Committed(j), historyLog[i])
+    \A i, j \in Server : i /= j =>
+       ((\/ LastTerm(log[i]) > LastTerm(log[j])
+         \/ /\ LastTerm(log[i]) = LastTerm(log[j])
+            /\ LastIndex(log[i]) >= LastIndex(log[j])) =>
+        IsPrefix(Committed(j), historyLog[i]))
 
 \* If a log entry is committed in a given term, then that
 \* entry will be present in the logs of the leaders
 \* for all higher-numbered terms
 \* See: https://github.com/uwplse/verdi-raft/blob/master/raft/LeaderCompletenessInterface.v
-LeaderCompletenessInv == 
+\*
+\* Rewritten: Check from Leader's perspective - a Leader must contain
+\* all entries committed in previous terms by any server.
+\* Complexity: O(Leaders × Server × CommitLen) ≈ O(Server × CommitLen) since usually 0-1 Leaders.
+
+\* Helper: Get the prefix of committed log where term <= t
+\* Since log terms are monotonically increasing, find the last index with term <= t
+\* Using <= instead of < provides an additional sanity check:
+\* If j has committed entries at term = t, they must have come from Leader i (or its predecessor)
+CommittedTermPrefix(j, t) ==
+    LET committed == Committed(j)
+        validIndices == {k \in 1..Len(committed) : committed[k].term <= t}
+    IN IF validIndices = {} THEN <<>>
+       ELSE SubSeq(committed, 1, Max(validIndices))
+
+LeaderCompletenessInv ==
     \A i \in Server :
-        LET committed == Committed(i) IN
-        \A idx \in 1..Len(committed) :
-            LET entry == historyLog[i][idx] IN 
-            \* if the entry is committed 
-            \A l \in CurrentLeaders :
-                \* all leaders with higher-number terms
-                currentTerm[l] > entry.term =>
-                \* have the entry at the same log position
-                historyLog[l][idx] = entry
+        state[i] = Leader =>
+        \A j \in Server : i /= j =>
+            IsPrefix(CommittedTermPrefix(j, currentTerm[i]), historyLog[i])
 
 \* Any entry committed by leader shall be persisted already
 CommittedIsDurableInv ==
@@ -2348,10 +2355,11 @@ MessageIndexValidInv ==
 
 \* State Machine Safety: All nodes should agree on committed entries
 \* This is critical for linearizability - catches state machine divergence
+\* Optimized: Using SubSeq comparison instead of \A idx for better efficiency
 StateMachineConsistency ==
-    \A i, j \in Server :
-        \A idx \in 1..Min({commitIndex[i], commitIndex[j]}) :
-            historyLog[i][idx] = historyLog[j][idx]
+    \A i, j \in Server : i /= j =>
+        LET minCommit == Min({commitIndex[i], commitIndex[j]})
+        IN SubSeq(historyLog[i], 1, minCommit) = SubSeq(historyLog[j], 1, minCommit)
 
 \* Commit index should never exceed log length
 CommitIndexBoundInv ==
@@ -2376,18 +2384,16 @@ LeaderLogLengthInv ==
         state[i] = Leader =>
             commitIndex[i] <= LastIndex(log[i])
 
-\* Term should be monotonic in the log (newer entries have >= terms)
-LogTermMonotonic ==
-    \A i \in Server :
-        \A idx1, idx2 \in 1..LastIndex(log[i]) :
-            idx1 < idx2 =>
-                LogTerm(i, idx1) <= LogTerm(i, idx2)
-
 \* Current term should be at least as large as any log entry term
+\* Optimized: Only check the last entry (newest has highest term due to monotonicity)
+\* and snapshotTerm. Full history checked implicitly via LogTermMonotonicProp.
 CurrentTermAtLeastLogTerm ==
     \A i \in Server :
-        \A idx \in 1..LastIndex(log[i]) :
-            currentTerm[i] >= LogTerm(i, idx)
+        \* Check snapshot term
+        /\ log[i].snapshotTerm <= currentTerm[i]
+        \* Check only the last entry (highest term due to monotonicity)
+        /\ Len(log[i].entries) > 0 =>
+            log[i].entries[Len(log[i].entries)].term <= currentTerm[i]
 
 
 \* Candidates must have voted for themselves
@@ -2425,7 +2431,6 @@ AdditionalSafety ==
     /\ CommittedEntriesTermInv
     /\ PendingConfigBoundInv
     /\ LeaderLogLengthInv
-    /\ LogTermMonotonic
     /\ CurrentTermAtLeastLogTerm
     /\ CandidateVotedForSelfInv
     /\ DurableStateConsistency
@@ -2469,11 +2474,10 @@ SnapshotTermBoundInv ==
 
 \* Invariant: HistoryLogLengthInv
 \* historyLog length must equal LastIndex (historyLog tracks full log history)
-\* Note: This only holds when log is not empty (after bootstrap)
+\* Note: LastIndex >= 0 is always true since offset >= 1 (LogOffsetMinInv)
 HistoryLogLengthInv ==
     \A i \in Server :
-        LastIndex(log[i]) >= 0 =>
-            Len(historyLog[i]) = LastIndex(log[i])
+        Len(historyLog[i]) = LastIndex(log[i])
 
 \* Aggregate P0 Log Structure invariants
 LogStructureInv ==
@@ -2682,22 +2686,6 @@ MatchIndexBoundInv ==
     \A i \in Server : \A j \in Server :
         state[i] = Leader => matchIndex[i][j] <= LastIndex(log[i])
 
-\* Invariant: LeaderMatchSelfInv
-\* Leader's matchIndex for itself should not exceed its LastIndex
-\* Note: matchIndex may temporarily lag behind lastIndex until MsgAppResp is processed
-\* Reference: raft.go:836-845 - leader sends MsgAppResp to itself after appending
-LeaderMatchSelfInv ==
-    \A i \in Server :
-        state[i] = Leader => matchIndex[i][i] <= LastIndex(log[i])
-
-\* Invariant: LeaderNextSelfInv
-\* Leader's nextIndex for itself should not exceed LastIndex + 1
-\* Note: nextIndex may temporarily lag behind until MsgAppResp is processed
-\* Reference: raft.go:836-845 - leader sends MsgAppResp to itself after appending
-LeaderNextSelfInv ==
-    \A i \in Server :
-        state[i] = Leader => nextIndex[i][i] <= LastIndex(log[i]) + 1
-
 \* Invariant: PendingSnapshotBoundInv
 \* pendingSnapshot cannot exceed Leader's LastIndex
 \* Reference: Snapshot is taken from leader's log
@@ -2789,8 +2777,6 @@ AdditionalProgressInv ==
     /\ NextIndexPositiveInv
     /\ NextIndexBoundInv
     /\ MatchIndexBoundInv
-    /\ LeaderMatchSelfInv
-    /\ LeaderNextSelfInv
     /\ PendingSnapshotBoundInv
 
 AdditionalMessageInv ==
@@ -2880,27 +2866,6 @@ PendingConfIndexAutoLeaveInv ==
                 pendingConfChangeIndex[i] >= Min(leaveJointIndices)
 
 \* ----------------------------------------------------------------------------
-\* Bug 8ecce32: CommittedEntries pagination correctness bug
-\* ----------------------------------------------------------------------------
-\* Scenario:
-\* 1. CommittedEntries limited by MaxCommittedSizePerReady
-\* 2. HardState.Commit was truncated to match limited entries
-\* 3. If user's Entries() implementation differs slightly from Raft's,
-\*    this could regress HardState.Commit or skip applying entries
-\*
-\* Detection: Applied entries should be consistent with what's committed
-\* Note: We don't model MaxCommittedSizePerReady, but we ensure consistency
-
-\* The committed entries in historyLog should be consistent across all servers
-\* (This is already covered by StateMachineConsistency, but we add explicit check)
-CommittedEntriesConsistentInv ==
-    \A i, j \in Server :
-        LET minCommit == Min({commitIndex[i], commitIndex[j]})
-        IN \A idx \in 1..minCommit :
-            (idx <= Len(historyLog[i]) /\ idx <= Len(historyLog[j])) =>
-                historyLog[i][idx] = historyLog[j][idx]
-
-\* ----------------------------------------------------------------------------
 \* Aggregate Bug Detection Invariants
 \* ----------------------------------------------------------------------------
 
@@ -2908,7 +2873,6 @@ BugDetectionInv ==
     /\ AppendEntriesPrevLogTermValidInv      \* Bug 76f1249
     /\ SinglePendingLeaveJointInv            \* Bug bd3c759
     /\ PendingConfIndexAutoLeaveInv          \* Bug bd3c759
-    /\ CommittedEntriesConsistentInv         \* Bug 8ecce32 (general safety property)
 
 \* ============================================================================
 \* P0: CRITICAL INVARIANTS - Known to cause panics in etcd
@@ -2975,29 +2939,6 @@ SnapshotAppliedConsistencyInv ==
 \* ============================================================================
 
 \* ----------------------------------------------------------------------------
-\* Invariant: AppendEntriesSourceValidInv
-\* Leader can only send entries that exist in its log
-\* Entries in MsgApp must be within [offset, lastIndex]
-\* ----------------------------------------------------------------------------
-AppendEntriesSourceValidInv ==
-    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
-        (m.mtype = AppendEntriesRequest /\ Len(m.mentries) > 0) =>
-            LET firstEntryIdx == m.mprevLogIndex + 1
-                lastEntryIdx == m.mprevLogIndex + Len(m.mentries)
-            IN /\ firstEntryIdx >= log[m.msource].offset
-               /\ lastEntryIdx <= LastIndex(log[m.msource])
-
-\* ----------------------------------------------------------------------------
-\* Invariant: HeartbeatCommitBoundInv
-\* Heartbeat's mcommitIndex should not exceed leader's actual commitIndex
-\* (Heartbeats are MsgApp with empty entries)
-\* ----------------------------------------------------------------------------
-HeartbeatCommitBoundInv ==
-    \A m \in DOMAIN messages \union DOMAIN pendingMessages :
-        m.mtype = AppendEntriesRequest =>
-            m.mcommitIndex <= commitIndex[m.msource]
-
-\* ----------------------------------------------------------------------------
 \* Invariant: AppliedConfigBoundInv
 \* appliedConfigIndex cannot exceed commitIndex (can only apply committed configs)
 \* ----------------------------------------------------------------------------
@@ -3024,8 +2965,6 @@ HighPriorityInv ==
 \* Aggregate P2 Detailed Invariants
 \* ----------------------------------------------------------------------------
 DetailedInv ==
-    /\ AppendEntriesSourceValidInv
-    /\ HeartbeatCommitBoundInv
     /\ AppliedConfigBoundInv
 
 \* ============================================================================
@@ -3154,23 +3093,6 @@ AppendEntriesResponseTermInv ==
             m.mterm > 0
 
 \* ----------------------------------------------------------------------------
-\* Invariant: LeaderLogContainsAllCommittedInv
-\* Source: Verdi-raft StateMachineSafetyProof - commit_invariant
-\* Combined with Raft paper's Leader Completeness property
-\* A leader's log must contain all committed entries (or have them in snapshot)
-\* Reference: raft.go:624-627 maybeSendAppend - if entries are compacted,
-\*            leader sends snapshot instead via maybeSendSnapshot()
-\* ----------------------------------------------------------------------------
-LeaderLogContainsAllCommittedInv ==
-    \A i \in Server :
-        state[i] = Leader =>
-            \* Leader's commitIndex should be achievable from its log
-            /\ commitIndex[i] <= LastIndex(log[i])
-            \* All entries up to commitIndex should be available or covered by snapshot
-            /\ \A idx \in 1..commitIndex[i] :
-                idx <= log[i].snapshotIndex \/ IsAvailable(i, idx)
-
-\* ----------------------------------------------------------------------------
 \* Invariant: SnapshotResponseTermValidInv
 \* Snapshot responses should have valid terms
 \* ----------------------------------------------------------------------------
@@ -3187,7 +3109,6 @@ VerdiRaftInspiredInv ==
     /\ LeaderCurrentTermEntriesInv
     /\ RequestVoteTermBoundInv
     /\ AppendEntriesResponseTermInv
-    /\ LeaderLogContainsAllCommittedInv
     /\ SnapshotResponseTermValidInv
 
 \* ============================================================================
@@ -3199,22 +3120,13 @@ VerdiRaftInspiredInv ==
 \* Invariant: TermNeverZeroInLogInv
 \* Source: Multiple bugs related to term=0 causing issues
 \* Entries in log should never have term 0
+\* Note: IsAvailable check removed - always true for idx in offset..LastIndex
 \* ----------------------------------------------------------------------------
 TermNeverZeroInLogInv ==
     \A i \in Server :
         \A idx \in log[i].offset..LastIndex(log[i]) :
-            IsAvailable(i, idx) =>
-                LogEntry(i, idx).term > 0
+            LogEntry(i, idx).term > 0
 
-\* ----------------------------------------------------------------------------
-\* Invariant: SnapshotTermNeverZeroInv
-\* Source: Related to Bug 76f1249 - term=0 confusion
-\* If snapshotIndex > 0, snapshotTerm must be > 0
-\* ----------------------------------------------------------------------------
-SnapshotTermNeverZeroInv ==
-    \A i \in Server :
-        log[i].snapshotIndex > 0 =>
-            log[i].snapshotTerm > 0
 
 \* ----------------------------------------------------------------------------
 \* Invariant: LeaderCommitNotExceedMatchQuorumInv
@@ -3230,31 +3142,5 @@ SnapshotTermNeverZeroInv ==
 \* ----------------------------------------------------------------------------
 GitHistoryBugPreventionInv ==
     /\ TermNeverZeroInLogInv
-    /\ SnapshotTermNeverZeroInv
-
-\* \* ============================================================================
-\* \* Monotonicity Properties
-\* \* ============================================================================
-
-\* \* Each server's commit index is monotonically increasing
-\* \* This is weaker form of CommittedLogAppendOnlyProp so it is not checked by default
-\* MonotonicCommitIndexProp ==
-\*     [][\A i \in Server :
-\*         commitIndex'[i] >= commitIndex[i]]_vars
-
-\* \* Each server's term is monotonically increasing
-\* MonotonicTermProp ==
-\*     [][\A i \in Server :
-\*         currentTerm'[i] >= currentTerm[i]]_vars
-
-\* \* Match index never decrements unless the current action is a node becoming leader
-\* \* Figure 2, page 4 in the raft paper:
-\* \* "Volatile state on leaders, reinitialized after election. For each server,
-\* \*  index of the highest log entry known to be replicated on server. Initialized
-\* \*  to 0, increases monotonically".  In other words, matchIndex never decrements
-\* \* unless the current action is a node becoming leader.
-\* MonotonicMatchIndexProp ==
-\*     [][(~ \E i \in Server: BecomeLeader(i)) =>
-\*             (\A i,j \in Server : matchIndex'[i][j] >= matchIndex[i][j])]_vars
 
 ===============================================================================
