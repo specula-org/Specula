@@ -118,8 +118,10 @@ etcdInitDurableState ==
         currentTerm |-> IF i \in InitServer THEN 1 ELSE 0,
         votedFor |-> Nil,
         log |-> IF i \in InitServer THEN Cardinality(InitServer) ELSE 0,
+        entries |-> IF i \in InitServer THEN BootstrapLog ELSE <<>>,  \* Persisted log entries
         snapshotIndex |-> 0,
         snapshotTerm |-> 0,
+        snapshotHistory |-> <<>>,  \* History covered by snapshot (initially empty)
         commitIndex |-> IF i \in InitServer THEN Cardinality(InitServer) ELSE 0,
         config |-> [ jointConfig |-> IF i \in InitServer THEN <<InitServer, {}>> ELSE <<{}, {}>>, learners |-> {}, autoLeave |-> FALSE]
     ]]
