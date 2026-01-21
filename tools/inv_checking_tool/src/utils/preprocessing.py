@@ -16,8 +16,11 @@ ANSI_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 # Markers for identifying TLC output sections
 ERROR_BEHAVIOR_MARKER = "The behavior up to this point is:"
-INVARIANT_VIOLATION_PATTERN = re.compile(r"Error:\s*Invariant\s+(\S+)\s+is violated")
-PROPERTY_VIOLATION_PATTERN = re.compile(r"Error:\s*Temporal property\s+(.+?)\s+is violated")
+# TLC output can have different formats for invariant violation:
+# - "Error: Invariant X is violated" (TLC raw output)
+# - "Invariant X is violated." (TLC tool mode output)
+INVARIANT_VIOLATION_PATTERN = re.compile(r"(?:Error:\s*)?Invariant\s+(\S+)\s+is violated")
+PROPERTY_VIOLATION_PATTERN = re.compile(r"(?:Error:\s*)?Temporal property\s+(.+?)\s+is violated")
 STATE_PATTERN = re.compile(r"^State\s+(\d+):\s*<(.+?)>")
 END_MARKERS = [
     "The number of states generated",
@@ -37,68 +40,6 @@ def strip_ansi_codes(text: str) -> str:
         Text with all ANSI escape codes removed.
     """
     return ANSI_ESCAPE_PATTERN.sub('', text)
-
-
-def find_trace_start(content: str) -> Optional[int]:
-    """Find the starting position of the error trace in TLC output.
-
-    Args:
-        content: The TLC output content.
-
-    Returns:
-        The character position where the trace starts, or None if not found.
-    """
-    # Look for the behavior marker
-    marker_pos = content.find(ERROR_BEHAVIOR_MARKER)
-    if marker_pos == -1:
-        return None
-
-    # Find the start of the line containing "Error:"
-    # Go backwards to find the "Error: Invariant..." line
-    search_start = max(0, marker_pos - 200)
-    error_match = INVARIANT_VIOLATION_PATTERN.search(content[search_start:marker_pos + len(ERROR_BEHAVIOR_MARKER)])
-    if error_match:
-        return search_start + error_match.start()
-
-    # Try property violation pattern
-    error_match = PROPERTY_VIOLATION_PATTERN.search(content[search_start:marker_pos + len(ERROR_BEHAVIOR_MARKER)])
-    if error_match:
-        return search_start + error_match.start()
-
-    # Fallback: just return the marker position's line start
-    line_start = content.rfind('\n', 0, marker_pos)
-    return line_start + 1 if line_start != -1 else 0
-
-
-def find_trace_end(content: str, start_pos: int) -> int:
-    """Find the ending position of the error trace.
-
-    The trace ends after the last state variable, but we need to include
-    the end marker line so that get_out_converted_string can properly
-    terminate the trace.
-
-    Args:
-        content: The TLC output content.
-        start_pos: The starting position of the trace.
-
-    Returns:
-        The character position where the trace ends (inclusive of end marker).
-    """
-    search_content = content[start_pos:]
-
-    # Find the earliest end marker
-    end_pos = len(search_content)
-    for marker in END_MARKERS:
-        pos = search_content.find(marker)
-        if pos != -1 and pos < end_pos:
-            # Include this line (go to end of line, not start)
-            line_end = search_content.find('\n', pos)
-            if line_end != -1:
-                end_pos = line_end + 1  # Include the newline
-            else:
-                end_pos = len(search_content)  # End of content
-
-    return start_pos + end_pos
 
 
 def extract_violation_info(content: str) -> Tuple[Optional[str], Optional[str]]:
@@ -201,29 +142,15 @@ def preprocess_tlc_output(file_path: str) -> Tuple[str, dict]:
     # Get statistics
     metadata["statistics"] = extract_statistics(content)
 
-    # Check if this is already a trace file (starts with --)
-    if content.lstrip().startswith("--"):
-        return content, metadata
-
-    # Check if this starts with @! (raw TLC output)
-    if content.lstrip().startswith("@!"):
-        # Add a dummy line for the converter
-        return "PLACEHOLDER\n" + content, metadata
-
-    # Find the trace section
-    trace_start = find_trace_start(content)
-    if trace_start is None:
+    # Validate that the content contains an error trace
+    if ERROR_BEHAVIOR_MARKER not in content:
         raise ValueError(
             "Could not find error trace in TLC output. "
-            "Expected 'The behavior up to this point is:' marker."
+            f"Expected '{ERROR_BEHAVIOR_MARKER}' marker."
         )
 
-    trace_end = find_trace_end(content, trace_start)
-    trace_content = content[trace_start:trace_end]
+    return content, metadata
 
-    # Add a placeholder line to make the converter work
-    # The converter expects a non-@ first line to trigger error mode
-    return "PLACEHOLDER\n" + trace_content, metadata
 
 
 def convert_to_trace_format(content: str) -> str:
