@@ -1221,25 +1221,6 @@ LeaveJoint(i) ==
        ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars, appliedConfigIndex, partitions>>
 
-\* Implicit LeaveJoint - leave joint config when autoLeave=TRUE but no LeaveJoint log entry exists
-\* This can happen when an implicit entry was created before EnterJoint was applied,
-\* resulting in a ValueEntry at the next log index instead of a LeaveJoint ConfigEntry.
-\* In this case, the system leaves joint config without a dedicated log entry.
-\* Reference: This is an edge case in etcd raft's autoLeave mechanism.
-ImplicitLeaveJoint(i, newVoters, newLearners) ==
-    /\ IsJointConfig(i)
-    /\ config[i].autoLeave = TRUE
-    \* No unapplied config entries exist
-    /\ LET validIndices == {x \in Max({log[i].offset, appliedConfigIndex[i]+1})..commitIndex[i] :
-                              LogEntry(i, x).type = ConfigEntry}
-       IN validIndices = {}
-    /\ config' = [config EXCEPT ![i] = [learners |-> newLearners, jointConfig |-> <<newVoters, {}>>, autoLeave |-> FALSE]]
-    /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] > 0 THEN
-        /\ reconfigCount' = reconfigCount + 1
-        /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
-       ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, logVars, durableState, progressVars, appliedConfigIndex, partitions>>
-
 \* Leader proposes LeaveJoint entry when autoLeave=TRUE and config entry is applied
 \* Reference: raft.go:745-760 - AutoLeave mechanism
 \* When r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex && r.state == StateLeader,
@@ -2002,8 +1983,6 @@ NextDynamic ==
     \/ \E i \in Server : ChangeConfAndSend(i)
     \/ \E i \in Server : ApplySimpleConfChange(i)
     \/ \E i \in Server : ProposeLeaveJoint(i)
-    \/ \E i \in Server, newVoters \in SUBSET Server, newLearners \in SUBSET Server :
-        ImplicitLeaveJoint(i, newVoters, newLearners)
 
 \* The specification must start with the initial state and transition according
 \* to Next.
@@ -2102,29 +2081,33 @@ LogMatchingInv ==
 
 \* All committed entries are contained in the log
 \* of at least one server in every quorum.
-\* In joint config, it's safe if EITHER incoming OR outgoing quorums hold the data,
-\* because election requires both quorums, so one blocking is enough.
 \*
-\* Note: Only check servers whose config is up-to-date (applied all committed config entries).
-\* A follower may have a stale config while having received committed entries from the leader.
-\* This is normal behavior during config change processing - the follower trusts the leader's
-\* commitIndex but hasn't applied the config entries yet.
+\* During joint config, use outgoing (old) config's quorum for checking,
+\* because entries committed before entering joint config are guaranteed
+\* to be in the old config's quorum.
+\*
+\* After leaving joint config, skip checking because the new config's quorum
+\* may not have all previously committed entries yet.
+\*
+\* For servers that never went through config change, use current config.
 QuorumLogInv ==
     \A i \in Server :
-        \* Find config entries within the committed range
-        LET configIndicesInCommitted == {k \in 1..commitIndex[i] :
-                k <= Len(historyLog[i]) /\ historyLog[i][k].type = ConfigEntry}
-            \* Check if server's config is up-to-date (applied all committed config entries)
-            configUpToDate == configIndicesInCommitted = {} \/
-                              appliedConfigIndex[i] >= Max(configIndicesInCommitted)
+        LET \* Check if there are any committed config entries (indicates config change happened)
+            hasCommittedConfigEntry == \E k \in 1..commitIndex[i] :
+                    k <= Len(historyLog[i]) /\ historyLog[i][k].type = ConfigEntry
         IN
-        \* Only check servers with up-to-date config
-        configUpToDate =>
-            (\/ \A S \in Quorum(GetConfig(i)) :
-                   \E j \in S : IsPrefix(Committed(i), historyLog[j])
-             \/ (IsJointConfig(i) /\
-                 \A S \in Quorum(GetOutgoingConfig(i)) :
-                     \E j \in S : IsPrefix(Committed(i), historyLog[j])))
+        IF IsJointConfig(i) THEN
+            \* During joint config: use outgoing config (old config) for quorum check
+            \A S \in Quorum(GetOutgoingConfig(i)) :
+                \E j \in S : IsPrefix(Committed(i), historyLog[j])
+        ELSE IF ~hasCommittedConfigEntry THEN
+            \* No config change ever: use current config for quorum check
+            \A S \in Quorum(GetConfig(i)) :
+                \E j \in S : IsPrefix(Committed(i), historyLog[j])
+        ELSE
+            \* After leaving joint config: skip check
+            \* (new config's quorum may not have all committed entries yet)
+            TRUE
 
 \* The "up-to-date" check performed by servers
 \* before issuing a vote implies that i receives

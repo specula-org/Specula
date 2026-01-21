@@ -420,18 +420,19 @@ MCDynamicConfigActions ==
     \* Reference: raft.go:745-760 - AutoLeave mechanism requires log entry commitment
     \/ /\ \E i \in Server : etcd!ProposeLeaveJoint(i)
        /\ UNCHANGED faultVars
-    \* ApplySnapshotConfChange: Apply configuration from snapshot's historyLog
-    \* Key constraint: voters must come from historyLog, not arbitrary
+    \* ApplySnapshotConfChange: Apply configuration from snapshot's snapshotHistory
+    \* Key constraint: voters must come from persisted snapshotHistory (not ghost variable historyLog)
     \* Key constraint: only apply committed config entries (per node.go:179-183)
+    \* Note: snapshotHistory contains entries 1..snapshotIndex, which are always committed
     \/ /\ \E i \in Server :
-           LET configIndices == {k \in 1..Len(historyLog[i]) : historyLog[i][k].type = ConfigEntry}
+           LET snapshotHist == durableState[i].snapshotHistory
+               configIndices == {k \in 1..Len(snapshotHist) : snapshotHist[k].type = ConfigEntry}
                lastConfigIdx == IF configIndices /= {} THEN Max(configIndices) ELSE 0
                newVoters == IF lastConfigIdx > 0
-                            THEN historyLog[i][lastConfigIdx].value.newconf
+                            THEN snapshotHist[lastConfigIdx].value.newconf
                             ELSE {}
            IN /\ newVoters /= {}
               /\ newVoters /= GetConfig(i)  \* Only apply if config differs
-              /\ lastConfigIdx <= commitIndex[i]  \* Only apply committed configs
               /\ etcd!ApplySnapshotConfChange(i, newVoters)
        /\ UNCHANGED faultVars
 
