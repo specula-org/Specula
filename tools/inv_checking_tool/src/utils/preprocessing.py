@@ -1,33 +1,17 @@
-"""Preprocessing utilities for TLC output files.
-
-This module handles various input formats including:
-- Raw TLC output (starting with @!)
-- Wrapped TLC output (with script headers, ANSI codes, etc.)
-- Direct trace files (starting with --)
-"""
+"""Preprocessing utilities for TLC output files."""
 
 import re
-import io
 from typing import Optional, Tuple
 
 
 # Pattern to match ANSI escape codes
 ANSI_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
-# Markers for identifying TLC output sections
-ERROR_BEHAVIOR_MARKER = "The behavior up to this point is:"
 # TLC output can have different formats for invariant violation:
 # - "Error: Invariant X is violated" (TLC raw output)
 # - "Invariant X is violated." (TLC tool mode output)
 INVARIANT_VIOLATION_PATTERN = re.compile(r"(?:Error:\s*)?Invariant\s+(\S+)\s+is violated")
 PROPERTY_VIOLATION_PATTERN = re.compile(r"(?:Error:\s*)?Temporal property\s+(.+?)\s+is violated")
-STATE_PATTERN = re.compile(r"^State\s+(\d+):\s*<(.+?)>")
-END_MARKERS = [
-    "The number of states generated",
-    "Progress:",
-    "Finished in",
-    "Worker: rmi",
-]
 
 
 def strip_ansi_codes(text: str) -> str:
@@ -104,6 +88,19 @@ def extract_statistics(content: str) -> dict:
     return stats
 
 
+def extract_counterexample_path(content: str) -> Optional[str]:
+    """Extract the counterexample file path from TLC output."""
+    match = None
+    for line in content.splitlines():
+        if "CounterExample written:" in line:
+            line = line.strip().strip('"')
+            _, _, path = line.partition("CounterExample written:")
+            path = path.strip()
+            if path:
+                match = path
+    return match
+
+
 def preprocess_tlc_output(file_path: str) -> Tuple[str, dict]:
     """Preprocess a TLC output file for parsing.
 
@@ -117,8 +114,7 @@ def preprocess_tlc_output(file_path: str) -> Tuple[str, dict]:
 
     Returns:
         A tuple of (preprocessed_content, metadata).
-        The preprocessed content is ready for TraceReader.
-        The metadata contains violation info and statistics.
+    The metadata contains violation info, statistics, and counterexample path.
 
     Raises:
         FileNotFoundError: If the file does not exist.
@@ -142,41 +138,9 @@ def preprocess_tlc_output(file_path: str) -> Tuple[str, dict]:
     # Get statistics
     metadata["statistics"] = extract_statistics(content)
 
-    # Validate that the content contains an error trace
-    if ERROR_BEHAVIOR_MARKER not in content:
-        raise ValueError(
-            "Could not find error trace in TLC output. "
-            f"Expected '{ERROR_BEHAVIOR_MARKER}' marker."
-        )
+    # Counterexample path if present
+    counterexample_path = extract_counterexample_path(content)
+    if counterexample_path:
+        metadata["counterexample_path"] = counterexample_path
 
     return content, metadata
-
-
-
-def convert_to_trace_format(content: str) -> str:
-    """Convert preprocessed content to TLA+ trace format.
-
-    This function uses TraceReader's get_out_converted_string to convert
-    TLC output format to the standard trace format that can be parsed.
-
-    Args:
-        content: Preprocessed TLC output content.
-
-    Returns:
-        Content in TLA+ trace format (starting with --).
-    """
-    # Import here to avoid circular imports
-    from ..trace_reader import TraceReader
-
-    # If already in trace format, return as-is
-    if content.lstrip().startswith("--"):
-        return content
-
-    # Convert using TraceReader's utility
-    f = io.StringIO(content)
-    converted_lines = list(TraceReader.get_out_converted_string(f))
-
-    if not converted_lines:
-        raise ValueError("Failed to convert TLC output to trace format.")
-
-    return ''.join(converted_lines)

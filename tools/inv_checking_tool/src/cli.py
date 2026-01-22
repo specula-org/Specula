@@ -6,7 +6,7 @@ allowing users to inspect invariant violations, view states, and
 compare execution traces.
 
 Usage:
-    python -m tools.inv_checking_tool.cli <file> [options]
+    python -m tools.inv_checking_tool <file> [options]
 
 Examples:
     # Show summary

@@ -89,3 +89,5 @@ venv/
 env/
 .envrc
 nohup.out
+!tools/inv_checking_tool/tests/test_data/nohup.out
+counterexample.json
