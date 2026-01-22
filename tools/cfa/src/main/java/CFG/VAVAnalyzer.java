@@ -43,15 +43,18 @@ public class VAVAnalyzer {
      */
     public List<String> validate() {
         errors.clear();
-        detectPureFunctions();
 
-        // Run SA analysis first to compute InVar/OutVar
+        // Run SA analysis first to compute InVar/OutVar and funcVarChange
         runSAAnalysis();
+
+        // Detect pure functions AFTER SA analysis, using funcVarChange
+        // A function is pure if it doesn't change any variables (including via calls)
+        detectPureFunctions();
 
         // Then validate using the dataflow results
         for (CFGFuncNode funcNode : callGraph.getFuncNodes()) {
             if (!funcNode.isEntryPoint()) continue;
-            if (funcNode.getFuncName().startsWith("Handle")) continue;
+            if (funcNode.isPureExpression()) continue;  // Skip pure expression functions
             if (pureFunctions.contains(funcNode.getFuncName())) continue;
 
             validateFunc(funcNode);
@@ -284,32 +287,37 @@ public class VAVAnalyzer {
     // ============================================================================
 
     private void detectPureFunctions() {
+        // A function is pure if it has no direct prime assignment or UNCHANGED in its body
+        // This is different from funcVarChange which includes called functions' effects
         pureFunctions.clear();
-        for (CFGFuncNode funcNode : callGraph.getFuncNodes()) {
-            if (!hasPrimeAssignment(funcNode.getRoot())) {
+        for (CFGFuncNode funcNode : callGraph.getAllFuncNodes()) {
+            if (!hasDirectStateChange(funcNode.getRoot())) {
                 pureFunctions.add(funcNode.getFuncName());
+                funcNode.setPureExpression(true);
             }
         }
     }
 
-    private boolean hasPrimeAssignment(CFGStmtNode node) {
+    private boolean hasDirectStateChange(CFGStmtNode node) {
         if (node == null) return false;
 
         String content = node.getContent();
         if (content != null && !content.isEmpty()) {
+            // Check for var' = ..., var' \in ..., var' \subseteq ...
             for (String var : variables) {
                 String primePattern = "(?<![\\w_])" + Pattern.quote(var) + "'\\s*(=|\\\\in|\\\\subseteq)";
                 if (Pattern.compile(primePattern).matcher(content).find()) {
                     return true;
                 }
             }
+            // Check for UNCHANGED
             if (content.contains("UNCHANGED")) {
                 return true;
             }
         }
 
         for (CFGStmtNode child : node.getChildren()) {
-            if (hasPrimeAssignment(child)) return true;
+            if (hasDirectStateChange(child)) return true;
         }
         return false;
     }
