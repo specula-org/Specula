@@ -973,18 +973,40 @@ ClientRequestAndSend(i, v) ==
 \* Reference: This models the implicit replication when leader sends MsgAppResp to itself.
 \* Reference: raft.go:745 - Auto-leave trigger condition:
 \*   if r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex && r.state == StateLeader
+\*
+\* Extended: Also supports DisableConfChangeValidation scenario where LeaveJoint can be
+\* proposed before EnterJoint is applied (but after EnterJoint is in the log).
+\* Reference: raft.go:1762-1770 - DisableConfChangeValidation bypasses pending check
 ReplicateImplicitEntry(i) ==
     /\ state[i] = Leader
     /\ LET isJoint == IsJointConfig(i)
+           \* Helper: Check if there's a pending EnterJoint entry in the log (not yet applied)
+           pendingIdx == pendingConfChangeIndex[i]
+           hasPendingEnterJoint ==
+               /\ pendingIdx > 0
+               /\ pendingIdx > log[i].offset
+               /\ pendingIdx <= LastIndex(log[i])
+               /\ LET entry == LogEntry(i, pendingIdx)
+                  IN /\ entry.type = ConfigEntry
+                     /\ "enterJoint" \in DOMAIN entry.value
+                     /\ entry.value.enterJoint = TRUE
+           \* Normal auto-leave: in joint config and conditions met
+           autoLeaveCondition ==
+               /\ isJoint
+               /\ config[i].autoLeave = TRUE
+               /\ applied[i] >= pendingConfChangeIndex[i]
+           \* DisableConfChangeValidation: not in joint but has pending EnterJoint
+           disableValidationCondition ==
+               /\ ~isJoint
+               /\ hasPendingEnterJoint
+           \* Should create LeaveJoint entry?
+           shouldCreateLeaveJoint == autoLeaveCondition \/ disableValidationCondition
        IN
-       \* FIX: When in joint config, must check auto-leave preconditions per raft.go:745
-       \* 1. config[i].autoLeave = TRUE (corresponds to r.trk.Config.AutoLeave)
-       \* 2. applied[i] >= pendingConfChangeIndex[i] (corresponds to newApplied >= r.pendingConfIndex)
-       \* Reference: raft.go:745 "if r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex"
+       \* Precondition: if in joint, must satisfy auto-leave conditions
        /\ (isJoint => (config[i].autoLeave = TRUE /\ applied[i] >= pendingConfChangeIndex[i]))
-       /\ LET entryType == IF isJoint THEN ConfigEntry ELSE ValueEntry
+       /\ LET entryType == IF shouldCreateLeaveJoint THEN ConfigEntry ELSE ValueEntry
               \* For LeaveJoint, use leaveJoint |-> TRUE format to match ApplyConfigUpdate
-              entryValue == IF isJoint
+              entryValue == IF shouldCreateLeaveJoint
                             THEN [leaveJoint |-> TRUE, newconf |-> GetConfig(i), learners |-> GetLearners(i)]
                             ELSE [val |-> 0]
           IN
@@ -998,7 +1020,7 @@ ReplicateImplicitEntry(i) ==
                    mlogTerm    |-> 0,
                    msource     |-> i,
                    mdest       |-> i])
-          /\ IF isJoint
+          /\ IF shouldCreateLeaveJoint
              THEN pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = LastIndex(log'[i])]
              ELSE UNCHANGED pendingConfChangeIndex
     /\ UNCHANGED <<messages, serverVars, candidateVars, matchIndex, commitIndex, applied, configVars, durableState, progressVars, partitions>>
