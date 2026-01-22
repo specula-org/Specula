@@ -263,7 +263,11 @@ public class CFGCALLGraph {
         visited.add(stmtNode);
         // Get current statement content
         String content = stmtNode.getContent();
-        
+
+        // Remove string literals from content before matching function names
+        // This prevents matching function names inside strings like "AddNewServer"
+        String contentWithoutStrings = removeStringLiterals(content);
+
         // Traverse all function names for matching
         for (String funcName : funcNames) {
             // (Recommended) Escape funcName to prevent it from containing regular expression meta characters
@@ -271,9 +275,9 @@ public class CFGCALLGraph {
 
             // Build core regular expression pattern - function name cannot be alphanumeric underscore
             String innerPatternString = "(?<![\\w_])" + quotedFuncName + "(?![\\w_])";
-            
+
             java.util.regex.Pattern compiledPattern = java.util.regex.Pattern.compile(innerPatternString);
-            java.util.regex.Matcher matcher = compiledPattern.matcher(content);
+            java.util.regex.Matcher matcher = compiledPattern.matcher(contentWithoutStrings);
 
             // Use matcher.find() to find matching
             if (matcher.find()) {
@@ -324,6 +328,19 @@ public class CFGCALLGraph {
                type == CFGStmtNode.StmtType.FORALL ||
                type == CFGStmtNode.StmtType.CHOOSE ||
                type == CFGStmtNode.StmtType.DISJUNCTION;
+    }
+
+    /**
+     * Remove string literals from content to prevent matching function names inside strings.
+     * E.g., change.action = "AddNewServer" should not match AddNewServer as a function call.
+     */
+    private String removeStringLiterals(String content) {
+        if (content == null) {
+            return "";
+        }
+        // Replace all double-quoted strings with empty string
+        // This handles strings like "AddNewServer", "RemoveServer", etc.
+        return content.replaceAll("\"[^\"]*\"", "");
     }
 
     private void initializeInvocationKinds() {

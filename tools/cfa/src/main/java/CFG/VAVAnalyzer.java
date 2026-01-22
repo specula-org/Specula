@@ -137,7 +137,8 @@ public class VAVAnalyzer {
         }
 
         // Record variables changed by this function
-        funcVarChange.put(funcNode.getFuncName(), getAllLeafOutVar(root));
+        Set<String> leafOutVar = getAllLeafOutVar(root);
+        funcVarChange.put(funcNode.getFuncName(), leafOutVar);
     }
 
     private void analyzeStmtSA(CFGFuncNode funcNode, CFGStmtNode stmt, Set<String> parentOutVar) {
@@ -287,39 +288,18 @@ public class VAVAnalyzer {
     // ============================================================================
 
     private void detectPureFunctions() {
-        // A function is pure if it has no direct prime assignment or UNCHANGED in its body
-        // This is different from funcVarChange which includes called functions' effects
+        // Use funcVarChange to detect pure functions
+        // A function is pure if funcVarChange is empty (no variables changed, including via calls)
         pureFunctions.clear();
         for (CFGFuncNode funcNode : callGraph.getAllFuncNodes()) {
-            if (!hasDirectStateChange(funcNode.getRoot())) {
+            Set<String> changedVars = funcVarChange.get(funcNode.getFuncName());
+            boolean isPure = (changedVars == null || changedVars.isEmpty());
+
+            if (isPure) {
                 pureFunctions.add(funcNode.getFuncName());
                 funcNode.setPureExpression(true);
             }
         }
-    }
-
-    private boolean hasDirectStateChange(CFGStmtNode node) {
-        if (node == null) return false;
-
-        String content = node.getContent();
-        if (content != null && !content.isEmpty()) {
-            // Check for var' = ..., var' \in ..., var' \subseteq ...
-            for (String var : variables) {
-                String primePattern = "(?<![\\w_])" + Pattern.quote(var) + "'\\s*(=|\\\\in|\\\\subseteq)";
-                if (Pattern.compile(primePattern).matcher(content).find()) {
-                    return true;
-                }
-            }
-            // Check for UNCHANGED
-            if (content.contains("UNCHANGED")) {
-                return true;
-            }
-        }
-
-        for (CFGStmtNode child : node.getChildren()) {
-            if (hasDirectStateChange(child)) return true;
-        }
-        return false;
     }
 
     private void buildParentMap(CFGStmtNode node) {
