@@ -183,7 +183,7 @@ func run(cfg runConfig) error {
 			raftCfg.TraceLogger = tracer
 			// Write config on first node creation
 			if !configWritten {
-				ndjsonTracer.WriteConfig(raftCfg.MaxInflightMsgs)
+				ndjsonTracer.WriteConfig(raftCfg.MaxInflightMsgs, raftCfg.ReadOnlyOption)
 				configWritten = true
 			}
 		},
@@ -345,5 +345,7 @@ func scenarioMap() map[string]string {
 		"snapshot_status_report":                filepath.Join("testdata", "snapshot_status_report.txt"),
 		"snapshot_status_report_failure":        filepath.Join("testdata", "snapshot_status_report_failure.txt"),
 		"report_unreachable":                    filepath.Join("testdata", "report_unreachable.txt"),
+		"read_index_safe":                       filepath.Join("testdata", "read_index_safe.txt"),
+		"read_index_lease_based":                filepath.Join("testdata", "read_index_lease_based.txt"),
 	}
 }

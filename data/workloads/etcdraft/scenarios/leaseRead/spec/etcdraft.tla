@@ -54,6 +54,16 @@ CONSTANT
 
 ASSUME MaxInflightMsgs \in Nat /\ MaxInflightMsgs > 0
 
+\* ReadOnly mode configuration
+\* Reference: raft.go:56-68, ReadOnlyOption
+\* "ReadOnlySafe" - requires quorum ack (default)
+\* "ReadOnlyLeaseBased" - relies on leader lease
+CONSTANT
+    \* @type: Str;
+    ReadOnlyOption
+
+ASSUME ReadOnlyOption \in {"ReadOnlySafe", "ReadOnlyLeaseBased"}
+
 \* FIFO message ordering control
 \* When TRUE, messages are tagged with sequence numbers and must be received in order
 CONSTANT MsgNoReorder

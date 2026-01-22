@@ -101,6 +101,15 @@ TraceMaxInflightMsgs == TLCEval(
        ELSE 256
 )
 
+\* Extract ReadOnlyOption from trace config line (tag="config")
+\* If no config line exists, use default "ReadOnlySafe"
+TraceReadOnlyOption == TLCEval(
+    LET configLines == SelectSeq(ndJsonDeserialize(JsonFile), LAMBDA x: "tag" \in DOMAIN x /\ x.tag = "config")
+    IN IF Len(configLines) > 0 /\ "config" \in DOMAIN configLines[1] /\ "ReadOnlyOption" \in DOMAIN configLines[1].config
+       THEN configLines[1].config.ReadOnlyOption
+       ELSE "ReadOnlySafe"
+)
+
 TraceInitServerVars == 
     /\ currentTerm = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN 0 ELSE LastBootstrapLog[i].event.state.term]
     /\ state = [i \in Server |-> IF BootstrapLogIndicesForServer(i)={} THEN Follower ELSE LastBootstrapLog[i].event.role]
