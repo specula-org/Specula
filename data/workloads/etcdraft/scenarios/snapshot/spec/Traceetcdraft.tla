@@ -269,11 +269,15 @@ ValidatePostStates(i) ==
     /\ votedFor'[i] = logline.event.state.vote
     /\ LastIndex(log'[i]) = logline.event.log
     /\ commitIndex'[i] = logline.event.state.commit
-    \* Note: applied is not validated in post-states because spec doesn't update it
-    \* (applied is updated asynchronously by application layer, not by raft actions)
     /\ config'[i].jointConfig = ConfFromLog(logline)
     /\ log'[i].snapshotIndex = logline.event.state.snapshotIndex
     /\ log'[i].snapshotTerm = logline.event.state.snapshotTerm
+    \* Validate applied if present in trace
+    /\ "applied" \in DOMAIN logline.event.state =>
+        applied'[i] = logline.event.state.applied
+    \* Validate config.learners if present in trace
+    /\ "learners" \in DOMAIN logline.event =>
+        config'[i].learners = ToSet(logline.event.learners)
 
 -------------------------------------------------------------------------------------
 \* Progress-specific validation helpers

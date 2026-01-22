@@ -1001,13 +1001,20 @@ ReplicateImplicitEntry(i) ==
                /\ hasPendingEnterJoint
            \* Should create LeaveJoint entry?
            shouldCreateLeaveJoint == autoLeaveCondition \/ disableValidationCondition
+           \* For LeaveJoint, determine the correct learners:
+           \* - If disableValidationCondition, get learners from the pending EnterJoint entry
+           \*   (because the EnterJoint hasn't been applied yet, so GetLearners returns old learners)
+           \* - Otherwise (autoLeaveCondition), use current config's learners
+           leaveJointLearners == IF disableValidationCondition
+                                 THEN LogEntry(i, pendingIdx).value.learners
+                                 ELSE GetLearners(i)
        IN
        \* Precondition: if in joint, must satisfy auto-leave conditions
        /\ (isJoint => (config[i].autoLeave = TRUE /\ applied[i] >= pendingConfChangeIndex[i]))
        /\ LET entryType == IF shouldCreateLeaveJoint THEN ConfigEntry ELSE ValueEntry
               \* For LeaveJoint, use leaveJoint |-> TRUE format to match ApplyConfigUpdate
               entryValue == IF shouldCreateLeaveJoint
-                            THEN [leaveJoint |-> TRUE, newconf |-> GetConfig(i), learners |-> GetLearners(i)]
+                            THEN [leaveJoint |-> TRUE, newconf |-> GetConfig(i), learners |-> leaveJointLearners]
                             ELSE [val |-> 0]
           IN
           /\ Replicate(i, entryValue, entryType)
