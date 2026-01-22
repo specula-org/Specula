@@ -22,6 +22,7 @@ SIMULATE_DEPTH=0
 DEADLOCK_CHECK=false
 CONTINUE_ON_ERROR=false
 CDOT_MODE=false
+JSON_DUMPTRACE=""
 
 # Help function
 usage() {
@@ -37,6 +38,7 @@ usage() {
     echo "  -w NUM     Workers (default: auto)"
     echo "  -t MIN     Timeout in minutes (default: 180)"
     echo "  -o FILE    Output log file (default: generated timestamp)"
+    echo "  -j FILE    Enable JSON trace dump format"
     echo "  -h         Show this help"
     echo ""
     echo "Model Checking Options:"
@@ -65,12 +67,13 @@ usage() {
 }
 
 # Parse arguments
-while getopts "s:c:m:M:w:t:d:k:o:SDCAn:f:p:h" opt; do
+while getopts "s:c:m:M:j:w:t:d:k:o:SDCAn:f:p:h" opt; do
     case $opt in
         s) SPEC_FILE="$OPTARG" ;;
         c) CONFIG_FILE="$OPTARG" ;;
         m) MEMORY="$OPTARG" ;;
         M) OFFHEAP_MEMORY="$OPTARG" ;;
+        j) JSON_DUMPTRACE="$OPTARG" ;;
         w) WORKERS="$OPTARG" ;;
         t) TIMEOUT_MINUTES="$OPTARG" ;;
         d) MAX_DEPTH="$OPTARG" ;;
@@ -247,6 +250,12 @@ if [ $TIMEOUT_MINUTES -gt 0 ]; then
          echo -e "${YELLOW}Warning: 'timeout' command not found. Timeout will be ignored.${NC}"
     fi
 fi
+
+# Add JSON dumptrace
+if [ "$JSON_DUMPTRACE" != "" ]; then
+    TLC_CMD="$TLC_CMD -dumptrace json ${JSON_DUMPTRACE}"
+fi
+
 
 echo -e "${YELLOW}Executing Command:${NC}"
 echo "$TLC_CMD"
