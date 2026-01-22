@@ -13,7 +13,7 @@ You are a TLA+ model checking expert assistant. Your task is to help users run T
 ## Run Command
 
 ```bash
-/home/ubuntu/Specula/scripts/start_background.sh -s MCetcdraft.tla -c MCetcdraft.cfg -S -n 1000000000 -p 100 -m 50G -M 10G -w 90 -t 60
+/home/ubuntu/Specula/scripts/start_background.sh -s MCetcdraft.tla -c MCetcdraft.cfg -S -n 1000000000 -p 100 -m 50G -M 10G -w 90 -t 60 -j counterexample.json
 ```
 
 ## Log Location

@@ -1,0 +1,4471 @@
+[0;32m================================[0m
+[0;32mTLC Simulation Mode[0m
+[0;32m================================[0m
+Spec File:       MCetcdraft.tla
+Config File:     MCetcdraft.cfg
+Memory Limit:    10G
+Off-heap Memory: 10G
+Workers:         90
+Timeout:         60 minutes
+[0;34m--- Simulation Settings ---[0m
+Trace Count:     1000000000
+Trace File:      (not saved)
+Sim Depth:       100
+Log File:        sim_MCetcdraft_20260122_080911.log
+[0;32m================================[0m
+[1;33mExecuting Command:[0m
+timeout 3600s java -XX:+UseParallelGC -Dtlc2.tool.fp.FPSet.impl=tlc2.tool.fp.OffHeapDiskFPSet -XX:MaxDirectMemorySize=10G -Xmx10G -Xms10G -cp /home/kewbish/Downloads/dev/specula/lib/CommunityModules-deps.jar:/home/kewbish/Downloads/dev/specula/lib/tla2tools.jar tlc2.TLC -config MCetcdraft.cfg MCetcdraft.tla -workers 90 -simulate num=1000000000 -depth 100 -dumptrace json trace.json
+
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running Random Simulation with seed 5506336886696627296 with 90 workers on 8 cores with 9813MB heap and 10240MB offheap memory [pid: 758586] (Linux 6.12.62-1-MANJARO amd64, Arch Linux 21.0.9 x86_64).
+Parsing file /home/kewbish/Downloads/dev/specula/data/workloads/etcdraft/scenarios/snapshot/spec/MCetcdraft.tla
+Parsing file /home/kewbish/Downloads/dev/specula/data/workloads/etcdraft/scenarios/snapshot/spec/etcdraft.tla
+Parsing file /tmp/tlc-8051905967895258516/_JsonTrace.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/tla2tools.jar!/tla2sany/StandardModules/_JsonTrace.tla)
+Parsing file /tmp/tlc-8051905967895258516/_TLCTrace.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-8051905967895258516/Naturals.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-8051905967895258516/Integers.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-8051905967895258516/Bags.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-8051905967895258516/FiniteSets.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-8051905967895258516/Sequences.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-8051905967895258516/SequencesExt.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/CommunityModules-deps.jar!/SequencesExt.tla)
+Parsing file /tmp/tlc-8051905967895258516/FiniteSetsExt.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/CommunityModules-deps.jar!/FiniteSetsExt.tla)
+Parsing file /tmp/tlc-8051905967895258516/BagsExt.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/CommunityModules-deps.jar!/BagsExt.tla)
+Parsing file /tmp/tlc-8051905967895258516/TLC.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-8051905967895258516/Folds.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/CommunityModules-deps.jar!/Folds.tla)
+Parsing file /tmp/tlc-8051905967895258516/Functions.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/CommunityModules-deps.jar!/Functions.tla)
+Parsing file /tmp/tlc-8051905967895258516/TLCExt.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Parsing file /tmp/tlc-8051905967895258516/Json.tla (jar:file:/home/kewbish/Downloads/dev/specula/lib/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module Folds
+Semantic processing of module Functions
+Semantic processing of module FiniteSetsExt
+Semantic processing of module SequencesExt
+Semantic processing of module BagsExt
+Semantic processing of module etcdraft
+Semantic errors:
+
+*** Warnings: 10
+
+line 507, col 9 to line 507, col 19 of module etcdraft
+
+The field name "currentTerm" in the record constructor is identical to the existing definition or declaration
+named currentTerm, located at line 114, col 5 to line 114, col 15 of module etcdraft.
+The field in the record will not take the value of the currentTerm definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [currentTerm |-> ...] = {"currentTerm"} holds true.
+
+
+line 508, col 9 to line 508, col 16 of module etcdraft
+
+The field name "votedFor" in the record constructor is identical to the existing definition or declaration
+named votedFor, located at line 123, col 5 to line 123, col 12 of module etcdraft.
+The field in the record will not take the value of the votedFor definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [votedFor |-> ...] = {"votedFor"} holds true.
+
+
+line 509, col 9 to line 509, col 11 of module etcdraft
+
+The field name "log" in the record constructor is identical to the existing definition or declaration
+named log, located at line 131, col 5 to line 131, col 7 of module etcdraft.
+The field in the record will not take the value of the log definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [log |-> ...] = {"log"} holds true.
+
+
+line 514, col 9 to line 514, col 19 of module etcdraft
+
+The field name "commitIndex" in the record constructor is identical to the existing definition or declaration
+named commitIndex, located at line 139, col 5 to line 139, col 15 of module etcdraft.
+The field in the record will not take the value of the commitIndex definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [commitIndex |-> ...] = {"commitIndex"} holds true.
+
+
+line 515, col 9 to line 515, col 14 of module etcdraft
+
+The field name "config" in the record constructor is identical to the existing definition or declaration
+named config, located at line 174, col 5 to line 174, col 10 of module etcdraft.
+The field in the record will not take the value of the config definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [config |-> ...] = {"config"} holds true.
+
+
+line 576, col 9 to line 576, col 19 of module etcdraft
+
+The field name "currentTerm" in the record constructor is identical to the existing definition or declaration
+named currentTerm, located at line 114, col 5 to line 114, col 15 of module etcdraft.
+The field in the record will not take the value of the currentTerm definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [currentTerm |-> ...] = {"currentTerm"} holds true.
+
+
+line 577, col 9 to line 577, col 16 of module etcdraft
+
+The field name "votedFor" in the record constructor is identical to the existing definition or declaration
+named votedFor, located at line 123, col 5 to line 123, col 12 of module etcdraft.
+The field in the record will not take the value of the votedFor definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [votedFor |-> ...] = {"votedFor"} holds true.
+
+
+line 578, col 9 to line 578, col 11 of module etcdraft
+
+The field name "log" in the record constructor is identical to the existing definition or declaration
+named log, located at line 131, col 5 to line 131, col 7 of module etcdraft.
+The field in the record will not take the value of the log definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [log |-> ...] = {"log"} holds true.
+
+
+line 583, col 9 to line 583, col 19 of module etcdraft
+
+The field name "commitIndex" in the record constructor is identical to the existing definition or declaration
+named commitIndex, located at line 139, col 5 to line 139, col 15 of module etcdraft.
+The field in the record will not take the value of the commitIndex definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [commitIndex |-> ...] = {"commitIndex"} holds true.
+
+
+line 584, col 9 to line 584, col 14 of module etcdraft
+
+The field name "config" in the record constructor is identical to the existing definition or declaration
+named config, located at line 174, col 5 to line 174, col 10 of module etcdraft.
+The field in the record will not take the value of the config definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [config |-> ...] = {"config"} holds true.
+
+
+
+Semantic processing of module TLCExt
+Semantic errors:
+
+*** Warnings: 10
+
+line 507, col 9 to line 507, col 19 of module etcdraft
+
+The field name "currentTerm" in the record constructor is identical to the existing definition or declaration
+named currentTerm, located at line 114, col 5 to line 114, col 15 of module etcdraft.
+The field in the record will not take the value of the currentTerm definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [currentTerm |-> ...] = {"currentTerm"} holds true.
+
+
+line 508, col 9 to line 508, col 16 of module etcdraft
+
+The field name "votedFor" in the record constructor is identical to the existing definition or declaration
+named votedFor, located at line 123, col 5 to line 123, col 12 of module etcdraft.
+The field in the record will not take the value of the votedFor definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [votedFor |-> ...] = {"votedFor"} holds true.
+
+
+line 509, col 9 to line 509, col 11 of module etcdraft
+
+The field name "log" in the record constructor is identical to the existing definition or declaration
+named log, located at line 131, col 5 to line 131, col 7 of module etcdraft.
+The field in the record will not take the value of the log definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [log |-> ...] = {"log"} holds true.
+
+
+line 514, col 9 to line 514, col 19 of module etcdraft
+
+The field name "commitIndex" in the record constructor is identical to the existing definition or declaration
+named commitIndex, located at line 139, col 5 to line 139, col 15 of module etcdraft.
+The field in the record will not take the value of the commitIndex definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [commitIndex |-> ...] = {"commitIndex"} holds true.
+
+
+line 515, col 9 to line 515, col 14 of module etcdraft
+
+The field name "config" in the record constructor is identical to the existing definition or declaration
+named config, located at line 174, col 5 to line 174, col 10 of module etcdraft.
+The field in the record will not take the value of the config definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [config |-> ...] = {"config"} holds true.
+
+
+line 576, col 9 to line 576, col 19 of module etcdraft
+
+The field name "currentTerm" in the record constructor is identical to the existing definition or declaration
+named currentTerm, located at line 114, col 5 to line 114, col 15 of module etcdraft.
+The field in the record will not take the value of the currentTerm definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [currentTerm |-> ...] = {"currentTerm"} holds true.
+
+
+line 577, col 9 to line 577, col 16 of module etcdraft
+
+The field name "votedFor" in the record constructor is identical to the existing definition or declaration
+named votedFor, located at line 123, col 5 to line 123, col 12 of module etcdraft.
+The field in the record will not take the value of the votedFor definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [votedFor |-> ...] = {"votedFor"} holds true.
+
+
+line 578, col 9 to line 578, col 11 of module etcdraft
+
+The field name "log" in the record constructor is identical to the existing definition or declaration
+named log, located at line 131, col 5 to line 131, col 7 of module etcdraft.
+The field in the record will not take the value of the log definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [log |-> ...] = {"log"} holds true.
+
+
+line 583, col 9 to line 583, col 19 of module etcdraft
+
+The field name "commitIndex" in the record constructor is identical to the existing definition or declaration
+named commitIndex, located at line 139, col 5 to line 139, col 15 of module etcdraft.
+The field in the record will not take the value of the commitIndex definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [commitIndex |-> ...] = {"commitIndex"} holds true.
+
+
+line 584, col 9 to line 584, col 14 of module etcdraft
+
+The field name "config" in the record constructor is identical to the existing definition or declaration
+named config, located at line 174, col 5 to line 174, col 10 of module etcdraft.
+The field in the record will not take the value of the config definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [config |-> ...] = {"config"} holds true.
+
+
+
+Semantic processing of module Json
+Semantic errors:
+
+*** Warnings: 10
+
+line 507, col 9 to line 507, col 19 of module etcdraft
+
+The field name "currentTerm" in the record constructor is identical to the existing definition or declaration
+named currentTerm, located at line 114, col 5 to line 114, col 15 of module etcdraft.
+The field in the record will not take the value of the currentTerm definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [currentTerm |-> ...] = {"currentTerm"} holds true.
+
+
+line 508, col 9 to line 508, col 16 of module etcdraft
+
+The field name "votedFor" in the record constructor is identical to the existing definition or declaration
+named votedFor, located at line 123, col 5 to line 123, col 12 of module etcdraft.
+The field in the record will not take the value of the votedFor definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [votedFor |-> ...] = {"votedFor"} holds true.
+
+
+line 509, col 9 to line 509, col 11 of module etcdraft
+
+The field name "log" in the record constructor is identical to the existing definition or declaration
+named log, located at line 131, col 5 to line 131, col 7 of module etcdraft.
+The field in the record will not take the value of the log definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [log |-> ...] = {"log"} holds true.
+
+
+line 514, col 9 to line 514, col 19 of module etcdraft
+
+The field name "commitIndex" in the record constructor is identical to the existing definition or declaration
+named commitIndex, located at line 139, col 5 to line 139, col 15 of module etcdraft.
+The field in the record will not take the value of the commitIndex definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [commitIndex |-> ...] = {"commitIndex"} holds true.
+
+
+line 515, col 9 to line 515, col 14 of module etcdraft
+
+The field name "config" in the record constructor is identical to the existing definition or declaration
+named config, located at line 174, col 5 to line 174, col 10 of module etcdraft.
+The field in the record will not take the value of the config definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [config |-> ...] = {"config"} holds true.
+
+
+line 576, col 9 to line 576, col 19 of module etcdraft
+
+The field name "currentTerm" in the record constructor is identical to the existing definition or declaration
+named currentTerm, located at line 114, col 5 to line 114, col 15 of module etcdraft.
+The field in the record will not take the value of the currentTerm definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [currentTerm |-> ...] = {"currentTerm"} holds true.
+
+
+line 577, col 9 to line 577, col 16 of module etcdraft
+
+The field name "votedFor" in the record constructor is identical to the existing definition or declaration
+named votedFor, located at line 123, col 5 to line 123, col 12 of module etcdraft.
+The field in the record will not take the value of the votedFor definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [votedFor |-> ...] = {"votedFor"} holds true.
+
+
+line 578, col 9 to line 578, col 11 of module etcdraft
+
+The field name "log" in the record constructor is identical to the existing definition or declaration
+named log, located at line 131, col 5 to line 131, col 7 of module etcdraft.
+The field in the record will not take the value of the log definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [log |-> ...] = {"log"} holds true.
+
+
+line 583, col 9 to line 583, col 19 of module etcdraft
+
+The field name "commitIndex" in the record constructor is identical to the existing definition or declaration
+named commitIndex, located at line 139, col 5 to line 139, col 15 of module etcdraft.
+The field in the record will not take the value of the commitIndex definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [commitIndex |-> ...] = {"commitIndex"} holds true.
+
+
+line 584, col 9 to line 584, col 14 of module etcdraft
+
+The field name "config" in the record constructor is identical to the existing definition or declaration
+named config, located at line 174, col 5 to line 174, col 10 of module etcdraft.
+The field in the record will not take the value of the config definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [config |-> ...] = {"config"} holds true.
+
+
+
+Semantic processing of module _JsonTrace
+Semantic errors:
+
+*** Warnings: 10
+
+line 507, col 9 to line 507, col 19 of module etcdraft
+
+The field name "currentTerm" in the record constructor is identical to the existing definition or declaration
+named currentTerm, located at line 114, col 5 to line 114, col 15 of module etcdraft.
+The field in the record will not take the value of the currentTerm definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [currentTerm |-> ...] = {"currentTerm"} holds true.
+
+
+line 508, col 9 to line 508, col 16 of module etcdraft
+
+The field name "votedFor" in the record constructor is identical to the existing definition or declaration
+named votedFor, located at line 123, col 5 to line 123, col 12 of module etcdraft.
+The field in the record will not take the value of the votedFor definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [votedFor |-> ...] = {"votedFor"} holds true.
+
+
+line 509, col 9 to line 509, col 11 of module etcdraft
+
+The field name "log" in the record constructor is identical to the existing definition or declaration
+named log, located at line 131, col 5 to line 131, col 7 of module etcdraft.
+The field in the record will not take the value of the log definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [log |-> ...] = {"log"} holds true.
+
+
+line 514, col 9 to line 514, col 19 of module etcdraft
+
+The field name "commitIndex" in the record constructor is identical to the existing definition or declaration
+named commitIndex, located at line 139, col 5 to line 139, col 15 of module etcdraft.
+The field in the record will not take the value of the commitIndex definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [commitIndex |-> ...] = {"commitIndex"} holds true.
+
+
+line 515, col 9 to line 515, col 14 of module etcdraft
+
+The field name "config" in the record constructor is identical to the existing definition or declaration
+named config, located at line 174, col 5 to line 174, col 10 of module etcdraft.
+The field in the record will not take the value of the config definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [config |-> ...] = {"config"} holds true.
+
+
+line 576, col 9 to line 576, col 19 of module etcdraft
+
+The field name "currentTerm" in the record constructor is identical to the existing definition or declaration
+named currentTerm, located at line 114, col 5 to line 114, col 15 of module etcdraft.
+The field in the record will not take the value of the currentTerm definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [currentTerm |-> ...] = {"currentTerm"} holds true.
+
+
+line 577, col 9 to line 577, col 16 of module etcdraft
+
+The field name "votedFor" in the record constructor is identical to the existing definition or declaration
+named votedFor, located at line 123, col 5 to line 123, col 12 of module etcdraft.
+The field in the record will not take the value of the votedFor definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [votedFor |-> ...] = {"votedFor"} holds true.
+
+
+line 578, col 9 to line 578, col 11 of module etcdraft
+
+The field name "log" in the record constructor is identical to the existing definition or declaration
+named log, located at line 131, col 5 to line 131, col 7 of module etcdraft.
+The field in the record will not take the value of the log definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [log |-> ...] = {"log"} holds true.
+
+
+line 583, col 9 to line 583, col 19 of module etcdraft
+
+The field name "commitIndex" in the record constructor is identical to the existing definition or declaration
+named commitIndex, located at line 139, col 5 to line 139, col 15 of module etcdraft.
+The field in the record will not take the value of the commitIndex definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [commitIndex |-> ...] = {"commitIndex"} holds true.
+
+
+line 584, col 9 to line 584, col 14 of module etcdraft
+
+The field name "config" in the record constructor is identical to the existing definition or declaration
+named config, located at line 174, col 5 to line 174, col 10 of module etcdraft.
+The field in the record will not take the value of the config definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [config |-> ...] = {"config"} holds true.
+
+
+
+Semantic processing of module _TLCTrace
+Semantic errors:
+
+*** Warnings: 10
+
+line 507, col 9 to line 507, col 19 of module etcdraft
+
+The field name "currentTerm" in the record constructor is identical to the existing definition or declaration
+named currentTerm, located at line 114, col 5 to line 114, col 15 of module etcdraft.
+The field in the record will not take the value of the currentTerm definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [currentTerm |-> ...] = {"currentTerm"} holds true.
+
+
+line 508, col 9 to line 508, col 16 of module etcdraft
+
+The field name "votedFor" in the record constructor is identical to the existing definition or declaration
+named votedFor, located at line 123, col 5 to line 123, col 12 of module etcdraft.
+The field in the record will not take the value of the votedFor definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [votedFor |-> ...] = {"votedFor"} holds true.
+
+
+line 509, col 9 to line 509, col 11 of module etcdraft
+
+The field name "log" in the record constructor is identical to the existing definition or declaration
+named log, located at line 131, col 5 to line 131, col 7 of module etcdraft.
+The field in the record will not take the value of the log definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [log |-> ...] = {"log"} holds true.
+
+
+line 514, col 9 to line 514, col 19 of module etcdraft
+
+The field name "commitIndex" in the record constructor is identical to the existing definition or declaration
+named commitIndex, located at line 139, col 5 to line 139, col 15 of module etcdraft.
+The field in the record will not take the value of the commitIndex definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [commitIndex |-> ...] = {"commitIndex"} holds true.
+
+
+line 515, col 9 to line 515, col 14 of module etcdraft
+
+The field name "config" in the record constructor is identical to the existing definition or declaration
+named config, located at line 174, col 5 to line 174, col 10 of module etcdraft.
+The field in the record will not take the value of the config definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [config |-> ...] = {"config"} holds true.
+
+
+line 576, col 9 to line 576, col 19 of module etcdraft
+
+The field name "currentTerm" in the record constructor is identical to the existing definition or declaration
+named currentTerm, located at line 114, col 5 to line 114, col 15 of module etcdraft.
+The field in the record will not take the value of the currentTerm definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [currentTerm |-> ...] = {"currentTerm"} holds true.
+
+
+line 577, col 9 to line 577, col 16 of module etcdraft
+
+The field name "votedFor" in the record constructor is identical to the existing definition or declaration
+named votedFor, located at line 123, col 5 to line 123, col 12 of module etcdraft.
+The field in the record will not take the value of the votedFor definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [votedFor |-> ...] = {"votedFor"} holds true.
+
+
+line 578, col 9 to line 578, col 11 of module etcdraft
+
+The field name "log" in the record constructor is identical to the existing definition or declaration
+named log, located at line 131, col 5 to line 131, col 7 of module etcdraft.
+The field in the record will not take the value of the log definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [log |-> ...] = {"log"} holds true.
+
+
+line 583, col 9 to line 583, col 19 of module etcdraft
+
+The field name "commitIndex" in the record constructor is identical to the existing definition or declaration
+named commitIndex, located at line 139, col 5 to line 139, col 15 of module etcdraft.
+The field in the record will not take the value of the commitIndex definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [commitIndex |-> ...] = {"commitIndex"} holds true.
+
+
+line 584, col 9 to line 584, col 14 of module etcdraft
+
+The field name "config" in the record constructor is identical to the existing definition or declaration
+named config, located at line 174, col 5 to line 174, col 10 of module etcdraft.
+The field in the record will not take the value of the config definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [config |-> ...] = {"config"} holds true.
+
+
+
+Semantic processing of module MCetcdraft
+Semantic errors:
+
+*** Warnings: 15
+
+line 507, col 9 to line 507, col 19 of module etcdraft
+
+The field name "currentTerm" in the record constructor is identical to the existing definition or declaration
+named currentTerm, located at line 114, col 5 to line 114, col 15 of module etcdraft.
+The field in the record will not take the value of the currentTerm definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [currentTerm |-> ...] = {"currentTerm"} holds true.
+
+
+line 508, col 9 to line 508, col 16 of module etcdraft
+
+The field name "votedFor" in the record constructor is identical to the existing definition or declaration
+named votedFor, located at line 123, col 5 to line 123, col 12 of module etcdraft.
+The field in the record will not take the value of the votedFor definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [votedFor |-> ...] = {"votedFor"} holds true.
+
+
+line 509, col 9 to line 509, col 11 of module etcdraft
+
+The field name "log" in the record constructor is identical to the existing definition or declaration
+named log, located at line 131, col 5 to line 131, col 7 of module etcdraft.
+The field in the record will not take the value of the log definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [log |-> ...] = {"log"} holds true.
+
+
+line 514, col 9 to line 514, col 19 of module etcdraft
+
+The field name "commitIndex" in the record constructor is identical to the existing definition or declaration
+named commitIndex, located at line 139, col 5 to line 139, col 15 of module etcdraft.
+The field in the record will not take the value of the commitIndex definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [commitIndex |-> ...] = {"commitIndex"} holds true.
+
+
+line 515, col 9 to line 515, col 14 of module etcdraft
+
+The field name "config" in the record constructor is identical to the existing definition or declaration
+named config, located at line 174, col 5 to line 174, col 10 of module etcdraft.
+The field in the record will not take the value of the config definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [config |-> ...] = {"config"} holds true.
+
+
+line 576, col 9 to line 576, col 19 of module etcdraft
+
+The field name "currentTerm" in the record constructor is identical to the existing definition or declaration
+named currentTerm, located at line 114, col 5 to line 114, col 15 of module etcdraft.
+The field in the record will not take the value of the currentTerm definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [currentTerm |-> ...] = {"currentTerm"} holds true.
+
+
+line 577, col 9 to line 577, col 16 of module etcdraft
+
+The field name "votedFor" in the record constructor is identical to the existing definition or declaration
+named votedFor, located at line 123, col 5 to line 123, col 12 of module etcdraft.
+The field in the record will not take the value of the votedFor definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [votedFor |-> ...] = {"votedFor"} holds true.
+
+
+line 578, col 9 to line 578, col 11 of module etcdraft
+
+The field name "log" in the record constructor is identical to the existing definition or declaration
+named log, located at line 131, col 5 to line 131, col 7 of module etcdraft.
+The field in the record will not take the value of the log definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [log |-> ...] = {"log"} holds true.
+
+
+line 583, col 9 to line 583, col 19 of module etcdraft
+
+The field name "commitIndex" in the record constructor is identical to the existing definition or declaration
+named commitIndex, located at line 139, col 5 to line 139, col 15 of module etcdraft.
+The field in the record will not take the value of the commitIndex definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [commitIndex |-> ...] = {"commitIndex"} holds true.
+
+
+line 584, col 9 to line 584, col 14 of module etcdraft
+
+The field name "config" in the record constructor is identical to the existing definition or declaration
+named config, located at line 174, col 5 to line 174, col 10 of module etcdraft.
+The field in the record will not take the value of the config definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [config |-> ...] = {"config"} holds true.
+
+
+line 118, col 9 to line 118, col 19 of module MCetcdraft
+
+The field name "currentTerm" in the record constructor is identical to the existing definition or declaration
+named currentTerm, located at line 114, col 5 to line 114, col 15 of module etcdraft.
+The field in the record will not take the value of the currentTerm definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [currentTerm |-> ...] = {"currentTerm"} holds true.
+
+
+line 119, col 9 to line 119, col 16 of module MCetcdraft
+
+The field name "votedFor" in the record constructor is identical to the existing definition or declaration
+named votedFor, located at line 123, col 5 to line 123, col 12 of module etcdraft.
+The field in the record will not take the value of the votedFor definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [votedFor |-> ...] = {"votedFor"} holds true.
+
+
+line 120, col 9 to line 120, col 11 of module MCetcdraft
+
+The field name "log" in the record constructor is identical to the existing definition or declaration
+named log, located at line 131, col 5 to line 131, col 7 of module etcdraft.
+The field in the record will not take the value of the log definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [log |-> ...] = {"log"} holds true.
+
+
+line 125, col 9 to line 125, col 19 of module MCetcdraft
+
+The field name "commitIndex" in the record constructor is identical to the existing definition or declaration
+named commitIndex, located at line 139, col 5 to line 139, col 15 of module etcdraft.
+The field in the record will not take the value of the commitIndex definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [commitIndex |-> ...] = {"commitIndex"} holds true.
+
+
+line 126, col 9 to line 126, col 14 of module MCetcdraft
+
+The field name "config" in the record constructor is identical to the existing definition or declaration
+named config, located at line 174, col 5 to line 174, col 10 of module etcdraft.
+The field in the record will not take the value of the config definition or declaration.
+In TLA+, field names in records are strings, regardless of any similarly named declarations or definitions.
+Therefore, DOMAIN [config |-> ...] = {"config"} holds true.
+
+
+
+Starting... (2026-01-22 08:09:12)
+Computed 1 initial states...
+Finished computing initial states: 1 distinct state generated at 2026-01-22 08:09:12.
+Error: Invariant VotesRespondedSubsetInv is violated.
+Error: The behavior up to this point is:
+State 1: <MCInit line 290, col 5 to line 291, col 226 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 0,
+  request |-> 0,
+  restart |-> 0,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 0,
+  snapshot |-> 0,
+  compact |-> 0,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = <<>>
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Follower @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> Nil @@ s2 :> Nil @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = <<>>
+/\ currentTerm = (s1 :> 1 @@ s2 :> 1 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 2: <MCTimeout(s1) line 152, col 5 to line 156, col 74 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 1,
+  request |-> 0,
+  restart |-> 0,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 0,
+  snapshot |-> 0,
+  compact |-> 0,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = <<>>
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Candidate @@ s2 :> Follower @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> Nil @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = <<>>
+/\ currentTerm = (s1 :> 2 @@ s2 :> 1 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 3: <MCRestart(s1) line 168, col 5 to line 170, col 74 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 1,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 0,
+  snapshot |-> 0,
+  compact |-> 0,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = <<>>
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Follower @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> Nil @@ s2 :> Nil @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = <<>>
+/\ currentTerm = (s1 :> 1 @@ s2 :> 1 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 4: <MCNextAsync(s2) line 338, col 8 to line 339, col 41 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 1,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 0,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = <<>>
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Follower @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> Nil @@ s2 :> Nil @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = <<>>
+/\ currentTerm = (s1 :> 1 @@ s2 :> 1 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 5: <MCTimeout(s1) line 152, col 5 to line 156, col 74 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 2,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 0,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = <<>>
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Candidate @@ s2 :> Follower @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> Nil @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = <<>>
+/\ currentTerm = (s1 :> 2 @@ s2 :> 1 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 6: <MCNextAsync(s1) line 300, col 8 to line 301, col 29 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 2,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 0,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = ( [ mdest |-> s1,
+    msource |-> s1,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Candidate @@ s2 :> Follower @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> Nil @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = <<>>
+/\ currentTerm = (s1 :> 2 @@ s2 :> 1 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 7: <MCStepDown(s1) line 192, col 5 to line 194, col 75 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 2,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 1,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = ( [ mdest |-> s1,
+    msource |-> s1,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Follower @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> Nil @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = <<>>
+/\ currentTerm = (s1 :> 2 @@ s2 :> 1 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 8: <MCTimeout(s2) line 152, col 5 to line 156, col 74 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 3,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 1,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = ( [ mdest |-> s1,
+    msource |-> s1,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = <<>>
+/\ currentTerm = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 9: <MCTimeout(s1) line 152, col 5 to line 156, col 74 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 4,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 1,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = ( [ mdest |-> s1,
+    msource |-> s1,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Candidate @@ s2 :> Candidate @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = <<>>
+/\ currentTerm = (s1 :> 3 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 10: <MCNextAsync(s2) line 300, col 8 to line 301, col 29 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 4,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 1,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = ( [ mdest |-> s1,
+    msource |-> s1,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Candidate @@ s2 :> Candidate @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = <<>>
+/\ currentTerm = (s1 :> 3 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 11: <MCStepDown(s1) line 192, col 5 to line 194, col 75 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 4,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 2,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = ( [ mdest |-> s1,
+    msource |-> s1,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = <<>>
+/\ currentTerm = (s1 :> 3 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 12: <MCTimeout(s2) line 152, col 5 to line 156, col 74 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 5,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 2,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = ( [ mdest |-> s1,
+    msource |-> s1,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = <<>>
+/\ currentTerm = (s1 :> 3 @@ s2 :> 3 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 13: <MCTimeout(s2) line 152, col 5 to line 156, col 74 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 6,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 2,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = ( [ mdest |-> s1,
+    msource |-> s1,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = <<>>
+/\ currentTerm = (s1 :> 3 @@ s2 :> 4 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 14: <MCNextAsyncAll line 369, col 8 to line 370, col 29 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 6,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 2,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = ( [ mdest |-> s1,
+    msource |-> s1,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 1,
+        votedFor |-> Nil,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 4,
+        votedFor |-> s2,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = ( [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ currentTerm = (s1 :> 3 @@ s2 :> 4 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 15: <MCNextAsyncAll line 369, col 8 to line 370, col 29 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 6,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 0,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 2,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = <<>>
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 3,
+        votedFor |-> s1,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        snapshotHistory |-> <<>>,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ] ] @@
+  s2 :>
+      [ currentTerm |-> 4,
+        votedFor |-> s2,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = ( [ mdest |-> s1,
+    msource |-> s1,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ currentTerm = (s1 :> 3 @@ s2 :> 4 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 16: <MCNextUnreliable line 384, col 8 to line 386, col 27 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 6,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 1,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 2,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = <<>>
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 3,
+        votedFor |-> s1,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 4,
+        votedFor |-> s2,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = ( [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ currentTerm = (s1 :> 3 @@ s2 :> 4 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 17: <MCNextAsync(s2) line 300, col 8 to line 301, col 29 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 6,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 1,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 2,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = ( [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 4,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 3,
+        votedFor |-> s1,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 4,
+        votedFor |-> s2,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = ( [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ currentTerm = (s1 :> 3 @@ s2 :> 4 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 18: <MCDynamicConfigActions line 427, col 8 to line 437, col 29 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 6,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 1,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 2,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = ( [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 4,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 1 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :> [learners |-> {}, jointConfig |-> <<{s1}, {}>>, autoLeave |-> FALSE] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 3,
+        votedFor |-> s1,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 4,
+        votedFor |-> s2,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = ( [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ currentTerm = (s1 :> 3 @@ s2 :> 4 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 19: <MCNextAsyncAll line 369, col 8 to line 370, col 29 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 6,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 1,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 2,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = <<>>
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 1 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :> [learners |-> {}, jointConfig |-> <<{s1}, {}>>, autoLeave |-> FALSE] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 3,
+        votedFor |-> s1,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 4,
+        votedFor |-> s2,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1}, {}>>,
+              autoLeave |-> FALSE ] ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = ( [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 4,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ currentTerm = (s1 :> 3 @@ s2 :> 4 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+State 20: <MCNextAsync(s2) line 346, col 8 to line 349, col 29 of module MCetcdraft>
+/\ progressState = ( s1 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s2 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s3 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) @@
+  s4 :>
+      ( s1 :> StateProbe @@
+        s2 :> StateProbe @@
+        s3 :> StateProbe @@
+        s4 :> StateProbe ) )
+/\ msgSeqCounter = 0
+/\ constraintCounters = [ timeout |-> 6,
+  request |-> 0,
+  restart |-> 1,
+  drop |-> 1,
+  duplicate |-> 0,
+  heartbeat |-> 0,
+  stepDown |-> 2,
+  snapshot |-> 0,
+  compact |-> 1,
+  confChange |-> 0,
+  reportUnreachable |-> 0,
+  partition |-> 0 ]
+/\ pendingMessages = <<>>
+/\ appliedConfigIndex = (s1 :> 2 @@ s2 :> 1 @@ s3 :> 0 @@ s4 :> 0)
+/\ reconfigCount = 0
+/\ votesResponded = (s1 :> {} @@ s2 :> {s2} @@ s3 :> {} @@ s4 :> {})
+/\ msgAppFlowPaused = ( s1 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s2 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s3 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) @@
+  s4 :> (s1 :> FALSE @@ s2 :> FALSE @@ s3 :> FALSE @@ s4 :> FALSE) )
+/\ state = (s1 :> Follower @@ s2 :> Candidate @@ s3 :> Follower @@ s4 :> Follower)
+/\ pendingSnapshot = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ config = ( s1 :>
+      [ learners |-> {},
+        jointConfig |-> <<{s1, s2}, {}>>,
+        autoLeave |-> FALSE ] @@
+  s2 :> [learners |-> {}, jointConfig |-> <<{s1}, {}>>, autoLeave |-> FALSE] @@
+  s3 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] @@
+  s4 :> [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE] )
+/\ matchIndex = ( s1 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s2 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s3 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) @@
+  s4 :> (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0) )
+/\ applied = (s1 :> 0 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ votedFor = (s1 :> s1 @@ s2 :> s2 @@ s3 :> Nil @@ s4 :> Nil)
+/\ durableState = ( s1 :>
+      [ currentTerm |-> 3,
+        votedFor |-> s1,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1, s2}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |-> <<>> ] @@
+  s2 :>
+      [ currentTerm |-> 4,
+        votedFor |-> s2,
+        log |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1,
+        commitIndex |-> 2,
+        config |->
+            [ learners |-> {},
+              jointConfig |-> <<{s1}, {}>>,
+              autoLeave |-> FALSE ],
+        snapshotHistory |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >> ] @@
+  s3 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] @@
+  s4 :>
+      [ currentTerm |-> 0,
+        votedFor |-> Nil,
+        log |-> 0,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0,
+        commitIndex |-> 0,
+        config |->
+            [learners |-> {}, jointConfig |-> <<{}, {}>>, autoLeave |-> FALSE],
+        snapshotHistory |-> <<>> ] )
+/\ historyLog = ( s1 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s2 :>
+      << [ value |-> [newconf |-> {s1}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ],
+         [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+           term |-> 1,
+           type |-> ConfigEntry ] >> @@
+  s3 :> <<>> @@
+  s4 :> <<>> )
+/\ nextIndex = ( s1 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s2 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s3 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) @@
+  s4 :> (s1 :> 1 @@ s2 :> 1 @@ s3 :> 1 @@ s4 :> 1) )
+/\ commitIndex = (s1 :> 2 @@ s2 :> 2 @@ s3 :> 0 @@ s4 :> 0)
+/\ inflights = ( s1 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s2 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s3 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) @@
+  s4 :> (s1 :> {} @@ s2 :> {} @@ s3 :> {} @@ s4 :> {}) )
+/\ messages = ( [ mdest |-> s2,
+    msource |-> s2,
+    mterm |-> 2,
+    mtype |-> RequestVoteResponse,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ currentTerm = (s1 :> 3 @@ s2 :> 4 @@ s3 :> 0 @@ s4 :> 0)
+/\ log = ( s1 :>
+      [ offset |-> 1,
+        entries |->
+            << [ value |-> [newconf |-> {s1}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ],
+               [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s2 :>
+      [ offset |-> 2,
+        entries |->
+            << [ value |-> [newconf |-> {s1, s2}, learners |-> {}],
+                 term |-> 1,
+                 type |-> ConfigEntry ] >>,
+        snapshotIndex |-> 1,
+        snapshotTerm |-> 1 ] @@
+  s3 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] @@
+  s4 :>
+      [ offset |-> 1,
+        entries |-> <<>>,
+        snapshotIndex |-> 0,
+        snapshotTerm |-> 0 ] )
+/\ partitions = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+/\ votesGranted = (s1 :> {} @@ s2 :> {s2} @@ s3 :> {} @@ s4 :> {})
+/\ pendingConfChangeIndex = (s1 :> 0 @@ s2 :> 0 @@ s3 :> 0 @@ s4 :> 0)
+
+The number of states generated: 4885
+Simulation using seed 5506336886696627296 and aril 0
+"CounterExample written: trace.json"
+Progress: 5088 states checked, 94 traces generated (trace length: mean=0, var(x)=0, sd=0)
+Finished in 04s at (2026-01-22 08:09:16)
+Trace exploration spec path: ./MCetcdraft_TTrace_1769098151.tla
+
+[0;32m================================[0m
+[1;33m⚠ Invariant violation found![0m
+[1;33mPlease check log: sim_MCetcdraft_20260122_080911.log[0m
+[0;32m================================[0m
