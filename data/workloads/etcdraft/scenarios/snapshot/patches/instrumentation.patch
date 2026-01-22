@@ -14,10 +14,54 @@ index abf24ce..a11eb2a 100644
  require (
  	github.com/cockroachdb/datadriven v1.0.2
 diff --git a/raft.go b/raft.go
-index 94c2363..bc1d26d 100644
+index 94c2363..c67e67f 100644
 --- a/raft.go
 +++ b/raft.go
-@@ -1627,6 +1627,8 @@ func stepLeader(r *raft, m pb.Message) error {
+@@ -474,7 +474,7 @@ func newRaft(c *Config) *raft {
+ 	if err != nil {
+ 		panic(err)
+ 	}
+-	assertConfStatesEquivalent(r.logger, cs, r.switchToConfig(cfg, trk))
++	assertConfStatesEquivalent(r.logger, cs, r.switchToConfig(cfg, trk, true))
+ 
+ 	if !IsEmptyHardState(hs) {
+ 		r.loadState(hs)
+@@ -742,6 +742,11 @@ func (r *raft) appliedTo(index uint64, size entryEncodingSize) {
+ 	newApplied := max(index, oldApplied)
+ 	r.raftLog.appliedTo(newApplied, size)
+ 
++	// Trace only when applied actually changes
++	if newApplied > oldApplied {
++		traceApplyEntries(r, newApplied)
++	}
++
+ 	if r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex && r.state == StateLeader {
+ 		// If the current (and most recent, at least for this leader's term)
+ 		// configuration should be auto-left, initiate that now. We use a
+@@ -776,9 +781,11 @@ func (r *raft) appliedSnap(snap *pb.Snapshot) {
+ // index changed (in which case the caller should call r.bcastAppend). This can
+ // only be called in StateLeader.
+ func (r *raft) maybeCommit() bool {
+-	defer traceCommit(r)
+-
+-	return r.raftLog.maybeCommit(entryID{term: r.Term, index: r.trk.Committed()})
++	changed := r.raftLog.maybeCommit(entryID{term: r.Term, index: r.trk.Committed()})
++	if changed {
++		traceCommit(r)
++	}
++	return changed
+ }
+ 
+ func (r *raft) reset(term uint64) {
+@@ -1621,12 +1628,16 @@ func stepLeader(r *raft, m pb.Message) error {
+ 		// out the next MsgApp.
+ 		// If snapshot failure, wait for a heartbeat interval before next try
+ 		pr.MsgAppFlowPaused = true
++		// Trace after state transition so prop reflects new state
++		traceReportSnapshotStatus(r, m.From, !m.Reject, pr)
+ 	case pb.MsgUnreachable:
+ 		// During optimistic replication, if the remote becomes unreachable,
+ 		// there is huge probability that a MsgApp is lost.
  		if pr.State == tracker.StateReplicate {
  			pr.BecomeProbe()
  		}
@@ -26,6 +70,39 @@ index 94c2363..bc1d26d 100644
  		r.logger.Debugf("%x failed to send message to %x because it is unreachable [%s]", r.id, m.From, pr)
  	case pb.MsgTransferLeader:
  		if pr.IsLearner {
+@@ -1929,7 +1940,7 @@ func (r *raft) restore(s pb.Snapshot) bool {
+ 		panic(fmt.Sprintf("unable to restore config %+v: %s", cs, err))
+ 	}
+ 
+-	assertConfStatesEquivalent(r.logger, cs, r.switchToConfig(cfg, trk))
++	assertConfStatesEquivalent(r.logger, cs, r.switchToConfig(cfg, trk, true))
+ 
+ 	last := r.raftLog.lastEntryID()
+ 	r.logger.Infof("%x [commit: %d, lastindex: %d, lastterm: %d] restored snapshot [index: %d, term: %d]",
+@@ -1963,7 +1974,7 @@ func (r *raft) applyConfChange(cc pb.ConfChangeV2) pb.ConfState {
+ 		panic(err)
+ 	}
+ 
+-	return r.switchToConfig(cfg, trk)
++	return r.switchToConfig(cfg, trk, false)
+ }
+ 
+ // switchToConfig reconfigures this node to use the provided configuration. It
+@@ -1972,8 +1983,12 @@ func (r *raft) applyConfChange(cc pb.ConfChangeV2) pb.ConfState {
+ // requirements.
+ //
+ // The inputs usually result from restoring a ConfState or applying a ConfChange.
+-func (r *raft) switchToConfig(cfg tracker.Config, trk tracker.ProgressMap) pb.ConfState {
+-	traceConfChangeEvent(cfg, r)
++// skipTrace: if true, skip tracing (used during snapshot restore where config
++// change is part of the atomic HandleSnapshotRequest action).
++func (r *raft) switchToConfig(cfg tracker.Config, trk tracker.ProgressMap, skipTrace bool) pb.ConfState {
++	if !skipTrace {
++		traceConfChangeEvent(cfg, r)
++	}
+ 
+ 	r.trk.Config = cfg
+ 	r.trk.Progress = trk
 diff --git a/rafttest/interaction_env.go b/rafttest/interaction_env.go
 index 16881c4..e658ac6 100644
 --- a/rafttest/interaction_env.go
@@ -42,8 +119,26 @@ index 16881c4..e658ac6 100644
  }
  
  // Node is a member of a raft group tested via an InteractionEnv.
+diff --git a/rafttest/interaction_env_handler.go b/rafttest/interaction_env_handler.go
+index 2ffec2b..a675318 100644
+--- a/rafttest/interaction_env_handler.go
++++ b/rafttest/interaction_env_handler.go
+@@ -192,6 +192,13 @@ func (env *InteractionEnv) Handle(t *testing.T, d datadriven.TestData) string {
+ 		// Example:
+ 		// report-unreachable 1 2
+ 		err = env.handleReportUnreachable(t, d)
++	case "report-snapshot":
++		// Reports the status of a snapshot sent from leader to target.
++		//
++		// Example:
++		// report-snapshot 1 3 ok    (snapshot to node 3 succeeded)
++		// report-snapshot 1 3 fail  (snapshot to node 3 failed)
++		err = env.handleReportSnapshot(t, d)
+ 	default:
+ 		err = fmt.Errorf("unknown command")
+ 	}
 diff --git a/rafttest/interaction_env_handler_compact.go b/rafttest/interaction_env_handler_compact.go
-index 25fa1d2..0ec5ae5 100644
+index 25fa1d2..b17e97d 100644
 --- a/rafttest/interaction_env_handler_compact.go
 +++ b/rafttest/interaction_env_handler_compact.go
 @@ -19,6 +19,7 @@ import (
@@ -54,7 +149,7 @@ index 25fa1d2..0ec5ae5 100644
  )
  
  func (env *InteractionEnv) handleCompact(t *testing.T, d datadriven.TestData) error {
-@@ -36,5 +37,47 @@ func (env *InteractionEnv) Compact(idx int, newFirstIndex uint64) error {
+@@ -36,5 +37,48 @@ func (env *InteractionEnv) Compact(idx int, newFirstIndex uint64) error {
  	if err := env.Nodes[idx].Compact(newFirstIndex); err != nil {
  		return err
  	}
@@ -85,11 +180,12 @@ index 25fa1d2..0ec5ae5 100644
 +			Name:   "CompactLog",
 +			NodeID: strconv.FormatUint(nodeID, 10),
 +			State: raft.TracingState{
-+				Term:          status.Term,
-+				Vote:          strconv.FormatUint(status.Vote, 10),
-+				Commit:        status.Commit,
-+				SnapshotIndex: snapshotIndex,
-+				SnapshotTerm:  snapshotTerm,
++				Term:             status.Term,
++				Vote:             strconv.FormatUint(status.Vote, 10),
++				Commit:           status.Commit,
++				SnapshotIndex:    snapshotIndex,
++				SnapshotTerm:     snapshotTerm,
++				PendingConfIndex: env.Nodes[idx].PendingConfIndex(),
 +			},
 +			Role:    status.RaftState.String(),
 +			LogSize: status.Progress[nodeID].Match,
@@ -103,7 +199,7 @@ index 25fa1d2..0ec5ae5 100644
  	return env.RaftLog(idx)
  }
 diff --git a/rafttest/interaction_env_handler_send_snapshot.go b/rafttest/interaction_env_handler_send_snapshot.go
-index c91d4cc..2089b8e 100644
+index c91d4cc..3e3efdf 100644
 --- a/rafttest/interaction_env_handler_send_snapshot.go
 +++ b/rafttest/interaction_env_handler_send_snapshot.go
 @@ -15,6 +15,7 @@
@@ -123,7 +219,7 @@ index c91d4cc..2089b8e 100644
  func (env *InteractionEnv) SendSnapshot(fromIdx, toIdx int) error {
  	snap, err := env.Nodes[fromIdx].Snapshot()
  	if err != nil {
-@@ -46,5 +49,41 @@ func (env *InteractionEnv) SendSnapshot(fromIdx, toIdx int) error {
+@@ -46,5 +49,49 @@ func (env *InteractionEnv) SendSnapshot(fromIdx, toIdx int) error {
  	}
  	env.Messages = append(env.Messages, msg)
  	_, _ = env.Output.WriteString(raft.DescribeMessage(msg, nil))
@@ -141,13 +237,21 @@ index c91d4cc..2089b8e 100644
 +			outgoing = append(outgoing, strconv.FormatUint(id, 10))
 +		}
 +
++		// Get snapshot index/term from storage for accurate tracing
++		firstIndex, _ := env.Nodes[fromIdx].Storage.FirstIndex()
++		snapshotIndex := firstIndex - 1
++		snapshotTerm, _ := env.Nodes[fromIdx].Storage.Term(snapshotIndex)
++
 +		env.Options.TraceLogger.TraceEvent(&raft.TracingEvent{
 +			Name:   "ManualSendSnapshot",
 +			NodeID: strconv.FormatUint(from, 10),
 +			State: raft.TracingState{
-+				Term:   status.Term,
-+				Vote:   strconv.FormatUint(status.Vote, 10),
-+				Commit: status.Commit,
++				Term:             status.Term,
++				Vote:             strconv.FormatUint(status.Vote, 10),
++				Commit:           status.Commit,
++				SnapshotIndex:    snapshotIndex,
++				SnapshotTerm:     snapshotTerm,
++				PendingConfIndex: env.Nodes[fromIdx].PendingConfIndex(),
 +			},
 +			Role:    status.RaftState.String(),
 +			LogSize: snap.Metadata.Index, // Use snapshot index as log size
@@ -165,50 +269,92 @@ index c91d4cc..2089b8e 100644
 +
  	return nil
  }
+diff --git a/rawnode.go b/rawnode.go
+index a4da2ae..6283709 100644
+--- a/rawnode.go
++++ b/rawnode.go
+@@ -560,3 +560,9 @@ func (rn *RawNode) ForgetLeader() error {
+ func (rn *RawNode) ReadIndex(rctx []byte) {
+ 	_ = rn.raft.Step(pb.Message{Type: pb.MsgReadIndex, Entries: []pb.Entry{{Data: rctx}}})
+ }
++
++// PendingConfIndex returns the index of the pending configuration change entry,
++// or 0 if there is no pending config change. Used for trace validation.
++func (rn *RawNode) PendingConfIndex() uint64 {
++	return rn.raft.pendingConfIndex
++}
 diff --git a/state_trace.go b/state_trace.go
-index 8712dc6..7caea73 100644
+index 8712dc6..9c1e84e 100644
 --- a/state_trace.go
 +++ b/state_trace.go
-@@ -48,6 +48,7 @@ const (
+@@ -38,6 +38,7 @@ const (
+ 	rsmChangeConf
+ 	rsmApplyConfChange
+ 	rsmReady
++	rsmApplyEntries
+ 	rsmSendAppendEntriesRequest
+ 	rsmReceiveAppendEntriesRequest
+ 	rsmSendAppendEntriesResponse
+@@ -48,6 +49,8 @@ const (
  	rsmReceiveRequestVoteResponse
  	rsmSendSnapshot
  	rsmReceiveSnapshot
 +	rsmReportUnreachable
++	rsmReportSnapshotStatus
  )
  
  func (e stateMachineEventType) String() string {
-@@ -71,6 +72,7 @@ func (e stateMachineEventType) String() string {
+@@ -61,6 +64,7 @@ func (e stateMachineEventType) String() string {
+ 		"ChangeConf",
+ 		"ApplyConfChange",
+ 		"Ready",
++		"ApplyEntries",
+ 		"SendAppendEntriesRequest",
+ 		"ReceiveAppendEntriesRequest",
+ 		"SendAppendEntriesResponse",
+@@ -71,6 +75,8 @@ func (e stateMachineEventType) String() string {
  		"ReceiveRequestVoteResponse",
  		"SendSnapshot",
  		"ReceiveSnapshot",
 +		"ReportUnreachable",
++		"ReportSnapshotStatus",
  	}[e]
  }
  
-@@ -93,9 +95,11 @@ type TracingEvent struct {
+@@ -87,15 +93,20 @@ type TracingEvent struct {
+ 	Role       string             `json:"role"`
+ 	LogSize    uint64             `json:"log"`
+ 	Conf       [2][]string        `json:"conf"`
++	Learners   []string           `json:"learners,omitempty"`
+ 	Message    *TracingMessage    `json:"msg,omitempty"`
+ 	ConfChange *TracingConfChange `json:"cc,omitempty"`
+ 	Properties map[string]any     `json:"prop,omitempty"`
  }
  
  type TracingState struct {
 -	Term   uint64 `json:"term"`
 -	Vote   string `json:"vote"`
 -	Commit uint64 `json:"commit"`
-+	Term          uint64 `json:"term"`
-+	Vote          string `json:"vote"`
-+	Commit        uint64 `json:"commit"`
-+	SnapshotIndex uint64 `json:"snapshotIndex"`
-+	SnapshotTerm  uint64 `json:"snapshotTerm"`
++	Term             uint64 `json:"term"`
++	Vote             string `json:"vote"`
++	Commit           uint64 `json:"commit"`
++	Applied          uint64 `json:"applied"`
++	SnapshotIndex    uint64 `json:"snapshotIndex"`
++	SnapshotTerm     uint64 `json:"snapshotTerm"`
++	PendingConfIndex uint64 `json:"pendingConfIndex"`
  }
  
  type TracingMessage struct {
-@@ -118,16 +122,23 @@ type SingleConfChange struct {
+@@ -118,16 +129,26 @@ type SingleConfChange struct {
  }
  
  type TracingConfChange struct {
 -	Changes []SingleConfChange `json:"changes,omitempty"`
 -	NewConf []string           `json:"newconf,omitempty"`
-+	Changes  []SingleConfChange `json:"changes,omitempty"`
-+	NewConf  []string           `json:"newconf,omitempty"`
-+	Learners []string           `json:"learners,omitempty"`
++	Changes    []SingleConfChange `json:"changes,omitempty"`
++	NewConf    []string           `json:"newconf,omitempty"`
++	Learners   []string           `json:"learners,omitempty"`
++	LeaveJoint bool               `json:"leaveJoint,omitempty"`
  }
  
  func makeTracingState(r *raft) TracingState {
@@ -221,15 +367,17 @@ index 8712dc6..7caea73 100644
 -		Term:   hs.Term,
 -		Vote:   strconv.FormatUint(hs.Vote, 10),
 -		Commit: hs.Commit,
-+		Term:          hs.Term,
-+		Vote:          strconv.FormatUint(hs.Vote, 10),
-+		Commit:        hs.Commit,
-+		SnapshotIndex: snapshotIndex,
-+		SnapshotTerm:  snapshotTerm,
++		Term:             hs.Term,
++		Vote:             strconv.FormatUint(hs.Vote, 10),
++		Commit:           hs.Commit,
++		Applied:          r.raftLog.applied,
++		SnapshotIndex:    snapshotIndex,
++		SnapshotTerm:     snapshotTerm,
++		PendingConfIndex: r.pendingConfIndex,
  	}
  }
  
-@@ -140,9 +151,9 @@ func makeTracingMessage(m *raftpb.Message) *TracingMessage {
+@@ -140,9 +161,9 @@ func makeTracingMessage(m *raftpb.Message) *TracingMessage {
  	entries := len(m.Entries)
  	index := m.Index
  	if m.Type == raftpb.MsgSnap {
@@ -242,7 +390,15 @@ index 8712dc6..7caea73 100644
  	}
  	return &TracingMessage{
  		Type:        m.Type.String(),
-@@ -196,6 +207,17 @@ func formatConf(s []uint64) []string {
+@@ -174,6 +195,7 @@ func traceEvent(evt stateMachineEventType, r *raft, m *raftpb.Message, prop map[
+ 		State:      makeTracingState(r),
+ 		LogSize:    r.raftLog.lastIndex(),
+ 		Conf:       [2][]string{formatConf(r.trk.Voters[0].Slice()), formatConf(r.trk.Voters[1].Slice())},
++		Learners:   formatLearners(r.trk.Learners),
+ 		Role:       r.state.String(),
+ 		Message:    makeTracingMessage(m),
+ 		Properties: prop,
+@@ -196,6 +218,17 @@ func formatConf(s []uint64) []string {
  	return r
  }
  
@@ -260,7 +416,23 @@ index 8712dc6..7caea73 100644
  // Use following helper functions to trace specific state and/or
  // transition at corresponding code lines
  func traceInitState(r *raft) {
-@@ -264,8 +286,12 @@ func traceChangeConfEvent(cci raftpb.ConfChangeI, r *raft) {
+@@ -210,6 +243,15 @@ func traceReady(r *raft) {
+ 	traceNodeEvent(rsmReady, r)
+ }
+ 
++func traceApplyEntries(r *raft, newApplied uint64) {
++	if r.traceLogger == nil {
++		return
++	}
++	traceEvent(rsmApplyEntries, r, nil, map[string]any{
++		"applied": newApplied,
++	})
++}
++
+ func traceCommit(r *raft) {
+ 	traceNodeEvent(rsmCommit, r)
+ }
+@@ -264,8 +306,12 @@ func traceChangeConfEvent(cci raftpb.ConfChangeI, r *raft) {
  		return
  	}
  
@@ -273,19 +445,24 @@ index 8712dc6..7caea73 100644
  	traceEvent(rsmChangeConf, r, nil, p)
  }
  
-@@ -275,8 +301,9 @@ func traceConfChangeEvent(cfg tracker.Config, r *raft) {
+@@ -274,9 +320,14 @@ func traceConfChangeEvent(cfg tracker.Config, r *raft) {
+ 		return
  	}
  
++	// Detect LeaveJoint: old config is joint (Voters[1] non-empty), new config is not joint (Voters[1] empty)
++	isLeaveJoint := len(r.trk.Config.Voters[1]) > 0 && len(cfg.Voters[1]) == 0
++
  	cc := &TracingConfChange{
 -		Changes: []SingleConfChange{},
 -		NewConf: formatConf(cfg.Voters[0].Slice()),
-+		Changes:  []SingleConfChange{},
-+		NewConf:  formatConf(cfg.Voters[0].Slice()),
-+		Learners: formatLearners(cfg.Learners),
++		Changes:    []SingleConfChange{},
++		NewConf:    formatConf(cfg.Voters[0].Slice()),
++		Learners:   formatLearners(cfg.Learners),
++		LeaveJoint: isLeaveJoint,
  	}
  
  	p := map[string]any{}
-@@ -293,15 +320,19 @@ func traceSendMessage(r *raft, m *raftpb.Message) {
+@@ -293,15 +344,19 @@ func traceSendMessage(r *raft, m *raftpb.Message) {
  
  	var evt stateMachineEventType
  	switch m.Type {
@@ -310,7 +487,7 @@ index 8712dc6..7caea73 100644
  	case raftpb.MsgAppResp, raftpb.MsgHeartbeatResp:
  		evt = rsmSendAppendEntriesResponse
  	case raftpb.MsgVote:
-@@ -337,3 +368,20 @@ func traceReceiveMessage(r *raft, m *raftpb.Message) {
+@@ -337,3 +392,38 @@ func traceReceiveMessage(r *raft, m *raftpb.Message) {
  	time.Sleep(time.Millisecond) // sleep 1ms to reduce time shift impact accross node
  	traceEvent(evt, r, m, nil)
  }
@@ -331,16 +508,45 @@ index 8712dc6..7caea73 100644
 +	}
 +	traceEvent(rsmReportUnreachable, r, nil, prop)
 +}
++
++// traceReportSnapshotStatus traces when snapshot status is reported,
++// which causes StateSnapshot -> StateProbe transition.
++func traceReportSnapshotStatus(r *raft, target uint64, success bool, pr *tracker.Progress) {
++	if r.traceLogger == nil {
++		return
++	}
++
++	prop := map[string]any{
++		"target":  strconv.FormatUint(target, 10),
++		"success": success,
++		"state":   pr.State.String(),
++		"match":   pr.Match,
++		"next":    pr.Next,
++		"paused":  pr.MsgAppFlowPaused,
++	}
++	traceEvent(rsmReportSnapshotStatus, r, nil, prop)
++}
 diff --git a/state_trace_nop.go b/state_trace_nop.go
-index cdeb99b..83729dd 100644
+index cdeb99b..6659daf 100644
 --- a/state_trace_nop.go
 +++ b/state_trace_nop.go
-@@ -48,3 +48,5 @@ func traceConfChangeEvent(tracker.Config, *raft) {}
+@@ -31,6 +31,8 @@ func traceInitState(*raft) {}
+ 
+ func traceReady(*raft) {}
+ 
++func traceApplyEntries(*raft, uint64) {}
++
+ func traceCommit(*raft) {}
+ 
+ func traceReplicate(*raft, ...raftpb.Entry) {}
+@@ -48,3 +50,7 @@ func traceConfChangeEvent(tracker.Config, *raft) {}
  func traceSendMessage(*raft, *raftpb.Message) {}
  
  func traceReceiveMessage(*raft, *raftpb.Message) {}
 +
 +func traceReportUnreachable(*raft, uint64, *tracker.Progress) {}
++
++func traceReportSnapshotStatus(*raft, uint64, bool, *tracker.Progress) {}
 diff --git a/testdata/checkquorum.txt b/testdata/checkquorum.txt
 deleted file mode 100644
 index b25c1e6..0000000
@@ -1484,3 +1690,82 @@ index 9de0254..c37b0fc 100755
  }
  PARALLEL=$(nproc)
  
+
+diff --git a/rafttest/interaction_env_handler_report_snapshot.go b/rafttest/interaction_env_handler_report_snapshot.go
+new file mode 100644
+index 0000000..f809bed
+--- /dev/null
++++ b/rafttest/interaction_env_handler_report_snapshot.go
+@@ -0,0 +1,72 @@
++// Copyright 2023 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//	http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++package rafttest
++
++import (
++	"errors"
++	"strconv"
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++	"go.etcd.io/raft/v3"
++)
++
++// handleReportSnapshot handles the "report-snapshot" command.
++// It reports the status of a snapshot sent from one node to another.
++//
++// Example usage:
++//
++//	report-snapshot 1 3 ok
++//	report-snapshot 1 3 fail
++//
++// The first argument is the leader node index, the second is the target node index,
++// and the third is the status ("ok" for success, "fail" for failure).
++func (env *InteractionEnv) handleReportSnapshot(t *testing.T, d datadriven.TestData) error {
++	// Parse arguments manually to handle mixed numeric and string args
++	var nodeIdxs []int
++	var status raft.SnapshotStatus
++
++	for _, arg := range d.CmdArgs {
++		// Skip arguments with values (like key=value)
++		if len(arg.Vals) != 0 {
++			continue
++		}
++		switch arg.Key {
++		case "ok":
++			status = raft.SnapshotFinish
++		case "fail":
++			status = raft.SnapshotFailure
++		default:
++			// Try to parse as node index
++			n, err := strconv.Atoi(arg.Key)
++			if err != nil {
++				return errors.New("usage: report-snapshot <leader-idx> <target-idx> ok|fail")
++			}
++			nodeIdxs = append(nodeIdxs, n-1) // Convert to 0-indexed
++		}
++	}
++
++	if len(nodeIdxs) != 2 {
++		return errors.New("usage: report-snapshot <leader-idx> <target-idx> ok|fail")
++	}
++	if status == 0 {
++		return errors.New("usage: report-snapshot <leader-idx> <target-idx> ok|fail")
++	}
++
++	leaderIdx := nodeIdxs[0]
++	targetIdx := nodeIdxs[1]
++	targetID := env.Nodes[targetIdx].Config.ID
++	env.Nodes[leaderIdx].ReportSnapshot(targetID, status)
++	return nil
++}
