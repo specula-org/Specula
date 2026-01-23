@@ -1211,7 +1211,7 @@ ApplySimpleConfChange(i) ==
         /\ k <= commitIndex[i]
         /\ config' = newConfigFn
         /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = k]  \* Track applied config
-        /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] >= k THEN
+        /\ IF state[i] = Leader /\ pendingConfChangeIndex[i] = k THEN
             /\ reconfigCount' = reconfigCount + 1
             /\ pendingConfChangeIndex' = [pendingConfChangeIndex EXCEPT ![i] = 0]
            ELSE UNCHANGED <<reconfigCount, pendingConfChangeIndex>>
@@ -1384,6 +1384,9 @@ HandleRequestVoteResponse(i, j, m) ==
     \* This tallies votes even when the current state is not Candidate, but
     \* they won't be looked at, so it doesn't matter.
     /\ m.mterm = currentTerm[i]
+    \* Only accept vote responses from nodes in config (or self, which bypasses filtering)
+    \* Reference: rawnode.go:123-125 filters responses from unknown nodes
+    /\ j = i \/ j \in (GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i))
     /\ votesResponded' = [votesResponded EXCEPT ![i] =
                               votesResponded[i] \cup {j}]
     /\ \/ /\ m.mvoteGranted
@@ -1561,6 +1564,9 @@ HandleAppendEntriesRequest(i, j, m) ==
 HandleAppendEntriesResponse(i, j, m) ==
     /\ m.mterm = currentTerm[i]
     /\ m.msubtype /= "heartbeat"  \* Heartbeat responses handled by HandleHeartbeatResponse
+    \* Only accept responses from nodes in config (or self)
+    \* Reference: rawnode.go:123-125 filters responses from unknown nodes
+    /\ j = i \/ j \in (GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i))
     /\ \/ /\ m.msuccess \* successful
           /\ matchIndex' = [matchIndex EXCEPT ![i][j] = Max({@, m.mmatchIndex})]
           /\ UNCHANGED <<pendingConfChangeIndex>>
@@ -1661,6 +1667,9 @@ HandleAppendEntriesResponse(i, j, m) ==
 HandleHeartbeatResponse(i, j, m) ==
     /\ m.mterm = currentTerm[i]
     /\ m.msubtype = "heartbeat"
+    \* Only accept responses from nodes in config (or self)
+    \* Reference: rawnode.go:123-125 filters responses from unknown nodes
+    /\ j = i \/ j \in (GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i))
     \* Only clear MsgAppFlowPaused, do NOT transition state
     \* Reference: raft.go:1495 pr.MsgAppFlowPaused = false
     /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
@@ -1849,6 +1858,19 @@ DropStaleResponse(i, j, m) ==
     /\ Discard(m)
     /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
 
+\* Drop response messages from nodes not in the current configuration.
+\* This models the filtering in RawNode.Step() / Node.Step():
+\*   if IsResponseMsg(m.Type) && rn.raft.trk.Progress[m.From] == nil { return ErrStepPeerNotFound }
+\* However, self-directed messages (j == i) bypass this check because they go through
+\* Advance() -> raft.Step() path which doesn't have this filtering.
+\* Reference: rawnode.go:123-125, rawnode.go:489-490
+\* @type: (Int, Int, MSG) => Bool;
+DropResponseFromNonMember(i, j, m) ==
+    /\ j /= i  \* Self-directed messages bypass this check (Advance() path)
+    /\ j \notin (GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i))
+    /\ Discard(m)
+    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, historyLog, partitions>>
+
 \* Combined action: Update term AND handle RequestVoteRequest atomically.
 \* This is needed because raft.go handles term update and vote processing in a single Step call,
 \* and Trace records only one event.
@@ -1888,11 +1910,13 @@ ReceiveDirect(m) ==
              /\ HandleRequestVoteRequest(i, j, m)
           \/ /\ m.mtype = RequestVoteResponse
              /\ \/ DropStaleResponse(i, j, m)
+                \/ DropResponseFromNonMember(i, j, m)
                 \/ HandleRequestVoteResponse(i, j, m)
           \/ /\ m.mtype = AppendEntriesRequest
              /\ HandleAppendEntriesRequest(i, j, m)
           \/ /\ m.mtype = AppendEntriesResponse
              /\ \/ DropStaleResponse(i, j, m)
+                \/ DropResponseFromNonMember(i, j, m)
                 \/ HandleHeartbeatResponse(i, j, m)
                 \/ HandleAppendEntriesResponse(i, j, m)
           \/ /\ m.mtype = SnapshotRequest
@@ -2191,10 +2215,28 @@ CommittedIsDurableInv ==
 \* Invariant: ProbeLimitInv
 \* In StateProbe, inflight message count is strictly limited to 1.
 \* (Rationale: Probe state is for probing, preventing message accumulation)
+\* NOTE: This invariant checks the inflights variable, but StateProbe doesn't use inflights!
+\* See ProbeNetworkMessageLimitInv for the correct check.
 ProbeLimitInv ==
     \A i \in Server : \A j \in Server :
         (state[i] = Leader /\ progressState[i][j] = StateProbe)
             => InflightsCount(i, j) <= 1
+
+\* Invariant: ProbeNetworkMessageLimitInv
+\* In StateProbe, the number of AppendEntriesRequest messages in the network should be limited to 1.
+\* This is the CORRECT invariant to detect the empty probe issue (TODO in progress.go:176-178).
+\* The implementation uses MsgAppFlowPaused (not inflights) to limit StateProbe messages,
+\* but empty probes (entries=0) don't set MsgAppFlowPaused, allowing multiple messages.
+\* Reference: tracker/progress.go:175-181 SentEntries() - StateProbe only sets MsgAppFlowPaused if entries > 0
+ProbeNetworkMessageLimitInv ==
+    \A i \in Server : \A j \in Server :
+        (state[i] = Leader /\ i /= j /\ progressState[i][j] = StateProbe) =>
+            LET msgsInNetwork == {m \in DOMAIN messages :
+                    m.mtype = AppendEntriesRequest /\
+                    m.msource = i /\
+                    m.mdest = j}
+                totalCount == FoldSet(LAMBDA m, acc: acc + messages[m], 0, msgsInNetwork)
+            IN totalCount <= 1
 
 \* Invariant: ReplicatePauseInv
 \* In StateReplicate, we should only be paused if Inflights are full.
@@ -2363,6 +2405,7 @@ SnapshotNoInflightsStrictInv ==
 \* Aggregate all Progress-related invariants
 ProgressSafety ==
     /\ ProbeLimitInv
+    /\ ProbeNetworkMessageLimitInv  \* NEW: Check actual network messages, not inflights variable
     /\ ReplicatePauseInv
     /\ SnapshotInflightsInv
     /\ InflightsLogIndexInv
@@ -2806,11 +2849,14 @@ CandidateTermPositiveInv ==
         state[i] = Candidate => currentTerm[i] > 0
 
 \* Invariant: VotesRespondedSubsetInv
-\* votesResponded should be subset of config (can only get responses from known nodes)
+\* votesResponded (excluding self) should be subset of config (can only get responses from known nodes)
+\* Self-vote bypasses Node-level filtering (goes through Advance() -> raft.Step() path),
+\* so self is always allowed in votesResponded even if not in config.
+\* Reference: rawnode.go:489-490 Advance() calls rn.raft.Step(m) directly
 VotesRespondedSubsetInv ==
     \A i \in Server :
         state[i] = Candidate =>
-            votesResponded[i] \subseteq (GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i))
+            (votesResponded[i] \ {i}) \subseteq (GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i))
 
 \* Invariant: VotesGrantedSubsetInv
 \* votesGranted should be subset of votesResponded
