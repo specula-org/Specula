@@ -24,23 +24,18 @@ Example usage:
     diff = reader.compare_states(-2, -1)  # Compare last two states
 """
 
-import io
-import re
+import json
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from .trace_reader import TraceReader
 from .utils.preprocessing import (
-    preprocess_tlc_output,
-    convert_to_trace_format,
+    extract_counterexample_path,
+    extract_statistics,
+    extract_violation_info,
     strip_ansi_codes,
 )
-from .utils.path_parser import (
-    parse_variable_path,
-    get_value_at_path,
-    format_value,
-    PathAccessError,
-)
+from .utils.path_parser import get_value_at_path, format_value, PathAccessError
 
 
 @dataclass
@@ -78,9 +73,6 @@ class TLCOutputReader:
         metadata: Metadata extracted from the output (violation info, stats).
     """
 
-    # Pattern to extract action name from action detail
-    ACTION_NAME_PATTERN = re.compile(r'<(\w+)(?:\([^)]*\))?')
-
     def __init__(self, file_path: str, save_action_name: bool = True):
         """Initialize the reader with a TLC output file.
 
@@ -105,27 +97,82 @@ class TLCOutputReader:
         Args:
             save_action_name: Whether to save action names.
         """
-        # Preprocess the file
-        preprocessed, self._metadata = preprocess_tlc_output(self.file_path)
+        content = Path(self.file_path).read_text(encoding="utf-8", errors="replace")
+        content = strip_ansi_codes(content)
 
-        # Convert to trace format
-        trace_content = convert_to_trace_format(preprocessed)
+        violation_type, violation_name = extract_violation_info(content)
+        self._metadata = {"statistics": extract_statistics(content)}
+        if violation_name:
+            self._metadata["violation_type"] = violation_type
+            self._metadata["violation_name"] = violation_name
 
-        # Parse using TraceReader
-        tr = TraceReader(save_action_name=save_action_name)
-        f = io.StringIO(trace_content)
+        counterexample_path = extract_counterexample_path(content)
+        if not counterexample_path:
+            raise ValueError(
+                "Could not find counterexample path in TLC output. "
+                "Expected 'CounterExample written: <file>'."
+            )
 
-        # Use trace_reader_with_state_str to get action details
-        for state, state_str in tr.trace_reader_with_state_str(f):
-            self._states.append(state)
+        trace_path = Path(counterexample_path)
+        if not trace_path.is_absolute():
+            trace_path = Path(self.file_path).parent / trace_path
+        self._metadata["counterexample_path"] = str(trace_path)
 
-            # Extract action detail from state string
-            action_detail = None
-            for line in state_str.split('\n'):
-                if line.startswith('\\*') and '<' in line:
-                    action_detail = line.strip()[2:].strip()  # Remove \* prefix
-                    break
-            self._action_details.append(action_detail)
+        with trace_path.open(encoding="utf-8", errors="replace") as f:
+            trace = json.load(f)
+
+        self._states, self._action_details = self._parse_trace(trace, save_action_name)
+
+    def _parse_trace(
+        self,
+        trace: Dict[str, Any],
+        save_action_name: bool,
+    ) -> tuple[List[Dict[str, Any]], List[Optional[str]]]:
+        action_by_state = {}
+        detail_by_state = {}
+        for entry in trace.get("action", []):
+            if not isinstance(entry, list) or len(entry) < 3:
+                continue
+            action = entry[1]
+            to_state = entry[2]
+            if not isinstance(action, dict) or not isinstance(to_state, list) or not to_state:
+                continue
+            state_id = to_state[0]
+            name = action.get("name")
+            if name:
+                action_by_state[state_id] = name
+            detail_by_state[state_id] = self._format_action_detail(action)
+
+        states = []
+        details = []
+        for entry in trace.get("state", []):
+            if not isinstance(entry, list) or len(entry) < 2:
+                continue
+            state_id, variables = entry[0], entry[1] or {}
+            state = dict(variables)
+            if save_action_name:
+                state["_action"] = action_by_state.get(state_id, "Unknown")
+            states.append(state)
+            details.append(detail_by_state.get(state_id))
+
+        if not states:
+            raise ValueError("No states found in trace JSON.")
+
+        return states, details
+
+    @staticmethod
+    def _format_action_detail(action: Dict[str, Any]) -> Optional[str]:
+        name = action.get("name")
+        if not name:
+            return None
+        location = action.get("location") or {}
+        if location:
+            return (
+                f"<{name} line {location.get('beginLine')}, col {location.get('beginColumn')} "
+                f"to line {location.get('endLine')}, col {location.get('endColumn')} "
+                f"of module {location.get('module')}>"
+            )
+        return f"<{name}>"
 
     @property
     def trace_length(self) -> int:
