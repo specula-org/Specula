@@ -2,6 +2,7 @@
 
 Run with:
     python -m pytest tools/inv_checking_tool/tests/test_mcp_handlers.py -v
+(Requires `pip install pytest-asyncio`.)
 """
 
 import json
@@ -22,7 +23,7 @@ from inv_checking_tool.src.mcp.handlers import SummaryHandler, StateHandler, Com
 
 # Path to test data - use local test data file that ships with the tests
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
-SAMPLE_OUTPUT_FILE = TEST_DATA_DIR / "sample_tlc_output.txt"
+SAMPLE_OUTPUT_FILE = TEST_DATA_DIR / "nohup.out"
 
 
 class TestSummaryHandler:
@@ -39,8 +40,8 @@ class TestSummaryHandler:
         data = json.loads(result)
 
         assert data["success"] is True
-        assert data["violation_name"] == "QuorumLogInv"
-        assert data["trace_length"] == 10
+        assert data["violation_name"] == "VotesRespondedSubsetInv"
+        assert data["trace_length"] == 20
         assert "actions" in data
         assert "statistics" in data
         assert "variables" in data
@@ -82,7 +83,7 @@ class TestStateHandler:
 
         assert data["success"] is True
         assert data["index"] == 1
-        assert data["action"] == "MCInit"
+        assert data["action"] == "Unknown"
         assert "variables" in data
 
     @pytest.mark.asyncio
@@ -95,7 +96,7 @@ class TestStateHandler:
         data = json.loads(result)
 
         assert data["success"] is True
-        assert data["index"] == 10
+        assert data["index"] == 20
 
     @pytest.mark.asyncio
     async def test_get_state_with_path(self, handler):
@@ -135,8 +136,8 @@ class TestStateHandler:
 
         assert data["success"] is True
         assert data["count"] == 3
-        assert data["states"][0]["index"] == 8
-        assert data["states"][2]["index"] == 10
+        assert data["states"][0]["index"] == 18
+        assert data["states"][2]["index"] == 20
 
     @pytest.mark.asyncio
     async def test_get_state_with_variables(self, handler):
@@ -183,8 +184,8 @@ class TestCompareHandler:
 
         assert data["success"] is True
         assert data["mode"] == "compare"
-        assert data["state1_index"] == 9
-        assert data["state2_index"] == 10
+        assert data["state1_index"] == 19
+        assert data["state2_index"] == 20
         assert "changed_variables" in data
         assert "changes" in data
 

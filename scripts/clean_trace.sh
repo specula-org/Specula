@@ -19,7 +19,7 @@ SPEC_FILE=""
 usage() {
     echo "Usage: $0 [-n|--dry-run] [-f|--force] SPEC_FILE"
     echo ""
-    echo "Delete TTrace output files (.bin and .tla) generated from a spec file."
+    echo "Delete TTrace output files (.bin and .tla), sim logs, and nohup.out."
     echo ""
     echo "Arguments:"
     echo "  SPEC_FILE    Path to the TLA+ spec file (e.g., Traceetcdraft.tla)"
@@ -77,20 +77,27 @@ fi
 SPEC_DIR="$(dirname "$SPEC_FILE")"
 SPEC_BASENAME="$(basename "$SPEC_FILE" .tla)"
 
-# Find matching TTrace files
-PATTERN="${SPEC_DIR}/${SPEC_BASENAME}_TTrace_*"
-FILES=($(ls -1 $PATTERN 2>/dev/null))
+# Find matching TTrace files, sim logs, and nohup.out
+shopt -s nullglob
+FILES=()
+FILES+=("${SPEC_DIR}/${SPEC_BASENAME}_TTrace_"*)
+FILES+=("${SPEC_DIR}/sim_${SPEC_BASENAME}"*.log)
+if [ -f "${SPEC_DIR}/nohup.out" ]; then
+    FILES+=("${SPEC_DIR}/nohup.out")
+fi
 
 if [ ${#FILES[@]} -eq 0 ]; then
-    echo -e "${YELLOW}No TTrace files found for: $SPEC_FILE${NC}"
+    echo -e "${YELLOW}No trace/log files found for: $SPEC_FILE${NC}"
     exit 0
 fi
 
 # Calculate total size
 TOTAL_SIZE=0
 for f in "${FILES[@]}"; do
-    SIZE=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)
-    TOTAL_SIZE=$((TOTAL_SIZE + SIZE))
+    if [ -f "$f" ]; then
+        SIZE=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)
+        TOTAL_SIZE=$((TOTAL_SIZE + SIZE))
+    fi
 done
 
 # Human readable size (pure bash, no bc)
@@ -108,12 +115,14 @@ human_size() {
 }
 
 # Display files
-echo -e "${GREEN}Found ${#FILES[@]} TTrace files for: ${SPEC_BASENAME}.tla${NC}"
+echo -e "${GREEN}Found ${#FILES[@]} trace/log files for: ${SPEC_BASENAME}.tla${NC}"
 echo -e "Total size: $(human_size $TOTAL_SIZE)"
 echo ""
 echo "Files to delete:"
 for f in "${FILES[@]}"; do
-    echo "  $f"
+    if [ -f "$f" ]; then
+        echo "  $f"
+    fi
 done
 echo ""
 
@@ -136,10 +145,12 @@ fi
 # Delete files
 DELETED=0
 for f in "${FILES[@]}"; do
-    if rm "$f" 2>/dev/null; then
-        ((DELETED++))
-    else
-        echo -e "${RED}Failed to delete: $f${NC}"
+    if [ -f "$f" ]; then
+        if rm "$f" 2>/dev/null; then
+            ((DELETED++))
+        else
+            echo -e "${RED}Failed to delete: $f${NC}"
+        fi
     fi
 done
 

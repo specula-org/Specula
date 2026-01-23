@@ -20,7 +20,6 @@ tools/inv_checking_tool/
 ├── mcp_server.py                  # MCP server entry point
 ├── README.md
 ├── src/
-│   ├── trace_reader.py            # TLA+ parser
 │   ├── tlc_output_reader.py       # Main TLCOutputReader class
 │   ├── cli.py                     # Command-line interface
 │   ├── utils/

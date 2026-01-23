@@ -11,7 +11,6 @@ Example usage:
     print(f"Violated: {summary.violation_name}")
 """
 
-from .src.trace_reader import TraceReader
 from .src.tlc_output_reader import TLCOutputReader
 
-__all__ = ["TraceReader", "TLCOutputReader"]
+__all__ = ["TLCOutputReader"]

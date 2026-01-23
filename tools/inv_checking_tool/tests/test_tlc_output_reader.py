@@ -35,7 +35,7 @@ from inv_checking_tool.src.utils.preprocessing import (
 
 # Path to test data - use local test data file that ships with the tests
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
-SAMPLE_OUTPUT_FILE = TEST_DATA_DIR / "sample_tlc_output.txt"
+SAMPLE_OUTPUT_FILE = TEST_DATA_DIR / "nohup.out"
 
 
 class TestPathParser:
@@ -151,40 +151,40 @@ class TestTLCOutputReader:
 
     def test_trace_length(self, reader):
         """Test trace length is correct."""
-        assert reader.trace_length == 10
+        assert reader.trace_length == 20
 
     def test_get_summary(self, reader):
         """Test getting trace summary."""
         summary = reader.get_summary()
         assert summary.violation_type == "invariant"
-        assert summary.violation_name == "QuorumLogInv"
-        assert summary.trace_length == 10
-        assert len(summary.actions) == 10
+        assert summary.violation_name == "VotesRespondedSubsetInv"
+        assert summary.trace_length == 20
+        assert len(summary.actions) == 20
 
     def test_get_summary_statistics(self, reader):
         """Test that summary includes statistics."""
         summary = reader.get_summary()
         assert "states_generated" in summary.statistics
-        assert summary.statistics["states_generated"] == 148265621
+        assert summary.statistics["states_generated"] == 4885
 
     def test_get_state_first(self, reader):
         """Test getting first state by index."""
         state = reader.get_state(1)
         assert state.index == 1
-        assert state.action == "MCInit"
+        assert state.action == "Unknown"
 
     def test_get_state_last(self, reader):
         """Test getting last state by 'last' keyword."""
         state = reader.get_state("last")
-        assert state.index == 10
+        assert state.index == 20
 
     def test_get_state_negative_index(self, reader):
         """Test getting state by negative index."""
         state = reader.get_state(-1)
-        assert state.index == 10
+        assert state.index == 20
 
         state2 = reader.get_state(-2)
-        assert state2.index == 9
+        assert state2.index == 19
 
     def test_get_state_first_keyword(self, reader):
         """Test getting first state by 'first' keyword."""
@@ -226,7 +226,7 @@ class TestTLCOutputReader:
         """Test getting last N states."""
         states = reader.get_states("-3:")
         assert len(states) == 3
-        assert [s.index for s in states] == [8, 9, 10]
+        assert [s.index for s in states] == [18, 19, 20]
 
     def test_get_states_first_n(self, reader):
         """Test getting first N states."""
@@ -278,8 +278,8 @@ class TestTLCOutputReader:
     def test_get_actions_list(self, reader):
         """Test getting action sequence."""
         actions = reader.get_actions_list()
-        assert len(actions) == 10
-        assert actions[0]["action"] == "MCInit"
+        assert len(actions) == 20
+        assert actions[0]["action"] == "Unknown"
         assert actions[0]["index"] == 1
 
     def test_compare_states(self, reader):
@@ -293,8 +293,8 @@ class TestTLCOutputReader:
     def test_compare_states_last_two(self, reader):
         """Test comparing last two states."""
         diff = reader.compare_states(-2, -1)
-        assert diff["state1_index"] == 9
-        assert diff["state2_index"] == 10
+        assert diff["state1_index"] == 19
+        assert diff["state2_index"] == 20 
 
     def test_find_variable_changes(self, reader):
         """Test finding where a variable changes."""
@@ -314,9 +314,9 @@ class TestTLCOutputReader:
 
     def test_search_states(self, reader):
         """Test searching states with predicate."""
-        # Find states where s1 is Leader
+        # Find states where s1 is Candidate
         leader_states = reader.search_states(
-            lambda s: s.get("state", {}).get("s1") == "Leader"
+            lambda s: s.get("state", {}).get("s1") == "Candidate"
         )
         assert isinstance(leader_states, list)
         assert all(isinstance(i, int) for i in leader_states)
@@ -325,19 +325,19 @@ class TestTLCOutputReader:
         """Test formatting a state for display."""
         formatted = reader.format_state(1)
         assert "State 1" in formatted
-        assert "MCInit" in formatted
+        assert "Unknown" in formatted
 
     def test_format_summary(self, reader):
         """Test formatting summary for display."""
         formatted = reader.format_summary()
-        assert "QuorumLogInv" in formatted
-        assert "10 states" in formatted
+        assert "VotesRespondedSubsetInv" in formatted
+        assert "20 states" in formatted
 
     def test_repr(self, reader):
         """Test string representation."""
         repr_str = repr(reader)
         assert "TLCOutputReader" in repr_str
-        assert "10" in repr_str
+        assert "20" in repr_str
 
 
 class TestTLCOutputReaderEdgeCases:
@@ -350,16 +350,21 @@ class TestTLCOutputReaderEdgeCases:
 
     def test_create_minimal_trace_file(self):
         """Test loading a minimal valid trace file."""
-        content = """Error: Invariant TestInv is violated.
-Error: The behavior up to this point is:
-State 1: <Init line 1, col 1 to line 1, col 10 of module Test>
-/\\ x = 1
-/\\ y = 2
+        trace = {
+            "state": [
+                [1, {"x": 1, "y": 2}],
+                [2, {"x": 2, "y": 3}],
+            ],
+            "action": [
+                [[1, {}], {"name": "Next"}, [2, {}]],
+            ],
+        }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as trace_file:
+            json.dump(trace, trace_file)
+            trace_file.flush()
 
-State 2: <Next line 2, col 1 to line 2, col 10 of module Test>
-/\\ x = 2
-/\\ y = 3
-
+        content = f"""Error: Invariant TestInv is violated.
+\"CounterExample written: {trace_file.name}\"
 The number of states generated: 100
 """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
@@ -381,15 +386,24 @@ The number of states generated: 100
                 assert state2.variables["y"] == 3
             finally:
                 os.unlink(f.name)
+                os.unlink(trace_file.name)
 
     def test_trace_with_nested_structures(self):
         """Test loading trace with complex nested structures."""
-        content = """Error: Invariant TestInv is violated.
-Error: The behavior up to this point is:
-State 1: <Init line 1, col 1 to line 1, col 10 of module Test>
-/\\ config = (s1 :> [a |-> 1, b |-> 2] @@ s2 :> [a |-> 3, b |-> 4])
-/\\ log = <<[term |-> 1, value |-> "x"], [term |-> 2, value |-> "y"]>>
+        trace = {
+            "state": [
+                [1, {
+                    "config": {"s1": {"a": 1, "b": 2}, "s2": {"a": 3, "b": 4}},
+                    "log": [{"term": 1, "value": "x"}, {"term": 2, "value": "y"}],
+                }],
+            ],
+        }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as trace_file:
+            json.dump(trace, trace_file)
+            trace_file.flush()
 
+        content = f"""Error: Invariant TestInv is violated.
+CounterExample written: {trace_file.name}
 The number of states generated: 100
 """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
@@ -411,6 +425,7 @@ The number of states generated: 100
                 assert val == "y"
             finally:
                 os.unlink(f.name)
+                os.unlink(trace_file.name)
 
 
 def run_tests():
