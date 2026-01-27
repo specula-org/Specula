@@ -1564,16 +1564,12 @@ HandleAppendEntriesRequest(i, j, m) ==
 HandleAppendEntriesResponse(i, j, m) ==
     /\ m.mterm = currentTerm[i]
     /\ m.msubtype /= "heartbeat"  \* Heartbeat responses handled by HandleHeartbeatResponse
-    \* Only accept responses from nodes in config (or self)
-    \* Reference: rawnode.go:123-125 filters responses from unknown nodes
-    /\ j = i \/ j \in (GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i))
     /\ \/ /\ m.msuccess \* successful
           /\ matchIndex' = [matchIndex EXCEPT ![i][j] = Max({@, m.mmatchIndex})]
           /\ UNCHANGED <<pendingConfChangeIndex>>
-          \* Free confirmed inflights, clear msgAppFlowPaused
-          \* Reference: MaybeUpdate() call in raft.go:1260-1289 handleAppendEntries()
+          \* Free confirmed inflights
+          \* Reference: inflights.go FreeLE() called from raft.go handleAppendEntries()
           /\ FreeInflightsLE(i, j, m.mmatchIndex)
-          /\ ClearMsgAppFlowPausedOnUpdate(i, j)
           \* State transition logic for successful MsgAppResp
           \* Reference: raft.go:1519-1540 handleAppendEntriesResponse()
           \* Key conditions:
@@ -1594,14 +1590,17 @@ HandleAppendEntriesResponse(i, j, m) ==
                                           \/ newMatchIndex + 1 >= pendingSnapshot[i][j]
              IN CASE \* Case 1: StateProbe -> StateReplicate
                      \* Reference: raft.go:1521-1522
+                     \* BecomeReplicate calls ResetState which clears MsgAppFlowPaused
                      progressState[i][j] = StateProbe
                      /\ (maybeUpdated \/ alreadyMatched) ->
                         /\ progressState' = [progressState EXCEPT ![i][j] = StateReplicate]
                         /\ nextIndex' = [nextIndex EXCEPT ![i][j] = Max({@, m.mmatchIndex + 1})]
+                        /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
                         /\ UNCHANGED pendingSnapshot
                   \* Case 2: StateSnapshot -> StateReplicate (via BecomeProbe + BecomeReplicate)
                   \* Reference: raft.go:1523-1537
                   \* Condition: MaybeUpdate returns true AND Match+1 >= firstIndex
+                  \* BecomeReplicate calls ResetState which clears MsgAppFlowPaused
                   [] progressState[i][j] = StateSnapshot
                      /\ maybeUpdated
                      /\ canResumeFromSnapshot ->
@@ -1612,13 +1611,19 @@ HandleAppendEntriesResponse(i, j, m) ==
                         \* (Since canResumeFromSnapshot implies Match+1 >= offset,
                         \*  and typically m.mmatchIndex >= pendingSnapshot when this path is taken)
                         /\ nextIndex' = [nextIndex EXCEPT ![i][j] = m.mmatchIndex + 1]
+                        /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
                         /\ pendingSnapshot' = [pendingSnapshot EXCEPT ![i][j] = 0]
                   \* Case 3: StateReplicate or conditions not met
                   \* Reference: raft.go:1538-1539 for StateReplicate (FreeLE handled separately)
+                  \* MaybeUpdate only clears MsgAppFlowPaused when matchIndex is actually updated
                   [] OTHER ->
                         /\ UNCHANGED <<progressState, pendingSnapshot>>
                         \* Still update nextIndex per MaybeUpdate logic
                         /\ nextIndex' = [nextIndex EXCEPT ![i][j] = Max({@, m.mmatchIndex + 1})]
+                        \* Only clear MsgAppFlowPaused if MaybeUpdate returns true (matchIndex updated)
+                        /\ IF maybeUpdated
+                           THEN msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
+                           ELSE UNCHANGED msgAppFlowPaused
        \/ /\ \lnot m.msuccess \* not successful
           \* Implement MaybeDecrTo (progress.go:226-252)
           \* rejected = m.mmatchIndex, matchHint = m.mrejectHint
@@ -1667,19 +1672,35 @@ HandleAppendEntriesResponse(i, j, m) ==
 HandleHeartbeatResponse(i, j, m) ==
     /\ m.mterm = currentTerm[i]
     /\ m.msubtype = "heartbeat"
-    \* Only accept responses from nodes in config (or self)
-    \* Reference: rawnode.go:123-125 filters responses from unknown nodes
-    /\ j = i \/ j \in (GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i))
-    \* Only clear MsgAppFlowPaused, do NOT transition state
     \* Reference: raft.go:1495 pr.MsgAppFlowPaused = false
-    /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
-    \* If StateReplicate and inflights over capacity, free one (edge case)
-    \* Reference: raft.go:1497-1499
-    \* Note: Use > instead of >= because FreeFirstOne only matters when truly over capacity
-    \* In normal flow, heartbeat response doesn't free inflights if at exactly MaxInflightMsgs
-    /\ IF progressState[i][j] = StateReplicate /\ Cardinality(inflights[i][j]) > MaxInflightMsgs
-       THEN inflights' = [inflights EXCEPT ![i][j] = @ \ {Min(@)}]
-       ELSE UNCHANGED inflights
+    \* Reference: raft.go:1502 r.sendAppend(m.From) -> SentEntries() -> pr.MsgAppFlowPaused = pr.Inflights.Full()
+    \* 
+    \* In real code, after setting MsgAppFlowPaused = false, sendAppend is called.
+    \* If sendAppend sends a message, SentEntries() is called which sets:
+    \*   pr.MsgAppFlowPaused = pr.Inflights.Full()
+    \* If inflights is already full, maybeSendAppend returns early (IsPaused check),
+    \* so no message is sent and MsgAppFlowPaused stays false only briefly.
+    \* However, in the spec we model the combined effect: if inflights is full,
+    \* the pause state should remain true after this operation completes.
+    \*
+    \* Fix: In StateReplicate, only clear MsgAppFlowPaused if inflights is not full.
+    \* This models the combined effect of the real code's:
+    \*   1. pr.MsgAppFlowPaused = false
+    \*   2. sendAppend() which may call SentEntries() setting pr.MsgAppFlowPaused = pr.Inflights.Full()
+    /\ LET newInflights == IF progressState[i][j] = StateReplicate /\ Cardinality(inflights[i][j]) > MaxInflightMsgs
+                           THEN inflights[i][j] \ {Min(inflights[i][j])}
+                           ELSE inflights[i][j]
+           \* After potentially freeing one inflight, check if still full
+           stillFull == Cardinality(newInflights) >= MaxInflightMsgs
+       IN /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = 
+               IF progressState[i][j] = StateReplicate 
+               THEN stillFull  \* SentEntries sets MsgAppFlowPaused = Inflights.Full()
+               ELSE FALSE]  \* StateProbe: just clear the pause
+          \* If StateReplicate and inflights over capacity, free one (edge case)
+          \* Reference: raft.go:1497-1499
+          /\ IF progressState[i][j] = StateReplicate /\ Cardinality(inflights[i][j]) > MaxInflightMsgs
+             THEN inflights' = [inflights EXCEPT ![i][j] = newInflights]
+             ELSE UNCHANGED inflights
     /\ Discard(m)
     /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState,
                    matchIndex, nextIndex, progressState, pendingSnapshot, partitions>>
