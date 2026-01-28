@@ -1,11 +1,22 @@
-"""Preprocessing utilities for TLC output files."""
+"""Preprocessing utilities for TLC output files.
 
+This module handles various input formats including:
+- Raw TLC output (starting with @!)
+- Wrapped TLC output (with script headers, ANSI codes, etc.)
+- Direct trace files (starting with --)
+- JSON trace files (from -dumptrace json)
+"""
+
+import io
 import re
 from typing import Optional, Tuple
 
 
 # Pattern to match ANSI escape codes
 ANSI_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+# Marker for identifying TLC error trace sections
+ERROR_BEHAVIOR_MARKER = "The behavior up to this point is:"
 
 # TLC output can have different formats for invariant violation:
 # - "Error: Invariant X is violated" (TLC raw output)
@@ -144,3 +155,30 @@ def preprocess_tlc_output(file_path: str) -> Tuple[str, dict]:
         metadata["counterexample_path"] = counterexample_path
 
     return content, metadata
+
+
+def convert_to_trace_format(content: str) -> str:
+    """Convert preprocessed content to TLA+ trace format.
+
+    This function uses TraceReader's get_out_converted_string to convert
+    TLC output format to the standard trace format that can be parsed.
+
+    Args:
+        content: Preprocessed TLC output content.
+
+    Returns:
+        Content in TLA+ trace format (starting with --).
+    """
+    from ..trace_reader import TraceReader
+
+    # If already in trace format, return as-is
+    if content.lstrip().startswith("--"):
+        return content
+
+    f = io.StringIO(content)
+    converted_lines = list(TraceReader.get_out_converted_string(f))
+
+    if not converted_lines:
+        raise ValueError("Failed to convert TLC output to trace format.")
+
+    return ''.join(converted_lines)
