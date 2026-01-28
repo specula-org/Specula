@@ -21,6 +21,7 @@ tools/inv_checking_tool/
 ├── README.md
 ├── src/
 │   ├── tlc_output_reader.py       # Main TLCOutputReader class
+│   ├── trace_reader.py            # Text-mode TLA+ trace parser
 │   ├── cli.py                     # Command-line interface
 │   ├── utils/
 │   │   ├── preprocessing.py       # File preprocessing
@@ -75,7 +76,12 @@ python -m tools.inv_checking_tool nohup.out --summary --json
 ```python
 from tools.inv_checking_tool import TLCOutputReader
 
+# Auto-detect format (default) — tries JSON first, falls back to text
 reader = TLCOutputReader("path/to/nohup.out")
+
+# Force a specific parsing mode
+reader = TLCOutputReader("path/to/nohup.out", mode="json")   # JSON only
+reader = TLCOutputReader("path/to/nohup.out", mode="text")   # text only
 
 # Get summary
 summary = reader.get_summary()
@@ -209,12 +215,29 @@ python -m pytest tools/inv_checking_tool/tests/test_mcp_handlers.py -v
 
 ## Supported Input Formats
 
-1. **Raw TLC output** - Starting with `@!`
-2. **Wrapped output** - With script headers and ANSI color codes
-3. **Simulation logs** - From `tlc -simulate`
-4. **Direct trace files** - Starting with `--`
+The tool supports two parsing modes, selected automatically by default:
 
-The tool automatically detects the format and preprocesses accordingly.
+### JSON mode (preferred)
+
+Used when TLC is run with `-dumptrace json <file>`. The TLC output will contain a
+`CounterExample written: <path>` line pointing to a JSON file with `state` and `action`
+arrays. This mode is more reliable and preserves richer action metadata (location, parameters).
+
+### Text mode (fallback)
+
+Parses raw TLC text output directly using `TraceReader`. Supports:
+
+1. **Raw TLC output** — starting with `@!`
+2. **Wrapped output** — with script headers and ANSI color codes
+3. **Simulation logs** — from `tlc -simulate`
+4. **Direct trace files** — starting with `--`
+
+### Auto-detection (default)
+
+When `mode="auto"` (the default), the reader checks:
+1. If a `CounterExample written:` path is found → JSON mode
+2. If `The behavior up to this point is:` marker is found → text mode
+3. Otherwise → raises `ValueError`
 
 ## Path Syntax
 

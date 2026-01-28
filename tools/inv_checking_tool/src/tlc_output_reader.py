@@ -24,18 +24,23 @@ Example usage:
     diff = reader.compare_states(-2, -1)  # Compare last two states
 """
 
+import io
 import json
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .utils.preprocessing import (
+    ERROR_BEHAVIOR_MARKER,
+    convert_to_trace_format,
     extract_counterexample_path,
     extract_statistics,
     extract_violation_info,
+    preprocess_tlc_output,
     strip_ansi_codes,
 )
 from .utils.path_parser import get_value_at_path, format_value, PathAccessError
+from .trace_reader import TraceReader
 
 
 @dataclass
@@ -73,18 +78,26 @@ class TLCOutputReader:
         metadata: Metadata extracted from the output (violation info, stats).
     """
 
-    def __init__(self, file_path: str, save_action_name: bool = True):
+    def __init__(self, file_path: str, save_action_name: bool = True, mode: str = "auto"):
         """Initialize the reader with a TLC output file.
 
         Args:
             file_path: Path to the TLC output file.
             save_action_name: Whether to extract action names from states.
+            mode: Parsing mode. One of:
+                - "auto": Auto-detect format. Tries JSON first, falls back to text.
+                - "json": Force JSON mode (requires -dumptrace json output).
+                - "text": Force text mode (parses raw TLC output directly).
 
         Raises:
             FileNotFoundError: If the file does not exist.
             ValueError: If the file does not contain a valid TLC trace.
         """
+        if mode not in ("auto", "json", "text"):
+            raise ValueError(f"Invalid mode: {mode!r}. Must be 'auto', 'json', or 'text'.")
+
         self.file_path = file_path
+        self.mode = mode
         self._states: List[Dict[str, Any]] = []
         self._metadata: Dict[str, Any] = {}
         self._action_details: List[str] = []
@@ -93,6 +106,11 @@ class TLCOutputReader:
 
     def _load_and_parse(self, save_action_name: bool) -> None:
         """Load and parse the TLC output file.
+
+        Auto-detection logic:
+        1. If a counterexample JSON path is found in the output, use JSON mode.
+        2. Otherwise, if the error behavior marker is present, use text mode.
+        3. Otherwise, raise ValueError.
 
         Args:
             save_action_name: Whether to save action names.
@@ -107,9 +125,36 @@ class TLCOutputReader:
             self._metadata["violation_name"] = violation_name
 
         counterexample_path = extract_counterexample_path(content)
+        has_error_trace = ERROR_BEHAVIOR_MARKER in content
+
+        # Determine effective mode
+        if self.mode == "json":
+            effective_mode = "json"
+        elif self.mode == "text":
+            effective_mode = "text"
+        else:  # auto
+            if counterexample_path:
+                effective_mode = "json"
+            elif has_error_trace:
+                effective_mode = "text"
+            else:
+                raise ValueError(
+                    "Could not auto-detect trace format. "
+                    "No JSON counterexample path or text error trace found in TLC output."
+                )
+
+        self._metadata["parse_mode"] = effective_mode
+
+        if effective_mode == "json":
+            self._load_json(counterexample_path, save_action_name)
+        else:
+            self._load_text(content, save_action_name)
+
+    def _load_json(self, counterexample_path: Optional[str], save_action_name: bool) -> None:
+        """Load trace from a JSON counterexample file."""
         if not counterexample_path:
             raise ValueError(
-                "Could not find counterexample path in TLC output. "
+                "JSON mode requires a counterexample path in TLC output. "
                 "Expected 'CounterExample written: <file>'."
             )
 
@@ -122,6 +167,32 @@ class TLCOutputReader:
             trace = json.load(f)
 
         self._states, self._action_details = self._parse_trace(trace, save_action_name)
+
+    def _load_text(self, content: str, save_action_name: bool) -> None:
+        """Load trace by parsing raw TLC text output using TraceReader."""
+        if ERROR_BEHAVIOR_MARKER not in content:
+            raise ValueError(
+                "Text mode requires an error trace in TLC output. "
+                f"Expected '{ERROR_BEHAVIOR_MARKER}' marker."
+            )
+
+        trace_content = convert_to_trace_format(content)
+
+        tr = TraceReader(save_action_name=save_action_name)
+        f = io.StringIO(trace_content)
+
+        for state, state_str in tr.trace_reader_with_state_str(f):
+            self._states.append(state)
+
+            action_detail = None
+            for line in state_str.split('\n'):
+                if line.startswith('\\*') and '<' in line:
+                    action_detail = line.strip()[2:].strip()
+                    break
+            self._action_details.append(action_detail)
+
+        if not self._states:
+            raise ValueError("No states found in TLC text output.")
 
     def _parse_trace(
         self,
