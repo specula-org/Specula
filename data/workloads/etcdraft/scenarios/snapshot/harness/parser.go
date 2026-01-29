@@ -169,7 +169,8 @@ type traceLine struct {
 }
 
 type traceConfig struct {
-	MaxInflightMsgs int `json:"MaxInflightMsgs"`
+	MaxInflightMsgs             int  `json:"MaxInflightMsgs"`
+	DisableConfChangeValidation bool `json:"DisableConfChangeValidation,omitempty"`
 }
 
 func newNDJSONLogger(path, scenario string) (raft.TraceLogger, func() error, error) {
@@ -205,14 +206,17 @@ func (l *ndjsonLogger) TraceEvent(evt *raft.TracingEvent) {
 	}
 }
 
-func (l *ndjsonLogger) WriteConfig(maxInflightMsgs int) {
+func (l *ndjsonLogger) WriteConfig(maxInflightMsgs int, disableConfChangeValidation bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if err := l.enc.Encode(traceLine{
 		Timestamp: time.Now().UTC(),
 		Scenario:  l.scenario,
 		Tag:       "config",
-		Config:    &traceConfig{MaxInflightMsgs: maxInflightMsgs},
+		Config: &traceConfig{
+			MaxInflightMsgs:             maxInflightMsgs,
+			DisableConfChangeValidation: disableConfChangeValidation,
+		},
 	}); err != nil {
 		log.Printf("config encode error: %v", err)
 	}

@@ -183,7 +183,7 @@ func run(cfg runConfig) error {
 			raftCfg.TraceLogger = tracer
 			// Write config on first node creation
 			if !configWritten {
-				ndjsonTracer.WriteConfig(raftCfg.MaxInflightMsgs)
+				ndjsonTracer.WriteConfig(raftCfg.MaxInflightMsgs, raftCfg.DisableConfChangeValidation)
 				configWritten = true
 			}
 		},
