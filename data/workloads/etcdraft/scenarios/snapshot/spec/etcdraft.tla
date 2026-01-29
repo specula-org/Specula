@@ -68,6 +68,16 @@ ASSUME MaxPartitions \in Nat /\ MaxPartitions >= 1
 CONSTANT RestartDropsMessages
 ASSUME RestartDropsMessages \in BOOLEAN
 
+\* DisableConfChangeValidation turns off propose-time verification of
+\* configuration changes against the currently active configuration.
+\* Reference: raft.go:258-278 Config.DisableConfChangeValidation
+\* WARNING: When TRUE, allows proposing LeaveJoint before EnterJoint is applied,
+\* which can violate QuorumLogInv if new config members don't have committed entries.
+\* Users should NOT enable this unless they have a reliable mechanism above raft
+\* that serializes and verifies configuration changes.
+CONSTANT DisableConfChangeValidation
+ASSUME DisableConfChangeValidation \in BOOLEAN
+
 ----
 \* Global variables
 
@@ -1004,7 +1014,10 @@ ReplicateImplicitEntry(i) ==
                /\ config[i].autoLeave = TRUE
                /\ applied[i] >= pendingConfChangeIndex[i]
            \* DisableConfChangeValidation: not in joint but has pending EnterJoint
+           \* Only enabled when DisableConfChangeValidation constant is TRUE
+           \* Reference: raft.go:1334-1338 - bypasses "not in joint state" check
            disableValidationCondition ==
+               /\ DisableConfChangeValidation  \* Must be explicitly enabled
                /\ ~isJoint
                /\ hasPendingEnterJoint
            \* Should create LeaveJoint entry?
