@@ -138,7 +138,7 @@ index 2ffec2b..a675318 100644
  		err = fmt.Errorf("unknown command")
  	}
 diff --git a/rafttest/interaction_env_handler_compact.go b/rafttest/interaction_env_handler_compact.go
-index 25fa1d2..b17e97d 100644
+index 25fa1d2..e517216 100644
 --- a/rafttest/interaction_env_handler_compact.go
 +++ b/rafttest/interaction_env_handler_compact.go
 @@ -19,6 +19,7 @@ import (
@@ -149,7 +149,7 @@ index 25fa1d2..b17e97d 100644
  )
  
  func (env *InteractionEnv) handleCompact(t *testing.T, d datadriven.TestData) error {
-@@ -36,5 +37,48 @@ func (env *InteractionEnv) Compact(idx int, newFirstIndex uint64) error {
+@@ -36,5 +37,49 @@ func (env *InteractionEnv) Compact(idx int, newFirstIndex uint64) error {
  	if err := env.Nodes[idx].Compact(newFirstIndex); err != nil {
  		return err
  	}
@@ -183,6 +183,7 @@ index 25fa1d2..b17e97d 100644
 +				Term:             status.Term,
 +				Vote:             strconv.FormatUint(status.Vote, 10),
 +				Commit:           status.Commit,
++				Applied:          status.Applied,
 +				SnapshotIndex:    snapshotIndex,
 +				SnapshotTerm:     snapshotTerm,
 +				PendingConfIndex: env.Nodes[idx].PendingConfIndex(),
@@ -199,7 +200,7 @@ index 25fa1d2..b17e97d 100644
  	return env.RaftLog(idx)
  }
 diff --git a/rafttest/interaction_env_handler_send_snapshot.go b/rafttest/interaction_env_handler_send_snapshot.go
-index c91d4cc..3e3efdf 100644
+index c91d4cc..0c0f59a 100644
 --- a/rafttest/interaction_env_handler_send_snapshot.go
 +++ b/rafttest/interaction_env_handler_send_snapshot.go
 @@ -15,6 +15,7 @@
@@ -219,7 +220,7 @@ index c91d4cc..3e3efdf 100644
  func (env *InteractionEnv) SendSnapshot(fromIdx, toIdx int) error {
  	snap, err := env.Nodes[fromIdx].Snapshot()
  	if err != nil {
-@@ -46,5 +49,49 @@ func (env *InteractionEnv) SendSnapshot(fromIdx, toIdx int) error {
+@@ -46,5 +49,50 @@ func (env *InteractionEnv) SendSnapshot(fromIdx, toIdx int) error {
  	}
  	env.Messages = append(env.Messages, msg)
  	_, _ = env.Output.WriteString(raft.DescribeMessage(msg, nil))
@@ -249,6 +250,7 @@ index c91d4cc..3e3efdf 100644
 +				Term:             status.Term,
 +				Vote:             strconv.FormatUint(status.Vote, 10),
 +				Commit:           status.Commit,
++				Applied:          status.Applied,
 +				SnapshotIndex:    snapshotIndex,
 +				SnapshotTerm:     snapshotTerm,
 +				PendingConfIndex: env.Nodes[fromIdx].PendingConfIndex(),
@@ -1690,10 +1692,8 @@ index 9de0254..c37b0fc 100755
  }
  PARALLEL=$(nproc)
  
-
 diff --git a/rafttest/interaction_env_handler_report_snapshot.go b/rafttest/interaction_env_handler_report_snapshot.go
 new file mode 100644
-index 0000000..f809bed
 --- /dev/null
 +++ b/rafttest/interaction_env_handler_report_snapshot.go
 @@ -0,0 +1,72 @@
@@ -1769,3 +1769,322 @@ index 0000000..f809bed
 +	env.Nodes[leaderIdx].ReportSnapshot(targetID, status)
 +	return nil
 +}
+diff --git a/testdata/report_unreachable.txt b/testdata/report_unreachable.txt
+new file mode 100644
+--- /dev/null
++++ b/testdata/report_unreachable.txt
+@@ -0,0 +1,71 @@
++# TestReportUnreachable tests the ReportUnreachable code path.
++# When the application layer reports that a peer is unreachable,
++# the leader transitions that peer from StateReplicate to StateProbe.
++#
++# This test covers the ReportUnreachable action in the TLA+ spec
++# (etcdraft.tla lines 1760-1771).
++
++# Turn off output during setup.
++log-level none
++----
++ok
++
++# Start with three nodes.
++add-nodes 3 voters=(1,2,3) index=10
++----
++ok
++
++campaign 1
++----
++ok
++
++stabilize
++----
++ok
++
++log-level debug
++----
++ok
++
++# All followers should be in StateReplicate.
++status 1
++----
++1: StateReplicate match=11 next=12
++2: StateReplicate match=11 next=12
++3: StateReplicate match=11 next=12
++
++# Report node 3 as unreachable.
++# This should transition node 3 from StateReplicate to StateProbe.
++report-unreachable 1 3
++----
++DEBUG 1 failed to send message to 3 because it is unreachable [StateProbe match=11 next=12]
++
++# Verify node 3 is now in StateProbe.
++# Inflights should also be cleared.
++status 1
++----
++1: StateReplicate match=11 next=12
++2: StateReplicate match=11 next=12
++3: StateProbe match=11 next=12
++
++# Report node 2 as unreachable as well.
++report-unreachable 1 2
++----
++DEBUG 1 failed to send message to 2 because it is unreachable [StateProbe match=11 next=12]
++
++status 1
++----
++1: StateReplicate match=11 next=12
++2: StateProbe match=11 next=12
++3: StateProbe match=11 next=12
++
++# Reporting unreachable for a node already in StateProbe logs but is otherwise a no-op.
++report-unreachable 1 3
++----
++DEBUG 1 failed to send message to 3 because it is unreachable [StateProbe match=11 next=12]
++
++status 1
++----
++1: StateReplicate match=11 next=12
++2: StateProbe match=11 next=12
++3: StateProbe match=11 next=12
+diff --git a/testdata/snapshot_status_report.txt b/testdata/snapshot_status_report.txt
+new file mode 100644
+--- /dev/null
++++ b/testdata/snapshot_status_report.txt
+@@ -0,0 +1,121 @@
++# TestSnapshotStatusReport tests the HandleSnapshotStatus code path.
++# When a leader sends a snapshot to a follower, the follower enters StateSnapshot.
++# The application layer then reports back via ReportSnapshot whether the snapshot
++# was successfully sent/applied. This triggers HandleSnapshotStatus which
++# transitions the follower from StateSnapshot to StateProbe.
++#
++# This test covers the HandleSnapshotStatus action in the TLA+ spec (etcdraft.tla
++# lines 1737-1755), which was previously not covered by any trace.
++
++# Turn off output during setup.
++log-level none
++----
++ok
++
++# Start with two nodes, but config has a third.
++add-nodes 2 voters=(1,2,3) index=10
++----
++ok
++
++campaign 1
++----
++ok
++
++# Stabilize the cluster.
++stabilize
++----
++ok
++
++# Compact log on leader so node 3 will need a snapshot.
++compact 1 11
++----
++ok
++
++# Drop messages to node 3 (it doesn't exist yet).
++deliver-msgs drop=(3)
++----
++ok
++
++# Enable debug logging.
++log-level debug
++----
++ok
++
++# Check initial status: node 3 is in StateProbe, inactive.
++status 1
++----
++1: StateReplicate match=11 next=12
++2: StateReplicate match=11 next=12
++3: StateProbe match=0 next=11 paused inactive
++
++# Add node 3.
++add-nodes 1
++----
++INFO 3 switched to configuration voters=()
++INFO 3 became follower at term 0
++INFO newRaft 3 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
++
++# Trigger heartbeat from leader.
++tick-heartbeat 1
++----
++ok
++
++process-ready 1
++----
++Ready MustSync=false:
++Messages:
++1->2 MsgHeartbeat Term:1 Log:0/0 Commit:11
++1->3 MsgHeartbeat Term:1 Log:0/0
++
++# Node 3 receives heartbeat and responds.
++stabilize 3
++----
++> 3 receiving messages
++  1->3 MsgHeartbeat Term:1 Log:0/0
++  INFO 3 [term: 0] received a MsgHeartbeat message with higher term from 1 [term: 1]
++  INFO 3 became follower at term 1
++> 3 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateFollower
++  HardState Term:1 Commit:0
++  Messages:
++  3->1 MsgHeartbeatResp Term:1 Log:0/0
++
++# Leader receives heartbeat response and sends snapshot.
++# Node 3 enters StateSnapshot.
++stabilize 1
++----
++> 1 receiving messages
++  3->1 MsgHeartbeatResp Term:1 Log:0/0
++  DEBUG 1 [firstindex: 12, commit: 11] sent snapshot[index: 11, term: 1] to 3 [StateProbe match=0 next=11]
++  DEBUG 1 paused sending replication messages to 3 [StateSnapshot match=0 next=12 paused pendingSnap=11]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->3 MsgSnap Term:1 Log:0/0
++    Snapshot: Index:11 Term:1 ConfState:Voters:[1 2 3] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++
++# Verify node 3 is in StateSnapshot.
++status 1
++----
++1: StateReplicate match=11 next=12
++2: StateReplicate match=11 next=12
++3: StateSnapshot match=0 next=12 paused pendingSnap=11
++
++# Now, instead of letting node 3 process the snapshot normally,
++# we simulate the application layer reporting snapshot status.
++# This exercises the HandleSnapshotStatus code path.
++
++# Report snapshot success (SnapshotFinish).
++# This should transition node 3 from StateSnapshot to StateProbe.
++report-snapshot 1 3 ok
++----
++DEBUG 1 snapshot succeeded, resumed sending replication messages to 3 [StateProbe match=0 next=12]
++
++# Verify node 3 is now in StateProbe (not StateSnapshot).
++# After successful snapshot, Next = max(Match+1, PendingSnapshot+1) = max(1, 12) = 12
++status 1
++----
++1: StateReplicate match=11 next=12
++2: StateReplicate match=11 next=12
++3: StateProbe match=0 next=12 paused
+diff --git a/testdata/snapshot_status_report_failure.txt b/testdata/snapshot_status_report_failure.txt
+new file mode 100644
+--- /dev/null
++++ b/testdata/snapshot_status_report_failure.txt
+@@ -0,0 +1,112 @@
++# TestSnapshotStatusReportFailure tests the HandleSnapshotStatus code path
++# when snapshot sending fails.
++#
++# When a snapshot fails to be sent/applied, the application reports
++# SnapshotFailure via ReportSnapshot. This triggers HandleSnapshotStatus
++# which transitions the follower from StateSnapshot to StateProbe with
++# Next = Match + 1 (since PendingSnapshot is cleared on failure).
++#
++# This test covers the failure branch of HandleSnapshotStatus in the TLA+ spec
++# (etcdraft.tla lines 1737-1755).
++
++# Turn off output during setup.
++log-level none
++----
++ok
++
++# Start with two nodes, config has a third.
++add-nodes 2 voters=(1,2,3) index=10
++----
++ok
++
++campaign 1
++----
++ok
++
++stabilize
++----
++ok
++
++# Compact log so node 3 will need a snapshot.
++compact 1 11
++----
++ok
++
++deliver-msgs drop=(3)
++----
++ok
++
++log-level debug
++----
++ok
++
++status 1
++----
++1: StateReplicate match=11 next=12
++2: StateReplicate match=11 next=12
++3: StateProbe match=0 next=11 paused inactive
++
++add-nodes 1
++----
++INFO 3 switched to configuration voters=()
++INFO 3 became follower at term 0
++INFO newRaft 3 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
++
++tick-heartbeat 1
++----
++ok
++
++process-ready 1
++----
++Ready MustSync=false:
++Messages:
++1->2 MsgHeartbeat Term:1 Log:0/0 Commit:11
++1->3 MsgHeartbeat Term:1 Log:0/0
++
++stabilize 3
++----
++> 3 receiving messages
++  1->3 MsgHeartbeat Term:1 Log:0/0
++  INFO 3 [term: 0] received a MsgHeartbeat message with higher term from 1 [term: 1]
++  INFO 3 became follower at term 1
++> 3 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateFollower
++  HardState Term:1 Commit:0
++  Messages:
++  3->1 MsgHeartbeatResp Term:1 Log:0/0
++
++stabilize 1
++----
++> 1 receiving messages
++  3->1 MsgHeartbeatResp Term:1 Log:0/0
++  DEBUG 1 [firstindex: 12, commit: 11] sent snapshot[index: 11, term: 1] to 3 [StateProbe match=0 next=11]
++  DEBUG 1 paused sending replication messages to 3 [StateSnapshot match=0 next=12 paused pendingSnap=11]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->3 MsgSnap Term:1 Log:0/0
++    Snapshot: Index:11 Term:1 ConfState:Voters:[1 2 3] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++
++# Verify node 3 is in StateSnapshot with pendingSnap=11.
++status 1
++----
++1: StateReplicate match=11 next=12
++2: StateReplicate match=11 next=12
++3: StateSnapshot match=0 next=12 paused pendingSnap=11
++
++# Report snapshot FAILURE.
++# This should transition node 3 from StateSnapshot to StateProbe.
++# On failure, PendingSnapshot is cleared first, so Next = max(Match+1, 0+1) = 1
++report-snapshot 1 3 fail
++----
++DEBUG 1 snapshot failed, resumed sending replication messages to 3 [StateProbe match=0 next=1]
++
++# Verify node 3 is now in StateProbe.
++# After failed snapshot, Next = Match + 1 = 0 + 1 = 1
++# (PendingSnapshot is cleared to 0 before calculating newNext)
++status 1
++----
++1: StateReplicate match=11 next=12
++2: StateReplicate match=11 next=12
++3: StateProbe match=0 next=1 paused
