@@ -245,7 +245,15 @@ progressVars == <<progressState, pendingSnapshot, nextIndex, msgAppFlowPaused, i
 
 \* All variables; used for stuttering (asserting state hasn't changed).
 vars == <<messageVars, serverVars, candidateVars, leaderVars, logVars, configVars, durableState, progressVars, partitionVars>>
-view_vars == <<messageVars, serverVars, candidateVars, leaderVars, log, commitIndex, config, durableState, progressVars, partitionVars>>
+
+\* View variables for state space reduction.
+\* Excludes from vars:
+\* - historyLog: Ghost variable for verification only, doesn't affect system behavior
+\* - applied: Can be derived from commitIndex progression
+\* - reconfigCount: Pure counter for trace validation
+\* - durableState: Derived from log state
+\* Note: msgSeqCounter is embedded in messages (mseq field), so excluding it here has no effect
+view_vars == <<messages, pendingMessages, serverVars, candidateVars, leaderVars, log, commitIndex, config, progressVars, partitionVars>>
 
 ----
 \* Helpers
@@ -1668,42 +1676,23 @@ HandleAppendEntriesResponse(i, j, m) ==
 
 \* Server i receives a heartbeat response from server j.
 \* Heartbeat responses do NOT cause state transitions (unlike MsgAppResp).
-\* Reference: raft.go:1493-1509 stepLeader case pb.MsgHeartbeatResp
+\* Reference: raft.go:1578-1597 stepLeader case pb.MsgHeartbeatResp
 HandleHeartbeatResponse(i, j, m) ==
     /\ m.mterm = currentTerm[i]
     /\ m.msubtype = "heartbeat"
-    \* Reference: raft.go:1495 pr.MsgAppFlowPaused = false
-    \* Reference: raft.go:1502 r.sendAppend(m.From) -> SentEntries() -> pr.MsgAppFlowPaused = pr.Inflights.Full()
-    \* 
-    \* In real code, after setting MsgAppFlowPaused = false, sendAppend is called.
-    \* If sendAppend sends a message, SentEntries() is called which sets:
-    \*   pr.MsgAppFlowPaused = pr.Inflights.Full()
-    \* If inflights is already full, maybeSendAppend returns early (IsPaused check),
-    \* so no message is sent and MsgAppFlowPaused stays false only briefly.
-    \* However, in the spec we model the combined effect: if inflights is full,
-    \* the pause state should remain true after this operation completes.
+    \* Reference: raft.go:1580 pr.MsgAppFlowPaused = false
     \*
-    \* Fix: In StateReplicate, only clear MsgAppFlowPaused if inflights is not full.
-    \* This models the combined effect of the real code's:
-    \*   1. pr.MsgAppFlowPaused = false
-    \*   2. sendAppend() which may call SentEntries() setting pr.MsgAppFlowPaused = pr.Inflights.Full()
-    /\ LET newInflights == IF progressState[i][j] = StateReplicate /\ Cardinality(inflights[i][j]) > MaxInflightMsgs
-                           THEN inflights[i][j] \ {Min(inflights[i][j])}
-                           ELSE inflights[i][j]
-           \* After potentially freeing one inflight, check if still full
-           stillFull == Cardinality(newInflights) >= MaxInflightMsgs
-       IN /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = 
-               IF progressState[i][j] = StateReplicate 
-               THEN stillFull  \* SentEntries sets MsgAppFlowPaused = Inflights.Full()
-               ELSE FALSE]  \* StateProbe: just clear the pause
-          \* If StateReplicate and inflights over capacity, free one (edge case)
-          \* Reference: raft.go:1497-1499
-          /\ IF progressState[i][j] = StateReplicate /\ Cardinality(inflights[i][j]) > MaxInflightMsgs
-             THEN inflights' = [inflights EXCEPT ![i][j] = newInflights]
-             ELSE UNCHANGED inflights
+    \* In real code, after setting MsgAppFlowPaused = false, sendAppend is called
+    \* if (pr.Match < lastIndex || pr.State == StateProbe). The sendAppend call
+    \* is modeled as a separate SendAppendEntries action in the spec, which will
+    \* update MsgAppFlowPaused via SentEntries() logic (see SendAppendEntries).
+    \*
+    \* Note: There is NO FreeFirstOne or inflight release in heartbeat response handling.
+    \* Inflights are only freed by MsgAppResp (FreeLE in handleAppendEntries).
+    /\ msgAppFlowPaused' = [msgAppFlowPaused EXCEPT ![i][j] = FALSE]
     /\ Discard(m)
     /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars, configVars, durableState,
-                   matchIndex, nextIndex, progressState, pendingSnapshot, partitions>>
+                   matchIndex, nextIndex, progressState, pendingSnapshot, inflights, partitions>>
 
 \* Compacts the log of server i up to newStart (exclusive).
 \* newStart becomes the new offset.
@@ -2155,33 +2144,39 @@ LogMatchingInv ==
 
 \* All committed entries are contained in the log
 \* of at least one server in every quorum.
+\* Committed entries must be preserved in the current config's quorum.
 \*
-\* During joint config, use outgoing (old) config's quorum for checking,
-\* because entries committed before entering joint config are guaranteed
-\* to be in the old config's quorum.
+\* Key insight about Joint Consensus:
+\* - In joint config <<incoming, outgoing>>, commits require BOTH quorums
+\* - LeaveJoint can only commit when both quorums agree
+\* - So when we're in joint state, the incoming config hasn't "taken over" yet
+\* - We should check the outgoing config (which is the one that was used to commit)
 \*
-\* After leaving joint config, skip checking because the new config's quorum
-\* may not have all previously committed entries yet.
+\* For non-joint config: check that quorum holds committed entries
+\* For joint config: check OUTGOING config's quorum (the one that committed the entries)
+\*   The incoming config will only be used alone after LeaveJoint commits,
+\*   and LeaveJoint commit requires incoming quorum to have all entries anyway.
 \*
-\* For servers that never went through config change, use current config.
+\* Note: Only check servers whose config is up-to-date (applied all committed config entries).
+\* A follower may have a stale config while having received committed entries from the leader.
+\* This is normal behavior during config change processing - the follower trusts the leader's
+\* commitIndex but hasn't applied the config entries yet.
 QuorumLogInv ==
     \A i \in Server :
-        LET \* Check if there are any committed config entries (indicates config change happened)
-            hasCommittedConfigEntry == \E k \in 1..commitIndex[i] :
-                    k <= Len(historyLog[i]) /\ historyLog[i][k].type = ConfigEntry
+        \* Find config entries within the committed range
+        LET configIndicesInCommitted == {k \in 1..commitIndex[i] :
+                k <= Len(historyLog[i]) /\ historyLog[i][k].type = ConfigEntry}
+            \* Check if server's config is up-to-date (applied all committed config entries)
+            configUpToDate == configIndicesInCommitted = {} \/
+                              appliedConfigIndex[i] >= Max(configIndicesInCommitted)
+            \* In joint config, use outgoing config for quorum check
+            \* because incoming config hasn't taken effect yet (LeaveJoint not committed)
+            effectiveConfig == IF IsJointConfig(i) THEN GetOutgoingConfig(i) ELSE GetConfig(i)
         IN
-        IF IsJointConfig(i) THEN
-            \* During joint config: use outgoing config (old config) for quorum check
-            \A S \in Quorum(GetOutgoingConfig(i)) :
+        \* Only check servers with up-to-date config
+        configUpToDate =>
+            \A S \in Quorum(effectiveConfig) :
                 \E j \in S : IsPrefix(Committed(i), historyLog[j])
-        ELSE IF ~hasCommittedConfigEntry THEN
-            \* No config change ever: use current config for quorum check
-            \A S \in Quorum(GetConfig(i)) :
-                \E j \in S : IsPrefix(Committed(i), historyLog[j])
-        ELSE
-            \* After leaving joint config: skip check
-            \* (new config's quorum may not have all committed entries yet)
-            TRUE
 
 \* The "up-to-date" check performed by servers
 \* before issuing a vote implies that i receives
@@ -2481,6 +2476,8 @@ CommitIndexBoundInv ==
         commitIndex[i] <= LastIndex(log[i])
 
 \* Term should be monotonic in the log (newer entries have >= terms)
+\* Optimized: Only check adjacent pairs - equivalent to checking all pairs
+\* due to transitivity of <=. Reduces complexity from O(n²) to O(n).
 LogTermMonotonic ==
     \A i \in Server :
         \A idx \in 1..(LastIndex(log[i]) - 1) :
