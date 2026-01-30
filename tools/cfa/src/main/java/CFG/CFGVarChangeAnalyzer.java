@@ -312,11 +312,12 @@ public class CFGVarChangeAnalyzer {
 
     private void genHandleUncalledFunc(CFGFuncNode funcNode){
         // uncalled must be root
-        // HandleFunc(args) == 
+        // HandleFunc(args) ==
         //      /\ pc = Nil
         //      /\ func(args)
         //      /\ UNCHANGED <<vars - Vars_func>>
-        //      /\ stack' = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>]>>
+        //      /\ info' = [args |-> <<arg1, arg2, ...>>, temp |-> <<>>]
+        //      /\ stack' = <<[backsite |-> Nil, info |-> info', args |-> <<>>]>>
         CFGFuncNode newFuncNode = new CFGFuncNode("Handle" + funcNode.getFuncName(), funcNode.getParameters(),0);
         newFuncNode.setInvocationKind(CFGFuncNode.InvocationKind.ENTRY);
         CFGStmtNode root = new CFGStmtNode(0, "root", null, CFGStmtNode.StmtType.ROOT);
@@ -325,7 +326,7 @@ public class CFGVarChangeAnalyzer {
         CFGStmtNode pc_stmt = new CFGStmtNode(1, "pc = Nil", null, CFGStmtNode.StmtType.NORMAL);
         root.addChild(pc_stmt);
         CFGStmtNode call_stmt = new CFGStmtNode(1, Call_uncalled(funcNode), null, CFGStmtNode.StmtType.NORMAL);
-        pc_stmt.addChild(call_stmt); 
+        pc_stmt.addChild(call_stmt);
         Set<String> unchangedVar = new HashSet<>(variables);
         unchangedVar.removeAll(funcVarChange.get(funcNode.getFuncName()));
         CFGStmtNode unchanged_stmt = new CFGStmtNode(1, getUnchangedVar(unchangedVar), null, CFGStmtNode.StmtType.NORMAL);
@@ -334,8 +335,11 @@ public class CFGVarChangeAnalyzer {
         callGraph.addFuncName(newFuncNode.getFuncName());
         CFGCALLEdge callEdge = new CFGCALLEdge(call_stmt, newFuncNode, funcNode, null, null);
         callGraph.addCallEdge(callEdge);
-        CFGStmtNode stack_stmt = new CFGStmtNode(1, "stack' = <<[backsite |-> Nil, info |-> [args |-> <<>>, temp |-> <<>>], args |-> <<>>]>>", null, CFGStmtNode.StmtType.NORMAL);
-        call_stmt.addChild(stack_stmt);
+        // Fix: populate info' with function parameters before storing in stack
+        CFGStmtNode info_stmt = new CFGStmtNode(1, setInfoStr(funcNode.getParameters(), new HashSet<>()), null, CFGStmtNode.StmtType.NORMAL);
+        unchanged_stmt.addChild(info_stmt);
+        CFGStmtNode stack_stmt = new CFGStmtNode(1, "stack' = <<[backsite |-> Nil, info |-> info', args |-> <<>>]>>", null, CFGStmtNode.StmtType.NORMAL);
+        info_stmt.addChild(stack_stmt);
     }
 
     private void genHandleCalledFunc(CFGFuncNode funcNode){
