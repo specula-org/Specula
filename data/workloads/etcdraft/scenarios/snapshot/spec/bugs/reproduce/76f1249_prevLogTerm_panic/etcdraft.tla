@@ -1,4 +1,4 @@
--------------------------- MODULE etcdraft_bug --------------------------
+-------------------------- MODULE etcdraft --------------------------
 EXTENDS Naturals, Integers, Bags, FiniteSets, Sequences, SequencesExt, FiniteSetsExt, BagsExt, TLC
 
 \* The initial and global set of server IDs.
@@ -684,18 +684,11 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
     /\ range[1] <= range[2]
     /\ state[i] = Leader
     /\ j \in GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i)
-    \* Guard: If sending entries (non-empty range), they must be available (not compacted)
-    \* Reference: raft.go:623-627 maybeSendAppend() - if term(prevIndex) fails, send snapshot
-    \* Heartbeat (range[1] = range[2]) doesn't send entries, so no check needed
-    /\ (range[1] = range[2] \/ range[1] >= log[i].offset)
-    \* NEW Guard (Bug 76f1249 fix): prevLogIndex must have retrievable term
-    \* Reference: raft.go:622-628 - if term(prevIndex) fails, send snapshot instead
-    \* prevLogIndex = range[1] - 1 can have valid term if:
-    \*   (1) prevLogIndex = 0 (empty log case, term = 0 is valid), or
-    \*   (2) prevLogIndex = snapshotIndex (term from snapshot metadata), or
-    \*   (3) prevLogIndex >= offset (entry is available in log)
-    \* NOTE: This applies to ALL AppendEntries including heartbeats - heartbeats also need valid prevLogTerm
-    /\ (range[1] = 1 \/ range[1] - 1 = log[i].snapshotIndex \/ range[1] - 1 >= log[i].offset)
+    \* BUG 76f1249: Removed guard that checks entries are available (not compacted)
+    \* Original: /\ (range[1] = range[2] \/ range[1] >= log[i].offset)
+    \* This allows sending MsgApp with prevLogIndex pointing to compacted entries,
+    \* causing prevLogTerm = 0 which can lead to follower panic
+    /\ TRUE  \* BUG: No check for compacted entries
     \* New: Check flow control state; cannot send when paused (except heartbeat)
     \* Reference: IsPaused check in raft.go:407-410, 652-655 maybeSendAppend()
     \* Note: heartbeat is sent directly via bcastHeartbeat(), bypassing maybeSendAppend()
@@ -710,7 +703,11 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
                             0
         \* Send the entries
         lastEntry == Min({LastIndex(log[i]), range[2]-1})
-        entries == SubSeq(log[i].entries, range[1] - log[i].offset + 1, lastEntry - log[i].offset + 1)
+        \* BUG 76f1249: When range[1] < offset, entries are compacted but we still try to send
+        \* This is the bug - we should send snapshot instead, but buggy code continues
+        entries == IF range[1] < log[i].offset
+                   THEN <<>>  \* Empty entries for compacted range (bug!)
+                   ELSE SubSeq(log[i].entries, range[1] - log[i].offset + 1, lastEntry - log[i].offset + 1)
         \* Commit calculation:
         \* - Heartbeat: Min(commitIndex, matchIndex) - bounded by what follower has
         \* - Empty append (no entries): commitIndex directly - just updating commit
@@ -795,9 +792,6 @@ SendSnapshot(i, j) ==
     \* Trigger: The previous log index required for AppendEntries is NOT available
     /\ LET prevLogIndex == nextIndex[i][j] - 1 IN
        ~IsAvailable(i, prevLogIndex)
-    \* Must have a snapshot to send (snapshotIndex > 0)
-    \* Reference: raft.go:677-682 - maybeSendSnapshot checks r.raftLog.snapshot()
-    /\ log[i].snapshotIndex > 0
     /\ LET snapshotHistory == SubSeq(historyLog[i], 1, log[i].snapshotIndex)
        IN Send([mtype          |-> SnapshotRequest,
                 mterm          |-> currentTerm[i],
@@ -957,23 +951,15 @@ ClientRequestAndSend(i, v) ==
 \* Reference: This models the implicit replication when leader sends MsgAppResp to itself.
 \* Reference: raft.go:745 - Auto-leave trigger condition:
 \*   if r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex && r.state == StateLeader
-\*
-\* BUG 12136: Joint State Stuck
-\* Issue: https://github.com/etcd-io/etcd/issues/12136
-\* When a new leader is elected in joint config, BecomeLeader sets
-\* pendingConfChangeIndex = lastIndex. The buggy condition
-\* `pendingConfChangeIndex < lastIndex` is never satisfied, blocking AutoLeave.
 ReplicateImplicitEntry(i) ==
     /\ state[i] = Leader
     /\ LET isJoint == IsJointConfig(i)
        IN
-       \* BUG 12136: Added extra condition that blocks AutoLeave when leader just elected
-       \* The buggy code requires pendingConfChangeIndex < lastIndex, but BecomeLeader
-       \* sets pendingConfChangeIndex = lastIndex, so this condition is never satisfied.
-       \* Fixed version only checks: applied >= pendingConfChangeIndex
-       /\ (isJoint => (config[i].autoLeave = TRUE
-                      /\ applied[i] >= pendingConfChangeIndex[i]
-                      /\ pendingConfChangeIndex[i] < LastIndex(log[i])))  \* BUG: Blocks AutoLeave for new leader
+       \* FIX: When in joint config, must check auto-leave preconditions per raft.go:745
+       \* 1. config[i].autoLeave = TRUE (corresponds to r.trk.Config.AutoLeave)
+       \* 2. applied[i] >= pendingConfChangeIndex[i] (corresponds to newApplied >= r.pendingConfIndex)
+       \* Reference: raft.go:745 "if r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex"
+       /\ (isJoint => (config[i].autoLeave = TRUE /\ applied[i] >= pendingConfChangeIndex[i]))
        /\ LET entryType == IF isJoint THEN ConfigEntry ELSE ValueEntry
               \* For LeaveJoint, use leaveJoint |-> TRUE format to match ApplyConfigUpdate
               entryValue == IF isJoint
@@ -1276,6 +1262,12 @@ ApplySnapshotConfChange(i, newVoters) ==
     /\ config' = [config EXCEPT ![i] = [learners |-> newLearners, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
     /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = lastConfigIdx]
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex, partitions>>
+
+\* Follower advances commit index (e.g., from AppendEntries leaderCommit)
+FollowerAdvanceCommitIndex(i, newCommit) ==
+    /\ state[i] /= Leader
+    /\ commitIndex' = [commitIndex EXCEPT ![i] = newCommit]
+    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, pendingConfChangeIndex, log, applied, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* Apply committed entries to state machine
 \* Reference: raft/node.go - application layer retrieves CommittedEntries from Ready()
@@ -3264,28 +3256,5 @@ GitHistoryBugPreventionInv ==
 \* MonotonicMatchIndexProp ==
 \*     [][(~ \E i \in Server: BecomeLeader(i)) =>
 \*             (\A i,j \in Server : matchIndex'[i][j] >= matchIndex[i][j])]_vars
-
-\* ============================================================================
-\* BUG 12136: Joint State Stuck Detection Invariant
-\* Issue: https://github.com/etcd-io/etcd/issues/12136
-\* When in joint config with autoLeave=TRUE, if applied >= pendingConfChangeIndex,
-\* the leader SHOULD be able to trigger AutoLeave.
-\* The bug is that new leader sets pendingConfChangeIndex = lastIndex, and the
-\* buggy condition `pendingConfChangeIndex < lastIndex` blocks AutoLeave forever.
-\* ============================================================================
-
-\* This invariant checks that a leader in joint config with autoLeave can eventually
-\* leave the joint state. The bug causes this to be violated because:
-\* - New leader sets pendingConfChangeIndex = lastIndex
-\* - Condition `pendingConfChangeIndex < lastIndex` is never satisfied
-\* - AutoLeave is blocked, stuck in joint config
-JointStateAutoLeavePossibleInv ==
-    \A i \in Server :
-        (state[i] = Leader /\ IsJointConfig(i) /\ config[i].autoLeave = TRUE) =>
-            \* If applied >= pendingConfChangeIndex, AutoLeave SHOULD be possible
-            \* But with the bug, even when this is true, the extra condition blocks it
-            ((applied[i] >= pendingConfChangeIndex[i]) =>
-                \* The buggy condition would require this, which fails for new leaders
-                pendingConfChangeIndex[i] < LastIndex(log[i]))
 
 ===============================================================================

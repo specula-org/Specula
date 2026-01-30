@@ -1,4 +1,4 @@
--------------------------- MODULE etcdraft_bug --------------------------
+-------------------------- MODULE etcdraft --------------------------
 EXTENDS Naturals, Integers, Bags, FiniteSets, Sequences, SequencesExt, FiniteSetsExt, BagsExt, TLC
 
 \* The initial and global set of server IDs.
@@ -684,11 +684,18 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
     /\ range[1] <= range[2]
     /\ state[i] = Leader
     /\ j \in GetConfig(i) \union GetOutgoingConfig(i) \union GetLearners(i)
-    \* BUG 76f1249: Removed guard that checks entries are available (not compacted)
-    \* Original: /\ (range[1] = range[2] \/ range[1] >= log[i].offset)
-    \* This allows sending MsgApp with prevLogIndex pointing to compacted entries,
-    \* causing prevLogTerm = 0 which can lead to follower panic
-    /\ TRUE  \* BUG: No check for compacted entries
+    \* Guard: If sending entries (non-empty range), they must be available (not compacted)
+    \* Reference: raft.go:623-627 maybeSendAppend() - if term(prevIndex) fails, send snapshot
+    \* Heartbeat (range[1] = range[2]) doesn't send entries, so no check needed
+    /\ (range[1] = range[2] \/ range[1] >= log[i].offset)
+    \* NEW Guard (Bug 76f1249 fix): prevLogIndex must have retrievable term
+    \* Reference: raft.go:622-628 - if term(prevIndex) fails, send snapshot instead
+    \* prevLogIndex = range[1] - 1 can have valid term if:
+    \*   (1) prevLogIndex = 0 (empty log case, term = 0 is valid), or
+    \*   (2) prevLogIndex = snapshotIndex (term from snapshot metadata), or
+    \*   (3) prevLogIndex >= offset (entry is available in log)
+    \* NOTE: This applies to ALL AppendEntries including heartbeats - heartbeats also need valid prevLogTerm
+    /\ (range[1] = 1 \/ range[1] - 1 = log[i].snapshotIndex \/ range[1] - 1 >= log[i].offset)
     \* New: Check flow control state; cannot send when paused (except heartbeat)
     \* Reference: IsPaused check in raft.go:407-410, 652-655 maybeSendAppend()
     \* Note: heartbeat is sent directly via bcastHeartbeat(), bypassing maybeSendAppend()
@@ -703,11 +710,7 @@ AppendEntriesInRangeToPeer(subtype, i, j, range) ==
                             0
         \* Send the entries
         lastEntry == Min({LastIndex(log[i]), range[2]-1})
-        \* BUG 76f1249: When range[1] < offset, entries are compacted but we still try to send
-        \* This is the bug - we should send snapshot instead, but buggy code continues
-        entries == IF range[1] < log[i].offset
-                   THEN <<>>  \* Empty entries for compacted range (bug!)
-                   ELSE SubSeq(log[i].entries, range[1] - log[i].offset + 1, lastEntry - log[i].offset + 1)
+        entries == SubSeq(log[i].entries, range[1] - log[i].offset + 1, lastEntry - log[i].offset + 1)
         \* Commit calculation:
         \* - Heartbeat: Min(commitIndex, matchIndex) - bounded by what follower has
         \* - Empty append (no entries): commitIndex directly - just updating commit
@@ -792,6 +795,9 @@ SendSnapshot(i, j) ==
     \* Trigger: The previous log index required for AppendEntries is NOT available
     /\ LET prevLogIndex == nextIndex[i][j] - 1 IN
        ~IsAvailable(i, prevLogIndex)
+    \* Must have a snapshot to send (snapshotIndex > 0)
+    \* Reference: raft.go:677-682 - maybeSendSnapshot checks r.raftLog.snapshot()
+    /\ log[i].snapshotIndex > 0
     /\ LET snapshotHistory == SubSeq(historyLog[i], 1, log[i].snapshotIndex)
        IN Send([mtype          |-> SnapshotRequest,
                 mterm          |-> currentTerm[i],
@@ -1262,12 +1268,6 @@ ApplySnapshotConfChange(i, newVoters) ==
     /\ config' = [config EXCEPT ![i] = [learners |-> newLearners, jointConfig |-> <<newVoters, oldconf>>, autoLeave |-> newAutoLeave]]
     /\ appliedConfigIndex' = [appliedConfigIndex EXCEPT ![i] = lastConfigIdx]
     /\ UNCHANGED <<messageVars, serverVars, candidateVars, leaderVars, logVars, durableState, progressVars, reconfigCount, pendingConfChangeIndex, partitions>>
-
-\* Follower advances commit index (e.g., from AppendEntries leaderCommit)
-FollowerAdvanceCommitIndex(i, newCommit) ==
-    /\ state[i] /= Leader
-    /\ commitIndex' = [commitIndex EXCEPT ![i] = newCommit]
-    /\ UNCHANGED <<messageVars, serverVars, candidateVars, matchIndex, pendingConfChangeIndex, log, applied, configVars, durableState, progressVars, historyLog, partitions>>
 
 \* Apply committed entries to state machine
 \* Reference: raft/node.go - application layer retrieves CommittedEntries from Ready()
@@ -3256,5 +3256,34 @@ GitHistoryBugPreventionInv ==
 \* MonotonicMatchIndexProp ==
 \*     [][(~ \E i \in Server: BecomeLeader(i)) =>
 \*             (\A i,j \in Server : matchIndex'[i][j] >= matchIndex[i][j])]_vars
+
+\* ============================================================================
+\* BUG 7280: Async Apply ConfChange Safety Detection Invariant
+\* Issue: https://github.com/etcd-io/etcd/issues/7280
+\* A Candidate must wait for all committed config changes to be applied before
+\* starting election. Otherwise, it may use the wrong (old) quorum.
+\* The bug is that Timeout doesn't check appliedConfigIndex, allowing election
+\* to proceed with committed but unapplied config changes.
+\* ============================================================================
+
+\* This invariant checks that a Candidate has no committed but unapplied config entries.
+\* With the bug (no check in Timeout), a Candidate can have unapplied config entries,
+\* meaning it might use the wrong quorum for election.
+\* Violation indicates the bug: Candidate started election before all configs applied.
+NoConfigGapDuringElectionInv ==
+    \A i \in Server :
+        state[i] = Candidate =>
+            \* Find committed but unapplied config entries
+            LET unappliedConfigIndices == {idx \in Max({appliedConfigIndex[i]+1, log[i].offset})..commitIndex[i] :
+                    idx <= Len(historyLog[i]) /\ historyLog[i][idx].type = ConfigEntry}
+            IN unappliedConfigIndices = {}  \* Should be empty if Candidate properly waited
+
+\* Alternative: Check that appliedConfigIndex is up-to-date with committed configs
+ElectionConfigAppliedInv ==
+    \A i \in Server :
+        state[i] = Candidate =>
+            LET configIndicesInCommitted == {k \in 1..commitIndex[i] :
+                    k <= Len(historyLog[i]) /\ historyLog[i][k].type = ConfigEntry}
+            IN configIndicesInCommitted = {} \/ appliedConfigIndex[i] >= Max(configIndicesInCommitted)
 
 ===============================================================================

@@ -1,4 +1,4 @@
--------------------------- MODULE etcdraft_bug --------------------------
+-------------------------- MODULE etcdraft --------------------------
 EXTENDS Naturals, Integers, Bags, FiniteSets, Sequences, SequencesExt, FiniteSetsExt, BagsExt, TLC
 
 \* The initial and global set of server IDs.
@@ -957,15 +957,23 @@ ClientRequestAndSend(i, v) ==
 \* Reference: This models the implicit replication when leader sends MsgAppResp to itself.
 \* Reference: raft.go:745 - Auto-leave trigger condition:
 \*   if r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex && r.state == StateLeader
+\*
+\* BUG 12136: Joint State Stuck
+\* Issue: https://github.com/etcd-io/etcd/issues/12136
+\* When a new leader is elected in joint config, BecomeLeader sets
+\* pendingConfChangeIndex = lastIndex. The buggy condition
+\* `pendingConfChangeIndex < lastIndex` is never satisfied, blocking AutoLeave.
 ReplicateImplicitEntry(i) ==
     /\ state[i] = Leader
     /\ LET isJoint == IsJointConfig(i)
        IN
-       \* FIX: When in joint config, must check auto-leave preconditions per raft.go:745
-       \* 1. config[i].autoLeave = TRUE (corresponds to r.trk.Config.AutoLeave)
-       \* 2. applied[i] >= pendingConfChangeIndex[i] (corresponds to newApplied >= r.pendingConfIndex)
-       \* Reference: raft.go:745 "if r.trk.Config.AutoLeave && newApplied >= r.pendingConfIndex"
-       /\ (isJoint => (config[i].autoLeave = TRUE /\ applied[i] >= pendingConfChangeIndex[i]))
+       \* BUG 12136: Added extra condition that blocks AutoLeave when leader just elected
+       \* The buggy code requires pendingConfChangeIndex < lastIndex, but BecomeLeader
+       \* sets pendingConfChangeIndex = lastIndex, so this condition is never satisfied.
+       \* Fixed version only checks: applied >= pendingConfChangeIndex
+       /\ (isJoint => (config[i].autoLeave = TRUE
+                      /\ applied[i] >= pendingConfChangeIndex[i]
+                      /\ pendingConfChangeIndex[i] < LastIndex(log[i])))  \* BUG: Blocks AutoLeave for new leader
        /\ LET entryType == IF isJoint THEN ConfigEntry ELSE ValueEntry
               \* For LeaveJoint, use leaveJoint |-> TRUE format to match ApplyConfigUpdate
               entryValue == IF isJoint
@@ -3258,32 +3266,26 @@ GitHistoryBugPreventionInv ==
 \*             (\A i,j \in Server : matchIndex'[i][j] >= matchIndex[i][j])]_vars
 
 \* ============================================================================
-\* BUG 7280: Async Apply ConfChange Safety Detection Invariant
-\* Issue: https://github.com/etcd-io/etcd/issues/7280
-\* A Candidate must wait for all committed config changes to be applied before
-\* starting election. Otherwise, it may use the wrong (old) quorum.
-\* The bug is that Timeout doesn't check appliedConfigIndex, allowing election
-\* to proceed with committed but unapplied config changes.
+\* BUG 12136: Joint State Stuck Detection Invariant
+\* Issue: https://github.com/etcd-io/etcd/issues/12136
+\* When in joint config with autoLeave=TRUE, if applied >= pendingConfChangeIndex,
+\* the leader SHOULD be able to trigger AutoLeave.
+\* The bug is that new leader sets pendingConfChangeIndex = lastIndex, and the
+\* buggy condition `pendingConfChangeIndex < lastIndex` blocks AutoLeave forever.
 \* ============================================================================
 
-\* This invariant checks that a Candidate has no committed but unapplied config entries.
-\* With the bug (no check in Timeout), a Candidate can have unapplied config entries,
-\* meaning it might use the wrong quorum for election.
-\* Violation indicates the bug: Candidate started election before all configs applied.
-NoConfigGapDuringElectionInv ==
+\* This invariant checks that a leader in joint config with autoLeave can eventually
+\* leave the joint state. The bug causes this to be violated because:
+\* - New leader sets pendingConfChangeIndex = lastIndex
+\* - Condition `pendingConfChangeIndex < lastIndex` is never satisfied
+\* - AutoLeave is blocked, stuck in joint config
+JointStateAutoLeavePossibleInv ==
     \A i \in Server :
-        state[i] = Candidate =>
-            \* Find committed but unapplied config entries
-            LET unappliedConfigIndices == {idx \in Max({appliedConfigIndex[i]+1, log[i].offset})..commitIndex[i] :
-                    idx <= Len(historyLog[i]) /\ historyLog[i][idx].type = ConfigEntry}
-            IN unappliedConfigIndices = {}  \* Should be empty if Candidate properly waited
-
-\* Alternative: Check that appliedConfigIndex is up-to-date with committed configs
-ElectionConfigAppliedInv ==
-    \A i \in Server :
-        state[i] = Candidate =>
-            LET configIndicesInCommitted == {k \in 1..commitIndex[i] :
-                    k <= Len(historyLog[i]) /\ historyLog[i][k].type = ConfigEntry}
-            IN configIndicesInCommitted = {} \/ appliedConfigIndex[i] >= Max(configIndicesInCommitted)
+        (state[i] = Leader /\ IsJointConfig(i) /\ config[i].autoLeave = TRUE) =>
+            \* If applied >= pendingConfChangeIndex, AutoLeave SHOULD be possible
+            \* But with the bug, even when this is true, the extra condition blocks it
+            ((applied[i] >= pendingConfChangeIndex[i]) =>
+                \* The buggy condition would require this, which fails for new leaders
+                pendingConfChangeIndex[i] < LastIndex(log[i]))
 
 ===============================================================================

@@ -4,7 +4,7 @@
 \* - Snapshots and log compaction
 \* - Configuration changes
 
-EXTENDS etcdraft_bug
+EXTENDS etcdraft
 
 \* ============================================================================
 \* CONSTRAINT CONSTANTS
@@ -80,7 +80,7 @@ VARIABLE constraintCounters
 
 faultVars == <<constraintCounters>>
 
-etcd == INSTANCE etcdraft_bug
+etcd == INSTANCE etcdraft
 
 \* ============================================================================
 \* ETCD BOOTSTRAP INITIALIZATION
