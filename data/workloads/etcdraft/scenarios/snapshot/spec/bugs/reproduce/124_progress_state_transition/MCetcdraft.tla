@@ -540,4 +540,13 @@ LeaderCommitCurrentTermLogsProp ==
                 historyLog'[i][commitIndex'[i]].term = currentTerm'[i]
     ]_mc_vars
 
+\* ============================================================================
+\* DEBUG INVARIANT for Bug 124
+\* ============================================================================
+
+\* Key condition: Can any follower enter StateSnapshot?
+NoStateSnapshotInv ==
+    \A i, j \in Server :
+        state[i] = Leader => progressState[i][j] /= StateSnapshot
+
 =============================================================================

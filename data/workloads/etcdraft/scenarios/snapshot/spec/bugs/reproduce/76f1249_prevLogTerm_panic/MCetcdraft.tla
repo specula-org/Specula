@@ -540,4 +540,13 @@ LeaderCommitCurrentTermLogsProp ==
                 historyLog'[i][commitIndex'[i]].term = currentTerm'[i]
     ]_mc_vars
 
+\* ============================================================================
+\* DEBUG INVARIANT for Bug 76f1249
+\* ============================================================================
+
+\* Key condition: slow follower exists (nextIndex < offset after compaction)
+NoSlowFollowerInv ==
+    \A i, j \in Server :
+        state[i] = Leader => nextIndex[i][j] >= log[i].offset
+
 =============================================================================

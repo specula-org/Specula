@@ -540,4 +540,34 @@ LeaderCommitCurrentTermLogsProp ==
                 historyLog'[i][commitIndex'[i]].term = currentTerm'[i]
     ]_mc_vars
 
+\* ============================================================================
+\* DEBUG INVARIANTS for Bug 7280
+\* ============================================================================
+
+\* Step 1: Check if we can reach a state where ANY node has unapplied committed config
+\* If this is violated, we confirmed the intermediate state is reachable
+NoUnappliedCommittedConfigInv ==
+    \A i \in Server :
+        LET unappliedConfigs == {idx \in (appliedConfigIndex[i]+1)..commitIndex[i] :
+                idx <= Len(historyLog[i]) /\ historyLog[i][idx].type = ConfigEntry}
+        IN unappliedConfigs = {}
+
+\* Step 2: Check if FOLLOWER can have unapplied committed config
+FollowerNoUnappliedConfigInv ==
+    \A i \in Server :
+        state[i] = Follower =>
+            LET unappliedConfigs == {idx \in (appliedConfigIndex[i]+1)..commitIndex[i] :
+                    idx <= Len(historyLog[i]) /\ historyLog[i][idx].type = ConfigEntry}
+            IN unappliedConfigs = {}
+
+\* Step 0: Check if any config change happens at all (log grows beyond bootstrap)
+\* Bootstrap has Cardinality(InitServer) entries, so if log > that, something was added
+NoNewLogEntriesInv ==
+    \A i \in Server :
+        i \in InitServer => Len(historyLog[i]) <= Cardinality(InitServer)
+
+\* Step 0b: Check if any node becomes Leader
+NoLeaderInv ==
+    \A i \in Server : state[i] /= Leader
+
 =============================================================================

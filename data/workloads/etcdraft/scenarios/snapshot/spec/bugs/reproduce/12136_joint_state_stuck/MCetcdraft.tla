@@ -540,4 +540,22 @@ LeaderCommitCurrentTermLogsProp ==
                 historyLog'[i][commitIndex'[i]].term = currentTerm'[i]
     ]_mc_vars
 
+\* ============================================================================
+\* DEBUG INVARIANTS for Bug 12136
+\* ============================================================================
+
+\* Step 0: Check if any ConfigEntry is added beyond bootstrap
+NoNewConfigEntryInv ==
+    \A i \in Server :
+        i \in InitServer => Len(historyLog[i]) <= Cardinality(InitServer)
+
+\* Step 1: Check if any node has joint config (via ApplySimpleConfChange)
+NoJointConfigInv ==
+    \A i \in Server : ~IsJointConfig(i)
+
+\* Step 2: Leader in joint config with autoLeave
+NoLeaderInJointConfigInv ==
+    \A i \in Server :
+        ~(state[i] = Leader /\ IsJointConfig(i) /\ config[i].autoLeave = TRUE)
+
 =============================================================================
