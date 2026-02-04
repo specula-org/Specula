@@ -7,7 +7,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp import types
 
-from .handlers import SummaryHandler, StateHandler, CompareHandler
+from .handlers import SummaryHandler, StateHandler, CompareHandler, TraceReplayHandler
 
 # Setup logging
 logging.basicConfig(
@@ -21,10 +21,11 @@ logger = logging.getLogger(__name__)
 class TLCOutputReaderMCPServer:
     """MCP Server for TLC Output Reader.
 
-    This server exposes 3 tools for analyzing TLC model checking output:
+    This server exposes 4 tools for analyzing TLC model checking output:
     1. get_tlc_summary - Get high-level overview of the trace
     2. get_tlc_state - Get specific states and variable values
     3. compare_tlc_states - Compare states and track variable changes
+    4. run_trace_replay - Replay a trace with optional ALIAS to observe details
     """
 
     def __init__(self):
@@ -40,6 +41,7 @@ class TLCOutputReaderMCPServer:
             "get_tlc_summary": SummaryHandler(),
             "get_tlc_state": StateHandler(),
             "compare_tlc_states": CompareHandler(),
+            "run_trace_replay": TraceReplayHandler(),
         }
 
         # Register list_tools handler
@@ -154,6 +156,66 @@ class TLCOutputReaderMCPServer:
                             }
                         },
                         "required": ["file_path"]
+                    }
+                ),
+                types.Tool(
+                    name="run_trace_replay",
+                    description=(
+                        "Replay a TLC trace using -loadTrace + -dumpTrace json. "
+                        "Returns a JSON file that can be analyzed with "
+                        "get_tlc_summary/get_tlc_state/compare_tlc_states.\n\n"
+                        "Use this when you need to observe additional details from an "
+                        "existing trace. Define an ALIAS operator in the spec to "
+                        "filter variables, evaluate expressions, or rename variables "
+                        "during replay. Reference the ALIAS in the config file.\n\n"
+                        "Example workflow:\n"
+                        "1. Define ALIAS in spec: MyAlias == [x |-> x, sum |-> x + y]\n"
+                        "2. Add to config: ALIAS\\nMyAlias\n"
+                        "3. Call run_trace_replay with that config\n"
+                        "4. Use get_tlc_summary on the output to analyze results"
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "spec_file": {
+                                "type": "string",
+                                "description": "TLA+ spec file name (e.g., 'Spec.tla')"
+                            },
+                            "trace_file": {
+                                "type": "string",
+                                "description": "Input trace file path (relative to work_dir or absolute)"
+                            },
+                            "work_dir": {
+                                "type": "string",
+                                "description": "Working directory containing the spec"
+                            },
+                            "config_file": {
+                                "type": "string",
+                                "description": "Config file name (can contain ALIAS definition)"
+                            },
+                            "output_file": {
+                                "type": "string",
+                                "description": "Output JSON file path (auto-generated if omitted)"
+                            },
+                            "trace_format": {
+                                "type": "string",
+                                "description": "Input trace format: 'json' (default) or 'tlc'",
+                                "enum": ["json", "tlc"]
+                            },
+                            "tla_jar": {
+                                "type": "string",
+                                "description": "Path to tla2tools.jar (optional)"
+                            },
+                            "community_jar": {
+                                "type": "string",
+                                "description": "Path to CommunityModules-deps.jar (optional)"
+                            },
+                            "timeout": {
+                                "type": "integer",
+                                "description": "Timeout in seconds (default: 300)"
+                            }
+                        },
+                        "required": ["spec_file", "trace_file", "work_dir"]
                     }
                 ),
             ]

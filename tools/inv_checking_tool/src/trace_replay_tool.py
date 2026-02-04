@@ -125,8 +125,9 @@ class TraceReplayer:
         config_file: Optional[str] = None,
         trace_format: TraceFormat = TraceFormat.JSON,
         java_opts: Optional[List[str]] = None,
-        timeout: int = 300
-    ) -> str:
+        timeout: int = 300,
+        tlc_output_file: Optional[str] = None
+    ) -> Tuple[str, str]:
         """Replay a trace file and save the result as JSON.
 
         Args:
@@ -138,9 +139,14 @@ class TraceReplayer:
             trace_format: Format of input trace file
             java_opts: Additional JVM options
             timeout: Timeout in seconds
+            tlc_output_file: Path to save TLC text output. If omitted,
+                derived from output_file by replacing extension with
+                _tlc_output.txt.
 
         Returns:
-            Path to the output JSON file
+            Tuple of (tlc_output_file, json_output_file).
+            tlc_output_file contains TLC's text output (for TLCOutputReader).
+            json_output_file is the -dumpTrace json result.
 
         Raises:
             RuntimeError: If TLC fails or times out
@@ -172,10 +178,19 @@ class TraceReplayer:
 
         output = stdout.decode('utf-8', errors='replace')
 
-        if process.returncode != 0 or not os.path.exists(output_file):
+        # TLC exits with non-zero codes for invariant/property violations
+        # (e.g. 12 for invariant violation). This is expected when replaying
+        # a counterexample trace. We only fail if the output file wasn't written.
+        if not os.path.exists(output_file):
             raise RuntimeError(f"TLC trace replay failed (exit {process.returncode}):\n{output}")
 
-        return output_file
+        # Save TLC text output so TLCOutputReader can parse it.
+        if not tlc_output_file:
+            tlc_output_file = output_file.rsplit('.', 1)[0] + '_tlc_output.txt'
+        with open(tlc_output_file, 'w') as f:
+            f.write(output)
+
+        return tlc_output_file, output_file
 
     def replay_sync(self, **kwargs) -> str:
         """Synchronous version of replay."""

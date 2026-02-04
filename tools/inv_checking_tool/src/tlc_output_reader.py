@@ -166,6 +166,10 @@ class TLCOutputReader:
         with trace_path.open(encoding="utf-8", errors="replace") as f:
             trace = json.load(f)
 
+        # -dumpTrace json wraps data under "counterexample" key; unwrap if present.
+        if "counterexample" in trace and isinstance(trace["counterexample"], dict):
+            trace = trace["counterexample"]
+
         self._states, self._action_details = self._parse_trace(trace, save_action_name)
 
     def _load_text(self, content: str, save_action_name: bool) -> None:
