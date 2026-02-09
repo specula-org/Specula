@@ -44,6 +44,7 @@ systems/etcd/raft/
 systems/asterinas/asterinas/
 data/workloads/**/spec/*_TTrace_*
 data/workloads/**/code/
+data/workloads/**/artifact/
 
 # TLA+ generated files
 *.st
