@@ -62,6 +62,9 @@ models/
 CLAUDE.md
 TLA+Parser.md
 
+# Experiment outputs (generated specs)
+src/prompts/skill_doc/experiments/output_*/
+
 # Java compiled files
 *.class
 *.jar
