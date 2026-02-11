@@ -1,3 +1,6 @@
 [submodule "tools/tlaplus"]
 	path = tools/tlaplus
 	url = https://github.com/tlaplus/tlaplus.git
+[submodule "case-studies"]
+	path = case-studies
+	url = https://github.com/specula-org/specula-case-studies.git
