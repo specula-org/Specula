@@ -20,7 +20,7 @@ Specula is a multi-phase, agentic workflow. Each phase is driven by a dedicated 
 
 ## Quickstart
 
-Specula runs as a set of code agent skills and MCP tools. It currently supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://openai.com/index/codex/), with more agents to be supported in the future.
+Specula runs as a set of code agent skills and MCP tools. It currently supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://openai.com/codex/), with more agents to be supported in the future.
 
 ### Prerequisites
 
