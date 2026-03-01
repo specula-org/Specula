@@ -15,7 +15,7 @@
 # Options:
 #   --dry-run           Print commands without executing
 #   --check             Only verify repos exist
-#   --max-parallel=N    Max concurrent agents (default: 2)
+#   --max-parallel=N    Max concurrent agents (default: 1)
 #   --max-turns=N       Max agent turns (default: 0 = unlimited)
 #
 # Prerequisites:
@@ -29,7 +29,7 @@ unset CLAUDECODE 2>/dev/null || true
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPECULA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
-MAX_PARALLEL=2
+MAX_PARALLEL=1
 MAX_TURNS=0
 DRY_RUN=false
 CHECK_ONLY=false
