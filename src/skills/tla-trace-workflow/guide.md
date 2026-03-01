@@ -6,9 +6,9 @@ Validate implementation traces against TLA+ specifications. Diagnose and fix val
 
 **Input**: Trace spec (`Trace.tla` + `Trace.cfg`) + trace file (`.ndjson`) + base spec
 
-**Output**: Validated spec (trace passes) or fix log documenting spec corrections
+**Output**: Validated spec (trace passes) or corrected spec
 
-**The user drives each phase.** You provide methodology and execute on their direction.
+**By default, execute autonomously.** Only pause for user confirmation if the prompt explicitly requests human-in-the-loop.
 
 ---
 
@@ -79,13 +79,13 @@ Key patterns:
 | Error Type | Description | Action |
 |------------|-------------|--------|
 | **Inconsistency Error** | Spec is objectively wrong about system behavior | Fix spec, read system code for evidence |
-| **Abstraction Gap** | Spec is correct but at different abstraction level | **STOP and ask user for guidance** |
+| **Abstraction Gap** | Spec is correct but at different abstraction level | Judge based on modeling goals (see `references/fix.md`) |
 
-For Inconsistency Errors: read system source code -> find evidence -> fix **base spec** (not trace comparison logic) -> verify with `run_trace_validation_parallel` -> document in `fix_log.md`.
+For Inconsistency Errors: read system source code -> find evidence -> fix **base spec** (not trace comparison logic) -> verify with `run_trace_validation_parallel`.
 
-For Abstraction Gaps: understand the gap -> list possible strategies -> **STOP and ask user** before proceeding.
+For Abstraction Gaps: understand the gap -> judge whether bridging it helps find more bugs or is just cosmetic -> choose fix strategy accordingly.
 
-**Read `references/fix.md`** for detailed workflow and fix_log.md format.
+**Read `references/fix.md`** for detailed workflow.
 
 ---
 
@@ -103,7 +103,6 @@ The user may request not to clean up the generated files. Otherwise, run `clean_
 4. **If last hit is an action call, debug INSIDE that action.** The problem is internal.
 5. **Classify error type before fixing.** Inconsistency Error vs Abstraction Gap require different strategies.
 6. **Fix the base spec, not the trace comparison logic.** Unless there is no other option.
-7. **Document every fix in `fix_log.md`.**
 
 ---
 
@@ -122,7 +121,7 @@ The user may request not to clean up the generated files. Otherwise, run `clean_
 
 - **`references/validation.md`** — Validation tool parameters, response types, usage examples
 - **`references/debugging.md`** — Layered debugging methodology, hit pattern analysis, variable inspection
-- **`references/fix.md`** — Error classification, fix workflow, fix_log.md format
+- **`references/fix.md`** — Error classification, fix workflow
 
 ## Related Skills
 

@@ -6,9 +6,9 @@ Run TLC model checking, monitor execution, analyze counterexamples, and determin
 
 **Input**: Model checking spec (`MC.tla` + `MC.cfg`), system implementation source code (ground truth), run command
 
-**Output**: Verified spec (no violations) or classified counterexamples documented in `inv_log.md`
+**Output**: Verified spec (no violations) or classified counterexamples
 
-**The user drives each phase.** You provide analysis and execute on their direction. All spec/invariant modifications require user confirmation before applying.
+**By default, execute autonomously.** Only pause for user confirmation if the prompt explicitly requests human-in-the-loop.
 
 ---
 
@@ -33,9 +33,9 @@ Every counterexample falls into exactly one category:
 | **Case B** | Spec Modeling Issue | Spec | Fix the spec to match implementation |
 | **Case C** | Real Bug | Implementation | STOP — report to user immediately |
 
-### Human-in-the-Loop
+### Autonomous by Default
 
-Every modification to the spec or invariants requires user confirmation BEFORE applying. Never auto-fix.
+Apply fixes directly without waiting for user confirmation. If the prompt explicitly requests human-in-the-loop, pause before each modification for approval.
 
 ---
 
@@ -132,10 +132,8 @@ This is the most important step. Read the relevant implementation source code to
 **Action**:
 1. Explain to the user why the behavior is reasonable (cite implementation code)
 2. Propose a weakened invariant that permits this legitimate behavior
-3. **STOP and wait for user confirmation**
-4. Apply the modification after confirmation
-5. Record in `inv_log.md`
-6. Restart model checking
+3. Apply the modification
+4. Restart model checking
 
 #### Case B: Spec Modeling Issue
 
@@ -148,10 +146,8 @@ This is the most important step. Read the relevant implementation source code to
 1. Identify the problematic Action or state transition in the spec
 2. Show the corresponding implementation code as evidence
 3. Propose a spec modification that correctly models the implementation
-4. **STOP and wait for user confirmation**
-5. Apply the modification after confirmation
-6. Record in `inv_log.md`
-7. Restart model checking
+4. Apply the modification
+5. Restart model checking
 
 #### Case C: Real Bug Found
 
@@ -166,8 +162,7 @@ This is the most important step. Read the relevant implementation source code to
 2. Describe the execution path in detail, state by state
 3. Show confirming implementation code that proves this path is possible
 4. Analyze impact and severity
-5. **Ask user for confirmation and next steps**
-6. Record in `inv_log.md`
+5. **Report to user** — real bugs always require user awareness
 
 **Case C is the most valuable outcome** — prioritize its discovery.
 
@@ -189,46 +184,13 @@ When the standard tools don't provide enough detail, use `run_trace_replay` to r
 
 ---
 
-## inv_log.md Recording Format
-
-Every modification MUST be recorded. Use this format:
-
-```markdown
-### Record #[Number] - [DateTime]
-
-#### Counterexample Summary
-[Brief description of the trace and violation]
-
-#### Analysis Conclusion
-- **Type**: [A: Invariant Too Strong / B: Spec Modeling Issue / C: Real Bug]
-- **Violated Property**: [Invariant name]
-- **Root Cause**: [Detailed explanation with implementation code references]
-
-#### Modifications Made
-- **File**: [filename]
-- **Before**:
-  ```tla
-  [original code]
-  ```
-- **After**:
-  ```tla
-  [modified code]
-  ```
-
-#### User Confirmation
-- **Confirmation Time**: [timestamp]
-- **User Feedback**: [any feedback or notes]
-```
-
----
-
 ## Critical Rules
 
 1. **Implementation is ground truth.** Never judge a counterexample without reading the relevant implementation code.
 2. **Classify before fixing.** Determine Case A / B / C before proposing any change.
-3. **Human in the loop.** Every modification requires user confirmation before applying.
+3. **Autonomous by default.** Apply fixes directly unless the prompt requests human-in-the-loop.
 4. **Prioritize Case C.** Real bug discovery is the most valuable outcome of model checking.
-5. **Document everything.** Record every counterexample analysis and modification in `inv_log.md`.
+5. **Document everything.** Record every counterexample analysis and modification.
 6. **Use tools systematically.** Start with `get_tlc_summary` for overview, then drill into states. Don't guess from raw log text when structured tools are available.
 7. **Restart after fixes.** After modifying spec or invariants, restart model checking from Phase 1 to verify the fix and continue checking.
 

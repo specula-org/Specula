@@ -76,36 +76,19 @@ Before making any changes, determine which type of error you're dealing with:
 2. **Find the corresponding code location** that proves your fix is correct
 3. **Document the evidence** (file path, line number, code snippet)
 
-### Principle 3: For Abstraction Gaps - Ask for Guidance
+### Principle 3: For Abstraction Gaps - Judge Based on Modeling Goals
 
-**When you identify an abstraction gap, STOP and ask the user.**
+**When you identify an abstraction gap, decide how to handle it based on the modeling goals in the modeling brief / bug report.**
 
-**Why?**
-- Multiple valid fix strategies exist:
-  - Modify spec logic to support the system's behavior
-  - Modify trace comparison logic to bridge the gap
-  - Modify system instrumentation to change trace generation
-- The choice depends on **design decisions about abstraction granularity**
-- Agent lacks the experience to make these architectural decisions
+**Decision criteria — does bridging this gap help find more bugs?**
 
-**How to report to user:**
-1. Describe the gap clearly
-2. Explain what the spec models vs what the system does
-3. List possible fix strategies
-4. Ask for guidance on which approach to take
+- **Yes, it matters for bug finding**: The gap hides real behavioral differences that could mask bugs. Bridge it by modifying the spec to support the system's actual behavior, preserving the ability to detect issues.
+- **No, it's cosmetic / optimization detail**: The gap is about implementation optimizations, batching, or performance details that don't affect correctness. Bridge it minimally — modify the trace comparison logic to tolerate the difference without changing core spec logic.
 
-### Principle 4: Document Every Fix
-
-**After each fix, write to `fix_log.md` in the spec directory.**
-
-**Content should include:**
-- Date and trace file that revealed the issue
-- Error type (Inconsistency Error or Abstraction Gap)
-- Brief description of the inconsistency
-- Fix strategy chosen
-- Files modified
-
-**Keep it concise** - just enough for the user to review.
+**Available strategies (choose based on above):**
+1. Modify spec logic to support the system's behavior (when the gap matters)
+2. Modify trace comparison logic to bridge the gap (when the gap is cosmetic)
+3. Add a constrained silent action to absorb the difference (when the system has intermediate states not in the trace)
 
 ---
 
@@ -135,9 +118,6 @@ Before making any changes, determine which type of error you're dealing with:
    ├── Run validate_spec_syntax
    ├── Run run_trace_validation on failing trace
    └── Run run_trace_validation_parallel on other traces for regression
-
-6. Document
-   └── Write to fix_log.md
 ```
 
 ### For Abstraction Gaps
@@ -155,64 +135,12 @@ Before making any changes, determine which type of error you're dealing with:
    ├── Understand the system's actual behavior
    └── Identify what creates the gap
 
-4. STOP and Ask User
-   ├── Report the gap clearly
-   ├── List possible fix strategies:
-   │   ├── Option A: Modify spec to support system's behavior
-   │   ├── Option B: Modify trace comparison logic
-   │   └── Option C: Modify system instrumentation
-   └── Wait for user guidance
+4. Judge: Does This Gap Matter for Bug Finding?
+   ├── Review the modeling brief / bug report for modeling goals
+   ├── YES (matters) → modify spec logic to support the behavior
+   └── NO (cosmetic) → modify trace comparison logic to tolerate it
 
-5. After User Guidance
-   ├── Implement the chosen strategy
-   ├── Verify the fix
-   └── Document in fix_log.md
-```
-
----
-
-## fix_log.md Format
-
-Create or append to `fix_log.md` in the spec directory:
-
-```markdown
-## [YYYY-MM-DD] - [Brief Title]
-
-**Trace:** `path/to/trace.ndjson`
-**Error Type:** Inconsistency Error / Abstraction Gap
-
-**Issue:**
-[Brief description of what was inconsistent]
-
-**Root Cause:**
-[What caused the inconsistency - reference system code if applicable]
-
-**Fix:**
-[What was changed and why]
-
-**Files Modified:**
-- `filename.tla`: [brief description of change]
-```
-
-**Example:**
-
-```markdown
-## YYYY-MM-DD - Incorrect term comparison in RequestVote
-
-**Trace:** `../traces/leader_election.ndjson`
-**Error Type:** Inconsistency Error
-
-**Issue:**
-RequestVote rejected valid votes because term comparison used `>` instead of `>=`.
-
-**Root Cause:**
-System code in `raft/raft.go:1234` accepts votes when `msg.Term >= r.Term`, but spec used `msg.term > currentTerm[i]`.
-
-**Fix:**
-Changed condition from `msg.term > currentTerm[i]` to `msg.term >= currentTerm[i]`.
-
-**Files Modified:**
-- `etcdraft.tla`: Line 456, fixed term comparison in HandleRequestVoteRequest
+5. Apply Fix and Verify
 ```
 
 ---
@@ -222,10 +150,9 @@ Changed condition from `msg.term > currentTerm[i]` to `msg.term >= currentTerm[i
 | Error Type | Fix Location | Action |
 |------------|--------------|--------|
 | Inconsistency Error | Base spec (preferred) | Fix spec to match system, document evidence |
-| Abstraction Gap | Depends on user guidance | STOP and ask user for direction |
+| Abstraction Gap | Depends on modeling goals | Judge if gap matters for bug finding, then choose strategy |
 
 **Remember:**
 - Always identify error type first
-- For inconsistency errors: read system code, fix spec, document
-- For abstraction gaps: stop and ask user
-- Document every fix in fix_log.md
+- For inconsistency errors: read system code, fix spec
+- For abstraction gaps: judge based on modeling goals, then choose strategy
