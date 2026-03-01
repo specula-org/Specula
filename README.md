@@ -10,8 +10,6 @@ Specula has found **23 new bugs** across multiple production systems (continuous
 
 Specula is a multi-phase, agentic workflow. Each phase is driven by a dedicated skill that encodes methodology and reference materials, and is executed by a code agent.
 
-<summary><b>Architecture Details</b></summary>
-
 1. **Code Analysis.** Deep static analysis of the target codebase: map core modules, mine git history and GitHub issues for historical bugs, and compare the implementation against the reference paper and common related implementations to identify deviations. Group findings into Bug Families by shared mechanism, and produce a Modeling Brief that drives spec generation.
 
 2. **Spec Generation.** Translate the Modeling Brief into a TLA+ specification suite: a base spec faithful to the implementation's actual control flow (not the reference algorithm), a model checking wrapper with counter-bounded actions, a trace validation spec, and an instrumentation mapping.
@@ -19,8 +17,6 @@ Specula is a multi-phase, agentic workflow. Each phase is driven by a dedicated 
 3. **Trace Validation & Model Checking.** Two sub-workflows that alternate:
    - **Trace Validation** — Verify that the spec can reproduce every state transition observed in a real execution trace, catching spec-implementation inconsistencies before model checking.
    - **Model Checking** — Explore the full state space to find invariant violations. Analyze counterexamples to determine if they represent real implementation bugs, spec bugs, or known issues.
-
-</details>
 
 ## Quickstart
 
