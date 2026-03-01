@@ -34,9 +34,9 @@ git clone https://github.com/specula-org/Specula.git && cd Specula
 bash scripts/setup.sh
 ```
 
-### Running the Pipeline
+### Running Specula
 
-**Full pipeline** (all three phases, one or more systems):
+**Full pipeline** (all three phases):
 
 ```bash
 bash scripts/launch_pipeline.sh "cometbft|cometbft/cometbft|Go|Tendermint BFT"
@@ -57,7 +57,7 @@ bash scripts/launch_spec_validation.sh cometbft
 
 ## Note
 
-Specula has evolved significantly over the past months. Specula-v1 was a four-step code-to-model synthesis tool (which is [archived](../../tree/archive/v1).
+Specula has evolved significantly over the past months. Specula-v1 was a four-step code-to-model synthesis tool (which is [archived](../../tree/archive/v1)).
 
 ## License
 
