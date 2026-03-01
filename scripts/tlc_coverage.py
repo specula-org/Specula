@@ -82,7 +82,7 @@ def run_tlc(spec_dir: Path, spec_file: str, config_file: str,
     """Run TLC with coverage enabled."""
     env = os.environ.copy()
     if trace_file:
-        env["JSON"] = str(trace_file)
+        env["JSON"] = str(trace_file.resolve())
 
     # Build classpath: tla2tools.jar + optional CommunityModules (absolute paths)
     cp = str(tla_jar.resolve())
