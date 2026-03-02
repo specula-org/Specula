@@ -17,6 +17,7 @@
 #   --check             Only verify repos exist
 #   --max-parallel=N    Max concurrent agents (default: 1)
 #   --max-turns=N       Max agent turns (default: 0 = unlimited)
+#   --agent=NAME        Agent adapter to use (default: claude-code)
 #
 # Prerequisites:
 #   - claude CLI installed and authenticated
@@ -24,7 +25,6 @@
 #   - Repos cloned at case-studies/<name>/artifact/<repo>/
 
 set -euo pipefail
-unset CLAUDECODE 2>/dev/null || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPECULA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -33,6 +33,7 @@ MAX_PARALLEL=1
 MAX_TURNS=0
 DRY_RUN=false
 CHECK_ONLY=false
+AGENT="claude-code"
 TARGETS=()
 
 # ──────────────────────────────────────────────────────────
@@ -44,6 +45,7 @@ for arg in "$@"; do
     --check) CHECK_ONLY=true ;;
     --max-parallel=*) MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*) MAX_TURNS="${arg#*=}" ;;
+    --agent=*) AGENT="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -56,6 +58,12 @@ done
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
   echo "Usage: $0 [options] \"name|github|lang|reference\" [...]"
   echo "Run $0 --help for details."
+  exit 1
+fi
+
+ADAPTER="$SCRIPT_DIR/adapters/${AGENT}.sh"
+if [[ ! -f "$ADAPTER" ]]; then
+  echo "ERROR: Unknown agent '${AGENT}' — adapter not found at ${ADAPTER}"
   exit 1
 fi
 
@@ -170,19 +178,13 @@ launch_agent() {
   echo "[$(date '+%H:%M:%S')] Launching agent: ${name}"
 
   if $DRY_RUN; then
-    echo "  [DRY RUN] claude --print --dangerously-skip-permissions --max-turns ${MAX_TURNS} -p <prompt>"
+    echo "  [DRY RUN] $ADAPTER --prompt=<prompt> --max-turns=${MAX_TURNS} --log=${log_file} --background"
     echo "  Prompt saved: ${prompt_file}"
     return 0
   fi
 
-  nohup claude \
-    --print \
-    --dangerously-skip-permissions \
-    --max-turns "$MAX_TURNS" \
-    -p "$prompt" \
-    > "$log_file" 2>&1 &
-
-  local pid=$!
+  local pid
+  pid=$("$ADAPTER" --prompt="$prompt" --max-turns="$MAX_TURNS" --log="$log_file" --background)
   echo "$pid" > "${work_dir}/agent.pid"
   echo "  PID=$pid  Log: $log_file"
 }

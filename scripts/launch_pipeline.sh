@@ -24,6 +24,7 @@
 #   --enable-reviews        Enable review steps (disabled by default)
 #   --max-parallel=N       Max concurrent agents per phase (default: 1)
 #   --max-turns=N          Max agent turns (default: 0 = unlimited)
+#   --agent=NAME           Agent adapter to use (default: claude-code)
 #
 # Output structure (per system):
 #   case-studies/<name>/
@@ -46,7 +47,6 @@
 #     └── pipeline.log                # This script's log
 
 set -euo pipefail
-unset CLAUDECODE 2>/dev/null || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPECULA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -59,7 +59,7 @@ SKIP_ANALYSIS=false
 SKIP_SPECGEN=false
 SKIP_VALIDATION=false
 SKIP_REVIEWS=true
-# (reserved)
+AGENT="claude-code"
 TARGETS=()
 
 # ──────────────────────────────────────────────────────────
@@ -74,6 +74,7 @@ for arg in "$@"; do
     --enable-reviews)    SKIP_REVIEWS=false ;;
     --max-parallel=*)    MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*)       MAX_TURNS="${arg#*=}" ;;
+    --agent=*)           AGENT="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -113,7 +114,7 @@ run_phase1_analysis() {
   log "PHASE 1: CODE ANALYSIS"
   divider
 
-  local analysis_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS")
+  local analysis_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
   for target in "${TARGETS[@]}"; do
     analysis_args+=("$target")
   done
@@ -141,11 +142,11 @@ run_review() {
   divider
 
   if $DRY_RUN; then
-    log "[DRY RUN] bash scripts/launch_review.sh ${phase} ${names[*]}"
+    log "[DRY RUN] bash scripts/launch_review.sh --agent=$AGENT ${phase} ${names[*]}"
     return 0
   fi
 
-  bash "$SCRIPT_DIR/launch_review.sh" "$phase" "${names[@]}"
+  bash "$SCRIPT_DIR/launch_review.sh" "--agent=$AGENT" "$phase" "${names[@]}"
 }
 
 run_phase2_specgen() {
@@ -156,7 +157,7 @@ run_phase2_specgen() {
   local names
   read -ra names <<< "$(extract_names)"
 
-  local specgen_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS")
+  local specgen_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
   for n in "${names[@]}"; do
     specgen_args+=("$n")
   done
@@ -177,7 +178,7 @@ run_phase3_validation() {
   local names
   read -ra names <<< "$(extract_names)"
 
-  local val_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS")
+  local val_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
   for n in "${names[@]}"; do
     val_args+=("$n")
   done

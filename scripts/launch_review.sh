@@ -15,11 +15,11 @@
 #   case-studies/<name>/review-<phase>.md
 
 set -euo pipefail
-unset CLAUDECODE 2>/dev/null || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPECULA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
+AGENT="claude-code"
 TARGETS=()
 
 # ──────────────────────────────────────────────────────────
@@ -30,6 +30,7 @@ shift 2>/dev/null || true
 
 for arg in "$@"; do
   case "$arg" in
+    --agent=*) AGENT="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -40,6 +41,12 @@ done
 
 if [[ -z "$PHASE" || ${#TARGETS[@]} -eq 0 ]]; then
   echo "Usage: $0 <analysis|specgen|validation> name [name ...]"
+  exit 1
+fi
+
+ADAPTER="$SCRIPT_DIR/adapters/${AGENT}.sh"
+if [[ ! -f "$ADAPTER" ]]; then
+  echo "ERROR: Unknown agent '${AGENT}' — adapter not found at ${ADAPTER}"
   exit 1
 fi
 
@@ -231,14 +238,8 @@ launch_review() {
 
   mkdir -p "$log_dir"
 
-  nohup claude \
-    --print \
-    --dangerously-skip-permissions \
-    --max-turns 30 \
-    -p "$prompt" \
-    > "$log_file" 2>&1 &
-
-  local pid=$!
+  local pid
+  pid=$("$ADAPTER" --prompt="$prompt" --max-turns=30 --log="$log_file" --background)
   echo "$pid" > "${log_dir}/review-${phase}.pid"
   echo "  PID=$pid  Log: $log_file"
 }
