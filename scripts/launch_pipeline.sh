@@ -24,7 +24,7 @@
 #   --enable-reviews        Enable review steps (disabled by default)
 #   --max-parallel=N       Max concurrent agents per phase (default: 1)
 #   --max-turns=N          Max agent turns (default: 0 = unlimited)
-#   --agent=NAME           Agent adapter to use (default: claude-code)
+#   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex)
 #
 # Output structure (per system):
 #   case-studies/<name>/
@@ -103,6 +103,14 @@ extract_names() {
     names+=("$(echo "$name" | xargs)")
   done
   echo "${names[@]}"
+}
+
+validate_agent_adapter() {
+  local adapter="${SCRIPT_DIR}/adapters/${AGENT}.sh"
+  if [[ ! -f "$adapter" ]]; then
+    echo "ERROR: Unknown agent '${AGENT}' — adapter not found at ${adapter}" >&2
+    exit 1
+  fi
 }
 
 # ──────────────────────────────────────────────────────────
@@ -322,6 +330,8 @@ main() {
   echo ""
   echo "Skip phases:  analysis=$SKIP_ANALYSIS specgen=$SKIP_SPECGEN validation=$SKIP_VALIDATION reviews=$SKIP_REVIEWS"
   echo ""
+
+  validate_agent_adapter
 
   local names
   read -ra names <<< "$(extract_names)"
