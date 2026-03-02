@@ -39,14 +39,14 @@ bash scripts/setup.sh
 **Full pipeline** (all three phases):
 
 ```bash
-bash scripts/launch_pipeline.sh "cometbft|cometbft/cometbft|Go|Tendermint BFT"
+bash scripts/launch_pipeline.sh cometbft
 ```
 
 **Individual phases:**
 
 ```bash
 # Phase 1: Code analysis
-bash scripts/launch_code_analysis.sh "cometbft|cometbft/cometbft|Go|Tendermint BFT"
+bash scripts/launch_code_analysis.sh cometbft
 
 # Phase 2: Specification
 bash scripts/launch_spec_generation.sh cometbft
