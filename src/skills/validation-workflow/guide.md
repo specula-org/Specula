@@ -23,7 +23,15 @@ These pull in opposite directions. Fixing trace failures may loosen the spec (in
 ## Output
 
 - Verified spec: all traces pass AND no invariant violations
-- `changelog.md`: unified record of all modifications across iterations
+
+### Required Artifacts
+
+All artifacts are relative to the case study root (e.g., `case-studies/<name>/`):
+
+| Artifact | Path | Description |
+|----------|------|-------------|
+| Changelog | `spec/changelog.md` | Unified record of all modifications across iterations (format below) |
+| MC output | `spec/output/` | TLC model checking output files (counterexamples, statistics) |
 
 ---
 
@@ -31,7 +39,7 @@ These pull in opposite directions. Fixing trace failures may loosen the spec (in
 
 1. **Verify all files exist**: base spec, trace spec, MC spec, trace files, instrumentation-spec
 2. **Read `instrumentation-spec.md`**: understand the mapping between spec actions and source code locations — you'll need this when analyzing failures and making fixes
-3. **Create `changelog.md`** in the spec directory (or open existing one)
+3. **Create `spec/changelog.md`** (or open existing one)
 
 ---
 
@@ -86,7 +94,7 @@ These pull in opposite directions. Fixing trace failures may loosen the spec (in
 
 ## changelog.md Format
 
-Maintain a single `changelog.md` in the spec directory. One line per fix, grouped by round.
+Maintain a single `spec/changelog.md`. One line per fix, grouped by round.
 
 ```markdown
 ## Round N - Trace Validation

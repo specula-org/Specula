@@ -50,6 +50,13 @@ Counter-bound fault-injection actions (timeout, crash, message loss, etc.). Do N
 
 Key concepts: cursor variable `l` walks through trace events; action wrappers match events, call base actions, validate post-state, advance cursor; silent actions handle impl state changes without trace events (must be tightly constrained).
 
+**Trace file location**: Trace files (`.ndjson`) are stored in `traces/` (sibling to `spec/`). The `JsonFile` operator in `Trace.tla` must default to `../traces/<name>.ndjson`, with an `IOEnv.JSON` override for per-run selection:
+```tla
+JsonFile ==
+    IF "JSON" \in DOMAIN IOEnv THEN IOEnv.JSON
+    ELSE "../traces/trace.ndjson"
+```
+
 **Read `references/trace-spec-pattern.md`** for the full template and silent action patterns.
 
 ---

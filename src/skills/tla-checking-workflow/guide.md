@@ -50,7 +50,7 @@ Apply fixes directly without waiting for user confirmation. If the prompt explic
    ```bash
    /path/to/start_background.sh -s MCSpec.tla -c MCSpec.cfg [options]
    ```
-3. Verify the process started by checking the log file (typically `nohup.out`)
+3. Verify the process started by checking the log file (typically `nohup.out`). **Save all TLC output files to `spec/output/`** — rename from `nohup.out` to a descriptive name (e.g., `output/MC_run1.out`, `output/MC_ve_bfs.out`).
 4. Confirm TLC is initializing (look for spec parsing, constant initialization, state space exploration starting)
 
 **Common run script options**:
