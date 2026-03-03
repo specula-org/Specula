@@ -1,6 +1,6 @@
 # TLA+ Verification Workflow (Orchestration)
 
-Iteratively refine a TLA+ spec by alternating between trace validation and model checking until both pass. This ensures the spec faithfully models the system — covering all real behaviors while excluding illegal states.
+Iteratively refine a TLA+ spec by alternating between trace validation and model checking until both pass, then hunt for real bugs using the converged spec. This ensures the spec faithfully models the system — covering all real behaviors while excluding illegal states — and then uses the trusted spec to find implementation bugs.
 
 ## Why Iteration is Necessary
 
@@ -15,7 +15,8 @@ These pull in opposite directions. Fixing trace failures may loosen the spec (in
 |------|-------------|
 | Base spec | `base.tla` + `base.cfg` — core specification |
 | Trace spec | `Trace.tla` + `Trace.cfg` — trace replay wrapper |
-| MC spec | `MC.tla` + `MC.cfg` — model checking wrapper (invariants defined here) |
+| MC spec | `MC.tla` + `MC.cfg` — model checking wrapper (standard + structural invariants) |
+| Hunting configs | `MC_hunt_*.cfg` / `MC_family*.cfg` — bug-family-specific configs (for bug hunting) |
 | Trace files | `.ndjson` files from instrumented test runs |
 | Instrumentation spec | `instrumentation-spec.md` — maps spec actions to source code locations |
 | Run command | Command to launch TLC for model checking |
@@ -32,6 +33,7 @@ All artifacts are relative to the case study root (e.g., `case-studies/<name>/`)
 |----------|------|-------------|
 | Changelog | `spec/changelog.md` | Unified record of all modifications across iterations (format below) |
 | MC output | `spec/output/` | TLC model checking output files (counterexamples, statistics) |
+| Bug report | `spec/bug-report.md` | Bug hunting results — produced after convergence (even if no bugs found) |
 
 ---
 
@@ -64,15 +66,20 @@ All artifacts are relative to the case study root (e.g., `case-studies/<name>/`)
 
 **Goal**: Ensure no invariant violations in the spec's state space.
 
+**Config**: Use **`MC.cfg` only** — standard safety + structural invariants. Do NOT use hunting configs (`MC_hunt_*.cfg`) in this phase; those are for bug hunting after convergence.
+
+**Run duration**: 10–30 minutes per run, depending on state space complexity. Use simulation mode for large state spaces, BFS for targeted checks.
+
 **Delegate to sub-skill**: Follow the methodology in `../tla-checking-workflow/guide.md`.
 
 **Steps**:
-1. Launch TLC model checking with the MC spec
+1. Launch TLC model checking with `MC.cfg`
 2. Monitor for violations
 3. For each violation: analyze counterexample, classify (Case A/B/C), and fix following the checking workflow
 4. Record each fix in `changelog.md`
-5. After fixing, restart model checking to verify fix and find more violations
-6. Continue until model checking completes with no violations
+5. **Case C (real bug)**: record as `[bug]` in changelog, save TLC output to `spec/output/`, then **continue** model checking — do not stop convergence
+6. After fixing Case A/B, restart model checking to verify fix and find more violations
+7. Continue until model checking completes with no violations
 
 **When model checking passes**: proceed to Phase 3.
 
@@ -83,12 +90,30 @@ All artifacts are relative to the case study root (e.g., `case-studies/<name>/`)
 **Decision logic**:
 
 - If Phase 2 **modified the spec** → go back to Phase 1 (spec changes may break trace validation)
-- If Phase 2 **did not modify the spec** (only invariant changes or no changes) → **done**
+- If Phase 2 **did not modify the spec** (only invariant changes or no changes) → **converged**, proceed to Bug Hunting
 - If Phase 1 **modified the spec** in a new round → Phase 2 must re-run after
 
 **Tracking regressions**: If a trace that passed in a previous round now fails, mark it as `[regression]` in changelog. This is informational — handle it the same way as any other failure.
 
-**Termination**: Both phases pass in the same round with no spec modifications needed.
+**Convergence**: Both phases pass in the same round with no spec modifications needed. The spec is now trusted. Proceed to Bug Hunting.
+
+---
+
+## Bug Hunting
+
+**Precondition**: Spec has converged (Phase 3 passed). The spec is trusted to faithfully model the implementation.
+
+**Goal**: Use the converged spec to find real implementation bugs via targeted model checking with bug-family configs.
+
+**Steps**:
+1. Collect any `[bug]` entries already recorded in `changelog.md` during Phase 2 (Case C found during convergence) — these will be included in the final report
+2. For each `MC_hunt_*.cfg` / `MC_family*.cfg`:
+   - Launch TLC model checking (10–30 minutes per config)
+   - Violation = **Case C** (real bug) — this is the expected and desired outcome
+   - Analyze each counterexample: describe execution path, cross-reference with implementation code, identify root cause and affected code locations
+   - Save TLC output to `spec/output/`
+3. Produce `spec/bug-report.md` with all findings — **read `references/bug-report-format.md`** for the template
+4. If no bugs found across all configs: still write the report (state space coverage + "no violations found")
 
 ---
 
@@ -107,7 +132,7 @@ Maintain a single `spec/changelog.md`. One line per fix, grouped by round.
 - [bug] ActionName: brief description of real bug found (Case C)
 
 ## Result
-Converged in N rounds. / Found real bug — stopped.
+Converged in N rounds. Bug hunting: M bugs found / no bugs found.
 ```
 
 **Keep entries concise** — a few sentences per fix is enough.

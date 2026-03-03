@@ -157,12 +157,20 @@ This is the most important step. Read the relevant implementation source code to
 - The invariant correctly captures a safety requirement
 - Yet the system can reach a state that violates the invariant
 
-**Action**:
-1. **Immediately stop automation**
-2. Describe the execution path in detail, state by state
-3. Show confirming implementation code that proves this path is possible
-4. Analyze impact and severity
-5. **Report to user** — real bugs always require user awareness
+**Action** (depends on context):
+
+*During spec validation (convergence):*
+1. Describe the execution path in detail, state by state
+2. Show confirming implementation code that proves this path is possible
+3. Analyze impact and severity
+4. Record as `[bug]` in `changelog.md`, save TLC output to `spec/output/`
+5. **Continue convergence** — do not stop the validation loop
+
+*During bug hunting (post-convergence):*
+1. Describe the execution path in detail, state by state
+2. Show confirming implementation code that proves this path is possible
+3. Analyze impact and severity
+4. Record in `spec/bug-report.md` with full details (counterexample summary, root cause, affected code)
 
 **Case C is the most valuable outcome** — prioritize its discovery.
 

@@ -51,6 +51,24 @@ Start in the 2-8 range per constant. Too small misses bugs; increase one constan
 | HeartbeatLimit | 6 | Lease/contact bugs need multiple heartbeats |
 | MaxMsgBufferLimit | 8-12 | Too low prunes valid states |
 
+## Hunting Configs
+
+Generate one `MC_hunt_<family>.cfg` per bug family from the modeling brief. These are used **after spec convergence** to find real bugs.
+
+**Naming**: `MC_hunt_<family>.cfg` or `MC_family<N>.cfg` (match the bug family name/number from the brief).
+
+**Pattern** — differ from `MC.cfg` in two ways:
+
+1. **Tight bounds**: reduce irrelevant action limits to 0-1, keep only the limits that trigger the target bug mechanism
+2. **Targeted invariants**: only the bug-family invariant + core safety. Do not include structural invariants or other families' invariants
+
+**MC.cfg invariant organization**: group invariants by category with comments, and **comment out** extension (bug-family) invariants.
+
+**Examples**:
+- Standard MC.cfg: `case-studies/braft/spec/MC.cfg` (standard + structural invariants, bug-detection commented out)
+- Hunting cfg (tight bounds): `case-studies/sofa-jraft/spec/MC_family1.cfg` (crash-recovery family, minimal bounds)
+- Hunting cfg (targeted invariant): `case-studies/cometbft/spec/MC_ve_ultra.cfg` (VE liveness, zeroed irrelevant limits)
+
 ## Example
 
 See `case-studies/hashicorp-raft/scenarios/base/spec/MChashiraft.tla` and `MChashiraft.cfg` for a complete MC spec with 7 counter-bounded actions, structural invariants, and temporal properties.

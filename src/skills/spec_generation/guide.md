@@ -11,7 +11,7 @@ Bug-family driven modeling: each spec extension exists because a Bug Family in t
 | Phase | Output | Description |
 |-------|--------|-------------|
 | 1 | `base.tla` + `base.cfg` | Base spec with all extensions |
-| 2 | `MC.tla` + `MC.cfg` | Model checking spec with counter-bounded actions |
+| 2 | `MC.tla` + `MC.cfg` + `MC_hunt_*.cfg` | Model checking spec + hunting configs per bug family |
 | 3 | `Trace.tla` + `Trace.cfg` | Trace validation spec |
 | 4 | `instrumentation-spec.md` | Action-to-code mapping for harness generation |
 
@@ -40,7 +40,11 @@ Bug-family driven modeling: each spec extension exists because a Bug Family in t
 
 Counter-bound fault-injection actions (timeout, crash, message loss, etc.). Do NOT bound deterministic/reactive actions. Add symmetry reduction, message buffer constraints, structural invariants, and temporal properties.
 
-**Read `references/mc-spec-pattern.md`** for the full template.
+**Generate two types of config**:
+- **`MC.cfg`** — standard safety + structural invariants. Used during spec validation (convergence). Extension invariants (bug-family-specific) should be listed but **commented out**.
+- **`MC_hunt_<family>.cfg`** — one per bug family from the modeling brief. Tight bounds (reduce irrelevant actions to 0-1), only the target invariant + core safety invariants. Used during bug hunting after spec converges.
+
+**Read `references/mc-spec-pattern.md`** for the full template and hunting config pattern.
 
 ---
 
