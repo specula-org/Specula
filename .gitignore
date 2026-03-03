@@ -87,6 +87,8 @@ tools/cfa/tests
 *.mcp.json
 .gemini/*
 .claude/skills
+.agents/skills
+src/skills/.system
 
 .venv/
 venv/
