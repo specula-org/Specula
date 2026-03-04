@@ -180,7 +180,7 @@ run_phase2_specgen() {
 
 run_phase3_validation() {
   divider
-  log "PHASE 3: SPEC VALIDATION (harness + trace validation + invariant checking)"
+  log "PHASE 3: SPEC VALIDATION (trace validation + invariant checking + bug hunting)"
   divider
 
   local names

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # Batch launcher: spawn one Claude Code agent per target system for spec validation.
-# Each agent writes a harness, then iteratively runs trace validation and invariant
-# checking using existing skills until both pass.
+# Each agent iteratively runs trace validation and invariant checking using existing
+# skills until both pass. Harness and traces must already exist (Phase 2.5).
 #
 # Usage:
 #   bash scripts/launch_spec_validation.sh [options] "name" [...]
@@ -154,16 +154,13 @@ It delegates to two sub-skills (read these too):
   ${SPECULA_ROOT}/.claude/skills/tla-trace-workflow/guide.md
   ${SPECULA_ROOT}/.claude/skills/tla-checking-workflow/guide.md
 
-## Reference example
+## Pre-step: Verify harness and traces
 
-- **etcd-raft harness**: ${SPECULA_ROOT}/case-studies/etcd-raft/ (look at scenarios/ for harness and config examples)
+Harness and traces should already exist from Phase 2.5 (harness generation). Verify:
+- Trace files in: ${work_dir}/traces/
+- Instrumentation guide: ${work_dir}/harness/INSTRUMENTATION.md
 
-## Pre-step: Write harness
-
-Before starting the validation workflow, you need traces. Read the instrumentation-spec.md and write a test harness that instruments the source code to produce NDJSON traces compatible with Trace.tla. Reference the etcd-raft examples for format and patterns.
-
-- Write harness code to: ${work_dir}/harness/
-- Collect traces to: ${work_dir}/traces/
+If instrumentation adjustments are needed during validation, read \`harness/INSTRUMENTATION.md\` for how to modify capture points and fields, then re-run \`bash harness/run.sh\` to regenerate traces.
 
 ## Critical Rules
 
@@ -183,7 +180,7 @@ launch_agent() {
   local log_file="${work_dir}/spec-validation.log"
   local prompt_file="${work_dir}/.spec-validation-prompt.md"
 
-  mkdir -p "${work_dir}/harness" "${work_dir}/traces"
+  mkdir -p "${work_dir}/traces"
   echo "$prompt" > "$prompt_file"
 
   echo "[$(date '+%H:%M:%S')] Launching agent: ${name}"
