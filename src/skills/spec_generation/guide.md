@@ -100,4 +100,5 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 ## Related Skills
 
 - **code_analysis** — Previous phase: produces the Modeling Brief
-- **tla-trace-workflow** — Next phase: validates the trace spec against real traces
+- **harness-generation** — Next phase (2.5): instruments the system and collects traces using `instrumentation-spec.md`
+- **validation-workflow** — Phase 3: validates the spec using traces and model checking
