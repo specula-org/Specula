@@ -7,8 +7,16 @@ Language-specific patterns for the trace emission library. Adapt to your target 
 Every trace module needs:
 1. **Global writer** — initialized once, thread-safe
 2. **Server mapping** — implementation node IDs → TLA+ names (s1, s2, s3)
-3. **Emit function** — captures timestamp, event name, node state, optional message fields
+3. **Emit function** — writes one NDJSON line per call, **must include `"tag": "trace"`** in the outer envelope
 4. **NDJSON output** — one JSON object per line, flushed immediately
+
+Every emitted line must follow this envelope:
+
+```json
+{"tag": "trace", "ts": "<real_timestamp>", "event": {"name": "ActionName", "nid": "s1", "state": {...}, "msg": {...}}}
+```
+
+`tag` is mandatory — Trace.tla filters on it. Lines without `"tag": "trace"` are silently ignored.
 
 ## Examples by Language
 

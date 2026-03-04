@@ -36,11 +36,41 @@ Instrument the real system's source code to emit NDJSON traces, write test scena
 Write a language-specific trace emission library in `harness/src/`. This module provides:
 
 1. **Initialization** — open trace file, set up server name mapping
-2. **Emit function** — write one NDJSON line per call with: event name, node ID, state snapshot, message fields (if applicable), real timestamp
+2. **Emit function** — write one NDJSON line per call with: tag, event name, node ID, state snapshot, message fields (if applicable), real timestamp
 3. **Shutdown** — flush and close
 
-**Requirements**:
-- Timestamps must be real (epoch nanos or monotonic clock), never synthetic
+### NDJSON Envelope
+
+Every trace line **must** include `"tag": "trace"`. Trace.tla filters on this field — lines without it are silently ignored, causing validation to see an empty trace.
+
+```json
+{"tag": "trace", "ts": "<real_timestamp>", "event": {"name": "<ActionName>", "nid": "<server_id>", "state": {...}, "msg": {...}}}
+```
+
+Optionally, emit a **config line** as the first line to declare cluster topology and tuning parameters. Use `"tag": "config"`:
+
+```json
+{"tag": "config", "ts": "...", "config": {"servers": ["s1", "s2", "s3"], "electionTimeout": "150ms", ...}}
+```
+
+Trace.tla can use this to override constants (e.g., `Server`, timeout values) instead of hardcoding them.
+
+### Server ID Mapping
+
+Implementation node IDs (hex addresses, ip:port, UUIDs) must be mapped to TLA+ names (`s1`, `s2`, `s3`). Choose the strategy that fits the system:
+
+| Strategy | When to use | Example |
+|----------|-------------|---------|
+| **Static mapping at emit time** | Test setup knows all node IDs upfront | braft, aptosbft — build a map in test init, call `nid(implID)` at each emit |
+| **Dynamic mapping at runtime** | Node IDs only known at startup | hashicorp-raft — register peers as they appear, assign `s1`, `s2`, ... in discovery order |
+| **Post-processing script** | IDs are too complex to map in-code (long hex, block hashes) | cometbft — emit raw IDs, then run `preprocess_trace.py` to remap all IDs before validation |
+
+If using post-processing, include the script in `harness/` and call it from `run.sh`.
+
+### Requirements
+
+- **`"tag": "trace"` is mandatory** on every event line
+- Timestamps must be real (epoch nanos, monotonic clock, ISO 8601, etc.), never synthetic
 - Output format must be NDJSON (one JSON object per line)
 - Event names must match `Trace.tla` exactly (1:1 correspondence with spec actions)
 - State fields must match the mapping in `instrumentation-spec.md`
@@ -54,12 +84,37 @@ Write a language-specific trace emission library in `harness/src/`. This module 
 
 Insert trace emit calls into the system's source code at the locations specified in `instrumentation-spec.md`.
 
-**Two approaches** (choose based on system):
+### Patch Management
 
-1. **Copy-and-patch**: Copy harness source files into the artifact, add `mod`/`import` declarations. Use `apply.sh` to automate. Best for compiled languages with module systems (Rust, Go).
-2. **Direct patch**: Modify artifact source files in-place. Use `apply.sh` with `git apply` or `sed`. Best for systems where adding modules is harder.
+Two approaches (choose based on system):
 
-**Rules**:
+1. **Copy-and-patch**: Copy harness source files (trace module, test scenarios) into the artifact, then patch `mod`/`import` declarations to wire them in. Best for compiled languages with module systems (Rust, Go).
+   - `apply.sh` steps: `cp harness/src/*.rs artifact/.../src/` → `sed` or `patch` to add `mod tla_trace;` to `lib.rs`
+   - Include a `clean.sh` to revert: `git -C artifact checkout -- .`
+
+2. **Git patch**: Generate a patch file from a working instrumented tree, then apply it reproducibly. Best for C/C++/Java or when modifying many source files.
+   - Create patch: `cd artifact && git diff > ../harness/patches/instrumentation.patch`
+   - `apply.sh` steps: `cd artifact && git checkout -- . && git apply ../harness/patches/instrumentation.patch`
+   - Patch files live in `harness/patches/` and are version-controlled
+
+### State Capture Levels
+
+Not all instrumentation points can capture full state. The instrumentation spec may define different capture levels:
+
+| Level | Fields | When to use |
+|-------|--------|-------------|
+| **Full** | All spec variables (term, role, votedFor, commitIndex, lastLogIndex, lastLogTerm, ...) | Action runs under the node's main lock and has access to all state |
+| **Weak** | Only term + role (or similarly minimal) | Async threads (e.g., replicator bthreads, background goroutines) that cannot safely read full state |
+| **Specialized** | A specific subset (e.g., term + role + commitIndex) | Actions that update a single field (e.g., AdvanceCommitIndex) where only that field plus core state is available |
+
+When using a non-full capture level, **document it** in `harness/INSTRUMENTATION.md` with the reason (e.g., "Replicator runs in a separate bthread, only term and role are passed via closure"). This tells the Phase 3 agent which Trace.tla validator variant (`ValidatePostStateWeak`, `ValidatePostStateCommit`, etc.) to use.
+
+### Trace Coverage
+
+Instrument **as many spec actions as possible**. The more actions are traced, the stronger the consistency check between implementation and spec. Only skip tracing an action if observing it provides no value for bug finding (e.g., pure heartbeat probes with no state change, read-only queries). Actions that are not traced will require Silent Action wrappers in Trace.tla, which weaken validation — minimize them.
+
+### Rules
+
 - Every instrumentation point inserts into **real system code** — the emit call runs inside the actual code path
 - Do NOT write a standalone simulator that reimplements protocol logic
 - Do NOT hand-write trace data
@@ -70,6 +125,8 @@ Insert trace emit calls into the system's source code at the locations specified
 ## Step 4: Write Test Scenarios
 
 Write test code that exercises the protocol code paths to generate trace events.
+
+**Reuse existing tests first.** Most systems already have integration or end-to-end tests that exercise the protocol paths you need. Prefer adding trace emit calls to existing test infrastructure rather than writing new tests from scratch. Only write new scenarios when existing tests do not cover the target code paths (e.g., specific fault injection, bug-family edge cases).
 
 **Requirements**:
 - Tests must use the system's real test framework (Go `testing`, Rust `#[test]`, Java JUnit, etc.)
