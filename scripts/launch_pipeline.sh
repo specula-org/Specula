@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Full Specula pipeline: Code Analysis → Review → Spec Generation → Review → Validation → Review
+# Full Specula pipeline: Code Analysis → Spec Generation → Harness Generation → Validation + Bug Hunting
 #
-# Runs all three phases with automated review agents between each phase.
+# Runs all phases with optional review agents between each phase.
 # All agent logs and review results are saved for inspection.
 #
 # Usage:
@@ -20,6 +20,7 @@
 #   --dry-run              Print commands without executing
 #   --skip-analysis        Skip code analysis (use existing outputs)
 #   --skip-specgen         Skip spec generation (use existing outputs)
+#   --skip-harness         Skip harness generation (use existing harness/traces)
 #   --skip-validation      Skip validation
 #   --enable-reviews        Enable review steps (disabled by default)
 #   --max-parallel=N       Max concurrent agents per phase (default: 1)
@@ -38,12 +39,18 @@
 #     │   ├── MC.tla                  # Phase 2 output
 #     │   ├── Trace.tla               # Phase 2 output
 #     │   ├── instrumentation-spec.md # Phase 2 output
-#     │   ├── review-specgen.md       # Phase 2 review
-#     │   ├── review-specgen.log      # Phase 2 review agent log
-#     │   ├── validation-report.md    # Phase 3 output
-#     │   ├── review-validation.md    # Phase 3 review
-#     │   └── review-validation.log   # Phase 3 review agent log
+#     │   ├── MC_hunt_*.cfg          # Phase 2 output (bug hunting configs)
+#     │   ├── changelog.md           # Phase 3 output
+#     │   ├── output/                # Phase 3 output (TLC results)
+#     │   └── bug-report.md          # Phase 3 output (bug hunting results)
+#     ├── harness/                     # Phase 2.5 output
+#     │   ├── src/                   # Trace module + test scenarios
+#     │   ├── apply.sh               # Apply instrumentation
+#     │   ├── run.sh                 # Build + run + collect traces
+#     │   └── INSTRUMENTATION.md     # Guide for adjusting instrumentation
+#     ├── traces/                      # Phase 2.5 output (NDJSON traces)
 #     ├── spec-gen.log                # Phase 2 agent log
+#     ├── harness-gen.log             # Phase 2.5 agent log
 #     └── pipeline.log                # This script's log
 
 set -euo pipefail
@@ -57,6 +64,7 @@ MAX_TURNS=0
 DRY_RUN=false
 SKIP_ANALYSIS=false
 SKIP_SPECGEN=false
+SKIP_HARNESS=false
 SKIP_VALIDATION=false
 SKIP_REVIEWS=true
 AGENT="claude-code"
@@ -70,6 +78,7 @@ for arg in "$@"; do
     --dry-run)           DRY_RUN=true ;;
     --skip-analysis)     SKIP_ANALYSIS=true ;;
     --skip-specgen)      SKIP_SPECGEN=true ;;
+    --skip-harness)      SKIP_HARNESS=true ;;
     --skip-validation)   SKIP_VALIDATION=true ;;
     --enable-reviews)    SKIP_REVIEWS=false ;;
     --max-parallel=*)    MAX_PARALLEL="${arg#*=}" ;;
@@ -176,6 +185,27 @@ run_phase2_specgen() {
   fi
 
   bash "$SCRIPT_DIR/launch_spec_generation.sh" "${specgen_args[@]}"
+}
+
+run_phase2_5_harness() {
+  divider
+  log "PHASE 2.5: HARNESS GENERATION (instrumentation + trace collection)"
+  divider
+
+  local names
+  read -ra names <<< "$(extract_names)"
+
+  local harness_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
+  for n in "${names[@]}"; do
+    harness_args+=("$n")
+  done
+
+  if $DRY_RUN; then
+    log "[DRY RUN] bash scripts/launch_harness_generation.sh ${harness_args[*]}"
+    return 0
+  fi
+
+  bash "$SCRIPT_DIR/launch_harness_generation.sh" "${harness_args[@]}"
 }
 
 run_phase3_validation() {
@@ -328,7 +358,7 @@ main() {
   echo "Max parallel: $MAX_PARALLEL"
   echo "Max turns:    $MAX_TURNS"
   echo ""
-  echo "Skip phases:  analysis=$SKIP_ANALYSIS specgen=$SKIP_SPECGEN validation=$SKIP_VALIDATION reviews=$SKIP_REVIEWS"
+  echo "Skip phases:  analysis=$SKIP_ANALYSIS specgen=$SKIP_SPECGEN harness=$SKIP_HARNESS validation=$SKIP_VALIDATION reviews=$SKIP_REVIEWS"
   echo ""
 
   validate_agent_adapter
@@ -353,6 +383,13 @@ main() {
     run_review "specgen" "${names[@]}"
   else
     log "Skipping Phase 2 (--skip-specgen)"
+  fi
+
+  # ── Phase 2.5: Harness Generation ──
+  if ! $SKIP_HARNESS; then
+    run_phase2_5_harness
+  else
+    log "Skipping Phase 2.5 (--skip-harness)"
   fi
 
   # ── Phase 3: Spec Validation (iterative trace validation + MC) ──
