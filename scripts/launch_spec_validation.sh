@@ -116,6 +116,16 @@ check_prereqs() {
       ok=false
     fi
 
+    # Warn if traces don't exist (not fatal — agent can adjust instrumentation)
+    local traces_dir="${CASE_STUDIES_DIR}/${name}/traces"
+    local trace_count=0
+    [[ -d "$traces_dir" ]] && trace_count=$(find "$traces_dir" -name "*.ndjson" 2>/dev/null | wc -l)
+    if [[ $trace_count -gt 0 ]]; then
+      printf "  traces OK (%d)" "$trace_count"
+    else
+      printf "  traces WARN (0 ndjson files)"
+    fi
+
     echo ""
   done
   $ok

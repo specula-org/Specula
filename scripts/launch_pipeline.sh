@@ -300,6 +300,21 @@ generate_summary() {
         echo "- **Spec Gen Review**: SKIPPED"
       fi
 
+      # Phase 2.5 status
+      local harness_dir="${work_dir}/harness"
+      local traces_dir="${work_dir}/traces"
+      if [[ -f "${harness_dir}/run.sh" ]]; then
+        local trace_count=0
+        [[ -d "$traces_dir" ]] && trace_count=$(find "$traces_dir" -name "*.ndjson" 2>/dev/null | wc -l)
+        local instr_guide="no"
+        [[ -f "${harness_dir}/INSTRUMENTATION.md" ]] && instr_guide="yes"
+        echo "- **Phase 2.5 (Harness)**: OK (traces: ${trace_count}, INSTRUMENTATION.md: ${instr_guide})"
+      elif [[ -d "$harness_dir" ]]; then
+        echo "- **Phase 2.5 (Harness)**: INCOMPLETE (harness/ exists but no run.sh)"
+      else
+        echo "- **Phase 2.5 (Harness)**: MISSING"
+      fi
+
       # Phase 3 status
       if [[ -f "${spec_dir}/changelog.md" ]]; then
         local result
