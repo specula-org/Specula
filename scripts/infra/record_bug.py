@@ -184,6 +184,42 @@ def update_bug(args):
         print(f"[{SHEET_MAP[sheet_key][0]}] Updated bug #{args.number}: {updates}")
 
 
+def delete_bug(args):
+    gc = get_client()
+    targets = resolve_sheets(args.sheet)
+
+    for sheet_key in targets:
+        sh, ws = get_worksheet(gc, sheet_key)
+        rows = ws.get_all_values()
+        target_row = None
+        for i, row in enumerate(rows[1:], start=2):
+            try:
+                if int(row[0]) == args.number:
+                    target_row = i
+                    break
+            except (ValueError, TypeError):
+                pass
+
+        if target_row is None:
+            print(f"[{SHEET_MAP[sheet_key][0]}] Bug #{args.number} not found, skipping", file=sys.stderr)
+            continue
+
+        ws.delete_rows(target_row)
+        print(f"[{SHEET_MAP[sheet_key][0]}] Deleted bug #{args.number}")
+
+    # Renumber remaining rows
+    for sheet_key in targets:
+        _, ws = get_worksheet(gc, sheet_key)
+        rows = ws.get_all_values()
+        for i, row in enumerate(rows[1:], start=2):
+            expected = i - 1
+            try:
+                if int(row[0]) != expected:
+                    ws.update_cell(i, 1, expected)
+            except (ValueError, TypeError):
+                pass
+
+
 def list_bugs(args):
     gc = get_client()
     sheet_key = args.sheet if args.sheet in SHEET_MAP else "new"
@@ -234,6 +270,12 @@ def main():
     p_upd.add_argument("--status", help="New status")
     p_upd.add_argument("--notes", help="New notes")
 
+    # --- delete ---
+    p_del = sub.add_parser("delete", help="Delete a bug by number")
+    p_del.add_argument("--sheet", choices=["new", "known"], default="new",
+                       help="Target: 'new' or 'known' (deletes from both simple + detailed)")
+    p_del.add_argument("--number", type=int, required=True, help="Bug number to delete")
+
     # --- list ---
     p_list = sub.add_parser("list", help="List all bugs")
     p_list.add_argument("--sheet", choices=list(SHEET_MAP.keys()), default="new",
@@ -244,6 +286,8 @@ def main():
         append_bug(args)
     elif args.command == "update":
         update_bug(args)
+    elif args.command == "delete":
+        delete_bug(args)
     elif args.command == "list":
         list_bugs(args)
 
