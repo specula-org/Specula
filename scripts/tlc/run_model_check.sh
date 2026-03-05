@@ -2,7 +2,7 @@
 ################################################################################
 # Generic Model Check Script
 # Usage: ./run_model_check.sh -s SPEC_FILE -c CONFIG_FILE [options]
-# ex: nohup ../../../../../../scripts/run_model_check.sh -s MCetcdraft.tla -c MCetcdraft.cfg -m 50G -w 90 -t 120 -D -S -p 200 -n 99999999 -A -o nohup.out & 
+# ex: nohup ../../../../../../scripts/tlc/run_model_check.sh -s MCetcdraft.tla -c MCetcdraft.cfg -m 50G -w 90 -t 120 -D -S -p 200 -n 99999999 -A -o nohup.out & 
 ################################################################################
 
 # Default Defaults
@@ -108,7 +108,7 @@ fi
 
 # Locate tla2tools.jar relative to this script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 JAR_PATH="$PROJECT_ROOT/lib/tla2tools.jar"
 COMMUNITY_MODULES="$PROJECT_ROOT/lib/CommunityModules-deps.jar"
 

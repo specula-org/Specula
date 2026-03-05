@@ -5,7 +5,7 @@
 # Unified interface for invoking Claude Code CLI.
 #
 # Usage:
-#   scripts/adapters/claude-code.sh [options]
+#   scripts/launch/adapters/claude-code.sh [options]
 #
 # Options:
 #   --prompt "..."         Task prompt (mutually exclusive with --prompt-file)

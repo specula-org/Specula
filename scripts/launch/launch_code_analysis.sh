@@ -1,33 +1,34 @@
 #!/usr/bin/env bash
 #
-# Batch launcher: spawn one Claude Code agent per target system for harness generation (Phase 2.5).
-# Each agent instruments the source code and collects NDJSON traces for spec validation.
+# Batch launcher: spawn one Claude Code agent per target system for code analysis.
+# Each agent follows the code-analysis skill methodology and produces a modeling brief.
 #
 # Usage:
-#   bash scripts/launch_harness_generation.sh [options] "name" [...]
+#   bash scripts/launch/launch_code_analysis.sh [options] "name|github|lang|reference" [...]
 #
 # Example:
-#   bash scripts/launch_harness_generation.sh cometbft
-#   bash scripts/launch_harness_generation.sh braft sofa-jraft dragonboat
+#   bash scripts/launch/launch_code_analysis.sh \
+#     "braft|brpc/braft|C++|Raft (Ongaro 2014)" \
+#     "sofa-jraft|sofastack/sofa-jraft|Java|Raft (Ongaro 2014)" \
+#     "dragonboat|lni/dragonboat|Go|Raft (Ongaro 2014)"
 #
 # Options:
 #   --dry-run           Print commands without executing
-#   --check             Only verify prerequisites exist
+#   --check             Only verify repos exist
 #   --max-parallel=N    Max concurrent agents (default: 1)
 #   --max-turns=N       Max agent turns (default: 0 = unlimited)
 #   --agent=NAME        Agent adapter to use (default: claude-code)
 #
 # Prerequisites:
 #   - claude CLI installed and authenticated
-#   - Phase 2 complete: spec/base.tla, spec/Trace.tla, spec/instrumentation-spec.md
-#   - Source repo cloned at case-studies/<name>/artifact/<repo>/
+#   - gh CLI installed and authenticated
+#   - Repos cloned at case-studies/<name>/artifact/<repo>/
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SPECULA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SPECULA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
-SKILL_DIR="$SPECULA_ROOT/.claude/skills/harness-generation"
 MAX_PARALLEL=1
 MAX_TURNS=0
 DRY_RUN=false
@@ -55,7 +56,7 @@ for arg in "$@"; do
 done
 
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
-  echo "Usage: $0 [options] name [name ...]"
+  echo "Usage: $0 [options] \"name|github|lang|reference\" [...]"
   echo "Run $0 --help for details."
   exit 1
 fi
@@ -82,39 +83,21 @@ find_repo_dir() {
 }
 
 # ──────────────────────────────────────────────────────────
-# Check prerequisites (Phase 2 outputs must exist)
+# Check all repos are present
 # ──────────────────────────────────────────────────────────
-check_prereqs() {
+check_repos() {
   local ok=true
-  for name in "${TARGETS[@]}"; do
+  for target in "${TARGETS[@]}"; do
+    IFS='|' read -r name _ _ _ <<< "$target"
     name="$(echo "$name" | xargs)"
-    local spec_dir="${CASE_STUDIES_DIR}/${name}/spec"
     local repo_dir
     repo_dir="$(find_repo_dir "$name")"
-
-    printf "  %-20s" "$name"
-
-    # Check specs
-    if [[ -f "${spec_dir}/base.tla" && -f "${spec_dir}/Trace.tla" ]]; then
-      printf "specs OK"
-    else
-      printf "specs MISSING"
-      ok=false
-    fi
-
-    # Check instrumentation spec
-    if [[ -f "${spec_dir}/instrumentation-spec.md" ]]; then
-      printf "  instr OK"
-    else
-      printf "  instr MISSING"
-      ok=false
-    fi
-
-    # Check artifact repo
     if [[ -n "$repo_dir" ]]; then
-      echo "  repo OK"
+      local commits
+      commits=$(cd "$repo_dir" && git rev-list --count HEAD 2>/dev/null || echo "?")
+      echo "  OK  ${name} (${commits} commits)"
     else
-      echo "  repo MISSING"
+      echo "  MISSING  ${name} — expected at ${CASE_STUDIES_DIR}/${name}/artifact/<repo>/"
       ok=false
     fi
   done
@@ -125,50 +108,59 @@ check_prereqs() {
 # Generate agent prompt
 # ──────────────────────────────────────────────────────────
 generate_prompt() {
-  local name="$1" repo_dir="$2"
+  local name="$1" github_short="$2" language="$3" reference="$4" repo_dir="$5"
   local work_dir="${CASE_STUDIES_DIR}/${name}"
-  local spec_dir="${work_dir}/spec"
 
   cat <<PROMPT_EOF
-# Trace Harness Generation Task: ${name}
+# Code Analysis Task
 
-You are generating a trace harness for **${name}** — instrumenting the real source code to produce NDJSON traces for TLA+ trace validation.
+You are analyzing the following system:
 
-## Inputs
+- **Name**: ${name}
+- **GitHub**: ${github_short}
+- **Language**: ${language}
+- **Reference Algorithm**: ${reference}
+- **Repository**: ${repo_dir}
+- **Working Directory**: ${work_dir}
 
-- **Instrumentation spec**: ${spec_dir}/instrumentation-spec.md
-- **Trace spec**: ${spec_dir}/Trace.tla + ${spec_dir}/Trace.cfg
-- **Base spec**: ${spec_dir}/base.tla (for understanding spec actions)
-- **Source code**: ${repo_dir}
+## Instructions
 
-## Workflow
+Follow the **code-analysis** skill methodology. Read the skill guide at:
+  ${SPECULA_ROOT}/.claude/skills/code_analysis/guide.md
 
-Read and follow the **harness-generation** skill:
-  ${SKILL_DIR}/guide.md
+Then read the reference files as needed:
+  ${SPECULA_ROOT}/.claude/skills/code_analysis/references/bug-archaeology.md
+  ${SPECULA_ROOT}/.claude/skills/code_analysis/references/deep-analysis.md
+  ${SPECULA_ROOT}/.claude/skills/code_analysis/references/modeling-brief-format.md
 
-Then read the reference:
-  ${SKILL_DIR}/references/trace-module-patterns.md
+And see the example:
+  ${SPECULA_ROOT}/.claude/skills/code_analysis/examples/hashicorp-raft-modeling-brief.md
+
+## Phases
+
+Execute all 4 phases in order:
+
+1. **Reconnaissance** — Build structural map of codebase
+2. **Bug Archaeology** — Mine git history and GitHub issues/PRs for bugs
+3. **Deep Analysis** — Systematic code reading to find new issues
+4. **Modeling Brief** — Synthesize findings into modeling-brief.md
 
 ## Output
 
-Write all harness files to: ${work_dir}/harness/
-Collect traces to: ${work_dir}/traces/
-
-Expected outputs:
-- \`${work_dir}/harness/src/\` — Trace emission module + test scenarios
-- \`${work_dir}/harness/apply.sh\` — Apply instrumentation to artifact
-- \`${work_dir}/harness/run.sh\` — One-command build + run + collect traces
-- \`${work_dir}/harness/INSTRUMENTATION.md\` — Guide for Phase 3 agent to adjust instrumentation
-- \`${work_dir}/traces/*.ndjson\` — Trace files from test runs
+Write your outputs to:
+- \`${work_dir}/modeling-brief.md\` — The primary deliverable (handoff to Spec Generation)
+- \`${work_dir}/analysis-report.md\` — Detailed audit trail of all findings
 
 ## Critical Rules
 
-1. Instrument real code, not a simulator. The trace must capture what the real system does.
-2. Never hand-write traces. Every trace line must come from running instrumented code.
-3. Match the instrumentation spec exactly. Event names, field names, trigger points.
-4. Real timestamps only. Sequential integers (1000, 1001, 1002) indicate hand-written traces.
-5. run.sh must work end-to-end. Anyone should be able to reproduce traces with a single command.
-6. Run a quick trace validation at the end to catch obvious format issues.
+1. VERIFY before reporting. Re-read code. Check for compensating mechanisms. No unverified claims.
+2. Read issue DISCUSSIONS, not just titles. For any issue you plan to reference, read the full comment thread via \`gh issue view --comments\` to confirm it hasn't been debunked.
+3. Do NOT hallucinate code logic. If unsure, READ IT. Cite file:line for every claim.
+4. Use parallel Task subagents aggressively. Launch multiple subagents concurrently for: issue batch verification (5-10 issues per subagent), file-by-file deep analysis (one subagent per core file), and commit review. This is essential for both depth AND coverage.
+5. Evidence-based claims only. Show code, git commits, issue discussions, or code path inconsistencies.
+6. Bug Families over flat lists. Group by mechanism. 5 actionable families > 17 flat findings.
+7. Every finding must be classified: model-checkable, test-verifiable, or code-review-only.
+8. Thoroughness is non-negotiable. Analyze ALL bug-fix commits touching core files. Deeply read 30+ GitHub issues (full discussion threads). Report coverage statistics in the analysis report.
 PROMPT_EOF
 }
 
@@ -178,10 +170,9 @@ PROMPT_EOF
 launch_agent() {
   local name="$1" prompt="$2"
   local work_dir="${CASE_STUDIES_DIR}/${name}"
-  local log_file="${work_dir}/harness-gen.log"
-  local prompt_file="${work_dir}/.harness-gen-prompt.md"
+  local log_file="${work_dir}/agent.log"
+  local prompt_file="${work_dir}/.prompt.md"
 
-  mkdir -p "${work_dir}/harness" "${work_dir}/traces"
   echo "$prompt" > "$prompt_file"
 
   echo "[$(date '+%H:%M:%S')] Launching agent: ${name}"
@@ -194,7 +185,7 @@ launch_agent() {
 
   local pid
   pid=$("$ADAPTER" --prompt="$prompt" --max-turns="$MAX_TURNS" --log="$log_file" --background)
-  echo "$pid" > "${work_dir}/harness-gen.pid"
+  echo "$pid" > "${work_dir}/agent.pid"
   echo "  PID=$pid  Log: $log_file"
 }
 
@@ -203,36 +194,40 @@ launch_agent() {
 # ──────────────────────────────────────────────────────────
 main() {
   echo "========================================"
-  echo " Specula — Harness Generation (Phase 2.5)"
+  echo " Specula — Code Analysis Batch Runner"
   echo "========================================"
   echo "Targets:      ${#TARGETS[@]}"
   echo "Max parallel: $MAX_PARALLEL"
   echo "Max turns:    $MAX_TURNS"
   echo ""
 
-  echo "Checking prerequisites..."
-  if ! check_prereqs; then
+  echo "Checking repositories..."
+  if ! check_repos; then
     echo ""
-    echo "ERROR: Missing prerequisites. Run spec generation (Phase 2) first."
+    echo "ERROR: Some repositories are missing. Clone them first."
     exit 1
   fi
   echo ""
 
   if $CHECK_ONLY; then
-    echo "All prerequisites OK."
+    echo "All repos OK."
     exit 0
   fi
 
   local running_pids=()
 
-  for name in "${TARGETS[@]}"; do
+  for target in "${TARGETS[@]}"; do
+    IFS='|' read -r name github_short language reference <<< "$target"
     name="$(echo "$name" | xargs)"
+    github_short="$(echo "$github_short" | xargs)"
+    language="$(echo "$language" | xargs)"
+    reference="$(echo "$reference" | xargs)"
 
     local repo_dir
     repo_dir="$(find_repo_dir "$name")"
 
     local prompt
-    prompt="$(generate_prompt "$name" "$repo_dir")"
+    prompt="$(generate_prompt "$name" "$github_short" "$language" "$reference" "$repo_dir")"
 
     # Throttle
     while (( ${#running_pids[@]} >= MAX_PARALLEL )); do
@@ -250,14 +245,14 @@ main() {
 
     launch_agent "$name" "$prompt"
     if ! $DRY_RUN; then
-      running_pids+=("$(cat "${CASE_STUDIES_DIR}/${name}/harness-gen.pid")")
+      running_pids+=("$(cat "${CASE_STUDIES_DIR}/${name}/agent.pid")")
     fi
     echo ""
   done
 
   if ! $DRY_RUN; then
     echo "[$(date '+%H:%M:%S')] All agents launched. Waiting..."
-    echo "  Monitor: tail -f ${CASE_STUDIES_DIR}/*/harness-gen.log"
+    echo "  Monitor: tail -f ${CASE_STUDIES_DIR}/*/agent.log"
     echo ""
     wait
     echo "[$(date '+%H:%M:%S')] All agents completed."
@@ -268,27 +263,21 @@ main() {
   echo "========================================"
   echo " Results"
   echo "========================================"
-  for name in "${TARGETS[@]}"; do
+  for target in "${TARGETS[@]}"; do
+    IFS='|' read -r name _ _ _ <<< "$target"
     name="$(echo "$name" | xargs)"
-    local work_dir="${CASE_STUDIES_DIR}/${name}"
-    local harness_dir="${work_dir}/harness"
-    local traces_dir="${work_dir}/traces"
-
-    local has_run=false has_apply=false has_guide=false trace_count=0
-    [[ -f "${harness_dir}/run.sh" ]] && has_run=true
-    [[ -f "${harness_dir}/apply.sh" ]] && has_apply=true
-    [[ -f "${harness_dir}/INSTRUMENTATION.md" ]] && has_guide=true
-    if [[ -d "$traces_dir" ]]; then
-      trace_count=$(find "$traces_dir" -name "*.ndjson" 2>/dev/null | wc -l)
-    fi
-
-    if $has_run && [[ $trace_count -gt 0 ]]; then
-      echo "  OK  ${name} -> run.sh: yes, traces: ${trace_count}"
-      $has_guide || echo "        warning: missing INSTRUMENTATION.md"
-    elif $has_run; then
-      echo "  ~~  ${name} -> run.sh: yes, traces: 0 (no traces generated)"
+    local brief="${CASE_STUDIES_DIR}/${name}/modeling-brief.md"
+    local report="${CASE_STUDIES_DIR}/${name}/analysis-report.md"
+    if [[ -f "$brief" ]]; then
+      local lines
+      lines=$(wc -l < "$brief")
+      echo "  OK  ${name} -> modeling-brief.md (${lines} lines)"
+    elif [[ -f "$report" ]]; then
+      local lines
+      lines=$(wc -l < "$report")
+      echo "  ~~  ${name} -> analysis-report.md only (${lines} lines, no modeling brief)"
     else
-      echo "  --  ${name} (no harness output)"
+      echo "  --  ${name} (no output)"
     fi
   done
 }

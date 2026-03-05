@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 #
-# Batch launcher: spawn one Claude Code agent per target system for TLA+ spec generation.
-# Each agent follows the spec-generation skill methodology and produces base/MC/Trace specs.
+# Batch launcher: spawn one Claude Code agent per target system for spec validation.
+# Each agent iteratively runs trace validation and invariant checking using existing
+# skills until both pass. Harness and traces must already exist (Phase 2.5).
 #
 # Usage:
-#   bash scripts/launch_spec_generation.sh [options] "name" [...]
+#   bash scripts/launch/launch_spec_validation.sh [options] "name" [...]
 #
 # Example:
-#   bash scripts/launch_spec_generation.sh cometbft
-#   bash scripts/launch_spec_generation.sh braft sofa-jraft dragonboat
+#   bash scripts/launch/launch_spec_validation.sh cometbft
+#   bash scripts/launch/launch_spec_validation.sh braft sofa-jraft dragonboat
 #
 # Options:
 #   --dry-run           Print commands without executing
@@ -18,16 +19,14 @@
 #   --agent=NAME        Agent adapter to use (default: claude-code)
 #
 # Prerequisites:
-#   - claude CLI installed and authenticated
-#   - modeling-brief.md exists at case-studies/<name>/modeling-brief.md
-#   - Source repo cloned at case-studies/<name>/artifact/<repo>/
+#   - Spec files at case-studies/<name>/spec/ (from Phase 2)
+#   - Source repo at case-studies/<name>/artifact/<repo>/
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SPECULA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SPECULA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
-SKILL_DIR="$SPECULA_ROOT/.claude/skills/spec_generation"
 MAX_PARALLEL=1
 MAX_TURNS=0
 DRY_RUN=false
@@ -88,25 +87,46 @@ check_prereqs() {
   local ok=true
   for name in "${TARGETS[@]}"; do
     name="$(echo "$name" | xargs)"
-    local brief="${CASE_STUDIES_DIR}/${name}/modeling-brief.md"
+    local spec_dir="${CASE_STUDIES_DIR}/${name}/spec"
     local repo_dir
     repo_dir="$(find_repo_dir "$name")"
 
-    if [[ -f "$brief" ]]; then
-      local lines
-      lines=$(wc -l < "$brief")
-      printf "  %-20s modeling-brief.md (%d lines)" "$name" "$lines"
+    printf "  %-20s" "$name"
+
+    if [[ -f "${spec_dir}/base.tla" && -f "${spec_dir}/MC.tla" && -f "${spec_dir}/Trace.tla" ]]; then
+      local base_lines
+      base_lines=$(wc -l < "${spec_dir}/base.tla")
+      printf "specs OK (%dL)" "$base_lines"
     else
-      printf "  %-20s MISSING modeling-brief.md" "$name"
+      printf "specs MISSING"
+      ok=false
+    fi
+
+    if [[ -f "${spec_dir}/instrumentation-spec.md" ]]; then
+      printf "  instr OK"
+    else
+      printf "  instr MISSING"
       ok=false
     fi
 
     if [[ -n "$repo_dir" ]]; then
-      echo "  repo OK"
+      printf "  repo OK"
     else
-      echo "  repo MISSING"
+      printf "  repo MISSING"
       ok=false
     fi
+
+    # Warn if traces don't exist (not fatal — agent can adjust instrumentation)
+    local traces_dir="${CASE_STUDIES_DIR}/${name}/traces"
+    local trace_count=0
+    [[ -d "$traces_dir" ]] && trace_count=$(find "$traces_dir" -name "*.ndjson" 2>/dev/null | wc -l)
+    if [[ $trace_count -gt 0 ]]; then
+      printf "  traces OK (%d)" "$trace_count"
+    else
+      printf "  traces WARN (0 ndjson files)"
+    fi
+
+    echo ""
   done
   $ok
 }
@@ -118,64 +138,46 @@ generate_prompt() {
   local name="$1" repo_dir="$2"
   local work_dir="${CASE_STUDIES_DIR}/${name}"
   local spec_dir="${work_dir}/spec"
-  local brief="${work_dir}/modeling-brief.md"
 
   cat <<PROMPT_EOF
-# TLA+ Spec Generation Task
+# Spec Validation Task: ${name}
 
-You are generating a TLA+ specification for: **${name}**
+You are validating the TLA+ specification for **${name}** through iterative trace validation and invariant checking.
 
 ## Inputs
 
-- **Modeling Brief**: ${brief}
-- **Source Code**: ${repo_dir}
-- **Output Directory**: ${spec_dir}
+- **Spec directory**: ${spec_dir}
+  - base.tla, base.cfg — Base specification
+  - MC.tla, MC.cfg — Model checking specification
+  - Trace.tla, Trace.cfg — Trace validation specification
+  - instrumentation-spec.md — Action-to-code mapping for harness generation
+- **Source code**: ${repo_dir}
+- **Modeling brief**: ${work_dir}/modeling-brief.md
 
-## Instructions
+## Workflow
 
-Follow the **spec-generation** skill methodology. Read the skill guide at:
-  ${SKILL_DIR}/guide.md
+Read and follow the **validation-workflow** skill:
+  ${SPECULA_ROOT}/.claude/skills/validation-workflow/guide.md
 
-Then read the reference files:
-  ${SKILL_DIR}/references/base-spec-methodology.md
-  ${SKILL_DIR}/references/mc-spec-pattern.md
-  ${SKILL_DIR}/references/trace-spec-pattern.md
-  ${SKILL_DIR}/references/instrumentation-spec-format.md
+This skill orchestrates the iterative loop between trace validation and model checking.
+It delegates to two sub-skills (read these too):
+  ${SPECULA_ROOT}/.claude/skills/tla-trace-workflow/guide.md
+  ${SPECULA_ROOT}/.claude/skills/tla-checking-workflow/guide.md
 
-## Phases
+## Pre-step: Verify harness and traces
 
-Execute all 4 phases in order:
+Harness and traces should already exist from Phase 2.5 (harness generation). Verify:
+- Trace files in: ${work_dir}/traces/
+- Instrumentation guide: ${work_dir}/harness/INSTRUMENTATION.md
 
-1. **Base Spec** — Write \`base.tla\` + \`base.cfg\` with bug-family driven extensions
-2. **MC Spec** — Write \`MC.tla\` + \`MC.cfg\` with counter-bounded actions
-3. **Trace Spec** — Write \`Trace.tla\` + \`Trace.cfg\` for trace validation
-4. **Instrumentation Spec** — Write \`instrumentation-spec.md\` with action-to-code mapping
-
-## Output
-
-Create the output directory and write all files to:
-  ${spec_dir}/
-
-Expected files:
-- \`${spec_dir}/base.tla\` — Base specification
-- \`${spec_dir}/base.cfg\` — Base config
-- \`${spec_dir}/MC.tla\` — Model checking specification
-- \`${spec_dir}/MC.cfg\` — Model checking config
-- \`${spec_dir}/Trace.tla\` — Trace validation specification
-- \`${spec_dir}/Trace.cfg\` — Trace validation config
-- \`${spec_dir}/instrumentation-spec.md\` — Instrumentation mapping
+If instrumentation adjustments are needed during validation, read \`harness/INSTRUMENTATION.md\` for how to modify capture points and fields, then re-run \`bash harness/run.sh\` to regenerate traces.
 
 ## Critical Rules
 
-1. Every extension traces to a Bug Family. No Bug Family reference = don't add the extension.
-2. Model the implementation, not the paper. Deviations from the reference algorithm are where bugs live.
-3. Follow the code's control flow faithfully. Do not simplify, reorder, or merge logic that the code keeps separate.
-4. Annotate every logic block with source lines (file:line). Not optional.
-5. Write to files early and often. Insurance against context loss.
-6. Split actions where code paths diverge. Merging hides bugs.
-7. Name actions after implementation functions. Enables cross-referencing with code.
-8. Silent actions must be tightly constrained. Unconstrained silent actions cause state space explosion.
-9. MC spec bounds fault-injection, not normal operations.
+1. Follow the validation-workflow skill — do not invent your own methodology.
+2. The implementation is ground truth. When spec and implementation disagree, the spec is wrong (unless it's a real bug).
+3. For Case C (real bug found): STOP and document it clearly. Do not "fix" real bugs.
+4. For abstraction gaps: document them and make a pragmatic choice, then continue.
 PROMPT_EOF
 }
 
@@ -185,11 +187,10 @@ PROMPT_EOF
 launch_agent() {
   local name="$1" prompt="$2"
   local work_dir="${CASE_STUDIES_DIR}/${name}"
-  local spec_dir="${work_dir}/spec"
-  local log_file="${work_dir}/spec-gen.log"
-  local prompt_file="${work_dir}/.spec-gen-prompt.md"
+  local log_file="${work_dir}/spec-validation.log"
+  local prompt_file="${work_dir}/.spec-validation-prompt.md"
 
-  mkdir -p "$spec_dir"
+  mkdir -p "${work_dir}/traces"
   echo "$prompt" > "$prompt_file"
 
   echo "[$(date '+%H:%M:%S')] Launching agent: ${name}"
@@ -202,7 +203,7 @@ launch_agent() {
 
   local pid
   pid=$("$ADAPTER" --prompt="$prompt" --max-turns="$MAX_TURNS" --log="$log_file" --background)
-  echo "$pid" > "${work_dir}/spec-gen.pid"
+  echo "$pid" > "${work_dir}/spec-validation.pid"
   echo "  PID=$pid  Log: $log_file"
 }
 
@@ -211,7 +212,7 @@ launch_agent() {
 # ──────────────────────────────────────────────────────────
 main() {
   echo "========================================"
-  echo " Specula — Spec Generation Batch Runner"
+  echo " Specula — Spec Validation Batch Runner"
   echo "========================================"
   echo "Targets:      ${#TARGETS[@]}"
   echo "Max parallel: $MAX_PARALLEL"
@@ -221,7 +222,7 @@ main() {
   echo "Checking prerequisites..."
   if ! check_prereqs; then
     echo ""
-    echo "ERROR: Missing prerequisites. Run code analysis first."
+    echo "ERROR: Missing prerequisites. Run spec generation first."
     exit 1
   fi
   echo ""
@@ -258,14 +259,14 @@ main() {
 
     launch_agent "$name" "$prompt"
     if ! $DRY_RUN; then
-      running_pids+=("$(cat "${CASE_STUDIES_DIR}/${name}/spec-gen.pid")")
+      running_pids+=("$(cat "${CASE_STUDIES_DIR}/${name}/spec-validation.pid")")
     fi
     echo ""
   done
 
   if ! $DRY_RUN; then
     echo "[$(date '+%H:%M:%S')] All agents launched. Waiting..."
-    echo "  Monitor: tail -f ${CASE_STUDIES_DIR}/*/spec-gen.log"
+    echo "  Monitor: tail -f ${CASE_STUDIES_DIR}/*/spec-validation.log"
     echo ""
     wait
     echo "[$(date '+%H:%M:%S')] All agents completed."
@@ -279,30 +280,17 @@ main() {
   for name in "${TARGETS[@]}"; do
     name="$(echo "$name" | xargs)"
     local spec_dir="${CASE_STUDIES_DIR}/${name}/spec"
-    local base="${spec_dir}/base.tla"
-    local mc="${spec_dir}/MC.tla"
-    local trace="${spec_dir}/Trace.tla"
-    local instr="${spec_dir}/instrumentation-spec.md"
+    local changelog="${spec_dir}/changelog.md"
 
-    local count=0
-    [[ -f "$base" ]] && count=$((count + 1))
-    [[ -f "$mc" ]] && count=$((count + 1))
-    [[ -f "$trace" ]] && count=$((count + 1))
-    [[ -f "$instr" ]] && count=$((count + 1))
-
-    if [[ $count -eq 4 ]]; then
-      local lines
-      lines=$(wc -l < "$base")
-      echo "  OK  ${name} -> ${count}/4 files (base.tla: ${lines} lines)"
-    elif [[ $count -gt 0 ]]; then
-      echo "  ~~  ${name} -> ${count}/4 files (incomplete)"
-      [[ ! -f "$base" ]] && echo "        missing: base.tla"
-      [[ ! -f "$mc" ]] && echo "        missing: MC.tla"
-      [[ ! -f "$trace" ]] && echo "        missing: Trace.tla"
-      [[ ! -f "$instr" ]] && echo "        missing: instrumentation-spec.md"
-    else
-      echo "  --  ${name} (no output)"
+    local status="(check log)"
+    if [[ -f "$changelog" ]]; then
+      local result
+      result=$(grep -i "^## Result" -A1 "$changelog" | tail -1)
+      result="${result:-changelog exists, no result yet}"
+      status="$result"
     fi
+
+    echo "  ${name}: ${status}"
   done
 }
 

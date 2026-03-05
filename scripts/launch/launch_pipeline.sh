@@ -6,13 +6,13 @@
 # All agent logs and review results are saved for inspection.
 #
 # Usage:
-#   bash scripts/launch_pipeline.sh [options] "name|github|lang|reference" [...]
+#   bash scripts/launch/launch_pipeline.sh [options] "name|github|lang|reference" [...]
 #
 # Example (single system):
-#   bash scripts/launch_pipeline.sh "cometbft|cometbft/cometbft|Go|Tendermint BFT"
+#   bash scripts/launch/launch_pipeline.sh "cometbft|cometbft/cometbft|Go|Tendermint BFT"
 #
 # Example (multiple systems):
-#   bash scripts/launch_pipeline.sh \
+#   bash scripts/launch/launch_pipeline.sh \
 #     "braft|brpc/braft|C++|Raft (Ongaro 2014)" \
 #     "sofa-jraft|sofastack/sofa-jraft|Java|Raft (Ongaro 2014)"
 #
@@ -56,7 +56,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SPECULA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SPECULA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
 
 MAX_PARALLEL=1
@@ -137,7 +137,7 @@ run_phase1_analysis() {
   done
 
   if $DRY_RUN; then
-    log "[DRY RUN] bash scripts/launch_code_analysis.sh ${analysis_args[*]}"
+    log "[DRY RUN] bash scripts/launch/launch_code_analysis.sh ${analysis_args[*]}"
     return 0
   fi
 
@@ -159,7 +159,7 @@ run_review() {
   divider
 
   if $DRY_RUN; then
-    log "[DRY RUN] bash scripts/launch_review.sh --agent=$AGENT ${phase} ${names[*]}"
+    log "[DRY RUN] bash scripts/launch/launch_review.sh --agent=$AGENT ${phase} ${names[*]}"
     return 0
   fi
 
@@ -180,7 +180,7 @@ run_phase2_specgen() {
   done
 
   if $DRY_RUN; then
-    log "[DRY RUN] bash scripts/launch_spec_generation.sh ${specgen_args[*]}"
+    log "[DRY RUN] bash scripts/launch/launch_spec_generation.sh ${specgen_args[*]}"
     return 0
   fi
 
@@ -201,7 +201,7 @@ run_phase2_5_harness() {
   done
 
   if $DRY_RUN; then
-    log "[DRY RUN] bash scripts/launch_harness_generation.sh ${harness_args[*]}"
+    log "[DRY RUN] bash scripts/launch/launch_harness_generation.sh ${harness_args[*]}"
     return 0
   fi
 
@@ -222,7 +222,7 @@ run_phase3_validation() {
   done
 
   if $DRY_RUN; then
-    log "[DRY RUN] bash scripts/launch_spec_validation.sh ${val_args[*]}"
+    log "[DRY RUN] bash scripts/launch/launch_spec_validation.sh ${val_args[*]}"
     return 0
   fi
 

@@ -4,7 +4,7 @@
 # Used by launch_pipeline.sh between phases. Can also be used standalone.
 #
 # Usage:
-#   bash scripts/launch_review.sh <phase> <name> [name ...]
+#   bash scripts/launch/launch_review.sh <phase> <name> [name ...]
 #
 # Phases:
 #   analysis    — Review code analysis output (modeling-brief.md, analysis-report.md)
@@ -17,7 +17,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SPECULA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SPECULA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
 AGENT="claude-code"
 TARGETS=()

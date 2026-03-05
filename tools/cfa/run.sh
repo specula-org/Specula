@@ -138,7 +138,7 @@ echo "Found executable JAR: $JAR_FILE"
 TLA2TOOLS_JAR="$PROJECT_ROOT/lib/tla2tools.jar"
 
 if [ ! -f "$TLA2TOOLS_JAR" ]; then
-    echo "ERROR: TLA2Tools JAR file not found. Please run scripts/setup.sh."
+    echo "ERROR: TLA2Tools JAR file not found. Please run scripts/infra/setup.sh."
     exit 1
 fi
 echo "Found TLA2Tools JAR: $TLA2TOOLS_JAR"

@@ -27,7 +27,7 @@ Environment requirements:
 To set up Specula:
 ```bash
 # Run Specula's setup script
-bash scripts/setup.sh
+bash scripts/infra/setup.sh
 
 # Verify TLA+ tools are installed
 ls lib/tla2tools.jar
@@ -459,7 +459,7 @@ export SPECULA_LOG_LEVEL="DEBUG"
 java -cp lib/tla2tools.jar tla2sany.SANY -help
 
 # If failed, re-run setup
-bash scripts/setup.sh
+bash scripts/infra/setup.sh
 ```
 
 ### CFA Tool Compilation Failure

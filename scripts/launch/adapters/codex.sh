@@ -5,7 +5,7 @@
 # Unified interface for invoking Codex CLI.
 #
 # Usage:
-#   scripts/adapters/codex.sh [options]
+#   scripts/launch/adapters/codex.sh [options]
 #
 # Options:
 #   --prompt "..."         Task prompt (mutually exclusive with --prompt-file)

@@ -32,7 +32,7 @@ Specula runs as a set of code agent skills and MCP tools. It currently supports 
 
 ```bash
 git clone https://github.com/specula-org/Specula.git && cd Specula
-bash scripts/setup.sh
+bash scripts/infra/setup.sh
 
 # then, clone your target repository into the case-studies subdir
 git clone https://github.com/cometbft/cometbft case-studies/cometbft/artifact/cometbft
@@ -69,25 +69,25 @@ codex mcp add tracedebugger \
 
 ```bash
 # provide the case study name
-bash scripts/launch_pipeline.sh cometbft
+bash scripts/launch/launch_pipeline.sh cometbft
 
 # optionally, you can provide more context of the form "<project name>|<github repo>|<language>|<description>"
-bash scripts/launch_pipeline.sh cometbft|cometbft/cometbft|Go|Tendermint BFT
+bash scripts/launch/launch_pipeline.sh cometbft|cometbft/cometbft|Go|Tendermint BFT
 ```
 
-See [here](https://github.com/specula-org/Specula/blob/main/scripts/launch_pipeline.sh#L19) for more CLI options (e.g. specifying which agent to use)
+See [here](https://github.com/specula-org/Specula/blob/main/scripts/launch/launch_pipeline.sh#L19) for more CLI options (e.g. specifying which agent to use)
 
 **Individual phases:**
 
 ```bash
 # Phase 1: Code analysis
-bash scripts/launch_code_analysis.sh cometbft
+bash scripts/launch/launch_code_analysis.sh cometbft
 
 # Phase 2: Specification
-bash scripts/launch_spec_generation.sh cometbft
+bash scripts/launch/launch_spec_generation.sh cometbft
 
 # Phase 3: Trace Validation and MC
-bash scripts/launch_spec_validation.sh cometbft
+bash scripts/launch/launch_spec_validation.sh cometbft
 ```
 
 ## Note

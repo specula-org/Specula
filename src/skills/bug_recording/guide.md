@@ -1,6 +1,6 @@
 # Bug Recording Guide
 
-Record confirmed bugs to the shared Google Sheet via `scripts/record_bug.py`.
+Record confirmed bugs to the shared Google Sheet via `scripts/infra/record_bug.py`.
 
 ## When to Record
 
@@ -57,7 +57,7 @@ When first recording a bug that hasn't been reported upstream yet, leave `--stat
 ### Append a new bug
 
 ```bash
-python3 scripts/record_bug.py append \
+python3 scripts/infra/record_bug.py append \
   --system "sofa-jraft" \
   --protocol "Raft (Java)" \
   --finding "onInstallSnapshotReturned missing term check" \
@@ -72,7 +72,7 @@ python3 scripts/record_bug.py append \
 ### Append a known bug
 
 ```bash
-python3 scripts/record_bug.py append --sheet known \
+python3 scripts/infra/record_bug.py append --sheet known \
   --system "CometBFT" \
   --protocol "PBFT (Go)" \
   --finding "Vote Extension Deadlock" \
@@ -86,7 +86,7 @@ python3 scripts/record_bug.py append --sheet known \
 ### Update an existing bug
 
 ```bash
-python3 scripts/record_bug.py update \
+python3 scripts/infra/record_bug.py update \
   --number 5 \
   --status "Merged" \
   --reference "PR #999" \
@@ -96,7 +96,7 @@ python3 scripts/record_bug.py update \
 Update a known bug:
 
 ```bash
-python3 scripts/record_bug.py update --sheet known \
+python3 scripts/infra/record_bug.py update --sheet known \
   --number 1 \
   --status "Merged"
 ```
@@ -104,10 +104,10 @@ python3 scripts/record_bug.py update --sheet known \
 ### List bugs
 
 ```bash
-python3 scripts/record_bug.py list                    # New bug (simple)
-python3 scripts/record_bug.py list --sheet new-detailed  # New bug (detailed)
-python3 scripts/record_bug.py list --sheet known         # Known bug (simple)
-python3 scripts/record_bug.py list --sheet known-detailed # Known bug (detailed)
+python3 scripts/infra/record_bug.py list                    # New bug (simple)
+python3 scripts/infra/record_bug.py list --sheet new-detailed  # New bug (detailed)
+python3 scripts/infra/record_bug.py list --sheet known         # Known bug (simple)
+python3 scripts/infra/record_bug.py list --sheet known-detailed # Known bug (detailed)
 ```
 
 ## Workflow
