@@ -159,11 +159,12 @@ Must be executable from the case study root: `cd case-studies/<name> && bash har
    - Event names match spec actions
    - Timestamps are real (not sequential integers)
    - State fields are present and reasonable
-4. Run a quick trace validation to catch obvious format issues:
+4. Check `Trace.cfg` has `PROPERTIES TraceMatched` (uncommented). If missing, add it — without it validation reports false positives.
+5. Run a quick trace validation to catch obvious format issues:
    ```
    run_trace_validation(spec_file="Trace.tla", config_file="Trace.cfg", trace_file="../traces/<name>.ndjson", work_dir="spec/")
    ```
-5. If validation fails, fix instrumentation and re-run. Minor fixes are expected at this stage.
+6. If validation fails, fix instrumentation and re-run. Minor fixes are expected at this stage.
 
 ---
 

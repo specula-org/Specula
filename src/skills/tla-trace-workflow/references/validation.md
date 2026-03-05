@@ -204,6 +204,7 @@ print(f"First line: {info['first_lines'][0]}")
 2. **Use the `suggestion` field** - It provides ready-to-use debugging instructions
 3. **Check the trace file** - Understand what event failed before debugging
 4. **Proceed to debugging** - Use `run_trace_debugging` to inspect variable values at failure point
+5. **Check `Trace.cfg` has `PROPERTIES TraceMatched`** before your first run — without it, `success` is a false positive.
 
 ## Decision Tree
 

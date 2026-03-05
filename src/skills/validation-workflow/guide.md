@@ -42,7 +42,8 @@ All artifacts are relative to the case study root (e.g., `case-studies/<name>/`)
 1. **Verify all files exist**: base spec, trace spec, MC spec, trace files, instrumentation-spec, hunting configs
 2. **Read `instrumentation-spec.md`**: understand the mapping between spec actions and source code locations — you'll need this when analyzing failures and making fixes
 3. **Read `harness/INSTRUMENTATION.md`**: understand how to adjust instrumentation if trace validation reveals capture timing or field issues
-4. **Create `spec/changelog.md`** (or open existing one)
+4. **Check `Trace.cfg` has `PROPERTIES TraceMatched`** (uncommented). If missing, add it — without it validation reports false positives.
+5. **Create `spec/changelog.md`** (or open existing one)
 
 ---
 

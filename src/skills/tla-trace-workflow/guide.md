@@ -38,6 +38,8 @@ TLC evaluates `/\` conditions top to bottom. If a condition is FALSE, subsequent
 
 **Tool**: `run_trace_validation`
 
+**Prerequisite**: Before running validation, check that `Trace.cfg` has `PROPERTIES TraceMatched` (uncommented). If missing, add it. Without this, TLC reports "no errors" even when the trace is never consumed — a false positive.
+
 Three outcomes:
 - `success` — trace is valid, done
 - `trace_mismatch` — go to Phase 2
@@ -103,6 +105,7 @@ The user may request not to clean up the generated files. Otherwise, run `clean_
 4. **If last hit is an action call, debug INSIDE that action.** The problem is internal.
 5. **Classify error type before fixing.** Inconsistency Error vs Abstraction Gap require different strategies.
 6. **Fix the base spec, not the trace comparison logic.** Unless there is no other option.
+7. **Trace.cfg must have `PROPERTIES TraceMatched`.** Without it, validation silently produces false positives. See Phase 1 prerequisite above.
 
 ---
 

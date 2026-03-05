@@ -23,6 +23,10 @@ The trace spec drives TLC through a recorded execution trace from the real imple
 9. **TraceNext** — all wrappers + silent actions
 10. **TraceMatched** — temporal property checking entire trace was consumed
 
+## Trace.cfg Must Include TraceMatched
+
+`Trace.cfg` must have `PROPERTIES TraceMatched` (uncommented). Without it, TLC reports "no errors" even when `l` never advances — trace validation becomes a false positive. Define `TraceMatched == <>(l > Len(TraceLog))` in `Trace.tla` and include `PROPERTIES TraceMatched` in `Trace.cfg`.
+
 ## Silent Actions
 
 Silent actions handle impl state changes without trace events (e.g., leader noop append, concurrent timeouts). **Unconstrained silent actions cause state space explosion.** Always add preconditions:
