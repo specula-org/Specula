@@ -38,7 +38,9 @@ bash scripts/infra/setup.sh
 git clone https://github.com/cometbft/cometbft case-studies/cometbft/artifact/cometbft
 ```
 
-Additionally, set up the Specula Agent Skills and MCP with your coding agent.
+<details>
+<summary>Alternative: Manual Agent Setup</summary>
+You will need to set up the Specula Agent Skills and MCP with your coding agent.
 
 - To set up skills, symlink [the Specula `src/skills` folder](https://github.com/specula-org/Specula/tree/main/src/skills) to the appropriate folder read by your coding agent. For Claude, this is `~/.claude/skills` or `.claude/skills`. For Codex, this is `~/.codex/skills` or `.agents/skills`.
 - To set up the MCP, add [the `trace_debugger` MCP here](https://github.com/specula-org/Specula/tree/main/tools/trace_debugger) to your agent config.
@@ -63,12 +65,15 @@ codex mcp add tracedebugger \
 	/path/to/specula/tools/trace_debugger/mcp_server.py
 ```
 
+</details>
+
 ### Running Specula
+
+The case study name will be the directory name in the `case-studies` subdir (i.e. `case-studies/<this artifact name>`). For example, if `cometbft` is cloned into `case-studies/cometbft`:
 
 **Full pipeline** (all three phases):
 
 ```bash
-# provide the case study name
 bash scripts/launch/launch_pipeline.sh cometbft
 
 # optionally, you can provide more context of the form "<project name>|<github repo>|<language>|<description>"
