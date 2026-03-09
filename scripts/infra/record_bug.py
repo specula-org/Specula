@@ -220,6 +220,82 @@ def delete_bug(args):
                 pass
 
 
+def sort_bugs(args):
+    """Sort all data rows by System column, renumber, and reformat."""
+    gc = get_client()
+    targets = resolve_sheets(args.sheet)
+
+    for sheet_key in targets:
+        sh, ws = get_worksheet(gc, sheet_key)
+        _, columns, _ = SHEET_MAP[sheet_key]
+        rows = ws.get_all_values()
+        header = rows[0]
+        data_rows = [r for r in rows[1:] if any(r)]
+
+        if not data_rows:
+            print(f"[{SHEET_MAP[sheet_key][0]}] No data rows to sort")
+            continue
+
+        # Sort by: protocol family (Raft/Paxos/...), then system, then finding
+        def sort_key(r):
+            protocol = r[2].lower()  # e.g. "raft (java)", "paxos (go)"
+            # Extract protocol family (first word)
+            family = protocol.split("(")[0].strip() if "(" in protocol else protocol.split()[0] if protocol else ""
+            return (family, r[1].lower(), r[3].lower())
+
+        data_rows.sort(key=sort_key)
+
+        # Renumber
+        for i, row in enumerate(data_rows):
+            row[0] = str(i + 1)
+
+        # Clear existing data rows and write sorted ones
+        num_data = len(data_rows)
+        col_count = len(columns)
+        # Build range: from row 2 to last data row
+        end_row = num_data + 1  # 1-indexed, header is row 1
+        cell_range = f"A2:{chr(ord('A') + col_count - 1)}{end_row}"
+        ws.update(values=data_rows, range_name=cell_range, value_input_option="USER_ENTERED")
+
+        # Reformat alternating colors for all data rows
+        requests = []
+        for i in range(num_data):
+            row_idx = i + 1  # 0-indexed sheet row (row 0 = header, row 1 = first data)
+            bg = LIGHT_BLUE if (i + 1) % 2 == 1 else WHITE
+            requests.append({
+                "repeatCell": {
+                    "range": {"sheetId": ws.id, "startRowIndex": row_idx, "endRowIndex": row_idx + 1,
+                              "startColumnIndex": 0, "endColumnIndex": col_count},
+                    "cell": {"userEnteredFormat": {
+                        "backgroundColor": bg,
+                        "textFormat": {"fontFamily": "Arial", "fontSize": 10},
+                        "horizontalAlignment": "CENTER",
+                        "verticalAlignment": "MIDDLE",
+                        "wrapStrategy": "WRAP",
+                        "borders": ALL_BORDERS,
+                    }},
+                    "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy,borders)",
+                }
+            })
+            # Left-aligned columns
+            _, _, left_cols = SHEET_MAP[sheet_key]
+            for col_idx in left_cols:
+                if col_idx < col_count:
+                    requests.append({
+                        "repeatCell": {
+                            "range": {"sheetId": ws.id, "startRowIndex": row_idx, "endRowIndex": row_idx + 1,
+                                      "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1},
+                            "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+                            "fields": "userEnteredFormat.horizontalAlignment",
+                        }
+                    })
+
+        if requests:
+            sh.batch_update({"requests": requests})
+
+        print(f"[{SHEET_MAP[sheet_key][0]}] Sorted {num_data} bugs by System")
+
+
 def list_bugs(args):
     gc = get_client()
     sheet_key = args.sheet if args.sheet in SHEET_MAP else "new"
@@ -276,6 +352,11 @@ def main():
                        help="Target: 'new' or 'known' (deletes from both simple + detailed)")
     p_del.add_argument("--number", type=int, required=True, help="Bug number to delete")
 
+    # --- sort ---
+    p_sort = sub.add_parser("sort", help="Sort bugs by System column")
+    p_sort.add_argument("--sheet", choices=["new", "known"], default="new",
+                        help="Target: 'new' or 'known' (sorts both simple + detailed)")
+
     # --- list ---
     p_list = sub.add_parser("list", help="List all bugs")
     p_list.add_argument("--sheet", choices=list(SHEET_MAP.keys()), default="new",
@@ -288,6 +369,8 @@ def main():
         update_bug(args)
     elif args.command == "delete":
         delete_bug(args)
+    elif args.command == "sort":
+        sort_bugs(args)
     elif args.command == "list":
         list_bugs(args)
 
