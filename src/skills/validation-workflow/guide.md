@@ -70,7 +70,7 @@ All artifacts are relative to the case study root (e.g., `case-studies/<name>/`)
 
 **Config**: Use **`MC.cfg` only** — standard safety + structural invariants. Do NOT use hunting configs (`MC_hunt_*.cfg`) in this phase; those are for bug hunting after convergence.
 
-**Run duration**: 10–30 minutes per run, depending on state space complexity. Use simulation mode for large state spaces, BFS for targeted checks.
+**Run duration**: 30 minutes per run. See `../tla-checking-workflow/guide.md` Phase 1 "Runtime Parameters" for worker, memory, and simulation depth settings.
 
 **Delegate to sub-skill**: Follow the methodology in `../tla-checking-workflow/guide.md`.
 
@@ -107,15 +107,26 @@ All artifacts are relative to the case study root (e.g., `case-studies/<name>/`)
 
 **Goal**: Use the converged spec to find real implementation bugs via targeted model checking with bug-family configs.
 
-**Steps**:
+### BFS + Simulation Strategy
+
+For each hunting config, alternate between BFS and simulation to maximize coverage:
+
+1. **BFS first** (30 min) — exhaustive within reachable diameter. Check the diameter achieved in TLC output.
+2. **If diameter ≤ 25** — the BFS run is too shallow to expose many bugs. Follow up with a **simulation run** (30 min) on the same config to reach deeper states.
+3. **If diameter > 25** — BFS coverage is likely sufficient. Simulation follow-up is optional.
+
+**Do NOT shrink config bounds to make BFS go deeper.** Counter bounds (timeout limits, crash limits, etc.) directly control which bug scenarios are reachable. Reducing them to fit BFS eliminates the very interleavings where bugs hide. When BFS is too shallow, use simulation for depth — not tighter bounds.
+
+### Steps
+
 1. Collect any `[bug]` entries already recorded in `changelog.md` during Phase 2 (Case C found during convergence) — these will be included in the final report
 2. For each `MC_hunt_*.cfg` / `MC_family*.cfg`:
-   - Launch TLC model checking (10–30 minutes per config)
-   - Violation = **Case C** (real bug) — this is the expected and desired outcome
-   - Analyze each counterexample: describe execution path, cross-reference with implementation code, identify root cause and affected code locations
-   - Save TLC output to `spec/output/`
+   - **Run 1 (BFS)**: Launch TLC model checking (30 min). Record diameter and state count from output.
+   - If violation found → **Case C** (real bug). Analyze counterexample: describe execution path, cross-reference with implementation code, identify root cause and affected code locations.
+   - If no violation and diameter ≤ 25 → **Run 2 (Simulation)**: Launch TLC simulation (30 min, `-S -n 999999999`) on the same config for deeper exploration.
+   - Save all TLC output to `spec/output/`
 3. Produce `spec/bug-report.md` with all findings — **read `references/bug-report-format.md`** for the template
-4. If no bugs found across all configs: still write the report (state space coverage + "no violations found")
+4. If no bugs found across all configs: still write the report (state space coverage, diameter achieved per config, + "no violations found")
 
 ---
 

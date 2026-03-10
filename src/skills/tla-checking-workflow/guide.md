@@ -53,18 +53,32 @@ Apply fixes directly without waiting for user confirmation. If the prompt explic
 3. Verify the process started by checking the log file (typically `nohup.out`). **Save all TLC output files to `spec/output/`** — rename from `nohup.out` to a descriptive name (e.g., `output/MC_run1.out`, `output/MC_ve_bfs.out`).
 4. Confirm TLC is initializing (look for spec parsing, constant initialization, state space exploration starting)
 
+### Runtime Parameters
+
+These parameters apply to **all** model checking runs — convergence and bug hunting alike. The run duration is the primary constraint; do not constrain state space size.
+
+| Parameter | Rule | Notes |
+|-----------|------|-------|
+| **Timeout** | **30 minutes** per run (`-t 30`) | The single hard constraint. If TLC hasn't found a violation in 30 min, the run ends. |
+| **Workers** | Match the machine (`-w auto` or explicit core count) | Detect available CPUs and use all of them. |
+| **Heap memory** | Match the machine (e.g., `-m 50G`) | Use most of available RAM. Leave headroom for OS and off-heap. |
+| **Off-heap memory** | Match the machine (e.g., `-M 200G`) | For `OffHeapDiskFPSet`. Set to available physical memory minus heap. |
+| **Simulation depth** | 50–100 (`-p 50` to `-p 100`) | Shorter (50) for simple protocols (few actions, shallow state graphs). Longer (100) for complex protocols (many interleaving actions, deep state graphs). |
+| **Simulation traces** | As many as possible (`-n 999999999`) | Let the timeout be the stopping condition, not trace count. |
+| **State space size** | **Do not constrain.** | Let TLC explore as much as possible within the 30-min window. |
+
 **Common run script options**:
 | Flag | Purpose | Example |
 |------|---------|---------|
 | `-s` | Spec file | `-s MCetcdraft.tla` |
 | `-c` | Config file | `-c MCetcdraft.cfg` |
 | `-S` | Simulation mode | `-S` |
-| `-n` | Number of simulation traces | `-n 1000000000` |
+| `-n` | Number of simulation traces | `-n 999999999` |
 | `-p` | Simulation depth | `-p 100` |
 | `-m` | Heap memory | `-m 50G` |
-| `-M` | Off-heap memory | `-M 10G` |
-| `-w` | Worker threads | `-w 90` |
-| `-t` | Timeout (minutes) | `-t 60` |
+| `-M` | Off-heap memory | `-M 200G` |
+| `-w` | Worker threads | `-w auto` |
+| `-t` | Timeout (minutes) | `-t 30` |
 | `-j` | JSON trace dump file | `-j counterexample.json` |
 | `-D` | Enable deadlock checking | `-D` |
 | `-C` | Continue after errors | `-C` |
