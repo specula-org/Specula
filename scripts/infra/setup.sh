@@ -166,7 +166,8 @@ else
   print_success "CommunityModules-deps.jar already exists"
 fi
 
-if java -cp "$PROJECT_ROOT/lib/tla2tools.jar" tlc2.TLC -help 2>&1 | grep -q "TLC"; then
+_tlc_out="$(java -cp "$PROJECT_ROOT/lib/tla2tools.jar" tlc2.TLC -help 2>&1 || true)"
+if echo "$_tlc_out" | grep -q "TLC"; then
   print_success "TLA+ tool invocation verified"
 else
   print_warning "TLA+ verification command failed; check your Java/JAR setup"
