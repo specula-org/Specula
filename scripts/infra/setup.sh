@@ -167,7 +167,7 @@ else
 fi
 
 _tlc_out="$(java -cp "$PROJECT_ROOT/lib/tla2tools.jar" tlc2.TLC -help 2>&1 || true)"
-if echo "$_tlc_out" | grep -q "TLC"; then
+if echo "$_tlc_out" | grep -q "TLA+"; then
   print_success "TLA+ tool invocation verified"
 else
   print_warning "TLA+ verification command failed; check your Java/JAR setup"
