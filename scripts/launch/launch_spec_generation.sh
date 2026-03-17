@@ -74,7 +74,7 @@ find_repo_dir() {
   local artifact_dir="${CASE_STUDIES_DIR}/${name}/artifact"
   [[ ! -d "$artifact_dir" ]] && return
   for d in "$artifact_dir"/*/; do
-    if [[ -d "${d}.git" ]]; then
+    if [[ -d "${d}.git" || -f "${d}.git" ]]; then
       echo "$d"
       return
     fi
@@ -177,6 +177,15 @@ Expected files:
 8. Silent actions must be tightly constrained. Unconstrained silent actions cause state space explosion.
 9. MC spec bounds fault-injection, not normal operations.
 PROMPT_EOF
+
+  # Inject per-target extra prompt if present
+  local extra="${work_dir}/.prompt-extra.md"
+  if [[ -f "$extra" ]]; then
+    echo ""
+    echo "## Target-Specific Instructions"
+    echo ""
+    cat "$extra"
+  fi
 }
 
 # ──────────────────────────────────────────────────────────
@@ -200,8 +209,8 @@ launch_agent() {
     return 0
   fi
 
-  local pid
-  pid=$("$ADAPTER" --prompt="$prompt" --max-turns="$MAX_TURNS" --log="$log_file" --background)
+  "$ADAPTER" --prompt-file="$prompt_file" --max-turns="$MAX_TURNS" --log="$log_file" --background &
+  local pid=$!
   echo "$pid" > "${work_dir}/spec-gen.pid"
   echo "  PID=$pid  Log: $log_file"
 }

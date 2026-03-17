@@ -74,7 +74,7 @@ find_repo_dir() {
   local artifact_dir="${CASE_STUDIES_DIR}/${name}/artifact"
   [[ ! -d "$artifact_dir" ]] && return
   for d in "$artifact_dir"/*/; do
-    if [[ -d "${d}.git" ]]; then
+    if [[ -d "${d}.git" || -f "${d}.git" ]]; then
       echo "$d"
       return
     fi
@@ -170,6 +170,15 @@ Expected outputs:
 5. run.sh must work end-to-end. Anyone should be able to reproduce traces with a single command.
 6. Run a quick trace validation at the end to catch obvious format issues.
 PROMPT_EOF
+
+  # Inject per-target extra prompt if present
+  local extra="${work_dir}/.prompt-extra.md"
+  if [[ -f "$extra" ]]; then
+    echo ""
+    echo "## Target-Specific Instructions"
+    echo ""
+    cat "$extra"
+  fi
 }
 
 # ──────────────────────────────────────────────────────────
@@ -192,8 +201,8 @@ launch_agent() {
     return 0
   fi
 
-  local pid
-  pid=$("$ADAPTER" --prompt="$prompt" --max-turns="$MAX_TURNS" --log="$log_file" --background)
+  "$ADAPTER" --prompt-file="$prompt_file" --max-turns="$MAX_TURNS" --log="$log_file" --background &
+  local pid=$!
   echo "$pid" > "${work_dir}/harness-gen.pid"
   echo "  PID=$pid  Log: $log_file"
 }

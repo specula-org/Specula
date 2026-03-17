@@ -10,7 +10,7 @@
 # Options:
 #   --prompt "..."         Task prompt (mutually exclusive with --prompt-file)
 #   --prompt-file file.md  Read prompt from file (mutually exclusive with --prompt)
-#   --max-turns N          Max iterations, 0=unlimited (required)
+#   --max-turns N          Max agent turns, 0=unlimited (optional)
 #   --log output.log       Log file path (required)
 #   --background           Run in background, print PID to stdout (default: foreground)
 #   --help                 Show this help
@@ -50,11 +50,6 @@ if [[ -z "$PROMPT" && -z "$PROMPT_FILE" ]]; then
   exit 1
 fi
 
-if [[ -z "$MAX_TURNS" ]]; then
-  echo "claude-code adapter: --max-turns is required" >&2
-  exit 1
-fi
-
 if [[ -z "$LOG_FILE" ]]; then
   echo "claude-code adapter: --log is required" >&2
   exit 1
@@ -74,22 +69,21 @@ fi
 
 unset CLAUDECODE 2>/dev/null || true
 unset CLAUDE_CODE_SSE_PORT 2>/dev/null || true
+unset CLAUDE_CODE_ENTRYPOINT 2>/dev/null || true
+
+# ── Build command ──
+
+CMD=(claude --print --dangerously-skip-permissions)
+
+# Only pass --max-turns if set and non-zero (0 = unlimited = don't pass flag)
+if [[ -n "$MAX_TURNS" && "$MAX_TURNS" != "0" ]]; then
+  CMD+=(--max-turns "$MAX_TURNS")
+fi
+
+CMD+=(-p "$PROMPT")
 
 # ── Run ──
+# Note: --background is handled by the caller (launch scripts use & directly).
+# The adapter always runs the command in the foreground and redirects to log.
 
-if $BACKGROUND; then
-  nohup claude \
-    --print \
-    --dangerously-skip-permissions \
-    --max-turns "$MAX_TURNS" \
-    -p "$PROMPT" \
-    > "$LOG_FILE" 2>&1 &
-  echo $!
-else
-  claude \
-    --print \
-    --dangerously-skip-permissions \
-    --max-turns "$MAX_TURNS" \
-    -p "$PROMPT" \
-    > "$LOG_FILE" 2>&1
-fi
+"${CMD[@]}" > "$LOG_FILE" 2>&1
