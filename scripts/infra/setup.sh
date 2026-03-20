@@ -109,6 +109,7 @@ TRACE_DEBUGGER_SERVER="$TRACE_DEBUGGER_DIR/mcp_server.py"
 SKILLS_SOURCE="$PROJECT_ROOT/src/skills"
 CLAUDE_PROJECT_SKILLS_LINK="$PROJECT_ROOT/.claude/skills"
 CODEX_PROJECT_SKILLS_LINK="$PROJECT_ROOT/.agents/skills"
+COPILOT_SKILLS_LINK="$PROJECT_ROOT/.github/skills"
 
 print_status "Project root: $PROJECT_ROOT"
 
@@ -191,6 +192,7 @@ fi
 
 setup_skills_root_symlink "$CLAUDE_PROJECT_SKILLS_LINK" "$SKILLS_SOURCE"
 setup_skills_root_symlink "$CODEX_PROJECT_SKILLS_LINK" "$SKILLS_SOURCE"
+setup_skills_root_symlink "$COPILOT_SKILLS_LINK" "$SKILLS_SOURCE"
 
 if command_exists claude; then
   setup_claude_mcp "$PROJECT_ROOT" "$TRACE_DEBUGGER_PYTHON" "$TRACE_DEBUGGER_SERVER"
@@ -205,7 +207,7 @@ else
 fi
 
 if ! command_exists claude && ! command_exists codex; then
-  print_warning "No supported agent CLI found. Configure skills and MCP manually after installing Claude Code or Codex."
+  print_warning "No supported agent CLI found. Configure skills and MCP manually after installing Claude Code, Codex, or Copilot CLI."
 fi
 
 print_success "Setup completed."

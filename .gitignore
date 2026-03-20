@@ -89,6 +89,7 @@ tools/cfa/tests
 .gemini/*
 .claude/skills
 .agents/skills
+.github/skills
 src/skills/.system
 
 .venv/

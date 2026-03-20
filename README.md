@@ -21,11 +21,11 @@ Specula is a multi-phase agentic workflow. Each phase is driven by a dedicated s
 
 ## Quick Start
 
-Specula runs as a set of code agent skills and MCP tools. It currently supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://openai.com/codex/), with more agents to be supported in the future.
+Specula runs as a set of code agent skills and MCP tools. It currently supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://openai.com/codex/), and [GitHub Copilot CLI](https://docs.github.com/en/copilot), with more agents to be supported in the future.
 
 ### Prerequisites
 
-- A supported code agent (Claude Code or Codex) installed
+- A supported code agent (Claude Code, Codex, or Copilot CLI) installed
 - Java 21+ (for TLC model checker)
 
 ### Setup
@@ -42,7 +42,7 @@ git clone https://github.com/cometbft/cometbft case-studies/cometbft/artifact/co
 <summary>Alternative: Manual Agent Setup</summary>
 You will need to set up the Specula Agent Skills and MCP with your coding agent.
 
-- To set up skills, symlink [the Specula `src/skills` folder](https://github.com/specula-org/Specula/tree/main/src/skills) to the appropriate folder read by your coding agent. For Claude, this is `~/.claude/skills` or `.claude/skills`. For Codex, this is `~/.codex/skills` or `.agents/skills`.
+- To set up skills, symlink [the Specula `src/skills` folder](https://github.com/specula-org/Specula/tree/main/src/skills) to the appropriate folder read by your coding agent. For Claude, this is `~/.claude/skills` or `.claude/skills`. For Codex, this is `~/.codex/skills` or `.agents/skills`. For Copilot CLI, this is `.github/skills`.
 - To set up the MCP, add [the `trace_debugger` MCP here](https://github.com/specula-org/Specula/tree/main/tools/trace_debugger) to your agent config.
 
 ```bash
