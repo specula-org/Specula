@@ -25,7 +25,7 @@
 #   --enable-reviews        Enable review steps (disabled by default)
 #   --max-parallel=N       Max concurrent agents per phase (default: 1)
 #   --max-turns=N          Max agent turns (default: 0 = unlimited)
-#   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex)
+#   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli)
 #
 # Output structure (per system):
 #   case-studies/<name>/
