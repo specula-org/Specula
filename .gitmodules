@@ -4,3 +4,9 @@
 [submodule "case-studies"]
 	path = case-studies
 	url = https://github.com/specula-org/specula-case-studies.git
+[submodule "tools/SysMoBench"]
+	path = tools/SysMoBench
+	url = https://github.com/specula-org/SysMoBench.git
+[submodule "tools/tlaplus-ai-tools"]
+	path = tools/tlaplus-ai-tools
+	url = https://github.com/photoszzt/tlaplus-ai-tools.git
