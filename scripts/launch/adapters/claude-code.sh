@@ -10,7 +10,8 @@
 # Options:
 #   --prompt "..."         Task prompt (mutually exclusive with --prompt-file)
 #   --prompt-file file.md  Read prompt from file (mutually exclusive with --prompt)
-#   --max-turns N          Max agent turns, 0=unlimited (optional)
+#   --max-turns N          (DEPRECATED, ignored — use --max-budget)
+#   --max-budget N         Max dollar budget for API calls (optional)
 #   --log output.log       Log file path (required)
 #   --background           Run in background, print PID to stdout (default: foreground)
 #   --help                 Show this help
@@ -20,6 +21,7 @@ set -euo pipefail
 PROMPT=""
 PROMPT_FILE=""
 MAX_TURNS=""
+MAX_BUDGET=""
 LOG_FILE=""
 BACKGROUND=false
 
@@ -27,7 +29,8 @@ for arg in "$@"; do
   case "$arg" in
     --prompt=*)      PROMPT="${arg#*=}" ;;
     --prompt-file=*) PROMPT_FILE="${arg#*=}" ;;
-    --max-turns=*)   MAX_TURNS="${arg#*=}" ;;
+    --max-turns=*)   MAX_TURNS="${arg#*=}" ;;  # deprecated, ignored
+    --max-budget=*)  MAX_BUDGET="${arg#*=}" ;;
     --log=*)         LOG_FILE="${arg#*=}" ;;
     --background)    BACKGROUND=true ;;
     --help|-h)
@@ -56,13 +59,21 @@ if [[ -z "$LOG_FILE" ]]; then
 fi
 
 # ── Resolve prompt ──
+# Feed prompt via stdin (not -p) to keep the process cmdline clean.
+# This prevents pkill -f collateral kills when the prompt contains
+# strings like "tlc2.TLC" that match other processes.
 
 if [[ -n "$PROMPT_FILE" ]]; then
   if [[ ! -f "$PROMPT_FILE" ]]; then
     echo "claude-code adapter: prompt file not found: $PROMPT_FILE" >&2
     exit 1
   fi
-  PROMPT="$(cat "$PROMPT_FILE")"
+  PROMPT_INPUT="$PROMPT_FILE"
+else
+  # Write inline prompt to temp file
+  PROMPT_INPUT="$(mktemp)"
+  echo "$PROMPT" > "$PROMPT_INPUT"
+  trap "rm -f '$PROMPT_INPUT'" EXIT
 fi
 
 # ── Environment setup ──
@@ -73,17 +84,49 @@ unset CLAUDE_CODE_ENTRYPOINT 2>/dev/null || true
 
 # ── Build command ──
 
-CMD=(claude --print --dangerously-skip-permissions)
+CMD=(claude --print --dangerously-skip-permissions --output-format json)
 
-# Only pass --max-turns if set and non-zero (0 = unlimited = don't pass flag)
-if [[ -n "$MAX_TURNS" && "$MAX_TURNS" != "0" ]]; then
-  CMD+=(--max-turns "$MAX_TURNS")
+# Budget control
+if [[ -n "$MAX_BUDGET" && "$MAX_BUDGET" != "0" ]]; then
+  CMD+=(--max-budget-usd "$MAX_BUDGET")
 fi
 
-CMD+=(-p "$PROMPT")
-
 # ── Run ──
-# Note: --background is handled by the caller (launch scripts use & directly).
-# The adapter always runs the command in the foreground and redirects to log.
+# Write JSON output to raw file, then post-process into .log and .usage.json
+RAW_JSON="${LOG_FILE%.log}.raw.json"
 
-"${CMD[@]}" > "$LOG_FILE" 2>&1
+"${CMD[@]}" < "$PROMPT_INPUT" > "$RAW_JSON" 2>&1 || true
+
+# Extract the text result for human-readable log
+python3 -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        d = json.load(f)
+    print(d.get('result', ''))
+except:
+    # If JSON parse fails, the raw output is plain text (e.g., error message)
+    with open(sys.argv[1]) as f:
+        print(f.read())
+" "$RAW_JSON" > "$LOG_FILE"
+
+# Extract usage stats
+python3 -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        d = json.load(f)
+    usage = {
+        'total_cost_usd': d.get('total_cost_usd', 0),
+        'num_turns': d.get('num_turns', 0),
+        'duration_ms': d.get('duration_ms', 0),
+        'stop_reason': d.get('stop_reason', ''),
+        'usage': d.get('usage', {}),
+        'model_usage': d.get('modelUsage', {})
+    }
+    json.dump(usage, sys.stdout, indent=2)
+    print()
+except:
+    json.dump({'error': 'parse_failed'}, sys.stdout)
+    print()
+" "$RAW_JSON" > "${LOG_FILE%.log}.usage.json"
