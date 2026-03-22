@@ -7,6 +7,9 @@
 .env
 .specula
 
+# Runtime logs
+logs/
+
 # Build output
 results/
 target/
