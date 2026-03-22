@@ -257,6 +257,11 @@ if [ "$JSON_DUMPTRACE" != "" ]; then
 fi
 
 
+# Use a temporary directory for TLC states to avoid filling the disk
+METADIR="$(mktemp -d /tmp/tlc-states-XXXXXX)"
+trap 'rm -rf "$METADIR"' EXIT
+TLC_CMD="$TLC_CMD -metadir $METADIR"
+
 echo -e "${YELLOW}Executing Command:${NC}"
 echo "$TLC_CMD"
 echo ""
