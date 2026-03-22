@@ -66,6 +66,7 @@ SKIP_ANALYSIS=false
 SKIP_SPECGEN=false
 SKIP_HARNESS=false
 SKIP_VALIDATION=false
+SKIP_CONFIRMATION=false
 SKIP_REVIEWS=true
 AGENT="claude-code"
 TARGETS=()
@@ -80,6 +81,7 @@ for arg in "$@"; do
     --skip-specgen)      SKIP_SPECGEN=true ;;
     --skip-harness)      SKIP_HARNESS=true ;;
     --skip-validation)   SKIP_VALIDATION=true ;;
+    --skip-confirmation) SKIP_CONFIRMATION=true ;;
     --enable-reviews)    SKIP_REVIEWS=false ;;
     --max-parallel=*)    MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*)       MAX_TURNS="${arg#*=}" ;;
@@ -229,6 +231,27 @@ run_phase3_validation() {
   bash "$SCRIPT_DIR/launch_spec_validation.sh" "${val_args[@]}"
 }
 
+run_phase4_confirmation() {
+  divider
+  log "PHASE 4: BUG CONFIRMATION (consolidate + reproduce)"
+  divider
+
+  local names
+  read -ra names <<< "$(extract_names)"
+
+  local confirm_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
+  for n in "${names[@]}"; do
+    confirm_args+=("$n")
+  done
+
+  if $DRY_RUN; then
+    log "[DRY RUN] bash scripts/launch/launch_bug_confirmation.sh ${confirm_args[*]}"
+    return 0
+  fi
+
+  bash "$SCRIPT_DIR/launch_bug_confirmation.sh" "${confirm_args[@]}"
+}
+
 # ──────────────────────────────────────────────────────────
 # Generate final summary
 # ──────────────────────────────────────────────────────────
@@ -373,7 +396,7 @@ main() {
   echo "Max parallel: $MAX_PARALLEL"
   echo "Max turns:    $MAX_TURNS"
   echo ""
-  echo "Skip phases:  analysis=$SKIP_ANALYSIS specgen=$SKIP_SPECGEN harness=$SKIP_HARNESS validation=$SKIP_VALIDATION reviews=$SKIP_REVIEWS"
+  echo "Skip phases:  analysis=$SKIP_ANALYSIS specgen=$SKIP_SPECGEN harness=$SKIP_HARNESS validation=$SKIP_VALIDATION confirmation=$SKIP_CONFIRMATION reviews=$SKIP_REVIEWS"
   echo ""
 
   validate_agent_adapter
@@ -413,6 +436,13 @@ main() {
     run_review "validation" "${names[@]}"
   else
     log "Skipping Phase 3 (--skip-validation)"
+  fi
+
+  # ── Phase 4: Bug Confirmation (consolidate MC + code review, reproduce) ──
+  if ! $SKIP_CONFIRMATION; then
+    run_phase4_confirmation
+  else
+    log "Skipping Phase 4 (--skip-confirmation)"
   fi
 
   # ── Summary ──
