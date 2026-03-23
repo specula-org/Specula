@@ -63,8 +63,9 @@ setup_claude_mcp() {
   print_status "Configuring tracedebugger MCP for Claude Code..."
   set +e
   claude mcp add --transport stdio --scope project \
+    tracedebugger \
     --env "SPECULA_ROOT=$project_root" \
-    tracedebugger -- \
+    -- \
     "$python_path" \
     "$server_path"
   local rc=$?
