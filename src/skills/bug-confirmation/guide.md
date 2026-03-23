@@ -9,7 +9,30 @@ Before attempting reproduction, you **must** first confirm the bug's validity by
 3. **Check for existing safeguards**: Check whether callers already have precondition checks, lock guards, or other mechanisms that prevent this bug from being triggered in practice. If they do, the bug is a false positive — report it and stop.
 4. **Construct a trigger scenario**: Describe in words a concrete sequence of events that could naturally occur at the user/system level and would reach the buggy code path. If you cannot construct one, the bug is likely a false positive.
 
-Only proceed to Phase 2 after completing the above steps and being confident the bug is real.
+Only proceed to Phase 1.5 after completing the above steps and being confident the code path is reachable.
+
+### Phase 1.5: Developer Intent Investigation
+
+A bug is defined by the developers' own requirements and expectations — not by the researcher's intuition about what should be correct. Before investing effort in reproduction, investigate what the developers themselves believe about this behavior.
+
+**What to investigate:**
+
+1. **Issue tracker**: Search for open and closed issues, PRs, and discussions mentioning the relevant code, function names, or the behavior in question. Developers may have already discussed this exact scenario.
+2. **Commit messages and PR discussions**: Use `git log` and `git blame` on the affected code. Read the commit messages and linked PRs to understand why the code was written this way. Look for statements of intent ("this is a trade-off", "we accept this because...", "this should be safe even if...").
+3. **Code comments and documentation**: Look for comments near the code (TODOs, FIXMEs, "known issue", "by design", "trade-off"), as well as design documents, RFCs, or architecture docs in the repository.
+4. **Test cases**: Check what the existing tests assert. Tests encode developer expectations — if a test explicitly sets up the scenario you found and asserts the current behavior, the developers likely consider it correct.
+
+**How to use what you find:**
+
+- **Developer says "we know about this, it's a deliberate trade-off"** → Classify as NOT a bug unless you can show their trade-off analysis is flawed (e.g., they accepted a liveness cost but didn't realize it also affects safety).
+- **Developer says "this should be safe even under condition X"** → If your counterexample shows it is NOT safe under condition X, this IS a bug — the developers' own stated requirement is violated.
+- **No developer commentary found** → Fall back to code quality analysis: assess whether the behavior constitutes a bug based on established engineering standards (e.g., violating API contracts, ignoring error returns, TOCTOU races, missing atomicity). These are bugs by any reasonable standard regardless of developer intent. Note the absence of developer evidence in your report and explain which engineering principle the code violates.
+
+The two symmetric cases above are the key insight: developer intent can both _dismiss_ a finding that looks like a bug to a researcher, and _validate_ a finding that a researcher would have dismissed. Always let the evidence speak.
+
+**Report what you find**: Whether the investigation confirms or refutes the bug, include a brief summary of the developer evidence in your final report. This makes the finding credible and actionable.
+
+Only proceed to Phase 2 after completing the above steps and being confident the bug is real and that developers would consider it a bug.
 
 ### Phase 2: Low-Invasiveness Reproduction
 
