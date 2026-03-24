@@ -4,6 +4,8 @@ Specula is an AI-powered framework that uses TLA+ formal specification to find b
 
 We have been applying Specula to find deep bugs in distributed system code. See the [running list of bugs](https://docs.google.com/spreadsheets/d/1AVXdKjNfD4952hZqyB-_wTdrzeTw0SD73f3F0zWJ0as) found by Specula.
 
+[Get started here!](#quick-start)
+
 ## Overview
 
 ![Specula Workflow](docs/images/workflow.svg)
@@ -25,27 +27,25 @@ Specula runs as a set of code agent skills and MCP tools. It currently supports 
 
 ### Prerequisites
 
-- A supported code agent (Claude Code, Codex, or Copilot CLI) installed
-- Java 21+ (for TLC model checker)
+- A supported code agent (Claude Code, Codex, or Copilot CLI) — you can contribute an adapter for your favourite agent [here](./scripts/launch/adapters)!
+- Java 21+ (for TLC model checker) and Maven
 
 ### Setup
 
 ```bash
 git clone https://github.com/specula-org/Specula.git && cd Specula
 bash scripts/infra/setup.sh
-
-# then, clone your target repository into the case-studies subdir
-git clone https://github.com/cometbft/cometbft case-studies/cometbft/artifact/cometbft
 ```
 
 <details>
 <summary>Alternative: Manual Agent Setup</summary>
 You will need to set up the Specula Agent Skills and MCP with your coding agent.
 
-- To set up skills, symlink [the Specula `src/skills` folder](https://github.com/specula-org/Specula/tree/main/src/skills) to the appropriate folder read by your coding agent. For Claude, this is `~/.claude/skills` or `.claude/skills`. For Codex, this is `~/.codex/skills` or `.agents/skills`. For Copilot CLI, this is `.github/skills`.
-- To set up the MCP, add [the `trace_debugger` MCP here](https://github.com/specula-org/Specula/tree/main/tools/trace_debugger) to your agent config.
+- To set up skills, symlink [the Specula `skills` folder](https://github.com/specula-org/Specula/tree/main/skills) to the appropriate folder read by your coding agent. For Claude, this is `~/.claude/skills` or `.claude/skills`. For Codex, this is `~/.codex/skills` or `.agents/skills`. For Copilot CLI, this is `.github/skills`.
+- To set up the MCP, add the `trace_debugger`, `spec_analyzer`, and `inv_checking_tool` MCPs [here](https://github.com/specula-org/Specula/tree/main/tools/) to your agent config. Be sure to build the CFA tool [here](./tools/cfa) with Maven before adding the `spec_analyzer`.
 
 ```bash
+# for trace debugger MCP
 cd tools/trace_debugger
 python3 -m venv .venv
 . .venv/bin/activate
@@ -67,7 +67,19 @@ codex mcp add tracedebugger \
 
 </details>
 
+This will install the Specula Agent Skills and MCPs.
+
+There are two options for usage. You can choose to use Specula entirely within the code agent (e.g. opening a separate Claude Code instance in your project and manually invoking the skills explicitly). This lets you apply Specula when you might already be embedded in a repo or have additional repo management requirements.
+
+Alternatively, continue to the next section to use our scripts for an end-to-end spec generation workflow.
+
 ### Running Specula
+
+First, clone your target repository into the case-studies subdir
+
+```
+git clone https://github.com/cometbft/cometbft case-studies/cometbft/artifact/cometbft
+```
 
 The case study name will be the directory name in the `case-studies` subdir (i.e. `case-studies/<this artifact name>`). For example, if `cometbft` is cloned into `case-studies/cometbft`:
 
@@ -80,7 +92,7 @@ bash scripts/launch/launch_pipeline.sh cometbft
 bash scripts/launch/launch_pipeline.sh cometbft|cometbft/cometbft|Go|Tendermint BFT
 ```
 
-See [here](https://github.com/specula-org/Specula/blob/main/scripts/launch/launch_pipeline.sh#L19) for more CLI options (e.g. specifying which agent to use)
+Your final spec will be output to `case-studies/cometbft/spec`. See [here](https://github.com/specula-org/Specula/blob/main/scripts/launch/launch_pipeline.sh#L19) for more CLI options (e.g. specifying which agent to use)
 
 **Individual phases:**
 
@@ -99,6 +111,6 @@ bash scripts/launch/launch_spec_validation.sh cometbft
 
 Specula has evolved significantly over the past months. Specula-v1 was a four-step code-to-model synthesis tool (which is [archived](../../tree/archive/v1)).
 
-## License
+## License and Contributing
 
-See [LICENSE](LICENSE) for details.
+See [LICENSE](LICENSE) for details. Also see [CONTRIBUTING](./CONTRIBUTING.md) for contributor sign-off requirements.
