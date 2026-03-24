@@ -1,1 +1,0 @@
-# Systems package for Specula.

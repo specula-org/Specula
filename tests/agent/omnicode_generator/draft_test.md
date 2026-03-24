@@ -1,1 +1,0 @@
-This is just a test. Please create a folder named "harness" and then write a file named "test.md" inside it, containing the message "test success".
