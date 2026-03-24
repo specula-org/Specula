@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Specula setup script (agent skills + trace debugger MCP + TLA+ jars)
+# Specula setup script (agent skills + MCP tools + TLA+ jars)
 
 set -euo pipefail
 
@@ -57,13 +57,14 @@ setup_skills_root_symlink() {
 
 setup_claude_mcp() {
   local project_root="$1"
-  local python_path="$2"
-  local server_path="$3"
+  local mcp_name="$2"
+  local python_path="$3"
+  local server_path="$4"
 
-  print_status "Configuring tracedebugger MCP for Claude Code..."
+  print_status "Configuring $mcp_name MCP for Claude Code..."
   set +e
   claude mcp add --transport stdio --scope project \
-    tracedebugger \
+    "$mcp_name" \
     --env "SPECULA_ROOT=$project_root" \
     -- \
     "$python_path" \
@@ -72,21 +73,22 @@ setup_claude_mcp() {
   set -e
 
   if [[ $rc -eq 0 ]]; then
-    print_success "Claude MCP configured: tracedebugger"
+    print_success "Claude MCP configured: $mcp_name"
   else
     print_warning "Claude MCP auto-config failed. Run manually:"
-    echo "  claude mcp add --transport stdio --scope project --env SPECULA_ROOT=$project_root tracedebugger -- $python_path $server_path"
+    echo "  claude mcp add --transport stdio --scope project --env SPECULA_ROOT=$project_root $mcp_name -- $python_path $server_path"
   fi
 }
 
 setup_codex_mcp() {
   local project_root="$1"
-  local python_path="$2"
-  local server_path="$3"
+  local mcp_name="$2"
+  local python_path="$3"
+  local server_path="$4"
 
-  print_status "Configuring tracedebugger MCP for Codex..."
+  print_status "Configuring $mcp_name MCP for Codex..."
   set +e
-  codex mcp add tracedebugger \
+  codex mcp add "$mcp_name" \
     --env "SPECULA_ROOT=$project_root" -- \
     "$python_path" \
     "$server_path"
@@ -94,10 +96,76 @@ setup_codex_mcp() {
   set -e
 
   if [[ $rc -eq 0 ]]; then
-    print_success "Codex MCP configured: tracedebugger"
+    print_success "Codex MCP configured: $mcp_name"
   else
     print_warning "Codex MCP auto-config failed. Run manually:"
-    echo "  codex mcp add tracedebugger --env SPECULA_ROOT=$project_root -- $python_path $server_path"
+    echo "  codex mcp add $mcp_name --env SPECULA_ROOT=$project_root -- $python_path $server_path"
+  fi
+}
+
+setup_python_tool_env() {
+  local tool_name="$1"
+  local tool_dir="$2"
+  local venv_dir="$3"
+  local python_path="$4"
+  local requirements_file="${5:-}"
+
+  if [[ ! -d "$tool_dir" ]]; then
+    print_error "$tool_name directory not found: $tool_dir"
+    exit 1
+  fi
+
+  print_status "Setting up $tool_name Python environment..."
+  python3 -m venv "$venv_dir"
+  "$python_path" -m pip install --upgrade pip
+
+  if [[ -n "$requirements_file" && -f "$requirements_file" ]]; then
+    "$python_path" -m pip install -r "$requirements_file"
+  else
+    "$python_path" -m pip install mcp
+  fi
+
+  print_success "$tool_name dependencies installed"
+}
+
+build_cfa_jar() {
+  local project_root="$1"
+  local cfa_dir="$2"
+
+  if [[ ! -d "$cfa_dir" ]]; then
+    print_error "CFA tool directory not found: $cfa_dir"
+    exit 1
+  fi
+
+  if ! command_exists mvn; then
+    print_error "mvn is required to build the CFA jar for spec_analyzer"
+    exit 1
+  fi
+
+  print_status "Building CFA jar for spec_analyzer..."
+  (
+    cd "$cfa_dir"
+    mvn package -DskipTests
+  )
+  print_success "CFA jar built"
+}
+
+setup_agent_mcps() {
+  local project_root="$1"
+  local mcp_name="$2"
+  local python_path="$3"
+  local server_path="$4"
+
+  if command_exists claude; then
+    setup_claude_mcp "$project_root" "$mcp_name" "$python_path" "$server_path"
+  else
+    print_warning "Claude CLI not found; skipping Claude MCP setup for $mcp_name"
+  fi
+
+  if command_exists codex; then
+    setup_codex_mcp "$project_root" "$mcp_name" "$python_path" "$server_path"
+  else
+    print_warning "Codex CLI not found; skipping Codex MCP setup for $mcp_name"
   fi
 }
 
@@ -107,7 +175,16 @@ TRACE_DEBUGGER_DIR="$PROJECT_ROOT/tools/trace_debugger"
 TRACE_DEBUGGER_VENV="$TRACE_DEBUGGER_DIR/.venv"
 TRACE_DEBUGGER_PYTHON="$TRACE_DEBUGGER_VENV/bin/python"
 TRACE_DEBUGGER_SERVER="$TRACE_DEBUGGER_DIR/mcp_server.py"
-SKILLS_SOURCE="$PROJECT_ROOT/src/skills"
+TOOLS_CFA_DIR="$PROJECT_ROOT/tools/cfa"
+SPEC_ANALYZER_DIR="$PROJECT_ROOT/tools/spec_analyzer"
+SPEC_ANALYZER_VENV="$SPEC_ANALYZER_DIR/.venv"
+SPEC_ANALYZER_PYTHON="$SPEC_ANALYZER_VENV/bin/python"
+SPEC_ANALYZER_SERVER="$SPEC_ANALYZER_DIR/mcp_server.py"
+INV_CHECKING_TOOL_DIR="$PROJECT_ROOT/tools/inv_checking_tool"
+INV_CHECKING_TOOL_VENV="$INV_CHECKING_TOOL_DIR/.venv"
+INV_CHECKING_TOOL_PYTHON="$INV_CHECKING_TOOL_VENV/bin/python"
+INV_CHECKING_TOOL_SERVER="$INV_CHECKING_TOOL_DIR/mcp_server.py"
+SKILLS_SOURCE="$PROJECT_ROOT/skills"
 CLAUDE_PROJECT_SKILLS_LINK="$PROJECT_ROOT/.claude/skills"
 CODEX_PROJECT_SKILLS_LINK="$PROJECT_ROOT/.agents/skills"
 COPILOT_SKILLS_LINK="$PROJECT_ROOT/.github/skills"
@@ -175,16 +252,27 @@ else
   print_warning "TLA+ verification command failed; check your Java/JAR setup"
 fi
 
-if [[ ! -d "$TRACE_DEBUGGER_DIR" ]]; then
-  print_error "Trace debugger directory not found: $TRACE_DEBUGGER_DIR"
-  exit 1
-fi
+setup_python_tool_env \
+  "trace debugger" \
+  "$TRACE_DEBUGGER_DIR" \
+  "$TRACE_DEBUGGER_VENV" \
+  "$TRACE_DEBUGGER_PYTHON" \
+  "$TRACE_DEBUGGER_DIR/requirements.txt"
 
-print_status "Setting up trace debugger Python environment..."
-python3 -m venv "$TRACE_DEBUGGER_VENV"
-"$TRACE_DEBUGGER_PYTHON" -m pip install --upgrade pip
-"$TRACE_DEBUGGER_PYTHON" -m pip install -r "$TRACE_DEBUGGER_DIR/requirements.txt"
-print_success "Trace debugger dependencies installed"
+build_cfa_jar "$PROJECT_ROOT" "$TOOLS_CFA_DIR"
+
+setup_python_tool_env \
+  "spec analyzer" \
+  "$SPEC_ANALYZER_DIR" \
+  "$SPEC_ANALYZER_VENV" \
+  "$SPEC_ANALYZER_PYTHON" \
+  "$SPEC_ANALYZER_DIR/requirements.txt"
+
+setup_python_tool_env \
+  "invariant checking tool" \
+  "$INV_CHECKING_TOOL_DIR" \
+  "$INV_CHECKING_TOOL_VENV" \
+  "$INV_CHECKING_TOOL_PYTHON"
 
 if [[ ! -d "$SKILLS_SOURCE" ]]; then
   print_error "Skills directory not found: $SKILLS_SOURCE"
@@ -195,17 +283,9 @@ setup_skills_root_symlink "$CLAUDE_PROJECT_SKILLS_LINK" "$SKILLS_SOURCE"
 setup_skills_root_symlink "$CODEX_PROJECT_SKILLS_LINK" "$SKILLS_SOURCE"
 setup_skills_root_symlink "$COPILOT_SKILLS_LINK" "$SKILLS_SOURCE"
 
-if command_exists claude; then
-  setup_claude_mcp "$PROJECT_ROOT" "$TRACE_DEBUGGER_PYTHON" "$TRACE_DEBUGGER_SERVER"
-else
-  print_warning "Claude CLI not found; skipping Claude MCP setup"
-fi
-
-if command_exists codex; then
-  setup_codex_mcp "$PROJECT_ROOT" "$TRACE_DEBUGGER_PYTHON" "$TRACE_DEBUGGER_SERVER"
-else
-  print_warning "Codex CLI not found; skipping Codex MCP setup"
-fi
+setup_agent_mcps "$PROJECT_ROOT" "tracedebugger" "$TRACE_DEBUGGER_PYTHON" "$TRACE_DEBUGGER_SERVER"
+setup_agent_mcps "$PROJECT_ROOT" "spec_analyzer" "$SPEC_ANALYZER_PYTHON" "$SPEC_ANALYZER_SERVER"
+setup_agent_mcps "$PROJECT_ROOT" "inv_checking_tool" "$INV_CHECKING_TOOL_PYTHON" "$INV_CHECKING_TOOL_SERVER"
 
 if ! command_exists claude && ! command_exists codex; then
   print_warning "No supported agent CLI found. Configure skills and MCP manually after installing Claude Code, Codex, or Copilot CLI."
@@ -214,3 +294,7 @@ fi
 print_success "Setup completed."
 print_status "Trace debugger Python: $TRACE_DEBUGGER_PYTHON"
 print_status "Trace debugger server: $TRACE_DEBUGGER_SERVER"
+print_status "Spec analyzer Python: $SPEC_ANALYZER_PYTHON"
+print_status "Spec analyzer server: $SPEC_ANALYZER_SERVER"
+print_status "Invariant checking tool Python: $INV_CHECKING_TOOL_PYTHON"
+print_status "Invariant checking tool server: $INV_CHECKING_TOOL_SERVER"
