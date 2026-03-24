@@ -1,1 +1,0 @@
-Design TLA+ data structures and state variables based on source code analysis.

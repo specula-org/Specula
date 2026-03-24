@@ -1,1 +1,0 @@
-Generate TLA+ skeleton specification with VARIABLES, Init, and stub actions from architecture.
