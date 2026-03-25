@@ -27,8 +27,10 @@ Specula runs as a set of code agent skills and MCP tools. It currently supports 
 
 ### Prerequisites
 
+- Python 3.8+ with pip
+- Java 21+ with Maven
+- GitHub CLI `gh`
 - A supported code agent (Claude Code, Codex, or Copilot CLI) — you can contribute an adapter for your favourite agent [here](./scripts/launch/adapters)!
-- Java 21+ (for TLC model checker) and Maven
 
 ### Setup
 
@@ -53,35 +55,33 @@ pip install -r requirements.txt
 
 # for Claude Code
 claude mcp add --transport stdio --scope project \
-    --env SPECULA_ROOT=/path/to/specula \
+    --env SPECULA_ROOT=$PWD \
     tracedebugger -- \
-    /path/to/specula/tools/trace_debugger/.venv/bin/python \
-    /path/to/specula//tools/trace_debugger/mcp_server.py
+    $PWD/tools/trace_debugger/.venv/bin/python \
+    $PWD/tools/trace_debugger/mcp_server.py
 
 # for Codex
 codex mcp add tracedebugger \
-	--env SPECULA_ROOT=/path/to/specula -- \
-	/path/to/specula/tools/trace_debugger/.venv/bin/python \
-	/path/to/specula/tools/trace_debugger/mcp_server.py
+	--env SPECULA_ROOT=$PWD -- \
+	$PWD/tools/trace_debugger/.venv/bin/python \
+	$PWD/tools/trace_debugger/mcp_server.py
 ```
 
 </details>
 
 This will install the Specula Agent Skills and MCPs.
 
-There are two options for usage. You can choose to use Specula entirely within the code agent (e.g. opening a separate Claude Code instance in your project and manually invoking the skills explicitly). This lets you apply Specula when you might already be embedded in a repo or have additional repo management requirements.
+### Interactive Mode
 
-Alternatively, continue to the next section to use our scripts for an end-to-end spec generation workflow.
+Open your coding agent in the Specula directory. The workflow is a sequence of skills, each producing input for the next:
 
-### Running Specula
+`/code-analysis` → `/spec-generation` → `/harness-generation` → `/validation-workflow` → `/bug-confirmation`
 
-First, clone your target repository into the case-studies subdir
+Tell the agent your target system (repo path, language, reference algorithm) and invoke `/code-analysis` to start.
 
-```
-git clone https://github.com/cometbft/cometbft case-studies/cometbft/artifact/cometbft
-```
+### Scripted Mode
 
-The case study name will be the directory name in the `case-studies` subdir (i.e. `case-studies/<this artifact name>`). For example, if `cometbft` is cloned into `case-studies/cometbft`:
+For batch or fully automated runs, place your target repository at `case-studies/<name>/artifact/<repo>/`, then run:
 
 **Full pipeline** (all three phases):
 
