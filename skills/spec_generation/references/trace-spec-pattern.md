@@ -128,36 +128,18 @@ TraceNext ==
        /\ UNCHANGED <<vars, pc>>
 ```
 
-### Action Bypass Pattern (Category B specific)
+### Do NOT Bypass Base Spec Actions
 
-In Category B, TLC explores multiple interleavings of concurrent events. A base spec action's precondition may reference shared state (e.g., `back - front > 0`) that another thread has modified between the traced event's actual execution and the interleaving TLC is currently exploring. This causes the base spec action to fail even though the real execution was valid.
+In Category B, TLC explores multiple interleavings. Some interleavings will cause a base spec action's precondition to fail (e.g., another thread modified shared state in this interleaving). This is **expected and correct** — those branches die, and TLC continues searching other interleavings.
 
-**When to bypass**: When a trace action reads cached/snapshot values that may diverge from the spec's current state due to concurrent modifications by other threads.
+**Always call the base spec action directly.** The real execution ordering is always among the viable orderings (because real execution times fall within the recorded intervals). In the real ordering, the spec state matches what the thread observed, so the base spec action will succeed. TLC is guaranteed to find this path.
 
-**How to bypass safely**:
+Bypassing the base spec action (manually setting variables instead of calling the action) is **harmful**:
+- It skips the base spec's precondition checks, weakening validation
+- It allows dead branches to survive longer (dying at a later action instead of earlier), wasting TLC search time
+- It risks accepting invalid traces that violate the spec
 
-1. **Don't call the base spec action directly.** Instead, manually set the variables that the action would set.
-2. **Add compensating precondition checks using logline values**, not spec state:
-
-```tla
-\* BAD: calls base spec, which reads current front/back (may be stale)
-TraceStealBegin(tid, logline) ==
-    /\ StealBegin(tid)       \* base spec guard: back - front > 0 may fail
-
-\* GOOD: bypasses base spec, uses logline's cached values
-TraceStealBegin(tid, logline) ==
-    /\ sPC[tid] = "Idle"
-    /\ logline.cachedBack - logline.cachedFront > 0  \* compensating check
-    /\ sPC' = [sPC EXCEPT ![tid] = "ReadTask"]
-    /\ sCachedFront' = [sCachedFront EXCEPT ![tid] = logline.cachedFront]
-    ...
-```
-
-3. **Document every bypass** with a comment explaining why the base spec action can't be called directly.
-
-**What the compensating check must cover**: The logical meaning of the bypassed precondition, applied to the values the thread actually observed (from logline), not the spec's current global state.
-
-**Lesson from crossbeam-deque**: `TraceStealBegin` bypassed `StealBegin(tid)` because concurrent worker pops advanced `front` past what the stealer cached. Without the bypass, valid traces would fail validation. Without the compensating check, invalid traces (stealer starting on empty deque) would pass silently.
+**Lesson from crossbeam-deque**: The initial implementation bypassed `StealBegin(tid)` with manual variable assignments. Review showed this was unnecessary — TLC's exhaustive search finds the correct interleaving where the base spec action succeeds. The bypass should be removed.
 
 ### Invariant Selection for Trace Validation
 
@@ -187,7 +169,7 @@ Timebox traces create branching at every overlapping interval pair. Control via:
 
 See `harness-generation` skill's `references/concurrent-timebox-guide.md` for the full Trace.tla template, preprocessor script, and instrumentation patterns.
 
-See `case-studies/crossbeam-deque/` for a complete Category B case study with Action Bypass pattern, ViablePIDs, and 4 validated traces.
+See `case-studies/crossbeam-deque/` for a complete Category B case study with ViablePIDs and 4 validated traces.
 
 ### Related Work
 
