@@ -170,13 +170,20 @@ Classify each finding as:
 - **FALSE POSITIVE**: Safeguards exist that prevent the bug in practice
 - **NEEDS REPRODUCTION**: Bug is plausible but needs a test to verify
 
-### Step 3: Attempt reproduction (for CONFIRMED / NEEDS REPRODUCTION bugs)
+### Step 3: MANDATORY — Reproduce every confirmed bug
 
-For each confirmed bug, follow the bug-confirmation skill Phase 2:
-- Write a minimal reproduction test/program
-- Use the system's public interfaces — no illegal state injection
-- For concurrency bugs: real multi-thread scenarios, small delays to widen race windows are OK
-- Success criterion: observable anomalous behavior (crash, deadlock, data inconsistency)
+**This step is NOT optional.** Every bug classified as CONFIRMED or NEEDS REPRODUCTION MUST have a reproduction test. A bug without reproduction is NOT confirmed — it is unverified.
+
+For each confirmed bug:
+1. Write a self-contained reproduction test to \`${work_dir}/repro/\`
+2. The test MUST use the system's public interfaces — no illegal state injection
+3. The test MUST actually be executed, and the output recorded
+4. For concurrency bugs: real multi-thread/multi-process scenarios. Small delays (sleep, failpoints) to widen race windows are OK, but the logic must not be altered.
+5. For distributed systems: use Docker or the system's test framework to set up a real cluster
+6. Success criterion: observable anomalous behavior (crash, deadlock, data inconsistency, invariant violation)
+7. If reproduction fails after genuine effort: explain what was tried, why it failed, and whether the bug is still believed to be real. Do NOT silently skip reproduction.
+
+**Output requirement**: At least one executable file in \`${work_dir}/repro/\` for each confirmed bug. Name them \`test_bug1_*.py\`, \`test_bug2_*.py\`, etc.
 
 ### Step 4: Write final report
 
@@ -188,27 +195,31 @@ Format:
 
 ## Summary
 - Total findings reviewed: N
-- Confirmed: N (M reproduced, K code-audit only)
+- Reproduced: N
+- Confirmed (code audit, reproduction failed): N
 - False positives: N
 - Inconclusive: N
 
 ## Bug 1: <title>
 - **Source**: MC / Code Review
-- **Status**: REPRODUCED / CONFIRMED (code audit) / FALSE POSITIVE
+- **Status**: REPRODUCED / REPRODUCTION FAILED / FALSE POSITIVE
 - **Severity**: Critical / High / Medium
 - **Location**: file:line
 - **Description**: ...
 - **Trigger scenario**: ...
-- **Reproduction**: (if reproduced, describe the test and result)
+- **Reproduction test**: repro/test_bug1_xxx.py — describe what it does
+- **Reproduction result**: PASS (bug triggered) / FAIL (bug not triggered, explain why)
 - **Recommendation**: ...
 \`\`\`
 
 ## Critical Rules
 
 1. Follow the bug-confirmation skill strictly — especially the prohibited approaches.
-2. MC-confirmed bugs with counterexamples are high-confidence; focus reproduction effort there first.
-3. Do NOT lower reproduction standards to claim success. If you cannot reproduce, say so honestly.
-4. For each false positive, explain clearly what safeguard prevents the bug.
+2. **Every confirmed bug MUST have a reproduction test in repro/.** No exceptions. "Code audit only" is NOT an acceptable final status for new bugs.
+3. MC-confirmed bugs with counterexamples are high-confidence; focus reproduction effort there first.
+4. Do NOT lower reproduction standards to claim success. If you cannot reproduce, say so honestly — but you MUST try.
+5. For each false positive, explain clearly what safeguard prevents the bug.
+6. Actually RUN the reproduction tests and record the output. Do not just write tests without executing them.
 PROMPT_EOF
 
   # Inject per-target extra prompt if present
@@ -324,6 +335,23 @@ main() {
       local summary
       summary=$(grep -A5 "^## Summary" "$report" 2>/dev/null | tail -4)
       echo "  ${name}: ${summary:-report exists}"
+
+      # Hard check: if confirmed bugs > 0, repro/ must have test files
+      local confirmed
+      confirmed=$(grep -oP 'Reproduced:\s*\K\d+' "$report" 2>/dev/null || echo "0")
+      local repro_dir="${CASE_STUDIES_DIR}/${name}/repro"
+      local repro_count
+      repro_count=$(find "$repro_dir" -name "test_bug*" -type f 2>/dev/null | wc -l)
+
+      local bug_count
+      bug_count=$(grep -cP '^\s*##\s+Bug\s+\d+' "$report" 2>/dev/null || echo "0")
+
+      if (( bug_count > 0 )) && (( repro_count == 0 )); then
+        echo "  ⚠ WARNING: ${name} has ${bug_count} bug(s) but NO reproduction tests in repro/"
+        echo "    Reproduction is MANDATORY. Re-run bug confirmation for this target."
+      elif (( repro_count > 0 )); then
+        echo "  ✓ ${name}: ${repro_count} reproduction test(s) in repro/"
+      fi
     else
       echo "  ${name}: (no report)"
     fi
