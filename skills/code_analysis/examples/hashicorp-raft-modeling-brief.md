@@ -199,4 +199,4 @@
   - `artifact/raft/configuration.go` (config changes, 370 lines)
 - **GitHub issues**: #503, #522, #614 (Family 1); #472 (Family 2); #85, #86 (Family 3)
 - **Reference spec**: Raft paper (Ongaro & Ousterhout, 2014)
-- **Reference TLA+ spec**: `examples/etcdraft.tla` (for syntax patterns only)
+- **Reference TLA+ spec**: `data/repositories/workloads/raft/tla/etcdraft.tla` (for syntax patterns only)
