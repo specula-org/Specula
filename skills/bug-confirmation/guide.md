@@ -34,7 +34,18 @@ The two symmetric cases above are the key insight: developer intent can both _di
 
 Only proceed to Phase 2 after completing the above steps and being confident the bug is real and that developers would consider it a bug.
 
-### Phase 2: Low-Invasiveness Reproduction
+### Phase 2: Low-Invasiveness Reproduction (MANDATORY for new bugs)
+
+**Phase 2 is MANDATORY for every NEW bug** — i.e., bugs that do not correspond to an existing JIRA ticket, CVE, or previously reported issue. A new bug without a reproduction test is unverified speculation, not a confirmed finding.
+
+**Known/historical bugs** (those matching an existing JIRA ticket) do NOT require reproduction — the existing ticket serves as confirmation. Classify them and move on.
+
+**For every new bug, you MUST**:
+1. Write a self-contained reproduction test to `repro/test_bug<N>_<name>.py` (or `.js`, `.rs`, `.go` etc.)
+2. Actually EXECUTE the test and record the output
+3. Report the result honestly: REPRODUCED (bug triggered) or REPRODUCTION FAILED (bug not triggered, explain why)
+
+"Code audit only" is NOT an acceptable final status for new bugs. If you skip reproduction for a new bug, the finding is considered unverified.
 
 The core principle: **simulate a real-world trigger, not bypass normal flows to poke the bug directly.**
 
@@ -61,3 +72,11 @@ The core principle: **simulate a real-world trigger, not bypass normal flows to 
 - Explain what approaches were attempted and why they failed
 - Analyze whether the bug itself is a false positive, or whether the trigger conditions are difficult to satisfy in the current test environment
 - Do not lower the bar of reproduction authenticity just to claim "reproduction succeeded"
+- The reproduction test file MUST still exist in `repro/` with the failed attempt code and a comment explaining why it didn't trigger
+
+**Output requirements (non-negotiable for new bugs):**
+- For each NEW confirmed bug: one executable test file in `repro/test_bug<N>_*.{py,js,rs,go,c,sh}`
+- The test must have been actually executed (not just written)
+- The confirmed-bugs.md must reference each test file and its execution result
+- If new bugs exist but zero reproduction tests exist, the confirmation is INVALID
+- Known/historical bugs do not require reproduction files
