@@ -2,6 +2,60 @@
 
 Instrument the real system's source code to emit NDJSON traces, write test scenarios that exercise the protocol, and collect the first batch of traces for Phase 3 (Spec Validation).
 
+---
+
+## Step 0: Determine System Category
+
+Before starting instrumentation, determine which category the target system belongs to. The two categories have fundamentally different trace collection strategies due to the difference in operation timescales.
+
+### Category A: Distributed / Message-Passing Systems
+
+**Examples**: CometBFT, braft, Substrate GRANDPA, Autobahn BFT, hashicorp-raft, etcd-raft
+
+**Characteristics**:
+- Operations are ms-level (network I/O, disk I/O, RPC)
+- Mutex overhead (μs) is negligible compared to operation time
+- Probe effect from trace instrumentation does not alter system behavior
+- Event ordering issues are rare and minor
+
+**Trace strategy**: Use the **standard single-file approach** described in Steps 1-7 below.
+- Single NDJSON file per scenario, all threads write via mutex
+- Timestamps via monotonic clock (ms or μs precision is fine)
+- State captured at emit time under existing locks
+- Minor ordering issues handled case-by-case (preprocessor or weak validation)
+
+### Category B: Concurrent / Lock-Free Data Structures
+
+**Examples**: DPDK rte_ring, arc-swap, libomp barrier+tasking, libgomp barrier, crossbeam-epoch
+
+**Characteristics**:
+- Operations are ns-level (CAS, atomic ops, spin loops)
+- Mutex overhead (μs) is 100-1000x the operation time — **severe probe effect**
+- Mutex serializes thread scheduling, suppressing the exact race conditions we want to observe
+- Event ordering issues are frequent due to tight timing windows
+
+**Trace strategy**: Use the **timebox approach** described in `references/concurrent-timebox-guide.md`.
+- Per-thread trace files (zero mutex contention)
+- Timestamps via `rdtsc` (ns precision, ~25 CPU cycles overhead)
+- Each event records an interval `[start, end]` around the operation
+- TLC searches all valid interleavings of overlapping intervals (partial order)
+- State still captured and validated (placed outside the interval to keep it tight)
+
+**Read `references/concurrent-timebox-guide.md` for the full concurrent trace methodology before proceeding.**
+
+### How to Decide
+
+| Question | If yes → | If no → |
+|----------|----------|---------|
+| Does the system communicate via network/RPC? | Category A | Keep checking |
+| Are core operations < 1μs (CAS, atomic, spin)? | Category B | Category A |
+| Does adding a mutex to the hot path change observable behavior? | Category B | Category A |
+| Is the system a lock-free or wait-free data structure? | Category B | Category A |
+
+When in doubt, default to Category A. Only use the timebox approach when probe effect is a real concern.
+
+---
+
 ## Input
 
 | Item | Description |
@@ -74,7 +128,7 @@ If using post-processing, include the script in `harness/` and call it from `run
 - Output format must be NDJSON (one JSON object per line)
 - Event names must match `Trace.tla` exactly (1:1 correspondence with spec actions)
 - State fields must match the mapping in `instrumentation-spec.md`
-- Thread-safe if the system is concurrent
+- Thread-safe: **Category A** → mutex-protected global writer (standard pattern); **Category B** → per-thread files with rdtsc intervals (see `references/concurrent-timebox-guide.md`)
 
 **Read `references/trace-module-patterns.md`** for language-specific templates.
 
@@ -159,12 +213,22 @@ Must be executable from the case study root: `cd case-studies/<name> && bash har
    - Event names match spec actions
    - Timestamps are real (not sequential integers)
    - State fields are present and reasonable
-4. Check `Trace.cfg` has `PROPERTIES TraceMatched` (uncommented). If missing, add it — without it validation reports false positives.
-5. Run a quick trace validation to catch obvious format issues:
+4. **Check event type coverage**:
+   - List all instrumented event types (from Step 3)
+   - For each type, verify it appears in at least one trace
+   - If an event type is missing from all traces, either:
+     - Add a test scenario that triggers it, or
+     - Document why it cannot be triggered in tests (e.g., "requires hardware fault injection")
+   - Uncovered event types mean the spec's handling of that action is untested by trace validation
+5. **(Category B only) Check trace concurrency quality**:
+   - At least one trace must have genuine cross-thread interval overlap
+   - If all traces are sequential (no overlap), the timebox mechanism is not being tested
+   - See `references/concurrent-timebox-guide.md` "Trace Quality Criteria" for details
+6. Run a quick trace validation to catch obvious format issues:
    ```
    run_trace_validation(spec_file="Trace.tla", config_file="Trace.cfg", trace_file="../traces/<name>.ndjson", work_dir="spec/")
    ```
-6. If validation fails, fix instrumentation and re-run. Minor fixes are expected at this stage.
+7. If validation fails, fix instrumentation and re-run. Minor fixes are expected at this stage.
 
 ---
 
