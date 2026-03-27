@@ -198,6 +198,31 @@ print(f"Trace has {info['line_count']} lines")
 print(f"First line: {info['first_lines'][0]}")
 ```
 
+## Category B (Concurrent/Lock-Free) Differences
+
+For Category B systems (DPDK, arc-swap, libomp, crossbeam-epoch), trace validation works differently:
+
+### Trace Format
+- Input is a **preprocessed JSON** file (not raw NDJSON) with per-thread arrays and compressed timestamps
+- Preprocessor merges per-thread files and compresses rdtsc timestamps to dense integers
+- Run the preprocessor before validation (see `harness-generation` skill's `concurrent-timebox-guide.md`)
+
+### Validation Behavior
+- TLC explores **multiple interleavings** of concurrent events (overlapping `[start, end]` intervals)
+- A trace mismatch at one interleaving doesn't mean failure — TLC tries all viable orderings
+- Validation fails only if **no** interleaving can fully consume all events
+- Expect **higher state counts** than Category A (branching at each overlap point)
+- **Longer TLC runtimes** are normal — the search space is inherently larger
+
+### Debugging Differences
+- `failed_trace_line` may not be meaningful in the same way — failure could be at different points across different interleavings
+- State mismatches may indicate TLC is exploring a non-real interleaving (normal pruning)
+- If validation fails, check: (1) are intervals too wide (creating too much apparent concurrency)? (2) is state captured at the wrong time? (3) is a silent action missing?
+
+### Timeout Considerations
+- Category B traces may need longer timeouts (600-1200s) due to interleaving search
+- Short traces (50-300 events) are strongly recommended to keep search tractable
+
 ## Best Practices
 
 1. **Always start with `run_trace_validation`** - It's faster and gives you the exact failure point
@@ -205,6 +230,7 @@ print(f"First line: {info['first_lines'][0]}")
 3. **Check the trace file** - Understand what event failed before debugging
 4. **Proceed to debugging** - Use `run_trace_debugging` to inspect variable values at failure point
 5. **Check `Trace.cfg` has `PROPERTIES TraceMatched`** before your first run — without it, `success` is a false positive.
+6. **(Category B) Use short traces** - 50-300 events per trace, run many traces for coverage
 
 ## Decision Tree
 

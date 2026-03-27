@@ -12,15 +12,28 @@ Validate implementation traces against TLA+ specifications. Diagnose and fix val
 
 ---
 
+## System Category
+
+Before debugging, determine which trace pattern is in use:
+
+- **Category A (Distributed)**: Single-file trace, cursor variable `l`, linear matching. This is the standard case described below.
+- **Category B (Concurrent/Lock-Free)**: Per-thread traces, cursor variable `pc` (per-thread), `ViablePIDs` partial-order search. See note at the end of each phase for Category B differences.
+
+Most case studies are Category A. Category B applies to DPDK, arc-swap, libomp, crossbeam-epoch and similar ns-level concurrent systems. See `harness-generation` skill's `guide.md` Step 0 for classification.
+
+---
+
 ## Core Concepts (MUST REMEMBER)
 
-### Variable `l` Semantics
+### Variable `l` Semantics (Category A)
 
 `l = N` means "currently validating TraceLog[N]", NOT "already validated N lines". TraceLog is 1-indexed.
 
+**Category B equivalent**: `pc[tid] = N` means "thread `tid` is about to process its Nth event". There is no single global cursor.
+
 ### TLCGet("level") vs `l`
 
-**ALWAYS use `TLCGet("level")` in breakpoint conditions, NOT `l`.** `l` only works in the Trace wrapper spec; `TLCGet("level")` works everywhere including the base spec.
+**ALWAYS use `TLCGet("level")` in breakpoint conditions, NOT `l`.** `l` only works in the Trace wrapper spec; `TLCGet("level")` works everywhere including the base spec. This applies to both Category A and B.
 
 ### Breakpoint Hit Semantics
 
@@ -29,6 +42,10 @@ A breakpoint hit means TLC is **attempting** to evaluate that line — it does N
 ### Conjunction Short-Circuit Evaluation
 
 TLC evaluates `/\` conditions top to bottom. If a condition is FALSE, subsequent conditions are not evaluated. Decreasing hit counts indicate filtering.
+
+### Category B: Multiple Branches per Step
+
+In Category B, TLC may explore multiple thread choices at each step (`\E tid \in ViablePIDs`). A single TLC level may have multiple branches. Hit counts will be higher than Category A because TLC tries every viable thread. This is normal — branches that fail preconditions or state validation are pruned automatically.
 
 ---
 
