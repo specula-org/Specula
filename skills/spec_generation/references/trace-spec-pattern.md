@@ -38,6 +38,18 @@ Silent actions handle impl state changes without trace events (e.g., leader noop
 - Match against the *next* trace event that would require this silent action
 - Restrict to specific nodes/states
 
+## Granularity Mismatch: One Trace Event, Multiple Spec Steps
+
+Sometimes the base spec models an operation as N sequential steps (each with its own PC state), but the trace can only observe the operation's start/end — not the intermediate steps.
+
+**Do not combine N steps into a single composite action.** This skips intermediate precondition checks and may silently bypass safety properties that are checked at intermediate PC states.
+
+**Option A (recommended when feasible): Fine-grained instrumentation.** Instrument each of the N steps separately so the trace has N events. This gives full L1 checking.
+
+**Option B: Silent actions for intermediate steps.** Use N-1 silent actions for the unobservable intermediate steps. Only the first or last step consumes the trace event. This preserves intermediate precondition checking while accepting that the trace can only observe the boundary.
+
+**Option C (acceptable but weaker): Composite action.** If the intermediate steps have no meaningful preconditions worth checking (e.g., they are purely bookkeeping PC transitions), combining them into one trace action is acceptable. Document why the intermediate checks are not valuable.
+
 ## Post-State Validation
 
 **Strong validation**: check term, role, commitIndex, lastLogIndex, lastLogTerm — for actions where trace records full state.
