@@ -68,8 +68,41 @@ The core principle: **simulate a real-world trigger, not bypass normal flows to 
 - The reproduction is deterministic, or triggers with significant probability across multiple runs
 - The erroneous behavior caused by the bug is clearly observable
 
+**Escalation ladder — start low-invasiveness, escalate if needed:**
+
+Your goal is to either **prove the bug exists** (trigger it) or **prove it doesn't** (explain why it's impossible to trigger). You must reach one of these conclusions. "I tried once and it didn't trigger" is NOT a conclusion.
+
+1. **Level 0 — Pure black-box**: Use only public APIs, normal operations, no failpoints. Try this first.
+2. **Level 1 — Timing assistance**: Add `sleep()` calls or use system-provided test hooks (e.g., `configureFailPoint`, `FAIL_POINT_DEFINE`) to widen race windows. The system logic is unchanged; you're only controlling timing.
+3. **Level 2 — State injection**: Directly inject the pre-condition state (e.g., insert a document that mimics a crash-recovery scenario) and verify the buggy code path handles it incorrectly. Clearly document that this is a state-injection test, not an end-to-end trigger.
+4. **Level 3 — Minimal code modification**: Add a small delay (`usleep`, `sleep`) inside the system's source code at the exact crash window location to make the race deterministic. Document the modification precisely.
+
+Start at Level 0. If it doesn't trigger, analyze WHY (what timing/state condition is missing?), then escalate to the next level. Each escalation must be explained. **Do not stop at Level 0 failure.**
+
+**Verify you triggered the RIGHT bug:**
+
+After triggering anomalous behavior, verify it matches the MC counterexample. Compare:
+- The sequence of operations matches the MC trace (same actions, same order)
+- The violated invariant is the same one MC found
+- The root cause is the same code path MC identified
+
+If you triggered a DIFFERENT bug than what MC found, report it separately but continue trying to trigger the original MC bug.
+
+**Evidence requirements:**
+
+When reporting REPRODUCED, you MUST include:
+- The exact command used to run the test
+- The actual output (copy-paste from terminal, not paraphrased)
+- Which line(s) of output demonstrate the bug was triggered
+- Comparison with expected (correct) behavior
+
+When reporting REPRODUCTION FAILED after exhausting the escalation ladder:
+- Which levels you attempted (0 through 3)
+- For each level: what you tried, what happened, why it didn't trigger
+- Your conclusion: is the bug real but hard to trigger, or is it a false positive?
+
 **If reproduction fails:**
-- Explain what approaches were attempted and why they failed
+- Explain what approaches were attempted at each escalation level and why they failed
 - Analyze whether the bug itself is a false positive, or whether the trigger conditions are difficult to satisfy in the current test environment
 - Do not lower the bar of reproduction authenticity just to claim "reproduction succeeded"
 - The reproduction test file MUST still exist in `repro/` with the failed attempt code and a comment explaining why it didn't trigger
@@ -77,6 +110,6 @@ The core principle: **simulate a real-world trigger, not bypass normal flows to 
 **Output requirements (non-negotiable for new bugs):**
 - For each NEW confirmed bug: one executable test file in `repro/test_bug<N>_*.{py,js,rs,go,c,sh}`
 - The test must have been actually executed (not just written)
-- The confirmed-bugs.md must reference each test file and its execution result
+- The confirmed-bugs.md must include **actual test output** (copy-paste) as evidence, not just a status label
 - If new bugs exist but zero reproduction tests exist, the confirmation is INVALID
 - Known/historical bugs do not require reproduction files
