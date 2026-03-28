@@ -56,7 +56,9 @@ Every trace action wrapper must include post-state field checks. `ValidatePostSt
 **Requirements**:
 - Every action wrapper must validate the **key fields** that the action modifies. Key fields are the spec variables that change as a result of this action (e.g., `currentTerm`, `role`, `commitIndex` for a Raft vote handler).
 - If the trace captures a field, validate it. Do not capture a field and then skip checking it.
-- If a field check causes validation failure, fix the root cause (spec bug, capture timing, mapping error). Do not remove the check to make validation pass.
+- If ValidatePostState checks a field, the harness must capture it. Do not write a check for a field that the harness never emits — this creates a conditional that is always vacuously true and provides no real validation.
+- If a field check causes validation failure, fix the root cause (spec bug, capture timing, mapping error). Do not remove the check to make validation pass, and do not remove the field from the harness to make the check vacuous.
+- For Category B systems, do not skip capturing a field because it is "racy" or "concurrently modified." The timebox approach (ViablePIDs) handles concurrent state — TLC searches for the interleaving where the captured value is consistent.
 
 **Strong validation**: check all key fields the action modifies — the default for most actions.
 
