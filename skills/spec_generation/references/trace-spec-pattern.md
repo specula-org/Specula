@@ -49,11 +49,18 @@ If instrumenting individual steps is truly impossible (e.g., the code path is in
 - Use N-1 silent actions for intermediate steps, with only the boundary step consuming the trace event
 - Combine into a composite action, but document why each skipped precondition is not valuable to check
 
-## Post-State Validation
+## Post-State Validation (MANDATORY)
 
-**Strong validation**: check term, role, commitIndex, lastLogIndex, lastLogTerm — for actions where trace records full state.
+Every trace action wrapper must include post-state field checks. `ValidatePostState == TRUE` is not acceptable — it disables state validation entirely, reducing trace validation to just action sequence feasibility.
 
-**Weak validation**: check only term + role — for async actions where trace may not capture full state.
+**Requirements**:
+- Every action wrapper must validate the **key fields** that the action modifies. Key fields are the spec variables that change as a result of this action (e.g., `currentTerm`, `role`, `commitIndex` for a Raft vote handler).
+- If the trace captures a field, validate it. Do not capture a field and then skip checking it.
+- If a field check causes validation failure, fix the root cause (spec bug, capture timing, mapping error). Do not remove the check to make validation pass.
+
+**Strong validation**: check all key fields the action modifies — the default for most actions.
+
+**Weak validation**: check only a subset of fields — allowed only when the thread genuinely cannot access certain fields (e.g., braft replicator threads that lack access to commitIndex). Document the reason. Weak validation is a last resort, not a convenience.
 
 ## Bootstrap State
 

@@ -224,11 +224,16 @@ Must be executable from the case study root: `cd case-studies/<name> && bash har
    - At least one trace must have genuine cross-thread interval overlap
    - If all traces are sequential (no overlap), the timebox mechanism is not being tested
    - See `references/concurrent-timebox-guide.md` "Trace Quality Criteria" for details
-6. Run a quick trace validation to catch obvious format issues:
+6. **Check state validation coverage (L2)**:
+   - Open `Trace.tla` and verify `ValidatePostState` is NOT a stub (`TRUE`)
+   - For each action wrapper, verify it checks the key fields that the action modifies
+   - Captured state fields in the trace must have corresponding checks in `ValidatePostState`
+   - If a field is captured but not validated, either add the check or remove the capture (don't leave dead data)
+7. Run a quick trace validation to catch obvious format issues:
    ```
    run_trace_validation(spec_file="Trace.tla", config_file="Trace.cfg", trace_file="../traces/<name>.ndjson", work_dir="spec/")
    ```
-7. If validation fails, fix instrumentation and re-run. Minor fixes are expected at this stage.
+8. If validation fails, fix instrumentation and re-run. Minor fixes are expected at this stage.
 
 ---
 

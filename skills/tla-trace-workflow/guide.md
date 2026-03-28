@@ -55,7 +55,9 @@ In Category B, TLC may explore multiple thread choices at each step (`\E tid \in
 
 **Tool**: `run_trace_validation`
 
-**Prerequisite**: Before running validation, check that `Trace.cfg` has `PROPERTIES TraceMatched` (uncommented). If missing, add it. Without this, TLC reports "no errors" even when the trace is never consumed — a false positive.
+**Prerequisites** (check before running validation):
+1. `Trace.cfg` has `PROPERTIES TraceMatched` (uncommented). Without this, TLC reports "no errors" even when the trace is never consumed — a false positive.
+2. `ValidatePostState` in `Trace.tla` is NOT a stub (`TRUE`). If it is, trace validation only checks action sequence feasibility without verifying state — this is insufficient. Go back and implement real field checks before proceeding. Every action wrapper should validate the key fields that the action modifies.
 
 Three outcomes:
 - `success` — trace is valid, done
