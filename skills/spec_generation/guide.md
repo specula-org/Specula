@@ -54,6 +54,8 @@ Counter-bound fault-injection actions (timeout, crash, message loss, etc.). Do N
 
 Key concepts: cursor variable `l` walks through trace events; action wrappers match events, call base actions, validate post-state, advance cursor; silent actions handle impl state changes without trace events (must be tightly constrained).
 
+**ValidatePostState must be implemented, not a stub.** For each action wrapper, write field checks based on what `instrumentation-spec.md` defines as captured fields. The base spec tells you which variables each action modifies; the instrumentation spec tells you which fields will be in the trace. Match them. Do not leave `ValidatePostState == TRUE` — Phase 2.5 and Phase 3 will reject it.
+
 **Trace file location**: Trace files (`.ndjson`) are stored in `traces/` (sibling to `spec/`). The `JsonFile` operator in `Trace.tla` must default to `../traces/<name>.ndjson`, with an `IOEnv.JSON` override for per-run selection:
 ```tla
 JsonFile ==
