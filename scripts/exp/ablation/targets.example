@@ -1,0 +1,19 @@
+# Example targets file for ablation experiments.
+# Format: name|github|lang|reference
+#
+# Choose targets that:
+#   - Have artifact repos cloned (case-studies/<name>/artifact/<repo>/)
+#   - Cover different complexity levels
+#   - Include systems with known bugs (for bug-finding evaluation)
+
+# SysMoBench overlap (both SysMoBench metrics + bug finding)
+etcd-raft|etcd-io/raft|Go|Raft (Ongaro 2014)
+redisraft|RedisLabs/redisraft|C|Raft (Ongaro 2014)
+
+# Specula bug-heavy (bug finding evaluation)
+# autobahn|asonnino/autobahn|Rust|Autobahn BFT
+# libgomp|gcc-mirror/gcc|C|OpenMP Flat Barrier
+
+# Additional (scale testing)
+# cometbft|cometbft/cometbft|Go|Tendermint BFT
+# braft|brpc/braft|C++|Raft (Ongaro 2014)

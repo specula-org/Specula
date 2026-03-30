@@ -1,0 +1,15 @@
+# Specula Overnight Task Queue — Raft Campaign
+# Format: name|github|lang|reference[TAB]flags
+
+# --- Existing incomplete ---
+hashicorp-raft|hashicorp/raft|Go|Raft (Ongaro 2014)
+
+# --- New targets (by star count) ---
+openraft|datafuselabs/openraft|Rust|Raft (Ongaro 2014)
+nuraft|ebay/nuraft|C++|Raft (Ongaro 2014)
+ratis|apache/ratis|Java|Raft (Ongaro 2014)
+raft-java|wenweihu86/raft-java|Java|Raft (Ongaro 2014)
+willemt-raft|willemt/raft|C|Raft (Ongaro 2014)
+async-raft|async-raft/async-raft|Rust|Raft (Ongaro 2014)
+redisraft|RedisLabs/redisraft|C|Raft (Ongaro 2014)
+ra|rabbitmq/ra|Erlang|Raft (Ongaro 2014)

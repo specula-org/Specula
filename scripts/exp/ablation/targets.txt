@@ -1,0 +1,6 @@
+# Ablation experiment targets
+# Format: name|github|lang|reference
+
+etcd-raft|etcd-io/raft|Go|Raft (Ongaro 2014)
+autobahn|asonnino/autobahn|Rust|Autobahn BFT
+libgomp|gcc-mirror/gcc|C|OpenMP Flat Barrier

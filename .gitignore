@@ -38,6 +38,7 @@ buildNumber.properties
 .m2/
 archive/
 lib/
+!scripts/exp/ablation/lib/
 tools/cfa/input/test
 tools/cfa/output/test
 data/repositories
@@ -102,4 +103,7 @@ env/
 nohup.out
 !tools/inv_checking_tool/tests/test_data/nohup.out
 counterexample.json
-scripts/exp
+# Experiment runtime artifacts (keep scripts/prompts/configs)
+scripts/exp/ablation/results/
+scripts/exp/tasks_*.queue
+scripts/exp/tasks-*.queue
