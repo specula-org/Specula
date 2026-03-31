@@ -53,11 +53,11 @@ count_lines() { [[ -f "$1" ]] && wc -l < "$1" || echo "0"; }
 
 check_sany() {
   local spec_dir="$1"
-  local target="$spec_dir/MC.tla"
-  [[ -f "$target" ]] || target="$spec_dir/base.tla"
-  [[ -f "$target" ]] || { echo "skip"; return; }
+  local target="MC.tla"
+  [[ -f "$spec_dir/$target" ]] || target="base.tla"
+  [[ -f "$spec_dir/$target" ]] || { echo "skip"; return; }
 
-  if java -cp "$TLA2TOOLS" tla2sany.SANY "$target" > /dev/null 2>&1; then
+  if (cd "$spec_dir" && java -cp "$TLA2TOOLS:$COMMUNITY" tla2sany.SANY "$target" > /dev/null 2>&1); then
     echo "pass"
   else
     echo "fail"
@@ -66,12 +66,12 @@ check_sany() {
 
 check_tlc() {
   local spec_dir="$1"
-  local spec="$spec_dir/MC.tla"
-  local cfg="$spec_dir/MC.cfg"
-  [[ -f "$spec" && -f "$cfg" ]] || { echo "skip"; return; }
+  local spec="MC.tla"
+  local cfg="MC.cfg"
+  [[ -f "$spec_dir/$spec" && -f "$spec_dir/$cfg" ]] || { echo "skip"; return; }
 
   local output
-  output=$(timeout 60 java -cp "$TLA2TOOLS:$COMMUNITY" \
+  output=$(cd "$spec_dir" && timeout 60 java -cp "$TLA2TOOLS:$COMMUNITY" \
     tlc2.TLC "$spec" -config "$cfg" -workers auto -deadlock \
     -simulate num=100 2>&1) || true
 

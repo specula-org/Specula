@@ -37,6 +37,8 @@ MAX_BUDGET_CLI=""
 MAX_PARALLEL=1
 GROUP_FILTER="all"
 DRY_RUN=false
+THRESHOLD=80
+MAX_WINDOWS=3
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -50,6 +52,10 @@ while [[ $# -gt 0 ]]; do
     --max-parallel=*) MAX_PARALLEL="${1#*=}"; shift ;;
     --group)         GROUP_FILTER="$2"; shift 2 ;;
     --group=*)       GROUP_FILTER="${1#*=}"; shift ;;
+    --threshold)     THRESHOLD="$2"; shift 2 ;;
+    --threshold=*)   THRESHOLD="${1#*=}"; shift ;;
+    --windows)       MAX_WINDOWS="$2"; shift 2 ;;
+    --windows=*)     MAX_WINDOWS="${1#*=}"; shift ;;
     --dry-run)       DRY_RUN=true; shift ;;
     -h|--help)       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"; exit 0 ;;
     *)               die "Unknown option: $1" ;;
@@ -58,6 +64,60 @@ done
 
 [[ -n "$TARGETS_FILE" ]] || die "Missing --targets-file"
 [[ -f "$TARGETS_FILE" ]] || die "Targets file not found: $TARGETS_FILE"
+
+# ── Usage gate ──
+
+USAGE_SCRIPT="$SCRIPT_DIR/../usage.sh"
+WINDOWS_USED=0
+USAGE_TMP_DIR=""
+
+check_usage() {
+  [[ -f "$USAGE_SCRIPT" ]] || { warn "usage.sh not found, skipping quota check"; return 0; }
+  [[ -z "$USAGE_TMP_DIR" ]] && USAGE_TMP_DIR="$(mktemp -d)"
+  local tmp="$USAGE_TMP_DIR/usage.json"
+  bash "$USAGE_SCRIPT" > "$tmp" 2>/dev/null || { warn "usage fetch failed"; return 0; }
+
+  python3 - "$tmp" "$THRESHOLD" "$USAGE_TMP_DIR/reset_at" <<'PYEOF'
+import json, sys
+with open(sys.argv[1]) as f:
+    d = json.load(f)
+threshold = float(sys.argv[2])
+reset_file = sys.argv[3]
+resets = []
+for key in ('five_hour', 'seven_day'):
+    obj = d.get(key)
+    if obj and obj.get('utilization', 0) > threshold:
+        resets.append(obj.get('resets_at', ''))
+if resets:
+    earliest = sorted([r for r in resets if r])[0] if any(resets) else ''
+    with open(reset_file, 'w') as f:
+        f.write(earliest)
+    sys.exit(1)
+sys.exit(0)
+PYEOF
+}
+
+wait_for_quota() {
+  while ! check_usage; do
+    WINDOWS_USED=$((WINDOWS_USED + 1))
+    if (( WINDOWS_USED > MAX_WINDOWS )); then
+      log "Max resets ($MAX_WINDOWS) exhausted, stopping"
+      return 1
+    fi
+    local reset_at sleep_secs
+    reset_at="$(cat "$USAGE_TMP_DIR/reset_at" 2>/dev/null || echo "")"
+    if [[ -n "$reset_at" ]]; then
+      sleep_secs=$(( $(date -d "$reset_at" +%s) - $(date +%s) + 120 ))
+      (( sleep_secs < 60 )) && sleep_secs=60
+      log "Over ${THRESHOLD}%, sleeping ${sleep_secs}s until $reset_at (reset $WINDOWS_USED/$MAX_WINDOWS)"
+    else
+      sleep_secs=600
+      log "Over ${THRESHOLD}%, no reset time, sleeping ${sleep_secs}s"
+    fi
+    sleep "$sleep_secs"
+  done
+  return 0
+}
 
 # ── Discover configs ──
 
@@ -182,6 +242,16 @@ for cfg in "${CONFIGS[@]}"; do
 
     cfg_name="$(basename "$cfg" .sh)"
     IFS='|' read -r tname _ _ _ <<< "$target"
+
+    # Wait for quota before launching
+    if ! wait_for_quota; then
+      log "Quota exhausted, draining active tasks..."
+      for i in "${!PIDS[@]}"; do
+        wait "${PIDS[$i]}" 2>/dev/null && COMPLETED=$((COMPLETED+1)) || FAILED=$((FAILED+1))
+      done
+      PIDS=(); PID_LABELS=()
+      break 2
+    fi
 
     mkdir -p "$RESULTS_BASE_DIR/$RUN_ID"
     run_one "$cfg" "$target" &
