@@ -77,6 +77,8 @@ Open your coding agent in the Specula directory. The workflow is a sequence of s
 
 `/code-analysis` → `/spec-generation` → `/harness-generation` → `/validation-workflow` → `/bug-confirmation`
 
+(Codex will use `$code-analysis`, `$spec-generation`, etc.)
+
 Tell the agent your target system (repo path, language, reference algorithm) and invoke `/code-analysis` to start.
 
 ### Scripted Mode
@@ -102,9 +104,14 @@ bash scripts/launch/launch_code_analysis.sh cometbft
 
 # Phase 2: Specification
 bash scripts/launch/launch_spec_generation.sh cometbft
+# Phase 2.5: Harness generation
+bash scripts/launch/launch_harness_generation.sh cometbft
 
 # Phase 3: Trace Validation and MC
 bash scripts/launch/launch_spec_validation.sh cometbft
+
+# Phase 4: Bug Confirmation
+bash scripts/launch/launch_bug_confirmation.sh cometbft
 ```
 
 ## Note
