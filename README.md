@@ -21,6 +21,8 @@ Specula is a multi-phase agentic workflow. Each phase is driven by a dedicated s
 - **Trace Validation** — Verifying that the model can reproduce every state transition observed in a real execution trace, catching model-code gaps before model checking.
 - **Model Checking** — Exploring the state space to find invariant violations and analyzing counterexamples to determine if they are code bugs, model bugs, or known issues.
 
+4. **Bug Confirmation.** The agent confirms that model-checking counterexamples correspond to real bugs by auditing the source code, investigating developer intent (issue tracker, commit history, tests), and writing reproduction tests that trigger the bug in the real system.
+
 ## Quick Start
 
 Specula runs as a set of code agent skills and MCP tools. It currently supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://openai.com/codex/), and [GitHub Copilot CLI](https://docs.github.com/en/copilot), with more agents to be supported in the future.
@@ -79,7 +81,15 @@ Open your coding agent in the Specula directory. The workflow is a sequence of s
 
 (Codex will use `$code-analysis`, `$spec-generation`, etc.)
 
-Tell the agent your target system (repo path, language, reference algorithm) and invoke `/code-analysis` to start.
+**To start**, tell the agent your target and invoke the first skill:
+
+```
+The target is case-studies/cometbft/artifact/cometbft, a Go implementation of
+Tendermint BFT consensus. The reference algorithm is the Tendermint paper
+(arXiv:1807.04938). Run /code-analysis.
+```
+
+Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) that the next skill consumes. When one skill completes, invoke the next. You can also run any skill independently — for example, `/validation-workflow` on an existing spec.
 
 ### Scripted Mode
 
