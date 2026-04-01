@@ -107,6 +107,52 @@ fi
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 divider() { echo ""; echo "════════════════════════════════════════════════════════════"; }
 
+USAGE_SCRIPT="$SPECULA_ROOT/scripts/exp/usage.sh"
+QUOTA_5H="${QUOTA_5H:-85}"
+QUOTA_7D="${QUOTA_7D:-95}"
+QUOTA_MAX_WAITS="${QUOTA_MAX_WAITS:-6}"
+
+wait_for_quota() {
+  [[ ! -f "$USAGE_SCRIPT" ]] && return 0
+  local waits=0
+  while true; do
+    local usage_json
+    usage_json="$(bash "$USAGE_SCRIPT" 2>/dev/null)" || { log "WARN: usage fetch failed, proceeding"; return 0; }
+    local check
+    check="$(python3 -c "
+import json, sys
+d = json.loads('''$usage_json''')
+five = d.get('five_hour') or {}
+seven = d.get('seven_day') or {}
+u5 = five.get('utilization', 0) or 0
+u7 = seven.get('utilization', 0) or 0
+if u5 > $QUOTA_5H:
+    print(f'5h={u5}% (limit $QUOTA_5H%) resets_at={five.get(\"resets_at\",\"\")}')
+elif u7 > $QUOTA_7D:
+    print(f'7d={u7}% (limit $QUOTA_7D%) resets_at={seven.get(\"resets_at\",\"\")}')
+else:
+    print('ok')
+" 2>/dev/null)" || { log "WARN: usage parse failed, proceeding"; return 0; }
+    [[ "$check" == "ok" ]] && return 0
+    waits=$((waits + 1))
+    if (( waits > QUOTA_MAX_WAITS )); then
+      log "ERROR: quota still over limit after $QUOTA_MAX_WAITS waits, aborting"
+      exit 1
+    fi
+    local reset_at
+    reset_at="$(echo "$check" | grep -oP 'resets_at=\K\S+' | head -1)"
+    if [[ -n "$reset_at" ]]; then
+      local sleep_secs=$(( $(date -d "$reset_at" +%s) - $(date +%s) + 120 ))
+      (( sleep_secs < 60 )) && sleep_secs=60
+      log "Quota: $check — sleeping ${sleep_secs}s (wait $waits/$QUOTA_MAX_WAITS)"
+    else
+      local sleep_secs=600
+      log "Quota: $check — sleeping ${sleep_secs}s (wait $waits/$QUOTA_MAX_WAITS)"
+    fi
+    sleep "$sleep_secs"
+  done
+}
+
 extract_names() {
   local names=()
   for target in "${TARGETS[@]}"; do
@@ -409,6 +455,7 @@ main() {
 
   # ── Phase 1: Code Analysis ──
   if ! $SKIP_ANALYSIS; then
+    wait_for_quota
     run_phase1_analysis
     run_review "analysis" "${names[@]}"
   else
@@ -417,6 +464,7 @@ main() {
 
   # ── Phase 2: Spec Generation ──
   if ! $SKIP_SPECGEN; then
+    wait_for_quota
     run_phase2_specgen
     run_review "specgen" "${names[@]}"
   else
@@ -425,6 +473,7 @@ main() {
 
   # ── Phase 2.5: Harness Generation ──
   if ! $SKIP_HARNESS; then
+    wait_for_quota
     run_phase2_5_harness
   else
     log "Skipping Phase 2.5 (--skip-harness)"
@@ -432,6 +481,7 @@ main() {
 
   # ── Phase 3: Spec Validation (iterative trace validation + MC) ──
   if ! $SKIP_VALIDATION; then
+    wait_for_quota
     run_phase3_validation
     run_review "validation" "${names[@]}"
   else
@@ -440,6 +490,7 @@ main() {
 
   # ── Phase 4: Bug Confirmation (consolidate MC + code review, reproduce) ──
   if ! $SKIP_CONFIRMATION; then
+    wait_for_quota
     run_phase4_confirmation
   else
     log "Skipping Phase 4 (--skip-confirmation)"
