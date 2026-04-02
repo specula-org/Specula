@@ -29,7 +29,9 @@ Specula handles two categories of systems with different trace strategies:
 | Trace approach | Single NDJSON file, mutex writer | Per-thread files, rdtsc timebox intervals |
 | TLC search | Linear (cursor `l`) | Partial order (`ViablePIDs`) |
 
-See `harness-generation` skill's `guide.md` Step 0 for classification.
+This category should be decided in **Phase 1** and written into `modeling-brief.md`, then reused by every later phase. Do not wait until harness generation to discover that a target is Category B.
+
+See `harness-generation` skill's `guide.md` Step 0 for classification details.
 
 ---
 
@@ -42,6 +44,7 @@ See `harness-generation` skill's `guide.md` Step 0 for classification.
 ### What Happens
 
 1. **Reconnaissance** — Map the codebase: core modules, concurrency model, atomicity boundaries.
+   Also classify the target as Category A or B and identify the semantic boundaries that matter (crash windows vs linearization / reclamation windows).
 2. **Bug Archaeology** — Mine git history and issue tracker for historical bugs. Group into **Bug Families** by shared mechanism.
 3. **Deep Analysis** — Systematic code reading guided by Bug Families. Look for: code path inconsistencies, non-atomic persistence with crash windows, missing guards, deviations from the reference algorithm.
 4. **Modeling Brief** — Synthesize findings into a concise handoff document. For each Bug Family: mechanism, evidence, modeling approach, invariants.
@@ -174,12 +177,10 @@ Pauses when API usage exceeds threshold, waits for reset, resumes automatically.
 ## Directory Structure (per case study)
 
 ```
-case-studies/<system-name>/
+.specula-output/
 ├── analysis-report.md           # Phase 1
 ├── modeling-brief.md            # Phase 1 → Phase 2 handoff
 ├── .prompt-extra.md             # Target-specific instructions for pipeline agents
-├── artifact/                    # Source code (cloned repo)
-│   └── <repo>/
 ├── spec/
 │   ├── base.tla + base.cfg     # Phase 2
 │   ├── MC.tla + MC.cfg         # Phase 2

@@ -27,7 +27,7 @@ These pull in opposite directions. Fixing trace failures may loosen the spec (in
 
 ### Required Artifacts
 
-All artifacts are relative to the case study root (e.g., `case-studies/<name>/`):
+All artifacts are relative to `.specula-output/`:
 
 | Artifact | Path | Description |
 |----------|------|-------------|
