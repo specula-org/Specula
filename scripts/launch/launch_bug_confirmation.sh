@@ -16,22 +16,23 @@
 #   --max-parallel=N    Max concurrent agents (default: 1)
 #   --max-turns=N       Max agent turns (default: 0 = unlimited)
 #   --agent=NAME        Agent adapter to use (default: claude-code)
+#   --artifact=PATH     Explicit path to the artifact repo (overrides auto-detection)
 #
 # Prerequisites:
-#   - Bug report at case-studies/<name>/spec/bug-report.md (from Phase 3)
-#   - Modeling brief at case-studies/<name>/modeling-brief.md (from Phase 1)
-#   - Source repo at case-studies/<name>/artifact/<repo>/
+#   - Bug report at <name>/spec/bug-report.md (from Phase 3)
+#   - Modeling brief at <name>/modeling-brief.md (from Phase 1)
+#   - Source repo at <name>/artifact/<repo>/ (or supplied via --artifact)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPECULA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
 MAX_PARALLEL=1
 MAX_TURNS=0
 DRY_RUN=false
 CHECK_ONLY=false
 AGENT="claude-code"
+ARTIFACT=""
 TARGETS=()
 
 # ──────────────────────────────────────────────────────────
@@ -44,6 +45,7 @@ for arg in "$@"; do
     --max-parallel=*) MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*) MAX_TURNS="${arg#*=}" ;;
     --agent=*) AGENT="${arg#*=}" ;;
+    --artifact=*) ARTIFACT="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -54,9 +56,7 @@ for arg in "$@"; do
 done
 
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
-  echo "Usage: $0 [options] name [name ...]"
-  echo "Run $0 --help for details."
-  exit 1
+  TARGETS+=("$(basename "$PWD")")
 fi
 
 ADAPTER="$SCRIPT_DIR/adapters/${AGENT}.sh"
@@ -66,18 +66,39 @@ if [[ ! -f "$ADAPTER" ]]; then
 fi
 
 # ──────────────────────────────────────────────────────────
+# Resolve working directory for a target
+# ──────────────────────────────────────────────────────────
+get_work_dir() {
+  local name="$1"
+  if (( ${#TARGETS[@]} == 1 )); then
+    echo "$PWD/.specula-output"
+  else
+    echo "$PWD/${name}/.specula-output"
+  fi
+}
+
+# ──────────────────────────────────────────────────────────
 # Find artifact repo directory
 # ──────────────────────────────────────────────────────────
 find_repo_dir() {
   local name="$1"
-  local artifact_dir="${CASE_STUDIES_DIR}/${name}/artifact"
-  [[ ! -d "$artifact_dir" ]] && return
-  for d in "$artifact_dir"/*/; do
-    if [[ -d "${d}.git" || -f "${d}.git" ]]; then
-      echo "$d"
-      return
-    fi
-  done
+  if [[ -n "$ARTIFACT" ]]; then
+    echo "$ARTIFACT"
+    return
+  fi
+  local artifact_dir="$PWD/${name}/artifact"
+  if [[ -d "$artifact_dir" ]]; then
+    for d in "$artifact_dir"/*/; do
+      if [[ -d "${d}.git" || -f "${d}.git" ]]; then
+        echo "$d"
+        return
+      fi
+    done
+  fi
+  if (( ${#TARGETS[@]} == 1 )); then
+    echo "$PWD"
+    return
+  fi
 }
 
 # ──────────────────────────────────────────────────────────
@@ -87,7 +108,8 @@ check_prereqs() {
   local ok=true
   for name in "${TARGETS[@]}"; do
     name="$(echo "$name" | xargs)"
-    local work_dir="${CASE_STUDIES_DIR}/${name}"
+    local work_dir
+    work_dir="$(get_work_dir "$name")"
     local repo_dir
     repo_dir="$(find_repo_dir "$name")"
 
@@ -124,7 +146,8 @@ check_prereqs() {
 # ──────────────────────────────────────────────────────────
 generate_prompt() {
   local name="$1" repo_dir="$2"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir
+  work_dir="$(get_work_dir "$name")"
   local spec_dir="${work_dir}/spec"
 
   cat <<PROMPT_EOF
@@ -237,7 +260,8 @@ PROMPT_EOF
 # ──────────────────────────────────────────────────────────
 launch_agent() {
   local name="$1" prompt="$2"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir
+  work_dir="$(get_work_dir "$name")"
   local log_file="${work_dir}/bug-confirmation.log"
   local prompt_file="${work_dir}/.bug-confirmation-prompt.md"
 
@@ -309,14 +333,14 @@ main() {
 
     launch_agent "$name" "$prompt"
     if ! $DRY_RUN; then
-      running_pids+=("$(cat "${CASE_STUDIES_DIR}/${name}/bug-confirmation.pid")")
+      running_pids+=("$(cat "$(get_work_dir "$name")/bug-confirmation.pid")")
     fi
     echo ""
   done
 
   if ! $DRY_RUN; then
     echo "[$(date '+%H:%M:%S')] All agents launched. Waiting..."
-    echo "  Monitor: tail -f ${CASE_STUDIES_DIR}/*/bug-confirmation.log"
+    echo "  Monitor: tail -f */bug-confirmation.log"
     echo ""
     wait
     echo "[$(date '+%H:%M:%S')] All agents completed."
@@ -329,7 +353,9 @@ main() {
   echo "========================================"
   for name in "${TARGETS[@]}"; do
     name="$(echo "$name" | xargs)"
-    local report="${CASE_STUDIES_DIR}/${name}/spec/confirmed-bugs.md"
+    local work_dir
+    work_dir="$(get_work_dir "$name")"
+    local report="${work_dir}/spec/confirmed-bugs.md"
 
     if [[ -f "$report" ]]; then
       local summary
@@ -339,7 +365,7 @@ main() {
       # Hard check: if confirmed bugs > 0, repro/ must have test files
       local confirmed
       confirmed=$(grep -oP 'Reproduced:\s*\K\d+' "$report" 2>/dev/null || echo "0")
-      local repro_dir="${CASE_STUDIES_DIR}/${name}/repro"
+      local repro_dir="${work_dir}/repro"
       local repro_count
       repro_count=$(find "$repro_dir" -name "test_bug*" -type f 2>/dev/null | wc -l)
 

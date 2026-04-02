@@ -16,23 +16,24 @@
 #   --max-parallel=N    Max concurrent agents (default: 1)
 #   --max-turns=N       Max agent turns (default: 0 = unlimited)
 #   --agent=NAME        Agent adapter to use (default: claude-code)
+#   --artifact=PATH     Explicit path to the artifact repo (bypasses auto-detection)
 #
 # Prerequisites:
 #   - claude CLI installed and authenticated
-#   - modeling-brief.md exists at case-studies/<name>/modeling-brief.md
-#   - Source repo cloned at case-studies/<name>/artifact/<repo>/
+#   - modeling-brief.md exists at <name>/.specula-output/modeling-brief.md
+#   - Source repo cloned at <name>/artifact/<repo>/ (or supplied via --artifact)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPECULA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
 SKILL_DIR="$SPECULA_ROOT/.claude/skills/spec_generation"
 MAX_PARALLEL=1
 MAX_TURNS=0
 DRY_RUN=false
 CHECK_ONLY=false
 AGENT="claude-code"
+ARTIFACT=""
 TARGETS=()
 
 # ──────────────────────────────────────────────────────────
@@ -45,6 +46,7 @@ for arg in "$@"; do
     --max-parallel=*) MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*) MAX_TURNS="${arg#*=}" ;;
     --agent=*) AGENT="${arg#*=}" ;;
+    --artifact=*) ARTIFACT="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -55,9 +57,7 @@ for arg in "$@"; do
 done
 
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
-  echo "Usage: $0 [options] name [name ...]"
-  echo "Run $0 --help for details."
-  exit 1
+  TARGETS+=("$(basename "$PWD")")
 fi
 
 ADAPTER="$SCRIPT_DIR/adapters/${AGENT}.sh"
@@ -67,18 +67,39 @@ if [[ ! -f "$ADAPTER" ]]; then
 fi
 
 # ──────────────────────────────────────────────────────────
+# Resolve work directory (.specula-output) for a target
+# ──────────────────────────────────────────────────────────
+get_work_dir() {
+  local name="$1"
+  if (( ${#TARGETS[@]} == 1 )); then
+    echo "$PWD/.specula-output"
+  else
+    echo "$PWD/${name}/.specula-output"
+  fi
+}
+
+# ──────────────────────────────────────────────────────────
 # Find artifact repo directory
 # ──────────────────────────────────────────────────────────
 find_repo_dir() {
   local name="$1"
-  local artifact_dir="${CASE_STUDIES_DIR}/${name}/artifact"
-  [[ ! -d "$artifact_dir" ]] && return
-  for d in "$artifact_dir"/*/; do
-    if [[ -d "${d}.git" || -f "${d}.git" ]]; then
-      echo "$d"
-      return
-    fi
-  done
+  if [[ -n "$ARTIFACT" ]]; then
+    echo "$ARTIFACT"
+    return
+  fi
+  local artifact_dir="$PWD/${name}/artifact"
+  if [[ -d "$artifact_dir" ]]; then
+    for d in "$artifact_dir"/*/; do
+      if [[ -d "${d}.git" || -f "${d}.git" ]]; then
+        echo "$d"
+        return
+      fi
+    done
+  fi
+  if (( ${#TARGETS[@]} == 1 )); then
+    echo "$PWD"
+    return
+  fi
 }
 
 # ──────────────────────────────────────────────────────────
@@ -88,7 +109,7 @@ check_prereqs() {
   local ok=true
   for name in "${TARGETS[@]}"; do
     name="$(echo "$name" | xargs)"
-    local brief="${CASE_STUDIES_DIR}/${name}/modeling-brief.md"
+    local brief="$(get_work_dir "$name")/modeling-brief.md"
     local repo_dir
     repo_dir="$(find_repo_dir "$name")"
 
@@ -116,7 +137,7 @@ check_prereqs() {
 # ──────────────────────────────────────────────────────────
 generate_prompt() {
   local name="$1" repo_dir="$2"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir="$(get_work_dir "$name")"
   local spec_dir="${work_dir}/spec"
   local brief="${work_dir}/modeling-brief.md"
 
@@ -141,6 +162,8 @@ Then read the reference files:
   ${SKILL_DIR}/references/mc-spec-pattern.md
   ${SKILL_DIR}/references/trace-spec-pattern.md
   ${SKILL_DIR}/references/instrumentation-spec-format.md
+
+Before writing specs, read \`${brief}\` and determine whether this target is Category A (distributed/message-passing) or Category B (concurrent/lock-free/runtime). If it is Category B, shape the spec around thread-local state, linearization points, stale views, memory ordering, reclamation, and ownership transfer. Do not force a message-bag / protocol-state template onto the code.
 
 ## Phases
 
@@ -176,6 +199,7 @@ Expected files:
 7. Name actions after implementation functions. Enables cross-referencing with code.
 8. Silent actions must be tightly constrained. Unconstrained silent actions cause state space explosion.
 9. MC spec bounds fault-injection, not normal operations.
+10. For Category B systems, split API-level operations at real semantic boundaries (read/confirm, reserve/publish, retire/reclaim, signal/complete). Do not collapse them into single actions unless the code is truly atomic there.
 PROMPT_EOF
 
   # Inject per-target extra prompt if present
@@ -193,7 +217,7 @@ PROMPT_EOF
 # ──────────────────────────────────────────────────────────
 launch_agent() {
   local name="$1" prompt="$2"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir="$(get_work_dir "$name")"
   local spec_dir="${work_dir}/spec"
   local log_file="${work_dir}/spec-gen.log"
   local prompt_file="${work_dir}/.spec-gen-prompt.md"
@@ -267,14 +291,14 @@ main() {
 
     launch_agent "$name" "$prompt"
     if ! $DRY_RUN; then
-      running_pids+=("$(cat "${CASE_STUDIES_DIR}/${name}/spec-gen.pid")")
+      running_pids+=("$(cat "$(get_work_dir "$name")/spec-gen.pid")")
     fi
     echo ""
   done
 
   if ! $DRY_RUN; then
     echo "[$(date '+%H:%M:%S')] All agents launched. Waiting..."
-    echo "  Monitor: tail -f ${CASE_STUDIES_DIR}/*/spec-gen.log"
+    echo "  Monitor: tail -f */.specula-output/spec-gen.log"
     echo ""
     wait
     echo "[$(date '+%H:%M:%S')] All agents completed."
@@ -287,7 +311,7 @@ main() {
   echo "========================================"
   for name in "${TARGETS[@]}"; do
     name="$(echo "$name" | xargs)"
-    local spec_dir="${CASE_STUDIES_DIR}/${name}/spec"
+    local spec_dir="$(get_work_dir "$name")/spec"
     local base="${spec_dir}/base.tla"
     local mc="${spec_dir}/MC.tla"
     local trace="${spec_dir}/Trace.tla"

@@ -26,9 +26,10 @@
 #   --max-parallel=N       Max concurrent agents per phase (default: 1)
 #   --max-turns=N          Max agent turns (default: 0 = unlimited)
 #   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli)
+#   --artifact=PATH        Path to system artifact/source code
 #
 # Output structure (per system):
-#   case-studies/<name>/
+#   .specula-output/
 #     ├── analysis-report.md          # Phase 1 output
 #     ├── modeling-brief.md           # Phase 1 output
 #     ├── agent.log                   # Phase 1 agent log
@@ -57,7 +58,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPECULA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
 
 MAX_PARALLEL=1
 MAX_TURNS=0
@@ -69,6 +69,7 @@ SKIP_VALIDATION=false
 SKIP_CONFIRMATION=false
 SKIP_REVIEWS=true
 AGENT="claude-code"
+ARTIFACT=""
 TARGETS=()
 
 # ──────────────────────────────────────────────────────────
@@ -86,6 +87,7 @@ for arg in "$@"; do
     --max-parallel=*)    MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*)       MAX_TURNS="${arg#*=}" ;;
     --agent=*)           AGENT="${arg#*=}" ;;
+    --artifact=*)        ARTIFACT="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -96,9 +98,7 @@ for arg in "$@"; do
 done
 
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
-  echo "Usage: $0 [options] \"name|github|lang|reference\" [...]"
-  echo "Run $0 --help for details."
-  exit 1
+  TARGETS+=("$(basename "$PWD")")
 fi
 
 # ──────────────────────────────────────────────────────────
@@ -171,6 +171,18 @@ validate_agent_adapter() {
 }
 
 # ──────────────────────────────────────────────────────────
+# Work directory helper
+# ──────────────────────────────────────────────────────────
+get_work_dir() {
+  local name="$1"
+  if (( ${#TARGETS[@]} == 1 )); then
+    echo "$PWD/.specula-output"
+  else
+    echo "$PWD/${name}/.specula-output"
+  fi
+}
+
+# ──────────────────────────────────────────────────────────
 # Phase runners
 # ──────────────────────────────────────────────────────────
 
@@ -180,6 +192,7 @@ run_phase1_analysis() {
   divider
 
   local analysis_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
+  [[ -n "$ARTIFACT" ]] && analysis_args+=("--artifact=$ARTIFACT")
   for target in "${TARGETS[@]}"; do
     analysis_args+=("$target")
   done
@@ -223,6 +236,7 @@ run_phase2_specgen() {
   read -ra names <<< "$(extract_names)"
 
   local specgen_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
+  [[ -n "$ARTIFACT" ]] && specgen_args+=("--artifact=$ARTIFACT")
   for n in "${names[@]}"; do
     specgen_args+=("$n")
   done
@@ -244,6 +258,7 @@ run_phase2_5_harness() {
   read -ra names <<< "$(extract_names)"
 
   local harness_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
+  [[ -n "$ARTIFACT" ]] && harness_args+=("--artifact=$ARTIFACT")
   for n in "${names[@]}"; do
     harness_args+=("$n")
   done
@@ -265,6 +280,7 @@ run_phase3_validation() {
   read -ra names <<< "$(extract_names)"
 
   local val_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
+  [[ -n "$ARTIFACT" ]] && val_args+=("--artifact=$ARTIFACT")
   for n in "${names[@]}"; do
     val_args+=("$n")
   done
@@ -286,6 +302,7 @@ run_phase4_confirmation() {
   read -ra names <<< "$(extract_names)"
 
   local confirm_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
+  [[ -n "$ARTIFACT" ]] && confirm_args+=("--artifact=$ARTIFACT")
   for n in "${names[@]}"; do
     confirm_args+=("$n")
   done
@@ -309,7 +326,8 @@ generate_summary() {
   log "PIPELINE SUMMARY"
   divider
 
-  local summary_file="${SPECULA_ROOT}/pipeline-summary.md"
+  local summary_file="$PWD/.specula-output/pipeline-summary.md"
+  mkdir -p "$PWD/.specula-output"
   {
     echo "# Specula Pipeline Summary"
     echo ""
@@ -319,7 +337,7 @@ generate_summary() {
     echo ""
 
     for name in "${names[@]}"; do
-      local work_dir="${CASE_STUDIES_DIR}/${name}"
+      local work_dir="$(get_work_dir "$name")"
       local spec_dir="${work_dir}/spec"
 
       echo "### ${name}"
@@ -418,7 +436,7 @@ generate_summary() {
         if [[ -f "$log_file" ]]; then
           local size
           size=$(du -h "$log_file" | cut -f1)
-          echo "- \`${log_file#$SPECULA_ROOT/}\` (${size})"
+          echo "- \`${log_file#$PWD/}\` (${size})"
         fi
       done
       echo ""
@@ -509,4 +527,5 @@ main() {
   log "Pipeline completed in ${mins}m ${secs}s"
 }
 
-main 2>&1 | tee "${SPECULA_ROOT}/pipeline.log"
+mkdir -p "$PWD/.specula-output"
+main 2>&1 | tee "$PWD/.specula-output/pipeline.log"

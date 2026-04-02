@@ -10,6 +10,7 @@
 # Example:
 #   bash scripts/launch/launch_spec_validation.sh cometbft
 #   bash scripts/launch/launch_spec_validation.sh braft sofa-jraft dragonboat
+#   bash scripts/launch/launch_spec_validation.sh --artifact=/path/to/repo myproject
 #
 # Options:
 #   --dry-run           Print commands without executing
@@ -17,21 +18,22 @@
 #   --max-parallel=N    Max concurrent agents (default: 1)
 #   --max-turns=N       Max agent turns (default: 0 = unlimited)
 #   --agent=NAME        Agent adapter to use (default: claude-code)
+#   --artifact=PATH     Explicit path to the artifact repo (overrides auto-detection)
 #
 # Prerequisites:
-#   - Spec files at case-studies/<name>/spec/ (from Phase 2)
-#   - Source repo at case-studies/<name>/artifact/<repo>/
+#   - Spec files at <name>/.specula-output/spec/ (from Phase 2)
+#   - Source repo at <name>/artifact/<repo>/ or specified via --artifact
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPECULA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
 MAX_PARALLEL=1
 MAX_TURNS=0
 DRY_RUN=false
 CHECK_ONLY=false
 AGENT="claude-code"
+ARTIFACT=""
 TARGETS=()
 
 # ──────────────────────────────────────────────────────────
@@ -44,6 +46,7 @@ for arg in "$@"; do
     --max-parallel=*) MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*) MAX_TURNS="${arg#*=}" ;;
     --agent=*) AGENT="${arg#*=}" ;;
+    --artifact=*) ARTIFACT="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -54,9 +57,7 @@ for arg in "$@"; do
 done
 
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
-  echo "Usage: $0 [options] name [name ...]"
-  echo "Run $0 --help for details."
-  exit 1
+  TARGETS+=("$(basename "$PWD")")
 fi
 
 ADAPTER="$SCRIPT_DIR/adapters/${AGENT}.sh"
@@ -66,18 +67,36 @@ if [[ ! -f "$ADAPTER" ]]; then
 fi
 
 # ──────────────────────────────────────────────────────────
-# Find artifact repo directory
+# Resolve working directory and artifact repo
 # ──────────────────────────────────────────────────────────
+get_work_dir() {
+  local name="$1"
+  if (( ${#TARGETS[@]} == 1 )); then
+    echo "$PWD/.specula-output"
+  else
+    echo "$PWD/${name}/.specula-output"
+  fi
+}
+
 find_repo_dir() {
   local name="$1"
-  local artifact_dir="${CASE_STUDIES_DIR}/${name}/artifact"
-  [[ ! -d "$artifact_dir" ]] && return
-  for d in "$artifact_dir"/*/; do
-    if [[ -d "${d}.git" || -f "${d}.git" ]]; then
-      echo "$d"
-      return
-    fi
-  done
+  if [[ -n "$ARTIFACT" ]]; then
+    echo "$ARTIFACT"
+    return
+  fi
+  local artifact_dir="$PWD/${name}/artifact"
+  if [[ -d "$artifact_dir" ]]; then
+    for d in "$artifact_dir"/*/; do
+      if [[ -d "${d}.git" || -f "${d}.git" ]]; then
+        echo "$d"
+        return
+      fi
+    done
+  fi
+  if (( ${#TARGETS[@]} == 1 )); then
+    echo "$PWD"
+    return
+  fi
 }
 
 # ──────────────────────────────────────────────────────────
@@ -87,7 +106,7 @@ check_prereqs() {
   local ok=true
   for name in "${TARGETS[@]}"; do
     name="$(echo "$name" | xargs)"
-    local spec_dir="${CASE_STUDIES_DIR}/${name}/spec"
+    local spec_dir="$(get_work_dir "$name")/spec"
     local repo_dir
     repo_dir="$(find_repo_dir "$name")"
 
@@ -117,7 +136,7 @@ check_prereqs() {
     fi
 
     # Warn if traces don't exist (not fatal — agent can adjust instrumentation)
-    local traces_dir="${CASE_STUDIES_DIR}/${name}/traces"
+    local traces_dir="$(get_work_dir "$name")/traces"
     local trace_count=0
     [[ -d "$traces_dir" ]] && trace_count=$(find "$traces_dir" -name "*.ndjson" 2>/dev/null | wc -l)
     if [[ $trace_count -gt 0 ]]; then
@@ -136,7 +155,7 @@ check_prereqs() {
 # ──────────────────────────────────────────────────────────
 generate_prompt() {
   local name="$1" repo_dir="$2"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir="$(get_work_dir "$name")"
   local spec_dir="${work_dir}/spec"
 
   cat <<PROMPT_EOF
@@ -164,6 +183,8 @@ It delegates to two sub-skills (read these too):
   ${SPECULA_ROOT}/.claude/skills/tla-trace-workflow/guide.md
   ${SPECULA_ROOT}/.claude/skills/tla-checking-workflow/guide.md
 
+Determine whether the target is Category A or Category B from \`${work_dir}/modeling-brief.md\`, the trace layout, and the instrumentation spec before debugging. Do not assume linear single-file traces for concurrent systems.
+
 ## Pre-step: Verify harness and traces
 
 Harness and traces should already exist from Phase 2.5 (harness generation). Verify:
@@ -178,6 +199,7 @@ If instrumentation adjustments are needed during validation, read \`harness/INST
 2. The implementation is ground truth. When spec and implementation disagree, the spec is wrong (unless it's a real bug).
 3. For Case C (real bug found): STOP and document it clearly. Do not "fix" real bugs.
 4. For abstraction gaps: document them and make a pragmatic choice, then continue.
+5. If the system is Category B, preserve the partial-order/timebox validation model. Do not "simplify" it into a linear trace workflow just to make validation easier.
 PROMPT_EOF
 
   # Inject per-target extra prompt if present
@@ -195,7 +217,7 @@ PROMPT_EOF
 # ──────────────────────────────────────────────────────────
 launch_agent() {
   local name="$1" prompt="$2"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir="$(get_work_dir "$name")"
   local log_file="${work_dir}/spec-validation.log"
   local prompt_file="${work_dir}/.spec-validation-prompt.md"
 
@@ -268,14 +290,14 @@ main() {
 
     launch_agent "$name" "$prompt"
     if ! $DRY_RUN; then
-      running_pids+=("$(cat "${CASE_STUDIES_DIR}/${name}/spec-validation.pid")")
+      running_pids+=("$(cat "$(get_work_dir "$name")/spec-validation.pid")")
     fi
     echo ""
   done
 
   if ! $DRY_RUN; then
     echo "[$(date '+%H:%M:%S')] All agents launched. Waiting..."
-    echo "  Monitor: tail -f ${CASE_STUDIES_DIR}/*/spec-validation.log"
+    echo "  Monitor: tail -f ${PWD}/*/.specula-output/spec-validation.log"
     echo ""
     wait
     echo "[$(date '+%H:%M:%S')] All agents completed."
@@ -288,7 +310,7 @@ main() {
   echo "========================================"
   for name in "${TARGETS[@]}"; do
     name="$(echo "$name" | xargs)"
-    local spec_dir="${CASE_STUDIES_DIR}/${name}/spec"
+    local spec_dir="$(get_work_dir "$name")/spec"
     local changelog="${spec_dir}/changelog.md"
 
     local status="(check log)"

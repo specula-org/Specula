@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 #
-# Batch launcher: spawn one Claude Code agent per target system for code analysis.
+# Batch launcher: spawn one agent per target system for code analysis.
 # Each agent follows the code-analysis skill methodology and produces a modeling brief.
 #
 # Usage:
 #   bash scripts/launch/launch_code_analysis.sh [options] "name|github|lang|reference" [...]
 #
-# Example:
-#   bash scripts/launch/launch_code_analysis.sh \
+# Single-target (run from your project directory):
+#   cd my-project
+#   bash ~/Specula/scripts/launch/launch_code_analysis.sh "myproject|me/myproject|Go|Raft"
+#
+# Batch (run from a directory containing multiple targets):
+#   cd case-studies
+#   bash ../scripts/launch/launch_code_analysis.sh \
 #     "braft|brpc/braft|C++|Raft (Ongaro 2014)" \
-#     "sofa-jraft|sofastack/sofa-jraft|Java|Raft (Ongaro 2014)" \
-#     "dragonboat|lni/dragonboat|Go|Raft (Ongaro 2014)"
+#     "sofa-jraft|sofastack/sofa-jraft|Java|Raft (Ongaro 2014)"
 #
 # Options:
 #   --dry-run           Print commands without executing
@@ -18,22 +22,19 @@
 #   --max-parallel=N    Max concurrent agents (default: 1)
 #   --max-turns=N       Max agent turns (default: 0 = unlimited)
 #   --agent=NAME        Agent adapter to use (default: claude-code)
-#
-# Prerequisites:
-#   - claude CLI installed and authenticated
-#   - gh CLI installed and authenticated
-#   - Repos cloned at case-studies/<name>/artifact/<repo>/
+#   --artifact=PATH     Source code path (default: $PWD for single target,
+#                       $PWD/<name>/artifact/<repo>/ for batch)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPECULA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
 MAX_PARALLEL=1
 MAX_TURNS=0
 DRY_RUN=false
 CHECK_ONLY=false
 AGENT="claude-code"
+ARTIFACT=""
 TARGETS=()
 
 # ──────────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ for arg in "$@"; do
     --max-parallel=*) MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*) MAX_TURNS="${arg#*=}" ;;
     --agent=*) AGENT="${arg#*=}" ;;
+    --artifact=*) ARTIFACT="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -56,9 +58,7 @@ for arg in "$@"; do
 done
 
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
-  echo "Usage: $0 [options] \"name|github|lang|reference\" [...]"
-  echo "Run $0 --help for details."
-  exit 1
+  TARGETS+=("$(basename "$PWD")")
 fi
 
 ADAPTER="$SCRIPT_DIR/adapters/${AGENT}.sh"
@@ -68,18 +68,42 @@ if [[ ! -f "$ADAPTER" ]]; then
 fi
 
 # ──────────────────────────────────────────────────────────
-# Find artifact repo directory
+# Path helpers
 # ──────────────────────────────────────────────────────────
+
+# Work directory: .specula-output under $PWD (single) or $PWD/<name> (batch)
+get_work_dir() {
+  local name="$1"
+  if (( ${#TARGETS[@]} == 1 )); then
+    echo "$PWD/.specula-output"
+  else
+    echo "$PWD/${name}/.specula-output"
+  fi
+}
+
+# Find source code directory
 find_repo_dir() {
   local name="$1"
-  local artifact_dir="${CASE_STUDIES_DIR}/${name}/artifact"
-  [[ ! -d "$artifact_dir" ]] && return
-  for d in "$artifact_dir"/*/; do
-    if [[ -d "${d}.git" || -f "${d}.git" ]]; then
-      echo "$d"
-      return
-    fi
-  done
+  # Explicit --artifact flag takes priority
+  if [[ -n "$ARTIFACT" ]]; then
+    echo "$ARTIFACT"
+    return
+  fi
+  # Batch: look for artifact/<repo>/ under $PWD/<name>/
+  local artifact_dir="$PWD/${name}/artifact"
+  if [[ -d "$artifact_dir" ]]; then
+    for d in "$artifact_dir"/*/; do
+      if [[ -d "${d}.git" || -f "${d}.git" ]]; then
+        echo "$d"
+        return
+      fi
+    done
+  fi
+  # Single target: source is $PWD
+  if (( ${#TARGETS[@]} == 1 )); then
+    echo "$PWD"
+    return
+  fi
 }
 
 # ──────────────────────────────────────────────────────────
@@ -97,7 +121,7 @@ check_repos() {
       commits=$(cd "$repo_dir" && git rev-list --count HEAD 2>/dev/null || echo "?")
       echo "  OK  ${name} (${commits} commits)"
     else
-      echo "  MISSING  ${name} — expected at ${CASE_STUDIES_DIR}/${name}/artifact/<repo>/"
+      echo "  MISSING  ${name} — use --artifact=<path> or place repo at ${name}/artifact/<repo>/"
       ok=false
     fi
   done
@@ -109,7 +133,8 @@ check_repos() {
 # ──────────────────────────────────────────────────────────
 generate_prompt() {
   local name="$1" github_short="$2" language="$3" reference="$4" repo_dir="$5"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir
+  work_dir="$(get_work_dir "$name")"
 
   cat <<PROMPT_EOF
 # Code Analysis Task
@@ -131,6 +156,8 @@ Follow the **code-analysis** skill methodology. Read the skill guide at:
 Then read the reference files as needed:
   ${SPECULA_ROOT}/.claude/skills/code_analysis/references/bug-archaeology.md
   ${SPECULA_ROOT}/.claude/skills/code_analysis/references/deep-analysis.md
+  ${SPECULA_ROOT}/.claude/skills/code_analysis/references/distributed-analysis.md
+  ${SPECULA_ROOT}/.claude/skills/code_analysis/references/concurrent-analysis.md
   ${SPECULA_ROOT}/.claude/skills/code_analysis/references/modeling-brief-format.md
 
 And see the example:
@@ -140,7 +167,7 @@ And see the example:
 
 Execute all 4 phases in order:
 
-1. **Reconnaissance** — Build structural map of codebase
+1. **Reconnaissance** — Build structural map of codebase and classify the target as Category A (distributed/message-passing) or Category B (concurrent/lock-free/runtime)
 2. **Bug Archaeology** — Mine git history and GitHub issues/PRs for bugs
 3. **Deep Analysis** — Systematic code reading to find new issues
 4. **Modeling Brief** — Synthesize findings into modeling-brief.md
@@ -161,6 +188,8 @@ Write your outputs to:
 6. Bug Families over flat lists. Group by mechanism. 5 actionable families > 17 flat findings.
 7. Every finding must be classified: model-checkable, test-verifiable, or code-review-only.
 8. Thoroughness is non-negotiable. Analyze ALL bug-fix commits touching core files. Deeply read 30+ GitHub issues (full discussion threads). Report coverage statistics in the analysis report.
+9. Record the system category and justification in \`modeling-brief.md\`. Later phases should not have to rediscover whether this is Category A or B.
+10. After classification, follow the matching category-specific reference file under \`skills/code_analysis/references/\`. Do not force a distributed-system template onto a concurrent library, or vice versa.
 PROMPT_EOF
 
   # Inject per-target extra prompt if present
@@ -174,14 +203,16 @@ PROMPT_EOF
 }
 
 # ──────────────────────────────────────────────────────────
-# Launch a single Claude Code agent
+# Launch a single agent
 # ──────────────────────────────────────────────────────────
 launch_agent() {
   local name="$1" prompt="$2"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir
+  work_dir="$(get_work_dir "$name")"
   local log_file="${work_dir}/agent.log"
   local prompt_file="${work_dir}/.prompt.md"
 
+  mkdir -p "$work_dir"
   echo "$prompt" > "$prompt_file"
 
   echo "[$(date '+%H:%M:%S')] Launching agent: ${name}"
@@ -213,7 +244,7 @@ main() {
   echo "Checking repositories..."
   if ! check_repos; then
     echo ""
-    echo "ERROR: Some repositories are missing. Clone them first."
+    echo "ERROR: Some repositories are missing. Use --artifact=<path> or place repos under <name>/artifact/<repo>/."
     exit 1
   fi
   echo ""
@@ -254,14 +285,13 @@ main() {
 
     launch_agent "$name" "$prompt"
     if ! $DRY_RUN; then
-      running_pids+=("$(cat "${CASE_STUDIES_DIR}/${name}/agent.pid")")
+      running_pids+=("$(cat "$(get_work_dir "$name")/agent.pid")")
     fi
     echo ""
   done
 
   if ! $DRY_RUN; then
     echo "[$(date '+%H:%M:%S')] All agents launched. Waiting..."
-    echo "  Monitor: tail -f ${CASE_STUDIES_DIR}/*/agent.log"
     echo ""
     wait
     echo "[$(date '+%H:%M:%S')] All agents completed."
@@ -275,8 +305,10 @@ main() {
   for target in "${TARGETS[@]}"; do
     IFS='|' read -r name _ _ _ <<< "$target"
     name="$(echo "$name" | xargs)"
-    local brief="${CASE_STUDIES_DIR}/${name}/modeling-brief.md"
-    local report="${CASE_STUDIES_DIR}/${name}/analysis-report.md"
+    local wdir
+    wdir="$(get_work_dir "$name")"
+    local brief="${wdir}/modeling-brief.md"
+    local report="${wdir}/analysis-report.md"
     if [[ -f "$brief" ]]; then
       local lines
       lines=$(wc -l < "$brief")

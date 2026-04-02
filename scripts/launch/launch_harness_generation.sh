@@ -9,6 +9,7 @@
 # Example:
 #   bash scripts/launch/launch_harness_generation.sh cometbft
 #   bash scripts/launch/launch_harness_generation.sh braft sofa-jraft dragonboat
+#   bash scripts/launch/launch_harness_generation.sh --artifact=/path/to/repo myproject
 #
 # Options:
 #   --dry-run           Print commands without executing
@@ -16,23 +17,24 @@
 #   --max-parallel=N    Max concurrent agents (default: 1)
 #   --max-turns=N       Max agent turns (default: 0 = unlimited)
 #   --agent=NAME        Agent adapter to use (default: claude-code)
+#   --artifact=PATH     Explicit path to artifact repo (overrides auto-detection)
 #
 # Prerequisites:
 #   - claude CLI installed and authenticated
 #   - Phase 2 complete: spec/base.tla, spec/Trace.tla, spec/instrumentation-spec.md
-#   - Source repo cloned at case-studies/<name>/artifact/<repo>/
+#   - Source repo at <name>/artifact/<repo>/ or specified via --artifact
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPECULA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
 SKILL_DIR="$SPECULA_ROOT/.claude/skills/harness-generation"
 MAX_PARALLEL=1
 MAX_TURNS=0
 DRY_RUN=false
 CHECK_ONLY=false
 AGENT="claude-code"
+ARTIFACT=""
 TARGETS=()
 
 # ──────────────────────────────────────────────────────────
@@ -45,6 +47,7 @@ for arg in "$@"; do
     --max-parallel=*) MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*) MAX_TURNS="${arg#*=}" ;;
     --agent=*) AGENT="${arg#*=}" ;;
+    --artifact=*) ARTIFACT="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -55,9 +58,7 @@ for arg in "$@"; do
 done
 
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
-  echo "Usage: $0 [options] name [name ...]"
-  echo "Run $0 --help for details."
-  exit 1
+  TARGETS+=("$(basename "$PWD")")
 fi
 
 ADAPTER="$SCRIPT_DIR/adapters/${AGENT}.sh"
@@ -67,18 +68,39 @@ if [[ ! -f "$ADAPTER" ]]; then
 fi
 
 # ──────────────────────────────────────────────────────────
+# Resolve working directory for a target
+# ──────────────────────────────────────────────────────────
+get_work_dir() {
+  local name="$1"
+  if (( ${#TARGETS[@]} == 1 )); then
+    echo "$PWD/.specula-output"
+  else
+    echo "$PWD/${name}/.specula-output"
+  fi
+}
+
+# ──────────────────────────────────────────────────────────
 # Find artifact repo directory
 # ──────────────────────────────────────────────────────────
 find_repo_dir() {
   local name="$1"
-  local artifact_dir="${CASE_STUDIES_DIR}/${name}/artifact"
-  [[ ! -d "$artifact_dir" ]] && return
-  for d in "$artifact_dir"/*/; do
-    if [[ -d "${d}.git" || -f "${d}.git" ]]; then
-      echo "$d"
-      return
-    fi
-  done
+  if [[ -n "$ARTIFACT" ]]; then
+    echo "$ARTIFACT"
+    return
+  fi
+  local artifact_dir="$PWD/${name}/artifact"
+  if [[ -d "$artifact_dir" ]]; then
+    for d in "$artifact_dir"/*/; do
+      if [[ -d "${d}.git" || -f "${d}.git" ]]; then
+        echo "$d"
+        return
+      fi
+    done
+  fi
+  if (( ${#TARGETS[@]} == 1 )); then
+    echo "$PWD"
+    return
+  fi
 }
 
 # ──────────────────────────────────────────────────────────
@@ -88,7 +110,7 @@ check_prereqs() {
   local ok=true
   for name in "${TARGETS[@]}"; do
     name="$(echo "$name" | xargs)"
-    local spec_dir="${CASE_STUDIES_DIR}/${name}/spec"
+    local spec_dir="$(get_work_dir "$name")/spec"
     local repo_dir
     repo_dir="$(find_repo_dir "$name")"
 
@@ -126,7 +148,7 @@ check_prereqs() {
 # ──────────────────────────────────────────────────────────
 generate_prompt() {
   local name="$1" repo_dir="$2"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir="$(get_work_dir "$name")"
   local spec_dir="${work_dir}/spec"
 
   cat <<PROMPT_EOF
@@ -186,7 +208,7 @@ PROMPT_EOF
 # ──────────────────────────────────────────────────────────
 launch_agent() {
   local name="$1" prompt="$2"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir="$(get_work_dir "$name")"
   local log_file="${work_dir}/harness-gen.log"
   local prompt_file="${work_dir}/.harness-gen-prompt.md"
 
@@ -259,14 +281,14 @@ main() {
 
     launch_agent "$name" "$prompt"
     if ! $DRY_RUN; then
-      running_pids+=("$(cat "${CASE_STUDIES_DIR}/${name}/harness-gen.pid")")
+      running_pids+=("$(cat "$(get_work_dir "$name")/harness-gen.pid")")
     fi
     echo ""
   done
 
   if ! $DRY_RUN; then
     echo "[$(date '+%H:%M:%S')] All agents launched. Waiting..."
-    echo "  Monitor: tail -f ${CASE_STUDIES_DIR}/*/harness-gen.log"
+    echo "  Monitor: tail -f */.specula-output/harness-gen.log"
     echo ""
     wait
     echo "[$(date '+%H:%M:%S')] All agents completed."
@@ -279,7 +301,7 @@ main() {
   echo "========================================"
   for name in "${TARGETS[@]}"; do
     name="$(echo "$name" | xargs)"
-    local work_dir="${CASE_STUDIES_DIR}/${name}"
+    local work_dir="$(get_work_dir "$name")"
     local harness_dir="${work_dir}/harness"
     local traces_dir="${work_dir}/traces"
 

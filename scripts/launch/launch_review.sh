@@ -12,15 +12,23 @@
 #   validation  — Review validation results (validation-report.md)
 #
 # Output:
-#   case-studies/<name>/review-<phase>.md
+#   .specula-output/review-<phase>.md
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPECULA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
 AGENT="claude-code"
 TARGETS=()
+
+get_work_dir() {
+  local name="$1"
+  if (( ${#TARGETS[@]} == 1 )); then
+    echo "$PWD/.specula-output"
+  else
+    echo "$PWD/${name}/.specula-output"
+  fi
+}
 
 # ──────────────────────────────────────────────────────────
 # Parse arguments
@@ -55,7 +63,7 @@ fi
 # ──────────────────────────────────────────────────────────
 generate_analysis_review_prompt() {
   local name="$1"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir="$(get_work_dir "$name")"
   cat <<PROMPT
 # Code Analysis Review: ${name}
 
@@ -109,7 +117,7 @@ PROMPT
 
 generate_specgen_review_prompt() {
   local name="$1"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir="$(get_work_dir "$name")"
   local spec_dir="${work_dir}/spec"
   cat <<PROMPT
 # Spec Generation Review: ${name}
@@ -172,7 +180,7 @@ PROMPT
 
 generate_validation_review_prompt() {
   local name="$1"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir="$(get_work_dir "$name")"
   local spec_dir="${work_dir}/spec"
   cat <<PROMPT
 # Validation Review: ${name}
@@ -216,7 +224,7 @@ PROMPT
 # ──────────────────────────────────────────────────────────
 launch_review() {
   local name="$1" phase="$2"
-  local work_dir="${CASE_STUDIES_DIR}/${name}"
+  local work_dir="$(get_work_dir "$name")"
   local spec_dir="${work_dir}/spec"
 
   # specgen/validation logs go under spec/ to match pipeline summary expectations
@@ -257,7 +265,7 @@ main() {
   for name in "${TARGETS[@]}"; do
     name="$(echo "$name" | xargs)"
     launch_review "$name" "$PHASE"
-    local pid_dir="${CASE_STUDIES_DIR}/${name}"
+    local pid_dir="$(get_work_dir "$name")"
     case "$PHASE" in
       specgen|validation) pid_dir="${pid_dir}/spec" ;;
     esac
@@ -278,9 +286,9 @@ main() {
     name="$(echo "$name" | xargs)"
     local review_file
     case "$PHASE" in
-      analysis)   review_file="${CASE_STUDIES_DIR}/${name}/review-analysis.md" ;;
-      specgen)    review_file="${CASE_STUDIES_DIR}/${name}/spec/review-specgen.md" ;;
-      validation) review_file="${CASE_STUDIES_DIR}/${name}/spec/review-validation.md" ;;
+      analysis)   review_file="$(get_work_dir "$name")/review-analysis.md" ;;
+      specgen)    review_file="$(get_work_dir "$name")/spec/review-specgen.md" ;;
+      validation) review_file="$(get_work_dir "$name")/spec/review-validation.md" ;;
     esac
 
     if [[ -f "$review_file" ]]; then
