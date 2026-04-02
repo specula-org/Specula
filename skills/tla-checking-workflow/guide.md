@@ -269,3 +269,7 @@ Returns: `violation_name`, `trace_length`, `actions`, `action_frequency`, `stati
 - **tla-trace-workflow** — Validates implementation traces against TLA+ specs (complementary to model checking)
 - **spec-generation** — Produces the TLA+ specs that this workflow checks
 - **code-analysis** — Analyzes system implementation to produce modeling briefs
+
+## Additional References
+
+For additional examples beyond the built-in ones, see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies across distributed systems, consensus protocols, and concurrent data structures.

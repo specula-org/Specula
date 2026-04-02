@@ -12,9 +12,26 @@ Investigate a system implementation to find bugs. Some bugs can be confirmed dir
 
 ---
 
+## Step 0: Classify System Category
+
+Before archaeology or deep analysis, classify the target as one of:
+
+- **Category A (Distributed / Message-Passing)** — network RPC, disk I/O, cluster membership, protocol state machines
+- **Category B (Concurrent / Lock-Free / Runtime)** — CAS loops, atomics, thread handoff, memory reclamation, ownership transfer, async cancellation
+
+Record the category and a brief justification in `modeling-brief.md`.
+
+After classifying:
+
+- read `references/deep-analysis.md` for the shared methodology
+- read `references/distributed-analysis.md` for **Category A**
+- read `references/concurrent-analysis.md` for **Category B**
+
+---
+
 ## Phase 1: Reconnaissance
 
-**Goal**: Build a structural map — core modules, scale, concurrency model, atomicity boundaries.
+**Goal**: Build a structural map — core modules, scale, concurrency model, and atomicity boundaries.
 
 ---
 
@@ -81,13 +98,16 @@ Every finding MUST be verified: re-read exact code lines, check for compensating
 6. **Evidence-based claims only.** Show code, git commits, issue discussions, or code path inconsistencies.
 7. **Bug Families over flat lists.** Group by mechanism. 5 actionable families > 17 flat findings.
 8. **Thoroughness is non-negotiable.** Do not skip issues, truncate commit analysis, or sample instead of scanning. The analysis report should document coverage statistics (total commits analyzed, issues deeply read, false positives excluded).
+9. **Classify Category A vs B explicitly.** Carry that decision into the Modeling Brief. Later phases should not have to rediscover it.
 
 ---
 
 ## Reference Files
 
 - **`references/bug-archaeology.md`** — Git mining and issue verification methodology
-- **`references/deep-analysis.md`** — Code analysis patterns (path inconsistency, atomicity, missing guards)
+- **`references/deep-analysis.md`** — Shared deep-analysis methodology
+- **`references/distributed-analysis.md`** — Category A (distributed / message-passing) analysis patterns
+- **`references/concurrent-analysis.md`** — Category B (concurrent / lock-free / runtime) analysis patterns
 - **`references/modeling-brief-format.md`** — Standard format for the handoff document
 - **`examples/hashicorp-raft-modeling-brief.md`** — Complete real-world example
 
@@ -95,3 +115,7 @@ Every finding MUST be verified: re-read exact code lines, check for compensating
 
 - **spec-generation** — Next phase: produces TLA+ specs from the Modeling Brief
 - **tla-trace-workflow** — Validates the trace spec against real traces
+
+## Additional References
+
+For additional examples beyond the built-in ones, see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies across distributed systems, consensus protocols, and concurrent data structures.

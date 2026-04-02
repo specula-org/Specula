@@ -278,3 +278,7 @@ See the [Specula case-studies repository](https://github.com/specula-org/specula
 
 - **spec-generation** — Previous phase: produces `instrumentation-spec.md` that drives this workflow
 - **validation-workflow** — Next phase: uses the traces to validate the spec
+
+## Additional References
+
+For additional examples beyond the built-in ones, see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies across distributed systems, consensus protocols, and concurrent data structures.

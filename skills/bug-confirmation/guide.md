@@ -113,3 +113,7 @@ When reporting REPRODUCTION FAILED after exhausting the escalation ladder:
 - The confirmed-bugs.md must include **actual test output** (copy-paste) as evidence, not just a status label
 - If new bugs exist but zero reproduction tests exist, the confirmation is INVALID
 - Known/historical bugs do not require reproduction files
+
+## Additional References
+
+For additional examples beyond the built-in ones, see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies across distributed systems, consensus protocols, and concurrent data structures.

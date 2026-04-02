@@ -19,7 +19,7 @@ Before debugging, determine which trace pattern is in use:
 - **Category A (Distributed)**: Single-file trace, cursor variable `l`, linear matching. This is the standard case described below.
 - **Category B (Concurrent/Lock-Free)**: Per-thread traces, cursor variable `pc` (per-thread), `ViablePIDs` partial-order search. See note at the end of each phase for Category B differences.
 
-Most case studies are Category A. Category B applies to DPDK, arc-swap, libomp, crossbeam-epoch and similar ns-level concurrent systems. See `harness-generation` skill's `guide.md` Step 0 for classification.
+Determine the category from `modeling-brief.md`, `instrumentation-spec.md`, and the trace file layout. Do **not** assume Category A just because the workflow historically focused on distributed systems. Category B applies to DPDK, arc-swap, libomp, crossbeam-epoch, papaya, and similar ns-level concurrent systems. See `harness-generation` skill's `guide.md` Step 0 for classification.
 
 ---
 
@@ -149,3 +149,7 @@ The user may request not to clean up the generated files. Otherwise, run `clean_
 
 - **spec-generation** — Previous phase: produces the TLA+ specs
 - **code-analysis** — First phase: produces the Modeling Brief
+
+## Additional References
+
+For additional examples beyond the built-in ones, see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies across distributed systems, consensus protocols, and concurrent data structures.

@@ -19,13 +19,33 @@ Bug-family driven modeling: each spec extension exists because a Bug Family in t
 
 ---
 
+## Step 0: Determine System Category
+
+Before writing any spec files, read `modeling-brief.md` and determine whether the target is:
+
+- **Category A (Distributed / Message-Passing)**
+- **Category B (Concurrent / Lock-Free / Runtime)**
+
+This should already be recorded in the brief. If it is missing, infer it from the source code and write the answer down before proceeding.
+
+For **Category B** systems, do **not** force a message-passing template onto the code. The spec should usually center on:
+
+- per-thread / per-task program counters
+- cached snapshots vs current shared state
+- linearization points
+- memory-visibility bridges across variables
+- retire / reclaim state
+- ownership transfer and wakeup paths
+
+---
+
 ## Phase 1: Base Spec
 
 **Goal**: Write the core TLA+ specification with bug-family driven extensions.
 
 1. **Read the Modeling Brief** — note each Bug Family's mechanism, suggested variables/actions, priority
 2. **Read source code (targeted)** — only the functions referenced in the brief, not the entire codebase
-3. **Design variables** — standard protocol variables + extension variables motivated by Bug Families
+3. **Design variables** — standard protocol variables (Category A) or concurrency variables (Category B: thread-local snapshots, reclamation state, handoff flags, cached views) + extension variables motivated by Bug Families
 4. **Write actions** — name after implementation functions, follow code's control flow faithfully, annotate every logic block with `file:line`
 5. **Write invariants** — standard safety properties + extension invariants targeting Bug Families + structural invariants
 6. **Write Init and Next**
@@ -88,6 +108,7 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 7. **Name actions after implementation functions.** Enables cross-referencing with code.
 8. **Silent actions must be tightly constrained.** Unconstrained silent actions cause state space explosion.
 9. **MC spec bounds fault-injection, not normal operations.**
+10. **For Category B, split operations at real semantic boundaries.** If code has separate read/confirm, reserve/publish, retire/reclaim, or signal/complete windows, do not collapse them into one action just because the public API looks atomic.
 
 ---
 
@@ -104,3 +125,7 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 - **code_analysis** — Previous phase: produces the Modeling Brief
 - **harness-generation** — Next phase (2.5): instruments the system and collects traces using `instrumentation-spec.md`
 - **validation-workflow** — Phase 3: validates the spec using traces and model checking
+
+## Additional References
+
+For additional examples beyond the built-in ones, see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies across distributed systems, consensus protocols, and concurrent data structures.

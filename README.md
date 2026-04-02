@@ -120,6 +120,10 @@ bash ~/Specula/scripts/launch/launch_spec_validation.sh
 bash ~/Specula/scripts/launch/launch_bug_confirmation.sh
 ```
 
+## Case Studies
+
+Specula ships with built-in examples covering CometBFT, braft, Substrate GRANDPA, DPDK rte_ring, and libgomp. For additional reference, clone the [case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies. Placing it alongside your project gives the agent more examples to learn from.
+
 ## Note
 
 Specula has evolved significantly over the past months. Specula-v1 was a four-step code-to-model synthesis tool (which is [archived](../../tree/archive/v1)).
