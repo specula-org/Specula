@@ -30,7 +30,35 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
-setup_skills_root_symlink() {
+# Prompt user with a yes/no question. Returns 0 for yes, 1 for no.
+ask_yn() {
+  local prompt="$1"
+  local answer
+  while true; do
+    read -rp "$(echo -e "${BLUE}[?]${NC} ${prompt} (y/n): ")" answer
+    case "$answer" in
+      [Yy]|[Yy][Ee][Ss]) return 0 ;;
+      [Nn]|[Nn][Oo]) return 1 ;;
+      *) echo "  Please answer y or n." ;;
+    esac
+  done
+}
+
+# Prompt user to choose global or local install. Prints "global" or "local".
+ask_scope() {
+  local agent_name="$1"
+  local answer
+  while true; do
+    read -rp "$(echo -e "${BLUE}[?]${NC} Install ${agent_name} skills globally (~/) or locally (project only)? (global/local): ")" answer
+    case "$answer" in
+      [Gg]|[Gg][Ll][Oo][Bb][Aa][Ll]) echo "global"; return 0 ;;
+      [Ll]|[Ll][Oo][Cc][Aa][Ll]) echo "local"; return 0 ;;
+      *) echo "  Please answer global or local." ;;
+    esac
+  done
+}
+
+setup_skills_symlink() {
   local target_link="$1"
   local skills_source="$2"
   local parent_dir
@@ -60,10 +88,11 @@ setup_claude_mcp() {
   local mcp_name="$2"
   local python_path="$3"
   local server_path="$4"
+  local scope="$5"
 
-  print_status "Configuring $mcp_name MCP for Claude Code..."
+  print_status "Configuring $mcp_name MCP for Claude Code (scope: $scope)..."
   set +e
-  claude mcp add --transport stdio --scope project \
+  claude mcp add --transport stdio --scope "$scope" \
     "$mcp_name" \
     --env "SPECULA_ROOT=$project_root" \
     -- \
@@ -73,10 +102,10 @@ setup_claude_mcp() {
   set -e
 
   if [[ $rc -eq 0 ]]; then
-    print_success "Claude MCP configured: $mcp_name"
+    print_success "Claude MCP configured: $mcp_name (scope: $scope)"
   else
     print_warning "Claude MCP auto-config failed. Run manually:"
-    echo "  claude mcp add --transport stdio --scope project --env SPECULA_ROOT=$project_root $mcp_name -- $python_path $server_path"
+    echo "  claude mcp add --transport stdio --scope $scope --env SPECULA_ROOT=$project_root $mcp_name -- $python_path $server_path"
   fi
 }
 
@@ -150,24 +179,7 @@ build_cfa_jar() {
   print_success "CFA jar built"
 }
 
-setup_agent_mcps() {
-  local project_root="$1"
-  local mcp_name="$2"
-  local python_path="$3"
-  local server_path="$4"
-
-  if command_exists claude; then
-    setup_claude_mcp "$project_root" "$mcp_name" "$python_path" "$server_path"
-  else
-    print_warning "Claude CLI not found; skipping Claude MCP setup for $mcp_name"
-  fi
-
-  if command_exists codex; then
-    setup_codex_mcp "$project_root" "$mcp_name" "$python_path" "$server_path"
-  else
-    print_warning "Codex CLI not found; skipping Codex MCP setup for $mcp_name"
-  fi
-}
+# ─── Main ────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -185,11 +197,10 @@ INV_CHECKING_TOOL_VENV="$INV_CHECKING_TOOL_DIR/.venv"
 INV_CHECKING_TOOL_PYTHON="$INV_CHECKING_TOOL_VENV/bin/python"
 INV_CHECKING_TOOL_SERVER="$INV_CHECKING_TOOL_DIR/mcp_server.py"
 SKILLS_SOURCE="$PROJECT_ROOT/skills"
-CLAUDE_PROJECT_SKILLS_LINK="$PROJECT_ROOT/.claude/skills"
-CODEX_PROJECT_SKILLS_LINK="$PROJECT_ROOT/.agents/skills"
-COPILOT_SKILLS_LINK="$PROJECT_ROOT/.github/skills"
 
 print_status "Project root: $PROJECT_ROOT"
+
+# ─── Prerequisites ───────────────────────────────────────────────────────────
 
 if ! command_exists python3; then
   print_error "Python 3 is required but not found"
@@ -208,6 +219,8 @@ if ! command_exists pip3; then
   exit 1
 fi
 print_success "pip3 found"
+
+# ─── TLA+ JARs ──────────────────────────────────────────────────────────────
 
 mkdir -p "$PROJECT_ROOT/lib"
 
@@ -252,6 +265,8 @@ else
   print_warning "TLA+ verification command failed; check your Java/JAR setup"
 fi
 
+# ─── Python tool environments ────────────────────────────────────────────────
+
 setup_python_tool_env \
   "trace debugger" \
   "$TRACE_DEBUGGER_DIR" \
@@ -274,22 +289,82 @@ setup_python_tool_env \
   "$INV_CHECKING_TOOL_VENV" \
   "$INV_CHECKING_TOOL_PYTHON"
 
+# ─── Skills directory check ──────────────────────────────────────────────────
+
 if [[ ! -d "$SKILLS_SOURCE" ]]; then
   print_error "Skills directory not found: $SKILLS_SOURCE"
   exit 1
 fi
 
-setup_skills_root_symlink "$CLAUDE_PROJECT_SKILLS_LINK" "$SKILLS_SOURCE"
-setup_skills_root_symlink "$CODEX_PROJECT_SKILLS_LINK" "$SKILLS_SOURCE"
-setup_skills_root_symlink "$COPILOT_SKILLS_LINK" "$SKILLS_SOURCE"
+# ─── Agent setup (interactive) ───────────────────────────────────────────────
 
-setup_agent_mcps "$PROJECT_ROOT" "tracedebugger" "$TRACE_DEBUGGER_PYTHON" "$TRACE_DEBUGGER_SERVER"
-setup_agent_mcps "$PROJECT_ROOT" "spec_analyzer" "$SPEC_ANALYZER_PYTHON" "$SPEC_ANALYZER_SERVER"
-setup_agent_mcps "$PROJECT_ROOT" "inv_checking_tool" "$INV_CHECKING_TOOL_PYTHON" "$INV_CHECKING_TOOL_SERVER"
+echo ""
+print_status "Agent configuration"
+echo ""
 
-if ! command_exists claude && ! command_exists codex; then
-  print_warning "No supported agent CLI found. Configure skills and MCP manually after installing Claude Code, Codex, or Copilot CLI."
+# MCP server list (name, python path, server path)
+MCP_SERVERS=(
+  "tracedebugger|$TRACE_DEBUGGER_PYTHON|$TRACE_DEBUGGER_SERVER"
+  "spec_analyzer|$SPEC_ANALYZER_PYTHON|$SPEC_ANALYZER_SERVER"
+  "inv_checking_tool|$INV_CHECKING_TOOL_PYTHON|$INV_CHECKING_TOOL_SERVER"
+)
+
+# --- Claude Code ---
+echo -e "${BLUE}[1/3] Claude Code${NC}"
+if ask_yn "Install Specula for Claude Code?"; then
+  scope="$(ask_scope "Claude Code")"
+  if [[ "$scope" == "global" ]]; then
+    setup_skills_symlink "$HOME/.claude/skills" "$SKILLS_SOURCE"
+    for entry in "${MCP_SERVERS[@]}"; do
+      IFS='|' read -r mcp_name mcp_python mcp_server <<< "$entry"
+      setup_claude_mcp "$PROJECT_ROOT" "$mcp_name" "$mcp_python" "$mcp_server" "user"
+    done
+  else
+    setup_skills_symlink "$PROJECT_ROOT/.claude/skills" "$SKILLS_SOURCE"
+    for entry in "${MCP_SERVERS[@]}"; do
+      IFS='|' read -r mcp_name mcp_python mcp_server <<< "$entry"
+      setup_claude_mcp "$PROJECT_ROOT" "$mcp_name" "$mcp_python" "$mcp_server" "project"
+    done
+  fi
+else
+  print_status "Skipped Claude Code."
 fi
+echo ""
+
+# --- Codex ---
+echo -e "${BLUE}[2/3] Codex${NC}"
+if ask_yn "Install Specula for Codex?"; then
+  scope="$(ask_scope "Codex")"
+  if [[ "$scope" == "global" ]]; then
+    setup_skills_symlink "$HOME/.codex/skills" "$SKILLS_SOURCE"
+  else
+    setup_skills_symlink "$PROJECT_ROOT/.agents/skills" "$SKILLS_SOURCE"
+  fi
+  for entry in "${MCP_SERVERS[@]}"; do
+    IFS='|' read -r mcp_name mcp_python mcp_server <<< "$entry"
+    setup_codex_mcp "$PROJECT_ROOT" "$mcp_name" "$mcp_python" "$mcp_server"
+  done
+else
+  print_status "Skipped Codex."
+fi
+echo ""
+
+# --- Copilot CLI ---
+echo -e "${BLUE}[3/3] GitHub Copilot CLI${NC}"
+if ask_yn "Install Specula for GitHub Copilot CLI?"; then
+  scope="$(ask_scope "Copilot CLI")"
+  if [[ "$scope" == "global" ]]; then
+    setup_skills_symlink "$HOME/.github/skills" "$SKILLS_SOURCE"
+  else
+    setup_skills_symlink "$PROJECT_ROOT/.github/skills" "$SKILLS_SOURCE"
+  fi
+  print_warning "Copilot CLI MCP must be configured manually. See README for details."
+else
+  print_status "Skipped Copilot CLI."
+fi
+echo ""
+
+# ─── Done ────────────────────────────────────────────────────────────────────
 
 print_success "Setup completed."
 print_status "Trace debugger Python: $TRACE_DEBUGGER_PYTHON"
