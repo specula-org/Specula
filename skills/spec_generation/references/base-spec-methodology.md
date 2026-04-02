@@ -2,7 +2,7 @@
 
 How to write a TLA+ base spec from a Modeling Brief.
 
-> **Note**: Examples reference Raft (hashicorp/raft) as an illustrative case study. Adapt to your target system.
+> **Note**: Examples reference Raft (hashicorp/raft) as an illustrative case study. Adapt to your target system. For Category B systems, the right template is often thread-local state + shared memory windows, not messages and roles.
 
 ## Principle: Bug-Family Driven, Code-Faithful
 
@@ -16,6 +16,15 @@ Start from standard protocol variables, then add **extension variables** from Bu
 
 Group variables for UNCHANGED clauses (e.g., `serverVars`, `logVars`, `leaderVars`).
 
+For **Category B** systems, common extension variables include:
+
+- per-thread / per-task PC state
+- cached snapshots of shared pointers / indices / counters
+- reservation vs publication state
+- retire / reclaim queues or epochs
+- ownership-transfer flags
+- helping / fallback / wakeup state
+
 ## Action Design
 
 ### Naming
@@ -28,6 +37,8 @@ Split a single implementation function into multiple spec actions when:
 1. **Different code paths have different checks** — e.g., one response path checks `resp.Term` while another skips it
 2. **Non-atomic operations have crash windows** — e.g., persistence writes term then votedFor separately
 3. **Independent threads/goroutines have different properties** — e.g., heartbeat runs without disk access while replicate requires disk
+4. **A lock-free operation has separate visibility stages** — e.g., read snapshot -> confirm -> dereference, reserve -> write -> publish, retire -> reclaim
+5. **Ownership transfers across threads** — e.g., enqueue wakeup -> decrement counter -> complete, detach -> fulfill -> bottom-half finish
 
 ### Action Structure
 
@@ -55,10 +66,19 @@ Common patterns: log entry records with type fields, message bags (Send/Discard/
 
 Beyond standard faults (crash, message loss, network partition), the analysis report may reveal **system-specific fault injection** opportunities. Examples: disk IO blocking (heartbeat continues while replicate stalls), non-atomic persistence (crash between two disk writes), configuration change mid-election. Design fault-injection actions based on what the Bug Families identify, not just common fault categories.
 
+For **Category B** systems, common fault-injection actions include:
+
+- stale snapshot / stale head / stale epoch capture
+- skipped re-check after cached read
+- weakened memory-order bridge
+- premature reclaim / free
+- wakeup / unpark to the wrong waiter
+- completion ordering inversion during ownership transfer
+
 ## Crash and Recovery
 
 For non-atomic persistence: after crash, in-memory state reverts to persisted state (which may differ if a non-atomic persist was interrupted).
 
 ## Example
 
-See `case-studies/hashicorp-raft/scenarios/base/spec/hashiraft.tla` for a complete base spec with 5 extensions, full source line annotations, and action splitting.
+See `../examples/cometbft/base.tla` for a complete base spec with extensions, full source line annotations, and action splitting.

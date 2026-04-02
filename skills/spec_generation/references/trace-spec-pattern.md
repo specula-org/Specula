@@ -4,7 +4,7 @@ Template and methodology for writing trace validation specs.
 
 > **Note**: Examples reference Raft (hashicorp/raft) as an illustrative case study. Adapt event names, state fields, and action wrappers to your target system.
 
-> **Important**: There are two trace spec patterns depending on system category. See the harness-generation skill's `guide.md` Step 0 for classification.
+> **Important**: There are two trace spec patterns depending on system category. The category should already be recorded in `modeling-brief.md`; do not wait until harness generation to decide it.
 > - **Category A (Distributed/Message-Passing)**: Single-file linear trace. Use the standard pattern below.
 > - **Category B (Concurrent/Lock-Free)**: Per-thread timebox trace. Use the timebox pattern at the end of this document.
 
@@ -84,7 +84,7 @@ TraceInit must match the implementation's initial state, which may differ from t
 
 ## Example
 
-See `case-studies/hashicorp-raft/scenarios/base/spec/Tracehashiraft.tla` and `Tracehashiraft.cfg` for a complete trace spec with 11 action wrappers, 3 silent actions, bootstrap state, and strong/weak validation.
+See `../examples/cometbft/Trace.tla` for a complete trace spec with action wrappers, silent actions, bootstrap state, and strong/weak validation.
 
 ---
 
@@ -189,7 +189,7 @@ Timebox traces create branching at every overlapping interval pair. Control via:
 
 See `harness-generation` skill's `references/concurrent-timebox-guide.md` for the full Trace.tla template, preprocessor script, and instrumentation patterns.
 
-See `case-studies/crossbeam-deque/` for a complete Category B case study with ViablePIDs and 4 validated traces.
+See `../examples/dpdk-ring/` for a complete Category B case study with ViablePIDs and validated traces.
 
 ### Related Work
 

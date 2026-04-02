@@ -2,7 +2,7 @@
 
 The instrumentation spec captures the mapping between TLA+ spec actions and source code locations. It serves as a "context handoff" — the spec generation agent's knowledge distilled into a document that an instrumentation agent (or human) can use to generate the actual code patches.
 
-> **Note**: Adapt to your target system. See `case-studies/hashicorp-raft/scenarios/base/patches/instrumentation.patch` for a complete real-world example.
+> **Note**: Adapt to your target system. See `../examples/cometbft/instrumentation-spec.md` for a complete real-world example.
 
 ## Document Structure
 

@@ -191,8 +191,8 @@
 
 ## 7. Reference Pointers
 
-- **Full analysis report**: `case-studies/hashicorp-raft/analysis-report.md`
-- **Bug reports**: `case-studies/hashicorp-raft/scenarios/base/bugs/`
+- **Full analysis report**: See the cometbft or dpdk-ring modeling brief examples in this directory for additional reference.
+- **Bug reports**: See the cometbft or dpdk-ring modeling brief examples in this directory for additional reference.
 - **Key source files**:
   - `artifact/raft/raft.go` (core state machine, 2200 lines)
   - `artifact/raft/replication.go` (replication + heartbeat, 660 lines)

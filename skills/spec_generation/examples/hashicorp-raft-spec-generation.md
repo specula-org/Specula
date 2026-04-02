@@ -129,8 +129,8 @@ Invariants (6):
 
 ## Reference Files
 
-- Base spec: `case-studies/hashicorp-raft/scenarios/base/spec/hashiraft.tla`
-- MC spec: `case-studies/hashicorp-raft/scenarios/base/spec/MChashiraft.tla`
-- Trace spec: `case-studies/hashicorp-raft/scenarios/base/spec/Tracehashiraft.tla`
-- Instrumentation: `case-studies/hashicorp-raft/scenarios/base/patches/instrumentation.patch`
+- Base spec: `cometbft/base.tla`
+- MC spec: `cometbft/MC.tla`
+- Trace spec: `cometbft/Trace.tla`
+- Instrumentation: `cometbft/instrumentation-spec.md`
 - Modeling Brief: `skills/code_analysis/examples/hashicorp-raft-modeling-brief.md`

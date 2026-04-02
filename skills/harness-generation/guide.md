@@ -269,8 +269,10 @@ Keep it short and practical — the Phase 3 agent needs to make small adjustment
 
 ## Examples
 
-- **Rust (aptosbft)**: `case-studies/aptosbft/harness/` — copy-and-patch approach, Rust trace module + test scenario
-- **Go (cometbft)**: `case-studies/cometbft/harness/` — Go test scenarios with preprocessing
+- **Rust (aptosbft)**: copy-and-patch approach, Rust trace module + test scenario
+- **Go (cometbft)**: Go test scenarios with preprocessing
+
+See the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) for full harness examples.
 
 ## Related Skills
 

@@ -2,7 +2,7 @@
 
 Template for `spec/bug-report.md`, produced after spec convergence during bug hunting.
 
-See `case-studies/cometbft/bug-report.md` for a complete real-world example.
+See `../examples/cometbft-bug-report.md` for a complete real-world example.
 
 ## Template
 

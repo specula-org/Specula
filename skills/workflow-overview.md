@@ -97,7 +97,7 @@ Bug Families are the organizing concept. Group by mechanism ("non-atomic persist
 | `traces/*.ndjson` | Recorded execution traces |
 | `harness/INSTRUMENTATION.md` | Guide for adjusting instrumentation |
 
-For MongoDB case studies: log parsing approach (no C++ recompilation needed). See `case-studies/mongodb-shared-harness.md`.
+For MongoDB targets: log parsing approach (no C++ recompilation needed). See the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) for a MongoDB shared harness example.
 
 ---
 

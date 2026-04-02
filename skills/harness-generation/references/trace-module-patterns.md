@@ -26,11 +26,13 @@ Every emitted line must follow this envelope:
 
 ### Examples by Language
 
+These examples are in the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies). Clone it for full reference.
+
 | Language | Case Study | Trace Module | Key Files |
 |----------|-----------|--------------|-----------|
-| Rust | aptosbft | `case-studies/aptosbft/harness/src/tla_trace.rs` | trace module + test scenario + apply.sh + run.sh |
-| Go | cometbft | `case-studies/cometbft/artifact/cometbft/` (instrumented in-place) | harness/run.sh + harness/preprocess_trace.py |
-| C++ | braft | `case-studies/braft/artifact/braft/` (trace_logger.cpp) | instrumented in artifact source |
+| Rust | aptosbft | `aptosbft/harness/src/tla_trace.rs` | trace module + test scenario + apply.sh + run.sh |
+| Go | cometbft | `cometbft/artifact/cometbft/` (instrumented in-place) | harness/run.sh + harness/preprocess_trace.py |
+| C++ | braft | `braft/artifact/braft/` (trace_logger.cpp) | instrumented in artifact source |
 
 **Start by reading the example closest to your target language**, then adapt the pattern to your system.
 
@@ -64,11 +66,13 @@ emit(event_name, tid, t_start, t_end, state, args)
 
 ### Examples by Language
 
+These examples are in the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies). Clone it for full reference.
+
 | Language | Case Study | Trace Module | Key Files |
 |----------|-----------|--------------|-----------|
-| C | DPDK rte_ring | `case-studies/dpdk-ring/harness/src/rte_ring_tla_trace.h` | header-only, `#ifdef` guarded |
-| C | libomp | `case-studies/libomp/harness/src/omp_trace.h` | header with preprocessor script |
-| Rust | arc-swap | `case-studies/arc-swap/harness/src/tla_trace.rs` | thread-local suppress flag pattern |
+| C | DPDK rte_ring | `dpdk-ring/harness/src/rte_ring_tla_trace.h` | header-only, `#ifdef` guarded |
+| C | libomp | `libomp/harness/src/omp_trace.h` | header with preprocessor script |
+| Rust | arc-swap | `arc-swap/harness/src/tla_trace.rs` | thread-local suppress flag pattern |
 
 ### Post-Processing Required
 

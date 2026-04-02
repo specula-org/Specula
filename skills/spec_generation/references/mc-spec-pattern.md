@@ -2,7 +2,7 @@
 
 Template and methodology for writing model checking specs that wrap the base spec with counter-bounded actions.
 
-> **Note**: Examples reference Raft as an illustrative case study. Adapt action names, constants, and bounds to your target system.
+> **Note**: Examples reference Raft as an illustrative case study. Adapt action names, constants, and bounds to your target system. Category B systems usually need fewer threads and smaller structures, but finer-grained actions and more targeted fault injection.
 
 ## Purpose
 
@@ -25,6 +25,12 @@ The MC spec enables exhaustive state space exploration by bounding non-determini
 **Bound**: actions that *introduce* non-determinism (timeout, client request, crash, message loss, heartbeat, disk block, config change).
 
 **Don't bound**: actions that *react* to existing state (message handlers, become leader, advance commit index, complete persist, drop stale message).
+
+For **Category B** systems:
+
+- **Bound** the injected bug mechanism: stale snapshot capture, skipped re-check, premature reclaim, wrong wakeup, weakened ordering bridge, buggy fallback path
+- **Do not bound away** the normal reactive steps that make the bug reachable: publish, confirm, help-transfer, reclaim scan, wakeup completion
+- Prefer **2-3 threads**, very small capacities / buffer sizes / key sets, and tiny bounds on unrelated actions so the target interleaving remains reachable
 
 ## Config Pattern
 
@@ -65,10 +71,21 @@ Generate one `MC_hunt_<family>.cfg` per bug family from the modeling brief. Thes
 **MC.cfg invariant organization**: group invariants by category with comments, and **comment out** extension (bug-family) invariants.
 
 **Examples**:
-- Standard MC.cfg: `case-studies/braft/spec/MC.cfg` (standard + structural invariants, bug-detection commented out)
-- Hunting cfg (tight bounds): `case-studies/sofa-jraft/spec/MC_family1.cfg` (crash-recovery family, minimal bounds)
-- Hunting cfg (targeted invariant): `case-studies/cometbft/spec/MC_ve_ultra.cfg` (VE liveness, zeroed irrelevant limits)
+- Standard MC.cfg: `../examples/braft/MC.cfg` (standard + structural invariants, bug-detection commented out)
+- Hunting cfg (tight bounds): `../examples/braft/MC.cfg` (crash-recovery family, minimal bounds)
+- Hunting cfg (targeted invariant): `../examples/cometbft/MC.cfg` (VE liveness, zeroed irrelevant limits)
+
+### Category B Hunting Pattern
+
+For concurrent / lock-free systems, a good hunting config usually has:
+
+1. **One mechanism only** — e.g. stale head, premature reclaim, skipped re-check
+2. **Tiny structure bounds** — capacity 2-3, 1-3 keys/values, 2-3 threads
+3. **Real bad-state invariants** — no use-after-free, no double-consume, no lost element, no over-capacity, no parked-on-aborted
+4. **Irrelevant actions near zero** — but keep the target mechanism and its enabling interleavings alive
+
+Do **not** make BFS deeper by shrinking the target mechanism itself. Shrink unrelated actions first.
 
 ## Example
 
-See `case-studies/hashicorp-raft/scenarios/base/spec/MChashiraft.tla` and `MChashiraft.cfg` for a complete MC spec with 7 counter-bounded actions, structural invariants, and temporal properties.
+See `../examples/cometbft/MC.tla` and `../examples/cometbft/MC.cfg` for a complete MC spec with counter-bounded actions, structural invariants, and temporal properties.
