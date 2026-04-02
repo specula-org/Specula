@@ -73,6 +73,8 @@ codex mcp add tracedebugger \
 
 This will install the Specula Agent Skills and MCPs.
 
+Optionally, clone the [case-studies repository](https://github.com/specula-org/specula-case-studies) for 60+ completed examples. You can pick case studies similar to your target system and place them alongside your project to give the agent more reference material.
+
 ### Interactive Mode
 
 Open your coding agent in the Specula directory. The workflow is a sequence of skills, each producing input for the next:
