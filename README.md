@@ -84,44 +84,40 @@ Open your coding agent in the Specula directory. The workflow is a sequence of s
 **To start**, tell the agent your target and invoke the first skill:
 
 ```
-The target is case-studies/cometbft/artifact/cometbft, a Go implementation of
-Tendermint BFT consensus. The reference algorithm is the Tendermint paper
-(arXiv:1807.04938). Run /code-analysis.
+This project is a Go implementation of Tendermint BFT consensus (cometbft/cometbft).
+The reference algorithm is the Tendermint paper (arXiv:1807.04938). Run /code-analysis.
 ```
 
-Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) that the next skill consumes. When one skill completes, invoke the next. You can also run any skill independently — for example, `/validation-workflow` on an existing spec.
+Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) in `.specula-output/` that the next skill consumes. When one skill completes, invoke the next. You can also run any skill independently — for example, `/validation-workflow` on an existing spec.
 
 ### Scripted Mode
 
-For batch or fully automated runs, place your target repository at `case-studies/<name>/artifact/<repo>/`, then run:
-
-**Full pipeline** (all three phases):
+Run the pipeline from your project directory:
 
 ```bash
-bash scripts/launch/launch_pipeline.sh cometbft
-
-# optionally, you can provide more context of the form "<project name>|<github repo>|<language>|<description>"
-bash scripts/launch/launch_pipeline.sh cometbft|cometbft/cometbft|Go|Tendermint BFT
+cd my-project
+bash ~/Specula/scripts/launch/launch_pipeline.sh
 ```
 
-Your final spec will be output to `case-studies/cometbft/spec`. See [here](https://github.com/specula-org/Specula/blob/main/scripts/launch/launch_pipeline.sh#L19) for more CLI options (e.g. specifying which agent to use)
+Output will be written to `.specula-output/` under your project root. The project name defaults to the directory name. See [here](https://github.com/specula-org/Specula/blob/main/scripts/launch/launch_pipeline.sh#L19) for more CLI options (e.g. `--agent=codex`, `--artifact=<path>`).
 
 **Individual phases:**
 
 ```bash
 # Phase 1: Code analysis
-bash scripts/launch/launch_code_analysis.sh cometbft
+bash ~/Specula/scripts/launch/launch_code_analysis.sh
 
 # Phase 2: Specification
-bash scripts/launch/launch_spec_generation.sh cometbft
+bash ~/Specula/scripts/launch/launch_spec_generation.sh
+
 # Phase 2.5: Harness generation
-bash scripts/launch/launch_harness_generation.sh cometbft
+bash ~/Specula/scripts/launch/launch_harness_generation.sh
 
 # Phase 3: Trace Validation and MC
-bash scripts/launch/launch_spec_validation.sh cometbft
+bash ~/Specula/scripts/launch/launch_spec_validation.sh
 
 # Phase 4: Bug Confirmation
-bash scripts/launch/launch_bug_confirmation.sh cometbft
+bash ~/Specula/scripts/launch/launch_bug_confirmation.sh
 ```
 
 ## Note
