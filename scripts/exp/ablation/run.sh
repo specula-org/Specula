@@ -30,6 +30,7 @@ CONFIG_FILE=""
 TARGET=""
 RUN_ID="$(date +%Y%m%d_%H%M%S)"
 MAX_BUDGET_CLI=""
+START_PHASE=1
 DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
@@ -42,6 +43,8 @@ while [[ $# -gt 0 ]]; do
     --run-id=*)    RUN_ID="${1#*=}"; shift ;;
     --max-budget)  MAX_BUDGET_CLI="$2"; shift 2 ;;
     --max-budget=*) MAX_BUDGET_CLI="${1#*=}"; shift ;;
+    --start-phase) START_PHASE="$2"; shift 2 ;;
+    --start-phase=*) START_PHASE="${1#*=}"; shift ;;
     --dry-run)     DRY_RUN=true; shift ;;
     -h|--help)     sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"; exit 0 ;;
     *)             die "Unknown option: $1" ;;
@@ -152,6 +155,11 @@ if $MULTI_PHASE; then
     log_prefix="agent.p${phase_num}"
 
     log "── $phase_label: $prompt_tmpl ──"
+
+    if (( phase_num < START_PHASE )); then
+      log "  [$phase_label] Skipped (--start-phase=$START_PHASE)"
+      continue
+    fi
 
     if ! run_single_phase "$prompt_tmpl" "$phase_label" "$log_prefix"; then
       warn "Phase $phase_num failed — stopping pipeline"

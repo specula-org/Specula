@@ -13,6 +13,7 @@ Code Analysis finds bugs — some directly confirmable, others suspected but imp
 Brief description (5-10 lines max):
 
 - System name, language, scale (LOC of core logic)
+- System category: **Category A (Distributed / Message-Passing)** or **Category B (Concurrent / Lock-Free)**, with one-sentence justification
 - What protocol/algorithm it implements
 - Key architectural choices that deviate from the reference algorithm
 - Concurrency model (single-threaded event loop, goroutines, async, etc.)
@@ -141,3 +142,5 @@ Links to detailed evidence for the spec author to consult:
 4. **Bug Families are the organizing principle**. Don't list findings flat. Group by mechanism so the spec author can design targeted extensions.
 
 5. **Explicit exclusions**. Stating what NOT to model is as valuable as stating what to model. It prevents the spec author from wasting effort.
+6. **Category must carry forward.** Later phases should be able to read the brief and immediately know whether to use distributed-style or concurrent-style modeling and trace validation.
+7. **Put category-specific detail in the right place.** The brief should record the category and chosen bug families, but the reusable playbooks live in `distributed-analysis.md` and `concurrent-analysis.md`.

@@ -4,3 +4,4 @@
 etcd-raft|etcd-io/raft|Go|Raft (Ongaro 2014)
 autobahn|asonnino/autobahn|Rust|Autobahn BFT
 libgomp|gcc-mirror/gcc|C|OpenMP Flat Barrier
+papaya|ibraheemdev/papaya|Rust|Lock-Free Concurrent HashMap
