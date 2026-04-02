@@ -26,13 +26,13 @@ Every emitted line must follow this envelope:
 
 ### Examples by Language
 
-These examples are in the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies). Clone it for full reference.
+Built-in examples are in `skills/harness-generation/examples/`. For additional examples in other languages, see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies).
 
-| Language | Case Study | Trace Module | Key Files |
-|----------|-----------|--------------|-----------|
-| Rust | aptosbft | `aptosbft/harness/src/tla_trace.rs` | trace module + test scenario + apply.sh + run.sh |
-| Go | cometbft | `cometbft/artifact/cometbft/` (instrumented in-place) | harness/run.sh + harness/preprocess_trace.py |
-| C++ | braft | `braft/artifact/braft/` (trace_logger.cpp) | instrumented in artifact source |
+| Language | Case Study | Built-in Example | Key Files |
+|----------|-----------|-----------------|-----------|
+| Go | cometbft | `../examples/cometbft/` | run.sh, preprocess_trace.py, INSTRUMENTATION.md |
+| Rust | aptosbft | (in case-studies repo) | trace module + test scenario + apply.sh + run.sh |
+| C++ | braft | (in case-studies repo) | instrumented in artifact source |
 
 **Start by reading the example closest to your target language**, then adapt the pattern to your system.
 
@@ -66,13 +66,13 @@ emit(event_name, tid, t_start, t_end, state, args)
 
 ### Examples by Language
 
-These examples are in the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies). Clone it for full reference.
+Built-in examples are in `skills/harness-generation/examples/`. For additional examples, see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies).
 
-| Language | Case Study | Trace Module | Key Files |
-|----------|-----------|--------------|-----------|
-| C | DPDK rte_ring | `dpdk-ring/harness/src/rte_ring_tla_trace.h` | header-only, `#ifdef` guarded |
-| C | libomp | `libomp/harness/src/omp_trace.h` | header with preprocessor script |
-| Rust | arc-swap | `arc-swap/harness/src/tla_trace.rs` | thread-local suppress flag pattern |
+| Language | Case Study | Built-in Example | Key Files |
+|----------|-----------|-----------------|-----------|
+| C | DPDK rte_ring | `../examples/dpdk-ring/` | rte_ring_tla_trace.h (header-only, `#ifdef` guarded), test_ring_trace.c, run.sh |
+| C | libomp | (in case-studies repo) | header with preprocessor script |
+| Rust | arc-swap | (in case-studies repo) | thread-local suppress flag pattern |
 
 ### Post-Processing Required
 
