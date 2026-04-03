@@ -12,6 +12,7 @@ PHASE_PROMPTS=(
   "full-p2.5.md"           # Phase 2.5: Harness (same as full)
   "full-p3a.md"            # Phase 3A: Trace Validation (same as full)
   "full-p3b.md"            # Phase 3B: Model Checking (same as full)
+  "full-p4.md"             # Phase 4: Bug Confirmation (same as full)
 )
 
 SPECULA_SKILLS=("ALL")

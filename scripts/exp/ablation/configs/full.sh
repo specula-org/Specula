@@ -3,7 +3,7 @@
 
 ABLATION_ID="full"
 ABLATION_GROUP="ablation"
-ABLATION_DESC="Full Specula pipeline (5 phases, sequential agent calls)"
+ABLATION_DESC="Full Specula pipeline (6 phases, sequential agent calls)"
 
 MULTI_PHASE=true
 PHASE_PROMPTS=(
@@ -12,6 +12,7 @@ PHASE_PROMPTS=(
   "full-p2.5.md"  # Phase 2.5: Harness → instrumented code + traces
   "full-p3a.md"   # Phase 3A: Trace Validation → iterative spec fixes
   "full-p3b.md"   # Phase 3B: Model Checking → bug-report.md
+  "full-p4.md"    # Phase 4: Bug Confirmation → confirmed bug-report.md
 )
 
 SPECULA_SKILLS=("ALL")
