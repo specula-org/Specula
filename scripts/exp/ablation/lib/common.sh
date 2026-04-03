@@ -133,7 +133,9 @@ if os.path.exists(proj_settings):
 # Also copy mcpServers if defined
 mcp_json = os.path.join('$SPECULA_ROOT', '.mcp.json')
 if os.path.exists(mcp_json):
-    os.symlink(mcp_json, os.path.join('$workspace', '.mcp.json'))
+    dst = os.path.join('$workspace', '.mcp.json')
+    if not os.path.exists(dst):
+        os.symlink(mcp_json, dst)
 
 # Auto-approve all tool calls for unattended runs
 mcp_config['permissions'] = {
