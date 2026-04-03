@@ -8,6 +8,8 @@
 # Options:
 #   --configs "c1 c2 ..."   Config names to run (default: all)
 #   --targets-file FILE     File with targets, one per line (required)
+#   --run-id ID             Override run ID (default: timestamp)
+#   --start-phase N         Resume from phase N, skipping earlier phases (default: 1)
 #   --max-budget N          Override max dollar budget (default: from config)
 #   --max-parallel N        Max concurrent runs (default: 1)
 #   --group GROUP           Only run configs from this group: ablation|baseline|all (default: all)
@@ -33,6 +35,8 @@ source "$SCRIPT_DIR/lib/common.sh"
 
 CONFIGS_FILTER=""
 TARGETS_FILE=""
+RUN_ID_CLI=""
+START_PHASE_CLI=""
 MAX_BUDGET_CLI=""
 MAX_PARALLEL=1
 GROUP_FILTER="all"
@@ -46,6 +50,10 @@ while [[ $# -gt 0 ]]; do
     --configs=*)     CONFIGS_FILTER="${1#*=}"; shift ;;
     --targets-file)  TARGETS_FILE="$2"; shift 2 ;;
     --targets-file=*) TARGETS_FILE="${1#*=}"; shift ;;
+    --run-id)        RUN_ID_CLI="$2"; shift 2 ;;
+    --run-id=*)      RUN_ID_CLI="${1#*=}"; shift ;;
+    --start-phase)   START_PHASE_CLI="$2"; shift 2 ;;
+    --start-phase=*) START_PHASE_CLI="${1#*=}"; shift ;;
     --max-budget)    MAX_BUDGET_CLI="$2"; shift 2 ;;
     --max-budget=*)  MAX_BUDGET_CLI="${1#*=}"; shift ;;
     --max-parallel)  MAX_PARALLEL="$2"; shift 2 ;;
@@ -163,7 +171,7 @@ done < "$TARGETS_FILE"
 
 # ── Plan matrix ──
 
-RUN_ID="$(date +%Y%m%d_%H%M%S)"
+RUN_ID="${RUN_ID_CLI:-$(date +%Y%m%d_%H%M%S)}"
 TOTAL=$(( ${#CONFIGS[@]} * ${#TARGETS[@]} ))
 
 log "══════════════════════════════════════════"
@@ -214,6 +222,7 @@ run_one() {
     --target "$target"
     --run-id "$RUN_ID"
   )
+  [[ -n "$START_PHASE_CLI" ]] && run_args+=(--start-phase "$START_PHASE_CLI")
   [[ -n "$MAX_BUDGET_CLI" ]] && run_args+=(--max-budget "$MAX_BUDGET_CLI")
 
   log "LAUNCH [$cfg_name × $tname]"
