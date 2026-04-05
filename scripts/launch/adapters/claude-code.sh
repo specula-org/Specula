@@ -110,23 +110,49 @@ except:
         print(f.read())
 " "$RAW_JSON" > "$LOG_FILE"
 
-# Extract usage stats
+# Extract usage stats, fixing num_turns from session JSONL if available
 python3 -c "
-import json, sys
-try:
-    with open(sys.argv[1]) as f:
-        d = json.load(f)
-    usage = {
-        'total_cost_usd': d.get('total_cost_usd', 0),
-        'num_turns': d.get('num_turns', 0),
-        'duration_ms': d.get('duration_ms', 0),
-        'stop_reason': d.get('stop_reason', ''),
-        'usage': d.get('usage', {}),
-        'model_usage': d.get('modelUsage', {})
-    }
-    json.dump(usage, sys.stdout, indent=2)
-    print()
-except:
-    json.dump({'error': 'parse_failed'}, sys.stdout)
-    print()
-" "$RAW_JSON" > "${LOG_FILE%.log}.usage.json"
+import json, sys, os, glob
+
+raw_path = sys.argv[1]
+with open(raw_path) as f:
+    d = json.load(f)
+
+usage = {
+    'total_cost_usd': d.get('total_cost_usd', 0),
+    'num_turns': d.get('num_turns', 0),
+    'duration_ms': d.get('duration_ms', 0),
+    'stop_reason': d.get('stop_reason', ''),
+    'usage': d.get('usage', {}),
+    'model_usage': d.get('modelUsage', {})
+}
+
+# Fix num_turns: count assistant messages from session JSONL (includes subagent turns)
+session_id = d.get('session_id', '')
+if session_id:
+    cwd = os.getcwd()
+    proj_key = cwd.replace('/', '-').lstrip('-')
+    proj_dir = os.path.expanduser(f'~/.claude/projects/-{proj_key}')
+    jsonl_path = os.path.join(proj_dir, f'{session_id}.jsonl')
+    if os.path.exists(jsonl_path):
+        assistant_count = 0
+        tool_count = 0
+        with open(jsonl_path) as f:
+            for line in f:
+                try:
+                    msg = json.loads(line)
+                    if msg.get('type') == 'assistant':
+                        assistant_count += 1
+                        content = msg.get('message', {}).get('content', [])
+                        if isinstance(content, list):
+                            tool_count += sum(1 for c in content if isinstance(c, dict) and c.get('type') == 'tool_use')
+                except:
+                    pass
+        usage['num_turns_reported'] = usage['num_turns']
+        usage['num_turns'] = assistant_count
+        usage['num_tool_uses'] = tool_count
+
+json.dump(usage, sys.stdout, indent=2)
+print()
+" "$RAW_JSON" > "${LOG_FILE%.log}.usage.json" 2>/dev/null || \
+python3 -c "import json; json.dump({'error': 'parse_failed'}, __import__('sys').stdout); print()" > "${LOG_FILE%.log}.usage.json"

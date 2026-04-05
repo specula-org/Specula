@@ -123,14 +123,43 @@ run_single_phase() {
   )
   [[ "$MAX_BUDGET" != "0" ]] && adapter_args+=("--max-budget=$MAX_BUDGET")
 
-  set +e
-  (cd "$WORKSPACE_DIR" && bash "$ADAPTER" "${adapter_args[@]}")
-  local rc=$?
-  set -e
+  local phase_timeout="${PHASE_TIMEOUT:-7200}"  # default 2 hours per phase
+  local max_retries=2
+  local attempt rc
+  for (( attempt=1; attempt<=max_retries; attempt++ )); do
+    set +e
+    (cd "$WORKSPACE_DIR" && timeout --signal=KILL "$phase_timeout" bash "$ADAPTER" "${adapter_args[@]}")
+    rc=$?
+    set -e
+    if [[ $rc -ne 137 ]]; then
+      break
+    fi
+    if (( attempt < max_retries )); then
+      warn "  [$phase_name] TIMEOUT (${phase_timeout}s) — retry $attempt/$max_retries"
+      # Clean stale output so retry writes fresh data
+      rm -f "$WORKSPACE_DIR/${log_prefix}.raw.json"
+    else
+      warn "  [$phase_name] TIMEOUT after $max_retries attempts — giving up"
+    fi
+  done
 
   local phase_end
   phase_end=$(date +%s)
   local phase_elapsed=$(( phase_end - phase_start ))
+
+  # Fix duration_ms in usage.json with actual elapsed time
+  local usage_json="$WORKSPACE_DIR/${log_prefix}.usage.json"
+  if [[ -f "$usage_json" ]]; then
+    python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    d = json.load(f)
+d['duration_ms_reported'] = d.get('duration_ms', 0)
+d['duration_ms'] = int(sys.argv[2]) * 1000
+with open(sys.argv[1], 'w') as f:
+    json.dump(d, f, indent=2)
+" "$usage_json" "$phase_elapsed" 2>/dev/null || true
+  fi
 
   if [[ $rc -eq 0 ]]; then
     log "  [$phase_name] Done (${phase_elapsed}s)"
