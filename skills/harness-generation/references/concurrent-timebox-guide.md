@@ -220,6 +220,60 @@ snprintf(buf, ..., t_refined_start, t_refined_end, ...);
 
 Use refinement when the critical section is a small part of a larger function. OmniLink calls these `refine_op_start()` / `refine_op_end()`.
 
+### Entire Hot Path Must Be Lock-Free
+
+Making `emit()` lock-free is necessary but not sufficient. The **entire code path from instrumentation site to file write** must be free of shared locks. Common violations:
+
+| Pattern | Problem | Fix |
+|---------|---------|-----|
+| ID registry (`table_id()`, `buffer_id()`) | Mutex on every event to map pointer → sequential ID | Thread-local cache; Mutex only on first encounter |
+| Thread name allocation | Mutex or atomic counter on every event | Cache in thread-local after first call |
+| Global counter (event sequence number) | Atomic fetch_add serializes all threads | Remove — timebox ordering replaces sequence numbers |
+| Shared lookup table | Mutex to read mapping on every emit | Clone into thread-local at init or cache on first access |
+
+**Rule**: grep your trace module for `lock()`, `Mutex`, and `fetch_add` calls. If any of them execute on every trace event (not just during initialization), they reintroduce the probe effect that timebox is designed to eliminate.
+
+**Fix pattern** (Rust): thread-local cache with lazy global fallback:
+
+```rust
+thread_local! {
+    static LOCAL_ID_CACHE: RefCell<HashMap<usize, u64>> = RefCell::new(HashMap::new());
+}
+
+pub fn resource_id(raw_addr: usize) -> u64 {
+    // Fast path: thread-local, no lock
+    LOCAL_ID_CACHE.with(|cache| {
+        if let Some(&id) = cache.borrow().get(&raw_addr) {
+            return id;
+        }
+        // Slow path: register once in global map
+        let id = GLOBAL_REGISTRY.lock().unwrap()
+            .entry(raw_addr).or_insert_with(|| COUNTER.fetch_add(1, Ordering::Relaxed))
+            .clone();
+        cache.borrow_mut().insert(raw_addr, id);
+        id
+    })
+}
+```
+
+**Fix pattern** (C): thread-local cache array:
+
+```c
+// Fast path: thread-local cache (no lock)
+static __thread struct { uintptr_t addr; uint64_t id; } __id_cache[16];
+static __thread int __id_cache_len = 0;
+
+uint64_t resource_id(uintptr_t addr) {
+    for (int i = 0; i < __id_cache_len; i++)
+        if (__id_cache[i].addr == addr) return __id_cache[i].id;
+    // Slow path: global registry (locked, runs once per resource per thread)
+    uint64_t id = register_global(addr);
+    if (__id_cache_len < 16)
+        __id_cache[__id_cache_len++] = (typeof(__id_cache[0])){addr, id};
+    return id;
+}
+```
+
 ---
 
 ## Step 3: Trace Format
