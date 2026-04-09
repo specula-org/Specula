@@ -46,9 +46,9 @@ When you append or update with `--sheet new`, both "New bug" (simple) and "New b
 |--------|---------|
 | *(empty)* | Not yet reported upstream |
 | `Open` | Issue/PR filed, awaiting response |
-| `Approved` | Maintainer acknowledged / PR approved |
-| `Merged` | Fix merged |
-| `Closed` | Closed by maintainer (wontfix, duplicate, etc.) |
+| `Approved` | Maintainer acknowledged / PR approved, but fix not yet in tree |
+| `Fixed` | Fix has landed in upstream tree (merged via PR, queue-merge, cherry-pick, or any other path — even if the GitHub PR shows as "Closed") |
+| `Closed` | Closed by maintainer without a fix (wontfix, duplicate, etc.) |
 
 When first recording a bug that hasn't been reported upstream yet, leave `--status` empty and put `Not yet opened` in `--notes`.
 
@@ -88,7 +88,7 @@ python3 scripts/infra/record_bug.py append --sheet known \
 ```bash
 python3 scripts/infra/record_bug.py update \
   --number 5 \
-  --status "Merged" \
+  --status "Fixed" \
   --reference "PR #999" \
   --url "https://github.com/..."
 ```
