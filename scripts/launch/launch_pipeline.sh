@@ -468,6 +468,18 @@ main() {
   local names
   read -ra names <<< "$(extract_names)"
 
+  # If running a single target, cd into its case-study directory so that
+  # downstream scripts (which use $PWD/.specula-output) write into the
+  # case study's own directory instead of polluting the repo root.
+  if (( ${#TARGETS[@]} == 1 )); then
+    local single_name="${names[0]}"
+    local case_dir="${SPECULA_ROOT}/case-studies/${single_name}"
+    if [[ -d "$case_dir" ]]; then
+      cd "$case_dir"
+      log "Single target: cd to ${case_dir}"
+    fi
+  fi
+
   local start_time
   start_time=$(date +%s)
 
