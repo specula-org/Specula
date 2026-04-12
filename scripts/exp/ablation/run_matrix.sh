@@ -13,6 +13,8 @@
 #   --max-budget N          Override max dollar budget (default: from config)
 #   --max-parallel N        Max concurrent runs (default: 1)
 #   --group GROUP           Only run configs from this group: ablation|baseline|all (default: all)
+#   --threshold N           5-hour utilization threshold % (default: 80)
+#   --threshold-7day N      7-day utilization threshold % (default: same as --threshold)
 #   --dry-run               Print matrix without executing
 #   --help                  Show this help
 #
@@ -42,6 +44,7 @@ MAX_PARALLEL=1
 GROUP_FILTER="all"
 DRY_RUN=false
 THRESHOLD=80
+THRESHOLD_7DAY=""
 MAX_WINDOWS=3
 
 while [[ $# -gt 0 ]]; do
@@ -62,6 +65,8 @@ while [[ $# -gt 0 ]]; do
     --group=*)       GROUP_FILTER="${1#*=}"; shift ;;
     --threshold)     THRESHOLD="$2"; shift 2 ;;
     --threshold=*)   THRESHOLD="${1#*=}"; shift ;;
+    --threshold-7day) THRESHOLD_7DAY="$2"; shift 2 ;;
+    --threshold-7day=*) THRESHOLD_7DAY="${1#*=}"; shift ;;
     --windows)       MAX_WINDOWS="$2"; shift 2 ;;
     --windows=*)     MAX_WINDOWS="${1#*=}"; shift ;;
     --dry-run)       DRY_RUN=true; shift ;;
@@ -85,16 +90,19 @@ check_usage() {
   local tmp="$USAGE_TMP_DIR/usage.json"
   bash "$USAGE_SCRIPT" > "$tmp" 2>/dev/null || { warn "usage fetch failed"; return 0; }
 
-  python3 - "$tmp" "$THRESHOLD" "$USAGE_TMP_DIR/reset_at" <<'PYEOF'
+  local threshold_7day="${THRESHOLD_7DAY:-$THRESHOLD}"
+  python3 - "$tmp" "$THRESHOLD" "$threshold_7day" "$USAGE_TMP_DIR/reset_at" <<'PYEOF'
 import json, sys
 with open(sys.argv[1]) as f:
     d = json.load(f)
-threshold = float(sys.argv[2])
-reset_file = sys.argv[3]
+threshold_5h = float(sys.argv[2])
+threshold_7d = float(sys.argv[3])
+reset_file = sys.argv[4]
+thresholds = {'five_hour': threshold_5h, 'seven_day': threshold_7d}
 resets = []
-for key in ('five_hour', 'seven_day'):
+for key, thresh in thresholds.items():
     obj = d.get(key)
-    if obj and obj.get('utilization', 0) > threshold:
+    if obj and obj.get('utilization', 0) > thresh:
         resets.append(obj.get('resets_at', ''))
 if resets:
     earliest = sorted([r for r in resets if r])[0] if any(resets) else ''
