@@ -107,3 +107,4 @@ counterexample.json
 scripts/exp/ablation/results/
 scripts/exp/tasks_*.queue
 scripts/exp/tasks-*.queue
+scripts/exp/ablation/eval/
