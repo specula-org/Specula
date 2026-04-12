@@ -84,9 +84,10 @@ threshold = float(sys.argv[2])
 reset_file = sys.argv[3]
 
 resets = []
+thresholds = {'five_hour': threshold, 'seven_day': 95}
 for key in ('five_hour', 'seven_day'):
     obj = d.get(key)
-    if obj and obj.get('utilization', 0) > threshold:
+    if obj and obj.get('utilization', 0) > thresholds.get(key, threshold):
         resets.append(obj.get('resets_at', ''))
 
 if resets:
