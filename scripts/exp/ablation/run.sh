@@ -125,12 +125,55 @@ run_single_phase() {
 
   local phase_timeout="${PHASE_TIMEOUT:-7200}"  # default 2 hours per phase
   local max_retries=2
+  local rate_limit_retries=3
   local attempt rc
   for (( attempt=1; attempt<=max_retries; attempt++ )); do
     set +e
     (cd "$WORKSPACE_DIR" && timeout --signal=KILL "$phase_timeout" bash "$ADAPTER" "${adapter_args[@]}")
     rc=$?
     set -e
+
+    # ── Rate limit (exit 75): wait for quota reset and retry ──
+    if [[ $rc -eq 75 ]]; then
+      if (( rate_limit_retries <= 0 )); then
+        warn "  [$phase_name] RATE LIMITED — max retries exhausted"
+        break
+      fi
+      rate_limit_retries=$((rate_limit_retries - 1))
+      # Parse reset time from usage.json or raw.json
+      local wait_secs=3600
+      local reset_info
+      reset_info=$(python3 -c "
+import json, re, sys
+try:
+    with open(sys.argv[1]) as f:
+        txt = f.read()
+    # Look for 'resets <time>' pattern
+    m = re.search(r'resets\s+(.+?)(?:\"|$)', txt)
+    if m:
+        print(m.group(1).strip())
+except:
+    pass
+" "$WORKSPACE_DIR/${log_prefix}.raw.json" 2>/dev/null || true)
+      if [[ -n "$reset_info" ]]; then
+        local reset_epoch
+        reset_epoch=$(date -d "$reset_info" +%s 2>/dev/null || echo "")
+        if [[ -n "$reset_epoch" ]]; then
+          local now_epoch
+          now_epoch=$(date +%s)
+          wait_secs=$(( reset_epoch - now_epoch + 120 ))
+          (( wait_secs < 60 )) && wait_secs=60
+        fi
+      fi
+      warn "  [$phase_name] RATE LIMITED — sleeping ${wait_secs}s (retries left: $rate_limit_retries)"
+      sleep "$wait_secs"
+      # Clean stale output so retry writes fresh data
+      rm -f "$WORKSPACE_DIR/${log_prefix}.raw.json"
+      # Don't count rate limit retries against max_retries
+      attempt=$((attempt - 1))
+      continue
+    fi
+
     if [[ $rc -ne 137 ]]; then
       break
     fi

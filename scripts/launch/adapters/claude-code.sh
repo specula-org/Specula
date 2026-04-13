@@ -97,6 +97,16 @@ RAW_JSON="${LOG_FILE%.log}.raw.json"
 
 "${CMD[@]}" < "$PROMPT_INPUT" > "$RAW_JSON" 2>&1 || true
 
+# ── Detect rate limit hit ──
+# Exit 75 (EX_TEMPFAIL) so callers can distinguish limit hits from real failures.
+if grep -q "hit your limit" "$RAW_JSON" 2>/dev/null; then
+  echo "claude-code adapter: rate limit hit" >&2
+  # Still post-process below so .log and .usage.json are written for diagnostics
+  RATE_LIMITED=true
+else
+  RATE_LIMITED=false
+fi
+
 # Extract the text result for human-readable log
 python3 -c "
 import json, sys
@@ -156,3 +166,8 @@ json.dump(usage, sys.stdout, indent=2)
 print()
 " "$RAW_JSON" > "${LOG_FILE%.log}.usage.json" 2>/dev/null || \
 python3 -c "import json; json.dump({'error': 'parse_failed'}, __import__('sys').stdout); print()" > "${LOG_FILE%.log}.usage.json"
+
+# Exit 75 (EX_TEMPFAIL) for rate limit so run.sh can wait and retry
+if $RATE_LIMITED; then
+  exit 75
+fi
