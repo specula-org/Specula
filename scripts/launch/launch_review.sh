@@ -19,6 +19,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPECULA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 AGENT="claude-code"
+CLAUDE_ALIAS="${CLAUDE_ALIAS:-claude}"
 TARGETS=()
 
 get_work_dir() {
@@ -39,6 +40,7 @@ shift 2>/dev/null || true
 for arg in "$@"; do
   case "$arg" in
     --agent=*) AGENT="${arg#*=}" ;;
+    --claude-alias=*) CLAUDE_ALIAS="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -247,7 +249,7 @@ launch_review() {
   mkdir -p "$log_dir"
 
   local pid
-  pid=$("$ADAPTER" --prompt="$prompt" --max-turns=30 --log="$log_file" --background)
+  pid=$("$ADAPTER" --prompt="$prompt" --max-turns=30 --claude-alias="$CLAUDE_ALIAS" --log="$log_file" --background)
   echo "$pid" > "${log_dir}/review-${phase}.pid"
   echo "  PID=$pid  Log: $log_file"
 }

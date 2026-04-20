@@ -17,6 +17,7 @@
 #   --max-parallel=N    Max concurrent agents (default: 1)
 #   --max-turns=N       Max agent turns (default: 0 = unlimited)
 #   --agent=NAME        Agent adapter to use (default: claude-code)
+#   --claude-alias=NAME Claude CLI profile (default: claude; e.g. claude-exp)
 #   --artifact=PATH     Explicit path to artifact repo (overrides auto-detection)
 #
 # Prerequisites:
@@ -34,6 +35,7 @@ MAX_TURNS=0
 DRY_RUN=false
 CHECK_ONLY=false
 AGENT="claude-code"
+CLAUDE_ALIAS="${CLAUDE_ALIAS:-claude}"
 ARTIFACT=""
 TARGETS=()
 
@@ -47,6 +49,7 @@ for arg in "$@"; do
     --max-parallel=*) MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*) MAX_TURNS="${arg#*=}" ;;
     --agent=*) AGENT="${arg#*=}" ;;
+    --claude-alias=*) CLAUDE_ALIAS="${arg#*=}" ;;
     --artifact=*) ARTIFACT="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
@@ -193,8 +196,11 @@ Expected outputs:
 6. Run a quick trace validation at the end to catch obvious format issues.
 PROMPT_EOF
 
-  # Inject per-target extra prompt if present
-  local extra="${work_dir}/.prompt-extra.md"
+  # Inject per-target extra prompt if present (check case-study root first, then .specula-output)
+  local extra="$PWD/.prompt-extra.md"
+  if [[ ! -f "$extra" ]]; then
+    extra="${work_dir}/.prompt-extra.md"
+  fi
   if [[ -f "$extra" ]]; then
     echo ""
     echo "## Target-Specific Instructions"
@@ -223,7 +229,7 @@ launch_agent() {
     return 0
   fi
 
-  "$ADAPTER" --prompt-file="$prompt_file" --max-turns="$MAX_TURNS" --log="$log_file" --background &
+  "$ADAPTER" --prompt-file="$prompt_file" --max-turns="$MAX_TURNS" --claude-alias="$CLAUDE_ALIAS" --log="$log_file" --background &
   local pid=$!
   echo "$pid" > "${work_dir}/harness-gen.pid"
   echo "  PID=$pid  Log: $log_file"

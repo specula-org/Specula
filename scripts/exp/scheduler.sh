@@ -17,6 +17,9 @@
 #   --max-turns N    Max agent turns per task (default: 0 = unlimited)
 #   --setup-only     Only clone repos and write prompts, don't run pipeline
 #   --dry-run        Print commands without executing
+#   --claude-alias NAME  Claude CLI profile (default: claude; e.g. claude-exp).
+#                        Forwarded to launch_pipeline.sh and used by usage.sh
+#                        so quota checks target the same account.
 #
 # Queue format (tab-separated):
 #   name|github|lang|reference[TAB]flags[TAB]prompt_file
@@ -38,6 +41,7 @@ MAX_TURNS=0
 PROMPT_FILE=""
 DRY_RUN=false
 SETUP_ONLY=false
+CLAUDE_ALIAS="${CLAUDE_ALIAS:-claude}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -49,6 +53,8 @@ while [[ $# -gt 0 ]]; do
     --prompt)     PROMPT_FILE="$2"; shift 2 ;;
     --setup-only) SETUP_ONLY=true; shift ;;
     --dry-run)    DRY_RUN=true;    shift ;;
+    --claude-alias) CLAUDE_ALIAS="$2"; shift 2 ;;
+    --claude-alias=*) CLAUDE_ALIAS="${1#*=}"; shift ;;
     -h|--help)    sed -n '2,/^$/s/^# \?//p' "$0"; exit 0 ;;
     *)            echo "Unknown: $1" >&2; exit 1 ;;
   esac
@@ -73,7 +79,7 @@ WINDOWS_USED=0
 
 check_usage() {
   local tmp="$LOG_DIR/.usage.json"
-  bash "$SCRIPT_DIR/usage.sh" > "$tmp" 2>/dev/null || { log "WARN: usage fetch failed"; return 0; }
+  CLAUDE_ALIAS="$CLAUDE_ALIAS" bash "$SCRIPT_DIR/usage.sh" > "$tmp" 2>/dev/null || { log "WARN: usage fetch failed"; return 0; }
 
   python3 - "$tmp" "$THRESHOLD" "$LOG_DIR/.reset_at" <<'PYEOF'
 import json, sys
@@ -203,6 +209,7 @@ run_task() {
   echo "running" > "$LOG_DIR/status/$idx"
 
   local -a cmd=(bash "$SPECULA_ROOT/scripts/launch/launch_pipeline.sh")
+  cmd+=(--claude-alias="$CLAUDE_ALIAS")
   if [[ -n "$flags" ]]; then
     read -ra flag_arr <<< "$flags"
     cmd+=("${flag_arr[@]}")

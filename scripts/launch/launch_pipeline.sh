@@ -26,6 +26,7 @@
 #   --max-parallel=N       Max concurrent agents per phase (default: 1)
 #   --max-turns=N          Max agent turns (default: 0 = unlimited)
 #   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli)
+#   --claude-alias=NAME    Claude CLI profile (default: claude; e.g. claude-exp selects CLAUDE_CONFIG_DIR=$HOME/.claude-exp)
 #   --artifact=PATH        Path to system artifact/source code
 #
 # Output structure (per system):
@@ -69,6 +70,7 @@ SKIP_VALIDATION=false
 SKIP_CONFIRMATION=false
 SKIP_REVIEWS=true
 AGENT="claude-code"
+CLAUDE_ALIAS="${CLAUDE_ALIAS:-claude}"
 ARTIFACT=""
 TARGETS=()
 
@@ -87,6 +89,7 @@ for arg in "$@"; do
     --max-parallel=*)    MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*)       MAX_TURNS="${arg#*=}" ;;
     --agent=*)           AGENT="${arg#*=}" ;;
+    --claude-alias=*)    CLAUDE_ALIAS="${arg#*=}" ;;
     --artifact=*)        ARTIFACT="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
@@ -117,7 +120,7 @@ wait_for_quota() {
   local waits=0
   while true; do
     local usage_json
-    usage_json="$(bash "$USAGE_SCRIPT" 2>/dev/null)" || { log "WARN: usage fetch failed, proceeding"; return 0; }
+    usage_json="$(CLAUDE_ALIAS="$CLAUDE_ALIAS" bash "$USAGE_SCRIPT" 2>/dev/null)" || { log "WARN: usage fetch failed, proceeding"; return 0; }
     local check
     check="$(python3 -c "
 import json, sys
@@ -191,7 +194,7 @@ run_phase1_analysis() {
   log "PHASE 1: CODE ANALYSIS"
   divider
 
-  local analysis_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
+  local analysis_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT" "--claude-alias=$CLAUDE_ALIAS")
   [[ -n "$ARTIFACT" ]] && analysis_args+=("--artifact=$ARTIFACT")
   for target in "${TARGETS[@]}"; do
     analysis_args+=("$target")
@@ -220,11 +223,11 @@ run_review() {
   divider
 
   if $DRY_RUN; then
-    log "[DRY RUN] bash scripts/launch/launch_review.sh --agent=$AGENT ${phase} ${names[*]}"
+    log "[DRY RUN] bash scripts/launch/launch_review.sh --agent=$AGENT --claude-alias=$CLAUDE_ALIAS ${phase} ${names[*]}"
     return 0
   fi
 
-  bash "$SCRIPT_DIR/launch_review.sh" "--agent=$AGENT" "$phase" "${names[@]}"
+  bash "$SCRIPT_DIR/launch_review.sh" "--agent=$AGENT" "--claude-alias=$CLAUDE_ALIAS" "$phase" "${names[@]}"
 }
 
 run_phase2_specgen() {
@@ -235,7 +238,7 @@ run_phase2_specgen() {
   local names
   read -ra names <<< "$(extract_names)"
 
-  local specgen_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
+  local specgen_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT" "--claude-alias=$CLAUDE_ALIAS")
   [[ -n "$ARTIFACT" ]] && specgen_args+=("--artifact=$ARTIFACT")
   for n in "${names[@]}"; do
     specgen_args+=("$n")
@@ -257,7 +260,7 @@ run_phase2_5_harness() {
   local names
   read -ra names <<< "$(extract_names)"
 
-  local harness_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
+  local harness_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT" "--claude-alias=$CLAUDE_ALIAS")
   [[ -n "$ARTIFACT" ]] && harness_args+=("--artifact=$ARTIFACT")
   for n in "${names[@]}"; do
     harness_args+=("$n")
@@ -279,7 +282,7 @@ run_phase3_validation() {
   local names
   read -ra names <<< "$(extract_names)"
 
-  local val_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
+  local val_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT" "--claude-alias=$CLAUDE_ALIAS")
   [[ -n "$ARTIFACT" ]] && val_args+=("--artifact=$ARTIFACT")
   for n in "${names[@]}"; do
     val_args+=("$n")
@@ -301,7 +304,7 @@ run_phase4_confirmation() {
   local names
   read -ra names <<< "$(extract_names)"
 
-  local confirm_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT")
+  local confirm_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT" "--claude-alias=$CLAUDE_ALIAS")
   [[ -n "$ARTIFACT" ]] && confirm_args+=("--artifact=$ARTIFACT")
   for n in "${names[@]}"; do
     confirm_args+=("$n")
@@ -459,6 +462,7 @@ main() {
   echo "Targets:      ${#TARGETS[@]}"
   echo "Max parallel: $MAX_PARALLEL"
   echo "Max turns:    $MAX_TURNS"
+  echo "Agent:        $AGENT  (claude-alias=$CLAUDE_ALIAS)"
   echo ""
   echo "Skip phases:  analysis=$SKIP_ANALYSIS specgen=$SKIP_SPECGEN harness=$SKIP_HARNESS validation=$SKIP_VALIDATION confirmation=$SKIP_CONFIRMATION reviews=$SKIP_REVIEWS"
   echo ""

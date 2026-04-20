@@ -6,6 +6,13 @@
 #   bash scripts/exp/usage.sh              # JSON output
 #   bash scripts/exp/usage.sh --check 80   # exit 1 if any window > 80%
 #
+# Profile selection (first match wins):
+#   CLAUDE_CREDENTIALS   — explicit path to credentials.json
+#   CLAUDE_CONFIG_DIR    — config dir (reads $CLAUDE_CONFIG_DIR/.credentials.json)
+#   CLAUDE_ALIAS         — alias name (reads $HOME/.<alias>/.credentials.json;
+#                          "claude" maps to the default $HOME/.claude)
+#   default              — $HOME/.claude/.credentials.json
+#
 # Exit codes:
 #   0  ok (or under threshold in --check mode)
 #   1  over threshold (--check mode)
@@ -13,7 +20,15 @@
 
 set -euo pipefail
 
-CREDENTIALS="${CLAUDE_CREDENTIALS:-$HOME/.claude/.credentials.json}"
+if [[ -n "${CLAUDE_CREDENTIALS:-}" ]]; then
+  CREDENTIALS="$CLAUDE_CREDENTIALS"
+elif [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
+  CREDENTIALS="$CLAUDE_CONFIG_DIR/.credentials.json"
+elif [[ -n "${CLAUDE_ALIAS:-}" && "$CLAUDE_ALIAS" != "claude" ]]; then
+  CREDENTIALS="$HOME/.${CLAUDE_ALIAS}/.credentials.json"
+else
+  CREDENTIALS="$HOME/.claude/.credentials.json"
+fi
 
 die() { echo "error: $*" >&2; exit 2; }
 

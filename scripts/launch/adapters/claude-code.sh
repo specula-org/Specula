@@ -12,6 +12,10 @@
 #   --prompt-file file.md  Read prompt from file (mutually exclusive with --prompt)
 #   --max-turns N          (DEPRECATED, ignored — use --max-budget)
 #   --max-budget N         Max dollar budget for API calls (optional)
+#   --claude-alias NAME    Claude CLI alias/profile (default: claude). Selects
+#                          CLAUDE_CONFIG_DIR=$HOME/.<NAME>. E.g. "claude-exp"
+#                          uses $HOME/.claude-exp. Also overridable via the
+#                          CLAUDE_ALIAS env var.
 #   --log output.log       Log file path (required)
 #   --background           Run in background, print PID to stdout (default: foreground)
 #   --help                 Show this help
@@ -24,15 +28,17 @@ MAX_TURNS=""
 MAX_BUDGET=""
 LOG_FILE=""
 BACKGROUND=false
+CLAUDE_ALIAS="${CLAUDE_ALIAS:-claude}"
 
 for arg in "$@"; do
   case "$arg" in
-    --prompt=*)      PROMPT="${arg#*=}" ;;
-    --prompt-file=*) PROMPT_FILE="${arg#*=}" ;;
-    --max-turns=*)   MAX_TURNS="${arg#*=}" ;;  # deprecated, ignored
-    --max-budget=*)  MAX_BUDGET="${arg#*=}" ;;
-    --log=*)         LOG_FILE="${arg#*=}" ;;
-    --background)    BACKGROUND=true ;;
+    --prompt=*)        PROMPT="${arg#*=}" ;;
+    --prompt-file=*)   PROMPT_FILE="${arg#*=}" ;;
+    --max-turns=*)     MAX_TURNS="${arg#*=}" ;;  # deprecated, ignored
+    --max-budget=*)    MAX_BUDGET="${arg#*=}" ;;
+    --claude-alias=*)  CLAUDE_ALIAS="${arg#*=}" ;;
+    --log=*)           LOG_FILE="${arg#*=}" ;;
+    --background)      BACKGROUND=true ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -81,6 +87,13 @@ fi
 unset CLAUDECODE 2>/dev/null || true
 unset CLAUDE_CODE_SSE_PORT 2>/dev/null || true
 unset CLAUDE_CODE_ENTRYPOINT 2>/dev/null || true
+
+# Select Claude profile/alias. The "claude-exp" alias in ~/.bashrc is
+# `CLAUDE_CONFIG_DIR=$HOME/.claude-exp claude`; replicate that mapping here
+# so the same behavior works in non-interactive shells. Alias determines the
+# config dir authoritatively — we do NOT inherit an ambient CLAUDE_CONFIG_DIR,
+# which would silently redirect quota-sensitive runs to the wrong profile.
+export CLAUDE_CONFIG_DIR="$HOME/.${CLAUDE_ALIAS:-claude}"
 
 # ── Build command ──
 
@@ -142,7 +155,8 @@ session_id = d.get('session_id', '')
 if session_id:
     cwd = os.getcwd()
     proj_key = cwd.replace('/', '-').lstrip('-')
-    proj_dir = os.path.expanduser(f'~/.claude/projects/-{proj_key}')
+    config_dir = os.environ.get('CLAUDE_CONFIG_DIR') or os.path.expanduser('~/.claude')
+    proj_dir = os.path.join(config_dir, 'projects', f'-{proj_key}')
     jsonl_path = os.path.join(proj_dir, f'{session_id}.jsonl')
     if os.path.exists(jsonl_path):
         assistant_count = 0
