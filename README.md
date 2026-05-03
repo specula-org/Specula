@@ -33,6 +33,7 @@ Specula runs as a set of code agent skills and MCP tools. It currently supports 
 - Java 21+ with Maven
 - GitHub CLI `gh`
 - A supported code agent (Claude Code, Codex, or Copilot CLI) — you can contribute an adapter for your favourite agent [here](./scripts/launch/adapters)!
+- **A model with strong reasoning capability, configured at high reasoning effort.** Specula relies on the model to read code, infer protocol invariants, and reason about counterexamples; lower reasoning settings noticeably reduce bug yield.
 
 ### Setup
 
