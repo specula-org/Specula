@@ -134,6 +134,8 @@ This is the most important step. Read the relevant implementation source code to
 - Does the spec correctly model the implementation's behavior?
 - Is the invariant capturing a genuine safety requirement?
 
+If the counterexample's preconditions look implausible in the real system (e.g., the violation requires a state combination you suspect the implementation prevents), run the procedure in `references/spec-fidelity-checklist.md` before classifying. The most common false positive is a Case C that's actually a Case B — the spec under-models a guard the implementation has.
+
 ### Step 4: Classify the Counterexample
 
 #### Case A: Invariant Too Strong
