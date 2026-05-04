@@ -220,6 +220,10 @@ When the standard tools don't provide enough detail, use `run_trace_replay` to r
 
 ---
 
+## When TLC behaves unexpectedly
+
+If TLC reports "no errors" when you expected a violation, hangs, errors out on cfg parsing, or otherwise behaves counterintuitively, scan `references/tlc-gotchas.md` before debugging the spec. Most non-obvious failures (unfaithful temporal properties, silent action explosion, `-deadlock` flag inversion, action substitution arity, string comparison) are listed there.
+
 ## Available Tools
 
 | Tool | Purpose | When to Use |
