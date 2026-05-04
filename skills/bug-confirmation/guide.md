@@ -1,5 +1,26 @@
 ## Bug Confirmation and Reproduction Guide
 
+### Phase 0: System-Level Consequence Test
+
+Before auditing reachability or reproducing, decide whether the finding is a bug or a path deviation. This filter is cheap and catches the most common false positive.
+
+**Apply three filters. All must pass.**
+
+1. **Path ≠ bug.** "The function deviates from its inferred contract" or "an unexpected execution path is reachable" is not a bug on its own. Internal helpers commonly assume preconditions their callers already enforce; a violation of an LLM-inferred postcondition that no test exercises is not a contract violation. Ask: does this deviation produce a *system-level consequence* — crash, deadlock, data corruption, safety/liveness violation, or wrong reply to a client? If the worst case is "an internal value is unexpected, but the surrounding code already validates / clamps / re-checks before any external effect", stop. Path deviation, not bug.
+
+2. **Name the observable harm.** Write one sentence describing what a user, operator, or other system component would see go wrong. "Returns Err in a branch that's never taken" is not harm. "Two replicas commit different values for the same slot" is harm. If you can't name the symptom, the finding is not yet a bug.
+
+3. **Check whether the developers consider the contract binding.** Skim issue/PR discussions, code comments, and tests near the suspect code. If developers explicitly say "this is by design / defensive / shouldn't happen / caller's responsibility", treat the finding as a path deviation unless you can show that their reasoning is wrong (e.g., the caller they're trusting doesn't actually validate). If developers have written tests that *assert* the current behavior, that's strong evidence they consider it correct.
+
+**Common false-positive shapes to filter out at this phase:**
+
+- Defensive-programming returns (`if x == nil { return ErrInvalid }` in a function whose only callers always pass non-nil) — the function is robust, not buggy.
+- "Unreachable" branches that LLM analysis flagged because it couldn't prove unreachability — verify with caller analysis before reporting.
+- Race windows that don't corrupt observable state because a downstream check absorbs the inconsistency.
+- "Function violates inferred postcondition X" where X was synthesized by an LLM and no test or caller depends on X.
+
+If the finding passes all three filters, proceed to Phase 1. If it fails any filter, stop here and record the finding as a path deviation in the report — note which filter rejected it and why. Do not silently drop the finding; the rejection itself is information for evaluating the bug-finding pipeline.
+
 ### Phase 1: Code Audit
 
 Before attempting reproduction, you **must** first confirm the bug's validity by reading the source code.
