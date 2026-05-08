@@ -18,7 +18,7 @@
 #   --max-parallel=N    Max concurrent agents (default: 1)
 #   --max-turns=N       Max agent turns (default: 0 = unlimited)
 #   --agent=NAME        Agent adapter to use (default: claude-code)
-#   --claude-alias=NAME Claude CLI profile (default: claude; e.g. claude-exp)
+#   --claude-alias=NAME Claude CLI profile (default: claude)
 #   --artifact=PATH     Explicit path to the artifact repo (overrides auto-detection)
 #
 # Prerequisites:

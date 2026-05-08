@@ -26,7 +26,7 @@
 #   --max-parallel=N       Max concurrent agents per phase (default: 1)
 #   --max-turns=N          Max agent turns (default: 0 = unlimited)
 #   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli)
-#   --claude-alias=NAME    Claude CLI profile (default: claude; e.g. claude-exp selects CLAUDE_CONFIG_DIR=$HOME/.claude-exp)
+#   --claude-alias=NAME    Claude CLI profile (default: claude)
 #   --artifact=PATH        Path to system artifact/source code
 #
 # Output structure (per system):

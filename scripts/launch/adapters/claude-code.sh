@@ -13,9 +13,8 @@
 #   --max-turns N          (DEPRECATED, ignored — use --max-budget)
 #   --max-budget N         Max dollar budget for API calls (optional)
 #   --claude-alias NAME    Claude CLI alias/profile (default: claude). Selects
-#                          CLAUDE_CONFIG_DIR=$HOME/.<NAME>. E.g. "claude-exp"
-#                          uses $HOME/.claude-exp. Also overridable via the
-#                          CLAUDE_ALIAS env var.
+#                          CLAUDE_CONFIG_DIR=$HOME/.<NAME>. Also overridable via
+#                          the CLAUDE_ALIAS env var.
 #   --effort LEVEL         Claude effort level: low|medium|high|xhigh|max
 #                          (default: max). Overridable via CLAUDE_EFFORT env.
 #   --log output.log       Log file path (required)
@@ -92,11 +91,11 @@ unset CLAUDECODE 2>/dev/null || true
 unset CLAUDE_CODE_SSE_PORT 2>/dev/null || true
 unset CLAUDE_CODE_ENTRYPOINT 2>/dev/null || true
 
-# Select Claude profile/alias. The "claude-exp" alias in ~/.bashrc is
-# `CLAUDE_CONFIG_DIR=$HOME/.claude-exp claude`; replicate that mapping here
-# so the same behavior works in non-interactive shells. Alias determines the
-# config dir authoritatively — we do NOT inherit an ambient CLAUDE_CONFIG_DIR,
-# which would silently redirect quota-sensitive runs to the wrong profile.
+# Select Claude profile/alias. The mapping is `CLAUDE_CONFIG_DIR=$HOME/.<alias>
+# claude`; replicate that mapping here so the same behavior works in non-
+# interactive shells. Alias determines the config dir authoritatively — we do
+# NOT inherit an ambient CLAUDE_CONFIG_DIR, which would silently redirect
+# quota-sensitive runs to the wrong profile.
 export CLAUDE_CONFIG_DIR="$HOME/.${CLAUDE_ALIAS:-claude}"
 
 # ── Build command ──
