@@ -12,6 +12,7 @@ Bug-family driven modeling: each spec extension exists because a Bug Family in t
 |-------|--------|-------------|
 | 1 | `base.tla` + `base.cfg` | Base spec with all extensions |
 | 2 | `MC.tla` + `MC.cfg` + `MC_hunt_*.cfg` | Model checking spec + hunting configs per bug family |
+| 2.5 | `brief-coverage.md` | **Mandatory** self-audit mapping brief §2/§5/§6.1 → spec/MC artifacts (see Phase 2.5 below) |
 | 3 | `Trace.tla` + `Trace.cfg` | Trace validation spec |
 | 4 | `instrumentation-spec.md` | Action-to-code mapping for harness generation |
 
@@ -68,6 +69,28 @@ Counter-bound fault-injection actions (timeout, crash, message loss, etc.). Do N
 
 ---
 
+## Phase 2.5: Brief Coverage Self-Audit (Mandatory)
+
+**Goal**: Catch the most common Phase 2 failure mode — invariants that are *defined* but never *enabled* in any hunt cfg, families that have no targeting hunt cfg, or findings that no hunt cfg can reach.
+
+**This is a self-check, not a grading rubric.** Use the checklist while you finalize Phase 2, not after. The intended workflow is:
+
+1. **Before** committing the final hunt cfgs: enumerate brief §2 (Bug Families), §5 (Proposed Invariants), and §6.1 (Model-Checkable Findings). Sketch the audit table mentally or in scratch.
+2. Identify gaps — invariants you defined but didn't enable; families with no hunt cfg; findings no cfg targets.
+3. **Modify the spec** — add invariants to hunt cfgs, create missing hunt cfg files, document genuinely out-of-scope items with a one-line reason.
+4. Repeat 2–3 until you can fill the audit table without empty cells or unjustified skips.
+5. **Only then** write `spec/brief-coverage.md` as the durable artifact.
+
+If you find yourself writing many "—" or "skipped" rows in `brief-coverage.md`, **go fix the spec instead**. The audit document is supposed to be boring.
+
+**The audit is brief-driven, not taxonomy-driven.** Do not consult the 8 concurrent / 6 distributed fault families when filling the tables — those exist as inspiration during code analysis, not as a required slate during spec generation. If the brief did not raise an item, you do not have to cover it.
+
+**Fill the audit tables by reading the actual cfg files, not from memory.** The arc-swap failure mode was specifically that the agent's intent (re-enable invariants in hunt cfgs) and the actual file content (still commented out) had drifted apart. Inspect each hunt cfg's contents while filling Table 2's "Enabled in which hunt cfg(s)" column.
+
+**Read `references/brief-coverage-checklist.md`** for the table templates, worked failure example, and full guidance.
+
+---
+
 ## Phase 3: Trace Spec
 
 **Goal**: Replay implementation traces against the base spec to verify consistency.
@@ -109,6 +132,7 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 8. **Silent actions must be tightly constrained.** Unconstrained silent actions cause state space explosion.
 9. **MC spec bounds fault-injection, not normal operations.**
 10. **For Category B, split operations at real semantic boundaries.** If code has separate read/confirm, reserve/publish, retire/reclaim, or signal/complete windows, do not collapse them into one action just because the public API looks atomic.
+11. **`brief-coverage.md` is a mandatory phase output.** Every Safety invariant in brief §5 must end up enabled in ≥1 hunt cfg, every brief §2 family must have a targeting hunt cfg (or an explicit, written-out merger), every §6.1 finding must have a hunt cfg whose fault setup makes it reachable. Use the checklist as a self-check before writing the final audit doc — see Phase 2.5 and `references/brief-coverage-checklist.md`.
 
 ---
 
@@ -116,6 +140,7 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 
 - **`references/base-spec-methodology.md`** — Variable design, action design, annotation style, invariants, helpers
 - **`references/mc-spec-pattern.md`** — MC spec template with counter-bounded actions
+- **`references/brief-coverage-checklist.md`** — Self-audit mapping brief §2/§5/§6.1 → spec/MC artifacts (Phase 2.5)
 - **`references/trace-spec-pattern.md`** — Trace spec template with event matching and silent actions
 - **`references/instrumentation-spec-format.md`** — Format for the action-to-code mapping document
 - **`examples/hashicorp-raft-spec-generation.md`** — Complete worked example
