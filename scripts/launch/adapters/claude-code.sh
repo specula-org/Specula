@@ -16,6 +16,8 @@
 #                          CLAUDE_CONFIG_DIR=$HOME/.<NAME>. E.g. "claude-exp"
 #                          uses $HOME/.claude-exp. Also overridable via the
 #                          CLAUDE_ALIAS env var.
+#   --effort LEVEL         Claude effort level: low|medium|high|xhigh|max
+#                          (default: max). Overridable via CLAUDE_EFFORT env.
 #   --log output.log       Log file path (required)
 #   --background           Run in background, print PID to stdout (default: foreground)
 #   --help                 Show this help
@@ -29,6 +31,7 @@ MAX_BUDGET=""
 LOG_FILE=""
 BACKGROUND=false
 CLAUDE_ALIAS="${CLAUDE_ALIAS:-claude}"
+EFFORT="${CLAUDE_EFFORT:-max}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -37,6 +40,7 @@ for arg in "$@"; do
     --max-turns=*)     MAX_TURNS="${arg#*=}" ;;  # deprecated, ignored
     --max-budget=*)    MAX_BUDGET="${arg#*=}" ;;
     --claude-alias=*)  CLAUDE_ALIAS="${arg#*=}" ;;
+    --effort=*)        EFFORT="${arg#*=}" ;;
     --log=*)           LOG_FILE="${arg#*=}" ;;
     --background)      BACKGROUND=true ;;
     --help|-h)
@@ -98,6 +102,11 @@ export CLAUDE_CONFIG_DIR="$HOME/.${CLAUDE_ALIAS:-claude}"
 # ── Build command ──
 
 CMD=(claude --print --dangerously-skip-permissions --output-format json)
+
+# Effort level (default: max). Empty/"default" passes nothing → CLI default.
+if [[ -n "$EFFORT" && "$EFFORT" != "default" ]]; then
+  CMD+=(--effort "$EFFORT")
+fi
 
 # Budget control
 if [[ -n "$MAX_BUDGET" && "$MAX_BUDGET" != "0" ]]; then
