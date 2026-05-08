@@ -135,6 +135,16 @@ When reporting REPRODUCTION FAILED after exhausting the escalation ladder:
 - If new bugs exist but zero reproduction tests exist, the confirmation is INVALID
 - Known/historical bugs do not require reproduction files
 
+## Batch Mode Constraints (CRITICAL)
+
+This pipeline runs `claude --print` (non-interactive batch). The harness exits at `end_turn`; any timer/wakeup registered before that is silently dropped along with it. Reproduction tests, build steps, and TLC runs that need waiting must block in the same turn.
+
+- ❌ **Do NOT use `ScheduleWakeup`, `CronCreate`,** or any tool whose semantics is "schedule me to be re-invoked later." The phase will appear to succeed (exit 0) but reproduction will be left half-done.
+- ❌ **Do NOT end your turn** while a reproduction test, compile step, or TLC run is unfinished and unobserved.
+- ✅ **Block in the same turn**: `Bash` with `wait $PID`, `timeout 30m ...`, or a single bounded poll loop wrapped in an outer `timeout`.
+
+See `../tla-checking-workflow/guide.md` Phase 2 "Batch Mode Constraints" for full rationale.
+
 ## Additional References
 
 For additional examples beyond the built-in ones, see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies across distributed systems, consensus protocols, and concurrent data structures.

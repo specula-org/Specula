@@ -260,6 +260,7 @@ Keep it short and practical — the Phase 3 agent needs to make small adjustment
 4. **Real timestamps only.** Use the system's clock (epoch nanos, monotonic, etc.). Sequential integers (1000, 1001, 1002) indicate hand-written traces.
 5. **One trace file per scenario.** Don't mix scenarios into a single file.
 6. **run.sh must work end-to-end.** Anyone should be able to reproduce traces with a single command.
+7. **Never use `ScheduleWakeup` / `CronCreate` to wait for builds, tests, or trace generation.** This pipeline runs `claude --print` — any cross-turn timer is silently dropped at `end_turn`, leaving harness work half-done with exit 0. Block within the turn (`Bash` with `wait` / `timeout`). See `../tla-checking-workflow/guide.md` Phase 2 "Batch Mode Constraints."
 
 ---
 

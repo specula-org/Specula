@@ -101,6 +101,20 @@ These parameters apply to **all** model checking runs — convergence and bug hu
 
 **When model checking completes with no violations**: Report success to user. No further action needed.
 
+### How to wait — Batch Mode Constraints (CRITICAL)
+
+This pipeline runs `claude --print` (non-interactive batch mode). The harness exits the moment you `end_turn`; any timer, wakeup, or cron registration made before that is silently discarded along with it. The phase will appear to succeed (exit 0) but the work after `end_turn` simply never happens.
+
+- ❌ **Do NOT use `ScheduleWakeup`, `CronCreate`,** or any tool whose semantics is "schedule me to be re-invoked after delay X." These rely on the harness staying alive across turns; in batch mode it does not.
+- ❌ **Do NOT end your turn** while a background TLC / build / test is still running and unobserved.
+- ✅ **Block in the same turn**: foreground `Bash` with `wait $PID`, `timeout 30m ...`, or a single bounded poll loop:
+  ```bash
+  timeout 30m bash -c 'until grep -qE "completed|Error" out.log; do sleep 30; done'
+  ```
+- ✅ **MCP tools are blocking and safe**: `get_tlc_summary`, `run_trace_validation`, etc. return when the work is done — use these in preference to manual polling whenever applicable.
+
+Only `end_turn` after the current piece of work is fully observed and recorded.
+
 ---
 
 ## Phase 3: Counterexample Analysis (Core Task)
@@ -217,6 +231,7 @@ When the standard tools don't provide enough detail, use `run_trace_replay` to r
 5. **Document everything.** Record every counterexample analysis and modification.
 6. **Use tools systematically.** Start with `get_tlc_summary` for overview, then drill into states. Don't guess from raw log text when structured tools are available.
 7. **Restart after fixes.** After modifying spec or invariants, restart model checking from Phase 1 to verify the fix and continue checking.
+8. **Never use `ScheduleWakeup` / `CronCreate` to wait.** This pipeline runs `claude --print` — any cross-turn timer is silently dropped. Block within the turn (`Bash` with `wait` / `timeout`) or use blocking MCP tools. See Phase 2 "Batch Mode Constraints."
 
 ---
 

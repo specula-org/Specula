@@ -160,6 +160,7 @@ Converged in N rounds. Bug hunting: M bugs found / no bugs found.
 4. **Record every fix in changelog.** This is the single source of truth for the iteration history.
 5. **Autonomous by default.** Apply fixes directly. Only pause for user confirmation if the prompt explicitly requests human-in-the-loop.
 6. **Read instrumentation-spec before fixing.** Always know the code location mapping when analyzing failures.
+7. **Never use `ScheduleWakeup` / `CronCreate` to wait between TLC runs.** This pipeline runs `claude --print` — the harness exits at `end_turn` and any cross-turn timer is silently dropped, leaving the round half-done with exit code 0. Always block within the turn (`Bash` with `wait` / `timeout`, or blocking MCP tools). See `../tla-checking-workflow/guide.md` Phase 2 "Batch Mode Constraints."
 
 ---
 
