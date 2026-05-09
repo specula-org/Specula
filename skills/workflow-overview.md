@@ -134,11 +134,13 @@ Run `MC_hunt_*.cfg` with fault injection. BFS + Simulation strategy:
 
 **Goal**: Confirm MC-found bugs are real and reproduce them.
 
-### Three Sub-Phases
+### Sub-Phases (see `skills/bug-confirmation/phases/` for each)
 
-1. **Code Audit** — Trace call chain, check safeguards, construct trigger scenario
-2. **Developer Intent** — Search issue tracker, read commit messages, check existing tests
-3. **Reproduction (MANDATORY for new bugs)** — Write and execute reproduction test
+1. **Investigation** — Five steps, cheap-first: triage filters (path ≠ bug, name observable harm) → code audit → developer intent investigation → prerequisite verification (code-level + protocol-semantic) → precedent re-check. Bias toward continuing investigation when uncertain rather than rejecting at triage.
+2. **Counterfactual Fix Check (system-property findings, advisory)** — For findings whose violated property is system-wide (availability, exhaustion, eventual consistency), re-run TLC with a one-line fix in spec; if property still violates, reframe before proceeding.
+3. **Reproduction (MANDATORY for new bugs)** — Write and execute reproduction test.
+
+After all applicable phases have run, assign a Report Tier (A/B/C) based on the accumulated evidence; see `skills/bug-confirmation/guide.md`.
 
 ### Key Rules
 
@@ -146,6 +148,7 @@ Run `MC_hunt_*.cfg` with fault injection. BFS + Simulation strategy:
 - Known/historical bugs (matching existing JIRA) don't require reproduction
 - "Code audit only" is NOT acceptable for new bugs
 - Tests must be actually executed, results recorded
+- Tier C findings are recorded in `confirmed-bugs.md` but excluded from the maintainer-facing submission by default
 
 ### Output
 
