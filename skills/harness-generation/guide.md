@@ -261,7 +261,7 @@ Keep it short and practical — the Phase 3 agent needs to make small adjustment
 5. **One trace file per scenario.** Don't mix scenarios into a single file.
 6. **run.sh must work end-to-end.** Anyone should be able to reproduce traces with a single command.
 7. **Never use `ScheduleWakeup` / `CronCreate` to wait for builds, tests, or trace generation.** This pipeline runs `claude --print` — any cross-turn timer is silently dropped at `end_turn`, leaving harness work half-done with exit 0. Block within the turn (`Bash` with `wait` / `timeout`). See `../tla-checking-workflow/guide.md` Phase 2 "Batch Mode Constraints."
-8. **Always wrap test/build commands in `timeout N`.** `cargo test`, `make`, language test harnesses — concurrent code in the system-under-test can deadlock. Without an outer `timeout`, a hung test silently consumes the entire phase. Pick N as 5–10× expected runtime, cap at 30 min, treat a fired timeout as a deadlock finding (don't auto-retry). Real incident: `cargo test` deadlocked overnight on arc-swap because no `timeout` was set.
+8. **Always wrap test/build commands in `timeout N`.** `cargo test`, `make`, language test harnesses — concurrent code in the system-under-test can deadlock. Without an outer `timeout`, a hung test silently consumes the entire phase. Pick N as 5–10× expected runtime, cap at 30 min, treat a fired timeout as a deadlock finding (don't auto-retry). **Polling loops that wait on subprocess output (e.g. `until grep "done" log; sleep 30; done`) need outer `timeout` too** — a SIGTERM'd subprocess won't write its natural-termination marker, so the polling spins forever. Real incidents: cargo test deadlocked overnight; polling loop spun for 2 hours on arc-swap.
 
 ---
 
