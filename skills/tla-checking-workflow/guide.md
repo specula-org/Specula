@@ -113,6 +113,16 @@ This pipeline runs `claude --print` (non-interactive batch mode). The harness ex
   ```
 - ✅ **MCP tools are blocking and safe**: `get_tlc_summary`, `run_trace_validation`, etc. return when the work is done — use these in preference to manual polling whenever applicable.
 
+**Wrap any potentially-deadlocking command in `timeout`.** Concurrent test suites, build steps that take locks, network calls, anything that might hang under bug conditions — give it an outer `timeout N` so the agent isn't held hostage by a deadlock in the system under test:
+
+```bash
+timeout 10m cargo test --test foo            # not just `cargo test --test foo`
+timeout 5m  make build                       # not just `make build`
+timeout 30m java tlc2.TLC ...                # TLC has its own -t flag too; outer timeout is belt-and-suspenders
+```
+
+Pick `N` as ~5–10× the expected runtime, capped at 30 min for any single command. A timeout that fires is a real signal — report it as a finding (likely a deadlock), do **not** auto-retry blindly. We have lost a full overnight run to a deadlocked `cargo test` with no outer timeout; do not let it happen again.
+
 Only `end_turn` after the current piece of work is fully observed and recorded.
 
 ---
@@ -232,6 +242,7 @@ When the standard tools don't provide enough detail, use `run_trace_replay` to r
 6. **Use tools systematically.** Start with `get_tlc_summary` for overview, then drill into states. Don't guess from raw log text when structured tools are available.
 7. **Restart after fixes.** After modifying spec or invariants, restart model checking from Phase 1 to verify the fix and continue checking.
 8. **Never use `ScheduleWakeup` / `CronCreate` to wait.** This pipeline runs `claude --print` — any cross-turn timer is silently dropped. Block within the turn (`Bash` with `wait` / `timeout`) or use blocking MCP tools. See Phase 2 "Batch Mode Constraints."
+9. **Wrap any potentially-deadlocking command in `timeout N`.** Concurrent tests, build steps, TLC runs, network calls — anything that might hang under bug conditions. A deadlock in the system under test must not silently consume the entire run. See Phase 2 "Batch Mode Constraints."
 
 ---
 

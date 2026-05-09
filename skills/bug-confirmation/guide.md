@@ -141,6 +141,7 @@ This pipeline runs `claude --print` (non-interactive batch). The harness exits a
 
 - ❌ **Do NOT use `ScheduleWakeup`, `CronCreate`,** or any tool whose semantics is "schedule me to be re-invoked later." The phase will appear to succeed (exit 0) but reproduction will be left half-done.
 - ❌ **Do NOT end your turn** while a reproduction test, compile step, or TLC run is unfinished and unobserved.
+- ❌ **Do NOT run a reproduction test or build without an outer `timeout`.** Reproduction tests deliberately exercise concurrent / racy code paths — they can and do deadlock. Always wrap: `timeout 5m cargo test ...`, `timeout 10m ./repro.sh`, etc. A fired timeout is a finding (likely the bug you're chasing), not a failure to retry.
 - ✅ **Block in the same turn**: `Bash` with `wait $PID`, `timeout 30m ...`, or a single bounded poll loop wrapped in an outer `timeout`.
 
 See `../tla-checking-workflow/guide.md` Phase 2 "Batch Mode Constraints" for full rationale.

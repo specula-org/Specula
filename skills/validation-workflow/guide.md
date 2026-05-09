@@ -161,6 +161,7 @@ Converged in N rounds. Bug hunting: M bugs found / no bugs found.
 5. **Autonomous by default.** Apply fixes directly. Only pause for user confirmation if the prompt explicitly requests human-in-the-loop.
 6. **Read instrumentation-spec before fixing.** Always know the code location mapping when analyzing failures.
 7. **Never use `ScheduleWakeup` / `CronCreate` to wait between TLC runs.** This pipeline runs `claude --print` — the harness exits at `end_turn` and any cross-turn timer is silently dropped, leaving the round half-done with exit code 0. Always block within the turn (`Bash` with `wait` / `timeout`, or blocking MCP tools). See `../tla-checking-workflow/guide.md` Phase 2 "Batch Mode Constraints."
+8. **Wrap potentially-deadlocking commands in `timeout N`.** TLC has `-t 30` but applies it inside the JVM; an outer `timeout` protects against JVM hangs. Build steps, test harnesses, anything in the system-under-test — same rule. A deadlocked subprocess silently consumes the entire phase otherwise.
 
 ---
 

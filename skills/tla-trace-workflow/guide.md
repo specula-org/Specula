@@ -126,6 +126,7 @@ The user may request not to clean up the generated files. Otherwise, run `clean_
 6. **Fix the base spec, not the trace comparison logic.** Unless there is no other option.
 7. **Trace.cfg must have `PROPERTIES TraceMatched`.** Without it, validation silently produces false positives. See Phase 1 prerequisite above.
 8. **Never use `ScheduleWakeup` / `CronCreate` to wait for trace validation runs.** This pipeline runs `claude --print` — any cross-turn timer is silently dropped at `end_turn` and the run is left half-done with exit 0. The MCP trace tools (`run_trace_validation`, `run_trace_debugging`) are blocking and safe; use them. See `../tla-checking-workflow/guide.md` Phase 2 "Batch Mode Constraints."
+9. **Wrap any non-MCP TLC invocation in `timeout N`.** If you shell out to TLC directly via `Bash` (not through MCP tools), use `timeout 30m java tlc2.TLC ...`. Build/test steps invoked from this skill follow the same rule.
 
 ---
 
