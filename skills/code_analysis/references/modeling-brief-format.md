@@ -103,6 +103,13 @@ Findings that TLA+ model checking should be able to confirm or refute. These dir
 |----|-------------|----------------------------|------------|
 ```
 
+**Each MC finding should be a forward-looking question about unaudited behavior**, not a reproduction of a closed historical issue.
+
+- ✅ *"If FastConfirmLoad's SC label is downgraded, can a stale snapshot reach the writer?"* — mechanism question, lets MC explore something whose answer isn't already known.
+- ❌ *"MC1: recreate pre-`d5dd00c` state of #198"* — the answer is in the closed PR; the fix already passed review.
+
+We don't value findings whose punchline reduces to "we reproduced a bug that's already fixed upstream." Re-deriving via TLA+ + Miri produces no information beyond `git revert <commit> && cargo test`. If a candidate finding's only honest description is "recreate #N" or "regression of PR #M", **demote it to § 7 Reference Pointers** — keep the issue as context for the bug family in § 2, but don't list it as a modeling target. See `bug-archaeology.md` § 1.4.
+
 #### 6.2 Test-Verifiable
 
 Findings better verified by writing unit/integration tests. Not suitable for TLA+ (too low-level, implementation-specific, or performance-related).
@@ -144,3 +151,4 @@ Links to detailed evidence for the spec author to consult:
 5. **Explicit exclusions**. Stating what NOT to model is as valuable as stating what to model. It prevents the spec author from wasting effort.
 6. **Category must carry forward.** Later phases should be able to read the brief and immediately know whether to use distributed-style or concurrent-style modeling and trace validation.
 7. **Put category-specific detail in the right place.** The brief should record the category and chosen bug families, but the reusable playbooks live in `distributed-analysis.md` and `concurrent-analysis.md`.
+8. **Closed bugs are reference, not target.** Historical bugs that the upstream has already fixed belong in § 2 Evidence (as evidence for the mechanism's bug-proneness) and § 7 Reference Pointers (as context for the spec author). They do **not** belong in § 6.1 as model-checkable findings. Reproducing a closed bug via formal methods produces no information beyond what the original PR already has. We don't value such results. See `bug-archaeology.md` § 1.4 and § 6.1 above.
