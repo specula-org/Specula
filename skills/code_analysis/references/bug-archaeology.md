@@ -28,6 +28,16 @@ For each bug fix commit, record:
 
 ---
 
+### 1.4 Already-Fixed Bugs Are Reference, Not Targets
+
+If a historical bug is already fixed in mainline, reproducing it adds value only if the reproduction itself produces something the upstream fix did not — e.g., a deeper mechanism explanation the original PR missed, a generalization to other sites the upstream did not audit, or a regression test the project does not have.
+
+**Re-deriving the bug via formal methods is not new value.** TLA+ and Miri both recovering "this fix is necessary" is equivalent to `git revert <commit> && cargo test` — useful as methodology demonstration, but contributes zero information about the system itself.
+
+When a historical fix has no such added value, record it as **reference context** in the brief (under "Reference Pointers" or as evidence for a bug-prone mechanism) — not as a Model-Checkable Finding or as a modeling target. A modeling-brief entry of the form "MC1: recreate pre-`<commit>` state of #<issue>" is target painting and should be rewritten as either (a) an unaudited-site question of the same mechanism, or (b) demoted to reference.
+
+---
+
 ## 2. GitHub Issue/PR Verification
 
 ### 2.1 Issue Collection
