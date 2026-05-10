@@ -195,10 +195,10 @@ Write your outputs to:
 10. After classification, follow the matching category-specific reference file under \`skills/code_analysis/references/\`. Do not force a distributed-system template onto a concurrent library, or vice versa.
 PROMPT_EOF
 
-  # Inject per-target extra prompt if present (check case-study root first, then .specula-output)
-  local extra="$PWD/.prompt-extra.md"
+  # Inject per-target extra prompt if present (prefer the target work dir)
+  local extra="${work_dir}/.prompt-extra.md"
   if [[ ! -f "$extra" ]]; then
-    extra="${work_dir}/.prompt-extra.md"
+    extra="$PWD/.prompt-extra.md"
   fi
   if [[ -f "$extra" ]]; then
     echo ""

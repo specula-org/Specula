@@ -170,12 +170,13 @@ Before writing specs, read \`${brief}\` and determine whether this target is Cat
 
 ## Phases
 
-Execute all 4 phases in order:
+Execute the spec-generation phases in order, including the mandatory self-audit between MC and Trace:
 
 1. **Base Spec** — Write \`base.tla\` + \`base.cfg\` with bug-family driven extensions
 2. **MC Spec** — Write \`MC.tla\` + \`MC.cfg\` with counter-bounded actions
-3. **Trace Spec** — Write \`Trace.tla\` + \`Trace.cfg\` for trace validation
-4. **Instrumentation Spec** — Write \`instrumentation-spec.md\` with action-to-code mapping
+3. **Brief Coverage Self-Audit** — Write \`brief-coverage.md\`; fix missing hunt cfg / invariant coverage before proceeding
+4. **Trace Spec** — Write \`Trace.tla\` + \`Trace.cfg\` for trace validation
+5. **Instrumentation Spec** — Write \`instrumentation-spec.md\` with action-to-code mapping
 
 ## Output
 
@@ -187,6 +188,7 @@ Expected files:
 - \`${spec_dir}/base.cfg\` — Base config
 - \`${spec_dir}/MC.tla\` — Model checking specification
 - \`${spec_dir}/MC.cfg\` — Model checking config
+- \`${spec_dir}/brief-coverage.md\` — Coverage audit mapping brief §2/§5/§6.1 to hunt cfgs and invariants
 - \`${spec_dir}/Trace.tla\` — Trace validation specification
 - \`${spec_dir}/Trace.cfg\` — Trace validation config
 - \`${spec_dir}/instrumentation-spec.md\` — Instrumentation mapping
@@ -203,12 +205,13 @@ Expected files:
 8. Silent actions must be tightly constrained. Unconstrained silent actions cause state space explosion.
 9. MC spec bounds fault-injection, not normal operations.
 10. For Category B systems, split API-level operations at real semantic boundaries (read/confirm, reserve/publish, retire/reclaim, signal/complete). Do not collapse them into single actions unless the code is truly atomic there.
+11. Before moving from MC spec to Trace spec, write \`brief-coverage.md\` and fix any missing hunt cfg or disabled invariant coverage it exposes.
 PROMPT_EOF
 
-  # Inject per-target extra prompt if present (check case-study root first, then .specula-output)
-  local extra="$PWD/.prompt-extra.md"
+  # Inject per-target extra prompt if present (prefer the target work dir)
+  local extra="${work_dir}/.prompt-extra.md"
   if [[ ! -f "$extra" ]]; then
-    extra="${work_dir}/.prompt-extra.md"
+    extra="$PWD/.prompt-extra.md"
   fi
   if [[ -f "$extra" ]]; then
     echo ""

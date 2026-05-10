@@ -205,10 +205,10 @@ If instrumentation adjustments are needed during validation, read \`harness/INST
 5. If the system is Category B, preserve the partial-order/timebox validation model. Do not "simplify" it into a linear trace workflow just to make validation easier.
 PROMPT_EOF
 
-  # Inject per-target extra prompt if present (check case-study root first, then .specula-output)
-  local extra="$PWD/.prompt-extra.md"
+  # Inject per-target extra prompt if present (prefer the target work dir)
+  local extra="${work_dir}/.prompt-extra.md"
   if [[ ! -f "$extra" ]]; then
-    extra="${work_dir}/.prompt-extra.md"
+    extra="$PWD/.prompt-extra.md"
   fi
   if [[ -f "$extra" ]]; then
     echo ""

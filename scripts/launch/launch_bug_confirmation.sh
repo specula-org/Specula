@@ -183,24 +183,28 @@ Create a unified list of all bugs/findings, noting for each:
 Filter out defensive coding suggestions, style issues, and theoretical-only concerns.
 Keep only findings that represent real logic bugs with concrete impact.
 
-### Step 2: Confirm each bug via code audit
+### Step 2: Confirm each bug via investigation
 
 For each finding, follow the bug-confirmation skill Phase 1:
-1. Locate and read the relevant code in the source repo
-2. Trace the call chain — is the buggy path reachable?
-3. Check for existing safeguards that prevent the bug
-4. Construct a concrete trigger scenario
+1. Apply the triage filters and name the observable harm
+2. Locate and read the relevant code in the source repo
+3. Trace the call chain — is the buggy path reachable?
+4. Check for existing safeguards that prevent the bug
+5. Construct a concrete trigger scenario
+6. Investigate developer intent, protocol/spec prerequisites, and any precedent prerequisites
 
 Classify each finding as:
 - **CONFIRMED**: Code audit confirms the bug is real and reachable
 - **FALSE POSITIVE**: Safeguards exist that prevent the bug in practice
 - **NEEDS REPRODUCTION**: Bug is plausible but needs a test to verify
 
-### Step 3: MANDATORY — Reproduce every confirmed bug
+For system-wide property findings, run the skill's Counterfactual Fix Check before final tier assignment.
 
-**This step is NOT optional.** Every bug classified as CONFIRMED or NEEDS REPRODUCTION MUST have a reproduction test. A bug without reproduction is NOT confirmed — it is unverified.
+### Step 3: MANDATORY — Reproduce every new confirmed bug
 
-For each confirmed bug:
+**This step is NOT optional for new bugs.** Every new bug classified as CONFIRMED or NEEDS REPRODUCTION MUST have a reproduction test. A new bug without reproduction is NOT confirmed — it is unverified. Known/historical bugs (matching an existing JIRA, CVE, upstream issue, or already-accepted report) do not require new reproduction, but the report must cite the existing evidence.
+
+For each new confirmed bug:
 1. Write a self-contained reproduction test to \`${work_dir}/repro/\`
 2. The test MUST use the system's public interfaces — no illegal state injection
 3. The test MUST actually be executed, and the output recorded
@@ -209,7 +213,7 @@ For each confirmed bug:
 6. Success criterion: observable anomalous behavior (crash, deadlock, data inconsistency, invariant violation)
 7. If reproduction fails after genuine effort: explain what was tried, why it failed, and whether the bug is still believed to be real. Do NOT silently skip reproduction.
 
-**Output requirement**: At least one executable file in \`${work_dir}/repro/\` for each confirmed bug. Name them \`test_bug1_*.py\`, \`test_bug2_*.py\`, etc.
+**Output requirement**: At least one executable file in \`${work_dir}/repro/\` for each new confirmed bug. Name them \`test_bug1_*.py\`, \`test_bug2_*.py\`, etc. Known/historical bugs should instead include the upstream reference and why it is sufficient.
 
 ### Step 4: Write final report
 
@@ -228,10 +232,13 @@ Format:
 
 ## Bug 1: <title>
 - **Source**: MC / Code Review
-- **Status**: REPRODUCED / REPRODUCTION FAILED / FALSE POSITIVE
+- **Status**: REPRODUCED / REPRODUCTION FAILED / KNOWN-HISTORICAL / FALSE POSITIVE
 - **Severity**: Critical / High / Medium
 - **Location**: file:line
 - **Description**: ...
+- **Prerequisites**: code/spec prerequisites and verification status
+- **Counterfactual fix check**: required for system-wide property findings; omit only when not applicable
+- **Report Tier**: A / B / C
 - **Trigger scenario**: ...
 - **Reproduction test**: repro/test_bug1_xxx.py — describe what it does
 - **Reproduction result**: PASS (bug triggered) / FAIL (bug not triggered, explain why)
@@ -241,17 +248,17 @@ Format:
 ## Critical Rules
 
 1. Follow the bug-confirmation skill strictly — especially the prohibited approaches.
-2. **Every confirmed bug MUST have a reproduction test in repro/.** No exceptions. "Code audit only" is NOT an acceptable final status for new bugs.
+2. **Every new confirmed bug MUST have a reproduction test in repro/.** "Code audit only" is NOT an acceptable final status for new bugs. Known/historical bugs are exempt only when the report cites the existing accepted evidence.
 3. MC-confirmed bugs with counterexamples are high-confidence; focus reproduction effort there first.
 4. Do NOT lower reproduction standards to claim success. If you cannot reproduce, say so honestly — but you MUST try.
 5. For each false positive, explain clearly what safeguard prevents the bug.
 6. Actually RUN the reproduction tests and record the output. Do not just write tests without executing them.
 PROMPT_EOF
 
-  # Inject per-target extra prompt if present (check case-study root first, then .specula-output)
-  local extra="$PWD/.prompt-extra.md"
+  # Inject per-target extra prompt if present (prefer the target work dir)
+  local extra="${work_dir}/.prompt-extra.md"
   if [[ ! -f "$extra" ]]; then
-    extra="${work_dir}/.prompt-extra.md"
+    extra="$PWD/.prompt-extra.md"
   fi
   if [[ -f "$extra" ]]; then
     echo ""
@@ -368,7 +375,7 @@ main() {
       summary=$(grep -A5 "^## Summary" "$report" 2>/dev/null | tail -4)
       echo "  ${name}: ${summary:-report exists}"
 
-      # Hard check: if confirmed bugs > 0, repro/ must have test files
+      # Soft check: new bugs require repro; known/historical bugs may cite existing evidence.
       local confirmed
       confirmed=$(grep -oP 'Reproduced:\s*\K\d+' "$report" 2>/dev/null || echo "0")
       local repro_dir="${work_dir}/repro"
@@ -380,7 +387,7 @@ main() {
 
       if (( bug_count > 0 )) && (( repro_count == 0 )); then
         echo "  ⚠ WARNING: ${name} has ${bug_count} bug(s) but NO reproduction tests in repro/"
-        echo "    Reproduction is MANDATORY. Re-run bug confirmation for this target."
+        echo "    This is OK only if all are known/historical bugs with cited upstream evidence."
       elif (( repro_count > 0 )); then
         echo "  ✓ ${name}: ${repro_count} reproduction test(s) in repro/"
       fi
