@@ -216,13 +216,14 @@ Adversary cancels an in-flight operation at any await / yield / external-complet
 - Spec hint: tag each modeled CAS as weak/strong. Weak CAS gets an extra `SpuriousFail` branch under counter bound. Verify the surrounding retry loop is correct under spurious failure.
 - Skip when: implementation uses only `compare_exchange_strong`.
 
-### 5.5 Memory Ordering Relaxation
+### 5.5 Memory Ordering / Visibility Bridges
 
-Adversary downgrades a load tagged `acquire` to `relaxed`, or a store tagged `release` to `relaxed`, on suspected cross-variable bridge sites.
+Model the implementation's actual memory-ordering labels first, then look for cross-variable visibility assumptions that those labels may not justify. If you run a deliberately weakened ordering as a sensitivity check, label it as hypothetical unless the implementation already uses that weaker ordering.
 
 - Applicable when: lock-free implementation uses mixed `Ordering::*` annotations and the safety argument depends on cross-variable visibility (see § 2.3).
-- Spec hint: **do not** attempt full TSO / ARM modeling. Label each load/store in the spec with the C11 ordering actually used in the implementation, then write a bounded adversary that downgrades only the labels suspected of being load-bearing.
-- Discipline: any counterexample requires manual review against the real hardware model. Many violations are spurious because actual TSO / ARM rules out the interleaving that TLA+'s sequential consistency allows when ordering is relaxed in spec but enforced in hardware.
+- Spec hint: **do not** attempt full TSO / ARM modeling. Label each load/store in the spec with the C11/Rust ordering actually used in the implementation. Add bounded visibility-gap actions only for bridges that the implementation's real labels leave ambiguous.
+- Hypothetical weakening: If you intentionally ask "would this break if Acquire were Relaxed?", put that in a separate hunt config and report any counterexample as a robustness/sensitivity result, not as an implementation bug.
+- Discipline: any counterexample requires manual review against the real hardware model. Many violations are spurious because actual TSO / ARM rules out the interleaving that a simplified TLA+ visibility model allows.
 - Skip when: implementation uses only `seq_cst` (rare in performance-sensitive lock-free code).
 - Existing examples: dpdk-ring `Stall` / `StaleRead` / `RTSCaptureHead`; arc-swap `OrderingGap` / `StaleRead`; left-right `SkipFence`.
 

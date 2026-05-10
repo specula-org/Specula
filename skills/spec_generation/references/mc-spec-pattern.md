@@ -97,12 +97,14 @@ The MC layer's contribution to 5.1 is purely negative: do **not** silently colla
 | Family | Counter / mechanism | Wrapper shape | Existing reference |
 |---|---|---|---|
 | 5.2 Cancellation | `cDropFuture < MaxDropFuture` | `MCDropFuture(t) == /\ cnt < bound /\ DropFuture(t) /\ cnt' = cnt+1` | `case-studies/kanal/spec/MC.tla` (`MCDropRecvFutureCancel`, `MCDropSendFutureCancel`) |
-| 5.3 OOM | `cAllocFail < MaxAllocFail` per site | `MCAllocFail(site) == /\ cnt < bound /\ AllocFail(site)` drives error branch | None yet — universally unmodeled |
-| 5.4 CAS_weak | `cSpuriousFail < MaxSpurious` | `MCCASWeakFail(t) == /\ cnt < bound /\ CASExpectedMatch(t) /\ CASFail(t)` | None yet |
-| 5.5 MemOrder | `cOrderGap < MaxOrderingGaps` | `MCDowngradeAcquire(t) == /\ cnt < bound /\ ReadAtRelaxed(t)` — downgrade labelled load | `case-studies/dpdk-ring/spec/MC.tla` (`MCStall` / `MCStaleRead` / `MCRTSCaptureHead`); `case-studies/arc-swap/spec/MC.tla` (`MCWriterScanSlot` + `orderingGapCount`); `case-studies/left-right/spec/MC.tla` (`MCSkipReaderFence`, `MCSkipWriterFence`) |
+| 5.3 OOM | `cAllocFail < MaxAllocFail` per site | `MCAllocFail(site) == /\ cAllocFail[site] < MaxAllocFail /\ AllocFail(site) /\ cAllocFail' = [cAllocFail EXCEPT ![site] = @ + 1]` drives error branch | None yet — universally unmodeled |
+| 5.4 CAS_weak | `cSpuriousFail < MaxSpurious` | `MCCASWeakFail(t) == /\ cSpuriousFail < MaxSpurious /\ CASExpectedMatch(t) /\ CASFail(t) /\ cSpuriousFail' = cSpuriousFail + 1` | None yet |
+| 5.5 MemOrder | `cOrderGap < MaxOrderingGaps` | Model the implementation's actual ordering first. If the code really has a weak bridge, wrap that path, e.g. `MCStaleRead(t) == /\ cOrderGap < MaxOrderingGaps /\ StaleReadAllowedByImpl(t) /\ cOrderGap' = cOrderGap + 1`. Hypothetical downgrades belong in explicitly labeled sensitivity configs, not the ground-truth MC spec. | `case-studies/dpdk-ring/spec/MC.tla` (`MCStall` / `MCStaleRead` / `MCRTSCaptureHead`); `case-studies/arc-swap/spec/MC.tla` (`MCWriterScanSlot` + `orderingGapCount`); `case-studies/left-right/spec/MC.tla` (`MCSkipReaderFence`, `MCSkipWriterFence`) |
 | 5.6 ABA | no counter — modeled in base via slot/generation tags + reclamation pool | `Reclaim(addr) ==` returns addr to free pool; CAS tuple checks `(ptr, gen)` | `case-studies/dpdk-ring/spec/base.tla` (`NoABA` invariant); `case-studies/crossbeam-epoch/spec/base.tla` |
 | 5.7 Caller misuse | `cIllegalCall < MaxIllegal` | external `ClientHarness` action set, one counter per misuse pattern | None yet — caller usually assumed cooperative |
-| 5.8 Lost wakeup | `cSpuriousWake < MaxSpuriousWake` | `MCSpuriousWake(t) == /\ cnt < bound /\ ParkedToReady(t)` without `notify` | `case-studies/libgomp/spec/MC.tla` (cancel-related wakeup paths) |
+| 5.8 Lost wakeup | `cSpuriousWake < MaxSpuriousWake` | `MCSpuriousWake(t) == /\ cSpuriousWake < MaxSpuriousWake /\ ParkedToReady(t) /\ cSpuriousWake' = cSpuriousWake + 1` without `notify` | `case-studies/libgomp/spec/MC.tla` (cancel-related wakeup paths) |
+
+These wrapper shapes are schematic: adapt the counter names, record fields, and `UNCHANGED` clauses to your MC module. The important rule is that any fault wrapper with a budget must consume that budget on the transition; otherwise the "bounded" fault can fire forever.
 
 For each row marked "None yet", that family is genuinely unmodeled in the existing case-study set. When generating a new spec where that family applies, you are writing the first reference example — keep the wrapper shape minimal and idiomatic so future case studies can reuse it.
 

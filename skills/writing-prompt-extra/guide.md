@@ -7,7 +7,9 @@ Read this when the user asks you to set up Specula for a new target, or to write
 `.prompt-extra.md` is an optional per-target file that every Specula phase launcher (`launch_code_analysis.sh`, `launch_spec_generation.sh`, `launch_harness_generation.sh`, `launch_spec_validation.sh`, `launch_bug_confirmation.sh`) appends to its agent prompt under a `## Target-Specific Instructions` heading. It lives at:
 
 - `.prompt-extra.md` in the directory the user launches the pipeline from, OR
-- `.specula-output/.prompt-extra.md` (used when scripted launchers create per-target work directories — checked second).
+- `.specula-output/.prompt-extra.md` (used when scripted launchers create per-target work directories — checked first by launchers).
+
+When both files exist, the per-target file under `.specula-output/` wins. This avoids accidentally applying one parent-directory prompt to every target in a batch run.
 
 Every phase agent reads the same file, so phase-specific instructions need to be marked (e.g., `### Phase 4 only`).
 
@@ -79,7 +81,7 @@ Choose the subset the target actually needs. A target with no production inciden
 3. **Read enough of the target source** to cite real file paths. If there's a GitHub repo, run `gh issue list` with relevant keywords to surface production incidents the user may not have mentioned.
 4. **Draft** using the structure above and the hard rules. Aim for under 60 lines.
 5. **Show the draft to the user before writing the file.** Highlight which sections you included and why, and call out any sections you considered including but dropped (e.g., "I skipped Out-of-Scope because the target is small enough that scoping isn't a concern").
-6. **Write to** `.prompt-extra.md` (or `.specula-output/.prompt-extra.md` if the user is using scripted launchers with a work directory).
+6. **Write to** `.specula-output/.prompt-extra.md` when the target is launched through Specula scripts, or `.prompt-extra.md` only for a single-target manual run from that target directory.
 
 ## Anti-patterns
 

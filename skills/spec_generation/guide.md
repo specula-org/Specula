@@ -16,6 +16,8 @@ Bug-family driven modeling: each spec extension exists because a Bug Family in t
 | 3 | `Trace.tla` + `Trace.cfg` | Trace validation spec |
 | 4 | `instrumentation-spec.md` | Action-to-code mapping for harness generation |
 
+This `brief-coverage.md` self-audit is part of spec generation. It is separate from the pipeline's harness-generation phase, which is also sometimes called Phase 2.5.
+
 **Single agent, sequential phases.** Each phase writes output to files. If context is compressed mid-session, re-read your own output files to recover.
 
 ---

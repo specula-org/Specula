@@ -32,6 +32,8 @@ Each finding's entry in `confirmed-bugs.md` should include, in addition to the e
 - `Counterfactual fix check:` block, when applicable (from Phase 2)
 - `Report Tier: A | B | C` (assigned at the end based on evidence from all applicable phases)
 
+If launcher prompts or older templates say "every confirmed bug needs reproduction," read that as **every new confirmed bug**. Known/historical bugs remain exempt when they cite accepted upstream evidence (JIRA, CVE, maintainer-accepted issue, or equivalent).
+
 ## Batch Mode Constraints (CRITICAL)
 
 This pipeline runs `claude --print` (non-interactive batch). The harness exits at `end_turn`; any timer/wakeup registered before that is silently dropped along with it. Reproduction tests, build steps, and TLC runs (Phase 2 and Phase 3) that need waiting must block in the same turn.

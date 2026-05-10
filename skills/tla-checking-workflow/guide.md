@@ -107,9 +107,9 @@ This pipeline runs `claude --print` (non-interactive batch mode). The harness ex
 
 - ❌ **Do NOT use `ScheduleWakeup`, `CronCreate`,** or any tool whose semantics is "schedule me to be re-invoked after delay X." These rely on the harness staying alive across turns; in batch mode it does not.
 - ❌ **Do NOT end your turn** while a background TLC / build / test is still running and unobserved.
-- ✅ **Block in the same turn**: foreground `Bash` with `wait $PID`, `timeout 30m ...`, or a single bounded poll loop:
+- ✅ **Block in the same turn**: foreground `Bash` with `wait $PID`, `timeout 30m ...`, or a single bounded poll loop. If the loop waits on a 30-minute TLC run, give the outer cap grace time:
   ```bash
-  timeout 30m bash -c 'until grep -qE "completed|Error" out.log; do sleep 30; done'
+  timeout 35m bash -c 'until grep -qE "Finished in|completed|Error|Invariant violation|aborted" out.log; do sleep 30; done'
   ```
 - ✅ **MCP tools are blocking and safe**: `get_tlc_summary`, `run_trace_validation`, etc. return when the work is done — use these in preference to manual polling whenever applicable.
 
@@ -130,7 +130,7 @@ timeout 35m bash -c 'until grep -qE "Finished in|Error|Invariant violation|abort
 #       ↑ outer cap > inner TLC -t (e.g., -t 30) + grace (5m)
 ```
 
-Rule of thumb: outer `timeout` ≥ inner subprocess time budget + 5 min grace. The polling loop must self-terminate even when its target marker never appears. We have lost 2 hours of an arc-swap run to a polling loop that watched for `Finished in` while TLC had been SIGTERM'd by its own `-t`; do not let it happen again.
+Rule of thumb: outer `timeout` ≥ inner subprocess time budget + 5 min grace for TLC, or 5-10× expected runtime for shorter build/test commands. These examples are starting points; inspect the command's own timeout and termination markers. The polling loop must self-terminate even when its target marker never appears. We have lost 2 hours of an arc-swap run to a polling loop that watched for `Finished in` while TLC had been SIGTERM'd by its own `-t`; do not let it happen again.
 
 Only `end_turn` after the current piece of work is fully observed and recorded.
 
