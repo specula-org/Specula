@@ -218,14 +218,21 @@ Adversary cancels an in-flight operation at any await / yield / external-complet
 
 ### 5.5 Memory Ordering / Visibility Bridges
 
-Model the implementation's actual memory-ordering labels first, then look for cross-variable visibility assumptions that those labels may not justify. If you run a deliberately weakened ordering as a sensitivity check, label it as hypothetical unless the implementation already uses that weaker ordering.
+Model the implementation's actual memory-ordering labels first, then look for cross-variable visibility assumptions that those labels may not justify.
 
 - Applicable when: lock-free implementation uses mixed `Ordering::*` annotations and the safety argument depends on cross-variable visibility (see § 2.3).
 - Spec hint: **do not** attempt full TSO / ARM modeling. Label each load/store in the spec with the C11/Rust ordering actually used in the implementation. Add bounded visibility-gap actions only for bridges that the implementation's real labels leave ambiguous.
-- Hypothetical weakening: If you intentionally ask "would this break if Acquire were Relaxed?", put that in a separate hunt config and report any counterexample as a robustness/sensitivity result, not as an implementation bug.
 - Discipline: any counterexample requires manual review against the real hardware model. Many violations are spurious because actual TSO / ARM rules out the interleaving that a simplified TLA+ visibility model allows.
 - Skip when: implementation uses only `seq_cst` (rare in performance-sensitive lock-free code).
-- Existing examples: dpdk-ring `Stall` / `StaleRead` / `RTSCaptureHead`; arc-swap `OrderingGap` / `StaleRead`; left-right `SkipFence`.
+
+**Forbidden: adversaries that reconstruct code states mainline has moved past.** If an adversary's effect on the spec equals `git revert <commit>` for some past commit, the adversary is answer-key-guided regression demonstration — drop it. The violation it produces is by construction; you knew the answer before you wrote the action.
+
+The "sensitivity" / "robustness check" framing does not rescue this. If the only conclusion you can write about a violation is "already fixed by PR #N — no action needed," the spec never asked a question whose answer wasn't already known. Treat the closed-PR list as evidence of mechanism bug-proneness in modeling-brief § 2, not as a target set for the spec to re-enumerate.
+
+Concrete patterns this rule retires:
+- `MCRelaxOrdering(site)` / `MCPickRelaxSite(site)` whose `RelaxSites` set is 1-to-1 with closed upstream commits that introduced the current SC labels (e.g., arc-swap rounds 2/3/4 enumerating sites at `(#76, #198, #204, #195, #164)`).
+- `MCRevert<X>` actions that disable a guard / check added by a known fix commit.
+- Counter-bounded actions inserted specifically to recreate the pre-fix interleaving documented in some past issue's comments.
 
 ### 5.6 ABA / Pointer Reuse
 
