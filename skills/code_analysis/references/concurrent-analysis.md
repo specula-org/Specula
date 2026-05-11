@@ -225,9 +225,11 @@ Model the implementation's actual memory-ordering labels first, then look for cr
 - Discipline: any counterexample requires manual review against the real hardware model. Many violations are spurious because actual TSO / ARM rules out the interleaving that a simplified TLA+ visibility model allows.
 - Skip when: implementation uses only `seq_cst` (rare in performance-sensitive lock-free code).
 
-**Forbidden: adversaries that reconstruct code states mainline has moved past.** If an adversary's effect on the spec equals `git revert <commit>` for some past commit, the adversary is answer-key-guided regression demonstration — drop it. The violation it produces is by construction; you knew the answer before you wrote the action.
+**Forbidden: adversaries whose only value is TLA+-reproduction of an already-fixed bug.** If your finding's contribution reduces to "we re-derived a result the upstream commit and its regression test already establish" — drop it. The information added is zero; only the medium (TLA+ vs `cargo test`) is different.
 
-The "sensitivity" / "robustness check" framing does not rescue this. If the only conclusion you can write about a violation is "already fixed by PR #N — no action needed," the spec never asked a question whose answer wasn't already known. Treat the closed-PR list as evidence of mechanism bug-proneness in modeling-brief § 2, not as a target set for the spec to re-enumerate.
+A practical litmus: if the adversary's effect on the spec can be obtained by `git revert <commit>` for some past commit, you are almost always in this case — answer-key-guided regression demonstration.
+
+The "sensitivity" / "robustness check" framing does not rescue this. If the only conclusion you can write about a violation is "already fixed by PR #N — no action needed," the work added nothing. Treat the closed-PR list as evidence of mechanism bug-proneness in modeling-brief § 2, not as a target set for the spec to re-enumerate.
 
 Concrete patterns this rule retires:
 - `MCRelaxOrdering(site)` / `MCPickRelaxSite(site)` whose `RelaxSites` set is 1-to-1 with closed upstream commits that introduced the current SC labels (e.g., arc-swap rounds 2/3/4 enumerating sites at `(#76, #198, #204, #195, #164)`).
