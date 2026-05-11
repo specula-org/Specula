@@ -4,6 +4,8 @@ Use this reference after classifying the target as **Category A (Distributed / M
 
 This file covers the analysis patterns that matter most for replicated state machines, consensus protocols, storage services, and other systems where the main risks are protocol logic, crash windows, and message-handling behavior.
 
+If the target uses BFT consensus (Byzantine threat model — PBFT, HotStuff, Tendermint / CometBFT, DiemBFT / AptosBFT, IBFT / QBFT, HoneyBadgerBFT, Algorand, Narwhal+Bullshark), **additionally** consult `bft-analysis.md` for the Byzantine adversary categories that compose on top of the 6 distributed fault families described here. For purely crash-fault-tolerant systems (Raft, Multi-Paxos, primary-backup), use this file alone — `bft-analysis.md` does not apply.
+
 ---
 
 ## 1. Reconnaissance Priorities
@@ -166,7 +168,7 @@ If the target has a domain-specific failure mode that fits its semantics better 
 
 Unlike concurrent specs (where one family — thread interleaving — dominates), distributed bugs typically emerge from the **interaction between two or three families**. Crash alone rarely surfaces a Raft bug; crash + network + timeout in combination does. Spend modeling effort ensuring each family is faithful, then let TLC explore their cross-product.
 
-> Byzantine / equivocation faults (BFT consensus) are deliberately not covered here — they require a separate adversary model and will be addressed in a dedicated reference.
+> Byzantine / equivocation faults (BFT consensus) are not covered here — see `bft-analysis.md` for the 9 Byzantine adversary categories. When the target is BFT, model both layers: the 6 distributed families below + the Byzantine actions in `bft-analysis.md` that compose with them.
 
 ### 5.1 Crash and Recovery — *the canonical headline*
 

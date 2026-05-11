@@ -54,7 +54,7 @@ The 9 categories below are the modal cluster of Byzantine actions concretized ac
 
 A Byzantine identity signs or sends incompatible protocol messages for the same logical slot (round / height / view / epoch).
 
-- **Applicable when**: every BFT protocol. Equivocation is the single most universal adversary action across PBFT-family literature, Twins, CometBFT accountability (where it is one of three exhaustive lunatic-class attacks for light-client safety), and Ethereum slashing rules.
+- **Applicable when**: every BFT protocol. Equivocation is the single most universal adversary action across PBFT-family literature, Twins, CometBFT accountability (where equivocation is one of the scoped light-client attack classes alongside lunatic and amnesia), and Ethereum slashing rules.
 - **Spec hint**: action wrapper `ByzEquivocate(s, r, v1, v2)` with `s ∈ Faulty`, `v1 ≠ v2`, both messages added to the message set in one step. The counterexample of interest is two honest validators committing different values at the same height.
 - **Case-study reference**: `case-studies/autobahn/spec/MC.tla` (`MCByzantinePrepare` fires repeatedly with different `val` for the same `(slot, view)` — emergent equivocation).
 - **Composition note**: equivocation alone often violates Agreement directly; combined with 5.2 message loss / partition (distributed-analysis.md), it produces classic split-brain.
@@ -112,7 +112,7 @@ A Byzantine actor forges, reuses, or relies on malformed, stale, conflicting, or
 - **Applicable when**: every BFT protocol whose safety / liveness invariants are stated in terms of certificates — PBFT prepared/commit certificates, HotStuff QCs and TCs, Tendermint commits, DiemBFT / AptosBFT QC+TC, Narwhal / Bullshark certified DAG blocks. Empirically the most bug-dense category in real BFT implementations: autobahn's DA-1 (QC not bound to value), DA-2 (`Timeout::digest` hashes nothing → forgeable TC), DA-3 (`TC::verify` always Ok), and DA-5 (winning-view selection from wrong cert) are all instances.
 - **Spec hint**: two default-safe action shapes — neither forges honest signatures.
   - `ByzForgeCertificate(s, certType, sl, v, val, signers)`: claimed `signers ⊆ Faulty`. The cert is "broken" via wrong value-binding, insufficient quorum, or malformed digest.
-  - `ByzReuseRealCertificate(s, cert, val_target)`: Byzantine takes a real existing certificate (signers are honest, they really signed `cert.value`) and presents it as binding a different value. Models autobahn DA-1 (QC not bound to value) and stale-cert replay attacks. Exploits value-binding / freshness gaps without any signature forgery.
+  - `ByzReuseRealCertificate(s, cert, val_target)`: Byzantine takes a real existing certificate (signers are honest, they really signed `cert.value`) and presents it as binding a different value. **Value-binding reuse example** — models autobahn DA-1 (QC not bound to value). The template body only mutates `value`; for other stale-context attacks (different slot, view, or epoch), extend the action to mutate the corresponding field. No signature forgery; exploits value-binding / freshness gaps.
   The **receiver-side** verification predicates (`ValidateQC`, `VerifyTC`, `CertSignersIntersect`, value-binding check) are the bug surface — missing or weakened predicates are how attacks succeed. **Verification-bypass variant**: `claimedSigners ⊆ Server` (may include honest IDs) is allowed only when the case study explicitly models a broken receiver-side check (e.g., autobahn DA-3 where `TC::verify` always returns Ok). Outside that scope, the bypass variant models honest-signature forgery and produces spurious bugs.
 - **Case-study reference**: `case-studies/autobahn/spec/MC_hunt_safety.tla` (`MCByzantineTimeout` + `MCByzantineVotePrepare` / `MCByzantineVoteConfirm`) — used in `MC_hunt_da23.cfg` to find autobahn DA-2 / DA-3.
 - **Composition note**: composes with 2.5 Replay (stale certificate reused in new view) and 2.1 Equivocation (Byzantine assembles conflicting QCs for the same slot/view).
@@ -122,7 +122,7 @@ A Byzantine actor forges, reuses, or relies on malformed, stale, conflicting, or
 A Byzantine actor creates, censors, duplicates, replays, or races evidence / slashing artifacts in the protocol's accountability subsystem. Distinct from the consensus path itself: evidence governs what the system *records about* Byzantine behavior, not how consensus proceeds.
 
 - **Applicable when**: target has an explicit evidence pool, slashing module, light-client accountability mechanism, or fork-detection subsystem. Tendermint / CometBFT evidence pool, Casper FFG slashing rules, Ethereum proposer/attester slashing, Aptos slashing infrastructure all fit. Permissioned BFT protocols without these subsystems do not need 2.8.
-- **Spec hint**: evidence is per-node (`evidencePool[s]`) — Byzantine cannot delete from another node's pool. Realistic action wrappers: `ByzWithholdEvidenceMsg(s, ev)` (don't gossip own evidence), `ByzProposeBadEvidence(s, ev_invalid)` (gossip invalid evidence; receiver-side `ValidEvidence` is the bug surface), `ByzReplayOldEvidence(s, ev_old, newCtx)`, `ByzGossipConflictingEvidence(s, ev_dup)`. Invariants to check: "evidence for any committed Byzantine action eventually applies", "no false evidence applies", "evidence-pool monotonic across reconfiguration".
+- **Spec hint**: evidence is per-node (`evidencePool[s]`) — Byzantine cannot delete from another node's pool. Realistic action wrappers: `ByzWithholdEvidenceMsg(s, ev)` (don't gossip own evidence), `ByzProposeBadEvidence(s, ev_invalid)` (gossip invalid evidence; receiver-side `ValidEvidence` is the bug surface), `ByzReplayOldEvidence(s, ev_old, newCtx)`, `ByzGossipConflictingEvidence(s, ev_dup)`. Candidate invariants, when supported by the protocol's gossip / expiry / slashing-availability assumptions: "evidence for any committed Byzantine action eventually applies", "no false evidence applies", "evidence-pool monotonic across reconfiguration".
 - **Case-study reference**: no corpus example yet. `case-studies/cometbft/spec/base.tla` has `DetectEquivocation` as a reactive-only sink — a starting point but not a full evidence-lifecycle model.
 - **Composition note**: composes with 2.1 Equivocation (Byzantine equivocates, then suppresses the resulting evidence) and 2.4 Selective Dissemination (evidence reaches some validators but not others).
 - **Conditional**: include when CometBFT-style accountability is in scope. cometbft is the immediate candidate in our corpus.
@@ -165,7 +165,7 @@ The view-change protocol is the most bug-prone subprotocol in BFT systems (autob
 
 ### 4.4 Accountability / Evidence Lifecycle Integrity
 
-Many BFT systems include evidence pools, slashing modules, or light-client checkpoints. Bugs hide in evidence creation (does the system actually create evidence for every detectable Byzantine action?), evidence propagation (can evidence be censored / replayed?), and evidence application (is the slashing transaction itself idempotent?). Model 2.6 + protocol-specific evidence actions.
+Many BFT systems include evidence pools, slashing modules, or light-client checkpoints. Bugs hide in evidence creation (does the system actually create evidence for every detectable Byzantine action?), evidence propagation (can evidence be censored / replayed?), and evidence application (is the slashing transaction itself idempotent?). Model 2.8 + the originating Byzantine action that produces the evidence (usually 2.1 equivocation, 2.2 invalid content, 2.6 amnesia, or a protocol-specific slashing condition).
 
 ### 4.5 Light-Client Safety vs Full-Node Safety Divergence
 
@@ -267,10 +267,11 @@ ByzForgeCertificate(s, certType, sl, v, val, signers) ==
           value |-> val, signers |-> signers] }
     /\ UNCHANGED state
 
-\* Reuse a real existing certificate in a wrong context — same (honest)
-\* signers, different value / slot / view binding. Models autobahn DA-1
-\* (QC not bound to value) and stale-cert replay attacks. No signature
-\* forgery; exploits value-binding / freshness gaps.
+\* Reuse a real existing certificate with the value-binding mutated.
+\* Models autobahn DA-1 (QC not bound to value) — a value-binding example.
+\* For other stale-context cases (different slot / view / epoch), mutate
+\* the corresponding field in the EXCEPT clause. No signature forgery;
+\* exploits value-binding / freshness gaps.
 ByzReuseRealCertificate(s, cert, val_target) ==
     /\ s \in Faulty
     /\ cert \in ExistingCerts
@@ -412,7 +413,7 @@ BFT adversary actions are layered on top of the 6 distributed fault families, no
 | 2.7 Cert Forge × 5.3 Timeout | Forged TC accepted at view-change boundary | autobahn DA-2/DA-3 |
 | 2.7 Cert Forge × 2.1 Equivocation | Conflicting QCs for the same slot | autobahn DA-1 |
 
-Prefer staged analysis when feasible — model and check each family individually before composing, so failures isolate cleanly. But if the hypothesis is inherently cross-family (e.g., aptosbft MC-4 = 2.6 amnesia × 5.1 crash; autobahn DA-2/DA-3 = 2.7 cert-forge × view-change), model the composition directly and document in the brief which component assumptions are being combined.
+Prefer staged analysis when feasible — model and check each family individually before composing, so failures isolate cleanly. But if the hypothesis is inherently cross-family (e.g., aptosbft MC-4 = 2.6 amnesia × 5.1 crash; autobahn DA-2/DA-3 = 2.7 cert-forge × view-change), model the composition directly and document in the brief which component assumptions are being combined. For BFT case studies, this exception overrides the generic "compose only after each family individually passes" guidance in `distributed-analysis.md` § Composition — Byzantine bugs are frequently cross-family by construction, and staged-only modeling will miss them.
 
 ---
 
@@ -432,5 +433,5 @@ Prefer staged analysis when feasible — model and check each family individuall
 - Target's safety argument explicitly excludes Byzantine threats (some replicated-storage systems, single-writer log-structured systems): use `distributed-analysis.md` alone.
 - Target uses BFT consensus for a sub-protocol but the case study is scoped to the non-BFT layer: focus on the relevant layer's threat model, not this file.
 
-If unsure, default to using both files — `bft-analysis.md` adds adversary categories but does not require modeling all 9 if the case study scopes them out explicitly.
+If the target layer participates in BFT safety / liveness and you are unsure, use both files; otherwise document in the modeling brief why the BFT layer is out of scope. `bft-analysis.md` adds adversary categories but does not require modeling all 9 if the case study scopes them out explicitly.
 
