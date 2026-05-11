@@ -150,5 +150,5 @@ Links to detailed evidence for the spec author to consult:
 
 5. **Explicit exclusions**. Stating what NOT to model is as valuable as stating what to model. It prevents the spec author from wasting effort.
 6. **Category must carry forward.** Later phases should be able to read the brief and immediately know whether to use distributed-style or concurrent-style modeling and trace validation.
-7. **Put category-specific detail in the right place.** The brief should record the category and chosen bug families, but the reusable playbooks live in `distributed-analysis.md` and `concurrent-analysis.md`.
+7. **Put category-specific detail in the right place.** The brief should record the category and chosen bug families, but the reusable playbooks live in `distributed-analysis.md` and `concurrent-analysis.md`, with `bft-analysis.md` as a BFT overlay on top of distributed.
 8. **Closed bugs are reference, not target.** Historical bugs that the upstream has already fixed belong in § 2 Evidence (as evidence for the mechanism's bug-proneness) and § 7 Reference Pointers (as context for the spec author). They do **not** belong in § 6.1 as model-checkable findings. Reproducing a closed bug via formal methods produces no information beyond what the original PR already has. We don't value such results. See `bug-archaeology.md` § 1.4 and § 6.1 above.

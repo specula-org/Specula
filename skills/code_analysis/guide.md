@@ -25,6 +25,7 @@ After classifying:
 
 - read `references/deep-analysis.md` for the shared methodology
 - read `references/distributed-analysis.md` for **Category A**
+- if Category A uses BFT consensus (Byzantine threat model — PBFT, HotStuff, Tendermint, DiemBFT, IBFT/QBFT, etc.), **also** read `references/bft-analysis.md`
 - read `references/concurrent-analysis.md` for **Category B**
 
 ---
@@ -107,6 +108,7 @@ Every finding MUST be verified: re-read exact code lines, check for compensating
 - **`references/bug-archaeology.md`** — Git mining and issue verification methodology
 - **`references/deep-analysis.md`** — Shared deep-analysis methodology
 - **`references/distributed-analysis.md`** — Category A (distributed / message-passing) analysis patterns
+- **`references/bft-analysis.md`** — BFT overlay (Byzantine adversary categories), read in addition to distributed-analysis.md when Category A is BFT
 - **`references/concurrent-analysis.md`** — Category B (concurrent / lock-free / runtime) analysis patterns
 - **`references/modeling-brief-format.md`** — Standard format for the handoff document
 - **`examples/hashicorp-raft-modeling-brief.md`** — Complete real-world example
