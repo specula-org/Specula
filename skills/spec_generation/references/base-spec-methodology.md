@@ -5,7 +5,7 @@ How to write a TLA+ base spec from a Modeling Brief.
 > **Note**: Examples reference Raft (hashicorp/raft) as an illustrative case study. Adapt to your target system. For Category B systems, the right template is often thread-local state + shared memory windows, not messages and roles.
 
 > **Category routing** — sections in this file are split by target category:
-> - **Category A** (distributed) → § "Action Design / When to Split" (general) + § "Fault Injection / Category A" (canonical fault actions: Crash, LoseMessage, Partition, Timeout) + § "Crash and Recovery". Bug-class taxonomy in `code_analysis/references/distributed-analysis.md` § 5.
+> - **Category A** (distributed) → § "Action Design / When to Split" (general) + § "Fault Injection / Category A" (canonical fault actions: Crash, LoseMessage, Partition, Timeout) + § "Crash and Recovery". Bug-class taxonomy in `code_analysis/references/distributed-analysis.md` § 5. If the target is BFT, also consult `code_analysis/references/bft-analysis.md` for the Byzantine adversary categories that overlay on top — use it as guidance for *which adversary shapes are worth considering*, not a fixed template to mirror.
 > - **Category B** (concurrent / lock-free) → § "Granularity for Concurrent Specs" (the headline 5.1) + § "Fault Injection / Category B" (5.2-5.8 fault action shapes). Bug-class taxonomy in `code_analysis/references/concurrent-analysis.md` § 5.
 >
 > Sections "Variable Design", "Action Design / Naming / Structure", "Invariant Design", "Helpers" apply to both categories.

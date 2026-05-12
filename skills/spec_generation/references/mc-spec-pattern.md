@@ -5,7 +5,7 @@ Template and methodology for writing model checking specs that wrap the base spe
 > **Note**: Examples reference Raft as an illustrative case study. Adapt action names, constants, and bounds to your target system. Category B systems usually need fewer threads and smaller structures, but finer-grained actions and more targeted fault injection.
 
 > **Category routing** — sections in this file are split by target category:
-> - **Category A** (distributed: Raft / Paxos / replicated storage / network FSM / streaming) → § "Applying Fault Families (Distributed Specs)"; bug-class taxonomy in `code_analysis/references/distributed-analysis.md` § 5.
+> - **Category A** (distributed: Raft / Paxos / replicated storage / network FSM / streaming) → § "Applying Fault Families (Distributed Specs)"; bug-class taxonomy in `code_analysis/references/distributed-analysis.md` § 5. If the target is BFT, also see `code_analysis/references/bft-analysis.md` § 5 for Byzantine wrapper shapes — treat the template there as a starting skeleton, adapt to the target protocol's actual message schema and validation path.
 > - **Category B** (concurrent / lock-free: lock-free data structures / synchronization primitives / runtimes / channels / collections) → § "Applying Fault Families (Concurrent Specs)"; bug-class taxonomy in `code_analysis/references/concurrent-analysis.md` § 5.
 >
 > Sections "Purpose", "Structure", "Which Actions to Bound", "Config Pattern", "Tuning Constants", "Hunting Configs" apply to both categories.
@@ -40,7 +40,7 @@ For **Category B** systems:
 
 ## Applying Fault Families (Distributed Specs)
 
-Companion to `code_analysis/references/distributed-analysis.md` § 5. That file describes which fault families a distributed system needs; this section shows the spec-level patterns. Distributed bugs typically require **two or three families composed** (crash + persistence, partition + timeout, etc.) — see distributed-analysis.md § 5 "Composition" for combinations.
+Companion to `code_analysis/references/distributed-analysis.md` § 5. That file describes which fault families a distributed system needs; this section shows the spec-level patterns. Distributed bugs typically require **two or three families composed** (crash + persistence, partition + timeout, etc.) — see distributed-analysis.md § 5 "Composition" for combinations. For BFT targets, the Byzantine wrapper shapes in `bft-analysis.md` § 5 compose with the families below; consult both, and let the case-study evidence dictate which compositions to actually model — do not feel obligated to enable every wrapper that appears in either reference.
 
 ### 5.1-5.6 Spec Patterns by Family
 
@@ -68,7 +68,7 @@ Distributed bugs typically need 2-3 families simultaneously active. Set conserva
 
 ### Coverage Annotation
 
-When generating MC.tla for a distributed target, document fault model coverage in the header so reviewers can verify it against `distributed-analysis.md` § 5:
+When generating MC.tla for a distributed target, document fault model coverage in the header so reviewers can verify it against `distributed-analysis.md` § 5 (and, for BFT targets, also against `bft-analysis.md` § 2 adversary categories):
 
 ```tla
 \* Fault model coverage:
