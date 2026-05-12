@@ -356,11 +356,10 @@ generate_summary() {
       fi
 
       # Phase 1 review
-      if [[ -f "${work_dir}/review-analysis.md" ]]; then
-        local verdict
-        verdict=$(grep -i "verdict:" "${work_dir}/review-analysis.md" | tail -1)
-        verdict="${verdict:-UNKNOWN}"
-        echo "- **Analysis Review**: ${verdict}"
+      if [[ -s "${work_dir}/review-analysis.md" ]]; then
+        echo "- **Analysis Review**: written ($(wc -l < "${work_dir}/review-analysis.md") lines)"
+      elif [[ -f "${work_dir}/review-analysis.md" ]]; then
+        echo "- **Analysis Review**: empty (check log)"
       else
         echo "- **Analysis Review**: SKIPPED"
       fi
@@ -381,11 +380,10 @@ generate_summary() {
       fi
 
       # Phase 2 review
-      if [[ -f "${spec_dir}/review-specgen.md" ]]; then
-        local verdict
-        verdict=$(grep -i "verdict:" "${spec_dir}/review-specgen.md" | tail -1)
-        verdict="${verdict:-UNKNOWN}"
-        echo "- **Spec Gen Review**: ${verdict}"
+      if [[ -s "${spec_dir}/review-specgen.md" ]]; then
+        echo "- **Spec Gen Review**: written ($(wc -l < "${spec_dir}/review-specgen.md") lines)"
+      elif [[ -f "${spec_dir}/review-specgen.md" ]]; then
+        echo "- **Spec Gen Review**: empty (check log)"
       else
         echo "- **Spec Gen Review**: SKIPPED"
       fi
@@ -406,21 +404,19 @@ generate_summary() {
       fi
 
       # Phase 3 status
-      if [[ -f "${spec_dir}/changelog.md" ]]; then
-        local result
-        result=$(grep -i "^## Result" -A1 "${spec_dir}/changelog.md" | tail -1)
-        result="${result:-in progress (no result yet)}"
-        echo "- **Phase 3 (Validation)**: ${result}"
+      if [[ -s "${spec_dir}/changelog.md" ]]; then
+        echo "- **Phase 3 (Validation)**: changelog written ($(wc -l < "${spec_dir}/changelog.md") lines)"
+      elif [[ -f "${spec_dir}/changelog.md" ]]; then
+        echo "- **Phase 3 (Validation)**: changelog empty (check log)"
       else
         echo "- **Phase 3 (Validation)**: SKIPPED"
       fi
 
       # Phase 3 review
-      if [[ -f "${spec_dir}/review-validation.md" ]]; then
-        local verdict
-        verdict=$(grep -i "verdict:" "${spec_dir}/review-validation.md" | tail -1)
-        verdict="${verdict:-UNKNOWN}"
-        echo "- **Validation Review**: ${verdict}"
+      if [[ -s "${spec_dir}/review-validation.md" ]]; then
+        echo "- **Validation Review**: written ($(wc -l < "${spec_dir}/review-validation.md") lines)"
+      elif [[ -f "${spec_dir}/review-validation.md" ]]; then
+        echo "- **Validation Review**: empty (check log)"
       else
         echo "- **Validation Review**: SKIPPED"
       fi

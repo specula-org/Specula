@@ -293,11 +293,10 @@ main() {
       validation) review_file="$(get_work_dir "$name")/spec/review-validation.md" ;;
     esac
 
-    if [[ -f "$review_file" ]]; then
-      local verdict
-      verdict=$(grep -i "verdict:" "$review_file" | tail -1)
-      verdict="${verdict:-UNKNOWN}"
-      echo "  ${name}: ${verdict}"
+    if [[ -s "$review_file" ]]; then
+      echo "  ${name}: review written ($(wc -l < "$review_file") lines)"
+    elif [[ -f "$review_file" ]]; then
+      echo "  ${name}: review empty (check log)"
     else
       echo "  ${name}: (no review file generated — check log)"
     fi

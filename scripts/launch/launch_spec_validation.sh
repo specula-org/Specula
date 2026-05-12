@@ -319,15 +319,13 @@ main() {
     local spec_dir="$(get_work_dir "$name")/spec"
     local changelog="${spec_dir}/changelog.md"
 
-    local status="(check log)"
-    if [[ -f "$changelog" ]]; then
-      local result
-      result=$(grep -i "^## Result" -A1 "$changelog" | tail -1)
-      result="${result:-changelog exists, no result yet}"
-      status="$result"
+    if [[ -s "$changelog" ]]; then
+      echo "  ${name}: changelog written ($(wc -l < "$changelog") lines)"
+    elif [[ -f "$changelog" ]]; then
+      echo "  ${name}: changelog empty (check log)"
+    else
+      echo "  ${name}: no changelog (check log)"
     fi
-
-    echo "  ${name}: ${status}"
   done
 }
 

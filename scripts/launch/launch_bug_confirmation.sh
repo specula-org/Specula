@@ -370,29 +370,16 @@ main() {
     work_dir="$(get_work_dir "$name")"
     local report="${work_dir}/spec/confirmed-bugs.md"
 
-    if [[ -f "$report" ]]; then
-      local summary
-      summary=$(grep -A5 "^## Summary" "$report" 2>/dev/null | tail -4)
-      echo "  ${name}: ${summary:-report exists}"
+    local repro_dir="${work_dir}/repro"
+    local repro_count=0
+    [[ -d "$repro_dir" ]] && repro_count=$(find "$repro_dir" -name "test_bug*" -type f 2>/dev/null | wc -l)
 
-      # Soft check: new bugs require repro; known/historical bugs may cite existing evidence.
-      local confirmed
-      confirmed=$(grep -oP 'Reproduced:\s*\K\d+' "$report" 2>/dev/null || echo "0")
-      local repro_dir="${work_dir}/repro"
-      local repro_count
-      repro_count=$(find "$repro_dir" -name "test_bug*" -type f 2>/dev/null | wc -l)
-
-      local bug_count
-      bug_count=$(grep -cP '^\s*##\s+Bug\s+\d+' "$report" 2>/dev/null || echo "0")
-
-      if (( bug_count > 0 )) && (( repro_count == 0 )); then
-        echo "  ⚠ WARNING: ${name} has ${bug_count} bug(s) but NO reproduction tests in repro/"
-        echo "    This is OK only if all are known/historical bugs with cited upstream evidence."
-      elif (( repro_count > 0 )); then
-        echo "  ✓ ${name}: ${repro_count} reproduction test(s) in repro/"
-      fi
+    if [[ -s "$report" ]]; then
+      echo "  ${name}: confirmed-bugs.md written ($(wc -l < "$report") lines, repro/ tests: ${repro_count})"
+    elif [[ -f "$report" ]]; then
+      echo "  ${name}: confirmed-bugs.md empty (check log; repro/ tests: ${repro_count})"
     else
-      echo "  ${name}: (no report)"
+      echo "  ${name}: (no report — check log; repro/ tests: ${repro_count})"
     fi
   done
 }
