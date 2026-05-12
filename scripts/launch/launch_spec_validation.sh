@@ -238,7 +238,7 @@ launch_agent() {
     return 0
   fi
 
-  "$ADAPTER" --prompt-file="$prompt_file" --max-turns="$MAX_TURNS" --claude-alias="$CLAUDE_ALIAS" --log="$log_file" --background &
+  "$ADAPTER" --prompt-file="$prompt_file" --max-turns="$MAX_TURNS" --claude-alias="$CLAUDE_ALIAS" --effort=max --log="$log_file" --background &
   local pid=$!
   echo "$pid" > "${work_dir}/spec-validation.pid"
   echo "  PID=$pid  Log: $log_file"

@@ -249,7 +249,7 @@ launch_review() {
   mkdir -p "$log_dir"
 
   local pid
-  pid=$("$ADAPTER" --prompt="$prompt" --max-turns=30 --claude-alias="$CLAUDE_ALIAS" --log="$log_file" --background)
+  pid=$("$ADAPTER" --prompt="$prompt" --max-turns=30 --claude-alias="$CLAUDE_ALIAS" --effort=max --log="$log_file" --background)
   echo "$pid" > "${log_dir}/review-${phase}.pid"
   echo "  PID=$pid  Log: $log_file"
 }

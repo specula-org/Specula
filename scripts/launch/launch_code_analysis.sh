@@ -229,7 +229,9 @@ launch_agent() {
     return 0
   fi
 
-  "$ADAPTER" --prompt-file="$prompt_file" --max-turns="$MAX_TURNS" --claude-alias="$CLAUDE_ALIAS" --log="$log_file" --background &
+  # --effort=max is explicit so the IDE's CLAUDE_EFFORT injection (from ~/.claude/settings.json)
+  # cannot silently downgrade pipeline runs.
+  "$ADAPTER" --prompt-file="$prompt_file" --max-turns="$MAX_TURNS" --claude-alias="$CLAUDE_ALIAS" --effort=max --log="$log_file" --background &
   local pid=$!
   echo "$pid" > "${work_dir}/agent.pid"
   echo "  PID=$pid  Log: $log_file"
