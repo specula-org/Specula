@@ -36,6 +36,8 @@ If a historical bug is already fixed in mainline, reproducing it adds value only
 
 When a historical fix has no such added value, record it as **reference context** in the brief (under "Reference Pointers" or as evidence for a bug-prone mechanism) — not as a Model-Checkable Finding or as a modeling target. A modeling-brief entry of the form "MC1: recreate pre-`<commit>` state of #<issue>" is target painting and should be rewritten as either (a) an unaudited-site question of the same mechanism, or (b) demoted to reference.
 
+**Value-driven containment**: a historical fix's citation flows from § 2 Evidence (as bug-prone-mechanism evidence) and stays in § 7 Reference Pointers. It must **not** propagate into § 4 Proposed Extensions, § 5 Proposed Invariants, or § 6.1 Model-Checkable Findings — including when the propagation is rationalized as "defense-confirmation target", "defense audit", "X-style attack probe", "boundary test at the threshold", "test the brief's MC-N hypothesis", or "verify the fix is load-bearing". Each of these framings predictably produces a Phase 4 writeup that admits the finding is "hardening / no externally observable consequence / deliberate developer intent / documented design choice / Tier C record-only" — zero information beyond the existing PR. Specula's compute and agent effort are spent to produce information the user does not already have; observed cost of generating predictable zero-value findings is ~$100 per case in the BFT corpus. Stop the propagation at § 2.
+
 ---
 
 ## 2. GitHub Issue/PR Verification

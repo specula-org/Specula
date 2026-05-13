@@ -110,6 +110,8 @@ Findings that TLA+ model checking should be able to confirm or refute. These dir
 
 We don't value findings whose punchline reduces to "we reproduced a bug that's already fixed upstream." Re-deriving via TLA+ + Miri produces no information beyond `git revert <commit> && cargo test`. If a candidate finding's only honest description is "recreate #N" or "regression of PR #M", **demote it to § 7 Reference Pointers** — keep the issue as context for the bug family in § 2, but don't list it as a modeling target. See `bug-archaeology.md` § 1.4.
 
+**Output-value litmus** (apply before adding any candidate to § 6.1): write the one-sentence Phase 4 writeup conclusion you predict for the finding. If the only honest conclusion is one of "hardening / defense-in-depth / no externally observable consequence / deliberate developer intent / documented design choice / Tier C record-only", **drop the finding from § 6.1 entirely** — the Phase 2-onward MC effort it would consume (~$30-80 per hunt-cfg pass in observed BFT runs) yields zero information beyond the existing fix. The Phase 2 hunt-cfg author is the same agent writing § 6.1, so the predicted Phase 4 verdict is fully accessible at brief-writing time; if you can foresee the verdict, the work is not worth generating. Rewrite the finding as a genuinely open mechanism question, or demote to § 7 Reference Pointers.
+
 #### 6.2 Test-Verifiable
 
 Findings better verified by writing unit/integration tests. Not suitable for TLA+ (too low-level, implementation-specific, or performance-related).
