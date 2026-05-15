@@ -160,88 +160,32 @@ If a finding is mostly about formatting, logging, allocation, or a tiny local co
 
 ---
 
-## 5. Fault Model Reference
+## 5. Fault Model — Vocabulary, Not Checklist
 
-Distributed systems have well-established canonical fault models — `crash + lose message + timeout` appears in every consensus paper and every replication codebase. The six families below codify what is already canonical across the literature, plus a few system-specific patterns surfaced by the case-study set. They are a checklist for completeness, not a constraint on design.
+The labels below are a vocabulary for talking about distributed failure modes. They are **not** a checklist; do not assume your target needs all of them, and do not copy structural choices from other case studies. Each target deserves a case-specific analysis grounded in its own code, deployment context, and the open questions the brief is trying to answer.
 
-If the target has a domain-specific failure mode that fits its semantics better — disk silent corruption, clock skew, geo-replication fan-out, leader lease drift, custom write-ahead-log truncation — model it directly. The list is non-exhaustive on purpose.
-
-Unlike concurrent specs (where one family — thread interleaving — dominates), distributed bugs typically emerge from the **interaction between two or three families**. Crash alone rarely surfaces a Raft bug; crash + network + timeout in combination does. Spend modeling effort ensuring each family is faithful, then let TLC explore their cross-product.
-
-> Byzantine / equivocation faults (BFT consensus) are not covered here — see `bft-analysis.md` for the 9 Byzantine adversary categories. When the target is BFT, model both layers: the 6 distributed families below + the Byzantine actions in `bft-analysis.md` that compose with them.
+> Byzantine / equivocation faults (BFT consensus) are not covered here — see `bft-analysis.md`. When the target is BFT, the Byzantine adversary composes with whichever non-Byzantine faults the target's deployment actually exposes.
 
 ### 5.1 Crash and Recovery — *the canonical headline*
 
-Server stops; in-memory state is lost; persisted state is retained. On restart, the node rejoins the quorum and may differ from the durable view of others.
+Server stops; in-memory state is lost; persisted state is retained. On restart, the node rejoins the quorum and may differ from the durable view of others. This is the substrate of distributed bugs in the same way thread interleaving is the substrate of concurrent bugs — a Raft/Paxos-style spec that does not model crash is usually missing its primary adversary. How to split persistent vs in-memory state is target-specific; the right granularity comes from reading the actual persistence code.
 
-- Applicable when: every distributed system. This is the canonical fault model — a distributed spec without it is missing its primary adversary.
-- Spec hint: `Crash(s)` action that splits state into persistent vs in-memory; only persistent survives. `Recover(s)` re-enters the protocol with persistent state. See `case-studies/cometbft/spec/base.tla`.
-- Skip when: never.
-- Composition note: most non-trivial Raft / Paxos bugs need crash composed with at least one network family (5.2) or non-atomic persistence (5.4).
+### 5.2-5.6 — Other Common Failure Modes
 
-### 5.2 Message Loss / Partition / Reorder
+These are situational. Use them only if your target's actual code, deployment, and the open question warrant them. Each entry is a label; the implementation should come from your case, not from imitating other case studies.
 
-Network drops messages, isolates servers, or reorders delivery.
+- **5.2 Message loss / partition / reorder** — asynchronous-messaging hazards: drops, isolation, out-of-order delivery across retries or multiple connections.
+- **5.3 Timeout / timer firing** — election, lease, heartbeat, or scheduler-delay timers fire non-deterministically. Often the trigger for split-brain when composed with partition.
+- **5.4 Non-atomic persistence** — multiple durable writes within one logical operation, with crash possible between any pair. Heavy in replicated-storage systems where fsync boundaries are the main correctness frontier.
+- **5.5 Configuration / membership change** — joint consensus, leader-driven reconfig, role / epoch transitions while the protocol is running.
+- **5.6 Snapshot / state transfer / catchup** — lagging server receives bulk state and must reconcile with subsequent incremental updates.
 
-- Applicable when: any system using asynchronous messaging.
-- Spec hint: `LoseMessage(m)` removes from the message bag; `PartitionServer(s)` filters delivery for that server; reorder is implicit when the spec uses a bag (set) rather than an ordered queue. See `case-studies/etcd-raft/spec/MC.tla` (`MCLoseMessage`, `MCPartitionServer`).
-- Skip when: rare — TCP delivery guarantees do not cover application-level reorder across retries / multiple connections.
-
-### 5.3 Timeout / Timer Firing
-
-Election / leader / heartbeat / lease timer fires non-deterministically. Models clock skew, scheduler delay, or simply the absence of a synchrony assumption.
-
-- Applicable when: any system with timers.
-- Spec hint: `Timeout(s)` action under counter bound. The action does not depend on real time — it fires at any spec-allowed point.
-- Skip when: rare; even pure data planes usually have some timer.
-- Composition note: timeout + partition is the classic split-brain trigger.
-
-### 5.4 Non-Atomic Persistence
-
-Crash between two or more durable writes within a single logical operation. Persistent state on restart contains a partial commit.
-
-- Applicable when: implementation uses multiple disk writes (term then votedFor; index then data; metadata then checkpoint) without group fsync.
-- Spec hint: split the "atomic" persist into N sub-actions; allow `Crash` between any pair. See `case-studies/aptosbft/spec/MC.tla` (`MCCrashBetweenSignAndPersist`).
-- Skip when: implementation uses single-atomic-write or transactional fsync.
-- Bug class: heavy in MongoDB / Raft variants where persistence is the main correctness boundary.
-
-### 5.5 Configuration / Membership Change
-
-Quorum membership changes during the protocol — joint consensus, leader-driven reconfig, or out-of-band cluster reshape.
-
-- Applicable when: system supports add/remove server, role changes, epoch transitions.
-- Spec hint: `ConfigChange(s, newCfg)` action; track active configs and decide how reads/writes intersect. Joint consensus (Raft §6) requires dual-config state.
-- Skip when: cluster size is fixed at boot.
-
-### 5.6 Snapshot / State Transfer / Catchup
-
-Lagging server receives bulk state from a peer rather than replaying the log; the protocol must reconcile installed state with subsequent incremental updates.
-
-- Applicable when: system has snapshot-and-install, log compaction, or peer-to-peer state sync.
-- Spec hint: `InstallSnapshot(s, snap)` truncates local state to snapshot; subsequent log appends must match. See `case-studies/etcd-raft/scenarios/snapshot/`.
-- Skip when: log is unbounded and never compacted.
-
----
-
-### Sub-Category Prioritization
-
-The six families apply with different weight by sub-category:
-
-| Sub-category | Typical examples | Priority families | Often skip |
-|---|---|---|---|
-| Raft / Multi-Paxos consensus | etcd-raft, hashicorp-raft, braft, logcabin | 5.1 Crash, 5.2 Network, 5.3 Timeout, 5.4 NonAtomicPersist, 5.6 Snapshot, 5.5 ConfigChange | — |
-| Replicated storage | mongodb-*, kudu, scylla, rethinkdb | 5.1 Crash, 5.4 NonAtomicPersist (heavy), 5.6 Catchup, 5.2 Network, 5.5 Reconfig | — |
-| Network protocol FSM | sonic-iccpd, sonic-linkmgrd, sonic-warmreboot | 5.2 Loss / Reorder, 5.3 Timeout, 5.1 Crash, **event-ordering** (system-specific) | 5.6 Snapshot |
-| Streaming / pub-sub | aeron, mongodb-changestreams | 5.1 Crash, 5.2 Network, 5.6 Catchup, 5.4 NonAtomicPersist | — |
-
-5.1 Crash appears in every row — like 5.1 Thread Interleaving in concurrent specs, it is universal. The differences are in which other families are load-bearing for the system's specific guarantees. Match the modeled adversary to actual exposure.
-
-If the target is hybrid, take the union of relevant rows.
+If your target's most realistic fault isn't named above — disk silent corruption, clock skew, geo-replication fan-out, leader lease drift, custom WAL truncation, GPS drift, application-level reorder across retries, etc. — describe it directly. The vocabulary is not a closed list.
 
 ### Composition
 
-Distributed bugs typically need 2-3 families composed: `crash + non-atomic persistence` (split-brain after partial fsync), `partition + timeout` (split-brain election), `config change + crash during transition` (lost commits). Compose only after each family individually passes — composition explodes state space and clouds blame attribution.
+Most non-trivial distributed bugs need 2-3 of these mechanisms composed (crash + non-atomic persist; partition + timeout; config change during transition). Composition explodes state space and clouds blame attribution, so compose only when the open question requires it, and only after each individual mechanism is faithful in isolation.
 
-### When None of These Fits
+### Caveat: no answer-key adversaries
 
-If the target's most realistic fault is not on this list — disk silent corruption, GPS clock drift, geo-replication fan-out, custom WAL truncation, leader-lease boundary issues — model it directly. The six families are starting points across the case-study set, not a definition of "fault model".
+The same anti-pattern that bites concurrent specs bites distributed specs too — adversaries whose only effect is to reproduce an already-fixed bug. If you can characterise a wrapper's effect as "equivalent to `git revert <commit>`" for some past commit, drop it. Closed PRs are evidence of mechanism bug-proneness (§ 2 of the modeling brief); they are not a target list for the spec to re-enumerate. See `modeling-brief-format.md` § 6.1 and `bug-archaeology.md` § 1.4.

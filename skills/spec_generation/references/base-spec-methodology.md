@@ -2,13 +2,9 @@
 
 How to write a TLA+ base spec from a Modeling Brief.
 
-> **Note**: Examples reference Raft (hashicorp/raft) as an illustrative case study. Adapt to your target system. For Category B systems, the right template is often thread-local state + shared memory windows, not messages and roles.
+> **On examples**: any examples below (Raft, hashicorp/raft, cometbft, etc.) are historical instances illustrating mechanics. They are not models to imitate. Adapt to your target system; for Category B targets the right shape is usually thread-local state + shared memory windows rather than messages and roles.
 
-> **Category routing** — sections in this file are split by target category:
-> - **Category A** (distributed) → § "Action Design / When to Split" (general) + § "Fault Injection / Category A" (canonical fault actions: Crash, LoseMessage, Partition, Timeout) + § "Crash and Recovery". Bug-class taxonomy in `code_analysis/references/distributed-analysis.md` § 5. If the target is BFT, also consult `code_analysis/references/bft-analysis.md` for the Byzantine adversary categories that overlay on top — use it as guidance for *which adversary shapes are worth considering*, not a fixed template to mirror.
-> - **Category B** (concurrent / lock-free) → § "Granularity for Concurrent Specs" (the headline 5.1) + § "Fault Injection / Category B" (5.2-5.8 fault action shapes). Bug-class taxonomy in `code_analysis/references/concurrent-analysis.md` § 5.
->
-> Sections "Variable Design", "Action Design / Naming / Structure", "Invariant Design", "Helpers" apply to both categories.
+> **Category vocabulary** — fault-family vocabulary lives in `code_analysis/references/distributed-analysis.md`, `concurrent-analysis.md`, and (for BFT) `bft-analysis.md`. Use it as shorthand when it helps; do not treat any family list as a checklist that every target must cover.
 
 ## Principle: Bug-Family Driven, Code-Faithful
 
@@ -125,36 +121,11 @@ Common patterns: log entry records with type fields, message bags (Send/Discard/
 
 ## Fault Injection
 
-This section defines the fault **actions** — the state transitions the adversary can take. The MC spec wraps these with counter bounds; see `mc-spec-pattern.md`. Both layers are needed: the base spec describes what the adversary can do, the MC spec bounds how often.
+This section defines the fault **actions** — state transitions the adversary can take. The MC spec wraps these with counter bounds (see `mc-spec-pattern.md`). The base spec describes what the adversary can do; the MC spec bounds how often.
 
-System-specific fault actions take priority over generic ones. The analysis report's Bug Families should drive the action set — examples: disk IO blocking (heartbeat continues while replicate stalls), non-atomic persistence (crash between two disk writes), configuration change mid-election. Design fault-injection actions based on what the Bug Families identify, not just common fault categories.
+**Design fault-injection actions based on what your Bug Families actually identify, not on common fault categories or other case studies' lists.** System-specific fault actions take priority — disk IO blocking, non-atomic persist windows, mid-election config change, NIC packet reorder, signal-during-RMW, JIT barrier reordering, etc. — whatever the target's code and the open question demand. The fault-family vocabularies in `distributed-analysis.md`, `concurrent-analysis.md`, and `bft-analysis.md` are starting points for naming, not a constraint on design.
 
-### Category A (Distributed) — canonical fault actions
-
-- `Crash(s)` — server stops; in-memory state lost, persisted state retained
-- `LoseMessage(m)` — message removed from network bag
-- `PartitionServer(s)` — server isolated from network
-- `Timeout(s)` — election / leader / liveness timer fires
-- Plus any system-specific fault actions surfaced by Bug Families (disk IO blocking, non-atomic persist windows, mid-election config change, etc.)
-
-### Category B (Concurrent / Lock-Free) — by fault family
-
-The fault family taxonomy lives in `code_analysis/references/concurrent-analysis.md` § 5 — that file decides which families apply to which sub-categories. Do not duplicate the list here.
-
-For each family that applies, define the underlying fault action in this base spec; the MC layer adds the counter wrapper:
-
-| Family | Action shape in base spec |
-|---|---|
-| 5.1 Thread interleaving | Not a fault action — handled via action granularity (see "Granularity for Concurrent Specs" above) |
-| 5.2 Cancellation | `DropFuture(t)`, `CloseChannel`, `CancelTask(t)` |
-| 5.3 OOM | `AllocFail(site)` driving the allocation site to its error branch |
-| 5.4 CAS_weak | tag CAS as weak/strong; weak CAS gets a `SpuriousFail` disjunct |
-| 5.5 MemOrder | actions for cross-variable visibility bridges (e.g., `StaleRead(t)`, `SkipFence(r)`) |
-| 5.6 ABA | reclamation returns slot/generation to free pool; CAS uses `(ptr, gen)` tuple |
-| 5.7 Caller misuse | external `ClientHarness` action set with adversarial call sequences |
-| 5.8 Lost wakeup | `SpuriousWake(t)` transitions a parked thread to ready without `Notify` |
-
-System-specific fault actions outside 5.1-5.8 (e.g., NIC packet reorder, signal-during-RMW, JIT barrier reordering) are equally first-class — add them when the analysis identifies them. The eight families are starting points, not a constraint.
+A reminder applicable to all categories: if you can characterise a fault action's effect as "equivalent to `git revert <commit>`" for some past commit — drop it. The MC run produces no information the closed PR didn't already record. See `mc-spec-pattern.md` § "Fault Family Wrappers — Guidance, Not Templates".
 
 ## Crash and Recovery
 

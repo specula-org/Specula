@@ -71,25 +71,13 @@ Counter-bound fault-injection actions (timeout, crash, message loss, etc.). Do N
 
 ---
 
-## Phase 2.5: Brief Coverage Self-Audit (Mandatory)
+## Phase 2.5: Brief Coverage Self-Audit
 
-**Goal**: Catch the most common Phase 2 failure mode — invariants that are *defined* but never *enabled* in any hunt cfg, families that have no targeting hunt cfg, or findings that no hunt cfg can reach.
+**Goal**: Catch the easy-to-miss failure mode — invariants *defined* but never *enabled* in any hunt cfg, families with no targeting hunt cfg, or findings no hunt cfg can reach.
 
-**This is a self-check, not a grading rubric.** Use the checklist while you finalize Phase 2, not after. The intended workflow is:
+This is a self-check, not a grading rubric. Glance over brief §2 / §5 / §6.1 while finalizing Phase 2, identify any obvious gaps, and either close them or note honestly why something is out of scope. The audit is **brief-driven, not taxonomy-driven** — if the brief did not raise it, you do not have to cover it. Fill the audit by reading actual cfg files, not from memory of what you intended.
 
-1. **Before** committing the final hunt cfgs: enumerate brief §2 (Bug Families), §5 (Proposed Invariants), and §6.1 (Model-Checkable Findings). Sketch the audit table mentally or in scratch.
-2. Identify gaps — invariants you defined but didn't enable; families with no hunt cfg; findings no cfg targets.
-3. **Modify the spec** — add invariants to hunt cfgs, create missing hunt cfg files, document genuinely out-of-scope items with a one-line reason.
-4. Repeat 2–3 until you can fill the audit table without empty cells or unjustified skips.
-5. **Only then** write `spec/brief-coverage.md` as the durable artifact.
-
-If you find yourself writing many "—" or "skipped" rows in `brief-coverage.md`, **go fix the spec instead**. The audit document is supposed to be boring.
-
-**The audit is brief-driven, not taxonomy-driven.** Do not consult the 8 concurrent / 6 distributed fault families when filling the tables — those exist as inspiration during code analysis, not as a required slate during spec generation. If the brief did not raise an item, you do not have to cover it.
-
-**Fill the audit tables by reading the actual cfg files, not from memory.** The arc-swap failure mode was specifically that the agent's intent (re-enable invariants in hunt cfgs) and the actual file content (still commented out) had drifted apart. Inspect each hunt cfg's contents while filling Table 2's "Enabled in which hunt cfg(s)" column.
-
-**Read `references/brief-coverage-checklist.md`** for the table templates, worked failure example, and full guidance.
+See `references/brief-coverage-checklist.md` for table sketches and a worked failure example.
 
 ---
 
