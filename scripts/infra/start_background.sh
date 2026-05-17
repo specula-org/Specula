@@ -42,25 +42,38 @@ if [ ! -d "$WORK_DIR" ]; then
     exit 1
 fi
 
+WORK_DIR="$(cd "$WORK_DIR" && pwd)"
+if [[ "$LOG_FILE" = /* ]]; then
+    LOG_PATH="$LOG_FILE"
+else
+    LOG_PATH="$WORK_DIR/$LOG_FILE"
+fi
+
+LOG_DIR="$(dirname "$LOG_PATH")"
+if [ ! -d "$LOG_DIR" ]; then
+    echo "Error: Log directory $LOG_DIR does not exist."
+    exit 1
+fi
+
 echo "Starting model check in background..."
 echo "Working Directory: $WORK_DIR"
-echo "Log File:          $WORK_DIR/$LOG_FILE"
+echo "Log File:          $LOG_PATH"
 echo "Arguments:         ${PASSTHROUGH_ARGS[*]}"
 
 # Start background process
 # We cd to WORK_DIR so relative paths for spec/config work
 cd "$WORK_DIR"
-nohup "$RUN_SCRIPT" "${PASSTHROUGH_ARGS[@]}" > "$LOG_FILE" 2>&1 &
+nohup "$RUN_SCRIPT" "${PASSTHROUGH_ARGS[@]}" > "$LOG_PATH" 2>&1 &
 PID=$!
 
-PID_FILE="$WORK_DIR/$LOG_FILE.pid"
+PID_FILE="$LOG_PATH.pid"
 echo "$PID" > "$PID_FILE"
 
 echo ""
 echo "✓ Process started! PID: $PID"
 echo "  PID file:    $PID_FILE"
-echo "  Wait:        $SCRIPT_DIR/wait_for_tlc.sh --pid-file $PID_FILE --timeout 1h --log $WORK_DIR/$LOG_FILE"
-echo "  Monitor:     tail -f $WORK_DIR/$LOG_FILE"
+echo "  Wait:        $SCRIPT_DIR/wait_for_tlc.sh --pid-file $PID_FILE --timeout 1h --log $LOG_PATH"
+echo "  Monitor:     tail -f $LOG_PATH"
 echo "  Stop:        kill $PID"
 echo ""
 echo "  NOTE: Do NOT write \`until grep \"Finished in\" $LOG_FILE; sleep; done\`."
