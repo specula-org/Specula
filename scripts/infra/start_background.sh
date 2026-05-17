@@ -53,7 +53,15 @@ cd "$WORK_DIR"
 nohup "$RUN_SCRIPT" "${PASSTHROUGH_ARGS[@]}" > "$LOG_FILE" 2>&1 &
 PID=$!
 
+PID_FILE="$WORK_DIR/$LOG_FILE.pid"
+echo "$PID" > "$PID_FILE"
+
 echo ""
 echo "✓ Process started! PID: $PID"
-echo "  To monitor:  tail -f $WORK_DIR/$LOG_FILE"
-echo "  To stop:     kill $PID"
+echo "  PID file:    $PID_FILE"
+echo "  Wait:        $SCRIPT_DIR/wait_for_tlc.sh --pid-file $PID_FILE --timeout 1h --log $WORK_DIR/$LOG_FILE"
+echo "  Monitor:     tail -f $WORK_DIR/$LOG_FILE"
+echo "  Stop:        kill $PID"
+echo ""
+echo "  NOTE: Do NOT write \`until grep \"Finished in\" $LOG_FILE; sleep; done\`."
+echo "        TLC killed by its own -t budget never writes \"Finished in\"; use wait_for_tlc.sh."

@@ -41,8 +41,8 @@ This pipeline runs `claude --print` (non-interactive batch). The harness exits a
 - ❌ **Do NOT use `ScheduleWakeup`, `CronCreate`,** or any tool whose semantics is "schedule me to be re-invoked later." The phase will appear to succeed (exit 0) but reproduction will be left half-done.
 - ❌ **Do NOT end your turn** while a reproduction test, compile step, or TLC run is unfinished and unobserved.
 - ❌ **Do NOT run a reproduction test or build without an outer `timeout`.** Reproduction tests deliberately exercise concurrent / racy code paths — they can and do deadlock. Always wrap: `timeout 5m cargo test ...`, `timeout 10m ./repro.sh`, etc. A fired timeout is a finding (likely the bug you're chasing), not a failure to retry.
-- ❌ **Do NOT use unbounded polling loops (`until grep ... ; sleep ; done`) waiting on a subprocess marker.** If the subprocess was killed by SIGTERM (e.g., its own `-t` budget hit), the natural-termination marker never appears and the polling spins forever on a static file. Outer `timeout` ≥ inner subprocess budget + grace. Real incident: 2 hours lost on arc-swap because polling watched for TLC's `Finished in` while TLC had been killed by its own `-t`.
-- ✅ **Block in the same turn**: `Bash` with `wait $PID`, `timeout 30m ...`, or a single bounded poll loop wrapped in an outer `timeout`.
+- ❌ **Do NOT use unbounded polling loops (`until grep ... ; sleep ; done`) waiting on a subprocess marker.** If the subprocess was killed by SIGTERM (e.g., its own `-t` budget hit), the natural-termination marker never appears and the polling spins forever on a static file. Real incident: 2h lost on arc-swap doing exactly this.
+- ✅ **Block in the same turn**: `Bash` with `wait $PID`, `timeout 30m ...`, or — for background TLC launched via `scripts/infra/start_background.sh` — `scripts/infra/wait_for_tlc.sh --pid-file out.log.pid --timeout 1h --log out.log` (blocks on PID, immune to SIGTERM-without-marker).
 
 See `../tla-checking-workflow/guide.md` Phase 2 "Batch Mode Constraints" for full rationale.
 
