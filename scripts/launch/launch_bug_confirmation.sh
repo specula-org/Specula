@@ -180,40 +180,41 @@ Create a unified list of all bugs/findings, noting for each:
 - Severity assessment
 - Affected code location
 
-Filter out defensive coding suggestions, style issues, and theoretical-only concerns.
-Keep only findings that represent real logic bugs with concrete impact.
+Treat every finding as a candidate. Do not pre-filter for "defensive coding", "style", or "theoretical-only" — every candidate goes through Phase 1 investigation and Phase 3 reproduction before classification.
 
 ### Step 2: Confirm each bug via investigation
 
 For each finding, follow the bug-confirmation skill Phase 1:
-1. Apply the triage filters and name the observable harm
-2. Locate and read the relevant code in the source repo
-3. Trace the call chain — is the buggy path reachable?
-4. Check for existing safeguards that prevent the bug
-5. Construct a concrete trigger scenario
-6. Investigate developer intent, protocol/spec prerequisites, and any precedent prerequisites
+1. Locate and read the relevant code in the source repo
+2. Trace the call chain — is the buggy path reachable?
+3. Check for existing safeguards that prevent the bug
+4. Construct a concrete trigger scenario
+5. Investigate developer intent (issue tracker, commits, comments, tests)
+6. For findings citing a precedent: re-verify the precedent's prerequisites at this site
 
 Classify each finding as:
 - **CONFIRMED**: Code audit confirms the bug is real and reachable
-- **FALSE POSITIVE**: Safeguards exist that prevent the bug in practice
-- **NEEDS REPRODUCTION**: Bug is plausible but needs a test to verify
+- **FALSE POSITIVE**: Safeguards exist that prevent the bug in practice, or developer intent dismisses it
+- **NEEDS REPRODUCTION**: Bug is plausible; reproduction will decide
 
-For system-wide property findings, run the skill's Counterfactual Fix Check before final tier assignment.
+### Step 3: Mandatory reproduction attempt for every bug
 
-### Step 3: MANDATORY — Reproduce every new confirmed bug
+**Every bug must attempt reproduction** — new, known, or historical. Walk the skill's escalation ladder strictly in order (Level 0 black-box → Level 1 timing → Level 2 state injection → Level 3 minimal code modification). Do not stop at Level 0 failure.
 
-**This step is NOT optional for new bugs.** Every new bug classified as CONFIRMED or NEEDS REPRODUCTION MUST have a reproduction test. A new bug without reproduction is NOT confirmed — it is unverified. Known/historical bugs (matching an existing JIRA, CVE, upstream issue, or already-accepted report) do not require new reproduction, but the report must cite the existing evidence.
+Two valid final reproduction statuses:
+- **REPRODUCED** — bug triggered; include level reached, the exact command, the copy-paste output, and which line demonstrates the bug
+- **REPRODUCTION FAILED** — escalation ladder exhausted; document per-level what was attempted and why it didn't trigger, and state whether you still believe the bug stands on code audit alone
 
-For each new confirmed bug:
-1. Write a self-contained reproduction test to \`${work_dir}/repro/\`
-2. The test MUST use the system's public interfaces — no illegal state injection
+For each bug:
+1. Write a self-contained reproduction test to \`${work_dir}/repro/test_bug<N>_*.{py,js,rs,go,c,sh}\`
+2. The test MUST use the system's public interfaces at Level 0; escalate only if Level 0 truly failed
 3. The test MUST actually be executed, and the output recorded
-4. For concurrency bugs: real multi-thread/multi-process scenarios. Small delays (sleep, failpoints) to widen race windows are OK, but the logic must not be altered.
+4. For concurrency bugs: real multi-thread/multi-process scenarios. Sleeps / failpoints to widen race windows are allowed and considered Level 1
 5. For distributed systems: use Docker or the system's test framework to set up a real cluster
 6. Success criterion: observable anomalous behavior (crash, deadlock, data inconsistency, invariant violation)
-7. If reproduction fails after genuine effort: explain what was tried, why it failed, and whether the bug is still believed to be real. Do NOT silently skip reproduction.
+7. For known/historical bugs with an upstream reproduction: re-use or adapt it; cite the upstream reproduction; still execute and record output
 
-**Output requirement**: At least one executable file in \`${work_dir}/repro/\` for each new confirmed bug. Name them \`test_bug1_*.py\`, \`test_bug2_*.py\`, etc. Known/historical bugs should instead include the upstream reference and why it is sufficient.
+**Output requirement**: One executable file in \`${work_dir}/repro/\` for EVERY bug — REPRODUCED entries get the working test; REPRODUCTION FAILED entries get the four-level attempt file with per-level comments. The \`confirmed-bugs.md\` entry must include actual test output (copy-paste).
 
 ### Step 4: Write final report
 
@@ -226,33 +227,32 @@ Format:
 ## Summary
 - Total findings reviewed: N
 - Reproduced: N
-- Confirmed (code audit, reproduction failed): N
+- Reproduction failed (escalation exhausted, claim stands on audit): N
 - False positives: N
 - Inconclusive: N
 
 ## Bug 1: <title>
 - **Source**: MC / Code Review
-- **Status**: REPRODUCED / REPRODUCTION FAILED / KNOWN-HISTORICAL / FALSE POSITIVE
-- **Severity**: Critical / High / Medium
+- **Status**: REPRODUCED / REPRODUCTION FAILED / FALSE POSITIVE / NEEDS MORE INFO
+- **Severity**: Critical / High / Medium / Low
 - **Location**: file:line
 - **Description**: ...
-- **Prerequisites**: code/spec prerequisites and verification status
-- **Counterfactual fix check**: required for system-wide property findings; omit only when not applicable
-- **Report Tier**: A / B / C
-- **Trigger scenario**: ...
-- **Reproduction test**: repro/test_bug1_xxx.py — describe what it does
-- **Reproduction result**: PASS (bug triggered) / FAIL (bug not triggered, explain why)
+- **Trigger scenario**: concrete sequence of events
+- **Developer intent investigation**: what was found in issue tracker, commits, comments, tests; or "no developer commentary found"
+- **Reproduction test**: repro/test_bug1_xxx.{py,c,...} — escalation level reached (0/1/2/3)
+- **Reproduction result**: PASS (bug triggered, paste output) / FAIL (per-level: what was tried, what happened, why it didn't trigger)
 - **Recommendation**: ...
 \`\`\`
 
 ## Critical Rules
 
-1. Follow the bug-confirmation skill strictly — especially the prohibited approaches.
-2. **Every new confirmed bug MUST have a reproduction test in repro/.** "Code audit only" is NOT an acceptable final status for new bugs. Known/historical bugs are exempt only when the report cites the existing accepted evidence.
-3. MC-confirmed bugs with counterexamples are high-confidence; focus reproduction effort there first.
-4. Do NOT lower reproduction standards to claim success. If you cannot reproduce, say so honestly — but you MUST try.
-5. For each false positive, explain clearly what safeguard prevents the bug.
-6. Actually RUN the reproduction tests and record the output. Do not just write tests without executing them.
+1. Follow the bug-confirmation skill strictly — especially the prohibited approaches in Phase 3.
+2. **Every bug MUST attempt reproduction and have a test file in repro/.** "Code audit only" is NOT a permitted status. REPRODUCTION FAILED (escalation ladder exhausted, documented per-level) IS a valid final status — it does not invalidate the finding.
+3. Walk the escalation ladder strictly in order (Level 0 → 1 → 2 → 3). Do not stop at Level 0 failure; escalate with a documented reason.
+4. MC-confirmed bugs with counterexamples are high-confidence; focus reproduction effort there first.
+5. Do NOT lower reproduction standards to claim success. If you cannot reproduce after exhausting the ladder, say REPRODUCTION FAILED honestly — but you MUST try all four levels.
+6. For each false positive, explain clearly what safeguard prevents the bug, or what developer-intent evidence dismisses it.
+7. Actually RUN the reproduction tests and record the output. Do not just write tests without executing them.
 PROMPT_EOF
 
   # Inject per-target extra prompt if present (prefer the target work dir)
