@@ -22,6 +22,8 @@
 #   --skip-specgen         Skip spec generation (use existing outputs)
 #   --skip-harness         Skip harness generation (use existing harness/traces)
 #   --skip-validation      Skip validation
+#   --skip-confirmation    Skip Phase 4a bug confirmation
+#   --skip-classification  Skip Phase 4b severity classification
 #   --enable-reviews        Enable review steps (disabled by default)
 #   --max-parallel=N       Max concurrent agents per phase (default: 1)
 #   --max-turns=N          Max agent turns (default: 0 = unlimited)
@@ -68,6 +70,7 @@ SKIP_SPECGEN=false
 SKIP_HARNESS=false
 SKIP_VALIDATION=false
 SKIP_CONFIRMATION=false
+SKIP_CLASSIFICATION=false
 SKIP_REVIEWS=true
 AGENT="claude-code"
 CLAUDE_ALIAS="${CLAUDE_ALIAS:-claude}"
@@ -85,6 +88,7 @@ for arg in "$@"; do
     --skip-harness)      SKIP_HARNESS=true ;;
     --skip-validation)   SKIP_VALIDATION=true ;;
     --skip-confirmation) SKIP_CONFIRMATION=true ;;
+    --skip-classification) SKIP_CLASSIFICATION=true ;;
     --enable-reviews)    SKIP_REVIEWS=false ;;
     --max-parallel=*)    MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*)       MAX_TURNS="${arg#*=}" ;;
@@ -318,6 +322,27 @@ run_phase4_confirmation() {
   bash "$SCRIPT_DIR/launch_bug_confirmation.sh" "${confirm_args[@]}"
 }
 
+run_phase4b_classification() {
+  divider
+  log "PHASE 4b: BUG CLASSIFICATION (severity tier assignment)"
+  divider
+
+  local names
+  read -ra names <<< "$(extract_names)"
+
+  local classify_args=("--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT" "--claude-alias=$CLAUDE_ALIAS")
+  for n in "${names[@]}"; do
+    classify_args+=("$n")
+  done
+
+  if $DRY_RUN; then
+    log "[DRY RUN] bash scripts/launch/launch_bug_classification.sh ${classify_args[*]}"
+    return 0
+  fi
+
+  bash "$SCRIPT_DIR/launch_bug_classification.sh" "${classify_args[@]}"
+}
+
 # ──────────────────────────────────────────────────────────
 # Generate final summary
 # ──────────────────────────────────────────────────────────
@@ -421,6 +446,24 @@ generate_summary() {
         echo "- **Validation Review**: SKIPPED"
       fi
 
+      # Phase 4a status
+      if [[ -s "${spec_dir}/confirmed-bugs.md" ]]; then
+        echo "- **Phase 4a (Bug Confirmation)**: confirmed-bugs.md written ($(wc -l < "${spec_dir}/confirmed-bugs.md") lines)"
+      elif [[ -f "${spec_dir}/confirmed-bugs.md" ]]; then
+        echo "- **Phase 4a (Bug Confirmation)**: empty (check log)"
+      else
+        echo "- **Phase 4a (Bug Confirmation)**: SKIPPED"
+      fi
+
+      # Phase 4b status
+      if [[ -s "${spec_dir}/bug-severity.md" ]]; then
+        echo "- **Phase 4b (Bug Classification)**: bug-severity.md written ($(wc -l < "${spec_dir}/bug-severity.md") lines)"
+      elif [[ -f "${spec_dir}/bug-severity.md" ]]; then
+        echo "- **Phase 4b (Bug Classification)**: empty (check log)"
+      else
+        echo "- **Phase 4b (Bug Classification)**: SKIPPED"
+      fi
+
       echo ""
 
       # List all logs
@@ -431,7 +474,9 @@ generate_summary() {
         "${work_dir}/spec-gen.log" \
         "${spec_dir}/review-specgen.log" \
         "${spec_dir}/quick-mc.log" \
-        "${spec_dir}/review-validation.log"; do
+        "${spec_dir}/review-validation.log" \
+        "${work_dir}/bug-confirmation.log" \
+        "${work_dir}/bug-classification.log"; do
         if [[ -f "$log_file" ]]; then
           local size
           size=$(du -h "$log_file" | cut -f1)
@@ -460,7 +505,7 @@ main() {
   echo "Max turns:    $MAX_TURNS"
   echo "Agent:        $AGENT  (claude-alias=$CLAUDE_ALIAS)"
   echo ""
-  echo "Skip phases:  analysis=$SKIP_ANALYSIS specgen=$SKIP_SPECGEN harness=$SKIP_HARNESS validation=$SKIP_VALIDATION confirmation=$SKIP_CONFIRMATION reviews=$SKIP_REVIEWS"
+  echo "Skip phases:  analysis=$SKIP_ANALYSIS specgen=$SKIP_SPECGEN harness=$SKIP_HARNESS validation=$SKIP_VALIDATION confirmation=$SKIP_CONFIRMATION classification=$SKIP_CLASSIFICATION reviews=$SKIP_REVIEWS"
   echo ""
 
   validate_agent_adapter
@@ -518,12 +563,20 @@ main() {
     log "Skipping Phase 3 (--skip-validation)"
   fi
 
-  # ── Phase 4: Bug Confirmation (consolidate MC + code review, reproduce) ──
+  # ── Phase 4a: Bug Confirmation (consolidate MC + code review, reproduce) ──
   if ! $SKIP_CONFIRMATION; then
     wait_for_quota
     run_phase4_confirmation
   else
-    log "Skipping Phase 4 (--skip-confirmation)"
+    log "Skipping Phase 4a (--skip-confirmation)"
+  fi
+
+  # ── Phase 4b: Bug Classification (severity tier assignment) ──
+  if ! $SKIP_CLASSIFICATION; then
+    wait_for_quota
+    run_phase4b_classification
+  else
+    log "Skipping Phase 4b (--skip-classification)"
   fi
 
   # ── Summary ──
