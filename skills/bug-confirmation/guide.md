@@ -4,12 +4,12 @@ Confirm bugs found by model checking or code review are real, then reproduce the
 
 ## Flow
 
-Each finding goes through two phases in order: investigation (Phase 1) and reproduction (Phase 3). Both phases run for every finding — no pre-filtering.
+Each finding goes through two phases in order: investigation (Phase 1) and reproduction (Phase 2). Both phases run for every finding — no pre-filtering.
 
 | # | Phase | When it runs | Output it adds |
 |---|-------|---|---|
 | 1 | [Investigation](phases/01-investigation.md) | Every finding | Code-audit result + dev-intent summary + precedent re-check |
-| 3 | [Reproduction](phases/03-reproduction.md) | Every finding | `repro/test_bug*` file + REPRODUCED / REPRODUCTION FAILED status |
+| 2 | [Reproduction](phases/02-reproduction.md) | Every finding | `repro/test_bug*` file + REPRODUCED / REPRODUCTION FAILED status |
 
 ## Per-bug output schema
 

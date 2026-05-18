@@ -180,7 +180,7 @@ Create a unified list of all bugs/findings, noting for each:
 - Severity assessment
 - Affected code location
 
-Treat every finding as a candidate. Do not pre-filter for "defensive coding", "style", or "theoretical-only" — every candidate goes through Phase 1 investigation and Phase 3 reproduction before classification.
+Treat every finding as a candidate. Do not pre-filter for "defensive coding", "style", or "theoretical-only" — every candidate goes through Phase 1 investigation and Phase 2 reproduction before classification.
 
 ### Step 2: Confirm each bug via investigation
 
@@ -246,7 +246,7 @@ Format:
 
 ## Critical Rules
 
-1. Follow the bug-confirmation skill strictly — especially the prohibited approaches in Phase 3.
+1. Follow the bug-confirmation skill strictly — especially the prohibited approaches in Phase 2.
 2. **Every bug MUST attempt reproduction and have a test file in repro/.** "Code audit only" is NOT a permitted status. REPRODUCTION FAILED (escalation ladder exhausted, documented per-level) IS a valid final status — it does not invalidate the finding.
 3. Walk the escalation ladder strictly in order (Level 0 → 1 → 2 → 3). Do not stop at Level 0 failure; escalate with a documented reason.
 4. MC-confirmed bugs with counterexamples are high-confidence; focus reproduction effort there first.

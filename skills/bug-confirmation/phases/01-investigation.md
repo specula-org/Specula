@@ -11,7 +11,7 @@ Confirm the bug's validity by reading the source code.
 1. **Locate the relevant code.** Find the specific functions and lines mentioned in the bug report. Read these functions in full and understand their context.
 2. **Trace the call chain.** Starting from public APIs or entry points, trace the path to the buggy code. Confirm whether this path is reachable during normal usage.
 3. **Check for existing safeguards.** Check whether callers already have precondition checks, lock guards, or other mechanisms that prevent this bug from being triggered in practice. If they do, report the finding as a false positive with the safeguard cited and stop.
-4. **Construct a trigger scenario.** Describe in words a concrete sequence of events that could naturally occur at the user/system level and would reach the buggy code path. If you cannot construct one after genuine effort, note that explicitly — the bug may still be real but unreachable, in which case Phase 3 reproduction will likely fail and surface that.
+4. **Construct a trigger scenario.** Describe in words a concrete sequence of events that could naturally occur at the user/system level and would reach the buggy code path. If you cannot construct one after genuine effort, note that explicitly — the bug may still be real but unreachable, in which case Phase 2 reproduction will likely fail and surface that.
 
 Record what you found: the cited file:line(s), the call chain, any safeguards encountered, and the constructed trigger scenario.
 
@@ -44,4 +44,4 @@ If the finding does not cite a precedent, skip this step.
 
 ---
 
-After completing the steps and being confident the bug stands (or has been firmly invalidated), proceed to Phase 3 (Reproduction).
+After completing the steps and being confident the bug stands (or has been firmly invalidated), proceed to Phase 2 (Reproduction).

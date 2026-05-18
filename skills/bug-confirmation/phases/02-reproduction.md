@@ -1,4 +1,4 @@
-# Phase 3: Mandatory Reproduction Attempt
+# Phase 2: Mandatory Reproduction Attempt
 
 **Every bug must attempt reproduction.** New, known, or historical — no exemption. Work through the escalation ladder; either trigger the bug or mark it REPRODUCTION FAILED with an honest reason.
 
