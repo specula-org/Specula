@@ -13,6 +13,8 @@
 #   --max-turns N          Max iterations, 0=unlimited (required) (Not currently supported with Codex, https://github.com/openai/codex/issues/12336)
 #   --log output.log       Log file path (required)
 #   --background           Run in background, print PID to stdout (default: foreground)
+#   --claude-alias NAME    Accepted for launcher compatibility; ignored.
+#   --effort LEVEL         Accepted for launcher compatibility; ignored.
 #   --help                 Show this help
 
 set -euo pipefail
@@ -22,6 +24,8 @@ PROMPT_FILE=""
 MAX_TURNS=""
 LOG_FILE=""
 BACKGROUND=false
+CLAUDE_ALIAS=""
+EFFORT=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -30,6 +34,8 @@ for arg in "$@"; do
     --max-turns=*)   MAX_TURNS="${arg#*=}" ;;
     --log=*)         LOG_FILE="${arg#*=}" ;;
     --background)    BACKGROUND=true ;;
+    --claude-alias=*) CLAUDE_ALIAS="${arg#*=}" ;;
+    --effort=*)      EFFORT="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -198,9 +204,7 @@ run_codex() {
   rm -f "$marker_file"
 }
 
-if $BACKGROUND; then
-  nohup bash -lc "$(declare -f write_usage_file run_codex); PROMPT=$(printf '%q' "$PROMPT"); run_codex $(printf '%q' "$LOG_FILE")" >/dev/null 2>&1 &
-  echo $!
-else
-  run_codex "$LOG_FILE"
-fi
+# Launch scripts already background the adapter process when they pass
+# --background, matching the claude-code adapter. Keep the Codex process in
+# this adapter's foreground so the parent can wait on the real work.
+run_codex "$LOG_FILE"

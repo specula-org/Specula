@@ -10,14 +10,15 @@
 #   bash scripts/exp/scheduler.sh [options]
 #
 # Options:
-#   --workers N      Parallel workers (default: 3)
-#   --threshold N    Usage % to pause at (default: 80)
-#   --windows N      Max resets to wait through (default: 3)
+#   --workers N         Parallel workers (default: 3)
+#   --threshold N       5-hour window usage % to pause at (default: 80)
+#   --threshold-7day N  7-day window usage % to pause at (default: 95)
+#   --windows N         Max resets to wait through (default: 3)
 #   --queue FILE     Task queue file (default: scripts/exp/tasks.queue)
 #   --max-turns N    Max agent turns per task (default: 0 = unlimited)
 #   --setup-only     Only clone repos and write prompts, don't run pipeline
 #   --dry-run        Print commands without executing
-#   --claude-alias NAME  Claude CLI profile (default: claude; e.g. claude-exp).
+#   --claude-alias NAME  Claude CLI profile (default: claude).
 #                        Forwarded to launch_pipeline.sh and used by usage.sh
 #                        so quota checks target the same account.
 #
@@ -35,6 +36,7 @@ SPECULA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 WORKERS=3
 THRESHOLD=80
+THRESHOLD_7DAY=95
 MAX_WINDOWS=3
 QUEUE_FILE="$SCRIPT_DIR/tasks.queue"
 MAX_TURNS=0
@@ -47,6 +49,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --workers)    WORKERS="$2";    shift 2 ;;
     --threshold)  THRESHOLD="$2";  shift 2 ;;
+    --threshold-7day) THRESHOLD_7DAY="$2"; shift 2 ;;
     --windows)    MAX_WINDOWS="$2"; shift 2 ;;
     --queue)      QUEUE_FILE="$2"; shift 2 ;;
     --max-turns)  MAX_TURNS="$2";  shift 2 ;;
@@ -81,19 +84,20 @@ check_usage() {
   local tmp="$LOG_DIR/.usage.json"
   CLAUDE_ALIAS="$CLAUDE_ALIAS" bash "$SCRIPT_DIR/usage.sh" > "$tmp" 2>/dev/null || { log "WARN: usage fetch failed"; return 0; }
 
-  python3 - "$tmp" "$THRESHOLD" "$LOG_DIR/.reset_at" <<'PYEOF'
+  python3 - "$tmp" "$THRESHOLD" "$THRESHOLD_7DAY" "$LOG_DIR/.reset_at" <<'PYEOF'
 import json, sys
 
 with open(sys.argv[1]) as f:
     d = json.load(f)
-threshold = float(sys.argv[2])
-reset_file = sys.argv[3]
+threshold_5h = float(sys.argv[2])
+threshold_7d = float(sys.argv[3])
+reset_file = sys.argv[4]
 
 resets = []
-thresholds = {'five_hour': threshold, 'seven_day': 95}
+thresholds = {'five_hour': threshold_5h, 'seven_day': threshold_7d}
 for key in ('five_hour', 'seven_day'):
     obj = d.get(key)
-    if obj and obj.get('utilization', 0) > thresholds.get(key, threshold):
+    if obj and obj.get('utilization', 0) > thresholds[key]:
         resets.append(obj.get('resets_at', ''))
 
 if resets:
