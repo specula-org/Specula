@@ -4,12 +4,12 @@ Confirm bugs found by model checking or code review are real, then reproduce the
 
 ## Flow
 
-Each finding goes through two phases in order: investigation (Phase 1) and reproduction (Phase 2). Both phases run for every finding — no pre-filtering.
+Each finding goes through two phases in order: investigation (Phase 1) and reproduction (Phase 2). Both phases run for every finding, with one exception: if Phase 1 establishes the finding is **code-review-sourced AND already-known** (a public issue/PR/CVE/advisory describes the same mechanism at the same site), drop the finding before Phase 2 — mark its entry `Status: DROPPED (code-review × known, cite: <URL>)` and do not write a `repro/` test. This is the only pre-filter; MC-found bugs (new or known) and code-review-found *new* bugs all proceed to Phase 2 as usual.
 
 | # | Phase | When it runs | Output it adds |
 |---|-------|---|---|
 | 1 | [Investigation](phases/01-investigation.md) | Every finding | Code-audit result + dev-intent summary + precedent re-check |
-| 2 | [Reproduction](phases/02-reproduction.md) | Every finding | `repro/test_bug*` file + REPRODUCED / REPRODUCTION FAILED status |
+| 2 | [Reproduction](phases/02-reproduction.md) | Every finding except dropped (code-review × known) | `repro/test_bug*` file + REPRODUCED / REPRODUCTION FAILED status |
 
 ## Per-bug output schema
 
