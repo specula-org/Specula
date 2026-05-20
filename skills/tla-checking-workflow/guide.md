@@ -107,11 +107,11 @@ This pipeline runs `claude --print` (non-interactive batch mode). The harness ex
 
 - ❌ **Do NOT use `ScheduleWakeup`, `CronCreate`,** or any tool whose semantics is "schedule me to be re-invoked after delay X." These rely on the harness staying alive across turns; in batch mode it does not.
 - ❌ **Do NOT end your turn** while a background TLC / build / test is still running and unobserved.
-- ✅ **Block in the same turn**: foreground `Bash` with `wait $PID`, `timeout 30m ...`, or — for background TLC launched via `scripts/infra/start_background.sh` — use the **`wait_for_tlc.sh` helper**, which blocks on the PID itself (immune to TLC's SIGTERM-on-budget):
+- ✅ **Block in the same turn**: foreground `Bash` with `wait $PID`, `timeout 30m ...`, or — for any backgrounded long-running job launched via `scripts/infra/start_background.sh` — use the **`wait_for_pid.sh` helper**, which blocks on the PID itself (immune to SIGTERM-on-budget):
   ```bash
   scripts/infra/start_background.sh -s MC.tla -c MC.cfg -o out.log -t 30 ...
   # start_background.sh prints the exact wait command, including --pid-file path. Use it.
-  scripts/infra/wait_for_tlc.sh --pid-file out.log.pid --timeout 40m --log out.log
+  scripts/infra/wait_for_pid.sh --pid-file out.log.pid --timeout 40m --log out.log
   ```
 - ✅ **MCP tools are blocking and safe**: `get_tlc_summary`, `run_trace_validation`, etc. return when the work is done — use these in preference to manual polling whenever applicable.
 
@@ -125,15 +125,15 @@ timeout 30m java tlc2.TLC ...                # TLC has its own -t flag too; oute
 
 Pick `N` as ~5–10× the expected runtime, capped at 30 min for any single command. A timeout that fires is a real signal — report it as a finding (likely a deadlock), do **not** auto-retry blindly. We have lost a full overnight run to a deadlocked `cargo test` with no outer timeout; do not let it happen again.
 
-**Never write `until grep "Finished in" out.log; do sleep N; done`.** If TLC was killed by its own `-t` SIGTERM (normal: BFS hit the budget), it exits **without** writing `Finished in`, and the polling loop spins forever on a static file. **Use `scripts/infra/wait_for_tlc.sh` instead** — it blocks on the PID (`tail --pid`), so any kind of exit (natural, SIGTERM, SIGKILL, OOM) unblocks it:
+**Block on the PID, not on a log marker.** A subprocess killed by SIGTERM (e.g. TLC hitting its own `-t` budget) exits without writing any natural-termination marker, so any wait that watches for a log token can spin forever on a static file. The `wait_for_pid.sh` helper blocks via `tail --pid` and unblocks on any exit (natural, SIGTERM, SIGKILL, OOM):
 
 ```bash
-scripts/infra/wait_for_tlc.sh --pid-file out.log.pid --timeout 40m --log out.log
+scripts/infra/wait_for_pid.sh --pid-file out.log.pid --timeout 40m --log out.log
 #   --timeout is the outer cap; recommend inner TLC -t + 5–10m grace.
 #   default is 1h if omitted; pass `--timeout none` to wait indefinitely.
 ```
 
-If you absolutely must write your own loop (e.g. no PID available), wrap the whole thing in `timeout` so it self-terminates even when the marker never appears. Real incident: 2h lost on arc-swap to a `until grep "Finished in"` loop running against a TLC that had been SIGTERM'd by its own `-t`.
+If you absolutely must write your own loop (e.g. no PID available), wrap the whole thing in `timeout` so it self-terminates even when the marker never appears.
 
 Only `end_turn` after the current piece of work is fully observed and recorded.
 
@@ -254,7 +254,7 @@ When the standard tools don't provide enough detail, use `run_trace_replay` to r
 6. **Use tools systematically.** Start with `get_tlc_summary` for overview, then drill into states. Don't guess from raw log text when structured tools are available.
 7. **Restart after fixes.** After modifying spec or invariants, restart model checking from Phase 1 to verify the fix and continue checking.
 8. **Never use `ScheduleWakeup` / `CronCreate` to wait.** This pipeline runs `claude --print` — any cross-turn timer is silently dropped. Block within the turn (`Bash` with `wait` / `timeout`) or use blocking MCP tools. See Phase 2 "Batch Mode Constraints."
-9. **Wrap any potentially-deadlocking command in `timeout N`.** Concurrent tests, build steps, TLC runs, network calls — anything that might hang under bug conditions. A deadlock in the system under test must not silently consume the entire run. **For background TLC, use `scripts/infra/wait_for_tlc.sh`** (blocks on PID, immune to SIGTERM-without-marker); never write `until grep "Finished in" ...; sleep; done`. See Phase 2 "Batch Mode Constraints."
+9. **Wrap any potentially-deadlocking command in `timeout N`.** Concurrent tests, build steps, TLC runs, network calls — anything that might hang under bug conditions. A deadlock in the system under test must not silently consume the entire run. **For any backgrounded long-running job, use `scripts/infra/wait_for_pid.sh`** (blocks on PID, immune to SIGTERM-without-marker). See Phase 2 "Batch Mode Constraints."
 
 ---
 
