@@ -227,87 +227,15 @@ Read and follow the **bug-confirmation** skill:
 
 ## Task
 
-### Step 1: Consolidate all findings
+Consolidate the two finding sources into one candidate list:
+- **MC findings** (with counterexamples): \`${spec_dir}/bug-report.md\`
+- **Code-review findings**: \`${work_dir}/modeling-brief.md\`
 
-Read both \`bug-report.md\` (MC-confirmed bugs) and \`modeling-brief.md\` (code review findings).
-Create a unified list of all bugs/findings, noting for each:
-- Source: MC (with counterexample) or code review
-- Severity assessment
-- Affected code location
+Then process every candidate **strictly per the bug-confirmation skill's Flow** — do not restate, relax, or override it here. In particular:
+- Apply **only** the skill's single pre-filter (code-review-sourced **and** already-known → drop before Phase 2, exactly as the skill defines it). Invent no other pre-filter — never skip a candidate as "defensive coding", "style", or "theoretical-only".
+- Follow the skill's Phase 1 (investigation) and Phase 2 (strict Level 0→3 escalation ladder), and use its per-bug output schema and statuses.
 
-Treat every finding as a candidate. Do not pre-filter for "defensive coding", "style", or "theoretical-only" — every candidate goes through Phase 1 investigation and Phase 2 reproduction before classification.
-
-### Step 2: Confirm each bug via investigation
-
-For each finding, follow the bug-confirmation skill Phase 1:
-1. Locate and read the relevant code in the source repo
-2. Trace the call chain — is the buggy path reachable?
-3. Check for existing safeguards that prevent the bug
-4. Construct a concrete trigger scenario
-5. Investigate developer intent (issue tracker, commits, comments, tests)
-6. For findings citing a precedent: re-verify the precedent's prerequisites at this site
-
-Classify each finding as:
-- **CONFIRMED**: Code audit confirms the bug is real and reachable
-- **FALSE POSITIVE**: Safeguards exist that prevent the bug in practice, or developer intent dismisses it
-- **NEEDS REPRODUCTION**: Bug is plausible; reproduction will decide
-
-### Step 3: Mandatory reproduction attempt for every bug
-
-**Every bug must attempt reproduction** — new, known, or historical. Walk the skill's escalation ladder strictly in order (Level 0 black-box → Level 1 timing → Level 2 state injection → Level 3 minimal code modification). Do not stop at Level 0 failure.
-
-Two valid final reproduction statuses:
-- **REPRODUCED** — bug triggered; include level reached, the exact command, the copy-paste output, and which line demonstrates the bug
-- **REPRODUCTION FAILED** — escalation ladder exhausted; document per-level what was attempted and why it didn't trigger, and state whether you still believe the bug stands on code audit alone
-
-For each bug:
-1. Write a self-contained reproduction test to \`${work_dir}/repro/test_bug<N>_*.{py,js,rs,go,c,sh}\`
-2. The test MUST use the system's public interfaces at Level 0; escalate only if Level 0 truly failed
-3. The test MUST actually be executed, and the output recorded
-4. For concurrency bugs: real multi-thread/multi-process scenarios. Sleeps / failpoints to widen race windows are allowed and considered Level 1
-5. For distributed systems: use Docker or the system's test framework to set up a real cluster
-6. Success criterion: observable anomalous behavior (crash, deadlock, data inconsistency, invariant violation)
-7. For known/historical bugs with an upstream reproduction: re-use or adapt it; cite the upstream reproduction; still execute and record output
-
-**Output requirement**: One executable file in \`${work_dir}/repro/\` for EVERY bug — REPRODUCED entries get the working test; REPRODUCTION FAILED entries get the four-level attempt file with per-level comments. The \`confirmed-bugs.md\` entry must include actual test output (copy-paste).
-
-### Step 4: Write final report
-
-Write the final consolidated report to: ${spec_dir}/confirmed-bugs.md
-
-Format:
-\`\`\`markdown
-# Confirmed Bug Report — ${name}
-
-## Summary
-- Total findings reviewed: N
-- Reproduced: N
-- Reproduction failed (escalation exhausted, claim stands on audit): N
-- False positives: N
-- Inconclusive: N
-
-## Bug 1: <title>
-- **Source**: MC / Code Review
-- **Status**: REPRODUCED / REPRODUCTION FAILED / FALSE POSITIVE / NEEDS MORE INFO
-- **Severity**: Critical / High / Medium / Low
-- **Location**: file:line
-- **Description**: ...
-- **Trigger scenario**: concrete sequence of events
-- **Developer intent investigation**: what was found in issue tracker, commits, comments, tests; or "no developer commentary found"
-- **Reproduction test**: repro/test_bug1_xxx.{py,c,...} — escalation level reached (0/1/2/3)
-- **Reproduction result**: PASS (bug triggered, paste output) / FAIL (per-level: what was tried, what happened, why it didn't trigger)
-- **Recommendation**: ...
-\`\`\`
-
-## Critical Rules
-
-1. Follow the bug-confirmation skill strictly — especially the prohibited approaches in Phase 2.
-2. **Every bug MUST attempt reproduction and have a test file in repro/.** "Code audit only" is NOT a permitted status. REPRODUCTION FAILED (escalation ladder exhausted, documented per-level) IS a valid final status — it does not invalidate the finding.
-3. Walk the escalation ladder strictly in order (Level 0 → 1 → 2 → 3). Do not stop at Level 0 failure; escalate with a documented reason.
-4. MC-confirmed bugs with counterexamples are high-confidence; focus reproduction effort there first.
-5. Do NOT lower reproduction standards to claim success. If you cannot reproduce after exhausting the ladder, say REPRODUCTION FAILED honestly — but you MUST try all four levels.
-6. For each false positive, explain clearly what safeguard prevents the bug, or what developer-intent evidence dismisses it.
-7. Actually RUN the reproduction tests and record the output. Do not just write tests without executing them.
+Write the consolidated report to \`${spec_dir}/confirmed-bugs.md\`, with one \`repro/\` test per non-dropped finding under \`${work_dir}/repro/\`, exactly as the skill specifies.
 PROMPT_EOF
   fi
 
