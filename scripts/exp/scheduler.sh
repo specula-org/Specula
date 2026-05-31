@@ -63,6 +63,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Forward thresholds to launch_pipeline.sh's internal quota gate.
+# launch_pipeline.sh has its own QUOTA_5H/QUOTA_7D defaults (85/95) that do not
+# read --threshold flags; without these exports the inner gate diverges from the
+# user-supplied scheduler thresholds and sleeps unexpectedly.
+export QUOTA_5H="$THRESHOLD"
+export QUOTA_7D="$THRESHOLD_7DAY"
+
 # Resolve prompt file to absolute path
 if [[ -n "$PROMPT_FILE" && ! "$PROMPT_FILE" =~ ^/ ]]; then
   PROMPT_FILE="$(cd "$(dirname "$PROMPT_FILE")" && pwd)/$(basename "$PROMPT_FILE")"
