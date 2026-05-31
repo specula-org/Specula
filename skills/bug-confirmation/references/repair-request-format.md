@@ -89,6 +89,23 @@ No fixed iteration cap by default. The loop terminates when **every request is t
 
 Budget pressure does **not** defer anything. The orchestrator waits for quota between rounds (like every other phase) rather than dumping work to `DEFERRED` — mass-deferring under throttling would be an exploitable weakness.
 
+## Repairing a request (Phase 3 repair mode)
+
+Phase 3 in repair mode (`--repair`) processes each request with status `OPEN` or `REOPENED`:
+
+1. Set `status: IN_REPAIR` before editing anything.
+2. Read its Trigger / Evidence and its `History` — never repeat a repair a prior round already tried and recorded as failed.
+3. Apply the repair for its `target`:
+   - **SPEC_REPAIR** — tighten the cited action / add the missing guard in `base.tla` so the model matches the implementation at the cited `file:line`.
+   - **FAULT_MODEL** — correct the fault model as a whole: the fault action's semantics in `base.tla`, its counter/wrapper in `MC.tla`, the cfg constants, or removing a fault that is not in the system's failure model. Not just `MC.cfg` bounds.
+   - **INVARIANT** — weaken / correct the cited invariant per the evidence.
+4. Re-validate (follow the validation-workflow skill):
+   - Run **full trace validation on all traces** — the soundness gate. If the repair excludes a real trace, it is wrong; undo it and reconsider.
+   - Re-run model checking on the request's `scope.hunt_cfgs`, and update `bug-report.md` for the affected cfg.
+5. Set `status: RECHECK` and append a `History` entry (tag `phase3-repair`) describing what changed and the re-run result (original CE gone / new CE / unchanged).
+
+Process **only** `OPEN`/`REOPENED` here; never touch `RESOLVED`/`DEFERRED`/`RECHECK`. The implementation is ground truth — do not overfit the spec to make a trace pass (model checking catches overfit repairs; see the validation-workflow skill). Do not edit `confirmed-bugs.md` in repair mode — the re-check pass owns it.
+
 ## When NOT to create a request
 
 A request is a **positive, cited claim** that the counterexample is an artifact. Do **not** create one when:

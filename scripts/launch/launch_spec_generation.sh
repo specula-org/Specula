@@ -157,26 +157,10 @@ You are generating a TLA+ specification for: **${name}**
 
 ## Instructions
 
-Follow the **spec-generation** skill methodology. Read the skill guide at:
+Follow the **spec-generation** skill exactly — it is the single source of methodology (its phases, references, rules, Category A/B handling, and the mandatory brief-coverage self-audit). Read and execute it in full:
   ${SKILL_DIR}/guide.md
 
-Then read the reference files:
-  ${SKILL_DIR}/references/base-spec-methodology.md
-  ${SKILL_DIR}/references/mc-spec-pattern.md
-  ${SKILL_DIR}/references/trace-spec-pattern.md
-  ${SKILL_DIR}/references/instrumentation-spec-format.md
-
-Before writing specs, read \`${brief}\` and determine whether this target is Category A (distributed/message-passing) or Category B (concurrent/lock-free/runtime). If it is Category B, shape the spec around thread-local state, linearization points, stale views, memory ordering, reclamation, and ownership transfer. Do not force a message-bag / protocol-state template onto the code.
-
-## Phases
-
-Execute the spec-generation phases in order, including the mandatory self-audit between MC and Trace:
-
-1. **Base Spec** — Write \`base.tla\` + \`base.cfg\` with bug-family driven extensions
-2. **MC Spec** — Write \`MC.tla\` + \`MC.cfg\` with counter-bounded actions
-3. **Brief Coverage Self-Audit** — Write \`brief-coverage.md\`; fix missing hunt cfg / invariant coverage before proceeding
-4. **Trace Spec** — Write \`Trace.tla\` + \`Trace.cfg\` for trace validation
-5. **Instrumentation Spec** — Write \`instrumentation-spec.md\` with action-to-code mapping
+Do everything the skill specifies. Do not add, relax, or override any step here.
 
 ## Output
 
@@ -192,20 +176,6 @@ Expected files:
 - \`${spec_dir}/Trace.tla\` — Trace validation specification
 - \`${spec_dir}/Trace.cfg\` — Trace validation config
 - \`${spec_dir}/instrumentation-spec.md\` — Instrumentation mapping
-
-## Critical Rules
-
-1. Every extension traces to a Bug Family. No Bug Family reference = don't add the extension.
-2. Model the implementation, not the paper. Deviations from the reference algorithm are where bugs live.
-3. Follow the code's control flow faithfully. Do not simplify, reorder, or merge logic that the code keeps separate.
-4. Annotate every logic block with source lines (file:line). Not optional.
-5. Write to files early and often. Insurance against context loss.
-6. Split actions where code paths diverge. Merging hides bugs.
-7. Name actions after implementation functions. Enables cross-referencing with code.
-8. Silent actions must be tightly constrained. Unconstrained silent actions cause state space explosion.
-9. MC spec bounds fault-injection, not normal operations.
-10. For Category B systems, split API-level operations at real semantic boundaries (read/confirm, reserve/publish, retire/reclaim, signal/complete). Do not collapse them into single actions unless the code is truly atomic there.
-11. Before moving from MC spec to Trace spec, write \`brief-coverage.md\` and fix any missing hunt cfg or disabled invariant coverage it exposes.
 PROMPT_EOF
 
   # Inject per-target extra prompt if present (prefer the target work dir)

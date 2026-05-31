@@ -179,41 +179,11 @@ arises, re-validate, then hand each request to re-check.
 - **Modeling brief**: ${work_dir}/modeling-brief.md
 - **Traces**: ${work_dir}/traces/
 
-## Read first
-- Artifact format + state machine: ${SPECULA_ROOT}/.claude/skills/bug-confirmation/references/repair-request-format.md
-- How to repair + re-validate: ${SPECULA_ROOT}/.claude/skills/validation-workflow/guide.md
-  (and its sub-skills tla-trace-workflow, tla-checking-workflow)
+## Methodology — read and follow exactly (single source of repair-mode method)
+- **${SPECULA_ROOT}/.claude/skills/bug-confirmation/references/repair-request-format.md** — the artifact, the state machine, and the per-request repair procedure (how to repair each target, the full-trace soundness gate, and the OPEN/REOPENED → IN_REPAIR → RECHECK transitions you own).
+- **${SPECULA_ROOT}/.claude/skills/validation-workflow/guide.md** (+ its sub-skills tla-trace-workflow, tla-checking-workflow) — how to repair the spec and re-validate without overfitting.
 
-You own each request's OPEN/REOPENED -> IN_REPAIR -> RECHECK transition.
-
-## Per-request procedure
-For each repair request with status OPEN or REOPENED:
-
-1. Set its frontmatter \`status: IN_REPAIR\` before editing anything.
-2. Read its Trigger / Evidence, and read its \`History\` — do NOT repeat a repair a prior
-   round already tried and recorded as failed.
-3. Apply the repair for its \`target\`:
-   - **SPEC_REPAIR**: tighten the cited action / add the missing guard in base.tla so the
-     model matches the implementation at the cited file:line.
-   - **FAULT_MODEL**: correct the fault model — the whole of the fault action's semantics
-     in base.tla, its counter/wrapper in MC.tla, the cfg constants, or removing a fault
-     that is not in the system's failure model. Not just MC.cfg bounds.
-   - **INVARIANT**: weaken / correct the cited invariant per the evidence.
-4. Re-validate, following validation-workflow:
-   - Run **FULL trace validation on all traces**. This is the soundness gate: if the
-     repair excludes a real trace, the repair is wrong — undo it and reconsider.
-   - Re-run model checking on the request's \`scope.hunt_cfgs\`.
-   - Update \`${spec_dir}/bug-report.md\` for the affected hunt cfg.
-5. Set \`status: RECHECK\` and append a \`History\` entry (tag \`phase3-repair\`) describing
-   what you changed and the re-run result (original CE gone / new CE / unchanged).
-
-## Critical rules
-- Process ONLY OPEN/REOPENED requests. Never touch RESOLVED / DEFERRED / RECHECK.
-- The implementation is ground truth. Do NOT overfit the spec to make a trace pass
-  (validation-workflow covers overfit repair and how model checking catches it).
-- Full trace validation every repair (soundness gate) — non-negotiable.
-- Do NOT edit confirmed-bugs.md here — the re-check pass owns that file.
-- If there are no OPEN/REOPENED requests, there is nothing to do; exit cleanly.
+Process ONLY OPEN/REOPENED requests. Do everything those docs specify; do not add, relax, or override any step here.
 PROMPT_EOF
 }
 
@@ -245,31 +215,11 @@ You are validating the TLA+ specification for **${name}** through iterative trac
 
 ## Workflow
 
-Read and follow the **validation-workflow** skill:
+Follow the **validation-workflow** skill exactly — it is the single source of methodology (its iterative trace-validation ↔ model-checking loop, the Case A/B/C classification, convergence, bug hunting, and required artifacts such as changelog.md / bug-report.md). Read and execute it in full, including the two sub-skills it delegates to:
   ${SPECULA_ROOT}/.claude/skills/validation-workflow/guide.md
+  (sub-skills: ${SPECULA_ROOT}/.claude/skills/tla-trace-workflow/guide.md and ${SPECULA_ROOT}/.claude/skills/tla-checking-workflow/guide.md)
 
-This skill orchestrates the iterative loop between trace validation and model checking.
-It delegates to two sub-skills (read these too):
-  ${SPECULA_ROOT}/.claude/skills/tla-trace-workflow/guide.md
-  ${SPECULA_ROOT}/.claude/skills/tla-checking-workflow/guide.md
-
-Determine whether the target is Category A or Category B from \`${work_dir}/modeling-brief.md\`, the trace layout, and the instrumentation spec before debugging. Do not assume linear single-file traces for concurrent systems.
-
-## Pre-step: Verify harness and traces
-
-Harness and traces should already exist from Phase 2.5 (harness generation). Verify:
-- Trace files in: ${work_dir}/traces/
-- Instrumentation guide: ${work_dir}/harness/INSTRUMENTATION.md
-
-If instrumentation adjustments are needed during validation, read \`harness/INSTRUMENTATION.md\` for how to modify capture points and fields, then re-run \`bash harness/run.sh\` to regenerate traces.
-
-## Critical Rules
-
-1. Follow the validation-workflow skill — do not invent your own methodology.
-2. The implementation is ground truth. When spec and implementation disagree, the spec is wrong (unless it's a real bug).
-3. For Case C (real bug found): STOP and document it clearly. Do not "fix" real bugs.
-4. For abstraction gaps: document them and make a pragmatic choice, then continue.
-5. If the system is Category B, preserve the partial-order/timebox validation model. Do not "simplify" it into a linear trace workflow just to make validation easier.
+Do everything the skill specifies. Do not add, relax, or override any step here. Harness and traces already exist from Phase 2.5 under \`${work_dir}/traces/\` and \`${work_dir}/harness/\`; the skill's Phase 0 covers verifying and (if needed) regenerating them.
 PROMPT_EOF
   fi
 

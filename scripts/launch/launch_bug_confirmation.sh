@@ -177,22 +177,8 @@ finding and transition its request out of RECHECK.
 - ${SPECULA_ROOT}/.claude/skills/bug-confirmation/phases/03-recheck.md
 - ${SPECULA_ROOT}/.claude/skills/bug-confirmation/references/repair-request-format.md
 
-## Task
-For each repair request with \`status: RECHECK\` (ignore every other status):
-- Compare the re-run result against the request's original counterexample.
-- Transition the request to **exactly one** of RESOLVED / REOPENED / DEFERRED —
-  **never leave it RECHECK**.
-- Update the linked finding's entry in \`confirmed-bugs.md\` accordingly. You — not the
-  orchestrator — own every confirmed-bugs.md status write.
-- **Per-request cap**: if \`--max-repair-rounds\` is > 0 and the request's own \`round\`
-  >= that cap, DEFER it instead of reopening.
-- **Anti-oscillation**: never REOPEN with a repair already tried in the request's History.
-
-## Critical rules
-- Process ONLY \`status: RECHECK\` requests.
-- Every processed request MUST leave RECHECK (RESOLVED / REOPENED / DEFERRED).
-- Budget / quota is NOT a reason to defer.
-- A DEFERRED finding is preserved for a developer with its full repair history — never dropped.
+## Instructions
+Do everything \`03-recheck.md\` and \`repair-request-format.md\` specify, exactly — process ONLY \`status: RECHECK\` requests, and honor the per-request cap (\`--max-repair-rounds\` above). Do not add, relax, or override any step here.
 PROMPT_EOF
 }
 

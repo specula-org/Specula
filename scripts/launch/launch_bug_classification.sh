@@ -125,52 +125,10 @@ You are assigning a Severity tier to each bug in **${name}**'s already-confirmed
 
 ## Methodology
 
-Read and follow the **bug-classification** skill:
+Follow the **bug-classification** skill exactly — it is the single source of methodology (the four-tier Severity rubric, the per-bug output schema and mandatory Summary block, the single-responsibility constraints — do not modify confirmed-bugs.md or its Status fields — the rule that Severity is independent of reproduction status, and the output validation checklist). Read and execute it in full:
   ${SPECULA_ROOT}/.claude/skills/bug-classification/guide.md
 
-The skill defines the four-tier Severity rubric, the per-bug output schema, the single-responsibility constraint (do not modify confirmed-bugs.md), and the rule that Severity is independent of reproduction status (a REPRODUCTION FAILED Critical bug is still Critical).
-
-## Task
-
-1. Read every entry in \`confirmed-bugs.md\` end-to-end.
-2. For each \`## Bug N:\` header, identify the worst observable consequence the bug enables under realistic conditions (reachable code path + within the system's stated fault / threat model).
-3. Map to the rubric (Critical / High / Medium / Low; \`—\` only for FALSE POSITIVE).
-4. Write one row per bug to \`${spec_dir}/bug-severity.md\` using the schema in the skill's "Output schema" section. Include the mandatory Summary block at the top.
-
-## Constraints
-
-- **Do not modify \`confirmed-bugs.md\`.** It is read-only input. The classifier's only write is \`bug-severity.md\`.
-- **Do not change \`Status\` fields** (REPRODUCED / REPRODUCTION FAILED / FALSE POSITIVE / NEEDS MORE INFO). Phase 4a is authoritative on Status; you are authoritative only on Severity.
-- **Do not lower Severity because reproduction failed or was hard.** A bug's worst-case impact does not depend on how easy it was to trigger in a sandbox. Use the bug's audit + trigger-scenario + developer-intent evidence to judge severity, not the Reproduction result.
-- **Do not add bugs** that are not already in \`confirmed-bugs.md\`. The classifier is not the place to introduce new findings.
-- **Do not write Phase 4a-style content** (no code audit, no reproduction script, no investigation). One row per bug, 1–2 sentences of Reasoning each.
-- One row per \`## Bug N:\` header. Numbering must match the input (do not renumber if there are gaps).
-- Every Severity must be one of \`Critical\`, \`High\`, \`Medium\`, \`Low\`, or \`—\` (use \`—\` only for FALSE POSITIVE).
-
-## Output format
-
-\`\`\`markdown
-# Severity Classification — ${name}
-
-## Summary
-
-- Total bugs: N
-- Critical: N
-- High: N
-- Medium: N
-- Low: N
-- FALSE POSITIVE (no severity): N
-
-## Per-bug classification
-
-| Bug | Title | Status | Severity | Reasoning |
-|-----|-------|--------|----------|-----------|
-| 1   | <title from ## Bug 1:>  | REPRODUCED         | High     | <1-2 sentences: consequence + reachability> |
-| 2   | <title from ## Bug 2:>  | REPRODUCTION FAILED | Critical | <consequence + why FAILED doesn't lower severity> |
-| 3   | <title from ## Bug 3:>  | FALSE POSITIVE     | —        | <1 sentence acknowledging FP call is sound>     |
-\`\`\`
-
-When done, verify against the skill's "Output validation checklist" (one row per Bug header in the input, every Severity in {Critical, High, Medium, Low, —}, every — row has Status = FALSE POSITIVE, every non-— Reasoning names at least one consequence and one trigger surface, Summary counts add up).
+Do everything the skill specifies. Do not add, relax, or override any step here.
 PROMPT_EOF
 }
 

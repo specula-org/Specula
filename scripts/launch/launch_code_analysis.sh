@@ -153,46 +153,16 @@ You are analyzing the following system:
 
 ## Instructions
 
-Follow the **code-analysis** skill methodology. Read the skill guide at:
+Follow the **code-analysis** skill exactly — it is the single source of methodology (its 4 phases, references, rules, bug-family modeling-brief format, and Category A/B handling). Read and execute it in full:
   ${SPECULA_ROOT}/.claude/skills/code_analysis/guide.md
 
-Then read the reference files as needed:
-  ${SPECULA_ROOT}/.claude/skills/code_analysis/references/bug-archaeology.md
-  ${SPECULA_ROOT}/.claude/skills/code_analysis/references/deep-analysis.md
-  ${SPECULA_ROOT}/.claude/skills/code_analysis/references/distributed-analysis.md
-  ${SPECULA_ROOT}/.claude/skills/code_analysis/references/concurrent-analysis.md
-  ${SPECULA_ROOT}/.claude/skills/code_analysis/references/modeling-brief-format.md
-
-And see the example:
-  ${SPECULA_ROOT}/.claude/skills/code_analysis/examples/hashicorp-raft-modeling-brief.md
-
-## Phases
-
-Execute all 4 phases in order:
-
-1. **Reconnaissance** — Build structural map of codebase and classify the target as Category A (distributed/message-passing) or Category B (concurrent/lock-free/runtime)
-2. **Bug Archaeology** — Mine git history and GitHub issues/PRs for bugs
-3. **Deep Analysis** — Systematic code reading to find new issues
-4. **Modeling Brief** — Synthesize findings into modeling-brief.md
+Do everything the skill specifies. Do not add, relax, or override any step here.
 
 ## Output
 
 Write your outputs to:
 - \`${work_dir}/modeling-brief.md\` — The primary deliverable (handoff to Spec Generation)
 - \`${work_dir}/analysis-report.md\` — Detailed audit trail of all findings
-
-## Critical Rules
-
-1. VERIFY before reporting. Re-read code. Check for compensating mechanisms. No unverified claims.
-2. Read issue DISCUSSIONS, not just titles. For any issue you plan to reference, read the full comment thread via \`gh issue view --comments\` to confirm it hasn't been debunked.
-3. Do NOT hallucinate code logic. If unsure, READ IT. Cite file:line for every claim.
-4. Use parallel Task subagents aggressively. Launch multiple subagents concurrently for: issue batch verification (5-10 issues per subagent), file-by-file deep analysis (one subagent per core file), and commit review. This is essential for both depth AND coverage.
-5. Evidence-based claims only. Show code, git commits, issue discussions, or code path inconsistencies.
-6. Bug Families over flat lists. Group by mechanism. 5 actionable families > 17 flat findings.
-7. Every finding must be classified: model-checkable, test-verifiable, or code-review-only.
-8. Thoroughness is non-negotiable. Analyze ALL bug-fix commits touching core files. Deeply read 30+ GitHub issues (full discussion threads). Report coverage statistics in the analysis report.
-9. Record the system category and justification in \`modeling-brief.md\`. Later phases should not have to rediscover whether this is Category A or B.
-10. After classification, follow the matching category-specific reference file under \`skills/code_analysis/references/\`. Do not force a distributed-system template onto a concurrent library, or vice versa.
 PROMPT_EOF
 
   # Inject per-target extra prompt if present (prefer the target work dir)

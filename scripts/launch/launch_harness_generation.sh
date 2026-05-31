@@ -168,11 +168,10 @@ You are generating a trace harness for **${name}** — instrumenting the real so
 
 ## Workflow
 
-Read and follow the **harness-generation** skill:
+Follow the **harness-generation** skill exactly — it is the single source of methodology (instrument real code, trace format, run.sh, end-to-end validation). Read and execute it in full:
   ${SKILL_DIR}/guide.md
 
-Then read the reference:
-  ${SKILL_DIR}/references/trace-module-patterns.md
+Do everything the skill specifies. Do not add, relax, or override any step here.
 
 ## Output
 
@@ -185,15 +184,6 @@ Expected outputs:
 - \`${work_dir}/harness/run.sh\` — One-command build + run + collect traces
 - \`${work_dir}/harness/INSTRUMENTATION.md\` — Guide for Phase 3 agent to adjust instrumentation
 - \`${work_dir}/traces/*.ndjson\` — Trace files from test runs
-
-## Critical Rules
-
-1. Instrument real code, not a simulator. The trace must capture what the real system does.
-2. Never hand-write traces. Every trace line must come from running instrumented code.
-3. Match the instrumentation spec exactly. Event names, field names, trigger points.
-4. Real timestamps only. Sequential integers (1000, 1001, 1002) indicate hand-written traces.
-5. run.sh must work end-to-end. Anyone should be able to reproduce traces with a single command.
-6. Run a quick trace validation at the end to catch obvious format issues.
 PROMPT_EOF
 
   # Inject per-target extra prompt if present (prefer the target work dir)
