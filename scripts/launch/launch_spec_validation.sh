@@ -15,6 +15,7 @@
 # Options:
 #   --dry-run           Print commands without executing
 #   --check             Only verify prerequisites exist
+#   --repair            Repair mode: process OPEN/REOPENED repair requests (confirmation back-edge)
 #   --max-parallel=N    Max concurrent agents (default: 1)
 #   --max-turns=N       Max agent turns (default: 0 = unlimited)
 #   --agent=NAME        Agent adapter to use (default: claude-code)
@@ -33,6 +34,7 @@ MAX_PARALLEL=1
 MAX_TURNS=0
 DRY_RUN=false
 CHECK_ONLY=false
+REPAIR_MODE=false
 AGENT="claude-code"
 CLAUDE_ALIAS="${CLAUDE_ALIAS:-claude}"
 ARTIFACT=""
@@ -45,6 +47,7 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
     --check) CHECK_ONLY=true ;;
+    --repair) REPAIR_MODE=true ;;
     --max-parallel=*) MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*) MAX_TURNS="${arg#*=}" ;;
     --agent=*) AGENT="${arg#*=}" ;;
@@ -154,6 +157,67 @@ check_prereqs() {
 }
 
 # ──────────────────────────────────────────────────────────
+# Generate repair-mode prompt (confirmation back-edge)
+# ──────────────────────────────────────────────────────────
+generate_repair_prompt() {
+  local name="$1" repo_dir="$2"
+  local work_dir="$(get_work_dir "$name")"
+  local spec_dir="${work_dir}/spec"
+
+  cat <<PROMPT_EOF
+# Spec Repair Task (confirmation back-edge): ${name}
+
+You are running spec validation in **REPAIR MODE**. The bug-confirmation phase handed
+back counterexamples it judged to be spec / fault-model / invariant **artifacts** (not
+real bugs), each recorded as a repair request. Repair the spec so the artifact no longer
+arises, re-validate, then hand each request to re-check.
+
+## Inputs
+- **Repair requests**: ${spec_dir}/repair-requests/   (process ONLY status OPEN or REOPENED)
+- **Spec directory**: ${spec_dir}   (base.tla, MC.tla, Trace.tla, *.cfg, MC_hunt_*.cfg)
+- **Source code**: ${repo_dir}
+- **Modeling brief**: ${work_dir}/modeling-brief.md
+- **Traces**: ${work_dir}/traces/
+
+## Read first
+- Artifact format + state machine: ${SPECULA_ROOT}/.claude/skills/bug-confirmation/references/repair-request-format.md
+- How to repair + re-validate: ${SPECULA_ROOT}/.claude/skills/validation-workflow/guide.md
+  (and its sub-skills tla-trace-workflow, tla-checking-workflow)
+
+You own each request's OPEN/REOPENED -> IN_REPAIR -> RECHECK transition.
+
+## Per-request procedure
+For each repair request with status OPEN or REOPENED:
+
+1. Set its frontmatter \`status: IN_REPAIR\` before editing anything.
+2. Read its Trigger / Evidence, and read its \`History\` — do NOT repeat a repair a prior
+   round already tried and recorded as failed.
+3. Apply the repair for its \`target\`:
+   - **SPEC_REPAIR**: tighten the cited action / add the missing guard in base.tla so the
+     model matches the implementation at the cited file:line.
+   - **FAULT_MODEL**: correct the fault model — the whole of the fault action's semantics
+     in base.tla, its counter/wrapper in MC.tla, the cfg constants, or removing a fault
+     that is not in the system's failure model. Not just MC.cfg bounds.
+   - **INVARIANT**: weaken / correct the cited invariant per the evidence.
+4. Re-validate, following validation-workflow:
+   - Run **FULL trace validation on all traces**. This is the soundness gate: if the
+     repair excludes a real trace, the repair is wrong — undo it and reconsider.
+   - Re-run model checking on the request's \`scope.hunt_cfgs\`.
+   - Update \`${spec_dir}/bug-report.md\` for the affected hunt cfg.
+5. Set \`status: RECHECK\` and append a \`History\` entry (tag \`phase3-repair\`) describing
+   what you changed and the re-run result (original CE gone / new CE / unchanged).
+
+## Critical rules
+- Process ONLY OPEN/REOPENED requests. Never touch RESOLVED / DEFERRED / RECHECK.
+- The implementation is ground truth. Do NOT overfit the spec to make a trace pass
+  (validation-workflow covers overfit repair and how model checking catches it).
+- Full trace validation every repair (soundness gate) — non-negotiable.
+- Do NOT edit confirmed-bugs.md here — the re-check pass owns that file.
+- If there are no OPEN/REOPENED requests, there is nothing to do; exit cleanly.
+PROMPT_EOF
+}
+
+# ──────────────────────────────────────────────────────────
 # Generate agent prompt
 # ──────────────────────────────────────────────────────────
 generate_prompt() {
@@ -161,6 +225,9 @@ generate_prompt() {
   local work_dir="$(get_work_dir "$name")"
   local spec_dir="${work_dir}/spec"
 
+  if $REPAIR_MODE; then
+    generate_repair_prompt "$name" "$repo_dir"
+  else
   cat <<PROMPT_EOF
 # Spec Validation Task: ${name}
 
@@ -204,6 +271,7 @@ If instrumentation adjustments are needed during validation, read \`harness/INST
 4. For abstraction gaps: document them and make a pragmatic choice, then continue.
 5. If the system is Category B, preserve the partial-order/timebox validation model. Do not "simplify" it into a linear trace workflow just to make validation easier.
 PROMPT_EOF
+  fi
 
   # Inject per-target extra prompt if present (prefer the target work dir)
   local extra="${work_dir}/.prompt-extra.md"
@@ -224,8 +292,10 @@ PROMPT_EOF
 launch_agent() {
   local name="$1" prompt="$2"
   local work_dir="$(get_work_dir "$name")"
-  local log_file="${work_dir}/spec-validation.log"
-  local prompt_file="${work_dir}/.spec-validation-prompt.md"
+  local tag="spec-validation"
+  $REPAIR_MODE && tag="spec-repair"
+  local log_file="${work_dir}/${tag}.log"
+  local prompt_file="${work_dir}/.${tag}-prompt.md"
 
   mkdir -p "${work_dir}/traces"
   echo "$prompt" > "$prompt_file"

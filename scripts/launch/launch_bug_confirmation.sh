@@ -13,6 +13,8 @@
 # Options:
 #   --dry-run           Print commands without executing
 #   --check             Only verify prerequisites exist
+#   --recheck           Re-check mode: settle RECHECK repair requests (confirmation back-edge)
+#   --max-repair-rounds=N  Per-request repair cap honored in --recheck (default: 0 = unlimited)
 #   --max-parallel=N    Max concurrent agents (default: 1)
 #   --max-turns=N       Max agent turns (default: 0 = unlimited)
 #   --agent=NAME        Agent adapter to use (default: claude-code)
@@ -32,6 +34,8 @@ MAX_PARALLEL=1
 MAX_TURNS=0
 DRY_RUN=false
 CHECK_ONLY=false
+RECHECK_MODE=false
+MAX_REPAIR_ROUNDS=0
 AGENT="claude-code"
 CLAUDE_ALIAS="${CLAUDE_ALIAS:-claude}"
 ARTIFACT=""
@@ -44,6 +48,8 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
     --check) CHECK_ONLY=true ;;
+    --recheck) RECHECK_MODE=true ;;
+    --max-repair-rounds=*) MAX_REPAIR_ROUNDS="${arg#*=}" ;;
     --max-parallel=*) MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*) MAX_TURNS="${arg#*=}" ;;
     --agent=*) AGENT="${arg#*=}" ;;
@@ -145,6 +151,52 @@ check_prereqs() {
 }
 
 # ──────────────────────────────────────────────────────────
+# Generate re-check-mode prompt (confirmation back-edge)
+# ──────────────────────────────────────────────────────────
+generate_recheck_prompt() {
+  local name="$1" repo_dir="$2"
+  local work_dir
+  work_dir="$(get_work_dir "$name")"
+  local spec_dir="${work_dir}/spec"
+
+  cat <<PROMPT_EOF
+# Bug Re-check Task (confirmation back-edge): ${name}
+
+You are running the bug-confirmation **RE-CHECK** pass. Phase 3 (repair mode) has repaired
+the spec for the open repair requests and moved them to \`status: RECHECK\`. Settle each
+finding and transition its request out of RECHECK.
+
+## Inputs
+- **Repair requests**: ${spec_dir}/repair-requests/   (process ONLY status RECHECK)
+- **Updated bug report + TLC output**: ${spec_dir}/bug-report.md , ${spec_dir}/output/
+- **Confirmed bugs (you update this)**: ${spec_dir}/confirmed-bugs.md
+- **Source code**: ${repo_dir}
+- **Per-request cap**: --max-repair-rounds=${MAX_REPAIR_ROUNDS}   (0 = unlimited)
+
+## Methodology — read and follow
+- ${SPECULA_ROOT}/.claude/skills/bug-confirmation/phases/03-recheck.md
+- ${SPECULA_ROOT}/.claude/skills/bug-confirmation/references/repair-request-format.md
+
+## Task
+For each repair request with \`status: RECHECK\` (ignore every other status):
+- Compare the re-run result against the request's original counterexample.
+- Transition the request to **exactly one** of RESOLVED / REOPENED / DEFERRED —
+  **never leave it RECHECK**.
+- Update the linked finding's entry in \`confirmed-bugs.md\` accordingly. You — not the
+  orchestrator — own every confirmed-bugs.md status write.
+- **Per-request cap**: if \`--max-repair-rounds\` is > 0 and the request's own \`round\`
+  >= that cap, DEFER it instead of reopening.
+- **Anti-oscillation**: never REOPEN with a repair already tried in the request's History.
+
+## Critical rules
+- Process ONLY \`status: RECHECK\` requests.
+- Every processed request MUST leave RECHECK (RESOLVED / REOPENED / DEFERRED).
+- Budget / quota is NOT a reason to defer.
+- A DEFERRED finding is preserved for a developer with its full repair history — never dropped.
+PROMPT_EOF
+}
+
+# ──────────────────────────────────────────────────────────
 # Generate agent prompt
 # ──────────────────────────────────────────────────────────
 generate_prompt() {
@@ -153,6 +205,9 @@ generate_prompt() {
   work_dir="$(get_work_dir "$name")"
   local spec_dir="${work_dir}/spec"
 
+  if $RECHECK_MODE; then
+    generate_recheck_prompt "$name" "$repo_dir"
+  else
   cat <<PROMPT_EOF
 # Bug Confirmation Task: ${name}
 
@@ -254,6 +309,7 @@ Format:
 6. For each false positive, explain clearly what safeguard prevents the bug, or what developer-intent evidence dismisses it.
 7. Actually RUN the reproduction tests and record the output. Do not just write tests without executing them.
 PROMPT_EOF
+  fi
 
   # Inject per-target extra prompt if present (prefer the target work dir)
   local extra="${work_dir}/.prompt-extra.md"
@@ -275,8 +331,10 @@ launch_agent() {
   local name="$1" prompt="$2"
   local work_dir
   work_dir="$(get_work_dir "$name")"
-  local log_file="${work_dir}/bug-confirmation.log"
-  local prompt_file="${work_dir}/.bug-confirmation-prompt.md"
+  local tag="bug-confirmation"
+  $RECHECK_MODE && tag="bug-recheck"
+  local log_file="${work_dir}/${tag}.log"
+  local prompt_file="${work_dir}/.${tag}-prompt.md"
 
   echo "$prompt" > "$prompt_file"
 
