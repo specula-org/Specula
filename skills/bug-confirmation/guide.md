@@ -9,14 +9,18 @@ Each finding goes through two phases in order: investigation (Phase 1) and repro
 | # | Phase | When it runs | Output it adds |
 |---|-------|---|---|
 | 1 | [Investigation](phases/01-investigation.md) | Every finding | Code-audit result + dev-intent summary + precedent re-check |
-| 2 | [Reproduction](phases/02-reproduction.md) | Every finding except dropped (code-review × known) | `repro/test_bug*` file + REPRODUCED / REPRODUCTION FAILED status |
+| 2 | [Reproduction](phases/02-reproduction.md) | Every finding except dropped (code-review × known) | `repro/test_bug*` file + REPRODUCED / REPRODUCTION FAILED status; or, for a **cited** artifact verdict, a repair request |
+| 2′ | [Re-check](phases/03-recheck.md) | `--recheck` only (pipeline repair loop) | resolves `RECHECK` repair requests; transitions each to RESOLVED / REOPENED / DEFERRED |
+
+**Confirmation loop.** When reproduction concludes — with a citation — that a counterexample is a spec / fault-model / invariant **artifact** rather than a real bug, it does not drop the finding. It emits a *repair request* that hands the finding back to Phase 3 for a scoped repair; the pipeline then re-runs this skill in `--recheck` mode (Phase 2′) to settle it. See `references/repair-request-format.md`. The loop is bounded by the run's token budget and by per-request anti-oscillation, not by a fixed iteration cap.
 
 ## Per-bug output schema
 
 Each finding's entry in `confirmed-bugs.md` should include:
 
 - **Source**: MC (with counterexample) or Code Review
-- **Status**: REPRODUCED / REPRODUCTION FAILED / FALSE POSITIVE / NEEDS MORE INFO
+- **Status**: REPRODUCED / REPRODUCTION FAILED / FALSE POSITIVE / NEEDS MORE INFO / PENDING REPAIR / DEFERRED
+- **Repair request**: RR-NNN if this finding was handed back to Phase 3 (omit otherwise)
 - **Severity**: Critical / High / Medium / Low
 - **Location**: file:line
 - **Description**: what the bug is, in 2-3 sentences

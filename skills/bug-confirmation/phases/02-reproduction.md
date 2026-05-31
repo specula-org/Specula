@@ -9,9 +9,10 @@ For every bug, you MUST:
 1. Write a self-contained reproduction test to `repro/test_bug<N>_<name>.{py,js,rs,go,c,sh}`
 2. Actually EXECUTE the test and record the output
 3. Walk the escalation ladder strictly in order (Level 0 → 1 → 2 → 3); document at each level what was tried and what happened
-4. Report one of two final statuses:
+4. Report a final outcome:
    - **REPRODUCED** — bug triggered; include level reached, the exact command, and observable evidence
    - **REPRODUCTION FAILED** — escalation ladder exhausted; include what was attempted at each level and a reasoned conclusion about why it didn't trigger
+   - **Hand back to repair** — if (and only if) you can cite that the counterexample is a spec/fault/invariant artifact, emit a repair request instead of a terminal status (see "When a counterexample is an artifact" below)
 
 "Code audit only" is NOT a permitted status. Every finding's entry in `confirmed-bugs.md` must show evidence of a reproduction attempt (the test file in `repro/` and the recorded output).
 
@@ -80,10 +81,26 @@ When reporting REPRODUCTION FAILED:
 - Your conclusion: is the bug real but hard to trigger (timing-sensitive, requires specific cluster topology, needs a fault not in the test framework), or do you now believe it's a false positive given the failed escalation?
 - Whether you still believe the bug stands on code audit alone — and the evidence supporting that
 
+## When a counterexample is an artifact — hand back to repair (confirmation loop)
+
+Reproduction failing is not always a statement about the bug — sometimes it is a statement about the **spec**. If the escalation ladder did not trigger the bug *because the counterexample requires something the implementation cannot actually do*, the finding is not dropped: it is handed back to Phase 3 for a scoped repair and returned to you (via `--recheck`, see `phases/03-recheck.md`) once the spec has changed. This is the confirmation-loop back-edge.
+
+Emit a repair request (write `repair-requests/RR-NNN.md`, `status: OPEN`, per `references/repair-request-format.md`) **only when you can cite** which of these holds:
+
+- **SPEC_REPAIR** — a step the counterexample requires is impossible at the code level: the model under-models a guard or branch the implementation has. Cite the missing guard (`file:line`). This is the common case — an over-permissive action, or an overfit repair that survived convergence.
+- **FAULT_MODEL** — the counterexample depends on an injected fault that is not in the system's failure model, or a fault modeled with the wrong semantics. Cite the failure-model evidence.
+- **INVARIANT** — the path reproduces but has no observable consequence, AND developer-intent evidence (Phase 1, Step 2) shows the implementation does not promise the violated property. Cite the evidence.
+
+If the path reproduces with no consequence because a **downstream mechanism masks it**, do not hand back: keep the finding and extend the repro test to assert the masking mechanism actually fires.
+
+**A citation is mandatory.** If you cannot cite the missing guard / inadmissible fault / unpromised property, do not emit a request — fall back to REPRODUCTION FAILED (you believe it is real but hard to trigger) or NEEDS MORE INFO (you cannot tell). "I couldn't trigger it" is never, by itself, grounds for a repair request.
+
+When you emit a request: set the finding's `confirmed-bugs.md` status to `PENDING REPAIR (RR-NNN)` and stop processing that finding — the loop returns it to you in re-check.
+
 ## Output requirements
 
 - For each bug: one executable test file in `repro/test_bug<N>_*.{py,js,rs,go,c,sh}`
 - The test must have been actually executed (not just written); the output must be captured
 - The `confirmed-bugs.md` entry must include the actual test output (copy-paste) as evidence, not just a status label
 - REPRODUCTION FAILED entries still get a `repro/` file — the file contains the attempt code at each escalation level and a comment explaining why each level didn't trigger
-- The final per-bug status is one of: REPRODUCED / REPRODUCTION FAILED / FALSE POSITIVE / NEEDS MORE INFO
+- The final per-bug status is one of: REPRODUCED / REPRODUCTION FAILED / FALSE POSITIVE / NEEDS MORE INFO. A finding handed back to repair is recorded as **PENDING REPAIR (RR-NNN)** until the re-check pass (`phases/03-recheck.md`) resolves it to one of these (or to DEFERRED).
