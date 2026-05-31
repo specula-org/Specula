@@ -24,6 +24,8 @@
 #   --skip-validation      Skip validation
 #   --skip-confirmation    Skip Phase 4a bug confirmation
 #   --skip-classification  Skip Phase 4b severity classification
+#   --skip-repair-loop     Skip the confirmation back-edge repair loop (default: enabled)
+#   --max-repair-rounds=N  Per-request repair cap, enforced by re-check (default: 0 = unlimited)
 #   --enable-reviews        Enable review steps (disabled by default)
 #   --max-parallel=N       Max concurrent agents per phase (default: 1)
 #   --max-turns=N          Max agent turns (default: 0 = unlimited)
@@ -71,6 +73,8 @@ SKIP_HARNESS=false
 SKIP_VALIDATION=false
 SKIP_CONFIRMATION=false
 SKIP_CLASSIFICATION=false
+SKIP_REPAIR_LOOP=false
+MAX_REPAIR_ROUNDS="${MAX_REPAIR_ROUNDS:-0}"   # 0 = unlimited (terminates on convergence or budget)
 SKIP_REVIEWS=true
 AGENT="claude-code"
 CLAUDE_ALIAS="${CLAUDE_ALIAS:-claude}"
@@ -89,6 +93,8 @@ for arg in "$@"; do
     --skip-validation)   SKIP_VALIDATION=true ;;
     --skip-confirmation) SKIP_CONFIRMATION=true ;;
     --skip-classification) SKIP_CLASSIFICATION=true ;;
+    --skip-repair-loop)  SKIP_REPAIR_LOOP=true ;;
+    --max-repair-rounds=*) MAX_REPAIR_ROUNDS="${arg#*=}" ;;
     --enable-reviews)    SKIP_REVIEWS=false ;;
     --max-parallel=*)    MAX_PARALLEL="${arg#*=}" ;;
     --max-turns=*)       MAX_TURNS="${arg#*=}" ;;
@@ -187,6 +193,127 @@ get_work_dir() {
   else
     echo "$PWD/${name}/.specula-output"
   fi
+}
+
+# ──────────────────────────────────────────────────────────
+# Repair-loop helpers (confirmation back-edge)
+#
+# Repair requests live at <work_dir>/spec/repair-requests/RR-*.md.
+# Their frontmatter `status:` is the single source of truth. See
+# .claude/skills/bug-confirmation/references/repair-request-format.md.
+# ──────────────────────────────────────────────────────────
+repair_dir() { echo "$(get_work_dir "$1")/spec/repair-requests"; }
+
+# Read a single frontmatter field (first match in the top block) from an RR file.
+rr_field() { sed -n "1,25{s/^${2}:[[:space:]]*//p}" "$1" | head -1 | sed 's/[[:space:]]*$//'; }
+rr_status() { rr_field "$1" status | tr -d '[:space:]'; }
+
+# Set status + append a History bullet, atomically (read-modify-write one file).
+rr_set_status() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import sys
+path, new_status, note = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as fh:
+    lines = fh.readlines()
+for i, ln in enumerate(lines[:25]):
+    if ln.startswith('status:'):
+        lines[i] = f'status: {new_status}\n'
+        break
+if lines and not lines[-1].endswith('\n'):
+    lines[-1] += '\n'
+lines.append(f'- {note}\n')
+with open(path, 'w') as fh:
+    fh.writelines(lines)
+PY
+}
+
+# True if any target has at least one RR file.
+has_any_request() {
+  local names; read -ra names <<< "$(extract_names)"
+  local n d
+  for n in "${names[@]}"; do
+    d="$(repair_dir "$n")"
+    [[ -d "$d" ]] && compgen -G "${d}/RR-*.md" > /dev/null 2>&1 && return 0
+  done
+  return 1
+}
+
+# True if any target has an RR that is not yet terminal (anything other than
+# RESOLVED / DEFERRED). Repair handles OPEN/REOPENED, re-check handles RECHECK;
+# reset_stale_in_repair recovers IN_REPAIR. The loop runs until none remain.
+repair_work_remaining() {
+  local names; read -ra names <<< "$(extract_names)"
+  local n d f st
+  for n in "${names[@]}"; do
+    d="$(repair_dir "$n")"
+    [[ -d "$d" ]] || continue
+    for f in "$d"/RR-*.md; do
+      [[ -e "$f" ]] || continue
+      st="$(rr_status "$f")"
+      [[ "$st" != "RESOLVED" && "$st" != "DEFERRED" ]] && return 0
+    done
+  done
+  return 1
+}
+
+# Stable signature of every request's (id, status, round). A round that leaves
+# this unchanged made no progress — stop, rather than spin (covers --dry-run and
+# a misbehaving agent that never transitions a request).
+repair_state_sig() {
+  local names; read -ra names <<< "$(extract_names)"
+  local n d f
+  for n in "${names[@]}"; do
+    d="$(repair_dir "$n")"
+    [[ -d "$d" ]] || continue
+    for f in "$d"/RR-*.md; do
+      [[ -e "$f" ]] || continue
+      echo "$(basename "$f"):$(rr_status "$f"):$(rr_field "$f" round)"
+    done
+  done
+}
+
+# Crash recovery: a request stuck IN_REPAIR means its repair phase died
+# mid-turn. Reset to OPEN so the next round retries it.
+reset_stale_in_repair() {
+  $DRY_RUN && return 0
+  local names; read -ra names <<< "$(extract_names)"
+  local n d f
+  for n in "${names[@]}"; do
+    d="$(repair_dir "$n")"
+    [[ -d "$d" ]] || continue
+    for f in "$d"/RR-*.md; do
+      [[ -e "$f" ]] || continue
+      if [[ "$(rr_status "$f")" == "IN_REPAIR" ]]; then
+        rr_set_status "$f" "OPEN" "reset (orchestrator): repair phase did not complete; retrying"
+        log "  reset $(basename "$f") IN_REPAIR -> OPEN (crash recovery)"
+      fi
+    done
+  done
+}
+
+# Regenerate the human-readable rollup index per target.
+regenerate_ledger() {
+  $DRY_RUN && return 0
+  local names; read -ra names <<< "$(extract_names)"
+  local n d f ledger
+  for n in "${names[@]}"; do
+    d="$(repair_dir "$n")"
+    [[ -d "$d" ]] || continue
+    compgen -G "${d}/RR-*.md" > /dev/null 2>&1 || continue
+    ledger="$(get_work_dir "$n")/spec/repair-ledger.md"
+    {
+      echo "# Repair Ledger — ${n}"
+      echo ""
+      echo "Updated: $(date -Iseconds)"
+      echo ""
+      echo "| Request | Bug | Target | Status | Round |"
+      echo "|---------|-----|--------|--------|-------|"
+      for f in "$d"/RR-*.md; do
+        [[ -e "$f" ]] || continue
+        echo "| $(rr_field "$f" id) | $(rr_field "$f" bug_id | sed 's/|/\\|/g') | $(rr_field "$f" target) | $(rr_status "$f") | $(rr_field "$f" round) |"
+      done
+    } > "$ledger"
+  done
 }
 
 # ──────────────────────────────────────────────────────────
@@ -322,6 +449,96 @@ run_phase4_confirmation() {
   bash "$SCRIPT_DIR/launch_bug_confirmation.sh" "${confirm_args[@]}"
 }
 
+# Phase 3 in repair mode: consume OPEN/REOPENED requests, repair the spec,
+# re-validate (full trace + scoped MC), transition each request to RECHECK.
+run_phase3_repair() {
+  divider
+  log "REPAIR ROUND ${1}: PHASE 3 (scoped spec/fault/invariant repair)"
+  divider
+
+  local names
+  read -ra names <<< "$(extract_names)"
+
+  local args=("--repair" "--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT" "--claude-alias=$CLAUDE_ALIAS")
+  [[ -n "$ARTIFACT" ]] && args+=("--artifact=$ARTIFACT")
+  for n in "${names[@]}"; do
+    args+=("$n")
+  done
+
+  if $DRY_RUN; then
+    log "[DRY RUN] bash scripts/launch/launch_spec_validation.sh ${args[*]}"
+    return 0
+  fi
+
+  bash "$SCRIPT_DIR/launch_spec_validation.sh" "${args[@]}"
+}
+
+# Phase 4 in re-check mode: consume RECHECK requests, settle each finding,
+# transition each request to RESOLVED / REOPENED / DEFERRED (never RECHECK).
+run_phase4_recheck() {
+  divider
+  log "REPAIR ROUND ${1}: PHASE 4 (re-check repair requests)"
+  divider
+
+  local names
+  read -ra names <<< "$(extract_names)"
+
+  # --max-repair-rounds is a PER-REQUEST cap: the re-check agent defers a
+  # request once its own `round` reaches the cap (0 = unlimited). The agent,
+  # not the orchestrator, writes every RESOLVED / DEFERRED back to confirmed-bugs.md.
+  local args=("--recheck" "--max-repair-rounds=$MAX_REPAIR_ROUNDS" "--max-parallel=$MAX_PARALLEL" "--max-turns=$MAX_TURNS" "--agent=$AGENT" "--claude-alias=$CLAUDE_ALIAS")
+  [[ -n "$ARTIFACT" ]] && args+=("--artifact=$ARTIFACT")
+  for n in "${names[@]}"; do
+    args+=("$n")
+  done
+
+  if $DRY_RUN; then
+    log "[DRY RUN] bash scripts/launch/launch_bug_confirmation.sh ${args[*]}"
+    return 0
+  fi
+
+  bash "$SCRIPT_DIR/launch_bug_confirmation.sh" "${args[@]}"
+}
+
+# Confirmation back-edge: alternate Phase 3 repair and Phase 4 re-check until
+# every request is terminal (RESOLVED / DEFERRED). Budget pressure is handled by
+# wait_for_quota (WAIT, like every other phase) — the loop never mass-defers on
+# quota, since dumping findings to DEFERRED under throttling would be an exploitable
+# weakness. DEFERRED is only ever written by the re-check agent, per finding, with
+# evidence (and the per-request --max-repair-rounds cap it enforces). The
+# orchestrator never edits confirmed-bugs.md.
+run_repair_loop() {
+  divider
+  local cap_disp; cap_disp=$([[ "$MAX_REPAIR_ROUNDS" == 0 ]] && echo "unlimited" || echo "${MAX_REPAIR_ROUNDS} per request")
+  log "REPAIR LOOP (confirmation back-edge) — cap=${cap_disp}"
+  divider
+
+  reset_stale_in_repair   # recover crashed IN_REPAIR from a prior run
+  if ! has_any_request; then
+    log "No repair requests emitted by bug confirmation — repair loop is a no-op."
+    return 0
+  fi
+
+  local round=0 sig_before
+  while repair_work_remaining; do
+    round=$((round + 1))
+    sig_before="$(repair_state_sig)"
+    wait_for_quota          # budget pressure -> WAIT, never auto-defer
+    run_phase3_repair "$round"
+    reset_stale_in_repair   # recover if this round's repair phase died mid-turn
+    wait_for_quota
+    run_phase4_recheck "$round"
+    regenerate_ledger
+    if [[ "$(repair_state_sig)" == "$sig_before" ]]; then
+      log "Repair loop made no progress in round ${round} (no request changed) — stopping to avoid spin."
+      break
+    fi
+  done
+
+  regenerate_ledger
+  log "Repair loop ended after ${round} round(s)."
+}
+
 run_phase4b_classification() {
   divider
   log "PHASE 4b: BUG CLASSIFICATION (severity tier assignment)"
@@ -455,6 +672,16 @@ generate_summary() {
         echo "- **Phase 4a (Bug Confirmation)**: SKIPPED"
       fi
 
+      # Repair loop status
+      local rr_dir="${spec_dir}/repair-requests"
+      if compgen -G "${rr_dir}/RR-*.md" > /dev/null 2>&1; then
+        local rr_total rr_resolved rr_deferred
+        rr_total=$(compgen -G "${rr_dir}/RR-*.md" | wc -l | tr -d ' ')
+        rr_resolved=$( { grep -lE '^status:[[:space:]]*RESOLVED' "${rr_dir}"/RR-*.md 2>/dev/null || true; } | wc -l | tr -d ' ')
+        rr_deferred=$( { grep -lE '^status:[[:space:]]*DEFERRED' "${rr_dir}"/RR-*.md 2>/dev/null || true; } | wc -l | tr -d ' ')
+        echo "- **Repair loop**: ${rr_total} request(s) — ${rr_resolved} resolved, ${rr_deferred} deferred"
+      fi
+
       # Phase 4b status
       if [[ -s "${spec_dir}/bug-severity.md" ]]; then
         echo "- **Phase 4b (Bug Classification)**: bug-severity.md written ($(wc -l < "${spec_dir}/bug-severity.md") lines)"
@@ -506,6 +733,7 @@ main() {
   echo "Agent:        $AGENT  (claude-alias=$CLAUDE_ALIAS)"
   echo ""
   echo "Skip phases:  analysis=$SKIP_ANALYSIS specgen=$SKIP_SPECGEN harness=$SKIP_HARNESS validation=$SKIP_VALIDATION confirmation=$SKIP_CONFIRMATION classification=$SKIP_CLASSIFICATION reviews=$SKIP_REVIEWS"
+  echo "Repair loop:  skip=$SKIP_REPAIR_LOOP per_request_cap=$([[ "$MAX_REPAIR_ROUNDS" == 0 ]] && echo unlimited || echo "$MAX_REPAIR_ROUNDS")"
   echo ""
 
   validate_agent_adapter
@@ -569,6 +797,13 @@ main() {
     run_phase4_confirmation
   else
     log "Skipping Phase 4a (--skip-confirmation)"
+  fi
+
+  # ── Repair loop: confirmation back-edge (spec/fault/invariant repair) ──
+  if ! $SKIP_CONFIRMATION && ! $SKIP_REPAIR_LOOP; then
+    run_repair_loop
+  elif $SKIP_REPAIR_LOOP; then
+    log "Skipping repair loop (--skip-repair-loop)"
   fi
 
   # ── Phase 4b: Bug Classification (severity tier assignment) ──
