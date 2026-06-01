@@ -4,7 +4,7 @@ Confirm bugs found by model checking or code review are real, then reproduce the
 
 ## Flow
 
-Each finding goes through two phases in order: investigation (Phase 1) and reproduction (Phase 2). Both phases run for every finding, with one exception: if Phase 1 establishes the finding is **code-review-sourced AND already-known** (a public issue/PR/CVE/advisory — **whether still open or already fixed** — describes the same mechanism at the same site), drop the finding before Phase 2 — mark its entry `Status: DROPPED (code-review × known, cite: <URL>)` and do not write a `repro/` test. **Open-vs-fixed does not matter: an open, unfixed issue still counts as already-known. A code-review reproduction of any already-reported bug is not a new bug (it is already in the tracker), so it is dropped regardless of fix status** — do not keep it on the grounds that the bug is still live. This is the only pre-filter; MC-found bugs (new or known) and code-review-found *new* bugs all proceed to Phase 2 as usual.
+Each finding goes through two phases in order: investigation (Phase 1) and reproduction (Phase 2). Both phases run for every finding, with one exception: if Phase 1 establishes the finding is **code-review-sourced AND already-known** (a public issue/PR/CVE/advisory — **whether still open or already fixed** — describes the same mechanism at the same site), drop the finding before Phase 2 — mark its entry `Status: DROPPED (code-review × known, cite: <URL>)` and do not write a `repro/` test. **Open-vs-fixed does not matter: an open, unfixed issue still counts as already-known. A code-review reproduction of any already-reported bug is not a new bug (it is already in the tracker), so it is dropped regardless of fix status** — do not keep it on the grounds that the bug is still live. This is the only pre-filter. A finding proceeds to Phase 2 unfiltered **only** if it is MC-found *with an actual counterexample* (new or known), or is a code-review-found *new* bug. A model-checking run that returned **no violation** does **not** make a finding MC-found — such a finding is code-review-sourced, and if it is already-known it is dropped here like any other code-review × known finding. A `Family`/`MC` label alone never exempts a finding from this pre-filter.
 
 | # | Phase | When it runs | Output it adds |
 |---|-------|---|---|
@@ -18,7 +18,7 @@ Each finding goes through two phases in order: investigation (Phase 1) and repro
 
 Each finding's entry in `confirmed-bugs.md` should include:
 
-- **Source**: MC (with counterexample) or Code Review
+- **Source**: `MC` only if model checking produced an actual counterexample (a violation trace) for this finding; otherwise `Code Review`. A finding whose model-checking run returned *no violation* is **not** MC-sourced even if it was checked under a named `Family`/`MC` config — record it as `Code Review` (cite the issue/Family), noting the no-violation result.
 - **Status**: REPRODUCED / REPRODUCTION FAILED / FALSE POSITIVE / NEEDS MORE INFO / PENDING REPAIR / DEFERRED
 - **Repair request**: RR-NNN if this finding was handed back to Phase 3 (omit otherwise)
 - **Severity**: Critical / High / Medium / Low
