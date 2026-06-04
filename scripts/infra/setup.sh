@@ -58,6 +58,19 @@ ask_scope() {
   done
 }
 
+ask_codex_install() {
+  local answer
+  while true; do
+    read -rp "$(echo -e "${BLUE}[?]${NC} Install Specula for Codex? (y/n/plugin): ")" answer
+    case "$answer" in
+      [Yy]|[Yy][Ee][Ss]) echo "legacy"; return 0 ;;
+      [Nn]|[Nn][Oo]) echo "skip"; return 0 ;;
+      [Pp]|[Pp][Ll][Uu][Gg][Ii][Nn]) echo "plugin"; return 0 ;;
+      *) echo "  Please answer y, n, or plugin." >&2 ;;
+    esac
+  done
+}
+
 setup_skills_symlink() {
   local target_link="$1"
   local skills_source="$2"
@@ -132,6 +145,18 @@ setup_codex_mcp() {
   fi
 }
 
+setup_codex_plugin() {
+  local project_root="$1"
+  local plugin_root="$2"
+
+  print_status "Generating Specula Codex plugin..."
+  python3 "$SCRIPT_DIR/setup_codex_plugin.py" \
+    --project-root "$project_root" \
+    --plugin-root "$plugin_root"
+  print_success "Codex plugin configured: specula-codex@specula"
+  print_status "Rerun this setup script and choose 'plugin' to update the Codex plugin."
+}
+
 setup_python_tool_env() {
   local tool_name="$1"
   local tool_dir="$2"
@@ -197,6 +222,7 @@ INV_CHECKING_TOOL_VENV="$INV_CHECKING_TOOL_DIR/.venv"
 INV_CHECKING_TOOL_PYTHON="$INV_CHECKING_TOOL_VENV/bin/python"
 INV_CHECKING_TOOL_SERVER="$INV_CHECKING_TOOL_DIR/mcp_server.py"
 SKILLS_SOURCE="$PROJECT_ROOT/skills"
+CODEX_PLUGIN_ROOT="$PROJECT_ROOT/.specula-codex"
 
 print_status "Project root: $PROJECT_ROOT"
 
@@ -333,20 +359,27 @@ echo ""
 
 # --- Codex ---
 echo -e "${BLUE}[2/3] Codex${NC}"
-if ask_yn "Install Specula for Codex?"; then
-  scope="$(ask_scope "Codex")"
-  if [[ "$scope" == "global" ]]; then
-    setup_skills_symlink "$HOME/.codex/skills" "$SKILLS_SOURCE"
-  else
-    setup_skills_symlink "$PROJECT_ROOT/.agents/skills" "$SKILLS_SOURCE"
-  fi
-  for entry in "${MCP_SERVERS[@]}"; do
-    IFS='|' read -r mcp_name mcp_python mcp_server <<< "$entry"
-    setup_codex_mcp "$PROJECT_ROOT" "$mcp_name" "$mcp_python" "$mcp_server"
-  done
-else
-  print_status "Skipped Codex."
-fi
+codex_install="$(ask_codex_install)"
+case "$codex_install" in
+  legacy)
+    scope="$(ask_scope "Codex")"
+    if [[ "$scope" == "global" ]]; then
+      setup_skills_symlink "$HOME/.codex/skills" "$SKILLS_SOURCE"
+    else
+      setup_skills_symlink "$PROJECT_ROOT/.agents/skills" "$SKILLS_SOURCE"
+    fi
+    for entry in "${MCP_SERVERS[@]}"; do
+      IFS='|' read -r mcp_name mcp_python mcp_server <<< "$entry"
+      setup_codex_mcp "$PROJECT_ROOT" "$mcp_name" "$mcp_python" "$mcp_server"
+    done
+    ;;
+  plugin)
+    setup_codex_plugin "$PROJECT_ROOT" "$CODEX_PLUGIN_ROOT"
+    ;;
+  skip)
+    print_status "Skipped Codex."
+    ;;
+esac
 echo ""
 
 # --- Copilot CLI ---
