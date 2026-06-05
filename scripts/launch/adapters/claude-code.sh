@@ -17,6 +17,8 @@
 #                          the CLAUDE_ALIAS env var.
 #   --effort LEVEL         Claude effort level: low|medium|high|xhigh|max
 #                          (default: max). Overridable via CLAUDE_EFFORT env.
+#   --model NAME           Model alias/name (e.g. sonnet, haiku, claude-opus-4-8).
+#                          Default: empty → profile default. Overridable via CLAUDE_MODEL.
 #   --log output.log       Log file path (required)
 #   --background           Run in background, print PID to stdout (default: foreground)
 #   --help                 Show this help
@@ -31,6 +33,7 @@ LOG_FILE=""
 BACKGROUND=false
 CLAUDE_ALIAS="${CLAUDE_ALIAS:-claude}"
 EFFORT="${CLAUDE_EFFORT:-max}"
+MODEL="${CLAUDE_MODEL:-}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -40,6 +43,7 @@ for arg in "$@"; do
     --max-budget=*)    MAX_BUDGET="${arg#*=}" ;;
     --claude-alias=*)  CLAUDE_ALIAS="${arg#*=}" ;;
     --effort=*)        EFFORT="${arg#*=}" ;;
+    --model=*)         MODEL="${arg#*=}" ;;
     --log=*)           LOG_FILE="${arg#*=}" ;;
     --background)      BACKGROUND=true ;;
     --help|-h)
@@ -110,6 +114,12 @@ fi
 # Budget control
 if [[ -n "$MAX_BUDGET" && "$MAX_BUDGET" != "0" ]]; then
   CMD+=(--max-budget-usd "$MAX_BUDGET")
+fi
+
+# Model override (default: empty → profile default). Used by the §6.5 model-
+# sensitivity experiment to pin sonnet/haiku; overridable via the CLAUDE_MODEL env.
+if [[ -n "$MODEL" ]]; then
+  CMD+=(--model "$MODEL")
 fi
 
 # ── Run ──
