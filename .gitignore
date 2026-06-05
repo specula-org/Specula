@@ -97,6 +97,7 @@ tools/cfa/tests
 .claude/skills
 .agents/skills
 .github/skills
+.specula-codex/
 src/skills/.system
 
 .venv/
