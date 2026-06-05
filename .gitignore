@@ -114,3 +114,7 @@ scripts/exp/tasks-*.queue
 scripts/exp/ablation/eval/
 # Phase 4 V0/V1/V2 controlled-comparison archive (local-only, not for github)
 experiments/phase4/
+scripts/exp/ablation/targets_rq2_libspdm.txt
+
+# Precious experiment data (bug violations + BFS depths) — keep local, back up off-repo
+experiments/specula-bug-data/
