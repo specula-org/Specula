@@ -8,7 +8,9 @@ ABLATION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SPECULA_ROOT="$(cd "$ABLATION_DIR/../../.." && pwd)"
 CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
 ADAPTER_DIR="$SPECULA_ROOT/scripts/launch/adapters"
-RESULTS_BASE_DIR="$ABLATION_DIR/results"
+# Results root. Override via RESULTS_BASE_DIR env to retarget a whole experiment
+# (e.g. the §6.5 model-sensitivity runs land under experiments/model-sensitivity/runs).
+RESULTS_BASE_DIR="${RESULTS_BASE_DIR:-$ABLATION_DIR/results}"
 
 # ── Logging ──
 
@@ -18,14 +20,19 @@ die()  { echo "[$(date '+%H:%M:%S')] ERROR: $*" >&2; exit 1; }
 
 # ── Target parsing ──
 #
-# Target format: "name|github|lang|reference"
+# Target format: "name|github|lang|reference[|artifact_path]"
 # Example: "etcd-raft|etcd-io/raft|Go|Raft (Ongaro 2014)"
+# Optional 5th field = explicit artifact repo path. When set, the agent reads
+# that path instead of case-studies/<name>/artifact/<repo>. Use it to point at a
+# CLEAN, independent source copy so baseline runs never touch Specula's canonical
+# case-study repos (which carry instrumentation + bug-named repro tests).
 
 parse_target() {
   local target="$1"
-  IFS='|' read -r TARGET_NAME TARGET_GITHUB TARGET_LANG TARGET_REFERENCE <<< "$target"
+  IFS='|' read -r TARGET_NAME TARGET_GITHUB TARGET_LANG TARGET_REFERENCE TARGET_ARTIFACT <<< "$target"
   TARGET_NAME="$(echo "$TARGET_NAME" | xargs)"
-  export TARGET_NAME TARGET_GITHUB TARGET_LANG TARGET_REFERENCE
+  TARGET_ARTIFACT="$(echo "${TARGET_ARTIFACT:-}" | xargs)"
+  export TARGET_NAME TARGET_GITHUB TARGET_LANG TARGET_REFERENCE TARGET_ARTIFACT
 }
 
 # ── Artifact lookup ──
@@ -183,6 +190,22 @@ link_artifact() {
   source_repo="${source_repo%/}"
   ln -sfn "$source_repo" "$workspace/artifact/$repo_name"
   echo "$workspace/artifact/$repo_name"
+}
+
+# Stage the artifact as a PRIVATE COPY (not a symlink) so phases that mutate the
+# source — harness instrumentation, builds — cannot contaminate a shared tree or
+# another run. Used when SPECULA_COPY_ARTIFACT=1 (the full pipeline writes to the
+# source, unlike the read-only baselines). Echoes the copied repo path.
+copy_artifact() {
+  local workspace="$1" source_repo="$2"
+  local repo_name dest
+  source_repo="${source_repo%/}"
+  repo_name="$(basename "$source_repo")"
+  dest="$workspace/artifact/$repo_name"
+  rm -rf "$dest"
+  # -a preserves the tree; clean exports carry no .git so nothing to prune.
+  cp -a "$source_repo" "$dest"
+  echo "$dest"
 }
 
 # ── Metadata ──

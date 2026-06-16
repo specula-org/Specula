@@ -40,6 +40,7 @@ TARGETS_FILE=""
 RUN_ID_CLI=""
 START_PHASE_CLI=""
 MAX_BUDGET_CLI=""
+MODEL_CLI="${CLAUDE_MODEL:-}"
 MAX_PARALLEL=1
 GROUP_FILTER="all"
 DRY_RUN=false
@@ -59,6 +60,8 @@ while [[ $# -gt 0 ]]; do
     --start-phase=*) START_PHASE_CLI="${1#*=}"; shift ;;
     --max-budget)    MAX_BUDGET_CLI="$2"; shift 2 ;;
     --max-budget=*)  MAX_BUDGET_CLI="${1#*=}"; shift ;;
+    --model)         MODEL_CLI="$2"; shift 2 ;;
+    --model=*)       MODEL_CLI="${1#*=}"; shift ;;
     --max-parallel)  MAX_PARALLEL="$2"; shift 2 ;;
     --max-parallel=*) MAX_PARALLEL="${1#*=}"; shift ;;
     --group)         GROUP_FILTER="$2"; shift 2 ;;
@@ -232,6 +235,7 @@ run_one() {
   )
   [[ -n "$START_PHASE_CLI" ]] && run_args+=(--start-phase "$START_PHASE_CLI")
   [[ -n "$MAX_BUDGET_CLI" ]] && run_args+=(--max-budget "$MAX_BUDGET_CLI")
+  [[ -n "$MODEL_CLI" ]] && run_args+=(--model "$MODEL_CLI")
 
   log "LAUNCH [$cfg_name × $tname]"
   bash "$SCRIPT_DIR/run.sh" "${run_args[@]}" \

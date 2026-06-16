@@ -32,6 +32,7 @@ RUN_ID="$(date +%Y%m%d_%H%M%S)"
 MAX_BUDGET_CLI=""
 START_PHASE=1
 DRY_RUN=false
+MODEL="${CLAUDE_MODEL:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -45,6 +46,8 @@ while [[ $# -gt 0 ]]; do
     --max-budget=*) MAX_BUDGET_CLI="${1#*=}"; shift ;;
     --start-phase) START_PHASE="$2"; shift 2 ;;
     --start-phase=*) START_PHASE="${1#*=}"; shift ;;
+    --model)       MODEL="$2"; shift 2 ;;
+    --model=*)     MODEL="${1#*=}"; shift ;;
     --dry-run)     DRY_RUN=true; shift ;;
     -h|--help)     sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"; exit 0 ;;
     *)             die "Unknown option: $1" ;;
@@ -69,20 +72,35 @@ load_config "$CONFIG_FILE"
 parse_target "$TARGET"
 
 # ── Locate artifact ──
+# Prefer an explicit clean artifact path (5th target field) so baseline runs use
+# an independent source copy and never read/write Specula's canonical case-studies.
 
-REPO_DIR="$(find_artifact_repo "$TARGET_NAME")"
-[[ -n "$REPO_DIR" ]] || die "Artifact repo not found for '$TARGET_NAME'. Expected at ${CASE_STUDIES_DIR}/${TARGET_NAME}/artifact/<repo>/"
+if [[ -n "${TARGET_ARTIFACT:-}" ]]; then
+  REPO_DIR="${TARGET_ARTIFACT%/}"
+  [[ -d "$REPO_DIR" ]] || die "Explicit artifact path not found: $REPO_DIR"
+else
+  REPO_DIR="$(find_artifact_repo "$TARGET_NAME")"
+  [[ -n "$REPO_DIR" ]] || die "Artifact repo not found for '$TARGET_NAME'. Expected at ${CASE_STUDIES_DIR}/${TARGET_NAME}/artifact/<repo>/"
+fi
 
 log "Config:  $ABLATION_ID ($ABLATION_GROUP)"
 log "Target:  $TARGET_NAME ($TARGET_LANG, $TARGET_REFERENCE)"
 log "Repo:    $REPO_DIR"
 log "Run ID:  $RUN_ID"
+log "Model:   ${MODEL:-<profile default>}   Sandbox: ${SPECULA_SANDBOX:-0}   CopyArtifact: ${SPECULA_COPY_ARTIFACT:-0}"
 
 # ── Create workspace ──
 
 WORKSPACE_DIR="$(create_workspace "$RUN_ID" "$ABLATION_ID" "$TARGET_NAME")"
 SPEC_DIR="$WORKSPACE_DIR/spec"
-REPO_DIR="$(link_artifact "$WORKSPACE_DIR" "$REPO_DIR")"
+# Phases that mutate the source (harness/build) need a private copy, not a shared
+# symlink, or parallel runs collide and instrumentation leaks across runs.
+if [[ "${SPECULA_COPY_ARTIFACT:-0}" == "1" ]]; then
+  log "Staging private artifact copy (SPECULA_COPY_ARTIFACT=1)…"
+  REPO_DIR="$(copy_artifact "$WORKSPACE_DIR" "$REPO_DIR")"
+else
+  REPO_DIR="$(link_artifact "$WORKSPACE_DIR" "$REPO_DIR")"
+fi
 
 log "Workspace: $WORKSPACE_DIR"
 
@@ -122,6 +140,7 @@ run_single_phase() {
     "--log=$agent_log"
   )
   [[ "$MAX_BUDGET" != "0" ]] && adapter_args+=("--max-budget=$MAX_BUDGET")
+  [[ -n "$MODEL" ]]          && adapter_args+=("--model=$MODEL")
 
   local phase_timeout="${PHASE_TIMEOUT:-7200}"  # default 2 hours per phase
   local max_retries=2
@@ -301,6 +320,8 @@ write_metadata "$WORKSPACE_DIR" \
   "lang=$TARGET_LANG" \
   "reference=$TARGET_REFERENCE" \
   "run_id=$RUN_ID" \
+  "model=${MODEL:-default}" \
+  "sandbox=${SPECULA_SANDBOX:-0}" \
   "max_budget=$MAX_BUDGET" \
   "multi_phase=$MULTI_PHASE" \
   "num_phases=${#PHASE_PROMPTS[@]}" \
