@@ -118,3 +118,21 @@ scripts/exp/ablation/targets_rq2_libspdm.txt
 
 # Precious experiment data (bug violations + BFS depths) — keep local, back up off-repo
 experiments/specula-bug-data/
+
+# Machine-/incident-specific local helper (hardcoded paths) — keep local, not a shippable tool
+scripts/tlc/cleanup-tmp-tlc.sh
+
+# ── Release-prep: local-only / confidential / generated (not for the public repo) ──
+# Paper checked out inside the tree (own private repo specula-org/Specula-Paper)
+docs/Specula-Paper/
+docs/pipeline-cost-time.md
+# All experiment outputs / run data (nothing here is tracked)
+experiments/
+# RQ2 baseline target lists: machine-specific paths; libspdm one is confidential
+scripts/exp/ablation/targets_rq2*.txt
+# §6.5 model-sensitivity "answer-mask" sandbox scaffolding
+scripts/launch/sandbox/
+# Generated output / caches
+.specula-output/
+_build/
+.pytest_cache/
