@@ -20,7 +20,9 @@ set -uo pipefail
 THRESHOLD_MIN=60        # idle minutes before considered stuck
 INTERVAL_SEC=600        # check every N seconds
 CASE_PATTERN="_2"       # only watch case-studies matching this glob suffix
-SPECULA_ROOT="/home/ubuntu/Specula"
+# Repo root, derived from this script's location (scripts/infra/). Override with
+# $SPECULA_ROOT if the script is run from a copy outside the tree.
+SPECULA_ROOT="${SPECULA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in

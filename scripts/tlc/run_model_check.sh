@@ -257,8 +257,12 @@ if [ "$JSON_DUMPTRACE" != "" ]; then
 fi
 
 
-# Use a temporary directory for TLC states to avoid filling the disk
-METADIR="$(mktemp -d /tmp/tlc-states-XXXXXX)"
+# TLC spills its state graph (often many GB) into the -metadir. Default to the
+# system temp dir, honoring $TMPDIR; set $TLC_STATE_DIR to redirect onto a larger
+# or faster volume. We deliberately do NOT default to /dev/shm: it is RAM-backed
+# and large hunts would exhaust memory on machines with modest RAM.
+_TLC_TMP_BASE="${TLC_STATE_DIR:-${TMPDIR:-/tmp}}"
+METADIR="$(mktemp -d "${_TLC_TMP_BASE%/}/tlc-states-XXXXXX")"
 trap 'rm -rf "$METADIR"' EXIT
 TLC_CMD="$TLC_CMD -metadir $METADIR"
 
