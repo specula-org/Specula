@@ -19,6 +19,7 @@ Each finding goes through two phases in order: investigation (Phase 1) and repro
 Each finding's entry in `confirmed-bugs.md` should include:
 
 - **Source**: `MC` only if model checking produced an actual counterexample (a violation trace) for this finding; otherwise `Code Review`. A finding whose model-checking run returned *no violation* is **not** MC-sourced even if it was checked under a named `Family`/`MC` config — record it as `Code Review` (cite the issue/Family), noting the no-violation result.
+- **Novelty**: `NEW` or `KNOWN`. `KNOWN` = a public issue/PR/CVE/advisory **or** a prior Specula dataset entry describes the same mechanism at the same site — the determination the Phase 1 issue-tracker search + precedent re-check (Steps 2–3) already make; just record the outcome here. A `KNOWN` value MUST carry a citation and fix-status: `KNOWN (cite: <URL or dataset-id>; fix-status: unfixed|fixed)`.
 - **Status**: REPRODUCED / REPRODUCTION FAILED / FALSE POSITIVE / NEEDS MORE INFO / PENDING REPAIR / DEFERRED
 - **Repair request**: RR-NNN if this finding was handed back to Phase 3 (omit otherwise)
 - **Severity**: Critical / High / Medium / Low
@@ -29,6 +30,10 @@ Each finding's entry in `confirmed-bugs.md` should include:
 - **Reproduction test**: path to `repro/test_bug*` + the escalation level reached
 - **Reproduction result**: PASS (bug triggered, copy-paste output) / FAIL (escalation exhausted, per-level summary)
 - **Recommendation**: suggested fix or mitigation
+
+**Novelty split (aggregate).** Near the top of `confirmed-bugs.md`, record a one-line split so the headline count separates genuinely-new findings from re-found known ones:
+
+`Reproduced: <N> = <M> NEW + <K> KNOWN-unfixed` — and, if any, flag `KNOWN-fixed: <J>` separately (each needs a version recheck).
 
 ## Batch Mode Constraints (CRITICAL)
 
