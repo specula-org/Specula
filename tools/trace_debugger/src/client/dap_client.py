@@ -6,12 +6,14 @@ from collections import deque
 
 logger = logging.getLogger(__name__)
 
+
 class DAPClient:
     """
     High-performance DAP client with an internal event queue.
     Ensures no events are lost while waiting for responses.
     """
-    def __init__(self, host='127.0.0.1', port=4712, timeout=30):
+
+    def __init__(self, host="127.0.0.1", port=4712, timeout=30):
         self.host = host
         self.port = port
         self.timeout = timeout
@@ -35,17 +37,20 @@ class DAPClient:
         return False
 
     def disconnect(self):
-        if self.sock: self.sock.close()
+        if self.sock:
+            self.sock.close()
         self.connected = False
 
     def send(self, type_, command=None, args=None):
         msg = {"seq": self.seq, "type": type_}
-        if command: msg["command"] = command
-        if args: msg["arguments"] = args
+        if command:
+            msg["command"] = command
+        if args:
+            msg["arguments"] = args
         body = json.dumps(msg)
         full = f"Content-Length: {len(body)}\r\n\r\n{body}"
         try:
-            self.sock.sendall(full.encode('utf-8'))
+            self.sock.sendall(full.encode("utf-8"))
         except (BrokenPipeError, OSError) as e:
             logger.info(f"Connection lost while sending '{command}': {e}")
             self.connected = False
@@ -55,31 +60,36 @@ class DAPClient:
 
     def _read_once(self, timeout=None):
         """Reads one message and dispatches it to the appropriate queue."""
-        if not self.connected: return None
-        if timeout: self.sock.settimeout(timeout)
-        else: self.sock.settimeout(None)
+        if not self.connected:
+            return None
+        if timeout:
+            self.sock.settimeout(timeout)
+        else:
+            self.sock.settimeout(None)
 
         try:
             while b"\r\n\r\n" not in self._buffer:
                 chunk = self.sock.recv(4096)
-                if not chunk: return None
+                if not chunk:
+                    return None
                 self._buffer += chunk
-            
+
             header_part, self._buffer = self._buffer.split(b"\r\n\r\n", 1)
             content_length = 0
-            for line in header_part.decode('utf-8').split("\r\n"):
+            for line in header_part.decode("utf-8").split("\r\n"):
                 if line.startswith("Content-Length:"):
                     content_length = int(line.split(":")[1].strip())
-            
+
             while len(self._buffer) < content_length:
                 chunk = self.sock.recv(4096)
-                if not chunk: return None
+                if not chunk:
+                    return None
                 self._buffer += chunk
-            
+
             body = self._buffer[:content_length]
             self._buffer = self._buffer[content_length:]
-            msg = json.loads(body.decode('utf-8'))
-            
+            msg = json.loads(body.decode("utf-8"))
+
             if msg.get("type") == "event":
                 self.event_queue.append(msg)
                 # Heartbeat for UI
@@ -87,7 +97,7 @@ class DAPClient:
                     pass
             elif msg.get("type") == "response":
                 self.pending_responses[msg.get("request_seq")] = msg
-            
+
             return msg
         except socket.timeout:
             return None
@@ -101,7 +111,7 @@ class DAPClient:
         if req_seq is None:
             return None
         start_time = time.time()
-        while time.time() - start_time < 10: # 10s timeout per request
+        while time.time() - start_time < 10:  # 10s timeout per request
             if req_seq in self.pending_responses:
                 return self.pending_responses.pop(req_seq)
             self._read_once(timeout=0.1)

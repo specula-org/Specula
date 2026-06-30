@@ -23,18 +23,31 @@ BORDER_STYLE = {"style": "SOLID", "width": 1, "color": BORDER_COLOR}
 ALL_BORDERS = {"top": BORDER_STYLE, "bottom": BORDER_STYLE, "left": BORDER_STYLE, "right": BORDER_STYLE}
 
 SIMPLE_COLUMNS = ["#", "System", "Protocol / Lang", "Finding", "Reference", "URL", "Status", "Notes"]
-DETAILED_COLUMNS = ["#", "System", "Protocol / Lang", "Finding", "Severity", "Bug Family",
-                    "Discovery Method", "Root Cause", "Affected Code", "Reference", "URL", "Status", "Notes"]
+DETAILED_COLUMNS = [
+    "#",
+    "System",
+    "Protocol / Lang",
+    "Finding",
+    "Severity",
+    "Bug Family",
+    "Discovery Method",
+    "Root Cause",
+    "Affected Code",
+    "Reference",
+    "URL",
+    "Status",
+    "Notes",
+]
 
 # Columns that should be LEFT-aligned (0-indexed)
-SIMPLE_LEFT_COLS = {3, 5, 7}    # Finding, URL, Notes
+SIMPLE_LEFT_COLS = {3, 5, 7}  # Finding, URL, Notes
 DETAILED_LEFT_COLS = {3, 7, 8, 10, 12}  # Finding, Root Cause, Affected Code, URL, Notes
 
 SHEET_MAP = {
-    "new":             ("New bug",              SIMPLE_COLUMNS,   SIMPLE_LEFT_COLS),
-    "new-detailed":    ("New bug (detailed)",   DETAILED_COLUMNS, DETAILED_LEFT_COLS),
-    "known":           ("Known bug",            SIMPLE_COLUMNS,   SIMPLE_LEFT_COLS),
-    "known-detailed":  ("Known bug (detailed)", DETAILED_COLUMNS, DETAILED_LEFT_COLS),
+    "new": ("New bug", SIMPLE_COLUMNS, SIMPLE_LEFT_COLS),
+    "new-detailed": ("New bug (detailed)", DETAILED_COLUMNS, DETAILED_LEFT_COLS),
+    "known": ("Known bug", SIMPLE_COLUMNS, SIMPLE_LEFT_COLS),
+    "known-detailed": ("Known bug (detailed)", DETAILED_COLUMNS, DETAILED_LEFT_COLS),
 }
 
 
@@ -70,16 +83,23 @@ def format_new_row(sh, ws, sheet_key, row_idx):
         # Base: center, Arial 10, borders, wrap, background
         {
             "repeatCell": {
-                "range": {"sheetId": sheet_id, "startRowIndex": row_idx, "endRowIndex": row_idx + 1,
-                          "startColumnIndex": 0, "endColumnIndex": col_count},
-                "cell": {"userEnteredFormat": {
-                    "backgroundColor": bg,
-                    "textFormat": {"fontFamily": "Arial", "fontSize": 10},
-                    "horizontalAlignment": "CENTER",
-                    "verticalAlignment": "MIDDLE",
-                    "wrapStrategy": "WRAP",
-                    "borders": ALL_BORDERS,
-                }},
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": row_idx,
+                    "endRowIndex": row_idx + 1,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": col_count,
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "backgroundColor": bg,
+                        "textFormat": {"fontFamily": "Arial", "fontSize": 10},
+                        "horizontalAlignment": "CENTER",
+                        "verticalAlignment": "MIDDLE",
+                        "wrapStrategy": "WRAP",
+                        "borders": ALL_BORDERS,
+                    }
+                },
                 "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy,borders)",
             }
         },
@@ -87,27 +107,53 @@ def format_new_row(sh, ws, sheet_key, row_idx):
     # Left-aligned columns
     for col_idx in left_cols:
         if col_idx < col_count:
-            requests.append({
-                "repeatCell": {
-                    "range": {"sheetId": sheet_id, "startRowIndex": row_idx, "endRowIndex": row_idx + 1,
-                              "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1},
-                    "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
-                    "fields": "userEnteredFormat.horizontalAlignment",
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": row_idx,
+                            "endRowIndex": row_idx + 1,
+                            "startColumnIndex": col_idx,
+                            "endColumnIndex": col_idx + 1,
+                        },
+                        "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+                        "fields": "userEnteredFormat.horizontalAlignment",
+                    }
                 }
-            })
+            )
     sh.batch_update({"requests": requests})
 
 
 def build_simple_row(num, args):
-    return [num, args.system, args.protocol, args.finding,
-            args.reference or "", args.url or "", args.status or "", args.notes or ""]
+    return [
+        num,
+        args.system,
+        args.protocol,
+        args.finding,
+        args.reference or "",
+        args.url or "",
+        args.status or "",
+        args.notes or "",
+    ]
 
 
 def build_detailed_row(num, args):
-    return [num, args.system, args.protocol, args.finding,
-            args.severity or "", args.bug_family or "", args.discovery_method or "",
-            args.root_cause or "", args.affected_code or "",
-            args.reference or "", args.url or "", args.status or "", args.notes or ""]
+    return [
+        num,
+        args.system,
+        args.protocol,
+        args.finding,
+        args.severity or "",
+        args.bug_family or "",
+        args.discovery_method or "",
+        args.root_cause or "",
+        args.affected_code or "",
+        args.reference or "",
+        args.url or "",
+        args.status or "",
+        args.notes or "",
+    ]
 
 
 def resolve_sheets(sheet_key):
@@ -164,9 +210,14 @@ def update_bug(args):
 
         updates = {}
         field_map = {
-            "reference": "Reference", "url": "URL", "status": "Status", "notes": "Notes",
-            "severity": "Severity", "bug_family": "Bug Family",
-            "discovery_method": "Discovery Method", "root_cause": "Root Cause",
+            "reference": "Reference",
+            "url": "URL",
+            "status": "Status",
+            "notes": "Notes",
+            "severity": "Severity",
+            "bug_family": "Bug Family",
+            "discovery_method": "Discovery Method",
+            "root_cause": "Root Cause",
             "affected_code": "Affected Code",
         }
         for attr, col_name in field_map.items():
@@ -262,33 +313,49 @@ def sort_bugs(args):
         for i in range(num_data):
             row_idx = i + 1  # 0-indexed sheet row (row 0 = header, row 1 = first data)
             bg = LIGHT_BLUE if (i + 1) % 2 == 1 else WHITE
-            requests.append({
-                "repeatCell": {
-                    "range": {"sheetId": ws.id, "startRowIndex": row_idx, "endRowIndex": row_idx + 1,
-                              "startColumnIndex": 0, "endColumnIndex": col_count},
-                    "cell": {"userEnteredFormat": {
-                        "backgroundColor": bg,
-                        "textFormat": {"fontFamily": "Arial", "fontSize": 10},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "wrapStrategy": "WRAP",
-                        "borders": ALL_BORDERS,
-                    }},
-                    "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy,borders)",
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws.id,
+                            "startRowIndex": row_idx,
+                            "endRowIndex": row_idx + 1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": col_count,
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": bg,
+                                "textFormat": {"fontFamily": "Arial", "fontSize": 10},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "wrapStrategy": "WRAP",
+                                "borders": ALL_BORDERS,
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy,borders)",
+                    }
                 }
-            })
+            )
             # Left-aligned columns
             _, _, left_cols = SHEET_MAP[sheet_key]
             for col_idx in left_cols:
                 if col_idx < col_count:
-                    requests.append({
-                        "repeatCell": {
-                            "range": {"sheetId": ws.id, "startRowIndex": row_idx, "endRowIndex": row_idx + 1,
-                                      "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1},
-                            "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
-                            "fields": "userEnteredFormat.horizontalAlignment",
+                    requests.append(
+                        {
+                            "repeatCell": {
+                                "range": {
+                                    "sheetId": ws.id,
+                                    "startRowIndex": row_idx,
+                                    "endRowIndex": row_idx + 1,
+                                    "startColumnIndex": col_idx,
+                                    "endColumnIndex": col_idx + 1,
+                                },
+                                "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+                                "fields": "userEnteredFormat.horizontalAlignment",
+                            }
                         }
-                    })
+                    )
 
         if requests:
             sh.batch_update({"requests": requests})
@@ -316,8 +383,12 @@ def main():
 
     # --- append ---
     p_add = sub.add_parser("append", help="Add a new bug")
-    p_add.add_argument("--sheet", choices=["new", "known"], default="new",
-                       help="Target: 'new' (writes to New bug + detailed) or 'known' (writes to Known bug + detailed)")
+    p_add.add_argument(
+        "--sheet",
+        choices=["new", "known"],
+        default="new",
+        help="Target: 'new' (writes to New bug + detailed) or 'known' (writes to Known bug + detailed)",
+    )
     p_add.add_argument("--system", required=True, help="System name")
     p_add.add_argument("--protocol", required=True, help="Protocol / Lang")
     p_add.add_argument("--finding", required=True, help="Bug description")
@@ -333,8 +404,12 @@ def main():
 
     # --- update ---
     p_upd = sub.add_parser("update", help="Update an existing bug")
-    p_upd.add_argument("--sheet", choices=["new", "known"], default="new",
-                       help="Target: 'new' or 'known' (updates both simple + detailed)")
+    p_upd.add_argument(
+        "--sheet",
+        choices=["new", "known"],
+        default="new",
+        help="Target: 'new' or 'known' (updates both simple + detailed)",
+    )
     p_upd.add_argument("--number", type=int, required=True, help="Bug number to update")
     p_upd.add_argument("--severity", help="New severity")
     p_upd.add_argument("--bug-family", help="New bug family")
@@ -348,19 +423,26 @@ def main():
 
     # --- delete ---
     p_del = sub.add_parser("delete", help="Delete a bug by number")
-    p_del.add_argument("--sheet", choices=["new", "known"], default="new",
-                       help="Target: 'new' or 'known' (deletes from both simple + detailed)")
+    p_del.add_argument(
+        "--sheet",
+        choices=["new", "known"],
+        default="new",
+        help="Target: 'new' or 'known' (deletes from both simple + detailed)",
+    )
     p_del.add_argument("--number", type=int, required=True, help="Bug number to delete")
 
     # --- sort ---
     p_sort = sub.add_parser("sort", help="Sort bugs by System column")
-    p_sort.add_argument("--sheet", choices=["new", "known"], default="new",
-                        help="Target: 'new' or 'known' (sorts both simple + detailed)")
+    p_sort.add_argument(
+        "--sheet",
+        choices=["new", "known"],
+        default="new",
+        help="Target: 'new' or 'known' (sorts both simple + detailed)",
+    )
 
     # --- list ---
     p_list = sub.add_parser("list", help="List all bugs")
-    p_list.add_argument("--sheet", choices=list(SHEET_MAP.keys()), default="new",
-                        help="Which sheet to list")
+    p_list.add_argument("--sheet", choices=list(SHEET_MAP.keys()), default="new", help="Which sheet to list")
 
     args = parser.parse_args()
     if args.command == "append":

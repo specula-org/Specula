@@ -14,6 +14,7 @@ class Breakpoint:
         condition: Optional TLA+ expression to conditionally break
         description: Human-readable description for reporting
     """
+
     line: int
     file: Optional[str] = None
     condition: Optional[str] = None
@@ -30,6 +31,7 @@ class BreakpointHit:
         description: Breakpoint description
         hit_count: Number of times this breakpoint was hit
     """
+
     file: str
     line: int
     description: str
@@ -44,6 +46,7 @@ class BreakpointStatistics:
         hits: List of breakpoint hit statistics
         total_hits: Total number of breakpoint hits across all breakpoints
     """
+
     hits: List[BreakpointHit] = field(default_factory=list)
     total_hits: int = 0
 
@@ -84,9 +87,9 @@ class BreakpointStatistics:
         Args:
             show_all: If True, show all breakpoints. If False, only show hit breakpoints.
         """
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"Breakpoint Statistics Summary")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
         print(f"Total hits: {self.total_hits}")
         print(f"Breakpoints hit: {len(self.get_hit_breakpoints())}/{len(self.hits)}")
         print(f"\nDetailed breakdown:")
@@ -97,8 +100,7 @@ class BreakpointStatistics:
 
             status = "✅" if hit.hit_count > 0 else "❌"
             file_display = hit.file if hit.file else "(default)"
-            print(f"  {status} {file_display:30s} Line {hit.line:3d}: "
-                  f"{hit.hit_count:3d} hits - {hit.description}")
+            print(f"  {status} {file_display:30s} Line {hit.line:3d}: {hit.hit_count:3d} hits - {hit.description}")
 
         # Summary of never-hit breakpoints
         never_hit = self.get_never_hit()

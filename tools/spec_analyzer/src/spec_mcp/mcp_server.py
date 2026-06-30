@@ -52,21 +52,12 @@ class SpecAnalyzerMCPServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "spec_file": {
-                                "type": "string",
-                                "description": "Path to TLA+ spec file (absolute path)"
-                            },
-                            "timeout": {
-                                "type": "integer",
-                                "description": "Timeout in seconds (default: 60)"
-                            },
-                            "debug": {
-                                "type": "boolean",
-                                "description": "Enable debug output (default: false)"
-                            }
+                            "spec_file": {"type": "string", "description": "Path to TLA+ spec file (absolute path)"},
+                            "timeout": {"type": "integer", "description": "Timeout in seconds (default: 60)"},
+                            "debug": {"type": "boolean", "description": "Enable debug output (default: false)"},
                         },
-                        "required": ["spec_file"]
-                    }
+                        "required": ["spec_file"],
+                    },
                 )
             ]
 
@@ -84,10 +75,7 @@ class SpecAnalyzerMCPServer:
             if name not in self.handlers:
                 error_msg = f"Unknown tool: {name}"
                 logger.error(error_msg)
-                return [types.TextContent(
-                    type="text",
-                    text=f'{{"success": false, "error": "{error_msg}"}}'
-                )]
+                return [types.TextContent(type="text", text=f'{{"success": false, "error": "{error_msg}"}}')]
 
             # Call the handler
             handler = self.handlers[name]
@@ -107,8 +95,4 @@ class SpecAnalyzerMCPServer:
         logger.info(f"Registered {len(self.handlers)} tools")
 
         async with stdio_server() as (read_stream, write_stream):
-            await self.server.run(
-                read_stream,
-                write_stream,
-                self.server.create_initialization_options()
-            )
+            await self.server.run(read_stream, write_stream, self.server.create_initialization_options())

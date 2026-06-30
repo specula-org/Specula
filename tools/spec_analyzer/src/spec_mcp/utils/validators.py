@@ -6,8 +6,7 @@ from typing import Dict, Any
 from .errors import ValidationError
 
 
-def validate_arguments(arguments: Dict[str, Any],
-                      schema: Dict[str, Any]) -> Dict[str, Any]:
+def validate_arguments(arguments: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
     """Validate arguments against JSON schema.
 
     Args:
@@ -35,8 +34,7 @@ def validate_arguments(arguments: Dict[str, Any],
         raise ValidationError(f"Invalid schema: {e.message}")
 
 
-def _apply_defaults(arguments: Dict[str, Any],
-                   schema: Dict[str, Any]) -> Dict[str, Any]:
+def _apply_defaults(arguments: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
     """Apply default values from schema to arguments.
 
     Args:

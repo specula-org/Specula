@@ -1,0 +1,42 @@
+# Ruff config for the Specula main repo (code-cleanliness gate; see .github/workflows/ci.yml).
+# Submodules (case-studies, tools/tlaplus*, tools/SysMoBench) and experiment/vendor
+# dirs are excluded so they are linted in their own repos, not here.
+line-length = 120
+target-version = "py310"
+
+extend-exclude = [
+    "case-studies",
+    "tools/tlaplus",
+    "tools/tlaplus-ai-tools",
+    "tools/SysMoBench",
+    "experiments",
+    "data",
+    "traces",
+    "logs",
+    "_build",
+    "lib",
+    ".specula-output",
+]
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # Pyflakes
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "I",    # isort
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "SIM102", # nested if statements
+    "SIM115", # open() w/o context manager: dual-mode readers accept caller-owned handles
+]
+
+[lint.per-file-ignores]
+# Tests manipulate sys.path before importing project modules.
+"**/tests/**/*.py" = ["E402"]
+
+[format]
+quote-style = "double"
+docstring-code-format = true

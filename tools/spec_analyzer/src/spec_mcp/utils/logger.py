@@ -16,9 +16,7 @@ DEFAULT_LOG_DIR = os.path.join(os.path.expanduser("~"), ".specula", "logs", "spe
 
 
 def setup_logging(
-    name: str = "spec-analyzer-mcp",
-    log_dir: str = DEFAULT_LOG_DIR,
-    level: int = logging.INFO
+    name: str = "spec-analyzer-mcp", log_dir: str = DEFAULT_LOG_DIR, level: int = logging.INFO
 ) -> logging.Logger:
     """Configure and return the root logger.
 
@@ -43,14 +41,12 @@ def setup_logging(
         root_logger.handlers.clear()
 
     # Formatter
-    formatter = logging.Formatter(
-        '[%(asctime)s] [%(levelname)s] [%(name)s] [%(threadName)s] %(message)s'
-    )
+    formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] [%(name)s] [%(threadName)s] %(message)s")
 
     # 1. Rotating File Handler
     # Max size 10MB, keep 5 backups
     file_handler = logging.handlers.RotatingFileHandler(
-        log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'
+        log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
     )
     file_handler.setFormatter(formatter)
     file_handler.setLevel(level)

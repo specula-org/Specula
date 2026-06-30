@@ -294,7 +294,7 @@ class TestTLCOutputReader:
         """Test comparing last two states."""
         diff = reader.compare_states(-2, -1)
         assert diff["state1_index"] == 19
-        assert diff["state2_index"] == 20 
+        assert diff["state2_index"] == 20
 
     def test_find_variable_changes(self, reader):
         """Test finding where a variable changes."""
@@ -315,9 +315,7 @@ class TestTLCOutputReader:
     def test_search_states(self, reader):
         """Test searching states with predicate."""
         # Find states where s1 is Candidate
-        leader_states = reader.search_states(
-            lambda s: s.get("state", {}).get("s1") == "Candidate"
-        )
+        leader_states = reader.search_states(lambda s: s.get("state", {}).get("s1") == "Candidate")
         assert isinstance(leader_states, list)
         assert all(isinstance(i, int) for i in leader_states)
 
@@ -359,7 +357,7 @@ class TestTLCOutputReaderEdgeCases:
                 [[1, {}], {"name": "Next"}, [2, {}]],
             ],
         }
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as trace_file:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as trace_file:
             json.dump(trace, trace_file)
             trace_file.flush()
 
@@ -367,7 +365,7 @@ class TestTLCOutputReaderEdgeCases:
 \"CounterExample written: {trace_file.name}\"
 The number of states generated: 100
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as f:
             f.write(content)
             f.flush()
 
@@ -392,13 +390,16 @@ The number of states generated: 100
         """Test loading trace with complex nested structures."""
         trace = {
             "state": [
-                [1, {
-                    "config": {"s1": {"a": 1, "b": 2}, "s2": {"a": 3, "b": 4}},
-                    "log": [{"term": 1, "value": "x"}, {"term": 2, "value": "y"}],
-                }],
+                [
+                    1,
+                    {
+                        "config": {"s1": {"a": 1, "b": 2}, "s2": {"a": 3, "b": 4}},
+                        "log": [{"term": 1, "value": "x"}, {"term": 2, "value": "y"}],
+                    },
+                ],
             ],
         }
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as trace_file:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as trace_file:
             json.dump(trace, trace_file)
             trace_file.flush()
 
@@ -406,7 +407,7 @@ The number of states generated: 100
 CounterExample written: {trace_file.name}
 The number of states generated: 100
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as f:
             f.write(content)
             f.flush()
 
@@ -444,14 +445,14 @@ def run_tests():
     skipped = 0
 
     for test_class in test_classes:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Running {test_class.__name__}")
-        print('='*60)
+        print("=" * 60)
 
         # Check for skip condition
-        if hasattr(test_class, 'pytestmark'):
+        if hasattr(test_class, "pytestmark"):
             for mark in test_class.pytestmark:
-                if mark.name == 'skipif' and mark.args[0]:
+                if mark.name == "skipif" and mark.args[0]:
                     print(f"  SKIPPED: {mark.kwargs.get('reason', 'No reason')}")
                     skipped += 1
                     continue
@@ -460,7 +461,7 @@ def run_tests():
 
         # Get fixture if needed
         fixture = None
-        if hasattr(instance, 'reader'):
+        if hasattr(instance, "reader"):
             try:
                 if SAMPLE_OUTPUT_FILE.exists():
                     fixture = TLCOutputReader(str(SAMPLE_OUTPUT_FILE))
@@ -469,13 +470,14 @@ def run_tests():
                 continue
 
         for name in dir(instance):
-            if name.startswith('test_'):
+            if name.startswith("test_"):
                 method = getattr(instance, name)
                 try:
                     # Inject fixture if method accepts it
                     import inspect
+
                     sig = inspect.signature(method)
-                    if 'reader' in sig.parameters and fixture:
+                    if "reader" in sig.parameters and fixture:
                         method(fixture)
                     else:
                         method()
@@ -499,9 +501,9 @@ def run_tests():
                         traceback.print_exc()
                         failed += 1
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Results: {passed} passed, {failed} failed, {skipped} skipped")
-    print('='*60)
+    print("=" * 60)
 
     return failed == 0
 

@@ -5,6 +5,7 @@ import json
 import os
 import threading
 
+
 class DebugClient:
     def __init__(self, port=4712):
         self.port = port
@@ -17,7 +18,7 @@ class DebugClient:
         while time.time() - start < 30:
             try:
                 self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.sock.connect(('127.0.0.1', self.port))
+                self.sock.connect(("127.0.0.1", self.port))
                 return True
             except ConnectionRefusedError:
                 print(".", end="", flush=True)
@@ -27,11 +28,13 @@ class DebugClient:
 
     def send(self, type_, command=None, args=None):
         msg = {"seq": self.seq, "type": type_}
-        if command: msg["command"] = command
-        if args: msg["arguments"] = args
+        if command:
+            msg["command"] = command
+        if args:
+            msg["arguments"] = args
         body = json.dumps(msg)
         full = f"Content-Length: {len(body)}\r\n\r\n{body}"
-        self.sock.sendall(full.encode('utf-8'))
+        self.sock.sendall(full.encode("utf-8"))
         self.seq += 1
         return self.seq - 1
 
@@ -40,13 +43,15 @@ class DebugClient:
             head = b""
             while b"\r\n\r\n" not in head:
                 chunk = self.sock.recv(1)
-                if not chunk: return None
+                if not chunk:
+                    return None
                 head += chunk
             content_len = int(head.decode().split("Content-Length: ")[1].strip())
             body = b""
             while len(body) < content_len:
                 chunk = self.sock.recv(content_len - len(body))
-                if not chunk: return None
+                if not chunk:
+                    return None
                 body += chunk
             return json.loads(body)
         except Exception as e:
@@ -57,24 +62,27 @@ class DebugClient:
         req_seq = self.send("request", command, args)
         while True:
             msg = self.receive()
-            if not msg: return None
+            if not msg:
+                return None
             if msg.get("type") == "response" and msg.get("request_seq") == req_seq:
                 return msg
+
 
 def get_specula_root():
     """Auto-detect Specula root directory."""
     # Try environment variable first
-    specula_root = os.environ.get('SPECULA_ROOT')
+    specula_root = os.environ.get("SPECULA_ROOT")
     if specula_root:
         return specula_root
     # Calculate relative to this file: tools/trace_debugger/examples/demo/xxx.py
     # Go up to specula root: ../../../../
     this_file = os.path.abspath(__file__)
-    demo_dir = os.path.dirname(this_file)           # .../demo
-    examples_dir = os.path.dirname(demo_dir)        # .../examples
+    demo_dir = os.path.dirname(this_file)  # .../demo
+    examples_dir = os.path.dirname(demo_dir)  # .../examples
     trace_debugger_dir = os.path.dirname(examples_dir)  # .../trace_debugger
-    tools_dir = os.path.dirname(trace_debugger_dir)     # .../tools
-    return os.path.dirname(tools_dir)                   # .../Specula
+    tools_dir = os.path.dirname(trace_debugger_dir)  # .../tools
+    return os.path.dirname(tools_dir)  # .../Specula
+
 
 def run_inspection():
     specula_root = get_specula_root()
@@ -91,30 +99,28 @@ def run_inspection():
     env = os.environ.copy()
     env["JSON"] = "../traces/confchange_disable_validation.ndjson"
 
-    print("="*70)
+    print("=" * 70)
     print("PHASE 4: Deep Dive into AppendEntries")
-    print("="*70)
+    print("=" * 70)
 
     cmd = [
-        "java", "-XX:+UseParallelGC", "-Xmx4G",
-        "-cp", classpath,
+        "java",
+        "-XX:+UseParallelGC",
+        "-Xmx4G",
+        "-cp",
+        classpath,
         "tlc2.TLC",
-        "-debugger", "port=4712",
-        "-config", cfg_file,
-        spec_file
+        "-debugger",
+        "port=4712",
+        "-config",
+        cfg_file,
+        spec_file,
     ]
 
-    proc = subprocess.Popen(
-        cmd,
-        cwd=work_dir,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        env=env
-    )
+    proc = subprocess.Popen(cmd, cwd=work_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
 
     def read_stdout(pipe):
-        for line in iter(pipe.readline, ''):
+        for line in iter(pipe.readline, ""):
             pass
         pipe.close()
 
@@ -125,7 +131,8 @@ def run_inspection():
         print("\n>>> Waiting for TLC...")
         while True:
             line = proc.stdout.readline()
-            if not line: break
+            if not line:
+                break
             if "Debugger is listening" in line:
                 print(">>> TLC Ready!")
                 break
@@ -149,10 +156,8 @@ def run_inspection():
             # AppendEntriesIfLogged 相关
             (spec_file, 323, "AppendEntriesIfLogged entry"),
             (spec_file, 327, "AppendEntries call"),
-
             # AppendEntries 函数（在 etcdraft_progress.tla 的 Line 516）
             (spec_file_base, 517, "AppendEntriesInRangeToPeer call"),
-
             # AppendEntriesInRangeToPeer 内部关键点
             (spec_file_base, 435, "AppendEntriesInRangeToPeer entry"),
             (spec_file_base, 436, "Condition: i /= j"),
@@ -180,16 +185,13 @@ def run_inspection():
         # 设置每个文件的断点
         for file, breakpoints in breakpoints_by_file.items():
             path = spec_path_trace if file == spec_file else spec_path_base
-            client.request("setBreakpoints", {
-                "source": {"name": file, "path": path},
-                "breakpoints": breakpoints
-            })
+            client.request("setBreakpoints", {"source": {"name": file, "path": path}, "breakpoints": breakpoints})
 
         client.request("configurationDone", {})
         client.request("continue", {})
 
         print("\n>>> Running... Waiting for breakpoints to hit...")
-        print("="*70)
+        print("=" * 70)
 
         hit_count = 0
         max_hits = 50  # 增加限制，看更多断点
@@ -236,9 +238,9 @@ def run_inspection():
                     print(f"\n>>> TLC Terminated after {hit_count} breakpoint hits")
                     break
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print(f"SUMMARY: Hit {hit_count} breakpoint(s)")
-        print("="*70)
+        print("=" * 70)
 
         print("\nBreakpoint Hit Summary:")
         for bp_file, bp_line, bp_desc in breakpoints_def:
@@ -256,10 +258,13 @@ def run_inspection():
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
-        if client.sock: client.sock.close()
+        if client.sock:
+            client.sock.close()
         proc.terminate()
+
 
 if __name__ == "__main__":
     run_inspection()

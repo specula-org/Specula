@@ -46,6 +46,7 @@ from .trace_reader import TraceReader
 @dataclass
 class StateInfo:
     """Information about a single state in the trace."""
+
     index: int  # 1-indexed state number
     action: Optional[str]  # Action name (e.g., "MCInit", "HandleRequestVoteRequest")
     action_detail: Optional[str]  # Full action string with location
@@ -55,6 +56,7 @@ class StateInfo:
 @dataclass
 class TraceSummary:
     """Summary information about the TLC trace."""
+
     violation_type: Optional[str]  # "invariant" or "property"
     violation_name: Optional[str]  # Name of the violated invariant/property
     trace_length: int  # Number of states in the trace
@@ -154,8 +156,7 @@ class TLCOutputReader:
         """Load trace from a JSON counterexample file."""
         if not counterexample_path:
             raise ValueError(
-                "JSON mode requires a counterexample path in TLC output. "
-                "Expected 'CounterExample written: <file>'."
+                "JSON mode requires a counterexample path in TLC output. Expected 'CounterExample written: <file>'."
             )
 
         trace_path = Path(counterexample_path)
@@ -176,8 +177,7 @@ class TLCOutputReader:
         """Load trace by parsing raw TLC text output using TraceReader."""
         if ERROR_BEHAVIOR_MARKER not in content:
             raise ValueError(
-                "Text mode requires an error trace in TLC output. "
-                f"Expected '{ERROR_BEHAVIOR_MARKER}' marker."
+                f"Text mode requires an error trace in TLC output. Expected '{ERROR_BEHAVIOR_MARKER}' marker."
             )
 
         trace_content = convert_to_trace_format(content)
@@ -189,8 +189,8 @@ class TLCOutputReader:
             self._states.append(state)
 
             action_detail = None
-            for line in state_str.split('\n'):
-                if line.startswith('\\*') and '<' in line:
+            for line in state_str.split("\n"):
+                if line.startswith("\\*") and "<" in line:
                     action_detail = line.strip()[2:].strip()
                     break
             self._action_details.append(action_detail)
@@ -281,9 +281,7 @@ class TLCOutputReader:
                 try:
                     index = int(index)
                 except ValueError:
-                    raise ValueError(
-                        f"Invalid index: {index}. Use positive int, negative int, 'first', or 'last'."
-                    )
+                    raise ValueError(f"Invalid index: {index}. Use positive int, negative int, 'first', or 'last'.")
 
         if not self._states:
             raise IndexError("Trace is empty")
@@ -298,8 +296,7 @@ class TLCOutputReader:
 
         if idx < 0 or idx >= len(self._states):
             raise IndexError(
-                f"State index {index} out of range. "
-                f"Valid range: 1 to {len(self._states)} or -1 to -{len(self._states)}"
+                f"State index {index} out of range. Valid range: 1 to {len(self._states)} or -1 to -{len(self._states)}"
             )
 
         return idx
@@ -316,31 +313,31 @@ class TLCOutputReader:
         range_str = range_str.strip()
 
         # Handle comma-separated list
-        if ',' in range_str:
+        if "," in range_str:
             indices = []
-            for part in range_str.split(','):
+            for part in range_str.split(","):
                 idx = self._normalize_index(part.strip())
                 indices.append(idx)
             return indices
 
         # Handle range with colon
-        if ':' not in range_str:
+        if ":" not in range_str:
             return [self._normalize_index(range_str)]
 
-        parts = range_str.split(':')
+        parts = range_str.split(":")
         if len(parts) != 2:
             raise ValueError(f"Invalid range format: {range_str}")
 
         start_str, end_str = parts
 
         # Parse start
-        if start_str.strip() == '':
+        if start_str.strip() == "":
             start = 0
         else:
             start = self._normalize_index(start_str.strip())
 
         # Parse end
-        if end_str.strip() == '':
+        if end_str.strip() == "":
             end = len(self._states)
         else:
             # End is inclusive in our API
@@ -361,15 +358,15 @@ class TLCOutputReader:
         """
         actions = []
         for state in self._states:
-            action = state.get('_action', 'Unknown')
+            action = state.get("_action", "Unknown")
             actions.append(action)
 
         return TraceSummary(
-            violation_type=self._metadata.get('violation_type'),
-            violation_name=self._metadata.get('violation_name'),
+            violation_type=self._metadata.get("violation_type"),
+            violation_name=self._metadata.get("violation_name"),
             trace_length=len(self._states),
             actions=actions,
-            statistics=self._metadata.get('statistics', {}),
+            statistics=self._metadata.get("statistics", {}),
         )
 
     def get_state(
@@ -391,9 +388,9 @@ class TLCOutputReader:
             StateInfo object with state data.
 
         Examples:
-            >>> reader.get_state(1)        # First state
-            >>> reader.get_state(-1)       # Last state
-            >>> reader.get_state("last")   # Also last state
+            >>> reader.get_state(1)  # First state
+            >>> reader.get_state(-1)  # Last state
+            >>> reader.get_state("last")  # Also last state
             >>> reader.get_state(5, variables=["currentTerm", "state"])
         """
         idx = self._normalize_index(index)
@@ -406,7 +403,7 @@ class TLCOutputReader:
             for var in variables:
                 if var in state:
                     filtered[var] = state[var]
-                elif not var.startswith('_'):
+                elif not var.startswith("_"):
                     # Try to find case-insensitive match
                     for k, v in state.items():
                         if k.lower() == var.lower():
@@ -415,11 +412,11 @@ class TLCOutputReader:
             vars_dict = filtered
         else:
             # Exclude internal keys
-            vars_dict = {k: v for k, v in state.items() if not k.startswith('_')}
+            vars_dict = {k: v for k, v in state.items() if not k.startswith("_")}
 
         return StateInfo(
             index=idx + 1,  # Return 1-indexed
-            action=state.get('_action'),
+            action=state.get("_action"),
             action_detail=action_detail,
             variables=vars_dict,
         )
@@ -442,10 +439,10 @@ class TLCOutputReader:
             List of StateInfo objects.
 
         Examples:
-            >>> reader.get_states([1, -1])           # First and last
-            >>> reader.get_states("1:5")             # States 1-5
-            >>> reader.get_states("-3:")             # Last 3 states
-            >>> reader.get_states("1,5,10")          # States 1, 5, 10
+            >>> reader.get_states([1, -1])  # First and last
+            >>> reader.get_states("1:5")  # States 1-5
+            >>> reader.get_states("-3:")  # Last 3 states
+            >>> reader.get_states("1,5,10")  # States 1, 5, 10
         """
         if isinstance(indices, str):
             idx_list = self._parse_range(indices)
@@ -515,7 +512,7 @@ class TLCOutputReader:
         state = self._states[idx]
 
         # Remove internal keys for cleaner access
-        clean_state = {k: v for k, v in state.items() if not k.startswith('_')}
+        clean_state = {k: v for k, v in state.items() if not k.startswith("_")}
 
         return get_value_at_path(clean_state, path)
 
@@ -529,7 +526,7 @@ class TLCOutputReader:
             return []
 
         # Get from first state (all states should have same variables)
-        return sorted([k for k in self._states[0].keys() if not k.startswith('_')])
+        return sorted([k for k in self._states[0].keys() if not k.startswith("_")])
 
     def get_actions_list(self) -> List[Dict[str, Any]]:
         """Get the sequence of actions in the trace.
@@ -546,11 +543,13 @@ class TLCOutputReader:
         """
         result = []
         for i, state in enumerate(self._states):
-            result.append({
-                "index": i + 1,
-                "action": state.get('_action', 'Unknown'),
-                "detail": self._action_details[i] if i < len(self._action_details) else None,
-            })
+            result.append(
+                {
+                    "index": i + 1,
+                    "action": state.get("_action", "Unknown"),
+                    "detail": self._action_details[i] if i < len(self._action_details) else None,
+                }
+            )
         return result
 
     def compare_states(
@@ -586,7 +585,7 @@ class TLCOutputReader:
         state2 = self._states[idx2]
 
         ignore_vars = set(ignore_vars or [])
-        ignore_vars.add('_action')  # Always ignore internal keys
+        ignore_vars.add("_action")  # Always ignore internal keys
 
         changed_variables = []
         changes = {}
@@ -594,7 +593,7 @@ class TLCOutputReader:
         # Compare all variables
         all_keys = set(state1.keys()) | set(state2.keys())
         for key in sorted(all_keys):
-            if key.startswith('_') or key in ignore_vars:
+            if key.startswith("_") or key in ignore_vars:
                 continue
 
             val1 = state1.get(key)
@@ -612,8 +611,8 @@ class TLCOutputReader:
             "changes": changes,
             "state1_index": idx1 + 1,
             "state2_index": idx2 + 1,
-            "state1_action": state1.get('_action'),
-            "state2_action": state2.get('_action'),
+            "state1_action": state1.get("_action"),
+            "state2_action": state2.get("_action"),
         }
 
     def find_variable_changes(
@@ -651,8 +650,7 @@ class TLCOutputReader:
             try:
                 if path:
                     current_value = get_value_at_path(
-                        {k: v for k, v in state.items() if not k.startswith('_')},
-                        full_path
+                        {k: v for k, v in state.items() if not k.startswith("_")}, full_path
                     )
                 else:
                     current_value = state.get(variable_name)
@@ -660,13 +658,15 @@ class TLCOutputReader:
                 current_value = None
 
             if i > 0 and current_value != prev_value:
-                changes.append({
-                    "from_state": i,  # 1-indexed
-                    "to_state": i + 1,
-                    "action": state.get('_action'),
-                    "before": prev_value,
-                    "after": current_value,
-                })
+                changes.append(
+                    {
+                        "from_state": i,  # 1-indexed
+                        "to_state": i + 1,
+                        "action": state.get("_action"),
+                        "before": prev_value,
+                        "after": current_value,
+                    }
+                )
 
             prev_value = current_value
 
@@ -692,7 +692,7 @@ class TLCOutputReader:
         matching = []
         for i, state in enumerate(self._states):
             # Create clean state without internal keys
-            clean_state = {k: v for k, v in state.items() if not k.startswith('_')}
+            clean_state = {k: v for k, v in state.items() if not k.startswith("_")}
             if predicate(clean_state):
                 matching.append(i + 1)
         return matching
@@ -727,11 +727,11 @@ class TLCOutputReader:
         for var_name, var_value in sorted(state_info.variables.items()):
             formatted = format_value(var_value, max_depth=max_depth)
             # Indent multi-line values
-            if '\n' in formatted:
-                formatted = formatted.replace('\n', '\n    ')
+            if "\n" in formatted:
+                formatted = formatted.replace("\n", "\n    ")
             lines.append(f"  {var_name} = {formatted}")
 
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     def format_summary(self) -> str:
         """Format the trace summary for display.
@@ -782,7 +782,7 @@ class TLCOutputReader:
         lines.append("")
         lines.append("=" * 60)
 
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     def __repr__(self) -> str:
         """Return string representation."""

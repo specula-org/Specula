@@ -15,18 +15,20 @@ from typing import Any, List, Union
 # Pattern to match path segments with optional array index
 # Matches: "name", "name[0]", "name[key]"
 PATH_SEGMENT_PATTERN = re.compile(
-    r'([a-zA-Z_][a-zA-Z0-9_]*)'  # Variable name
-    r'(?:\[([^\]]+)\])?'         # Optional index in brackets
+    r"([a-zA-Z_][a-zA-Z0-9_]*)"  # Variable name
+    r"(?:\[([^\]]+)\])?"  # Optional index in brackets
 )
 
 
 class PathParseError(Exception):
     """Exception raised when path parsing fails."""
+
     pass
 
 
 class PathAccessError(Exception):
     """Exception raised when path access fails."""
+
     pass
 
 
@@ -61,7 +63,7 @@ def parse_variable_path(path: str) -> List[Union[str, int]]:
     parts = []
 
     # Split by dots, but handle brackets specially
-    segments = path.split('.')
+    segments = path.split(".")
 
     for segment in segments:
         if not segment:
@@ -73,13 +75,13 @@ def parse_variable_path(path: str) -> List[Union[str, int]]:
 
         while remaining:
             # Check for leading bracket (for subsequent indices)
-            if remaining.startswith('['):
-                bracket_end = remaining.find(']')
+            if remaining.startswith("["):
+                bracket_end = remaining.find("]")
                 if bracket_end == -1:
                     raise PathParseError(f"Unclosed bracket in path: {path}")
 
                 index_str = remaining[1:bracket_end]
-                remaining = remaining[bracket_end + 1:]
+                remaining = remaining[bracket_end + 1 :]
 
                 # Try to parse as integer
                 try:
@@ -105,7 +107,7 @@ def parse_variable_path(path: str) -> List[Union[str, int]]:
                     # Keep as string key
                     parts.append(index)
 
-            remaining = remaining[match.end():]
+            remaining = remaining[match.end() :]
             first_in_segment = False
 
     return parts
@@ -147,32 +149,26 @@ def get_value_at_path(data: Any, path: Union[str, List[Union[str, int]]]) -> Any
                     else:
                         available = list(current.keys())[:10]
                         raise PathAccessError(
-                            f"Key '{part}' not found at path '{'.'.join(traversed[:-1])}'. "
-                            f"Available keys: {available}"
+                            f"Key '{part}' not found at path '{'.'.join(traversed[:-1])}'. Available keys: {available}"
                         )
                 else:
                     current = current[part]
             elif isinstance(current, (list, tuple)):
                 if not isinstance(part, int):
                     raise PathAccessError(
-                        f"Cannot use non-integer key '{part}' to index list "
-                        f"at path '{'.'.join(traversed[:-1])}'"
+                        f"Cannot use non-integer key '{part}' to index list at path '{'.'.join(traversed[:-1])}'"
                     )
                 if part < 0 or part >= len(current):
                     raise PathAccessError(
-                        f"Index {part} out of range (length={len(current)}) "
-                        f"at path '{'.'.join(traversed[:-1])}'"
+                        f"Index {part} out of range (length={len(current)}) at path '{'.'.join(traversed[:-1])}'"
                     )
                 current = current[part]
             else:
                 raise PathAccessError(
-                    f"Cannot traverse into {type(current).__name__} "
-                    f"at path '{'.'.join(traversed[:-1])}'"
+                    f"Cannot traverse into {type(current).__name__} at path '{'.'.join(traversed[:-1])}'"
                 )
         except (KeyError, IndexError, TypeError) as e:
-            raise PathAccessError(
-                f"Failed to access path '{'.'.join(traversed)}': {e}"
-            ) from e
+            raise PathAccessError(f"Failed to access path '{'.'.join(traversed)}': {e}") from e
 
     return current
 

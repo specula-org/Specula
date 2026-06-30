@@ -34,22 +34,10 @@ class TraceDebuggingHandler(BaseHandler):
         return {
             "type": "object",
             "properties": {
-                "spec_file": {
-                    "type": "string",
-                    "description": "TLA+ spec file name"
-                },
-                "config_file": {
-                    "type": "string",
-                    "description": "TLC config file name"
-                },
-                "trace_file": {
-                    "type": "string",
-                    "description": "Trace file path (relative to work_dir or absolute)"
-                },
-                "work_dir": {
-                    "type": "string",
-                    "description": "Working directory (absolute path)"
-                },
+                "spec_file": {"type": "string", "description": "TLA+ spec file name"},
+                "config_file": {"type": "string", "description": "TLC config file name"},
+                "trace_file": {"type": "string", "description": "Trace file path (relative to work_dir or absolute)"},
+                "work_dir": {"type": "string", "description": "Working directory (absolute path)"},
                 "breakpoints": {
                     "type": "array",
                     "description": "List of breakpoints to set",
@@ -59,38 +47,19 @@ class TraceDebuggingHandler(BaseHandler):
                             "line": {"type": "integer"},
                             "file": {"type": "string"},
                             "condition": {"type": "string"},
-                            "description": {"type": "string"}
+                            "description": {"type": "string"},
                         },
-                        "required": ["line"]
-                    }
+                        "required": ["line"],
+                    },
                 },
-                "timeout": {
-                    "type": "integer",
-                    "default": 300,
-                    "description": "Timeout in seconds"
-                },
-                "tla_jar": {
-                    "type": "string",
-                    "description": "Path to tla2tools.jar (optional)"
-                },
-                "community_jar": {
-                    "type": "string",
-                    "description": "Path to CommunityModules-deps.jar (optional)"
-                },
-                "host": {
-                    "type": "string",
-                    "default": "127.0.0.1",
-                    "description": "DAP server host"
-                },
-                "port": {
-                    "type": "integer",
-                    "default": 4712,
-                    "description": "DAP server port"
-                },
+                "timeout": {"type": "integer", "default": 300, "description": "Timeout in seconds"},
+                "tla_jar": {"type": "string", "description": "Path to tla2tools.jar (optional)"},
+                "community_jar": {"type": "string", "description": "Path to CommunityModules-deps.jar (optional)"},
+                "host": {"type": "string", "default": "127.0.0.1", "description": "DAP server host"},
+                "port": {"type": "integer", "default": 4712, "description": "DAP server port"},
                 # Phase 3: evaluate and collect_variables will be added here
             },
-            "required": ["spec_file", "config_file", "trace_file",
-                        "work_dir", "breakpoints"]
+            "required": ["spec_file", "config_file", "trace_file", "work_dir", "breakpoints"],
         }
 
     async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -119,10 +88,7 @@ class TraceDebuggingHandler(BaseHandler):
             # 2. Start TLC debugger
             logger.info(f"Starting TLC debugger...")
             if not session.start():
-                raise ExecutionError(
-                    "Failed to start TLC debugger",
-                    details={"spec_file": arguments["spec_file"]}
-                )
+                raise ExecutionError("Failed to start TLC debugger", details={"spec_file": arguments["spec_file"]})
 
             # 3. Set breakpoints
             breakpoints = self._parse_breakpoints(arguments["breakpoints"])
@@ -141,7 +107,7 @@ class TraceDebuggingHandler(BaseHandler):
                 """
                 if not name:
                     return name
-                return name.replace('.tla', '')
+                return name.replace(".tla", "")
 
             def files_match(file1: str, file2: str) -> bool:
                 """Check if two filenames match, ignoring .tla extension."""
@@ -165,12 +131,9 @@ class TraceDebuggingHandler(BaseHandler):
                         logger.info(f"Evaluating expressions at {file_name}:{line}")
                         for expr in eval_config["expressions"]:
                             result = session.evaluate_at_breakpoint(expr, frame_id)
-                            evaluated_results.append({
-                                "expression": expr,
-                                "result": result,
-                                "file": file_name,
-                                "line": line
-                            })
+                            evaluated_results.append(
+                                {"expression": expr, "result": result, "file": file_name, "line": line}
+                            )
 
                 # Handle collect_variables
                 if "collect_variables" in arguments:
@@ -180,18 +143,23 @@ class TraceDebuggingHandler(BaseHandler):
                     max_samples = collect_config.get("max_samples", 10)
 
                     # Check if this is the target breakpoint and we haven't collected enough samples
-                    if line == target_line and len(collected_vars) < max_samples and files_match(file_name, target_file):
-                        logger.info(f"Collecting variables at {file_name}:{line} (sample {len(collected_vars)+1}/{max_samples})")
-                        vars_dict = session.get_variables_at_breakpoint(
-                            collect_config["variables"],
-                            frame_id
+                    if (
+                        line == target_line
+                        and len(collected_vars) < max_samples
+                        and files_match(file_name, target_file)
+                    ):
+                        logger.info(
+                            f"Collecting variables at {file_name}:{line} (sample {len(collected_vars) + 1}/{max_samples})"
                         )
-                        collected_vars.append({
-                            "sample_index": len(collected_vars),
-                            "file": file_name,
-                            "line": line,
-                            "variables": vars_dict
-                        })
+                        vars_dict = session.get_variables_at_breakpoint(collect_config["variables"], frame_id)
+                        collected_vars.append(
+                            {
+                                "sample_index": len(collected_vars),
+                                "file": file_name,
+                                "line": line,
+                                "variables": vars_dict,
+                            }
+                        )
 
             # 5. Run trace validation with callback
             timeout = arguments.get("timeout", 300)
@@ -209,10 +177,7 @@ class TraceDebuggingHandler(BaseHandler):
             # 6. Build result
             execution_time = time.time() - start_time
 
-            result = {
-                "statistics": self._format_statistics(stats),
-                "execution_time": execution_time
-            }
+            result = {"statistics": self._format_statistics(stats), "execution_time": execution_time}
 
             # Add Phase 3 results if available
             if evaluated_results:
@@ -243,19 +208,21 @@ class TraceDebuggingHandler(BaseHandler):
             tla_jar=args.get("tla_jar"),
             community_jar=args.get("community_jar"),
             host=args.get("host", "127.0.0.1"),
-            port=args.get("port", 4712)
+            port=args.get("port", 4712),
         )
 
     def _parse_breakpoints(self, bp_list: List[Dict]) -> List[Breakpoint]:
         """Parse breakpoint list from arguments."""
         breakpoints = []
         for bp in bp_list:
-            breakpoints.append(Breakpoint(
-                line=bp["line"],
-                file=bp.get("file"),
-                condition=bp.get("condition"),
-                description=bp.get("description", f"Line {bp['line']}")
-            ))
+            breakpoints.append(
+                Breakpoint(
+                    line=bp["line"],
+                    file=bp.get("file"),
+                    condition=bp.get("condition"),
+                    description=bp.get("description", f"Line {bp['line']}"),
+                )
+            )
         return breakpoints
 
     def _format_statistics(self, stats) -> Dict[str, Any]:
@@ -268,16 +235,11 @@ class TraceDebuggingHandler(BaseHandler):
                     "line": hit.line,
                     "description": hit.description,
                     "hit_count": hit.hit_count,
-                    "was_hit": hit.hit_count > 0
+                    "was_hit": hit.hit_count > 0,
                 }
                 for hit in stats.hits
             ],
             "never_hit": [
-                {
-                    "file": hit.file,
-                    "line": hit.line,
-                    "description": hit.description
-                }
-                for hit in stats.get_never_hit()
-            ]
+                {"file": hit.file, "line": hit.line, "description": hit.description} for hit in stats.get_never_hit()
+            ],
         }

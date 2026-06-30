@@ -7,22 +7,22 @@ import sys
 import os
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from tla_mcp.handlers.trace_validation import TraceValidationHandler
 
 
 def get_specula_root():
     """Auto-detect Specula root directory."""
-    specula_root = os.environ.get('SPECULA_ROOT')
+    specula_root = os.environ.get("SPECULA_ROOT")
     if specula_root:
         return specula_root
     # Calculate relative to this file: tools/trace_debugger/tests/xxx.py
     this_file = os.path.abspath(__file__)
-    tests_dir = os.path.dirname(this_file)              # .../tests
-    trace_debugger_dir = os.path.dirname(tests_dir)     # .../trace_debugger
-    tools_dir = os.path.dirname(trace_debugger_dir)     # .../tools
-    return os.path.dirname(tools_dir)                   # .../Specula
+    tests_dir = os.path.dirname(this_file)  # .../tests
+    trace_debugger_dir = os.path.dirname(tests_dir)  # .../trace_debugger
+    tools_dir = os.path.dirname(trace_debugger_dir)  # .../tools
+    return os.path.dirname(tools_dir)  # .../Specula
 
 
 @pytest.mark.asyncio
@@ -42,9 +42,7 @@ async def test_advanced_features():
         "config_file": "Traceetcdraft_progress.cfg",
         "trace_file": "../traces/confchange_disable_validation.ndjson",
         "work_dir": work_dir,
-        "breakpoints": [
-            {"line": 522, "file": "Traceetcdraft_progress.tla", "condition": 'TLCGet("level") = 29'}
-        ],
+        "breakpoints": [{"line": 522, "file": "Traceetcdraft_progress.tla", "condition": 'TLCGet("level") = 29'}],
         "timeout": 60,
         "collect_variables": {
             "breakpoint_line": 522,
@@ -65,8 +63,8 @@ async def test_advanced_features():
                 "l + 1",
                 "pl - 1",
             ],
-            "max_samples": 2
-        }
+            "max_samples": 2,
+        },
     }
 
     print(f"\nTesting with variables:")
@@ -83,12 +81,12 @@ async def test_advanced_features():
         print(f"\n✅ Collected Variables ({len(result['collected_variables'])} samples):")
         for sample in result["collected_variables"]:
             print(f"\n  Sample {sample['sample_index']}:")
-            for var_name, var_value in sample['variables'].items():
+            for var_name, var_value in sample["variables"].items():
                 print(f"    {var_name} = {var_value}")
         return True
     else:
         print("\n❌ No collected variables!")
-        if not result.get('success'):
+        if not result.get("success"):
             print(f"Error: {result.get('error_message')}")
         return False
 

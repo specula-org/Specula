@@ -59,10 +59,7 @@ class BaseHandler(ABC):
         try:
             # 1. Validate arguments
             logger.info(f"[{self.tool_name}] Validating arguments...")
-            validated_args = validate_arguments(
-                arguments,
-                self.argument_schema
-            )
+            validated_args = validate_arguments(arguments, self.argument_schema)
 
             # 2. Execute tool logic
             logger.info(f"[{self.tool_name}] Executing...")
@@ -75,18 +72,14 @@ class BaseHandler(ABC):
 
         except ValidationError as e:
             logger.error(f"[{self.tool_name}] Validation error: {e}")
-            return format_error_response(
-                tool_name=self.tool_name,
-                error_type="ValidationError",
-                error_message=str(e)
-            )
+            return format_error_response(tool_name=self.tool_name, error_type="ValidationError", error_message=str(e))
         except ExecutionError as e:
             logger.error(f"[{self.tool_name}] Execution error: {e}")
             return format_error_response(
                 tool_name=self.tool_name,
                 error_type="ExecutionError",
                 error_message=str(e),
-                details=e.details if hasattr(e, 'details') else None
+                details=e.details if hasattr(e, "details") else None,
             )
         except Exception as e:
             logger.error(f"[{self.tool_name}] Unexpected error: {e}")
@@ -95,5 +88,5 @@ class BaseHandler(ABC):
                 tool_name=self.tool_name,
                 error_type="UnexpectedError",
                 error_message=str(e),
-                traceback=traceback.format_exc()
+                traceback=traceback.format_exc(),
             )

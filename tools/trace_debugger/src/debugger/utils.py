@@ -23,7 +23,7 @@ def collect_variable_values(
     condition: str,
     variables: List[str],
     max_samples: int = 10,
-    breakpoint_file: Optional[str] = None
+    breakpoint_file: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Collect variable values across multiple breakpoint hits.
 
@@ -49,7 +49,7 @@ def collect_variable_values(
         ...     breakpoint_line=438,
         ...     condition='TLCGet("level") = 29',
         ...     variables=["i", "j", "GetConfig(i)"],
-        ...     max_samples=10
+        ...     max_samples=10,
         ... )
         >>> for v in values:
         ...     print(f"i={v['i']}, j={v['j']}, GetConfig(i)={v['GetConfig(i)']}")
@@ -62,7 +62,7 @@ def collect_variable_values(
         line=breakpoint_line,
         file=breakpoint_file,
         condition=condition,
-        description=f"Collecting variables: {', '.join(variables)}"
+        description=f"Collecting variables: {', '.join(variables)}",
     )
     session.set_breakpoints([bp])
 
@@ -120,10 +120,7 @@ def collect_variable_values(
     return samples
 
 
-def check_conditions_at_breakpoint(
-    session: DebugSession,
-    conditions: Dict[str, str]
-) -> Dict[str, Any]:
+def check_conditions_at_breakpoint(session: DebugSession, conditions: Dict[str, str]) -> Dict[str, Any]:
     """Check multiple conditions at current breakpoint.
 
     This assumes the debugger is already stopped at a breakpoint.
@@ -139,11 +136,9 @@ def check_conditions_at_breakpoint(
 
     Example:
         >>> # Assume we're stopped at a breakpoint
-        >>> results = check_conditions_at_breakpoint(session, {
-        ...     "i != j": "i /= j",
-        ...     "range valid": "range[1] <= range[2]",
-        ...     "is leader": "state[i] = Leader"
-        ... })
+        >>> results = check_conditions_at_breakpoint(
+        ...     session, {"i != j": "i /= j", "range valid": "range[1] <= range[2]", "is leader": "state[i] = Leader"}
+        ... )
         >>> for desc, result in results.items():
         ...     print(f"{desc}: {result}")
     """

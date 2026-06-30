@@ -24,12 +24,9 @@ class CleanTracesHandler(BaseHandler):
         return {
             "type": "object",
             "properties": {
-                "spec_file": {
-                    "type": "string",
-                    "description": "Path to the TLA+ spec file (e.g., Traceetcdraft.tla)"
-                },
+                "spec_file": {"type": "string", "description": "Path to the TLA+ spec file (e.g., Traceetcdraft.tla)"},
             },
-            "required": ["spec_file"]
+            "required": ["spec_file"],
         }
 
     async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -44,15 +41,11 @@ class CleanTracesHandler(BaseHandler):
         spec_file = arguments["spec_file"]
 
         if not os.path.exists(spec_file):
-            raise ExecutionError(
-                f"Spec file not found: {spec_file}",
-                details={"spec_file": spec_file, "exists": False}
-            )
+            raise ExecutionError(f"Spec file not found: {spec_file}", details={"spec_file": spec_file, "exists": False})
 
         if not os.path.isfile(spec_file):
             raise ExecutionError(
-                f"Spec path is not a file: {spec_file}",
-                details={"spec_file": spec_file, "is_file": False}
+                f"Spec path is not a file: {spec_file}", details={"spec_file": spec_file, "is_file": False}
             )
 
         spec_dir = os.path.dirname(spec_file) or "."

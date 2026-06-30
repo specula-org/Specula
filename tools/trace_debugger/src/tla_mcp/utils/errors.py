@@ -3,11 +3,13 @@
 
 class MCPError(Exception):
     """Base exception for MCP errors."""
+
     pass
 
 
 class ValidationError(MCPError):
     """Argument validation error."""
+
     pass
 
 

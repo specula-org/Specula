@@ -85,7 +85,7 @@ class TraceReplayHandler(BaseHandler):
                 "message": (
                     f"Trace replay complete. "
                     f"Use get_tlc_summary/get_tlc_state/compare_tlc_states "
-                    f"with file_path=\"{tlc_output_path}\" to analyze the result."
+                    f'with file_path="{tlc_output_path}" to analyze the result.'
                 ),
             }
 

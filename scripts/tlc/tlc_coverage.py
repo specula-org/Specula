@@ -44,14 +44,13 @@ DEFAULT_TLA_JAR = SCRIPT_DIR.parent / "lib" / "tla2tools.jar"
 DEFAULT_COMMUNITY_JAR = SCRIPT_DIR.parent / "lib" / "CommunityModules-deps.jar"
 
 # Regex to parse TLC coverage output
-COVERAGE_PATTERN = re.compile(
-    r"line (\d+), col (\d+) to line (\d+), col (\d+) of module (\w+)>?:\s*(\d+)"
-)
+COVERAGE_PATTERN = re.compile(r"line (\d+), col (\d+) to line (\d+), col (\d+) of module (\w+)>?:\s*(\d+)")
 
 
 @dataclass
 class CoverageResult:
     """Results of coverage analysis."""
+
     total: int = 0
     covered: int = 0
     uncovered_lines: Dict[str, Set[int]] = field(default_factory=lambda: defaultdict(set))
@@ -67,18 +66,24 @@ class CoverageResult:
 
 def parse_exclude_range(spec: str) -> Tuple[str, int, int]:
     """Parse 'module:start-end' format."""
-    if ':' not in spec:
+    if ":" not in spec:
         raise ValueError(f"Invalid format: {spec}. Expected 'module:start-end'")
-    module, range_str = spec.split(':', 1)
-    if '-' not in range_str:
+    module, range_str = spec.split(":", 1)
+    if "-" not in range_str:
         raise ValueError(f"Invalid range: {range_str}. Expected 'start-end'")
-    start, end = range_str.split('-', 1)
+    start, end = range_str.split("-", 1)
     return module, int(start), int(end)
 
 
-def run_tlc(spec_dir: Path, spec_file: str, config_file: str,
-            tla_jar: Path, trace_file: Optional[Path] = None,
-            timeout: int = 300, community_jar: Optional[Path] = None) -> str:
+def run_tlc(
+    spec_dir: Path,
+    spec_file: str,
+    config_file: str,
+    tla_jar: Path,
+    trace_file: Optional[Path] = None,
+    timeout: int = 300,
+    community_jar: Optional[Path] = None,
+) -> str:
     """Run TLC with coverage enabled."""
     env = os.environ.copy()
     if trace_file:
@@ -90,9 +95,14 @@ def run_tlc(spec_dir: Path, spec_file: str, config_file: str,
         cp = f"{tla_jar.resolve()}:{community_jar.resolve()}"
 
     cmd = [
-        "java", "-cp", cp, "tlc2.TLC",
-        "-coverage", "0",
-        "-config", config_file,
+        "java",
+        "-cp",
+        cp,
+        "tlc2.TLC",
+        "-coverage",
+        "0",
+        "-config",
+        config_file,
         "-noTE",
     ]
     # For trace validation, suppress deadlock checking (trace terminates naturally)
@@ -100,15 +110,13 @@ def run_tlc(spec_dir: Path, spec_file: str, config_file: str,
         cmd.append("-deadlock")
     cmd.append(spec_file)
 
-    result = subprocess.run(
-        cmd, cwd=spec_dir, env=env,
-        capture_output=True, text=True, timeout=timeout
-    )
+    result = subprocess.run(cmd, cwd=spec_dir, env=env, capture_output=True, text=True, timeout=timeout)
     return result.stdout + result.stderr
 
 
-def parse_coverage(output: str, modules: Set[str], exclude_ranges: Dict[str, List[Tuple[int, int]]],
-                   top_level_only: bool = True) -> Dict[Tuple, int]:
+def parse_coverage(
+    output: str, modules: Set[str], exclude_ranges: Dict[str, List[Tuple[int, int]]], top_level_only: bool = True
+) -> Dict[Tuple, int]:
     """Parse TLC coverage output."""
     coverage = {}
 
@@ -145,10 +153,19 @@ def parse_coverage(output: str, modules: Set[str], exclude_ranges: Dict[str, Lis
     return coverage
 
 
-def analyze_traces(spec_dir: Path, trace_dir: Path, spec_file: str, config_file: str,
-                   tla_jar: Path, modules: Set[str], exclude_ranges: Dict[str, List[Tuple[int, int]]],
-                   top_level_only: bool, timeout: int, verbose: bool,
-                   community_jar: Optional[Path] = None) -> CoverageResult:
+def analyze_traces(
+    spec_dir: Path,
+    trace_dir: Path,
+    spec_file: str,
+    config_file: str,
+    tla_jar: Path,
+    modules: Set[str],
+    exclude_ranges: Dict[str, List[Tuple[int, int]]],
+    top_level_only: bool,
+    timeout: int,
+    verbose: bool,
+    community_jar: Optional[Path] = None,
+) -> CoverageResult:
     """Analyze coverage across multiple trace files."""
     trace_files = sorted(trace_dir.glob("*.ndjson"))
     if verbose:
@@ -160,8 +177,7 @@ def analyze_traces(spec_dir: Path, trace_dir: Path, spec_file: str, config_file:
         if verbose:
             print(f"[{i:2d}/{len(trace_files)}] {tf.name}...", end=" ", flush=True)
         try:
-            output = run_tlc(spec_dir, spec_file, config_file, tla_jar, tf, timeout,
-                             community_jar=community_jar)
+            output = run_tlc(spec_dir, spec_file, config_file, tla_jar, tf, timeout, community_jar=community_jar)
             if "Model checking completed" not in output and "states generated" not in output:
                 if verbose:
                     print("FAILED")
@@ -173,7 +189,7 @@ def analyze_traces(spec_dir: Path, trace_dir: Path, spec_file: str, config_file:
 
             if verbose:
                 c = sum(1 for v in cov.values() if v > 0)
-                print(f"OK ({c}/{len(cov)} = {c/len(cov)*100:.1f}%)" if cov else "OK (empty)")
+                print(f"OK ({c}/{len(cov)} = {c / len(cov) * 100:.1f}%)" if cov else "OK (empty)")
 
         except subprocess.TimeoutExpired:
             if verbose:
@@ -185,9 +201,16 @@ def analyze_traces(spec_dir: Path, trace_dir: Path, spec_file: str, config_file:
     return build_result(all_stmts)
 
 
-def analyze_model(spec_dir: Path, spec_file: str, config_file: str, tla_jar: Path,
-                  modules: Set[str], exclude_ranges: Dict[str, List[Tuple[int, int]]],
-                  top_level_only: bool, timeout: int) -> CoverageResult:
+def analyze_model(
+    spec_dir: Path,
+    spec_file: str,
+    config_file: str,
+    tla_jar: Path,
+    modules: Set[str],
+    exclude_ranges: Dict[str, List[Tuple[int, int]]],
+    top_level_only: bool,
+    timeout: int,
+) -> CoverageResult:
     """Analyze coverage from model checking."""
     output = run_tlc(spec_dir, spec_file, config_file, tla_jar, timeout=timeout)
     cov = parse_coverage(output, modules, exclude_ranges, top_level_only)
@@ -209,7 +232,7 @@ def print_result(result: CoverageResult, title: str):
     """Print coverage result."""
     print(f"\n{'=' * 70}")
     print(title)
-    print('=' * 70)
+    print("=" * 70)
     print(f"Total statements:     {result.total}")
     print(f"Covered statements:   {result.covered}")
     print(f"Uncovered statements: {result.uncovered}")
@@ -218,7 +241,7 @@ def print_result(result: CoverageResult, title: str):
     if result.uncovered_lines:
         print(f"\n{'-' * 70}")
         print("UNCOVERED LINES BY MODULE")
-        print('-' * 70)
+        print("-" * 70)
         for module in sorted(result.uncovered_lines.keys()):
             lines = sorted(result.uncovered_lines[module])
             print(f"\n{module}.tla ({len(lines)} lines):")
@@ -229,24 +252,23 @@ def print_comparison(r1: CoverageResult, r2: CoverageResult, n1: str, n2: str):
     """Print comparison of two results."""
     print(f"\n{'=' * 70}")
     print("COVERAGE COMPARISON")
-    print('=' * 70)
+    print("=" * 70)
     print(f"{'Metric':<25} {n1:>20} {n2:>20}")
-    print('-' * 70)
+    print("-" * 70)
     print(f"{'Total statements':<25} {r1.total:>20} {r2.total:>20}")
     print(f"{'Covered statements':<25} {r1.covered:>20} {r2.covered:>20}")
     print(f"{'Uncovered statements':<25} {r1.uncovered:>20} {r2.uncovered:>20}")
     print(f"{'Coverage %':<25} {r1.pct:>19.2f}% {r2.pct:>19.2f}%")
-    print('-' * 70)
+    print("-" * 70)
     print(f"{'Difference':<25} {'':<20} {r2.pct - r1.pct:>+19.2f}%")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="TLC Coverage Analysis Tool",
-                                     formatter_class=argparse.RawDescriptionHelpFormatter,
-                                     epilog=__doc__)
+    parser = argparse.ArgumentParser(
+        description="TLC Coverage Analysis Tool", formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__
+    )
     parser.add_argument("--tla-jar", default=str(DEFAULT_TLA_JAR), help="Path to tla2tools.jar")
-    parser.add_argument("--community-jar", default=str(DEFAULT_COMMUNITY_JAR),
-                        help="Path to CommunityModules-deps.jar")
+    parser.add_argument("--community-jar", default=str(DEFAULT_COMMUNITY_JAR), help="Path to CommunityModules-deps.jar")
     parser.add_argument("--timeout", type=int, default=300, help="TLC timeout in seconds")
 
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -258,8 +280,9 @@ def main():
     p_trace.add_argument("--spec-file", default="Traceetcdraft.tla")
     p_trace.add_argument("--config-file", default="Traceetcdraft.cfg")
     p_trace.add_argument("--modules", nargs="+", default=[], help="Modules to include")
-    p_trace.add_argument("--exclude-range", nargs="*", default=[],
-                         help="Exclude ranges: module:start-end (e.g., etcdraft:600-650)")
+    p_trace.add_argument(
+        "--exclude-range", nargs="*", default=[], help="Exclude ranges: module:start-end (e.g., etcdraft:600-650)"
+    )
     p_trace.add_argument("--all", action="store_true", help="Include nested statements")
     p_trace.add_argument("--quiet", action="store_true")
 
@@ -299,11 +322,17 @@ def main():
             exclude[m].append((s, e))
 
         result = analyze_traces(
-            Path(args.spec_dir), Path(args.trace_dir),
-            args.spec_file, args.config_file, tla_jar,
-            set(args.modules), dict(exclude),
-            not args.all, args.timeout, not args.quiet,
-            community_jar=community_jar
+            Path(args.spec_dir),
+            Path(args.trace_dir),
+            args.spec_file,
+            args.config_file,
+            tla_jar,
+            set(args.modules),
+            dict(exclude),
+            not args.all,
+            args.timeout,
+            not args.quiet,
+            community_jar=community_jar,
         )
         print_result(result, "TRACE VALIDATION COVERAGE")
 
@@ -314,8 +343,14 @@ def main():
             exclude[m].append((s, e))
 
         result = analyze_model(
-            Path(args.spec_dir), args.spec_file, args.config_file, tla_jar,
-            set(args.modules), dict(exclude), not args.all, args.timeout
+            Path(args.spec_dir),
+            args.spec_file,
+            args.config_file,
+            tla_jar,
+            set(args.modules),
+            dict(exclude),
+            not args.all,
+            args.timeout,
         )
         print_result(result, "MODEL CHECKING COVERAGE")
 
@@ -333,20 +368,54 @@ def main():
         top_level = not args.all
 
         if args.trace_dir1:
-            r1 = analyze_traces(Path(args.spec_dir1), Path(args.trace_dir1),
-                                args.spec_file1, args.config_file1, tla_jar,
-                                set(args.modules1), dict(exc1), top_level, args.timeout, True)
+            r1 = analyze_traces(
+                Path(args.spec_dir1),
+                Path(args.trace_dir1),
+                args.spec_file1,
+                args.config_file1,
+                tla_jar,
+                set(args.modules1),
+                dict(exc1),
+                top_level,
+                args.timeout,
+                True,
+            )
         else:
-            r1 = analyze_model(Path(args.spec_dir1), args.spec_file1, args.config_file1,
-                               tla_jar, set(args.modules1), dict(exc1), top_level, args.timeout)
+            r1 = analyze_model(
+                Path(args.spec_dir1),
+                args.spec_file1,
+                args.config_file1,
+                tla_jar,
+                set(args.modules1),
+                dict(exc1),
+                top_level,
+                args.timeout,
+            )
 
         if args.trace_dir2:
-            r2 = analyze_traces(Path(args.spec_dir2), Path(args.trace_dir2),
-                                args.spec_file2, args.config_file2, tla_jar,
-                                set(args.modules2), dict(exc2), top_level, args.timeout, True)
+            r2 = analyze_traces(
+                Path(args.spec_dir2),
+                Path(args.trace_dir2),
+                args.spec_file2,
+                args.config_file2,
+                tla_jar,
+                set(args.modules2),
+                dict(exc2),
+                top_level,
+                args.timeout,
+                True,
+            )
         else:
-            r2 = analyze_model(Path(args.spec_dir2), args.spec_file2, args.config_file2,
-                               tla_jar, set(args.modules2), dict(exc2), top_level, args.timeout)
+            r2 = analyze_model(
+                Path(args.spec_dir2),
+                args.spec_file2,
+                args.config_file2,
+                tla_jar,
+                set(args.modules2),
+                dict(exc2),
+                top_level,
+                args.timeout,
+            )
 
         print_comparison(r1, r2, Path(args.spec_dir1).name, Path(args.spec_dir2).name)
 

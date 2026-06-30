@@ -78,8 +78,7 @@ def print_state_diffs(states: List[Tuple[str, List[str]]]) -> None:
         added_keys = [k for k in curr_terms.keys() if k not in prev_terms]
         removed_keys = [k for k in prev_terms.keys() if k not in curr_terms]
         changed_keys = [
-            k for k in curr_terms.keys()
-            if k in prev_terms and curr_terms[k].strip() != prev_terms[k].strip()
+            k for k in curr_terms.keys() if k in prev_terms and curr_terms[k].strip() != prev_terms[k].strip()
         ]
 
         print(f"State {state_id}:")

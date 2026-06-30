@@ -60,9 +60,7 @@ class StateHandler(BaseHandler):
         path = arguments.get("path")
 
         if index is None and indices is None:
-            raise ValidationError(
-                "Must provide either 'index' (single state) or 'indices' (multiple states)"
-            )
+            raise ValidationError("Must provide either 'index' (single state) or 'indices' (multiple states)")
 
         try:
             reader = TLCOutputReader(file_path)
@@ -87,12 +85,7 @@ class StateHandler(BaseHandler):
         except Exception as e:
             raise ExecutionError(f"Error reading state: {e}")
 
-    def _query_path(
-        self,
-        reader: TLCOutputReader,
-        index: Union[int, str],
-        path: str
-    ) -> Dict[str, Any]:
+    def _query_path(self, reader: TLCOutputReader, index: Union[int, str], path: str) -> Dict[str, Any]:
         """Query a nested value at a path."""
         value = reader.get_variable_at_path(index, path)
         state = reader.get_state(index)
@@ -105,10 +98,7 @@ class StateHandler(BaseHandler):
         }
 
     def _get_single_state(
-        self,
-        reader: TLCOutputReader,
-        index: Union[int, str],
-        variables: Optional[List[str]]
+        self, reader: TLCOutputReader, index: Union[int, str], variables: Optional[List[str]]
     ) -> Dict[str, Any]:
         """Get a single state."""
         state = reader.get_state(index, variables)
@@ -121,10 +111,7 @@ class StateHandler(BaseHandler):
         }
 
     def _get_multiple_states(
-        self,
-        reader: TLCOutputReader,
-        indices: Union[str, List],
-        variables: Optional[List[str]]
+        self, reader: TLCOutputReader, indices: Union[str, List], variables: Optional[List[str]]
     ) -> Dict[str, Any]:
         """Get multiple states."""
         states = reader.get_states(indices, variables)

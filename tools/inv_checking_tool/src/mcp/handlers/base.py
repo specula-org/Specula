@@ -19,11 +19,13 @@ class HandlerError(Exception):
 
 class ValidationError(HandlerError):
     """Error during argument validation."""
+
     pass
 
 
 class ExecutionError(HandlerError):
     """Error during tool execution."""
+
     pass
 
 
@@ -56,12 +58,7 @@ class BaseHandler(ABC):
         """
         pass
 
-    def _format_error(
-        self,
-        error_type: str,
-        error_message: str,
-        details: Dict[str, Any] = None
-    ) -> str:
+    def _format_error(self, error_type: str, error_message: str, details: Dict[str, Any] = None) -> str:
         """Format an error response as JSON."""
         response = {
             "success": False,
@@ -69,7 +66,7 @@ class BaseHandler(ABC):
                 "type": error_type,
                 "message": error_message,
                 "tool": self.tool_name,
-            }
+            },
         }
         if details:
             response["error"]["details"] = details
@@ -106,8 +103,4 @@ class BaseHandler(ABC):
         except Exception as e:
             logger.error(f"[{self.tool_name}] Unexpected error: {e}")
             logger.error(traceback.format_exc())
-            return self._format_error(
-                "UnexpectedError",
-                str(e),
-                {"traceback": traceback.format_exc()}
-            )
+            return self._format_error("UnexpectedError", str(e), {"traceback": traceback.format_exc()})

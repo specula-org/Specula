@@ -27,22 +27,11 @@ class VAVHandler(BaseHandler):
         return {
             "type": "object",
             "properties": {
-                "spec_file": {
-                    "type": "string",
-                    "description": "Path to TLA+ spec file (absolute path)"
-                },
-                "timeout": {
-                    "type": "integer",
-                    "description": "Timeout in seconds (default: 60)",
-                    "default": 60
-                },
-                "debug": {
-                    "type": "boolean",
-                    "description": "Enable debug output (default: false)",
-                    "default": False
-                }
+                "spec_file": {"type": "string", "description": "Path to TLA+ spec file (absolute path)"},
+                "timeout": {"type": "integer", "description": "Timeout in seconds (default: 60)", "default": 60},
+                "debug": {"type": "boolean", "description": "Enable debug output (default: false)", "default": False},
             },
-            "required": ["spec_file"]
+            "required": ["spec_file"],
         }
 
     async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -67,37 +56,33 @@ class VAVHandler(BaseHandler):
 
         # Validate spec file exists
         if not os.path.exists(spec_file):
-            raise ExecutionError(
-                f"Spec file not found: {spec_file}",
-                details={"spec_file": spec_file, "exists": False}
-            )
+            raise ExecutionError(f"Spec file not found: {spec_file}", details={"spec_file": spec_file, "exists": False})
 
         # Find CFA jar
         cfa_jar = self._find_cfa_jar()
         if not cfa_jar:
             raise ExecutionError(
                 "CFA tool JAR not found. Please ensure the CFA tool is built.",
-                details={"searched_paths": self._get_search_paths()}
+                details={"searched_paths": self._get_search_paths()},
             )
 
         # Find TLA tools jar (needed for SANY parser)
         tla_jar = self._find_tla_jar()
         if not tla_jar:
-            raise ExecutionError(
-                "TLA+ tools JAR not found.",
-                details={"searched_paths": self._get_tla_search_paths()}
-            )
+            raise ExecutionError("TLA+ tools JAR not found.", details={"searched_paths": self._get_tla_search_paths()})
 
         # Build command
         # The CFA tool expects: input.tla output.tla --algorithm vav
         output_file = "/tmp/vav_output.tla"
         cmd = [
             "java",
-            "-cp", f"{cfa_jar}:{tla_jar}",
+            "-cp",
+            f"{cfa_jar}:{tla_jar}",
             "CFG.SANYTransformerCli",
             spec_file,
             output_file,
-            "--algorithm", "vav"
+            "--algorithm",
+            "vav",
         ]
 
         if debug:
@@ -106,12 +91,7 @@ class VAVHandler(BaseHandler):
         logger.info(f"Running VAV analysis: {' '.join(cmd)}")
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
             output = result.stdout + result.stderr
             logger.info(f"VAV output:\n{output}")
@@ -124,24 +104,19 @@ class VAVHandler(BaseHandler):
                 "issue_count": len(issues),
                 "summary": self._generate_summary(issues),
                 "raw_output": output,
-                "spec_file": spec_file
+                "spec_file": spec_file,
             }
 
         except subprocess.TimeoutExpired:
             raise ExecutionError(
-                f"VAV analysis timed out after {timeout} seconds",
-                details={"spec_file": spec_file, "timeout": timeout}
+                f"VAV analysis timed out after {timeout} seconds", details={"spec_file": spec_file, "timeout": timeout}
             )
         except FileNotFoundError:
             raise ExecutionError(
-                "Java not found. Please ensure Java is installed and in PATH",
-                details={"command": "java"}
+                "Java not found. Please ensure Java is installed and in PATH", details={"command": "java"}
             )
         except Exception as e:
-            raise ExecutionError(
-                f"Failed to run VAV analysis: {e}",
-                details={"error": str(e)}
-            )
+            raise ExecutionError(f"Failed to run VAV analysis: {e}", details={"error": str(e)})
 
     def _find_cfa_jar(self) -> str:
         """Find the CFA tool JAR file."""
@@ -152,7 +127,7 @@ class VAVHandler(BaseHandler):
 
     def _get_search_paths(self) -> List[str]:
         """Get list of paths to search for CFA JAR."""
-        specula_root = os.environ.get('SPECULA_ROOT')
+        specula_root = os.environ.get("SPECULA_ROOT")
         if not specula_root:
             # Calculate relative to this file
             this_file = os.path.abspath(__file__)
@@ -164,10 +139,10 @@ class VAVHandler(BaseHandler):
             specula_root = os.path.dirname(tools_dir)
 
         return [
-            os.path.join(specula_root, 'tools', 'cfa', 'target',
-                        'tlaplus-parser-1.0-SNAPSHOT-jar-with-dependencies.jar'),
-            os.path.join(specula_root, 'tools', 'cfa', 'target',
-                        'tlaplus-parser-1.0-SNAPSHOT.jar'),
+            os.path.join(
+                specula_root, "tools", "cfa", "target", "tlaplus-parser-1.0-SNAPSHOT-jar-with-dependencies.jar"
+            ),
+            os.path.join(specula_root, "tools", "cfa", "target", "tlaplus-parser-1.0-SNAPSHOT.jar"),
         ]
 
     def _find_tla_jar(self) -> str:
@@ -179,7 +154,7 @@ class VAVHandler(BaseHandler):
 
     def _get_tla_search_paths(self) -> List[str]:
         """Get list of paths to search for TLA JAR."""
-        specula_root = os.environ.get('SPECULA_ROOT')
+        specula_root = os.environ.get("SPECULA_ROOT")
         if not specula_root:
             this_file = os.path.abspath(__file__)
             handlers_dir = os.path.dirname(this_file)
@@ -190,7 +165,7 @@ class VAVHandler(BaseHandler):
             specula_root = os.path.dirname(tools_dir)
 
         return [
-            os.path.join(specula_root, 'lib', 'tla2tools.jar'),
+            os.path.join(specula_root, "lib", "tla2tools.jar"),
         ]
 
     def _parse_vav_output(self, output: str) -> List[Dict[str, Any]]:
@@ -208,23 +183,23 @@ class VAVHandler(BaseHandler):
         # [MISSING] FuncName branch N: Variables not assigned: [var1, var2]
         #   Path: ...
         missing_pattern = re.compile(
-            r'\[MISSING\]\s+(\w+)(?:\s+branch\s+(\d+))?:\s*'
-            r'(?:Variables not assigned|Branch missing variables):\s*\[([^\]]+)\]\s*'
-            r'(?:\n\s*Path:\s*(.+))?',
-            re.MULTILINE
+            r"\[MISSING\]\s+(\w+)(?:\s+branch\s+(\d+))?:\s*"
+            r"(?:Variables not assigned|Branch missing variables):\s*\[([^\]]+)\]\s*"
+            r"(?:\n\s*Path:\s*(.+))?",
+            re.MULTILINE,
         )
 
         for match in missing_pattern.finditer(output):
             func_name = match.group(1)
             branch = match.group(2)
-            variables = [v.strip() for v in match.group(3).split(',')]
+            variables = [v.strip() for v in match.group(3).split(",")]
             path = match.group(4).strip() if match.group(4) else None
 
             issue = {
                 "type": "MISSING",
                 "function": func_name,
                 "variables": variables,
-                "message": f"Variables {variables} not assigned in {func_name}"
+                "message": f"Variables {variables} not assigned in {func_name}",
             }
             if branch:
                 issue["branch"] = int(branch)
@@ -239,10 +214,10 @@ class VAVHandler(BaseHandler):
         #   First: ...
         #   Second: ...
         duplicate_pattern = re.compile(
-            r'\[DUPLICATE\]\s+(\w+):\s*Variable\s+\'(\w+)\'\s+assigned multiple times\s*'
-            r'(?:\n\s*First:\s*(.+))?\s*'
-            r'(?:\n\s*Second:\s*(.+))?',
-            re.MULTILINE
+            r"\[DUPLICATE\]\s+(\w+):\s*Variable\s+\'(\w+)\'\s+assigned multiple times\s*"
+            r"(?:\n\s*First:\s*(.+))?\s*"
+            r"(?:\n\s*Second:\s*(.+))?",
+            re.MULTILINE,
         )
 
         for match in duplicate_pattern.finditer(output):
@@ -255,7 +230,7 @@ class VAVHandler(BaseHandler):
                 "type": "DUPLICATE",
                 "function": func_name,
                 "variable": variable,
-                "message": f"Variable '{variable}' assigned multiple times in {func_name}"
+                "message": f"Variable '{variable}' assigned multiple times in {func_name}",
             }
             if first_loc:
                 issue["first_assignment"] = first_loc

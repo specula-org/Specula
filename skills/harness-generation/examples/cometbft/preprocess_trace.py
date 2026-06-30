@@ -4,6 +4,7 @@
 Maps concrete hex addresses to abstract server IDs (s1, s2, s3)
 and concrete block hashes to abstract values (v1, v2, ...).
 """
+
 import json
 import sys
 from collections import OrderedDict

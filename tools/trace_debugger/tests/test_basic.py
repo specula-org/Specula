@@ -5,7 +5,8 @@ import sys
 import os
 
 # Add src to path (go up one level from tests/)
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
 
 def test_imports():
     """Test that all imports work."""
@@ -13,6 +14,7 @@ def test_imports():
 
     try:
         from debugger.breakpoint import Breakpoint, BreakpointHit, BreakpointStatistics
+
         print("  ✅ breakpoint module imported")
     except Exception as e:
         print(f"  ❌ breakpoint import failed: {e}")
@@ -20,6 +22,7 @@ def test_imports():
 
     try:
         from debugger.session import DebugSession
+
         print("  ✅ session module imported")
     except Exception as e:
         print(f"  ❌ session import failed: {e}")
@@ -27,6 +30,7 @@ def test_imports():
 
     try:
         from debugger.utils import collect_variable_values
+
         print("  ✅ utils module imported")
     except Exception as e:
         print(f"  ❌ utils import failed: {e}")
@@ -34,6 +38,7 @@ def test_imports():
 
     try:
         from debugger import DebugSession, Breakpoint
+
         print("  ✅ Package-level import works")
     except Exception as e:
         print(f"  ❌ Package import failed: {e}")
@@ -67,7 +72,7 @@ def test_breakpoint_classes():
             BreakpointHit("test.tla", 200, "Second BP", 0),
             BreakpointHit("test.tla", 300, "Third BP", 5),
         ],
-        total_hits=15
+        total_hits=15,
     )
     print(f"  ✅ Created BreakpointStatistics: {stats.total_hits} total hits")
 
@@ -84,9 +89,9 @@ def test_breakpoint_classes():
 
     # Test print_summary
     print("\n  Testing print_summary():")
-    print("  " + "="*60)
+    print("  " + "=" * 60)
     stats.print_summary()
-    print("  " + "="*60)
+    print("  " + "=" * 60)
 
     print("✅ Breakpoint classes work correctly\n")
     return True
@@ -98,12 +103,7 @@ def test_session_instantiation():
 
     from debugger import DebugSession
 
-    session = DebugSession(
-        spec_file="Test.tla",
-        config_file="Test.cfg",
-        trace_file="test.ndjson",
-        work_dir="/tmp"
-    )
+    session = DebugSession(spec_file="Test.tla", config_file="Test.cfg", trace_file="test.ndjson", work_dir="/tmp")
 
     print(f"  ✅ Created DebugSession")
     print(f"     - spec_file: {session.spec_file}")
@@ -123,9 +123,9 @@ def test_session_instantiation():
 
 def main():
     """Run all tests."""
-    print("="*70)
+    print("=" * 70)
     print("Basic Functionality Tests")
-    print("="*70)
+    print("=" * 70)
     print()
 
     try:
@@ -133,17 +133,18 @@ def main():
         test_breakpoint_classes()
         test_session_instantiation()
 
-        print("="*70)
+        print("=" * 70)
         print("✅ All basic tests passed!")
-        print("="*70)
+        print("=" * 70)
         return 0
 
     except Exception as e:
         print()
-        print("="*70)
+        print("=" * 70)
         print(f"❌ Tests failed: {e}")
-        print("="*70)
+        print("=" * 70)
         import traceback
+
         traceback.print_exc()
         return 1
 
