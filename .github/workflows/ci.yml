@@ -42,6 +42,8 @@ jobs:
           set -euo pipefail
           fail=0
           while IFS= read -r f; do
+            # Skip symlinks; their targets are tracked and linted at their real path.
+            [ -L "$f" ] && continue
             bash -n "$f" || { echo "syntax error: $f"; fail=1; }
           done < <(git ls-files '*.sh')
           exit "$fail"
