@@ -9,9 +9,9 @@ _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from client.dap_client import DAPClient
-from debugger.breakpoint import Breakpoint, BreakpointHit, BreakpointStatistics
-from executor.tlc_process import TLCExecutor
+from client.dap_client import DAPClient  # noqa: E402
+from debugger.breakpoint import Breakpoint, BreakpointHit, BreakpointStatistics  # noqa: E402
+from executor.tlc_process import TLCExecutor  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

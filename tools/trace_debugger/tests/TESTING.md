@@ -102,7 +102,7 @@ Expected total runtime: ~3-4 minutes
 ## Requirements
 
 - **Java 11+**: Required to run TLC
-- **Python 3.8+**: Required for the test suite
+- **Python 3.10+**: Required for the test suite
 - **TLA+ Tools**: `tla2tools.jar` and `CommunityModules-deps.jar` in `lib/` directory
 - **Environment variable** (optional): `SPECULA_ROOT` pointing to the specula root directory
 

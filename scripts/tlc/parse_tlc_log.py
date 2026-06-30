@@ -50,6 +50,11 @@ def print_warnings_errors(lines: list[str]) -> None:
 
 
 def print_state_diffs(states: list[tuple[str, list[str]]]) -> None:
+    def flush_var(var_name: str, buf: list[str], curr_terms: dict[str, str]) -> None:
+        if var_name is None:
+            return
+        curr_terms[var_name] = "\n".join(buf).strip()
+
     prev_terms: dict[str, str] = {}
 
     for state_id, lines in states:
@@ -57,27 +62,20 @@ def print_state_diffs(states: list[tuple[str, list[str]]]) -> None:
         current_var = None
         buffer: list[str] = []
 
-        def flush_var(var_name: str, buf: list[str]) -> None:
-            if var_name is None:
-                return
-            curr_terms[var_name] = "\n".join(buf).strip()
-
         for line in lines:
             m = ASSIGN_RE.match(line)
             if m:
-                flush_var(current_var, buffer)
+                flush_var(current_var, buffer, curr_terms)
                 current_var = m.group(1)
                 buffer = [m.group(2)]
             else:
                 if current_var is not None:
                     buffer.append(line)
-        flush_var(current_var, buffer)
+        flush_var(current_var, buffer, curr_terms)
 
         added_keys = [k for k in curr_terms if k not in prev_terms]
         removed_keys = [k for k in prev_terms if k not in curr_terms]
-        changed_keys = [
-            k for k in curr_terms if k in prev_terms and curr_terms[k].strip() != prev_terms[k].strip()
-        ]
+        changed_keys = [k for k in curr_terms if k in prev_terms and curr_terms[k].strip() != prev_terms[k].strip()]
 
         print(f"State {state_id}:")
         if not added_keys and not removed_keys and not changed_keys:
@@ -118,8 +116,8 @@ def main() -> None:
 
     try:
         lines = args.log_path.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
-        raise SystemExit(f"Log not found: {args.log_path}")
+    except FileNotFoundError as e:
+        raise SystemExit(f"Log not found: {args.log_path}") from e
 
     # Truncate anything after the TLC footer summary (e.g., "<n> states generated").
     for i, ln in enumerate(lines):

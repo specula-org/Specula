@@ -120,7 +120,7 @@ def run_inspection():
     proc = subprocess.Popen(cmd, cwd=work_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
 
     def read_stdout(pipe):
-        for line in iter(pipe.readline, ""):
+        for _line in iter(pipe.readline, ""):
             pass
         pipe.close()
 

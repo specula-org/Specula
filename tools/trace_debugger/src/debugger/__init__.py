@@ -40,9 +40,9 @@ _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from debugger.breakpoint import Breakpoint, BreakpointHit, BreakpointStatistics
-from debugger.session import DebugSession
-from debugger.utils import check_conditions_at_breakpoint, collect_variable_values
+from debugger.breakpoint import Breakpoint, BreakpointHit, BreakpointStatistics  # noqa: E402
+from debugger.session import DebugSession  # noqa: E402
+from debugger.utils import check_conditions_at_breakpoint, collect_variable_values  # noqa: E402
 
 __all__ = [
     # Core classes

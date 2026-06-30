@@ -61,6 +61,6 @@ class SummaryHandler(BaseHandler):
         except FileNotFoundError:
             raise
         except ValueError as e:
-            raise ExecutionError(f"Failed to parse TLC output: {e}")
+            raise ExecutionError(f"Failed to parse TLC output: {e}") from e
         except Exception as e:
-            raise ExecutionError(f"Error reading TLC output: {e}")
+            raise ExecutionError(f"Error reading TLC output: {e}") from e

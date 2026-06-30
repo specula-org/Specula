@@ -66,34 +66,34 @@ class TraceReader:
                 level -= 1
                 if level == 0:
                     return i
-        assert False
+        raise AssertionError("unbalanced delimiters: no matching close found")
 
-    def _post_process_list(self, l, kind):
-        l = self._list_handler(l, kind)
+    def _post_process_list(self, items, kind):
+        items = self._list_handler(items, kind)
         if self.hashable:
             if kind is self.LIST_IS_SET:
-                l = frozenset(l)
+                items = frozenset(items)
             elif kind is self.LIST_IS_SEQ:
-                l = tuple(l)
-        return l
+                items = tuple(items)
+        return items
 
     # return a list
     def _lists(self, string, kind):
-        l = list()
+        items = list()
         if not string:
-            return self._post_process_list(l, kind)
+            return self._post_process_list(items, kind)
         processed, pos, length = 0, 0, len(string)
         while pos < length:
             if string[pos] in self._matching or string[pos] == ",":
                 if string[pos] != ",":
                     pos = pos + self._find_next_match(string[pos:]) + 1
-                l.append(self._variable_converter(string[processed:pos]))
+                items.append(self._variable_converter(string[processed:pos]))
                 processed = pos + 2
                 pos += 1
             pos += 1
         if pos != processed:
-            l.append(self._variable_converter(string[processed:pos]))
-        return self._post_process_list(l, kind)
+            items.append(self._variable_converter(string[processed:pos]))
+        return self._post_process_list(items, kind)
 
     # < string $
     def _chevrons(self, string):
@@ -182,10 +182,7 @@ class TraceReader:
     # convert MC.out to trace file
     @staticmethod
     def get_out_converted_string(file):
-        if not hasattr(file, "read"):
-            f = open(file)
-        else:
-            f = file
+        f = open(file) if not hasattr(file, "read") else file
 
         n_state = 0
         start_msg = "The behavior up to this point is:"
@@ -229,10 +226,7 @@ class TraceReader:
 
     @staticmethod
     def get_dot_converted_string(file):
-        if not hasattr(file, "read"):
-            f = open(file)
-        else:
-            f = file
+        f = open(file) if not hasattr(file, "read") else file
         yield "-" * 16 + " MODULE MC_dot " + "-" * 16 + "\n"
         for line in f:
             if ' [label="' in line:
@@ -244,10 +238,7 @@ class TraceReader:
         f.close()
 
     def get_dot_graph(self, file):
-        if not hasattr(file, "read"):
-            f = open(file)
-        else:
-            f = file
+        f = open(file) if not hasattr(file, "read") else file
         g = defaultdict(lambda: [])
         for line in f:
             if " -> " in line:
@@ -265,10 +256,7 @@ class TraceReader:
 
     # read trace file and yield states as python objects
     def trace_reader_with_state_str(self, file):
-        if not hasattr(file, "read"):
-            f = open(file)
-        else:
-            f = file
+        f = open(file) if not hasattr(file, "read") else file
 
         starting_chars = f.read(2)
         is_dot_file = False
@@ -357,10 +345,7 @@ if __name__ == "__main__":
         save_action_name=args.action, hashable=args.hash_data, sort_dict=args.sort_keys, handler_py=args.handler
     )
 
-    if not args.graph:
-        states = list(tr.trace_reader(args.trace_file))
-    else:
-        states = tr.get_dot_graph(args.trace_file)
+    states = list(tr.trace_reader(args.trace_file)) if not args.graph else tr.get_dot_graph(args.trace_file)
 
     def serialize_sets(obj):
         if isinstance(obj, frozenset):

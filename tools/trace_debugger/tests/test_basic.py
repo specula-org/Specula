@@ -13,6 +13,7 @@ def test_imports():
     print("Testing imports...")
 
     try:
+        from debugger.breakpoint import Breakpoint, BreakpointHit, BreakpointStatistics  # noqa: F401
 
         print("  ✅ breakpoint module imported")
     except Exception as e:
@@ -20,6 +21,7 @@ def test_imports():
         raise
 
     try:
+        from debugger.session import DebugSession  # noqa: F401
 
         print("  ✅ session module imported")
     except Exception as e:
@@ -27,6 +29,7 @@ def test_imports():
         raise
 
     try:
+        from debugger.utils import collect_variable_values  # noqa: F401
 
         print("  ✅ utils module imported")
     except Exception as e:
@@ -34,6 +37,7 @@ def test_imports():
         raise
 
     try:
+        from debugger import Breakpoint, DebugSession  # noqa: F401
 
         print("  ✅ Package-level import works")
     except Exception as e:

@@ -90,9 +90,9 @@ class CompareHandler(BaseHandler):
         except FileNotFoundError:
             raise
         except (IndexError, ValueError) as e:
-            raise ExecutionError(f"Invalid index: {e}")
+            raise ExecutionError(f"Invalid index: {e}") from e
         except Exception as e:
-            raise ExecutionError(f"Error comparing states: {e}")
+            raise ExecutionError(f"Error comparing states: {e}") from e
 
     async def _track_variable(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Track changes to a variable."""
@@ -116,4 +116,4 @@ class CompareHandler(BaseHandler):
         except FileNotFoundError:
             raise
         except Exception as e:
-            raise ExecutionError(f"Error tracking variable: {e}")
+            raise ExecutionError(f"Error tracking variable: {e}") from e

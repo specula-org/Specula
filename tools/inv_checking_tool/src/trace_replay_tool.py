@@ -158,9 +158,9 @@ class TraceReplayer:
 
         try:
             stdout, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as e:
             process.kill()
-            raise RuntimeError(f"Trace replay timed out after {timeout}s")
+            raise RuntimeError(f"Trace replay timed out after {timeout}s") from e
 
         output = stdout.decode("utf-8", errors="replace")
 

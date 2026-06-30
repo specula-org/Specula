@@ -107,16 +107,16 @@ class VAVHandler(BaseHandler):
                 "spec_file": spec_file,
             }
 
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
             raise ExecutionError(
                 f"VAV analysis timed out after {timeout} seconds", details={"spec_file": spec_file, "timeout": timeout}
-            )
-        except FileNotFoundError:
+            ) from e
+        except FileNotFoundError as e:
             raise ExecutionError(
                 "Java not found. Please ensure Java is installed and in PATH", details={"command": "java"}
-            )
+            ) from e
         except Exception as e:
-            raise ExecutionError(f"Failed to run VAV analysis: {e}", details={"error": str(e)})
+            raise ExecutionError(f"Failed to run VAV analysis: {e}", details={"error": str(e)}) from e
 
     def _find_cfa_jar(self) -> str:
         """Find the CFA tool JAR file."""

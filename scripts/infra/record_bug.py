@@ -9,6 +9,7 @@ Supports 4 sheets:
 """
 
 import argparse
+import contextlib
 import sys
 
 import gspread
@@ -65,10 +66,8 @@ def next_bug_number(ws):
     col_values = ws.col_values(1)
     nums = []
     for v in col_values[1:]:
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             nums.append(int(v))
-        except (ValueError, TypeError):
-            pass
     return max(nums, default=0) + 1
 
 
@@ -176,10 +175,7 @@ def append_bug(args):
         num = num_from_ws if sheet_key == targets[0] else num_from_ws
         _, columns, _ = SHEET_MAP[sheet_key]
 
-        if len(columns) == len(DETAILED_COLUMNS):
-            row = build_detailed_row(num, args)
-        else:
-            row = build_simple_row(num, args)
+        row = build_detailed_row(num, args) if len(columns) == len(DETAILED_COLUMNS) else build_simple_row(num, args)
 
         ws.append_row(row, value_input_option="USER_ENTERED")
         total_rows = len(ws.get_all_values())
@@ -280,7 +276,6 @@ def sort_bugs(args):
         sh, ws = get_worksheet(gc, sheet_key)
         _, columns, _ = SHEET_MAP[sheet_key]
         rows = ws.get_all_values()
-        header = rows[0]
         data_rows = [r for r in rows[1:] if any(r)]
 
         if not data_rows:

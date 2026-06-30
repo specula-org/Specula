@@ -79,11 +79,11 @@ class StateHandler(BaseHandler):
         except FileNotFoundError:
             raise
         except PathAccessError as e:
-            raise ExecutionError(f"Path access error: {e}")
+            raise ExecutionError(f"Path access error: {e}") from e
         except (IndexError, ValueError) as e:
-            raise ExecutionError(f"Invalid index: {e}")
+            raise ExecutionError(f"Invalid index: {e}") from e
         except Exception as e:
-            raise ExecutionError(f"Error reading state: {e}")
+            raise ExecutionError(f"Error reading state: {e}") from e
 
     def _query_path(self, reader: TLCOutputReader, index: int | str, path: str) -> dict[str, Any]:
         """Query a nested value at a path."""

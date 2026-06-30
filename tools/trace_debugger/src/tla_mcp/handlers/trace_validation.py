@@ -136,11 +136,11 @@ class TraceValidationHandler(BaseHandler):
 
             return stdout.decode("utf-8", errors="replace")
 
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as e:
             process.kill()
-            raise ExecutionError(f"TLC timed out after {timeout} seconds", details={"timeout": timeout})
+            raise ExecutionError(f"TLC timed out after {timeout} seconds", details={"timeout": timeout}) from e
         except Exception as e:
-            raise ExecutionError(f"Failed to run TLC: {e}", details={"command": " ".join(cmd)})
+            raise ExecutionError(f"Failed to run TLC: {e}", details={"command": " ".join(cmd)}) from e
 
     def _parse_output(self, output: str, include_last_state: bool = False) -> dict[str, Any]:
         """Parse TLC output and return structured result."""

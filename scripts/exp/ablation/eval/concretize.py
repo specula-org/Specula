@@ -43,7 +43,7 @@ result = subprocess.run(
 try:
     d = json.loads(result.stdout)
     text = d.get("result", "")
-except:
+except BaseException:
     text = result.stdout
 
 # Try to parse as JSON directly
@@ -53,7 +53,7 @@ try:
     json_match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text, re.DOTALL)
     if json_match:
         invariants = json.loads(json_match.group())
-except:
+except BaseException:
     pass
 
 # Fallback: extract from code blocks

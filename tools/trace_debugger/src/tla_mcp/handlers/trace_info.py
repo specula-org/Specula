@@ -82,6 +82,8 @@ class TraceInfoHandler(BaseHandler):
         except UnicodeDecodeError as e:
             raise ExecutionError(
                 f"Failed to read trace file (encoding error): {e}", details={"trace_file": trace_file, "error": str(e)}
-            )
+            ) from e
         except OSError as e:
-            raise ExecutionError(f"Failed to read trace file: {e}", details={"trace_file": trace_file, "error": str(e)})
+            raise ExecutionError(
+                f"Failed to read trace file: {e}", details={"trace_file": trace_file, "error": str(e)}
+            ) from e

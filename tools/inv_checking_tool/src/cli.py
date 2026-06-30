@@ -210,10 +210,7 @@ def handle_state(reader: TLCOutputReader, args) -> None:
     """Handle --state command."""
     # Parse the index
     try:
-        if args.state.lower() in ("first", "last"):
-            index = args.state.lower()
-        else:
-            index = int(args.state)
+        index = args.state.lower() if args.state.lower() in ("first", "last") else int(args.state)
     except ValueError:
         print(f"Error: Invalid state index: {args.state}", file=sys.stderr)
         sys.exit(1)

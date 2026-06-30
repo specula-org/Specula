@@ -70,7 +70,6 @@ def parse_variable_path(path: str) -> list[str | int]:
 
         # Handle multiple brackets in one segment: a[0][1]
         remaining = segment
-        first_in_segment = True
 
         while remaining:
             # Check for leading bracket (for subsequent indices)
@@ -107,7 +106,6 @@ def parse_variable_path(path: str) -> list[str | int]:
                     parts.append(index)
 
             remaining = remaining[match.end() :]
-            first_in_segment = False
 
     return parts
 

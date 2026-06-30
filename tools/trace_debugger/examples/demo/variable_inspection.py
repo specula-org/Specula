@@ -48,7 +48,7 @@ class DebugClient:
                     return None
                 body += chunk
             return json.loads(body)
-        except:
+        except BaseException:
             return None
 
     def request(self, command, args=None):
@@ -131,7 +131,7 @@ proc = subprocess.Popen(
 
 
 def read_stdout(pipe):
-    for line in iter(pipe.readline, ""):
+    for _line in iter(pipe.readline, ""):
         pass
     pipe.close()
 

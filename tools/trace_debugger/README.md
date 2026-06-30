@@ -501,7 +501,7 @@ Document each fix in `fix_log.md`:
 ### Prerequisites
 
 - **Java 11+**: Required to run TLC
-- **Python 3.8+**: Required for the debugger tool
+- **Python 3.10+**: Required for the debugger tool
 - **TLA+ Tools**: `tla2tools.jar` and `CommunityModules-deps.jar`
 
 ### Setup
@@ -660,7 +660,7 @@ The `examples/demo/` directory contains complete demonstrations:
 ### Software Requirements
 
 - **Java**: JDK 11 or higher
-- **Python**: 3.8 or higher
+- **Python**: 3.10 or higher
 - **TLA+ Tools**: tla2tools.jar (version 1.7.1+)
 - **CommunityModules**: CommunityModules-deps.jar (for JSON support)
 

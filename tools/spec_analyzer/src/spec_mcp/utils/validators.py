@@ -30,9 +30,9 @@ def validate_arguments(arguments: dict[str, Any], schema: dict[str, Any]) -> dic
         return validated
 
     except jsonschema.ValidationError as e:
-        raise ValidationError(f"Invalid arguments: {e.message}")
+        raise ValidationError(f"Invalid arguments: {e.message}") from e
     except jsonschema.SchemaError as e:
-        raise ValidationError(f"Invalid schema: {e.message}")
+        raise ValidationError(f"Invalid schema: {e.message}") from e
 
 
 def _apply_defaults(arguments: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:

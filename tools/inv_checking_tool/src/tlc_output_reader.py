@@ -279,8 +279,10 @@ class TLCOutputReader:
             else:
                 try:
                     index = int(index)
-                except ValueError:
-                    raise ValueError(f"Invalid index: {index}. Use positive int, negative int, 'first', or 'last'.")
+                except ValueError as e:
+                    raise ValueError(
+                        f"Invalid index: {index}. Use positive int, negative int, 'first', or 'last'."
+                    ) from e
 
         if not self._states:
             raise IndexError("Trace is empty")
@@ -330,17 +332,10 @@ class TLCOutputReader:
         start_str, end_str = parts
 
         # Parse start
-        if start_str.strip() == "":
-            start = 0
-        else:
-            start = self._normalize_index(start_str.strip())
+        start = 0 if start_str.strip() == "" else self._normalize_index(start_str.strip())
 
-        # Parse end
-        if end_str.strip() == "":
-            end = len(self._states)
-        else:
-            # End is inclusive in our API
-            end = self._normalize_index(end_str.strip()) + 1
+        # Parse end (end is inclusive in our API)
+        end = len(self._states) if end_str.strip() == "" else self._normalize_index(end_str.strip()) + 1
 
         return list(range(start, end))
 
@@ -480,7 +475,7 @@ class TLCOutputReader:
 
         raise KeyError(
             f"Variable '{variable_name}' not found in state {state_index}. "
-            f"Available: {[k for k in state.keys() if not k.startswith('_')]}"
+            f"Available: {[k for k in state if not k.startswith('_')]}"
         )
 
     def get_variable_at_path(
@@ -525,7 +520,7 @@ class TLCOutputReader:
             return []
 
         # Get from first state (all states should have same variables)
-        return sorted([k for k in self._states[0].keys() if not k.startswith("_")])
+        return sorted([k for k in self._states[0] if not k.startswith("_")])
 
     def get_actions_list(self) -> list[dict[str, Any]]:
         """Get the sequence of actions in the trace.

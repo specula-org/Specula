@@ -58,8 +58,8 @@ class TraceReplayHandler(BaseHandler):
         fmt_str = arguments.get("trace_format", "json")
         try:
             trace_format = TraceFormat(fmt_str)
-        except ValueError:
-            raise ValidationError(f"Invalid trace_format: {fmt_str}. Must be 'json' or 'tlc'.")
+        except ValueError as e:
+            raise ValidationError(f"Invalid trace_format: {fmt_str}. Must be 'json' or 'tlc'.") from e
 
         # Determine output file path
         output_file = arguments.get("output_file")
@@ -90,6 +90,6 @@ class TraceReplayHandler(BaseHandler):
             }
 
         except RuntimeError as e:
-            raise ExecutionError(str(e))
+            raise ExecutionError(str(e)) from e
         except Exception as e:
-            raise ExecutionError(f"Trace replay failed: {e}")
+            raise ExecutionError(f"Trace replay failed: {e}") from e

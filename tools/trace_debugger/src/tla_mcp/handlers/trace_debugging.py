@@ -15,7 +15,7 @@ _src_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from debugger import Breakpoint, DebugSession
+from debugger import Breakpoint, DebugSession  # noqa: E402
 
 
 class TraceDebuggingHandler(BaseHandler):

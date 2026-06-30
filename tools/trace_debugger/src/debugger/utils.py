@@ -11,8 +11,8 @@ _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from debugger.breakpoint import Breakpoint
-from debugger.session import DebugSession
+from debugger.breakpoint import Breakpoint  # noqa: E402
+from debugger.session import DebugSession  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

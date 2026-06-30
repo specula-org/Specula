@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check a single invariant against a spec using TLC simulation."""
 
+import contextlib
 import json
 import os
 import re
@@ -111,7 +112,5 @@ except subprocess.TimeoutExpired:
 finally:
     # Cleanup
     for f in [check_tla, check_cfg]:
-        try:
+        with contextlib.suppress(BaseException):
             os.remove(f)
-        except:
-            pass

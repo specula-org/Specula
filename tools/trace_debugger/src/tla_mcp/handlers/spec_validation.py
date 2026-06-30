@@ -114,13 +114,13 @@ class SpecValidationHandler(BaseHandler):
                 "work_dir": work_dir,
             }
 
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
             raise ExecutionError(
                 "Syntax validation timed out after 10 seconds", details={"spec_file": spec_file, "timeout": 10}
-            )
-        except FileNotFoundError:
+            ) from e
+        except FileNotFoundError as e:
             raise ExecutionError(
                 "Java not found. Please ensure Java is installed and in PATH", details={"command": "java"}
-            )
+            ) from e
         except Exception as e:
-            raise ExecutionError(f"Failed to run syntax validation: {e}", details={"error": str(e)})
+            raise ExecutionError(f"Failed to run syntax validation: {e}", details={"error": str(e)}) from e
