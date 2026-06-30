@@ -1,0 +1,72 @@
+name: CI
+
+# Lightweight first-step CI: code-cleanliness + the deterministic test suites.
+# Heavier checks (TLA+ SANY parse, trace-validation golden regression, bounded
+# TLC runs) are intentionally left for a follow-up; the LLM pipeline never runs here.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Cancel superseded PR runs, but let every push-to-main build finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Python lint (ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pip install "ruff==0.15.18"
+      # Lint only tracked main-repo Python; submodules are linted in their own repos.
+      - name: ruff check
+        run: git ls-files -z '*.py' | xargs -0 -r ruff check
+      - name: ruff format --check
+        run: git ls-files -z '*.py' | xargs -0 -r ruff format --check
+
+  shell:
+    name: Shell lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: bash -n (syntax)
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS= read -r f; do
+            bash -n "$f" || { echo "syntax error: $f"; fail=1; }
+          done < <(git ls-files '*.sh')
+          exit "$fail"
+      # shellcheck is advisory for now (scripts were never linted); tighten later.
+      - name: shellcheck (advisory)
+        continue-on-error: true
+        run: git ls-files -z '*.sh' | xargs -0 -r shellcheck
+
+  test:
+    name: Python tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test deps
+        run: pip install pytest pytest-asyncio "mcp>=1.0.0" "jsonschema>=4.0.0"
+      - name: inv_checking_tool tests
+        env:
+          PYTHONPATH: tools
+        run: pytest tools/inv_checking_tool/tests -q
+      # trace_debugger has standalone scripts; only test_basic.py runs without a live TLC.
+      - name: trace_debugger basic test
+        env:
+          PYTHONPATH: tools/trace_debugger/src
+        run: python tools/trace_debugger/tests/test_basic.py
