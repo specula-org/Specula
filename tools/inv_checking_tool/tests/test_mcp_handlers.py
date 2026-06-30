@@ -6,11 +6,10 @@ Run with:
 """
 
 import json
-import os
 import sys
-import tempfile
-import pytest
 from pathlib import Path
+
+import pytest
 
 # Add parent directories to path for imports
 current_dir = Path(__file__).parent
@@ -18,8 +17,7 @@ package_dir = current_dir.parent
 tools_dir = package_dir.parent
 sys.path.insert(0, str(tools_dir))
 
-from inv_checking_tool.src.mcp.handlers import SummaryHandler, StateHandler, CompareHandler
-
+from inv_checking_tool.src.mcp.handlers import CompareHandler, StateHandler, SummaryHandler
 
 # Path to test data - use local test data file that ships with the tests
 TEST_DATA_DIR = Path(__file__).parent / "test_data"

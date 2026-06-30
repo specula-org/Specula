@@ -1,8 +1,8 @@
 """TLA+ Trace Debugger MCP Server."""
 
+from mcp import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp import types
 
 from .utils.logger import logger, setup_logging
 
@@ -30,12 +30,12 @@ class TLADebuggerMCPServer:
         Tools are registered using decorators. Handlers are imported
         lazily when needed to avoid import-time dependencies.
         """
+        from .handlers.clean_traces import CleanTracesHandler
+        from .handlers.spec_validation import SpecValidationHandler
         from .handlers.trace_debugging import TraceDebuggingHandler
+        from .handlers.trace_info import TraceInfoHandler
         from .handlers.trace_validation import TraceValidationHandler
         from .handlers.trace_validation_parallel import ParallelTraceValidationHandler
-        from .handlers.trace_info import TraceInfoHandler
-        from .handlers.spec_validation import SpecValidationHandler
-        from .handlers.clean_traces import CleanTracesHandler
 
         # Initialize handlers
         self.handlers = {
@@ -242,7 +242,7 @@ class TLADebuggerMCPServer:
             result = await handler.handle(arguments)
 
             logger.info(f"Handler returned result, length: {len(result)} chars")
-            logger.info(f"About to return TextContent to MCP client...")
+            logger.info("About to return TextContent to MCP client...")
 
             # Force flush before return
             for h in logger.handlers:

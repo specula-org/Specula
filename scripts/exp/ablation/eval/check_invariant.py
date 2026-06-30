@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Check a single invariant against a spec using TLC simulation."""
 
-import json, sys, os, subprocess, tempfile, re
+import json
+import os
+import re
+import subprocess
+import sys
 
 spec_dir = sys.argv[1]
 inv_file = sys.argv[2]  # JSON file with concretized invariants
@@ -27,7 +31,7 @@ check_tla = os.path.join(spec_dir, "_InvCheck.tla")
 check_cfg = os.path.join(spec_dir, "_InvCheck.cfg")
 
 with open(check_tla, "w") as f:
-    f.write(f"---- MODULE _InvCheck ----\n")
+    f.write("---- MODULE _InvCheck ----\n")
     f.write(f"EXTENDS {base_module}\n\n")
     # MC module may define additional operators needed
     f.write(f"MCInv_{inv_name} ==\n")
@@ -36,7 +40,7 @@ with open(check_tla, "w") as f:
     # Remove the "Name ==" prefix if present
     body = re.sub(r"^\w+\s*==\s*", "", body, count=1).strip()
     f.write(f"  {body}\n")
-    f.write(f"====\n")
+    f.write("====\n")
 
 # Copy MC.cfg and replace invariants
 mc_cfg_content = open(os.path.join(spec_dir, "MC.cfg")).read()
@@ -46,12 +50,12 @@ mc_cfg_content = re.sub(r"INVARIANTS?\s*\n(?:\s+\w+\s*\n)*", "", mc_cfg_content)
 # Actually, simpler: extend MC module which already extends base
 with open(check_tla, "w") as f:
     mc_module = re.search(r"MODULE\s+(\w+)", mc_content).group(1)
-    f.write(f"---- MODULE _InvCheck ----\n")
+    f.write("---- MODULE _InvCheck ----\n")
     f.write(f"EXTENDS {mc_module}\n\n")
     f.write(f"MCInv_{inv_name} ==\n")
     body = re.sub(r"^\w+\s*==\s*", "", inv_def, count=1).strip()
     f.write(f"  {body}\n")
-    f.write(f"====\n")
+    f.write("====\n")
 
 with open(check_cfg, "w") as f:
     # Use MC.cfg but replace invariants

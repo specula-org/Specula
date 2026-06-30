@@ -1,7 +1,7 @@
-import socket
 import json
-import time
 import logging
+import socket
+import time
 from collections import deque
 
 logger = logging.getLogger(__name__)
@@ -99,9 +99,9 @@ class DAPClient:
                 self.pending_responses[msg.get("request_seq")] = msg
 
             return msg
-        except socket.timeout:
+        except TimeoutError:
             return None
-        except Exception as e:
+        except Exception:
             self.connected = False
             return None
 

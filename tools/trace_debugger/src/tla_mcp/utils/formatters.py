@@ -1,7 +1,7 @@
 """Response formatting utilities."""
 
 import json
-from typing import Dict, Any, Optional
+from typing import Any
 
 
 def format_error_response(tool_name: str, error_type: str, error_message: str, **kwargs) -> str:
@@ -21,7 +21,7 @@ def format_error_response(tool_name: str, error_type: str, error_message: str, *
     return json.dumps(result, indent=2)
 
 
-def format_success_response(data: Dict[str, Any]) -> str:
+def format_success_response(data: dict[str, Any]) -> str:
     """Format success response as JSON string.
 
     Args:

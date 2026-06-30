@@ -2,10 +2,10 @@
 
 import os
 import subprocess
-from typing import Dict, Any
+from typing import Any
 
-from .base import BaseHandler
 from ..utils.errors import ExecutionError
+from .base import BaseHandler
 
 
 class SpecValidationHandler(BaseHandler):
@@ -20,7 +20,7 @@ class SpecValidationHandler(BaseHandler):
         return "validate_spec_syntax"
 
     @property
-    def argument_schema(self) -> Dict[str, Any]:
+    def argument_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -32,7 +32,7 @@ class SpecValidationHandler(BaseHandler):
             "required": ["spec_file", "config_file", "work_dir"],
         }
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Validate TLA+ spec syntax.
 
         Args:

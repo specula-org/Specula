@@ -4,18 +4,18 @@ import asyncio
 import os
 import sys
 import time
-from typing import Dict, Any, List
+from typing import Any
 
-from .base import BaseHandler
 from ..utils.errors import ExecutionError
 from ..utils.logger import logger
+from .base import BaseHandler
 
 # Add debugger to path
 _src_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from debugger import DebugSession, Breakpoint
+from debugger import Breakpoint, DebugSession
 
 
 class TraceDebuggingHandler(BaseHandler):
@@ -30,7 +30,7 @@ class TraceDebuggingHandler(BaseHandler):
         return "run_trace_debugging"
 
     @property
-    def argument_schema(self) -> Dict[str, Any]:
+    def argument_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -62,7 +62,7 @@ class TraceDebuggingHandler(BaseHandler):
             "required": ["spec_file", "config_file", "trace_file", "work_dir", "breakpoints"],
         }
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute trace validation with breakpoints.
 
         Args:
@@ -81,12 +81,12 @@ class TraceDebuggingHandler(BaseHandler):
         start_time = time.time()
 
         # 1. Create DebugSession
-        logger.info(f"Creating DebugSession...")
+        logger.info("Creating DebugSession...")
         session = self._create_session(arguments)
 
         try:
             # 2. Start TLC debugger
-            logger.info(f"Starting TLC debugger...")
+            logger.info("Starting TLC debugger...")
             if not session.start():
                 raise ExecutionError("Failed to start TLC debugger", details={"spec_file": arguments["spec_file"]})
 
@@ -198,7 +198,7 @@ class TraceDebuggingHandler(BaseHandler):
             logger.info("Closing debug session...")
             session.close()
 
-    def _create_session(self, args: Dict[str, Any]) -> DebugSession:
+    def _create_session(self, args: dict[str, Any]) -> DebugSession:
         """Create DebugSession from arguments."""
         return DebugSession(
             spec_file=args["spec_file"],
@@ -211,7 +211,7 @@ class TraceDebuggingHandler(BaseHandler):
             port=args.get("port", 4712),
         )
 
-    def _parse_breakpoints(self, bp_list: List[Dict]) -> List[Breakpoint]:
+    def _parse_breakpoints(self, bp_list: list[dict]) -> list[Breakpoint]:
         """Parse breakpoint list from arguments."""
         breakpoints = []
         for bp in bp_list:
@@ -225,7 +225,7 @@ class TraceDebuggingHandler(BaseHandler):
             )
         return breakpoints
 
-    def _format_statistics(self, stats) -> Dict[str, Any]:
+    def _format_statistics(self, stats) -> dict[str, Any]:
         """Format BreakpointStatistics to dict."""
         return {
             "total_hits": stats.total_hits,

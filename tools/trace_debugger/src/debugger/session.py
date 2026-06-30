@@ -1,9 +1,8 @@
 """Debug session management for TLA+ trace validation."""
 
+import logging
 import os
 import sys
-import logging
-from typing import List, Dict, Optional
 
 # Add parent directory to path for imports
 _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -11,8 +10,8 @@ if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
 from client.dap_client import DAPClient
+from debugger.breakpoint import Breakpoint, BreakpointHit, BreakpointStatistics
 from executor.tlc_process import TLCExecutor
-from debugger.breakpoint import Breakpoint, BreakpointStatistics, BreakpointHit
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +44,8 @@ class DebugSession:
         config_file: str,
         trace_file: str,
         work_dir: str,
-        tla_jar: Optional[str] = None,
-        community_jar: Optional[str] = None,
+        tla_jar: str | None = None,
+        community_jar: str | None = None,
         port: int = 4712,
         host: str = "127.0.0.1",
     ):
@@ -96,8 +95,8 @@ class DebugSession:
 
         # Session state
         self.is_running = False
-        self.breakpoints: List[Breakpoint] = []
-        self.breakpoint_hits: Dict[tuple, BreakpointHit] = {}  # (file, line) -> BreakpointHit
+        self.breakpoints: list[Breakpoint] = []
+        self.breakpoint_hits: dict[tuple, BreakpointHit] = {}  # (file, line) -> BreakpointHit
 
     def start(self) -> bool:
         """Start TLC debugger and establish connection.
@@ -135,7 +134,7 @@ class DebugSession:
             logger.error(f"Error starting debug session: {e}")
             return False
 
-    def set_breakpoints(self, breakpoints: List[Breakpoint]):
+    def set_breakpoints(self, breakpoints: list[Breakpoint]):
         """Set breakpoints.
 
         Args:
@@ -184,7 +183,7 @@ class DebugSession:
 
         logger.info(f"Set {len(breakpoints)} breakpoint(s) across {len(breakpoints_by_file)} file(s)")
 
-    def run_until_done(self, timeout: Optional[int] = None, on_breakpoint_hit=None) -> BreakpointStatistics:
+    def run_until_done(self, timeout: int | None = None, on_breakpoint_hit=None) -> BreakpointStatistics:
         """Run until termination or timeout.
 
         Args:
@@ -236,7 +235,7 @@ class DebugSession:
                 output_text = event.get("body", {}).get("output", "")
                 # Look for final completion message (not intermediate "Finished checking")
                 if "Finished in" in output_text and " at " in output_text:
-                    logger.info(f"TLC execution finished (detected from output)")
+                    logger.info("TLC execution finished (detected from output)")
                     # Give TLC a moment to send any remaining events
                     time.sleep(0.1)
                     break
@@ -288,7 +287,7 @@ class DebugSession:
 
         return stats
 
-    def evaluate_at_breakpoint(self, expression: str, frame_id: int = 0) -> Optional[str]:
+    def evaluate_at_breakpoint(self, expression: str, frame_id: int = 0) -> str | None:
         """Evaluate expression at current breakpoint.
 
         Called when breakpoint is hit. Evaluates a TLA+ expression.
@@ -306,7 +305,7 @@ class DebugSession:
             return resp["body"].get("result")
         return None
 
-    def get_variables_at_breakpoint(self, var_names: List[str], frame_id: int = 0) -> Dict[str, str]:
+    def get_variables_at_breakpoint(self, var_names: list[str], frame_id: int = 0) -> dict[str, str]:
         """Get variable values at current breakpoint.
 
         Supports:
@@ -359,7 +358,7 @@ class DebugSession:
             scopes_resp = self.client.request("scopes", {"frameId": frame_id})
 
             if not scopes_resp or not scopes_resp.get("success"):
-                logger.warning(f"DEBUG: Failed to get scopes or request unsuccessful")
+                logger.warning("DEBUG: Failed to get scopes or request unsuccessful")
                 return result
 
             logger.info(f"DEBUG: Available scopes: {[s['name'] for s in scopes_resp['body']['scopes']]}")
@@ -400,7 +399,7 @@ class DebugSession:
         logger.info(f"DEBUG: get_variables_at_breakpoint - Found {len(result)} variable(s): {list(result.keys())}")
         return result
 
-    def step_over(self) -> Optional[Dict[str, str]]:
+    def step_over(self) -> dict[str, str] | None:
         """Execute next line (step over function calls).
 
         This executes the current TLA+ expression/statement and stops at the next line,
@@ -424,7 +423,7 @@ class DebugSession:
             logger.info(f"Stepped to {location['file']}:{location['line']}")
         return location
 
-    def step_into(self) -> Optional[Dict[str, str]]:
+    def step_into(self) -> dict[str, str] | None:
         """Step into action/function calls.
 
         In TLA+, this enters the definition of an action when it's called.
@@ -449,7 +448,7 @@ class DebugSession:
             logger.info(f"Stepped into {location['file']}:{location['line']}")
         return location
 
-    def step_out(self) -> Optional[Dict[str, str]]:
+    def step_out(self) -> dict[str, str] | None:
         """Step out of current action/function.
 
         Returns to the caller of the current action. Useful when you've stepped
@@ -473,7 +472,7 @@ class DebugSession:
             logger.info(f"Stepped out to {location['file']}:{location['line']}")
         return location
 
-    def _wait_for_stop_event(self, timeout: int = 10) -> Optional[Dict[str, str]]:
+    def _wait_for_stop_event(self, timeout: int = 10) -> dict[str, str] | None:
         """Wait for stopped event and return current location.
 
         This is a helper method for step operations. After sending a step request

@@ -1,9 +1,9 @@
 """Handler for compare_tlc_states tool."""
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
-from .base import BaseHandler, ValidationError, ExecutionError
 from ...tlc_output_reader import TLCOutputReader
+from .base import BaseHandler, ExecutionError, ValidationError
 
 
 class CompareHandler(BaseHandler):
@@ -18,7 +18,7 @@ class CompareHandler(BaseHandler):
     def tool_name(self) -> str:
         return "compare_tlc_states"
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute the compare_tlc_states tool.
 
         Args:
@@ -66,7 +66,7 @@ class CompareHandler(BaseHandler):
                 "  - 'track_variable' to track variable changes"
             )
 
-    async def _compare_states(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def _compare_states(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Compare two states."""
         file_path = arguments["file_path"]
         index1 = arguments["index1"]
@@ -94,7 +94,7 @@ class CompareHandler(BaseHandler):
         except Exception as e:
             raise ExecutionError(f"Error comparing states: {e}")
 
-    async def _track_variable(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def _track_variable(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Track changes to a variable."""
         file_path = arguments["file_path"]
         variable = arguments["track_variable"]

@@ -8,8 +8,8 @@ This module provides centralized logging configuration, ensuring that:
 
 import logging
 import logging.handlers
-import sys
 import os
+import sys
 
 # Default log directory
 DEFAULT_LOG_DIR = os.path.join(os.path.expanduser("~"), ".specula", "logs", "spec_analyzer")

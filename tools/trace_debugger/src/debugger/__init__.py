@@ -42,7 +42,7 @@ if _src_dir not in sys.path:
 
 from debugger.breakpoint import Breakpoint, BreakpointHit, BreakpointStatistics
 from debugger.session import DebugSession
-from debugger.utils import collect_variable_values, check_conditions_at_breakpoint
+from debugger.utils import check_conditions_at_breakpoint, collect_variable_values
 
 __all__ = [
     # Core classes

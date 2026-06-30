@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Integration test - simulates the examples/coarse_grained_localization.py scenario."""
 
-import sys
 import os
+import sys
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from debugger import DebugSession, Breakpoint
+from debugger import Breakpoint, DebugSession
 
 
 def get_specula_root():

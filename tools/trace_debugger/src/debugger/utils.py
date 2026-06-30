@@ -1,18 +1,18 @@
 """Utility functions for advanced debugging scenarios."""
 
+import logging
 import os
 import sys
 import time
-import logging
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 # Add parent directory to path for imports
 _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from debugger.session import DebugSession
 from debugger.breakpoint import Breakpoint
+from debugger.session import DebugSession
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +21,10 @@ def collect_variable_values(
     session: DebugSession,
     breakpoint_line: int,
     condition: str,
-    variables: List[str],
+    variables: list[str],
     max_samples: int = 10,
-    breakpoint_file: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    breakpoint_file: str | None = None,
+) -> list[dict[str, Any]]:
     """Collect variable values across multiple breakpoint hits.
 
     This is useful for understanding why a condition fails by examining
@@ -120,7 +120,7 @@ def collect_variable_values(
     return samples
 
 
-def check_conditions_at_breakpoint(session: DebugSession, conditions: Dict[str, str]) -> Dict[str, Any]:
+def check_conditions_at_breakpoint(session: DebugSession, conditions: dict[str, str]) -> dict[str, Any]:
     """Check multiple conditions at current breakpoint.
 
     This assumes the debugger is already stopped at a breakpoint.

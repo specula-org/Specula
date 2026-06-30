@@ -26,21 +26,20 @@ Example usage:
 
 import io
 import json
-from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
+from .trace_reader import TraceReader
+from .utils.path_parser import PathAccessError, format_value, get_value_at_path
 from .utils.preprocessing import (
     ERROR_BEHAVIOR_MARKER,
     convert_to_trace_format,
     extract_counterexample_path,
     extract_statistics,
     extract_violation_info,
-    preprocess_tlc_output,
     strip_ansi_codes,
 )
-from .utils.path_parser import get_value_at_path, format_value, PathAccessError
-from .trace_reader import TraceReader
 
 
 @dataclass
@@ -48,20 +47,20 @@ class StateInfo:
     """Information about a single state in the trace."""
 
     index: int  # 1-indexed state number
-    action: Optional[str]  # Action name (e.g., "MCInit", "HandleRequestVoteRequest")
-    action_detail: Optional[str]  # Full action string with location
-    variables: Dict[str, Any]  # State variables
+    action: str | None  # Action name (e.g., "MCInit", "HandleRequestVoteRequest")
+    action_detail: str | None  # Full action string with location
+    variables: dict[str, Any]  # State variables
 
 
 @dataclass
 class TraceSummary:
     """Summary information about the TLC trace."""
 
-    violation_type: Optional[str]  # "invariant" or "property"
-    violation_name: Optional[str]  # Name of the violated invariant/property
+    violation_type: str | None  # "invariant" or "property"
+    violation_name: str | None  # Name of the violated invariant/property
     trace_length: int  # Number of states in the trace
-    actions: List[str]  # List of action names
-    statistics: Dict[str, Any] = field(default_factory=dict)  # TLC statistics
+    actions: list[str]  # List of action names
+    statistics: dict[str, Any] = field(default_factory=dict)  # TLC statistics
 
 
 class TLCOutputReader:
@@ -100,9 +99,9 @@ class TLCOutputReader:
 
         self.file_path = file_path
         self.mode = mode
-        self._states: List[Dict[str, Any]] = []
-        self._metadata: Dict[str, Any] = {}
-        self._action_details: List[str] = []
+        self._states: list[dict[str, Any]] = []
+        self._metadata: dict[str, Any] = {}
+        self._action_details: list[str] = []
 
         self._load_and_parse(save_action_name)
 
@@ -152,7 +151,7 @@ class TLCOutputReader:
         else:
             self._load_text(content, save_action_name)
 
-    def _load_json(self, counterexample_path: Optional[str], save_action_name: bool) -> None:
+    def _load_json(self, counterexample_path: str | None, save_action_name: bool) -> None:
         """Load trace from a JSON counterexample file."""
         if not counterexample_path:
             raise ValueError(
@@ -200,9 +199,9 @@ class TLCOutputReader:
 
     def _parse_trace(
         self,
-        trace: Dict[str, Any],
+        trace: dict[str, Any],
         save_action_name: bool,
-    ) -> tuple[List[Dict[str, Any]], List[Optional[str]]]:
+    ) -> tuple[list[dict[str, Any]], list[str | None]]:
         action_by_state = {}
         detail_by_state = {}
         for entry in trace.get("action", []):
@@ -236,7 +235,7 @@ class TLCOutputReader:
         return states, details
 
     @staticmethod
-    def _format_action_detail(action: Dict[str, Any]) -> Optional[str]:
+    def _format_action_detail(action: dict[str, Any]) -> str | None:
         name = action.get("name")
         if not name:
             return None
@@ -254,7 +253,7 @@ class TLCOutputReader:
         """Return the number of states in the trace."""
         return len(self._states)
 
-    def _normalize_index(self, index: Union[int, str]) -> int:
+    def _normalize_index(self, index: int | str) -> int:
         """Convert various index formats to a 0-based index.
 
         Args:
@@ -301,7 +300,7 @@ class TLCOutputReader:
 
         return idx
 
-    def _parse_range(self, range_str: str) -> List[int]:
+    def _parse_range(self, range_str: str) -> list[int]:
         """Parse a range string into a list of 0-based indices.
 
         Args:
@@ -371,8 +370,8 @@ class TLCOutputReader:
 
     def get_state(
         self,
-        index: Union[int, str],
-        variables: Optional[List[str]] = None,
+        index: int | str,
+        variables: list[str] | None = None,
     ) -> StateInfo:
         """Get a single state by index.
 
@@ -423,9 +422,9 @@ class TLCOutputReader:
 
     def get_states(
         self,
-        indices: Union[str, List[Union[int, str]]],
-        variables: Optional[List[str]] = None,
-    ) -> List[StateInfo]:
+        indices: str | list[int | str],
+        variables: list[str] | None = None,
+    ) -> list[StateInfo]:
         """Get multiple states.
 
         Args:
@@ -453,7 +452,7 @@ class TLCOutputReader:
 
     def get_variable(
         self,
-        state_index: Union[int, str],
+        state_index: int | str,
         variable_name: str,
     ) -> Any:
         """Get a specific variable from a state.
@@ -486,7 +485,7 @@ class TLCOutputReader:
 
     def get_variable_at_path(
         self,
-        state_index: Union[int, str],
+        state_index: int | str,
         path: str,
     ) -> Any:
         """Get a nested variable value using path syntax.
@@ -516,7 +515,7 @@ class TLCOutputReader:
 
         return get_value_at_path(clean_state, path)
 
-    def get_all_variables(self) -> List[str]:
+    def get_all_variables(self) -> list[str]:
         """Get list of all variable names in the trace.
 
         Returns:
@@ -528,7 +527,7 @@ class TLCOutputReader:
         # Get from first state (all states should have same variables)
         return sorted([k for k in self._states[0].keys() if not k.startswith("_")])
 
-    def get_actions_list(self) -> List[Dict[str, Any]]:
+    def get_actions_list(self) -> list[dict[str, Any]]:
         """Get the sequence of actions in the trace.
 
         Returns:
@@ -554,10 +553,10 @@ class TLCOutputReader:
 
     def compare_states(
         self,
-        index1: Union[int, str],
-        index2: Union[int, str],
-        ignore_vars: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        index1: int | str,
+        index2: int | str,
+        ignore_vars: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Compare two states and find differences.
 
         Args:
@@ -618,8 +617,8 @@ class TLCOutputReader:
     def find_variable_changes(
         self,
         variable_name: str,
-        path: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        path: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Find all states where a variable changes.
 
         Args:
@@ -675,7 +674,7 @@ class TLCOutputReader:
     def search_states(
         self,
         predicate: callable,
-    ) -> List[int]:
+    ) -> list[int]:
         """Search for states matching a predicate.
 
         Args:
@@ -699,8 +698,8 @@ class TLCOutputReader:
 
     def format_state(
         self,
-        index: Union[int, str],
-        variables: Optional[List[str]] = None,
+        index: int | str,
+        variables: list[str] | None = None,
         max_depth: int = 4,
     ) -> str:
         """Format a state for display.

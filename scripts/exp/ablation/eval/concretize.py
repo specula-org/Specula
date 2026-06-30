@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Concretize invariant templates to a specific TLA+ spec using claude CLI."""
 
-import json, sys, re, subprocess, os
+import json
+import re
+import subprocess
+import sys
 
 spec_path = sys.argv[1]
 template_path = sys.argv[2]

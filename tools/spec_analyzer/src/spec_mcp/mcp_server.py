@@ -1,8 +1,8 @@
 """TLA+ Spec Analyzer MCP Server."""
 
+from mcp import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp import types
 
 from .utils.logger import logger, setup_logging
 

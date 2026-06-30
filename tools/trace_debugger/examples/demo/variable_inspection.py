@@ -1,4 +1,9 @@
-import subprocess, time, socket, json, os, threading
+import json
+import os
+import socket
+import subprocess
+import threading
+import time
 
 
 class DebugClient:
@@ -23,7 +28,7 @@ class DebugClient:
         if args:
             msg["arguments"] = args
         body = json.dumps(msg)
-        self.sock.sendall(f"Content-Length: {len(body)}\r\n\r\n{body}".encode("utf-8"))
+        self.sock.sendall(f"Content-Length: {len(body)}\r\n\r\n{body}".encode())
         self.seq += 1
         return self.seq - 1
 

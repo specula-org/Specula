@@ -1,9 +1,9 @@
-import subprocess
-import time
-import socket
 import json
 import os
+import socket
+import subprocess
 import threading
+import time
 
 
 class DebugClient:

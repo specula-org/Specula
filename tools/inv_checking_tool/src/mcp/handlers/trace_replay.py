@@ -1,10 +1,10 @@
 """Handler for run_trace_replay tool."""
 
 import os
-from typing import Any, Dict
+from typing import Any
 
-from .base import BaseHandler, ValidationError, ExecutionError
-from ...trace_replay_tool import TraceReplayer, TraceFormat
+from ...trace_replay_tool import TraceFormat, TraceReplayer
+from .base import BaseHandler, ExecutionError, ValidationError
 
 
 class TraceReplayHandler(BaseHandler):
@@ -19,7 +19,7 @@ class TraceReplayHandler(BaseHandler):
     def tool_name(self) -> str:
         return "run_trace_replay"
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute trace replay.
 
         Args:

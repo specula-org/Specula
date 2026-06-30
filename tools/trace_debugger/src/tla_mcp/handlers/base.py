@@ -3,12 +3,12 @@
 import json
 import traceback
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Any
 
+from ..utils.errors import ExecutionError, ValidationError
+from ..utils.formatters import format_error_response
 from ..utils.logger import logger
 from ..utils.validators import validate_arguments
-from ..utils.formatters import format_error_response
-from ..utils.errors import ValidationError, ExecutionError
 
 
 class BaseHandler(ABC):
@@ -28,7 +28,7 @@ class BaseHandler(ABC):
 
     @property
     @abstractmethod
-    def argument_schema(self) -> Dict[str, Any]:
+    def argument_schema(self) -> dict[str, Any]:
         """JSON schema for arguments validation.
 
         Should be a valid JSON Schema (draft 7) object with:
@@ -49,7 +49,7 @@ class BaseHandler(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute the tool logic.
 
         Args:
@@ -64,7 +64,7 @@ class BaseHandler(ABC):
         """
         pass
 
-    async def handle(self, arguments: Dict[str, Any]) -> str:
+    async def handle(self, arguments: dict[str, Any]) -> str:
         """Handle tool call with validation and error handling.
 
         This is the main entry point for tool execution. It:

@@ -3,8 +3,9 @@
 
 import asyncio
 import json
-import sys
 import os
+import sys
+
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -67,7 +68,7 @@ async def test_advanced_features():
         },
     }
 
-    print(f"\nTesting with variables:")
+    print("\nTesting with variables:")
     for var in arguments["collect_variables"]["variables"]:
         print(f"  - {var}")
 

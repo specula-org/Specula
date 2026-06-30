@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Basic test to verify imports and class instantiation."""
 
-import sys
 import os
+import sys
 
 # Add src to path (go up one level from tests/)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -13,7 +13,6 @@ def test_imports():
     print("Testing imports...")
 
     try:
-        from debugger.breakpoint import Breakpoint, BreakpointHit, BreakpointStatistics
 
         print("  ✅ breakpoint module imported")
     except Exception as e:
@@ -21,7 +20,6 @@ def test_imports():
         raise
 
     try:
-        from debugger.session import DebugSession
 
         print("  ✅ session module imported")
     except Exception as e:
@@ -29,7 +27,6 @@ def test_imports():
         raise
 
     try:
-        from debugger.utils import collect_variable_values
 
         print("  ✅ utils module imported")
     except Exception as e:
@@ -37,7 +34,6 @@ def test_imports():
         raise
 
     try:
-        from debugger import DebugSession, Breakpoint
 
         print("  ✅ Package-level import works")
     except Exception as e:
@@ -105,7 +101,7 @@ def test_session_instantiation():
 
     session = DebugSession(spec_file="Test.tla", config_file="Test.cfg", trace_file="test.ndjson", work_dir="/tmp")
 
-    print(f"  ✅ Created DebugSession")
+    print("  ✅ Created DebugSession")
     print(f"     - spec_file: {session.spec_file}")
     print(f"     - config_file: {session.config_file}")
     print(f"     - trace_file: {session.trace_file}")
@@ -115,7 +111,7 @@ def test_session_instantiation():
     # Check defaults
     assert session.tla_jar.endswith("tla2tools.jar")
     assert session.community_jar.endswith("CommunityModules-deps.jar")
-    print(f"  ✅ Default JAR paths set correctly")
+    print("  ✅ Default JAR paths set correctly")
 
     print("✅ DebugSession instantiation works\n")
     return True

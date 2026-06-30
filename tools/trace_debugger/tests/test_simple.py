@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Simple test without breakpoint conditions."""
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from debugger import DebugSession, Breakpoint
+from debugger import Breakpoint, DebugSession
 
 
 def get_specula_root():

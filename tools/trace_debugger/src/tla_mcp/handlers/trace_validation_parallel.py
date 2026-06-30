@@ -4,11 +4,11 @@ import asyncio
 import os
 import shutil
 import tempfile
-from typing import Dict, Any, List
+from typing import Any
 
-from .trace_validation import TraceValidationHandler
 from ..utils.errors import ExecutionError
 from ..utils.logger import logger
+from .trace_validation import TraceValidationHandler
 
 
 class ParallelTraceValidationHandler(TraceValidationHandler):
@@ -23,7 +23,7 @@ class ParallelTraceValidationHandler(TraceValidationHandler):
         return "run_trace_validation_parallel"
 
     @property
-    def argument_schema(self) -> Dict[str, Any]:
+    def argument_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -42,7 +42,7 @@ class ParallelTraceValidationHandler(TraceValidationHandler):
             "required": ["spec_file", "config_file", "trace_files", "work_dir"],
         }
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute trace validation for multiple traces in parallel."""
         trace_files = arguments["trace_files"]
         if not trace_files:
@@ -53,7 +53,7 @@ class ParallelTraceValidationHandler(TraceValidationHandler):
 
         logger.info("Running TLC validation for %d trace(s) with parallelism=%d", len(trace_files), max_parallel)
 
-        async def run_one(trace_file: str) -> Dict[str, Any]:
+        async def run_one(trace_file: str) -> dict[str, Any]:
             async with semaphore:
                 args = dict(arguments)
                 args["trace_file"] = trace_file
@@ -87,14 +87,14 @@ class ParallelTraceValidationHandler(TraceValidationHandler):
 
         return response
 
-    def _condense_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+    def _condense_result(self, result: dict[str, Any]) -> dict[str, Any]:
         condensed = {"status": result.get("status", "error")}
         suggestion = result.get("suggestion")
         if suggestion:
             condensed["suggestion"] = suggestion
         return condensed
 
-    def _summarize_status(self, results: List[Dict[str, Any]]) -> Dict[str, str]:
+    def _summarize_status(self, results: list[dict[str, Any]]) -> dict[str, str]:
         summary = {}
         for result in results:
             if result["status"] == "success":

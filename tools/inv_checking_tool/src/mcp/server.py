@@ -3,11 +3,11 @@
 import logging
 import sys
 
+from mcp import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp import types
 
-from .handlers import SummaryHandler, StateHandler, CompareHandler, TraceReplayHandler
+from .handlers import CompareHandler, StateHandler, SummaryHandler, TraceReplayHandler
 
 # Setup logging
 logging.basicConfig(

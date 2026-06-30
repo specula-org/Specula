@@ -9,8 +9,7 @@ And retrieve values from nested Python data structures.
 """
 
 import re
-from typing import Any, List, Union
-
+from typing import Any
 
 # Pattern to match path segments with optional array index
 # Matches: "name", "name[0]", "name[key]"
@@ -32,7 +31,7 @@ class PathAccessError(Exception):
     pass
 
 
-def parse_variable_path(path: str) -> List[Union[str, int]]:
+def parse_variable_path(path: str) -> list[str | int]:
     """Parse a dot-separated path into a list of keys/indices.
 
     Supports the following path formats:
@@ -113,7 +112,7 @@ def parse_variable_path(path: str) -> List[Union[str, int]]:
     return parts
 
 
-def get_value_at_path(data: Any, path: Union[str, List[Union[str, int]]]) -> Any:
+def get_value_at_path(data: Any, path: str | list[str | int]) -> Any:
     """Get a value from nested data structure using a path.
 
     Args:

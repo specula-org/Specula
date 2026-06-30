@@ -7,12 +7,11 @@ It provides concise feedback suitable for AI agents.
 import asyncio
 import os
 import re
-import subprocess
-from typing import Dict, Any, Optional, Tuple
+from typing import Any
 
-from .base import BaseHandler
 from ..utils.errors import ExecutionError
 from ..utils.logger import logger
+from .base import BaseHandler
 
 
 class TraceValidationHandler(BaseHandler):
@@ -26,7 +25,7 @@ class TraceValidationHandler(BaseHandler):
         return "run_trace_validation"
 
     @property
-    def argument_schema(self) -> Dict[str, Any]:
+    def argument_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -46,7 +45,7 @@ class TraceValidationHandler(BaseHandler):
             "required": ["spec_file", "config_file", "trace_file", "work_dir"],
         }
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute trace validation.
 
         Returns:
@@ -74,7 +73,7 @@ class TraceValidationHandler(BaseHandler):
         include_last_state = arguments.get("include_last_state", False)
         return self._parse_output(output, include_last_state)
 
-    def _get_jar_paths(self, args: Dict[str, Any]) -> Tuple[str, str]:
+    def _get_jar_paths(self, args: dict[str, Any]) -> tuple[str, str]:
         """Get TLA+ JAR paths."""
         tla_jar = args.get("tla_jar")
         community_jar = args.get("community_jar")
@@ -99,7 +98,7 @@ class TraceValidationHandler(BaseHandler):
 
         return tla_jar, community_jar
 
-    def _build_command(self, args: Dict[str, Any], tla_jar: str, community_jar: str) -> list:
+    def _build_command(self, args: dict[str, Any], tla_jar: str, community_jar: str) -> list:
         """Build TLC command."""
         classpath = f"{tla_jar}:{community_jar}"
         metadir = args.get("metadir", "/tmp/tlc_validation")
@@ -121,7 +120,7 @@ class TraceValidationHandler(BaseHandler):
             "0.9",
         ]
 
-    async def _run_tlc(self, cmd: list, args: Dict[str, Any]) -> str:
+    async def _run_tlc(self, cmd: list, args: dict[str, Any]) -> str:
         """Run TLC and return output."""
         env = os.environ.copy()
         env["JSON"] = args["trace_file"]
@@ -143,7 +142,7 @@ class TraceValidationHandler(BaseHandler):
         except Exception as e:
             raise ExecutionError(f"Failed to run TLC: {e}", details={"command": " ".join(cmd)})
 
-    def _parse_output(self, output: str, include_last_state: bool = False) -> Dict[str, Any]:
+    def _parse_output(self, output: str, include_last_state: bool = False) -> dict[str, Any]:
         """Parse TLC output and return structured result."""
         # Check for success
         if "Model checking completed. No error has been found." in output:
@@ -160,7 +159,7 @@ class TraceValidationHandler(BaseHandler):
         # Other error - return raw output
         return {"status": "error", "message": "TLC reported an error", "raw_output": output}
 
-    def _parse_trace_mismatch(self, output: str, include_last_state: bool = False) -> Dict[str, Any]:
+    def _parse_trace_mismatch(self, output: str, include_last_state: bool = False) -> dict[str, Any]:
         """Parse trace mismatch output."""
         # Find all states with their l values
         # Pattern: "State N: <...>" followed by "/\ l = M"

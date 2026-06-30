@@ -29,14 +29,12 @@ Examples:
 """
 
 import argparse
-import subprocess
-import re
 import os
-import sys
-from pathlib import Path
+import re
+import subprocess
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Optional, Set, Dict, List, Tuple
+from pathlib import Path
 
 # Default paths (relative to script location)
 SCRIPT_DIR = Path(__file__).parent
@@ -53,7 +51,7 @@ class CoverageResult:
 
     total: int = 0
     covered: int = 0
-    uncovered_lines: Dict[str, Set[int]] = field(default_factory=lambda: defaultdict(set))
+    uncovered_lines: dict[str, set[int]] = field(default_factory=lambda: defaultdict(set))
 
     @property
     def pct(self) -> float:
@@ -64,7 +62,7 @@ class CoverageResult:
         return self.total - self.covered
 
 
-def parse_exclude_range(spec: str) -> Tuple[str, int, int]:
+def parse_exclude_range(spec: str) -> tuple[str, int, int]:
     """Parse 'module:start-end' format."""
     if ":" not in spec:
         raise ValueError(f"Invalid format: {spec}. Expected 'module:start-end'")
@@ -80,9 +78,9 @@ def run_tlc(
     spec_file: str,
     config_file: str,
     tla_jar: Path,
-    trace_file: Optional[Path] = None,
+    trace_file: Path | None = None,
     timeout: int = 300,
-    community_jar: Optional[Path] = None,
+    community_jar: Path | None = None,
 ) -> str:
     """Run TLC with coverage enabled."""
     env = os.environ.copy()
@@ -115,8 +113,8 @@ def run_tlc(
 
 
 def parse_coverage(
-    output: str, modules: Set[str], exclude_ranges: Dict[str, List[Tuple[int, int]]], top_level_only: bool = True
-) -> Dict[Tuple, int]:
+    output: str, modules: set[str], exclude_ranges: dict[str, list[tuple[int, int]]], top_level_only: bool = True
+) -> dict[tuple, int]:
     """Parse TLC coverage output."""
     coverage = {}
 
@@ -159,19 +157,19 @@ def analyze_traces(
     spec_file: str,
     config_file: str,
     tla_jar: Path,
-    modules: Set[str],
-    exclude_ranges: Dict[str, List[Tuple[int, int]]],
+    modules: set[str],
+    exclude_ranges: dict[str, list[tuple[int, int]]],
     top_level_only: bool,
     timeout: int,
     verbose: bool,
-    community_jar: Optional[Path] = None,
+    community_jar: Path | None = None,
 ) -> CoverageResult:
     """Analyze coverage across multiple trace files."""
     trace_files = sorted(trace_dir.glob("*.ndjson"))
     if verbose:
         print(f"Found {len(trace_files)} trace files\n")
 
-    all_stmts: Dict[Tuple, int] = {}
+    all_stmts: dict[tuple, int] = {}
 
     for i, tf in enumerate(trace_files, 1):
         if verbose:
@@ -206,8 +204,8 @@ def analyze_model(
     spec_file: str,
     config_file: str,
     tla_jar: Path,
-    modules: Set[str],
-    exclude_ranges: Dict[str, List[Tuple[int, int]]],
+    modules: set[str],
+    exclude_ranges: dict[str, list[tuple[int, int]]],
     top_level_only: bool,
     timeout: int,
 ) -> CoverageResult:
@@ -217,7 +215,7 @@ def analyze_model(
     return build_result(cov)
 
 
-def build_result(stmts: Dict[Tuple, int]) -> CoverageResult:
+def build_result(stmts: dict[tuple, int]) -> CoverageResult:
     """Build CoverageResult from statements dict."""
     result = CoverageResult()
     result.total = len(stmts)

@@ -43,7 +43,6 @@ Example:
 
 import asyncio
 import os
-from typing import Optional, List, Tuple
 from enum import Enum
 
 
@@ -61,10 +60,10 @@ class TraceReplayer:
     and output the result as a JSON file for further processing.
     """
 
-    def __init__(self, tla_jar: Optional[str] = None, community_jar: Optional[str] = None):
+    def __init__(self, tla_jar: str | None = None, community_jar: str | None = None):
         self.tla_jar, self.community_jar = self._resolve_jar_paths(tla_jar, community_jar)
 
-    def _resolve_jar_paths(self, tla_jar: Optional[str], community_jar: Optional[str]) -> Tuple[str, str]:
+    def _resolve_jar_paths(self, tla_jar: str | None, community_jar: str | None) -> tuple[str, str]:
         """Resolve JAR paths, using defaults if not provided."""
         if tla_jar is None or community_jar is None:
             specula_root = os.environ.get("SPECULA_ROOT")
@@ -89,10 +88,10 @@ class TraceReplayer:
         spec_file: str,
         input_trace: str,
         output_trace: str,
-        config_file: Optional[str],
+        config_file: str | None,
         trace_format: TraceFormat,
-        java_opts: Optional[List[str]] = None,
-    ) -> List[str]:
+        java_opts: list[str] | None = None,
+    ) -> list[str]:
         """Build the TLC command for trace replay."""
         classpath = f"{self.tla_jar}:{self.community_jar}"
 
@@ -115,12 +114,12 @@ class TraceReplayer:
         trace_file: str,
         work_dir: str,
         output_file: str,
-        config_file: Optional[str] = None,
+        config_file: str | None = None,
         trace_format: TraceFormat = TraceFormat.JSON,
-        java_opts: Optional[List[str]] = None,
+        java_opts: list[str] | None = None,
         timeout: int = 300,
-        tlc_output_file: Optional[str] = None,
-    ) -> Tuple[str, str]:
+        tlc_output_file: str | None = None,
+    ) -> tuple[str, str]:
         """Replay a trace file and save the result as JSON.
 
         Args:

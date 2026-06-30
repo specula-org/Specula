@@ -4,12 +4,12 @@
 This test verifies that the step operations work correctly with TLC debugger.
 """
 
+import logging
 import os
 import sys
-import time
-import logging
 import tempfile
 import textwrap
+import time
 
 # Add src to path
 test_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,7 +17,7 @@ tool_dir = os.path.dirname(test_dir)
 src_dir = os.path.join(tool_dir, "src")
 sys.path.insert(0, src_dir)
 
-from debugger import DebugSession, Breakpoint
+from debugger import Breakpoint, DebugSession
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -133,7 +133,7 @@ def test_step_over():
             location = session.step_over()
 
             if location:
-                logger.info(f"✅ Step over successful - returned location")
+                logger.info("✅ Step over successful - returned location")
                 logger.info(f"   Location: {location['file']}:{location['line']}")
                 return True
             else:
@@ -208,9 +208,9 @@ def test_step_into():
                 logger.error("❌ step_into returned None")
                 return False
 
-            logger.info(f"✅ Step into successful - returned location")
+            logger.info("✅ Step into successful - returned location")
             logger.info(f"   Location: {location['file']}:{location['line']}")
-            logger.info(f"   Note: TLA+ step_into behavior may differ from imperative languages")
+            logger.info("   Note: TLA+ step_into behavior may differ from imperative languages")
             return True
 
         except Exception as e:
@@ -276,7 +276,7 @@ def test_step_out():
             location = session.step_out()
 
             if location:
-                logger.info(f"✅ Step out successful - returned location")
+                logger.info("✅ Step out successful - returned location")
                 logger.info(f"   Location: {location['file']}:{location['line']}")
                 return True
             else:

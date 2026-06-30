@@ -1,12 +1,12 @@
 """TLA+ Trace Validation Debugger."""
 
 from .debugger import (
-    DebugSession,
     Breakpoint,
     BreakpointHit,
     BreakpointStatistics,
-    collect_variable_values,
+    DebugSession,
     check_conditions_at_breakpoint,
+    collect_variable_values,
 )
 
 __all__ = [

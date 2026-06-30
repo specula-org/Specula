@@ -3,11 +3,11 @@
 import os
 import re
 import subprocess
-from typing import Dict, Any, List
+from typing import Any
 
-from .base import BaseHandler
 from ..utils.errors import ExecutionError
 from ..utils.logger import logger
+from .base import BaseHandler
 
 
 class VAVHandler(BaseHandler):
@@ -23,7 +23,7 @@ class VAVHandler(BaseHandler):
         return "run_vav_analysis"
 
     @property
-    def argument_schema(self) -> Dict[str, Any]:
+    def argument_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -34,7 +34,7 @@ class VAVHandler(BaseHandler):
             "required": ["spec_file"],
         }
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Run VAV analysis on a TLA+ spec.
 
         Args:
@@ -125,7 +125,7 @@ class VAVHandler(BaseHandler):
                 return path
         return None
 
-    def _get_search_paths(self) -> List[str]:
+    def _get_search_paths(self) -> list[str]:
         """Get list of paths to search for CFA JAR."""
         specula_root = os.environ.get("SPECULA_ROOT")
         if not specula_root:
@@ -152,7 +152,7 @@ class VAVHandler(BaseHandler):
                 return path
         return None
 
-    def _get_tla_search_paths(self) -> List[str]:
+    def _get_tla_search_paths(self) -> list[str]:
         """Get list of paths to search for TLA JAR."""
         specula_root = os.environ.get("SPECULA_ROOT")
         if not specula_root:
@@ -168,7 +168,7 @@ class VAVHandler(BaseHandler):
             os.path.join(specula_root, "lib", "tla2tools.jar"),
         ]
 
-    def _parse_vav_output(self, output: str) -> List[Dict[str, Any]]:
+    def _parse_vav_output(self, output: str) -> list[dict[str, Any]]:
         """Parse VAV output to extract issues.
 
         Args:
@@ -241,7 +241,7 @@ class VAVHandler(BaseHandler):
 
         return issues
 
-    def _generate_summary(self, issues: List[Dict[str, Any]]) -> str:
+    def _generate_summary(self, issues: list[dict[str, Any]]) -> str:
         """Generate a human-readable summary of issues.
 
         Args:

@@ -40,7 +40,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import List, Optional
 
 # Handle both direct execution and module execution
 try:

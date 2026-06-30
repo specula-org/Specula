@@ -7,12 +7,13 @@ Or run directly:
     python tools/inv_checking_tool/tests/test_tlc_output_reader.py
 """
 
+import json
 import os
 import sys
-import json
 import tempfile
-import pytest
 from pathlib import Path
+
+import pytest
 
 # Add parent directories to path for imports
 current_dir = Path(__file__).parent
@@ -22,16 +23,15 @@ sys.path.insert(0, str(tools_dir))
 
 from inv_checking_tool import TLCOutputReader
 from inv_checking_tool.src.utils.path_parser import (
-    parse_variable_path,
-    get_value_at_path,
-    PathParseError,
     PathAccessError,
+    PathParseError,
+    get_value_at_path,
+    parse_variable_path,
 )
 from inv_checking_tool.src.utils.preprocessing import (
-    strip_ansi_codes,
     extract_violation_info,
+    strip_ansi_codes,
 )
-
 
 # Path to test data - use local test data file that ships with the tests
 TEST_DATA_DIR = Path(__file__).parent / "test_data"

@@ -42,7 +42,7 @@ class TraceReader:
             handler_module = __import__(os.path.basename(handler_py).replace(".py", ""))
             sys.path.pop(0)
         except ModuleNotFoundError:
-            print("Warning: cannot import module '{}'".format(handler_py), file=sys.stderr)
+            print(f"Warning: cannot import module '{handler_py}'", file=sys.stderr)
             handler_module = None
 
         if hasattr(handler_module, "user_dict"):
@@ -206,7 +206,7 @@ class TraceReader:
             elif line.startswith("State") or line[0].isdigit():
                 yield r"\*" + line[line.find(":") + 1 :]
                 n_state = n_state + 1
-                yield "STATE_{} == \n".format(n_state)
+                yield f"STATE_{n_state} == \n"
             elif line == "\n":
                 yield "\n" * 2
             elif any(line.startswith(x) for x in end_msg):
@@ -237,7 +237,7 @@ class TraceReader:
         for line in f:
             if ' [label="' in line:
                 state_hash, label = TraceReader.get_dot_label_string(line)
-                yield "STATE_{} == \n".format(state_hash)
+                yield f"STATE_{state_hash} == \n"
                 yield from label.splitlines(keepends=True)
                 yield "\n" * 2
         yield "=" * 49 + "\n"
@@ -329,8 +329,8 @@ get_dot_converted_string = TraceReader.get_dot_converted_string
 
 
 if __name__ == "__main__":
-    import json
     import argparse
+    import json
 
     # arg parser
     parser = argparse.ArgumentParser(description="Read TLA traces into Python objects")

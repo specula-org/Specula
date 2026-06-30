@@ -1,10 +1,10 @@
 """Handler for get_trace_info tool."""
 
 import os
-from typing import Dict, Any
+from typing import Any
 
-from .base import BaseHandler
 from ..utils.errors import ExecutionError
+from .base import BaseHandler
 
 
 class TraceInfoHandler(BaseHandler):
@@ -19,7 +19,7 @@ class TraceInfoHandler(BaseHandler):
         return "get_trace_info"
 
     @property
-    def argument_schema(self) -> Dict[str, Any]:
+    def argument_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -28,7 +28,7 @@ class TraceInfoHandler(BaseHandler):
             "required": ["trace_file"],
         }
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Get trace file information.
 
         Args:
@@ -60,7 +60,7 @@ class TraceInfoHandler(BaseHandler):
 
         try:
             # Read file
-            with open(trace_file, "r", encoding="utf-8") as f:
+            with open(trace_file, encoding="utf-8") as f:
                 lines = f.readlines()
 
             # Get file size
@@ -83,5 +83,5 @@ class TraceInfoHandler(BaseHandler):
             raise ExecutionError(
                 f"Failed to read trace file (encoding error): {e}", details={"trace_file": trace_file, "error": str(e)}
             )
-        except IOError as e:
+        except OSError as e:
             raise ExecutionError(f"Failed to read trace file: {e}", details={"trace_file": trace_file, "error": str(e)})
