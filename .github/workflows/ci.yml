@@ -37,6 +37,22 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      # Guard against the symlink footgun that broke the first CI run: an absolute
+      # target (/home/…) exists only on the author's machine, and a relative target
+      # that points outside the tree resolves nowhere. Both must fail here, not silently.
+      - name: symlinks are relative and resolve
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS= read -r f; do
+            [ -L "$f" ] || continue
+            target=$(readlink "$f")
+            case "$target" in
+              /*) echo "absolute symlink target (not portable): $f -> $target"; fail=1; continue;;
+            esac
+            [ -e "$f" ] || { echo "broken symlink: $f -> $target"; fail=1; }
+          done < <(git ls-files)
+          exit "$fail"
       - name: bash -n (syntax)
         run: |
           set -euo pipefail
