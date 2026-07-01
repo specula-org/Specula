@@ -19,6 +19,7 @@ Lives in scripts/launch/ for now (no packaging dependency); moves into the
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import time
@@ -36,6 +37,16 @@ def _ts() -> str:
 def _trim(s: str) -> str:
     """Mirror bash `echo "$x" | xargs` word-trim (leading/trailing whitespace)."""
     return s.strip()
+
+
+def _grep_num(text: str, prefix: str) -> str:
+    """First integer on the first line starting with `prefix`, else '?' — mirrors
+    bash `grep -E "^prefix" | grep -oE '[0-9]+' | head -1`."""
+    for ln in text.splitlines():
+        if ln.startswith(prefix):
+            m = re.search(r"\d+", ln)
+            return m.group(0) if m else "?"
+    return "?"
 
 
 class Workspace:
@@ -79,6 +90,8 @@ class Phase:
     title = ""  # banner title
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites."
+    accepts_artifact = True  # bug_classification takes no --artifact (rejects it)
+    dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
 
     # ── per-phase hooks ──
     def target_name(self, target: str) -> str:
@@ -134,7 +147,7 @@ class Phase:
                 agent = arg[len("--agent=") :]
             elif arg.startswith("--claude-alias="):
                 claude_alias = arg[len("--claude-alias=") :]
-            elif arg.startswith("--artifact="):
+            elif arg.startswith("--artifact=") and self.accepts_artifact:
                 artifact = arg[len("--artifact=") :]
             elif arg in ("--help", "-h"):
                 print(self.__doc__ or self.title)
@@ -201,11 +214,15 @@ class Phase:
 
     def _launch(self, ws, name, prompt, dry_run, max_turns, claude_alias, adapter):
         files = self.agent_files(ws, name)
-        files["mkdir"].mkdir(parents=True, exist_ok=True)
+        for d in files["mkdirs"]:
+            d.mkdir(parents=True, exist_ok=True)
         files["prompt"].write_text(prompt)
         print(f"[{_ts()}] Launching agent: {name}")
         if dry_run:
-            print(f"  [DRY RUN] {adapter} --prompt=<prompt> --max-turns={max_turns} --log={files['log']} --background")
+            print(
+                f"  [DRY RUN] {adapter} {self.dry_prompt_flag}=<prompt> "
+                f"--max-turns={max_turns} --log={files['log']} --background"
+            )
             print(f"  Prompt saved: {files['prompt']}")
             return None
         proc = subprocess.Popen(
@@ -256,7 +273,7 @@ class CodeAnalysisPhase(Phase):
 
     def agent_files(self, ws, name):
         wd = ws.work_dir(name)
-        return {"log": wd / "agent.log", "pid": wd / "agent.pid", "prompt": wd / ".prompt.md", "mkdir": wd}
+        return {"log": wd / "agent.log", "pid": wd / "agent.pid", "prompt": wd / ".prompt.md", "mkdirs": [wd]}
 
     def build_prompt(self, ws, target):
         parts = [_trim(x) for x in target.split("|")]
@@ -338,7 +355,7 @@ class SpecGenerationPhase(Phase):
             "log": wd / "spec-gen.log",
             "pid": wd / "spec-gen.pid",
             "prompt": wd / ".spec-gen-prompt.md",
-            "mkdir": wd / "spec",
+            "mkdirs": [wd / "spec"],
         }
 
     def build_prompt(self, ws, target):
@@ -410,7 +427,187 @@ Expected files:
                 print(f"  --  {name} (no output)")
 
 
-PHASES: dict[str, Phase] = {p.key: p for p in [CodeAnalysisPhase(), SpecGenerationPhase()]}
+class HarnessGenerationPhase(Phase):
+    key = "harness_generation"
+    title = "Specula — Harness Generation (Phase 2.5)"
+    check_header = "Checking prerequisites..."
+    check_fail_msg = "ERROR: Missing prerequisites. Run spec generation (Phase 2) first."
+
+    def check(self, ws, names):
+        ok = True
+        for name in names:
+            spec_dir = ws.work_dir(name) / "spec"
+            repo_dir = ws.find_repo_dir(name)
+            line = f"  {name:<20}"
+            if (spec_dir / "base.tla").is_file() and (spec_dir / "Trace.tla").is_file():
+                line += "specs OK"
+            else:
+                line += "specs MISSING"
+                ok = False
+            if (spec_dir / "instrumentation-spec.md").is_file():
+                line += "  instr OK"
+            else:
+                line += "  instr MISSING"
+                ok = False
+            line += "  repo OK" if repo_dir else "  repo MISSING"
+            if not repo_dir:
+                ok = False
+            print(line)
+        return ok
+
+    def agent_files(self, ws, name):
+        wd = ws.work_dir(name)
+        return {
+            "log": wd / "harness-gen.log",
+            "pid": wd / "harness-gen.pid",
+            "prompt": wd / ".harness-gen-prompt.md",
+            "mkdirs": [wd / "harness", wd / "traces"],
+        }
+
+    def build_prompt(self, ws, target):
+        name = self.target_name(target)
+        wd = ws.work_dir(name)
+        spec_dir = wd / "spec"
+        repo_dir = ws.find_repo_dir(name)
+        prompt = f"""# Trace Harness Generation Task: {name}
+
+You are generating a trace harness for **{name}** — instrumenting the real source code to produce NDJSON traces for TLA+ trace validation.
+
+## Inputs
+
+- **Instrumentation spec**: {spec_dir}/instrumentation-spec.md
+- **Trace spec**: {spec_dir}/Trace.tla + {spec_dir}/Trace.cfg
+- **Base spec**: {spec_dir}/base.tla (for understanding spec actions)
+- **Source code**: {repo_dir}
+
+## Workflow
+
+Follow the **harness-generation** skill exactly — it is the single source of methodology (instrument real code, trace format, run.sh, end-to-end validation). Read and execute it in full:
+  {SPECULA_ROOT}/.claude/skills/harness-generation/guide.md
+
+Do everything the skill specifies. Do not add, relax, or override any step here.
+
+## Output
+
+Write all harness files to: {wd}/harness/
+Collect traces to: {wd}/traces/
+
+Expected outputs:
+- `{wd}/harness/src/` — Trace emission module + test scenarios
+- `{wd}/harness/apply.sh` — Apply instrumentation to artifact
+- `{wd}/harness/run.sh` — One-command build + run + collect traces
+- `{wd}/harness/INSTRUMENTATION.md` — Guide for Phase 3 agent to adjust instrumentation
+- `{wd}/traces/*.ndjson` — Trace files from test runs
+"""
+        return self._with_extra(ws, name, prompt)
+
+    def summarize(self, ws, names):
+        print()
+        print("========================================")
+        print(" Results")
+        print("========================================")
+        for name in names:
+            wd = ws.work_dir(name)
+            harness_dir = wd / "harness"
+            traces_dir = wd / "traces"
+            has_run = (harness_dir / "run.sh").is_file()
+            has_guide = (harness_dir / "INSTRUMENTATION.md").is_file()
+            trace_count = len(list(traces_dir.rglob("*.ndjson"))) if traces_dir.is_dir() else 0
+            if has_run and trace_count > 0:
+                print(f"  OK  {name} -> run.sh: yes, traces: {trace_count}")
+                if not has_guide:
+                    print("        warning: missing INSTRUMENTATION.md")
+            elif has_run:
+                print(f"  ~~  {name} -> run.sh: yes, traces: 0 (no traces generated)")
+            else:
+                print(f"  --  {name} (no harness output)")
+
+
+class BugClassificationPhase(Phase):
+    key = "bug_classification"
+    title = "Specula — Bug Classification Batch Runner"
+    check_header = "Checking prerequisites..."
+    check_fail_msg = "ERROR: Missing prerequisites. Run Phase 4a (launch_bug_confirmation.sh) first."
+    accepts_artifact = False  # this launcher takes no --artifact
+    dry_prompt_flag = "--prompt-file"  # its dry-run line shows --prompt-file=<prompt>
+
+    def check(self, ws, names):
+        ok = True
+        for name in names:
+            cb = ws.work_dir(name) / "spec" / "confirmed-bugs.md"
+            line = f"  {name:<20}"
+            if cb.is_file() and cb.stat().st_size > 0:
+                line += "confirmed-bugs OK"
+            else:
+                line += "confirmed-bugs MISSING"
+                ok = False
+            print(line)
+        return ok
+
+    def agent_files(self, ws, name):
+        wd = ws.work_dir(name)
+        return {
+            "log": wd / "bug-classification.log",
+            "pid": wd / "bug-classification.pid",
+            "prompt": wd / ".bug-classification-prompt.md",
+            "mkdirs": [],  # bash does not mkdir; work_dir already exists (has confirmed-bugs.md)
+        }
+
+    def build_prompt(self, ws, target):
+        # NOTE: bash bug_classification generate_prompt does NOT inject .prompt-extra.
+        name = self.target_name(target)
+        spec_dir = ws.work_dir(name) / "spec"
+        return f"""# Bug Classification Task: {name}
+
+You are assigning a Severity tier to each bug in **{name}**'s already-confirmed bug report.
+
+## Input
+
+- **Confirmed bug report (from Phase 4a)**: {spec_dir}/confirmed-bugs.md
+
+## Output
+
+- **Severity classification**: {spec_dir}/bug-severity.md (you create this file)
+
+## Methodology
+
+Follow the **bug-classification** skill exactly — it is the single source of methodology (the four-tier Severity rubric, the per-bug output schema and mandatory Summary block, the single-responsibility constraints — do not modify confirmed-bugs.md or its Status fields — the rule that Severity is independent of reproduction status, and the output validation checklist). Read and execute it in full:
+  {SPECULA_ROOT}/.claude/skills/bug-classification/guide.md
+
+Do everything the skill specifies. Do not add, relax, or override any step here.
+"""
+
+    def summarize(self, ws, names):
+        print()
+        print("========================================")
+        print(" Results")
+        print("========================================")
+        for name in names:
+            report = ws.work_dir(name) / "spec" / "bug-severity.md"
+            if report.is_file() and report.stat().st_size > 0:
+                text = report.read_text()
+                total = _grep_num(text, "- Total bugs:")
+                c = _grep_num(text, "- Critical:")
+                h = _grep_num(text, "- High:")
+                m = _grep_num(text, "- Medium:")
+                low = _grep_num(text, "- Low:")
+                fp = _grep_num(text, "- FALSE POSITIVE")
+                print(f"  {name}: total={total}  C={c} H={h} M={m} L={low} FP={fp}")
+            elif report.is_file():
+                print(f"  {name}: bug-severity.md empty (check log)")
+            else:
+                print(f"  {name}: (no report — check log)")
+
+
+PHASES: dict[str, Phase] = {
+    p.key: p
+    for p in [
+        CodeAnalysisPhase(),
+        SpecGenerationPhase(),
+        HarnessGenerationPhase(),
+        BugClassificationPhase(),
+    ]
+}
 
 
 def main(argv: list[str]) -> int:
