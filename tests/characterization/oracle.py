@@ -19,13 +19,13 @@ Each case produces a deterministic, normalized text snapshot. Volatile bits
 (absolute paths, timestamps, tmp dirs) are replaced with <PLACEHOLDERS> so the
 snapshot is stable across machines and runs.
 """
+
 from __future__ import annotations
 
 import argparse
 import difflib
 import json
 import os
-import shutil
 import stat
 import subprocess
 import sys
@@ -83,9 +83,7 @@ def _norm_line(line: str) -> str:
     # [HH:MM:SS] log timestamps -> [TIME]
     line = re.sub(r"\[\d{2}:\d{2}:\d{2}\]", "[TIME]", line)
     # ISO-8601 datetimes (date -Iseconds) -> <DATE>
-    line = re.sub(
-        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[+-]\d{2}:\d{2}|Z)?", "<DATE>", line
-    )
+    line = re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[+-]\d{2}:\d{2}|Z)?", "<DATE>", line)
     # "completed in 0m 1s" elapsed -> <ELAPSED>
     line = re.sub(r"completed in \d+m \d+s", "completed in <ELAPSED>", line)
     # quota gate "sleeping 12345s" (now-relative) -> <SECS>
@@ -99,10 +97,15 @@ def _clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     ambient Claude config that could redirect the adapter."""
     env = dict(os.environ)
     for var in (
-        "VIRTUAL_ENV", "CLAUDE_CONFIG_DIR", "CLAUDECODE",
-        "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT",
+        "VIRTUAL_ENV",
+        "CLAUDE_CONFIG_DIR",
+        "CLAUDECODE",
+        "CLAUDE_CODE_SSE_PORT",
+        "CLAUDE_CODE_ENTRYPOINT",
         # popped so command construction is deterministic regardless of ambient env
-        "CLAUDE_EFFORT", "CLAUDE_MODEL", "CLAUDE_ALIAS",
+        "CLAUDE_EFFORT",
+        "CLAUDE_MODEL",
+        "CLAUDE_ALIAS",
     ):
         env.pop(var, None)
     env["PATH"] = "/usr/bin:/bin:" + env.get("PATH", "")
@@ -122,7 +125,7 @@ def _write_fake_claude(bindir: Path, fixture: Path) -> None:
         # no-op when CLAUDE_ARGV_FILE is unset, so output cases are unaffected.
         'printf "%s\\n" "$@" > "${CLAUDE_ARGV_FILE:-/dev/null}"\n'
         "cat >/dev/null\n"  # consume the prompt on stdin
-        f'cat {json.dumps(str(fixture))}\n'
+        f"cat {json.dumps(str(fixture))}\n"
     )
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
@@ -165,13 +168,13 @@ def run_adapter_case(
             proj_dir.mkdir(parents=True, exist_ok=True)
             (proj_dir / f"{session_id}.jsonl").write_text("\n".join(session_jsonl) + "\n")
         env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base)})
-        prompt_arg = (
-            f"--prompt={inline_prompt}" if inline_prompt is not None
-            else f"--prompt-file={prompt}"
-        )
+        prompt_arg = f"--prompt={inline_prompt}" if inline_prompt is not None else f"--prompt-file={prompt}"
         proc = subprocess.run(
             _adapter_cmd() + [prompt_arg, "--claude-alias=testalias", f"--log={log}"],
-            cwd=str(base), env=env, capture_output=True, text=True,
+            cwd=str(base),
+            env=env,
+            capture_output=True,
+            text=True,
         )
         parts = [f"exit_code: {proc.returncode}", ""]
         for name, p in [(".log", log), (".usage.json", base / "out.usage.json")]:
@@ -202,10 +205,11 @@ def run_adapter_cmd_case(flags: list[str]) -> str:
             }
         )
         subprocess.run(
-            _adapter_cmd()
-            + [f"--prompt-file={prompt}", "--claude-alias=testalias",
-               f"--log={base}/out.log", *flags],
-            cwd=str(base), env=env, capture_output=True, text=True,
+            _adapter_cmd() + [f"--prompt-file={prompt}", "--claude-alias=testalias", f"--log={base}/out.log", *flags],
+            cwd=str(base),
+            env=env,
+            capture_output=True,
+            text=True,
         )
         argv = argv_file.read_text() if argv_file.exists() else "<MISSING>"
         return normalize(f"=== claude argv ===\n{argv}", {str(base): "<TMP>"})
@@ -221,8 +225,11 @@ def run_adapter_error_case(flags: list[str]) -> str:
         env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base)})
         resolved = [f.replace("@BASE@", str(base)) for f in flags]
         proc = subprocess.run(
-            _adapter_cmd() + resolved, cwd=str(base), env=env,
-            capture_output=True, text=True,
+            _adapter_cmd() + resolved,
+            cwd=str(base),
+            env=env,
+            capture_output=True,
+            text=True,
         )
         return normalize(
             f"exit_code: {proc.returncode}\n\n=== stderr ===\n{proc.stderr}",
@@ -242,10 +249,16 @@ def run_dryrun_case(script: str, target: str) -> str:
         env = _clean_env({"HOME": str(tmp)})
         proc = subprocess.run(
             [
-                "bash", str(LAUNCH / script),
-                "--dry-run", f"--artifact={artifact}", target,
+                "bash",
+                str(LAUNCH / script),
+                "--dry-run",
+                f"--artifact={artifact}",
+                target,
             ],
-            cwd=work, env=env, capture_output=True, text=True,
+            cwd=work,
+            env=env,
+            capture_output=True,
+            text=True,
         )
         parts = [f"exit_code: {proc.returncode}", "", "=== stdout ===", proc.stdout, ""]
         prompt = work / ".specula-output" / ".prompt.md"
@@ -277,9 +290,7 @@ def run_gate_case(script: str, target: str, use_artifact: bool = True) -> str:
         args.append(target)
         env = _clean_env({"HOME": str(tmp)})
         proc = subprocess.run(args, cwd=work, env=env, capture_output=True, text=True)
-        return normalize(
-            f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n", subs
-        )
+        return normalize(f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n", subs)
 
 
 def run_pipeline_case(flags: list[str], target: str) -> str:
@@ -296,10 +307,17 @@ def run_pipeline_case(flags: list[str], target: str) -> str:
         env = _clean_env({"HOME": str(tmp)})
         proc = subprocess.run(
             [
-                "bash", str(LAUNCH / "launch_pipeline.sh"),
-                "--dry-run", f"--artifact={artifact}", *flags, target,
+                "bash",
+                str(LAUNCH / "launch_pipeline.sh"),
+                "--dry-run",
+                f"--artifact={artifact}",
+                *flags,
+                target,
             ],
-            cwd=work, env=env, capture_output=True, text=True,
+            cwd=work,
+            env=env,
+            capture_output=True,
+            text=True,
         )
         raw = normalize(
             f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n",
@@ -314,9 +332,7 @@ def _pipeline_functions_only() -> str:
     whole pipeline. The top-level `mkdir .specula-output` that remains runs
     harmlessly inside the test's tmp cwd."""
     src = (LAUNCH / "launch_pipeline.sh").read_text().splitlines(keepends=True)
-    cut = next(
-        (i for i, ln in enumerate(src) if ln.startswith("main 2>&1")), len(src)
-    )
+    cut = next((i for i, ln in enumerate(src) if ln.startswith("main 2>&1")), len(src))
     return "".join(src[:cut])
 
 
@@ -377,13 +393,9 @@ def run_repair_case() -> str:
         rr = tmp / "RR-001.md"
         rr.write_text(_RR_FIXTURE)
         driver = tmp / "driver.sh"
-        driver.write_text(
-            _REPAIR_DRIVER.replace("@FNONLY@", str(fnonly)).replace("@RR@", str(rr))
-        )
+        driver.write_text(_REPAIR_DRIVER.replace("@FNONLY@", str(fnonly)).replace("@RR@", str(rr)))
         env = _clean_env({"HOME": str(tmp)})
-        proc = subprocess.run(
-            ["bash", str(driver)], cwd=tmp, env=env, capture_output=True, text=True
-        )
+        proc = subprocess.run(["bash", str(driver)], cwd=tmp, env=env, capture_output=True, text=True)
         out = f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n"
         if proc.stderr.strip():
             out += f"\n=== stderr ===\n{proc.stderr}\n"
@@ -427,9 +439,7 @@ def run_quota_case(usage_json: str, q5: int, q7: int) -> str:
             .replace("@Q7@", str(q7))
         )
         env = _clean_env({"HOME": str(tmp)})
-        proc = subprocess.run(
-            ["bash", str(driver)], cwd=tmp, env=env, capture_output=True, text=True
-        )
+        proc = subprocess.run(["bash", str(driver)], cwd=tmp, env=env, capture_output=True, text=True)
         out = f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n"
         return normalize(out, {str(tmp): "<TMP>"})
 
@@ -451,17 +461,11 @@ CASES: dict[str, callable] = {
             '{"type":"assistant","message":{"content":[{"type":"text","text":"done"}]}}',
         ],
     ),
-    "adapter_inline_prompt": lambda: run_adapter_case(
-        "claude_normal.json", inline_prompt="analyze this system"
-    ),
+    "adapter_inline_prompt": lambda: run_adapter_case("claude_normal.json", inline_prompt="analyze this system"),
     # command construction: how flags become the `claude` invocation
     "adapter_cmd_default": lambda: run_adapter_cmd_case([]),
-    "adapter_cmd_all_flags": lambda: run_adapter_cmd_case(
-        ["--effort=high", "--model=sonnet", "--max-budget=5"]
-    ),
-    "adapter_cmd_skips": lambda: run_adapter_cmd_case(
-        ["--effort=default", "--max-budget=0"]
-    ),
+    "adapter_cmd_all_flags": lambda: run_adapter_cmd_case(["--effort=high", "--model=sonnet", "--max-budget=5"]),
+    "adapter_cmd_skips": lambda: run_adapter_cmd_case(["--effort=default", "--max-budget=0"]),
     # validation contract: exit code + stderr on bad invocations
     "adapter_err_no_log": lambda: run_adapter_error_case(["--prompt=x"]),
     "adapter_err_both_prompt": lambda: run_adapter_error_case(
@@ -473,33 +477,19 @@ CASES: dict[str, callable] = {
     ),
     "adapter_err_unknown_opt": lambda: run_adapter_error_case(["--bogus"]),
     # step 3 target: phase-launcher dry-run (arg parse, path calc, agent command, prompt)
-    "dryrun_code_analysis": lambda: run_dryrun_case(
-        "launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo"
-    ),
+    "dryrun_code_analysis": lambda: run_dryrun_case("launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo"),
     # step 5 target: launch_pipeline.sh phase sequencing + repair-loop gating under --skip-*
-    "pipeline_seq_full": lambda: run_pipeline_case(
-        [], "footest|foo/bar|Go|Raft demo"
-    ),
+    "pipeline_seq_full": lambda: run_pipeline_case([], "footest|foo/bar|Go|Raft demo"),
     "pipeline_seq_resume": lambda: run_pipeline_case(
         ["--skip-analysis", "--skip-specgen", "--skip-harness"],
         "footest|foo/bar|Go|Raft demo",
     ),
-    "pipeline_seq_skip_repair": lambda: run_pipeline_case(
-        ["--skip-repair-loop"], "footest|foo/bar|Go|Raft demo"
-    ),
+    "pipeline_seq_skip_repair": lambda: run_pipeline_case(["--skip-repair-loop"], "footest|foo/bar|Go|Raft demo"),
     # step 3 target: downstream-phase precondition gates (input contract each enforces)
-    "gate_spec_generation": lambda: run_gate_case(
-        "launch_spec_generation.sh", "footest|foo/bar|Go|Raft demo"
-    ),
-    "gate_harness_generation": lambda: run_gate_case(
-        "launch_harness_generation.sh", "footest|foo/bar|Go|Raft demo"
-    ),
-    "gate_spec_validation": lambda: run_gate_case(
-        "launch_spec_validation.sh", "footest|foo/bar|Go|Raft demo"
-    ),
-    "gate_bug_confirmation": lambda: run_gate_case(
-        "launch_bug_confirmation.sh", "footest|foo/bar|Go|Raft demo"
-    ),
+    "gate_spec_generation": lambda: run_gate_case("launch_spec_generation.sh", "footest|foo/bar|Go|Raft demo"),
+    "gate_harness_generation": lambda: run_gate_case("launch_harness_generation.sh", "footest|foo/bar|Go|Raft demo"),
+    "gate_spec_validation": lambda: run_gate_case("launch_spec_validation.sh", "footest|foo/bar|Go|Raft demo"),
+    "gate_bug_confirmation": lambda: run_gate_case("launch_bug_confirmation.sh", "footest|foo/bar|Go|Raft demo"),
     "gate_bug_classification": lambda: run_gate_case(
         "launch_bug_classification.sh", "footest|foo/bar|Go|Raft demo", use_artifact=False
     ),
@@ -509,17 +499,20 @@ CASES: dict[str, callable] = {
     "quota_under": lambda: run_quota_case(
         '{"five_hour":{"utilization":50,"resets_at":"2099-01-01T00:00:00+00:00"},'
         '"seven_day":{"utilization":50,"resets_at":"2099-01-08T00:00:00+00:00"}}',
-        q5=85, q7=95,
+        q5=85,
+        q7=95,
     ),
     "quota_over_5h": lambda: run_quota_case(
         '{"five_hour":{"utilization":86,"resets_at":"2099-01-01T00:00:00+00:00"},'
         '"seven_day":{"utilization":50,"resets_at":"2099-01-08T00:00:00+00:00"}}',
-        q5=85, q7=95,
+        q5=85,
+        q7=95,
     ),
     "quota_over_7d": lambda: run_quota_case(
         '{"five_hour":{"utilization":50,"resets_at":"2099-01-01T00:00:00+00:00"},'
         '"seven_day":{"utilization":96,"resets_at":"2099-01-08T00:00:00+00:00"}}',
-        q5=85, q7=95,
+        q5=85,
+        q7=95,
     ),
 }
 
@@ -554,8 +547,11 @@ def cmd_check(names: list[str]) -> int:
             failed += 1
             print(f"  FAIL     {name}")
             diff = difflib.unified_diff(
-                expected.splitlines(), actual.splitlines(),
-                fromfile=f"golden/{name}.txt", tofile="actual", lineterm="",
+                expected.splitlines(),
+                actual.splitlines(),
+                fromfile=f"golden/{name}.txt",
+                tofile="actual",
+                lineterm="",
             )
             for line in diff:
                 print("    " + line)

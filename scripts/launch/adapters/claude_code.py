@@ -21,6 +21,8 @@ Options:
   --background          Run in background (accepted; caller handles backgrounding)
   --help                Show this help
 """
+
+import contextlib
 import json
 import os
 import subprocess
@@ -64,9 +66,7 @@ def _extract_usage(raw_text: str, usage_path: str) -> None:
         if session_id:
             cwd = os.getcwd()
             proj_key = cwd.replace("/", "-").lstrip("-")
-            config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser(
-                "~/.claude"
-            )
+            config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
             proj_dir = os.path.join(config_dir, "projects", f"-{proj_key}")
             jsonl_path = os.path.join(proj_dir, f"{session_id}.jsonl")
             if os.path.exists(jsonl_path):
@@ -81,10 +81,7 @@ def _extract_usage(raw_text: str, usage_path: str) -> None:
                                 content = msg.get("message", {}).get("content", [])
                                 if isinstance(content, list):
                                     tool_count += sum(
-                                        1
-                                        for c in content
-                                        if isinstance(c, dict)
-                                        and c.get("type") == "tool_use"
+                                        1 for c in content if isinstance(c, dict) and c.get("type") == "tool_use"
                                     )
                         except Exception:
                             pass
@@ -117,21 +114,21 @@ def main(argv: list[str]) -> int:
 
     for arg in argv:
         if arg.startswith("--prompt="):
-            prompt = arg[len("--prompt="):]
+            prompt = arg[len("--prompt=") :]
         elif arg.startswith("--prompt-file="):
-            prompt_file = arg[len("--prompt-file="):]
+            prompt_file = arg[len("--prompt-file=") :]
         elif arg.startswith("--max-turns="):
             pass  # deprecated, ignored
         elif arg.startswith("--max-budget="):
-            max_budget = arg[len("--max-budget="):]
+            max_budget = arg[len("--max-budget=") :]
         elif arg.startswith("--claude-alias="):
-            claude_alias = arg[len("--claude-alias="):]
+            claude_alias = arg[len("--claude-alias=") :]
         elif arg.startswith("--effort="):
-            effort = arg[len("--effort="):]
+            effort = arg[len("--effort=") :]
         elif arg.startswith("--model="):
-            model = arg[len("--model="):]
+            model = arg[len("--model=") :]
         elif arg.startswith("--log="):
-            log_file = arg[len("--log="):]
+            log_file = arg[len("--log=") :]
         elif arg == "--background":
             _background = True
         elif arg in ("--help", "-h"):
@@ -168,9 +165,7 @@ def main(argv: list[str]) -> int:
             os.environ.pop(var, None)
         # Alias determines the config dir authoritatively (do NOT inherit an
         # ambient CLAUDE_CONFIG_DIR, which would redirect quota-sensitive runs).
-        os.environ["CLAUDE_CONFIG_DIR"] = (
-            os.environ.get("HOME", "") + "/." + (claude_alias or "claude")
-        )
+        os.environ["CLAUDE_CONFIG_DIR"] = os.environ.get("HOME", "") + "/." + (claude_alias or "claude")
 
         # ── Build command ──
         cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", "json"]
@@ -199,10 +194,8 @@ def main(argv: list[str]) -> int:
         return 75 if rate_limited else 0
     finally:
         if tmp_prompt is not None:
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(tmp_prompt)
-            except OSError:
-                pass
 
 
 if __name__ == "__main__":
