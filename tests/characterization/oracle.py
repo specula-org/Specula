@@ -57,6 +57,20 @@ def _adapter_cmd() -> list[str]:
     return ["bash", str(ADAPTER)]
 
 
+PHASELIB = LAUNCH / "phaselib.py"
+
+
+def _launcher_cmd(script: str) -> list[str]:
+    """Which phase-launcher implementation the dry-run/gate cases exercise. Default:
+    the bash launcher (or its shim). SPECULA_LAUNCHER_IMPL=python runs phaselib.py
+    with the phase key derived from the script name (launch_<key>.sh -> <key>) — the
+    step-3 parity check against the bash-captured goldens."""
+    if os.environ.get("SPECULA_LAUNCHER_IMPL") == "python":
+        key = script[len("launch_") : -len(".sh")]
+        return ["python3", str(PHASELIB), key]
+    return ["bash", str(LAUNCH / script)]
+
+
 # ── normalization ───────────────────────────────────────────────────────────
 def normalize(text: str, extra: dict[str, str] | None = None) -> str:
     """Replace volatile substrings with stable placeholders.
@@ -264,13 +278,7 @@ def run_dryrun_case(script: str, target: str) -> str:
         work.mkdir()
         env = _clean_env({"HOME": str(tmp)})
         proc = subprocess.run(
-            [
-                "bash",
-                str(LAUNCH / script),
-                "--dry-run",
-                f"--artifact={artifact}",
-                target,
-            ],
+            _launcher_cmd(script) + ["--dry-run", f"--artifact={artifact}", target],
             cwd=work,
             env=env,
             capture_output=True,
@@ -296,7 +304,7 @@ def run_gate_case(script: str, target: str, use_artifact: bool = True) -> str:
         tmp = Path(td)
         work = tmp / "work"
         work.mkdir()
-        args = ["bash", str(LAUNCH / script), "--dry-run"]
+        args = _launcher_cmd(script) + ["--dry-run"]
         subs = {str(work): "<WORK>", str(tmp): "<TMP>"}
         if use_artifact:
             artifact = tmp / "artifact"
