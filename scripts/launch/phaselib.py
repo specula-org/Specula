@@ -81,6 +81,12 @@ class Phase:
     check_fail_msg = "ERROR: Missing prerequisites."
 
     # ── per-phase hooks ──
+    def target_name(self, target: str) -> str:
+        """Extract the display/work name from a target string. Downstream phases
+        get name-only targets, so the whole (trimmed) string is the name;
+        code_analysis overrides this to split the 'name|github|lang|ref' form."""
+        return _trim(target)
+
     def check(self, ws: Workspace, names: list[str]) -> bool:
         """Print a per-target prerequisite line; return True iff all satisfied."""
         raise NotImplementedError
@@ -148,7 +154,7 @@ class Phase:
             return 1
 
         ws = Workspace(targets, artifact=artifact)
-        names = [_trim(t.split("|", 1)[0]) for t in targets]
+        names = [self.target_name(t) for t in targets]
 
         print("========================================")
         print(f" {self.title}")
@@ -171,7 +177,7 @@ class Phase:
 
         running: list[subprocess.Popen] = []
         for target in targets:
-            name = _trim(target.split("|", 1)[0])
+            name = self.target_name(target)
             prompt = self.build_prompt(ws, target)
             # Throttle.
             while len(running) >= max_parallel:
@@ -225,6 +231,10 @@ class CodeAnalysisPhase(Phase):
     check_fail_msg = (
         "ERROR: Some repositories are missing. Use --artifact=<path> or place repos under <name>/artifact/<repo>/."
     )
+
+    def target_name(self, target):
+        # code_analysis targets are "name|github|lang|reference"; name is field 1.
+        return _trim(target.split("|", 1)[0])
 
     def check(self, ws, names):
         ok = True
@@ -299,7 +309,108 @@ Write your outputs to:
                 print(f"  --  {name} (no output)")
 
 
-PHASES: dict[str, Phase] = {p.key: p for p in [CodeAnalysisPhase()]}
+class SpecGenerationPhase(Phase):
+    key = "spec_generation"
+    title = "Specula — Spec Generation Batch Runner"
+    check_header = "Checking prerequisites..."
+    check_fail_msg = "ERROR: Missing prerequisites. Run code analysis first."
+
+    def check(self, ws, names):
+        ok = True
+        for name in names:
+            brief = ws.work_dir(name) / "modeling-brief.md"
+            repo_dir = ws.find_repo_dir(name)
+            if brief.is_file():
+                lines = len(brief.read_text().splitlines())
+                line = f"  {name:<20} modeling-brief.md ({lines} lines)"
+            else:
+                line = f"  {name:<20} MISSING modeling-brief.md"
+                ok = False
+            line += "  repo OK" if repo_dir else "  repo MISSING"
+            if not repo_dir:
+                ok = False
+            print(line)
+        return ok
+
+    def agent_files(self, ws, name):
+        wd = ws.work_dir(name)
+        return {
+            "log": wd / "spec-gen.log",
+            "pid": wd / "spec-gen.pid",
+            "prompt": wd / ".spec-gen-prompt.md",
+            "mkdir": wd / "spec",
+        }
+
+    def build_prompt(self, ws, target):
+        name = self.target_name(target)
+        wd = ws.work_dir(name)
+        spec_dir = wd / "spec"
+        brief = wd / "modeling-brief.md"
+        repo_dir = ws.find_repo_dir(name)
+        prompt = f"""# TLA+ Spec Generation Task
+
+You are generating a TLA+ specification for: **{name}**
+
+## Inputs
+
+- **Modeling Brief**: {brief}
+- **Source Code**: {repo_dir}
+- **Output Directory**: {spec_dir}
+
+## Instructions
+
+Follow the **spec-generation** skill exactly — it is the single source of methodology (its phases, references, rules, Category A/B handling, and the mandatory brief-coverage self-audit). Read and execute it in full:
+  {SPECULA_ROOT}/.claude/skills/spec_generation/guide.md
+
+Do everything the skill specifies. Do not add, relax, or override any step here.
+
+## Output
+
+Create the output directory and write all files to:
+  {spec_dir}/
+
+Expected files:
+- `{spec_dir}/base.tla` — Base specification
+- `{spec_dir}/base.cfg` — Base config
+- `{spec_dir}/MC.tla` — Model checking specification
+- `{spec_dir}/MC.cfg` — Model checking config
+- `{spec_dir}/brief-coverage.md` — Coverage audit mapping brief §2/§5/§6.1 to hunt cfgs and invariants
+- `{spec_dir}/Trace.tla` — Trace validation specification
+- `{spec_dir}/Trace.cfg` — Trace validation config
+- `{spec_dir}/instrumentation-spec.md` — Instrumentation mapping
+"""
+        return self._with_extra(ws, name, prompt)
+
+    def summarize(self, ws, names):
+        print()
+        print("========================================")
+        print(" Results")
+        print("========================================")
+        for name in names:
+            spec_dir = ws.work_dir(name) / "spec"
+            base = spec_dir / "base.tla"
+            mc = spec_dir / "MC.tla"
+            trace = spec_dir / "Trace.tla"
+            instr = spec_dir / "instrumentation-spec.md"
+            count = sum(f.is_file() for f in (base, mc, trace, instr))
+            if count == 4:
+                n = len(base.read_text().splitlines())
+                print(f"  OK  {name} -> {count}/4 files (base.tla: {n} lines)")
+            elif count > 0:
+                print(f"  ~~  {name} -> {count}/4 files (incomplete)")
+                if not base.is_file():
+                    print("        missing: base.tla")
+                if not mc.is_file():
+                    print("        missing: MC.tla")
+                if not trace.is_file():
+                    print("        missing: Trace.tla")
+                if not instr.is_file():
+                    print("        missing: instrumentation-spec.md")
+            else:
+                print(f"  --  {name} (no output)")
+
+
+PHASES: dict[str, Phase] = {p.key: p for p in [CodeAnalysisPhase(), SpecGenerationPhase()]}
 
 
 def main(argv: list[str]) -> int:

@@ -267,15 +267,30 @@ def run_adapter_error_case(flags: list[str]) -> str:
         )
 
 
-def run_dryrun_case(script: str, target: str) -> str:
-    """Run a phase launcher with --dry-run in an isolated cwd; snapshot stdout
-    plus the generated .prompt.md (the exact prompt handed to the agent)."""
+def run_dryrun_case(
+    script: str,
+    target: str,
+    seed: dict[str, str] | None = None,
+    prompt_rel: str = ".specula-output/.prompt.md",
+) -> str:
+    """Run a phase launcher with --dry-run in an isolated cwd; snapshot stdout plus
+    the generated prompt file (the exact prompt handed to the agent).
+
+    seed: files to create under the work cwd first (relpath -> content) so a
+    downstream phase's prerequisites are satisfied and it reaches the dry-run
+    print (e.g. seed modeling-brief.md for spec_generation).
+    prompt_rel: where this phase writes its prompt (spec_generation uses
+    .spec-gen-prompt.md, not .prompt.md)."""
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         artifact = tmp / "artifact"
         _init_git_repo(artifact)
         work = tmp / "work"
         work.mkdir()
+        for rel, content in (seed or {}).items():
+            f = work / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(content)
         env = _clean_env({"HOME": str(tmp)})
         proc = subprocess.run(
             _launcher_cmd(script) + ["--dry-run", f"--artifact={artifact}", target],
@@ -285,8 +300,8 @@ def run_dryrun_case(script: str, target: str) -> str:
             text=True,
         )
         parts = [f"exit_code: {proc.returncode}", "", "=== stdout ===", proc.stdout, ""]
-        prompt = work / ".specula-output" / ".prompt.md"
-        parts.append("=== .prompt.md ===")
+        prompt = work / prompt_rel
+        parts.append(f"=== {prompt.name} ===")
         parts.append(prompt.read_text() if prompt.exists() else "<MISSING>")
         parts.append("")
         raw = normalize(
@@ -504,6 +519,14 @@ CASES: dict[str, callable] = {
     "adapter_err_unknown_opt": lambda: run_adapter_error_case(["--bogus"]),
     # step 3 target: phase-launcher dry-run (arg parse, path calc, agent command, prompt)
     "dryrun_code_analysis": lambda: run_dryrun_case("launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo"),
+    "dryrun_spec_generation": lambda: run_dryrun_case(
+        "launch_spec_generation.sh",
+        "footest",
+        seed={
+            ".specula-output/modeling-brief.md": "# Modeling Brief\nfamily A: crash window\nfamily B: missing guard\n"
+        },
+        prompt_rel=".specula-output/.spec-gen-prompt.md",
+    ),
     # step 5 target: launch_pipeline.sh phase sequencing + repair-loop gating under --skip-*
     "pipeline_seq_full": lambda: run_pipeline_case([], "footest|foo/bar|Go|Raft demo"),
     "pipeline_seq_resume": lambda: run_pipeline_case(
