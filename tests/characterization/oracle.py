@@ -80,6 +80,11 @@ def normalize(text: str, extra: dict[str, str] | None = None) -> str:
 def _norm_line(line: str) -> str:
     import re
 
+    # claude spawn failure: bash "…: claude: command not found" vs the python port's
+    # "failed to run claude: …" collapse to one placeholder (whole line replaced) so
+    # the missing-claude case is three-way consistent (orig bash ≡ python ≡ shim).
+    if "command not found" in line or "failed to run claude" in line:
+        return "<CLAUDE-SPAWN-ERROR>"
     # [HH:MM:SS] log timestamps -> [TIME]
     line = re.sub(r"\[\d{2}:\d{2}:\d{2}\]", "[TIME]", line)
     # ISO-8601 datetimes (date -Iseconds) -> <DATE>
@@ -141,6 +146,7 @@ def run_adapter_case(
     session_id: str = "",
     session_jsonl: list[str] | None = None,
     inline_prompt: str | None = None,
+    with_claude: bool = True,
 ) -> str:
     """Feed a canned `claude` JSON response through the adapter (bash or python
     port, per SPECULA_ADAPTER_IMPL); snapshot exit code + derived .log +
@@ -148,6 +154,10 @@ def run_adapter_case(
 
     inline_prompt: if given, pass `--prompt=...` (exercising the mktemp path)
     instead of `--prompt-file=...`.
+
+    with_claude=False: don't put a `claude` on PATH, so the spawn fails — pins the
+    "claude missing" path (bash writes the shell error into RAW_JSON and carries
+    on → exit 0 + parse_failed; the python port mirrors that).
 
     When session_jsonl is given, plant a fake session transcript at the path the
     num_turns fixup looks up ($CLAUDE_CONFIG_DIR/projects/-<cwd>/<sid>.jsonl) so
@@ -157,7 +167,6 @@ def run_adapter_case(
     with tempfile.TemporaryDirectory() as td:
         base = Path(td).resolve()
         bindir = base / "bin"
-        _write_fake_claude(bindir, fixture)
         prompt = base / "prompt.md"
         prompt.write_text("dummy prompt\n")
         log = base / "out.log"
@@ -167,7 +176,14 @@ def run_adapter_case(
             proj_dir = base / ".testalias" / "projects" / f"-{proj_key}"
             proj_dir.mkdir(parents=True, exist_ok=True)
             (proj_dir / f"{session_id}.jsonl").write_text("\n".join(session_jsonl) + "\n")
-        env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base)})
+        # PATH override (no ambient dirs appended) so `claude` presence is controlled:
+        # with_claude=True → fake claude on PATH; False → only /usr/bin:/bin (no claude).
+        if with_claude:
+            _write_fake_claude(bindir, fixture)
+            path = f"{bindir}:/usr/bin:/bin"
+        else:
+            path = "/usr/bin:/bin"
+        env = _clean_env({"PATH": path, "HOME": str(base)})
         prompt_arg = f"--prompt={inline_prompt}" if inline_prompt is not None else f"--prompt-file={prompt}"
         proc = subprocess.run(
             _adapter_cmd() + [prompt_arg, "--claude-alias=testalias", f"--log={log}"],
@@ -462,6 +478,8 @@ CASES: dict[str, callable] = {
         ],
     ),
     "adapter_inline_prompt": lambda: run_adapter_case("claude_normal.json", inline_prompt="analyze this system"),
+    # claude can't be spawned (missing from PATH): exit 0 + error-in-.log + parse_failed
+    "adapter_claude_missing": lambda: run_adapter_case("claude_normal.json", with_claude=False),
     # command construction: how flags become the `claude` invocation
     "adapter_cmd_default": lambda: run_adapter_cmd_case([]),
     "adapter_cmd_all_flags": lambda: run_adapter_cmd_case(["--effort=high", "--model=sonnet", "--max-budget=5"]),
