@@ -1,0 +1,52 @@
+exit_code: 0
+
+=== stdout ===
+========================================
+ Specula — Bug Confirmation Batch Runner
+========================================
+Targets:      1
+Max parallel: 1
+Max turns:    0
+
+Checking prerequisites...
+  footest             bug-report OK  brief OK  repo OK
+
+[TIME] Launching agent: footest
+  [DRY RUN] <ROOT>/scripts/launch/adapters/claude-code.sh --prompt=<prompt> --max-turns=0 --log=<WORK>/.specula-output/bug-confirmation.log --background
+  Prompt saved: <WORK>/.specula-output/.bug-confirmation-prompt.md
+
+
+========================================
+ Results
+========================================
+  footest: (no report — check log; repro/ tests: 0)
+
+
+=== .bug-confirmation-prompt.md ===
+# Bug Confirmation Task: footest
+
+You are confirming and reproducing bugs found in **footest** by both model checking and code review.
+
+## Inputs
+
+- **Bug report (MC findings)**: <WORK>/.specula-output/spec/bug-report.md
+- **Modeling brief (code review findings)**: <WORK>/.specula-output/modeling-brief.md
+- **Source code**: <ARTIFACT>
+- **Spec directory**: <WORK>/.specula-output/spec
+
+## Methodology
+
+Read and follow the **bug-confirmation** skill:
+  <ROOT>/.claude/skills/bug-confirmation/guide.md
+
+## Task
+
+Consolidate the two finding sources into one candidate list:
+- **MC findings** (with counterexamples): `<WORK>/.specula-output/spec/bug-report.md`
+- **Code-review findings**: `<WORK>/.specula-output/modeling-brief.md`
+
+Then process every candidate **strictly per the bug-confirmation skill's Flow** — do not restate, relax, or override it here. In particular:
+- Apply **only** the skill's single pre-filter (code-review-sourced **and** already-known → drop before Phase 2, exactly as the skill defines it). Invent no other pre-filter — never skip a candidate as "defensive coding", "style", or "theoretical-only".
+- Follow the skill's Phase 1 (investigation) and Phase 2 (strict Level 0→3 escalation ladder), and use its per-bug output schema and statuses.
+
+Write the consolidated report to `<WORK>/.specula-output/spec/confirmed-bugs.md`, with one `repro/` test per non-dropped finding under `<WORK>/.specula-output/repro/`, exactly as the skill specifies.

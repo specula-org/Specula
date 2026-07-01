@@ -56,11 +56,19 @@ class Workspace:
     `$PWD/.specula-output`; batch to `$PWD/<name>/.specula-output`.
     """
 
-    def __init__(self, targets: list[str], artifact: str = "", cwd: Path | None = None):
+    def __init__(
+        self,
+        targets: list[str],
+        artifact: str = "",
+        cwd: Path | None = None,
+        opts: dict | None = None,
+    ):
         self.targets = targets
         self.artifact = artifact
         self.cwd = Path(cwd) if cwd else Path.cwd()
         self.single = len(targets) == 1
+        # phase-specific run options (e.g. validation --repair, confirmation --recheck)
+        self.opts = opts or {}
 
     def work_dir(self, name: str) -> Path:
         if self.single:
@@ -94,6 +102,12 @@ class Phase:
     dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
 
     # ── per-phase hooks ──
+    def parse_flag(self, arg: str, extra: dict) -> bool:
+        """Consume a phase-specific flag into `extra`; return True if handled.
+        Override for extra flags (validation --repair; confirmation --recheck /
+        --max-repair-rounds). `extra` is exposed to hooks as `ws.opts`."""
+        return False
+
     def target_name(self, target: str) -> str:
         """Extract the display/work name from a target string. Downstream phases
         get name-only targets, so the whole (trimmed) string is the name;
@@ -133,6 +147,7 @@ class Phase:
         claude_alias = os.environ.get("CLAUDE_ALIAS", "claude")
         artifact = ""
         targets: list[str] = []
+        extra: dict = {}
 
         for arg in argv:
             if arg == "--dry-run":
@@ -152,6 +167,8 @@ class Phase:
             elif arg in ("--help", "-h"):
                 print(self.__doc__ or self.title)
                 return 0
+            elif self.parse_flag(arg, extra):
+                pass
             elif arg.startswith("-"):
                 print(f"Unknown option: {arg}")
                 return 1
@@ -166,7 +183,7 @@ class Phase:
             print(f"ERROR: Unknown agent '{agent}' — adapter not found at {adapter}")
             return 1
 
-        ws = Workspace(targets, artifact=artifact)
+        ws = Workspace(targets, artifact=artifact, opts=extra)
         names = [self.target_name(t) for t in targets]
 
         print("========================================")
@@ -599,6 +616,244 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
                 print(f"  {name}: (no report — check log)")
 
 
+class SpecValidationPhase(Phase):
+    key = "spec_validation"
+    title = "Specula — Spec Validation Batch Runner"
+    check_header = "Checking prerequisites..."
+    check_fail_msg = "ERROR: Missing prerequisites. Run spec generation first."
+
+    def parse_flag(self, arg, extra):
+        if arg == "--repair":
+            extra["repair"] = True
+            return True
+        return False
+
+    def check(self, ws, names):
+        ok = True
+        for name in names:
+            spec_dir = ws.work_dir(name) / "spec"
+            repo_dir = ws.find_repo_dir(name)
+            line = f"  {name:<20}"
+            base = spec_dir / "base.tla"
+            if base.is_file() and (spec_dir / "MC.tla").is_file() and (spec_dir / "Trace.tla").is_file():
+                line += f"specs OK ({len(base.read_text().splitlines())}L)"
+            else:
+                line += "specs MISSING"
+                ok = False
+            if (spec_dir / "instrumentation-spec.md").is_file():
+                line += "  instr OK"
+            else:
+                line += "  instr MISSING"
+                ok = False
+            line += "  repo OK" if repo_dir else "  repo MISSING"
+            if not repo_dir:
+                ok = False
+            traces_dir = ws.work_dir(name) / "traces"
+            n = len(list(traces_dir.rglob("*.ndjson"))) if traces_dir.is_dir() else 0
+            line += f"  traces OK ({n})" if n > 0 else "  traces WARN (0 ndjson files)"
+            print(line)
+        return ok
+
+    def agent_files(self, ws, name):
+        wd = ws.work_dir(name)
+        tag = "spec-repair" if ws.opts.get("repair") else "spec-validation"
+        return {
+            "log": wd / f"{tag}.log",
+            "pid": wd / "spec-validation.pid",  # bash always writes spec-validation.pid
+            "prompt": wd / f".{tag}-prompt.md",
+            "mkdirs": [wd / "traces"],
+        }
+
+    def build_prompt(self, ws, target):
+        name = self.target_name(target)
+        wd = ws.work_dir(name)
+        spec_dir = wd / "spec"
+        repo_dir = ws.find_repo_dir(name)
+        if ws.opts.get("repair"):
+            prompt = f"""# Spec Repair Task (confirmation back-edge): {name}
+
+You are running spec validation in **REPAIR MODE**. The bug-confirmation phase handed
+back counterexamples it judged to be spec / fault-model / invariant **artifacts** (not
+real bugs), each recorded as a repair request. Repair the spec so the artifact no longer
+arises, re-validate, then hand each request to re-check.
+
+## Inputs
+- **Repair requests**: {spec_dir}/repair-requests/   (process ONLY status OPEN or REOPENED)
+- **Spec directory**: {spec_dir}   (base.tla, MC.tla, Trace.tla, *.cfg, MC_hunt_*.cfg)
+- **Source code**: {repo_dir}
+- **Modeling brief**: {wd}/modeling-brief.md
+- **Traces**: {wd}/traces/
+
+## Methodology — read and follow exactly (single source of repair-mode method)
+- **{SPECULA_ROOT}/.claude/skills/bug-confirmation/references/repair-request-format.md** — the artifact, the state machine, and the per-request repair procedure (how to repair each target, the full-trace soundness gate, and the OPEN/REOPENED → IN_REPAIR → RECHECK transitions you own).
+- **{SPECULA_ROOT}/.claude/skills/validation-workflow/guide.md** (+ its sub-skills tla-trace-workflow, tla-checking-workflow) — how to repair the spec and re-validate without overfitting.
+
+Process ONLY OPEN/REOPENED requests. Do everything those docs specify; do not add, relax, or override any step here.
+"""
+        else:
+            prompt = f"""# Spec Validation Task: {name}
+
+You are validating the TLA+ specification for **{name}** through iterative trace validation and invariant checking.
+
+## Inputs
+
+- **Spec directory**: {spec_dir}
+  - base.tla, base.cfg — Base specification
+  - MC.tla, MC.cfg — Model checking specification
+  - Trace.tla, Trace.cfg — Trace validation specification
+  - instrumentation-spec.md — Action-to-code mapping for harness generation
+- **Source code**: {repo_dir}
+- **Modeling brief**: {wd}/modeling-brief.md
+
+## Workflow
+
+Follow the **validation-workflow** skill exactly — it is the single source of methodology (its iterative trace-validation ↔ model-checking loop, the Case A/B/C classification, convergence, bug hunting, and required artifacts such as changelog.md / bug-report.md). Read and execute it in full, including the two sub-skills it delegates to:
+  {SPECULA_ROOT}/.claude/skills/validation-workflow/guide.md
+  (sub-skills: {SPECULA_ROOT}/.claude/skills/tla-trace-workflow/guide.md and {SPECULA_ROOT}/.claude/skills/tla-checking-workflow/guide.md)
+
+Do everything the skill specifies. Do not add, relax, or override any step here. Harness and traces already exist from Phase 2.5 under `{wd}/traces/` and `{wd}/harness/`; the skill's Phase 0 covers verifying and (if needed) regenerating them.
+"""
+        return self._with_extra(ws, name, prompt)
+
+    def summarize(self, ws, names):
+        print()
+        print("========================================")
+        print(" Results")
+        print("========================================")
+        for name in names:
+            changelog = ws.work_dir(name) / "spec" / "changelog.md"
+            if changelog.is_file() and changelog.stat().st_size > 0:
+                print(f"  {name}: changelog written ({len(changelog.read_text().splitlines())} lines)")
+            elif changelog.is_file():
+                print(f"  {name}: changelog empty (check log)")
+            else:
+                print(f"  {name}: no changelog (check log)")
+
+
+class BugConfirmationPhase(Phase):
+    key = "bug_confirmation"
+    title = "Specula — Bug Confirmation Batch Runner"
+    check_header = "Checking prerequisites..."
+    check_fail_msg = "ERROR: Missing prerequisites. Run full pipeline first."
+
+    def parse_flag(self, arg, extra):
+        if arg == "--recheck":
+            extra["recheck"] = True
+            return True
+        if arg.startswith("--max-repair-rounds="):
+            extra["max_repair_rounds"] = arg[len("--max-repair-rounds=") :]
+            return True
+        return False
+
+    def check(self, ws, names):
+        ok = True
+        for name in names:
+            wd = ws.work_dir(name)
+            repo_dir = ws.find_repo_dir(name)
+            line = f"  {name:<20}"
+            if (wd / "spec" / "bug-report.md").is_file():
+                line += "bug-report OK"
+            else:
+                line += "bug-report MISSING"
+                ok = False
+            if (wd / "modeling-brief.md").is_file():
+                line += "  brief OK"
+            else:
+                line += "  brief MISSING"
+                ok = False
+            line += "  repo OK" if repo_dir else "  repo MISSING"
+            if not repo_dir:
+                ok = False
+            print(line)
+        return ok
+
+    def agent_files(self, ws, name):
+        wd = ws.work_dir(name)
+        tag = "bug-recheck" if ws.opts.get("recheck") else "bug-confirmation"
+        return {
+            "log": wd / f"{tag}.log",
+            "pid": wd / "bug-confirmation.pid",  # bash always writes bug-confirmation.pid
+            "prompt": wd / f".{tag}-prompt.md",
+            "mkdirs": [],
+        }
+
+    def build_prompt(self, ws, target):
+        name = self.target_name(target)
+        wd = ws.work_dir(name)
+        spec_dir = wd / "spec"
+        repo_dir = ws.find_repo_dir(name)
+        if ws.opts.get("recheck"):
+            rounds = ws.opts.get("max_repair_rounds", "0")
+            prompt = f"""# Bug Re-check Task (confirmation back-edge): {name}
+
+You are running the bug-confirmation **RE-CHECK** pass. Phase 3 (repair mode) has repaired
+the spec for the open repair requests and moved them to `status: RECHECK`. Settle each
+finding and transition its request out of RECHECK.
+
+## Inputs
+- **Repair requests**: {spec_dir}/repair-requests/   (process ONLY status RECHECK)
+- **Updated bug report + TLC output**: {spec_dir}/bug-report.md , {spec_dir}/output/
+- **Confirmed bugs (you update this)**: {spec_dir}/confirmed-bugs.md
+- **Source code**: {repo_dir}
+- **Per-request cap**: --max-repair-rounds={rounds}   (0 = unlimited)
+
+## Methodology — read and follow
+- {SPECULA_ROOT}/.claude/skills/bug-confirmation/phases/03-recheck.md
+- {SPECULA_ROOT}/.claude/skills/bug-confirmation/references/repair-request-format.md
+
+## Instructions
+Do everything `03-recheck.md` and `repair-request-format.md` specify, exactly — process ONLY `status: RECHECK` requests, and honor the per-request cap (`--max-repair-rounds` above). Do not add, relax, or override any step here.
+"""
+        else:
+            prompt = f"""# Bug Confirmation Task: {name}
+
+You are confirming and reproducing bugs found in **{name}** by both model checking and code review.
+
+## Inputs
+
+- **Bug report (MC findings)**: {spec_dir}/bug-report.md
+- **Modeling brief (code review findings)**: {wd}/modeling-brief.md
+- **Source code**: {repo_dir}
+- **Spec directory**: {spec_dir}
+
+## Methodology
+
+Read and follow the **bug-confirmation** skill:
+  {SPECULA_ROOT}/.claude/skills/bug-confirmation/guide.md
+
+## Task
+
+Consolidate the two finding sources into one candidate list:
+- **MC findings** (with counterexamples): `{spec_dir}/bug-report.md`
+- **Code-review findings**: `{wd}/modeling-brief.md`
+
+Then process every candidate **strictly per the bug-confirmation skill's Flow** — do not restate, relax, or override it here. In particular:
+- Apply **only** the skill's single pre-filter (code-review-sourced **and** already-known → drop before Phase 2, exactly as the skill defines it). Invent no other pre-filter — never skip a candidate as "defensive coding", "style", or "theoretical-only".
+- Follow the skill's Phase 1 (investigation) and Phase 2 (strict Level 0→3 escalation ladder), and use its per-bug output schema and statuses.
+
+Write the consolidated report to `{spec_dir}/confirmed-bugs.md`, with one `repro/` test per non-dropped finding under `{wd}/repro/`, exactly as the skill specifies.
+"""
+        return self._with_extra(ws, name, prompt)
+
+    def summarize(self, ws, names):
+        print()
+        print("========================================")
+        print(" Results")
+        print("========================================")
+        for name in names:
+            wd = ws.work_dir(name)
+            report = wd / "spec" / "confirmed-bugs.md"
+            repro_dir = wd / "repro"
+            repro_count = len([p for p in repro_dir.rglob("test_bug*") if p.is_file()]) if repro_dir.is_dir() else 0
+            if report.is_file() and report.stat().st_size > 0:
+                n = len(report.read_text().splitlines())
+                print(f"  {name}: confirmed-bugs.md written ({n} lines, repro/ tests: {repro_count})")
+            elif report.is_file():
+                print(f"  {name}: confirmed-bugs.md empty (check log; repro/ tests: {repro_count})")
+            else:
+                print(f"  {name}: (no report — check log; repro/ tests: {repro_count})")
+
+
 PHASES: dict[str, Phase] = {
     p.key: p
     for p in [
@@ -606,6 +861,8 @@ PHASES: dict[str, Phase] = {
         SpecGenerationPhase(),
         HarnessGenerationPhase(),
         BugClassificationPhase(),
+        SpecValidationPhase(),
+        BugConfirmationPhase(),
     ]
 }
 

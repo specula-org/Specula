@@ -273,6 +273,7 @@ def run_dryrun_case(
     seed: dict[str, str] | None = None,
     prompt_rel: str = ".specula-output/.prompt.md",
     use_artifact: bool = True,
+    extra_flags: list[str] | None = None,
 ) -> str:
     """Run a phase launcher with --dry-run in an isolated cwd; snapshot stdout plus
     the generated prompt file (the exact prompt handed to the agent).
@@ -282,7 +283,8 @@ def run_dryrun_case(
     print (e.g. seed modeling-brief.md for spec_generation).
     prompt_rel: where this phase writes its prompt (spec_generation uses
     .spec-gen-prompt.md, not .prompt.md).
-    use_artifact: pass --artifact (bug_classification takes none)."""
+    use_artifact: pass --artifact (bug_classification takes none).
+    extra_flags: phase-specific flags (validation --repair; confirmation --recheck)."""
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         work = tmp / "work"
@@ -292,7 +294,7 @@ def run_dryrun_case(
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(content)
         env = _clean_env({"HOME": str(tmp)})
-        cmd = _launcher_cmd(script) + ["--dry-run"]
+        cmd = _launcher_cmd(script) + ["--dry-run", *(extra_flags or [])]
         subs = {str(work): "<WORK>", str(tmp): "<TMP>"}
         if use_artifact:
             artifact = tmp / "artifact"
@@ -482,6 +484,19 @@ def run_quota_case(usage_json: str, q5: int, q7: int) -> str:
         return normalize(out, {str(tmp): "<TMP>"})
 
 
+# prerequisite fixtures for the downstream phases' happy-path dry-runs
+_VALIDATION_SEED = {
+    ".specula-output/spec/base.tla": "---- MODULE base ----\nx == 1\n====\n",
+    ".specula-output/spec/MC.tla": "---- MODULE MC ----\n====\n",
+    ".specula-output/spec/Trace.tla": "---- MODULE Trace ----\n====\n",
+    ".specula-output/spec/instrumentation-spec.md": "# instrumentation\n",
+}
+_CONFIRMATION_SEED = {
+    ".specula-output/spec/bug-report.md": "# Bug Report\n\n## MC-1: something\n",
+    ".specula-output/modeling-brief.md": "# Modeling Brief\n",
+}
+
+
 # ── case registry ───────────────────────────────────────────────────────────
 # name -> zero-arg callable returning the normalized snapshot string.
 CASES: dict[str, callable] = {
@@ -542,6 +557,32 @@ CASES: dict[str, callable] = {
         seed={".specula-output/spec/confirmed-bugs.md": "# Confirmed Bugs\n\n## Bug 1: something\n"},
         prompt_rel=".specula-output/.bug-classification-prompt.md",
         use_artifact=False,
+    ),
+    "dryrun_spec_validation": lambda: run_dryrun_case(
+        "launch_spec_validation.sh",
+        "footest",
+        seed=_VALIDATION_SEED,
+        prompt_rel=".specula-output/.spec-validation-prompt.md",
+    ),
+    "dryrun_spec_validation_repair": lambda: run_dryrun_case(
+        "launch_spec_validation.sh",
+        "footest",
+        seed=_VALIDATION_SEED,
+        prompt_rel=".specula-output/.spec-repair-prompt.md",
+        extra_flags=["--repair"],
+    ),
+    "dryrun_bug_confirmation": lambda: run_dryrun_case(
+        "launch_bug_confirmation.sh",
+        "footest",
+        seed=_CONFIRMATION_SEED,
+        prompt_rel=".specula-output/.bug-confirmation-prompt.md",
+    ),
+    "dryrun_bug_confirmation_recheck": lambda: run_dryrun_case(
+        "launch_bug_confirmation.sh",
+        "footest",
+        seed=_CONFIRMATION_SEED,
+        prompt_rel=".specula-output/.bug-recheck-prompt.md",
+        extra_flags=["--recheck", "--max-repair-rounds=3"],
     ),
     # step 5 target: launch_pipeline.sh phase sequencing + repair-loop gating under --skip-*
     "pipeline_seq_full": lambda: run_pipeline_case([], "footest|foo/bar|Go|Raft demo"),
