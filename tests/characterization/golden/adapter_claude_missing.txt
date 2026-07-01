@@ -1,0 +1,9 @@
+exit_code: 0
+
+=== .log ===
+<CLAUDE-SPAWN-ERROR>
+
+
+
+=== .usage.json ===
+{"error": "parse_failed"}
