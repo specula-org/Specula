@@ -64,6 +64,8 @@ traces/
 output/autosave/
 generation_summary.json
 specula
+# ...but the repo-root CLI entrypoint of the same name is a tracked source file.
+!/specula
 models/
 
 # claude
