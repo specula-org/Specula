@@ -39,6 +39,16 @@ FIXTURES = HERE / "fixtures"
 SPECULA_ROOT = HERE.parent.parent
 LAUNCH = SPECULA_ROOT / "scripts" / "launch"
 ADAPTER = LAUNCH / "adapters" / "claude-code.sh"
+ADAPTER_PY = LAUNCH / "adapters" / "claude_code.py"
+
+
+def _adapter_cmd() -> list[str]:
+    """Which adapter implementation the adapter cases exercise. Default: the bash
+    adapter (or its shim). Set SPECULA_ADAPTER_IMPL=python to run the Python port
+    directly and diff it against the bash-captured goldens (step-1 parity check)."""
+    if os.environ.get("SPECULA_ADAPTER_IMPL") == "python":
+        return ["python3", str(ADAPTER_PY)]
+    return ["bash", str(ADAPTER)]
 
 
 # ── normalization ───────────────────────────────────────────────────────────
@@ -110,33 +120,43 @@ def _init_git_repo(path: Path) -> None:
 
 
 # ── case runners ────────────────────────────────────────────────────────────
-def run_adapter_case(fixture_name: str) -> str:
-    """Feed a canned `claude` JSON response through the real claude-code.sh
-    adapter; snapshot exit code + derived .log + .usage.json."""
+def run_adapter_case(
+    fixture_name: str, session_id: str = "", session_jsonl: list[str] | None = None
+) -> str:
+    """Feed a canned `claude` JSON response through the adapter (bash or python
+    port, per SPECULA_ADAPTER_IMPL); snapshot exit code + derived .log +
+    .usage.json.
+
+    When session_jsonl is given, plant a fake session transcript at the path the
+    num_turns fixup looks up ($CLAUDE_CONFIG_DIR/projects/-<cwd>/<sid>.jsonl) so
+    that branch is exercised. `base` is resolved (realpath) so it matches the
+    adapter's os.getcwd()-derived project key."""
     fixture = FIXTURES / fixture_name
     with tempfile.TemporaryDirectory() as td:
-        tmp = Path(td)
-        bindir = tmp / "bin"
+        base = Path(td).resolve()
+        bindir = base / "bin"
         _write_fake_claude(bindir, fixture)
-        prompt = tmp / "prompt.md"
+        prompt = base / "prompt.md"
         prompt.write_text("dummy prompt\n")
-        log = tmp / "out.log"
-        env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(tmp)})
+        log = base / "out.log"
+        if session_jsonl is not None:
+            # CLAUDE_CONFIG_DIR = $HOME/.testalias (HOME=base); proj key from cwd=base
+            proj_key = str(base).replace("/", "-").lstrip("-")
+            proj_dir = base / ".testalias" / "projects" / f"-{proj_key}"
+            proj_dir.mkdir(parents=True, exist_ok=True)
+            (proj_dir / f"{session_id}.jsonl").write_text("\n".join(session_jsonl) + "\n")
+        env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base)})
         proc = subprocess.run(
-            [
-                "bash", str(ADAPTER),
-                f"--prompt-file={prompt}",
-                "--claude-alias=testalias",
-                f"--log={log}",
-            ],
-            cwd=tmp, env=env, capture_output=True, text=True,
+            _adapter_cmd()
+            + [f"--prompt-file={prompt}", "--claude-alias=testalias", f"--log={log}"],
+            cwd=str(base), env=env, capture_output=True, text=True,
         )
         parts = [f"exit_code: {proc.returncode}", ""]
-        for name, p in [(".log", log), (".usage.json", tmp / "out.usage.json")]:
+        for name, p in [(".log", log), (".usage.json", base / "out.usage.json")]:
             parts.append(f"=== {name} ===")
             parts.append(p.read_text() if p.exists() else "<MISSING>")
             parts.append("")
-        raw = normalize("\n".join(parts), {str(tmp): "<TMP>"})
+        raw = normalize("\n".join(parts), {str(base): "<TMP>"})
     return raw
 
 
@@ -351,6 +371,16 @@ CASES: dict[str, callable] = {
     "adapter_normal": lambda: run_adapter_case("claude_normal.json"),
     "adapter_ratelimit": lambda: run_adapter_case("claude_ratelimit.json"),
     "adapter_malformed": lambda: run_adapter_case("claude_malformed.txt"),
+    "adapter_with_session": lambda: run_adapter_case(
+        "claude_session.json",
+        session_id="sess-abc",
+        session_jsonl=[
+            '{"type":"user","message":{"content":"hi"}}',
+            '{"type":"assistant","message":{"content":[{"type":"text","text":"t"},{"type":"tool_use","name":"Bash"}]}}',
+            '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"},{"type":"tool_use","name":"Edit"}]}}',
+            '{"type":"assistant","message":{"content":[{"type":"text","text":"done"}]}}',
+        ],
+    ),
     # step 3 target: phase-launcher dry-run (arg parse, path calc, agent command, prompt)
     "dryrun_code_analysis": lambda: run_dryrun_case(
         "launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo"

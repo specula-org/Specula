@@ -26,6 +26,7 @@ Once pytest works: `pytest tests/characterization/` runs the same cases.
 | `adapter_normal` | 1 (adapter) | JSON → `.log` (result text) + `.usage.json` (field rename `modelUsage`→`model_usage`, `num_turns` kept when `session_id` empty), exit 0 |
 | `adapter_ratelimit` | 1 | `"hit your limit"` → **exit 75** (EX_TEMPFAIL, the retry signal the pipeline depends on) |
 | `adapter_malformed` | 1 | non-JSON → `.log` raw fallback + `.usage.json` = `{"error": "parse_failed"}` |
+| `adapter_with_session` | 1 | non-empty `session_id` → num_turns fixup: reads the session JSONL, overrides `num_turns` with the assistant-message count, records `num_turns_reported` + `num_tool_uses` |
 | `dryrun_code_analysis` | 3 (phase framework) | arg parse, path calc, exact agent command (`--log/--background`), full generated `.prompt.md` |
 | `gate_*` (×5) | 3 | each downstream phase's **precondition gate** — the input contract it enforces before running (e.g. spec-gen needs `modeling-brief.md`; exit 1 + "Missing prerequisites" message) |
 | `pipeline_seq_*` (×3) | 5 (orchestrator) | `launch_pipeline.sh` phase order + review/harness/repair-loop gating under `--skip-*` combos |
@@ -43,6 +44,12 @@ Once pytest works: `pytest tests/characterization/` runs the same cases.
 
 ## Techniques worth knowing
 
+- **Adapter impl switch** (`SPECULA_ADAPTER_IMPL=python`): the adapter cases run
+  the bash adapter by default; set this env var to run the Python port
+  (`scripts/launch/adapters/claude_code.py`) and diff it against the same
+  bash-captured goldens — this is the step-1 parity check. After the strangler
+  cutover `claude-code.sh` is a shim to the port, so the default run exercises
+  Python too.
 - **Sourcing bash functions in isolation** (`repair_*`, `quota_*`): `oracle.py`
   strips the trailing `main` invocation from `launch_pipeline.sh`, sources the
   rest, and drives individual helpers. For quota it also overrides `USAGE_SCRIPT`
