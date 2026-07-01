@@ -1,1 +1,1 @@
-/home/ubuntu/Specula/scripts/tlc/run_model_check.sh
+../tlc/run_model_check.sh
