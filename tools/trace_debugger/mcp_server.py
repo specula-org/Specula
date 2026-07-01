@@ -19,13 +19,13 @@ Usage:
     }
 """
 
-import asyncio
 import argparse
-import sys
+import asyncio
 import os
+import sys
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from tla_mcp import TLADebuggerMCPServer
 from tla_mcp.utils.logger import logger
@@ -53,13 +53,13 @@ Examples:
       }
     }
   }
-        """
+        """,
     )
     parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default="INFO",
-        help="Logging level (default: INFO)"
+        help="Logging level (default: INFO)",
     )
     return parser.parse_args()
 

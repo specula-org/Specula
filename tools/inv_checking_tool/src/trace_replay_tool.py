@@ -43,13 +43,13 @@ Example:
 
 import asyncio
 import os
-from typing import Optional, List, Tuple
 from enum import Enum
 
 
 class TraceFormat(Enum):
     """Supported trace input formats."""
-    TLC = "tlc"    # Binary .bin format
+
+    TLC = "tlc"  # Binary .bin format
     JSON = "json"  # JSON format
 
 
@@ -60,23 +60,15 @@ class TraceReplayer:
     and output the result as a JSON file for further processing.
     """
 
-    def __init__(
-        self,
-        tla_jar: Optional[str] = None,
-        community_jar: Optional[str] = None
-    ):
+    def __init__(self, tla_jar: str | None = None, community_jar: str | None = None):
         self.tla_jar, self.community_jar = self._resolve_jar_paths(tla_jar, community_jar)
 
-    def _resolve_jar_paths(
-        self,
-        tla_jar: Optional[str],
-        community_jar: Optional[str]
-    ) -> Tuple[str, str]:
+    def _resolve_jar_paths(self, tla_jar: str | None, community_jar: str | None) -> tuple[str, str]:
         """Resolve JAR paths, using defaults if not provided."""
         if tla_jar is None or community_jar is None:
-            specula_root = os.environ.get('SPECULA_ROOT')
+            specula_root = os.environ.get("SPECULA_ROOT")
             if specula_root:
-                default_lib = os.path.join(specula_root, 'lib')
+                default_lib = os.path.join(specula_root, "lib")
             else:
                 this_file = os.path.abspath(__file__)
                 tla_mcp_dir = os.path.dirname(this_file)
@@ -84,7 +76,7 @@ class TraceReplayer:
                 tool_dir = os.path.dirname(src_dir)
                 tools_dir = os.path.dirname(tool_dir)
                 specula_root = os.path.dirname(tools_dir)
-                default_lib = os.path.join(specula_root, 'lib')
+                default_lib = os.path.join(specula_root, "lib")
 
             tla_jar = tla_jar or os.path.join(default_lib, "tla2tools.jar")
             community_jar = community_jar or os.path.join(default_lib, "CommunityModules-deps.jar")
@@ -96,10 +88,10 @@ class TraceReplayer:
         spec_file: str,
         input_trace: str,
         output_trace: str,
-        config_file: Optional[str],
+        config_file: str | None,
         trace_format: TraceFormat,
-        java_opts: Optional[List[str]] = None
-    ) -> List[str]:
+        java_opts: list[str] | None = None,
+    ) -> list[str]:
         """Build the TLC command for trace replay."""
         classpath = f"{self.tla_jar}:{self.community_jar}"
 
@@ -122,12 +114,12 @@ class TraceReplayer:
         trace_file: str,
         work_dir: str,
         output_file: str,
-        config_file: Optional[str] = None,
+        config_file: str | None = None,
         trace_format: TraceFormat = TraceFormat.JSON,
-        java_opts: Optional[List[str]] = None,
+        java_opts: list[str] | None = None,
         timeout: int = 300,
-        tlc_output_file: Optional[str] = None
-    ) -> Tuple[str, str]:
+        tlc_output_file: str | None = None,
+    ) -> tuple[str, str]:
         """Replay a trace file and save the result as JSON.
 
         Args:
@@ -157,26 +149,20 @@ class TraceReplayer:
             output_trace=output_file,
             config_file=config_file,
             trace_format=trace_format,
-            java_opts=java_opts
+            java_opts=java_opts,
         )
 
         process = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=work_dir,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT
+            *cmd, cwd=work_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
         )
 
         try:
-            stdout, _ = await asyncio.wait_for(
-                process.communicate(),
-                timeout=timeout
-            )
-        except asyncio.TimeoutError:
+            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        except asyncio.TimeoutError as e:
             process.kill()
-            raise RuntimeError(f"Trace replay timed out after {timeout}s")
+            raise RuntimeError(f"Trace replay timed out after {timeout}s") from e
 
-        output = stdout.decode('utf-8', errors='replace')
+        output = stdout.decode("utf-8", errors="replace")
 
         # TLC exits with non-zero codes for invariant/property violations
         # (e.g. 12 for invariant violation). This is expected when replaying
@@ -186,8 +172,8 @@ class TraceReplayer:
 
         # Save TLC text output so TLCOutputReader can parse it.
         if not tlc_output_file:
-            tlc_output_file = output_file.rsplit('.', 1)[0] + '_tlc_output.txt'
-        with open(tlc_output_file, 'w') as f:
+            tlc_output_file = output_file.rsplit(".", 1)[0] + "_tlc_output.txt"
+        with open(tlc_output_file, "w") as f:
             f.write(output)
 
         return tlc_output_file, output_file

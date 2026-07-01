@@ -1,13 +1,13 @@
 """Argument validation utilities."""
 
+from typing import Any
+
 import jsonschema
-from typing import Dict, Any
 
 from .errors import ValidationError
 
 
-def validate_arguments(arguments: Dict[str, Any],
-                      schema: Dict[str, Any]) -> Dict[str, Any]:
+def validate_arguments(arguments: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
     """Validate arguments against JSON schema.
 
     Args:
@@ -30,13 +30,12 @@ def validate_arguments(arguments: Dict[str, Any],
         return validated
 
     except jsonschema.ValidationError as e:
-        raise ValidationError(f"Invalid arguments: {e.message}")
+        raise ValidationError(f"Invalid arguments: {e.message}") from e
     except jsonschema.SchemaError as e:
-        raise ValidationError(f"Invalid schema: {e.message}")
+        raise ValidationError(f"Invalid schema: {e.message}") from e
 
 
-def _apply_defaults(arguments: Dict[str, Any],
-                   schema: Dict[str, Any]) -> Dict[str, Any]:
+def _apply_defaults(arguments: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
     """Apply default values from schema to arguments.
 
     Args:

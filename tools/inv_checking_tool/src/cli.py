@@ -40,7 +40,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import List, Optional
 
 # Handle both direct execution and module execution
 try:
@@ -49,9 +48,10 @@ try:
 except ImportError:
     # Direct execution - add parent directories to path
     import os
+
     current_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(current_dir)  # inv_checking_tool
-    tools_dir = os.path.dirname(parent_dir)    # tools
+    tools_dir = os.path.dirname(parent_dir)  # tools
     sys.path.insert(0, tools_dir)
     from inv_checking_tool.src.tlc_output_reader import TLCOutputReader
     from inv_checking_tool.src.utils.path_parser import format_value
@@ -87,7 +87,7 @@ Examples:
 
   # Show action sequence
   %(prog)s output.log --actions
-        """
+        """,
     )
 
     parser.add_argument(
@@ -100,7 +100,8 @@ Examples:
     mode_group = parser.add_mutually_exclusive_group()
 
     mode_group.add_argument(
-        "--summary", "-s",
+        "--summary",
+        "-s",
         action="store_true",
         help="Show trace summary (violated invariant, trace length, etc.)",
     )
@@ -147,23 +148,25 @@ Examples:
 
     # Options that modify output
     parser.add_argument(
-        "--var", "-v",
+        "--var",
+        "-v",
         type=str,
         metavar="PATH",
         action="append",
         dest="var_paths",
-        help="Variable path to show (can be used multiple times). "
-             "Supports dot notation: 'log.s1.entries[0]'",
+        help="Variable path to show (can be used multiple times). Supports dot notation: 'log.s1.entries[0]'",
     )
 
     parser.add_argument(
-        "--json", "-j",
+        "--json",
+        "-j",
         action="store_true",
         help="Output in JSON format",
     )
 
     parser.add_argument(
-        "--compact", "-c",
+        "--compact",
+        "-c",
         action="store_true",
         help="Compact output (less whitespace)",
     )
@@ -189,13 +192,16 @@ def handle_summary(reader: TLCOutputReader, args) -> None:
     """Handle --summary command."""
     if args.json:
         summary = reader.get_summary()
-        output_json({
-            "violation_type": summary.violation_type,
-            "violation_name": summary.violation_name,
-            "trace_length": summary.trace_length,
-            "actions": summary.actions,
-            "statistics": summary.statistics,
-        }, args.compact)
+        output_json(
+            {
+                "violation_type": summary.violation_type,
+                "violation_name": summary.violation_name,
+                "trace_length": summary.trace_length,
+                "actions": summary.actions,
+                "statistics": summary.statistics,
+            },
+            args.compact,
+        )
     else:
         print(reader.format_summary())
 
@@ -204,10 +210,7 @@ def handle_state(reader: TLCOutputReader, args) -> None:
     """Handle --state command."""
     # Parse the index
     try:
-        if args.state.lower() in ("first", "last"):
-            index = args.state.lower()
-        else:
-            index = int(args.state)
+        index = args.state.lower() if args.state.lower() in ("first", "last") else int(args.state)
     except ValueError:
         print(f"Error: Invalid state index: {args.state}", file=sys.stderr)
         sys.exit(1)
@@ -216,7 +219,7 @@ def handle_state(reader: TLCOutputReader, args) -> None:
     variables = args.var_paths if args.var_paths else None
 
     try:
-        if args.var_paths and len(args.var_paths) == 1 and '.' in args.var_paths[0]:
+        if args.var_paths and len(args.var_paths) == 1 and "." in args.var_paths[0]:
             # Single path query - get just that value
             value = reader.get_variable_at_path(index, args.var_paths[0])
             if args.json:
@@ -227,12 +230,15 @@ def handle_state(reader: TLCOutputReader, args) -> None:
             # Get full state or filtered state
             state = reader.get_state(index, variables)
             if args.json:
-                output_json({
-                    "index": state.index,
-                    "action": state.action,
-                    "action_detail": state.action_detail,
-                    "variables": state.variables,
-                }, args.compact)
+                output_json(
+                    {
+                        "index": state.index,
+                        "action": state.action,
+                        "action_detail": state.action_detail,
+                        "variables": state.variables,
+                    },
+                    args.compact,
+                )
             else:
                 print(reader.format_state(index, variables, max_depth=args.max_depth))
     except (IndexError, ValueError) as e:
@@ -248,11 +254,17 @@ def handle_states(reader: TLCOutputReader, args) -> None:
         states = reader.get_states(args.states, variables)
 
         if args.json:
-            output_json([{
-                "index": s.index,
-                "action": s.action,
-                "variables": s.variables,
-            } for s in states], args.compact)
+            output_json(
+                [
+                    {
+                        "index": s.index,
+                        "action": s.action,
+                        "variables": s.variables,
+                    }
+                    for s in states
+                ],
+                args.compact,
+            )
         else:
             for state in states:
                 print(reader.format_state(state.index, variables, max_depth=args.max_depth))
@@ -265,8 +277,8 @@ def handle_states(reader: TLCOutputReader, args) -> None:
 def handle_diff(reader: TLCOutputReader, args) -> None:
     """Handle --diff command."""
     try:
-        index1 = int(args.diff[0]) if args.diff[0].lstrip('-').isdigit() else args.diff[0]
-        index2 = int(args.diff[1]) if args.diff[1].lstrip('-').isdigit() else args.diff[1]
+        index1 = int(args.diff[0]) if args.diff[0].lstrip("-").isdigit() else args.diff[0]
+        index2 = int(args.diff[1]) if args.diff[1].lstrip("-").isdigit() else args.diff[1]
     except ValueError:
         print(f"Error: Invalid state indices: {args.diff}", file=sys.stderr)
         sys.exit(1)
@@ -281,12 +293,12 @@ def handle_diff(reader: TLCOutputReader, args) -> None:
             print(f"Actions: {diff['state1_action']} -> {diff['state2_action']}")
             print()
 
-            if not diff['changed_variables']:
+            if not diff["changed_variables"]:
                 print("No changes detected.")
             else:
                 print(f"Changed variables ({len(diff['changed_variables'])}):")
-                for var_name in diff['changed_variables']:
-                    change = diff['changes'][var_name]
+                for var_name in diff["changed_variables"]:
+                    change = diff["changes"][var_name]
                     print(f"\n  {var_name}:")
                     print(f"    Before: {format_value(change['before'], max_depth=2)}")
                     print(f"    After:  {format_value(change['after'], max_depth=2)}")
@@ -298,8 +310,8 @@ def handle_diff(reader: TLCOutputReader, args) -> None:
 def handle_track(reader: TLCOutputReader, args) -> None:
     """Handle --track command."""
     # Check if tracking a path
-    if '.' in args.track:
-        parts = args.track.split('.', 1)
+    if "." in args.track:
+        parts = args.track.split(".", 1)
         var_name, path = parts[0], parts[1]
     else:
         var_name, path = args.track, None
@@ -338,7 +350,7 @@ def handle_actions(reader: TLCOutputReader, args) -> None:
                 print(f"{action_info['index']:3d}. {action_info['action']}")
             else:
                 print(f"State {action_info['index']:3d}: {action_info['action']}")
-                if action_info['detail']:
+                if action_info["detail"]:
                     print(f"            {action_info['detail']}")
 
 

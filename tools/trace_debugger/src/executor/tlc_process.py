@@ -1,10 +1,11 @@
+import logging
+import os
 import subprocess
 import threading
-import os
-import logging
 import time
 
 logger = logging.getLogger(__name__)
+
 
 class TLCExecutor:
     def __init__(self, tla_jar_path=None, community_jar_path=None):
@@ -21,18 +22,17 @@ class TLCExecutor:
         try:
             # Find and kill processes matching: java + tlc2.TLC + -debugger + port=<port>
             import psutil
+
             killed_count = 0
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            for proc in psutil.process_iter(["pid", "name", "cmdline"]):
                 try:
-                    cmdline = proc.info.get('cmdline', [])
+                    cmdline = proc.info.get("cmdline", [])
                     if not cmdline:
                         continue
 
-                    cmdline_str = ' '.join(cmdline)
+                    cmdline_str = " ".join(cmdline)
                     # Check if it's a TLC debugger process on our port
-                    if ('tlc2.TLC' in cmdline_str and
-                        '-debugger' in cmdline_str and
-                        f'port={port}' in cmdline_str):
+                    if "tlc2.TLC" in cmdline_str and "-debugger" in cmdline_str and f"port={port}" in cmdline_str:
                         logger.warning(f"Found zombie TLC process (PID {proc.pid}), killing...")
                         proc.kill()
                         proc.wait(timeout=3)
@@ -48,8 +48,9 @@ class TLCExecutor:
             # If psutil is not available, fall back to pkill
             logger.warning("psutil not available, using pkill fallback")
             try:
-                subprocess.run(['pkill', '-9', '-f', f'tlc2.TLC.*-debugger.*port={port}'],
-                             stderr=subprocess.DEVNULL, check=False)
+                subprocess.run(
+                    ["pkill", "-9", "-f", f"tlc2.TLC.*-debugger.*port={port}"], stderr=subprocess.DEVNULL, check=False
+                )
                 time.sleep(0.5)
             except Exception as e:
                 logger.warning(f"Could not cleanup zombie processes: {e}")
@@ -60,13 +61,27 @@ class TLCExecutor:
 
         classpath = f"{self.tla_jar_path}:{self.community_jar_path}"
         env = os.environ.copy()
-        if trace_file: env["JSON"] = trace_file
+        if trace_file:
+            env["JSON"] = trace_file
 
-        cmd = ["java", "-XX:+UseParallelGC", "-Xmx4G", "-cp", classpath,
-               "tlc2.TLC", "-debugger", f"port={port}", "-config", config_file, spec_file]
+        cmd = [
+            "java",
+            "-XX:+UseParallelGC",
+            "-Xmx4G",
+            "-cp",
+            classpath,
+            "tlc2.TLC",
+            "-debugger",
+            f"port={port}",
+            "-config",
+            config_file,
+            spec_file,
+        ]
 
         logger.info(f"Launching TLC: {' '.join(cmd)}")
-        self.process = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+        self.process = subprocess.Popen(
+            cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env
+        )
 
         def drain_and_watch():
             """Drain TLC stdout and signal readiness or failure.

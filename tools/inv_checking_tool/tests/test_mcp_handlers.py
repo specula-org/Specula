@@ -6,11 +6,10 @@ Run with:
 """
 
 import json
-import os
 import sys
-import tempfile
-import pytest
 from pathlib import Path
+
+import pytest
 
 # Add parent directories to path for imports
 current_dir = Path(__file__).parent
@@ -18,8 +17,7 @@ package_dir = current_dir.parent
 tools_dir = package_dir.parent
 sys.path.insert(0, str(tools_dir))
 
-from inv_checking_tool.src.mcp.handlers import SummaryHandler, StateHandler, CompareHandler
-
+from inv_checking_tool.src.mcp.handlers import CompareHandler, StateHandler, SummaryHandler
 
 # Path to test data - use local test data file that ships with the tests
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
@@ -75,10 +73,7 @@ class TestStateHandler:
     @pytest.mark.asyncio
     async def test_get_single_state(self, handler):
         """Test getting a single state."""
-        result = await handler.handle({
-            "file_path": str(SAMPLE_OUTPUT_FILE),
-            "index": 1
-        })
+        result = await handler.handle({"file_path": str(SAMPLE_OUTPUT_FILE), "index": 1})
         data = json.loads(result)
 
         assert data["success"] is True
@@ -89,10 +84,7 @@ class TestStateHandler:
     @pytest.mark.asyncio
     async def test_get_last_state(self, handler):
         """Test getting the last state."""
-        result = await handler.handle({
-            "file_path": str(SAMPLE_OUTPUT_FILE),
-            "index": -1
-        })
+        result = await handler.handle({"file_path": str(SAMPLE_OUTPUT_FILE), "index": -1})
         data = json.loads(result)
 
         assert data["success"] is True
@@ -101,11 +93,7 @@ class TestStateHandler:
     @pytest.mark.asyncio
     async def test_get_state_with_path(self, handler):
         """Test querying a nested path."""
-        result = await handler.handle({
-            "file_path": str(SAMPLE_OUTPUT_FILE),
-            "index": 1,
-            "path": "currentTerm.s1"
-        })
+        result = await handler.handle({"file_path": str(SAMPLE_OUTPUT_FILE), "index": 1, "path": "currentTerm.s1"})
         data = json.loads(result)
 
         assert data["success"] is True
@@ -115,10 +103,7 @@ class TestStateHandler:
     @pytest.mark.asyncio
     async def test_get_multiple_states(self, handler):
         """Test getting multiple states."""
-        result = await handler.handle({
-            "file_path": str(SAMPLE_OUTPUT_FILE),
-            "indices": "1:3"
-        })
+        result = await handler.handle({"file_path": str(SAMPLE_OUTPUT_FILE), "indices": "1:3"})
         data = json.loads(result)
 
         assert data["success"] is True
@@ -128,10 +113,7 @@ class TestStateHandler:
     @pytest.mark.asyncio
     async def test_get_states_from_end(self, handler):
         """Test getting last N states."""
-        result = await handler.handle({
-            "file_path": str(SAMPLE_OUTPUT_FILE),
-            "indices": "-3:"
-        })
+        result = await handler.handle({"file_path": str(SAMPLE_OUTPUT_FILE), "indices": "-3:"})
         data = json.loads(result)
 
         assert data["success"] is True
@@ -142,11 +124,9 @@ class TestStateHandler:
     @pytest.mark.asyncio
     async def test_get_state_with_variables(self, handler):
         """Test filtering to specific variables."""
-        result = await handler.handle({
-            "file_path": str(SAMPLE_OUTPUT_FILE),
-            "index": 1,
-            "variables": ["currentTerm", "state"]
-        })
+        result = await handler.handle(
+            {"file_path": str(SAMPLE_OUTPUT_FILE), "index": 1, "variables": ["currentTerm", "state"]}
+        )
         data = json.loads(result)
 
         assert data["success"] is True
@@ -157,9 +137,7 @@ class TestStateHandler:
     @pytest.mark.asyncio
     async def test_missing_index(self, handler):
         """Test error when neither index nor indices provided."""
-        result = await handler.handle({
-            "file_path": str(SAMPLE_OUTPUT_FILE)
-        })
+        result = await handler.handle({"file_path": str(SAMPLE_OUTPUT_FILE)})
         data = json.loads(result)
 
         assert data["success"] is False
@@ -175,11 +153,7 @@ class TestCompareHandler:
     @pytest.mark.asyncio
     async def test_compare_states(self, handler):
         """Test comparing two states."""
-        result = await handler.handle({
-            "file_path": str(SAMPLE_OUTPUT_FILE),
-            "index1": -2,
-            "index2": -1
-        })
+        result = await handler.handle({"file_path": str(SAMPLE_OUTPUT_FILE), "index1": -2, "index2": -1})
         data = json.loads(result)
 
         assert data["success"] is True
@@ -192,10 +166,7 @@ class TestCompareHandler:
     @pytest.mark.asyncio
     async def test_track_variable(self, handler):
         """Test tracking variable changes."""
-        result = await handler.handle({
-            "file_path": str(SAMPLE_OUTPUT_FILE),
-            "track_variable": "currentTerm"
-        })
+        result = await handler.handle({"file_path": str(SAMPLE_OUTPUT_FILE), "track_variable": "currentTerm"})
         data = json.loads(result)
 
         assert data["success"] is True
@@ -207,11 +178,9 @@ class TestCompareHandler:
     @pytest.mark.asyncio
     async def test_track_variable_with_path(self, handler):
         """Test tracking variable with sub-path."""
-        result = await handler.handle({
-            "file_path": str(SAMPLE_OUTPUT_FILE),
-            "track_variable": "state",
-            "track_path": "s1"
-        })
+        result = await handler.handle(
+            {"file_path": str(SAMPLE_OUTPUT_FILE), "track_variable": "state", "track_path": "s1"}
+        )
         data = json.loads(result)
 
         assert data["success"] is True
@@ -220,9 +189,7 @@ class TestCompareHandler:
     @pytest.mark.asyncio
     async def test_missing_mode_params(self, handler):
         """Test error when neither compare nor track params provided."""
-        result = await handler.handle({
-            "file_path": str(SAMPLE_OUTPUT_FILE)
-        })
+        result = await handler.handle({"file_path": str(SAMPLE_OUTPUT_FILE)})
         data = json.loads(result)
 
         assert data["success"] is False

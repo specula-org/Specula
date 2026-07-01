@@ -1,10 +1,10 @@
 """Handler for get_tlc_state tool."""
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
-from .base import BaseHandler, ValidationError, ExecutionError
 from ...tlc_output_reader import TLCOutputReader
 from ...utils.path_parser import PathAccessError
+from .base import BaseHandler, ExecutionError, ValidationError
 
 
 class StateHandler(BaseHandler):
@@ -21,7 +21,7 @@ class StateHandler(BaseHandler):
     def tool_name(self) -> str:
         return "get_tlc_state"
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute the get_tlc_state tool.
 
         Args:
@@ -60,9 +60,7 @@ class StateHandler(BaseHandler):
         path = arguments.get("path")
 
         if index is None and indices is None:
-            raise ValidationError(
-                "Must provide either 'index' (single state) or 'indices' (multiple states)"
-            )
+            raise ValidationError("Must provide either 'index' (single state) or 'indices' (multiple states)")
 
         try:
             reader = TLCOutputReader(file_path)
@@ -81,18 +79,13 @@ class StateHandler(BaseHandler):
         except FileNotFoundError:
             raise
         except PathAccessError as e:
-            raise ExecutionError(f"Path access error: {e}")
+            raise ExecutionError(f"Path access error: {e}") from e
         except (IndexError, ValueError) as e:
-            raise ExecutionError(f"Invalid index: {e}")
+            raise ExecutionError(f"Invalid index: {e}") from e
         except Exception as e:
-            raise ExecutionError(f"Error reading state: {e}")
+            raise ExecutionError(f"Error reading state: {e}") from e
 
-    def _query_path(
-        self,
-        reader: TLCOutputReader,
-        index: Union[int, str],
-        path: str
-    ) -> Dict[str, Any]:
+    def _query_path(self, reader: TLCOutputReader, index: int | str, path: str) -> dict[str, Any]:
         """Query a nested value at a path."""
         value = reader.get_variable_at_path(index, path)
         state = reader.get_state(index)
@@ -105,11 +98,8 @@ class StateHandler(BaseHandler):
         }
 
     def _get_single_state(
-        self,
-        reader: TLCOutputReader,
-        index: Union[int, str],
-        variables: Optional[List[str]]
-    ) -> Dict[str, Any]:
+        self, reader: TLCOutputReader, index: int | str, variables: list[str] | None
+    ) -> dict[str, Any]:
         """Get a single state."""
         state = reader.get_state(index, variables)
 
@@ -121,11 +111,8 @@ class StateHandler(BaseHandler):
         }
 
     def _get_multiple_states(
-        self,
-        reader: TLCOutputReader,
-        indices: Union[str, List],
-        variables: Optional[List[str]]
-    ) -> Dict[str, Any]:
+        self, reader: TLCOutputReader, indices: str | list, variables: list[str] | None
+    ) -> dict[str, Any]:
         """Get multiple states."""
         states = reader.get_states(indices, variables)
 

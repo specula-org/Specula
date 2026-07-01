@@ -1,18 +1,17 @@
 """Debug session management for TLA+ trace validation."""
 
+import logging
 import os
 import sys
-import logging
-from typing import List, Dict, Optional
 
 # Add parent directory to path for imports
 _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from client.dap_client import DAPClient
-from executor.tlc_process import TLCExecutor
-from debugger.breakpoint import Breakpoint, BreakpointStatistics, BreakpointHit
+from client.dap_client import DAPClient  # noqa: E402
+from debugger.breakpoint import Breakpoint, BreakpointHit, BreakpointStatistics  # noqa: E402
+from executor.tlc_process import TLCExecutor  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -28,21 +27,28 @@ class DebugSession:
         ...     spec_file="Traceetcdraft_progress.tla",
         ...     config_file="Traceetcdraft_progress.cfg",
         ...     trace_file="../traces/confchange_disable_validation.ndjson",
-        ...     work_dir="/path/to/spec"
+        ...     work_dir="/path/to/spec",
         ... )
         >>> session.start()
-        >>> session.set_breakpoints([
-        ...     Breakpoint(line=522, condition='TLCGet("level") = 29', description="TraceNext entry")
-        ... ])
+        >>> session.set_breakpoints(
+        ...     [Breakpoint(line=522, condition='TLCGet("level") = 29', description="TraceNext entry")]
+        ... )
         >>> stats = session.run_until_done(timeout=120)
         >>> stats.print_summary()
         >>> session.close()
     """
 
-    def __init__(self, spec_file: str, config_file: str, trace_file: str,
-                 work_dir: str, tla_jar: Optional[str] = None,
-                 community_jar: Optional[str] = None, port: int = 4712,
-                 host: str = '127.0.0.1'):
+    def __init__(
+        self,
+        spec_file: str,
+        config_file: str,
+        trace_file: str,
+        work_dir: str,
+        tla_jar: str | None = None,
+        community_jar: str | None = None,
+        port: int = 4712,
+        host: str = "127.0.0.1",
+    ):
         """Initialize debug session.
 
         Args:
@@ -66,19 +72,19 @@ class DebugSession:
         # Try to find lib directory relative to this file or use environment variable
         if tla_jar is None or community_jar is None:
             # Try environment variable first
-            specula_root = os.environ.get('SPECULA_ROOT')
+            specula_root = os.environ.get("SPECULA_ROOT")
             if specula_root:
-                default_lib = os.path.join(specula_root, 'lib')
+                default_lib = os.path.join(specula_root, "lib")
             else:
                 # Calculate relative to this file: tools/trace_debugger/src/debugger/session.py
                 # Go up to specula root: ../../../../lib
                 this_file = os.path.abspath(__file__)
                 debugger_src_dir = os.path.dirname(this_file)  # .../src/debugger
-                src_dir = os.path.dirname(debugger_src_dir)     # .../src
-                tool_dir = os.path.dirname(src_dir)             # .../trace_debugger
-                tools_dir = os.path.dirname(tool_dir)           # .../tools
-                specula_root = os.path.dirname(tools_dir)       # .../specula
-                default_lib = os.path.join(specula_root, 'lib')
+                src_dir = os.path.dirname(debugger_src_dir)  # .../src
+                tool_dir = os.path.dirname(src_dir)  # .../trace_debugger
+                tools_dir = os.path.dirname(tool_dir)  # .../tools
+                specula_root = os.path.dirname(tools_dir)  # .../specula
+                default_lib = os.path.join(specula_root, "lib")
 
         self.tla_jar = tla_jar or os.path.join(default_lib, "tla2tools.jar")
         self.community_jar = community_jar or os.path.join(default_lib, "CommunityModules-deps.jar")
@@ -89,8 +95,8 @@ class DebugSession:
 
         # Session state
         self.is_running = False
-        self.breakpoints: List[Breakpoint] = []
-        self.breakpoint_hits: Dict[tuple, BreakpointHit] = {}  # (file, line) -> BreakpointHit
+        self.breakpoints: list[Breakpoint] = []
+        self.breakpoint_hits: dict[tuple, BreakpointHit] = {}  # (file, line) -> BreakpointHit
 
     def start(self) -> bool:
         """Start TLC debugger and establish connection.
@@ -106,7 +112,7 @@ class DebugSession:
                 config_file=self.config_file,
                 trace_file=self.trace_file,
                 cwd=self.work_dir,
-                port=self.port
+                port=self.port,
             ):
                 logger.error("Failed to start TLC executor")
                 return False
@@ -128,7 +134,7 @@ class DebugSession:
             logger.error(f"Error starting debug session: {e}")
             return False
 
-    def set_breakpoints(self, breakpoints: List[Breakpoint]):
+    def set_breakpoints(self, breakpoints: list[Breakpoint]):
         """Set breakpoints.
 
         Args:
@@ -164,25 +170,20 @@ class DebugSession:
             logger.info(f"DEBUG: file_path: {file_path}")
             logger.info(f"DEBUG: breakpoints: {bp_list}")
 
-            self.client.request("setBreakpoints", {
-                "source": {"name": file_name, "path": file_path},
-                "breakpoints": bp_list
-            })
+            self.client.request(
+                "setBreakpoints", {"source": {"name": file_name, "path": file_path}, "breakpoints": bp_list}
+            )
 
             # Initialize statistics tracking
             for bp in bps:
                 key = (file_name, bp.line)
                 self.breakpoint_hits[key] = BreakpointHit(
-                    file=file_name,
-                    line=bp.line,
-                    description=bp.description,
-                    hit_count=0
+                    file=file_name, line=bp.line, description=bp.description, hit_count=0
                 )
 
         logger.info(f"Set {len(breakpoints)} breakpoint(s) across {len(breakpoints_by_file)} file(s)")
 
-    def run_until_done(self, timeout: Optional[int] = None,
-                       on_breakpoint_hit=None) -> BreakpointStatistics:
+    def run_until_done(self, timeout: int | None = None, on_breakpoint_hit=None) -> BreakpointStatistics:
         """Run until termination or timeout.
 
         Args:
@@ -200,6 +201,7 @@ class DebugSession:
 
         total_hits = 0
         import time
+
         start_time = time.time()
 
         while True:
@@ -233,7 +235,7 @@ class DebugSession:
                 output_text = event.get("body", {}).get("output", "")
                 # Look for final completion message (not intermediate "Finished checking")
                 if "Finished in" in output_text and " at " in output_text:
-                    logger.info(f"TLC execution finished (detected from output)")
+                    logger.info("TLC execution finished (detected from output)")
                     # Give TLC a moment to send any remaining events
                     time.sleep(0.1)
                     break
@@ -254,8 +256,8 @@ class DebugSession:
                         # Update hit count (only for our breakpoints)
                         # Try exact match first, then with .tla extension
                         key = (file_name, line)
-                        if key not in self.breakpoint_hits and not file_name.endswith('.tla'):
-                            key = (file_name + '.tla', line)
+                        if key not in self.breakpoint_hits and not file_name.endswith(".tla"):
+                            key = (file_name + ".tla", line)
 
                         if key in self.breakpoint_hits:
                             self.breakpoint_hits[key].hit_count += 1
@@ -281,15 +283,11 @@ class DebugSession:
                 break
 
         # Build statistics
-        stats = BreakpointStatistics(
-            hits=list(self.breakpoint_hits.values()),
-            total_hits=total_hits
-        )
+        stats = BreakpointStatistics(hits=list(self.breakpoint_hits.values()), total_hits=total_hits)
 
         return stats
 
-    def evaluate_at_breakpoint(self, expression: str,
-                               frame_id: int = 0) -> Optional[str]:
+    def evaluate_at_breakpoint(self, expression: str, frame_id: int = 0) -> str | None:
         """Evaluate expression at current breakpoint.
 
         Called when breakpoint is hit. Evaluates a TLA+ expression.
@@ -301,18 +299,13 @@ class DebugSession:
         Returns:
             str: Evaluation result, or None if failed
         """
-        resp = self.client.request("evaluate", {
-            "expression": expression,
-            "frameId": frame_id,
-            "context": "watch"
-        })
+        resp = self.client.request("evaluate", {"expression": expression, "frameId": frame_id, "context": "watch"})
 
         if resp and resp.get("success"):
             return resp["body"].get("result")
         return None
 
-    def get_variables_at_breakpoint(self, var_names: List[str],
-                                    frame_id: int = 0) -> Dict[str, str]:
+    def get_variables_at_breakpoint(self, var_names: list[str], frame_id: int = 0) -> dict[str, str]:
         """Get variable values at current breakpoint.
 
         Supports:
@@ -335,13 +328,13 @@ class DebugSession:
         complex_exprs = []
 
         # Expressions contain: operators, function calls, field access, indexing
-        expression_indicators = ['.', '[', '+', '-', '*', '/', '(', ')', '=', '<', '>', '\\']
+        expression_indicators = [".", "[", "+", "-", "*", "/", "(", ")", "=", "<", ">", "\\"]
 
         for var_name in var_names:
             # Check if it's a complex expression
             is_expr = any(char in var_name for char in expression_indicators)
             # Also check if it has spaces (likely an expression like "l + 1")
-            is_expr = is_expr or ' ' in var_name
+            is_expr = is_expr or " " in var_name
 
             if is_expr:
                 complex_exprs.append(var_name)
@@ -365,7 +358,7 @@ class DebugSession:
             scopes_resp = self.client.request("scopes", {"frameId": frame_id})
 
             if not scopes_resp or not scopes_resp.get("success"):
-                logger.warning(f"DEBUG: Failed to get scopes or request unsuccessful")
+                logger.warning("DEBUG: Failed to get scopes or request unsuccessful")
                 return result
 
             logger.info(f"DEBUG: Available scopes: {[s['name'] for s in scopes_resp['body']['scopes']]}")
@@ -377,9 +370,7 @@ class DebugSession:
                 logger.info(f"DEBUG: Checking scope '{scope_name}' (vref={vref})")
 
                 if vref > 0:
-                    vars_resp = self.client.request("variables", {
-                        "variablesReference": vref
-                    })
+                    vars_resp = self.client.request("variables", {"variablesReference": vref})
                     if vars_resp and vars_resp.get("success"):
                         variables = vars_resp["body"]["variables"]
                         logger.info(f"DEBUG: Scope '{scope_name}' has {len(variables)} variable(s) at first level")
@@ -390,9 +381,7 @@ class DebugSession:
                             # Only query containers (vref > 0), skip leaf nodes
                             if var_ref > 0:
                                 logger.info(f"DEBUG:   Querying container '{v['name']}' (vref={var_ref})")
-                                nested_resp = self.client.request("variables", {
-                                    "variablesReference": var_ref
-                                })
+                                nested_resp = self.client.request("variables", {"variablesReference": var_ref})
 
                                 if nested_resp and nested_resp.get("success"):
                                     nested_vars = nested_resp["body"]["variables"]
@@ -410,7 +399,7 @@ class DebugSession:
         logger.info(f"DEBUG: get_variables_at_breakpoint - Found {len(result)} variable(s): {list(result.keys())}")
         return result
 
-    def step_over(self) -> Optional[Dict[str, str]]:
+    def step_over(self) -> dict[str, str] | None:
         """Execute next line (step over function calls).
 
         This executes the current TLA+ expression/statement and stops at the next line,
@@ -434,7 +423,7 @@ class DebugSession:
             logger.info(f"Stepped to {location['file']}:{location['line']}")
         return location
 
-    def step_into(self) -> Optional[Dict[str, str]]:
+    def step_into(self) -> dict[str, str] | None:
         """Step into action/function calls.
 
         In TLA+, this enters the definition of an action when it's called.
@@ -459,7 +448,7 @@ class DebugSession:
             logger.info(f"Stepped into {location['file']}:{location['line']}")
         return location
 
-    def step_out(self) -> Optional[Dict[str, str]]:
+    def step_out(self) -> dict[str, str] | None:
         """Step out of current action/function.
 
         Returns to the caller of the current action. Useful when you've stepped
@@ -483,7 +472,7 @@ class DebugSession:
             logger.info(f"Stepped out to {location['file']}:{location['line']}")
         return location
 
-    def _wait_for_stop_event(self, timeout: int = 10) -> Optional[Dict[str, str]]:
+    def _wait_for_stop_event(self, timeout: int = 10) -> dict[str, str] | None:
         """Wait for stopped event and return current location.
 
         This is a helper method for step operations. After sending a step request
@@ -496,6 +485,7 @@ class DebugSession:
             Dict with file, line, frame_id (all as strings), or None if timeout
         """
         import time
+
         start_time = time.time()
 
         while (time.time() - start_time) < timeout:
@@ -520,7 +510,7 @@ class DebugSession:
                         return {
                             "file": frame.get("source", {}).get("name", ""),
                             "line": str(frame.get("line", 0)),
-                            "frame_id": str(frame.get("id", 0))
+                            "frame_id": str(frame.get("id", 0)),
                         }
 
             # If TLC terminates during stepping, return None

@@ -1,10 +1,10 @@
 """Handler for run_trace_replay tool."""
 
 import os
-from typing import Any, Dict
+from typing import Any
 
-from .base import BaseHandler, ValidationError, ExecutionError
-from ...trace_replay_tool import TraceReplayer, TraceFormat
+from ...trace_replay_tool import TraceFormat, TraceReplayer
+from .base import BaseHandler, ExecutionError, ValidationError
 
 
 class TraceReplayHandler(BaseHandler):
@@ -19,7 +19,7 @@ class TraceReplayHandler(BaseHandler):
     def tool_name(self) -> str:
         return "run_trace_replay"
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute trace replay.
 
         Args:
@@ -58,8 +58,8 @@ class TraceReplayHandler(BaseHandler):
         fmt_str = arguments.get("trace_format", "json")
         try:
             trace_format = TraceFormat(fmt_str)
-        except ValueError:
-            raise ValidationError(f"Invalid trace_format: {fmt_str}. Must be 'json' or 'tlc'.")
+        except ValueError as e:
+            raise ValidationError(f"Invalid trace_format: {fmt_str}. Must be 'json' or 'tlc'.") from e
 
         # Determine output file path
         output_file = arguments.get("output_file")
@@ -85,11 +85,11 @@ class TraceReplayHandler(BaseHandler):
                 "message": (
                     f"Trace replay complete. "
                     f"Use get_tlc_summary/get_tlc_state/compare_tlc_states "
-                    f"with file_path=\"{tlc_output_path}\" to analyze the result."
+                    f'with file_path="{tlc_output_path}" to analyze the result.'
                 ),
             }
 
         except RuntimeError as e:
-            raise ExecutionError(str(e))
+            raise ExecutionError(str(e)) from e
         except Exception as e:
-            raise ExecutionError(f"Trace replay failed: {e}")
+            raise ExecutionError(f"Trace replay failed: {e}") from e

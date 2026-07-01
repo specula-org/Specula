@@ -2,11 +2,11 @@
 
 import glob
 import os
-from typing import Dict, Any, List
+from typing import Any
 
-from .base import BaseHandler
 from ..utils.errors import ExecutionError
 from ..utils.logger import logger
+from .base import BaseHandler
 
 
 class CleanTracesHandler(BaseHandler):
@@ -20,19 +20,16 @@ class CleanTracesHandler(BaseHandler):
         return "clean_traces"
 
     @property
-    def argument_schema(self) -> Dict[str, Any]:
+    def argument_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "spec_file": {
-                    "type": "string",
-                    "description": "Path to the TLA+ spec file (e.g., Traceetcdraft.tla)"
-                },
+                "spec_file": {"type": "string", "description": "Path to the TLA+ spec file (e.g., Traceetcdraft.tla)"},
             },
-            "required": ["spec_file"]
+            "required": ["spec_file"],
         }
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Delete TTrace output files for a spec file.
 
         Args:
@@ -44,15 +41,11 @@ class CleanTracesHandler(BaseHandler):
         spec_file = arguments["spec_file"]
 
         if not os.path.exists(spec_file):
-            raise ExecutionError(
-                f"Spec file not found: {spec_file}",
-                details={"spec_file": spec_file, "exists": False}
-            )
+            raise ExecutionError(f"Spec file not found: {spec_file}", details={"spec_file": spec_file, "exists": False})
 
         if not os.path.isfile(spec_file):
             raise ExecutionError(
-                f"Spec path is not a file: {spec_file}",
-                details={"spec_file": spec_file, "is_file": False}
+                f"Spec path is not a file: {spec_file}", details={"spec_file": spec_file, "is_file": False}
             )
 
         spec_dir = os.path.dirname(spec_file) or "."
@@ -61,8 +54,8 @@ class CleanTracesHandler(BaseHandler):
         pattern = os.path.join(spec_dir, f"{spec_basename}_TTrace_*")
         matched_files = sorted(glob.glob(pattern))
 
-        deleted_files: List[str] = []
-        failed_files: List[str] = []
+        deleted_files: list[str] = []
+        failed_files: list[str] = []
 
         for file_path in matched_files:
             try:

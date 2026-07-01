@@ -12,18 +12,16 @@ Given a log path, this prints:
 import argparse
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple
-
 
 STATE_RE = re.compile(r"^State\s+(\d+)")
 ASSIGN_RE = re.compile(r"^\s*/\\\s*([^\s=]+)\s*=\s*(.*)$")
 
 
-def parse_states(lines: List[str]) -> List[Tuple[str, List[str]]]:
+def parse_states(lines: list[str]) -> list[tuple[str, list[str]]]:
     """Group lines by State N sections."""
-    states: List[Tuple[str, List[str]]] = []
+    states: list[tuple[str, list[str]]] = []
     current_id = None
-    current_lines: List[str] = []
+    current_lines: list[str] = []
 
     for raw in lines:
         line = raw.rstrip("\n")
@@ -41,7 +39,7 @@ def parse_states(lines: List[str]) -> List[Tuple[str, List[str]]]:
     return states
 
 
-def print_warnings_errors(lines: List[str]) -> None:
+def print_warnings_errors(lines: list[str]) -> None:
     print("Warnings/Errors:")
     for raw in lines:
         line = raw.rstrip("\n")
@@ -51,36 +49,33 @@ def print_warnings_errors(lines: List[str]) -> None:
     print()
 
 
-def print_state_diffs(states: List[Tuple[str, List[str]]]) -> None:
-    prev_terms: Dict[str, str] = {}
+def print_state_diffs(states: list[tuple[str, list[str]]]) -> None:
+    def flush_var(var_name: str, buf: list[str], curr_terms: dict[str, str]) -> None:
+        if var_name is None:
+            return
+        curr_terms[var_name] = "\n".join(buf).strip()
+
+    prev_terms: dict[str, str] = {}
 
     for state_id, lines in states:
-        curr_terms: Dict[str, str] = {}
+        curr_terms: dict[str, str] = {}
         current_var = None
-        buffer: List[str] = []
-
-        def flush_var(var_name: str, buf: List[str]) -> None:
-            if var_name is None:
-                return
-            curr_terms[var_name] = "\n".join(buf).strip()
+        buffer: list[str] = []
 
         for line in lines:
             m = ASSIGN_RE.match(line)
             if m:
-                flush_var(current_var, buffer)
+                flush_var(current_var, buffer, curr_terms)
                 current_var = m.group(1)
                 buffer = [m.group(2)]
             else:
                 if current_var is not None:
                     buffer.append(line)
-        flush_var(current_var, buffer)
+        flush_var(current_var, buffer, curr_terms)
 
-        added_keys = [k for k in curr_terms.keys() if k not in prev_terms]
-        removed_keys = [k for k in prev_terms.keys() if k not in curr_terms]
-        changed_keys = [
-            k for k in curr_terms.keys()
-            if k in prev_terms and curr_terms[k].strip() != prev_terms[k].strip()
-        ]
+        added_keys = [k for k in curr_terms if k not in prev_terms]
+        removed_keys = [k for k in prev_terms if k not in curr_terms]
+        changed_keys = [k for k in curr_terms if k in prev_terms and curr_terms[k].strip() != prev_terms[k].strip()]
 
         print(f"State {state_id}:")
         if not added_keys and not removed_keys and not changed_keys:
@@ -121,8 +116,8 @@ def main() -> None:
 
     try:
         lines = args.log_path.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
-        raise SystemExit(f"Log not found: {args.log_path}")
+    except FileNotFoundError as e:
+        raise SystemExit(f"Log not found: {args.log_path}") from e
 
     # Truncate anything after the TLC footer summary (e.g., "<n> states generated").
     for i, ln in enumerate(lines):

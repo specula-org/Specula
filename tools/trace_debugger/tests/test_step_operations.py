@@ -4,26 +4,23 @@
 This test verifies that the step operations work correctly with TLC debugger.
 """
 
+import logging
 import os
 import sys
-import time
-import logging
 import tempfile
 import textwrap
+import time
 
 # Add src to path
 test_dir = os.path.dirname(os.path.abspath(__file__))
 tool_dir = os.path.dirname(test_dir)
-src_dir = os.path.join(tool_dir, 'src')
+src_dir = os.path.join(tool_dir, "src")
 sys.path.insert(0, src_dir)
 
-from debugger import DebugSession, Breakpoint
+from debugger import Breakpoint, DebugSession
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -69,10 +66,10 @@ def create_test_spec(tmpdir):
     spec_path = os.path.join(tmpdir, "StepTest.tla")
     cfg_path = os.path.join(tmpdir, "StepTest.cfg")
 
-    with open(spec_path, 'w') as f:
+    with open(spec_path, "w") as f:
         f.write(STEP_TEST_TLA)
 
-    with open(cfg_path, 'w') as f:
+    with open(cfg_path, "w") as f:
         f.write(STEP_TEST_CFG)
 
     return "StepTest.tla", "StepTest.cfg", tmpdir
@@ -87,9 +84,9 @@ def test_step_over():
     3. When breakpoint is hit, performs step_over
     4. Verifies step_over returns a valid location or handles termination gracefully
     """
-    logger.info("="*70)
+    logger.info("=" * 70)
     logger.info("TEST: Step Over")
-    logger.info("="*70)
+    logger.info("=" * 70)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         spec_file, config_file, work_dir = create_test_spec(tmpdir)
@@ -98,7 +95,7 @@ def test_step_over():
             spec_file=spec_file,
             config_file=config_file,
             trace_file="",  # Not using trace validation
-            work_dir=work_dir
+            work_dir=work_dir,
         )
 
         try:
@@ -110,9 +107,7 @@ def test_step_over():
             logger.info("✅ Debug session started")
 
             # Set breakpoint in Next (line 14 - first line of Next)
-            session.set_breakpoints([
-                Breakpoint(line=14, description="Next action - first line")
-            ])
+            session.set_breakpoints([Breakpoint(line=14, description="Next action - first line")])
 
             # Start execution
             session.client.request("configurationDone", {})
@@ -138,7 +133,7 @@ def test_step_over():
             location = session.step_over()
 
             if location:
-                logger.info(f"✅ Step over successful - returned location")
+                logger.info("✅ Step over successful - returned location")
                 logger.info(f"   Location: {location['file']}:{location['line']}")
                 return True
             else:
@@ -150,6 +145,7 @@ def test_step_over():
         except Exception as e:
             logger.error(f"❌ Exception during test: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -165,19 +161,14 @@ def test_step_into():
     2. When hit, performs step_into to enter HelperAction
     3. Verifies we're inside HelperAction
     """
-    logger.info("\n" + "="*70)
+    logger.info("\n" + "=" * 70)
     logger.info("TEST: Step Into")
-    logger.info("="*70)
+    logger.info("=" * 70)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         spec_file, config_file, work_dir = create_test_spec(tmpdir)
 
-        session = DebugSession(
-            spec_file=spec_file,
-            config_file=config_file,
-            trace_file="",
-            work_dir=work_dir
-        )
+        session = DebugSession(spec_file=spec_file, config_file=config_file, trace_file="", work_dir=work_dir)
 
         try:
             # Start session
@@ -188,9 +179,7 @@ def test_step_into():
             logger.info("✅ Debug session started")
 
             # Set breakpoint at Next action where HelperAction is called (line 15)
-            session.set_breakpoints([
-                Breakpoint(line=15, description="HelperAction call in Next")
-            ])
+            session.set_breakpoints([Breakpoint(line=15, description="HelperAction call in Next")])
 
             # Start execution
             session.client.request("configurationDone", {})
@@ -219,14 +208,15 @@ def test_step_into():
                 logger.error("❌ step_into returned None")
                 return False
 
-            logger.info(f"✅ Step into successful - returned location")
+            logger.info("✅ Step into successful - returned location")
             logger.info(f"   Location: {location['file']}:{location['line']}")
-            logger.info(f"   Note: TLA+ step_into behavior may differ from imperative languages")
+            logger.info("   Note: TLA+ step_into behavior may differ from imperative languages")
             return True
 
         except Exception as e:
             logger.error(f"❌ Exception during test: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -242,19 +232,14 @@ def test_step_out():
     2. When hit, performs step_out to return to caller
     3. Verifies we're back in Next action
     """
-    logger.info("\n" + "="*70)
+    logger.info("\n" + "=" * 70)
     logger.info("TEST: Step Out")
-    logger.info("="*70)
+    logger.info("=" * 70)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         spec_file, config_file, work_dir = create_test_spec(tmpdir)
 
-        session = DebugSession(
-            spec_file=spec_file,
-            config_file=config_file,
-            trace_file="",
-            work_dir=work_dir
-        )
+        session = DebugSession(spec_file=spec_file, config_file=config_file, trace_file="", work_dir=work_dir)
 
         try:
             # Start session
@@ -265,9 +250,7 @@ def test_step_out():
             logger.info("✅ Debug session started")
 
             # Set breakpoint inside HelperAction (line 10)
-            session.set_breakpoints([
-                Breakpoint(line=10, description="Inside HelperAction")
-            ])
+            session.set_breakpoints([Breakpoint(line=10, description="Inside HelperAction")])
 
             # Start execution
             session.client.request("configurationDone", {})
@@ -293,7 +276,7 @@ def test_step_out():
             location = session.step_out()
 
             if location:
-                logger.info(f"✅ Step out successful - returned location")
+                logger.info("✅ Step out successful - returned location")
                 logger.info(f"   Location: {location['file']}:{location['line']}")
                 return True
             else:
@@ -305,6 +288,7 @@ def test_step_out():
         except Exception as e:
             logger.error(f"❌ Exception during test: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -321,19 +305,14 @@ def test_interactive_stepping():
     3. Step into a function
     4. Step out
     """
-    logger.info("\n" + "="*70)
+    logger.info("\n" + "=" * 70)
     logger.info("TEST: Interactive Stepping Workflow")
-    logger.info("="*70)
+    logger.info("=" * 70)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         spec_file, config_file, work_dir = create_test_spec(tmpdir)
 
-        session = DebugSession(
-            spec_file=spec_file,
-            config_file=config_file,
-            trace_file="",
-            work_dir=work_dir
-        )
+        session = DebugSession(spec_file=spec_file, config_file=config_file, trace_file="", work_dir=work_dir)
 
         try:
             # Start session
@@ -344,9 +323,7 @@ def test_interactive_stepping():
             logger.info("✅ Debug session started")
 
             # Set breakpoint at Next action entry (line 13)
-            session.set_breakpoints([
-                Breakpoint(line=13, description="Next action entry")
-            ])
+            session.set_breakpoints([Breakpoint(line=13, description="Next action entry")])
 
             # Start execution
             session.client.request("configurationDone", {})
@@ -390,8 +367,8 @@ def test_interactive_stepping():
                     logger.info(f"   → Inside action at line {loc['line']}")
 
                     # Evaluate variable while inside
-                    if loc.get('frame_id'):
-                        val = session.evaluate_at_breakpoint("val", int(loc['frame_id']))
+                    if loc.get("frame_id"):
+                        val = session.evaluate_at_breakpoint("val", int(loc["frame_id"]))
                         logger.info(f"   → Variable 'val' = {val}")
             except BrokenPipeError:
                 logger.info("   → TLC terminated (expected after state exploration)")
@@ -417,6 +394,7 @@ def test_interactive_stepping():
         except Exception as e:
             logger.error(f"❌ Exception during test: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -427,19 +405,19 @@ def test_interactive_stepping():
 def main():
     """Run all step operation tests."""
     logger.info("Starting Step Operations Tests")
-    logger.info("="*70)
+    logger.info("=" * 70)
 
     results = {
         "step_over": test_step_over(),
         "step_into": test_step_into(),
         "step_out": test_step_out(),
-        "interactive": test_interactive_stepping()
+        "interactive": test_interactive_stepping(),
     }
 
     # Summary
-    logger.info("\n" + "="*70)
+    logger.info("\n" + "=" * 70)
     logger.info("TEST SUMMARY")
-    logger.info("="*70)
+    logger.info("=" * 70)
 
     for test_name, passed in results.items():
         status = "✅ PASSED" if passed else "❌ FAILED"

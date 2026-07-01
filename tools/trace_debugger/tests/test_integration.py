@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 """Integration test - simulates the examples/coarse_grained_localization.py scenario."""
 
-import sys
 import os
+import sys
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from debugger import DebugSession, Breakpoint
+from debugger import Breakpoint, DebugSession
 
 
 def get_specula_root():
     """Auto-detect Specula root directory."""
-    specula_root = os.environ.get('SPECULA_ROOT')
+    specula_root = os.environ.get("SPECULA_ROOT")
     if specula_root:
         return specula_root
     # Calculate relative to this file: tools/trace_debugger/tests/xxx.py
     this_file = os.path.abspath(__file__)
-    tests_dir = os.path.dirname(this_file)              # .../tests
-    trace_debugger_dir = os.path.dirname(tests_dir)     # .../trace_debugger
-    tools_dir = os.path.dirname(trace_debugger_dir)     # .../tools
-    return os.path.dirname(tools_dir)                   # .../Specula
+    tests_dir = os.path.dirname(this_file)  # .../tests
+    trace_debugger_dir = os.path.dirname(tests_dir)  # .../trace_debugger
+    tools_dir = os.path.dirname(trace_debugger_dir)  # .../tools
+    return os.path.dirname(tools_dir)  # .../Specula
 
 
 def test_coarse_grained_localization():
@@ -31,9 +31,9 @@ def test_coarse_grained_localization():
     by setting breakpoints at key locations to identify which branch is taken.
     """
 
-    print("="*70)
+    print("=" * 70)
     print("Integration Test: Coarse-Grained Localization")
-    print("="*70)
+    print("=" * 70)
     print()
     print("Scenario: Debugging confchange_disable_validation.ndjson line 30 failure")
     print()
@@ -47,7 +47,7 @@ def test_coarse_grained_localization():
         spec_file="Traceetcdraft_progress.tla",
         config_file="Traceetcdraft_progress.cfg",
         trace_file="../traces/confchange_disable_validation.ndjson",
-        work_dir=work_dir
+        work_dir=work_dir,
     )
     print("  ✅ Session created")
     print()
@@ -70,26 +70,10 @@ def test_coarse_grained_localization():
     print()
 
     breakpoints = [
-        Breakpoint(
-            line=522,
-            condition='TLCGet("level") = 29',
-            description="TraceNext entry point"
-        ),
-        Breakpoint(
-            line=489,
-            condition='TLCGet("level") = 29',
-            description="SendAppendEntriesRequest branch"
-        ),
-        Breakpoint(
-            line=323,
-            condition='TLCGet("level") = 29',
-            description="AppendEntriesIfLogged entry"
-        ),
-        Breakpoint(
-            line=327,
-            condition='TLCGet("level") = 29',
-            description="AppendEntries action call"
-        ),
+        Breakpoint(line=522, condition='TLCGet("level") = 29', description="TraceNext entry point"),
+        Breakpoint(line=489, condition='TLCGet("level") = 29', description="SendAppendEntriesRequest branch"),
+        Breakpoint(line=323, condition='TLCGet("level") = 29', description="AppendEntriesIfLogged entry"),
+        Breakpoint(line=327, condition='TLCGet("level") = 29', description="AppendEntries action call"),
     ]
 
     for bp in breakpoints:
@@ -144,9 +128,9 @@ def test_coarse_grained_localization():
     print("  ✅ Session closed")
     print()
 
-    print("="*70)
+    print("=" * 70)
     print("✅ Integration test completed successfully!")
-    print("="*70)
+    print("=" * 70)
 
     return True
 
@@ -161,5 +145,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ Test failed with error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

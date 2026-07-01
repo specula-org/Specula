@@ -29,7 +29,7 @@ Specula runs as a set of code agent skills and MCP tools. It currently supports 
 
 ### Prerequisites
 
-- Python 3.8+ with pip
+- Python 3.10+ with pip
 - Java 21+ with Maven
 - GitHub CLI `gh`
 - A supported code agent (Claude Code, Codex, or Copilot CLI) — you can contribute an adapter for your favourite agent [here](./scripts/launch/adapters)!

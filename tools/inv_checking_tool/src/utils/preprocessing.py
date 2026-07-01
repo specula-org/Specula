@@ -9,11 +9,9 @@ This module handles various input formats including:
 
 import io
 import re
-from typing import Optional, Tuple
-
 
 # Pattern to match ANSI escape codes
-ANSI_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+ANSI_ESCAPE_PATTERN = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 # Marker for identifying TLC error trace sections
 ERROR_BEHAVIOR_MARKER = "The behavior up to this point is:"
@@ -34,10 +32,10 @@ def strip_ansi_codes(text: str) -> str:
     Returns:
         Text with all ANSI escape codes removed.
     """
-    return ANSI_ESCAPE_PATTERN.sub('', text)
+    return ANSI_ESCAPE_PATTERN.sub("", text)
 
 
-def extract_violation_info(content: str) -> Tuple[Optional[str], Optional[str]]:
+def extract_violation_info(content: str) -> tuple[str | None, str | None]:
     """Extract the violated invariant/property name from TLC output.
 
     Args:
@@ -99,7 +97,7 @@ def extract_statistics(content: str) -> dict:
     return stats
 
 
-def extract_counterexample_path(content: str) -> Optional[str]:
+def extract_counterexample_path(content: str) -> str | None:
     """Extract the counterexample file path from TLC output."""
     match = None
     for line in content.splitlines():
@@ -112,7 +110,7 @@ def extract_counterexample_path(content: str) -> Optional[str]:
     return match
 
 
-def preprocess_tlc_output(file_path: str) -> Tuple[str, dict]:
+def preprocess_tlc_output(file_path: str) -> tuple[str, dict]:
     """Preprocess a TLC output file for parsing.
 
     This function handles various input formats:
@@ -131,7 +129,7 @@ def preprocess_tlc_output(file_path: str) -> Tuple[str, dict]:
         FileNotFoundError: If the file does not exist.
         ValueError: If the file does not contain a valid TLC trace.
     """
-    with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+    with open(file_path, encoding="utf-8", errors="replace") as f:
         content = f.read()
 
     # Strip ANSI codes
@@ -181,4 +179,4 @@ def convert_to_trace_format(content: str) -> str:
     if not converted_lines:
         raise ValueError("Failed to convert TLC output to trace format.")
 
-    return ''.join(converted_lines)
+    return "".join(converted_lines)

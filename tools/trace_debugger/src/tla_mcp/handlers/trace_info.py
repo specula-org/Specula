@@ -1,10 +1,10 @@
 """Handler for get_trace_info tool."""
 
 import os
-from typing import Dict, Any
+from typing import Any
 
-from .base import BaseHandler
 from ..utils.errors import ExecutionError
+from .base import BaseHandler
 
 
 class TraceInfoHandler(BaseHandler):
@@ -19,19 +19,16 @@ class TraceInfoHandler(BaseHandler):
         return "get_trace_info"
 
     @property
-    def argument_schema(self) -> Dict[str, Any]:
+    def argument_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "trace_file": {
-                    "type": "string",
-                    "description": "Path to trace file (absolute or relative)"
-                }
+                "trace_file": {"type": "string", "description": "Path to trace file (absolute or relative)"}
             },
-            "required": ["trace_file"]
+            "required": ["trace_file"],
         }
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Get trace file information.
 
         Args:
@@ -52,20 +49,18 @@ class TraceInfoHandler(BaseHandler):
         # Check if file exists
         if not os.path.exists(trace_file):
             raise ExecutionError(
-                f"Trace file not found: {trace_file}",
-                details={"trace_file": trace_file, "exists": False}
+                f"Trace file not found: {trace_file}", details={"trace_file": trace_file, "exists": False}
             )
 
         # Check if it's a file (not directory)
         if not os.path.isfile(trace_file):
             raise ExecutionError(
-                f"Path is not a file: {trace_file}",
-                details={"trace_file": trace_file, "is_file": False}
+                f"Path is not a file: {trace_file}", details={"trace_file": trace_file, "is_file": False}
             )
 
         try:
             # Read file
-            with open(trace_file, 'r', encoding='utf-8') as f:
+            with open(trace_file, encoding="utf-8") as f:
                 lines = f.readlines()
 
             # Get file size
@@ -81,16 +76,14 @@ class TraceInfoHandler(BaseHandler):
                 "file_size_bytes": file_size,
                 "first_lines": first_lines,
                 "last_lines": last_lines,
-                "trace_file": trace_file
+                "trace_file": trace_file,
             }
 
         except UnicodeDecodeError as e:
             raise ExecutionError(
-                f"Failed to read trace file (encoding error): {e}",
-                details={"trace_file": trace_file, "error": str(e)}
-            )
-        except IOError as e:
+                f"Failed to read trace file (encoding error): {e}", details={"trace_file": trace_file, "error": str(e)}
+            ) from e
+        except OSError as e:
             raise ExecutionError(
-                f"Failed to read trace file: {e}",
-                details={"trace_file": trace_file, "error": str(e)}
-            )
+                f"Failed to read trace file: {e}", details={"trace_file": trace_file, "error": str(e)}
+            ) from e

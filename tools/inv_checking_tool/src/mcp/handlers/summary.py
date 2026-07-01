@@ -1,9 +1,9 @@
 """Handler for get_tlc_summary tool."""
 
-from typing import Any, Dict
+from typing import Any
 
-from .base import BaseHandler, ValidationError, ExecutionError
 from ...tlc_output_reader import TLCOutputReader
+from .base import BaseHandler, ExecutionError, ValidationError
 
 
 class SummaryHandler(BaseHandler):
@@ -18,7 +18,7 @@ class SummaryHandler(BaseHandler):
     def tool_name(self) -> str:
         return "get_tlc_summary"
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute the get_tlc_summary tool.
 
         Args:
@@ -61,6 +61,6 @@ class SummaryHandler(BaseHandler):
         except FileNotFoundError:
             raise
         except ValueError as e:
-            raise ExecutionError(f"Failed to parse TLC output: {e}")
+            raise ExecutionError(f"Failed to parse TLC output: {e}") from e
         except Exception as e:
-            raise ExecutionError(f"Error reading TLC output: {e}")
+            raise ExecutionError(f"Error reading TLC output: {e}") from e

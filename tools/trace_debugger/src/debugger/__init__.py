@@ -10,14 +10,16 @@ Quick Start:
     ...     spec_file="Traceetcdraft_progress.tla",
     ...     config_file="Traceetcdraft_progress.cfg",
     ...     trace_file="../traces/confchange_disable_validation.ndjson",
-    ...     work_dir="/path/to/spec"
+    ...     work_dir="/path/to/spec",
     ... )
     >>>
     >>> session.start()
-    >>> session.set_breakpoints([
-    ...     Breakpoint(line=522, condition='TLCGet("level") = 29', description="TraceNext entry"),
-    ...     Breakpoint(line=489, condition='TLCGet("level") = 29', description="SendAppendEntriesRequest"),
-    ... ])
+    >>> session.set_breakpoints(
+    ...     [
+    ...         Breakpoint(line=522, condition='TLCGet("level") = 29', description="TraceNext entry"),
+    ...         Breakpoint(line=489, condition='TLCGet("level") = 29', description="SendAppendEntriesRequest"),
+    ...     ]
+    ... )
     >>>
     >>> stats = session.run_until_done(timeout=120)
     >>> stats.print_summary()
@@ -38,19 +40,17 @@ _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from debugger.breakpoint import Breakpoint, BreakpointHit, BreakpointStatistics
-from debugger.session import DebugSession
-from debugger.utils import collect_variable_values, check_conditions_at_breakpoint
+from debugger.breakpoint import Breakpoint, BreakpointHit, BreakpointStatistics  # noqa: E402
+from debugger.session import DebugSession  # noqa: E402
+from debugger.utils import check_conditions_at_breakpoint, collect_variable_values  # noqa: E402
 
 __all__ = [
     # Core classes
     "DebugSession",
-
     # Breakpoint data structures
     "Breakpoint",
     "BreakpointHit",
     "BreakpointStatistics",
-
     # Utility functions
     "collect_variable_values",
     "check_conditions_at_breakpoint",

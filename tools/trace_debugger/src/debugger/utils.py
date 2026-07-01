@@ -1,18 +1,18 @@
 """Utility functions for advanced debugging scenarios."""
 
+import logging
 import os
 import sys
 import time
-import logging
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 # Add parent directory to path for imports
 _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from debugger.session import DebugSession
-from debugger.breakpoint import Breakpoint
+from debugger.breakpoint import Breakpoint  # noqa: E402
+from debugger.session import DebugSession  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +21,10 @@ def collect_variable_values(
     session: DebugSession,
     breakpoint_line: int,
     condition: str,
-    variables: List[str],
+    variables: list[str],
     max_samples: int = 10,
-    breakpoint_file: Optional[str] = None
-) -> List[Dict[str, Any]]:
+    breakpoint_file: str | None = None,
+) -> list[dict[str, Any]]:
     """Collect variable values across multiple breakpoint hits.
 
     This is useful for understanding why a condition fails by examining
@@ -49,7 +49,7 @@ def collect_variable_values(
         ...     breakpoint_line=438,
         ...     condition='TLCGet("level") = 29',
         ...     variables=["i", "j", "GetConfig(i)"],
-        ...     max_samples=10
+        ...     max_samples=10,
         ... )
         >>> for v in values:
         ...     print(f"i={v['i']}, j={v['j']}, GetConfig(i)={v['GetConfig(i)']}")
@@ -62,7 +62,7 @@ def collect_variable_values(
         line=breakpoint_line,
         file=breakpoint_file,
         condition=condition,
-        description=f"Collecting variables: {', '.join(variables)}"
+        description=f"Collecting variables: {', '.join(variables)}",
     )
     session.set_breakpoints([bp])
 
@@ -120,10 +120,7 @@ def collect_variable_values(
     return samples
 
 
-def check_conditions_at_breakpoint(
-    session: DebugSession,
-    conditions: Dict[str, str]
-) -> Dict[str, Any]:
+def check_conditions_at_breakpoint(session: DebugSession, conditions: dict[str, str]) -> dict[str, Any]:
     """Check multiple conditions at current breakpoint.
 
     This assumes the debugger is already stopped at a breakpoint.
@@ -139,11 +136,9 @@ def check_conditions_at_breakpoint(
 
     Example:
         >>> # Assume we're stopped at a breakpoint
-        >>> results = check_conditions_at_breakpoint(session, {
-        ...     "i != j": "i /= j",
-        ...     "range valid": "range[1] <= range[2]",
-        ...     "is leader": "state[i] = Leader"
-        ... })
+        >>> results = check_conditions_at_breakpoint(
+        ...     session, {"i != j": "i /= j", "range valid": "range[1] <= range[2]", "is leader": "state[i] = Leader"}
+        ... )
         >>> for desc, result in results.items():
         ...     print(f"{desc}: {result}")
     """

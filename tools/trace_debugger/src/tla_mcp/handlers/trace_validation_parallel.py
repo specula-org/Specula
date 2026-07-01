@@ -4,11 +4,11 @@ import asyncio
 import os
 import shutil
 import tempfile
-from typing import Dict, Any, List
+from typing import Any
 
-from .trace_validation import TraceValidationHandler
 from ..utils.errors import ExecutionError
 from ..utils.logger import logger
+from .trace_validation import TraceValidationHandler
 
 
 class ParallelTraceValidationHandler(TraceValidationHandler):
@@ -23,63 +23,37 @@ class ParallelTraceValidationHandler(TraceValidationHandler):
         return "run_trace_validation_parallel"
 
     @property
-    def argument_schema(self) -> Dict[str, Any]:
+    def argument_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "spec_file": {
-                    "type": "string",
-                    "description": "TLA+ spec file name (e.g., 'Traceetcdraft.tla')"
-                },
-                "config_file": {
-                    "type": "string",
-                    "description": "TLC config file name (e.g., 'Traceetcdraft.cfg')"
-                },
+                "spec_file": {"type": "string", "description": "TLA+ spec file name (e.g., 'Traceetcdraft.tla')"},
+                "config_file": {"type": "string", "description": "TLC config file name (e.g., 'Traceetcdraft.cfg')"},
                 "trace_files": {
                     "type": "array",
                     "description": "List of trace file paths (relative to work_dir or absolute)",
-                    "items": {"type": "string"}
+                    "items": {"type": "string"},
                 },
-                "work_dir": {
-                    "type": "string",
-                    "description": "Working directory (absolute path)"
-                },
-                "timeout": {
-                    "type": "integer",
-                    "default": 300,
-                    "description": "Timeout in seconds (default: 300)"
-                },
-                "tla_jar": {
-                    "type": "string",
-                    "description": "Path to tla2tools.jar (optional)"
-                },
-                "community_jar": {
-                    "type": "string",
-                    "description": "Path to CommunityModules-deps.jar (optional)"
-                }
+                "work_dir": {"type": "string", "description": "Working directory (absolute path)"},
+                "timeout": {"type": "integer", "default": 300, "description": "Timeout in seconds (default: 300)"},
+                "tla_jar": {"type": "string", "description": "Path to tla2tools.jar (optional)"},
+                "community_jar": {"type": "string", "description": "Path to CommunityModules-deps.jar (optional)"},
             },
-            "required": ["spec_file", "config_file", "trace_files", "work_dir"]
+            "required": ["spec_file", "config_file", "trace_files", "work_dir"],
         }
 
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute trace validation for multiple traces in parallel."""
         trace_files = arguments["trace_files"]
         if not trace_files:
-            raise ExecutionError(
-                "No trace files provided",
-                details={"trace_files": trace_files}
-            )
+            raise ExecutionError("No trace files provided", details={"trace_files": trace_files})
 
         max_parallel = min(len(trace_files), os.cpu_count() or 1)
         semaphore = asyncio.Semaphore(max_parallel)
 
-        logger.info(
-            "Running TLC validation for %d trace(s) with parallelism=%d",
-            len(trace_files),
-            max_parallel
-        )
+        logger.info("Running TLC validation for %d trace(s) with parallelism=%d", len(trace_files), max_parallel)
 
-        async def run_one(trace_file: str) -> Dict[str, Any]:
+        async def run_one(trace_file: str) -> dict[str, Any]:
             async with semaphore:
                 args = dict(arguments)
                 args["trace_file"] = trace_file
@@ -93,7 +67,7 @@ class ParallelTraceValidationHandler(TraceValidationHandler):
                     logger.error(f"Validation failed for {trace_file}: {e}")
                     condensed = {
                         "status": "error",
-                        "suggestion": f"Validation error: {e}. Run run_trace_validation on this trace for details."
+                        "suggestion": f"Validation error: {e}. Run run_trace_validation on this trace for details.",
                     }
                 finally:
                     shutil.rmtree(metadir, ignore_errors=True)
@@ -101,39 +75,32 @@ class ParallelTraceValidationHandler(TraceValidationHandler):
                 condensed["trace_file"] = trace_file
                 return condensed
 
-        results = await asyncio.gather(
-            *[run_one(trace_file) for trace_file in trace_files]
-        )
+        results = await asyncio.gather(*[run_one(trace_file) for trace_file in trace_files])
 
         passed = sum(1 for result in results if result["status"] == "success")
         failed = len(results) - passed
 
-        response = {
-            "status": "success" if not failed else "trace_mismatch",
-            "passed": passed,
-            "failed": failed
-        }
+        response = {"status": "success" if not failed else "trace_mismatch", "passed": passed, "failed": failed}
 
         if failed:
             response["failures"] = self._summarize_status(results)
 
         return response
 
-    def _condense_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+    def _condense_result(self, result: dict[str, Any]) -> dict[str, Any]:
         condensed = {"status": result.get("status", "error")}
         suggestion = result.get("suggestion")
         if suggestion:
             condensed["suggestion"] = suggestion
         return condensed
 
-    def _summarize_status(self, results: List[Dict[str, Any]]) -> Dict[str, str]:
+    def _summarize_status(self, results: list[dict[str, Any]]) -> dict[str, str]:
         summary = {}
         for result in results:
             if result["status"] == "success":
                 continue
             trace_file = os.path.basename(result["trace_file"])
             summary[trace_file] = result.get(
-                "suggestion",
-                "Trace validation failed. Run run_trace_validation on this trace for detailed output."
+                "suggestion", "Trace validation failed. Run run_trace_validation on this trace for detailed output."
             )
         return summary

@@ -8,8 +8,6 @@ import json
 import pathlib
 import shutil
 import subprocess
-import sys
-
 
 PLUGIN_NAME = "specula-codex"
 MARKETPLACE_NAME = "specula"

@@ -4,7 +4,7 @@ import json
 import logging
 import traceback
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -12,18 +12,20 @@ logger = logging.getLogger(__name__)
 class HandlerError(Exception):
     """Base error for handler operations."""
 
-    def __init__(self, message: str, details: Dict[str, Any] = None):
+    def __init__(self, message: str, details: dict[str, Any] = None):
         super().__init__(message)
         self.details = details or {}
 
 
 class ValidationError(HandlerError):
     """Error during argument validation."""
+
     pass
 
 
 class ExecutionError(HandlerError):
     """Error during tool execution."""
+
     pass
 
 
@@ -42,7 +44,7 @@ class BaseHandler(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute the tool logic.
 
         Args:
@@ -56,12 +58,7 @@ class BaseHandler(ABC):
         """
         pass
 
-    def _format_error(
-        self,
-        error_type: str,
-        error_message: str,
-        details: Dict[str, Any] = None
-    ) -> str:
+    def _format_error(self, error_type: str, error_message: str, details: dict[str, Any] = None) -> str:
         """Format an error response as JSON."""
         response = {
             "success": False,
@@ -69,13 +66,13 @@ class BaseHandler(ABC):
                 "type": error_type,
                 "message": error_message,
                 "tool": self.tool_name,
-            }
+            },
         }
         if details:
             response["error"]["details"] = details
         return json.dumps(response, indent=2)
 
-    async def handle(self, arguments: Dict[str, Any]) -> str:
+    async def handle(self, arguments: dict[str, Any]) -> str:
         """Handle tool call with error handling.
 
         Args:
@@ -106,8 +103,4 @@ class BaseHandler(ABC):
         except Exception as e:
             logger.error(f"[{self.tool_name}] Unexpected error: {e}")
             logger.error(traceback.format_exc())
-            return self._format_error(
-                "UnexpectedError",
-                str(e),
-                {"traceback": traceback.format_exc()}
-            )
+            return self._format_error("UnexpectedError", str(e), {"traceback": traceback.format_exc()})

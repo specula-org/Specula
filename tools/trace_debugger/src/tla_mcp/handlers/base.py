@@ -3,12 +3,12 @@
 import json
 import traceback
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Any
 
+from ..utils.errors import ExecutionError, ValidationError
+from ..utils.formatters import format_error_response
 from ..utils.logger import logger
 from ..utils.validators import validate_arguments
-from ..utils.formatters import format_error_response
-from ..utils.errors import ValidationError, ExecutionError
 
 
 class BaseHandler(ABC):
@@ -28,7 +28,7 @@ class BaseHandler(ABC):
 
     @property
     @abstractmethod
-    def argument_schema(self) -> Dict[str, Any]:
+    def argument_schema(self) -> dict[str, Any]:
         """JSON schema for arguments validation.
 
         Should be a valid JSON Schema (draft 7) object with:
@@ -49,7 +49,7 @@ class BaseHandler(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute the tool logic.
 
         Args:
@@ -64,7 +64,7 @@ class BaseHandler(ABC):
         """
         pass
 
-    async def handle(self, arguments: Dict[str, Any]) -> str:
+    async def handle(self, arguments: dict[str, Any]) -> str:
         """Handle tool call with validation and error handling.
 
         This is the main entry point for tool execution. It:
@@ -82,10 +82,7 @@ class BaseHandler(ABC):
         try:
             # 1. Validate arguments
             logger.info(f"[{self.tool_name}] Validating arguments...")
-            validated_args = validate_arguments(
-                arguments,
-                self.argument_schema
-            )
+            validated_args = validate_arguments(arguments, self.argument_schema)
 
             # 2. Execute tool logic
             logger.info(f"[{self.tool_name}] Executing...")
@@ -98,18 +95,14 @@ class BaseHandler(ABC):
 
         except ValidationError as e:
             logger.error(f"[{self.tool_name}] Validation error: {e}")
-            return format_error_response(
-                tool_name=self.tool_name,
-                error_type="ValidationError",
-                error_message=str(e)
-            )
+            return format_error_response(tool_name=self.tool_name, error_type="ValidationError", error_message=str(e))
         except ExecutionError as e:
             logger.error(f"[{self.tool_name}] Execution error: {e}")
             return format_error_response(
                 tool_name=self.tool_name,
                 error_type="ExecutionError",
                 error_message=str(e),
-                details=e.details if hasattr(e, 'details') else None
+                details=e.details if hasattr(e, "details") else None,
             )
         except Exception as e:
             logger.error(f"[{self.tool_name}] Unexpected error: {e}")
@@ -118,5 +111,5 @@ class BaseHandler(ABC):
                 tool_name=self.tool_name,
                 error_type="UnexpectedError",
                 error_message=str(e),
-                traceback=traceback.format_exc()
+                traceback=traceback.format_exc(),
             )
