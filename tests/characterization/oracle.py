@@ -272,6 +272,7 @@ def run_dryrun_case(
     target: str,
     seed: dict[str, str] | None = None,
     prompt_rel: str = ".specula-output/.prompt.md",
+    use_artifact: bool = True,
 ) -> str:
     """Run a phase launcher with --dry-run in an isolated cwd; snapshot stdout plus
     the generated prompt file (the exact prompt handed to the agent).
@@ -280,11 +281,10 @@ def run_dryrun_case(
     downstream phase's prerequisites are satisfied and it reaches the dry-run
     print (e.g. seed modeling-brief.md for spec_generation).
     prompt_rel: where this phase writes its prompt (spec_generation uses
-    .spec-gen-prompt.md, not .prompt.md)."""
+    .spec-gen-prompt.md, not .prompt.md).
+    use_artifact: pass --artifact (bug_classification takes none)."""
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
-        artifact = tmp / "artifact"
-        _init_git_repo(artifact)
         work = tmp / "work"
         work.mkdir()
         for rel, content in (seed or {}).items():
@@ -292,22 +292,21 @@ def run_dryrun_case(
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(content)
         env = _clean_env({"HOME": str(tmp)})
-        proc = subprocess.run(
-            _launcher_cmd(script) + ["--dry-run", f"--artifact={artifact}", target],
-            cwd=work,
-            env=env,
-            capture_output=True,
-            text=True,
-        )
+        cmd = _launcher_cmd(script) + ["--dry-run"]
+        subs = {str(work): "<WORK>", str(tmp): "<TMP>"}
+        if use_artifact:
+            artifact = tmp / "artifact"
+            _init_git_repo(artifact)
+            cmd.append(f"--artifact={artifact}")
+            subs[str(artifact)] = "<ARTIFACT>"
+        cmd.append(target)
+        proc = subprocess.run(cmd, cwd=work, env=env, capture_output=True, text=True)
         parts = [f"exit_code: {proc.returncode}", "", "=== stdout ===", proc.stdout, ""]
         prompt = work / prompt_rel
         parts.append(f"=== {prompt.name} ===")
         parts.append(prompt.read_text() if prompt.exists() else "<MISSING>")
         parts.append("")
-        raw = normalize(
-            "\n".join(parts),
-            {str(artifact): "<ARTIFACT>", str(work): "<WORK>", str(tmp): "<TMP>"},
-        )
+        raw = normalize("\n".join(parts), subs)
     return raw
 
 
@@ -526,6 +525,23 @@ CASES: dict[str, callable] = {
             ".specula-output/modeling-brief.md": "# Modeling Brief\nfamily A: crash window\nfamily B: missing guard\n"
         },
         prompt_rel=".specula-output/.spec-gen-prompt.md",
+    ),
+    "dryrun_harness_generation": lambda: run_dryrun_case(
+        "launch_harness_generation.sh",
+        "footest",
+        seed={
+            ".specula-output/spec/base.tla": "---- MODULE base ----\n====\n",
+            ".specula-output/spec/Trace.tla": "---- MODULE Trace ----\n====\n",
+            ".specula-output/spec/instrumentation-spec.md": "# instrumentation\n",
+        },
+        prompt_rel=".specula-output/.harness-gen-prompt.md",
+    ),
+    "dryrun_bug_classification": lambda: run_dryrun_case(
+        "launch_bug_classification.sh",
+        "footest",
+        seed={".specula-output/spec/confirmed-bugs.md": "# Confirmed Bugs\n\n## Bug 1: something\n"},
+        prompt_rel=".specula-output/.bug-classification-prompt.md",
+        use_artifact=False,
     ),
     # step 5 target: launch_pipeline.sh phase sequencing + repair-loop gating under --skip-*
     "pipeline_seq_full": lambda: run_pipeline_case([], "footest|foo/bar|Go|Raft demo"),

@@ -1,0 +1,54 @@
+exit_code: 0
+
+=== stdout ===
+========================================
+ Specula — Harness Generation (Phase 2.5)
+========================================
+Targets:      1
+Max parallel: 1
+Max turns:    0
+
+Checking prerequisites...
+  footest             specs OK  instr OK  repo OK
+
+[TIME] Launching agent: footest
+  [DRY RUN] <ROOT>/scripts/launch/adapters/claude-code.sh --prompt=<prompt> --max-turns=0 --log=<WORK>/.specula-output/harness-gen.log --background
+  Prompt saved: <WORK>/.specula-output/.harness-gen-prompt.md
+
+
+========================================
+ Results
+========================================
+  --  footest (no harness output)
+
+
+=== .harness-gen-prompt.md ===
+# Trace Harness Generation Task: footest
+
+You are generating a trace harness for **footest** — instrumenting the real source code to produce NDJSON traces for TLA+ trace validation.
+
+## Inputs
+
+- **Instrumentation spec**: <WORK>/.specula-output/spec/instrumentation-spec.md
+- **Trace spec**: <WORK>/.specula-output/spec/Trace.tla + <WORK>/.specula-output/spec/Trace.cfg
+- **Base spec**: <WORK>/.specula-output/spec/base.tla (for understanding spec actions)
+- **Source code**: <ARTIFACT>
+
+## Workflow
+
+Follow the **harness-generation** skill exactly — it is the single source of methodology (instrument real code, trace format, run.sh, end-to-end validation). Read and execute it in full:
+  <ROOT>/.claude/skills/harness-generation/guide.md
+
+Do everything the skill specifies. Do not add, relax, or override any step here.
+
+## Output
+
+Write all harness files to: <WORK>/.specula-output/harness/
+Collect traces to: <WORK>/.specula-output/traces/
+
+Expected outputs:
+- `<WORK>/.specula-output/harness/src/` — Trace emission module + test scenarios
+- `<WORK>/.specula-output/harness/apply.sh` — Apply instrumentation to artifact
+- `<WORK>/.specula-output/harness/run.sh` — One-command build + run + collect traces
+- `<WORK>/.specula-output/harness/INSTRUMENTATION.md` — Guide for Phase 3 agent to adjust instrumentation
+- `<WORK>/.specula-output/traces/*.ndjson` — Trace files from test runs
