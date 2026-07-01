@@ -854,6 +854,255 @@ Write the consolidated report to `{spec_dir}/confirmed-bugs.md`, with one `repro
                 print(f"  {name}: (no report — check log; repro/ tests: {repro_count})")
 
 
+class ReviewPhase(Phase):
+    """Inter-phase review agent (used by launch_pipeline.sh between phases; off by
+    default). The outlier: args are `<phase> <name...>`, no --dry-run/--check, an
+    inline --prompt, and hardcoded --max-turns=30 — so it overrides run() wholesale
+    instead of using the shared driver. Reviews are pinned via the agent's captured
+    prompt (see tests/characterization/ review_*)."""
+
+    key = "review"
+
+    def run(self, argv: list[str]) -> int:
+        phase = argv[0] if argv else ""
+        agent = "claude-code"
+        claude_alias = os.environ.get("CLAUDE_ALIAS", "claude")
+        targets: list[str] = []
+        for arg in argv[1:]:
+            if arg.startswith("--agent="):
+                agent = arg[len("--agent=") :]
+            elif arg.startswith("--claude-alias="):
+                claude_alias = arg[len("--claude-alias=") :]
+            elif arg in ("--help", "-h"):
+                print(self.__doc__ or "review")
+                return 0
+            else:
+                targets.append(arg)
+
+        if not phase or not targets:
+            print(f"Usage: {SCRIPT_DIR}/phaselib.py review <analysis|specgen|validation> name [name ...]")
+            return 1
+
+        adapter = SCRIPT_DIR / "adapters" / f"{agent}.sh"
+        if not adapter.is_file():
+            print(f"ERROR: Unknown agent '{agent}' — adapter not found at {adapter}")
+            return 1
+
+        ws = Workspace(targets)
+        names = [_trim(t) for t in targets]
+
+        print("========================================")
+        print(f" Specula — Review Agent ({phase})")
+        print("========================================")
+
+        for name in names:
+            self._launch_review(ws, name, phase, adapter, claude_alias)
+
+        print()
+        print("Waiting for review agents to complete...")
+        # The adapter call ran synchronously above (mirroring bash's `pid=$(...)`
+        # command substitution), so there is nothing left to wait on here.
+
+        print()
+        print("========================================")
+        print(" Review Results")
+        print("========================================")
+        for name in names:
+            wd = ws.work_dir(name)
+            if phase == "specgen":
+                review_file = wd / "spec" / "review-specgen.md"
+            elif phase == "validation":
+                review_file = wd / "spec" / "review-validation.md"
+            else:  # analysis
+                review_file = wd / "review-analysis.md"
+            if review_file.is_file() and review_file.stat().st_size > 0:
+                print(f"  {name}: review written ({len(review_file.read_text().splitlines())} lines)")
+            elif review_file.is_file():
+                print(f"  {name}: review empty (check log)")
+            else:
+                print(f"  {name}: (no review file generated — check log)")
+        return 0
+
+    def _launch_review(self, ws, name, phase, adapter, claude_alias):
+        wd = ws.work_dir(name)
+        # specgen/validation logs go under spec/ to match pipeline summary expectations
+        log_dir = wd / "spec" if phase in ("specgen", "validation") else wd
+        log_file = log_dir / f"review-{phase}.log"
+        if phase == "analysis":
+            prompt = self._analysis_prompt(wd, name)
+        elif phase == "specgen":
+            prompt = self._specgen_prompt(wd, name)
+        elif phase == "validation":
+            prompt = self._validation_prompt(wd, name)
+        else:
+            print(f"Unknown phase: {phase}")
+            raise SystemExit(1)
+        print(f"[{_ts()}] Reviewing {name} ({phase})...")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        proc = subprocess.run(
+            [
+                str(adapter),
+                f"--prompt={prompt}",
+                "--max-turns=30",
+                f"--claude-alias={claude_alias}",
+                "--effort=max",
+                f"--log={log_file}",
+                "--background",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        pid = proc.stdout.rstrip("\n")
+        (log_dir / f"review-{phase}.pid").write_text(f"{pid}\n")
+        print(f"  PID={pid}  Log: {log_file}")
+
+    def _analysis_prompt(self, wd, name):
+        return f"""# Code Analysis Review: {name}
+
+Review the code analysis outputs for quality and completeness.
+
+## Files to Review
+
+- Modeling Brief: {wd}/modeling-brief.md
+- Analysis Report: {wd}/analysis-report.md
+
+## Review Checklist
+
+Score each item 1-5 (1=missing, 3=adequate, 5=excellent):
+
+1. **Coverage Statistics**: Are they reported? How many issues were deeply read (target: 30+)?
+2. **Bug Families**: Are they well-defined with mechanisms, not just lists? (target: 4-7 families)
+3. **Evidence Quality**: Does each bug cite file:line, issue numbers, and commit references?
+4. **Model-Checkable Findings**: Are findings classified? How many are model-checkable?
+5. **Modeling Brief Completeness**: Variables, actions, invariants, extensions all specified?
+6. **False Positive Control**: Were excluded issues documented with reasons?
+7. **Source Code Annotations**: Are file:line references present throughout?
+
+## Output
+
+Write your review to: {wd}/review-analysis.md
+
+Format:
+```markdown
+# Code Analysis Review: {name}
+
+## Scores
+| Criterion | Score | Notes |
+|-----------|-------|-------|
+| Coverage Statistics | X/5 | ... |
+| Bug Families | X/5 | ... |
+| Evidence Quality | X/5 | ... |
+| Model-Checkable Findings | X/5 | ... |
+| Modeling Brief Completeness | X/5 | ... |
+| False Positive Control | X/5 | ... |
+| Source Code Annotations | X/5 | ... |
+
+## Overall: X/35
+
+## Issues Found
+- ...
+
+## Verdict: PASS / NEEDS_IMPROVEMENT
+```
+"""
+
+    def _specgen_prompt(self, wd, name):
+        spec_dir = wd / "spec"
+        return f"""# Spec Generation Review: {name}
+
+Review the generated TLA+ specs for correctness and completeness.
+
+## Files to Review
+
+- Base Spec: {spec_dir}/base.tla
+- Base Config: {spec_dir}/base.cfg
+- MC Spec: {spec_dir}/MC.tla
+- MC Config: {spec_dir}/MC.cfg
+- Trace Spec: {spec_dir}/Trace.tla
+- Trace Config: {spec_dir}/Trace.cfg
+- Instrumentation: {spec_dir}/instrumentation-spec.md
+- Modeling Brief (reference): {wd}/modeling-brief.md
+
+## Review Checklist
+
+Score each item 1-5:
+
+1. **Bug Family Coverage**: Does each Bug Family in the brief have corresponding spec extensions?
+2. **Action Design**: Are actions named after impl functions? Are code paths split where they diverge?
+3. **Source Annotations**: Does every logic block cite file:line?
+4. **Invariant Coverage**: Are standard + extension invariants present for each Bug Family?
+5. **MC Spec Structure**: Are only fault-injection actions bounded? Symmetry/view/constraints present?
+6. **Trace Spec Design**: Are silent actions tightly constrained? Post-state validation present?
+7. **Instrumentation Mapping**: Is there a 1:1 mapping between spec actions and code locations?
+8. **Logical Correctness**: Check for tautologies, impossible guards, typos in temporal properties.
+
+## Output
+
+Write your review to: {spec_dir}/review-specgen.md
+
+Format:
+```markdown
+# Spec Generation Review: {name}
+
+## Scores
+| Criterion | Score | Notes |
+|-----------|-------|-------|
+| Bug Family Coverage | X/5 | ... |
+| Action Design | X/5 | ... |
+| Source Annotations | X/5 | ... |
+| Invariant Coverage | X/5 | ... |
+| MC Spec Structure | X/5 | ... |
+| Trace Spec Design | X/5 | ... |
+| Instrumentation Mapping | X/5 | ... |
+| Logical Correctness | X/5 | ... |
+
+## Overall: X/40
+
+## Issues Found
+- ...
+
+## Verdict: PASS / NEEDS_IMPROVEMENT
+```
+"""
+
+    def _validation_prompt(self, wd, name):
+        spec_dir = wd / "spec"
+        return f"""# Validation Review: {name}
+
+Review the spec validation results and summarize readiness for trace validation.
+
+## Files to Review
+
+- Validation Report: {spec_dir}/validation-report.md
+- Quick MC Log (if exists): {spec_dir}/quick-mc.log
+
+## Review Checklist
+
+1. **Syntax**: Did all specs pass SANY?
+2. **MC Results**: Any violations found? Expected or unexpected?
+3. **Readiness**: Is the spec ready for trace validation? What needs instrumentation first?
+
+## Output
+
+Write your review to: {spec_dir}/review-validation.md
+
+Format:
+```markdown
+# Validation Review: {name}
+
+## Status
+- Syntax: PASS/FAIL
+- MC: PASS/FAIL/TIMEOUT/SKIPPED
+- Ready for trace validation: YES/NO
+
+## Next Steps
+- ...
+
+## Verdict: PASS / NEEDS_IMPROVEMENT
+```
+"""
+
+
 PHASES: dict[str, Phase] = {
     p.key: p
     for p in [
@@ -863,6 +1112,7 @@ PHASES: dict[str, Phase] = {
         BugClassificationPhase(),
         SpecValidationPhase(),
         BugConfirmationPhase(),
+        ReviewPhase(),
     ]
 }
 

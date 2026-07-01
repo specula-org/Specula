@@ -143,7 +143,9 @@ def _write_fake_claude(bindir: Path, fixture: Path) -> None:
         # record the args the adapter passed (for command-construction cases);
         # no-op when CLAUDE_ARGV_FILE is unset, so output cases are unaffected.
         'printf "%s\\n" "$@" > "${CLAUDE_ARGV_FILE:-/dev/null}"\n'
-        "cat >/dev/null\n"  # consume the prompt on stdin
+        # record the prompt on stdin (for review, which passes it inline); drains
+        # to /dev/null when CLAUDE_STDIN_FILE is unset, so other cases are unaffected.
+        'cat > "${CLAUDE_STDIN_FILE:-/dev/null}"\n'
         f"cat {json.dumps(str(fixture))}\n"
     )
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
@@ -310,6 +312,33 @@ def run_dryrun_case(
         parts.append("")
         raw = normalize("\n".join(parts), subs)
     return raw
+
+
+def run_review_case(phase: str) -> str:
+    """Pin the review launcher, which has no --dry-run (it always spawns an agent).
+    Run it with a fake `claude` that records the inline prompt it receives on stdin,
+    and snapshot stdout (banner / per-name lines / summary) + that captured prompt."""
+    fixture = FIXTURES / "claude_normal.json"
+    with tempfile.TemporaryDirectory() as td:
+        base = Path(td).resolve()
+        bindir = base / "bin"
+        _write_fake_claude(bindir, fixture)
+        work = base / "work"
+        work.mkdir()
+        stdin_file = base / "captured_prompt.txt"
+        env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base), "CLAUDE_STDIN_FILE": str(stdin_file)})
+        proc = subprocess.run(
+            _launcher_cmd("launch_review.sh") + [phase, "footest"],
+            cwd=str(work),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        parts = [f"exit_code: {proc.returncode}", "", "=== stdout ===", proc.stdout, ""]
+        parts.append("=== review prompt (agent stdin) ===")
+        parts.append(stdin_file.read_text() if stdin_file.exists() else "<MISSING>")
+        parts.append("")
+        return normalize("\n".join(parts), {str(work): "<WORK>", str(base): "<TMP>"})
 
 
 def run_gate_case(script: str, target: str, use_artifact: bool = True) -> str:
@@ -584,6 +613,10 @@ CASES: dict[str, callable] = {
         prompt_rel=".specula-output/.bug-recheck-prompt.md",
         extra_flags=["--recheck", "--max-repair-rounds=3"],
     ),
+    # step 3 target: review launcher (the outlier — no --dry-run; pin via captured prompt)
+    "review_analysis": lambda: run_review_case("analysis"),
+    "review_specgen": lambda: run_review_case("specgen"),
+    "review_validation": lambda: run_review_case("validation"),
     # step 5 target: launch_pipeline.sh phase sequencing + repair-loop gating under --skip-*
     "pipeline_seq_full": lambda: run_pipeline_case([], "footest|foo/bar|Go|Raft demo"),
     "pipeline_seq_resume": lambda: run_pipeline_case(
