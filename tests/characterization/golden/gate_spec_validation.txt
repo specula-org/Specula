@@ -1,0 +1,14 @@
+exit_code: 1
+
+=== stdout ===
+========================================
+ Specula — Spec Validation Batch Runner
+========================================
+Targets:      1
+Max parallel: 1
+Max turns:    0
+
+Checking prerequisites...
+  footest|foo/bar|Go|Raft demospecs MISSING  instr MISSING  repo OK  traces WARN (0 ndjson files)
+
+ERROR: Missing prerequisites. Run spec generation first.
