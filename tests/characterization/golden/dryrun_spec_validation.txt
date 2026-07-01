@@ -1,0 +1,46 @@
+exit_code: 0
+
+=== stdout ===
+========================================
+ Specula — Spec Validation Batch Runner
+========================================
+Targets:      1
+Max parallel: 1
+Max turns:    0
+
+Checking prerequisites...
+  footest             specs OK (3L)  instr OK  repo OK  traces WARN (0 ndjson files)
+
+[TIME] Launching agent: footest
+  [DRY RUN] <ROOT>/scripts/launch/adapters/claude-code.sh --prompt=<prompt> --max-turns=0 --log=<WORK>/.specula-output/spec-validation.log --background
+  Prompt saved: <WORK>/.specula-output/.spec-validation-prompt.md
+
+
+========================================
+ Results
+========================================
+  footest: no changelog (check log)
+
+
+=== .spec-validation-prompt.md ===
+# Spec Validation Task: footest
+
+You are validating the TLA+ specification for **footest** through iterative trace validation and invariant checking.
+
+## Inputs
+
+- **Spec directory**: <WORK>/.specula-output/spec
+  - base.tla, base.cfg — Base specification
+  - MC.tla, MC.cfg — Model checking specification
+  - Trace.tla, Trace.cfg — Trace validation specification
+  - instrumentation-spec.md — Action-to-code mapping for harness generation
+- **Source code**: <ARTIFACT>
+- **Modeling brief**: <WORK>/.specula-output/modeling-brief.md
+
+## Workflow
+
+Follow the **validation-workflow** skill exactly — it is the single source of methodology (its iterative trace-validation ↔ model-checking loop, the Case A/B/C classification, convergence, bug hunting, and required artifacts such as changelog.md / bug-report.md). Read and execute it in full, including the two sub-skills it delegates to:
+  <ROOT>/.claude/skills/validation-workflow/guide.md
+  (sub-skills: <ROOT>/.claude/skills/tla-trace-workflow/guide.md and <ROOT>/.claude/skills/tla-checking-workflow/guide.md)
+
+Do everything the skill specifies. Do not add, relax, or override any step here. Harness and traces already exist from Phase 2.5 under `<WORK>/.specula-output/traces/` and `<WORK>/.specula-output/harness/`; the skill's Phase 0 covers verifying and (if needed) regenerating them.

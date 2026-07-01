@@ -1,0 +1,44 @@
+exit_code: 0
+
+=== stdout ===
+========================================
+ Specula — Bug Confirmation Batch Runner
+========================================
+Targets:      1
+Max parallel: 1
+Max turns:    0
+
+Checking prerequisites...
+  footest             bug-report OK  brief OK  repo OK
+
+[TIME] Launching agent: footest
+  [DRY RUN] <ROOT>/scripts/launch/adapters/claude-code.sh --prompt=<prompt> --max-turns=0 --log=<WORK>/.specula-output/bug-recheck.log --background
+  Prompt saved: <WORK>/.specula-output/.bug-recheck-prompt.md
+
+
+========================================
+ Results
+========================================
+  footest: (no report — check log; repro/ tests: 0)
+
+
+=== .bug-recheck-prompt.md ===
+# Bug Re-check Task (confirmation back-edge): footest
+
+You are running the bug-confirmation **RE-CHECK** pass. Phase 3 (repair mode) has repaired
+the spec for the open repair requests and moved them to `status: RECHECK`. Settle each
+finding and transition its request out of RECHECK.
+
+## Inputs
+- **Repair requests**: <WORK>/.specula-output/spec/repair-requests/   (process ONLY status RECHECK)
+- **Updated bug report + TLC output**: <WORK>/.specula-output/spec/bug-report.md , <WORK>/.specula-output/spec/output/
+- **Confirmed bugs (you update this)**: <WORK>/.specula-output/spec/confirmed-bugs.md
+- **Source code**: <ARTIFACT>
+- **Per-request cap**: --max-repair-rounds=3   (0 = unlimited)
+
+## Methodology — read and follow
+- <ROOT>/.claude/skills/bug-confirmation/phases/03-recheck.md
+- <ROOT>/.claude/skills/bug-confirmation/references/repair-request-format.md
+
+## Instructions
+Do everything `03-recheck.md` and `repair-request-format.md` specify, exactly — process ONLY `status: RECHECK` requests, and honor the per-request cap (`--max-repair-rounds` above). Do not add, relax, or override any step here.
