@@ -1,0 +1,14 @@
+exit_code: 1
+
+=== stdout ===
+========================================
+ Specula — Spec Generation Batch Runner
+========================================
+Targets:      1
+Max parallel: 1
+Max turns:    0
+
+Checking prerequisites...
+  footest|foo/bar|Go|Raft demo MISSING modeling-brief.md  repo OK
+
+ERROR: Missing prerequisites. Run code analysis first.

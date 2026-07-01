@@ -1,0 +1,48 @@
+exit_code: 0
+
+=== stdout ===
+========================================
+ Specula — Code Analysis Batch Runner
+========================================
+Targets:      1
+Max parallel: 1
+Max turns:    0
+
+Checking repositories...
+  OK  footest (? commits)
+
+[TIME] Launching agent: footest
+  [DRY RUN] <ROOT>/scripts/launch/adapters/claude-code.sh --prompt=<prompt> --max-turns=0 --log=<WORK>/.specula-output/agent.log --background
+  Prompt saved: <WORK>/.specula-output/.prompt.md
+
+
+========================================
+ Results
+========================================
+  --  footest (no output)
+
+
+=== .prompt.md ===
+# Code Analysis Task
+
+You are analyzing the following system:
+
+- **Name**: footest
+- **GitHub**: foo/bar
+- **Language**: Go
+- **Reference Algorithm**: Raft demo
+- **Repository**: <ARTIFACT>
+- **Working Directory**: <WORK>/.specula-output
+
+## Instructions
+
+Follow the **code-analysis** skill exactly — it is the single source of methodology (its 4 phases, references, rules, bug-family modeling-brief format, and Category A/B handling). Read and execute it in full:
+  <ROOT>/.claude/skills/code_analysis/guide.md
+
+Do everything the skill specifies. Do not add, relax, or override any step here.
+
+## Output
+
+Write your outputs to:
+- `<WORK>/.specula-output/modeling-brief.md` — The primary deliverable (handoff to Spec Generation)
+- `<WORK>/.specula-output/analysis-report.md` — Detailed audit trail of all findings
