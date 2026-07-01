@@ -27,6 +27,9 @@ Once pytest works: `pytest tests/characterization/` runs the same cases.
 | `adapter_ratelimit` | 1 | `"hit your limit"` → **exit 75** (EX_TEMPFAIL, the retry signal the pipeline depends on) |
 | `adapter_malformed` | 1 | non-JSON → `.log` raw fallback + `.usage.json` = `{"error": "parse_failed"}` |
 | `adapter_with_session` | 1 | non-empty `session_id` → num_turns fixup: reads the session JSONL, overrides `num_turns` with the assistant-message count, records `num_turns_reported` + `num_tool_uses` |
+| `adapter_inline_prompt` | 1 | `--prompt=...` (mktemp path) instead of `--prompt-file` still produces the right output |
+| `adapter_cmd_*` (×3) | 1 | command construction — how `--effort`/`--model`/`--max-budget` become the `claude` argv, incl. the skip-on-`default`/`0`/empty branches |
+| `adapter_err_*` (×5) | 1 | validation contract — exit 1 + exact stderr for missing `--log`, both/neither prompt, missing prompt file, unknown option |
 | `dryrun_code_analysis` | 3 (phase framework) | arg parse, path calc, exact agent command (`--log/--background`), full generated `.prompt.md` |
 | `gate_*` (×5) | 3 | each downstream phase's **precondition gate** — the input contract it enforces before running (e.g. spec-gen needs `modeling-brief.md`; exit 1 + "Missing prerequisites" message) |
 | `pipeline_seq_*` (×3) | 5 (orchestrator) | `launch_pipeline.sh` phase order + review/harness/repair-loop gating under `--skip-*` combos |
@@ -49,7 +52,9 @@ Once pytest works: `pytest tests/characterization/` runs the same cases.
   (`scripts/launch/adapters/claude_code.py`) and diff it against the same
   bash-captured goldens — this is the step-1 parity check. After the strangler
   cutover `claude-code.sh` is a shim to the port, so the default run exercises
-  Python too.
+  Python too. Set `SPECULA_ADAPTER_IMPL=<path-to-a-bash-script>` to run an
+  explicit script — e.g. the pre-cutover bash original (`git show <rev>:…`) to
+  capture ground-truth goldens or re-confirm bash ≡ python.
 - **Sourcing bash functions in isolation** (`repair_*`, `quota_*`): `oracle.py`
   strips the trailing `main` invocation from `launch_pipeline.sh`, sources the
   rest, and drives individual helpers. For quota it also overrides `USAGE_SCRIPT`
@@ -59,7 +64,7 @@ Once pytest works: `pytest tests/characterization/` runs the same cases.
 ## Adding cases (remaining step-0 work)
 
 Register a zero-arg callable in `oracle.CASES` that returns a normalized string,
-then `--update`. 16 cases so far. Still optional (lower value — the pattern is
+then `--update`. 26 cases so far. Still optional (lower value — the pattern is
 proven by `dryrun_code_analysis` and the contracts by `gate_*`): the 5 downstream
 phases' *happy-path* dry-runs (seed a `.specula-output/` fixture with
 `modeling-brief.md`, `spec/*.tla`, etc. so they reach the dry-run print) and the

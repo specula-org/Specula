@@ -43,11 +43,17 @@ ADAPTER_PY = LAUNCH / "adapters" / "claude_code.py"
 
 
 def _adapter_cmd() -> list[str]:
-    """Which adapter implementation the adapter cases exercise. Default: the bash
-    adapter (or its shim). Set SPECULA_ADAPTER_IMPL=python to run the Python port
-    directly and diff it against the bash-captured goldens (step-1 parity check)."""
-    if os.environ.get("SPECULA_ADAPTER_IMPL") == "python":
+    """Which adapter implementation the adapter cases exercise. Controlled by
+    SPECULA_ADAPTER_IMPL:
+      unset/other → the installed adapter (`claude-code.sh`, now a shim to python)
+      "python"    → run the Python port directly (parity check)
+      <a path>    → run `bash <path>` (e.g. the pre-cutover bash original, to
+                    capture ground-truth goldens or re-verify parity against it)."""
+    impl = os.environ.get("SPECULA_ADAPTER_IMPL", "")
+    if impl == "python":
         return ["python3", str(ADAPTER_PY)]
+    if impl and os.path.exists(impl):
+        return ["bash", impl]
     return ["bash", str(ADAPTER)]
 
 
@@ -92,9 +98,13 @@ def _clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     """A predictable env: system python (no broken venv .pth noise), no
     ambient Claude config that could redirect the adapter."""
     env = dict(os.environ)
-    env.pop("VIRTUAL_ENV", None)
-    env.pop("CLAUDE_CONFIG_DIR", None)
-    env.pop("CLAUDECODE", None)
+    for var in (
+        "VIRTUAL_ENV", "CLAUDE_CONFIG_DIR", "CLAUDECODE",
+        "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT",
+        # popped so command construction is deterministic regardless of ambient env
+        "CLAUDE_EFFORT", "CLAUDE_MODEL", "CLAUDE_ALIAS",
+    ):
+        env.pop(var, None)
     env["PATH"] = "/usr/bin:/bin:" + env.get("PATH", "")
     if extra:
         env.update(extra)
@@ -108,6 +118,9 @@ def _write_fake_claude(bindir: Path, fixture: Path) -> None:
     stub = bindir / "claude"
     stub.write_text(
         "#!/usr/bin/env bash\n"
+        # record the args the adapter passed (for command-construction cases);
+        # no-op when CLAUDE_ARGV_FILE is unset, so output cases are unaffected.
+        'printf "%s\\n" "$@" > "${CLAUDE_ARGV_FILE:-/dev/null}"\n'
         "cat >/dev/null\n"  # consume the prompt on stdin
         f'cat {json.dumps(str(fixture))}\n'
     )
@@ -121,11 +134,17 @@ def _init_git_repo(path: Path) -> None:
 
 # ── case runners ────────────────────────────────────────────────────────────
 def run_adapter_case(
-    fixture_name: str, session_id: str = "", session_jsonl: list[str] | None = None
+    fixture_name: str,
+    session_id: str = "",
+    session_jsonl: list[str] | None = None,
+    inline_prompt: str | None = None,
 ) -> str:
     """Feed a canned `claude` JSON response through the adapter (bash or python
     port, per SPECULA_ADAPTER_IMPL); snapshot exit code + derived .log +
     .usage.json.
+
+    inline_prompt: if given, pass `--prompt=...` (exercising the mktemp path)
+    instead of `--prompt-file=...`.
 
     When session_jsonl is given, plant a fake session transcript at the path the
     num_turns fixup looks up ($CLAUDE_CONFIG_DIR/projects/-<cwd>/<sid>.jsonl) so
@@ -146,9 +165,12 @@ def run_adapter_case(
             proj_dir.mkdir(parents=True, exist_ok=True)
             (proj_dir / f"{session_id}.jsonl").write_text("\n".join(session_jsonl) + "\n")
         env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base)})
+        prompt_arg = (
+            f"--prompt={inline_prompt}" if inline_prompt is not None
+            else f"--prompt-file={prompt}"
+        )
         proc = subprocess.run(
-            _adapter_cmd()
-            + [f"--prompt-file={prompt}", "--claude-alias=testalias", f"--log={log}"],
+            _adapter_cmd() + [prompt_arg, "--claude-alias=testalias", f"--log={log}"],
             cwd=str(base), env=env, capture_output=True, text=True,
         )
         parts = [f"exit_code: {proc.returncode}", ""]
@@ -158,6 +180,54 @@ def run_adapter_case(
             parts.append("")
         raw = normalize("\n".join(parts), {str(base): "<TMP>"})
     return raw
+
+
+def run_adapter_cmd_case(flags: list[str]) -> str:
+    """Pin command construction: snapshot the exact argv the adapter passes to
+    `claude` for a given flag combo (--effort/--model/--max-budget assembly, incl.
+    the skip-on-default/zero/empty branches). The fake `claude` records its args."""
+    fixture = FIXTURES / "claude_normal.json"
+    with tempfile.TemporaryDirectory() as td:
+        base = Path(td).resolve()
+        bindir = base / "bin"
+        _write_fake_claude(bindir, fixture)
+        prompt = base / "prompt.md"
+        prompt.write_text("dummy prompt\n")
+        argv_file = base / "claude_argv.txt"
+        env = _clean_env(
+            {
+                "PATH": f"{bindir}:/usr/bin:/bin",
+                "HOME": str(base),
+                "CLAUDE_ARGV_FILE": str(argv_file),
+            }
+        )
+        subprocess.run(
+            _adapter_cmd()
+            + [f"--prompt-file={prompt}", "--claude-alias=testalias",
+               f"--log={base}/out.log", *flags],
+            cwd=str(base), env=env, capture_output=True, text=True,
+        )
+        argv = argv_file.read_text() if argv_file.exists() else "<MISSING>"
+        return normalize(f"=== claude argv ===\n{argv}", {str(base): "<TMP>"})
+
+
+def run_adapter_error_case(flags: list[str]) -> str:
+    """Pin the validation contract: snapshot exit code + stderr for a deliberately
+    invalid invocation. `@BASE@` in a flag is replaced with the tmp dir."""
+    with tempfile.TemporaryDirectory() as td:
+        base = Path(td).resolve()
+        bindir = base / "bin"
+        _write_fake_claude(bindir, FIXTURES / "claude_normal.json")
+        env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base)})
+        resolved = [f.replace("@BASE@", str(base)) for f in flags]
+        proc = subprocess.run(
+            _adapter_cmd() + resolved, cwd=str(base), env=env,
+            capture_output=True, text=True,
+        )
+        return normalize(
+            f"exit_code: {proc.returncode}\n\n=== stderr ===\n{proc.stderr}",
+            {str(base): "<TMP>"},
+        )
 
 
 def run_dryrun_case(script: str, target: str) -> str:
@@ -381,6 +451,27 @@ CASES: dict[str, callable] = {
             '{"type":"assistant","message":{"content":[{"type":"text","text":"done"}]}}',
         ],
     ),
+    "adapter_inline_prompt": lambda: run_adapter_case(
+        "claude_normal.json", inline_prompt="analyze this system"
+    ),
+    # command construction: how flags become the `claude` invocation
+    "adapter_cmd_default": lambda: run_adapter_cmd_case([]),
+    "adapter_cmd_all_flags": lambda: run_adapter_cmd_case(
+        ["--effort=high", "--model=sonnet", "--max-budget=5"]
+    ),
+    "adapter_cmd_skips": lambda: run_adapter_cmd_case(
+        ["--effort=default", "--max-budget=0"]
+    ),
+    # validation contract: exit code + stderr on bad invocations
+    "adapter_err_no_log": lambda: run_adapter_error_case(["--prompt=x"]),
+    "adapter_err_both_prompt": lambda: run_adapter_error_case(
+        ["--prompt=x", "--prompt-file=@BASE@/p.md", "--log=@BASE@/o.log"]
+    ),
+    "adapter_err_no_prompt": lambda: run_adapter_error_case(["--log=@BASE@/o.log"]),
+    "adapter_err_prompt_file_missing": lambda: run_adapter_error_case(
+        ["--prompt-file=@BASE@/nope.md", "--log=@BASE@/o.log"]
+    ),
+    "adapter_err_unknown_opt": lambda: run_adapter_error_case(["--bogus"]),
     # step 3 target: phase-launcher dry-run (arg parse, path calc, agent command, prompt)
     "dryrun_code_analysis": lambda: run_dryrun_case(
         "launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo"

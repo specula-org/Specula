@@ -1,0 +1,4 @@
+exit_code: 1
+
+=== stderr ===
+claude-code adapter: one of --prompt or --prompt-file is required
