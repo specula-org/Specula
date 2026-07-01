@@ -1,0 +1,4 @@
+exit_code: 1
+
+=== stderr ===
+claude-code adapter: prompt file not found: <TMP>/nope.md

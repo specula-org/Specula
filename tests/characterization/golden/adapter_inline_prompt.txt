@@ -1,0 +1,24 @@
+exit_code: 0
+
+=== .log ===
+Analysis complete. Wrote modeling-brief.md and analysis-report.md.
+
+
+=== .usage.json ===
+{
+  "total_cost_usd": 0.4231,
+  "num_turns": 7,
+  "duration_ms": 123456,
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 1000,
+    "output_tokens": 500,
+    "cache_read_input_tokens": 2000
+  },
+  "model_usage": {
+    "claude-opus-4-8": {
+      "inputTokens": 1000,
+      "outputTokens": 500
+    }
+  }
+}
