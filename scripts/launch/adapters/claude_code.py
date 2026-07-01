@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""Adapter: claude-code (Python port of claude-code.sh).
+
+Unified interface for invoking the Claude Code CLI. Behavior is a faithful port
+of the original bash adapter; the characterization suite in
+tests/characterization/ pins the observable contract (exit codes, .log/.usage.json
+shape, the num_turns session fixup). Run the parity check with:
+
+    SPECULA_ADAPTER_IMPL=python python3 tests/characterization/oracle.py --check -k adapter
+
+Options:
+  --prompt=...          Task prompt (mutually exclusive with --prompt-file)
+  --prompt-file=FILE    Read prompt from file (mutually exclusive with --prompt)
+  --max-turns=N         (DEPRECATED, ignored — use --max-budget)
+  --max-budget=N        Max dollar budget for API calls (optional)
+  --claude-alias=NAME   Claude CLI alias/profile (default: claude). Selects
+                        CLAUDE_CONFIG_DIR=$HOME/.<NAME>. Also via CLAUDE_ALIAS env.
+  --effort=LEVEL        low|medium|high|xhigh|max (default: max; via CLAUDE_EFFORT)
+  --model=NAME          Model alias/name (default: profile default; via CLAUDE_MODEL)
+  --log=FILE            Log file path (required)
+  --background          Run in background (accepted; caller handles backgrounding)
+  --help                Show this help
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+HELP = __doc__
+
+
+def _derived_path(log_file: str, suffix: str) -> str:
+    """Mirror bash `${LOG_FILE%.log}<suffix>`."""
+    stem = log_file[:-4] if log_file.endswith(".log") else log_file
+    return stem + suffix
+
+
+def _extract_log(raw_text: str, log_file: str) -> None:
+    """Result text -> .log; on JSON-parse failure, fall back to the raw output."""
+    with open(log_file, "w") as fh:
+        try:
+            d = json.loads(raw_text)
+            print(d.get("result", ""), file=fh)
+        except Exception:
+            print(raw_text, file=fh)
+
+
+def _extract_usage(raw_text: str, usage_path: str) -> None:
+    """Usage stats -> .usage.json, fixing num_turns from the session JSONL when a
+    session_id is present. Any failure -> {"error": "parse_failed"} (mirrors the
+    bash `|| parse_failed` fallback)."""
+    try:
+        d = json.loads(raw_text)
+        usage = {
+            "total_cost_usd": d.get("total_cost_usd", 0),
+            "num_turns": d.get("num_turns", 0),
+            "duration_ms": d.get("duration_ms", 0),
+            "stop_reason": d.get("stop_reason", ""),
+            "usage": d.get("usage", {}),
+            "model_usage": d.get("modelUsage", {}),
+        }
+        session_id = d.get("session_id", "")
+        if session_id:
+            cwd = os.getcwd()
+            proj_key = cwd.replace("/", "-").lstrip("-")
+            config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser(
+                "~/.claude"
+            )
+            proj_dir = os.path.join(config_dir, "projects", f"-{proj_key}")
+            jsonl_path = os.path.join(proj_dir, f"{session_id}.jsonl")
+            if os.path.exists(jsonl_path):
+                assistant_count = 0
+                tool_count = 0
+                with open(jsonl_path) as f:
+                    for line in f:
+                        try:
+                            msg = json.loads(line)
+                            if msg.get("type") == "assistant":
+                                assistant_count += 1
+                                content = msg.get("message", {}).get("content", [])
+                                if isinstance(content, list):
+                                    tool_count += sum(
+                                        1
+                                        for c in content
+                                        if isinstance(c, dict)
+                                        and c.get("type") == "tool_use"
+                                    )
+                        except Exception:
+                            pass
+                usage["num_turns_reported"] = usage["num_turns"]
+                usage["num_turns"] = assistant_count
+                usage["num_tool_uses"] = tool_count
+        with open(usage_path, "w") as uf:
+            json.dump(usage, uf, indent=2)
+            uf.write("\n")
+    except Exception:
+        with open(usage_path, "w") as uf:
+            json.dump({"error": "parse_failed"}, uf)
+            uf.write("\n")
+
+
+def _die(msg: str) -> int:
+    print(msg, file=sys.stderr)
+    return 1
+
+
+def main(argv: list[str]) -> int:
+    prompt = ""
+    prompt_file = ""
+    max_budget = ""
+    log_file = ""
+    _background = False  # accepted; caller does the backgrounding, as in bash
+    claude_alias = os.environ.get("CLAUDE_ALIAS", "claude")
+    effort = os.environ.get("CLAUDE_EFFORT", "max")
+    model = os.environ.get("CLAUDE_MODEL", "")
+
+    for arg in argv:
+        if arg.startswith("--prompt="):
+            prompt = arg[len("--prompt="):]
+        elif arg.startswith("--prompt-file="):
+            prompt_file = arg[len("--prompt-file="):]
+        elif arg.startswith("--max-turns="):
+            pass  # deprecated, ignored
+        elif arg.startswith("--max-budget="):
+            max_budget = arg[len("--max-budget="):]
+        elif arg.startswith("--claude-alias="):
+            claude_alias = arg[len("--claude-alias="):]
+        elif arg.startswith("--effort="):
+            effort = arg[len("--effort="):]
+        elif arg.startswith("--model="):
+            model = arg[len("--model="):]
+        elif arg.startswith("--log="):
+            log_file = arg[len("--log="):]
+        elif arg == "--background":
+            _background = True
+        elif arg in ("--help", "-h"):
+            print(HELP)
+            return 0
+        else:
+            return _die(f"claude-code adapter: unknown option: {arg}")
+
+    # ── Validate arguments ──
+    if prompt and prompt_file:
+        return _die("claude-code adapter: --prompt and --prompt-file are mutually exclusive")
+    if not prompt and not prompt_file:
+        return _die("claude-code adapter: one of --prompt or --prompt-file is required")
+    if not log_file:
+        return _die("claude-code adapter: --log is required")
+
+    # ── Resolve prompt ──
+    # Feed prompt via stdin (not -p) to keep the process cmdline clean, so
+    # `pkill -f` can't collateral-kill on strings like "tlc2.TLC".
+    tmp_prompt = None
+    if prompt_file:
+        if not os.path.isfile(prompt_file):
+            return _die(f"claude-code adapter: prompt file not found: {prompt_file}")
+        prompt_input = prompt_file
+    else:
+        fd, tmp_prompt = tempfile.mkstemp()
+        with os.fdopen(fd, "w") as f:
+            f.write(prompt + "\n")
+        prompt_input = tmp_prompt
+
+    try:
+        # ── Environment setup ──
+        for var in ("CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT"):
+            os.environ.pop(var, None)
+        # Alias determines the config dir authoritatively (do NOT inherit an
+        # ambient CLAUDE_CONFIG_DIR, which would redirect quota-sensitive runs).
+        os.environ["CLAUDE_CONFIG_DIR"] = (
+            os.environ.get("HOME", "") + "/." + (claude_alias or "claude")
+        )
+
+        # ── Build command ──
+        cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", "json"]
+        if effort and effort != "default":
+            cmd += ["--effort", effort]
+        if max_budget and max_budget != "0":
+            cmd += ["--max-budget-usd", max_budget]
+        if model:
+            cmd += ["--model", model]
+
+        # ── Run ──
+        raw_json = _derived_path(log_file, ".raw.json")
+        with open(prompt_input) as pin, open(raw_json, "w") as out:
+            subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT)  # ignore rc
+
+        raw_text = open(raw_json, errors="replace").read()
+
+        # ── Detect rate limit → exit 75 (EX_TEMPFAIL) so callers can wait/retry ──
+        rate_limited = "hit your limit" in raw_text
+        if rate_limited:
+            print("claude-code adapter: rate limit hit", file=sys.stderr)
+
+        _extract_log(raw_text, log_file)
+        _extract_usage(raw_text, _derived_path(log_file, ".usage.json"))
+
+        return 75 if rate_limited else 0
+    finally:
+        if tmp_prompt is not None:
+            try:
+                os.remove(tmp_prompt)
+            except OSError:
+                pass
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
