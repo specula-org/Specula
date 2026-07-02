@@ -1,0 +1,22 @@
+exit_code: 0
+
+=== stdout ===
+========================================
+ Specula — Code Analysis Batch Runner
+========================================
+Targets:      1
+Max parallel: 1
+Max turns:    abc
+
+Checking repositories...
+  OK  footest (? commits)
+
+[TIME] Launching agent: footest
+  [DRY RUN] <ROOT>/scripts/launch/adapters/claude-code.sh --prompt=<prompt> --max-turns=abc --log=<WORK>/.specula-output/agent.log --background
+  Prompt saved: <WORK>/.specula-output/.prompt.md
+
+
+========================================
+ Results
+========================================
+  --  footest (no output)

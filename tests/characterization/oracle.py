@@ -733,6 +733,11 @@ CASES: dict[str, callable] = {
     "adapter_normal": lambda: run_adapter_case("claude_normal.json"),
     "adapter_ratelimit": lambda: run_adapter_case("claude_ratelimit.json"),
     "adapter_malformed": lambda: run_adapter_case("claude_malformed.txt"),
+    # non-UTF-8 claude output: deliberate deviation from the bash, which died with
+    # a UnicodeDecodeError (non-zero exit, no .usage.json, rate-limit exit-75 lost).
+    # The port degrades to U+FFFD in .log + parse_failed on the normal exit path.
+    # Golden is python-truth by design; the pre-cutover bash fails this case.
+    "adapter_nonutf8": lambda: run_adapter_case("claude_nonutf8.txt"),
     "adapter_with_session": lambda: run_adapter_case(
         "claude_session.json",
         session_id="sess-abc",
@@ -797,6 +802,32 @@ CASES: dict[str, callable] = {
         "footest|foo/bar|Go|Raft demo",
         use_artifact=False,
         seed={"footest/artifact/.hidden/.git/HEAD": "ref: refs/heads/main\n"},
+    ),
+    # a 5th '|'-separated field folds into the reference (bash `IFS='|' read` gave
+    # the last variable the whole remainder, pipes included) — pins the prompt's
+    # Reference Algorithm line; golden captured from the pre-cutover bash
+    "dryrun_code_analysis_pipe_reference": lambda: run_dryrun_case(
+        "launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo|and Paxos notes"
+    ),
+    # --max-turns is a deprecated verbatim passthrough (adapter ignores it): a
+    # non-numeric value must survive to the banner and the dry-run command line
+    # exactly as under bash; golden captured from the pre-cutover bash
+    "dryrun_code_analysis_maxturns_verbatim": lambda: run_dryrun_case(
+        "launch_code_analysis.sh",
+        "footest|foo/bar|Go|Raft demo",
+        snapshot_prompt=False,
+        extra_flags=["--max-turns=abc"],
+    ),
+    # deliberate deviation: --max-parallel IS arithmetic (throttle bound), and bash
+    # accepted garbage only to hang forever in the throttle loop (empty crashed the
+    # arithmetic mid-run) — the port fails fast with a one-line error, exit 1.
+    # Golden is python-truth by design; the pre-cutover bash fails this case.
+    "bad_max_parallel_code_analysis": lambda: run_dryrun_case(
+        "launch_code_analysis.sh",
+        "footest|foo/bar|Go|Raft demo",
+        snapshot_prompt=False,
+        use_artifact=False,
+        extra_flags=["--max-parallel=abc"],
     ),
     "dryrun_spec_generation": lambda: run_dryrun_case(
         "launch_spec_generation.sh",

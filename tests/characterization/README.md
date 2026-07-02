@@ -29,11 +29,13 @@ Once pytest works: `pytest tests/characterization/` runs the same cases.
 | `adapter_with_session` | 1 | non-empty `session_id` → num_turns fixup: reads the session JSONL, overrides `num_turns` with the assistant-message count, records `num_turns_reported` + `num_tool_uses` |
 | `adapter_inline_prompt` | 1 | `--prompt=...` (mktemp path) instead of `--prompt-file` still produces the right output |
 | `adapter_claude_missing` | 1 | `claude` not on PATH → spawn fails; bash writes the shell error into `RAW_JSON` and carries on (exit 0 + error in `.log` + `parse_failed`), and the port mirrors it (a divergence a reviewer caught; now pinned) |
+| `adapter_nonutf8` | 1 | non-UTF-8 claude output → U+FFFD in `.log` + `parse_failed`, normal exit path — a **deliberate deviation** (bash died on the decode error: non-zero exit, no `.usage.json`, rate-limit exit-75 lost); python-truth golden, the pre-cutover bash fails it |
 | `adapter_cmd_*` (×4) | 1 | command construction — how `--effort`/`--model`/`--max-budget` become the `claude` argv, incl. the skip-on-`default`/`0`/empty branches and the `${VAR:-}` rule (exported-but-empty `CLAUDE_EFFORT` still means `--effort max`) |
 | `adapter_configdir_*` (×3) | 1 | alias → `CLAUDE_CONFIG_DIR` export (`$HOME/.<alias>`): exported-but-empty env, empty `--claude-alias=` flag, and an ambient `CLAUDE_CONFIG_DIR` the adapter must override (alias is authoritative) |
 | `adapter_err_*` (×5) | 1 | validation contract — exit 1 + exact stderr for missing `--log`, both/neither prompt, missing prompt file, unknown option |
-| `dryrun_*` (×10) | 3 (phase framework) | arg parse, path calc, exact agent command (`--log/--background`), full generated prompt — incl. the `--repair`/`--recheck` mode variants, the hidden-dir repo skip (real 1-commit repo pins the check line too), and the only-dotdirs `$PWD` fallthrough |
+| `dryrun_*` (×12) | 3 (phase framework) | arg parse, path calc, exact agent command (`--log/--background`), full generated prompt — incl. the `--repair`/`--recheck` mode variants, the hidden-dir repo skip (real 1-commit repo pins the check line too), the only-dotdirs `$PWD` fallthrough, a 5th `\|` field folding into the reference (bash `IFS='\|' read` remainder rule), and `--max-turns=abc` passing through verbatim (deprecated, never numeric-validated) |
 | `bad_artifact_code_analysis` | 3 | bad `--artifact` path degrades to `OK <name> (? commits)` + exit 0 (bash `cd … \|\| echo "?"`), never a traceback |
+| `bad_max_parallel_code_analysis` | 3 | non-numeric `--max-parallel` → one-line error + exit 1 — a **deliberate deviation** (bash accepted it, then hung forever in the throttle loop; empty crashed its arithmetic mid-run); python-truth golden |
 | `gate_*` (×5) | 3 | each downstream phase's **precondition gate** — the input contract it enforces before running (e.g. spec-gen needs `modeling-brief.md`; exit 1 + "Missing prerequisites" message) |
 | `check_ok_*` (×2) | 3 | the `--check` success path — per-phase OK message (`All repos OK.` for code_analysis, `All prerequisites OK.` for the rest) |
 | `help_*` (×7) | 3 | `--help` prints the full bash usage text (options, examples) verbatim; review needs its phase arg first |
@@ -72,7 +74,7 @@ Once pytest works: `pytest tests/characterization/` runs the same cases.
 ## Adding cases (remaining step-0 work)
 
 Register a zero-arg callable in `oracle.CASES` that returns a normalized string,
-then `--update` (`-k` with an exact case name updates only that case). 62 cases
+then `--update` (`-k` with an exact case name updates only that case). 66 cases
 so far. When a new golden pins behavior the original
 bash also had, verify parity against the pre-cutover script:
 `SPECULA_LAUNCHER_IMPL=<path-to-old-bash> oracle.py --check -k <case>` (materialize
