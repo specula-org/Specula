@@ -31,6 +31,12 @@ import tempfile
 
 HELP = __doc__
 
+# Nested-session markers stripped before spawning claude, so the child CLI does
+# not believe it is running inside another Claude Code session. Shared with the
+# characterization harness (tests/characterization/oracle.py imports it) so the
+# two lists cannot drift.
+SESSION_ENV_VARS = ("CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT")
+
 
 def _derived_path(log_file: str, suffix: str) -> str:
     """Mirror bash `${LOG_FILE%.log}<suffix>`."""
@@ -38,22 +44,32 @@ def _derived_path(log_file: str, suffix: str) -> str:
     return stem + suffix
 
 
-def _extract_log(raw_text: str, log_file: str) -> None:
+def _parse_result(raw_text: str) -> dict | None:
+    """The claude result JSON, parsed once for both extractors below; None when
+    the output isn't a JSON object (crash text, spawn error, truncation)."""
+    try:
+        d = json.loads(raw_text)
+    except Exception:
+        return None
+    return d if isinstance(d, dict) else None
+
+
+def _extract_log(d: dict | None, raw_text: str, log_file: str) -> None:
     """Result text -> .log; on JSON-parse failure, fall back to the raw output."""
     with open(log_file, "w") as fh:
-        try:
-            d = json.loads(raw_text)
+        if d is not None:
             print(d.get("result", ""), file=fh)
-        except Exception:
+        else:
             print(raw_text, file=fh)
 
 
-def _extract_usage(raw_text: str, usage_path: str) -> None:
+def _extract_usage(d: dict | None, usage_path: str) -> None:
     """Usage stats -> .usage.json, fixing num_turns from the session JSONL when a
     session_id is present. Any failure -> {"error": "parse_failed"} (mirrors the
     bash `|| parse_failed` fallback)."""
     try:
-        d = json.loads(raw_text)
+        if d is None:
+            raise ValueError("result JSON unparseable")
         usage = {
             "total_cost_usd": d.get("total_cost_usd", 0),
             "num_turns": d.get("num_turns", 0),
@@ -74,6 +90,11 @@ def _extract_usage(raw_text: str, usage_path: str) -> None:
                 tool_count = 0
                 with open(jsonl_path) as f:
                     for line in f:
+                        # Session transcripts are dominated by huge tool-result
+                        # lines; skip the full JSON parse for anything that can't
+                        # be an assistant turn (cheap superset substring test).
+                        if '"assistant"' not in line:
+                            continue
                         try:
                             msg = json.loads(line)
                             if msg.get("type") == "assistant":
@@ -108,8 +129,10 @@ def main(argv: list[str]) -> int:
     max_budget = ""
     log_file = ""
     _background = False  # accepted; caller does the backgrounding, as in bash
-    claude_alias = os.environ.get("CLAUDE_ALIAS", "claude")
-    effort = os.environ.get("CLAUDE_EFFORT", "max")
+    # `or`: bash ${VAR:-default} treats an exported-but-empty var as unset — an
+    # empty CLAUDE_EFFORT must still mean "max", not "skip the --effort flag".
+    claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
+    effort = os.environ.get("CLAUDE_EFFORT") or "max"
     model = os.environ.get("CLAUDE_MODEL", "")
 
     for arg in argv:
@@ -161,7 +184,7 @@ def main(argv: list[str]) -> int:
 
     try:
         # ── Environment setup ──
-        for var in ("CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT"):
+        for var in SESSION_ENV_VARS:
             os.environ.pop(var, None)
         # Alias determines the config dir authoritatively (do NOT inherit an
         # ambient CLAUDE_CONFIG_DIR, which would redirect quota-sensitive runs).
@@ -198,8 +221,9 @@ def main(argv: list[str]) -> int:
         if rate_limited:
             print("claude-code adapter: rate limit hit", file=sys.stderr)
 
-        _extract_log(raw_text, log_file)
-        _extract_usage(raw_text, _derived_path(log_file, ".usage.json"))
+        result = _parse_result(raw_text)
+        _extract_log(result, raw_text, log_file)
+        _extract_usage(result, _derived_path(log_file, ".usage.json"))
 
         return 75 if rate_limited else 0
     finally:
