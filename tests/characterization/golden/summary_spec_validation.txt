@@ -1,0 +1,25 @@
+exit_code: 0
+
+=== stdout ===
+========================================
+ Specula — Spec Validation Batch Runner
+========================================
+Targets:      1
+Max parallel: 1
+Max turns:    0
+
+Checking prerequisites...
+  footest             specs OK (2L)  instr OK  repo OK  traces WARN (0 ndjson files)
+
+[TIME] Launching agent: footest
+  PID=<PID>  Log: <WORK>/.specula-output/spec-validation.log
+
+[TIME] All agents launched. Waiting...
+  Monitor: tail -f <WORK>/*/.specula-output/spec-validation.log
+
+[TIME] All agents completed.
+
+========================================
+ Results
+========================================
+  footest: changelog written (4 lines)

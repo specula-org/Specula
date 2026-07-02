@@ -61,13 +61,20 @@ PHASELIB = LAUNCH / "phaselib.py"
 
 
 def _launcher_cmd(script: str) -> list[str]:
-    """Which phase-launcher implementation the dry-run/gate cases exercise. Default:
-    the bash launcher (or its shim). SPECULA_LAUNCHER_IMPL=python runs phaselib.py
-    with the phase key derived from the script name (launch_<key>.sh -> <key>) — the
-    step-3 parity check against the bash-captured goldens."""
-    if os.environ.get("SPECULA_LAUNCHER_IMPL") == "python":
+    """Which phase-launcher implementation the dry-run/gate/summary cases exercise:
+    unset/other → the installed launcher (`launch_<phase>.sh`, now a shim to python)
+    "python"    → run phaselib.py directly with the phase key from the script name
+                  (launch_<key>.sh -> <key>) — the step-3 parity check.
+    <a path>    → run `bash <path>` (e.g. a pre-cutover bash launcher materialized
+                  under scripts/launch/, to capture ground-truth goldens or
+                  re-verify parity against the bash). Run one case at a time in
+                  this mode, since the path overrides the script for every case."""
+    impl = os.environ.get("SPECULA_LAUNCHER_IMPL", "")
+    if impl == "python":
         key = script[len("launch_") : -len(".sh")]
         return ["python3", str(PHASELIB), key]
+    if impl and os.path.exists(impl):
+        return ["bash", impl]
     return ["bash", str(LAUNCH / script)]
 
 
@@ -101,6 +108,8 @@ def _norm_line(line: str) -> str:
         return "<CLAUDE-SPAWN-ERROR>"
     # [HH:MM:SS] log timestamps -> [TIME]
     line = re.sub(r"\[\d{2}:\d{2}:\d{2}\]", "[TIME]", line)
+    # launched-agent PIDs -> <PID> (full-run summary path)
+    line = re.sub(r"PID=\d+", "PID=<PID>", line)
     # ISO-8601 datetimes (date -Iseconds) -> <DATE>
     line = re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[+-]\d{2}:\d{2}|Z)?", "<DATE>", line)
     # "completed in 0m 1s" elapsed -> <ELAPSED>
@@ -340,10 +349,14 @@ def run_bad_artifact_case(script: str, target: str) -> str:
         )
 
 
-def run_review_case(phase: str) -> str:
+def run_review_case(phase: str, seed: dict[str, str] | None = None) -> str:
     """Pin the review launcher, which has no --dry-run (it always spawns an agent).
     Run it with a fake `claude` that records the inline prompt it receives on stdin,
-    and snapshot stdout (banner / per-name lines / summary) + that captured prompt."""
+    and snapshot stdout (banner / per-name lines / summary) + that captured prompt.
+
+    seed: pre-create the phase's review file (relpath -> content) so the summary's
+    *populated* branch fires ('review written (N lines)', counting via wc -l);
+    without it the summary reports 'no review file generated'."""
     fixture = FIXTURES / "claude_normal.json"
     with tempfile.TemporaryDirectory() as td:
         base = Path(td).resolve()
@@ -351,6 +364,10 @@ def run_review_case(phase: str) -> str:
         _write_fake_claude(bindir, fixture)
         work = base / "work"
         work.mkdir()
+        for rel, content in (seed or {}).items():
+            f = work / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(content)
         stdin_file = base / "captured_prompt.txt"
         env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base), "CLAUDE_STDIN_FILE": str(stdin_file)})
         proc = subprocess.run(
@@ -386,6 +403,42 @@ def run_gate_case(script: str, target: str, use_artifact: bool = True) -> str:
         env = _clean_env({"HOME": str(tmp)})
         proc = subprocess.run(args, cwd=work, env=env, capture_output=True, text=True)
         return normalize(f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n", subs)
+
+
+def run_summary_case(script: str, target: str, seed: dict[str, str], use_artifact: bool = True) -> str:
+    """Run a phase launcher in FULL mode (no --dry-run/--check) with a fake `claude`
+    and pre-seeded files; snapshot stdout. This is the only case that reaches the
+    post-launch summary path — both summarize()'s *populated* branch (the OK/~~/
+    written lines that count .md/.tla lines via wc -l) and the per-phase
+    `Monitor: tail -f …` hint — neither of which the dry-run/gate cases exercise.
+
+    `seed` writes BOTH the phase's prerequisites (so check() passes and the run
+    proceeds) and its output files (so summarize sees them), relative to the work
+    cwd (single-target → under .specula-output/). The agent is faked, so its own
+    output files never appear; only the seeded ones drive the summary. Launched-
+    agent PIDs are normalized to <PID>."""
+    with tempfile.TemporaryDirectory() as td:
+        base = Path(td).resolve()
+        bindir = base / "bin"
+        _write_fake_claude(bindir, FIXTURES / "claude_normal.json")
+        work = base / "work"
+        work.mkdir()
+        for rel, content in seed.items():
+            f = work / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(content)
+        env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base)})
+        cmd = _launcher_cmd(script)
+        subs = {str(work): "<WORK>", str(base): "<TMP>"}
+        if use_artifact:
+            artifact = base / "artifact"
+            _init_git_repo(artifact)
+            cmd = cmd + [f"--artifact={artifact}"]
+            subs[str(artifact)] = "<ARTIFACT>"
+        cmd = cmd + [target]
+        proc = subprocess.run(cmd, cwd=str(work), env=env, capture_output=True, text=True)
+        parts = [f"exit_code: {proc.returncode}", "", "=== stdout ===", proc.stdout, ""]
+        return normalize("\n".join(parts), subs)
 
 
 def run_pipeline_case(flags: list[str], target: str) -> str:
@@ -553,6 +606,45 @@ _CONFIRMATION_SEED = {
     ".specula-output/modeling-brief.md": "# Modeling Brief\n",
 }
 
+# summary-path fixtures: each merges the phase's *prerequisites* (so check() passes
+# and the run proceeds to launch+summary) with the *output* files a completed agent
+# would have written (so summarize()'s populated branch fires). Line counts are
+# chosen to exercise wc -l (trailing-newline files → N == newline count).
+_SUMMARY_CODE_ANALYSIS = {
+    ".specula-output/modeling-brief.md": "# Modeling Brief\nfamily A: crash window\nfamily B: missing guard\n",
+}
+_SUMMARY_SPEC_GENERATION = {
+    ".specula-output/modeling-brief.md": "# Modeling Brief\n",  # prereq
+    ".specula-output/spec/base.tla": "---- MODULE base ----\nx == 1\n====\n",  # output (3 lines)
+    ".specula-output/spec/MC.tla": "---- MODULE MC ----\n====\n",
+    ".specula-output/spec/Trace.tla": "---- MODULE Trace ----\n====\n",
+    ".specula-output/spec/instrumentation-spec.md": "# instrumentation\n",
+}
+_SUMMARY_HARNESS = {
+    ".specula-output/spec/base.tla": "---- MODULE base ----\n====\n",  # prereq
+    ".specula-output/spec/Trace.tla": "---- MODULE Trace ----\n====\n",  # prereq
+    ".specula-output/spec/instrumentation-spec.md": "# instrumentation\n",  # prereq
+    ".specula-output/harness/run.sh": "#!/usr/bin/env bash\n",  # output
+    ".specula-output/harness/INSTRUMENTATION.md": "# guide\n",  # output
+    ".specula-output/traces/t1.ndjson": '{"e":1}\n',  # output
+}
+_SUMMARY_BUG_CLASSIFICATION = {
+    ".specula-output/spec/confirmed-bugs.md": "# Confirmed Bugs\n\n## Bug 1\n",  # prereq (non-empty)
+    ".specula-output/spec/bug-severity.md": (
+        "# Bug Severity\n\n## Summary\n"
+        "- Total bugs: 5\n- Critical: 1\n- High: 2\n- Medium: 1\n- Low: 1\n- FALSE POSITIVE: 0\n"
+    ),  # output (grep-counted)
+}
+_SUMMARY_SPEC_VALIDATION = {
+    **_VALIDATION_SEED,  # prereqs (base.tla has no trailing NL → check shows 2L)
+    ".specula-output/spec/changelog.md": "# Changelog\n\n- fixed X\n- fixed Y\n",  # output (4 lines)
+}
+_SUMMARY_BUG_CONFIRMATION = {
+    **_CONFIRMATION_SEED,  # prereqs (bug-report.md + modeling-brief.md)
+    ".specula-output/spec/confirmed-bugs.md": "# Confirmed Bugs\n\n## DA-1\n## DA-2\n",  # output (4 lines)
+    ".specula-output/repro/test_bug1.py": "def test():\n    pass\n",  # repro test (counted)
+}
+
 
 # ── case registry ───────────────────────────────────────────────────────────
 # name -> zero-arg callable returning the normalized snapshot string.
@@ -649,6 +741,10 @@ CASES: dict[str, callable] = {
     "review_analysis": lambda: run_review_case("analysis"),
     "review_specgen": lambda: run_review_case("specgen"),
     "review_validation": lambda: run_review_case("validation"),
+    # review summary's populated branch (review file present -> 'review written (N lines)')
+    "review_analysis_populated": lambda: run_review_case(
+        "analysis", seed={".specula-output/review-analysis.md": "# Review\n\n- point 1\n- point 2\n"}
+    ),
     # step 5 target: launch_pipeline.sh phase sequencing + repair-loop gating under --skip-*
     "pipeline_seq_full": lambda: run_pipeline_case([], "footest|foo/bar|Go|Raft demo"),
     "pipeline_seq_resume": lambda: run_pipeline_case(
@@ -663,6 +759,25 @@ CASES: dict[str, callable] = {
     "gate_bug_confirmation": lambda: run_gate_case("launch_bug_confirmation.sh", "footest|foo/bar|Go|Raft demo"),
     "gate_bug_classification": lambda: run_gate_case(
         "launch_bug_classification.sh", "footest|foo/bar|Go|Raft demo", use_artifact=False
+    ),
+    # step 3 target: post-launch summary path — summarize()'s populated branch
+    # (OK/~~/written lines counting .md/.tla via wc -l) + per-phase Monitor hint,
+    # neither reached by dry-run/gate. Full run with a faked agent + seeded outputs.
+    "summary_code_analysis": lambda: run_summary_case(
+        "launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo", _SUMMARY_CODE_ANALYSIS
+    ),
+    "summary_spec_generation": lambda: run_summary_case(
+        "launch_spec_generation.sh", "footest", _SUMMARY_SPEC_GENERATION
+    ),
+    "summary_harness_generation": lambda: run_summary_case("launch_harness_generation.sh", "footest", _SUMMARY_HARNESS),
+    "summary_bug_classification": lambda: run_summary_case(
+        "launch_bug_classification.sh", "footest", _SUMMARY_BUG_CLASSIFICATION, use_artifact=False
+    ),
+    "summary_spec_validation": lambda: run_summary_case(
+        "launch_spec_validation.sh", "footest", _SUMMARY_SPEC_VALIDATION
+    ),
+    "summary_bug_confirmation": lambda: run_summary_case(
+        "launch_bug_confirmation.sh", "footest", _SUMMARY_BUG_CONFIRMATION
     ),
     # step 5 target: repair-loop state-machine primitives (rr_set_status mutator)
     "repair_state_machine": run_repair_case,
