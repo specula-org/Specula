@@ -21,4 +21,4 @@ Checking repositories...
 ========================================
  Results
 ========================================
-  OK  footest -> modeling-brief.md (3 lines)
+  OK  footest -> modeling-brief.md (2 lines)
