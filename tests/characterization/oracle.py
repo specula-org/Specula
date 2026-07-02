@@ -591,7 +591,9 @@ CASES: dict[str, callable] = {
     # step 3 target: phase-launcher dry-run (arg parse, path calc, agent command, prompt)
     "dryrun_code_analysis": lambda: run_dryrun_case("launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo"),
     # regression guard: bad --artifact path degrades to "? commits", never crashes (F1)
-    "bad_artifact_code_analysis": lambda: run_bad_artifact_case("launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo"),
+    "bad_artifact_code_analysis": lambda: run_bad_artifact_case(
+        "launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo"
+    ),
     "dryrun_spec_generation": lambda: run_dryrun_case(
         "launch_spec_generation.sh",
         "footest",
