@@ -154,6 +154,9 @@ def _write_fake_claude(bindir: Path, fixture: Path) -> None:
         # record the args the adapter passed (for command-construction cases);
         # no-op when CLAUDE_ARGV_FILE is unset, so output cases are unaffected.
         'printf "%s\\n" "$@" > "${CLAUDE_ARGV_FILE:-/dev/null}"\n'
+        # record the CLAUDE_CONFIG_DIR the adapter exported (alias -> config-dir
+        # mapping); no-op when CLAUDE_CONFIG_DIR_FILE is unset.
+        'printf "%s\\n" "${CLAUDE_CONFIG_DIR:-}" > "${CLAUDE_CONFIG_DIR_FILE:-/dev/null}"\n'
         # record the prompt on stdin (for review, which passes it inline); drains
         # to /dev/null when CLAUDE_STDIN_FILE is unset, so other cases are unaffected.
         'cat > "${CLAUDE_STDIN_FILE:-/dev/null}"\n'
@@ -284,6 +287,42 @@ def run_adapter_error_case(flags: list[str]) -> str:
         )
 
 
+def run_adapter_configdir_case(flags: list[str], env_extra: dict[str, str] | None = None) -> str:
+    """Pin the alias -> CLAUDE_CONFIG_DIR contract: the alias sets the config dir
+    ($HOME/.<alias>), not a `claude` argv flag, so the command-construction case
+    can't see it. The fake `claude` records the CLAUDE_CONFIG_DIR the adapter
+    exported; snapshot it. With CLAUDE_ALIAS='' and no --claude-alias, the empty
+    env must still resolve to `.claude` (bash ${CLAUDE_ALIAS:-claude}). NB this
+    contract is double-guarded — both the alias default and the config-dir line's
+    own `or "claude"` — so it holds even if one guard is dropped; the case locks
+    the observable contract, previously untested, rather than a single line."""
+    fixture = FIXTURES / "claude_normal.json"
+    with tempfile.TemporaryDirectory() as td:
+        base = Path(td).resolve()
+        bindir = base / "bin"
+        _write_fake_claude(bindir, fixture)
+        prompt = base / "prompt.md"
+        prompt.write_text("dummy prompt\n")
+        cfg_file = base / "config_dir.txt"
+        env = _clean_env(
+            {
+                "PATH": f"{bindir}:/usr/bin:/bin",
+                "HOME": str(base),
+                "CLAUDE_CONFIG_DIR_FILE": str(cfg_file),
+                **(env_extra or {}),
+            }
+        )
+        subprocess.run(
+            _adapter_cmd() + [f"--prompt-file={prompt}", f"--log={base}/out.log", *flags],
+            cwd=str(base),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        seen = cfg_file.read_text() if cfg_file.exists() else "<MISSING>"
+        return normalize(f"=== CLAUDE_CONFIG_DIR seen by claude ===\n{seen}", {str(base): "<TMP>"})
+
+
 def run_dryrun_case(
     script: str,
     target: str,
@@ -408,7 +447,13 @@ def run_review_case(phase: str, seed: dict[str, str] | None = None, fixture_name
         return normalize("\n".join(parts), {str(work): "<WORK>", str(base): "<TMP>"})
 
 
-def run_summary_case(script: str, target: str, seed: dict[str, str], use_artifact: bool = True) -> str:
+def run_summary_case(
+    script: str,
+    target: str,
+    seed: dict[str, str],
+    use_artifact: bool = True,
+    seed_bytes: dict[str, bytes] | None = None,
+) -> str:
     """Run a phase launcher in FULL mode (no --dry-run/--check) with a fake `claude`
     and pre-seeded files; snapshot stdout. This is the only case that reaches the
     post-launch summary path — both summarize()'s *populated* branch (the OK/~~/
@@ -419,7 +464,11 @@ def run_summary_case(script: str, target: str, seed: dict[str, str], use_artifac
     proceeds) and its output files (so summarize sees them), relative to the work
     cwd (single-target → under .specula-output/). The agent is faked, so its own
     output files never appear; only the seeded ones drive the summary. Launched-
-    agent PIDs are normalized to <PID>."""
+    agent PIDs are normalized to <PID>.
+
+    seed_bytes: raw-byte files (relpath -> bytes) — used to plant a non-UTF-8 byte
+    in a counted file, pinning that `_wc_l` counts bytes (like `wc -l`) and never
+    crashes on invalid UTF-8 (a `read_text()` regression would raise here)."""
     with tempfile.TemporaryDirectory() as td:
         base = Path(td).resolve()
         bindir = base / "bin"
@@ -430,6 +479,10 @@ def run_summary_case(script: str, target: str, seed: dict[str, str], use_artifac
             f = work / rel
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(content)
+        for rel, data in (seed_bytes or {}).items():
+            f = work / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_bytes(data)
         env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base)})
         cmd = _launcher_cmd(script)
         subs = {str(work): "<WORK>", str(base): "<TMP>"}
@@ -675,6 +728,9 @@ CASES: dict[str, callable] = {
     "adapter_cmd_skips": lambda: run_adapter_cmd_case(["--effort=default", "--max-budget=0"]),
     # exported-but-empty CLAUDE_EFFORT must still mean --effort max (bash ${:-max})
     "adapter_cmd_empty_effort_env": lambda: run_adapter_cmd_case([], env_extra={"CLAUDE_EFFORT": ""}),
+    # empty CLAUDE_ALIAS still resolves CLAUDE_CONFIG_DIR to .claude — locks the
+    # (previously untested, double-guarded) contract, not a single line
+    "adapter_configdir_empty_alias": lambda: run_adapter_configdir_case([], env_extra={"CLAUDE_ALIAS": ""}),
     # validation contract: exit code + stderr on bad invocations
     "adapter_err_no_log": lambda: run_adapter_error_case(["--prompt=x"]),
     "adapter_err_both_prompt": lambda: run_adapter_error_case(
@@ -690,6 +746,17 @@ CASES: dict[str, callable] = {
     # regression guard: bad --artifact path degrades to "? commits", never crashes (F1)
     "bad_artifact_code_analysis": lambda: run_dryrun_case(
         "launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo", snapshot_prompt=False, bad_artifact=True
+    ),
+    # find_repo_dir must skip a hidden .git-bearing dir (bash glob */ never matches
+    # dotdirs) and pick the real repo — prompt's Repository line pins the choice (F5)
+    "dryrun_code_analysis_hidden_repo": lambda: run_dryrun_case(
+        "launch_code_analysis.sh",
+        "footest|foo/bar|Go|Raft demo",
+        use_artifact=False,
+        seed={
+            "footest/artifact/.hidden/.git/HEAD": "ref: refs/heads/main\n",
+            "footest/artifact/realrepo/.git/HEAD": "ref: refs/heads/main\n",
+        },
     ),
     "dryrun_spec_generation": lambda: run_dryrun_case(
         "launch_spec_generation.sh",
@@ -815,6 +882,14 @@ CASES: dict[str, callable] = {
     ),
     "summary_bug_confirmation": lambda: run_summary_case(
         "launch_bug_confirmation.sh", "footest", _SUMMARY_BUG_CONFIRMATION
+    ),
+    # summarize must count a non-UTF-8 output file by bytes (like wc -l) and never
+    # crash — a read_text() regression would raise decoding the \xff byte (F3)
+    "summary_code_analysis_nonutf8": lambda: run_summary_case(
+        "launch_code_analysis.sh",
+        "footest|foo/bar|Go|Raft demo",
+        {},
+        seed_bytes={".specula-output/modeling-brief.md": b"# Modeling Brief\n\xff\nfamily A\n"},
     ),
     # step 5 target: repair-loop state-machine primitives (rr_set_status mutator)
     "repair_state_machine": run_repair_case,
