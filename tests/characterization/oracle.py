@@ -462,9 +462,7 @@ def run_review_case(
         work.mkdir()
         _seed_files(work, seed)
         stdin_file = base / "captured_prompt.txt"
-        env = _clean_env(
-            {"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base), "CLAUDE_STDIN_FILE": str(stdin_file)}
-        )
+        env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base), "CLAUDE_STDIN_FILE": str(stdin_file)})
         proc = subprocess.run(
             _launcher_cmd("launch_review.sh") + [phase, "footest"],
             cwd=str(work),
@@ -509,9 +507,7 @@ def run_summary_case(
         work = base / "work"
         work.mkdir()
         _seed_files(work, seed)
-        env = _clean_env(
-            {"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base), "GIT_CEILING_DIRECTORIES": str(base)}
-        )
+        env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base), "GIT_CEILING_DIRECTORIES": str(base)})
         cmd = _launcher_cmd(script)
         subs = {str(work): "<WORK>", str(base): "<TMP>"}
         if use_artifact:
