@@ -16,13 +16,15 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import subprocess
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "launch"))
+LAUNCH = Path(__file__).resolve().parents[2] / "scripts" / "launch"
+sys.path.insert(0, str(LAUNCH))
 import pipelinelib as pl  # noqa: E402
 
 RR_TEMPLATE = """\
@@ -210,24 +212,33 @@ class TestEpoch(unittest.TestCase):
 
 
 class TestWaitForQuota(TmpCwd):
-    def gate(self, json_text=None, exit_code=0, max_waits="1", q5="85", q7="95"):
+    def gate(self, json_text=None, exit_code=0, max_waits="1", q5="85", q7="95", script_body=None):
+        """Run wait_for_quota against a stub usage.sh; returns (rc, sleeps, out).
+        The abort path raises SystemExit(1) — folded into rc so every test can
+        assert on the recorded sleeps with a single call."""
         script = self.tmp / "usage.sh"
-        if json_text is None:
+        if script_body is not None:
+            script.write_bytes(script_body)
+        elif json_text is None:
             script.write_text(f"#!/usr/bin/env bash\nexit {exit_code}\n")
         else:
             script.write_text(f"#!/usr/bin/env bash\ncat <<'J'\n{json_text}\nJ\n")
         script.chmod(0o755)
         sleeps = []
-        rc, out = quiet(
-            pl.wait_for_quota,
-            usage_script=script,
-            q5=q5,
-            q7=q7,
-            max_waits=max_waits,
-            claude_alias="claude",
-            sleep_fn=sleeps.append,
-        )
-        return rc, sleeps, out
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                rc = pl.wait_for_quota(
+                    usage_script=script,
+                    q5=q5,
+                    q7=q7,
+                    max_waits=max_waits,
+                    claude_alias="claude",
+                    sleep_fn=sleeps.append,
+                )
+        except SystemExit as e:
+            rc = e.code
+        return rc, sleeps, buf.getvalue()
 
     def test_missing_script_proceeds_silently(self):
         rc, out = quiet(
@@ -255,50 +266,33 @@ class TestWaitForQuota(TmpCwd):
         rc, sleeps, _ = self.gate(usage(50, 50))
         self.assertEqual((rc, sleeps), (0, []))
 
+    def test_nonutf8_output_is_a_parse_failure(self):
+        # bash: undecodable bytes broke the `python3 -c` heredoc → WARN + proceed;
+        # the gate must never abort the run on garbage usage output
+        rc, _, out = self.gate(script_body=b"#!/usr/bin/env bash\nprintf '\\xff\\xfe{bad}'\n")
+        self.assertEqual(rc, 0)
+        self.assertIn("usage parse failed", out)
+
     def test_over_aborts_after_max_waits(self):
-        with self.assertRaises(SystemExit) as ctx:
-            self.gate(usage(86, 50))
-        self.assertEqual(ctx.exception.code, 1)
+        rc, _, out = self.gate(usage(86, 50))
+        self.assertEqual(rc, 1)
+        self.assertIn("quota still over limit", out)
 
     def test_over_sleep_derived_from_resets_at(self):
         future = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() + 1000))
-        with self.assertRaises(SystemExit):
-            self.gate(usage(86, 50, r5=future))
-        # sleep length asserted via the recording variant below (list survives)
-        sleeps = []
-        script = self.tmp / "usage.sh"
-        with self.assertRaises(SystemExit), contextlib.redirect_stdout(io.StringIO()):
-            pl.wait_for_quota(
-                usage_script=script,
-                q5="85",
-                q7="95",
-                max_waits="1",
-                claude_alias="claude",
-                sleep_fn=sleeps.append,
-            )
+        rc, sleeps, _ = self.gate(usage(86, 50, r5=future))
+        self.assertEqual(rc, 1)
         self.assertEqual(len(sleeps), 1)
         self.assertTrue(1000 - 60 + 120 <= sleeps[0] <= 1000 + 120 + 5)
 
     def test_no_resets_at_sleeps_600(self):
-        sleeps = []
-        script = self.tmp / "usage.sh"
-        script.write_text(f"#!/usr/bin/env bash\ncat <<'J'\n{usage(86, 50, r5=None)}\nJ\n")
-        script.chmod(0o755)
-        with self.assertRaises(SystemExit), contextlib.redirect_stdout(io.StringIO()):
-            pl.wait_for_quota(
-                usage_script=script, q5="85", q7="95", max_waits="1", claude_alias="claude", sleep_fn=sleeps.append
-            )
+        rc, sleeps, _ = self.gate(usage(86, 50, r5=None))
+        self.assertEqual(rc, 1)
         self.assertEqual(sleeps, [600])
 
     def test_past_resets_at_clamps_to_60(self):
-        sleeps = []
-        script = self.tmp / "usage.sh"
-        script.write_text(f"#!/usr/bin/env bash\ncat <<'J'\n{usage(86, 50, r5='2000-01-01T00:00:00+00:00')}\nJ\n")
-        script.chmod(0o755)
-        with self.assertRaises(SystemExit), contextlib.redirect_stdout(io.StringIO()):
-            pl.wait_for_quota(
-                usage_script=script, q5="85", q7="95", max_waits="1", claude_alias="claude", sleep_fn=sleeps.append
-            )
+        rc, sleeps, _ = self.gate(usage(86, 50, r5="2000-01-01T00:00:00+00:00"))
+        self.assertEqual(rc, 1)
         self.assertEqual(sleeps, [60])
 
     def test_recovers_when_usage_drops(self):
@@ -487,6 +481,133 @@ class TestLedger(RRDirCase):
         f = self.rr_dir / "RR-1.md"
         f.write_text(pad + "status: DEFERRED\n")
         self.assertEqual(pl.Pipeline._status_file_count([f], "DEFERRED"), 1)
+
+
+# ──────────────────────────────────────────────────────────
+# Exit-code and error-path parity (bash set -e / set -u / pipefail)
+# ──────────────────────────────────────────────────────────
+class TestRunLauncherExitCodes(TmpCwd):
+    def _launch(self, body: str) -> int:
+        (self.tmp / "fake.sh").write_text(body)
+        p = make_pipeline(["t|g|l|r"])
+        self.addCleanup(setattr, pl, "SCRIPT_DIR", pl.SCRIPT_DIR)
+        pl.SCRIPT_DIR = self.tmp
+        with self.assertRaises(SystemExit) as ctx:
+            p._run_launcher("fake.sh", [])
+        return ctx.exception.code
+
+    def test_signal_death_maps_to_128_plus_n(self):
+        # bash set -e reported a SIGTERM'd launcher as 143, not the mod-256
+        # wraparound 241 — schedulers classify kills by 128+N
+        self.assertEqual(self._launch("kill -TERM $$\n"), 143)
+
+    def test_plain_failure_passes_through(self):
+        self.assertEqual(self._launch("exit 7\n"), 7)
+
+
+class TestSingleTargetGuards(TmpCwd):
+    def test_empty_name_aborts_before_phases(self):
+        # bash died at `names[0]: unbound variable` (set -u) before any phase;
+        # the port must fail fast too, not run the pipeline with zero names
+        p = make_pipeline(["|org/repo|Go|ref"])
+        buf = io.StringIO()
+        with self.assertRaises(SystemExit) as ctx, contextlib.redirect_stdout(buf):
+            p.main()
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("ERROR: no target name parsed", buf.getvalue())
+        self.assertNotIn("PHASE 1", buf.getvalue())
+
+    def test_absolute_name_does_not_escape_case_studies(self):
+        # bash string concat kept an absolute name under case-studies/ (no cd);
+        # a pathlib join would discard the prefix and chdir into the named dir
+        abs_case = self.tmp / "abs_case"
+        abs_case.mkdir()
+        p = make_pipeline(
+            [f"{abs_case}|org/repo|Go|ref"],
+            dry_run=True,
+            skip_analysis=True,
+            skip_specgen=True,
+            skip_harness=True,
+            skip_validation=True,
+            skip_confirmation=True,
+            skip_classification=True,
+            skip_repair_loop=True,
+        )
+        rc, out = quiet(p.main)
+        self.assertEqual(rc, 0)
+        self.assertNotIn("Single target: cd to", out)
+        self.assertEqual(os.getcwd(), str(self.tmp))
+
+
+class TestLogicalCwd(TmpCwd):
+    def setUp(self):
+        super().setUp()
+        old_pwd = os.environ.get("PWD")
+
+        def restore():
+            if old_pwd is None:
+                os.environ.pop("PWD", None)
+            else:
+                os.environ["PWD"] = old_pwd
+
+        self.addCleanup(restore)
+
+    def test_symlink_component_preserved(self):
+        # bash $PWD keeps the path you cd'd through; getcwd resolves symlinks
+        real = self.tmp / "mysys"
+        real.mkdir()
+        link = self.tmp / "work"
+        link.symlink_to(real)
+        os.chdir(link)
+        os.environ["PWD"] = str(link)
+        self.assertEqual(pl._logical_cwd(), link)
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args([]))
+        self.assertEqual(p.targets, ["work"])  # bash `basename "$PWD"`
+
+    def test_stale_pwd_falls_back_to_getcwd(self):
+        os.environ["PWD"] = "/definitely/not/here"
+        self.assertEqual(pl._logical_cwd(), Path.cwd())
+
+
+class TestMainTeeTeardown(TmpCwd):
+    """End-to-end pins for the `main 2>&1 | tee` teardown, driven as a
+    subprocess because the entry dup2s the real fds 1/2."""
+
+    def _run_entry(self, patch: str) -> subprocess.CompletedProcess:
+        d = self.tmp / "driver.py"
+        d.write_text(
+            "import sys\n"
+            f"sys.path.insert(0, {str(LAUNCH)!r})\n"
+            "import pipelinelib as pl\n"
+            f"{patch}\n"
+            "sys.exit(pl.main(['t|g|l|r']))\n"
+        )
+        return subprocess.run([sys.executable, str(d)], cwd=self.tmp, capture_output=True, text=True)
+
+    def test_unexpected_exception_traceback_reaches_log(self):
+        # bash set -e left the failing command's stderr in pipeline.log; an
+        # escaping exception must not die silently behind the devnull teardown
+        r = self._run_entry(
+            "def boom(self):\n    print('pre-crash progress')\n    raise ValueError('boom')\npl.Pipeline.main = boom"
+        )
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("ValueError: boom", r.stdout)  # traceback flowed through the tee
+        log_text = (self.tmp / ".specula-output" / "pipeline.log").read_text()
+        self.assertIn("pre-crash progress", log_text)
+        self.assertIn("ValueError: boom", log_text)
+
+    def test_failing_tee_fails_the_pipeline(self):
+        # bash pipefail: `main 2>&1 | tee log` exited non-zero when tee could
+        # not write the log, even though main succeeded
+        out = self.tmp / ".specula-output"
+        out.mkdir()
+        logf = out / "pipeline.log"
+        logf.write_text("")
+        logf.chmod(0o444)
+        self.addCleanup(logf.chmod, 0o644)
+        r = self._run_entry("pl.Pipeline.main = lambda self: 0")
+        self.assertEqual(r.returncode, 1)
 
 
 if __name__ == "__main__":

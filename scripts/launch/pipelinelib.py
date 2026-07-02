@@ -16,6 +16,7 @@ Lives in scripts/launch/ for now (no packaging dependency); moves into the
 
 from __future__ import annotations
 
+import contextlib
 import json
 import locale
 import os
@@ -23,12 +24,18 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 
-# phaselib's import also adopts the ambient LC_COLLATE, so RR-file glob order
-# matches bash pathname expansion (ledger rows, state signatures).
-from phaselib import _wc_l
+from phaselib import _logical_cwd, _wc_l
+
+# bash pathname expansion (`for f in "$d"/RR-*.md`) orders by the locale
+# collating sequence — RR-file glob order feeds ledger rows and repair state
+# signatures. Set LC_COLLATE explicitly (idempotent with phaselib's own
+# module-level call) rather than relying on the import side effect.
+with contextlib.suppress(locale.Error):
+    locale.setlocale(locale.LC_COLLATE, "")
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
@@ -216,14 +223,17 @@ def wait_for_quota(
         env = dict(os.environ)
         env["CLAUDE_ALIAS"] = claude_alias
         try:
-            r = subprocess.run(["bash", str(usage_script)], env=env, capture_output=True, text=True)
+            r = subprocess.run(["bash", str(usage_script)], env=env, capture_output=True)
         except OSError:
+            r = None  # spawn failure surfaces like the bash `$( ) ||` fetch failure
+        if r is None or r.returncode != 0:
             log("WARN: usage fetch failed, proceeding")
             return 0
-        if r.returncode != 0:
-            log("WARN: usage fetch failed, proceeding")
-            return 0
-        check = _quota_check(r.stdout, q5, q7)
+        check = None
+        with contextlib.suppress(UnicodeDecodeError):
+            # undecodable bytes broke the bash `python3 -c` heredoc the same way:
+            # a parse failure, never an abort — the gate must not kill the run
+            check = _quota_check(r.stdout.decode(), q5, q7)
         if check is None:
             log("WARN: usage parse failed, proceeding")
             return 0
@@ -314,7 +324,7 @@ class Pipeline:
             else:
                 self.targets.append(arg)
         if not self.targets:
-            self.targets.append(Path.cwd().name)
+            self.targets.append(_logical_cwd().name)  # bash `basename "$PWD"` (logical)
         return None
 
     # ── utilities ──
@@ -341,8 +351,8 @@ class Pipeline:
     def get_work_dir(self, name: str) -> str:
         """$PWD is evaluated at call time — after the single-target cd."""
         if len(self.targets) == 1:
-            return f"{os.getcwd()}/.specula-output"
-        return f"{os.getcwd()}/{name}/.specula-output"
+            return f"{_logical_cwd()}/.specula-output"
+        return f"{_logical_cwd()}/{name}/.specula-output"
 
     def wait_for_quota(self) -> None:
         wait_for_quota(
@@ -440,7 +450,11 @@ class Pipeline:
     def _run_launcher(self, script: str, args: list[str]) -> None:
         r = subprocess.run(["bash", str(SCRIPT_DIR / script), *args])
         if r.returncode != 0:
-            raise SystemExit(r.returncode)  # bash set -e: a failing phase aborts the run
+            # bash set -e: a failing phase aborts the run. Signal death arrives
+            # as a negative returncode — report 128+N like the bash did (143,
+            # not the mod-256 wraparound 241), schedulers classify kills by it.
+            code = 128 - r.returncode if r.returncode < 0 else r.returncode
+            raise SystemExit(code)
 
     def _phase(self, banner: str, script: str, args: list[str]) -> None:
         divider()
@@ -458,14 +472,8 @@ class Pipeline:
         if self.skip_reviews:
             log(f"Skipping {phase} review (--skip-reviews)")
             return
-        divider()
-        log(f"REVIEW: {phase}")
-        divider()
         args = [f"--agent={self.agent}", f"--claude-alias={self.claude_alias}", phase, *names]
-        if self.dry_run:
-            log(f"[DRY RUN] bash scripts/launch/launch_review.sh {' '.join(args)}")
-            return
-        self._run_launcher("launch_review.sh", args)
+        self._phase(f"REVIEW: {phase}", "launch_review.sh", args)
 
     def run_phase2_specgen(self) -> None:
         self._phase("PHASE 2: SPEC GENERATION", "launch_spec_generation.sh", self._phase_args(self.extract_names()))
@@ -718,10 +726,18 @@ class Pipeline:
         # If running a single target, cd into its case-study directory so that
         # downstream scripts (which use $PWD/.specula-output) write into the
         # case study's own directory instead of polluting the repo root.
-        if len(self.targets) == 1 and names:
-            case_dir = SPECULA_ROOT / "case-studies" / names[0]
+        if len(self.targets) == 1:
+            if not names:
+                # bash died here (`names[0]: unbound variable` under set -u):
+                # fail fast before any phase runs on a nameless target.
+                log(f"ERROR: no target name parsed from '{self.targets[0]}', aborting")
+                raise SystemExit(1)
+            # string concat like the bash — a pathlib join would let an absolute
+            # name discard the case-studies prefix and cd anywhere
+            case_dir = Path(f"{SPECULA_ROOT}/case-studies/{names[0]}")
             if case_dir.is_dir():
                 os.chdir(case_dir)
+                os.environ["PWD"] = str(case_dir)  # bash cd exports the new $PWD
                 log(f"Single target: cd to {case_dir}")
 
         start_time = int(time.time())
@@ -795,7 +811,7 @@ def main(argv: list[str]) -> int:
     # bash bottom line: mkdir -p "$PWD/.specula-output"; main 2>&1 | tee .../pipeline.log
     # The log lands in the LAUNCH cwd — main's single-target cd happens later,
     # after the tee is already open.
-    out_dir = Path.cwd() / ".specula-output"
+    out_dir = _logical_cwd() / ".specula-output"
     out_dir.mkdir(parents=True, exist_ok=True)
     tee = subprocess.Popen(["tee", str(out_dir / "pipeline.log")], stdin=subprocess.PIPE)
     sys.stdout.flush()
@@ -806,6 +822,12 @@ def main(argv: list[str]) -> int:
         code = p.main()
     except SystemExit as e:
         code = e.code if isinstance(e.code, int) else 1
+    except BaseException as e:
+        # Print while fd 2 still feeds the tee: after the finally below it is
+        # /dev/null, and an escaping exception would die with no diagnostics
+        # anywhere. bash `set -e` left the failing command's stderr in the log.
+        traceback.print_exc()
+        code = 130 if isinstance(e, KeyboardInterrupt) else 1  # 128+SIGINT, like bash
     finally:
         sys.stdout.flush()
         sys.stderr.flush()
@@ -815,7 +837,11 @@ def main(argv: list[str]) -> int:
         os.dup2(devnull, 2)
         os.close(devnull)
         tee.stdin.close()
-        tee.wait()
+        # bash pipefail: a failing tee (unwritable/full log) failed the pipeline
+        # even when main succeeded
+        tee_rc = tee.wait()
+        if code == 0 and tee_rc != 0:
+            code = tee_rc
     return code
 
 
