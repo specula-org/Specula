@@ -1,0 +1,2 @@
+=== CLAUDE_CONFIG_DIR seen by claude ===
+<TMP>/.claude
