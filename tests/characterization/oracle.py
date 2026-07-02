@@ -515,7 +515,9 @@ def run_quota_case(usage_json: str, q5: int, q7: int) -> str:
 
 # prerequisite fixtures for the downstream phases' happy-path dry-runs
 _VALIDATION_SEED = {
-    ".specula-output/spec/base.tla": "---- MODULE base ----\nx == 1\n====\n",
+    # base.tla deliberately has NO trailing newline, to pin the wc-l vs splitlines
+    # line-count edge in the "specs OK (NL)" check (bash wc-l = 2, not 3).
+    ".specula-output/spec/base.tla": "---- MODULE base ----\nx == 1\n====",
     ".specula-output/spec/MC.tla": "---- MODULE MC ----\n====\n",
     ".specula-output/spec/Trace.tla": "---- MODULE Trace ----\n====\n",
     ".specula-output/spec/instrumentation-spec.md": "# instrumentation\n",
