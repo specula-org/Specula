@@ -281,13 +281,19 @@ class CodeAnalysisPhase(Phase):
         for name in names:
             repo_dir = ws.find_repo_dir(name)
             if repo_dir:
-                r = subprocess.run(
-                    ["git", "rev-list", "--count", "HEAD"],
-                    cwd=repo_dir,
-                    capture_output=True,
-                    text=True,
-                )
-                commits = r.stdout.strip() if r.returncode == 0 else "?"
+                # --artifact is returned verbatim (may not exist); mirror bash
+                # `cd "$repo_dir" && git ... || echo "?"` — degrade to "?" on a
+                # bad/unreadable path instead of crashing on subprocess cwd.
+                commits = "?"
+                if Path(repo_dir).is_dir():
+                    r = subprocess.run(
+                        ["git", "rev-list", "--count", "HEAD"],
+                        cwd=repo_dir,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if r.returncode == 0:
+                        commits = r.stdout.strip()
                 print(f"  OK  {name} ({commits} commits)")
             else:
                 print(f"  MISSING  {name} — use --artifact=<path> or place repo at {name}/artifact/<repo>/")

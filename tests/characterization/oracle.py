@@ -314,6 +314,32 @@ def run_dryrun_case(
     return raw
 
 
+def run_bad_artifact_case(script: str, target: str) -> str:
+    """Pin the graceful-degrade contract for a bad --artifact path: bash did
+    `cd "$repo_dir" && git ... || echo "?"`, so a non-existent/unreadable artifact
+    yields `OK <name> (? commits)` + exit 0, NOT a crash. Regression guard for the
+    port, which previously raised FileNotFoundError on subprocess cwd."""
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        work = tmp / "work"
+        work.mkdir()
+        env = _clean_env({"HOME": str(tmp)})
+        # --dry-run so we stop after check(); artifact points at a path that does
+        # not exist (common typo). check() must degrade to "?" rather than crash.
+        bad = tmp / "no-such-repo"
+        proc = subprocess.run(
+            _launcher_cmd(script) + ["--dry-run", f"--artifact={bad}", target],
+            cwd=work,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        return normalize(
+            f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n",
+            {str(bad): "<BAD-ARTIFACT>", str(work): "<WORK>", str(tmp): "<TMP>"},
+        )
+
+
 def run_review_case(phase: str) -> str:
     """Pin the review launcher, which has no --dry-run (it always spawns an agent).
     Run it with a fake `claude` that records the inline prompt it receives on stdin,
@@ -564,6 +590,8 @@ CASES: dict[str, callable] = {
     "adapter_err_unknown_opt": lambda: run_adapter_error_case(["--bogus"]),
     # step 3 target: phase-launcher dry-run (arg parse, path calc, agent command, prompt)
     "dryrun_code_analysis": lambda: run_dryrun_case("launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo"),
+    # regression guard: bad --artifact path degrades to "? commits", never crashes (F1)
+    "bad_artifact_code_analysis": lambda: run_bad_artifact_case("launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo"),
     "dryrun_spec_generation": lambda: run_dryrun_case(
         "launch_spec_generation.sh",
         "footest",
