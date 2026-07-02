@@ -27,6 +27,7 @@ import argparse
 import difflib
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -64,19 +65,24 @@ def _adapter_cmd() -> list[str]:
 
 
 PHASELIB = LAUNCH / "phaselib.py"
+PIPELINELIB = LAUNCH / "pipelinelib.py"
 
 
 def _launcher_cmd(script: str) -> list[str]:
     """Which phase-launcher implementation the dry-run/gate/summary cases exercise:
     unset/other → the installed launcher (`launch_<phase>.sh`, now a shim to python)
     "python"    → run phaselib.py directly with the phase key from the script name
-                  (launch_<key>.sh -> <key>) — the step-3 parity check.
+                  (launch_<key>.sh -> <key>) — the step-3 parity check. The
+                  pipeline is the exception: it lives in pipelinelib.py, not a
+                  phaselib phase key.
     <a path>    → run `bash <path>` (e.g. a pre-cutover bash launcher materialized
                   under scripts/launch/, to capture ground-truth goldens or
                   re-verify parity against the bash). Run one case at a time in
                   this mode, since the path overrides the script for every case."""
     impl = os.environ.get("SPECULA_LAUNCHER_IMPL", "")
     if impl == "python":
+        if script == "launch_pipeline.sh":
+            return ["python3", str(PIPELINELIB)]
         key = script[len("launch_") : -len(".sh")]
         return ["python3", str(PHASELIB), key]
     if impl and os.path.exists(impl):
@@ -147,6 +153,12 @@ def _clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
         "GIT_DIR",
         "GIT_WORK_TREE",
         "GIT_INDEX_FILE",
+        # pipeline knobs read from env: an ambient value would swing the banner's
+        # repair cap and the quota gate's thresholds/wait bound
+        "MAX_REPAIR_ROUNDS",
+        "QUOTA_5H",
+        "QUOTA_7D",
+        "QUOTA_MAX_WAITS",
     ):
         env.pop(var, None)
     env["PATH"] = "/usr/bin:/bin:" + env.get("PATH", "")
@@ -534,9 +546,8 @@ def run_pipeline_case(flags: list[str], target: str) -> str:
         work.mkdir()
         env = _clean_env({"HOME": str(tmp)})
         proc = subprocess.run(
-            [
-                "bash",
-                str(LAUNCH / "launch_pipeline.sh"),
+            _launcher_cmd("launch_pipeline.sh")
+            + [
                 "--dry-run",
                 f"--artifact={artifact}",
                 *flags,
@@ -554,26 +565,164 @@ def run_pipeline_case(flags: list[str], target: str) -> str:
     return raw
 
 
-def _pipeline_functions_only() -> str:
-    """launch_pipeline.sh with the trailing `main` invocation stripped, so it can
-    be sourced to expose the repair-loop helper functions without running the
-    whole pipeline. The top-level `mkdir .specula-output` that remains runs
-    harmlessly inside the test's tmp cwd."""
-    src = (LAUNCH / "launch_pipeline.sh").read_text().splitlines(keepends=True)
-    cut = next((i for i, ln in enumerate(src) if ln.startswith("main 2>&1")), len(src))
-    return "".join(src[:cut])
+def run_pipeline_full_case(flags: list[str], target: str, seed: dict, snapshot_files: list[str] | None = None) -> str:
+    """Full pipeline run (no --dry-run): fake `claude` + seeded phase
+    prerequisites/outputs. Reaches everything the dry-run cases can't: the
+    `main 2>&1 | tee pipeline.log` plumbing, the real phase subprocess sequencing
+    under set -e, the repair loop's reset / no-progress / terminal branches,
+    regenerate_ledger, and generate_summary's populated branches (wc -l counts,
+    du -h log sizes, resolved/deferred tallies).
+
+    snapshot_files: work-relative paths appended to the snapshot after the run
+    (RR files post-transition, the regenerated ledger). pipeline.log is asserted
+    byte-identical to captured stdout — the tee contract."""
+    with tempfile.TemporaryDirectory() as td:
+        base = Path(td).resolve()
+        bindir = base / "bin"
+        _write_fake_claude(bindir, FIXTURES / "claude_normal.json")
+        work = base / "work"
+        work.mkdir()
+        _seed_files(work, seed)
+        artifact = base / "artifact"
+        _init_git_repo(artifact)
+        env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base), "GIT_CEILING_DIRECTORIES": str(base)})
+        cmd = _launcher_cmd("launch_pipeline.sh") + [f"--artifact={artifact}", *flags, target]
+        proc = subprocess.run(cmd, cwd=work, env=env, capture_output=True, text=True)
+        parts = [f"exit_code: {proc.returncode}", "", "=== stdout ===", proc.stdout, ""]
+        plog = work / ".specula-output" / "pipeline.log"
+        if plog.is_file():
+            tee_ok = plog.read_text() == proc.stdout
+            parts += ["=== pipeline.log (tee) ===", "identical to stdout" if tee_ok else "!! DIFFERS FROM STDOUT", ""]
+        else:
+            parts += ["=== pipeline.log (tee) ===", "<MISSING>", ""]
+        for rel in snapshot_files or []:
+            f = work / rel
+            parts += [f"=== {rel} ===", f.read_text() if f.is_file() else "<MISSING>", ""]
+        if proc.stderr.strip():
+            parts += ["=== stderr ===", proc.stderr, ""]
+        return normalize("\n".join(parts), {str(artifact): "<ARTIFACT>", str(work): "<WORK>", str(base): "<TMP>"})
 
 
-_RR_FIXTURE = """\
+def run_pipeline_cd_case() -> str:
+    """Single target whose case-studies/<name>/ dir exists → main() cd's into it
+    before running the phases: pins the 'Single target: cd to …' log, the summary
+    landing in the case dir, and pipeline.log staying in the LAUNCH cwd (the tee
+    opens before the cd). Hermetic via a copied tree: SCRIPT_DIR/SPECULA_ROOT
+    derive from the entry script's location, so the pipeline entry + adapters/ +
+    the python ports are copied under a tmp specroot with a seeded
+    case-studies/footest/ (the real repo has no such case study, and writing into
+    a real one wouldn't be hermetic). The tmp tree has no scripts/exp/usage.sh,
+    which also pins the quota gate's missing-usage-script branch (silent proceed —
+    no WARN lines)."""
+    impl = os.environ.get("SPECULA_LAUNCHER_IMPL", "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td).resolve()
+        root = tmp / "specroot"
+        launch = root / "scripts" / "launch"
+        (launch / "adapters").mkdir(parents=True)
+        # dry-run only existence-checks the adapter, never runs it
+        shutil.copy2(ADAPTER, launch / "adapters" / "claude-code.sh")
+        for py in ("phaselib.py", "pipelinelib.py"):
+            if (LAUNCH / py).exists():
+                shutil.copy2(LAUNCH / py, launch / py)
+        entry_src = Path(impl) if impl and impl != "python" and os.path.exists(impl) else LAUNCH / "launch_pipeline.sh"
+        shutil.copy2(entry_src, launch / "launch_pipeline.sh")
+        (root / "case-studies" / "footest").mkdir(parents=True)
+        work = tmp / "work"
+        work.mkdir()
+        if impl == "python":
+            cmd = ["python3", str(launch / "pipelinelib.py")]
+        else:
+            cmd = ["bash", str(launch / "launch_pipeline.sh")]
+        env = _clean_env({"HOME": str(tmp)})
+        proc = subprocess.run(cmd + ["--dry-run", "footest"], cwd=work, env=env, capture_output=True, text=True)
+        case_out = root / "case-studies" / "footest" / ".specula-output"
+        locs = [
+            f"pipeline.log in launch cwd: {'yes' if (work / '.specula-output' / 'pipeline.log').is_file() else 'NO'}",
+            f"summary in case dir: {'yes' if (case_out / 'pipeline-summary.md').is_file() else 'NO'}",
+            f"summary in launch cwd: {'yes (BUG)' if (work / '.specula-output' / 'pipeline-summary.md').is_file() else 'no'}",
+        ]
+        parts = [
+            f"exit_code: {proc.returncode}",
+            "",
+            "=== stdout ===",
+            proc.stdout,
+            "",
+            "=== file locations ===",
+            *locs,
+            "",
+        ]
+        if proc.stderr.strip():
+            parts += ["=== stderr ===", proc.stderr, ""]
+        return normalize("\n".join(parts), {str(root): "<SPECROOT>", str(work): "<WORK>", str(tmp): "<TMP>"})
+
+
+def _pipeline_helper_impl() -> tuple[str, Path]:
+    """Which implementation the sourced-helper cases (repair state machine, quota
+    gate) drive. The bash originals aren't standalone commands — those drivers
+    source launch_pipeline.sh (main call stripped) to reach its helper functions;
+    the python drivers import pipelinelib and call the same-named ports, printing
+    the same lines (that equivalence is exactly what the shared golden proves).
+      SPECULA_LAUNCHER_IMPL unset → installed: the bash body while it exists,
+                    pipelinelib.py once launch_pipeline.sh is a shim
+      "python"    → pipelinelib.py
+      <a path>    → that bash source (ground-truth capture / re-verification)"""
+    impl = os.environ.get("SPECULA_LAUNCHER_IMPL", "")
+    if impl == "python":
+        return "python", PIPELINELIB
+    if impl and os.path.exists(impl):
+        return "bash", Path(impl)
+    installed = LAUNCH / "launch_pipeline.sh"
+    if "pipelinelib.py" in installed.read_text():
+        return "python", PIPELINELIB
+    return "bash", installed
+
+
+def _pipeline_functions_only(src: Path) -> str:
+    """A bash pipeline source with the trailing `main` invocation stripped, so it
+    can be sourced to expose the repair-loop/quota helper functions without
+    running the whole pipeline. The top-level `mkdir .specula-output` that
+    remains runs harmlessly inside the test's tmp cwd."""
+    lines = src.read_text().splitlines(keepends=True)
+    cut = next((i for i, ln in enumerate(lines) if ln.startswith("main 2>&1")), len(lines))
+    return "".join(lines[:cut])
+
+
+def _run_pipeline_driver(bash_tpl: str, py_tpl: str, subs: dict[str, str], tmp: Path) -> subprocess.CompletedProcess:
+    """Materialize and run the bash or python variant of a helper driver, per
+    _pipeline_helper_impl. `subs` maps @TOKEN@ -> value in the chosen template;
+    @FNONLY@ (bash: the sourceable pipeline functions) and @LAUNCH@ (python:
+    pipelinelib's import dir) are filled in here."""
+    kind, src = _pipeline_helper_impl()
+    if kind == "bash":
+        fnonly = tmp / "pipeline_fnonly.sh"
+        fnonly.write_text(_pipeline_functions_only(src))
+        text = bash_tpl.replace("@FNONLY@", str(fnonly))
+        driver, runner = tmp / "driver.sh", "bash"
+    else:
+        text = py_tpl.replace("@LAUNCH@", str(LAUNCH))
+        driver, runner = tmp / "driver.py", "python3"
+    for token, val in subs.items():
+        text = text.replace(token, val)
+    driver.write_text(text)
+    return subprocess.run(
+        [runner, str(driver)], cwd=tmp, env=_clean_env({"HOME": str(tmp)}), capture_output=True, text=True
+    )
+
+
+def _rr_fixture(rr_id: str, status: str, bug_id: str = "DA-1 | agreement safety violated", round_: int = 1) -> str:
+    """A repair-request file in the confirmed frontmatter format (see
+    .claude/skills/bug-confirmation/references/repair-request-format.md)."""
+    return f"""\
 ---
-id: RR-001
-bug_id: DA-1 | agreement safety violated
+id: {rr_id}
+bug_id: {bug_id}
 target: base.tla
-status: OPEN
-round: 1
+status: {status}
+round: {round_}
 ---
 
-# Repair Request RR-001
+# Repair Request {rr_id}
 
 The spec models the QC without binding it to the proposal value.
 
@@ -581,7 +730,10 @@ The spec models the QC without binding it to the proposal value.
 - created (bug confirmation): QC reuse enables value forgery
 """
 
-# Drives the sourced repair helpers through a real OPEN -> IN_REPAIR -> RESOLVED
+
+_RR_FIXTURE = _rr_fixture("RR-001", "OPEN")
+
+# Drives the repair helpers through a real OPEN -> IN_REPAIR -> RESOLVED
 # sequence; @FNONLY@/@RR@ are substituted with tmp paths before running.
 _REPAIR_DRIVER = """\
 #!/usr/bin/env bash
@@ -608,30 +760,115 @@ echo "== final file content =="
 cat "$RR"
 """
 
+_REPAIR_DRIVER_PY = """\
+import sys
+
+sys.path.insert(0, "@LAUNCH@")
+import pipelinelib as pl
+
+RR = "@RR@"
+print("== field reads (pre) ==")
+print("id=" + pl.rr_field(RR, "id"))
+print("status=" + pl.rr_status(RR))
+print("round=" + pl.rr_field(RR, "round"))
+print("bug_id=" + pl.rr_field(RR, "bug_id"))
+print()
+print("== transition OPEN -> IN_REPAIR ==")
+pl.rr_set_status(RR, "IN_REPAIR", "picked up by repair phase (round 1)")
+print("status=" + pl.rr_status(RR))
+print()
+print("== transition IN_REPAIR -> RESOLVED ==")
+pl.rr_set_status(RR, "RESOLVED", "fix verified by re-check")
+print("status=" + pl.rr_status(RR))
+print()
+print("== final file content ==")
+sys.stdout.write(open(RR).read())
+"""
+
 
 def run_repair_case() -> str:
     """Characterize the repair-loop state-machine primitives (rr_field / rr_status
     / rr_set_status) — the atomic ops step 5 must reimplement, incl. the embedded
     python mutator that rewrites `status:` and appends a History bullet."""
-    fnonly_src = _pipeline_functions_only()
     with tempfile.TemporaryDirectory() as td:
-        tmp = Path(td)
-        fnonly = tmp / "pipeline_fnonly.sh"
-        fnonly.write_text(fnonly_src)
+        tmp = Path(td).resolve()
         rr = tmp / "RR-001.md"
         rr.write_text(_RR_FIXTURE)
-        driver = tmp / "driver.sh"
-        driver.write_text(_REPAIR_DRIVER.replace("@FNONLY@", str(fnonly)).replace("@RR@", str(rr)))
-        env = _clean_env({"HOME": str(tmp)})
-        proc = subprocess.run(["bash", str(driver)], cwd=tmp, env=env, capture_output=True, text=True)
+        proc = _run_pipeline_driver(_REPAIR_DRIVER, _REPAIR_DRIVER_PY, {"@RR@": str(rr)}, tmp)
         out = f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n"
         if proc.stderr.strip():
             out += f"\n=== stderr ===\n{proc.stderr}\n"
-        return normalize(out, {str(rr): "<RR>", str(fnonly): "<FNONLY>", str(tmp): "<TMP>"})
+        return normalize(out, {str(rr): "<RR>", str(tmp): "<TMP>"})
 
 
-# Drives the sourced wait_for_quota with a stubbed usage source + stubbed sleep,
-# so the real decision logic runs on fixed input without network or blocking.
+# rr_field/rr_set_status edge behaviors the port must copy exactly.
+_RR_EDGE_FIXTURES = {
+    # status buried past line 25: rr_field's sed window (1,25) misses it → reads
+    # empty; rr_set_status rewrites nothing but still appends the History bullet
+    "RR-E1.md": ("---\nid: RR-E1\n" + "".join(f"pad{i}: x\n" for i in range(24)) + "status: BURIED\n---\n\n# body\n"),
+    # no trailing newline: the mutator must terminate the last line before
+    # appending the bullet (the cmdsub-trailing-newline pitfall family)
+    "RR-E2.md": "---\nid: RR-E2\nstatus: OPEN\n---\n\n# body\n- last line no newline",
+    # duplicate status lines inside the window: reads take the FIRST match; the
+    # mutator rewrites only the first
+    "RR-E3.md": "---\nid: RR-E3\nstatus: OPEN\nstatus: RESOLVED\n---\n\n# body\n",
+}
+
+_REPAIR_EDGE_DRIVER = """\
+#!/usr/bin/env bash
+RRDIR="@RRDIR@"
+set --
+source "@FNONLY@"
+set +euo pipefail
+
+for f in "$RRDIR"/RR-E*.md; do
+  echo "== $(basename "$f") =="
+  echo "pre-status=[$(rr_status "$f")]"
+  rr_set_status "$f" IN_REPAIR "edge transition (round 1)"
+  echo "post-status=[$(rr_status "$f")]"
+  echo "-- content --"
+  cat "$f"
+  echo
+done
+"""
+
+_REPAIR_EDGE_DRIVER_PY = """\
+import locale
+import sys
+from pathlib import Path
+
+sys.path.insert(0, "@LAUNCH@")
+import pipelinelib as pl  # import sets LC_COLLATE (bash glob order)
+
+for f in sorted(Path("@RRDIR@").glob("RR-E*.md"), key=lambda p: locale.strxfrm(p.name)):
+    print(f"== {f.name} ==")
+    print(f"pre-status=[{pl.rr_status(f)}]")
+    pl.rr_set_status(f, "IN_REPAIR", "edge transition (round 1)")
+    print(f"post-status=[{pl.rr_status(f)}]")
+    print("-- content --")
+    sys.stdout.write(f.read_text())
+    print()
+"""
+
+
+def run_repair_edges_case() -> str:
+    """Pin the RR helper edge behaviors (see _RR_EDGE_FIXTURES): the 25-line
+    frontmatter window, the missing-trailing-newline append, first-match wins."""
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td).resolve()
+        rrdir = tmp / "rr"
+        rrdir.mkdir()
+        for name, content in _RR_EDGE_FIXTURES.items():
+            (rrdir / name).write_text(content)
+        proc = _run_pipeline_driver(_REPAIR_EDGE_DRIVER, _REPAIR_EDGE_DRIVER_PY, {"@RRDIR@": str(rrdir)}, tmp)
+        out = f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n"
+        if proc.stderr.strip():
+            out += f"\n=== stderr ===\n{proc.stderr}\n"
+        return normalize(out, {str(rrdir): "<RRDIR>", str(tmp): "<TMP>"})
+
+
+# Drives wait_for_quota with a stubbed usage source + stubbed sleep, so the real
+# decision logic runs on fixed input without network or blocking.
 # QUOTA_MAX_WAITS=1 → one "over" detection then bounded abort.
 _QUOTA_DRIVER = """\
 #!/usr/bin/env bash
@@ -640,35 +877,60 @@ source "@FNONLY@"
 set +euo pipefail
 USAGE_SCRIPT="@FAKEUSAGE@"          # override the real credentialed usage.sh
 QUOTA_5H=@Q5@; QUOTA_7D=@Q7@; QUOTA_MAX_WAITS=1
-sleep() { :; }                       # stub: never actually block
+@SLEEP_STUB@
 wait_for_quota
 echo "wait_for_quota returned: $?"   # only reached on the 'ok' (proceed) path
 """
 
+_QUOTA_DRIVER_PY = """\
+import sys
 
-def run_quota_case(usage_json: str, q5: int, q7: int) -> str:
+sys.path.insert(0, "@LAUNCH@")
+import pipelinelib as pl
+
+rc = pl.wait_for_quota(
+    usage_script="@FAKEUSAGE@",
+    q5="@Q5@",
+    q7="@Q7@",
+    max_waits="1",
+    claude_alias="claude",
+    sleep_fn=@PY_SLEEP@,
+)
+print(f"wait_for_quota returned: {rc}")  # only reached on the 'ok' (proceed) path
+"""
+
+
+def run_quota_case(usage_json: str, q5: int, q7: int, record_sleep: bool = False, fetch_fail: bool = False) -> str:
     """Characterize the quota gate's decision on a fixed usage snapshot: 5h is
     checked before 7d, strictly `>` threshold, over→WAIT (bounded by MAX_WAITS
-    then abort), fetch-error→proceed. The two-layer QUOTA_5H/QUOTA_7D env is the
-    known step-5 landmine this pins."""
-    fnonly_src = _pipeline_functions_only()
+    then abort), fetch/parse-error→proceed. The two-layer QUOTA_5H/QUOTA_7D env
+    is the known step-5 landmine this pins.
+
+    record_sleep: the sleep stub prints the computed wait — pins the
+    deterministic sleep-duration branches (no resets_at → 600s; resets_at in the
+    past → negative, clamped to 60s) that the `sleeping <SECS>s` normalization
+    would otherwise erase.
+    fetch_fail: the usage script exits non-zero → WARN + proceed."""
     with tempfile.TemporaryDirectory() as td:
-        tmp = Path(td)
-        fnonly = tmp / "pipeline_fnonly.sh"
-        fnonly.write_text(fnonly_src)
+        tmp = Path(td).resolve()
         fake_usage = tmp / "fake_usage.sh"
-        fake_usage.write_text("#!/usr/bin/env bash\ncat <<'JSON'\n" + usage_json + "\nJSON\n")
+        if fetch_fail:
+            fake_usage.write_text("#!/usr/bin/env bash\nexit 3\n")
+        else:
+            fake_usage.write_text("#!/usr/bin/env bash\ncat <<'JSON'\n" + usage_json + "\nJSON\n")
         fake_usage.chmod(0o755)
-        driver = tmp / "driver.sh"
-        driver.write_text(
-            _QUOTA_DRIVER.replace("@FNONLY@", str(fnonly))
-            .replace("@FAKEUSAGE@", str(fake_usage))
-            .replace("@Q5@", str(q5))
-            .replace("@Q7@", str(q7))
-        )
-        env = _clean_env({"HOME": str(tmp)})
-        proc = subprocess.run(["bash", str(driver)], cwd=tmp, env=env, capture_output=True, text=True)
+        subs = {
+            "@FAKEUSAGE@": str(fake_usage),
+            "@Q5@": str(q5),
+            "@Q7@": str(q7),
+            # stubs: never actually block; optionally record the computed wait
+            "@SLEEP_STUB@": ('sleep() { echo "  [stub] sleep ${1}s"; }' if record_sleep else "sleep() { :; }"),
+            "@PY_SLEEP@": ('lambda s: print(f"  [stub] sleep {s}s")' if record_sleep else "lambda s: None"),
+        }
+        proc = _run_pipeline_driver(_QUOTA_DRIVER, _QUOTA_DRIVER_PY, subs, tmp)
         out = f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n"
+        if proc.stderr.strip():
+            out += f"\n=== stderr ===\n{proc.stderr}\n"
         return normalize(out, {str(tmp): "<TMP>"})
 
 
@@ -724,6 +986,55 @@ _SUMMARY_BUG_CONFIRMATION = {
     ".specula-output/spec/confirmed-bugs.md": "# Confirmed Bugs\n\n## DA-1\n## DA-2\n",  # output (4 lines)
     ".specula-output/repro/test_bug1.py": "def test():\n    pass\n",  # repro test (counted)
 }
+
+# full-pipeline fixtures: every phase's prerequisites AND outputs, so each check()
+# passes, every phase runs (fake agent), and generate_summary's populated branch
+# fires for every section. Review files are seeded too (reviews stay skipped) —
+# "written (N lines)" for analysis/validation, "empty (check log)" for specgen.
+_PIPELINE_FULL_SEED = {
+    ".specula-output/modeling-brief.md": "# Modeling Brief\nfamily A: crash window\nfamily B: missing guard\n",
+    ".specula-output/spec/base.tla": "---- MODULE base ----\nx == 1\n====\n",
+    ".specula-output/spec/MC.tla": "---- MODULE MC ----\n====\n",
+    ".specula-output/spec/Trace.tla": "---- MODULE Trace ----\n====\n",
+    ".specula-output/spec/instrumentation-spec.md": "# instrumentation\n",
+    ".specula-output/harness/run.sh": "#!/usr/bin/env bash\n",
+    ".specula-output/harness/INSTRUMENTATION.md": "# guide\n",
+    ".specula-output/traces/t1.ndjson": '{"e":1}\n',
+    ".specula-output/spec/changelog.md": "# Changelog\n\n- fixed X\n- fixed Y\n",
+    ".specula-output/spec/bug-report.md": "# Bug Report\n\n## MC-1: something\n",
+    ".specula-output/spec/confirmed-bugs.md": "# Confirmed Bugs\n\n## DA-1\n## DA-2\n",
+    ".specula-output/spec/bug-severity.md": "# Bug Severity\n\n- Total bugs: 2\n",
+    ".specula-output/review-analysis.md": "# Review\n\n- point 1\n",
+    ".specula-output/spec/review-specgen.md": "",
+    ".specula-output/spec/review-validation.md": "# Review\n\n- ok\n",
+}
+
+# repair-loop fixtures: only confirmation runs (phases 1–3 + 4b skipped); the loop
+# itself invokes phase 3 --repair (needs the validation prereqs) and phase 4
+# --recheck (needs the confirmation prereqs). The fake agent never transitions a
+# request, so round 1 must detect "no progress" and stop rather than spin.
+_REPAIR_LOOP_SKIPS = [
+    "--skip-analysis",
+    "--skip-specgen",
+    "--skip-harness",
+    "--skip-validation",
+    "--skip-classification",
+]
+_REPAIR_LOOP_SEED = {
+    **_VALIDATION_SEED,
+    **_CONFIRMATION_SEED,
+    ".specula-output/spec/repair-requests/RR-001.md": _rr_fixture("RR-001", "OPEN"),
+    # IN_REPAIR = a prior run died mid-repair; the orchestrator must reset it to
+    # OPEN (crash recovery) before entering the loop
+    ".specula-output/spec/repair-requests/RR-002.md": _rr_fixture(
+        "RR-002", "IN_REPAIR", bug_id="DA-27 | ordering", round_=2
+    ),
+}
+_RR_SNAPSHOT_FILES = [
+    ".specula-output/spec/repair-requests/RR-001.md",
+    ".specula-output/spec/repair-requests/RR-002.md",
+    ".specula-output/spec/repair-ledger.md",
+]
 
 
 # ── case registry ───────────────────────────────────────────────────────────
@@ -935,6 +1246,7 @@ CASES: dict[str, callable] = {
     "help_spec_validation": lambda: run_help_case("launch_spec_validation.sh"),
     "help_bug_confirmation": lambda: run_help_case("launch_bug_confirmation.sh"),
     "help_review": lambda: run_help_case("launch_review.sh", pre_args=["analysis"]),
+    "help_pipeline": lambda: run_help_case("launch_pipeline.sh"),
     # step 3 target: post-launch summary path — summarize()'s populated branch
     # (OK/~~/written lines counting .md/.tla via wc -l) + per-phase Monitor hint,
     # neither reached by dry-run/gate. Full run with a faked agent + seeded outputs.
@@ -983,6 +1295,63 @@ CASES: dict[str, callable] = {
         '"seven_day":{"utilization":96,"resets_at":"2099-01-08T00:00:00+00:00"}}',
         q5=85,
         q7=95,
+    ),
+    # utilization exactly AT the threshold is not over (strict >)
+    "quota_at_limit": lambda: run_quota_case(
+        '{"five_hour":{"utilization":85,"resets_at":"2099-01-01T00:00:00+00:00"},'
+        '"seven_day":{"utilization":95,"resets_at":"2099-01-08T00:00:00+00:00"}}',
+        q5=85,
+        q7=95,
+    ),
+    # usage script exits non-zero -> WARN fetch failed + proceed
+    "quota_fetch_fail": lambda: run_quota_case("", q5=85, q7=95, fetch_fail=True),
+    # usage output isn't JSON -> WARN parse failed + proceed
+    "quota_malformed_json": lambda: run_quota_case("not json {", q5=85, q7=95),
+    # over-limit with NO resets_at -> the fixed 600s wait branch (recorded sleep)
+    "quota_no_resets_at": lambda: run_quota_case(
+        '{"five_hour":{"utilization":86},"seven_day":{"utilization":50}}',
+        q5=85,
+        q7=95,
+        record_sleep=True,
+    ),
+    # resets_at in the past -> negative wait, clamped to the 60s floor (recorded sleep)
+    "quota_resets_past": lambda: run_quota_case(
+        '{"five_hour":{"utilization":86,"resets_at":"2000-01-01T00:00:00+00:00"},'
+        '"seven_day":{"utilization":50,"resets_at":"2000-01-08T00:00:00+00:00"}}',
+        q5=85,
+        q7=95,
+        record_sleep=True,
+    ),
+    # step 5 target: rr_field/rr_set_status edge behaviors (25-line window,
+    # missing trailing newline, duplicate status lines)
+    "repair_rr_edges": run_repair_edges_case,
+    # step 5 target: single-target cd branch — summary in the case dir,
+    # pipeline.log in the launch cwd, quota silent when usage.sh is absent
+    "pipeline_single_target_cd": run_pipeline_cd_case,
+    # step 5 target: full pipeline run (fake agent, all phases) — the tee into
+    # pipeline.log, set -e sequencing, generate_summary's populated branches
+    "pipeline_full_run": lambda: run_pipeline_full_case([], "footest|foo/bar|Go|Raft demo", _PIPELINE_FULL_SEED),
+    # step 5 target: repair loop live round — crash-recovery reset (IN_REPAIR ->
+    # OPEN), one repair+recheck round, no-progress stop, regenerated ledger
+    "pipeline_repair_loop": lambda: run_pipeline_full_case(
+        [*_REPAIR_LOOP_SKIPS, "--max-repair-rounds=2"],
+        "footest|foo/bar|Go|Raft demo",
+        _REPAIR_LOOP_SEED,
+        snapshot_files=_RR_SNAPSHOT_FILES,
+    ),
+    # step 5 target: repair loop with only terminal requests — 0 rounds, summary
+    # tallies resolved/deferred via the status grep
+    "pipeline_repair_all_terminal": lambda: run_pipeline_full_case(
+        _REPAIR_LOOP_SKIPS,
+        "footest|foo/bar|Go|Raft demo",
+        {
+            **_CONFIRMATION_SEED,
+            ".specula-output/spec/repair-requests/RR-001.md": _rr_fixture("RR-001", "RESOLVED"),
+            ".specula-output/spec/repair-requests/RR-002.md": _rr_fixture(
+                "RR-002", "DEFERRED", bug_id="DA-27 | ordering", round_=3
+            ),
+        },
+        snapshot_files=[".specula-output/spec/repair-ledger.md"],
     ),
 }
 
