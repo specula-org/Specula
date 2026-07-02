@@ -173,7 +173,7 @@ class Phase:
     # ── shared driver ──
     def run(self, argv: list[str]) -> int:
         max_parallel = 1
-        max_turns = 0
+        max_turns = "0"
         dry_run = False
         check_only = False
         agent = "claude-code"
@@ -189,9 +189,20 @@ class Phase:
             elif arg == "--check":
                 check_only = True
             elif arg.startswith("--max-parallel="):
-                max_parallel = int(arg[len("--max-parallel=") :])
+                val = arg[len("--max-parallel=") :]
+                try:
+                    max_parallel = int(val)
+                except ValueError:
+                    # bash never validated this; a garbage value hung its throttle
+                    # loop forever (empty crashed the arithmetic mid-run). Fail fast
+                    # instead — pinned by bad_max_parallel_code_analysis.
+                    print(f"Invalid --max-parallel: '{val}' (expected an integer)")
+                    return 1
             elif arg.startswith("--max-turns="):
-                max_turns = int(arg[len("--max-turns=") :])
+                # Deprecated passthrough the adapter ignores. bash forwarded it
+                # verbatim, so keep it a string: `--max-turns=$VAR` with VAR unset
+                # or non-numeric must not crash the launcher.
+                max_turns = arg[len("--max-turns=") :]
             elif arg.startswith("--agent="):
                 agent = arg[len("--agent=") :]
             elif arg.startswith("--claude-alias="):
@@ -365,7 +376,9 @@ Options:
         return {"log": wd / "agent.log", "pid": wd / "agent.pid", "prompt": wd / ".prompt.md", "mkdirs": [wd]}
 
     def build_prompt(self, ws, target):
-        parts = [_trim(x) for x in target.split("|")]
+        # maxsplit=3: bash `IFS='|' read -r name github lang reference` folds any
+        # further '|'-separated content (pipes included) into the reference field.
+        parts = [_trim(x) for x in target.split("|", 3)]
         parts += [""] * (4 - len(parts))
         name, github, language, reference = parts[0], parts[1], parts[2], parts[3]
         repo_dir = ws.find_repo_dir(name)

@@ -214,6 +214,11 @@ def main(argv: list[str]) -> int:
             with open(raw_json, "w") as out:
                 out.write(f"claude-code adapter: failed to run claude: {e}\n")
 
+        # errors="replace" is a deliberate deviation from the bash, which died on
+        # non-UTF-8 claude output (UnicodeDecodeError under set -e: non-zero exit,
+        # empty .log, no .usage.json — and a rate-limit hit lost its exit-75 retry
+        # signal). Degrade to U+FFFD + parse_failed on the normal exit-code path
+        # instead; pinned by the adapter_nonutf8 characterization case.
         raw_text = open(raw_json, errors="replace").read()
 
         # ── Detect rate limit → exit 75 (EX_TEMPFAIL) so callers can wait/retry ──

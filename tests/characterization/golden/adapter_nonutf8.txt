@@ -1,0 +1,9 @@
+exit_code: 0
+
+=== .log ===
+claude crashed: �� raw stack text, not json
+
+
+
+=== .usage.json ===
+{"error": "parse_failed"}
