@@ -41,6 +41,10 @@ LAUNCH = SPECULA_ROOT / "scripts" / "launch"
 ADAPTER = LAUNCH / "adapters" / "claude-code.sh"
 ADAPTER_PY = LAUNCH / "adapters" / "claude_code.py"
 
+# single source for the nested-session env vars the adapter strips
+sys.path.insert(0, str(LAUNCH / "adapters"))
+from claude_code import SESSION_ENV_VARS  # noqa: E402
+
 
 def _adapter_cmd() -> list[str]:
     """Which adapter implementation the adapter cases exercise. Controlled by
@@ -127,9 +131,7 @@ def _clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     for var in (
         "VIRTUAL_ENV",
         "CLAUDE_CONFIG_DIR",
-        "CLAUDECODE",
-        "CLAUDE_CODE_SSE_PORT",
-        "CLAUDE_CODE_ENTRYPOINT",
+        *SESSION_ENV_VARS,
         # popped so command construction is deterministic regardless of ambient env
         "CLAUDE_EFFORT",
         "CLAUDE_MODEL",
@@ -226,10 +228,13 @@ def run_adapter_case(
     return raw
 
 
-def run_adapter_cmd_case(flags: list[str]) -> str:
+def run_adapter_cmd_case(flags: list[str], env_extra: dict[str, str] | None = None) -> str:
     """Pin command construction: snapshot the exact argv the adapter passes to
     `claude` for a given flag combo (--effort/--model/--max-budget assembly, incl.
-    the skip-on-default/zero/empty branches). The fake `claude` records its args."""
+    the skip-on-default/zero/empty branches). The fake `claude` records its args.
+
+    env_extra: ambient env to set (e.g. CLAUDE_EFFORT="") — pins the bash
+    ${VAR:-default} rule that an exported-but-empty var still means the default."""
     fixture = FIXTURES / "claude_normal.json"
     with tempfile.TemporaryDirectory() as td:
         base = Path(td).resolve()
@@ -243,6 +248,7 @@ def run_adapter_cmd_case(flags: list[str]) -> str:
                 "PATH": f"{bindir}:/usr/bin:/bin",
                 "HOME": str(base),
                 "CLAUDE_ARGV_FILE": str(argv_file),
+                **(env_extra or {}),
             }
         )
         subprocess.run(
@@ -285,9 +291,15 @@ def run_dryrun_case(
     prompt_rel: str = ".specula-output/.prompt.md",
     use_artifact: bool = True,
     extra_flags: list[str] | None = None,
+    snapshot_prompt: bool = True,
+    bad_artifact: bool = False,
+    check_only: bool = False,
 ) -> str:
-    """Run a phase launcher with --dry-run in an isolated cwd; snapshot stdout plus
-    the generated prompt file (the exact prompt handed to the agent).
+    """Run a phase launcher with --dry-run (or --check) in an isolated cwd;
+    snapshot stdout, plus the generated prompt file (the exact prompt handed to
+    the agent) unless snapshot_prompt=False. One runner covers the dry-run,
+    precondition-gate, bad-artifact and check-only case families, so harness
+    changes (env hygiene, normalization) apply to all of them at once.
 
     seed: files to create under the work cwd first (relpath -> content) so a
     downstream phase's prerequisites are satisfied and it reaches the dry-run
@@ -295,7 +307,12 @@ def run_dryrun_case(
     prompt_rel: where this phase writes its prompt (spec_generation uses
     .spec-gen-prompt.md, not .prompt.md).
     use_artifact: pass --artifact (bug_classification takes none).
-    extra_flags: phase-specific flags (validation --repair; confirmation --recheck)."""
+    extra_flags: phase-specific flags (validation --repair; confirmation --recheck).
+    snapshot_prompt: False for gate/check cases, which never reach the prompt.
+    bad_artifact: point --artifact at a nonexistent path — pins the graceful
+    degrade (`OK <name> (? commits)` + exit 0, bash `cd ... || echo "?"`), the
+    contract the port once broke with a FileNotFoundError on subprocess cwd.
+    check_only: run --check instead of --dry-run (pins the check-ok message)."""
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         work = tmp / "work"
@@ -305,9 +322,14 @@ def run_dryrun_case(
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(content)
         env = _clean_env({"HOME": str(tmp)})
-        cmd = _launcher_cmd(script) + ["--dry-run", *(extra_flags or [])]
+        mode = "--check" if check_only else "--dry-run"
+        cmd = _launcher_cmd(script) + [mode, *(extra_flags or [])]
         subs = {str(work): "<WORK>", str(tmp): "<TMP>"}
-        if use_artifact:
+        if bad_artifact:
+            bad = tmp / "no-such-repo"
+            cmd.append(f"--artifact={bad}")
+            subs[str(bad)] = "<BAD-ARTIFACT>"
+        elif use_artifact:
             artifact = tmp / "artifact"
             _init_git_repo(artifact)
             cmd.append(f"--artifact={artifact}")
@@ -315,49 +337,47 @@ def run_dryrun_case(
         cmd.append(target)
         proc = subprocess.run(cmd, cwd=work, env=env, capture_output=True, text=True)
         parts = [f"exit_code: {proc.returncode}", "", "=== stdout ===", proc.stdout, ""]
-        prompt = work / prompt_rel
-        parts.append(f"=== {prompt.name} ===")
-        parts.append(prompt.read_text() if prompt.exists() else "<MISSING>")
-        parts.append("")
+        if snapshot_prompt:
+            prompt = work / prompt_rel
+            parts.append(f"=== {prompt.name} ===")
+            parts.append(prompt.read_text() if prompt.exists() else "<MISSING>")
+            parts.append("")
         raw = normalize("\n".join(parts), subs)
     return raw
 
 
-def run_bad_artifact_case(script: str, target: str) -> str:
-    """Pin the graceful-degrade contract for a bad --artifact path: bash did
-    `cd "$repo_dir" && git ... || echo "?"`, so a non-existent/unreadable artifact
-    yields `OK <name> (? commits)` + exit 0, NOT a crash. Regression guard for the
-    port, which previously raised FileNotFoundError on subprocess cwd."""
+def run_help_case(script: str, pre_args: list[str] | None = None) -> str:
+    """Pin --help: the bash launchers printed their full header comment (usage,
+    examples, the complete option list) via sed; the port must keep that text.
+    pre_args: launch_review.sh requires a phase argument before --help (the bash
+    parsed `$1` as the phase unconditionally — same contract, pinned as-is)."""
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
-        work = tmp / "work"
-        work.mkdir()
         env = _clean_env({"HOME": str(tmp)})
-        # --dry-run so we stop after check(); artifact points at a path that does
-        # not exist (common typo). check() must degrade to "?" rather than crash.
-        bad = tmp / "no-such-repo"
         proc = subprocess.run(
-            _launcher_cmd(script) + ["--dry-run", f"--artifact={bad}", target],
-            cwd=work,
+            _launcher_cmd(script) + [*(pre_args or []), "--help"],
+            cwd=tmp,
             env=env,
             capture_output=True,
             text=True,
         )
-        return normalize(
-            f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n",
-            {str(bad): "<BAD-ARTIFACT>", str(work): "<WORK>", str(tmp): "<TMP>"},
-        )
+        return normalize(f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n")
 
 
-def run_review_case(phase: str, seed: dict[str, str] | None = None) -> str:
+def run_review_case(phase: str, seed: dict[str, str] | None = None, fixture_name: str = "claude_normal.json") -> str:
     """Pin the review launcher, which has no --dry-run (it always spawns an agent).
     Run it with a fake `claude` that records the inline prompt it receives on stdin,
-    and snapshot stdout (banner / per-name lines / summary) + that captured prompt.
+    and snapshot stdout (banner / per-name lines / summary) + that captured prompt
+    (+ stderr when non-empty — adapter diagnostics pass through since the exit-code
+    propagation fix).
 
     seed: pre-create the phase's review file (relpath -> content) so the summary's
     *populated* branch fires ('review written (N lines)', counting via wc -l);
-    without it the summary reports 'no review file generated'."""
-    fixture = FIXTURES / "claude_normal.json"
+    without it the summary reports 'no review file generated'.
+    fixture_name: the canned claude response; claude_ratelimit.json makes the
+    adapter exit 75 (EX_TEMPFAIL), which must abort the launcher with 75 exactly
+    as bash `set -e` + `pid=$(adapter ...)` did."""
+    fixture = FIXTURES / fixture_name
     with tempfile.TemporaryDirectory() as td:
         base = Path(td).resolve()
         bindir = base / "bin"
@@ -381,28 +401,11 @@ def run_review_case(phase: str, seed: dict[str, str] | None = None) -> str:
         parts.append("=== review prompt (agent stdin) ===")
         parts.append(stdin_file.read_text() if stdin_file.exists() else "<MISSING>")
         parts.append("")
+        if proc.stderr.strip():
+            parts.append("=== stderr ===")
+            parts.append(proc.stderr)
+            parts.append("")
         return normalize("\n".join(parts), {str(work): "<WORK>", str(base): "<TMP>"})
-
-
-def run_gate_case(script: str, target: str, use_artifact: bool = True) -> str:
-    """Run a downstream phase launcher --dry-run with NO prior-phase outputs, to
-    pin its precondition gate — the input contract each phase enforces before it
-    will run (exit code + the 'Missing prerequisites' message step 3 must keep)."""
-    with tempfile.TemporaryDirectory() as td:
-        tmp = Path(td)
-        work = tmp / "work"
-        work.mkdir()
-        args = _launcher_cmd(script) + ["--dry-run"]
-        subs = {str(work): "<WORK>", str(tmp): "<TMP>"}
-        if use_artifact:
-            artifact = tmp / "artifact"
-            _init_git_repo(artifact)
-            args.append(f"--artifact={artifact}")
-            subs[str(artifact)] = "<ARTIFACT>"
-        args.append(target)
-        env = _clean_env({"HOME": str(tmp)})
-        proc = subprocess.run(args, cwd=work, env=env, capture_output=True, text=True)
-        return normalize(f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n", subs)
 
 
 def run_summary_case(script: str, target: str, seed: dict[str, str], use_artifact: bool = True) -> str:
@@ -670,6 +673,8 @@ CASES: dict[str, callable] = {
     "adapter_cmd_default": lambda: run_adapter_cmd_case([]),
     "adapter_cmd_all_flags": lambda: run_adapter_cmd_case(["--effort=high", "--model=sonnet", "--max-budget=5"]),
     "adapter_cmd_skips": lambda: run_adapter_cmd_case(["--effort=default", "--max-budget=0"]),
+    # exported-but-empty CLAUDE_EFFORT must still mean --effort max (bash ${:-max})
+    "adapter_cmd_empty_effort_env": lambda: run_adapter_cmd_case([], env_extra={"CLAUDE_EFFORT": ""}),
     # validation contract: exit code + stderr on bad invocations
     "adapter_err_no_log": lambda: run_adapter_error_case(["--prompt=x"]),
     "adapter_err_both_prompt": lambda: run_adapter_error_case(
@@ -683,8 +688,8 @@ CASES: dict[str, callable] = {
     # step 3 target: phase-launcher dry-run (arg parse, path calc, agent command, prompt)
     "dryrun_code_analysis": lambda: run_dryrun_case("launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo"),
     # regression guard: bad --artifact path degrades to "? commits", never crashes (F1)
-    "bad_artifact_code_analysis": lambda: run_bad_artifact_case(
-        "launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo"
+    "bad_artifact_code_analysis": lambda: run_dryrun_case(
+        "launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo", snapshot_prompt=False, bad_artifact=True
     ),
     "dryrun_spec_generation": lambda: run_dryrun_case(
         "launch_spec_generation.sh",
@@ -745,6 +750,9 @@ CASES: dict[str, callable] = {
     "review_analysis_populated": lambda: run_review_case(
         "analysis", seed={".specula-output/review-analysis.md": "# Review\n\n- point 1\n- point 2\n"}
     ),
+    # adapter failure propagation: rate limit -> adapter exit 75 -> launcher exit 75,
+    # diagnostics on stderr, no PID line (bash set -e + pid=$(...) contract)
+    "review_ratelimit": lambda: run_review_case("analysis", fixture_name="claude_ratelimit.json"),
     # step 5 target: launch_pipeline.sh phase sequencing + repair-loop gating under --skip-*
     "pipeline_seq_full": lambda: run_pipeline_case([], "footest|foo/bar|Go|Raft demo"),
     "pipeline_seq_resume": lambda: run_pipeline_case(
@@ -753,13 +761,42 @@ CASES: dict[str, callable] = {
     ),
     "pipeline_seq_skip_repair": lambda: run_pipeline_case(["--skip-repair-loop"], "footest|foo/bar|Go|Raft demo"),
     # step 3 target: downstream-phase precondition gates (input contract each enforces)
-    "gate_spec_generation": lambda: run_gate_case("launch_spec_generation.sh", "footest|foo/bar|Go|Raft demo"),
-    "gate_harness_generation": lambda: run_gate_case("launch_harness_generation.sh", "footest|foo/bar|Go|Raft demo"),
-    "gate_spec_validation": lambda: run_gate_case("launch_spec_validation.sh", "footest|foo/bar|Go|Raft demo"),
-    "gate_bug_confirmation": lambda: run_gate_case("launch_bug_confirmation.sh", "footest|foo/bar|Go|Raft demo"),
-    "gate_bug_classification": lambda: run_gate_case(
-        "launch_bug_classification.sh", "footest|foo/bar|Go|Raft demo", use_artifact=False
+    "gate_spec_generation": lambda: run_dryrun_case(
+        "launch_spec_generation.sh", "footest|foo/bar|Go|Raft demo", snapshot_prompt=False
     ),
+    "gate_harness_generation": lambda: run_dryrun_case(
+        "launch_harness_generation.sh", "footest|foo/bar|Go|Raft demo", snapshot_prompt=False
+    ),
+    "gate_spec_validation": lambda: run_dryrun_case(
+        "launch_spec_validation.sh", "footest|foo/bar|Go|Raft demo", snapshot_prompt=False
+    ),
+    "gate_bug_confirmation": lambda: run_dryrun_case(
+        "launch_bug_confirmation.sh", "footest|foo/bar|Go|Raft demo", snapshot_prompt=False
+    ),
+    "gate_bug_classification": lambda: run_dryrun_case(
+        "launch_bug_classification.sh", "footest|foo/bar|Go|Raft demo", snapshot_prompt=False, use_artifact=False
+    ),
+    # --check success path: per-phase OK message ("All repos OK." for code_analysis,
+    # "All prerequisites OK." for the rest — bash wording restored)
+    "check_ok_code_analysis": lambda: run_dryrun_case(
+        "launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo", snapshot_prompt=False, check_only=True
+    ),
+    "check_ok_spec_generation": lambda: run_dryrun_case(
+        "launch_spec_generation.sh",
+        "footest",
+        seed={".specula-output/modeling-brief.md": "# Modeling Brief\n"},
+        snapshot_prompt=False,
+        check_only=True,
+    ),
+    # --help: full usage text (the bash header comment) for every launcher;
+    # review needs a phase arg before --help (bash parsed $1 as the phase)
+    "help_code_analysis": lambda: run_help_case("launch_code_analysis.sh"),
+    "help_spec_generation": lambda: run_help_case("launch_spec_generation.sh"),
+    "help_harness_generation": lambda: run_help_case("launch_harness_generation.sh"),
+    "help_bug_classification": lambda: run_help_case("launch_bug_classification.sh"),
+    "help_spec_validation": lambda: run_help_case("launch_spec_validation.sh"),
+    "help_bug_confirmation": lambda: run_help_case("launch_bug_confirmation.sh"),
+    "help_review": lambda: run_help_case("launch_review.sh", pre_args=["analysis"]),
     # step 3 target: post-launch summary path — summarize()'s populated branch
     # (OK/~~/written lines counting .md/.tla via wc -l) + per-phase Monitor hint,
     # neither reached by dry-run/gate. Full run with a faked agent + seeded outputs.

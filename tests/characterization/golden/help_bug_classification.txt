@@ -1,0 +1,26 @@
+exit_code: 0
+
+=== stdout ===
+
+Batch launcher: spawn one Claude Code agent per target system for Phase 4b
+severity classification. Each agent reads the confirmed-bugs.md produced by
+Phase 4a (bug-confirmation) and writes a separate bug-severity.md table
+assigning Critical / High / Medium / Low per bug. No new analysis, no repro
+work, no modification to confirmed-bugs.md.
+
+Usage:
+  bash scripts/launch/launch_bug_classification.sh [options] "name" [...]
+
+Example:
+  bash scripts/launch/launch_bug_classification.sh libgomp_3 autobahn_3
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Only verify prerequisites exist
+  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+
+Prerequisites:
+  - Confirmed bug report at <name>/spec/confirmed-bugs.md (from Phase 4a)
