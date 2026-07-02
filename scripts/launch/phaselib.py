@@ -18,6 +18,8 @@ Lives in scripts/launch/ for now (no packaging dependency); moves into the
 
 from __future__ import annotations
 
+import contextlib
+import locale
 import os
 import re
 import subprocess
@@ -27,6 +29,13 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
+
+# bash pathname expansion (`for d in .../*/`) orders by the locale collating
+# sequence; adopt the ambient locale so find_repo_dir picks the same repo the
+# bash launcher did (codepoint sort can order e.g. 'Backup-old' before 'braft'
+# where strcoll does the reverse). Falls back to bytewise (C) if unset/invalid.
+with contextlib.suppress(locale.Error):
+    locale.setlocale(locale.LC_COLLATE, "")
 
 
 def _ts() -> str:
@@ -90,7 +99,7 @@ class Workspace:
         # Batch: <cwd>/<name>/artifact/<repo-with-.git>/ (bash keeps the trailing slash).
         artifact_dir = self.cwd / name / "artifact"
         if artifact_dir.is_dir():
-            for d in sorted(artifact_dir.iterdir()):
+            for d in sorted(artifact_dir.iterdir(), key=lambda p: locale.strxfrm(p.name)):
                 # bash `for d in "$artifact_dir"/*/` — the glob never matches
                 # dotdirs, so a hidden .git-bearing dir (stale backup, tool
                 # cache) must not shadow the real repo.
