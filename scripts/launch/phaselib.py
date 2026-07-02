@@ -39,6 +39,12 @@ def _trim(s: str) -> str:
     return s.strip()
 
 
+def _wc_l(path: Path) -> int:
+    """Line count matching bash `wc -l < file` (counts newlines, NOT splitlines —
+    they differ by 1 when the file has no trailing newline)."""
+    return path.read_text().count("\n")
+
+
 def _grep_num(text: str, prefix: str) -> str:
     """First integer on the first line starting with `prefix`, else '?' — mirrors
     bash `grep -E "^prefix" | grep -oE '[0-9]+' | head -1`."""
@@ -334,10 +340,10 @@ Write your outputs to:
             brief = wd / "modeling-brief.md"
             report = wd / "analysis-report.md"
             if brief.is_file():
-                n = len(brief.read_text().splitlines())
+                n = _wc_l(brief)
                 print(f"  OK  {name} -> modeling-brief.md ({n} lines)")
             elif report.is_file():
-                n = len(report.read_text().splitlines())
+                n = _wc_l(report)
                 print(f"  ~~  {name} -> analysis-report.md only ({n} lines, no modeling brief)")
             else:
                 print(f"  --  {name} (no output)")
@@ -355,7 +361,7 @@ class SpecGenerationPhase(Phase):
             brief = ws.work_dir(name) / "modeling-brief.md"
             repo_dir = ws.find_repo_dir(name)
             if brief.is_file():
-                lines = len(brief.read_text().splitlines())
+                lines = _wc_l(brief)
                 line = f"  {name:<20} modeling-brief.md ({lines} lines)"
             else:
                 line = f"  {name:<20} MISSING modeling-brief.md"
@@ -428,7 +434,7 @@ Expected files:
             instr = spec_dir / "instrumentation-spec.md"
             count = sum(f.is_file() for f in (base, mc, trace, instr))
             if count == 4:
-                n = len(base.read_text().splitlines())
+                n = _wc_l(base)
                 print(f"  OK  {name} -> {count}/4 files (base.tla: {n} lines)")
             elif count > 0:
                 print(f"  ~~  {name} -> {count}/4 files (incomplete)")
@@ -636,7 +642,7 @@ class SpecValidationPhase(Phase):
             line = f"  {name:<20}"
             base = spec_dir / "base.tla"
             if base.is_file() and (spec_dir / "MC.tla").is_file() and (spec_dir / "Trace.tla").is_file():
-                line += f"specs OK ({len(base.read_text().splitlines())}L)"
+                line += f"specs OK ({_wc_l(base)}L)"
             else:
                 line += "specs MISSING"
                 ok = False
@@ -723,7 +729,7 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
         for name in names:
             changelog = ws.work_dir(name) / "spec" / "changelog.md"
             if changelog.is_file() and changelog.stat().st_size > 0:
-                print(f"  {name}: changelog written ({len(changelog.read_text().splitlines())} lines)")
+                print(f"  {name}: changelog written ({_wc_l(changelog)} lines)")
             elif changelog.is_file():
                 print(f"  {name}: changelog empty (check log)")
             else:
@@ -846,7 +852,7 @@ Write the consolidated report to `{spec_dir}/confirmed-bugs.md`, with one `repro
             repro_dir = wd / "repro"
             repro_count = len([p for p in repro_dir.rglob("test_bug*") if p.is_file()]) if repro_dir.is_dir() else 0
             if report.is_file() and report.stat().st_size > 0:
-                n = len(report.read_text().splitlines())
+                n = _wc_l(report)
                 print(f"  {name}: confirmed-bugs.md written ({n} lines, repro/ tests: {repro_count})")
             elif report.is_file():
                 print(f"  {name}: confirmed-bugs.md empty (check log; repro/ tests: {repro_count})")
@@ -916,7 +922,7 @@ class ReviewPhase(Phase):
             else:  # analysis
                 review_file = wd / "review-analysis.md"
             if review_file.is_file() and review_file.stat().st_size > 0:
-                print(f"  {name}: review written ({len(review_file.read_text().splitlines())} lines)")
+                print(f"  {name}: review written ({_wc_l(review_file)} lines)")
             elif review_file.is_file():
                 print(f"  {name}: review empty (check log)")
             else:

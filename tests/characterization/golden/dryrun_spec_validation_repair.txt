@@ -9,7 +9,7 @@ Max parallel: 1
 Max turns:    0
 
 Checking prerequisites...
-  footest             specs OK (3L)  instr OK  repo OK  traces WARN (0 ndjson files)
+  footest             specs OK (2L)  instr OK  repo OK  traces WARN (0 ndjson files)
 
 [TIME] Launching agent: footest
   [DRY RUN] <ROOT>/scripts/launch/adapters/claude-code.sh --prompt=<prompt> --max-turns=0 --log=<WORK>/.specula-output/spec-repair.log --background
