@@ -1,0 +1,29 @@
+exit_code: 0
+
+=== stdout ===
+
+Batch launcher: spawn one Claude Code agent per target system for spec validation.
+Each agent iteratively runs trace validation and invariant checking using existing
+skills until both pass. Harness and traces must already exist (Phase 2.5).
+
+Usage:
+  bash scripts/launch/launch_spec_validation.sh [options] "name" [...]
+
+Example:
+  bash scripts/launch/launch_spec_validation.sh cometbft
+  bash scripts/launch/launch_spec_validation.sh braft sofa-jraft dragonboat
+  bash scripts/launch/launch_spec_validation.sh --artifact=/path/to/repo myproject
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Only verify prerequisites exist
+  --repair            Repair mode: process OPEN/REOPENED repair requests (confirmation back-edge)
+  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --artifact=PATH     Explicit path to the artifact repo (overrides auto-detection)
+
+Prerequisites:
+  - Spec files at <name>/.specula-output/spec/ (from Phase 2)
+  - Source repo at <name>/artifact/<repo>/ or specified via --artifact
