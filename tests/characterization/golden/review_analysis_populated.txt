@@ -1,0 +1,65 @@
+exit_code: 0
+
+=== stdout ===
+========================================
+ Specula — Review Agent (analysis)
+========================================
+[TIME] Reviewing footest (analysis)...
+  PID=  Log: <WORK>/.specula-output/review-analysis.log
+
+Waiting for review agents to complete...
+
+========================================
+ Review Results
+========================================
+  footest: review written (4 lines)
+
+
+=== review prompt (agent stdin) ===
+# Code Analysis Review: footest
+
+Review the code analysis outputs for quality and completeness.
+
+## Files to Review
+
+- Modeling Brief: <WORK>/.specula-output/modeling-brief.md
+- Analysis Report: <WORK>/.specula-output/analysis-report.md
+
+## Review Checklist
+
+Score each item 1-5 (1=missing, 3=adequate, 5=excellent):
+
+1. **Coverage Statistics**: Are they reported? How many issues were deeply read (target: 30+)?
+2. **Bug Families**: Are they well-defined with mechanisms, not just lists? (target: 4-7 families)
+3. **Evidence Quality**: Does each bug cite file:line, issue numbers, and commit references?
+4. **Model-Checkable Findings**: Are findings classified? How many are model-checkable?
+5. **Modeling Brief Completeness**: Variables, actions, invariants, extensions all specified?
+6. **False Positive Control**: Were excluded issues documented with reasons?
+7. **Source Code Annotations**: Are file:line references present throughout?
+
+## Output
+
+Write your review to: <WORK>/.specula-output/review-analysis.md
+
+Format:
+```markdown
+# Code Analysis Review: footest
+
+## Scores
+| Criterion | Score | Notes |
+|-----------|-------|-------|
+| Coverage Statistics | X/5 | ... |
+| Bug Families | X/5 | ... |
+| Evidence Quality | X/5 | ... |
+| Model-Checkable Findings | X/5 | ... |
+| Modeling Brief Completeness | X/5 | ... |
+| False Positive Control | X/5 | ... |
+| Source Code Annotations | X/5 | ... |
+
+## Overall: X/35
+
+## Issues Found
+- ...
+
+## Verdict: PASS / NEEDS_IMPROVEMENT
+```

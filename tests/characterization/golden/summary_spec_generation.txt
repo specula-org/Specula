@@ -1,0 +1,25 @@
+exit_code: 0
+
+=== stdout ===
+========================================
+ Specula — Spec Generation Batch Runner
+========================================
+Targets:      1
+Max parallel: 1
+Max turns:    0
+
+Checking prerequisites...
+  footest              modeling-brief.md (1 lines)  repo OK
+
+[TIME] Launching agent: footest
+  PID=<PID>  Log: <WORK>/.specula-output/spec-gen.log
+
+[TIME] All agents launched. Waiting...
+  Monitor: tail -f */.specula-output/spec-gen.log
+
+[TIME] All agents completed.
+
+========================================
+ Results
+========================================
+  OK  footest -> 4/4 files (base.tla: 3 lines)

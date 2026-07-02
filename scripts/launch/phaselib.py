@@ -134,6 +134,13 @@ class Phase:
     def summarize(self, ws: Workspace, names: list[str]) -> None:
         raise NotImplementedError
 
+    def monitor_line(self, ws: Workspace) -> str | None:
+        """The '  Monitor: tail -f ...' hint printed once after all agents launch
+        (per-phase; code_analysis prints none). Faithful to each bash launcher's
+        hand-written glob — quirks and all: some omit the .specula-output/ segment,
+        and spec_validation uses an absolute ${PWD} path."""
+        return None
+
     # ── shared prompt-extra injection (identical across phases) ──
     def _with_extra(self, ws: Workspace, name: str, prompt: str) -> str:
         extra = ws.work_dir(name) / ".prompt-extra.md"
@@ -227,6 +234,9 @@ class Phase:
 
         if not dry_run:
             print(f"[{_ts()}] All agents launched. Waiting...")
+            monitor = self.monitor_line(ws)
+            if monitor is not None:
+                print(monitor)
             print()
             for p in running:
                 p.wait()
@@ -455,6 +465,9 @@ Expected files:
             else:
                 print(f"  --  {name} (no output)")
 
+    def monitor_line(self, ws):
+        return "  Monitor: tail -f */.specula-output/spec-gen.log"
+
 
 class HarnessGenerationPhase(Phase):
     key = "harness_generation"
@@ -551,6 +564,9 @@ Expected outputs:
             else:
                 print(f"  --  {name} (no harness output)")
 
+    def monitor_line(self, ws):
+        return "  Monitor: tail -f */.specula-output/harness-gen.log"
+
 
 class BugClassificationPhase(Phase):
     key = "bug_classification"
@@ -626,6 +642,10 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
                 print(f"  {name}: bug-severity.md empty (check log)")
             else:
                 print(f"  {name}: (no report — check log)")
+
+    def monitor_line(self, ws):
+        # bash glob omits the .specula-output/ segment — replicated verbatim.
+        return "  Monitor: tail -f */bug-classification.log"
 
 
 class SpecValidationPhase(Phase):
@@ -740,6 +760,11 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
                 print(f"  {name}: changelog empty (check log)")
             else:
                 print(f"  {name}: no changelog (check log)")
+
+    def monitor_line(self, ws):
+        # bash uses an absolute ${PWD} path and always spec-validation.log (even
+        # in --repair mode, whose log is spec-repair.log) — replicated verbatim.
+        return f"  Monitor: tail -f {ws.cwd}/*/.specula-output/spec-validation.log"
 
 
 class BugConfirmationPhase(Phase):
@@ -864,6 +889,11 @@ Write the consolidated report to `{spec_dir}/confirmed-bugs.md`, with one `repro
                 print(f"  {name}: confirmed-bugs.md empty (check log; repro/ tests: {repro_count})")
             else:
                 print(f"  {name}: (no report — check log; repro/ tests: {repro_count})")
+
+    def monitor_line(self, ws):
+        # bash glob omits the .specula-output/ segment and always bug-confirmation.log
+        # (even in --recheck, whose log is bug-recheck.log) — replicated verbatim.
+        return "  Monitor: tail -f */bug-confirmation.log"
 
 
 class ReviewPhase(Phase):
