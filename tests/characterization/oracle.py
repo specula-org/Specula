@@ -1209,6 +1209,9 @@ CASES: dict[str, callable] = {
         "footest|foo/bar|Go|Raft demo",
     ),
     "pipeline_seq_skip_repair": lambda: run_pipeline_case(["--skip-repair-loop"], "footest|foo/bar|Go|Raft demo"),
+    # reviews are disabled by default — this is the only case exercising run_review's
+    # enabled branch (REVIEW banners + launch_review.sh command lines)
+    "pipeline_seq_reviews": lambda: run_pipeline_case(["--enable-reviews"], "footest|foo/bar|Go|Raft demo"),
     # step 3 target: downstream-phase precondition gates (input contract each enforces)
     "gate_spec_generation": lambda: run_dryrun_case(
         "launch_spec_generation.sh", "footest|foo/bar|Go|Raft demo", snapshot_prompt=False
