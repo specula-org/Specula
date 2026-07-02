@@ -5,8 +5,8 @@ golden snapshots, so the Python rewrites (steps 1/3/5/6 in `MIGRATION-PLAN.md`)
 can be diffed against a fixed baseline. The question each case answers:
 *"does my Python behave like the bash it replaced?"*
 
-Stdlib-only on purpose — no pytest/pip needed (the repo `.venv` is currently
-broken; step 2 wires this into pytest/CI). Runs under any `python3`.
+Stdlib-only — no pytest/pip needed, runs under any `python3`. CI runs the same
+cases via the pytest wrapper (`test_characterization.py`).
 
 ## Run
 
@@ -17,7 +17,7 @@ python3 tests/characterization/oracle.py --list        # list case names
 python3 tests/characterization/oracle.py --check -k adapter   # filter by substring
 ```
 
-Once pytest works: `pytest tests/characterization/` runs the same cases.
+The pytest wrapper runs the same cases: `pytest tests/characterization/`.
 
 ## What each case guards
 
