@@ -41,8 +41,10 @@ def _trim(s: str) -> str:
 
 def _wc_l(path: Path) -> int:
     """Line count matching bash `wc -l < file` (counts newlines, NOT splitlines —
-    they differ by 1 when the file has no trailing newline)."""
-    return path.read_text().count("\n")
+    they differ by 1 when the file has no trailing newline). Byte-oriented like
+    wc: agent-written files aren't guaranteed valid UTF-8, and a summary must
+    never crash after the agents already ran."""
+    return path.read_bytes().count(b"\n")
 
 
 def _grep_num(text: str, prefix: str) -> str:
@@ -89,6 +91,11 @@ class Workspace:
         artifact_dir = self.cwd / name / "artifact"
         if artifact_dir.is_dir():
             for d in sorted(artifact_dir.iterdir()):
+                # bash `for d in "$artifact_dir"/*/` — the glob never matches
+                # dotdirs, so a hidden .git-bearing dir (stale backup, tool
+                # cache) must not shadow the real repo.
+                if d.name.startswith("."):
+                    continue
                 if d.is_dir() and (d / ".git").exists():
                     return str(d) + "/"
         # Single target: source is $PWD.
@@ -102,8 +109,10 @@ class Phase:
 
     key = ""  # cli name (e.g. "code_analysis")
     title = ""  # banner title
+    usage = ""  # --help text: the bash launcher's header comment, extracted verbatim
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites."
+    check_ok_msg = "All prerequisites OK."  # code_analysis says "All repos OK."
     accepts_artifact = True  # bug_classification takes no --artifact (rejects it)
     dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
 
@@ -147,7 +156,9 @@ class Phase:
         if not extra.is_file():
             extra = ws.cwd / ".prompt-extra.md"
         if extra.is_file():
-            prompt += "\n## Target-Specific Instructions\n\n" + extra.read_text()
+            # errors="replace": bash `cat` concatenated raw bytes; a stray
+            # non-UTF-8 byte in a user's .prompt-extra.md must not crash the run.
+            prompt += "\n## Target-Specific Instructions\n\n" + extra.read_text(errors="replace")
         return prompt
 
     # ── shared driver ──
@@ -157,7 +168,8 @@ class Phase:
         dry_run = False
         check_only = False
         agent = "claude-code"
-        claude_alias = os.environ.get("CLAUDE_ALIAS", "claude")
+        # `or`: bash ${CLAUDE_ALIAS:-claude} treats an exported-but-empty var as unset
+        claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
         artifact = ""
         targets: list[str] = []
         extra: dict = {}
@@ -178,7 +190,7 @@ class Phase:
             elif arg.startswith("--artifact=") and self.accepts_artifact:
                 artifact = arg[len("--artifact=") :]
             elif arg in ("--help", "-h"):
-                print(self.__doc__ or self.title)
+                sys.stdout.write(self.usage)
                 return 0
             elif self.parse_flag(arg, extra):
                 pass
@@ -215,7 +227,7 @@ class Phase:
         print()
 
         if check_only:
-            print("All prerequisites OK.")
+            print(self.check_ok_msg)
             return 0
 
         running: list[subprocess.Popen] = []
@@ -277,10 +289,39 @@ class Phase:
 class CodeAnalysisPhase(Phase):
     key = "code_analysis"
     title = "Specula — Code Analysis Batch Runner"
+    usage = r"""
+Batch launcher: spawn one agent per target system for code analysis.
+Each agent follows the code-analysis skill methodology and produces a modeling brief.
+
+Usage:
+  bash scripts/launch/launch_code_analysis.sh [options] "name|github|lang|reference" [...]
+
+Single-target (run from your project directory):
+  cd my-project
+  bash ~/Specula/scripts/launch/launch_code_analysis.sh "myproject|me/myproject|Go|Raft"
+
+Batch (run from a directory containing multiple targets):
+  cd case-studies
+  bash ../scripts/launch/launch_code_analysis.sh \
+    "braft|brpc/braft|C++|Raft (Ongaro 2014)" \
+    "sofa-jraft|sofastack/sofa-jraft|Java|Raft (Ongaro 2014)"
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Only verify repos exist
+  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --artifact=PATH     Source code path (default: $PWD for single target,
+                      $PWD/<name>/artifact/<repo>/ for batch)
+
+"""
     check_header = "Checking repositories..."
     check_fail_msg = (
         "ERROR: Some repositories are missing. Use --artifact=<path> or place repos under <name>/artifact/<repo>/."
     )
+    check_ok_msg = "All repos OK."
 
     def target_name(self, target):
         # code_analysis targets are "name|github|lang|reference"; name is field 1.
@@ -368,6 +409,32 @@ Write your outputs to:
 class SpecGenerationPhase(Phase):
     key = "spec_generation"
     title = "Specula — Spec Generation Batch Runner"
+    usage = r"""
+Batch launcher: spawn one Claude Code agent per target system for TLA+ spec generation.
+Each agent follows the spec-generation skill methodology and produces base/MC/Trace specs.
+
+Usage:
+  bash scripts/launch/launch_spec_generation.sh [options] "name" [...]
+
+Example:
+  bash scripts/launch/launch_spec_generation.sh cometbft
+  bash scripts/launch/launch_spec_generation.sh braft sofa-jraft dragonboat
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Only verify prerequisites exist
+  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --artifact=PATH     Explicit path to the artifact repo (bypasses auto-detection)
+
+Prerequisites:
+  - claude CLI installed and authenticated
+  - modeling-brief.md exists at <name>/.specula-output/modeling-brief.md
+  - Source repo cloned at <name>/artifact/<repo>/ (or supplied via --artifact)
+
+"""
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites. Run code analysis first."
 
@@ -472,6 +539,33 @@ Expected files:
 class HarnessGenerationPhase(Phase):
     key = "harness_generation"
     title = "Specula — Harness Generation (Phase 2.5)"
+    usage = r"""
+Batch launcher: spawn one Claude Code agent per target system for harness generation (Phase 2.5).
+Each agent instruments the source code and collects NDJSON traces for spec validation.
+
+Usage:
+  bash scripts/launch/launch_harness_generation.sh [options] "name" [...]
+
+Example:
+  bash scripts/launch/launch_harness_generation.sh cometbft
+  bash scripts/launch/launch_harness_generation.sh braft sofa-jraft dragonboat
+  bash scripts/launch/launch_harness_generation.sh --artifact=/path/to/repo myproject
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Only verify prerequisites exist
+  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --artifact=PATH     Explicit path to artifact repo (overrides auto-detection)
+
+Prerequisites:
+  - claude CLI installed and authenticated
+  - Phase 2 complete: spec/base.tla, spec/Trace.tla, spec/instrumentation-spec.md
+  - Source repo at <name>/artifact/<repo>/ or specified via --artifact
+
+"""
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites. Run spec generation (Phase 2) first."
 
@@ -571,6 +665,31 @@ Expected outputs:
 class BugClassificationPhase(Phase):
     key = "bug_classification"
     title = "Specula — Bug Classification Batch Runner"
+    usage = r"""
+Batch launcher: spawn one Claude Code agent per target system for Phase 4b
+severity classification. Each agent reads the confirmed-bugs.md produced by
+Phase 4a (bug-confirmation) and writes a separate bug-severity.md table
+assigning Critical / High / Medium / Low per bug. No new analysis, no repro
+work, no modification to confirmed-bugs.md.
+
+Usage:
+  bash scripts/launch/launch_bug_classification.sh [options] "name" [...]
+
+Example:
+  bash scripts/launch/launch_bug_classification.sh libgomp_3 autobahn_3
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Only verify prerequisites exist
+  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+
+Prerequisites:
+  - Confirmed bug report at <name>/spec/confirmed-bugs.md (from Phase 4a)
+
+"""
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites. Run Phase 4a (launch_bug_confirmation.sh) first."
     accepts_artifact = False  # this launcher takes no --artifact
@@ -630,7 +749,7 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
         for name in names:
             report = ws.work_dir(name) / "spec" / "bug-severity.md"
             if report.is_file() and report.stat().st_size > 0:
-                text = report.read_text()
+                text = report.read_text(errors="replace")  # bash grep is byte-safe
                 total = _grep_num(text, "- Total bugs:")
                 c = _grep_num(text, "- Critical:")
                 h = _grep_num(text, "- High:")
@@ -651,6 +770,34 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
 class SpecValidationPhase(Phase):
     key = "spec_validation"
     title = "Specula — Spec Validation Batch Runner"
+    usage = r"""
+Batch launcher: spawn one Claude Code agent per target system for spec validation.
+Each agent iteratively runs trace validation and invariant checking using existing
+skills until both pass. Harness and traces must already exist (Phase 2.5).
+
+Usage:
+  bash scripts/launch/launch_spec_validation.sh [options] "name" [...]
+
+Example:
+  bash scripts/launch/launch_spec_validation.sh cometbft
+  bash scripts/launch/launch_spec_validation.sh braft sofa-jraft dragonboat
+  bash scripts/launch/launch_spec_validation.sh --artifact=/path/to/repo myproject
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Only verify prerequisites exist
+  --repair            Repair mode: process OPEN/REOPENED repair requests (confirmation back-edge)
+  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --artifact=PATH     Explicit path to the artifact repo (overrides auto-detection)
+
+Prerequisites:
+  - Spec files at <name>/.specula-output/spec/ (from Phase 2)
+  - Source repo at <name>/artifact/<repo>/ or specified via --artifact
+
+"""
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites. Run spec generation first."
 
@@ -770,6 +917,34 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
 class BugConfirmationPhase(Phase):
     key = "bug_confirmation"
     title = "Specula — Bug Confirmation Batch Runner"
+    usage = r"""
+Batch launcher: spawn one Claude Code agent per target system for bug confirmation.
+Each agent consolidates MC bugs + code review findings, then attempts to reproduce
+each bug following the bug-confirmation skill methodology.
+
+Usage:
+  bash scripts/launch/launch_bug_confirmation.sh [options] "name" [...]
+
+Example:
+  bash scripts/launch/launch_bug_confirmation.sh hashicorp-raft nuraft
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Only verify prerequisites exist
+  --recheck           Re-check mode: settle RECHECK repair requests (confirmation back-edge)
+  --max-repair-rounds=N  Per-request repair cap honored in --recheck (default: 0 = unlimited)
+  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --artifact=PATH     Explicit path to the artifact repo (overrides auto-detection)
+
+Prerequisites:
+  - Bug report at <name>/spec/bug-report.md (from Phase 3)
+  - Modeling brief at <name>/modeling-brief.md (from Phase 1)
+  - Source repo at <name>/artifact/<repo>/ (or supplied via --artifact)
+
+"""
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites. Run full pipeline first."
 
@@ -904,11 +1079,27 @@ class ReviewPhase(Phase):
     prompt (see tests/characterization/ review_*)."""
 
     key = "review"
+    usage = r"""
+Run a Claude Code review agent on phase outputs.
+Used by launch_pipeline.sh between phases. Can also be used standalone.
+
+Usage:
+  bash scripts/launch/launch_review.sh <phase> <name> [name ...]
+
+Phases:
+  analysis    — Review code analysis output (modeling-brief.md, analysis-report.md)
+  specgen     — Review spec generation output (base.tla, MC.tla, Trace.tla)
+  validation  — Review validation results (validation-report.md)
+
+Output:
+  .specula-output/review-<phase>.md
+
+"""
 
     def run(self, argv: list[str]) -> int:
         phase = argv[0] if argv else ""
         agent = "claude-code"
-        claude_alias = os.environ.get("CLAUDE_ALIAS", "claude")
+        claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
         targets: list[str] = []
         for arg in argv[1:]:
             if arg.startswith("--agent="):
@@ -916,7 +1107,7 @@ class ReviewPhase(Phase):
             elif arg.startswith("--claude-alias="):
                 claude_alias = arg[len("--claude-alias=") :]
             elif arg in ("--help", "-h"):
-                print(self.__doc__ or "review")
+                sys.stdout.write(self.usage)
                 return 0
             else:
                 targets.append(arg)
@@ -938,7 +1129,13 @@ class ReviewPhase(Phase):
         print("========================================")
 
         for name in names:
-            self._launch_review(ws, name, phase, adapter, claude_alias)
+            rc = self._launch_review(ws, name, phase, adapter, claude_alias)
+            if rc != 0:
+                # bash ran under `set -euo pipefail`: a failing adapter (notably
+                # exit 75 = EX_TEMPFAIL on rate limit) aborted the launcher with
+                # that code so the pipeline can wait/retry instead of treating
+                # the review as done.
+                return rc
 
         print()
         print("Waiting for review agents to complete...")
@@ -981,22 +1178,31 @@ class ReviewPhase(Phase):
             raise SystemExit(1)
         print(f"[{_ts()}] Reviewing {name} ({phase})...")
         log_dir.mkdir(parents=True, exist_ok=True)
+        # Capture only stdout (bash `pid=$(...)` command substitution); stderr is
+        # inherited so adapter diagnostics ("rate limit hit", arg errors) reach
+        # the console / pipeline log as they did under bash.
         proc = subprocess.run(
             [
                 str(adapter),
-                f"--prompt={prompt}",
+                # bash: prompt=$(generate_..._prompt) — command substitution
+                # strips trailing newlines before the adapter sees the prompt.
+                f"--prompt={prompt.rstrip(chr(10))}",
                 "--max-turns=30",
                 f"--claude-alias={claude_alias}",
                 "--effort=max",
                 f"--log={log_file}",
                 "--background",
             ],
-            capture_output=True,
+            stdout=subprocess.PIPE,
             text=True,
         )
+        if proc.returncode != 0:
+            # bash set -e aborted here, before the pid file write / PID line.
+            return proc.returncode
         pid = proc.stdout.rstrip("\n")
         (log_dir / f"review-{phase}.pid").write_text(f"{pid}\n")
         print(f"  PID={pid}  Log: {log_file}")
+        return 0
 
     def _analysis_prompt(self, wd, name):
         return f"""# Code Analysis Review: {name}
@@ -1160,6 +1366,11 @@ PHASES: dict[str, Phase] = {
 
 
 def main(argv: list[str]) -> int:
+    # bash echo flushed per line; python block-buffers when stdout is a pipe
+    # (launch_pipeline.sh tees everything), which would hold progress lines —
+    # including the Monitor hint — in the buffer for the hours p.wait() blocks.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
     if not argv or argv[0] not in PHASES:
         print(f"usage: phaselib.py <phase> [options] <target>...\nphases: {', '.join(PHASES)}", file=sys.stderr)
         return 2
