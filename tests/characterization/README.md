@@ -5,8 +5,10 @@ golden snapshots, so the Python rewrites (steps 1/3/5/6 in `MIGRATION-PLAN.md`)
 can be diffed against a fixed baseline. The question each case answers:
 *"does my Python behave like the bash it replaced?"*
 
-Stdlib-only — no pytest/pip needed, runs under any `python3`. CI runs the same
-cases via the pytest wrapper (`test_characterization.py`).
+No pytest needed — the oracle runs directly. It imports the `specula` package,
+so install it first (`pip install -e .` from the repo root, or put `src/` on
+`PYTHONPATH`). CI runs the same cases via the pytest wrapper
+(`test_characterization.py`).
 
 ## Run
 
@@ -59,7 +61,7 @@ The pytest wrapper runs the same cases: `pytest tests/characterization/`.
 
 - **Adapter impl switch** (`SPECULA_ADAPTER_IMPL=python`): the adapter cases run
   the bash adapter by default; set this env var to run the Python port
-  (`scripts/launch/adapters/claude_code.py`) and diff it against the same
+  (`src/specula/adapters/claude_code.py`, run as `python3 -m specula.adapters.claude_code`) and diff it against the same
   bash-captured goldens — this is the step-1 parity check. After the strangler
   cutover `claude-code.sh` is a shim to the port, so the default run exercises
   Python too. Set `SPECULA_ADAPTER_IMPL=<path-to-a-bash-script>` to run an
