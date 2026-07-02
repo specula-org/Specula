@@ -5,8 +5,8 @@ launchers/adapters as normalized golden snapshots, so the Python rewrites
 (steps 1/3/5/6) can be diffed against a fixed baseline ("did my Python behave
 like the bash it replaced?").
 
-Deliberately stdlib-only (no pytest/pip needed) — the repo `.venv` is corrupted
-(see memory reference_broken_venv_pytest); step 2 wires this into pytest/CI.
+Stdlib-only (no pytest/pip needed), so it runs under any `python3`; the pytest
+wrapper (test_characterization.py) exposes the same cases to CI.
 
 Usage:
     python3 tests/characterization/oracle.py --check     # diff vs golden (default; exit 1 on mismatch)

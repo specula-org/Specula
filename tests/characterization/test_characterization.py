@@ -1,10 +1,9 @@
 """Pytest wrapper over the stdlib characterization oracle.
 
-The real logic lives in `oracle.py` (stdlib-only, runnable without pytest while
-the repo .venv is broken — see memory reference_broken_venv_pytest). This thin
-wrapper lets step 2's CI discover the same cases via `pytest`.
+The real logic lives in `oracle.py` (stdlib-only, runnable under any `python3`).
+This thin wrapper lets CI discover the same cases via `pytest`.
 
-Run:  pytest tests/characterization/          (once pytest works in the venv)
+Run:  pytest tests/characterization/
 Regen golden:  python3 tests/characterization/oracle.py --update
 """
 
