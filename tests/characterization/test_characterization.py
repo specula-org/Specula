@@ -1,7 +1,8 @@
 """Pytest wrapper over the stdlib characterization oracle.
 
-The real logic lives in `oracle.py` (stdlib-only, runnable under any `python3`).
-This thin wrapper lets CI discover the same cases via `pytest`.
+The real logic lives in `oracle.py` (no pytest needed to run it directly, but
+it imports the installed `specula` package). This thin wrapper lets CI discover
+the same cases via `pytest`.
 
 Run:  pytest tests/characterization/
 Regen golden:  python3 tests/characterization/oracle.py --update
