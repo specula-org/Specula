@@ -1,9 +1,47 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "specula"
+version = "0.0.0"
+description = "Specula: a framework for finding deep bugs in system code using TLA+."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "mcp>=1.0.0",
+    "jsonschema>=4.0.0",
+    "mypy",
+]
+
+# No [project.scripts] yet — the real CLI is still the bash `specula` launcher.
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["specula*"]
+
+# mypy gates only the typed migration code; the rest of the repo is untyped.
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = [
+    "src/specula",
+    "tests/characterization/oracle.py",
+    "tests/characterization/test_characterization.py",
+]
+mypy_path = "src"
+
 # Ruff config for the Specula main repo (code-cleanliness gate; see .github/workflows/ci.yml).
 # Submodules (case-studies, tools/tlaplus*, tools/SysMoBench) and experiment/vendor
 # dirs are excluded so they are linted in their own repos, not here.
+[tool.ruff]
 line-length = 120
 target-version = "py310"
-
 extend-exclude = [
     "case-studies",
     "tools/tlaplus",
@@ -18,7 +56,7 @@ extend-exclude = [
     ".specula-output",
 ]
 
-[lint]
+[tool.ruff.lint]
 select = [
     "E",    # pycodestyle errors
     "F",    # Pyflakes
@@ -33,10 +71,10 @@ ignore = [
     "SIM115", # open() w/o context manager: dual-mode readers accept caller-owned handles
 ]
 
-[lint.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 # Tests manipulate sys.path before importing project modules.
 "**/tests/**/*.py" = ["E402"]
 
-[format]
+[tool.ruff.format]
 quote-style = "double"
 docstring-code-format = true
