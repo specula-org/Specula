@@ -30,15 +30,16 @@ Once pytest works: `pytest tests/characterization/` runs the same cases.
 | `adapter_inline_prompt` | 1 | `--prompt=...` (mktemp path) instead of `--prompt-file` still produces the right output |
 | `adapter_claude_missing` | 1 | `claude` not on PATH → spawn fails; bash writes the shell error into `RAW_JSON` and carries on (exit 0 + error in `.log` + `parse_failed`), and the port mirrors it (a divergence a reviewer caught; now pinned) |
 | `adapter_cmd_*` (×4) | 1 | command construction — how `--effort`/`--model`/`--max-budget` become the `claude` argv, incl. the skip-on-`default`/`0`/empty branches and the `${VAR:-}` rule (exported-but-empty `CLAUDE_EFFORT` still means `--effort max`) |
+| `adapter_configdir_*` (×3) | 1 | alias → `CLAUDE_CONFIG_DIR` export (`$HOME/.<alias>`): exported-but-empty env, empty `--claude-alias=` flag, and an ambient `CLAUDE_CONFIG_DIR` the adapter must override (alias is authoritative) |
 | `adapter_err_*` (×5) | 1 | validation contract — exit 1 + exact stderr for missing `--log`, both/neither prompt, missing prompt file, unknown option |
-| `dryrun_*` (×8) | 3 (phase framework) | arg parse, path calc, exact agent command (`--log/--background`), full generated prompt — incl. the `--repair`/`--recheck` mode variants |
+| `dryrun_*` (×10) | 3 (phase framework) | arg parse, path calc, exact agent command (`--log/--background`), full generated prompt — incl. the `--repair`/`--recheck` mode variants, the hidden-dir repo skip (real 1-commit repo pins the check line too), and the only-dotdirs `$PWD` fallthrough |
 | `bad_artifact_code_analysis` | 3 | bad `--artifact` path degrades to `OK <name> (? commits)` + exit 0 (bash `cd … \|\| echo "?"`), never a traceback |
 | `gate_*` (×5) | 3 | each downstream phase's **precondition gate** — the input contract it enforces before running (e.g. spec-gen needs `modeling-brief.md`; exit 1 + "Missing prerequisites" message) |
 | `check_ok_*` (×2) | 3 | the `--check` success path — per-phase OK message (`All repos OK.` for code_analysis, `All prerequisites OK.` for the rest) |
 | `help_*` (×7) | 3 | `--help` prints the full bash usage text (options, examples) verbatim; review needs its phase arg first |
 | `review_*` (×4) | 3 | the review launcher (no `--dry-run`): banner/per-name lines/summary + the exact inline prompt captured from the agent's stdin, incl. the summary's populated branch |
 | `review_ratelimit` | 3 | adapter failure propagation: rate limit → adapter exit 75 → launcher aborts with 75, diagnostics on stderr, no PID line (the bash `set -e` + `pid=$(…)` contract) |
-| `summary_*` (×6) | 3 | the post-launch full-run path — summarize()'s populated branch (wc-l counts) + the per-phase `Monitor: tail -f …` hint, which dry-run/gate never reach |
+| `summary_*` (×7) | 3 | the post-launch full-run path — summarize()'s populated branch (wc-l counts) + the per-phase `Monitor: tail -f …` hint, which dry-run/gate never reach; the nonutf8 variant pins byte-safe, wc-l-style counting (no trailing newline → 2, splitlines would say 3) |
 | `pipeline_seq_*` (×3) | 5 (orchestrator) | `launch_pipeline.sh` phase order + review/harness/repair-loop gating under `--skip-*` combos |
 | `repair_state_machine` | 5 | repair-loop primitives `rr_field`/`rr_status`/`rr_set_status` — the embedded-python mutator that rewrites `status:` in-place and appends a History bullet, across OPEN→IN_REPAIR→RESOLVED |
 | `quota_*` (×3) | 5 | real `wait_for_quota` decision (usage source + `sleep` stubbed): 5h-before-7d, strict `>` threshold, over→bounded wait then abort, two-layer `QUOTA_5H`/`QUOTA_7D` |
@@ -71,7 +72,8 @@ Once pytest works: `pytest tests/characterization/` runs the same cases.
 ## Adding cases (remaining step-0 work)
 
 Register a zero-arg callable in `oracle.CASES` that returns a normalized string,
-then `--update`. 56 cases so far. When a new golden pins behavior the original
+then `--update` (`-k` with an exact case name updates only that case). 62 cases
+so far. When a new golden pins behavior the original
 bash also had, verify parity against the pre-cutover script:
 `SPECULA_LAUNCHER_IMPL=<path-to-old-bash> oracle.py --check -k <case>` (materialize
 the old launcher tree with `git archive $(git merge-base HEAD origin/main) scripts/launch`).

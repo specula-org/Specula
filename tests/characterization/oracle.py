@@ -14,6 +14,7 @@ Usage:
     python3 tests/characterization/oracle.py --update     # (re)write golden snapshots
     python3 tests/characterization/oracle.py --list       # list case names
     python3 tests/characterization/oracle.py --check -k adapter   # filter by substring
+                                                                  # (an exact case name selects only that case)
 
 Each case produces a deterministic, normalized text snapshot. Volatile bits
 (absolute paths, timestamps, tmp dirs) are replaced with <PLACEHOLDERS> so the
@@ -30,6 +31,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -136,6 +138,15 @@ def _clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
         "CLAUDE_EFFORT",
         "CLAUDE_MODEL",
         "CLAUDE_ALIAS",
+        # fake-claude recorder channels: an ambient value would redirect every
+        # case's stub into it (cases re-inject their own via `extra`)
+        "CLAUDE_ARGV_FILE",
+        "CLAUDE_STDIN_FILE",
+        "CLAUDE_CONFIG_DIR_FILE",
+        # ambient git redirection would swing the seeded repos' commit counts
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
     ):
         env.pop(var, None)
     env["PATH"] = "/usr/bin:/bin:" + env.get("PATH", "")
@@ -165,9 +176,45 @@ def _write_fake_claude(bindir: Path, fixture: Path) -> None:
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def _init_git_repo(path: Path) -> None:
+def _init_git_repo(path: Path, commit: bool = False) -> None:
+    """A real (valid) repo: a fake with only .git/HEAD is rejected by git, whose
+    repo discovery then ascends PAST the tempdir — with TMPDIR inside any checkout
+    the commit count comes from the enclosing repo and the golden goes flaky.
+    commit=True adds one empty commit so `git rev-list --count HEAD` succeeds
+    ('1 commits' — the success branch no other case exercises)."""
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", str(path)], check=True, env=_clean_env())
+    if commit:
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(path),
+                "-c",
+                "user.name=oracle",
+                "-c",
+                "user.email=oracle@test",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "seed",
+            ],
+            check=True,
+            env=_clean_env(),
+        )
+
+
+def _seed_files(root: Path, seed: dict[str, str | bytes] | None) -> None:
+    """Create seed files under root (relpath -> content). bytes values are written
+    raw — used to plant non-UTF-8 bytes a text write would reject."""
+    for rel, content in (seed or {}).items():
+        f = root / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, bytes):
+            f.write_bytes(content)
+        else:
+            f.write_text(content)
 
 
 # ── case runners ────────────────────────────────────────────────────────────
@@ -231,13 +278,29 @@ def run_adapter_case(
     return raw
 
 
-def run_adapter_cmd_case(flags: list[str], env_extra: dict[str, str] | None = None) -> str:
-    """Pin command construction: snapshot the exact argv the adapter passes to
-    `claude` for a given flag combo (--effort/--model/--max-budget assembly, incl.
-    the skip-on-default/zero/empty branches). The fake `claude` records its args.
+def run_adapter_cmd_case(
+    flags: list[str],
+    env_extra: dict[str, str] | None = None,
+    record: str = "argv",
+    claude_alias: str | None = "testalias",
+) -> str:
+    """Pin what the spawned `claude` observes for a given flag/env combo. The fake
+    `claude` records into the channel selected by `record`:
+      "argv"      — the exact argv (--effort/--model/--max-budget assembly, incl.
+                    the skip-on-default/zero/empty branches)
+      "configdir" — the CLAUDE_CONFIG_DIR the adapter exported (the alias sets the
+                    config dir, $HOME/.<alias>, not an argv flag, so the argv
+                    channel can't see it); prefixed with the exit code so a run
+                    that never reaches claude can't silently pin <MISSING>
 
     env_extra: ambient env to set (e.g. CLAUDE_EFFORT="") — pins the bash
-    ${VAR:-default} rule that an exported-but-empty var still means the default."""
+    ${VAR:-default} rule that an exported-but-empty var still means the default.
+    claude_alias: value for --claude-alias; None omits the flag entirely, "" pins
+    the empty-flag path (guarded only by the config-dir line's own default)."""
+    recorder_var, header = {
+        "argv": ("CLAUDE_ARGV_FILE", "claude argv"),
+        "configdir": ("CLAUDE_CONFIG_DIR_FILE", "CLAUDE_CONFIG_DIR seen by claude"),
+    }[record]
     fixture = FIXTURES / "claude_normal.json"
     with tempfile.TemporaryDirectory() as td:
         base = Path(td).resolve()
@@ -245,24 +308,28 @@ def run_adapter_cmd_case(flags: list[str], env_extra: dict[str, str] | None = No
         _write_fake_claude(bindir, fixture)
         prompt = base / "prompt.md"
         prompt.write_text("dummy prompt\n")
-        argv_file = base / "claude_argv.txt"
+        record_file = base / "recorded.txt"
         env = _clean_env(
             {
                 "PATH": f"{bindir}:/usr/bin:/bin",
                 "HOME": str(base),
-                "CLAUDE_ARGV_FILE": str(argv_file),
+                recorder_var: str(record_file),
                 **(env_extra or {}),
             }
         )
-        subprocess.run(
-            _adapter_cmd() + [f"--prompt-file={prompt}", "--claude-alias=testalias", f"--log={base}/out.log", *flags],
+        alias_flags = [] if claude_alias is None else [f"--claude-alias={claude_alias}"]
+        proc = subprocess.run(
+            _adapter_cmd() + [f"--prompt-file={prompt}", *alias_flags, f"--log={base}/out.log", *flags],
             cwd=str(base),
             env=env,
             capture_output=True,
             text=True,
         )
-        argv = argv_file.read_text() if argv_file.exists() else "<MISSING>"
-        return normalize(f"=== claude argv ===\n{argv}", {str(base): "<TMP>"})
+        recorded = record_file.read_text() if record_file.exists() else "<MISSING>"
+        snap = f"=== {header} ===\n{recorded}"
+        if record == "configdir":
+            snap = f"exit_code: {proc.returncode}\n\n" + snap
+        return normalize(snap, {str(base): "<TMP>"})
 
 
 def run_adapter_error_case(flags: list[str]) -> str:
@@ -287,42 +354,6 @@ def run_adapter_error_case(flags: list[str]) -> str:
         )
 
 
-def run_adapter_configdir_case(flags: list[str], env_extra: dict[str, str] | None = None) -> str:
-    """Pin the alias -> CLAUDE_CONFIG_DIR contract: the alias sets the config dir
-    ($HOME/.<alias>), not a `claude` argv flag, so the command-construction case
-    can't see it. The fake `claude` records the CLAUDE_CONFIG_DIR the adapter
-    exported; snapshot it. With CLAUDE_ALIAS='' and no --claude-alias, the empty
-    env must still resolve to `.claude` (bash ${CLAUDE_ALIAS:-claude}). NB this
-    contract is double-guarded — both the alias default and the config-dir line's
-    own `or "claude"` — so it holds even if one guard is dropped; the case locks
-    the observable contract, previously untested, rather than a single line."""
-    fixture = FIXTURES / "claude_normal.json"
-    with tempfile.TemporaryDirectory() as td:
-        base = Path(td).resolve()
-        bindir = base / "bin"
-        _write_fake_claude(bindir, fixture)
-        prompt = base / "prompt.md"
-        prompt.write_text("dummy prompt\n")
-        cfg_file = base / "config_dir.txt"
-        env = _clean_env(
-            {
-                "PATH": f"{bindir}:/usr/bin:/bin",
-                "HOME": str(base),
-                "CLAUDE_CONFIG_DIR_FILE": str(cfg_file),
-                **(env_extra or {}),
-            }
-        )
-        subprocess.run(
-            _adapter_cmd() + [f"--prompt-file={prompt}", f"--log={base}/out.log", *flags],
-            cwd=str(base),
-            env=env,
-            capture_output=True,
-            text=True,
-        )
-        seen = cfg_file.read_text() if cfg_file.exists() else "<MISSING>"
-        return normalize(f"=== CLAUDE_CONFIG_DIR seen by claude ===\n{seen}", {str(base): "<TMP>"})
-
-
 def run_dryrun_case(
     script: str,
     target: str,
@@ -333,6 +364,7 @@ def run_dryrun_case(
     snapshot_prompt: bool = True,
     bad_artifact: bool = False,
     check_only: bool = False,
+    repos: list[str] | None = None,
 ) -> str:
     """Run a phase launcher with --dry-run (or --check) in an isolated cwd;
     snapshot stdout, plus the generated prompt file (the exact prompt handed to
@@ -351,16 +383,19 @@ def run_dryrun_case(
     bad_artifact: point --artifact at a nonexistent path — pins the graceful
     degrade (`OK <name> (? commits)` + exit 0, bash `cd ... || echo "?"`), the
     contract the port once broke with a FileNotFoundError on subprocess cwd.
-    check_only: run --check instead of --dry-run (pins the check-ok message)."""
+    check_only: run --check instead of --dry-run (pins the check-ok message).
+    repos: relpaths under the work cwd to create as REAL one-commit git repos
+    (for <name>/artifact/<repo> discovery cases; see _init_git_repo on why a
+    fake .git is not hermetic). GIT_CEILING_DIRECTORIES stops repo discovery at
+    the tempdir so non-repo cwds can't resolve an enclosing checkout either."""
     with tempfile.TemporaryDirectory() as td:
-        tmp = Path(td)
+        tmp = Path(td).resolve()
         work = tmp / "work"
         work.mkdir()
-        for rel, content in (seed or {}).items():
-            f = work / rel
-            f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_text(content)
-        env = _clean_env({"HOME": str(tmp)})
+        _seed_files(work, seed)
+        for rel in repos or []:
+            _init_git_repo(work / rel, commit=True)
+        env = _clean_env({"HOME": str(tmp), "GIT_CEILING_DIRECTORIES": str(tmp)})
         mode = "--check" if check_only else "--dry-run"
         cmd = _launcher_cmd(script) + [mode, *(extra_flags or [])]
         subs = {str(work): "<WORK>", str(tmp): "<TMP>"}
@@ -423,10 +458,7 @@ def run_review_case(phase: str, seed: dict[str, str] | None = None, fixture_name
         _write_fake_claude(bindir, fixture)
         work = base / "work"
         work.mkdir()
-        for rel, content in (seed or {}).items():
-            f = work / rel
-            f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_text(content)
+        _seed_files(work, seed)
         stdin_file = base / "captured_prompt.txt"
         env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base), "CLAUDE_STDIN_FILE": str(stdin_file)})
         proc = subprocess.run(
@@ -450,9 +482,8 @@ def run_review_case(phase: str, seed: dict[str, str] | None = None, fixture_name
 def run_summary_case(
     script: str,
     target: str,
-    seed: dict[str, str],
+    seed: dict[str, str | bytes],
     use_artifact: bool = True,
-    seed_bytes: dict[str, bytes] | None = None,
 ) -> str:
     """Run a phase launcher in FULL mode (no --dry-run/--check) with a fake `claude`
     and pre-seeded files; snapshot stdout. This is the only case that reaches the
@@ -464,26 +495,17 @@ def run_summary_case(
     proceeds) and its output files (so summarize sees them), relative to the work
     cwd (single-target → under .specula-output/). The agent is faked, so its own
     output files never appear; only the seeded ones drive the summary. Launched-
-    agent PIDs are normalized to <PID>.
-
-    seed_bytes: raw-byte files (relpath -> bytes) — used to plant a non-UTF-8 byte
-    in a counted file, pinning that `_wc_l` counts bytes (like `wc -l`) and never
-    crashes on invalid UTF-8 (a `read_text()` regression would raise here)."""
+    agent PIDs are normalized to <PID>. bytes seed values are written raw (plant
+    a non-UTF-8 byte in a counted file to pin byte-safe counting). stderr is
+    snapshotted only when non-empty, so a summarize() crash is self-diagnosing."""
     with tempfile.TemporaryDirectory() as td:
         base = Path(td).resolve()
         bindir = base / "bin"
         _write_fake_claude(bindir, FIXTURES / "claude_normal.json")
         work = base / "work"
         work.mkdir()
-        for rel, content in seed.items():
-            f = work / rel
-            f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_text(content)
-        for rel, data in (seed_bytes or {}).items():
-            f = work / rel
-            f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_bytes(data)
-        env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base)})
+        _seed_files(work, seed)
+        env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base), "GIT_CEILING_DIRECTORIES": str(base)})
         cmd = _launcher_cmd(script)
         subs = {str(work): "<WORK>", str(base): "<TMP>"}
         if use_artifact:
@@ -494,6 +516,8 @@ def run_summary_case(
         cmd = cmd + [target]
         proc = subprocess.run(cmd, cwd=str(work), env=env, capture_output=True, text=True)
         parts = [f"exit_code: {proc.returncode}", "", "=== stdout ===", proc.stdout, ""]
+        if proc.stderr.strip():
+            parts += ["=== stderr ===", proc.stderr, ""]
         return normalize("\n".join(parts), subs)
 
 
@@ -728,9 +752,17 @@ CASES: dict[str, callable] = {
     "adapter_cmd_skips": lambda: run_adapter_cmd_case(["--effort=default", "--max-budget=0"]),
     # exported-but-empty CLAUDE_EFFORT must still mean --effort max (bash ${:-max})
     "adapter_cmd_empty_effort_env": lambda: run_adapter_cmd_case([], env_extra={"CLAUDE_EFFORT": ""}),
-    # empty CLAUDE_ALIAS still resolves CLAUDE_CONFIG_DIR to .claude — locks the
-    # (previously untested, double-guarded) contract, not a single line
-    "adapter_configdir_empty_alias": lambda: run_adapter_configdir_case([], env_extra={"CLAUDE_ALIAS": ""}),
+    # alias -> CLAUDE_CONFIG_DIR contract, all three entry points: exported-but-empty
+    # env, empty --claude-alias= flag (guarded only by the config-dir line's own
+    # default — the env default can't save it), and an ambient CLAUDE_CONFIG_DIR
+    # that the adapter must override (alias is authoritative, never inherited)
+    "adapter_configdir_empty_alias": lambda: run_adapter_cmd_case(
+        [], env_extra={"CLAUDE_ALIAS": ""}, record="configdir", claude_alias=None
+    ),
+    "adapter_configdir_empty_alias_flag": lambda: run_adapter_cmd_case([], record="configdir", claude_alias=""),
+    "adapter_configdir_ambient_override": lambda: run_adapter_cmd_case(
+        [], env_extra={"CLAUDE_CONFIG_DIR": "/elsewhere/.other"}, record="configdir", claude_alias=None
+    ),
     # validation contract: exit code + stderr on bad invocations
     "adapter_err_no_log": lambda: run_adapter_error_case(["--prompt=x"]),
     "adapter_err_both_prompt": lambda: run_adapter_error_case(
@@ -748,15 +780,23 @@ CASES: dict[str, callable] = {
         "launch_code_analysis.sh", "footest|foo/bar|Go|Raft demo", snapshot_prompt=False, bad_artifact=True
     ),
     # find_repo_dir must skip a hidden .git-bearing dir (bash glob */ never matches
-    # dotdirs) and pick the real repo — prompt's Repository line pins the choice (F5)
+    # dotdirs) and pick the real repo — pinned twice: the check line ('1 commits',
+    # realrepo is a real one-commit repo; .hidden would give '?') and the prompt's
+    # Repository line (F5). Also the only coverage of rev-list's success branch.
     "dryrun_code_analysis_hidden_repo": lambda: run_dryrun_case(
         "launch_code_analysis.sh",
         "footest|foo/bar|Go|Raft demo",
         use_artifact=False,
-        seed={
-            "footest/artifact/.hidden/.git/HEAD": "ref: refs/heads/main\n",
-            "footest/artifact/realrepo/.git/HEAD": "ref: refs/heads/main\n",
-        },
+        seed={"footest/artifact/.hidden/.git/HEAD": "ref: refs/heads/main\n"},
+        repos=["footest/artifact/realrepo"],
+    ),
+    # artifact/ containing ONLY ineligible (hidden) dirs: the loop exhausts and the
+    # single-target fallthrough returns $PWD — Repository becomes the work cwd
+    "dryrun_code_analysis_dotdir_only": lambda: run_dryrun_case(
+        "launch_code_analysis.sh",
+        "footest|foo/bar|Go|Raft demo",
+        use_artifact=False,
+        seed={"footest/artifact/.hidden/.git/HEAD": "ref: refs/heads/main\n"},
     ),
     "dryrun_spec_generation": lambda: run_dryrun_case(
         "launch_spec_generation.sh",
@@ -883,13 +923,14 @@ CASES: dict[str, callable] = {
     "summary_bug_confirmation": lambda: run_summary_case(
         "launch_bug_confirmation.sh", "footest", _SUMMARY_BUG_CONFIRMATION
     ),
-    # summarize must count a non-UTF-8 output file by bytes (like wc -l) and never
-    # crash — a read_text() regression would raise decoding the \xff byte (F3)
+    # summarize must count a non-UTF-8 output file by bytes like wc -l and never
+    # crash: \xff pins the no-crash half (strict read_text() raises), and the
+    # missing trailing newline pins the counting half ('2 lines' = newline count;
+    # a splitlines-based regression would report 3) (F3)
     "summary_code_analysis_nonutf8": lambda: run_summary_case(
         "launch_code_analysis.sh",
         "footest|foo/bar|Go|Raft demo",
-        {},
-        seed_bytes={".specula-output/modeling-brief.md": b"# Modeling Brief\n\xff\nfamily A\n"},
+        {".specula-output/modeling-brief.md": b"# Modeling Brief\n\xff\nfamily A"},
     ),
     # step 5 target: repair-loop state-machine primitives (rr_set_status mutator)
     "repair_state_machine": run_repair_case,
@@ -930,16 +971,23 @@ def cmd_update(names: list[str]) -> int:
 
 
 def cmd_check(names: list[str]) -> int:
-    failed = 0
-    for name in names:
+    # Cases are hermetic (own tempdir + _clean_env), so they run concurrently;
+    # results are reported in registry order. Subprocess-bound: ~10x wall-time win.
+    def _run(name: str):
         gp = golden_path(name)
         if not gp.exists():
+            return name, None, None
+        return name, CASES[name](), gp.read_text()
+
+    with ThreadPoolExecutor(max_workers=min(12, os.cpu_count() or 4)) as ex:
+        results = list(ex.map(_run, names))
+
+    failed = 0
+    for name, actual, expected in results:
+        if expected is None:
             print(f"  MISSING GOLDEN  {name}  (run --update)")
             failed += 1
-            continue
-        actual = CASES[name]()
-        expected = gp.read_text()
-        if actual == expected:
+        elif actual == expected:
             print(f"  ok       {name}")
         else:
             failed += 1
@@ -966,7 +1014,10 @@ def main() -> int:
     ap.add_argument("-k", metavar="SUBSTR", help="only cases whose name contains SUBSTR")
     args = ap.parse_args()
 
-    names = [n for n in CASES if not args.k or args.k in n]
+    # -k matching an exact case name selects only that case (several case names
+    # are substrings of others, e.g. dryrun_code_analysis[_hidden_repo] — plain
+    # substring matching could silently --update a sibling's golden too)
+    names = [args.k] if args.k and args.k in CASES else [n for n in CASES if not args.k or args.k in n]
     if not names:
         print(f"no cases match -k {args.k!r}", file=sys.stderr)
         return 2

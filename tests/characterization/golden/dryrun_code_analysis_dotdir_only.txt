@@ -9,7 +9,7 @@ Max parallel: 1
 Max turns:    0
 
 Checking repositories...
-  OK  footest (1 commits)
+  OK  footest (? commits)
 
 [TIME] Launching agent: footest
   [DRY RUN] <ROOT>/scripts/launch/adapters/claude-code.sh --prompt=<prompt> --max-turns=0 --log=<WORK>/.specula-output/agent.log --background
@@ -31,7 +31,7 @@ You are analyzing the following system:
 - **GitHub**: foo/bar
 - **Language**: Go
 - **Reference Algorithm**: Raft demo
-- **Repository**: <WORK>/footest/artifact/realrepo/
+- **Repository**: <WORK>
 - **Working Directory**: <WORK>/.specula-output
 
 ## Instructions
