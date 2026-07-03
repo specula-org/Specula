@@ -121,11 +121,18 @@ def reset_state(work_dir: Path) -> None:
             (_state_dir(work_dir) / name).unlink()
 
 
+def _has_content(p: Path) -> bool:
+    """True if p is a file with non-whitespace content. A report of only spaces
+    is a silent quit, not a deliverable — st_size > 0 would wave it through.
+    Raises OSError to the caller (each site handles read failure differently)."""
+    return p.is_file() and bool(p.read_text(errors="replace").strip())
+
+
 def _blocked_file(work_dir: Path) -> Path | None:
     for rel in BLOCKED_LOCATIONS:
         p = work_dir / rel
         try:
-            if p.is_file() and p.stat().st_size > 0:
+            if _has_content(p):
                 return p
         except OSError:
             continue
@@ -286,7 +293,7 @@ def decide(phase: str, work_dir: Path) -> tuple[bool, str]:
     if contract is not None:
         deliverable = work_dir / contract
         try:
-            missing = not deliverable.is_file() or deliverable.stat().st_size == 0
+            missing = not _has_content(deliverable)
         except OSError:
             missing = True
         if missing:
@@ -354,7 +361,7 @@ def _accept_main(phase: str, work_dir_arg: str) -> int:
     if contract is not None:
         deliverable = work_dir / contract
         try:
-            delivered = deliverable.is_file() and deliverable.stat().st_size > 0
+            delivered = _has_content(deliverable)
         except OSError:
             delivered = True  # unreadable ≠ missing: don't false-alarm
         if delivered:

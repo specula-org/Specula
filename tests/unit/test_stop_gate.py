@@ -100,6 +100,13 @@ class TestDeliverableContract(GateCase):
         allow, _ = sg.decide("spec_validation", self.wd)
         self.assertTrue(allow)
 
+    def test_whitespace_only_deliverable_blocks(self) -> None:
+        # a report of only spaces is a silent quit; st_size > 0 would wave it through
+        self.deliver(text="   \n\t\n")
+        allow, reason = sg.decide("spec_validation", self.wd)
+        self.assertFalse(allow)
+        self.assertIn("bug-report.md", reason)
+
 
 class TestBlockedSurrender(GateCase):
     def test_blocked_in_spec_allows(self) -> None:
@@ -115,6 +122,12 @@ class TestBlockedSurrender(GateCase):
 
     def test_empty_blocked_does_not_count(self) -> None:
         (self.wd / "spec" / "BLOCKED.md").write_text("")
+        allow, _ = sg.decide("spec_validation", self.wd)
+        self.assertFalse(allow)
+
+    def test_whitespace_only_blocked_does_not_count(self) -> None:
+        (self.wd / "spec" / "BLOCKED.md").write_text("   \n")
+        self.assertIsNone(sg._blocked_file(self.wd))
         allow, _ = sg.decide("spec_validation", self.wd)
         self.assertFalse(allow)
 
@@ -161,6 +174,17 @@ class TestFuse(GateCase):
         self.assertFalse((sd / "FAILED-HOOK-CAP").exists())
         self.assertTrue((sd / "gate.log").exists())  # audit trail survives
 
+    def test_reset_cli(self) -> None:
+        # the contract shell adapters actually invoke: `stop_gate.py reset <wd>`
+        sd = self.wd / sg.STATE_DIRNAME
+        sd.mkdir()
+        (sd / "blocks").write_text("3\n")
+        (sd / "FAILED-HOOK-CAP").write_text("x\n")
+        rc = sg.main(["reset", str(self.wd)])
+        self.assertEqual(rc, 0)
+        self.assertFalse((sd / "blocks").exists())
+        self.assertFalse((sd / "FAILED-HOOK-CAP").exists())
+
 
 class TestLivePids(GateCase):
     def test_live_background_job_blocks(self) -> None:
@@ -178,6 +202,18 @@ class TestLivePids(GateCase):
         pf = self.wd / "spec" / "output" / "done.out.pid"
         pf.parent.mkdir(parents=True)
         pf.write_text(f"{proc.pid}\n")
+        allow, _ = sg.decide("spec_validation", self.wd)
+        self.assertTrue(allow)
+
+    @unittest.skipUnless(Path("/proc/self/stat").exists(), "needs /proc for start-time")
+    def test_reused_pid_skipped(self) -> None:
+        # a live pid whose start time postdates the pid-file mtime by more than
+        # the tolerance is a reused pid, not the recorded job -> allow the stop
+        self.deliver()
+        pf = self.wd / "spec" / "output" / "MC_run1.out.pid"
+        self.spawn_sleeper(pf)
+        old = pf.stat().st_mtime - sg.PID_REUSE_TOLERANCE_S - 100
+        os.utime(pf, (old, old))
         allow, _ = sg.decide("spec_validation", self.wd)
         self.assertTrue(allow)
 
@@ -283,6 +319,26 @@ class TestHookEntry(GateCase):
         )
         self.assertEqual(r.returncode, 0)
         self.assertEqual(r.stdout, "")
+
+    def test_decide_exception_fails_open(self) -> None:
+        # the load-bearing guarantee: a crash inside decide() must allow the
+        # stop (exit 0, no block), never wedge a healthy run
+        import unittest.mock as mock
+
+        env = os.environ.copy()
+        env["SPECULA_PHASE"] = "spec_validation"
+        env["SPECULA_WORK_DIR"] = str(self.wd)
+        with mock.patch.object(sg, "decide", side_effect=RuntimeError("boom")):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                old = sys.stdin
+                sys.stdin = io.StringIO(json.dumps({"hook_event_name": "Stop"}))
+                try:
+                    rc = sg.main(["claude"])
+                finally:
+                    sys.stdin = old
+        self.assertEqual(rc, 0)
+        self.assertEqual(buf.getvalue(), "")
 
 
 class TestAcceptEntry(GateCase):
