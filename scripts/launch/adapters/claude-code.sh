@@ -2,14 +2,19 @@
 # Adapter: claude-code
 # Capabilities: max-turns, mcp, auto-approve, background
 #
-# Thin shim → Python port (specula.adapters.claude_code). Forwards args verbatim;
-# exit code (incl. 75 on rate limit) propagates via exec. Behavior pinned in
-# tests/characterization/. Original bash impl is in git history.
+# Thin shim → Python port (src/specula/adapters/claude_code.py). Forwards args
+# verbatim; exit code (incl. 75 on rate limit) propagates via exec. Behavior
+# pinned in tests/characterization/. Original bash impl is in git history.
 #
-# The adapter is stdlib-only, so src/ on PYTHONPATH lets any `python3` run it —
-# no install or active venv needed, so bare-environment pipeline callers work.
+# Invoked by file path, NOT `python3 -m specula...`: -m would require exporting
+# PYTHONPATH=src, which the spawned claude session inherits (every python the
+# agent then runs inside the target repo would resolve `import specula` — and
+# anything else under src/ — to this repo first), and -m puts the caller's CWD
+# ahead of stdlib on sys.path (the pipeline runs from the analyzed repo, so a
+# top-level json.py there would shadow `import json` inside the adapter). Path
+# invocation pins sys.path[0] to the adapter's own directory and touches no env.
+# Stdlib-only; runs under any python3 >= 3.10 (PEP 604 unions), no install or
+# active venv needed.
 set -euo pipefail
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SPECULA_SRC="$(cd -P "$SCRIPT_DIR/../../../src" && pwd)"
-export PYTHONPATH="$SPECULA_SRC${PYTHONPATH:+:$PYTHONPATH}"
-exec python3 -m specula.adapters.claude_code "$@"
+exec python3 "$SCRIPT_DIR/../../../src/specula/adapters/claude_code.py" "$@"
