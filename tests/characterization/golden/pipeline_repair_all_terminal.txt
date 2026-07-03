@@ -46,6 +46,9 @@ Checking prerequisites...
 ========================================
   footest: (no report — check log; repro/ tests: 0)
 
+Acceptance gate:
+  FAILED  footest: deliverable missing or empty: spec/confirmed-bugs.md
+
 ════════════════════════════════════════════════════════════
 [TIME] REPAIR LOOP (confirmation back-edge) — cap=unlimited
 

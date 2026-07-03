@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Adapter: copilot-cli
 # Capabilities: model-select, auto-approve, background
+# stop-gate: NOT supported — Copilot CLI has no stop-hook mechanism. The
+# generic gate env vars (SPECULA_PHASE/SPECULA_WORK_DIR; see
+# src/specula/stop_gate.py) are simply never read here, so the execution
+# layer fails open by construction; the launcher-side acceptance audit
+# still applies to runs through this adapter.
 #
 # Unified interface for invoking GitHub Copilot CLI.
 #

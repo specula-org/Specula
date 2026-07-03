@@ -23,3 +23,6 @@ Checking prerequisites...
  Results
 ========================================
   footest: changelog written (4 lines)
+
+Acceptance gate:
+  FAILED  footest: deliverable missing or empty: spec/bug-report.md

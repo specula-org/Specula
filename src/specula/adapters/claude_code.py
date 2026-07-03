@@ -24,6 +24,7 @@ Options:
 import contextlib
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -190,6 +191,40 @@ def main(argv: list[str]) -> int:
         # ambient CLAUDE_CONFIG_DIR, which would redirect quota-sensitive runs).
         os.environ["CLAUDE_CONFIG_DIR"] = os.environ.get("HOME", "") + "/." + (claude_alias or "claude")
 
+        # ── Stop gate (execution layer) ──
+        # Generic gate interface: the phase launcher exports SPECULA_PHASE +
+        # SPECULA_WORK_DIR (see src/specula/stop_gate.py). When both are present,
+        # register a Stop hook so the agent cannot end its turn while background
+        # jobs it started run unobserved, or without the phase deliverable.
+        # Without them (interactive use, tests, other callers) nothing is
+        # injected and the claude argv is unchanged.
+        settings_args: list[str] = []
+        work_dir = os.environ.get("SPECULA_WORK_DIR", "")
+        if (
+            work_dir
+            and os.environ.get("SPECULA_PHASE")
+            and os.environ.get("SPECULA_STOP_GATE", "").lower() != "off"
+            and os.path.isdir(work_dir)
+        ):
+            try:
+                gate = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stop_gate.py"))
+                state_dir = os.path.join(work_dir, ".stop-gate")
+                os.makedirs(state_dir, exist_ok=True)
+                # Fresh fuse per agent run — via the gate's own CLI (like
+                # codex.sh) so the state-file list has exactly one owner.
+                subprocess.run([sys.executable, gate, "reset", work_dir], check=False)
+                hook = {"type": "command", "command": f"python3 {shlex.quote(gate)} claude", "timeout": 60}
+                settings_path = os.path.join(state_dir, "claude-settings.json")
+                with open(settings_path, "w") as sf:
+                    json.dump({"hooks": {"Stop": [{"hooks": [hook]}]}}, sf, indent=2)
+                    sf.write("\n")
+                settings_args = ["--settings", settings_path]
+            except OSError as e:  # fail-open: a broken gate must never wedge the run
+                settings_args = []
+                print(
+                    f"claude-code adapter: stop-gate setup failed ({e}); continuing without the gate", file=sys.stderr
+                )
+
         # ── Build command ──
         cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", "json"]
         if effort and effort != "default":
@@ -198,6 +233,7 @@ def main(argv: list[str]) -> int:
             cmd += ["--max-budget-usd", max_budget]
         if model:
             cmd += ["--model", model]
+        cmd += settings_args
 
         # ── Run ──
         raw_json = _derived_path(log_file, ".raw.json")

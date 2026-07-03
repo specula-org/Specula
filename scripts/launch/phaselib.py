@@ -287,7 +287,35 @@ class Phase:
             print(f"[{_ts()}] All agents completed.")
 
         self.summarize(ws, names)
+        if not dry_run:
+            self._acceptance(ws, names)
         return 0
+
+    # ── acceptance layer (stop gate) ──
+    def _acceptance(self, ws: Workspace, names: list[str]) -> None:
+        """Audit each target's phase contract after the agents exit: deliverable
+        present, or an explicit BLOCKED.md declaring failure. Alarm-only by
+        design — the exit code stays 0 (downstream prerequisite gates still stop
+        the pipeline); this makes a slipped-through failure loud instead of a
+        silent all-OK summary. Contract lives in src/specula/stop_gate.py."""
+        gate = SPECULA_ROOT / "src" / "specula" / "stop_gate.py"
+        failures: list[tuple[str, str]] = []
+        for name in names:
+            try:
+                r = subprocess.run(
+                    [sys.executable, str(gate), "accept", self.key, str(ws.work_dir(name))],
+                    capture_output=True,
+                    text=True,
+                )
+            except OSError:
+                continue  # fail-open for THIS target only; still audit the rest
+            if r.returncode != 0:
+                failures.append((name, (r.stdout or r.stderr).strip()))
+        if failures:
+            print()
+            print("Acceptance gate:")
+            for name, msg in failures:
+                print(f"  FAILED  {name}: {msg}")
 
     def _launch(self, ws, name, prompt, dry_run, max_turns, claude_alias, adapter):
         files = self.agent_files(ws, name)
@@ -302,6 +330,13 @@ class Phase:
             )
             print(f"  Prompt saved: {files['prompt']}")
             return None
+        # Generic stop-gate interface (src/specula/stop_gate.py): tell the
+        # adapter which phase this agent runs and where its work dir is, so
+        # hook-capable adapters arm the completion gate. Per-launch env copy,
+        # not os.environ: targets differ under --max-parallel.
+        env = os.environ.copy()
+        env["SPECULA_PHASE"] = self.key
+        env["SPECULA_WORK_DIR"] = str(ws.work_dir(name))
         proc = subprocess.Popen(
             [
                 str(adapter),
@@ -311,7 +346,8 @@ class Phase:
                 "--effort=max",
                 f"--log={files['log']}",
                 "--background",
-            ]
+            ],
+            env=env,
         )
         files["pid"].write_text(f"{proc.pid}\n")
         print(f"  PID={proc.pid}  Log: {files['log']}")

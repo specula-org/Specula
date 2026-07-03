@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Adapter: claude-code
-# Capabilities: max-turns, mcp, auto-approve, background
+# Capabilities: max-turns, mcp, auto-approve, background, stop-gate
 #
 # Thin shim → Python port (src/specula/adapters/claude_code.py). Forwards args
 # verbatim; exit code (incl. 75 on rate limit) propagates via exec. Behavior
