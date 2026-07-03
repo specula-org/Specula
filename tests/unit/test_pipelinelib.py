@@ -345,6 +345,13 @@ class TestParsing(TmpCwd):
         p = make_pipeline(["two words|x|y|z"])
         self.assertEqual(p.extract_names(), ["two", "words"])
 
+    def test_extract_names_stops_at_first_line(self):
+        # bash `IFS='|' read -r name ...` consumes only the first line, so a
+        # newline in the target terminates the name before the '|' split —
+        # no phantom second name from a stray newline (e.g. $(cat targets.txt))
+        p = make_pipeline(["foo\nbar|repo|Go|ref"])
+        self.assertEqual(p.extract_names(), ["foo"])
+
     def test_parse_args_skips_and_values(self):
         p = pl.Pipeline()
         rc = p.parse_args(
@@ -607,6 +614,18 @@ class TestMainTeeTeardown(TmpCwd):
         logf.chmod(0o444)
         self.addCleanup(logf.chmod, 0o644)
         r = self._run_entry("pl.Pipeline.main = lambda self: 0")
+        self.assertEqual(r.returncode, 1)
+
+    def test_failing_tee_wins_over_failing_main(self):
+        # bash pipefail returns the rightmost non-zero status: when main fails
+        # (rc=2) AND tee fails, the pipeline exits with tee's code (1), not 2
+        out = self.tmp / ".specula-output"
+        out.mkdir()
+        logf = out / "pipeline.log"
+        logf.write_text("")
+        logf.chmod(0o444)
+        self.addCleanup(logf.chmod, 0o644)
+        r = self._run_entry("pl.Pipeline.main = lambda self: 2")
         self.assertEqual(r.returncode, 1)
 
 

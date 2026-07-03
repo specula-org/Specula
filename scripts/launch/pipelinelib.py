@@ -336,7 +336,10 @@ class Pipeline:
         out of contract."""
         names: list[str] = []
         for target in self.targets:
-            names.extend(target.split("|", 1)[0].split())
+            # bash `IFS='|' read -r name _ _ _ <<< "$target"` reads only the
+            # first line, so a newline terminates the name before the '|' split.
+            first_line = target.split("\n", 1)[0]
+            names.extend(first_line.split("|", 1)[0].split())
         return names
 
     def validate_agent_adapter(self) -> None:
@@ -569,7 +572,7 @@ class Pipeline:
         log("PIPELINE SUMMARY")
         divider()
 
-        pwd = os.getcwd()
+        pwd = str(_logical_cwd())  # bash $PWD, matching get_work_dir and the tee log dir
         summary_file = Path(pwd) / ".specula-output" / "pipeline-summary.md"
         summary_file.parent.mkdir(parents=True, exist_ok=True)
         out: list[str] = []
@@ -605,7 +608,13 @@ class Pipeline:
             harness_dir = work_dir / "harness"
             traces_dir = work_dir / "traces"
             if (harness_dir / "run.sh").is_file():
-                trace_count = len(list(traces_dir.rglob("*.ndjson"))) if traces_dir.is_dir() else 0
+                # bash `find "$traces_dir" -name '*.ndjson'` (default -P) does not
+                # descend a symlinked start dir; is_dir() alone would follow it.
+                trace_count = (
+                    len(list(traces_dir.rglob("*.ndjson")))
+                    if traces_dir.is_dir() and not traces_dir.is_symlink()
+                    else 0
+                )
                 instr_guide = "yes" if (harness_dir / "INSTRUMENTATION.md").is_file() else "no"
                 out.append(f"- **Phase 2.5 (Harness)**: OK (traces: {trace_count}, INSTRUMENTATION.md: {instr_guide})")
             elif harness_dir.is_dir():
@@ -837,10 +846,11 @@ def main(argv: list[str]) -> int:
         os.dup2(devnull, 2)
         os.close(devnull)
         tee.stdin.close()
-        # bash pipefail: a failing tee (unwritable/full log) failed the pipeline
-        # even when main succeeded
+        # bash pipefail: the pipeline's status is the rightmost command to exit
+        # non-zero, so a failing tee (unwritable/full log) wins even when main
+        # also failed — verified: `set -o pipefail; (exit 2)|(exit 1)` exits 1.
         tee_rc = tee.wait()
-        if code == 0 and tee_rc != 0:
+        if tee_rc != 0:
             code = tee_rc
     return code
 
