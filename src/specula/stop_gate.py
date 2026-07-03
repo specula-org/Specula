@@ -96,12 +96,15 @@ def _read_blocks(work_dir: Path) -> int:
         return 0
 
 
-def _write_blocks(work_dir: Path, n: int) -> None:
+def _write_blocks(work_dir: Path, n: int) -> bool:
+    """Persist the block counter; False if it couldn't be written (fuse can't
+    advance, so the caller must fail open)."""
     try:
         _state_dir(work_dir).mkdir(parents=True, exist_ok=True)
         (_state_dir(work_dir) / "blocks").write_text(f"{n}\n")
+        return True
     except OSError:
-        pass
+        return False
 
 
 def _log(work_dir: Path, msg: str) -> None:
@@ -333,7 +336,8 @@ def _hook_main(flavor: str) -> int:
         verdict = "allow" if allow else "block"
         _log(work_dir, f"{flavor} phase={phase} {verdict} (stop_hook_active={active}) {reason}")
         if not allow:
-            _write_blocks(work_dir, _read_blocks(work_dir) + 1)
+            if not _write_blocks(work_dir, _read_blocks(work_dir) + 1):
+                allow, reason = True, "gate state unwritable; failing open"
 
     if not allow:
         json.dump({"decision": "block", "reason": reason}, sys.stdout)

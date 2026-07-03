@@ -309,6 +309,13 @@ class TestHookEntry(GateCase):
         log = (self.wd / sg.STATE_DIRNAME / "gate.log").read_text()
         self.assertEqual(log.count("block"), 2)
 
+    def test_unwritable_state_fails_open(self) -> None:
+        os.chmod(self.wd, 0o500)
+        self.addCleanup(os.chmod, self.wd, 0o700)
+        rc, out = self.run_hook("claude")
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, "")
+
     def test_garbage_stdin_fails_open_on_no_context(self) -> None:
         r = subprocess.run(
             [sys.executable, str(GATE), "claude"],
