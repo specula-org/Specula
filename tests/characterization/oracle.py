@@ -34,6 +34,7 @@ import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 HERE = Path(__file__).resolve().parent
 GOLDEN_DIR = HERE / "golden"
@@ -565,7 +566,9 @@ def run_pipeline_case(flags: list[str], target: str) -> str:
     return raw
 
 
-def run_pipeline_full_case(flags: list[str], target: str, seed: dict, snapshot_files: list[str] | None = None) -> str:
+def run_pipeline_full_case(
+    flags: list[str], target: str, seed: dict[str, Any], snapshot_files: list[str] | None = None
+) -> str:
     """Full pipeline run (no --dry-run): fake `claude` + seeded phase
     prerequisites/outputs. Reaches everything the dry-run cases can't: the
     `main 2>&1 | tee pipeline.log` plumbing, the real phase subprocess sequencing
@@ -688,7 +691,9 @@ def _pipeline_functions_only(src: Path) -> str:
     return "".join(lines[:cut])
 
 
-def _run_pipeline_driver(bash_tpl: str, py_tpl: str, subs: dict[str, str], tmp: Path) -> subprocess.CompletedProcess:
+def _run_pipeline_driver(
+    bash_tpl: str, py_tpl: str, subs: dict[str, str], tmp: Path
+) -> subprocess.CompletedProcess[str]:
     """Materialize and run the bash or python variant of a helper driver, per
     _pipeline_helper_impl. `subs` maps @TOKEN@ -> value in the chosen template;
     @FNONLY@ (bash: the sourceable pipeline functions) and @LAUNCH@ (python:
