@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Adapter: claude-code (Python port of claude-code.sh).
 
 Unified interface for invoking the Claude Code CLI. Behavior is a faithful port
@@ -28,6 +27,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from typing import Any
 
 HELP = __doc__
 
@@ -44,7 +44,7 @@ def _derived_path(log_file: str, suffix: str) -> str:
     return stem + suffix
 
 
-def _parse_result(raw_text: str) -> dict | None:
+def _parse_result(raw_text: str) -> dict[str, Any] | None:
     """The claude result JSON, parsed once for both extractors below; None when
     the output isn't a JSON object (crash text, spawn error, truncation)."""
     try:
@@ -54,7 +54,7 @@ def _parse_result(raw_text: str) -> dict | None:
     return d if isinstance(d, dict) else None
 
 
-def _extract_log(d: dict | None, raw_text: str, log_file: str) -> None:
+def _extract_log(d: dict[str, Any] | None, raw_text: str, log_file: str) -> None:
     """Result text -> .log; on JSON-parse failure, fall back to the raw output."""
     with open(log_file, "w") as fh:
         if d is not None:
@@ -63,7 +63,7 @@ def _extract_log(d: dict | None, raw_text: str, log_file: str) -> None:
             print(raw_text, file=fh)
 
 
-def _extract_usage(d: dict | None, usage_path: str) -> None:
+def _extract_usage(d: dict[str, Any] | None, usage_path: str) -> None:
     """Usage stats -> .usage.json, fixing num_turns from the session JSONL when a
     session_id is present. Any failure -> {"error": "parse_failed"} (mirrors the
     bash `|| parse_failed` fallback)."""

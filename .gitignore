@@ -63,9 +63,10 @@ traces/
 **/output/
 output/autosave/
 generation_summary.json
-specula
-# ...but the repo-root CLI entrypoint of the same name is a tracked source file.
-!/specula
+# (an unanchored `specula` pattern lived here — a rename artifact from the
+# `specula+` era that ignored the CLI entrypoint and the src/ package, and would
+# silently swallow any future path component named `specula`; nothing generates
+# bare `specula` paths — pipeline output goes to .specula-output/)
 models/
 
 # claude

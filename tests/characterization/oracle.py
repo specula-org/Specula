@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Characterization oracle for the Specula bash orchestration layer.
 
 This is migration **step 0**: it pins the *current* behavior of the bash
@@ -6,8 +5,9 @@ launchers/adapters as normalized golden snapshots, so the Python rewrites
 (steps 1/3/5/6) can be diffed against a fixed baseline ("did my Python behave
 like the bash it replaced?").
 
-Deliberately stdlib-only (no pytest/pip needed) — the repo `.venv` is corrupted
-(see memory reference_broken_venv_pytest); step 2 wires this into pytest/CI.
+No pytest needed to run the oracle directly, but it imports the `specula`
+package — install it (`pip install -e .`) or put `src/` on PYTHONPATH first. The
+pytest wrapper (test_characterization.py) exposes the same cases to CI.
 
 Usage:
     python3 tests/characterization/oracle.py --check     # diff vs golden (default; exit 1 on mismatch)
@@ -32,6 +32,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -43,11 +44,10 @@ FIXTURES = HERE / "fixtures"
 SPECULA_ROOT = HERE.parent.parent
 LAUNCH = SPECULA_ROOT / "scripts" / "launch"
 ADAPTER = LAUNCH / "adapters" / "claude-code.sh"
-ADAPTER_PY = LAUNCH / "adapters" / "claude_code.py"
+ADAPTER_MODULE = "specula.adapters.claude_code"
 
 # single source for the nested-session env vars the adapter strips
-sys.path.insert(0, str(LAUNCH / "adapters"))
-from claude_code import SESSION_ENV_VARS  # noqa: E402
+from specula.adapters.claude_code import SESSION_ENV_VARS  # noqa: E402
 
 
 def _adapter_cmd() -> list[str]:
@@ -59,7 +59,9 @@ def _adapter_cmd() -> list[str]:
                     capture ground-truth goldens or re-verify parity against it)."""
     impl = os.environ.get("SPECULA_ADAPTER_IMPL", "")
     if impl == "python":
-        return ["python3", str(ADAPTER_PY)]
+        # sys.executable, not "python3": the module lives in the installed
+        # `specula` package, so use the interpreter that has it (the suite's venv).
+        return [sys.executable, "-m", ADAPTER_MODULE]
     if impl and os.path.exists(impl):
         return ["bash", impl]
     return ["bash", str(ADAPTER)]
@@ -134,8 +136,8 @@ def _norm_line(line: str) -> str:
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 def _clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
-    """A predictable env: system python (no broken venv .pth noise), no
-    ambient Claude config that could redirect the adapter."""
+    """A predictable env: no ambient Claude config that could redirect the
+    adapter, controlled PATH."""
     env = dict(os.environ)
     for var in (
         "VIRTUAL_ENV",
@@ -266,8 +268,7 @@ def run_adapter_case(
             proj_dir = base / ".testalias" / "projects" / f"-{proj_key}"
             proj_dir.mkdir(parents=True, exist_ok=True)
             (proj_dir / f"{session_id}.jsonl").write_text("\n".join(session_jsonl) + "\n")
-        # PATH override (no ambient dirs appended) so `claude` presence is controlled:
-        # with_claude=True → fake claude on PATH; False → only /usr/bin:/bin (no claude).
+        # PATH controls `claude` presence (with_claude → fake on PATH).
         if with_claude:
             _write_fake_claude(bindir, fixture)
             path = f"{bindir}:/usr/bin:/bin"
@@ -370,7 +371,7 @@ def run_adapter_error_case(flags: list[str]) -> str:
 def run_dryrun_case(
     script: str,
     target: str,
-    seed: dict[str, str] | None = None,
+    seed: dict[str, str | bytes] | None = None,
     prompt_rel: str = ".specula-output/.prompt.md",
     use_artifact: bool = True,
     extra_flags: list[str] | None = None,
@@ -451,7 +452,9 @@ def run_help_case(script: str, pre_args: list[str] | None = None) -> str:
         return normalize(f"exit_code: {proc.returncode}\n\n=== stdout ===\n{proc.stdout}\n")
 
 
-def run_review_case(phase: str, seed: dict[str, str] | None = None, fixture_name: str = "claude_normal.json") -> str:
+def run_review_case(
+    phase: str, seed: dict[str, str | bytes] | None = None, fixture_name: str = "claude_normal.json"
+) -> str:
     """Pin the review launcher, which has no --dry-run (it always spawns an agent).
     Run it with a fake `claude` that records the inline prompt it receives on stdin,
     and snapshot stdout (banner / per-name lines / summary) + that captured prompt
@@ -940,7 +943,7 @@ def run_quota_case(usage_json: str, q5: int, q7: int, record_sleep: bool = False
 
 
 # prerequisite fixtures for the downstream phases' happy-path dry-runs
-_VALIDATION_SEED = {
+_VALIDATION_SEED: dict[str, str | bytes] = {
     # base.tla deliberately has NO trailing newline, to pin the wc-l vs splitlines
     # line-count edge in the "specs OK (NL)" check (bash wc-l = 2, not 3).
     ".specula-output/spec/base.tla": "---- MODULE base ----\nx == 1\n====",
@@ -948,7 +951,7 @@ _VALIDATION_SEED = {
     ".specula-output/spec/Trace.tla": "---- MODULE Trace ----\n====\n",
     ".specula-output/spec/instrumentation-spec.md": "# instrumentation\n",
 }
-_CONFIRMATION_SEED = {
+_CONFIRMATION_SEED: dict[str, str | bytes] = {
     ".specula-output/spec/bug-report.md": "# Bug Report\n\n## MC-1: something\n",
     ".specula-output/modeling-brief.md": "# Modeling Brief\n",
 }
@@ -957,17 +960,17 @@ _CONFIRMATION_SEED = {
 # and the run proceeds to launch+summary) with the *output* files a completed agent
 # would have written (so summarize()'s populated branch fires). Line counts are
 # chosen to exercise wc -l (trailing-newline files → N == newline count).
-_SUMMARY_CODE_ANALYSIS = {
+_SUMMARY_CODE_ANALYSIS: dict[str, str | bytes] = {
     ".specula-output/modeling-brief.md": "# Modeling Brief\nfamily A: crash window\nfamily B: missing guard\n",
 }
-_SUMMARY_SPEC_GENERATION = {
+_SUMMARY_SPEC_GENERATION: dict[str, str | bytes] = {
     ".specula-output/modeling-brief.md": "# Modeling Brief\n",  # prereq
     ".specula-output/spec/base.tla": "---- MODULE base ----\nx == 1\n====\n",  # output (3 lines)
     ".specula-output/spec/MC.tla": "---- MODULE MC ----\n====\n",
     ".specula-output/spec/Trace.tla": "---- MODULE Trace ----\n====\n",
     ".specula-output/spec/instrumentation-spec.md": "# instrumentation\n",
 }
-_SUMMARY_HARNESS = {
+_SUMMARY_HARNESS: dict[str, str | bytes] = {
     ".specula-output/spec/base.tla": "---- MODULE base ----\n====\n",  # prereq
     ".specula-output/spec/Trace.tla": "---- MODULE Trace ----\n====\n",  # prereq
     ".specula-output/spec/instrumentation-spec.md": "# instrumentation\n",  # prereq
@@ -975,18 +978,18 @@ _SUMMARY_HARNESS = {
     ".specula-output/harness/INSTRUMENTATION.md": "# guide\n",  # output
     ".specula-output/traces/t1.ndjson": '{"e":1}\n',  # output
 }
-_SUMMARY_BUG_CLASSIFICATION = {
+_SUMMARY_BUG_CLASSIFICATION: dict[str, str | bytes] = {
     ".specula-output/spec/confirmed-bugs.md": "# Confirmed Bugs\n\n## Bug 1\n",  # prereq (non-empty)
     ".specula-output/spec/bug-severity.md": (
         "# Bug Severity\n\n## Summary\n"
         "- Total bugs: 5\n- Critical: 1\n- High: 2\n- Medium: 1\n- Low: 1\n- FALSE POSITIVE: 0\n"
     ),  # output (grep-counted)
 }
-_SUMMARY_SPEC_VALIDATION = {
+_SUMMARY_SPEC_VALIDATION: dict[str, str | bytes] = {
     **_VALIDATION_SEED,  # prereqs (base.tla has no trailing NL → check shows 2L)
     ".specula-output/spec/changelog.md": "# Changelog\n\n- fixed X\n- fixed Y\n",  # output (4 lines)
 }
-_SUMMARY_BUG_CONFIRMATION = {
+_SUMMARY_BUG_CONFIRMATION: dict[str, str | bytes] = {
     **_CONFIRMATION_SEED,  # prereqs (bug-report.md + modeling-brief.md)
     ".specula-output/spec/confirmed-bugs.md": "# Confirmed Bugs\n\n## DA-1\n## DA-2\n",  # output (4 lines)
     ".specula-output/repro/test_bug1.py": "def test():\n    pass\n",  # repro test (counted)
@@ -1044,7 +1047,7 @@ _RR_SNAPSHOT_FILES = [
 
 # ── case registry ───────────────────────────────────────────────────────────
 # name -> zero-arg callable returning the normalized snapshot string.
-CASES: dict[str, callable] = {
+CASES: dict[str, Callable[[], str]] = {
     # step 1 target: adapter post-processing (JSON -> .log/.usage.json, exit codes)
     "adapter_normal": lambda: run_adapter_case("claude_normal.json"),
     "adapter_ratelimit": lambda: run_adapter_case("claude_ratelimit.json"),
@@ -1381,7 +1384,7 @@ def cmd_update(names: list[str]) -> int:
 def cmd_check(names: list[str]) -> int:
     # Cases are hermetic (own tempdir + _clean_env), so they run concurrently;
     # results are reported in registry order. Subprocess-bound: ~10x wall-time win.
-    def _run(name: str):
+    def _run(name: str) -> tuple[str, str | None, str | None]:
         gp = golden_path(name)
         if not gp.exists():
             return name, None, None
@@ -1400,6 +1403,8 @@ def cmd_check(names: list[str]) -> int:
         else:
             failed += 1
             print(f"  FAIL     {name}")
+            # actual is None only when expected is None (handled above), so both are str.
+            assert actual is not None
             diff = difflib.unified_diff(
                 expected.splitlines(),
                 actual.splitlines(),
