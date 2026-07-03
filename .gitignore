@@ -101,6 +101,7 @@ tools/cfa/tests
 .agents/skills
 .github/skills
 .specula-codex/
+.codex/
 src/skills/.system
 
 .venv/

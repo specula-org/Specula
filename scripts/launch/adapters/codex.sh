@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Adapter: codex
-# Capabilities: max-turns, auto-approve, background
+# Capabilities: max-turns, auto-approve, background, stop-gate
 #
 # Unified interface for invoking Codex CLI.
 #
@@ -203,6 +203,29 @@ run_codex() {
   write_usage_file "$log_file" "$marker_file"
   rm -f "$marker_file"
 }
+
+# ── Stop gate (execution layer) ──
+# Generic gate interface: the phase launcher exports SPECULA_PHASE +
+# SPECULA_WORK_DIR (see src/specula/stop_gate.py). Codex discovers hooks from
+# the project layer (<git toplevel of cwd>/.codex/hooks.json), so arm the gate
+# by writing a Stop hook there; per-run specifics travel via env, so the file
+# content is identical for every run and safe to share between concurrent
+# agents. Without the env vars nothing is written and codex runs untouched.
+if [[ -n "${SPECULA_PHASE:-}" && -n "${SPECULA_WORK_DIR:-}" \
+      && "${SPECULA_STOP_GATE:-on}" != "off" && -d "${SPECULA_WORK_DIR:-}" ]]; then
+  ADAPTER_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  GATE_PY="$(cd -P "$ADAPTER_DIR/../../.." && pwd)/src/specula/stop_gate.py"
+  python3 "$GATE_PY" reset "$SPECULA_WORK_DIR"   # fresh fuse per agent run
+  HOOKS_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  HOOKS_FILE="$HOOKS_ROOT/.codex/hooks.json"
+  if [[ ! -e "$HOOKS_FILE" ]]; then
+    mkdir -p "$HOOKS_ROOT/.codex"
+    printf '{\n  "hooks": {\n    "Stop": [\n      { "hooks": [ { "type": "command", "command": "python3 %s codex", "timeout": 60 } ] }\n    ]\n  }\n}\n' \
+      "'$GATE_PY'" > "$HOOKS_FILE"
+  elif ! grep -q "stop_gate.py" "$HOOKS_FILE"; then
+    echo "codex adapter: $HOOKS_FILE exists without the stop gate; leaving it untouched (gate disarmed for this run)" >&2
+  fi
+fi
 
 # Launch scripts already background the adapter process when they pass
 # --background, matching the claude-code adapter. Keep the Codex process in
