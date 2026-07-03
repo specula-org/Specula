@@ -221,7 +221,9 @@ def main(argv: list[str]) -> int:
                 settings_args = ["--settings", settings_path]
             except OSError as e:  # fail-open: a broken gate must never wedge the run
                 settings_args = []
-                print(f"claude-code adapter: stop-gate setup failed ({e}); continuing without the gate", file=sys.stderr)
+                print(
+                    f"claude-code adapter: stop-gate setup failed ({e}); continuing without the gate", file=sys.stderr
+                )
 
         # ── Build command ──
         cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", "json"]

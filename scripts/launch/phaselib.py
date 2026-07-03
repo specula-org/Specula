@@ -56,6 +56,18 @@ def _wc_l(path: Path) -> int:
     return path.read_bytes().count(b"\n")
 
 
+def _logical_cwd() -> Path:
+    """bash `$PWD`: the logical path (symlink components preserved) when the
+    inherited PWD still names the current directory; physical getcwd otherwise
+    (bash performs the same same-directory validation at startup)."""
+    pwd = os.environ.get("PWD", "")
+    if pwd.startswith("/"):
+        with contextlib.suppress(OSError):
+            if os.path.samefile(pwd, os.curdir):
+                return Path(pwd)
+    return Path.cwd()
+
+
 def _grep_num(text: str, prefix: str) -> str:
     """First integer on the first line starting with `prefix`, else '?' — mirrors
     bash `grep -E "^prefix" | grep -oE '[0-9]+' | head -1`."""
@@ -82,7 +94,7 @@ class Workspace:
     ):
         self.targets = targets
         self.artifact = artifact
-        self.cwd = Path(cwd) if cwd else Path.cwd()
+        self.cwd = Path(cwd) if cwd else _logical_cwd()  # bash $PWD, not the physical getcwd
         self.single = len(targets) == 1
         # phase-specific run options (e.g. validation --repair, confirmation --recheck)
         self.opts = opts or {}
@@ -221,7 +233,7 @@ class Phase:
                 targets.append(arg)
 
         if not targets:
-            targets = [Path.cwd().name]
+            targets = [_logical_cwd().name]  # bash `basename "$PWD"` (logical under symlinks)
 
         adapter = SCRIPT_DIR / "adapters" / f"{agent}.sh"
         if not adapter.is_file():

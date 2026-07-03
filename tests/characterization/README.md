@@ -44,9 +44,15 @@ The pytest wrapper runs the same cases: `pytest tests/characterization/`.
 | `review_*` (×4) | 3 | the review launcher (no `--dry-run`): banner/per-name lines/summary + the exact inline prompt captured from the agent's stdin, incl. the summary's populated branch |
 | `review_ratelimit` | 3 | adapter failure propagation: rate limit → adapter exit 75 → launcher aborts with 75, diagnostics on stderr, no PID line (the bash `set -e` + `pid=$(…)` contract) |
 | `summary_*` (×7) | 3 | the post-launch full-run path — summarize()'s populated branch (wc-l counts) + the per-phase `Monitor: tail -f …` hint, which dry-run/gate never reach; the nonutf8 variant pins byte-safe, wc-l-style counting (no trailing newline → 2, splitlines would say 3); the spec_validation variant also pins the acceptance-gate `FAILED` line (deliverable audit, src/specula/stop_gate.py) — a **deliberate post-cutover addition**, not present in the retired bash |
-| `pipeline_seq_*` (×3) | 5 (orchestrator) | `launch_pipeline.sh` phase order + review/harness/repair-loop gating under `--skip-*` combos |
-| `repair_state_machine` | 5 | repair-loop primitives `rr_field`/`rr_status`/`rr_set_status` — the embedded-python mutator that rewrites `status:` in-place and appends a History bullet, across OPEN→IN_REPAIR→RESOLVED |
-| `quota_*` (×3) | 5 | real `wait_for_quota` decision (usage source + `sleep` stubbed): 5h-before-7d, strict `>` threshold, over→bounded wait then abort, two-layer `QUOTA_5H`/`QUOTA_7D` |
+| `pipeline_seq_*` (×4) | 5 (orchestrator) | `launch_pipeline.sh` phase order + review/harness/repair-loop gating under `--skip-*` combos, incl. the `--enable-reviews` branch (REVIEW banners + `launch_review.sh` command lines; reviews are off by default so no other case reaches it). The review command line puts the `<phase>` arg first — a **deliberate deviation**: the pre-cutover bash emitted `--agent=…/--claude-alias=…` before the phase, so `launch_review.sh` (which reads phase from `$1`) parsed phase as `--agent=…` and every real (non-dry-run) `--enable-reviews` run died with `Unknown phase`; python-truth golden, the pre-cutover bash fails it |
+| `pipeline_full_run` | 5 | full pipeline (fake agent, all phases): the `main 2>&1 \| tee pipeline.log` plumbing (log asserted byte-identical to stdout), real subprocess sequencing under `set -e`, and generate_summary's populated branches (wc-l counts, du-h log sizes, written/empty/SKIPPED review lines) |
+| `pipeline_repair_loop` | 5 | a live repair round: crash-recovery reset (IN_REPAIR→OPEN + History bullet), phase 3 `--repair` + phase 4 `--recheck` invocations, no-progress detection ("stopping to avoid spin"), regenerated ledger (`\|` in bug_id escaped) |
+| `pipeline_repair_all_terminal` | 5 | only RESOLVED/DEFERRED requests: the loop exits after 0 rounds; summary tallies `N resolved, M deferred` via the whole-file status grep |
+| `pipeline_single_target_cd` | 5 | single target with a `case-studies/<name>/` dir → cd before the phases: summary lands in the case dir while `pipeline.log` stays in the launch cwd (tee opens pre-cd); quota gate silent when `usage.sh` is absent (copied-tree hermetic setup) |
+| `repair_state_machine` | 5 | repair-loop primitives `rr_field`/`rr_status`/`rr_set_status` — the mutator that rewrites `status:` in-place and appends a History bullet, across OPEN→IN_REPAIR→RESOLVED |
+| `repair_rr_edges` | 5 | RR helper edge table: `status:` past the 25-line frontmatter window (read empty, bullet still appended), missing trailing newline repaired before append, duplicate status lines → first match wins |
+| `quota_*` (×8) | 5 | real `wait_for_quota` decision (usage source + `sleep` stubbed): 5h-before-7d, strict `>` (at-limit passes), over→bounded wait then abort, fetch-fail/parse-fail→WARN+proceed, no `resets_at`→600s, past `resets_at`→60s floor (recorded-sleep variants), two-layer `QUOTA_5H`/`QUOTA_7D` |
+| `help_pipeline` | 5 | pipeline `--help` prints the full bash usage text verbatim (pre-tee: no `.specula-output/` side effects) |
 
 ## How it stays deterministic
 
@@ -67,16 +73,27 @@ The pytest wrapper runs the same cases: `pytest tests/characterization/`.
   Python too. Set `SPECULA_ADAPTER_IMPL=<path-to-a-bash-script>` to run an
   explicit script — e.g. the pre-cutover bash original (`git show <rev>:…`) to
   capture ground-truth goldens or re-confirm bash ≡ python.
-- **Sourcing bash functions in isolation** (`repair_*`, `quota_*`): `oracle.py`
-  strips the trailing `main` invocation from `launch_pipeline.sh`, sources the
-  rest, and drives individual helpers. For quota it also overrides `USAGE_SCRIPT`
-  (→ a fake that emits a fixture) and stubs `sleep`, so the *real* decision logic
-  runs on fixed input without network or blocking.
+- **Launcher impl switch** (`SPECULA_LAUNCHER_IMPL`): same idea for the phase
+  launchers and the pipeline. `python` runs `phaselib.py <key>` /
+  `pipelinelib.py` directly; a path runs that bash script (materialize the
+  pre-cutover original with `git show <rev>:scripts/launch/launch_pipeline.sh`
+  into `scripts/launch/` so its `SCRIPT_DIR`-relative lookups resolve — one
+  case at a time, the path overrides every case).
+- **Dual-implementation helper drivers** (`repair_*`, `quota_*`): the helpers
+  aren't standalone commands, so each case has two equivalent drivers. Bash:
+  strip the trailing `main` invocation from the pipeline source, `source` it,
+  call the helpers. Python: import `pipelinelib`, call the same-named ports,
+  print the same lines — the shared golden is the parity proof. For quota both
+  override the usage source (→ a fake that emits a fixture) and stub `sleep`
+  (optionally recording the computed wait), so the *real* decision logic runs
+  on fixed input without network or blocking. `_pipeline_helper_impl` picks
+  bash while `launch_pipeline.sh` still has the bash body, python once it's a
+  shim, honoring `SPECULA_LAUNCHER_IMPL` overrides.
 
 ## Adding cases (remaining step-0 work)
 
 Register a zero-arg callable in `oracle.CASES` that returns a normalized string,
-then `--update` (`-k` with an exact case name updates only that case). 66 cases
+then `--update` (`-k` with an exact case name updates only that case). 77 cases
 so far. When a new golden pins behavior the original
 bash also had, verify parity against the pre-cutover script:
 `SPECULA_LAUNCHER_IMPL=<path-to-old-bash> oracle.py --check -k <case>` (materialize
