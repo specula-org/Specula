@@ -162,6 +162,9 @@ def _clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
         "QUOTA_5H",
         "QUOTA_7D",
         "QUOTA_MAX_WAITS",
+        # an ambient isolation root would reroute every $PWD-derived path the
+        # legacy goldens pin (step 4 workspace control)
+        "SPECULA_RUN_DIR",
     ):
         env.pop(var, None)
     env["PATH"] = "/usr/bin:/bin:" + env.get("PATH", "")

@@ -79,10 +79,17 @@ def _grep_num(text: str, prefix: str) -> str:
 
 
 class Workspace:
-    """Path resolution for a run — the object step 4 (workspace control) extends.
+    """Path resolution for a run.
 
-    Faithful to the bash `get_work_dir` / `find_repo_dir`: single-target writes to
-    `$PWD/.specula-output`; batch to `$PWD/<name>/.specula-output`.
+    Legacy (no `SPECULA_RUN_DIR`): faithful to the bash `get_work_dir` /
+    `find_repo_dir` — single-target writes to `$PWD/.specula-output`; batch to
+    `$PWD/<name>/.specula-output`.
+
+    Isolated (`SPECULA_RUN_DIR` set, step 4 workspace control): every output
+    lands under `<run>/<name>/.specula-output` — uniform batch-style layout,
+    single/batch no longer fork — and canonical *inputs* (artifact checkout,
+    .prompt-extra.md) fall back to `case-studies/<name>` since no cd into the
+    case directory happens anymore.
     """
 
     def __init__(
@@ -98,18 +105,25 @@ class Workspace:
         self.single = len(targets) == 1
         # phase-specific run options (e.g. validation --repair, confirmation --recheck)
         self.opts = opts or {}
+        run_dir = os.environ.get("SPECULA_RUN_DIR", "")
+        self.run_dir: Path | None = Path(run_dir) if run_dir else None
 
     def work_dir(self, name: str) -> Path:
+        if self.run_dir:
+            return self.run_dir / name / ".specula-output"
         if self.single:
             return self.cwd / ".specula-output"
         return self.cwd / name / ".specula-output"
 
-    def find_repo_dir(self, name: str) -> str:
-        # Explicit --artifact wins.
-        if self.artifact:
-            return self.artifact
-        # Batch: <cwd>/<name>/artifact/<repo-with-.git>/ (bash keeps the trailing slash).
-        artifact_dir = self.cwd / name / "artifact"
+    def case_dir(self, name: str) -> Path:
+        """Canonical `case-studies/<name>` — the fallback root for canonical
+        inputs when the run is isolated (the legacy flow reached these via the
+        single-target cd)."""
+        return SPECULA_ROOT / "case-studies" / name
+
+    @staticmethod
+    def _repo_under(artifact_dir: Path) -> str:
+        """First `<artifact_dir>/<repo-with-.git>/` (bash keeps the trailing slash)."""
         if artifact_dir.is_dir():
             for d in sorted(artifact_dir.iterdir(), key=lambda p: locale.strxfrm(p.name)):
                 # bash `for d in "$artifact_dir"/*/` — the glob never matches
@@ -119,6 +133,20 @@ class Workspace:
                     continue
                 if d.is_dir() and (d / ".git").exists():
                     return str(d) + "/"
+        return ""
+
+    def find_repo_dir(self, name: str) -> str:
+        # Explicit --artifact wins.
+        if self.artifact:
+            return self.artifact
+        if self.run_dir:
+            # Isolated: the run root holds no sources, so neither the batch
+            # cwd search nor the single-target "source is $PWD" rule applies —
+            # only the canonical checkout can supply the repo.
+            return self._repo_under(self.case_dir(name) / "artifact")
+        found = self._repo_under(self.cwd / name / "artifact")
+        if found:
+            return found
         # Single target: source is $PWD.
         if self.single:
             return str(self.cwd)
@@ -175,7 +203,11 @@ class Phase:
     def _with_extra(self, ws: Workspace, name: str, prompt: str) -> str:
         extra = ws.work_dir(name) / ".prompt-extra.md"
         if not extra.is_file():
-            extra = ws.cwd / ".prompt-extra.md"
+            # Isolated runs never cd into the case dir, so the cwd fallback
+            # would silently drop the canonical case-studies/<name> extra —
+            # target-specific instructions must survive isolation.
+            fallback = ws.case_dir(name) if ws.run_dir else ws.cwd
+            extra = fallback / ".prompt-extra.md"
         if extra.is_file():
             # errors="replace": bash `cat` concatenated raw bytes; a stray
             # non-UTF-8 byte in a user's .prompt-extra.md must not crash the run.

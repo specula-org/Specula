@@ -21,6 +21,7 @@ import json
 import locale
 import os
 import re
+import secrets
 import subprocess
 import sys
 import time
@@ -74,6 +75,10 @@ Options:
   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli)
   --claude-alias=NAME    Claude CLI profile (default: claude)
   --artifact=PATH        Path to system artifact/source code
+  --isolate              Write all outputs to an isolated runs/<run-id>/ workspace
+                         (parallel-safe; keeps case-studies/ pristine; default: off)
+  --run-id=ID            Attach to runs/ID — reuse an existing run's workspace,
+                         e.g. to resume with --skip-* flags (implies --isolate)
 
 Output structure (per system):
   .specula-output/
@@ -124,6 +129,21 @@ def _date_iseconds() -> str:
 def _b(flag: bool) -> str:
     """bash booleans print as the literal command names `true` / `false`."""
     return "true" if flag else "false"
+
+
+# ──────────────────────────────────────────────────────────
+# Workspace isolation (step 4): runs/<run-id>/<name>/.specula-output
+
+
+def generate_run_id() -> str:
+    """Sortable, human-readable, collision-safe: 20260703-153000-a1b2."""
+    return time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
+
+
+def _valid_run_id(run_id: str) -> bool:
+    """Attach ids become a path segment under runs/ — reject anything that
+    could escape it (separators, `.`/`..`) or garble logs (whitespace)."""
+    return bool(re.fullmatch(r"[A-Za-z0-9._-]+", run_id)) and run_id not in (".", "..")
 
 
 # ──────────────────────────────────────────────────────────
@@ -279,11 +299,18 @@ class Pipeline:
         self.quota_5h = os.environ.get("QUOTA_5H") or "85"
         self.quota_7d = os.environ.get("QUOTA_7D") or "95"
         self.quota_max_waits = os.environ.get("QUOTA_MAX_WAITS") or "6"
+        # workspace isolation (step 4); run_dir stays None in legacy mode
+        self.isolate = False
+        self.run_id = ""
+        self._run_id_given = False  # `--run-id=` (empty) must error, not mint a fresh id
+        self.run_dir: Path | None = None
+        self.argv: list[str] = []
 
     # ── argument parsing (runs before the tee starts, like the bash top level) ──
     def parse_args(self, argv: list[str]) -> int | None:
         """Returns an exit code for the pre-tee exits (--help / unknown option),
         None to proceed."""
+        self.argv = list(argv)  # recorded verbatim in run.json
         for arg in argv:
             if arg == "--dry-run":
                 self.dry_run = True
@@ -305,6 +332,12 @@ class Pipeline:
                 self.max_repair_rounds = arg.split("=", 1)[1]
             elif arg == "--enable-reviews":
                 self.skip_reviews = False
+            elif arg == "--isolate":
+                self.isolate = True
+            elif arg.startswith("--run-id="):
+                self.run_id = arg.split("=", 1)[1]
+                self._run_id_given = True
+                self.isolate = True  # attaching implies isolation
             elif arg.startswith("--max-parallel="):
                 self.max_parallel = arg.split("=", 1)[1]
             elif arg.startswith("--max-turns="):
@@ -326,6 +359,71 @@ class Pipeline:
         if not self.targets:
             self.targets.append(_logical_cwd().name)  # bash `basename "$PWD"` (logical)
         return None
+
+    # ── workspace isolation (step 4; runs before the tee so pipeline.log can
+    #    land in the run root) ──
+    def resolve_run_dir(self) -> int | None:
+        """Establish the per-run root. Returns an exit code for an invalid
+        --run-id (pre-tee, like the option errors), None to proceed.
+
+        Sources, in priority order: --isolate / --run-id create-or-attach under
+        SPECULA_ROOT/runs; an ambient SPECULA_RUN_DIR (scheduler, outer script)
+        is honored as-is. Neither present -> legacy mode, byte-identical to the
+        $PWD-derived bash behavior.
+        """
+        env_dir = os.environ.get("SPECULA_RUN_DIR", "")
+        if self.isolate:
+            if self._run_id_given and not _valid_run_id(self.run_id):
+                print(f"ERROR: invalid --run-id '{self.run_id}' (allowed: [A-Za-z0-9._-]+)", file=sys.stderr)
+                return 1
+            if not self._run_id_given:
+                self.run_id = generate_run_id()
+            self.run_dir = SPECULA_ROOT / "runs" / self.run_id
+        elif env_dir:
+            self.run_dir = Path(env_dir)
+            self.run_id = self.run_dir.name
+        else:
+            return None
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        os.environ["SPECULA_RUN_DIR"] = str(self.run_dir)  # phase subprocesses inherit
+        self._write_run_meta()
+        if self.isolate:
+            # runs/latest -> <run-id>; symlink+rename so readers never see a gap
+            with contextlib.suppress(OSError):
+                tmp = self.run_dir.parent / f".latest.{self.run_id}.tmp"
+                tmp.symlink_to(self.run_id)
+                tmp.replace(self.run_dir.parent / "latest")
+        return None
+
+    def _write_run_meta(self) -> None:
+        """run.json: enough to audit a run after the fact (what ran, with what
+        argv, against which artifact revision). Attach never rewrites the
+        original record, and metadata must never kill a run."""
+        assert self.run_dir is not None
+        meta_file = self.run_dir / "run.json"
+        if meta_file.exists():
+            return
+        artifact_sha: str | None = None
+        if self.artifact:
+            with contextlib.suppress(Exception):
+                r = subprocess.run(
+                    ["git", "-C", self.artifact, "rev-parse", "HEAD"],
+                    capture_output=True,
+                )
+                if r.returncode == 0:
+                    artifact_sha = r.stdout.decode(errors="replace").strip()
+        meta = {
+            "run_id": self.run_id,
+            "created": _date_iseconds(),
+            "argv": self.argv,
+            "targets": self.targets,
+            "agent": self.agent,
+            "claude_alias": self.claude_alias,
+            "artifact": self.artifact,
+            "artifact_git_sha": artifact_sha,
+        }
+        with contextlib.suppress(OSError):
+            meta_file.write_text(json.dumps(meta, indent=2) + "\n")
 
     # ── utilities ──
     def extract_names(self) -> list[str]:
@@ -352,7 +450,11 @@ class Pipeline:
             raise SystemExit(1)
 
     def get_work_dir(self, name: str) -> str:
-        """$PWD is evaluated at call time — after the single-target cd."""
+        """Legacy: $PWD is evaluated at call time — after the single-target cd.
+        Isolated: uniform batch-style layout under the run root (mirrors
+        Workspace.work_dir; the isolation tests pin both against drift)."""
+        if self.run_dir:
+            return f"{self.run_dir}/{name}/.specula-output"
         if len(self.targets) == 1:
             return f"{_logical_cwd()}/.specula-output"
         return f"{_logical_cwd()}/{name}/.specula-output"
@@ -580,8 +682,13 @@ class Pipeline:
         log("PIPELINE SUMMARY")
         divider()
 
-        pwd = str(_logical_cwd())  # bash $PWD, matching get_work_dir and the tee log dir
-        summary_file = Path(pwd) / ".specula-output" / "pipeline-summary.md"
+        if self.run_dir:
+            # run-scoped artifacts live at the run root, next to pipeline.log
+            pwd = str(self.run_dir)  # base for the Logs section's relative paths
+            summary_file = self.run_dir / "pipeline-summary.md"
+        else:
+            pwd = str(_logical_cwd())  # bash $PWD, matching get_work_dir and the tee log dir
+            summary_file = Path(pwd) / ".specula-output" / "pipeline-summary.md"
         summary_file.parent.mkdir(parents=True, exist_ok=True)
         out: list[str] = []
         out += ["# Specula Pipeline Summary", "", f"Generated: {_date_iseconds()}", "", "## Systems Processed", ""]
@@ -725,6 +832,8 @@ class Pipeline:
         print(f"Max parallel: {self.max_parallel}")
         print(f"Max turns:    {self.max_turns}")
         print(f"Agent:        {self.agent}  (claude-alias={self.claude_alias})")
+        if self.run_dir:
+            print(f"Run:          {self.run_id}  ({self.run_dir})")
         print()
         print(
             f"Skip phases:  analysis={_b(self.skip_analysis)} specgen={_b(self.skip_specgen)}"
@@ -743,19 +852,21 @@ class Pipeline:
         # If running a single target, cd into its case-study directory so that
         # downstream scripts (which use $PWD/.specula-output) write into the
         # case study's own directory instead of polluting the repo root.
+        # Isolated runs never cd — outputs go to the run root regardless.
         if len(self.targets) == 1:
             if not names:
                 # bash died here (`names[0]: unbound variable` under set -u):
                 # fail fast before any phase runs on a nameless target.
                 log(f"ERROR: no target name parsed from '{self.targets[0]}', aborting")
                 raise SystemExit(1)
-            # string concat like the bash — a pathlib join would let an absolute
-            # name discard the case-studies prefix and cd anywhere
-            case_dir = Path(f"{SPECULA_ROOT}/case-studies/{names[0]}")
-            if case_dir.is_dir():
-                os.chdir(case_dir)
-                os.environ["PWD"] = str(case_dir)  # bash cd exports the new $PWD
-                log(f"Single target: cd to {case_dir}")
+            if not self.run_dir:
+                # string concat like the bash — a pathlib join would let an absolute
+                # name discard the case-studies prefix and cd anywhere
+                case_dir = Path(f"{SPECULA_ROOT}/case-studies/{names[0]}")
+                if case_dir.is_dir():
+                    os.chdir(case_dir)
+                    os.environ["PWD"] = str(case_dir)  # bash cd exports the new $PWD
+                    log(f"Single target: cd to {case_dir}")
 
         start_time = int(time.time())
 
@@ -824,13 +935,21 @@ def main(argv: list[str]) -> int:
         # --help / unknown option exit before the tee starts, like the bash
         # top-level parse: no .specula-output/, no pipeline.log.
         return rc
+    rc = p.resolve_run_dir()
+    if rc is not None:
+        return rc  # invalid --run-id: pre-tee exit, like the option errors
 
-    # bash bottom line: mkdir -p "$PWD/.specula-output"; main 2>&1 | tee .../pipeline.log
-    # The log lands in the LAUNCH cwd — main's single-target cd happens later,
-    # after the tee is already open.
-    out_dir = _logical_cwd() / ".specula-output"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    tee = subprocess.Popen(["tee", str(out_dir / "pipeline.log")], stdin=subprocess.PIPE)
+    if p.run_dir:
+        # isolated: the log is a run-scoped artifact, it lives at the run root
+        log_path = p.run_dir / "pipeline.log"
+    else:
+        # bash bottom line: mkdir -p "$PWD/.specula-output"; main 2>&1 | tee .../pipeline.log
+        # The log lands in the LAUNCH cwd — main's single-target cd happens later,
+        # after the tee is already open.
+        out_dir = _logical_cwd() / ".specula-output"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        log_path = out_dir / "pipeline.log"
+    tee = subprocess.Popen(["tee", str(log_path)], stdin=subprocess.PIPE)
     sys.stdout.flush()
     sys.stderr.flush()
     os.dup2(tee.stdin.fileno(), 1)  # fd-level: phase subprocesses inherit the tee

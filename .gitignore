@@ -138,5 +138,8 @@ scripts/exp/ablation/targets_rq2*.txt
 scripts/launch/sandbox/
 # Generated output / caches
 .specula-output/
+# Per-run isolated workspaces (launch_pipeline.sh --isolate); experiment
+# results, never curated content — that lives in case-studies/
+/runs/
 _build/
 .pytest_cache/
