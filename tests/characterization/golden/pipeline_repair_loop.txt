@@ -1,0 +1,192 @@
+exit_code: 0
+
+=== stdout ===
+╔══════════════════════════════════════════════════════════╗
+║        Specula — Full Pipeline Runner                   ║
+╚══════════════════════════════════════════════════════════╝
+
+Targets:      1
+Max parallel: 1
+Max turns:    0
+Agent:        claude-code  (claude-alias=claude)
+
+Skip phases:  analysis=true specgen=true harness=true validation=true confirmation=false classification=true reviews=true
+Repair loop:  skip=false per_request_cap=2
+
+[TIME] Skipping Phase 1 (--skip-analysis)
+[TIME] Skipping Phase 2 (--skip-specgen)
+[TIME] Skipping Phase 2.5 (--skip-harness)
+[TIME] Skipping Phase 3 (--skip-validation)
+[TIME] WARN: usage fetch failed, proceeding
+
+════════════════════════════════════════════════════════════
+[TIME] PHASE 4: BUG CONFIRMATION (consolidate + reproduce)
+
+════════════════════════════════════════════════════════════
+========================================
+ Specula — Bug Confirmation Batch Runner
+========================================
+Targets:      1
+Max parallel: 1
+Max turns:    0
+
+Checking prerequisites...
+  footest             bug-report OK  brief OK  repo OK
+
+[TIME] Launching agent: footest
+  PID=<PID>  Log: <WORK>/.specula-output/bug-confirmation.log
+
+[TIME] All agents launched. Waiting...
+  Monitor: tail -f */bug-confirmation.log
+
+[TIME] All agents completed.
+
+========================================
+ Results
+========================================
+  footest: (no report — check log; repro/ tests: 0)
+
+════════════════════════════════════════════════════════════
+[TIME] REPAIR LOOP (confirmation back-edge) — cap=2 per request
+
+════════════════════════════════════════════════════════════
+[TIME]   reset RR-002.md IN_REPAIR -> OPEN (crash recovery)
+[TIME] WARN: usage fetch failed, proceeding
+
+════════════════════════════════════════════════════════════
+[TIME] REPAIR ROUND 1: PHASE 3 (scoped spec/fault/invariant repair)
+
+════════════════════════════════════════════════════════════
+========================================
+ Specula — Spec Validation Batch Runner
+========================================
+Targets:      1
+Max parallel: 1
+Max turns:    0
+
+Checking prerequisites...
+  footest             specs OK (2L)  instr OK  repo OK  traces WARN (0 ndjson files)
+
+[TIME] Launching agent: footest
+  PID=<PID>  Log: <WORK>/.specula-output/spec-repair.log
+
+[TIME] All agents launched. Waiting...
+  Monitor: tail -f <WORK>/*/.specula-output/spec-validation.log
+
+[TIME] All agents completed.
+
+========================================
+ Results
+========================================
+  footest: no changelog (check log)
+[TIME] WARN: usage fetch failed, proceeding
+
+════════════════════════════════════════════════════════════
+[TIME] REPAIR ROUND 1: PHASE 4 (re-check repair requests)
+
+════════════════════════════════════════════════════════════
+========================================
+ Specula — Bug Confirmation Batch Runner
+========================================
+Targets:      1
+Max parallel: 1
+Max turns:    0
+
+Checking prerequisites...
+  footest             bug-report OK  brief OK  repo OK
+
+[TIME] Launching agent: footest
+  PID=<PID>  Log: <WORK>/.specula-output/bug-recheck.log
+
+[TIME] All agents launched. Waiting...
+  Monitor: tail -f */bug-confirmation.log
+
+[TIME] All agents completed.
+
+========================================
+ Results
+========================================
+  footest: (no report — check log; repro/ tests: 0)
+[TIME] Repair loop made no progress in round 1 (no request changed) — stopping to avoid spin.
+[TIME] Repair loop ended after 1 round(s).
+[TIME] Skipping Phase 4b (--skip-classification)
+
+════════════════════════════════════════════════════════════
+[TIME] PIPELINE SUMMARY
+
+════════════════════════════════════════════════════════════
+# Specula Pipeline Summary
+
+Generated: <DATE>
+
+## Systems Processed
+
+### footest
+
+- **Phase 1 (Analysis)**: OK (modeling-brief: 1 lines)
+- **Analysis Review**: SKIPPED
+- **Phase 2 (Spec Gen)**: OK (4/4 files, base: 2 lines)
+- **Spec Gen Review**: SKIPPED
+- **Phase 2.5 (Harness)**: MISSING
+- **Phase 3 (Validation)**: SKIPPED
+- **Validation Review**: SKIPPED
+- **Phase 4a (Bug Confirmation)**: SKIPPED
+- **Repair loop**: 2 request(s) — 0 resolved, 0 deferred
+- **Phase 4b (Bug Classification)**: SKIPPED
+
+**Logs:**
+- `.specula-output/bug-confirmation.log` (4.0K)
+
+
+[TIME] Summary written to: <WORK>/.specula-output/pipeline-summary.md
+
+[TIME] Pipeline completed in <ELAPSED>
+
+
+=== pipeline.log (tee) ===
+identical to stdout
+
+=== .specula-output/spec/repair-requests/RR-001.md ===
+---
+id: RR-001
+bug_id: DA-1 | agreement safety violated
+target: base.tla
+status: OPEN
+round: 1
+---
+
+# Repair Request RR-001
+
+The spec models the QC without binding it to the proposal value.
+
+## History
+- created (bug confirmation): QC reuse enables value forgery
+
+
+=== .specula-output/spec/repair-requests/RR-002.md ===
+---
+id: RR-002
+bug_id: DA-27 | ordering
+target: base.tla
+status: OPEN
+round: 2
+---
+
+# Repair Request RR-002
+
+The spec models the QC without binding it to the proposal value.
+
+## History
+- created (bug confirmation): QC reuse enables value forgery
+- reset (orchestrator): repair phase did not complete; retrying
+
+
+=== .specula-output/spec/repair-ledger.md ===
+# Repair Ledger — footest
+
+Updated: <DATE>
+
+| Request | Bug | Target | Status | Round |
+|---------|-----|--------|--------|-------|
+| RR-001 | DA-1 \| agreement safety violated | base.tla | OPEN | 1 |
+| RR-002 | DA-27 \| ordering | base.tla | OPEN | 2 |

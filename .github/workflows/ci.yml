@@ -91,8 +91,8 @@ jobs:
         env:
           PYTHONPATH: tools/trace_debugger/src
         run: uv run python tools/trace_debugger/tests/test_basic.py
-      - name: characterization tests
-        run: uv run pytest tests/characterization/ -q
+      - name: tests
+        run: uv run pytest tests/ -q
 
   typecheck:
     name: Type check (mypy)

@@ -102,7 +102,7 @@ cd my-project
 bash ~/Specula/scripts/launch/launch_pipeline.sh
 ```
 
-Output will be written to `.specula-output/` under your project root. The project name defaults to the directory name. See [here](https://github.com/specula-org/Specula/blob/main/scripts/launch/launch_pipeline.sh#L19) for more CLI options (e.g. `--agent=codex`, `--artifact=<path>`).
+Output will be written to `.specula-output/` under your project root. The project name defaults to the directory name. Run `bash ~/Specula/scripts/launch/launch_pipeline.sh --help` for the full list of CLI options (e.g. `--agent=codex`, `--artifact=<path>`).
 
 **Individual phases:**
 
