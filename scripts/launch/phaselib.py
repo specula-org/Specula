@@ -296,7 +296,7 @@ class Phase:
                     text=True,
                 )
             except OSError:
-                return  # fail-open: a broken audit must never wedge a run
+                continue  # fail-open for THIS target only; still audit the rest
             if r.returncode != 0:
                 failures.append((name, (r.stdout or r.stderr).strip()))
         if failures:

@@ -118,6 +118,15 @@ class TestBlockedSurrender(GateCase):
         allow, _ = sg.decide("spec_validation", self.wd)
         self.assertFalse(allow)
 
+    def test_blocked_with_live_jobs_allows_but_reports(self) -> None:
+        # Surrender is terminal, but never silent about orphaned jobs.
+        (self.wd / "spec" / "BLOCKED.md").write_text("stuck\n")
+        self.spawn_sleeper(self.wd / "spec" / "output" / "job.out.pid")
+        allow, reason = sg.decide("spec_validation", self.wd)
+        self.assertTrue(allow)
+        self.assertIn("left behind", reason)
+        self.assertIn("job.out.pid", reason)
+
 
 class TestFuse(GateCase):
     def test_fuse_opens_at_cap(self) -> None:
@@ -199,6 +208,27 @@ class TestLivePids(GateCase):
         self.spawn_sleeper(sd / "x.pid")
         allow, _ = sg.decide("spec_validation", self.wd)
         self.assertTrue(allow)
+
+    def test_pid_in_pruned_states_dir_ignored(self) -> None:
+        # TLC metadirs (states/) can hold millions of files; the scan prunes
+        # them, so a pid file in there is invisible by design.
+        self.deliver()
+        self.spawn_sleeper(self.wd / "spec" / "output" / "states" / "x.out.pid")
+        allow, _ = sg.decide("spec_validation", self.wd)
+        self.assertTrue(allow)
+
+    def test_pid_beyond_depth_limit_ignored(self) -> None:
+        self.deliver()
+        deep = self.wd / "a" / "b" / "c" / "d" / "e" / "f"
+        self.spawn_sleeper(deep / "x.pid")
+        allow, _ = sg.decide("spec_validation", self.wd)
+        self.assertTrue(allow)
+
+    def test_pid_within_depth_limit_found(self) -> None:
+        self.deliver()
+        self.spawn_sleeper(self.wd / "a" / "b" / "c" / "d" / "x.pid")
+        allow, _ = sg.decide("spec_validation", self.wd)
+        self.assertFalse(allow)
 
 
 class TestHookEntry(GateCase):
@@ -286,6 +316,13 @@ class TestAcceptEntry(GateCase):
         rc, out = self.accept("spec_validation")
         self.assertEqual(rc, 3)
         self.assertIn("BLOCKED.md", out)
+
+    def test_blocked_reports_orphans(self) -> None:
+        (self.wd / "spec" / "BLOCKED.md").write_text("stuck\n")
+        self.spawn_sleeper(self.wd / "spec" / "output" / "job.out.pid")
+        rc, out = self.accept("spec_validation")
+        self.assertEqual(rc, 3)
+        self.assertIn("job.out.pid", out)
 
     def test_blocked_surfaces_even_without_contract(self) -> None:
         (self.wd / "spec" / "BLOCKED.md").write_text("cannot build\n")

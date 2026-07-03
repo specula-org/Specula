@@ -74,6 +74,13 @@ DEFAULT_CAP = 5
 # assumed to be a reused pid, not the recorded job.
 PID_REUSE_TOLERANCE_S = 300
 
+# Pid-file scan bounds. A TLC hunt's metadir (states/, checkpoints) can hold
+# millions of files; an unbounded walk would blow the hook's timeout and
+# silently disarm the gate, so prune known-huge dirs and cap depth/volume.
+SCAN_EXCLUDE_DIRS = frozenset({".git", "states", ".tlacache", "node_modules", "__pycache__", STATE_DIRNAME})
+SCAN_MAX_DEPTH = 5
+SCAN_DIR_BUDGET = 2000
+
 
 # ──────────────────────────────────────────────────────────
 # State (per-run, under <work_dir>/.stop-gate/)
@@ -177,6 +184,28 @@ def _started_long_after(pid: int, pid_file: Path) -> bool:
         return False
 
 
+def _find_pid_files(work_dir: Path) -> list[Path]:
+    """Bounded *.pid search: prunes SCAN_EXCLUDE_DIRS, descends at most
+    SCAN_MAX_DEPTH levels, and visits at most SCAN_DIR_BUDGET directories."""
+    found: list[Path] = []
+    root_depth = len(work_dir.parts)
+    budget = SCAN_DIR_BUDGET
+    try:
+        for dirpath, dirnames, filenames in os.walk(work_dir):
+            depth = len(Path(dirpath).parts) - root_depth
+            if depth >= SCAN_MAX_DEPTH:
+                dirnames[:] = []
+            else:
+                dirnames[:] = sorted(d for d in dirnames if d not in SCAN_EXCLUDE_DIRS)
+            found.extend(Path(dirpath) / f for f in filenames if f.endswith(".pid"))
+            budget -= 1
+            if budget <= 0:
+                break
+    except OSError:
+        pass
+    return sorted(found)
+
+
 def _live_pid_files(work_dir: Path) -> list[tuple[Path, int]]:
     """Pid files under the work dir whose process is still alive.
 
@@ -187,12 +216,8 @@ def _live_pid_files(work_dir: Path) -> list[tuple[Path, int]]:
     for layouts the root rule misses)."""
     ancestors = _ancestor_pids()
     live: list[tuple[Path, int]] = []
-    try:
-        candidates = sorted(work_dir.rglob("*.pid"))
-    except OSError:
-        return live
-    for pf in candidates:
-        if STATE_DIRNAME in pf.parts or pf.parent == work_dir:
+    for pf in _find_pid_files(work_dir):
+        if pf.parent == work_dir:
             continue
         try:
             text = pf.read_text().strip().splitlines()[0].strip()
@@ -219,7 +244,13 @@ def decide(phase: str, work_dir: Path) -> tuple[bool, str]:
 
     blocked = _blocked_file(work_dir)
     if blocked is not None:
-        return True, f"agent declared failure in {blocked}"
+        # Surrender is terminal — but never silent about what it leaves behind.
+        reason = f"agent declared failure in {blocked}"
+        leftovers = _live_pid_files(work_dir)
+        if leftovers:
+            jobs = ", ".join(f"{pf} (pid {pid})" for pf, pid in leftovers)
+            reason += f"; WARNING: live background job(s) left behind: {jobs}"
+        return True, reason
 
     try:
         cap = int(os.environ.get("SPECULA_STOP_GATE_CAP", "") or DEFAULT_CAP)
@@ -303,32 +334,45 @@ def _hook_main(flavor: str) -> int:
     return 0
 
 
+def _orphan_note(work_dir: Path) -> str:
+    leftovers = _live_pid_files(work_dir)
+    if not leftovers:
+        return ""
+    return "; live background job(s) left behind: " + ", ".join(f"{pf} (pid {pid})" for pf, pid in leftovers)
+
+
 def _accept_main(phase: str, work_dir_arg: str) -> int:
     """Acceptance layer: audit the contract after the agent exits.
     Exit 0 = contract satisfied (or no contract for this phase; silent),
     exit 1 = deliverable missing, exit 3 = agent declared failure (BLOCKED.md).
-    Never raises: an audit that cannot run reports OK (fail-open)."""
-    try:
-        work_dir = Path(work_dir_arg)
-        blocked = _blocked_file(work_dir)
-        contract = CONTRACTS.get(phase)
-        if contract is not None:
-            deliverable = work_dir / contract
-            if deliverable.is_file() and deliverable.stat().st_size > 0:
-                return 0
-            if blocked is not None:
-                print(f"agent declared failure — no {contract}; see {blocked}")
-                return 3
-            capped = (_state_dir(work_dir) / "FAILED-HOOK-CAP").is_file()
-            suffix = " (stop-gate fuse opened; see .stop-gate/gate.log)" if capped else ""
-            print(f"deliverable missing or empty: {contract}{suffix}")
-            return 1
+    Fail-open is deliberately narrow here — only the file checks are guarded
+    (except OSError); a programming error must crash loudly in tests/CI, not
+    turn the audit into a permanent silent OK."""
+    work_dir = Path(work_dir_arg)
+    blocked = _blocked_file(work_dir)  # swallows I/O errors internally
+    contract = CONTRACTS.get(phase)
+    if contract is not None:
+        deliverable = work_dir / contract
+        try:
+            delivered = deliverable.is_file() and deliverable.stat().st_size > 0
+        except OSError:
+            delivered = True  # unreadable ≠ missing: don't false-alarm
+        if delivered:
+            return 0
         if blocked is not None:
-            print(f"agent declared failure; see {blocked}")
+            print(f"agent declared failure — no {contract}; see {blocked}{_orphan_note(work_dir)}")
             return 3
-        return 0
-    except Exception:
-        return 0
+        try:
+            capped = (_state_dir(work_dir) / "FAILED-HOOK-CAP").is_file()
+        except OSError:
+            capped = False
+        suffix = " (stop-gate fuse opened; see .stop-gate/gate.log)" if capped else ""
+        print(f"deliverable missing or empty: {contract}{suffix}")
+        return 1
+    if blocked is not None:
+        print(f"agent declared failure; see {blocked}{_orphan_note(work_dir)}")
+        return 3
+    return 0
 
 
 def main(argv: list[str]) -> int:

@@ -206,18 +206,22 @@ def main(argv: list[str]) -> int:
             and os.environ.get("SPECULA_STOP_GATE", "").lower() != "off"
             and os.path.isdir(work_dir)
         ):
-            gate = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stop_gate.py"))
-            state_dir = os.path.join(work_dir, ".stop-gate")
-            os.makedirs(state_dir, exist_ok=True)
-            for stale in ("blocks", "FAILED-HOOK-CAP"):  # fresh fuse per agent run
-                with contextlib.suppress(OSError):
-                    os.remove(os.path.join(state_dir, stale))
-            hook = {"type": "command", "command": f"python3 {shlex.quote(gate)} claude", "timeout": 60}
-            settings_path = os.path.join(state_dir, "claude-settings.json")
-            with open(settings_path, "w") as sf:
-                json.dump({"hooks": {"Stop": [{"hooks": [hook]}]}}, sf, indent=2)
-                sf.write("\n")
-            settings_args = ["--settings", settings_path]
+            try:
+                gate = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stop_gate.py"))
+                state_dir = os.path.join(work_dir, ".stop-gate")
+                os.makedirs(state_dir, exist_ok=True)
+                # Fresh fuse per agent run — via the gate's own CLI (like
+                # codex.sh) so the state-file list has exactly one owner.
+                subprocess.run([sys.executable, gate, "reset", work_dir], check=False)
+                hook = {"type": "command", "command": f"python3 {shlex.quote(gate)} claude", "timeout": 60}
+                settings_path = os.path.join(state_dir, "claude-settings.json")
+                with open(settings_path, "w") as sf:
+                    json.dump({"hooks": {"Stop": [{"hooks": [hook]}]}}, sf, indent=2)
+                    sf.write("\n")
+                settings_args = ["--settings", settings_path]
+            except OSError as e:  # fail-open: a broken gate must never wedge the run
+                settings_args = []
+                print(f"claude-code adapter: stop-gate setup failed ({e}); continuing without the gate", file=sys.stderr)
 
         # ── Build command ──
         cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", "json"]
