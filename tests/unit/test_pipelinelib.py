@@ -405,6 +405,35 @@ class TestParsing(TmpCwd):
         self.assertEqual(batch.get_work_dir("a"), f"{self.tmp}/a/.specula-output")
 
 
+class TestRunReview(TmpCwd):
+    """run_review must emit `<phase>` as the FIRST positional. launch_review.sh /
+    ReviewPhase.run read the phase from argv[0] and treat every other non-flag
+    arg as a target, so the phase has to lead. The pre-migration bash put the
+    flags first, which made a real (non-dry-run) --enable-reviews run parse phase
+    as "--agent=..." and abort with "Unknown phase"; --dry-run only logs the
+    command, so the sequencing golden never caught it. Pin the arg order here."""
+
+    def _capture(self, phase: str) -> list[str]:
+        p = make_pipeline(["footest|foo/bar|Go|ref"], skip_reviews=False)
+        seen: list[list[str]] = []
+        p._phase = lambda banner, script, args: seen.append(args)
+        p.run_review(phase, ["footest"])
+        self.assertEqual(len(seen), 1)
+        return seen[0]
+
+    def test_phase_arg_leads(self) -> None:
+        # argv[0] is exactly what ReviewPhase.run reads as the phase
+        args = self._capture("analysis")
+        self.assertEqual(args[0], "analysis")
+        self.assertFalse(args[0].startswith("--"))
+
+    def test_flags_and_names_preserved(self) -> None:
+        args = self._capture("specgen")
+        self.assertIn("--agent=claude-code", args)
+        self.assertIn("--claude-alias=claude", args)
+        self.assertEqual(args[-1], "footest")
+
+
 class RRDirCase(TmpCwd):
     """Base with a seeded single-target repair dir."""
 

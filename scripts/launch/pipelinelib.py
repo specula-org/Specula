@@ -475,7 +475,15 @@ class Pipeline:
         if self.skip_reviews:
             log(f"Skipping {phase} review (--skip-reviews)")
             return
-        args = [f"--agent={self.agent}", f"--claude-alias={self.claude_alias}", phase, *names]
+        # launch_review.sh's contract is `<phase> <name...>`: it reads the phase
+        # from the first positional (ReviewPhase.run: phase = argv[0]) and treats
+        # every other non-flag arg as a target. The pre-migration bash emitted the
+        # flags BEFORE the phase, so a real run parsed phase as "--agent=..." and
+        # died with "Unknown phase" — invisible under --dry-run, which only logs
+        # the command without executing it. Phase goes first: a deliberate
+        # divergence from the buggy bash order (the pipeline_seq_reviews golden
+        # and characterization README record this).
+        args = [phase, f"--agent={self.agent}", f"--claude-alias={self.claude_alias}", *names]
         self._phase(f"REVIEW: {phase}", "launch_review.sh", args)
 
     def run_phase2_specgen(self) -> None:

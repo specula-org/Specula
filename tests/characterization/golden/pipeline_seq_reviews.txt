@@ -25,7 +25,7 @@ Repair loop:  skip=false per_request_cap=unlimited
 [TIME] REVIEW: analysis
 
 ════════════════════════════════════════════════════════════
-[TIME] [DRY RUN] bash scripts/launch/launch_review.sh --agent=claude-code --claude-alias=claude analysis footest
+[TIME] [DRY RUN] bash scripts/launch/launch_review.sh analysis --agent=claude-code --claude-alias=claude footest
 [TIME] WARN: usage fetch failed, proceeding
 
 ════════════════════════════════════════════════════════════
@@ -38,7 +38,7 @@ Repair loop:  skip=false per_request_cap=unlimited
 [TIME] REVIEW: specgen
 
 ════════════════════════════════════════════════════════════
-[TIME] [DRY RUN] bash scripts/launch/launch_review.sh --agent=claude-code --claude-alias=claude specgen footest
+[TIME] [DRY RUN] bash scripts/launch/launch_review.sh specgen --agent=claude-code --claude-alias=claude footest
 [TIME] WARN: usage fetch failed, proceeding
 
 ════════════════════════════════════════════════════════════
@@ -58,7 +58,7 @@ Repair loop:  skip=false per_request_cap=unlimited
 [TIME] REVIEW: validation
 
 ════════════════════════════════════════════════════════════
-[TIME] [DRY RUN] bash scripts/launch/launch_review.sh --agent=claude-code --claude-alias=claude validation footest
+[TIME] [DRY RUN] bash scripts/launch/launch_review.sh validation --agent=claude-code --claude-alias=claude footest
 [TIME] WARN: usage fetch failed, proceeding
 
 ════════════════════════════════════════════════════════════
