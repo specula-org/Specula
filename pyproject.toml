@@ -31,8 +31,7 @@ python_version = "3.10"
 strict = true
 files = [
     "src/specula",
-    "tests/characterization/oracle.py",
-    "tests/characterization/test_characterization.py",
+    "tests",
 ]
 mypy_path = "src"
 
