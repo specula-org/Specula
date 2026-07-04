@@ -1,0 +1,45 @@
+exit_code: 0
+
+=== stdout ===
+[TS] ===========================================
+[TS] Specula Scheduler  run=<RUN_ID>
+[TS] Workers=1  Threshold=80%  MaxWindows=3
+[TS] ===========================================
+[TS] Loaded 3 tasks from <SPECROOT>/tasks.queue
+[TS] --- Setup phase ---
+[TS] CLONE alpha: github.com/a/b -> <SPECROOT>/case-studies/alpha/artifact/b
+[TS] DRY-RUN: git clone --depth 1 https://github.com/a/b <SPECROOT>/case-studies/alpha/artifact/b
+[TS] CLONE beta: github.com/c/d -> <SPECROOT>/case-studies/beta/artifact/d
+[TS] DRY-RUN: git clone --depth 1 https://github.com/c/d <SPECROOT>/case-studies/beta/artifact/d
+[TS] CLONE gamma-no-pipes: github.com/ -> <SPECROOT>/case-studies/gamma-no-pipes/artifact/
+[TS] DRY-RUN: git clone --depth 1 https://github.com/ <SPECROOT>/case-studies/gamma-no-pipes/artifact/
+[TS] --- Setup complete ---
+[TS] CLONE alpha: github.com/a/b -> <SPECROOT>/case-studies/alpha/artifact/b
+[TS] DRY-RUN: git clone --depth 1 https://github.com/a/b <SPECROOT>/case-studies/alpha/artifact/b
+[TS] START #1 alpha
+[TS] DRY-RUN: bash <SPECROOT>/scripts/launch/launch_pipeline.sh --claude-alias=claude --run-id=<RUN_ID>-1-alpha --flag-one --flag-two=x third-col.md alpha|a/b|Go|ref
+[TS] CLONE beta: github.com/c/d -> <SPECROOT>/case-studies/beta/artifact/d
+[TS] DRY-RUN: git clone --depth 1 https://github.com/c/d <SPECROOT>/case-studies/beta/artifact/d
+[TS] START #2 beta
+[TS] DRY-RUN: bash <SPECROOT>/scripts/launch/launch_pipeline.sh --claude-alias=claude --run-id=<RUN_ID>-2-beta beta|c/d|Rust|r2
+[TS] CLONE gamma-no-pipes: github.com/ -> <SPECROOT>/case-studies/gamma-no-pipes/artifact/
+[TS] DRY-RUN: git clone --depth 1 https://github.com/ <SPECROOT>/case-studies/gamma-no-pipes/artifact/
+[TS] START #3 gamma-no-pipes
+[TS] DRY-RUN: bash <SPECROOT>/scripts/launch/launch_pipeline.sh --claude-alias=claude --run-id=<RUN_ID>-3-gamma-no-pipes gamma-no-pipes
+[TS] ===========================================
+[TS] SUMMARY
+[TS]   DRY  alpha
+[TS]   DRY  beta
+[TS]   DRY  gamma-no-pipes
+[TS] Total=3  Success=0  Failed=0  Skipped=0  Resets=0
+[TS] Logs: <SPECROOT>/logs/scheduler/<RUN_ID>/
+[TS] ===========================================
+
+
+=== scheduler.log (tee) ===
+identical to stdout
+
+=== status files ===
+0: dry-run
+1: dry-run
+2: dry-run

@@ -1,0 +1,35 @@
+exit_code: 0
+
+=== stdout ===
+[TS] ===========================================
+[TS] Specula Scheduler  run=<RUN_ID>
+[TS] Workers=1  Threshold=70%  MaxWindows=3
+[TS] ===========================================
+[TS] Loaded 2 tasks from <SPECROOT>/tasks.queue
+[TS] --- Setup phase ---
+[TS] --- Setup complete ---
+[TS] START #1 footest
+[TS] DONE  #1 footest  (success, <N>s, attempt 1)
+[TS] START #2 bartest
+[TS] DONE  #2 bartest  (success, <N>s, attempt 1)
+[TS] ===========================================
+[TS] SUMMARY
+[TS]   OK   footest
+[TS]   OK   bartest
+[TS] Total=2  Success=2  Failed=0  Skipped=0  Resets=0
+[TS] Logs: <SPECROOT>/logs/scheduler/<RUN_ID>/
+[TS] ===========================================
+
+
+=== scheduler.log (tee) ===
+identical to stdout
+
+=== status files ===
+0: success
+1: success
+
+=== pipeline-calls.txt ===
+argv: --claude-alias=claude --run-id=<RUN_ID>-1-footest footest|foo/bar|Go|Raft demo
+env: QUOTA_5H=70 QUOTA_7D=90
+argv: --claude-alias=claude --run-id=<RUN_ID>-2-bartest bartest|baz/qux|Rust|Paxos notes
+env: QUOTA_5H=70 QUOTA_7D=90

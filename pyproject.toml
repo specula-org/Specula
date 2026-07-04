@@ -77,3 +77,6 @@ ignore = [
 [tool.ruff.format]
 quote-style = "double"
 docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

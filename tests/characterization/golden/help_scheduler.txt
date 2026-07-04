@@ -1,0 +1,42 @@
+exit_code: 0
+
+=== stdout ===
+
+Overnight batch scheduler for Specula pipeline.
+
+Runs tasks from a queue file with N parallel workers.
+Pauses when usage exceeds threshold, waits for 5-hour window reset, resumes.
+Stops after exhausting MAX_WINDOWS resets.
+
+Usage:
+  bash scripts/exp/scheduler.sh [options]
+
+Options:
+  --workers N         Parallel workers (default: 3)
+  --threshold N       5-hour window usage % to pause at (default: 80)
+  --threshold-7day N  7-day window usage % to pause at (default: 95)
+  --windows N         Max resets to wait through (default: 3)
+  --queue FILE     Task queue file (default: scripts/exp/tasks.queue)
+  --max-turns N    Max agent turns per task (default: 0 = unlimited)
+  --setup-only     Only clone repos and write prompts, don't run pipeline
+  --dry-run        Print commands without executing
+  --claude-alias NAME  Claude CLI profile (default: claude).
+                       Forwarded to launch_pipeline.sh and used by usage.sh
+                       so quota checks target the same account.
+
+Queue format (tab-separated):
+  name|github|lang|reference[TAB]flags
+
+  - flags: optional launch_pipeline.sh flags (e.g. --skip-analysis)
+
+Workspace: every task's pipeline runs isolated under runs/<run>-<n>-<name>/
+(scheduler passes --run-id; canonical inputs stay in case-studies/<name>/).
+A --prompt file is copied to case-studies/<name>/.prompt-extra.md for ALL
+tasks; for per-task prompts, place .prompt-extra.md there yourself first.
+
+
+=== scheduler.log (tee) ===
+<NO LOG DIR>
+
+=== status files ===
+<NONE>

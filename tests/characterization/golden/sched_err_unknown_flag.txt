@@ -1,0 +1,13 @@
+exit_code: 1
+
+=== stdout ===
+
+
+=== scheduler.log (tee) ===
+<NO LOG DIR>
+
+=== status files ===
+<NONE>
+
+=== stderr ===
+Unknown: --bogus
