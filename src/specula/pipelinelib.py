@@ -437,17 +437,19 @@ class Pipeline:
 
     # ── utilities ──
     def extract_names(self) -> list[str]:
-        """First '|' field of each target, trimmed. The bash flattened the list
-        through `echo ${names[@]}` + `read -ra`, so a name with internal
-        whitespace splits into several — reproduced by extend(split()). Names
-        with quote characters were undefined behavior under `xargs` and stay
-        out of contract."""
+        """First '|' field of each target, trimmed — one name per target. Wart
+        fix (step 7): the bash flattened the list through `echo ${names[@]}` +
+        `read -ra`, so a name with internal whitespace silently split into
+        several phantom targets; a whitespace-only name still contributes
+        nothing (the bash word-split dropped those too)."""
         names: list[str] = []
         for target in self.targets:
             # bash `IFS='|' read -r name _ _ _ <<< "$target"` reads only the
             # first line, so a newline terminates the name before the '|' split.
             first_line = target.split("\n", 1)[0]
-            names.extend(first_line.split("|", 1)[0].split())
+            name = first_line.split("|", 1)[0].strip()
+            if name:
+                names.append(name)
         return names
 
     def validate_agent_adapter(self) -> None:

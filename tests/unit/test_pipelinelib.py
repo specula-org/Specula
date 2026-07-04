@@ -352,10 +352,16 @@ class TestParsing(TmpCwd):
         p = make_pipeline(["  braft |brpc/braft|C++|Raft", "cometbft"])
         self.assertEqual(p.extract_names(), ["braft", "cometbft"])
 
-    def test_extract_names_flattens_internal_whitespace(self) -> None:
-        # bash re-split names on whitespace (echo+read -ra); kept faithfully
+    def test_extract_names_keeps_internal_whitespace(self) -> None:
+        # wart fix (step 7): bash re-split names on whitespace (echo+read -ra),
+        # turning one spaced name into phantom targets; the name stays whole now
         p = make_pipeline(["two words|x|y|z"])
-        self.assertEqual(p.extract_names(), ["two", "words"])
+        self.assertEqual(p.extract_names(), ["two words"])
+
+    def test_extract_names_drops_whitespace_only_name(self) -> None:
+        # the bash word-split contributed nothing for an all-blank name; kept
+        p = make_pipeline(["   |x|y|z", "real|x|y|z"])
+        self.assertEqual(p.extract_names(), ["real"])
 
     def test_extract_names_stops_at_first_line(self) -> None:
         # bash `IFS='|' read -r name ...` consumes only the first line, so a
