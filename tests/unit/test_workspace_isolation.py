@@ -10,10 +10,9 @@ tests ARE the definition of the isolation semantics:
     layout, single/batch fork) — pinned here at function level and by the
     untouched characterization goldens end-to-end.
 
-stdlib unittest (no pytest/pip needed — the repo .venv is corrupted; pytest
-collects unittest.TestCase natively once step 2 wires CI):
+stdlib unittest, collected natively by pytest; imports the installed package:
 
-    python3 -m unittest tests.unit.test_workspace_isolation -v
+    uv run python -m unittest tests.unit.test_workspace_isolation -v
 """
 
 from __future__ import annotations
@@ -30,10 +29,10 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-LAUNCH = Path(__file__).resolve().parents[2] / "scripts" / "launch"
-sys.path.insert(0, str(LAUNCH))
-import phaselib  # type: ignore[import-not-found]  # noqa: E402
-import pipelinelib as pl  # type: ignore[import-not-found]  # noqa: E402
+PKG = Path(__file__).resolve().parents[2] / "src" / "specula"
+
+from specula import phaselib
+from specula import pipelinelib as pl
 
 RUN_ID_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
 
@@ -130,7 +129,7 @@ class TestPipelineWorkDirMirror(EnvIsolatedCase):
     implementations cannot drift apart."""
 
     def test_legacy_single_and_batch(self) -> None:
-        cwd = str(pl._logical_cwd())
+        cwd = str(phaselib._logical_cwd())
         p = pl.Pipeline()
         p.parse_args(["foo|o/r|Go|ref"])
         self.assertEqual(p.get_work_dir("foo"), f"{cwd}/.specula-output")
@@ -191,7 +190,7 @@ class TestFindRepoDir(EnvIsolatedCase):
 
 
 class TestPromptExtra(EnvIsolatedCase):
-    def _inject(self, ws: object, name: str) -> str:
+    def _inject(self, ws: phaselib.Workspace, name: str) -> str:
         return str(phaselib.Phase()._with_extra(ws, name, "PROMPT"))
 
     def test_isolated_work_dir_copy_wins(self) -> None:
@@ -301,12 +300,51 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         self.assertTrue(ext.is_dir())
         self.assertFalse((root / "runs").exists())
 
-    def test_legacy_mode_untouched(self) -> None:
+    def test_default_mints_isolated_run(self) -> None:
+        # the flip (step 7d): no flags, no ambient env -> a fresh isolated run
         root = self.tmp()
         p = self._pipeline(["foo|o/r|Go|ref"], root)
+        assert p.run_dir is not None
+        self.assertEqual(p.run_dir.parent, root / "runs")
+        self.assertRegex(p.run_id, RUN_ID_RE)
+        self.assertEqual(os.environ["SPECULA_RUN_DIR"], str(p.run_dir))
+
+    def test_no_isolate_gives_legacy_mode(self) -> None:
+        root = self.tmp()
+        p = self._pipeline(["--no-isolate", "foo|o/r|Go|ref"], root)
         self.assertIsNone(p.run_dir)
         self.assertFalse((root / "runs").exists())
         self.assertNotIn("SPECULA_RUN_DIR", os.environ)
+
+    def test_no_isolate_overrides_ambient_env(self) -> None:
+        # explicit beats ambient: children must not re-isolate off the env
+        root = self.tmp()
+        self.set_run_dir(self.tmp() / "external-run")
+        p = self._pipeline(["--no-isolate", "foo|o/r|Go|ref"], root)
+        self.assertIsNone(p.run_dir)
+        self.assertNotIn("SPECULA_RUN_DIR", os.environ)
+
+    def test_explicit_isolate_mints_despite_ambient_env(self) -> None:
+        # pre-flip behavior preserved: --isolate always minted a fresh run
+        root = self.tmp()
+        ext = self.tmp() / "external-run"
+        self.set_run_dir(ext)
+        p = self._pipeline(["--isolate", "foo|o/r|Go|ref"], root)
+        assert p.run_dir is not None
+        self.assertEqual(p.run_dir.parent, root / "runs")
+        self.assertNotEqual(p.run_dir, ext)
+
+    def test_no_isolate_conflicts_with_run_id(self) -> None:
+        for argv in (
+            ["--no-isolate", "--run-id=x", "foo|o/r|Go|ref"],
+            ["--run-id=x", "--no-isolate", "foo|o/r|Go|ref"],
+        ):
+            with self.subTest(argv=argv):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    rc = pl.Pipeline().parse_args(argv)
+                self.assertEqual(rc, 1)
+                self.assertIn("--no-isolate conflicts with --run-id", err.getvalue())
 
     def test_latest_symlink_tracks_newest(self) -> None:
         root = self.tmp()
@@ -330,8 +368,8 @@ class TestEnvThreading(EnvIsolatedCase):
             f'#!/usr/bin/env bash\nprintf \'%s\' "${{SPECULA_RUN_DIR:-UNSET}}" > "{marker}"\n'
         )
         self.patch_root(pl, root)
-        self.addCleanup(setattr, pl, "SCRIPT_DIR", pl.SCRIPT_DIR)
-        pl.SCRIPT_DIR = fake_scripts
+        self.addCleanup(setattr, pl, "LAUNCH_DIR", pl.LAUNCH_DIR)
+        pl.LAUNCH_DIR = fake_scripts
         p = pl.Pipeline()
         self.assertIsNone(p.parse_args(["--isolate", "foo|o/r|Go|ref"]))
         self.assertIsNone(p.resolve_run_dir())
@@ -380,7 +418,7 @@ class TestParallelIsolation(EnvIsolatedCase):
         for run in (run_a, run_b):
             procs.append(
                 subprocess.Popen(
-                    [sys.executable, str(LAUNCH / "pipelinelib.py"), *self.SKIPS, target],
+                    [sys.executable, str(PKG / "pipelinelib.py"), *self.SKIPS, target],
                     cwd=launch_cwd,
                     env={**env, "SPECULA_RUN_DIR": str(run)},
                     stdout=subprocess.PIPE,
@@ -427,6 +465,7 @@ class TestMonitorLine(EnvIsolatedCase):
             with self.subTest(phase=cls.__name__):
                 line = cls().monitor_line(ws)
                 self.assertEqual(line, f"  Monitor: tail -f {run}/*/.specula-output/{logname}")
+                assert line is not None  # for mypy: proven by the assertEqual
                 # the launch cwd the isolated run does not write to never leaks in
                 self.assertNotIn("/launch/dir", line)
 

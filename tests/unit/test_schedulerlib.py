@@ -7,7 +7,7 @@ queue-parsing edges, the quota decision table, the transient-retry classifier
 line's real exit code (the bash always said exit=0), and the sanctioned
 deviations (robust _epoch, fail-fast numeric args).
 
-stdlib unittest:  python3 -m unittest tests.unit.test_schedulerlib -v
+stdlib unittest:  uv run python -m unittest tests.unit.test_schedulerlib -v
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ import contextlib
 import io
 import os
 import re
-import sys
 import tempfile
 import threading
 import time
@@ -25,12 +24,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-EXP = Path(__file__).resolve().parents[2] / "scripts" / "exp"
-sys.path.insert(0, str(EXP))
-import schedulerlib as sl  # type: ignore[import-not-found]  # noqa: E402
+from specula import schedulerlib as sl
 
 
-class Sched(sl.Scheduler):  # type: ignore[misc]
+class Sched(sl.Scheduler):
     """Instrumented scheduler: sleeps recorded instead of blocking, log lines
     captured in memory (the tee-to-file contract is golden-pinned, not re-tested
     here)."""
@@ -91,7 +88,7 @@ class TestParseArgs(Base):
             (s.workers, s.threshold, s.threshold_7day, s.max_windows, s.max_turns),
             (3, "80", "95", 3, 0),
         )
-        self.assertEqual(s.queue_file, str(sl.SCRIPT_DIR / "tasks.queue"))
+        self.assertEqual(s.queue_file, str(sl.EXP_DIR / "tasks.queue"))
         self.assertEqual((s.prompt_file, s.dry_run, s.setup_only, s.claude_alias), ("", False, False, "claude"))
 
     def test_all_flags_space_style(self) -> None:
@@ -251,7 +248,7 @@ class TestCheckUsage(Base):
         root = self.tmp()
         if stub_body is not None:
             (root / "usage.sh").write_text(stub_body)
-        self.patch_mod("SCRIPT_DIR", root)
+        self.patch_mod("EXP_DIR", root)
         return self.sched()
 
     def json_stub(self, payload: str, rc: int = 0) -> str:
@@ -430,15 +427,29 @@ class WorkerBase(Base):
 
 
 class TestSetupTask(WorkerBase):
-    def test_phantom_empty_target_uses_bash_path_strings(self) -> None:
+    def test_degenerate_empty_target_collapses_paths(self) -> None:
+        # wart fix (step 7): pathlib joins — a malformed queue line with an
+        # empty name no longer leaks `case-studies//artifact/` into the logs
+        # (still garbage-in-garbage-out, but the path is at least well-formed)
         root = self.root()
         s = self.sched()
         s.dry_run = True
         self.task(s, "")
         s.setup_task(0)
-        # string interpolation parity: the doubled slash survives in the logs
-        self.assertEqual(s.lines[0], f"CLONE : github.com/ -> {root}/case-studies//artifact/")
+        self.assertEqual(s.lines[0], f"CLONE : github.com/ -> {root}/case-studies/artifact")
         self.assertTrue((root / "case-studies" / "spec").is_dir())
+
+    def test_wellformed_target_paths_unchanged(self) -> None:
+        # for real names the pathlib join renders byte-identically to the bash
+        root = self.root()
+        s = self.sched()
+        s.dry_run = True
+        self.task(s, "footest|foo/bar|Go|r")
+        s.setup_task(0)
+        self.assertEqual(
+            s.lines[0],
+            f"CLONE footest: github.com/foo/bar -> {root}/case-studies/footest/artifact/bar",
+        )
 
     def test_git_file_worktree_style_skips_clone(self) -> None:
         root = self.root()
@@ -481,9 +492,10 @@ class TestSetupTask(WorkerBase):
         self.assertEqual(cm.exception.code, 128)
         self.assertIn("fatal: nope", out.getvalue())  # bash: `... 2>&1 | tail -1`
 
-    def test_clone_failure_in_worker_thread_leaves_no_status(self) -> None:
-        # bash: the run_task subshell died under set -e before `echo running`;
-        # a SystemExit in the thread mirrors that ("not-started" in the summary)
+    def test_clone_failure_aborts_scheduler_before_any_task(self) -> None:
+        # wart fix (step 7): setup runs once, in main()'s setup phase — a clone
+        # failure there kills the whole scheduler (bash main-scope set -e did
+        # the same); no task starts, no status file appears
         self.root()
         bindir = self.tmp()
         (bindir / "git").write_text("#!/bin/sh\nexit 128\n")
@@ -492,12 +504,28 @@ class TestSetupTask(WorkerBase):
         self.addCleanup(lambda: os.environ.__setitem__("PATH", old_path))
         os.environ["PATH"] = f"{bindir}:{old_path}"
         s = self.sched()
-        self.task(s, "footest|foo/bar|Go|r")
-        t = threading.Thread(target=s._worker, args=(0,))
-        t.start()
-        t.join()
+        qf = self.tmp() / "tasks.queue"
+        qf.write_text("footest|foo/bar|Go|r\n")
+        s.queue_file = str(qf)
+        with self.assertRaises(SystemExit) as cm:
+            s.main()
+        self.assertEqual(cm.exception.code, 128)
         self.assertFalse((Path(s.log_dir) / "status" / "0").exists())
         self.assertEqual([ln for ln in s.lines if ln.startswith("START")], [])
+
+    def test_run_task_does_not_rerun_setup(self) -> None:
+        # wart fix (step 7): the bash ran setup_task again inside run_task,
+        # doubling the CLONE/PROMPT logs; run_task now only runs the pipeline
+        root = self.root("#!/usr/bin/env bash\nexit 0\n")
+        s = self.sched()
+        pf = self.tmp() / "p.md"
+        pf.write_text("extra\n")
+        s.prompt_file = str(pf)
+        self.task(s, "footest|foo/bar|Go|r")
+        s.run_task(0)
+        setup_lines = [ln for ln in s.lines if ln.startswith(("CLONE", "PROMPT", "DRY-RUN: git", "DRY-RUN: cp"))]
+        self.assertEqual(setup_lines, [])
+        self.assertFalse((root / "case-studies" / "footest").exists())
 
 
 class TestRunTask(WorkerBase):
@@ -676,7 +704,20 @@ class TestSummary(Base):
         self.assertIn("  DRY  c", s.lines)
         self.assertIn("  ---- d (not-started)", s.lines)
         self.assertIn("  ---- e (weird)", s.lines)
-        self.assertIn("Total=5  Success=1  Failed=1  Skipped=2  Resets=2", s.lines)
+        # wart fix (step 7): Dry counted — the bash tally didn't add up to Total
+        self.assertIn("Total=5  Success=1  Failed=1  Dry=1  Skipped=2  Resets=2", s.lines)
+
+    def test_returns_failed_count_for_exit_code(self) -> None:
+        # wart fix (step 7): failures surface in the exit code (bash exited 0)
+        s = self.sched()
+        s.task_targets = ["a|x/y|Go|r", "b|x/y|Go|r", "c|x/y|Go|r"]
+        for idx, status in ((0, "success"), (1, "failed"), (2, "failed")):
+            (Path(s.log_dir) / "status" / str(idx)).write_text(status + "\n")
+        self.assertEqual(s.summary(), 2)
+        s2 = self.sched()
+        s2.task_targets = ["a|x/y|Go|r"]
+        # not-started (quota drain) is a scheduling outcome, not a failure
+        self.assertEqual(s2.summary(), 0)
 
 
 # ── run() wiring ─────────────────────────────────────────────────────────────

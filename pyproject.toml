@@ -19,7 +19,9 @@ dev = [
     "mypy",
 ]
 
-# No [project.scripts] yet — the real CLI is still the bash `specula` launcher.
+# The repo-root `specula` launcher is a shim to the same dispatcher.
+[project.scripts]
+specula = "specula.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -73,6 +75,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests manipulate sys.path before importing project modules.
 "**/tests/**/*.py" = ["E402"]
+# Dual-mode entry: a sys.path bootstrap must run before the package import
+# so the file also works invoked by path (launch_pipeline.sh shim).
+"src/specula/pipelinelib.py" = ["E402"]
 
 [tool.ruff.format]
 quote-style = "double"

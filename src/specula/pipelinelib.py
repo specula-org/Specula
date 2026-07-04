@@ -9,9 +9,6 @@ state machine and the quota gate are all faithful ports, pinned by the
 pipeline_*/repair_*/quota_* cases in tests/characterization/.
 
 Usage:  python3 pipelinelib.py [options] "name|github|lang|reference" [...]
-
-Lives in scripts/launch/ for now (no packaging dependency); moves into the
-`specula/` package once that exists (migration step 2).
 """
 
 from __future__ import annotations
@@ -19,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import json
 import locale
+import math
 import os
 import re
 import secrets
@@ -26,10 +24,19 @@ import subprocess
 import sys
 import time
 import traceback
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from phaselib import _logical_cwd, _wc_l
+# The sibling import works in both invocation modes: as a package module
+# (`from specula import pipelinelib`; src/ already importable) and as a file
+# run by path (the launch_pipeline.sh shim, oracle specroot copies) — path
+# invocation puts src/specula/ on sys.path but not src/, so add the package
+# root first. In-process only: unlike PYTHONPATH it leaks into no child
+# process (see scripts/launch/adapters/claude-code.sh for why that matters).
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from specula.phaselib import _logical_cwd, _wc_l
 
 # bash pathname expansion (`for f in "$d"/RR-*.md`) orders by the locale
 # collating sequence — RR-file glob order feeds ledger rows and repair state
@@ -38,8 +45,10 @@ from phaselib import _logical_cwd, _wc_l
 with contextlib.suppress(locale.Error):
     locale.setlocale(locale.LC_COLLATE, "")
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
+# the launch_*.sh phase shims and the agent adapters stay under scripts/launch/
+LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
 USAGE_SCRIPT = SPECULA_ROOT / "scripts" / "exp" / "usage.sh"
 
 USAGE = """
@@ -75,10 +84,13 @@ Options:
   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli)
   --claude-alias=NAME    Claude CLI profile (default: claude)
   --artifact=PATH        Path to system artifact/source code
-  --isolate              Write all outputs to an isolated runs/<run-id>/ workspace
-                         (parallel-safe; keeps case-studies/ pristine; default: off).
-                         Sources are read from case-studies/<name>/artifact or
-                         --artifact — the run root holds no code.
+  --isolate              Isolated workspace (the default): all outputs go to
+                         runs/<run-id>/ — parallel-safe, keeps case-studies/
+                         pristine. Sources are read from case-studies/<name>/artifact
+                         or --artifact; the run root holds no code.
+  --no-isolate           Legacy layout: outputs under $PWD/.specula-output
+                         (a single target cd's into case-studies/<name>/ when
+                         it exists)
   --run-id=ID            Attach to runs/ID — reuse an existing run's workspace,
                          e.g. to resume with --skip-* flags (implies --isolate)
 
@@ -200,8 +212,9 @@ def _quota_check(usage_json: str, q5: str, q7: str) -> str | None:
     """The decision the bash embedded in a `python3 -c` heredoc: 'ok', an
     over-limit message, or None for any parse failure (the bash caught those as
     a non-zero exit → 'usage parse failed'). q5/q7 stay raw strings for display
-    parity; numeric conversion happens inside the try so a garbage threshold is
-    a parse failure (proceed), exactly like the bash interpolation was."""
+    parity; parse_args validates them at startup (wart fix, step 7 — the bash
+    let a garbage threshold read as a parse failure, silently disabling the
+    gate), so the float() here only fails for callers that skip parse_args."""
     try:
         d = json.loads(usage_json)
         five = d.get("five_hour") or {}
@@ -232,7 +245,7 @@ def wait_for_quota(
     q7: str,
     max_waits: str,
     claude_alias: str,
-    sleep_fn=time.sleep,
+    sleep_fn: Callable[[float], object] = time.sleep,
 ) -> int:
     """Block until usage is under both thresholds. 5h is checked before 7d,
     strictly `>`; fetch/parse failures WARN and proceed; over-limit waits until
@@ -301,8 +314,11 @@ class Pipeline:
         self.quota_5h = os.environ.get("QUOTA_5H") or "85"
         self.quota_7d = os.environ.get("QUOTA_7D") or "95"
         self.quota_max_waits = os.environ.get("QUOTA_MAX_WAITS") or "6"
-        # workspace isolation (step 4); run_dir stays None in legacy mode
-        self.isolate = False
+        # workspace isolation (step 4; default since step 7d) — run_dir stays
+        # None only in legacy mode (--no-isolate)
+        self.isolate = True
+        self._isolate_explicit = False  # an isolation flag was given (vs the default)
+        self._no_isolate_given = False
         self.run_id = ""
         self._run_id_given = False  # `--run-id=` (empty) must error, not mint a fresh id
         self.run_dir: Path | None = None
@@ -336,10 +352,16 @@ class Pipeline:
                 self.skip_reviews = False
             elif arg == "--isolate":
                 self.isolate = True
+                self._isolate_explicit = True
+            elif arg == "--no-isolate":
+                self.isolate = False
+                self._isolate_explicit = True
+                self._no_isolate_given = True
             elif arg.startswith("--run-id="):
                 self.run_id = arg.split("=", 1)[1]
                 self._run_id_given = True
                 self.isolate = True  # attaching implies isolation
+                self._isolate_explicit = True
             elif arg.startswith("--max-parallel="):
                 self.max_parallel = arg.split("=", 1)[1]
             elif arg.startswith("--max-turns="):
@@ -360,6 +382,30 @@ class Pipeline:
                 self.targets.append(arg)
         if not self.targets:
             self.targets.append(_logical_cwd().name)  # bash `basename "$PWD"` (logical)
+        # order-independent: the two are contradictory however they arrive
+        # (e.g. scheduler-injected --run-id + a --no-isolate from queue flags)
+        if self._run_id_given and self._no_isolate_given:
+            print("ERROR: --no-isolate conflicts with --run-id", file=sys.stderr)
+            return 1
+        # wart fix (step 7): garbage quota config fails fast (pre-tee, like the
+        # option errors). The bash pushed the values into the gate's arithmetic,
+        # where a bad threshold read as "usage parse failed" and silently
+        # DISABLED the gate, and a bad QUOTA_MAX_WAITS crashed mid-run.
+        for label, val, conv in (
+            ("QUOTA_5H", self.quota_5h, float),
+            ("QUOTA_7D", self.quota_7d, float),
+            ("QUOTA_MAX_WAITS", self.quota_max_waits, int),
+        ):
+            try:
+                parsed = conv(val)
+            except ValueError:
+                print(f"ERROR: {label} must be numeric, got '{val}'", file=sys.stderr)
+                return 1
+            # inf/nan parse fine but make the gate's `usage > limit` comparison
+            # never fire — the same silently-disabled gate this check prevents
+            if conv is float and not math.isfinite(parsed):
+                print(f"ERROR: {label} must be a finite number, got '{val}'", file=sys.stderr)
+                return 1
         return None
 
     # ── workspace isolation (step 4; runs before the tee so pipeline.log can
@@ -368,28 +414,33 @@ class Pipeline:
         """Establish the per-run root. Returns an exit code for an invalid
         --run-id (pre-tee, like the option errors), None to proceed.
 
-        Sources, in priority order: --isolate / --run-id create-or-attach under
-        SPECULA_ROOT/runs; an ambient SPECULA_RUN_DIR (scheduler, outer script)
-        is honored as-is. Neither present -> legacy mode, byte-identical to the
-        $PWD-derived bash behavior.
+        Sources, in priority order: an explicit flag wins (--run-id attach,
+        --isolate mint, --no-isolate legacy); then an ambient SPECULA_RUN_DIR
+        (scheduler, outer script) is honored as-is; otherwise the default
+        mints a fresh isolated run under SPECULA_ROOT/runs (the flip, step 7d
+        — the $PWD-derived legacy layout now needs --no-isolate).
         """
+        if not self.isolate:
+            # explicit --no-isolate: guaranteed-legacy for the whole tree —
+            # the phase children must not re-isolate off an ambient run dir
+            os.environ.pop("SPECULA_RUN_DIR", None)
+            return None
         env_dir = os.environ.get("SPECULA_RUN_DIR", "")
-        if self.isolate:
+        attached_ambient = bool(env_dir) and not self._isolate_explicit
+        if attached_ambient:
+            self.run_dir = Path(env_dir)
+            self.run_id = self.run_dir.name
+        else:
             if self._run_id_given and not _valid_run_id(self.run_id):
                 print(f"ERROR: invalid --run-id '{self.run_id}' (allowed: [A-Za-z0-9._-]+)", file=sys.stderr)
                 return 1
             if not self._run_id_given:
                 self.run_id = generate_run_id()
             self.run_dir = SPECULA_ROOT / "runs" / self.run_id
-        elif env_dir:
-            self.run_dir = Path(env_dir)
-            self.run_id = self.run_dir.name
-        else:
-            return None
         self.run_dir.mkdir(parents=True, exist_ok=True)
         os.environ["SPECULA_RUN_DIR"] = str(self.run_dir)  # phase subprocesses inherit
         self._write_run_meta()
-        if self.isolate:
+        if not attached_ambient:
             # runs/latest -> <run-id>; symlink+rename so readers never see a gap
             with contextlib.suppress(OSError):
                 tmp = self.run_dir.parent / f".latest.{self.run_id}.tmp"
@@ -429,21 +480,23 @@ class Pipeline:
 
     # ── utilities ──
     def extract_names(self) -> list[str]:
-        """First '|' field of each target, trimmed. The bash flattened the list
-        through `echo ${names[@]}` + `read -ra`, so a name with internal
-        whitespace splits into several — reproduced by extend(split()). Names
-        with quote characters were undefined behavior under `xargs` and stay
-        out of contract."""
+        """First '|' field of each target, trimmed — one name per target. Wart
+        fix (step 7): the bash flattened the list through `echo ${names[@]}` +
+        `read -ra`, so a name with internal whitespace silently split into
+        several phantom targets; a whitespace-only name still contributes
+        nothing (the bash word-split dropped those too)."""
         names: list[str] = []
         for target in self.targets:
             # bash `IFS='|' read -r name _ _ _ <<< "$target"` reads only the
             # first line, so a newline terminates the name before the '|' split.
             first_line = target.split("\n", 1)[0]
-            names.extend(first_line.split("|", 1)[0].split())
+            name = first_line.split("|", 1)[0].strip()
+            if name:
+                names.append(name)
         return names
 
     def validate_agent_adapter(self) -> None:
-        adapter = SCRIPT_DIR / "adapters" / f"{self.agent}.sh"
+        adapter = LAUNCH_DIR / "adapters" / f"{self.agent}.sh"
         if not adapter.is_file():
             print(
                 f"ERROR: Unknown agent '{self.agent}' — adapter not found at {adapter}",
@@ -555,7 +608,7 @@ class Pipeline:
         return args
 
     def _run_launcher(self, script: str, args: list[str]) -> None:
-        r = subprocess.run(["bash", str(SCRIPT_DIR / script), *args])
+        r = subprocess.run(["bash", str(LAUNCH_DIR / script), *args])
         if r.returncode != 0:
             # bash set -e: a failing phase aborts the run. Signal death arrives
             # as a negative returncode — report 128+N like the bash did (143,
@@ -759,8 +812,6 @@ class Pipeline:
 
             rr_files = self._rr_files(name)
             if rr_files:
-                # bash grep -lE scans the WHOLE file (unlike rr_status's 25-line
-                # window) and matches the status as a prefix — kept faithfully
                 rr_resolved = self._status_file_count(rr_files, "RESOLVED")
                 rr_deferred = self._status_file_count(rr_files, "DEFERRED")
                 out.append(
@@ -776,11 +827,15 @@ class Pipeline:
                 out.append("- **Phase 4b (Bug Classification)**: SKIPPED")
 
             out += ["", "**Logs:**"]
+            # wart fix (step 7): the bash candidate list skipped the phase-2.5
+            # and phase-3 agent logs (harness-gen.log, spec-validation.log)
             for log_file in (
                 work_dir / "agent.log",
                 work_dir / "review-analysis.log",
                 work_dir / "spec-gen.log",
                 spec_dir / "review-specgen.log",
+                work_dir / "harness-gen.log",
+                work_dir / "spec-validation.log",
                 spec_dir / "quick-mc.log",
                 spec_dir / "review-validation.log",
                 work_dir / "bug-confirmation.log",
@@ -812,17 +867,13 @@ class Pipeline:
 
     @staticmethod
     def _status_file_count(files: list[Path], status: str) -> int:
-        """Files with ≥1 line matching ^status:[[:space:]]*<status> — bash
-        `grep -lE ... | wc -l`."""
-        n = 0
-        for f in files:
-            try:
-                text = f.read_text(errors="replace")
-            except OSError:
-                continue
-            if any(re.match(r"status:[ \t\f\v\r]*" + status, ln) for ln in text.splitlines()):
-                n += 1
-        return n
+        """Files whose status (as the state machine reads it: rr_status's
+        25-line frontmatter window, exact token) equals `status`. Wart fix
+        (step 7): the bash summary used `grep -lE '^status:[[:space:]]*X' |
+        wc -l` — whole file, prefix match — so it could disagree with the
+        repair loop's own reads (a buried `status:` line counted here but not
+        there) and RESOLVEDX counted as RESOLVED."""
+        return sum(1 for f in files if rr_status(f) == status)
 
     # ── main (runs inside the tee) ──
     def main(self) -> int:
@@ -952,10 +1003,12 @@ def main(argv: list[str]) -> int:
         out_dir.mkdir(parents=True, exist_ok=True)
         log_path = out_dir / "pipeline.log"
     tee = subprocess.Popen(["tee", str(log_path)], stdin=subprocess.PIPE)
+    assert tee.stdin is not None  # stdin=PIPE
+    tee_in = tee.stdin
     sys.stdout.flush()
     sys.stderr.flush()
-    os.dup2(tee.stdin.fileno(), 1)  # fd-level: phase subprocesses inherit the tee
-    os.dup2(tee.stdin.fileno(), 2)
+    os.dup2(tee_in.fileno(), 1)  # fd-level: phase subprocesses inherit the tee
+    os.dup2(tee_in.fileno(), 2)
     try:
         code = p.main()
     except SystemExit as e:
@@ -974,7 +1027,7 @@ def main(argv: list[str]) -> int:
         os.dup2(devnull, 1)
         os.dup2(devnull, 2)
         os.close(devnull)
-        tee.stdin.close()
+        tee_in.close()
         # bash pipefail: the pipeline's status is the rightmost command to exit
         # non-zero, so a failing tee (unwritable/full log) wins even when main
         # also failed — verified: `set -o pipefail; (exit 2)|(exit 1)` exits 1.

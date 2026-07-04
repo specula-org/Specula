@@ -15,7 +15,7 @@ exit_code: 0
 [TS] ===========================================
 [TS] SUMMARY
 [TS]   ---- footest (not-started)
-[TS] Total=1  Success=0  Failed=0  Skipped=1  Resets=1
+[TS] Total=1  Success=0  Failed=0  Dry=0  Skipped=1  Resets=1
 [TS] Logs: <SPECROOT>/logs/scheduler/<RUN_ID>/
 [TS] ===========================================
 

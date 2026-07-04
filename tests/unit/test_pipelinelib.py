@@ -1,14 +1,13 @@
-"""Unit tests for scripts/launch/pipelinelib.py (migration step 5).
+"""Unit tests for specula.pipelinelib (migration step 5).
 
 The characterization suite pins end-to-end behavior against the bash goldens;
 these tests pin the state-transition and decision tables at function level —
 the repair-request state machine, the quota gate, and the small parsing rules
 whose edge inputs are awkward to reach through a full pipeline run.
 
-stdlib unittest (no pytest/pip needed — the repo .venv is corrupted; pytest
-collects unittest.TestCase natively once step 2 wires CI):
+stdlib unittest, collected natively by pytest; imports the installed package:
 
-    python3 -m unittest discover -s tests/unit -v
+    uv run python -m unittest discover -s tests/unit -v
 """
 
 from __future__ import annotations
@@ -25,9 +24,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-LAUNCH = Path(__file__).resolve().parents[2] / "scripts" / "launch"
-sys.path.insert(0, str(LAUNCH))
-import pipelinelib as pl  # type: ignore[import-not-found]  # noqa: E402
+SRC = Path(__file__).resolve().parents[2] / "src"
+
+from specula import pipelinelib as pl
+from specula.phaselib import _logical_cwd
 
 RR_TEMPLATE = """\
 ---
@@ -203,7 +203,9 @@ class TestQuotaCheck(unittest.TestCase):
     def test_parse_failures_return_none(self) -> None:
         self.assertIsNone(self.check("not json {"))
         self.assertIsNone(self.check(usage("86", 50)))  # string utilization: bash TypeError
-        self.assertIsNone(self.check(usage(86, 50), q5="abc"))  # garbage threshold
+        # a garbage threshold still degrades to parse-fail at this layer, but
+        # parse_args rejects it before the gate ever runs (wart fix, step 7)
+        self.assertIsNone(self.check(usage(86, 50), q5="abc"))
 
 
 class TestEpoch(unittest.TestCase):
@@ -249,7 +251,7 @@ class TestWaitForQuota(TmpCwd):
                     sleep_fn=sleeps.append,
                 )
         except SystemExit as e:
-            rc = e.code
+            rc = e.code if isinstance(e.code, int) else 1
         return rc, sleeps, buf.getvalue()
 
     def test_missing_script_proceeds_silently(self) -> None:
@@ -352,10 +354,46 @@ class TestParsing(TmpCwd):
         p = make_pipeline(["  braft |brpc/braft|C++|Raft", "cometbft"])
         self.assertEqual(p.extract_names(), ["braft", "cometbft"])
 
-    def test_extract_names_flattens_internal_whitespace(self) -> None:
-        # bash re-split names on whitespace (echo+read -ra); kept faithfully
+    def test_extract_names_keeps_internal_whitespace(self) -> None:
+        # wart fix (step 7): bash re-split names on whitespace (echo+read -ra),
+        # turning one spaced name into phantom targets; the name stays whole now
         p = make_pipeline(["two words|x|y|z"])
-        self.assertEqual(p.extract_names(), ["two", "words"])
+        self.assertEqual(p.extract_names(), ["two words"])
+
+    def test_extract_names_drops_whitespace_only_name(self) -> None:
+        # the bash word-split contributed nothing for an all-blank name; kept
+        p = make_pipeline(["   |x|y|z", "real|x|y|z"])
+        self.assertEqual(p.extract_names(), ["real"])
+
+    def test_garbage_quota_env_rejected_at_parse(self) -> None:
+        # wart fix (step 7): the bash let a garbage threshold read as "usage
+        # parse failed" and silently disabled the quota gate; a garbage
+        # QUOTA_MAX_WAITS crashed mid-run. Both fail fast at parse time now.
+        for var, val in (("QUOTA_5H", "high"), ("QUOTA_7D", "9%"), ("QUOTA_MAX_WAITS", "1.5")):
+            with self.subTest(var=var):
+                os.environ[var] = val
+                self.addCleanup(os.environ.pop, var, None)
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    rc = pl.Pipeline().parse_args(["t|g|l|r"])
+                self.assertEqual(rc, 1)
+                self.assertIn(f"{var} must be numeric, got '{val}'", err.getvalue())
+                os.environ.pop(var, None)
+
+    def test_nonfinite_quota_threshold_rejected_at_parse(self) -> None:
+        # inf/nan pass float() but make the gate's `usage > limit` always False,
+        # silently disabling it — the very failure the numeric check exists to
+        # prevent, so a non-finite threshold fails fast too
+        for var, val in (("QUOTA_5H", "inf"), ("QUOTA_5H", "nan"), ("QUOTA_7D", "Infinity")):
+            with self.subTest(var=var, val=val):
+                os.environ[var] = val
+                self.addCleanup(os.environ.pop, var, None)
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    rc = pl.Pipeline().parse_args(["t|g|l|r"])
+                self.assertEqual(rc, 1)
+                self.assertIn(f"{var} must be a finite number, got '{val}'", err.getvalue())
+                os.environ.pop(var, None)
 
     def test_extract_names_stops_at_first_line(self) -> None:
         # bash `IFS='|' read -r name ...` consumes only the first line, so a
@@ -416,7 +454,7 @@ class TestRunReview(TmpCwd):
     def _capture(self, phase: str) -> list[str]:
         p = make_pipeline(["footest|foo/bar|Go|ref"], skip_reviews=False)
         seen: list[list[str]] = []
-        p._phase = lambda banner, script, args: seen.append(args)
+        p._phase = lambda banner, script, args: seen.append(args)  # type: ignore[method-assign]
         p.run_review(phase, ["footest"])
         self.assertEqual(len(seen), 1)
         return seen[0]
@@ -516,19 +554,23 @@ class TestLedger(RRDirCase):
         self.p.regenerate_ledger()
         self.assertFalse((self.tmp / ".specula-output" / "spec" / "repair-ledger.md").exists())
 
-    def test_status_file_count_prefix_quirk(self) -> None:
-        # grep -lE '^status:[[:space:]]*RESOLVED' matches as a PREFIX — RESOLVEDX
-        # counts too. Kept faithfully; pinned so a "fix" is a conscious decision.
+    def test_status_file_count_exact_token(self) -> None:
+        # wart fix (step 7): the bash grep matched RESOLVED as a PREFIX, so a
+        # botched RESOLVEDX counted as resolved; the count is exact now
         f1 = make_rr(self.rr_dir, "RR-1", "RESOLVEDX")
-        f2 = make_rr(self.rr_dir, "RR-2", "OPEN")
-        self.assertEqual(pl.Pipeline._status_file_count([f1, f2], "RESOLVED"), 1)
+        f2 = make_rr(self.rr_dir, "RR-2", "RESOLVED")
+        f3 = make_rr(self.rr_dir, "RR-3", "OPEN")
+        self.assertEqual(pl.Pipeline._status_file_count([f1, f2, f3], "RESOLVED"), 1)
 
-    def test_status_file_count_scans_whole_file(self) -> None:
-        # unlike rr_status's 25-line window, the summary grep sees the whole file
+    def test_status_file_count_uses_state_machine_window(self) -> None:
+        # wart fix (step 7): the bash summary grep scanned the whole file while
+        # rr_status reads only the 25-line frontmatter window — the same RR
+        # could count as resolved in the summary yet stay OPEN to the repair
+        # loop; both reads now share rr_status
         pad = "".join(f"k{i}: v\n" for i in range(30))
         f = self.rr_dir / "RR-1.md"
         f.write_text(pad + "status: DEFERRED\n")
-        self.assertEqual(pl.Pipeline._status_file_count([f], "DEFERRED"), 1)
+        self.assertEqual(pl.Pipeline._status_file_count([f], "DEFERRED"), 0)
 
 
 # ──────────────────────────────────────────────────────────
@@ -538,8 +580,8 @@ class TestRunLauncherExitCodes(TmpCwd):
     def _launch(self, body: str) -> int | str | None:
         (self.tmp / "fake.sh").write_text(body)
         p = make_pipeline(["t|g|l|r"])
-        self.addCleanup(setattr, pl, "SCRIPT_DIR", pl.SCRIPT_DIR)
-        pl.SCRIPT_DIR = self.tmp
+        self.addCleanup(setattr, pl, "LAUNCH_DIR", pl.LAUNCH_DIR)
+        pl.LAUNCH_DIR = self.tmp
         with self.assertRaises(SystemExit) as ctx:
             p._run_launcher("fake.sh", [])
         return ctx.exception.code
@@ -608,14 +650,14 @@ class TestLogicalCwd(TmpCwd):
         link.symlink_to(real)
         os.chdir(link)
         os.environ["PWD"] = str(link)
-        self.assertEqual(pl._logical_cwd(), link)
+        self.assertEqual(_logical_cwd(), link)
         p = pl.Pipeline()
         self.assertIsNone(p.parse_args([]))
         self.assertEqual(p.targets, ["work"])  # bash `basename "$PWD"`
 
     def test_stale_pwd_falls_back_to_getcwd(self) -> None:
         os.environ["PWD"] = "/definitely/not/here"
-        self.assertEqual(pl._logical_cwd(), Path.cwd())
+        self.assertEqual(_logical_cwd(), Path.cwd())
 
 
 class TestMainTeeTeardown(TmpCwd):
@@ -626,10 +668,10 @@ class TestMainTeeTeardown(TmpCwd):
         d = self.tmp / "driver.py"
         d.write_text(
             "import sys\n"
-            f"sys.path.insert(0, {str(LAUNCH)!r})\n"
-            "import pipelinelib as pl\n"
+            f"sys.path.insert(0, {str(SRC)!r})\n"
+            "from specula import pipelinelib as pl\n"
             f"{patch}\n"
-            "sys.exit(pl.main(['t|g|l|r']))\n"
+            "sys.exit(pl.main(['--no-isolate', 't|g|l|r']))\n"  # legacy: keep runs/ out of the real repo
         )
         return subprocess.run([sys.executable, str(d)], cwd=self.tmp, capture_output=True, text=True)
 
