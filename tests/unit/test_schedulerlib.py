@@ -7,7 +7,7 @@ queue-parsing edges, the quota decision table, the transient-retry classifier
 line's real exit code (the bash always said exit=0), and the sanctioned
 deviations (robust _epoch, fail-fast numeric args).
 
-stdlib unittest:  python3 -m unittest tests.unit.test_schedulerlib -v
+stdlib unittest:  uv run python -m unittest tests.unit.test_schedulerlib -v
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ import contextlib
 import io
 import os
 import re
-import sys
 import tempfile
 import threading
 import time
@@ -25,12 +24,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-EXP = Path(__file__).resolve().parents[2] / "scripts" / "exp"
-sys.path.insert(0, str(EXP))
-import schedulerlib as sl  # type: ignore[import-not-found]  # noqa: E402
+from specula import schedulerlib as sl
 
 
-class Sched(sl.Scheduler):  # type: ignore[misc]
+class Sched(sl.Scheduler):
     """Instrumented scheduler: sleeps recorded instead of blocking, log lines
     captured in memory (the tee-to-file contract is golden-pinned, not re-tested
     here)."""
@@ -91,7 +88,7 @@ class TestParseArgs(Base):
             (s.workers, s.threshold, s.threshold_7day, s.max_windows, s.max_turns),
             (3, "80", "95", 3, 0),
         )
-        self.assertEqual(s.queue_file, str(sl.SCRIPT_DIR / "tasks.queue"))
+        self.assertEqual(s.queue_file, str(sl.EXP_DIR / "tasks.queue"))
         self.assertEqual((s.prompt_file, s.dry_run, s.setup_only, s.claude_alias), ("", False, False, "claude"))
 
     def test_all_flags_space_style(self) -> None:
@@ -251,7 +248,7 @@ class TestCheckUsage(Base):
         root = self.tmp()
         if stub_body is not None:
             (root / "usage.sh").write_text(stub_body)
-        self.patch_mod("SCRIPT_DIR", root)
+        self.patch_mod("EXP_DIR", root)
         return self.sched()
 
     def json_stub(self, payload: str, rc: int = 0) -> str:

@@ -1,14 +1,13 @@
-"""Unit tests for scripts/launch/pipelinelib.py (migration step 5).
+"""Unit tests for specula.pipelinelib (migration step 5).
 
 The characterization suite pins end-to-end behavior against the bash goldens;
 these tests pin the state-transition and decision tables at function level —
 the repair-request state machine, the quota gate, and the small parsing rules
 whose edge inputs are awkward to reach through a full pipeline run.
 
-stdlib unittest (no pytest/pip needed — the repo .venv is corrupted; pytest
-collects unittest.TestCase natively once step 2 wires CI):
+stdlib unittest, collected natively by pytest; imports the installed package:
 
-    python3 -m unittest discover -s tests/unit -v
+    uv run python -m unittest discover -s tests/unit -v
 """
 
 from __future__ import annotations
@@ -25,9 +24,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-LAUNCH = Path(__file__).resolve().parents[2] / "scripts" / "launch"
-sys.path.insert(0, str(LAUNCH))
-import pipelinelib as pl  # type: ignore[import-not-found]  # noqa: E402
+SRC = Path(__file__).resolve().parents[2] / "src"
+
+from specula import pipelinelib as pl
+from specula.phaselib import _logical_cwd
 
 RR_TEMPLATE = """\
 ---
@@ -249,7 +249,7 @@ class TestWaitForQuota(TmpCwd):
                     sleep_fn=sleeps.append,
                 )
         except SystemExit as e:
-            rc = e.code
+            rc = e.code if isinstance(e.code, int) else 1
         return rc, sleeps, buf.getvalue()
 
     def test_missing_script_proceeds_silently(self) -> None:
@@ -416,7 +416,7 @@ class TestRunReview(TmpCwd):
     def _capture(self, phase: str) -> list[str]:
         p = make_pipeline(["footest|foo/bar|Go|ref"], skip_reviews=False)
         seen: list[list[str]] = []
-        p._phase = lambda banner, script, args: seen.append(args)
+        p._phase = lambda banner, script, args: seen.append(args)  # type: ignore[method-assign]
         p.run_review(phase, ["footest"])
         self.assertEqual(len(seen), 1)
         return seen[0]
@@ -538,8 +538,8 @@ class TestRunLauncherExitCodes(TmpCwd):
     def _launch(self, body: str) -> int | str | None:
         (self.tmp / "fake.sh").write_text(body)
         p = make_pipeline(["t|g|l|r"])
-        self.addCleanup(setattr, pl, "SCRIPT_DIR", pl.SCRIPT_DIR)
-        pl.SCRIPT_DIR = self.tmp
+        self.addCleanup(setattr, pl, "LAUNCH_DIR", pl.LAUNCH_DIR)
+        pl.LAUNCH_DIR = self.tmp
         with self.assertRaises(SystemExit) as ctx:
             p._run_launcher("fake.sh", [])
         return ctx.exception.code
@@ -608,14 +608,14 @@ class TestLogicalCwd(TmpCwd):
         link.symlink_to(real)
         os.chdir(link)
         os.environ["PWD"] = str(link)
-        self.assertEqual(pl._logical_cwd(), link)
+        self.assertEqual(_logical_cwd(), link)
         p = pl.Pipeline()
         self.assertIsNone(p.parse_args([]))
         self.assertEqual(p.targets, ["work"])  # bash `basename "$PWD"`
 
     def test_stale_pwd_falls_back_to_getcwd(self) -> None:
         os.environ["PWD"] = "/definitely/not/here"
-        self.assertEqual(pl._logical_cwd(), Path.cwd())
+        self.assertEqual(_logical_cwd(), Path.cwd())
 
 
 class TestMainTeeTeardown(TmpCwd):
@@ -626,8 +626,8 @@ class TestMainTeeTeardown(TmpCwd):
         d = self.tmp / "driver.py"
         d.write_text(
             "import sys\n"
-            f"sys.path.insert(0, {str(LAUNCH)!r})\n"
-            "import pipelinelib as pl\n"
+            f"sys.path.insert(0, {str(SRC)!r})\n"
+            "from specula import pipelinelib as pl\n"
             f"{patch}\n"
             "sys.exit(pl.main(['t|g|l|r']))\n"
         )

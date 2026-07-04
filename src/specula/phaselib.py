@@ -11,9 +11,6 @@ Behavior is a faithful port; the characterization suite in tests/characterizatio
 pins each launcher's --dry-run output and precondition gate against the bash.
 
 Usage:  python3 phaselib.py <phase> [options] "<target>" [...]
-
-Lives in scripts/launch/ for now (no packaging dependency); moves into the
-`specula/` package once that exists (migration step 2).
 """
 
 from __future__ import annotations
@@ -27,8 +24,10 @@ import sys
 import time
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
+# the launch_*.sh shims and the agent adapters stay under scripts/launch/
+LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
 
 # bash pathname expansion (`for d in .../*/`) orders by the locale collating
 # sequence; adopt the ambient locale so find_repo_dir picks the same repo the
@@ -277,7 +276,7 @@ class Phase:
         if not targets:
             targets = [_logical_cwd().name]  # bash `basename "$PWD"` (logical under symlinks)
 
-        adapter = SCRIPT_DIR / "adapters" / f"{agent}.sh"
+        adapter = LAUNCH_DIR / "adapters" / f"{agent}.sh"
         if not adapter.is_file():
             print(f"ERROR: Unknown agent '{agent}' — adapter not found at {adapter}")
             return 1
@@ -1230,7 +1229,7 @@ Output:
             print(f"Usage: {SCRIPT_DIR}/phaselib.py review <analysis|specgen|validation> name [name ...]")
             return 1
 
-        adapter = SCRIPT_DIR / "adapters" / f"{agent}.sh"
+        adapter = LAUNCH_DIR / "adapters" / f"{agent}.sh"
         if not adapter.is_file():
             print(f"ERROR: Unknown agent '{agent}' — adapter not found at {adapter}")
             return 1

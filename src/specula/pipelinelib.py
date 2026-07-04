@@ -9,9 +9,6 @@ state machine and the quota gate are all faithful ports, pinned by the
 pipeline_*/repair_*/quota_* cases in tests/characterization/.
 
 Usage:  python3 pipelinelib.py [options] "name|github|lang|reference" [...]
-
-Lives in scripts/launch/ for now (no packaging dependency); moves into the
-`specula/` package once that exists (migration step 2).
 """
 
 from __future__ import annotations
@@ -26,10 +23,19 @@ import subprocess
 import sys
 import time
 import traceback
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from phaselib import _logical_cwd, _wc_l
+# The sibling import works in both invocation modes: as a package module
+# (`from specula import pipelinelib`; src/ already importable) and as a file
+# run by path (the launch_pipeline.sh shim, oracle specroot copies) — path
+# invocation puts src/specula/ on sys.path but not src/, so add the package
+# root first. In-process only: unlike PYTHONPATH it leaks into no child
+# process (see scripts/launch/adapters/claude-code.sh for why that matters).
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from specula.phaselib import _logical_cwd, _wc_l
 
 # bash pathname expansion (`for f in "$d"/RR-*.md`) orders by the locale
 # collating sequence — RR-file glob order feeds ledger rows and repair state
@@ -38,8 +44,10 @@ from phaselib import _logical_cwd, _wc_l
 with contextlib.suppress(locale.Error):
     locale.setlocale(locale.LC_COLLATE, "")
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
+# the launch_*.sh phase shims and the agent adapters stay under scripts/launch/
+LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
 USAGE_SCRIPT = SPECULA_ROOT / "scripts" / "exp" / "usage.sh"
 
 USAGE = """
@@ -232,7 +240,7 @@ def wait_for_quota(
     q7: str,
     max_waits: str,
     claude_alias: str,
-    sleep_fn=time.sleep,
+    sleep_fn: Callable[[float], object] = time.sleep,
 ) -> int:
     """Block until usage is under both thresholds. 5h is checked before 7d,
     strictly `>`; fetch/parse failures WARN and proceed; over-limit waits until
@@ -443,7 +451,7 @@ class Pipeline:
         return names
 
     def validate_agent_adapter(self) -> None:
-        adapter = SCRIPT_DIR / "adapters" / f"{self.agent}.sh"
+        adapter = LAUNCH_DIR / "adapters" / f"{self.agent}.sh"
         if not adapter.is_file():
             print(
                 f"ERROR: Unknown agent '{self.agent}' — adapter not found at {adapter}",
@@ -555,7 +563,7 @@ class Pipeline:
         return args
 
     def _run_launcher(self, script: str, args: list[str]) -> None:
-        r = subprocess.run(["bash", str(SCRIPT_DIR / script), *args])
+        r = subprocess.run(["bash", str(LAUNCH_DIR / script), *args])
         if r.returncode != 0:
             # bash set -e: a failing phase aborts the run. Signal death arrives
             # as a negative returncode — report 128+N like the bash did (143,
@@ -952,10 +960,12 @@ def main(argv: list[str]) -> int:
         out_dir.mkdir(parents=True, exist_ok=True)
         log_path = out_dir / "pipeline.log"
     tee = subprocess.Popen(["tee", str(log_path)], stdin=subprocess.PIPE)
+    assert tee.stdin is not None  # stdin=PIPE
+    tee_in = tee.stdin
     sys.stdout.flush()
     sys.stderr.flush()
-    os.dup2(tee.stdin.fileno(), 1)  # fd-level: phase subprocesses inherit the tee
-    os.dup2(tee.stdin.fileno(), 2)
+    os.dup2(tee_in.fileno(), 1)  # fd-level: phase subprocesses inherit the tee
+    os.dup2(tee_in.fileno(), 2)
     try:
         code = p.main()
     except SystemExit as e:
@@ -974,7 +984,7 @@ def main(argv: list[str]) -> int:
         os.dup2(devnull, 1)
         os.dup2(devnull, 2)
         os.close(devnull)
-        tee.stdin.close()
+        tee_in.close()
         # bash pipefail: the pipeline's status is the rightmost command to exit
         # non-zero, so a failing tee (unwritable/full log) wins even when main
         # also failed — verified: `set -o pipefail; (exit 2)|(exit 1)` exits 1.

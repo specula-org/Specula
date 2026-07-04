@@ -67,12 +67,13 @@ def _adapter_cmd() -> list[str]:
     return ["bash", str(ADAPTER)]
 
 
-PHASELIB = LAUNCH / "phaselib.py"
-PIPELINELIB = LAUNCH / "pipelinelib.py"
+PKG = SPECULA_ROOT / "src" / "specula"
+PHASELIB = PKG / "phaselib.py"
+PIPELINELIB = PKG / "pipelinelib.py"
 
 EXP = SPECULA_ROOT / "scripts" / "exp"
 SCHEDULER = EXP / "scheduler.sh"
-SCHEDULERLIB = EXP / "schedulerlib.py"
+SCHEDULERLIB = PKG / "schedulerlib.py"
 
 
 def _launcher_cmd(script: str) -> list[str]:
@@ -641,16 +642,21 @@ def run_pipeline_cd_case() -> str:
         (launch / "adapters").mkdir(parents=True)
         # dry-run only existence-checks the adapter, never runs it
         shutil.copy2(ADAPTER, launch / "adapters" / "claude-code.sh")
+        pkg = root / "src" / "specula"
+        pkg.mkdir(parents=True)
+        # regular package beats any installed `specula` on sys.path, so the
+        # copied pipelinelib's `from specula.phaselib import …` stays hermetic
+        (pkg / "__init__.py").write_text("")
         for py in ("phaselib.py", "pipelinelib.py"):
-            if (LAUNCH / py).exists():
-                shutil.copy2(LAUNCH / py, launch / py)
+            if (PKG / py).exists():
+                shutil.copy2(PKG / py, pkg / py)
         entry_src = Path(impl) if impl and impl != "python" and os.path.exists(impl) else LAUNCH / "launch_pipeline.sh"
         shutil.copy2(entry_src, launch / "launch_pipeline.sh")
         (root / "case-studies" / "footest").mkdir(parents=True)
         work = tmp / "work"
         work.mkdir()
         if impl == "python":
-            cmd = ["python3", str(launch / "pipelinelib.py")]
+            cmd = ["python3", str(pkg / "pipelinelib.py")]
         else:
             cmd = ["bash", str(launch / "launch_pipeline.sh")]
         env = _clean_env({"HOME": str(tmp)})
@@ -712,8 +718,8 @@ def _run_pipeline_driver(
 ) -> subprocess.CompletedProcess[str]:
     """Materialize and run the bash or python variant of a helper driver, per
     _pipeline_helper_impl. `subs` maps @TOKEN@ -> value in the chosen template;
-    @FNONLY@ (bash: the sourceable pipeline functions) and @LAUNCH@ (python:
-    pipelinelib's import dir) are filled in here."""
+    @FNONLY@ (bash: the sourceable pipeline functions) and @SRC@ (python:
+    the package root, so `from specula import pipelinelib` works) are filled in here."""
     kind, src = _pipeline_helper_impl()
     if kind == "bash":
         fnonly = tmp / "pipeline_fnonly.sh"
@@ -721,7 +727,7 @@ def _run_pipeline_driver(
         text = bash_tpl.replace("@FNONLY@", str(fnonly))
         driver, runner = tmp / "driver.sh", "bash"
     else:
-        text = py_tpl.replace("@LAUNCH@", str(LAUNCH))
+        text = py_tpl.replace("@SRC@", str(SPECULA_ROOT / "src"))
         driver, runner = tmp / "driver.py", "python3"
     for token, val in subs.items():
         text = text.replace(token, val)
@@ -784,8 +790,8 @@ cat "$RR"
 _REPAIR_DRIVER_PY = """\
 import sys
 
-sys.path.insert(0, "@LAUNCH@")
-import pipelinelib as pl
+sys.path.insert(0, "@SRC@")
+from specula import pipelinelib as pl
 
 RR = "@RR@"
 print("== field reads (pre) ==")
@@ -858,8 +864,8 @@ import locale
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "@LAUNCH@")
-import pipelinelib as pl  # import sets LC_COLLATE (bash glob order)
+sys.path.insert(0, "@SRC@")
+from specula import pipelinelib as pl  # import sets LC_COLLATE (bash glob order)
 
 for f in sorted(Path("@RRDIR@").glob("RR-E*.md"), key=lambda p: locale.strxfrm(p.name)):
     print(f"== {f.name} ==")
@@ -906,8 +912,8 @@ echo "wait_for_quota returned: $?"   # only reached on the 'ok' (proceed) path
 _QUOTA_DRIVER_PY = """\
 import sys
 
-sys.path.insert(0, "@LAUNCH@")
-import pipelinelib as pl
+sys.path.insert(0, "@SRC@")
+from specula import pipelinelib as pl
 
 rc = pl.wait_for_quota(
     usage_script="@FAKEUSAGE@",
@@ -1163,9 +1169,11 @@ def run_scheduler_case(
         impl = os.environ.get("SPECULA_SCHEDULER_IMPL", "")
         src = Path(impl) if impl and impl != "python" and os.path.exists(impl) else SCHEDULER
         shutil.copy2(src, exp / "scheduler.sh")
+        pkg = root / "src" / "specula"
+        pkg.mkdir(parents=True)
         if SCHEDULERLIB.exists():
-            shutil.copy2(SCHEDULERLIB, exp / "schedulerlib.py")
-        cmd = ["python3", str(exp / "schedulerlib.py")] if impl == "python" else ["bash", str(exp / "scheduler.sh")]
+            shutil.copy2(SCHEDULERLIB, pkg / "schedulerlib.py")
+        cmd = ["python3", str(pkg / "schedulerlib.py")] if impl == "python" else ["bash", str(exp / "scheduler.sh")]
 
         qfile = root / "tasks.queue"
         qfile.write_text(queue)

@@ -10,10 +10,9 @@ tests ARE the definition of the isolation semantics:
     layout, single/batch fork) — pinned here at function level and by the
     untouched characterization goldens end-to-end.
 
-stdlib unittest (no pytest/pip needed — the repo .venv is corrupted; pytest
-collects unittest.TestCase natively once step 2 wires CI):
+stdlib unittest, collected natively by pytest; imports the installed package:
 
-    python3 -m unittest tests.unit.test_workspace_isolation -v
+    uv run python -m unittest tests.unit.test_workspace_isolation -v
 """
 
 from __future__ import annotations
@@ -30,10 +29,10 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-LAUNCH = Path(__file__).resolve().parents[2] / "scripts" / "launch"
-sys.path.insert(0, str(LAUNCH))
-import phaselib  # type: ignore[import-not-found]  # noqa: E402
-import pipelinelib as pl  # type: ignore[import-not-found]  # noqa: E402
+PKG = Path(__file__).resolve().parents[2] / "src" / "specula"
+
+from specula import phaselib
+from specula import pipelinelib as pl
 
 RUN_ID_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
 
@@ -130,7 +129,7 @@ class TestPipelineWorkDirMirror(EnvIsolatedCase):
     implementations cannot drift apart."""
 
     def test_legacy_single_and_batch(self) -> None:
-        cwd = str(pl._logical_cwd())
+        cwd = str(phaselib._logical_cwd())
         p = pl.Pipeline()
         p.parse_args(["foo|o/r|Go|ref"])
         self.assertEqual(p.get_work_dir("foo"), f"{cwd}/.specula-output")
@@ -191,7 +190,7 @@ class TestFindRepoDir(EnvIsolatedCase):
 
 
 class TestPromptExtra(EnvIsolatedCase):
-    def _inject(self, ws: object, name: str) -> str:
+    def _inject(self, ws: phaselib.Workspace, name: str) -> str:
         return str(phaselib.Phase()._with_extra(ws, name, "PROMPT"))
 
     def test_isolated_work_dir_copy_wins(self) -> None:
@@ -330,8 +329,8 @@ class TestEnvThreading(EnvIsolatedCase):
             f'#!/usr/bin/env bash\nprintf \'%s\' "${{SPECULA_RUN_DIR:-UNSET}}" > "{marker}"\n'
         )
         self.patch_root(pl, root)
-        self.addCleanup(setattr, pl, "SCRIPT_DIR", pl.SCRIPT_DIR)
-        pl.SCRIPT_DIR = fake_scripts
+        self.addCleanup(setattr, pl, "LAUNCH_DIR", pl.LAUNCH_DIR)
+        pl.LAUNCH_DIR = fake_scripts
         p = pl.Pipeline()
         self.assertIsNone(p.parse_args(["--isolate", "foo|o/r|Go|ref"]))
         self.assertIsNone(p.resolve_run_dir())
@@ -380,7 +379,7 @@ class TestParallelIsolation(EnvIsolatedCase):
         for run in (run_a, run_b):
             procs.append(
                 subprocess.Popen(
-                    [sys.executable, str(LAUNCH / "pipelinelib.py"), *self.SKIPS, target],
+                    [sys.executable, str(PKG / "pipelinelib.py"), *self.SKIPS, target],
                     cwd=launch_cwd,
                     env={**env, "SPECULA_RUN_DIR": str(run)},
                     stdout=subprocess.PIPE,
@@ -427,6 +426,7 @@ class TestMonitorLine(EnvIsolatedCase):
             with self.subTest(phase=cls.__name__):
                 line = cls().monitor_line(ws)
                 self.assertEqual(line, f"  Monitor: tail -f {run}/*/.specula-output/{logname}")
+                assert line is not None  # for mypy: proven by the assertEqual
                 # the launch cwd the isolated run does not write to never leaks in
                 self.assertNotIn("/launch/dir", line)
 

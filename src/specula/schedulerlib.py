@@ -66,8 +66,10 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
+# usage.sh and the default tasks.queue stay under scripts/exp/
+EXP_DIR = SPECULA_ROOT / "scripts" / "exp"
 
 # the bash --help printed the scheduler.sh header comment via sed (lines 2 to
 # the first blank line, `# ` stripped); the text is pinned by help_scheduler
@@ -136,7 +138,7 @@ class Scheduler:
         self.threshold = "80"  # raw strings: displayed verbatim + exported to QUOTA_5H/7D
         self.threshold_7day = "95"
         self.max_windows = 3
-        self.queue_file = str(SCRIPT_DIR / "tasks.queue")
+        self.queue_file = str(EXP_DIR / "tasks.queue")
         self.max_turns = 0
         self.prompt_file = ""
         self.dry_run = False
@@ -244,7 +246,7 @@ class Scheduler:
         python died nonzero — kept as-is, revisited in the cutover commit)."""
         tmp = f"{self.log_dir}/.usage.json"
         proc = subprocess.run(
-            ["bash", str(SCRIPT_DIR / "usage.sh")],
+            ["bash", str(EXP_DIR / "usage.sh")],
             env={**os.environ, "CLAUDE_ALIAS": self.claude_alias},
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
