@@ -19,7 +19,9 @@ dev = [
     "mypy",
 ]
 
-# No [project.scripts] yet — the real CLI is still the bash `specula` launcher.
+# The repo-root `specula` launcher is a shim to the same dispatcher.
+[project.scripts]
+specula = "specula.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
