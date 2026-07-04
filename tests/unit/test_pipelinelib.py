@@ -203,7 +203,9 @@ class TestQuotaCheck(unittest.TestCase):
     def test_parse_failures_return_none(self) -> None:
         self.assertIsNone(self.check("not json {"))
         self.assertIsNone(self.check(usage("86", 50)))  # string utilization: bash TypeError
-        self.assertIsNone(self.check(usage(86, 50), q5="abc"))  # garbage threshold
+        # a garbage threshold still degrades to parse-fail at this layer, but
+        # parse_args rejects it before the gate ever runs (wart fix, step 7)
+        self.assertIsNone(self.check(usage(86, 50), q5="abc"))
 
 
 class TestEpoch(unittest.TestCase):
@@ -362,6 +364,21 @@ class TestParsing(TmpCwd):
         # the bash word-split contributed nothing for an all-blank name; kept
         p = make_pipeline(["   |x|y|z", "real|x|y|z"])
         self.assertEqual(p.extract_names(), ["real"])
+
+    def test_garbage_quota_env_rejected_at_parse(self) -> None:
+        # wart fix (step 7): the bash let a garbage threshold read as "usage
+        # parse failed" and silently disabled the quota gate; a garbage
+        # QUOTA_MAX_WAITS crashed mid-run. Both fail fast at parse time now.
+        for var, val in (("QUOTA_5H", "high"), ("QUOTA_7D", "9%"), ("QUOTA_MAX_WAITS", "1.5")):
+            with self.subTest(var=var):
+                os.environ[var] = val
+                self.addCleanup(os.environ.pop, var, None)
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    rc = pl.Pipeline().parse_args(["t|g|l|r"])
+                self.assertEqual(rc, 1)
+                self.assertIn(f"{var} must be numeric, got '{val}'", err.getvalue())
+                os.environ.pop(var, None)
 
     def test_extract_names_stops_at_first_line(self) -> None:
         # bash `IFS='|' read -r name ...` consumes only the first line, so a

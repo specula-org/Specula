@@ -208,8 +208,9 @@ def _quota_check(usage_json: str, q5: str, q7: str) -> str | None:
     """The decision the bash embedded in a `python3 -c` heredoc: 'ok', an
     over-limit message, or None for any parse failure (the bash caught those as
     a non-zero exit → 'usage parse failed'). q5/q7 stay raw strings for display
-    parity; numeric conversion happens inside the try so a garbage threshold is
-    a parse failure (proceed), exactly like the bash interpolation was."""
+    parity; parse_args validates them at startup (wart fix, step 7 — the bash
+    let a garbage threshold read as a parse failure, silently disabling the
+    gate), so the float() here only fails for callers that skip parse_args."""
     try:
         d = json.loads(usage_json)
         five = d.get("five_hour") or {}
@@ -368,6 +369,20 @@ class Pipeline:
                 self.targets.append(arg)
         if not self.targets:
             self.targets.append(_logical_cwd().name)  # bash `basename "$PWD"` (logical)
+        # wart fix (step 7): garbage quota config fails fast (pre-tee, like the
+        # option errors). The bash pushed the values into the gate's arithmetic,
+        # where a bad threshold read as "usage parse failed" and silently
+        # DISABLED the gate, and a bad QUOTA_MAX_WAITS crashed mid-run.
+        for label, val, conv in (
+            ("QUOTA_5H", self.quota_5h, float),
+            ("QUOTA_7D", self.quota_7d, float),
+            ("QUOTA_MAX_WAITS", self.quota_max_waits, int),
+        ):
+            try:
+                conv(val)
+            except ValueError:
+                print(f"ERROR: {label} must be numeric, got '{val}'", file=sys.stderr)
+                return 1
         return None
 
     # ── workspace isolation (step 4; runs before the tee so pipeline.log can
