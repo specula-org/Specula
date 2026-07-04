@@ -1,26 +1,10 @@
 #!/usr/bin/env bash
 #
 # specula — unified command-line entrypoint for the Specula pipeline.
-#
-# Specula runs as a sequence of phases, each of which has historically been
-# launched by its own scripts/launch/launch_*.sh. This dispatcher gives them a
-# single front door:
-#
-#   specula <command> [options] "name|github|lang|reference" [...]
-#
-# It is a thin passthrough: every argument after <command> is forwarded
-# verbatim to the underlying launch script, so per-phase flags (--agent,
-# --artifact, --max-parallel, --dry-run, ...) behave exactly as before and
-# `specula <command> --help` shows that script's own help.
-#
-# Examples:
-#   specula run      "cometbft|cometbft/cometbft|Go|Tendermint BFT"
-#   specula analyze  --agent=codex "cometbft|cometbft/cometbft|Go|Tendermint"
-#   specula validate --max-parallel=4
-#
+# Thin shim → Python dispatcher (src/specula/cli.py); after `pip install -e .`
+# the same dispatcher is on PATH as the `specula` console script. Every
+# argument is forwarded verbatim and the exit code propagates via exec.
 set -euo pipefail
-
-PROG="specula"
 
 # Resolve this script's real directory, following symlinks so it keeps working
 # when symlinked onto PATH. Kept portable (no `readlink -f`, which is non-POSIX).
@@ -31,62 +15,5 @@ while [ -h "$SOURCE" ]; do
   if [[ "$SOURCE" != /* ]]; then SOURCE="$src_dir/$SOURCE"; fi
 done
 SPECULA_ROOT="$(cd -P "$(dirname "$SOURCE")" && pwd)"
-SCRIPTS_DIR="$SPECULA_ROOT/scripts"
 
-# command | script (relative to scripts/) | one-line help.
-# The order here is the order shown in `specula --help`.
-COMMANDS=(
-  "run|launch/launch_pipeline.sh|Run the full pipeline (all phases: analysis -> classification)"
-  "analyze|launch/launch_code_analysis.sh|Phase 1 - static code analysis -> modeling brief"
-  "specgen|launch/launch_spec_generation.sh|Phase 2 - generate TLA+ specs from the modeling brief"
-  "harness|launch/launch_harness_generation.sh|Phase 2.5 - instrument the system + collect traces"
-  "validate|launch/launch_spec_validation.sh|Phase 3 - trace validation + model checking (bug hunting)"
-  "confirm|launch/launch_bug_confirmation.sh|Phase 4a - confirm & reproduce model-checking bugs"
-  "classify|launch/launch_bug_classification.sh|Phase 4b - assign severity tiers to confirmed bugs"
-  "review|launch/launch_review.sh|Run an inter-phase review agent"
-  "setup|infra/setup.sh|Install Specula agent skills + MCP tools"
-)
-
-print_help() {
-  local width=0 entry cmd rest desc
-  for entry in "${COMMANDS[@]}"; do
-    cmd="${entry%%|*}"
-    (( ${#cmd} > width )) && width=${#cmd}
-  done
-
-  echo "usage: $PROG <command> [options] \"name|github|lang|reference\" [...]"
-  echo ""
-  echo "A framework for finding deep bugs in system code using TLA+."
-  echo ""
-  echo "commands:"
-  for entry in "${COMMANDS[@]}"; do
-    cmd="${entry%%|*}"
-    rest="${entry#*|}"   # script|desc
-    desc="${rest#*|}"
-    printf "  %-${width}s  %s\n" "$cmd" "$desc"
-  done
-  echo ""
-  echo "Every argument after <command> is forwarded verbatim to the underlying"
-  echo "launch script. Run '$PROG <command> --help' for a command's full flag set."
-}
-
-# ── dispatch ──
-if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" || "$1" == "help" ]]; then
-  print_help
-  exit 0
-fi
-
-sub="$1"; shift
-for entry in "${COMMANDS[@]}"; do
-  cmd="${entry%%|*}"
-  if [[ "$sub" == "$cmd" ]]; then
-    rest="${entry#*|}"
-    script="${rest%%|*}"
-    exec bash "$SCRIPTS_DIR/$script" "$@"
-  fi
-done
-
-echo "$PROG: unknown command '$sub'" >&2
-echo "" >&2
-print_help >&2
-exit 2
+exec python3 "$SPECULA_ROOT/src/specula/cli.py" "$@"

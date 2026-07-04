@@ -67,8 +67,13 @@ def _adapter_cmd() -> list[str]:
     return ["bash", str(ADAPTER)]
 
 
-PHASELIB = LAUNCH / "phaselib.py"
-PIPELINELIB = LAUNCH / "pipelinelib.py"
+PKG = SPECULA_ROOT / "src" / "specula"
+PHASELIB = PKG / "phaselib.py"
+PIPELINELIB = PKG / "pipelinelib.py"
+
+EXP = SPECULA_ROOT / "scripts" / "exp"
+SCHEDULER = EXP / "scheduler.sh"
+SCHEDULERLIB = PKG / "schedulerlib.py"
 
 
 def _launcher_cmd(script: str) -> list[str]:
@@ -131,6 +136,14 @@ def _norm_line(line: str) -> str:
     line = re.sub(r"completed in \d+m \d+s", "completed in <ELAPSED>", line)
     # quota gate "sleeping 12345s" (now-relative) -> <SECS>
     line = re.sub(r"sleeping \d+s", "sleeping <SECS>s", line)
+    # scheduler log() prefix "[YYYY-MM-DD HH:MM:SS]" -> [TS]
+    line = re.sub(r"\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]", "[TS]", line)
+    # scheduler RUN_ID (date +%Y%m%d_%H%M%S: run= banner, Logs: path) -> <RUN_ID>
+    line = re.sub(r"\b\d{8}_\d{6}\b", "<RUN_ID>", line)
+    # scheduler task wall time "(success, 3s, attempt 1)" -> <N>s
+    line = re.sub(r", \d+s, attempt", ", <N>s, attempt", line)
+    # minted isolated run ids (generate_run_id: 20260703-153000-a1b2) -> <RID>
+    line = re.sub(r"\b\d{8}-\d{6}-[0-9a-f]{4}\b", "<RID>", line)
     return line
 
 
@@ -162,6 +175,9 @@ def _clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
         "QUOTA_5H",
         "QUOTA_7D",
         "QUOTA_MAX_WAITS",
+        # an ambient isolation root would reroute every $PWD-derived path the
+        # legacy goldens pin (step 4 workspace control)
+        "SPECULA_RUN_DIR",
     ):
         env.pop(var, None)
     env["PATH"] = "/usr/bin:/bin:" + env.get("PATH", "")
@@ -541,7 +557,11 @@ def run_pipeline_case(flags: list[str], target: str) -> str:
     """Run launch_pipeline.sh --dry-run with a given --skip-* combo; snapshot the
     phase sequencing + repair-loop gating. Hermetic: HOME points at an empty tmp
     so the quota gate's usage.sh finds no credentials, warns, and proceeds (no
-    network); dry-run prints each phase's command instead of launching agents."""
+    network); dry-run prints each phase's command instead of launching agents.
+    Runs --no-isolate since the default flip (step 7d): these cases pin the
+    legacy $PWD layout, now behind the escape hatch (and isolating here would
+    write runs/ into the real repo). pipeline_default_isolate covers the new
+    default hermetically."""
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         artifact = tmp / "artifact"
@@ -553,6 +573,7 @@ def run_pipeline_case(flags: list[str], target: str) -> str:
             _launcher_cmd("launch_pipeline.sh")
             + [
                 "--dry-run",
+                "--no-isolate",
                 f"--artifact={artifact}",
                 *flags,
                 target,
@@ -592,7 +613,8 @@ def run_pipeline_full_case(
         artifact = base / "artifact"
         _init_git_repo(artifact)
         env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base), "GIT_CEILING_DIRECTORIES": str(base)})
-        cmd = _launcher_cmd("launch_pipeline.sh") + [f"--artifact={artifact}", *flags, target]
+        # --no-isolate: these cases pin the legacy layout (step 7d flip)
+        cmd = _launcher_cmd("launch_pipeline.sh") + ["--no-isolate", f"--artifact={artifact}", *flags, target]
         proc = subprocess.run(cmd, cwd=work, env=env, capture_output=True, text=True)
         parts = [f"exit_code: {proc.returncode}", "", "=== stdout ===", proc.stdout, ""]
         plog = work / ".specula-output" / "pipeline.log"
@@ -628,25 +650,95 @@ def run_pipeline_cd_case() -> str:
         (launch / "adapters").mkdir(parents=True)
         # dry-run only existence-checks the adapter, never runs it
         shutil.copy2(ADAPTER, launch / "adapters" / "claude-code.sh")
+        pkg = root / "src" / "specula"
+        pkg.mkdir(parents=True)
+        # regular package beats any installed `specula` on sys.path, so the
+        # copied pipelinelib's `from specula.phaselib import …` stays hermetic
+        (pkg / "__init__.py").write_text("")
         for py in ("phaselib.py", "pipelinelib.py"):
-            if (LAUNCH / py).exists():
-                shutil.copy2(LAUNCH / py, launch / py)
+            if (PKG / py).exists():
+                shutil.copy2(PKG / py, pkg / py)
         entry_src = Path(impl) if impl and impl != "python" and os.path.exists(impl) else LAUNCH / "launch_pipeline.sh"
         shutil.copy2(entry_src, launch / "launch_pipeline.sh")
         (root / "case-studies" / "footest").mkdir(parents=True)
         work = tmp / "work"
         work.mkdir()
         if impl == "python":
-            cmd = ["python3", str(launch / "pipelinelib.py")]
+            cmd = ["python3", str(pkg / "pipelinelib.py")]
         else:
             cmd = ["bash", str(launch / "launch_pipeline.sh")]
         env = _clean_env({"HOME": str(tmp)})
-        proc = subprocess.run(cmd + ["--dry-run", "footest"], cwd=work, env=env, capture_output=True, text=True)
+        # --no-isolate: this case pins the legacy single-target cd branch (7d flip)
+        proc = subprocess.run(
+            cmd + ["--dry-run", "--no-isolate", "footest"], cwd=work, env=env, capture_output=True, text=True
+        )
         case_out = root / "case-studies" / "footest" / ".specula-output"
         locs = [
             f"pipeline.log in launch cwd: {'yes' if (work / '.specula-output' / 'pipeline.log').is_file() else 'NO'}",
             f"summary in case dir: {'yes' if (case_out / 'pipeline-summary.md').is_file() else 'NO'}",
             f"summary in launch cwd: {'yes (BUG)' if (work / '.specula-output' / 'pipeline-summary.md').is_file() else 'no'}",
+        ]
+        parts = [
+            f"exit_code: {proc.returncode}",
+            "",
+            "=== stdout ===",
+            proc.stdout,
+            "",
+            "=== file locations ===",
+            *locs,
+            "",
+        ]
+        if proc.stderr.strip():
+            parts += ["=== stderr ===", proc.stderr, ""]
+        return normalize("\n".join(parts), {str(root): "<SPECROOT>", str(work): "<WORK>", str(tmp): "<TMP>"})
+
+
+def run_pipeline_default_isolate_case() -> str:
+    """The default flip (step 7d): no isolation flag, no ambient env — the
+    pipeline mints runs/<run-id>/ under SPECULA_ROOT and reroots everything
+    there. Hermetic via the same copied-specroot trick as the cd case (the
+    minted run must land in a tmp specroot, not the real repo). Pins: the Run
+    banner, no single-target cd, pipeline.log/run.json/summary at the run
+    root, the runs/latest symlink, and both the launch cwd and the canonical
+    case dir staying untouched."""
+    impl = os.environ.get("SPECULA_LAUNCHER_IMPL", "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td).resolve()
+        root = tmp / "specroot"
+        launch = root / "scripts" / "launch"
+        (launch / "adapters").mkdir(parents=True)
+        shutil.copy2(ADAPTER, launch / "adapters" / "claude-code.sh")
+        pkg = root / "src" / "specula"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("")
+        for py in ("phaselib.py", "pipelinelib.py"):
+            if (PKG / py).exists():
+                shutil.copy2(PKG / py, pkg / py)
+        entry_src = Path(impl) if impl and impl != "python" and os.path.exists(impl) else LAUNCH / "launch_pipeline.sh"
+        shutil.copy2(entry_src, launch / "launch_pipeline.sh")
+        (root / "case-studies" / "footest").mkdir(parents=True)
+        work = tmp / "work"
+        work.mkdir()
+        if impl == "python":
+            cmd = ["python3", str(pkg / "pipelinelib.py")]
+        else:
+            cmd = ["bash", str(launch / "launch_pipeline.sh")]
+        env = _clean_env({"HOME": str(tmp)})
+        proc = subprocess.run(cmd + ["--dry-run", "footest"], cwd=work, env=env, capture_output=True, text=True)
+        runs_dir = root / "runs"
+        runs = sorted(d for d in runs_dir.iterdir() if d.is_dir() and not d.is_symlink()) if runs_dir.is_dir() else []
+        run = runs[0] if len(runs) == 1 else None
+        latest_ok = (
+            run is not None and (runs_dir / "latest").is_symlink() and os.readlink(runs_dir / "latest") == run.name
+        )
+        locs = [
+            f"exactly one run dir: {'yes' if len(runs) == 1 else 'NO (' + str(len(runs)) + ')'}",
+            f"pipeline.log at run root: {'yes' if run and (run / 'pipeline.log').is_file() else 'NO'}",
+            f"run.json at run root: {'yes' if run and (run / 'run.json').is_file() else 'NO'}",
+            f"summary at run root: {'yes' if run and (run / 'pipeline-summary.md').is_file() else 'NO'}",
+            f"latest symlink -> run: {'yes' if latest_ok else 'NO'}",
+            f"launch cwd untouched: {'yes' if not (work / '.specula-output').exists() else 'NO'}",
+            f"case dir untouched: {'yes' if not (root / 'case-studies' / 'footest' / '.specula-output').exists() else 'NO'}",
         ]
         parts = [
             f"exit_code: {proc.returncode}",
@@ -699,8 +791,8 @@ def _run_pipeline_driver(
 ) -> subprocess.CompletedProcess[str]:
     """Materialize and run the bash or python variant of a helper driver, per
     _pipeline_helper_impl. `subs` maps @TOKEN@ -> value in the chosen template;
-    @FNONLY@ (bash: the sourceable pipeline functions) and @LAUNCH@ (python:
-    pipelinelib's import dir) are filled in here."""
+    @FNONLY@ (bash: the sourceable pipeline functions) and @SRC@ (python:
+    the package root, so `from specula import pipelinelib` works) are filled in here."""
     kind, src = _pipeline_helper_impl()
     if kind == "bash":
         fnonly = tmp / "pipeline_fnonly.sh"
@@ -708,7 +800,7 @@ def _run_pipeline_driver(
         text = bash_tpl.replace("@FNONLY@", str(fnonly))
         driver, runner = tmp / "driver.sh", "bash"
     else:
-        text = py_tpl.replace("@LAUNCH@", str(LAUNCH))
+        text = py_tpl.replace("@SRC@", str(SPECULA_ROOT / "src"))
         driver, runner = tmp / "driver.py", "python3"
     for token, val in subs.items():
         text = text.replace(token, val)
@@ -771,8 +863,8 @@ cat "$RR"
 _REPAIR_DRIVER_PY = """\
 import sys
 
-sys.path.insert(0, "@LAUNCH@")
-import pipelinelib as pl
+sys.path.insert(0, "@SRC@")
+from specula import pipelinelib as pl
 
 RR = "@RR@"
 print("== field reads (pre) ==")
@@ -845,8 +937,8 @@ import locale
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "@LAUNCH@")
-import pipelinelib as pl  # import sets LC_COLLATE (bash glob order)
+sys.path.insert(0, "@SRC@")
+from specula import pipelinelib as pl  # import sets LC_COLLATE (bash glob order)
 
 for f in sorted(Path("@RRDIR@").glob("RR-E*.md"), key=lambda p: locale.strxfrm(p.name)):
     print(f"== {f.name} ==")
@@ -893,8 +985,8 @@ echo "wait_for_quota returned: $?"   # only reached on the 'ok' (proceed) path
 _QUOTA_DRIVER_PY = """\
 import sys
 
-sys.path.insert(0, "@LAUNCH@")
-import pipelinelib as pl
+sys.path.insert(0, "@SRC@")
+from specula import pipelinelib as pl
 
 rc = pl.wait_for_quota(
     usage_script="@FAKEUSAGE@",
@@ -1043,6 +1135,188 @@ _RR_SNAPSHOT_FILES = [
     ".specula-output/spec/repair-requests/RR-002.md",
     ".specula-output/spec/repair-ledger.md",
 ]
+
+
+# ── scheduler (step 6) ──────────────────────────────────────────────────────
+# The scheduler derives SPECULA_ROOT from its own path and writes logs/ +
+# case-studies/ under it, so every case materializes the implementation under
+# test inside a throwaway specroot, with usage.sh / launch_pipeline.sh replaced
+# by stubs in that tree (both are invoked by absolute path, not PATH) and
+# `sleep` stubbed via PATH (bash's sleep is the external command, so the poll /
+# stagger / backoff / quota waits all return instantly).
+
+# under both thresholds -> the quota gate proceeds silently (the default stub,
+# so unrelated cases carry no WARN noise)
+_SCHED_USAGE_UNDER = (
+    '{"five_hour":{"utilization":10,"resets_at":"2099-01-01T00:00:00+00:00"},'
+    '"seven_day":{"utilization":10,"resets_at":"2099-01-08T00:00:00+00:00"}}'
+)
+
+# stateful usage stub: over threshold on the first call, under afterwards —
+# drives one full wait_for_quota sleep cycle then proceeds. @OVER@ is the
+# first-call JSON; @STATE@ a per-case counter file.
+_SCHED_USAGE_OVER_ONCE = """\
+#!/usr/bin/env bash
+n=$(cat "@STATE@" 2>/dev/null || echo 0); n=$((n+1)); printf %s "$n" > "@STATE@"
+if [ "$n" -le 1 ]; then cat <<'JSON'
+@OVER@
+JSON
+else cat <<'JSON'
+{"five_hour":{"utilization":10,"resets_at":"2099-01-01T00:00:00+00:00"},"seven_day":{"utilization":10,"resets_at":"2099-01-08T00:00:00+00:00"}}
+JSON
+fi
+"""
+
+# fake launch_pipeline.sh: records its argv + the QUOTA_* env the scheduler
+# exported (the --threshold forwarding contract), then succeeds.
+_SCHED_PIPELINE_OK = """\
+#!/usr/bin/env bash
+{ printf 'argv: %s\\n' "$*"; echo "env: QUOTA_5H=${QUOTA_5H:-unset} QUOTA_7D=${QUOTA_7D:-unset}"; } >> "@MARKER@"
+echo "fake pipeline ok"
+"""
+
+# fails with a transient marker on the first call, succeeds on the second
+_SCHED_PIPELINE_FLAKY = """\
+#!/usr/bin/env bash
+n=$(cat "@STATE@" 2>/dev/null || echo 0); n=$((n+1)); printf %s "$n" > "@STATE@"
+if [ "$n" -le 1 ]; then echo "API Error: 529 overloaded_error"; exit 1; fi
+echo "fake pipeline ok"
+"""
+
+# fails silently, but writes an "API Error" phase-1 agent.log into the isolated
+# run dir it was handed via --run-id — end-to-end proof that the scheduler's
+# transient probe reads the same path the pipeline actually writes
+_SCHED_PIPELINE_AGENTLOG = """\
+#!/usr/bin/env bash
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+rid=""
+for a in "$@"; do case "$a" in --run-id=*) rid="${a#*=}";; esac; done
+d="$root/runs/$rid/footest/.specula-output"
+mkdir -p "$d"
+echo "API Error: overloaded" > "$d/agent.log"
+exit 1
+"""
+
+# tripwire default: a case that never expects to launch the pipeline fails
+# loudly (exit 97 in the task log -> FAIL line) instead of silently "passing"
+_SCHED_PIPELINE_TRIPWIRE = '#!/usr/bin/env bash\necho "REAL PIPELINE INVOKED"; exit 97\n'
+
+
+def run_scheduler_case(
+    queue: str,
+    flags: list[str],
+    usage_json: str | None = _SCHED_USAGE_UNDER,
+    usage_script: str | None = None,
+    pipeline_script: str = _SCHED_PIPELINE_TRIPWIRE,
+    seed: dict[str, str | bytes] | None = None,
+    prompt: str | None = None,
+    snapshot: list[str] | None = None,
+    record_sleeps: bool = False,
+) -> str:
+    """Run scheduler.sh hermetically in a throwaway specroot; snapshot exit code,
+    stdout (== scheduler.log — asserted, the log() tee contract), status files,
+    and optionally recorded sleeps / extra files.
+
+    queue: tasks.queue content, written into the specroot (tabs are semantic).
+    flags: scheduler argv beyond --queue (space-separated value style, as bash).
+    usage_json: fixed usage.sh output; None plants NO usage.sh (the fetch-fail
+    WARN + proceed branch). usage_script overrides with a full stub body
+    (@STATE@ -> a per-case counter file) for stateful over-then-under gates.
+    pipeline_script: fake launch_pipeline.sh body (@STATE@/@MARKER@ substituted;
+    the marker file records argv + forwarded QUOTA env). Defaults to a tripwire
+    so dry-run/setup-only cases prove the real pipeline is never invoked.
+    prompt: content of a specroot-relative myprompt.md passed as `--prompt
+    myprompt.md` — also pins the cwd-relative-to-absolute resolution.
+    snapshot: specroot-relative files appended (e.g. the written .prompt-extra.md).
+    record_sleeps: append the sleep stub's recorded durations, with the
+    poll/stagger constants (30/3) dropped — their count depends on how fast a
+    background task exits, only the quota/backoff sleeps are deterministic."""
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td).resolve()
+        root = tmp / "specroot"
+        exp = root / "scripts" / "exp"
+        launch = root / "scripts" / "launch"
+        exp.mkdir(parents=True)
+        launch.mkdir(parents=True)
+
+        impl = os.environ.get("SPECULA_SCHEDULER_IMPL", "")
+        src = Path(impl) if impl and impl != "python" and os.path.exists(impl) else SCHEDULER
+        shutil.copy2(src, exp / "scheduler.sh")
+        pkg = root / "src" / "specula"
+        pkg.mkdir(parents=True)
+        if SCHEDULERLIB.exists():
+            shutil.copy2(SCHEDULERLIB, pkg / "schedulerlib.py")
+        cmd = ["python3", str(pkg / "schedulerlib.py")] if impl == "python" else ["bash", str(exp / "scheduler.sh")]
+
+        qfile = root / "tasks.queue"
+        qfile.write_text(queue)
+        state = tmp / "stub-state"
+        marker = root / "pipeline-calls.txt"
+        if usage_script is not None:
+            (exp / "usage.sh").write_text(usage_script.replace("@STATE@", str(state)))
+        elif usage_json is not None:
+            (exp / "usage.sh").write_text("#!/usr/bin/env bash\ncat <<'JSON'\n" + usage_json + "\nJSON\n")
+        (launch / "launch_pipeline.sh").write_text(
+            pipeline_script.replace("@STATE@", str(state)).replace("@MARKER@", str(marker))
+        )
+        _seed_files(root, seed)
+
+        sleeps = tmp / "sleeps.txt"
+        bindir = tmp / "bin"
+        bindir.mkdir()
+        stub = bindir / "sleep"
+        stub.write_text(f'#!/usr/bin/env bash\necho "$1" >> "{sleeps}"\n')
+        stub.chmod(0o755)
+
+        argv = cmd + ["--queue", str(qfile), *flags]
+        if prompt is not None:
+            (root / "myprompt.md").write_text(prompt)
+            argv += ["--prompt", "myprompt.md"]
+        env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(tmp)})
+        try:
+            proc = subprocess.run(argv, cwd=root, env=env, capture_output=True, text=True, timeout=120)
+            rc, stdout, stderr = proc.returncode, proc.stdout, proc.stderr
+        except subprocess.TimeoutExpired as e:  # a leaked real sleep would hang CI
+            rc, stdout, stderr = -1, str(e.stdout or ""), "TIMEOUT (a sleep escaped the stub?)"
+
+        parts = [f"exit_code: {rc}", "", "=== stdout ===", stdout, ""]
+        logdirs = sorted((root / "logs" / "scheduler").glob("*")) if (root / "logs").is_dir() else []
+        slog = logdirs[0] / "scheduler.log" if logdirs else None
+        parts.append("=== scheduler.log (tee) ===")
+        if slog is not None and slog.is_file():
+            parts.append("identical to stdout" if slog.read_text() == stdout else "!! DIFFERS FROM STDOUT")
+        else:
+            parts.append("<NO LOG DIR>")
+        parts.append("")
+        parts.append("=== status files ===")
+        status = sorted(logdirs[0].glob("status/*"), key=lambda p: int(p.name)) if logdirs else []
+        parts += [f"{p.name}: {p.read_text().strip()}" for p in status] or ["<NONE>"]
+        parts.append("")
+        if record_sleeps:
+            vals = sleeps.read_text().split() if sleeps.is_file() else []
+            parts.append("=== recorded sleeps (poll/stagger dropped) ===")
+            parts += [v for v in vals if v not in ("3", "30")] or ["<NONE>"]
+            parts.append("")
+        for rel in snapshot or []:
+            f = root / rel
+            parts += [f"=== {rel} ===", f.read_text() if f.is_file() else "<MISSING>", ""]
+        if stderr.strip():
+            parts += ["=== stderr ===", stderr, ""]
+        return normalize("\n".join(parts), {str(root): "<SPECROOT>", str(tmp): "<TMP>"})
+
+
+# a queue whose artifact dirs are pre-seeded (a .git dir satisfies the bash
+# `-d .git` probe) so real-mode cases never reach the network clone
+_SCHED_QUEUE_2 = "footest|foo/bar|Go|Raft demo\nbartest|baz/qux|Rust|Paxos notes\n"
+_SCHED_SEED_2: dict[str, str | bytes] = {
+    "case-studies/footest/artifact/bar/.git/HEAD": "ref: refs/heads/main\n",
+    "case-studies/bartest/artifact/qux/.git/HEAD": "ref: refs/heads/main\n",
+}
+_SCHED_OVER_5H_PAST = (
+    '{"five_hour":{"utilization":86,"resets_at":"2000-01-01T00:00:00+00:00"},'
+    '"seven_day":{"utilization":10,"resets_at":"2099-01-08T00:00:00+00:00"}}'
+)
+_SCHED_OVER_5H_NORESET = '{"five_hour":{"utilization":86},"seven_day":{"utilization":10}}'
 
 
 # ── case registry ───────────────────────────────────────────────────────────
@@ -1339,6 +1613,7 @@ CASES: dict[str, Callable[[], str]] = {
     # step 5 target: single-target cd branch — summary in the case dir,
     # pipeline.log in the launch cwd, quota silent when usage.sh is absent
     "pipeline_single_target_cd": run_pipeline_cd_case,
+    "pipeline_default_isolate": run_pipeline_default_isolate_case,
     # step 5 target: full pipeline run (fake agent, all phases) — the tee into
     # pipeline.log, set -e sequencing, generate_summary's populated branches
     "pipeline_full_run": lambda: run_pipeline_full_case([], "footest|foo/bar|Go|Raft demo", _PIPELINE_FULL_SEED),
@@ -1363,6 +1638,117 @@ CASES: dict[str, Callable[[], str]] = {
             ),
         },
         snapshot_files=[".specula-output/spec/repair-ledger.md"],
+    ),
+    # step 6 target: scheduler --help (originally the bash header comment via
+    # sed; the cutover dropped the advertised-but-never-implemented per-task
+    # prompt_file queue column and documents the per-task isolation)
+    "help_scheduler": lambda: run_scheduler_case("", ["--help"]),
+    # step 6 target: argument/queue error contract
+    "sched_err_unknown_flag": lambda: run_scheduler_case("footest|foo/bar|Go|r\n", ["--bogus"]),
+    "sched_err_missing_queue": lambda: run_scheduler_case(
+        "", ["--queue", "/nonexistent/tasks.queue", "--workers", "1"]
+    ),
+    "sched_empty_queue": lambda: run_scheduler_case("# only a comment\n\n", ["--workers", "1"]),
+    # step 6 target: dry-run lifecycle — banner, setup phase (and the second
+    # setup_task call inside run_task: the DRY-RUN clone/cp lines repeat), the
+    # exact launch_pipeline.sh command lines (per-task --run-id isolation, flags
+    # word-split from the queue, --claude-alias/--max-turns forwarding),
+    # relative --prompt resolution, dry-run status files, and the summary's DRY
+    # rows (counted in no tally: Success=0 Failed=0 Skipped=0)
+    "sched_dryrun_full": lambda: run_scheduler_case(
+        "# nightly batch\nfootest|foo/bar|Go|Raft demo\t--skip-analysis --skip-specgen\nbartest|baz/qux|Rust|Paxos notes\n",
+        ["--dry-run", "--workers", "1", "--max-turns", "7", "--claude-alias", "myalias"],
+        prompt="Verify liveness.\n",
+    ),
+    # queue-parsing edges: comments (indented too), a tabs-only line is blank
+    # (cutover fix: under bash it became a phantom task with an empty name), a
+    # third tab column folds into the pipeline flags (the per-task prompt_file
+    # column was never implemented), a no-pipe target passes through whole,
+    # multiple flags survive word-splitting
+    "sched_queue_variants": lambda: run_scheduler_case(
+        "  # indented comment\n"
+        "\t\t\n"
+        "alpha|a/b|Go|ref\t--flag-one --flag-two=x\tthird-col.md\n"
+        "beta|c/d|Rust|r2\n"
+        "gamma-no-pipes\n",
+        ["--dry-run", "--workers", "1"],
+    ),
+    # --setup-only, real mode: pre-seeded .git dir skips the clone, --prompt is
+    # actually copied into case-studies/<name>/.prompt-extra.md, no worker runs
+    "sched_setup_only": lambda: run_scheduler_case(
+        "footest|foo/bar|Go|Raft demo\n",
+        ["--setup-only", "--workers", "1"],
+        seed=_SCHED_SEED_2,
+        prompt="Check the election safety property.\n",
+        snapshot=["case-studies/footest/.prompt-extra.md"],
+    ),
+    # full real-mode lifecycle, 1 worker (deterministic ordering): START/DONE per
+    # task, per-task success status, summary tallies, and the fake pipeline's
+    # marker pinning the exact argv + the QUOTA_5H/7D env forwarded from
+    # --threshold/--threshold-7day
+    "sched_full_run": lambda: run_scheduler_case(
+        _SCHED_QUEUE_2,
+        ["--workers", "1", "--threshold", "70", "--threshold-7day", "90"],
+        pipeline_script=_SCHED_PIPELINE_OK,
+        seed=_SCHED_SEED_2,
+        snapshot=["pipeline-calls.txt"],
+    ),
+    # transient API failure -> RETRY with 180s*attempt backoff -> success on
+    # attempt 2 (the task log grep branch)
+    "sched_retry_transient": lambda: run_scheduler_case(
+        "footest|foo/bar|Go|Raft demo\n",
+        ["--workers", "1"],
+        pipeline_script=_SCHED_PIPELINE_FLAKY,
+        seed=_SCHED_SEED_2,
+        record_sleeps=True,
+    ),
+    # the agent.log transient probe reads the isolated run's real phase-1 log
+    # (the fake pipeline writes it via its --run-id, proving scheduler and
+    # pipeline agree on the path): silent exit-1 becomes retries; attempt 3 is
+    # transient too but not retried (attempt < max_retries), FAIL at attempt 3,
+    # scheduler still exits 0 (task failures never affect the exit code)
+    "sched_retry_agentlog_exhaust": lambda: run_scheduler_case(
+        "footest|foo/bar|Go|Raft demo\n",
+        ["--workers", "1"],
+        pipeline_script=_SCHED_PIPELINE_AGENTLOG,
+        seed=_SCHED_SEED_2,
+        record_sleeps=True,
+    ),
+    # non-transient failure: no retry, FAIL at attempt 1, Failed=1, exit 0
+    "sched_fail_nontransient": lambda: run_scheduler_case(
+        "footest|foo/bar|Go|Raft demo\n",
+        ["--workers", "1"],
+        pipeline_script='#!/usr/bin/env bash\necho "boom"; exit 1\n',
+        seed=_SCHED_SEED_2,
+    ),
+    # step 6 target: quota gate. Over 5h with a past resets_at -> negative wait
+    # clamped to the 60s floor, one reset consumed, then proceeds
+    "sched_quota_wait_past_reset": lambda: run_scheduler_case(
+        "footest|foo/bar|Go|Raft demo\n",
+        ["--dry-run", "--workers", "1", "--windows", "3"],
+        usage_script=_SCHED_USAGE_OVER_ONCE.replace("@OVER@", _SCHED_OVER_5H_PAST),
+        record_sleeps=True,
+    ),
+    # over with NO resets_at -> the fixed 600s branch ("no reset time")
+    "sched_quota_no_reset_time": lambda: run_scheduler_case(
+        "footest|foo/bar|Go|Raft demo\n",
+        ["--dry-run", "--workers", "1", "--windows", "3"],
+        usage_script=_SCHED_USAGE_OVER_ONCE.replace("@OVER@", _SCHED_OVER_5H_NORESET),
+        record_sleeps=True,
+    ),
+    # --windows 0 and permanently over: the first over-detection exhausts the
+    # budget — never sleeps, drains, task left not-started (Skipped), exit 0
+    "sched_quota_exhaust": lambda: run_scheduler_case(
+        "footest|foo/bar|Go|Raft demo\n",
+        ["--dry-run", "--workers", "1", "--windows", "0"],
+        usage_json=_SCHED_OVER_5H_PAST,
+        record_sleeps=True,
+    ),
+    # usage.sh missing entirely -> "WARN: usage fetch failed" + proceed
+    "sched_quota_fetch_fail": lambda: run_scheduler_case(
+        "footest|foo/bar|Go|Raft demo\n",
+        ["--dry-run", "--workers", "1"],
+        usage_json=None,
     ),
 }
 

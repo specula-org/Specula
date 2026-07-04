@@ -1,0 +1,16 @@
+exit_code: 0
+
+=== stdout ===
+[TS] ===========================================
+[TS] Specula Scheduler  run=<RUN_ID>
+[TS] Workers=1  Threshold=80%  MaxWindows=3
+[TS] ===========================================
+[TS] Loaded 0 tasks from <SPECROOT>/tasks.queue
+[TS] Empty queue
+
+
+=== scheduler.log (tee) ===
+identical to stdout
+
+=== status files ===
+<NONE>

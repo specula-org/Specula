@@ -11,9 +11,6 @@ Behavior is a faithful port; the characterization suite in tests/characterizatio
 pins each launcher's --dry-run output and precondition gate against the bash.
 
 Usage:  python3 phaselib.py <phase> [options] "<target>" [...]
-
-Lives in scripts/launch/ for now (no packaging dependency); moves into the
-`specula/` package once that exists (migration step 2).
 """
 
 from __future__ import annotations
@@ -26,9 +23,12 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TypedDict
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
+# the launch_*.sh shims and the agent adapters stay under scripts/launch/
+LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
 
 # bash pathname expansion (`for d in .../*/`) orders by the locale collating
 # sequence; adopt the ambient locale so find_repo_dir picks the same repo the
@@ -78,11 +78,27 @@ def _grep_num(text: str, prefix: str) -> str:
     return "?"
 
 
-class Workspace:
-    """Path resolution for a run — the object step 4 (workspace control) extends.
+class AgentFiles(TypedDict):
+    """Shape of `Phase.agent_files`: per-agent paths + dirs to create."""
 
-    Faithful to the bash `get_work_dir` / `find_repo_dir`: single-target writes to
-    `$PWD/.specula-output`; batch to `$PWD/<name>/.specula-output`.
+    log: Path
+    pid: Path
+    prompt: Path
+    mkdirs: list[Path]
+
+
+class Workspace:
+    """Path resolution for a run.
+
+    Legacy (no `SPECULA_RUN_DIR`): faithful to the bash `get_work_dir` /
+    `find_repo_dir` — single-target writes to `$PWD/.specula-output`; batch to
+    `$PWD/<name>/.specula-output`.
+
+    Isolated (`SPECULA_RUN_DIR` set, step 4 workspace control): every output
+    lands under `<run>/<name>/.specula-output` — uniform batch-style layout,
+    single/batch no longer fork — and canonical *inputs* (artifact checkout,
+    .prompt-extra.md) fall back to `case-studies/<name>` since no cd into the
+    case directory happens anymore.
     """
 
     def __init__(
@@ -90,26 +106,33 @@ class Workspace:
         targets: list[str],
         artifact: str = "",
         cwd: Path | None = None,
-        opts: dict | None = None,
-    ):
+        opts: dict[str, str | bool] | None = None,
+    ) -> None:
         self.targets = targets
         self.artifact = artifact
         self.cwd = Path(cwd) if cwd else _logical_cwd()  # bash $PWD, not the physical getcwd
         self.single = len(targets) == 1
         # phase-specific run options (e.g. validation --repair, confirmation --recheck)
         self.opts = opts or {}
+        run_dir = os.environ.get("SPECULA_RUN_DIR", "")
+        self.run_dir: Path | None = Path(run_dir) if run_dir else None
 
     def work_dir(self, name: str) -> Path:
+        if self.run_dir:
+            return self.run_dir / name / ".specula-output"
         if self.single:
             return self.cwd / ".specula-output"
         return self.cwd / name / ".specula-output"
 
-    def find_repo_dir(self, name: str) -> str:
-        # Explicit --artifact wins.
-        if self.artifact:
-            return self.artifact
-        # Batch: <cwd>/<name>/artifact/<repo-with-.git>/ (bash keeps the trailing slash).
-        artifact_dir = self.cwd / name / "artifact"
+    def case_dir(self, name: str) -> Path:
+        """Canonical `case-studies/<name>` — the fallback root for canonical
+        inputs when the run is isolated (the legacy flow reached these via the
+        single-target cd)."""
+        return SPECULA_ROOT / "case-studies" / name
+
+    @staticmethod
+    def _repo_under(artifact_dir: Path) -> str:
+        """First `<artifact_dir>/<repo-with-.git>/` (bash keeps the trailing slash)."""
         if artifact_dir.is_dir():
             for d in sorted(artifact_dir.iterdir(), key=lambda p: locale.strxfrm(p.name)):
                 # bash `for d in "$artifact_dir"/*/` — the glob never matches
@@ -119,6 +142,20 @@ class Workspace:
                     continue
                 if d.is_dir() and (d / ".git").exists():
                     return str(d) + "/"
+        return ""
+
+    def find_repo_dir(self, name: str) -> str:
+        # Explicit --artifact wins.
+        if self.artifact:
+            return self.artifact
+        if self.run_dir:
+            # Isolated: the run root holds no sources, so neither the batch
+            # cwd search nor the single-target "source is $PWD" rule applies —
+            # only the canonical checkout can supply the repo.
+            return self._repo_under(self.case_dir(name) / "artifact")
+        found = self._repo_under(self.cwd / name / "artifact")
+        if found:
+            return found
         # Single target: source is $PWD.
         if self.single:
             return str(self.cwd)
@@ -138,7 +175,7 @@ class Phase:
     dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
 
     # ── per-phase hooks ──
-    def parse_flag(self, arg: str, extra: dict) -> bool:
+    def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
         """Consume a phase-specific flag into `extra`; return True if handled.
         Override for extra flags (validation --repair; confirmation --recheck /
         --max-repair-rounds). `extra` is exposed to hooks as `ws.opts`."""
@@ -154,7 +191,7 @@ class Phase:
         """Print a per-target prerequisite line; return True iff all satisfied."""
         raise NotImplementedError
 
-    def agent_files(self, ws: Workspace, name: str) -> dict:
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
         """Return {log, pid, prompt, mkdir} paths for this phase's agent run."""
         raise NotImplementedError
 
@@ -166,16 +203,30 @@ class Phase:
 
     def monitor_line(self, ws: Workspace) -> str | None:
         """The '  Monitor: tail -f ...' hint printed once after all agents launch
-        (per-phase; code_analysis prints none). Faithful to each bash launcher's
-        hand-written glob — quirks and all: some omit the .specula-output/ segment,
-        and spec_validation uses an absolute ${PWD} path."""
+        (per-phase; code_analysis prints none). Legacy is faithful to each bash
+        launcher's hand-written glob — quirks and all: some omit the
+        .specula-output/ segment, and spec_validation uses an absolute ${PWD}
+        path. Isolated runs re-root the glob under the run dir (see _monitor)."""
         return None
+
+    def _monitor(self, ws: Workspace, logname: str, legacy: str) -> str:
+        """Monitor hint. Isolated (SPECULA_RUN_DIR set): an accurate run-rooted
+        glob — the legacy relative `*/` points at the launch cwd, which an
+        isolated run no longer writes to. Legacy: the bash launcher's original
+        string, verbatim."""
+        if ws.run_dir:
+            return f"  Monitor: tail -f {ws.run_dir}/*/.specula-output/{logname}"
+        return legacy
 
     # ── shared prompt-extra injection (identical across phases) ──
     def _with_extra(self, ws: Workspace, name: str, prompt: str) -> str:
         extra = ws.work_dir(name) / ".prompt-extra.md"
         if not extra.is_file():
-            extra = ws.cwd / ".prompt-extra.md"
+            # Isolated runs never cd into the case dir, so the cwd fallback
+            # would silently drop the canonical case-studies/<name> extra —
+            # target-specific instructions must survive isolation.
+            fallback = ws.case_dir(name) if ws.run_dir else ws.cwd
+            extra = fallback / ".prompt-extra.md"
         if extra.is_file():
             # errors="replace": bash `cat` concatenated raw bytes; a stray
             # non-UTF-8 byte in a user's .prompt-extra.md must not crash the run.
@@ -193,7 +244,7 @@ class Phase:
         claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
         artifact = ""
         targets: list[str] = []
-        extra: dict = {}
+        extra: dict[str, str | bool] = {}
 
         for arg in argv:
             if arg == "--dry-run":
@@ -235,7 +286,7 @@ class Phase:
         if not targets:
             targets = [_logical_cwd().name]  # bash `basename "$PWD"` (logical under symlinks)
 
-        adapter = SCRIPT_DIR / "adapters" / f"{agent}.sh"
+        adapter = LAUNCH_DIR / "adapters" / f"{agent}.sh"
         if not adapter.is_file():
             print(f"ERROR: Unknown agent '{agent}' — adapter not found at {adapter}")
             return 1
@@ -262,7 +313,7 @@ class Phase:
             print(self.check_ok_msg)
             return 0
 
-        running: list[subprocess.Popen] = []
+        running: list[subprocess.Popen[bytes]] = []
         for target in targets:
             name = self.target_name(target)
             prompt = self.build_prompt(ws, target)
@@ -317,7 +368,16 @@ class Phase:
             for name, msg in failures:
                 print(f"  FAILED  {name}: {msg}")
 
-    def _launch(self, ws, name, prompt, dry_run, max_turns, claude_alias, adapter):
+    def _launch(
+        self,
+        ws: Workspace,
+        name: str,
+        prompt: str,
+        dry_run: bool,
+        max_turns: str,
+        claude_alias: str,
+        adapter: Path,
+    ) -> subprocess.Popen[bytes] | None:
         files = self.agent_files(ws, name)
         for d in files["mkdirs"]:
             d.mkdir(parents=True, exist_ok=True)
@@ -391,11 +451,11 @@ Options:
     )
     check_ok_msg = "All repos OK."
 
-    def target_name(self, target):
+    def target_name(self, target: str) -> str:
         # code_analysis targets are "name|github|lang|reference"; name is field 1.
         return _trim(target.split("|", 1)[0])
 
-    def check(self, ws, names):
+    def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True
         for name in names:
             repo_dir = ws.find_repo_dir(name)
@@ -419,11 +479,11 @@ Options:
                 ok = False
         return ok
 
-    def agent_files(self, ws, name):
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
         wd = ws.work_dir(name)
         return {"log": wd / "agent.log", "pid": wd / "agent.pid", "prompt": wd / ".prompt.md", "mkdirs": [wd]}
 
-    def build_prompt(self, ws, target):
+    def build_prompt(self, ws: Workspace, target: str) -> str:
         # maxsplit=3: bash `IFS='|' read -r name github lang reference` folds any
         # further '|'-separated content (pipes included) into the reference field.
         parts = [_trim(x) for x in target.split("|", 3)]
@@ -457,7 +517,7 @@ Write your outputs to:
 """
         return self._with_extra(ws, name, prompt)
 
-    def summarize(self, ws, names):
+    def summarize(self, ws: Workspace, names: list[str]) -> None:
         print()
         print("========================================")
         print(" Results")
@@ -508,7 +568,7 @@ Prerequisites:
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites. Run code analysis first."
 
-    def check(self, ws, names):
+    def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True
         for name in names:
             brief = ws.work_dir(name) / "modeling-brief.md"
@@ -525,7 +585,7 @@ Prerequisites:
             print(line)
         return ok
 
-    def agent_files(self, ws, name):
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
         wd = ws.work_dir(name)
         return {
             "log": wd / "spec-gen.log",
@@ -534,7 +594,7 @@ Prerequisites:
             "mkdirs": [wd / "spec"],
         }
 
-    def build_prompt(self, ws, target):
+    def build_prompt(self, ws: Workspace, target: str) -> str:
         name = self.target_name(target)
         wd = ws.work_dir(name)
         spec_dir = wd / "spec"
@@ -574,7 +634,7 @@ Expected files:
 """
         return self._with_extra(ws, name, prompt)
 
-    def summarize(self, ws, names):
+    def summarize(self, ws: Workspace, names: list[str]) -> None:
         print()
         print("========================================")
         print(" Results")
@@ -602,8 +662,8 @@ Expected files:
             else:
                 print(f"  --  {name} (no output)")
 
-    def monitor_line(self, ws):
-        return "  Monitor: tail -f */.specula-output/spec-gen.log"
+    def monitor_line(self, ws: Workspace) -> str | None:
+        return self._monitor(ws, "spec-gen.log", "  Monitor: tail -f */.specula-output/spec-gen.log")
 
 
 class HarnessGenerationPhase(Phase):
@@ -639,7 +699,7 @@ Prerequisites:
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites. Run spec generation (Phase 2) first."
 
-    def check(self, ws, names):
+    def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True
         for name in names:
             spec_dir = ws.work_dir(name) / "spec"
@@ -661,7 +721,7 @@ Prerequisites:
             print(line)
         return ok
 
-    def agent_files(self, ws, name):
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
         wd = ws.work_dir(name)
         return {
             "log": wd / "harness-gen.log",
@@ -670,7 +730,7 @@ Prerequisites:
             "mkdirs": [wd / "harness", wd / "traces"],
         }
 
-    def build_prompt(self, ws, target):
+    def build_prompt(self, ws: Workspace, target: str) -> str:
         name = self.target_name(target)
         wd = ws.work_dir(name)
         spec_dir = wd / "spec"
@@ -707,7 +767,7 @@ Expected outputs:
 """
         return self._with_extra(ws, name, prompt)
 
-    def summarize(self, ws, names):
+    def summarize(self, ws: Workspace, names: list[str]) -> None:
         print()
         print("========================================")
         print(" Results")
@@ -728,8 +788,8 @@ Expected outputs:
             else:
                 print(f"  --  {name} (no harness output)")
 
-    def monitor_line(self, ws):
-        return "  Monitor: tail -f */.specula-output/harness-gen.log"
+    def monitor_line(self, ws: Workspace) -> str | None:
+        return self._monitor(ws, "harness-gen.log", "  Monitor: tail -f */.specula-output/harness-gen.log")
 
 
 class BugClassificationPhase(Phase):
@@ -765,7 +825,7 @@ Prerequisites:
     accepts_artifact = False  # this launcher takes no --artifact
     dry_prompt_flag = "--prompt-file"  # its dry-run line shows --prompt-file=<prompt>
 
-    def check(self, ws, names):
+    def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True
         for name in names:
             cb = ws.work_dir(name) / "spec" / "confirmed-bugs.md"
@@ -778,7 +838,7 @@ Prerequisites:
             print(line)
         return ok
 
-    def agent_files(self, ws, name):
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
         wd = ws.work_dir(name)
         return {
             "log": wd / "bug-classification.log",
@@ -787,7 +847,7 @@ Prerequisites:
             "mkdirs": [],  # bash does not mkdir; work_dir already exists (has confirmed-bugs.md)
         }
 
-    def build_prompt(self, ws, target):
+    def build_prompt(self, ws: Workspace, target: str) -> str:
         # NOTE: bash bug_classification generate_prompt does NOT inject .prompt-extra.
         name = self.target_name(target)
         spec_dir = ws.work_dir(name) / "spec"
@@ -811,7 +871,7 @@ Follow the **bug-classification** skill exactly — it is the single source of m
 Do everything the skill specifies. Do not add, relax, or override any step here.
 """
 
-    def summarize(self, ws, names):
+    def summarize(self, ws: Workspace, names: list[str]) -> None:
         print()
         print("========================================")
         print(" Results")
@@ -832,9 +892,9 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
             else:
                 print(f"  {name}: (no report — check log)")
 
-    def monitor_line(self, ws):
-        # bash glob omits the .specula-output/ segment — replicated verbatim.
-        return "  Monitor: tail -f */bug-classification.log"
+    def monitor_line(self, ws: Workspace) -> str | None:
+        # bash glob omits the .specula-output/ segment — replicated verbatim in legacy.
+        return self._monitor(ws, "bug-classification.log", "  Monitor: tail -f */bug-classification.log")
 
 
 class SpecValidationPhase(Phase):
@@ -871,13 +931,13 @@ Prerequisites:
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites. Run spec generation first."
 
-    def parse_flag(self, arg, extra):
+    def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
         if arg == "--repair":
             extra["repair"] = True
             return True
         return False
 
-    def check(self, ws, names):
+    def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True
         for name in names:
             spec_dir = ws.work_dir(name) / "spec"
@@ -903,7 +963,7 @@ Prerequisites:
             print(line)
         return ok
 
-    def agent_files(self, ws, name):
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
         wd = ws.work_dir(name)
         tag = "spec-repair" if ws.opts.get("repair") else "spec-validation"
         return {
@@ -913,7 +973,7 @@ Prerequisites:
             "mkdirs": [wd / "traces"],
         }
 
-    def build_prompt(self, ws, target):
+    def build_prompt(self, ws: Workspace, target: str) -> str:
         name = self.target_name(target)
         wd = ws.work_dir(name)
         spec_dir = wd / "spec"
@@ -964,7 +1024,7 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
 """
         return self._with_extra(ws, name, prompt)
 
-    def summarize(self, ws, names):
+    def summarize(self, ws: Workspace, names: list[str]) -> None:
         print()
         print("========================================")
         print(" Results")
@@ -978,10 +1038,12 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
             else:
                 print(f"  {name}: no changelog (check log)")
 
-    def monitor_line(self, ws):
+    def monitor_line(self, ws: Workspace) -> str | None:
         # bash uses an absolute ${PWD} path and always spec-validation.log (even
-        # in --repair mode, whose log is spec-repair.log) — replicated verbatim.
-        return f"  Monitor: tail -f {ws.cwd}/*/.specula-output/spec-validation.log"
+        # in --repair mode, whose log is spec-repair.log) — replicated verbatim in legacy.
+        return self._monitor(
+            ws, "spec-validation.log", f"  Monitor: tail -f {ws.cwd}/*/.specula-output/spec-validation.log"
+        )
 
 
 class BugConfirmationPhase(Phase):
@@ -1018,7 +1080,7 @@ Prerequisites:
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites. Run full pipeline first."
 
-    def parse_flag(self, arg, extra):
+    def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
         if arg == "--recheck":
             extra["recheck"] = True
             return True
@@ -1027,7 +1089,7 @@ Prerequisites:
             return True
         return False
 
-    def check(self, ws, names):
+    def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True
         for name in names:
             wd = ws.work_dir(name)
@@ -1049,7 +1111,7 @@ Prerequisites:
             print(line)
         return ok
 
-    def agent_files(self, ws, name):
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
         wd = ws.work_dir(name)
         tag = "bug-recheck" if ws.opts.get("recheck") else "bug-confirmation"
         return {
@@ -1059,7 +1121,7 @@ Prerequisites:
             "mkdirs": [],
         }
 
-    def build_prompt(self, ws, target):
+    def build_prompt(self, ws: Workspace, target: str) -> str:
         name = self.target_name(target)
         wd = ws.work_dir(name)
         spec_dir = wd / "spec"
@@ -1117,7 +1179,7 @@ Write the consolidated report to `{spec_dir}/confirmed-bugs.md`, with one `repro
 """
         return self._with_extra(ws, name, prompt)
 
-    def summarize(self, ws, names):
+    def summarize(self, ws: Workspace, names: list[str]) -> None:
         print()
         print("========================================")
         print(" Results")
@@ -1135,10 +1197,10 @@ Write the consolidated report to `{spec_dir}/confirmed-bugs.md`, with one `repro
             else:
                 print(f"  {name}: (no report — check log; repro/ tests: {repro_count})")
 
-    def monitor_line(self, ws):
+    def monitor_line(self, ws: Workspace) -> str | None:
         # bash glob omits the .specula-output/ segment and always bug-confirmation.log
-        # (even in --recheck, whose log is bug-recheck.log) — replicated verbatim.
-        return "  Monitor: tail -f */bug-confirmation.log"
+        # (even in --recheck, whose log is bug-recheck.log) — replicated verbatim in legacy.
+        return self._monitor(ws, "bug-confirmation.log", "  Monitor: tail -f */bug-confirmation.log")
 
 
 class ReviewPhase(Phase):
@@ -1186,7 +1248,7 @@ Output:
             print(f"Usage: {SCRIPT_DIR}/phaselib.py review <analysis|specgen|validation> name [name ...]")
             return 1
 
-        adapter = SCRIPT_DIR / "adapters" / f"{agent}.sh"
+        adapter = LAUNCH_DIR / "adapters" / f"{agent}.sh"
         if not adapter.is_file():
             print(f"ERROR: Unknown agent '{agent}' — adapter not found at {adapter}")
             return 1
@@ -1232,7 +1294,7 @@ Output:
                 print(f"  {name}: (no review file generated — check log)")
         return 0
 
-    def _launch_review(self, ws, name, phase, adapter, claude_alias):
+    def _launch_review(self, ws: Workspace, name: str, phase: str, adapter: Path, claude_alias: str) -> int:
         wd = ws.work_dir(name)
         # specgen/validation logs go under spec/ to match pipeline summary expectations
         log_dir = wd / "spec" if phase in ("specgen", "validation") else wd
@@ -1274,7 +1336,7 @@ Output:
         print(f"  PID={pid}  Log: {log_file}")
         return 0
 
-    def _analysis_prompt(self, wd, name):
+    def _analysis_prompt(self, wd: Path, name: str) -> str:
         return f"""# Code Analysis Review: {name}
 
 Review the code analysis outputs for quality and completeness.
@@ -1324,7 +1386,7 @@ Format:
 ```
 """
 
-    def _specgen_prompt(self, wd, name):
+    def _specgen_prompt(self, wd: Path, name: str) -> str:
         spec_dir = wd / "spec"
         return f"""# Spec Generation Review: {name}
 
@@ -1383,7 +1445,7 @@ Format:
 ```
 """
 
-    def _validation_prompt(self, wd, name):
+    def _validation_prompt(self, wd: Path, name: str) -> str:
         spec_dir = wd / "spec"
         return f"""# Validation Review: {name}
 

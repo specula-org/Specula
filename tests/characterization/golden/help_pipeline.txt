@@ -34,6 +34,15 @@ Options:
   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli)
   --claude-alias=NAME    Claude CLI profile (default: claude)
   --artifact=PATH        Path to system artifact/source code
+  --isolate              Isolated workspace (the default): all outputs go to
+                         runs/<run-id>/ — parallel-safe, keeps case-studies/
+                         pristine. Sources are read from case-studies/<name>/artifact
+                         or --artifact; the run root holds no code.
+  --no-isolate           Legacy layout: outputs under $PWD/.specula-output
+                         (a single target cd's into case-studies/<name>/ when
+                         it exists)
+  --run-id=ID            Attach to runs/ID — reuse an existing run's workspace,
+                         e.g. to resume with --skip-* flags (implies --isolate)
 
 Output structure (per system):
   .specula-output/
