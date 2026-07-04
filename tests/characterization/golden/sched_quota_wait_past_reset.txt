@@ -11,8 +11,6 @@ exit_code: 0
 [TS] DRY-RUN: git clone --depth 1 https://github.com/foo/bar <SPECROOT>/case-studies/footest/artifact/bar
 [TS] --- Setup complete ---
 [TS] Over 80%, sleeping <SECS>s until <DATE> (reset 1/3)
-[TS] CLONE footest: github.com/foo/bar -> <SPECROOT>/case-studies/footest/artifact/bar
-[TS] DRY-RUN: git clone --depth 1 https://github.com/foo/bar <SPECROOT>/case-studies/footest/artifact/bar
 [TS] START #1 footest
 [TS] DRY-RUN: bash <SPECROOT>/scripts/launch/launch_pipeline.sh --claude-alias=claude --run-id=<RUN_ID>-1-footest footest|foo/bar|Go|Raft demo
 [TS] ===========================================

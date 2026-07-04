@@ -4,11 +4,11 @@ Overnight batch scheduler: runs queue tasks through launch_pipeline.sh with N
 parallel workers, pausing on quota and retrying transient API failures. Every
 observable behavior (log lines, status files, summary tallies, exit codes) is
 pinned by the sched_* characterization goldens — first captured from the bash
-original, then intentionally regenerated for the cutover changes below. Kept
-bash quirks: the doubled setup logs inside run_task, dry-run tasks counted in
-no summary tally, task failures never affecting the exit code. Path strings
-shown in logs are assembled by string interpolation, not pathlib, so bash
-artifacts like `case-studies//artifact/` survive byte-identically.
+original, then intentionally regenerated for the cutover changes and wart
+fixes below. Kept bash quirks: dry-run tasks counted in no summary tally,
+task failures never affecting the exit code. Path strings shown in logs are
+assembled by string interpolation, not pathlib, so bash artifacts like
+`case-studies//artifact/` survive byte-identically.
 
 Cutover changes (per-task isolation, agreed 2026-07-04):
   - every task's pipeline gets --run-id=<scheduler-run>-<n>-<name>: outputs go
@@ -29,12 +29,17 @@ Cutover changes (per-task isolation, agreed 2026-07-04):
     queue-format help no longer advertises the never-implemented per-task
     prompt_file column.
 
+Wart fixes (step 7, 2026-07-04 — goldens intentionally regenerated):
+  - setup runs once, in main()'s setup phase. The bash ran setup_task again
+    inside every run_task, doubling the setup logs and rewriting
+    .prompt-extra.md mid-run; a clone failure now aborts the scheduler in the
+    setup phase (the bash main-scope set -e did the same) instead of also
+    having a silent per-task death path.
+
 Concurrency: bash forked a subshell per task; here each task runs in a thread
 whose only work is spawning the pipeline subprocess, log/status bookkeeping and
 backoff sleeps — the actual parallelism is the pipeline child processes, same
-as bash. A task aborted mid-setup (SystemExit in the thread) dies without
-writing a status file, mirroring the bash subshell's set -e death
-("not-started" in the summary).
+as bash.
 
 Sleeps go through the external `sleep` command deliberately: the
 characterization harness stubs `sleep` on PATH, and both implementations must
@@ -381,8 +386,6 @@ class Scheduler:
         name = target.split("|")[0]
         task_log = f"{self.log_dir}/{idx + 1}-{name}.log"
 
-        self.setup_task(idx)
-
         self.log(f"START #{idx + 1} {name}")
         self._write_status(idx, "running")
 
@@ -451,12 +454,6 @@ class Scheduler:
         self.log(f"FAIL  #{idx + 1} {name}  (exhausted {max_retries} retries)")
         self._write_status(idx, "failed")
 
-    def _worker(self, idx: int) -> None:
-        """Thread target: a SystemExit from setup (clone failure) ends only this
-        task — the bash subshell's set -e death, no status file written."""
-        with suppress(SystemExit):
-            self.run_task(idx)
-
     # ── main loop ───────────────────────────────────────────────────────────
     def main_loop(self) -> None:
         task_idx = 0
@@ -476,7 +473,7 @@ class Scheduler:
                     active = []
                     stopped = True
                     break
-                t = threading.Thread(target=self._worker, args=(task_idx,))
+                t = threading.Thread(target=self.run_task, args=(task_idx,))
                 t.start()
                 active.append(t)
                 task_idx += 1

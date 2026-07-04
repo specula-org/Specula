@@ -478,9 +478,10 @@ class TestSetupTask(WorkerBase):
         self.assertEqual(cm.exception.code, 128)
         self.assertIn("fatal: nope", out.getvalue())  # bash: `... 2>&1 | tail -1`
 
-    def test_clone_failure_in_worker_thread_leaves_no_status(self) -> None:
-        # bash: the run_task subshell died under set -e before `echo running`;
-        # a SystemExit in the thread mirrors that ("not-started" in the summary)
+    def test_clone_failure_aborts_scheduler_before_any_task(self) -> None:
+        # wart fix (step 7): setup runs once, in main()'s setup phase — a clone
+        # failure there kills the whole scheduler (bash main-scope set -e did
+        # the same); no task starts, no status file appears
         self.root()
         bindir = self.tmp()
         (bindir / "git").write_text("#!/bin/sh\nexit 128\n")
@@ -489,12 +490,28 @@ class TestSetupTask(WorkerBase):
         self.addCleanup(lambda: os.environ.__setitem__("PATH", old_path))
         os.environ["PATH"] = f"{bindir}:{old_path}"
         s = self.sched()
-        self.task(s, "footest|foo/bar|Go|r")
-        t = threading.Thread(target=s._worker, args=(0,))
-        t.start()
-        t.join()
+        qf = self.tmp() / "tasks.queue"
+        qf.write_text("footest|foo/bar|Go|r\n")
+        s.queue_file = str(qf)
+        with self.assertRaises(SystemExit) as cm:
+            s.main()
+        self.assertEqual(cm.exception.code, 128)
         self.assertFalse((Path(s.log_dir) / "status" / "0").exists())
         self.assertEqual([ln for ln in s.lines if ln.startswith("START")], [])
+
+    def test_run_task_does_not_rerun_setup(self) -> None:
+        # wart fix (step 7): the bash ran setup_task again inside run_task,
+        # doubling the CLONE/PROMPT logs; run_task now only runs the pipeline
+        root = self.root("#!/usr/bin/env bash\nexit 0\n")
+        s = self.sched()
+        pf = self.tmp() / "p.md"
+        pf.write_text("extra\n")
+        s.prompt_file = str(pf)
+        self.task(s, "footest|foo/bar|Go|r")
+        s.run_task(0)
+        setup_lines = [ln for ln in s.lines if ln.startswith(("CLONE", "PROMPT", "DRY-RUN: git", "DRY-RUN: cp"))]
+        self.assertEqual(setup_lines, [])
+        self.assertFalse((root / "case-studies" / "footest").exists())
 
 
 class TestRunTask(WorkerBase):
