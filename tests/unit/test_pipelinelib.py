@@ -656,7 +656,7 @@ class TestMainTeeTeardown(TmpCwd):
             f"sys.path.insert(0, {str(SRC)!r})\n"
             "from specula import pipelinelib as pl\n"
             f"{patch}\n"
-            "sys.exit(pl.main(['t|g|l|r']))\n"
+            "sys.exit(pl.main(['--no-isolate', 't|g|l|r']))\n"  # legacy: keep runs/ out of the real repo
         )
         return subprocess.run([sys.executable, str(d)], cwd=self.tmp, capture_output=True, text=True)
 

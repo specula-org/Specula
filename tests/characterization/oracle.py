@@ -142,6 +142,8 @@ def _norm_line(line: str) -> str:
     line = re.sub(r"\b\d{8}_\d{6}\b", "<RUN_ID>", line)
     # scheduler task wall time "(success, 3s, attempt 1)" -> <N>s
     line = re.sub(r", \d+s, attempt", ", <N>s, attempt", line)
+    # minted isolated run ids (generate_run_id: 20260703-153000-a1b2) -> <RID>
+    line = re.sub(r"\b\d{8}-\d{6}-[0-9a-f]{4}\b", "<RID>", line)
     return line
 
 
@@ -555,7 +557,11 @@ def run_pipeline_case(flags: list[str], target: str) -> str:
     """Run launch_pipeline.sh --dry-run with a given --skip-* combo; snapshot the
     phase sequencing + repair-loop gating. Hermetic: HOME points at an empty tmp
     so the quota gate's usage.sh finds no credentials, warns, and proceeds (no
-    network); dry-run prints each phase's command instead of launching agents."""
+    network); dry-run prints each phase's command instead of launching agents.
+    Runs --no-isolate since the default flip (step 7d): these cases pin the
+    legacy $PWD layout, now behind the escape hatch (and isolating here would
+    write runs/ into the real repo). pipeline_default_isolate covers the new
+    default hermetically."""
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         artifact = tmp / "artifact"
@@ -567,6 +573,7 @@ def run_pipeline_case(flags: list[str], target: str) -> str:
             _launcher_cmd("launch_pipeline.sh")
             + [
                 "--dry-run",
+                "--no-isolate",
                 f"--artifact={artifact}",
                 *flags,
                 target,
@@ -606,7 +613,8 @@ def run_pipeline_full_case(
         artifact = base / "artifact"
         _init_git_repo(artifact)
         env = _clean_env({"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(base), "GIT_CEILING_DIRECTORIES": str(base)})
-        cmd = _launcher_cmd("launch_pipeline.sh") + [f"--artifact={artifact}", *flags, target]
+        # --no-isolate: these cases pin the legacy layout (step 7d flip)
+        cmd = _launcher_cmd("launch_pipeline.sh") + ["--no-isolate", f"--artifact={artifact}", *flags, target]
         proc = subprocess.run(cmd, cwd=work, env=env, capture_output=True, text=True)
         parts = [f"exit_code: {proc.returncode}", "", "=== stdout ===", proc.stdout, ""]
         plog = work / ".specula-output" / "pipeline.log"
@@ -660,12 +668,77 @@ def run_pipeline_cd_case() -> str:
         else:
             cmd = ["bash", str(launch / "launch_pipeline.sh")]
         env = _clean_env({"HOME": str(tmp)})
-        proc = subprocess.run(cmd + ["--dry-run", "footest"], cwd=work, env=env, capture_output=True, text=True)
+        # --no-isolate: this case pins the legacy single-target cd branch (7d flip)
+        proc = subprocess.run(
+            cmd + ["--dry-run", "--no-isolate", "footest"], cwd=work, env=env, capture_output=True, text=True
+        )
         case_out = root / "case-studies" / "footest" / ".specula-output"
         locs = [
             f"pipeline.log in launch cwd: {'yes' if (work / '.specula-output' / 'pipeline.log').is_file() else 'NO'}",
             f"summary in case dir: {'yes' if (case_out / 'pipeline-summary.md').is_file() else 'NO'}",
             f"summary in launch cwd: {'yes (BUG)' if (work / '.specula-output' / 'pipeline-summary.md').is_file() else 'no'}",
+        ]
+        parts = [
+            f"exit_code: {proc.returncode}",
+            "",
+            "=== stdout ===",
+            proc.stdout,
+            "",
+            "=== file locations ===",
+            *locs,
+            "",
+        ]
+        if proc.stderr.strip():
+            parts += ["=== stderr ===", proc.stderr, ""]
+        return normalize("\n".join(parts), {str(root): "<SPECROOT>", str(work): "<WORK>", str(tmp): "<TMP>"})
+
+
+def run_pipeline_default_isolate_case() -> str:
+    """The default flip (step 7d): no isolation flag, no ambient env — the
+    pipeline mints runs/<run-id>/ under SPECULA_ROOT and reroots everything
+    there. Hermetic via the same copied-specroot trick as the cd case (the
+    minted run must land in a tmp specroot, not the real repo). Pins: the Run
+    banner, no single-target cd, pipeline.log/run.json/summary at the run
+    root, the runs/latest symlink, and both the launch cwd and the canonical
+    case dir staying untouched."""
+    impl = os.environ.get("SPECULA_LAUNCHER_IMPL", "")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td).resolve()
+        root = tmp / "specroot"
+        launch = root / "scripts" / "launch"
+        (launch / "adapters").mkdir(parents=True)
+        shutil.copy2(ADAPTER, launch / "adapters" / "claude-code.sh")
+        pkg = root / "src" / "specula"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("")
+        for py in ("phaselib.py", "pipelinelib.py"):
+            if (PKG / py).exists():
+                shutil.copy2(PKG / py, pkg / py)
+        entry_src = Path(impl) if impl and impl != "python" and os.path.exists(impl) else LAUNCH / "launch_pipeline.sh"
+        shutil.copy2(entry_src, launch / "launch_pipeline.sh")
+        (root / "case-studies" / "footest").mkdir(parents=True)
+        work = tmp / "work"
+        work.mkdir()
+        if impl == "python":
+            cmd = ["python3", str(pkg / "pipelinelib.py")]
+        else:
+            cmd = ["bash", str(launch / "launch_pipeline.sh")]
+        env = _clean_env({"HOME": str(tmp)})
+        proc = subprocess.run(cmd + ["--dry-run", "footest"], cwd=work, env=env, capture_output=True, text=True)
+        runs_dir = root / "runs"
+        runs = sorted(d for d in runs_dir.iterdir() if d.is_dir() and not d.is_symlink()) if runs_dir.is_dir() else []
+        run = runs[0] if len(runs) == 1 else None
+        latest_ok = (
+            run is not None and (runs_dir / "latest").is_symlink() and os.readlink(runs_dir / "latest") == run.name
+        )
+        locs = [
+            f"exactly one run dir: {'yes' if len(runs) == 1 else 'NO (' + str(len(runs)) + ')'}",
+            f"pipeline.log at run root: {'yes' if run and (run / 'pipeline.log').is_file() else 'NO'}",
+            f"run.json at run root: {'yes' if run and (run / 'run.json').is_file() else 'NO'}",
+            f"summary at run root: {'yes' if run and (run / 'pipeline-summary.md').is_file() else 'NO'}",
+            f"latest symlink -> run: {'yes' if latest_ok else 'NO'}",
+            f"launch cwd untouched: {'yes' if not (work / '.specula-output').exists() else 'NO'}",
+            f"case dir untouched: {'yes' if not (root / 'case-studies' / 'footest' / '.specula-output').exists() else 'NO'}",
         ]
         parts = [
             f"exit_code: {proc.returncode}",
@@ -1540,6 +1613,7 @@ CASES: dict[str, Callable[[], str]] = {
     # step 5 target: single-target cd branch — summary in the case dir,
     # pipeline.log in the launch cwd, quota silent when usage.sh is absent
     "pipeline_single_target_cd": run_pipeline_cd_case,
+    "pipeline_default_isolate": run_pipeline_default_isolate_case,
     # step 5 target: full pipeline run (fake agent, all phases) — the tee into
     # pipeline.log, set -e sequencing, generate_summary's populated branches
     "pipeline_full_run": lambda: run_pipeline_full_case([], "footest|foo/bar|Go|Raft demo", _PIPELINE_FULL_SEED),

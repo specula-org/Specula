@@ -83,10 +83,13 @@ Options:
   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli)
   --claude-alias=NAME    Claude CLI profile (default: claude)
   --artifact=PATH        Path to system artifact/source code
-  --isolate              Write all outputs to an isolated runs/<run-id>/ workspace
-                         (parallel-safe; keeps case-studies/ pristine; default: off).
-                         Sources are read from case-studies/<name>/artifact or
-                         --artifact — the run root holds no code.
+  --isolate              Isolated workspace (the default): all outputs go to
+                         runs/<run-id>/ — parallel-safe, keeps case-studies/
+                         pristine. Sources are read from case-studies/<name>/artifact
+                         or --artifact; the run root holds no code.
+  --no-isolate           Legacy layout: outputs under $PWD/.specula-output
+                         (a single target cd's into case-studies/<name>/ when
+                         it exists)
   --run-id=ID            Attach to runs/ID — reuse an existing run's workspace,
                          e.g. to resume with --skip-* flags (implies --isolate)
 
@@ -310,8 +313,11 @@ class Pipeline:
         self.quota_5h = os.environ.get("QUOTA_5H") or "85"
         self.quota_7d = os.environ.get("QUOTA_7D") or "95"
         self.quota_max_waits = os.environ.get("QUOTA_MAX_WAITS") or "6"
-        # workspace isolation (step 4); run_dir stays None in legacy mode
-        self.isolate = False
+        # workspace isolation (step 4; default since step 7d) — run_dir stays
+        # None only in legacy mode (--no-isolate)
+        self.isolate = True
+        self._isolate_explicit = False  # an isolation flag was given (vs the default)
+        self._no_isolate_given = False
         self.run_id = ""
         self._run_id_given = False  # `--run-id=` (empty) must error, not mint a fresh id
         self.run_dir: Path | None = None
@@ -345,10 +351,16 @@ class Pipeline:
                 self.skip_reviews = False
             elif arg == "--isolate":
                 self.isolate = True
+                self._isolate_explicit = True
+            elif arg == "--no-isolate":
+                self.isolate = False
+                self._isolate_explicit = True
+                self._no_isolate_given = True
             elif arg.startswith("--run-id="):
                 self.run_id = arg.split("=", 1)[1]
                 self._run_id_given = True
                 self.isolate = True  # attaching implies isolation
+                self._isolate_explicit = True
             elif arg.startswith("--max-parallel="):
                 self.max_parallel = arg.split("=", 1)[1]
             elif arg.startswith("--max-turns="):
@@ -369,6 +381,11 @@ class Pipeline:
                 self.targets.append(arg)
         if not self.targets:
             self.targets.append(_logical_cwd().name)  # bash `basename "$PWD"` (logical)
+        # order-independent: the two are contradictory however they arrive
+        # (e.g. scheduler-injected --run-id + a --no-isolate from queue flags)
+        if self._run_id_given and self._no_isolate_given:
+            print("ERROR: --no-isolate conflicts with --run-id", file=sys.stderr)
+            return 1
         # wart fix (step 7): garbage quota config fails fast (pre-tee, like the
         # option errors). The bash pushed the values into the gate's arithmetic,
         # where a bad threshold read as "usage parse failed" and silently
@@ -391,28 +408,33 @@ class Pipeline:
         """Establish the per-run root. Returns an exit code for an invalid
         --run-id (pre-tee, like the option errors), None to proceed.
 
-        Sources, in priority order: --isolate / --run-id create-or-attach under
-        SPECULA_ROOT/runs; an ambient SPECULA_RUN_DIR (scheduler, outer script)
-        is honored as-is. Neither present -> legacy mode, byte-identical to the
-        $PWD-derived bash behavior.
+        Sources, in priority order: an explicit flag wins (--run-id attach,
+        --isolate mint, --no-isolate legacy); then an ambient SPECULA_RUN_DIR
+        (scheduler, outer script) is honored as-is; otherwise the default
+        mints a fresh isolated run under SPECULA_ROOT/runs (the flip, step 7d
+        — the $PWD-derived legacy layout now needs --no-isolate).
         """
+        if not self.isolate:
+            # explicit --no-isolate: guaranteed-legacy for the whole tree —
+            # the phase children must not re-isolate off an ambient run dir
+            os.environ.pop("SPECULA_RUN_DIR", None)
+            return None
         env_dir = os.environ.get("SPECULA_RUN_DIR", "")
-        if self.isolate:
+        attached_ambient = bool(env_dir) and not self._isolate_explicit
+        if attached_ambient:
+            self.run_dir = Path(env_dir)
+            self.run_id = self.run_dir.name
+        else:
             if self._run_id_given and not _valid_run_id(self.run_id):
                 print(f"ERROR: invalid --run-id '{self.run_id}' (allowed: [A-Za-z0-9._-]+)", file=sys.stderr)
                 return 1
             if not self._run_id_given:
                 self.run_id = generate_run_id()
             self.run_dir = SPECULA_ROOT / "runs" / self.run_id
-        elif env_dir:
-            self.run_dir = Path(env_dir)
-            self.run_id = self.run_dir.name
-        else:
-            return None
         self.run_dir.mkdir(parents=True, exist_ok=True)
         os.environ["SPECULA_RUN_DIR"] = str(self.run_dir)  # phase subprocesses inherit
         self._write_run_meta()
-        if self.isolate:
+        if not attached_ambient:
             # runs/latest -> <run-id>; symlink+rename so readers never see a gap
             with contextlib.suppress(OSError):
                 tmp = self.run_dir.parent / f".latest.{self.run_id}.tmp"

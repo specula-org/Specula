@@ -102,7 +102,7 @@ cd my-project
 bash ~/Specula/scripts/launch/launch_pipeline.sh
 ```
 
-Output will be written to `.specula-output/` under your project root. The project name defaults to the directory name. Run `bash ~/Specula/scripts/launch/launch_pipeline.sh --help` for the full list of CLI options (e.g. `--agent=codex`, `--artifact=<path>`).
+Each run gets an isolated workspace: outputs land under `~/Specula/runs/<run-id>/<name>/.specula-output/`, with the run's `pipeline.log`, `run.json` and summary at the run root and `runs/latest` pointing at the newest run — so re-runs never overwrite each other and parallel runs don't interfere. The project name defaults to the directory name. Pass `--run-id=<id>` to resume an existing run (e.g. with `--skip-*` flags), or `--no-isolate` for the legacy layout that writes `.specula-output/` directly under your project root. Run `bash ~/Specula/scripts/launch/launch_pipeline.sh --help` for the full list of CLI options (e.g. `--agent=codex`, `--artifact=<path>`).
 
 **Individual phases:**
 

@@ -300,12 +300,51 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         self.assertTrue(ext.is_dir())
         self.assertFalse((root / "runs").exists())
 
-    def test_legacy_mode_untouched(self) -> None:
+    def test_default_mints_isolated_run(self) -> None:
+        # the flip (step 7d): no flags, no ambient env -> a fresh isolated run
         root = self.tmp()
         p = self._pipeline(["foo|o/r|Go|ref"], root)
+        assert p.run_dir is not None
+        self.assertEqual(p.run_dir.parent, root / "runs")
+        self.assertRegex(p.run_id, RUN_ID_RE)
+        self.assertEqual(os.environ["SPECULA_RUN_DIR"], str(p.run_dir))
+
+    def test_no_isolate_gives_legacy_mode(self) -> None:
+        root = self.tmp()
+        p = self._pipeline(["--no-isolate", "foo|o/r|Go|ref"], root)
         self.assertIsNone(p.run_dir)
         self.assertFalse((root / "runs").exists())
         self.assertNotIn("SPECULA_RUN_DIR", os.environ)
+
+    def test_no_isolate_overrides_ambient_env(self) -> None:
+        # explicit beats ambient: children must not re-isolate off the env
+        root = self.tmp()
+        self.set_run_dir(self.tmp() / "external-run")
+        p = self._pipeline(["--no-isolate", "foo|o/r|Go|ref"], root)
+        self.assertIsNone(p.run_dir)
+        self.assertNotIn("SPECULA_RUN_DIR", os.environ)
+
+    def test_explicit_isolate_mints_despite_ambient_env(self) -> None:
+        # pre-flip behavior preserved: --isolate always minted a fresh run
+        root = self.tmp()
+        ext = self.tmp() / "external-run"
+        self.set_run_dir(ext)
+        p = self._pipeline(["--isolate", "foo|o/r|Go|ref"], root)
+        assert p.run_dir is not None
+        self.assertEqual(p.run_dir.parent, root / "runs")
+        self.assertNotEqual(p.run_dir, ext)
+
+    def test_no_isolate_conflicts_with_run_id(self) -> None:
+        for argv in (
+            ["--no-isolate", "--run-id=x", "foo|o/r|Go|ref"],
+            ["--run-id=x", "--no-isolate", "foo|o/r|Go|ref"],
+        ):
+            with self.subTest(argv=argv):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    rc = pl.Pipeline().parse_args(argv)
+                self.assertEqual(rc, 1)
+                self.assertIn("--no-isolate conflicts with --run-id", err.getvalue())
 
     def test_latest_symlink_tracks_newest(self) -> None:
         root = self.tmp()
