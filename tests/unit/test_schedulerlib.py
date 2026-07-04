@@ -187,11 +187,11 @@ class TestLoadQueue(Base):
         self.assertEqual(s.task_flags, ["", ""])
         self.assertEqual(s.lines[-1], f"Loaded 2 tasks from {s.queue_file}")
 
-    def test_tabs_only_line_is_a_phantom_task(self) -> None:
-        # the bash blank check strips spaces only: a tabs-only line becomes a
-        # task with an empty name (pinned by sched_queue_variants end-to-end)
+    def test_whitespace_only_line_is_blank(self) -> None:
+        # cutover fix: the bash blank check stripped spaces only, so a tabs-only
+        # line became a phantom task with an empty name (cloning github.com/!)
         s = self.load("\t\t\na|g/h|Go|r\n")
-        self.assertEqual(s.task_targets, ["", "a|g/h|Go|r"])
+        self.assertEqual(s.task_targets, ["a|g/h|Go|r"])
 
     def test_first_tab_splits_and_leading_tabs_stripped(self) -> None:
         s = self.load("a|g/h|Go|r\t\t--skip-analysis --max-parallel=2\n")
@@ -204,10 +204,11 @@ class TestLoadQueue(Base):
         self.assertEqual(s.task_flags, ["--flag-one\tthird-col.md"])
         self.assertEqual(s.task_flags[0].split(), ["--flag-one", "third-col.md"])
 
-    def test_unterminated_final_line_dropped(self) -> None:
-        # bash `while IFS= read -r` parity: no trailing newline -> line dropped
+    def test_unterminated_final_line_kept(self) -> None:
+        # cutover fix: bash `while IFS= read -r` silently dropped a final line
+        # with no trailing newline — a whole task vanished from the queue
         s = self.load("a|g/h|Go|r\nb|i/j|Rust|r2")
-        self.assertEqual(s.task_targets, ["a|g/h|Go|r"])
+        self.assertEqual(s.task_targets, ["a|g/h|Go|r", "b|i/j|Rust|r2"])
 
     def test_missing_queue_file(self) -> None:
         s = self.sched()
@@ -275,19 +276,15 @@ class TestCheckUsage(Base):
         self.assertFalse(s.check_usage())
         self.assertEqual(self.reset_at(s), "")
 
-    def test_malformed_json_treated_as_over(self) -> None:
-        # bash parity quirk: the embedded python died nonzero -> over-quota
-        # (NOT the pipeline's WARN+proceed; revisited in the cutover commit)
-        s = self.gated(self.json_stub("not json {"))
-        self.assertFalse(s.check_usage())
-
-    def test_non_object_json_treated_as_over(self) -> None:
-        s = self.gated(self.json_stub("3"))
-        self.assertFalse(s.check_usage())
-
-    def test_string_utilization_treated_as_over(self) -> None:
-        s = self.gated(self.json_stub('{"five_hour":{"utilization":"lots"}}'))
-        self.assertFalse(s.check_usage())
+    def test_malformed_json_warns_and_proceeds(self) -> None:
+        # cutover fix: bash treated unparseable JSON as over-quota (its embedded
+        # python died nonzero) and slept through reset windows on garbage input;
+        # aligned with the pipeline gate's WARN + proceed
+        for payload in ("not json {", "3", '{"five_hour":{"utilization":"lots"}}'):
+            with self.subTest(payload=payload):
+                s = self.gated(self.json_stub(payload))
+                self.assertTrue(s.check_usage())
+                self.assertEqual(s.lines[-1], "WARN: usage parse failed")
 
     def test_fetch_failure_warns_and_proceeds(self) -> None:
         s = self.gated("#!/usr/bin/env bash\nexit 3\n")
@@ -503,6 +500,7 @@ class TestRunTask(WorkerBase):
     def test_dry_run_command_line(self) -> None:
         root = self.root()
         s = self.sched()
+        s.run_id = "20990101_000000"
         s.dry_run = True
         s.max_turns = 7
         s.claude_alias = "myalias"
@@ -511,6 +509,7 @@ class TestRunTask(WorkerBase):
         self.assertEqual(
             s.lines[-1],
             f"DRY-RUN: bash {root}/scripts/launch/launch_pipeline.sh --claude-alias=myalias"
+            " --run-id=20990101_000000-1-footest"
             " --skip-analysis --skip-specgen --max-turns=7 footest|foo/bar|Go|Raft demo",
         )
         self.assertEqual((Path(s.log_dir) / "status" / "0").read_text(), "dry-run\n")
@@ -518,23 +517,34 @@ class TestRunTask(WorkerBase):
     def test_max_turns_zero_omitted(self) -> None:
         root = self.root()
         s = self.sched()
+        s.run_id = "20990101_000000"
         s.dry_run = True
         self.task(s, "footest|foo/bar|Go|r")
         s.run_task(0)
         self.assertEqual(
             s.lines[-1],
-            f"DRY-RUN: bash {root}/scripts/launch/launch_pipeline.sh --claude-alias=claude footest|foo/bar|Go|r",
+            f"DRY-RUN: bash {root}/scripts/launch/launch_pipeline.sh --claude-alias=claude"
+            " --run-id=20990101_000000-1-footest footest|foo/bar|Go|r",
         )
 
-    def test_nontransient_fail_reports_exit_zero(self) -> None:
-        # bash quirk pinned: `local rc=$?` read the if-statement's status (0),
-        # so the FAIL line always says exit=0 whatever the pipeline returned
+    def test_task_run_id_sanitized_and_indexed(self) -> None:
+        s = self.sched()
+        s.run_id = "20990101_000000"
+        s.task_targets = ["we ird|a/b|Go|r", "we ird|a/b|Go|r"]
+        s.task_flags = ["", ""]
+        # invalid run-id chars replaced; the index keeps duplicate names apart
+        self.assertEqual(s.task_run_id(0), "20990101_000000-1-we_ird")
+        self.assertEqual(s.task_run_id(1), "20990101_000000-2-we_ird")
+
+    def test_nontransient_fail_reports_real_exit(self) -> None:
+        # cutover fix: the bash FAIL line always said exit=0 (`local rc=$?`
+        # read the failed `if` statement's own status, not the pipeline's)
         root = self.root('#!/usr/bin/env bash\necho "boom"\nexit 7\n')
         self.seed_repo(root, "footest", "bar")
         s = self.sched()
         self.task(s, "footest|foo/bar|Go|r")
         s.run_task(0)
-        self.assertRegex(s.lines[-1], r"^FAIL  #1 footest  \(exit=0, \d+s, attempt 1\)$")
+        self.assertRegex(s.lines[-1], r"^FAIL  #1 footest  \(exit=7, \d+s, attempt 1\)$")
         self.assertEqual((Path(s.log_dir) / "status" / "0").read_text(), "failed\n")
         self.assertEqual(s.sleeps, [])
 
@@ -564,23 +574,27 @@ class TestRunTask(WorkerBase):
         self.task(s, "footest|foo/bar|Go|r")
         s.run_task(0)
         self.assertEqual(s.sleeps, [180, 360])
-        self.assertRegex(s.lines[-1], r"^FAIL  #1 footest  \(exit=0, \d+s, attempt 3\)$")
+        self.assertRegex(s.lines[-1], r"^FAIL  #1 footest  \(exit=1, \d+s, attempt 3\)$")
 
-    def test_agentlog_probe_reads_stale_canonical_path(self) -> None:
-        # pinned as-is: the probe reads case-studies/<name>/agent.log, NOT the
-        # real .specula-output/agent.log location (cutover commit fixes this)
+    def test_agentlog_probe_reads_isolated_run_dir(self) -> None:
+        # cutover fix: the probe reads the isolated run's real phase-1 agent log
+        # (runs/<task-run-id>/<name>/.specula-output/agent.log); the bash probed
+        # case-studies/<name>/agent.log, which the pipeline never wrote
         root = self.root("#!/usr/bin/env bash\nexit 1\n")  # silent failure
         self.seed_repo(root, "footest", "bar")
         s = self.sched()
+        s.run_id = "20990101_000000"
         self.task(s, "footest|foo/bar|Go|r")
-        (root / "case-studies" / "footest" / ".specula-output").mkdir(parents=True)
-        (root / "case-studies" / "footest" / ".specula-output" / "agent.log").write_text("API Error: 529\n")
-        s.run_task(0)
-        self.assertEqual(s.sleeps, [])  # real location ignored -> not transient
+        (root / "case-studies" / "footest").mkdir(parents=True, exist_ok=True)
         (root / "case-studies" / "footest" / "agent.log").write_text("API Error: 529\n")
+        s.run_task(0)
+        self.assertEqual(s.sleeps, [])  # the bash's stale location is ignored now
+        rundir = root / "runs" / s.task_run_id(0) / "footest" / ".specula-output"
+        rundir.mkdir(parents=True)
+        (rundir / "agent.log").write_text("API Error: 529\n")
         s.lines.clear()
         s.run_task(0)
-        self.assertEqual(s.sleeps, [180, 360])  # stale location honored
+        self.assertEqual(s.sleeps, [180, 360])  # isolated run dir honored
 
 
 # ── main loop / summary ──────────────────────────────────────────────────────

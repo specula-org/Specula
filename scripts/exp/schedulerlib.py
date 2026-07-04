@@ -3,12 +3,31 @@
 Overnight batch scheduler: runs queue tasks through launch_pipeline.sh with N
 parallel workers, pausing on quota and retrying transient API failures. Every
 observable behavior (log lines, status files, summary tallies, exit codes) is
-pinned by the sched_* characterization goldens, captured from the bash
-original — including its quirks (the doubled setup logs inside run_task, the
-FAIL line's exit=0, dry-run tasks counted in no tally, the phantom task from a
-tabs-only queue line). Path strings shown in logs are assembled by string
-interpolation, not pathlib, so bash artifacts like `case-studies//artifact/`
-survive byte-identically.
+pinned by the sched_* characterization goldens — first captured from the bash
+original, then intentionally regenerated for the cutover changes below. Kept
+bash quirks: the doubled setup logs inside run_task, dry-run tasks counted in
+no summary tally, task failures never affecting the exit code. Path strings
+shown in logs are assembled by string interpolation, not pathlib, so bash
+artifacts like `case-studies//artifact/` survive byte-identically.
+
+Cutover changes (per-task isolation, agreed 2026-07-04):
+  - every task's pipeline gets --run-id=<scheduler-run>-<n>-<name>: outputs go
+    to an isolated runs/<id>/ workspace instead of the canonical
+    case-studies/<name>/ dirs (which keep holding the *inputs* this scheduler
+    sets up: the artifact clone and .prompt-extra.md). One run dir per task,
+    not per scheduler run — the run-scoped artifacts (pipeline.log, run.json)
+    live at the run root and would collide across parallel workers.
+  - the transient-retry agent.log probe reads the isolated run's real phase-1
+    log; the bash probed case-studies/<name>/agent.log, which was never
+    written, so that whole retry branch was dead.
+  - the FAIL line reports the pipeline's real exit code (bash always said
+    exit=0: `local rc=$?` read the failed `if` statement's own status).
+  - unparseable usage JSON warns and proceeds like the pipeline's quota gate
+    (bash treated it as over-quota and slept through reset windows).
+  - queue parsing: an unterminated final line is kept (bash dropped the task);
+    a whitespace-only line is blank (a tabs-only line was a phantom task); the
+    queue-format help no longer advertises the never-implemented per-task
+    prompt_file column.
 
 Concurrency: bash forked a subshell per task; here each task runs in a thread
 whose only work is spawning the pipeline subprocess, log/status bookkeeping and
@@ -74,11 +93,14 @@ Options:
                        so quota checks target the same account.
 
 Queue format (tab-separated):
-  name|github|lang|reference[TAB]flags[TAB]prompt_file
+  name|github|lang|reference[TAB]flags
 
   - flags: optional launch_pipeline.sh flags (e.g. --skip-analysis)
-  - prompt_file: optional path to extra prompt (relative to queue dir)
-    Content is written to case-studies/<name>/.prompt-extra.md before launch.
+
+Workspace: every task's pipeline runs isolated under runs/<run>-<n>-<name>/
+(scheduler passes --run-id; canonical inputs stay in case-studies/<name>/).
+A --prompt file is copied to case-studies/<name>/.prompt-extra.md for ALL
+tasks; for per-task prompts, place .prompt-extra.md there yourself first.
 """
 
 _TRANSIENT_RE = re.compile(r"API Error: 5[0-9][0-9]|Internal server error|overloaded_error|Overloaded")
@@ -240,7 +262,11 @@ class Scheduler:
                 return False
             return True
         except Exception:
-            return False
+            # cutover fix: the bash treated unparseable usage JSON as over-quota
+            # (its embedded python died nonzero) and slept through reset windows
+            # on garbage input; align with the pipeline gate's WARN + proceed
+            self.log("WARN: usage parse failed")
+            return True
 
     def wait_for_quota(self) -> bool:
         """Block until under quota; False once MAX_WINDOWS resets are exhausted."""
@@ -272,11 +298,12 @@ class Scheduler:
             self.log(f"Queue file not found: {self.queue_file}")
             raise SystemExit(1)
         text = Path(self.queue_file).read_text()
-        # bash `while IFS= read -r`: an unterminated final line is dropped; a
-        # tabs-only line is NOT blank (the check strips spaces only) — both
-        # pinned (sched_queue_variants, unit tests)
-        for line in text.split("\n")[:-1]:
-            if not line.replace(" ", "") or re.match(r"^\s*#", line):
+        # cutover fixes over the bash `while IFS= read -r` loop: an unterminated
+        # final line is kept (bash silently dropped the task), and a
+        # whitespace-only line is blank (bash stripped spaces only, so a
+        # tabs-only line became a phantom task with an empty name)
+        for line in text.split("\n"):
+            if not line.strip() or re.match(r"^\s*#", line):
                 continue
             if "\t" in line:
                 target, flags = line.split("\t", 1)
@@ -333,6 +360,14 @@ class Scheduler:
     def _write_status(self, idx: int, status: str) -> None:
         Path(f"{self.log_dir}/status/{idx}").write_text(status + "\n")
 
+    def task_run_id(self, idx: int) -> str:
+        """The pipeline --run-id for task idx: <scheduler-run>-<n>-<name>,
+        sanitized to the run-id charset (it becomes a path segment under
+        runs/). The index keeps duplicate queue names from attaching to the
+        same run dir."""
+        name = self.task_targets[idx].split("|")[0]
+        return f"{self.run_id}-{idx + 1}-" + re.sub(r"[^A-Za-z0-9._-]", "_", name)
+
     def run_task(self, idx: int) -> None:
         target = self.task_targets[idx]
         flags = self.task_flags[idx]
@@ -344,7 +379,18 @@ class Scheduler:
         self.log(f"START #{idx + 1} {name}")
         self._write_status(idx, "running")
 
-        cmd = ["bash", f"{SPECULA_ROOT}/scripts/launch/launch_pipeline.sh", f"--claude-alias={self.claude_alias}"]
+        # every task runs in an isolated per-task workspace: runs/<run-id>/.
+        # --run-id implies --isolate; queue flags come later, so they can still
+        # override. One run dir per TASK (not per scheduler run): the run-scoped
+        # artifacts (pipeline.log, run.json, pipeline-summary.md) live at the
+        # run root and would collide across parallel workers.
+        task_run_id = self.task_run_id(idx)
+        cmd = [
+            "bash",
+            f"{SPECULA_ROOT}/scripts/launch/launch_pipeline.sh",
+            f"--claude-alias={self.claude_alias}",
+            f"--run-id={task_run_id}",
+        ]
         if flags:
             cmd += flags.split()  # bash `read -ra` word-splitting: no quote handling
         if self.max_turns > 0:
@@ -360,23 +406,20 @@ class Scheduler:
         for attempt in range(1, max_retries + 1):
             start_ts = int(time.time())
             with open(task_log, "w") as lf:
-                ok = subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT, check=False).returncode == 0
+                rc = subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT, check=False).returncode
             elapsed = int(time.time()) - start_ts
-            if ok:
+            if rc == 0:
                 self.log(f"DONE  #{idx + 1} {name}  (success, {elapsed}s, attempt {attempt})")
                 self._write_status(idx, "success")
                 return
-
-            # bash quirk kept for parity: `local rc=$?` ran after the failed `if`
-            # *statement*, whose own status is 0 — the FAIL line always says
-            # exit=0 (the real code is only in the task log)
-            rc = 0
+            # cutover fix: the bash FAIL line always said exit=0 (`local rc=$?`
+            # read the failed `if` statement's own status); report the real code
 
             is_transient = _grep(task_log, _TRANSIENT_RE)
-            # stale path kept as-is: the real agent log lives under
-            # .specula-output/, so this probe never fires in practice (made
-            # run-dir aware in the cutover commit)
-            agent_log = f"{SPECULA_ROOT}/case-studies/{name}/agent.log"
+            # cutover fix: the bash probed case-studies/<name>/agent.log, a path
+            # the pipeline never wrote (phase agent logs live under the work
+            # dir); probe the isolated run's actual phase-1 agent log
+            agent_log = f"{SPECULA_ROOT}/runs/{task_run_id}/{name}/.specula-output/agent.log"
             if os.path.isfile(agent_log) and _grep(agent_log, "API Error:"):
                 is_transient = True
 

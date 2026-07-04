@@ -25,11 +25,14 @@ Options:
                        so quota checks target the same account.
 
 Queue format (tab-separated):
-  name|github|lang|reference[TAB]flags[TAB]prompt_file
+  name|github|lang|reference[TAB]flags
 
   - flags: optional launch_pipeline.sh flags (e.g. --skip-analysis)
-  - prompt_file: optional path to extra prompt (relative to queue dir)
-    Content is written to case-studies/<name>/.prompt-extra.md before launch.
+
+Workspace: every task's pipeline runs isolated under runs/<run>-<n>-<name>/
+(scheduler passes --run-id; canonical inputs stay in case-studies/<name>/).
+A --prompt file is copied to case-studies/<name>/.prompt-extra.md for ALL
+tasks; for per-task prompts, place .prompt-extra.md there yourself first.
 
 
 === scheduler.log (tee) ===

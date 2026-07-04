@@ -9,7 +9,7 @@ exit_code: 0
 [TS] --- Setup phase ---
 [TS] --- Setup complete ---
 [TS] START #1 footest
-[TS] FAIL  #1 footest  (exit=0, <N>s, attempt 1)
+[TS] FAIL  #1 footest  (exit=1, <N>s, attempt 1)
 [TS] ===========================================
 [TS] SUMMARY
 [TS]   FAIL footest

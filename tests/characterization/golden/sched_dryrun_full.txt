@@ -18,12 +18,12 @@ exit_code: 0
 [TS] DRY-RUN: git clone --depth 1 https://github.com/foo/bar <SPECROOT>/case-studies/footest/artifact/bar
 [TS] DRY-RUN: cp <SPECROOT>/myprompt.md -> <SPECROOT>/case-studies/footest/.prompt-extra.md
 [TS] START #1 footest
-[TS] DRY-RUN: bash <SPECROOT>/scripts/launch/launch_pipeline.sh --claude-alias=myalias --skip-analysis --skip-specgen --max-turns=7 footest|foo/bar|Go|Raft demo
+[TS] DRY-RUN: bash <SPECROOT>/scripts/launch/launch_pipeline.sh --claude-alias=myalias --run-id=<RUN_ID>-1-footest --skip-analysis --skip-specgen --max-turns=7 footest|foo/bar|Go|Raft demo
 [TS] CLONE bartest: github.com/baz/qux -> <SPECROOT>/case-studies/bartest/artifact/qux
 [TS] DRY-RUN: git clone --depth 1 https://github.com/baz/qux <SPECROOT>/case-studies/bartest/artifact/qux
 [TS] DRY-RUN: cp <SPECROOT>/myprompt.md -> <SPECROOT>/case-studies/bartest/.prompt-extra.md
 [TS] START #2 bartest
-[TS] DRY-RUN: bash <SPECROOT>/scripts/launch/launch_pipeline.sh --claude-alias=myalias --max-turns=7 bartest|baz/qux|Rust|Paxos notes
+[TS] DRY-RUN: bash <SPECROOT>/scripts/launch/launch_pipeline.sh --claude-alias=myalias --run-id=<RUN_ID>-2-bartest --max-turns=7 bartest|baz/qux|Rust|Paxos notes
 [TS] ===========================================
 [TS] SUMMARY
 [TS]   DRY  footest

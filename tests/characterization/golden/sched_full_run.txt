@@ -29,7 +29,7 @@ identical to stdout
 1: success
 
 === pipeline-calls.txt ===
-argv: --claude-alias=claude footest|foo/bar|Go|Raft demo
+argv: --claude-alias=claude --run-id=<RUN_ID>-1-footest footest|foo/bar|Go|Raft demo
 env: QUOTA_5H=70 QUOTA_7D=90
-argv: --claude-alias=claude bartest|baz/qux|Rust|Paxos notes
+argv: --claude-alias=claude --run-id=<RUN_ID>-2-bartest bartest|baz/qux|Rust|Paxos notes
 env: QUOTA_5H=70 QUOTA_7D=90

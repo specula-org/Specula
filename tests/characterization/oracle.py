@@ -1104,6 +1104,20 @@ if [ "$n" -le 1 ]; then echo "API Error: 529 overloaded_error"; exit 1; fi
 echo "fake pipeline ok"
 """
 
+# fails silently, but writes an "API Error" phase-1 agent.log into the isolated
+# run dir it was handed via --run-id — end-to-end proof that the scheduler's
+# transient probe reads the same path the pipeline actually writes
+_SCHED_PIPELINE_AGENTLOG = """\
+#!/usr/bin/env bash
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+rid=""
+for a in "$@"; do case "$a" in --run-id=*) rid="${a#*=}";; esac; done
+d="$root/runs/$rid/footest/.specula-output"
+mkdir -p "$d"
+echo "API Error: overloaded" > "$d/agent.log"
+exit 1
+"""
+
 # tripwire default: a case that never expects to launch the pipeline fails
 # loudly (exit 97 in the task log -> FAIL line) instead of silently "passing"
 _SCHED_PIPELINE_TRIPWIRE = '#!/usr/bin/env bash\necho "REAL PIPELINE INVOKED"; exit 97\n'
@@ -1543,9 +1557,9 @@ CASES: dict[str, Callable[[], str]] = {
         },
         snapshot_files=[".specula-output/spec/repair-ledger.md"],
     ),
-    # step 6 target: scheduler --help (the bash header comment via sed — including
-    # the queue-format text; its per-task prompt_file column is NOT implemented,
-    # see sched_queue_variants)
+    # step 6 target: scheduler --help (originally the bash header comment via
+    # sed; the cutover dropped the advertised-but-never-implemented per-task
+    # prompt_file queue column and documents the per-task isolation)
     "help_scheduler": lambda: run_scheduler_case("", ["--help"]),
     # step 6 target: argument/queue error contract
     "sched_err_unknown_flag": lambda: run_scheduler_case("footest|foo/bar|Go|r\n", ["--bogus"]),
@@ -1555,20 +1569,20 @@ CASES: dict[str, Callable[[], str]] = {
     "sched_empty_queue": lambda: run_scheduler_case("# only a comment\n\n", ["--workers", "1"]),
     # step 6 target: dry-run lifecycle — banner, setup phase (and the second
     # setup_task call inside run_task: the DRY-RUN clone/cp lines repeat), the
-    # exact launch_pipeline.sh command lines (flags word-split from the queue,
-    # --claude-alias/--max-turns forwarding), relative --prompt resolution,
-    # dry-run status files, and the summary's DRY rows (counted in no tally:
-    # Success=0 Failed=0 Skipped=0)
+    # exact launch_pipeline.sh command lines (per-task --run-id isolation, flags
+    # word-split from the queue, --claude-alias/--max-turns forwarding),
+    # relative --prompt resolution, dry-run status files, and the summary's DRY
+    # rows (counted in no tally: Success=0 Failed=0 Skipped=0)
     "sched_dryrun_full": lambda: run_scheduler_case(
         "# nightly batch\nfootest|foo/bar|Go|Raft demo\t--skip-analysis --skip-specgen\nbartest|baz/qux|Rust|Paxos notes\n",
         ["--dry-run", "--workers", "1", "--max-turns", "7", "--claude-alias", "myalias"],
         prompt="Verify liveness.\n",
     ),
-    # queue-parsing edges: comments (indented too), a tabs-only line is NOT
-    # skipped (the blank check strips spaces only -> a phantom task with an empty
-    # name), a third tab column folds into the pipeline flags (the header's
-    # per-task prompt_file column was never implemented), a no-pipe target passes
-    # through whole, multiple flags survive word-splitting
+    # queue-parsing edges: comments (indented too), a tabs-only line is blank
+    # (cutover fix: under bash it became a phantom task with an empty name), a
+    # third tab column folds into the pipeline flags (the per-task prompt_file
+    # column was never implemented), a no-pipe target passes through whole,
+    # multiple flags survive word-splitting
     "sched_queue_variants": lambda: run_scheduler_case(
         "  # indented comment\n"
         "\t\t\n"
@@ -1606,16 +1620,16 @@ CASES: dict[str, Callable[[], str]] = {
         seed=_SCHED_SEED_2,
         record_sleeps=True,
     ),
-    # the agent.log transient probe reads case-studies/<name>/agent.log — a stale
-    # path (real agent logs live under .specula-output/), pinned as-is: a planted
-    # file there turns a silent exit-1 into retries; attempt 3 is transient too
-    # but not retried (attempt < max_retries), FAIL at attempt 3, scheduler still
-    # exits 0 (task failures never affect the exit code)
+    # the agent.log transient probe reads the isolated run's real phase-1 log
+    # (the fake pipeline writes it via its --run-id, proving scheduler and
+    # pipeline agree on the path): silent exit-1 becomes retries; attempt 3 is
+    # transient too but not retried (attempt < max_retries), FAIL at attempt 3,
+    # scheduler still exits 0 (task failures never affect the exit code)
     "sched_retry_agentlog_exhaust": lambda: run_scheduler_case(
         "footest|foo/bar|Go|Raft demo\n",
         ["--workers", "1"],
-        pipeline_script="#!/usr/bin/env bash\nexit 1\n",
-        seed={**_SCHED_SEED_2, "case-studies/footest/agent.log": "API Error: overloaded\n"},
+        pipeline_script=_SCHED_PIPELINE_AGENTLOG,
+        seed=_SCHED_SEED_2,
         record_sleeps=True,
     ),
     # non-transient failure: no retry, FAIL at attempt 1, Failed=1, exit 0
