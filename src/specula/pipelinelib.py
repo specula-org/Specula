@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import json
 import locale
+import math
 import os
 import re
 import secrets
@@ -396,9 +397,14 @@ class Pipeline:
             ("QUOTA_MAX_WAITS", self.quota_max_waits, int),
         ):
             try:
-                conv(val)
+                parsed = conv(val)
             except ValueError:
                 print(f"ERROR: {label} must be numeric, got '{val}'", file=sys.stderr)
+                return 1
+            # inf/nan parse fine but make the gate's `usage > limit` comparison
+            # never fire — the same silently-disabled gate this check prevents
+            if conv is float and not math.isfinite(parsed):
+                print(f"ERROR: {label} must be a finite number, got '{val}'", file=sys.stderr)
                 return 1
         return None
 

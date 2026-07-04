@@ -380,6 +380,21 @@ class TestParsing(TmpCwd):
                 self.assertIn(f"{var} must be numeric, got '{val}'", err.getvalue())
                 os.environ.pop(var, None)
 
+    def test_nonfinite_quota_threshold_rejected_at_parse(self) -> None:
+        # inf/nan pass float() but make the gate's `usage > limit` always False,
+        # silently disabling it — the very failure the numeric check exists to
+        # prevent, so a non-finite threshold fails fast too
+        for var, val in (("QUOTA_5H", "inf"), ("QUOTA_5H", "nan"), ("QUOTA_7D", "Infinity")):
+            with self.subTest(var=var, val=val):
+                os.environ[var] = val
+                self.addCleanup(os.environ.pop, var, None)
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    rc = pl.Pipeline().parse_args(["t|g|l|r"])
+                self.assertEqual(rc, 1)
+                self.assertIn(f"{var} must be a finite number, got '{val}'", err.getvalue())
+                os.environ.pop(var, None)
+
     def test_extract_names_stops_at_first_line(self) -> None:
         # bash `IFS='|' read -r name ...` consumes only the first line, so a
         # newline in the target terminates the name before the '|' split —
