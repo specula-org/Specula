@@ -215,6 +215,8 @@ Generated: <DATE>
 **Logs:**
 - `.specula-output/agent.log` (4.0K)
 - `.specula-output/spec-gen.log` (4.0K)
+- `.specula-output/harness-gen.log` (4.0K)
+- `.specula-output/spec-validation.log` (4.0K)
 - `.specula-output/bug-confirmation.log` (4.0K)
 - `.specula-output/bug-classification.log` (4.0K)
 

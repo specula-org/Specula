@@ -784,11 +784,15 @@ class Pipeline:
                 out.append("- **Phase 4b (Bug Classification)**: SKIPPED")
 
             out += ["", "**Logs:**"]
+            # wart fix (step 7): the bash candidate list skipped the phase-2.5
+            # and phase-3 agent logs (harness-gen.log, spec-validation.log)
             for log_file in (
                 work_dir / "agent.log",
                 work_dir / "review-analysis.log",
                 work_dir / "spec-gen.log",
                 spec_dir / "review-specgen.log",
+                work_dir / "harness-gen.log",
+                work_dir / "spec-validation.log",
                 spec_dir / "quick-mc.log",
                 spec_dir / "review-validation.log",
                 work_dir / "bug-confirmation.log",
