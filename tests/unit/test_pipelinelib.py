@@ -516,19 +516,23 @@ class TestLedger(RRDirCase):
         self.p.regenerate_ledger()
         self.assertFalse((self.tmp / ".specula-output" / "spec" / "repair-ledger.md").exists())
 
-    def test_status_file_count_prefix_quirk(self) -> None:
-        # grep -lE '^status:[[:space:]]*RESOLVED' matches as a PREFIX — RESOLVEDX
-        # counts too. Kept faithfully; pinned so a "fix" is a conscious decision.
+    def test_status_file_count_exact_token(self) -> None:
+        # wart fix (step 7): the bash grep matched RESOLVED as a PREFIX, so a
+        # botched RESOLVEDX counted as resolved; the count is exact now
         f1 = make_rr(self.rr_dir, "RR-1", "RESOLVEDX")
-        f2 = make_rr(self.rr_dir, "RR-2", "OPEN")
-        self.assertEqual(pl.Pipeline._status_file_count([f1, f2], "RESOLVED"), 1)
+        f2 = make_rr(self.rr_dir, "RR-2", "RESOLVED")
+        f3 = make_rr(self.rr_dir, "RR-3", "OPEN")
+        self.assertEqual(pl.Pipeline._status_file_count([f1, f2, f3], "RESOLVED"), 1)
 
-    def test_status_file_count_scans_whole_file(self) -> None:
-        # unlike rr_status's 25-line window, the summary grep sees the whole file
+    def test_status_file_count_uses_state_machine_window(self) -> None:
+        # wart fix (step 7): the bash summary grep scanned the whole file while
+        # rr_status reads only the 25-line frontmatter window — the same RR
+        # could count as resolved in the summary yet stay OPEN to the repair
+        # loop; both reads now share rr_status
         pad = "".join(f"k{i}: v\n" for i in range(30))
         f = self.rr_dir / "RR-1.md"
         f.write_text(pad + "status: DEFERRED\n")
-        self.assertEqual(pl.Pipeline._status_file_count([f], "DEFERRED"), 1)
+        self.assertEqual(pl.Pipeline._status_file_count([f], "DEFERRED"), 0)
 
 
 # ──────────────────────────────────────────────────────────

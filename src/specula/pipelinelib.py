@@ -767,8 +767,6 @@ class Pipeline:
 
             rr_files = self._rr_files(name)
             if rr_files:
-                # bash grep -lE scans the WHOLE file (unlike rr_status's 25-line
-                # window) and matches the status as a prefix — kept faithfully
                 rr_resolved = self._status_file_count(rr_files, "RESOLVED")
                 rr_deferred = self._status_file_count(rr_files, "DEFERRED")
                 out.append(
@@ -820,17 +818,13 @@ class Pipeline:
 
     @staticmethod
     def _status_file_count(files: list[Path], status: str) -> int:
-        """Files with ≥1 line matching ^status:[[:space:]]*<status> — bash
-        `grep -lE ... | wc -l`."""
-        n = 0
-        for f in files:
-            try:
-                text = f.read_text(errors="replace")
-            except OSError:
-                continue
-            if any(re.match(r"status:[ \t\f\v\r]*" + status, ln) for ln in text.splitlines()):
-                n += 1
-        return n
+        """Files whose status (as the state machine reads it: rr_status's
+        25-line frontmatter window, exact token) equals `status`. Wart fix
+        (step 7): the bash summary used `grep -lE '^status:[[:space:]]*X' |
+        wc -l` — whole file, prefix match — so it could disagree with the
+        repair loop's own reads (a buried `status:` line counted here but not
+        there) and RESOLVEDX counted as RESOLVED."""
+        return sum(1 for f in files if rr_status(f) == status)
 
     # ── main (runs inside the tee) ──
     def main(self) -> int:
