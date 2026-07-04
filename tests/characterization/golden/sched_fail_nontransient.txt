@@ -1,0 +1,25 @@
+exit_code: 0
+
+=== stdout ===
+[TS] ===========================================
+[TS] Specula Scheduler  run=<RUN_ID>
+[TS] Workers=1  Threshold=80%  MaxWindows=3
+[TS] ===========================================
+[TS] Loaded 1 tasks from <SPECROOT>/tasks.queue
+[TS] --- Setup phase ---
+[TS] --- Setup complete ---
+[TS] START #1 footest
+[TS] FAIL  #1 footest  (exit=0, <N>s, attempt 1)
+[TS] ===========================================
+[TS] SUMMARY
+[TS]   FAIL footest
+[TS] Total=1  Success=0  Failed=1  Skipped=0  Resets=0
+[TS] Logs: <SPECROOT>/logs/scheduler/<RUN_ID>/
+[TS] ===========================================
+
+
+=== scheduler.log (tee) ===
+identical to stdout
+
+=== status files ===
+0: failed
