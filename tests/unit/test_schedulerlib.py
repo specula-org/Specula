@@ -693,6 +693,18 @@ class TestSummary(Base):
         # wart fix (step 7): Dry counted — the bash tally didn't add up to Total
         self.assertIn("Total=5  Success=1  Failed=1  Dry=1  Skipped=2  Resets=2", s.lines)
 
+    def test_returns_failed_count_for_exit_code(self) -> None:
+        # wart fix (step 7): failures surface in the exit code (bash exited 0)
+        s = self.sched()
+        s.task_targets = ["a|x/y|Go|r", "b|x/y|Go|r", "c|x/y|Go|r"]
+        for idx, status in ((0, "success"), (1, "failed"), (2, "failed")):
+            (Path(s.log_dir) / "status" / str(idx)).write_text(status + "\n")
+        self.assertEqual(s.summary(), 2)
+        s2 = self.sched()
+        s2.task_targets = ["a|x/y|Go|r"]
+        # not-started (quota drain) is a scheduling outcome, not a failure
+        self.assertEqual(s2.summary(), 0)
+
 
 # ── run() wiring ─────────────────────────────────────────────────────────────
 class TestRun(Base):

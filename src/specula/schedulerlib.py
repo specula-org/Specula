@@ -36,6 +36,9 @@ Wart fixes (step 7, 2026-07-04 — goldens intentionally regenerated):
     having a silent per-task death path.
   - the summary tally counts dry-run tasks (`Dry=N`); the bash printed their
     DRY lines but counted them nowhere, so the tally didn't add up to Total.
+  - the exit code is 1 when any task failed (0 otherwise); the bash always
+    exited 0, invisible to cron/CI wrappers. Quota-drained ("not-started")
+    tasks are a scheduling outcome, not a failure — they don't flip it.
 
 Concurrency: bash forked a subshell per task; here each task runs in a thread
 whose only work is spawning the pipeline subprocess, log/status bookkeeping and
@@ -487,7 +490,7 @@ class Scheduler:
         for t in active:
             t.join()
 
-    def summary(self) -> None:
+    def summary(self) -> int:
         self.log("===========================================")
         self.log("SUMMARY")
         total = len(self.task_targets)
@@ -515,6 +518,7 @@ class Scheduler:
         )
         self.log(f"Logs: {self.log_dir}/")
         self.log("===========================================")
+        return failed
 
     def main(self) -> int:
         self.log("===========================================")
@@ -537,8 +541,10 @@ class Scheduler:
             return 0
 
         self.main_loop()
-        self.summary()
-        return 0
+        # wart fix (step 7): task failures surface in the exit code — the bash
+        # always exited 0, so cron/CI wrappers couldn't tell a wiped-out run
+        # from a clean one
+        return 1 if self.summary() > 0 else 0
 
     def run(self, argv: list[str]) -> int:
         rc = self.parse_args(argv)
