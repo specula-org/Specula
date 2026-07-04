@@ -25,7 +25,7 @@ exit_code: 0
 [TS]   DRY  alpha
 [TS]   DRY  beta
 [TS]   DRY  gamma-no-pipes
-[TS] Total=3  Success=0  Failed=0  Skipped=0  Resets=0
+[TS] Total=3  Success=0  Failed=0  Dry=3  Skipped=0  Resets=0
 [TS] Logs: <SPECROOT>/logs/scheduler/<RUN_ID>/
 [TS] ===========================================
 

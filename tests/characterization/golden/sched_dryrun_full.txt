@@ -22,7 +22,7 @@ exit_code: 0
 [TS] SUMMARY
 [TS]   DRY  footest
 [TS]   DRY  bartest
-[TS] Total=2  Success=0  Failed=0  Skipped=0  Resets=0
+[TS] Total=2  Success=0  Failed=0  Dry=2  Skipped=0  Resets=0
 [TS] Logs: <SPECROOT>/logs/scheduler/<RUN_ID>/
 [TS] ===========================================
 

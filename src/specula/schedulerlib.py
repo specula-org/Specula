@@ -5,9 +5,8 @@ parallel workers, pausing on quota and retrying transient API failures. Every
 observable behavior (log lines, status files, summary tallies, exit codes) is
 pinned by the sched_* characterization goldens — first captured from the bash
 original, then intentionally regenerated for the cutover changes and wart
-fixes below. Kept bash quirks: dry-run tasks counted in no summary tally,
-task failures never affecting the exit code. Path strings shown in logs are
-assembled by string interpolation, not pathlib, so bash artifacts like
+fixes below. Kept bash quirk: path strings shown in logs are assembled by
+string interpolation, not pathlib, so bash artifacts like
 `case-studies//artifact/` survive byte-identically.
 
 Cutover changes (per-task isolation, agreed 2026-07-04):
@@ -35,6 +34,8 @@ Wart fixes (step 7, 2026-07-04 — goldens intentionally regenerated):
     .prompt-extra.md mid-run; a clone failure now aborts the scheduler in the
     setup phase (the bash main-scope set -e did the same) instead of also
     having a silent per-task death path.
+  - the summary tally counts dry-run tasks (`Dry=N`); the bash printed their
+    DRY lines but counted them nowhere, so the tally didn't add up to Total.
 
 Concurrency: bash forked a subshell per task; here each task runs in a thread
 whose only work is spawning the pipeline subprocess, log/status bookkeeping and
@@ -490,7 +491,7 @@ class Scheduler:
         self.log("===========================================")
         self.log("SUMMARY")
         total = len(self.task_targets)
-        success = failed = other = 0
+        success = failed = dry = other = 0
         for i in range(total):
             name = self.task_targets[i].split("|")[0]
             try:
@@ -504,11 +505,14 @@ class Scheduler:
                 failed += 1
                 self.log(f"  FAIL {name}")
             elif s == "dry-run":
+                dry += 1
                 self.log(f"  DRY  {name}")
             else:
                 other += 1
                 self.log(f"  ---- {name} ({s})")
-        self.log(f"Total={total}  Success={success}  Failed={failed}  Skipped={other}  Resets={self.windows_used}")
+        self.log(
+            f"Total={total}  Success={success}  Failed={failed}  Dry={dry}  Skipped={other}  Resets={self.windows_used}"
+        )
         self.log(f"Logs: {self.log_dir}/")
         self.log("===========================================")
 

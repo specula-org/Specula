@@ -690,7 +690,8 @@ class TestSummary(Base):
         self.assertIn("  DRY  c", s.lines)
         self.assertIn("  ---- d (not-started)", s.lines)
         self.assertIn("  ---- e (weird)", s.lines)
-        self.assertIn("Total=5  Success=1  Failed=1  Skipped=2  Resets=2", s.lines)
+        # wart fix (step 7): Dry counted — the bash tally didn't add up to Total
+        self.assertIn("Total=5  Success=1  Failed=1  Dry=1  Skipped=2  Resets=2", s.lines)
 
 
 # ── run() wiring ─────────────────────────────────────────────────────────────
