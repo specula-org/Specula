@@ -194,10 +194,20 @@ class Phase:
 
     def monitor_line(self, ws: Workspace) -> str | None:
         """The '  Monitor: tail -f ...' hint printed once after all agents launch
-        (per-phase; code_analysis prints none). Faithful to each bash launcher's
-        hand-written glob — quirks and all: some omit the .specula-output/ segment,
-        and spec_validation uses an absolute ${PWD} path."""
+        (per-phase; code_analysis prints none). Legacy is faithful to each bash
+        launcher's hand-written glob — quirks and all: some omit the
+        .specula-output/ segment, and spec_validation uses an absolute ${PWD}
+        path. Isolated runs re-root the glob under the run dir (see _monitor)."""
         return None
+
+    def _monitor(self, ws: Workspace, logname: str, legacy: str) -> str:
+        """Monitor hint. Isolated (SPECULA_RUN_DIR set): an accurate run-rooted
+        glob — the legacy relative `*/` points at the launch cwd, which an
+        isolated run no longer writes to. Legacy: the bash launcher's original
+        string, verbatim."""
+        if ws.run_dir:
+            return f"  Monitor: tail -f {ws.run_dir}/*/.specula-output/{logname}"
+        return legacy
 
     # ── shared prompt-extra injection (identical across phases) ──
     def _with_extra(self, ws: Workspace, name: str, prompt: str) -> str:
@@ -635,7 +645,7 @@ Expected files:
                 print(f"  --  {name} (no output)")
 
     def monitor_line(self, ws):
-        return "  Monitor: tail -f */.specula-output/spec-gen.log"
+        return self._monitor(ws, "spec-gen.log", "  Monitor: tail -f */.specula-output/spec-gen.log")
 
 
 class HarnessGenerationPhase(Phase):
@@ -761,7 +771,7 @@ Expected outputs:
                 print(f"  --  {name} (no harness output)")
 
     def monitor_line(self, ws):
-        return "  Monitor: tail -f */.specula-output/harness-gen.log"
+        return self._monitor(ws, "harness-gen.log", "  Monitor: tail -f */.specula-output/harness-gen.log")
 
 
 class BugClassificationPhase(Phase):
@@ -865,8 +875,8 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
                 print(f"  {name}: (no report — check log)")
 
     def monitor_line(self, ws):
-        # bash glob omits the .specula-output/ segment — replicated verbatim.
-        return "  Monitor: tail -f */bug-classification.log"
+        # bash glob omits the .specula-output/ segment — replicated verbatim in legacy.
+        return self._monitor(ws, "bug-classification.log", "  Monitor: tail -f */bug-classification.log")
 
 
 class SpecValidationPhase(Phase):
@@ -1012,8 +1022,10 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
 
     def monitor_line(self, ws):
         # bash uses an absolute ${PWD} path and always spec-validation.log (even
-        # in --repair mode, whose log is spec-repair.log) — replicated verbatim.
-        return f"  Monitor: tail -f {ws.cwd}/*/.specula-output/spec-validation.log"
+        # in --repair mode, whose log is spec-repair.log) — replicated verbatim in legacy.
+        return self._monitor(
+            ws, "spec-validation.log", f"  Monitor: tail -f {ws.cwd}/*/.specula-output/spec-validation.log"
+        )
 
 
 class BugConfirmationPhase(Phase):
@@ -1169,8 +1181,8 @@ Write the consolidated report to `{spec_dir}/confirmed-bugs.md`, with one `repro
 
     def monitor_line(self, ws):
         # bash glob omits the .specula-output/ segment and always bug-confirmation.log
-        # (even in --recheck, whose log is bug-recheck.log) — replicated verbatim.
-        return "  Monitor: tail -f */bug-confirmation.log"
+        # (even in --recheck, whose log is bug-recheck.log) — replicated verbatim in legacy.
+        return self._monitor(ws, "bug-confirmation.log", "  Monitor: tail -f */bug-confirmation.log")
 
 
 class ReviewPhase(Phase):

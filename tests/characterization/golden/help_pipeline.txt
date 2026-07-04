@@ -35,7 +35,9 @@ Options:
   --claude-alias=NAME    Claude CLI profile (default: claude)
   --artifact=PATH        Path to system artifact/source code
   --isolate              Write all outputs to an isolated runs/<run-id>/ workspace
-                         (parallel-safe; keeps case-studies/ pristine; default: off)
+                         (parallel-safe; keeps case-studies/ pristine; default: off).
+                         Sources are read from case-studies/<name>/artifact or
+                         --artifact — the run root holds no code.
   --run-id=ID            Attach to runs/ID — reuse an existing run's workspace,
                          e.g. to resume with --skip-* flags (implies --isolate)
 

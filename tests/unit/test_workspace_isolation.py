@@ -405,5 +405,56 @@ class TestParallelIsolation(EnvIsolatedCase):
         self.assertEqual(list(launch_cwd.iterdir()), [])
 
 
+class TestMonitorLine(EnvIsolatedCase):
+    """The 'Monitor: tail -f ...' hint must point where the logs actually land:
+    the launch cwd in legacy, the run root under isolation (the legacy relative
+    `*/` glob would tail an empty launch cwd the isolated run never writes to)."""
+
+    # (phase class, log filename that appears in the isolated run-rooted hint)
+    PHASES = [
+        (phaselib.SpecGenerationPhase, "spec-gen.log"),
+        (phaselib.HarnessGenerationPhase, "harness-gen.log"),
+        (phaselib.BugClassificationPhase, "bug-classification.log"),
+        (phaselib.SpecValidationPhase, "spec-validation.log"),
+        (phaselib.BugConfirmationPhase, "bug-confirmation.log"),
+    ]
+
+    def test_isolated_reroots_under_run(self) -> None:
+        run = self.tmp()
+        self.set_run_dir(run)
+        ws = phaselib.Workspace(["foo"], cwd=Path("/launch/dir"))
+        for cls, logname in self.PHASES:
+            with self.subTest(phase=cls.__name__):
+                line = cls().monitor_line(ws)
+                self.assertEqual(line, f"  Monitor: tail -f {run}/*/.specula-output/{logname}")
+                # the launch cwd the isolated run does not write to never leaks in
+                self.assertNotIn("/launch/dir", line)
+
+    def test_legacy_unchanged(self) -> None:
+        """Byte-identical to the bash launchers' hand-written globs (quirks and
+        all) — the same strings the characterization goldens pin."""
+        ws = phaselib.Workspace(["foo"], cwd=Path("/launch/dir"))
+        expected = {
+            phaselib.SpecGenerationPhase: "  Monitor: tail -f */.specula-output/spec-gen.log",
+            phaselib.HarnessGenerationPhase: "  Monitor: tail -f */.specula-output/harness-gen.log",
+            phaselib.BugClassificationPhase: "  Monitor: tail -f */bug-classification.log",
+            phaselib.SpecValidationPhase: "  Monitor: tail -f /launch/dir/*/.specula-output/spec-validation.log",
+            phaselib.BugConfirmationPhase: "  Monitor: tail -f */bug-confirmation.log",
+        }
+        for cls, line in expected.items():
+            with self.subTest(phase=cls.__name__):
+                self.assertEqual(cls().monitor_line(ws), line)
+
+    def test_code_analysis_prints_none_either_mode(self) -> None:
+        for isolated in (False, True):
+            with self.subTest(isolated=isolated):
+                if isolated:
+                    self.set_run_dir(self.tmp())
+                else:
+                    os.environ.pop("SPECULA_RUN_DIR", None)
+                ws = phaselib.Workspace(["foo"])
+                self.assertIsNone(phaselib.CodeAnalysisPhase().monitor_line(ws))
+
+
 if __name__ == "__main__":
     unittest.main()
