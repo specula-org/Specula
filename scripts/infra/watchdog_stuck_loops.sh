@@ -19,7 +19,7 @@ set -uo pipefail
 
 THRESHOLD_MIN=60        # idle minutes before considered stuck
 INTERVAL_SEC=600        # check every N seconds
-CASE_PATTERN="_2"       # only watch case-studies matching this glob suffix
+CASE_PATTERN="_2"       # only watch cases matching this glob suffix (case-studies/ and runs/)
 # Repo root, derived from this script's location (scripts/infra/). Override with
 # $SPECULA_ROOT if the script is run from a copy outside the tree.
 SPECULA_ROOT="${SPECULA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
@@ -63,7 +63,8 @@ check_case() {
     local outdir="$case_dir/.specula-output"
 
     [[ -d "$outdir" ]] || return
-    [[ -f "$outdir/pipeline-summary.md" ]] && return    # done
+    [[ -f "$outdir/pipeline-summary.md" ]] && return       # done (legacy layout)
+    [[ -f "$case_dir/../pipeline-summary.md" ]] && return  # done (isolated: summary at run root)
 
     # Find latest mtime of any file under outdir
     local latest_mtime
@@ -110,8 +111,15 @@ check_case() {
 log "Watchdog started: threshold=${THRESHOLD_MIN}min, interval=${INTERVAL_SEC}s, pattern=*${CASE_PATTERN}"
 
 while true; do
+    # legacy layout: case-studies/<name>/.specula-output
     for case_dir in "$SPECULA_ROOT"/case-studies/*${CASE_PATTERN}/; do
         [[ -d "$case_dir" ]] || continue
+        check_case "$case_dir"
+    done
+    # isolated layout (now the default): runs/<run-id>/<name>/.specula-output
+    for case_dir in "$SPECULA_ROOT"/runs/*/*${CASE_PATTERN}/; do
+        [[ -d "$case_dir" ]] || continue
+        [[ "$case_dir" == */runs/latest/* ]] && continue   # symlink to newest run — skip the duplicate
         check_case "$case_dir"
     done
     sleep "$INTERVAL_SEC"
