@@ -377,7 +377,7 @@ class Scheduler:
         target = self.task_targets[idx]
         flags = self.task_flags[idx]
         name = target.split("|")[0]
-        task_log = f"{self.log_dir}/{name}.log"
+        task_log = f"{self.log_dir}/{idx + 1}-{name}.log"
 
         self.setup_task(idx)
 

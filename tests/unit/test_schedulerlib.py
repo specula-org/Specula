@@ -509,7 +509,7 @@ class TestRunTask(WorkerBase):
         s.run_task(0)
         self.assertEqual((Path(s.log_dir) / "status" / "0").read_text(), "success\n")
         self.assertRegex(s.lines[-1], r"^DONE  #1 footest  \(success, \d+s, attempt 1\)$")
-        self.assertEqual((Path(s.log_dir) / "footest.log").read_text(), "pipeline ran\n")
+        self.assertEqual((Path(s.log_dir) / "1-footest.log").read_text(), "pipeline ran\n")
 
     def test_dry_run_command_line(self) -> None:
         root = self.root()
