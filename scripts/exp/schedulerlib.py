@@ -46,6 +46,8 @@ Sanctioned deviations from the bash (agreed 2026-07-04, unit-test pinned):
     (pipelinelib semantics).
   - numeric flags (--workers/--windows/--max-turns/--threshold*) are validated
     at parse time; bash accepted garbage and then hung or spun in arithmetic.
+    --workers additionally requires >= 1: bash took 0/negative and the fill
+    loop spun forever without ever dispatching a task.
   - a flag missing its value errors out cleanly; bash died on `set -u`.
   - a relative --prompt whose directory doesn't exist resolves via abspath;
     bash died in `cd "$(dirname ...)"`.
@@ -199,6 +201,9 @@ class Scheduler:
                     return 1
                 if a == "--workers":
                     self.workers = int(v)
+                    if self.workers < 1:  # 0/negative would spin the fill loop forever
+                        print(f"ERROR: --workers must be >= 1 (got {v})", file=sys.stderr)
+                        return 1
                 elif a == "--threshold":
                     self.threshold = v
                 elif a == "--threshold-7day":
@@ -418,7 +423,13 @@ class Scheduler:
             is_transient = _grep(task_log, _TRANSIENT_RE)
             # cutover fix: the bash probed case-studies/<name>/agent.log, a path
             # the pipeline never wrote (phase agent logs live under the work
-            # dir); probe the isolated run's actual phase-1 agent log
+            # dir); probe the isolated run's actual phase-1 agent log.
+            # Best-effort, two known edges: retries reuse the run dir (run-id is
+            # per task, not per attempt), so an attempt that dies before phase 1
+            # truncates agent.log can read the previous attempt's API error and
+            # misclassify a real failure as transient — costs at most the
+            # remaining bounded backoffs. And a queue-flag --run-id override
+            # moves the run dir, degrading the probe to the task-log grep above.
             agent_log = f"{SPECULA_ROOT}/runs/{task_run_id}/{name}/.specula-output/agent.log"
             if os.path.isfile(agent_log) and _grep(agent_log, "API Error:"):
                 is_transient = True

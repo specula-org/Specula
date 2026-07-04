@@ -3,8 +3,9 @@
 The sched_* characterization goldens pin the end-to-end observable behavior
 against the bash original; these tests pin the helper-level semantics — the
 queue-parsing edges, the quota decision table, the transient-retry classifier
-(including the stale agent.log probe path), the FAIL line's exit=0 bash quirk,
-and the sanctioned deviations (robust _epoch, fail-fast numeric args).
+(including the isolated-run agent.log probe the cutover introduced), the FAIL
+line's real exit code (the bash always said exit=0), and the sanctioned
+deviations (robust _epoch, fail-fast numeric args).
 
 stdlib unittest:  python3 -m unittest tests.unit.test_schedulerlib -v
 """
@@ -169,6 +170,19 @@ class TestParseArgs(Base):
         s = Sched()
         self.assertIsNone(s.parse_args(["--threshold", "80.5"]))  # float thresholds fine
         self.assertEqual(s.threshold, "80.5")
+
+    def test_workers_must_be_positive(self) -> None:
+        # deviation: bash took --workers 0 (or negative) and the fill loop spun
+        # forever without dispatching; the port rejects it at parse time
+        for v in ("0", "-3"):
+            with self.subTest(v=v):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    self.assertEqual(Sched().parse_args(["--workers", v]), 1)
+                self.assertIn("must be >= 1", err.getvalue())
+        s = Sched()
+        self.assertIsNone(s.parse_args(["--workers", "1"]))
+        self.assertEqual(s.workers, 1)
 
 
 # ── queue parsing ────────────────────────────────────────────────────────────
