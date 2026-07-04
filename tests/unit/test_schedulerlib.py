@@ -427,15 +427,29 @@ class WorkerBase(Base):
 
 
 class TestSetupTask(WorkerBase):
-    def test_phantom_empty_target_uses_bash_path_strings(self) -> None:
+    def test_degenerate_empty_target_collapses_paths(self) -> None:
+        # wart fix (step 7): pathlib joins — a malformed queue line with an
+        # empty name no longer leaks `case-studies//artifact/` into the logs
+        # (still garbage-in-garbage-out, but the path is at least well-formed)
         root = self.root()
         s = self.sched()
         s.dry_run = True
         self.task(s, "")
         s.setup_task(0)
-        # string interpolation parity: the doubled slash survives in the logs
-        self.assertEqual(s.lines[0], f"CLONE : github.com/ -> {root}/case-studies//artifact/")
+        self.assertEqual(s.lines[0], f"CLONE : github.com/ -> {root}/case-studies/artifact")
         self.assertTrue((root / "case-studies" / "spec").is_dir())
+
+    def test_wellformed_target_paths_unchanged(self) -> None:
+        # for real names the pathlib join renders byte-identically to the bash
+        root = self.root()
+        s = self.sched()
+        s.dry_run = True
+        self.task(s, "footest|foo/bar|Go|r")
+        s.setup_task(0)
+        self.assertEqual(
+            s.lines[0],
+            f"CLONE footest: github.com/foo/bar -> {root}/case-studies/footest/artifact/bar",
+        )
 
     def test_git_file_worktree_style_skips_clone(self) -> None:
         root = self.root()

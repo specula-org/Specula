@@ -11,8 +11,8 @@ exit_code: 0
 [TS] DRY-RUN: git clone --depth 1 https://github.com/a/b <SPECROOT>/case-studies/alpha/artifact/b
 [TS] CLONE beta: github.com/c/d -> <SPECROOT>/case-studies/beta/artifact/d
 [TS] DRY-RUN: git clone --depth 1 https://github.com/c/d <SPECROOT>/case-studies/beta/artifact/d
-[TS] CLONE gamma-no-pipes: github.com/ -> <SPECROOT>/case-studies/gamma-no-pipes/artifact/
-[TS] DRY-RUN: git clone --depth 1 https://github.com/ <SPECROOT>/case-studies/gamma-no-pipes/artifact/
+[TS] CLONE gamma-no-pipes: github.com/ -> <SPECROOT>/case-studies/gamma-no-pipes/artifact
+[TS] DRY-RUN: git clone --depth 1 https://github.com/ <SPECROOT>/case-studies/gamma-no-pipes/artifact
 [TS] --- Setup complete ---
 [TS] START #1 alpha
 [TS] DRY-RUN: bash <SPECROOT>/scripts/launch/launch_pipeline.sh --claude-alias=claude --run-id=<RUN_ID>-1-alpha --flag-one --flag-two=x third-col.md alpha|a/b|Go|ref

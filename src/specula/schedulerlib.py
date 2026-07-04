@@ -5,9 +5,7 @@ parallel workers, pausing on quota and retrying transient API failures. Every
 observable behavior (log lines, status files, summary tallies, exit codes) is
 pinned by the sched_* characterization goldens — first captured from the bash
 original, then intentionally regenerated for the cutover changes and wart
-fixes below. Kept bash quirk: path strings shown in logs are assembled by
-string interpolation, not pathlib, so bash artifacts like
-`case-studies//artifact/` survive byte-identically.
+fixes below.
 
 Cutover changes (per-task isolation, agreed 2026-07-04):
   - every task's pipeline gets --run-id=<scheduler-run>-<n>-<name>: outputs go
@@ -39,6 +37,9 @@ Wart fixes (step 7, 2026-07-04 — goldens intentionally regenerated):
   - the exit code is 1 when any task failed (0 otherwise); the bash always
     exited 0, invisible to cron/CI wrappers. Quota-drained ("not-started")
     tasks are a scheduling outcome, not a failure — they don't flip it.
+  - setup paths are pathlib joins; the bash string interpolation leaked
+    artifacts like `case-studies//artifact/` into logs when a malformed queue
+    line yielded an empty name/repo field (identical for well-formed names).
 
 Concurrency: bash forked a subshell per task; here each task runs in a thread
 whose only work is spawning the pipeline subprocess, log/status bookkeeping and
@@ -337,20 +338,20 @@ class Scheduler:
         name = fields[0]
         github = fields[1] if len(fields) > 1 else ""
 
-        work_dir = f"{SPECULA_ROOT}/case-studies/{name}"
-        Path(work_dir, "spec").mkdir(parents=True, exist_ok=True)
-        Path(work_dir, "artifact").mkdir(parents=True, exist_ok=True)
+        work_dir = SPECULA_ROOT / "case-studies" / name
+        (work_dir / "spec").mkdir(parents=True, exist_ok=True)
+        (work_dir / "artifact").mkdir(parents=True, exist_ok=True)
 
         repo_name = github.split("/")[-1]
-        artifact_dir = f"{work_dir}/artifact/{repo_name}"
-        dotgit = Path(artifact_dir) / ".git"
+        artifact_dir = work_dir / "artifact" / repo_name
+        dotgit = artifact_dir / ".git"
         if not dotgit.is_dir() and not dotgit.is_file():
             self.log(f"CLONE {name}: github.com/{github} -> {artifact_dir}")
             if self.dry_run:
                 self.log(f"DRY-RUN: git clone --depth 1 https://github.com/{github} {artifact_dir}")
             else:
                 proc = subprocess.run(
-                    ["git", "clone", "--depth", "1", f"https://github.com/{github}", artifact_dir],
+                    ["git", "clone", "--depth", "1", f"https://github.com/{github}", str(artifact_dir)],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -360,16 +361,15 @@ class Scheduler:
                 if lines:  # bash: `git clone ... 2>&1 | tail -1` (raw stdout, not log())
                     print(lines[-1], flush=True)
                 if proc.returncode != 0:
-                    # set -e parity: kills the setup phase; in a worker thread the
-                    # task dies without a status file ("not-started"), like the
-                    # bash subshell
+                    # set -e parity: aborts the scheduler from main()'s setup
+                    # phase before any task starts
                     raise SystemExit(proc.returncode)
 
         if self.prompt_file and os.path.isfile(self.prompt_file):
             if self.dry_run:
                 self.log(f"DRY-RUN: cp {self.prompt_file} -> {work_dir}/.prompt-extra.md")
             else:
-                Path(work_dir, ".prompt-extra.md").write_bytes(Path(self.prompt_file).read_bytes())
+                (work_dir / ".prompt-extra.md").write_bytes(Path(self.prompt_file).read_bytes())
                 self.log(f"PROMPT {name}: wrote .prompt-extra.md")
 
     # ── worker ──────────────────────────────────────────────────────────────
