@@ -4,7 +4,7 @@
 #
 # Thin shim → Python port (src/specula/adapters/claude_code.py). Forwards args
 # verbatim; exit code (incl. 75 on rate limit) propagates via exec. Behavior
-# pinned in tests/characterization/. Original bash impl is in git history.
+# pinned by tests/unit/test_adapters.py. Original bash impl is in git history.
 #
 # Invoked by file path, NOT `python3 -m specula...`: -m would require exporting
 # PYTHONPATH=src, which the spawned claude session inherits (every python the

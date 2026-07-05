@@ -105,8 +105,8 @@ jobs:
           python-version: "3.10"
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-      # .[dev] gives mypy both `specula.*` and pytest (the char wrapper imports
-      # it). Scope + strictness live in [tool.mypy].
+      # .[dev] gives mypy `specula.*` plus pytest (the test runner). Scope +
+      # strictness live in [tool.mypy].
       - name: Install deps
         run: uv sync --locked --extra dev
       - name: mypy

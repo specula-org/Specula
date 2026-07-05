@@ -1,4 +1,0 @@
-exit_code: 1
-
-=== stdout ===
-Invalid --max-parallel: 'abc' (expected an integer)

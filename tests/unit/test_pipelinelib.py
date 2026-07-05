@@ -1,7 +1,7 @@
 """Unit tests for specula.pipelinelib (migration step 5).
 
-The characterization suite pins end-to-end behavior against the bash goldens;
-these tests pin the state-transition and decision tables at function level —
+The end-to-end CLI chain is covered by tests/e2e; these tests pin the
+state-transition and decision tables at function level —
 the repair-request state machine, the quota gate, and the small parsing rules
 whose edge inputs are awkward to reach through a full pipeline run.
 

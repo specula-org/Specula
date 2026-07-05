@@ -1,6 +1,0 @@
-exit_code: 1
-
-=== stdout ===
-[TIME] Quota: 5h=86% (limit 85%) resets_at=<DATE> — sleeping <SECS>s (wait 1/1)
-  [stub] sleep 60s
-[TIME] ERROR: quota still over limit after 1 waits, aborting

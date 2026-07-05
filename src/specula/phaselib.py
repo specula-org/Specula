@@ -7,8 +7,8 @@ agent adapter (throttled, in the background), then summarize. This module folds
 that shared skeleton into one `Phase` base + a small subclass per phase, so the
 `launch_<phase>.sh` scripts become thin shims (`exec python3 phaselib.py <phase>`).
 
-Behavior is a faithful port; the characterization suite in tests/characterization/
-pins each launcher's --dry-run output and precondition gate against the bash.
+Behavior is a faithful port of the original bash launchers; the phase logic is
+covered by tests/unit and the end-to-end CLI chain by tests/e2e.
 
 Usage:  python3 phaselib.py <phase> [options] "<target>" [...]
 """
@@ -1207,8 +1207,8 @@ class ReviewPhase(Phase):
     """Inter-phase review agent (used by launch_pipeline.sh between phases; off by
     default). The outlier: args are `<phase> <name...>`, no --dry-run/--check, an
     inline --prompt, and hardcoded --max-turns=30 — so it overrides run() wholesale
-    instead of using the shared driver. Reviews are pinned via the agent's captured
-    prompt (see tests/characterization/ review_*)."""
+    instead of using the shared driver. The review's contract is the agent-facing
+    prompt it assembles."""
 
     key = "review"
     usage = r"""

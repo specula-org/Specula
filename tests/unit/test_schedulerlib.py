@@ -1,7 +1,7 @@
 """Unit tests for schedulerlib (migration step 6 port of scripts/exp/scheduler.sh).
 
-The sched_* characterization goldens pin the end-to-end observable behavior
-against the bash original; these tests pin the helper-level semantics — the
+The batch dry-run in tests/e2e covers the end-to-end observable behavior;
+these tests pin the helper-level semantics — the
 queue-parsing edges, the quota decision table, the transient-retry classifier
 (including the isolated-run agent.log probe the cutover introduced), the FAIL
 line's real exit code (the bash always said exit=0), and the sanctioned

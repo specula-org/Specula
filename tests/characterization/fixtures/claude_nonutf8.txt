@@ -1,1 +1,0 @@
-claude crashed: ÿþ raw stack text, not json

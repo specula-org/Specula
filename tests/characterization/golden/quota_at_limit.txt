@@ -1,4 +1,0 @@
-exit_code: 0
-
-=== stdout ===
-wait_for_quota returned: 0
