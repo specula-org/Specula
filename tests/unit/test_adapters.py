@@ -27,7 +27,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLAUDE_PY = REPO_ROOT / "src" / "specula" / "adapters" / "claude_code.py"
@@ -74,6 +74,13 @@ class AdapterRun(TypedDict):
     sessionenv: str
     stdin: str | None
     base: Path
+
+
+class SessionCase(TypedDict):
+    name: str
+    transcript: str | None  # session JSONL to seed, or None to leave absent
+    want: dict[str, int]
+    absent: list[str]
 
 
 class AdapterCase(unittest.TestCase):
@@ -309,6 +316,66 @@ class ClaudeCodeAdapter(AdapterCase):
         self.assertEqual(r["returncode"], 0)
         self.assertIn("claude-code", r["stdout"])
         self.assertIn("--prompt-file", r["stdout"])
+
+    def test_session_usage(self) -> None:
+        # non-empty session_id -> _extract_usage rewrites num_turns from the session
+        # JSONL. Default fixture uses session_id="", so this is the only coverage.
+        assistant = json.dumps({"type": "assistant", "message": {"content": [{"type": "tool_use"}, {"type": "text"}]}})
+        assistant_tool = json.dumps({"type": "assistant", "message": {"content": [{"type": "tool_use"}]}})
+        user = json.dumps({"type": "user", "message": {"content": []}})
+        noise = '{"type": "tool_result", "huge": "payload with no assistant marker"}'
+
+        cases: list[SessionCase] = [
+            {
+                # 2 assistant turns, 2 tool_use total; user/tool_result ignored
+                "name": "recomputes-from-transcript",
+                "transcript": "\n".join([assistant, user, noise, assistant_tool]) + "\n",
+                "want": {"num_turns": 2, "num_turns_reported": 9, "num_tool_uses": 2},
+                "absent": [],
+            },
+            {
+                # no JSONL on disk -> block skipped, turns untouched
+                "name": "missing-transcript-leaves-turns-alone",
+                "transcript": None,
+                "want": {"num_turns": 9},
+                "absent": ["num_turns_reported", "num_tool_uses"],
+            },
+        ]
+        for tc in cases:
+            with self.subTest(tc["name"]):
+                sid = "sess-123"
+                fixture = dict(CLAUDE_JSON, session_id=sid, num_turns=9)
+                usage = self._run_with_session(fixture, transcript=tc["transcript"], sid=sid)
+                for key, val in tc["want"].items():
+                    self.assertEqual(usage[key], val)
+                for key in tc["absent"]:
+                    self.assertNotIn(key, usage)
+
+    def _run_with_session(self, fixture: dict[str, Any], *, transcript: str | None, sid: str = "") -> dict[str, Any]:
+        """Run the claude adapter with HOME==cwd==base so a seeded transcript lands
+        where the adapter looks ($HOME/.claude/projects/-<key>). Not via
+        run_adapter, which mints its own HOME."""
+        base = self.sandbox()
+        bindir = base / "bin"
+        fixture_file = base / "fixture.txt"
+        fixture_file.write_text(json.dumps(fixture))
+        self._write_fake(bindir, "claude", fixture_file, record_extra=False)
+        (base / "prompt.md").write_text("the prompt\n")
+        if transcript is not None:
+            key = str(base).replace("/", "-").lstrip("-")
+            jsonl = base / ".claude" / "projects" / f"-{key}" / f"{sid}.jsonl"
+            jsonl.parent.mkdir(parents=True)
+            jsonl.write_text(transcript)
+        env = {k: v for k, v in os.environ.items() if k not in _VOLATILE}
+        env["HOME"] = str(base)
+        env["PATH"] = f"{bindir}:/usr/bin:/bin"
+        proc = subprocess.run(
+            self.CMD + [f"--prompt-file={base}/prompt.md", f"--log={base}/out.log"],
+            cwd=str(base), env=env, capture_output=True, text=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        usage: dict[str, Any] = json.loads((base / "out.usage.json").read_text())
+        return usage
 
 
 # ── codex (bash) ─────────────────────────────────────────────────────────────

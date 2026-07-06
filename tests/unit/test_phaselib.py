@@ -328,6 +328,125 @@ class TestArgErrors(PhaseCase):
                 self.assertIn(f"launch_{spec['key']}.sh", out)
 
 
+class TestSummarize(PhaseCase):
+    """The post-launch Results block each phase prints. Dry-run/--check return
+    before the launch loop, so nothing else reaches summarize(); these seed the
+    output files and call it directly (no agent). Replaces the retired summary_*
+    goldens, incl. the non-UTF-8 _wc_l byte-count case."""
+
+    class Case(TypedDict):
+        name: str
+        phase: str
+        files: dict[str, str | bytes]
+        want: list[str]
+
+    CASES: list[Case] = [
+        {
+            "name": "code_analysis/brief",
+            "phase": "code_analysis",
+            "files": {"modeling-brief.md": "a\nb\nc\n"},
+            "want": [f"OK  {NAME} -> modeling-brief.md (3 lines)"],
+        },
+        {
+            "name": "code_analysis/report-only",
+            "phase": "code_analysis",
+            "files": {"analysis-report.md": "x\ny\n"},
+            "want": [f"~~  {NAME} -> analysis-report.md only (2 lines, no modeling brief)"],
+        },
+        {
+            "name": "code_analysis/none",
+            "phase": "code_analysis",
+            "files": {},
+            "want": [f"--  {NAME} (no output)"],
+        },
+        {
+            # _wc_l counts \n by bytes (wc -l): a \xff line with no trailing newline
+            # must count, not crash. Replaces summary_code_analysis_nonutf8.
+            "name": "code_analysis/nonutf8-bytes",
+            "phase": "code_analysis",
+            "files": {"modeling-brief.md": b"line1\n\xff\xfe line2 no newline"},
+            "want": [f"OK  {NAME} -> modeling-brief.md (1 lines)"],
+        },
+        {
+            "name": "spec_generation/complete",
+            "phase": "spec_generation",
+            "files": {f"spec/{f}": "l1\nl2\n" for f in ("base.tla", "MC.tla", "Trace.tla", "instrumentation-spec.md")},
+            "want": [f"OK  {NAME} -> 4/4 files (base.tla: 2 lines)"],
+        },
+        {
+            "name": "spec_generation/incomplete",
+            "phase": "spec_generation",
+            "files": {"spec/MC.tla": "x\n"},
+            "want": [f"~~  {NAME} -> 1/4 files (incomplete)", "missing: base.tla"],
+        },
+        {
+            "name": "harness_generation/run+traces",
+            "phase": "harness_generation",
+            "files": {"harness/run.sh": "#!/bin/sh\n", "traces/t1.ndjson": "{}\n"},
+            "want": [f"OK  {NAME} -> run.sh: yes, traces: 1", "warning: missing INSTRUMENTATION.md"],
+        },
+        {
+            "name": "harness_generation/none",
+            "phase": "harness_generation",
+            "files": {},
+            "want": [f"--  {NAME} (no harness output)"],
+        },
+        {
+            "name": "spec_validation/changelog",
+            "phase": "spec_validation",
+            "files": {"spec/changelog.md": "c1\nc2\nc3\n"},
+            "want": [f"{NAME}: changelog written (3 lines)"],
+        },
+        {
+            "name": "spec_validation/empty-changelog",
+            "phase": "spec_validation",
+            "files": {"spec/changelog.md": ""},
+            "want": [f"{NAME}: changelog empty (check log)"],
+        },
+        {
+            "name": "bug_confirmation/repro-count",
+            "phase": "bug_confirmation",
+            "files": {
+                "spec/confirmed-bugs.md": "b1\nb2\n",
+                "repro/test_bug1.py": "assert True\n",
+                "repro/nested/test_bug2.py": "assert True\n",
+            },
+            "want": [f"{NAME}: confirmed-bugs.md written (2 lines, repro/ tests: 2)"],
+        },
+        {
+            "name": "bug_classification/severity",
+            "phase": "bug_classification",
+            "files": {
+                "spec/bug-severity.md": (
+                    "- Total bugs: 7\n- Critical: 1\n- High: 2\n- Medium: 3\n- Low: 1\n- FALSE POSITIVE: 0\n"
+                )
+            },
+            "want": [f"{NAME}: total=7  C=1 H=2 M=3 L=1 FP=0"],
+        },
+        {
+            "name": "bug_classification/no-report",
+            "phase": "bug_classification",
+            "files": {},
+            "want": [f"{NAME}: (no report — check log)"],
+        },
+    ]
+
+    def test_results_block(self) -> None:
+        for i, tc in enumerate(self.CASES):
+            with self.subTest(tc["name"]):
+                name = f"t{i}"  # fresh work dir per case so seeds don't leak
+                for rel, content in tc["files"].items():
+                    p = self.work_dir(name) / rel
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                    p.write_bytes(content) if isinstance(content, bytes) else p.write_text(content)
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    phaselib.PHASES[tc["phase"]].summarize(phaselib.Workspace([name]), [name])
+                got = buf.getvalue()
+                for want in tc["want"]:
+                    self.assertIn(want.replace(NAME, name), got)
+
+
 class TestReviewPhase(PhaseCase):
     """The review agent overrides run() wholesale; its contract is the prompt it
     assembles (no --dry-run, so drive the pure builders directly to stay off the

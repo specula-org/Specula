@@ -573,6 +573,51 @@ class TestLedger(RRDirCase):
         self.assertEqual(pl.Pipeline._status_file_count([f], "DEFERRED"), 0)
 
 
+class TestRepairLoop(RRDirCase):
+    """run_repair_loop orchestration: round counting + the no-progress spin guard,
+    with the phase bodies stubbed. Replaces the pipeline_repair_* goldens."""
+
+    def drive(self, on_repair: Callable[[int], None]) -> tuple[list[int], str]:
+        """Run the loop with the phase bodies + quota wait stubbed; return the
+        rounds run_phase3_repair saw and the captured log."""
+        rounds: list[int] = []
+
+        def repair(round_: int) -> None:
+            rounds.append(round_)
+            on_repair(round_)
+
+        self.p.run_phase3_repair = repair  # type: ignore[method-assign]
+        self.p.run_phase4_recheck = lambda round_: None  # type: ignore[method-assign]
+        self.p.wait_for_quota = lambda: None  # type: ignore[method-assign]
+        _, out = quiet(self.p.run_repair_loop)
+        return rounds, out
+
+    def resolve(self, rr_id: str = "RR-1") -> Callable[[int], None]:
+        return lambda r: pl.rr_set_status(self.rr_dir / f"{rr_id}.md", "RESOLVED", "done")
+
+    def test_no_requests_is_noop(self) -> None:
+        rounds, out = self.drive(lambda r: None)
+        self.assertEqual(rounds, [])
+        self.assertIn("repair loop is a no-op", out)
+
+    def test_resolves_then_stops(self) -> None:
+        make_rr(self.rr_dir, "RR-1", "OPEN")
+        rounds, out = self.drive(self.resolve())
+        self.assertEqual(rounds, [1])
+        self.assertIn("ended after 1 round", out)
+
+    def test_no_progress_guard_breaks_spin(self) -> None:
+        make_rr(self.rr_dir, "RR-1", "OPEN")
+        rounds, out = self.drive(lambda r: None)  # status never changes -> stop after 1
+        self.assertEqual(rounds, [1])
+        self.assertIn("made no progress in round 1", out)
+
+    def test_stale_in_repair_recovered_before_loop(self) -> None:
+        make_rr(self.rr_dir, "RR-1", "IN_REPAIR")  # crashed prior run -> reset to OPEN
+        self.drive(self.resolve())
+        self.assertEqual(pl.rr_status(self.rr_dir / "RR-1.md"), "RESOLVED")
+
+
 # ──────────────────────────────────────────────────────────
 # Exit-code and error-path parity (bash set -e / set -u / pipefail)
 # ──────────────────────────────────────────────────────────
