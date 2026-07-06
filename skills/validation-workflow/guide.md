@@ -34,6 +34,7 @@ All artifacts are relative to `.specula-output/`:
 | Changelog | `spec/changelog.md` | Unified record of all modifications across iterations (format below) |
 | MC output | `spec/output/` | TLC model checking output files (counterexamples, statistics) |
 | Bug report | `spec/bug-report.md` | Bug hunting results — produced after convergence (even if no bugs found) |
+| Findings index | `spec/findings.json` | Machine-readable mirror of the bug report for per-finding orchestration (see `references/findings-json-format.md`) |
 
 ---
 
@@ -126,7 +127,8 @@ For each hunting config, alternate between BFS and simulation to maximize covera
    - If no violation and diameter ≤ 25 → **Run 2 (Simulation)**: Launch TLC simulation (30 min, `-S -n 999999999`) on the same config for deeper exploration.
    - Save all TLC output to `spec/output/`
 3. Produce `spec/bug-report.md` with all findings — **read `references/bug-report-format.md`** for the template
-4. If no bugs found across all configs: still write the report (state space coverage, diameter achieved per config, + "no violations found")
+4. Produce `spec/findings.json` — a structured mirror of the same findings — **read `references/findings-json-format.md`** for the schema. Every `## Bug N` in the report gets exactly one entry; emit `"findings": []` (present, not missing) when no bugs are found.
+5. If no bugs found across all configs: still write the report (state space coverage, diameter achieved per config, + "no violations found")
 
 ---
 
