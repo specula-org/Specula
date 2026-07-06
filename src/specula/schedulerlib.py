@@ -3,9 +3,9 @@
 Overnight batch scheduler: runs queue tasks through launch_pipeline.sh with N
 parallel workers, pausing on quota and retrying transient API failures. Every
 observable behavior (log lines, status files, summary tallies, exit codes) is
-pinned by the sched_* characterization goldens — first captured from the bash
-original, then intentionally regenerated for the cutover changes and wart
-fixes below.
+pinned by tests/unit/test_schedulerlib.py and the batch dry-run in tests/e2e.
+The cutover changes and wart fixes below are deliberate deviations from the
+bash original (git history preserves it).
 
 Cutover changes (per-task isolation, agreed 2026-07-04):
   - every task's pipeline gets --run-id=<scheduler-run>-<n>-<name>: outputs go
@@ -46,9 +46,9 @@ whose only work is spawning the pipeline subprocess, log/status bookkeeping and
 backoff sleeps — the actual parallelism is the pipeline child processes, same
 as bash.
 
-Sleeps go through the external `sleep` command deliberately: the
-characterization harness stubs `sleep` on PATH, and both implementations must
-honor the same stub.
+Sleeps go through the external `sleep` command deliberately, so a test can stub
+`sleep` on PATH to run the poll loop instantly (tests/e2e stubs it for the batch
+dry-run).
 
 Sanctioned deviations from the bash (agreed 2026-07-04, unit-test pinned):
   - malformed resets_at timestamps: bash's `date -d` died under set -e and took

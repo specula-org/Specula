@@ -5,8 +5,8 @@ Runs the full phase sequence (analysis → specgen → harness → validation �
 confirmation [+ repair loop] → classification → summary) by invoking the
 per-phase launchers as subprocesses, exactly like the bash did — the dry-run
 command lines, the `main 2>&1 | tee pipeline.log` plumbing, the repair-request
-state machine and the quota gate are all faithful ports, pinned by the
-pipeline_*/repair_*/quota_* cases in tests/characterization/.
+state machine and the quota gate are all faithful ports of the bash, covered by
+tests/unit/test_pipelinelib.py and the end-to-end dry-run chain in tests/e2e.
 
 Usage:  python3 pipelinelib.py [options] "name|github|lang|reference" [...]
 """
@@ -638,8 +638,7 @@ class Pipeline:
         # flags BEFORE the phase, so a real run parsed phase as "--agent=..." and
         # died with "Unknown phase" — invisible under --dry-run, which only logs
         # the command without executing it. Phase goes first: a deliberate
-        # divergence from the buggy bash order (the pipeline_seq_reviews golden
-        # and characterization README record this).
+        # divergence from the buggy bash order (git history has the original).
         args = [phase, f"--agent={self.agent}", f"--claude-alias={self.claude_alias}", *names]
         self._phase(f"REVIEW: {phase}", "launch_review.sh", args)
 

@@ -1,5 +1,0 @@
-exit_code: 0
-
-=== stdout ===
-[TIME] WARN: usage parse failed, proceeding
-wait_for_quota returned: 0

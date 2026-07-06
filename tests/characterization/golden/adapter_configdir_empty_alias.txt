@@ -1,4 +1,0 @@
-exit_code: 0
-
-=== CLAUDE_CONFIG_DIR seen by claude ===
-<TMP>/.claude

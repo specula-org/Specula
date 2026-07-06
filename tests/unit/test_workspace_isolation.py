@@ -1,14 +1,14 @@
 """Behavior tests for workspace isolation (migration step 4).
 
-Unlike the characterization goldens there is no bash to diff against — these
-tests ARE the definition of the isolation semantics:
+There is no bash to diff against — these tests ARE the definition of the
+isolation semantics:
 
   - `SPECULA_RUN_DIR` set  -> every output lands under <run>/<name>/.specula-output
     (uniform batch-style layout; the single-target cd disappears), canonical
     inputs (artifact checkout, .prompt-extra.md) fall back to case-studies/<name>.
   - `SPECULA_RUN_DIR` unset -> byte-identical legacy behavior ($PWD-derived
-    layout, single/batch fork) — pinned here at function level and by the
-    untouched characterization goldens end-to-end.
+    layout, single/batch fork) — pinned here at function level, with the
+    end-to-end chain in tests/e2e.
 
 stdlib unittest, collected natively by pytest; imports the installed package:
 
@@ -471,7 +471,7 @@ class TestMonitorLine(EnvIsolatedCase):
 
     def test_legacy_unchanged(self) -> None:
         """Byte-identical to the bash launchers' hand-written globs (quirks and
-        all) — the same strings the characterization goldens pin."""
+        all)."""
         ws = phaselib.Workspace(["foo"], cwd=Path("/launch/dir"))
         expected = {
             phaselib.SpecGenerationPhase: "  Monitor: tail -f */.specula-output/spec-gen.log",

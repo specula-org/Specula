@@ -1,11 +1,9 @@
 """Adapter: claude-code (Python port of claude-code.sh).
 
-Unified interface for invoking the Claude Code CLI. Behavior is a faithful port
-of the original bash adapter; the characterization suite in
-tests/characterization/ pins the observable contract (exit codes, .log/.usage.json
-shape, the num_turns session fixup). Run the parity check with:
-
-    SPECULA_ADAPTER_IMPL=python python3 tests/characterization/oracle.py --check -k adapter
+Unified interface for invoking the Claude Code CLI. The command-construction
+contract (argv assembly, config-dir from the alias, exit codes incl. the
+rate-limit 75, the num_turns session fixup) is pinned by
+tests/unit/test_adapters.py.
 
 Options:
   --prompt=...          Task prompt (mutually exclusive with --prompt-file)
@@ -33,9 +31,7 @@ from typing import Any
 HELP = __doc__
 
 # Nested-session markers stripped before spawning claude, so the child CLI does
-# not believe it is running inside another Claude Code session. Shared with the
-# characterization harness (tests/characterization/oracle.py imports it) so the
-# two lists cannot drift.
+# not believe it is running inside another Claude Code session.
 SESSION_ENV_VARS = ("CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT")
 
 
@@ -254,7 +250,7 @@ def main(argv: list[str]) -> int:
         # non-UTF-8 claude output (UnicodeDecodeError under set -e: non-zero exit,
         # empty .log, no .usage.json — and a rate-limit hit lost its exit-75 retry
         # signal). Degrade to U+FFFD + parse_failed on the normal exit-code path
-        # instead; pinned by the adapter_nonutf8 characterization case.
+        # instead (test_adapters.py::test_nonutf8_output_degrades_gracefully).
         raw_text = open(raw_json, errors="replace").read()
 
         # ── Detect rate limit → exit 75 (EX_TEMPFAIL) so callers can wait/retry ──
