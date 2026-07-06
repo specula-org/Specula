@@ -27,6 +27,10 @@ specula = "specula.cli:main"
 where = ["src"]
 include = ["specula*"]
 
+# Ship the externalized agent-prompt templates (markdown) inside the wheel.
+[tool.setuptools.package-data]
+"specula.prompts" = ["**/*.md"]
+
 # mypy gates only the typed migration code; the rest of the repo is untyped.
 [tool.mypy]
 python_version = "3.10"
