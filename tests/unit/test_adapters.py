@@ -371,7 +371,10 @@ class ClaudeCodeAdapter(AdapterCase):
         env["PATH"] = f"{bindir}:/usr/bin:/bin"
         proc = subprocess.run(
             self.CMD + [f"--prompt-file={base}/prompt.md", f"--log={base}/out.log"],
-            cwd=str(base), env=env, capture_output=True, text=True,
+            cwd=str(base),
+            env=env,
+            capture_output=True,
+            text=True,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         usage: dict[str, Any] = json.loads((base / "out.usage.json").read_text())
