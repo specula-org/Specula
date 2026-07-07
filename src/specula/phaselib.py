@@ -1199,11 +1199,17 @@ Prerequisites:
 
         debate = bool(ws.opts.get("debate"))
         rounds = int(str(ws.opts.get("rounds", "5")))
+        # `max_parallel` here is the per-finding concurrency. The pipeline default
+        # is 1 — it means "concurrent targets" for the other phases, but that is
+        # degenerate for per-finding fan-out (findings would run one at a time, so
+        # "parallel" would not actually be parallel). Use a real concurrency
+        # default; an explicit --max-parallel=N>1 still wins.
+        findings_parallel = max_parallel if max_parallel > 1 else 4
         rc = 0
         for name in names:
             cfg = ConfirmConfig(
                 name=name, ws=ws, adapter=adapter, repo_dir=ws.find_repo_dir(name),
-                max_parallel=max_parallel, debate=debate, rounds=rounds,
+                max_parallel=findings_parallel, debate=debate, rounds=rounds,
                 claude_alias=claude_alias, dry_run=dry_run,
             )
             code = run_parallel_confirmation(cfg)

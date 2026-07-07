@@ -278,6 +278,7 @@ class TestDryRunCommand(PhaseCase):
         rc, out = self.dry_run(BY_KEY["bug_confirmation"])
         self.assertEqual(rc, 0, out)
         self.assertIn("Parallel confirmation", out)
+        self.assertIn("max_parallel=4", out)  # real concurrency default, not the target-concurrency 1
         self.assertNotIn("--background", out)  # not the single-agent _launch command
 
     def test_bug_confirmation_recheck_stays_single_agent(self) -> None:
