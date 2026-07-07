@@ -414,6 +414,54 @@ class Phase:
         return proc
 
 
+def run_agent_blocking(
+    adapter: Path,
+    prompt: str,
+    prompt_file: Path,
+    log_file: Path,
+    *,
+    phase_key: str,
+    work_dir: Path,
+    claude_alias: str,
+    max_turns: str = "0",
+    stop_gate: bool = False,
+) -> tuple[int, str]:
+    """Run ONE agent invocation, blocking, and return (returncode, log text).
+
+    The blocking sibling of `Phase._launch`: it shares the same adapter path, the
+    same flag set (`--prompt-file` / `--max-turns` / `--claude-alias` /
+    `--effort=max` / `--log`), and the same stop-gate env keys
+    (`SPECULA_PHASE` / `SPECULA_WORK_DIR`) — but drops `--background` so the
+    caller can read the result before issuing the next turn. That is the shape a
+    per-finding confirmation debate needs (turn N+1 reads turn N's output),
+    which the fire-all-then-wait `_launch` loop cannot express.
+
+    The completion stop-gate is OFF per turn by default: it audits a *phase*
+    deliverable (`confirmed-bugs.md`) that exists only after all findings are
+    aggregated, never after a single turn; the phase-level acceptance check
+    (`Phase._acceptance`) covers it once at the end. Rate-limit (exit 75) is the
+    caller's concern — this runs exactly one invocation.
+    """
+    prompt_file.parent.mkdir(parents=True, exist_ok=True)
+    prompt_file.write_text(prompt)
+    env = os.environ.copy()
+    env["SPECULA_PHASE"] = phase_key
+    env["SPECULA_WORK_DIR"] = str(work_dir)
+    if not stop_gate:
+        env["SPECULA_STOP_GATE"] = "off"
+    cmd = [
+        str(adapter),
+        f"--prompt-file={prompt_file}",
+        f"--max-turns={max_turns}",
+        f"--claude-alias={claude_alias}",
+        "--effort=max",
+        f"--log={log_file}",
+    ]
+    rc = subprocess.run(cmd, env=env).returncode
+    text = log_file.read_text(errors="replace") if log_file.is_file() else ""
+    return rc, text
+
+
 class CodeAnalysisPhase(Phase):
     key = "code_analysis"
     title = "Specula — Code Analysis Batch Runner"
