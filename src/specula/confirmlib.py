@@ -3,11 +3,10 @@
 The default Phase-4 mode: instead of one agent confirming every finding in one
 context (the legacy single-agent path, still reachable via ``--legacy-confirm``),
 this fans out one Reproducer agent per finding, in parallel, after a step-0
-consolidate+dedup of the two finding sources into ``candidates.json``. Roles and
-the verdict vocabulary live in
-``skills/bug-confirmation/references/parallel-confirmation.md`` — this module is
-the dispatcher: it owns the per-finding work, serial RR-NNN allocation, and
-aggregation into ``confirmed-bugs.md``.
+consolidate+dedup of the two finding sources into ``candidates.json``. The
+Reproducer follows the bug-confirmation skill (``guide.md`` + phase docs); this
+module is the dispatcher: it owns the per-finding work, serial RR-NNN allocation,
+and aggregation into ``confirmed-bugs.md``.
 
 Every agent turn goes through :func:`specula.phaselib.run_agent_blocking` — the
 same adapter path, flags, and stop-gate env as ``Phase._launch``. Rate-limit
@@ -110,6 +109,7 @@ class Outcome:
 
 # ── prompt builders ──────────────────────────────────────────────────────────
 
+
 def _context(cfg: ConfirmConfig, f: Finding, repo_for_agent: str) -> str:
     wd = cfg.ws.work_dir(cfg.name)
     return render(
@@ -125,11 +125,17 @@ def _context(cfg: ConfirmConfig, f: Finding, repo_for_agent: str) -> str:
 
 
 def prompt_reproduce(cfg: ConfirmConfig, f: Finding, repo: str) -> str:
-    return render("confirmation/reproduce", finding_id=f.id, canon=" / ".join(CANON),
-                  fdir=str(f.fdir), context=_context(cfg, f, repo))
+    return render(
+        "confirmation/reproduce",
+        finding_id=f.id,
+        canon=" / ".join(CANON),
+        fdir=str(f.fdir),
+        context=_context(cfg, f, repo),
+    )
 
 
 # ── one agent turn (blocking, via the shared phaselib primitive) ─────────────
+
 
 def run_turn(cfg: ConfirmConfig, f: Finding, role: str, turn_no: int, prompt: str) -> tuple[str | None, str]:
     """Run one agent turn synchronously; return (verdict, response text).
@@ -143,8 +149,13 @@ def run_turn(cfg: ConfirmConfig, f: Finding, role: str, turn_no: int, prompt: st
         _log(f"    [{f.id}] [DRY] turn {turn_no} {role} → {log.name}")
         return ("REPRODUCED" if role == "A" and turn_no == 1 else None), ""
     rc, text = run_agent_blocking(
-        cfg.adapter, prompt, prompt_file, log,
-        phase_key=PHASE_KEY, work_dir=cfg.ws.work_dir(cfg.name), claude_alias=cfg.claude_alias,
+        cfg.adapter,
+        prompt,
+        prompt_file,
+        log,
+        phase_key=PHASE_KEY,
+        work_dir=cfg.ws.work_dir(cfg.name),
+        claude_alias=cfg.claude_alias,
     )
     if rc == 75:
         raise RateLimited(f"{f.id} turn {turn_no} {role}")
@@ -152,6 +163,7 @@ def run_turn(cfg: ConfirmConfig, f: Finding, role: str, turn_no: int, prompt: st
 
 
 # ── per-finding git worktree (build isolation) ───────────────────────────────
+
 
 def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]:
     """Return (repo_path_for_agent, cleanup). With worktree (default) each finding
@@ -166,7 +178,9 @@ def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]
     try:
         subprocess.run(
             ["git", "-C", repo, "worktree", "add", "--detach", "--force", str(wt)],
-            check=True, capture_output=True, text=True,
+            check=True,
+            capture_output=True,
+            text=True,
         )
     except subprocess.CalledProcessError as e:
         _log(f"  [{f.id}] worktree add failed ({e.stderr.strip()[:80]}) — sharing tree")
@@ -179,6 +193,7 @@ def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]
 
 
 # ── one finding: reproduce → verdict ─────────────────────────────────────────
+
 
 def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
     f.fdir.mkdir(parents=True, exist_ok=True)
@@ -198,6 +213,7 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
 
 
 # ── idempotent per-finding verdict cache (survives a rate-limit phase retry) ──
+
 
 def _save_verdict(o: Outcome) -> None:
     o.finding.fdir.mkdir(parents=True, exist_ok=True)
@@ -264,7 +280,9 @@ def _merge_rr(rid: str, finding_id: str, cx_fallback: str, body: str) -> str:
         if len(parts) == 3:
             fm, rest = parts[1], parts[2]
     if fm is None:  # agent wrote no frontmatter — honest stub, empty scope, flagged
-        note = "" if body.strip() else "## Trigger\n(agent returned PENDING REPAIR but wrote no repair-request.body.md)\n"
+        note = (
+            "" if body.strip() else "## Trigger\n(agent returned PENDING REPAIR but wrote no repair-request.body.md)\n"
+        )
         stub = (
             f"---\n{lifecycle}target: SPEC_REPAIR\ncounterexample: {cx_fallback}\n"
             f"scope:\n  actions: []\n  invariants: []\n  hunt_cfgs: []\n  fault_actions: []\n---\n\n"
@@ -298,6 +316,7 @@ def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
 
 
 # ── step 0: consolidate + dedup the two finding sources into candidates.json ──
+
 
 def _validate_candidates(path: Path) -> list[str]:
     errs: list[str] = []
@@ -347,9 +366,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
     findings_json = spec_dir / "findings.json"
     brief = wd / "modeling-brief.md"
     mc_src = (
-        f"`{findings_json}` (structured MC findings — prefer this)"
-        if findings_json.is_file()
-        else f"`{bug_report}`"
+        f"`{findings_json}` (structured MC findings — prefer this)" if findings_json.is_file() else f"`{bug_report}`"
     )
     prompt = render(
         "confirmation/consolidate",
@@ -364,8 +381,13 @@ def consolidate(cfg: ConfirmConfig) -> None:
         return
     spec_dir.mkdir(parents=True, exist_ok=True)
     rc, _ = run_agent_blocking(
-        cfg.adapter, prompt, spec_dir / ".consolidate.prompt.md", spec_dir / ".consolidate.log",
-        phase_key=PHASE_KEY, work_dir=wd, claude_alias=cfg.claude_alias,
+        cfg.adapter,
+        prompt,
+        spec_dir / ".consolidate.prompt.md",
+        spec_dir / ".consolidate.log",
+        phase_key=PHASE_KEY,
+        work_dir=wd,
+        claude_alias=cfg.claude_alias,
     )
     if rc == 75:
         raise RateLimited(f"{cfg.name} consolidate")
@@ -379,6 +401,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
 
 
 # ── aggregation → confirmed-bugs.md ──────────────────────────────────────────
+
 
 def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     """Write the phase's confirmed-bugs.md from the per-finding outcomes. This is
@@ -418,6 +441,7 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
 
 
 # ── driver ───────────────────────────────────────────────────────────────────
+
 
 def load_findings(cfg: ConfirmConfig) -> list[Finding]:
     wd = cfg.ws.work_dir(cfg.name)

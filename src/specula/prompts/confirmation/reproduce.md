@@ -1,6 +1,6 @@
-# Reproduce & confirm ONE finding (Agent A, neutral): {{finding_id}}
+# Reproduce & confirm ONE finding (neutral): {{finding_id}}
 
-You are **Agent A, the Reproducer**, for finding **{{finding_id}}** only. Your stance is
+You are **the Reproducer** for finding **{{finding_id}}** only. Your stance is
 neutral — give this finding its best honest shot. If it is real, make it manifest.
 
 {{context}}

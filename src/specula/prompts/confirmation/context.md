@@ -13,4 +13,3 @@
 - Confirmation flow: {{skills}}/bug-confirmation/guide.md
 - Investigation: {{skills}}/bug-confirmation/phases/01-investigation.md
 - Reproduction: {{skills}}/bug-confirmation/phases/02-reproduction.md
-- Your role: {{skills}}/bug-confirmation/references/parallel-confirmation.md

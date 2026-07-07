@@ -111,7 +111,9 @@ class TestMergeRR(ConfirmCase):
 class TestValidateCandidates(ConfirmCase):
     def test_valid(self) -> None:
         p = Path(self.tmp) / "c.json"
-        p.write_text(json.dumps({"findings": [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}]}))
+        p.write_text(
+            json.dumps({"findings": [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}]})
+        )
         self.assertEqual(C._validate_candidates(p), [])
 
     def test_invalid_reports_problems(self) -> None:

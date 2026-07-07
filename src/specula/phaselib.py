@@ -317,8 +317,12 @@ class Phase:
         # per-finding bug confirmation) instead of the default single-agent
         # `_launch` loop below. None = fall through to the single-agent loop.
         alt = self.run_alternate(
-            ws, names, adapter=adapter, claude_alias=claude_alias,
-            max_parallel=max_parallel, dry_run=dry_run,
+            ws,
+            names,
+            adapter=adapter,
+            claude_alias=claude_alias,
+            max_parallel=max_parallel,
+            dry_run=dry_run,
         )
         if alt is not None:
             return alt
@@ -1198,8 +1202,13 @@ Prerequisites:
         rc = 0
         for name in names:
             cfg = ConfirmConfig(
-                name=name, ws=ws, adapter=adapter, repo_dir=ws.find_repo_dir(name),
-                max_parallel=findings_parallel, claude_alias=claude_alias, dry_run=dry_run,
+                name=name,
+                ws=ws,
+                adapter=adapter,
+                repo_dir=ws.find_repo_dir(name),
+                max_parallel=findings_parallel,
+                claude_alias=claude_alias,
+                dry_run=dry_run,
             )
             code = run_parallel_confirmation(cfg)
             if code != 0:
