@@ -463,6 +463,10 @@ def load_findings(cfg: ConfirmConfig) -> list[Finding]:
     path = spec_dir / "candidates.json"
     if not path.is_file():
         path = spec_dir / "findings.json"
+    if not path.is_file():
+        # No candidate list (e.g. --dry-run, which does not run consolidate, or a
+        # consolidate that produced nothing) — nothing to fan out.
+        return []
     conf_root = wd / "confirmation"
     doc = json.loads(path.read_text())
     return [Finding(d, conf_root / str(d["id"])) for d in doc.get("findings", [])]
