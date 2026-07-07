@@ -156,5 +156,62 @@ class TestDriver(ConfirmCase):
         self.assertEqual(rc, 0)
 
 
+class TestAggregate(ConfirmCase):
+    def _confirmed_bugs(self, body: str, name: str = "T") -> str:
+        ws = self.seed(name, [{"id": "MC-1", "source": "model-checking", "title": "the bug", "summary": "s"}])
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn(body)):
+            C.run_parallel_confirmation(self.cfg(ws, name))
+        return (ws.work_dir(name) / "spec" / "confirmed-bugs.md").read_text()
+
+    def test_heading_is_bug_n_not_finding_id(self) -> None:
+        cb = self._confirmed_bugs("- **Novelty**: NEW\nVERDICT: REPRODUCED")
+        self.assertIn("## Bug 1: the bug", cb)  # Phase 4b parses integer "## Bug N:"
+        self.assertNotIn("## MC-1:", cb)
+        self.assertIn("- **Finding ID**: MC-1", cb)  # id carried as a body field
+        self.assertIn("| 1 | MC-1 |", cb)  # and a table column
+
+    def test_novelty_split_counts_known_unfixed(self) -> None:
+        cb = self._confirmed_bugs("- **Novelty**: KNOWN (cite: http://x; fix-status: unfixed)\nVERDICT: REPRODUCED")
+        self.assertIn("Reproduced: 1 = 0 NEW + 1 KNOWN-unfixed", cb)
+
+    def test_novelty_known_fixed_flagged_separately(self) -> None:
+        cb = self._confirmed_bugs("- **Novelty**: KNOWN (cite: http://x; fix-status: fixed)\nVERDICT: REPRODUCED")
+        self.assertIn("0 NEW + 0 KNOWN-unfixed", cb)
+        self.assertIn("KNOWN-fixed: 1", cb)
+
+    def test_missing_novelty_defaults_new(self) -> None:
+        cb = self._confirmed_bugs("VERDICT: REPRODUCED")
+        self.assertIn("Reproduced: 1 = 1 NEW + 0 KNOWN-unfixed", cb)
+
+
+class TestPromptExtraAndLog(ConfirmCase):
+    def test_prompt_extra_appended_to_reproduce(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T", prompt_extra="\n## Target-Specific Instructions\n\nCHECK THE FOO RACE")
+        f = C.Finding({"id": "MC-1", "title": "t", "summary": "s"}, ws.work_dir("T") / "confirmation" / "MC-1")
+        self.assertIn("CHECK THE FOO RACE", C.prompt_reproduce(cfg, f, "/repo"))
+
+    def test_bug_confirmation_log_written_and_global_reset(self) -> None:
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn("VERDICT: FALSE POSITIVE")):
+            C.run_parallel_confirmation(self.cfg(ws, "T"))
+        log = ws.work_dir("T") / "bug-confirmation.log"
+        self.assertTrue(log.is_file() and log.stat().st_size > 0)  # summary link + tail -f resolve
+        self.assertIsNone(C._log_file)  # global reset — does not leak to the next call
+
+    def test_rr_bug_id_is_bug_n(self) -> None:
+        ws = self.seed("T", [])
+        f = C.Finding(
+            {"id": "MC-1", "title": "t", "summary": "s", "counterexample": "x.out"},
+            ws.work_dir("T") / "confirmation" / "MC-1",
+        )
+        f.fdir.mkdir(parents=True, exist_ok=True)
+        (f.fdir / "repair-request.body.md").write_text("---\ntarget: SPEC_REPAIR\n---\n\n## Trigger\nx\n")
+        o = C.Outcome(f, "PENDING REPAIR", True, 0, "body", bug_no=3)
+        rid = C.allocate_rr(self.cfg(ws, "T"), o)
+        rr = (ws.work_dir("T") / "spec" / "repair-requests" / f"{rid}.md").read_text()
+        self.assertIn("bug_id: Bug 3", rr)  # points at the "## Bug 3:" heading, not MC-1
+
+
 if __name__ == "__main__":
     unittest.main()

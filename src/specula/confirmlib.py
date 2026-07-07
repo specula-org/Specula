@@ -49,6 +49,12 @@ ID_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._
 _VERDICT_RE = re.compile(r"^\s*VERDICT:\s*(.+?)\s*$", re.MULTILINE)
 _rr_lock = threading.Lock()
 _print_lock = threading.Lock()
+_log_file: Path | None = None  # when set, _log also tees here (the phase's bug-confirmation.log)
+
+
+def _set_log_file(path: Path | None) -> None:
+    global _log_file
+    _log_file = path
 
 
 class RateLimited(Exception):
@@ -62,6 +68,9 @@ class RateLimited(Exception):
 def _log(msg: str) -> None:
     with _print_lock:
         print(msg, flush=True)
+        if _log_file is not None:
+            with _log_file.open("a") as fh:
+                fh.write(msg + "\n")
 
 
 def parse_verdict(text: str) -> str | None:
@@ -95,6 +104,7 @@ class ConfirmConfig:
     claude_alias: str = "claude"
     worktree: bool = True
     dry_run: bool = False
+    prompt_extra: str = ""  # target's .prompt-extra.md, appended to every agent prompt
 
 
 @dataclass
@@ -105,6 +115,7 @@ class Outcome:
     rounds: int
     body: str  # the Reproducer's response, used as the verdict body
     rr: str | None = None  # assigned RR-NNN when status is PENDING REPAIR
+    bug_no: int = 0  # 1-based index in confirmed-bugs.md (the "## Bug N:" number)
 
 
 # ── prompt builders ──────────────────────────────────────────────────────────
@@ -125,12 +136,15 @@ def _context(cfg: ConfirmConfig, f: Finding, repo_for_agent: str) -> str:
 
 
 def prompt_reproduce(cfg: ConfirmConfig, f: Finding, repo: str) -> str:
-    return render(
-        "confirmation/reproduce",
-        finding_id=f.id,
-        canon=" / ".join(CANON),
-        fdir=str(f.fdir),
-        context=_context(cfg, f, repo),
+    return (
+        render(
+            "confirmation/reproduce",
+            finding_id=f.id,
+            canon=" / ".join(CANON),
+            fdir=str(f.fdir),
+            context=_context(cfg, f, repo),
+        )
+        + cfg.prompt_extra
     )
 
 
@@ -311,7 +325,9 @@ def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
         nums = [int(m.group(1)) for p in rr_dir.glob("RR-*.md") if (m := re.match(r"RR-(\d+)\.md$", p.name))]
         rid = f"RR-{max(nums, default=0) + 1:03d}"
         cx = str(o.finding.data.get("counterexample") or "")
-        (rr_dir / f"{rid}.md").write_text(_merge_rr(rid, o.finding.id, cx, body))
+        # bug_id points at the confirmed-bugs.md heading (## Bug N:), the label the
+        # re-check pass correlates against — not the raw finding id.
+        (rr_dir / f"{rid}.md").write_text(_merge_rr(rid, f"Bug {o.bug_no}", cx, body))
     return rid
 
 
@@ -368,13 +384,16 @@ def consolidate(cfg: ConfirmConfig) -> None:
     mc_src = (
         f"`{findings_json}` (structured MC findings — prefer this)" if findings_json.is_file() else f"`{bug_report}`"
     )
-    prompt = render(
-        "confirmation/consolidate",
-        name=cfg.name,
-        mc_src=mc_src,
-        brief=str(brief),
-        out=str(out),
-        schema_doc=str(SKILLS / "validation-workflow" / "references" / "findings-json-format.md"),
+    prompt = (
+        render(
+            "confirmation/consolidate",
+            name=cfg.name,
+            mc_src=mc_src,
+            brief=str(brief),
+            out=str(out),
+            schema_doc=str(SKILLS / "validation-workflow" / "references" / "findings-json-format.md"),
+        )
+        + cfg.prompt_extra
     )
     if cfg.dry_run:
         _log(f"  {cfg.name}: [DRY] consolidate → {out}")
@@ -403,32 +422,47 @@ def consolidate(cfg: ConfirmConfig) -> None:
 # ── aggregation → confirmed-bugs.md ──────────────────────────────────────────
 
 
+def _novelty(body: str) -> str:
+    """Parse the Reproducer's per-bug Novelty: NEW / KNOWN-unfixed / KNOWN-fixed.
+    Defaults to NEW when absent (a bug with no novelty claim is treated as new)."""
+    m = re.search(r"\*\*Novelty\*\*:\s*(NEW|KNOWN)", body, re.IGNORECASE)
+    if not m or m.group(1).upper() == "NEW":
+        return "NEW"
+    fix = re.search(r"fix-status:\s*(unfixed|fixed)", body, re.IGNORECASE)
+    return "KNOWN-fixed" if (fix and fix.group(1).lower() == "fixed") else "KNOWN-unfixed"
+
+
 def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     """Write the phase's confirmed-bugs.md from the per-finding outcomes. This is
-    the canonical Phase-4 deliverable the classification phase and repair loop
-    read; A/B isolation is handled by the run dir, not by a separate filename."""
+    the canonical Phase-4 deliverable the classification phase (Phase 4b) and the
+    repair loop read; A/B isolation is handled by the run dir, not by a separate
+    filename. Headers are ``## Bug N:`` (integer N, table order) so Phase 4b's
+    "one row per ``## Bug N:`` header" parsing aligns; the finding id (MC-1 / CR-2)
+    is carried as a body field and a table column."""
     report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
     reproduced = [o for o in outcomes if o.status == "REPRODUCED"]
-
-    def is_known(o: Outcome) -> bool:
-        return bool(re.search(r"^novelty:\s*KNOWN", o.body, re.MULTILINE | re.IGNORECASE))
-
-    n_known = sum(1 for o in reproduced if is_known(o))
-    n_new = len(reproduced) - n_known
+    nov = [_novelty(o.body) for o in reproduced]
+    n_new = nov.count("NEW")
+    n_known_unfixed = nov.count("KNOWN-unfixed")
+    n_known_fixed = nov.count("KNOWN-fixed")
 
     lines = [f"# Confirmed Bugs — {cfg.name}", ""]
-    lines.append(f"Reproduced: {len(reproduced)} = {n_new} NEW + {n_known} KNOWN")
+    split = f"Reproduced: {len(reproduced)} = {n_new} NEW + {n_known_unfixed} KNOWN-unfixed"
+    if n_known_fixed:
+        split += f"    (KNOWN-fixed: {n_known_fixed} — each needs a version recheck)"
+    lines.append(split)
     lines.append("")
-    lines.append("| Finding | Status |")
-    lines.append("|---|---|")
+    lines.append("| Bug | Finding | Status |")
+    lines.append("|---|---|---|")
     for o in outcomes:
         rr = f" ({o.rr})" if o.rr else ""
-        lines.append(f"| {o.finding.id} | {o.status}{rr} |")
+        lines.append(f"| {o.bug_no} | {o.finding.id} | {o.status}{rr} |")
     lines.append("")
     for o in outcomes:
         rr = f" ({o.rr})" if o.rr else ""
-        lines.append(f"## {o.finding.id}: {o.finding.data.get('title', '')}")
+        lines.append(f"## Bug {o.bug_no}: {o.finding.data.get('title', '')}")
         lines.append("")
+        lines.append(f"- **Finding ID**: {o.finding.id}")
         lines.append(f"- **Status**: {o.status}{rr}")
         lines.append(f"- **Transcript**: {o.finding.fdir / 'debate.md'}")
         lines.append("")
@@ -464,6 +498,18 @@ def run_parallel_confirmation(cfg: ConfirmConfig) -> int:
     withholds confirmed-bugs.md rather than propagating a special exit code, and
     the missing deliverable is what the classification gate + the scheduler's
     transient-log retry act on."""
+    if not cfg.dry_run:
+        log_path = cfg.ws.work_dir(cfg.name) / "bug-confirmation.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("")  # fresh per run so the summary link + `tail -f` follow THIS run
+        _set_log_file(log_path)
+    try:
+        return _drive_confirmation(cfg)
+    finally:
+        _set_log_file(None)
+
+
+def _drive_confirmation(cfg: ConfirmConfig) -> int:
     try:
         consolidate(cfg)
     except RateLimited:
@@ -501,6 +547,8 @@ def run_parallel_confirmation(cfg: ConfirmConfig) -> int:
 
     order = {f.id: i for i, f in enumerate(findings)}
     outcomes.sort(key=lambda o: order[o.finding.id])
+    for i, o in enumerate(outcomes, 1):
+        o.bug_no = i  # the "## Bug N:" number, in table order (drives aggregate + the RR bug_id)
     for o in outcomes:
         if o.status.startswith("PENDING REPAIR") and o.rr is None and not cfg.dry_run:
             o.rr = allocate_rr(cfg, o)

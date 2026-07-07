@@ -219,19 +219,23 @@ class Phase:
         return legacy
 
     # ── shared prompt-extra injection (identical across phases) ──
-    def _with_extra(self, ws: Workspace, name: str, prompt: str) -> str:
+    def _read_prompt_extra(self, ws: Workspace, name: str) -> str:
+        """The target's .prompt-extra.md as an appendable block (with its section
+        header), or '' if none. Isolated runs never cd into the case dir, so the
+        cwd fallback would silently drop the canonical case-studies/<name> extra —
+        target-specific instructions must survive isolation."""
         extra = ws.work_dir(name) / ".prompt-extra.md"
         if not extra.is_file():
-            # Isolated runs never cd into the case dir, so the cwd fallback
-            # would silently drop the canonical case-studies/<name> extra —
-            # target-specific instructions must survive isolation.
             fallback = ws.case_dir(name) if ws.run_dir else ws.cwd
             extra = fallback / ".prompt-extra.md"
         if extra.is_file():
             # errors="replace": bash `cat` concatenated raw bytes; a stray
             # non-UTF-8 byte in a user's .prompt-extra.md must not crash the run.
-            prompt += "\n## Target-Specific Instructions\n\n" + extra.read_text(errors="replace")
-        return prompt
+            return "\n## Target-Specific Instructions\n\n" + extra.read_text(errors="replace")
+        return ""
+
+    def _with_extra(self, ws: Workspace, name: str, prompt: str) -> str:
+        return prompt + self._read_prompt_extra(ws, name)
 
     # ── shared driver ──
     def run(self, argv: list[str]) -> int:
@@ -1201,6 +1205,8 @@ Prerequisites:
         findings_parallel = max_parallel if max_parallel > 1 else 4
         rc = 0
         for name in names:
+            if not dry_run:
+                print(f"  Monitor: tail -f {ws.work_dir(name)}/bug-confirmation.log")
             cfg = ConfirmConfig(
                 name=name,
                 ws=ws,
@@ -1209,6 +1215,7 @@ Prerequisites:
                 max_parallel=findings_parallel,
                 claude_alias=claude_alias,
                 dry_run=dry_run,
+                prompt_extra=self._read_prompt_extra(ws, name),
             )
             code = run_parallel_confirmation(cfg)
             if code != 0:

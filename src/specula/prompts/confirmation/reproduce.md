@@ -9,9 +9,14 @@ neutral — give this finding its best honest shot. If it is real, make it manif
 1. Investigate (Phase 1) and reproduce (Phase 2) this ONE finding, per the skill
    docs above — write and ACTUALLY EXECUTE `repro/test_bug{{finding_id}}_*`, walking the
    escalation ladder 0→3. A no-violation model-checking finding is Code Review.
-2. In your response, include these sections (they become the verdict body):
-   `## Description`, `## Trigger scenario`, `## Developer intent`,
-   `## Reproduction result` (paste real output), `## Recommendation`.
+2. In your response, include these header fields (the dispatcher reads
+   `- **Novelty**:` for the NEW / KNOWN-unfixed / KNOWN-fixed count):
+     - `- **Source**: MC` (model-checking counterexample) or `Code Review` (no-violation / code-review finding)
+     - `- **Novelty**: NEW` or `KNOWN (cite: <URL/dataset-id>; fix-status: unfixed|fixed)`
+     - `- **Location**: file:line`
+   then these sections (they become the verdict body): `## Description`,
+   `## Trigger scenario`, `## Developer intent`, `## Reproduction result`
+   (paste real output), `## Recommendation`.
 3. End your ENTIRE response with a single line:
    `VERDICT: <one of: {{canon}}>`
    Use PENDING REPAIR (no number — the dispatcher assigns RR-NNN) only for a
