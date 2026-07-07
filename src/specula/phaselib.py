@@ -313,6 +313,16 @@ class Phase:
             print(self.check_ok_msg)
             return 0
 
+        # A phase may take over its own per-target execution (e.g. parallel
+        # per-finding bug confirmation) instead of the default single-agent
+        # `_launch` loop below. None = fall through to the single-agent loop.
+        alt = self.run_alternate(
+            ws, names, adapter=adapter, claude_alias=claude_alias,
+            max_parallel=max_parallel, dry_run=dry_run,
+        )
+        if alt is not None:
+            return alt
+
         running: list[subprocess.Popen[bytes]] = []
         for target in targets:
             name = self.target_name(target)
@@ -341,6 +351,23 @@ class Phase:
         if not dry_run:
             self._acceptance(ws, names)
         return 0
+
+    def run_alternate(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        claude_alias: str,
+        max_parallel: int,
+        dry_run: bool,
+    ) -> int | None:
+        """Hook: let a phase run its targets its own way instead of the default
+        single-agent `_launch` loop. Return an exit code to mean "handled, stop
+        here"; return None (the default) to fall through to the single-agent
+        loop. Overridden by BugConfirmationPhase for parallel per-finding
+        confirmation."""
+        return None
 
     # ── acceptance layer (stop gate) ──
     def _acceptance(self, ws: Workspace, names: list[str]) -> None:
@@ -412,6 +439,54 @@ class Phase:
         files["pid"].write_text(f"{proc.pid}\n")
         print(f"  PID={proc.pid}  Log: {files['log']}")
         return proc
+
+
+def run_agent_blocking(
+    adapter: Path,
+    prompt: str,
+    prompt_file: Path,
+    log_file: Path,
+    *,
+    phase_key: str,
+    work_dir: Path,
+    claude_alias: str,
+    max_turns: str = "0",
+    stop_gate: bool = False,
+) -> tuple[int, str]:
+    """Run ONE agent invocation, blocking, and return (returncode, log text).
+
+    The blocking sibling of `Phase._launch`: it shares the same adapter path, the
+    same flag set (`--prompt-file` / `--max-turns` / `--claude-alias` /
+    `--effort=max` / `--log`), and the same stop-gate env keys
+    (`SPECULA_PHASE` / `SPECULA_WORK_DIR`) — but drops `--background` so the
+    caller can read the result before issuing the next turn. That is the shape a
+    per-finding confirmation debate needs (turn N+1 reads turn N's output),
+    which the fire-all-then-wait `_launch` loop cannot express.
+
+    The completion stop-gate is OFF per turn by default: it audits a *phase*
+    deliverable (`confirmed-bugs.md`) that exists only after all findings are
+    aggregated, never after a single turn; the phase-level acceptance check
+    (`Phase._acceptance`) covers it once at the end. Rate-limit (exit 75) is the
+    caller's concern — this runs exactly one invocation.
+    """
+    prompt_file.parent.mkdir(parents=True, exist_ok=True)
+    prompt_file.write_text(prompt)
+    env = os.environ.copy()
+    env["SPECULA_PHASE"] = phase_key
+    env["SPECULA_WORK_DIR"] = str(work_dir)
+    if not stop_gate:
+        env["SPECULA_STOP_GATE"] = "off"
+    cmd = [
+        str(adapter),
+        f"--prompt-file={prompt_file}",
+        f"--max-turns={max_turns}",
+        f"--claude-alias={claude_alias}",
+        "--effort=max",
+        f"--log={log_file}",
+    ]
+    rc = subprocess.run(cmd, env=env).returncode
+    text = log_file.read_text(errors="replace") if log_file.is_file() else ""
+    return rc, text
 
 
 class CodeAnalysisPhase(Phase):
@@ -1050,9 +1125,10 @@ class BugConfirmationPhase(Phase):
     key = "bug_confirmation"
     title = "Specula — Bug Confirmation Batch Runner"
     usage = r"""
-Batch launcher: spawn one Claude Code agent per target system for bug confirmation.
-Each agent consolidates MC bugs + code review findings, then attempts to reproduce
-each bug following the bug-confirmation skill methodology.
+Bug confirmation for each target system. By DEFAULT this runs parallel
+per-finding confirmation (step 0 consolidate + dedup, then one Reproducer agent
+per finding, in parallel — see confirmlib.py). `--legacy-confirm` reverts to the
+single agent that consolidates and reproduces every finding in one context.
 
 Usage:
   bash scripts/launch/launch_bug_confirmation.sh [options] "name" [...]
@@ -1063,9 +1139,10 @@ Example:
 Options:
   --dry-run           Print commands without executing
   --check             Only verify prerequisites exist
-  --recheck           Re-check mode: settle RECHECK repair requests (confirmation back-edge)
+  --legacy-confirm    Single-agent confirmation (one agent, all findings) instead of parallel
+  --recheck           Re-check mode: settle RECHECK repair requests (confirmation back-edge; single-agent)
   --max-repair-rounds=N  Per-request repair cap honored in --recheck (default: 0 = unlimited)
-  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-parallel=N    Concurrent findings in parallel mode / concurrent agents in --legacy-confirm (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
@@ -1087,7 +1164,50 @@ Prerequisites:
         if arg.startswith("--max-repair-rounds="):
             extra["max_repair_rounds"] = arg[len("--max-repair-rounds=") :]
             return True
+        if arg == "--legacy-confirm":
+            extra["legacy"] = True
+            return True
         return False
+
+    def run_alternate(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        claude_alias: str,
+        max_parallel: int,
+        dry_run: bool,
+    ) -> int | None:
+        """Parallel per-finding confirmation — the DEFAULT first-pass mode.
+        `--legacy-confirm` falls back to the single-agent path; `--recheck`
+        always uses it (re-check is single-agent). None defers to the
+        single-agent loop in Phase.run."""
+        if ws.opts.get("legacy") or ws.opts.get("recheck"):
+            return None
+        # Local import: confirmlib imports phaselib, so a top-level import here
+        # would be circular.
+        from specula.confirmlib import ConfirmConfig, run_parallel_confirmation
+
+        # `max_parallel` here is the per-finding concurrency. The pipeline default
+        # is 1 — it means "concurrent targets" for the other phases, but that is
+        # degenerate for per-finding fan-out (findings would run one at a time, so
+        # "parallel" would not actually be parallel). Use a real concurrency
+        # default; an explicit --max-parallel=N>1 still wins.
+        findings_parallel = max_parallel if max_parallel > 1 else 4
+        rc = 0
+        for name in names:
+            cfg = ConfirmConfig(
+                name=name, ws=ws, adapter=adapter, repo_dir=ws.find_repo_dir(name),
+                max_parallel=findings_parallel, claude_alias=claude_alias, dry_run=dry_run,
+            )
+            code = run_parallel_confirmation(cfg)
+            if code != 0:
+                rc = code
+        self.summarize(ws, names)
+        if not dry_run:
+            self._acceptance(ws, names)
+        return rc
 
     def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True
