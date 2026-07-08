@@ -74,3 +74,29 @@ With reads and network open by default, the only default protection is on writes
 A prompt-injected agent could read credentials or exfiltrate over the open
 network. To defend against that, set `read.deny` (credentials) and switch
 `network.mode` to `allowlist`.
+
+### Running the full pipeline (write paths)
+
+The default write allow-list is the run workspace + `${TMPDIR}` + `/tmp`. That
+covers **spec-only** phases (code analysis, spec generation, model checking over
+the specs in the workspace). The **full pipeline** — harness generation and trace
+validation — also writes *outside* the workspace: the artifact source tree it
+instruments and patches, and per-language build caches (`target/`, `~/.cargo`,
+`~/.cache`, …). Those are denied by default, so a full run in the default sandbox
+will fail until you grant them.
+
+Grant them without hand-editing the config by exporting
+`SPECULA_SANDBOX_EXTRA_WRITE` (a `:`-separated path list the launcher can set per
+run):
+
+```bash
+export SPECULA_SANDBOX_EXTRA_WRITE="/path/to/artifact:$HOME/.cargo:$HOME/.cache"
+```
+
+or add the same paths to `write.allow` in `sandbox.json`.
+
+**Usage stats note:** the agent's session transcript dir
+(`$CLAUDE_CONFIG_DIR/projects`, default `~/.claude/projects`) is read-only under
+the sandbox, so the per-turn / tool-use counts in `.usage.json` are not refined —
+cost and quota, taken from the agent's own JSON, are unaffected. Add that dir to
+`write.allow` if you need the full stats.
