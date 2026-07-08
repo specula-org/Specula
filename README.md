@@ -35,6 +35,8 @@ Specula runs as a set of code agent skills and MCP tools. It currently supports 
 - A supported code agent (Claude Code, Codex, or Copilot CLI) — you can contribute an adapter for your favourite agent [here](./scripts/launch/adapters)!
 - **A model with strong reasoning capability, configured at high reasoning effort.** Specula relies on the model to read code, infer protocol invariants, and reason about counterexamples; lower reasoning settings noticeably reduce bug yield.
 
+> **Windows:** run Specula inside [WSL2](https://learn.microsoft.com/windows/wsl/install) (the Linux environment built into Windows), where everything below works exactly as on Linux. Native Windows (outside WSL2) is not supported.
+
 ### Setup
 
 ```bash
