@@ -78,6 +78,7 @@ Options:
   --skip-classification  Skip Phase 4b severity classification
   --skip-repair-loop     Skip the confirmation back-edge repair loop (default: enabled)
   --legacy-confirm       Phase 4a: single-agent confirmation instead of the default parallel per-finding
+  --confirm-debate       Phase 4a: add the adversarial Challenger debate (parallel mode; default off)
   --max-repair-rounds=N  Per-request repair cap, enforced by re-check (default: 0 = unlimited)
   --enable-reviews        Enable review steps (disabled by default)
   --max-parallel=N       Max concurrent agents per phase (default: 1)
@@ -306,6 +307,7 @@ class Pipeline:
         self.skip_classification = False
         self.skip_repair_loop = False
         self.confirm_legacy = False  # --legacy-confirm: single-agent Phase 4a instead of the default parallel
+        self.confirm_debate = False  # --confirm-debate: add the adversarial Challenger (parallel mode)
         # `or`: bash ${VAR:-default} treats an exported-but-empty var as unset
         self.max_repair_rounds = os.environ.get("MAX_REPAIR_ROUNDS") or "0"
         self.skip_reviews = True
@@ -350,6 +352,8 @@ class Pipeline:
                 self.skip_repair_loop = True
             elif arg == "--legacy-confirm":
                 self.confirm_legacy = True
+            elif arg == "--confirm-debate":
+                self.confirm_debate = True
             elif arg.startswith("--max-repair-rounds="):
                 self.max_repair_rounds = arg.split("=", 1)[1]
             elif arg == "--enable-reviews":
@@ -667,9 +671,12 @@ class Pipeline:
         pre: list[str] = []
         if self.confirm_legacy:
             pre.append("--legacy-confirm")
+        if self.confirm_debate:
+            pre.append("--debate")
         mode = "single-agent, legacy" if self.confirm_legacy else "parallel per-finding"
+        debate = " + debate" if self.confirm_debate and not self.confirm_legacy else ""
         self._phase(
-            f"PHASE 4: BUG CONFIRMATION ({mode})",
+            f"PHASE 4: BUG CONFIRMATION ({mode}{debate})",
             "launch_bug_confirmation.sh",
             self._phase_args(self.extract_names(), pre=pre or None),
         )

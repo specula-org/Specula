@@ -1148,6 +1148,8 @@ Options:
   --dry-run           Print commands without executing
   --check             Only verify prerequisites exist
   --legacy-confirm    Single-agent confirmation (one agent, all findings) instead of parallel
+  --debate            Add an adversarial Challenger after each confirmation (parallel mode; default off)
+  --rounds=N          Max debate rounds with --debate (default: 5)
   --recheck           Re-check mode: settle RECHECK repair requests (confirmation back-edge; single-agent)
   --max-repair-rounds=N  Per-request repair cap honored in --recheck (default: 0 = unlimited)
   --max-parallel=N    Concurrent findings in parallel mode / concurrent agents in --legacy-confirm (default: 1)
@@ -1175,6 +1177,12 @@ Prerequisites:
         if arg == "--legacy-confirm":
             extra["legacy"] = True
             return True
+        if arg == "--debate":
+            extra["debate"] = True
+            return True
+        if arg.startswith("--rounds="):
+            extra["rounds"] = arg[len("--rounds=") :]
+            return True
         return False
 
     def run_alternate(
@@ -1197,6 +1205,8 @@ Prerequisites:
         # would be circular.
         from specula.confirmlib import ConfirmConfig, run_parallel_confirmation
 
+        debate = bool(ws.opts.get("debate"))
+        rounds = int(str(ws.opts.get("rounds", "5")))
         # `max_parallel` here is the per-finding concurrency. The pipeline default
         # is 1 — it means "concurrent targets" for the other phases, but that is
         # degenerate for per-finding fan-out (findings would run one at a time, so
@@ -1213,6 +1223,8 @@ Prerequisites:
                 adapter=adapter,
                 repo_dir=ws.find_repo_dir(name),
                 max_parallel=findings_parallel,
+                debate=debate,
+                rounds=rounds,
                 claude_alias=claude_alias,
                 dry_run=dry_run,
                 prompt_extra=self._read_prompt_extra(ws, name),
