@@ -1,7 +1,7 @@
 {
   "enabled": true,
   "write": {
-    "allow": ["${WORKSPACE}", "${TMPDIR}"],
+    "allow": ["${WORKSPACE}", "${TMPDIR}", "/tmp"],
     "deny": []
   },
   "read": {

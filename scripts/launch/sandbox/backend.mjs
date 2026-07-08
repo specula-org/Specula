@@ -24,6 +24,15 @@ const TEMPLATE_PATH = path.join(HERE, 'sandbox.default.json');
 const CAPABILITY = path.join(HERE, 'capability.mjs');
 const USER_CONFIG_PATH = path.join(os.homedir(), '.specula', 'sandbox.json');
 
+// Human-facing diagnostics — printed only when stderr is a real terminal. When
+// this backend wraps an agent whose stdout+stderr the caller captures and parses
+// (e.g. `claude --output-format json`, merged via 2>&1), a stray line here would
+// corrupt that stream, so stay silent unless a human is watching. Hard failures
+// (refuse / fatal) still write to stderr unconditionally.
+function diag(msg) {
+  if (process.stderr.isTTY) process.stderr.write(msg);
+}
+
 // ── Locate srt without hardcoding any machine path ──
 export async function loadSrt() {
   // 1) normal resolution — srt is a local dependency or already on NODE_PATH.
@@ -71,22 +80,31 @@ export function loadConfig(explicit, cwd) {
   const def = fs.readFileSync(TEMPLATE_PATH, 'utf8');
   fs.mkdirSync(path.dirname(USER_CONFIG_PATH), { recursive: true });
   fs.writeFileSync(USER_CONFIG_PATH, def);
-  process.stderr.write(`[specula-sandbox] wrote default config → ${USER_CONFIG_PATH} (edit it to tighten)\n`);
+  diag(`[specula-sandbox] wrote default config → ${USER_CONFIG_PATH} (edit it to tighten)\n`);
   return { cfg: JSON.parse(def), source: USER_CONFIG_PATH };
 }
 
-// Expand Specula placeholders in a config path.
+// Expand Specula placeholders (${WORKSPACE}, ${TMPDIR}) and a leading ~ in a
+// config path. We expand ~ ourselves so a credential deny does not depend on
+// srt's own tilde handling for this load-bearing path.
 export function expandPlaceholders(s, workspace) {
-  return String(s).replaceAll('${WORKSPACE}', workspace).replaceAll('${TMPDIR}', os.tmpdir());
+  let out = String(s).replaceAll('${WORKSPACE}', workspace).replaceAll('${TMPDIR}', os.tmpdir());
+  if (out === '~') out = os.homedir();
+  else if (out.startsWith('~/')) out = path.join(os.homedir(), out.slice(2));
+  return out;
 }
 
 // Specula sandbox.json → srt runtime config.
 export function translate(cfg, workspace) {
   const expand = s => expandPlaceholders(s, workspace);
   const arr = x => (Array.isArray(x) ? x : []);
+  // Run-specific write paths the launcher can inject without editing the config
+  // file (e.g. the artifact source tree + build caches a full pipeline writes to).
+  const extraWrite = (process.env.SPECULA_SANDBOX_EXTRA_WRITE || '')
+    .split(path.delimiter).filter(Boolean).map(expand);
   const runtime = {
     filesystem: {
-      allowWrite: arr(cfg.write?.allow).map(expand),
+      allowWrite: [...arr(cfg.write?.allow).map(expand), ...extraWrite],
       denyWrite: arr(cfg.write?.deny).map(expand),
       denyRead: arr(cfg.read?.deny).map(expand),
       allowRead: arr(cfg.read?.allow).map(expand),
@@ -146,7 +164,7 @@ async function main() {
   const command = args.cmd.map(shq).join(' ');
 
   if (cfg.enabled === false) {
-    process.stderr.write(`[specula-sandbox] enabled:false in ${source} → running WITHOUT sandbox\n`);
+    diag(`[specula-sandbox] enabled:false in ${source} → running WITHOUT sandbox\n`);
     runChild(command).on('exit', (code, signal) => process.exit(signal ? 1 : (code ?? 0)));
     return;
   }
