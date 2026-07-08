@@ -26,8 +26,6 @@ import shlex
 import subprocess
 import sys
 import tempfile
-import threading
-import time
 from typing import Any
 
 HELP = __doc__
@@ -41,41 +39,6 @@ def _derived_path(log_file: str, suffix: str) -> str:
     """Mirror bash `${LOG_FILE%.log}<suffix>`."""
     stem = log_file[:-4] if log_file.endswith(".log") else log_file
     return stem + suffix
-
-
-def _trace_stream_line(line: str, dbg: Any) -> None:
-    """TEMPORARY WSL DEBUG: turn one claude stream-json NDJSON event into a
-    human-readable trace line on stderr. Best-effort; unknown shapes are ignored.
-    Delete along with the rest of the debug scaffolding after WSL testing."""
-    try:
-        evt = json.loads(line)
-    except Exception:
-        return
-    if not isinstance(evt, dict):
-        return
-    t = evt.get("type")
-    if t == "system":
-        dbg(f"[stream] system/{evt.get('subtype', '')} model={evt.get('model', '')}")
-    elif t == "assistant":
-        for block in (evt.get("message", {}) or {}).get("content", []) or []:
-            if not isinstance(block, dict):
-                continue
-            bt = block.get("type")
-            if bt == "text" and block.get("text", "").strip():
-                dbg(f"[stream] assistant: {block['text'].strip()[:500]}")
-            elif bt == "tool_use":
-                inp = json.dumps(block.get("input", {}))[:300]
-                dbg(f"[stream] tool_use {block.get('name', '?')}({inp})")
-    elif t == "user":
-        for block in (evt.get("message", {}) or {}).get("content", []) or []:
-            if isinstance(block, dict) and block.get("type") == "tool_result":
-                content = block.get("content", "")
-                if isinstance(content, list):
-                    content = " ".join(str(c.get("text", "")) for c in content if isinstance(c, dict))
-                dbg(f"[stream] tool_result: {str(content).strip()[:400]}")
-    elif t == "result":
-        dbg(f"[stream] RESULT subtype={evt.get('subtype', '')} turns={evt.get('num_turns', '?')} "
-            f"cost=${evt.get('total_cost_usd', '?')}")
 
 
 def _parse_result(raw_text: str) -> dict[str, Any] | None:
@@ -259,14 +222,7 @@ def main(argv: list[str]) -> int:
                 )
 
         # ── Build command ──
-        # TEMPORARY WSL DEBUG: opt into stream-json (live message/tool trace) with
-        # SPECULA_STREAM=on. Default stays --output-format json so the pipeline's
-        # parsing + the adapter tests are byte-for-byte unchanged.
-        _stream = os.environ.get("SPECULA_STREAM", "").lower() in ("1", "on", "true", "yes")
-        _fmt = "stream-json" if _stream else "json"
-        cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", _fmt]
-        if _stream:
-            cmd += ["--verbose", "--include-partial-messages"]
+        cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", "json"]
         if effort and effort != "default":
             cmd += ["--effort", effort]
         if max_budget and max_budget != "0":
@@ -277,99 +233,18 @@ def main(argv: list[str]) -> int:
 
         # ── Run ──
         raw_json = _derived_path(log_file, ".raw.json")
-        # TEMPORARY WSL DEBUG: claude runs with --output-format json, which buffers
-        # the whole result and only writes agent.log at the end — so mid-run there
-        # is no signal the agent is alive. Loud debug is DEFAULT ON here; set
-        # SPECULA_DEBUG=off to silence. Revert this whole block after WSL testing.
-        # ponytail: heartbeat thread + stage prints; delete post-testing.
-        debug = os.environ.get("SPECULA_DEBUG", "on").lower() not in ("0", "off", "false", "no")
-        phase = os.environ.get("SPECULA_PHASE", "agent")
-
-        def _dbg(msg: str) -> None:
-            if debug:
-                print(f"[specula-debug] {phase}: {msg}", file=sys.stderr, flush=True)
-
-        _dbg(f"cwd={os.getcwd()}")
-        _dbg(f"log_file={log_file}")
-        _dbg(
-            f"prompt_input={prompt_input} "
-            f"({os.path.getsize(prompt_input) if os.path.exists(prompt_input) else '?'} bytes)"
-        )
-        _dbg(f"raw_json={raw_json}")
-        _dbg(f"launching: {' '.join(cmd)}")
-        if debug:
-            try:
-                _ptext = open(prompt_input, errors="replace").read()
-                _dbg(f"PROMPT ({len(_ptext)} chars) head:\n{_ptext[:800]}")
-                if len(_ptext) > 800:
-                    _dbg(f"PROMPT tail:\n{_ptext[-400:]}")
-            except OSError as e:
-                _dbg(f"could not read prompt for preview: {e}")
-
-        done = threading.Event()
-
-        def _heartbeat() -> None:
-            start = time.monotonic()
-            while not done.wait(5):
-                elapsed = int(time.monotonic() - start)
-                size = os.path.getsize(raw_json) if os.path.exists(raw_json) else 0
-                print(
-                    f"[specula-debug] {phase}: claude working… {elapsed}s elapsed, "
-                    f"{size} bytes captured so far",
-                    file=sys.stderr, flush=True,
-                )
-
-        rc = None
-        if debug and _stream:
-            # Stream mode: read claude's NDJSON events live, print a human trace to
-            # stderr, save the raw stream, and keep the LAST result event as raw_json
-            # so downstream parsing (_parse_result/_extract_usage) is unchanged.
-            stream_path = _derived_path(log_file, ".stream.jsonl")
-            result_line = ""
-            try:
-                with open(prompt_input) as pin, open(stream_path, "w") as sout:
-                    proc = subprocess.Popen(
-                        cmd, stdin=pin, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
-                    )
-                    assert proc.stdout is not None
-                    for line in proc.stdout:
-                        sout.write(line)
-                        sout.flush()
-                        _trace_stream_line(line, _dbg)
-                        try:
-                            evt = json.loads(line)
-                        except Exception:
-                            continue
-                        if isinstance(evt, dict) and evt.get("type") == "result":
-                            result_line = line
-                    rc = proc.wait()
-                # raw_json must hold the single result object json-mode would have produced
-                with open(raw_json, "w") as out:
-                    out.write(result_line or "")
-                _dbg(f"stream saved -> {stream_path}")
-            except OSError as e:
-                _dbg(f"SPAWN FAILED: {e} — is `claude` on PATH and executable?")
-                with open(raw_json, "w") as out:
-                    out.write(f"claude-code adapter: failed to run claude: {e}\n")
-        else:
-            if debug:
-                threading.Thread(target=_heartbeat, daemon=True).start()
-            try:
-                with open(prompt_input) as pin, open(raw_json, "w") as out:
-                    proc = subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT)  # ignore rc
-                    rc = proc.returncode
-            except OSError as e:
-                # Spawn failure (claude missing / not executable). Bash writes the
-                # shell's "command not found" into RAW_JSON via 2>&1 and carries on;
-                # mirror that so post-processing still runs → exit 0, .log with the
-                # error text, .usage.json = parse_failed. (A louder exit-1 failure
-                # might be preferable, but changing it is a separate, deliberate
-                # decision — this port stays behavior-identical to the bash.)
-                _dbg(f"SPAWN FAILED: {e} — is `claude` on PATH and executable?")
-                with open(raw_json, "w") as out:
-                    out.write(f"claude-code adapter: failed to run claude: {e}\n")
-        done.set()
-        _dbg(f"claude exited rc={rc}, captured {os.path.getsize(raw_json) if os.path.exists(raw_json) else 0} bytes")
+        try:
+            with open(prompt_input) as pin, open(raw_json, "w") as out:
+                subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT)  # ignore rc
+        except OSError as e:
+            # Spawn failure (claude missing / not executable). Bash writes the
+            # shell's "command not found" into RAW_JSON via 2>&1 and carries on;
+            # mirror that so post-processing still runs → exit 0, .log with the
+            # error text, .usage.json = parse_failed. (A louder exit-1 failure
+            # might be preferable, but changing it is a separate, deliberate
+            # decision — this port stays behavior-identical to the bash.)
+            with open(raw_json, "w") as out:
+                out.write(f"claude-code adapter: failed to run claude: {e}\n")
 
         # errors="replace" is a deliberate deviation from the bash, which died on
         # non-UTF-8 claude output (UnicodeDecodeError under set -e: non-zero exit,
@@ -377,9 +252,6 @@ def main(argv: list[str]) -> int:
         # signal). Degrade to U+FFFD + parse_failed on the normal exit-code path
         # instead (test_adapters.py::test_nonutf8_output_degrades_gracefully).
         raw_text = open(raw_json, errors="replace").read()
-        _dbg(f"RAW OUTPUT ({len(raw_text)} chars) head:\n{raw_text[:1200]}")
-        if len(raw_text) > 1200:
-            _dbg(f"RAW OUTPUT tail:\n{raw_text[-600:]}")
 
         # ── Detect rate limit → exit 75 (EX_TEMPFAIL) so callers can wait/retry ──
         rate_limited = "hit your limit" in raw_text
@@ -389,12 +261,6 @@ def main(argv: list[str]) -> int:
         result = _parse_result(raw_text)
         _extract_log(result, raw_text, log_file)
         _extract_usage(result, _derived_path(log_file, ".usage.json"))
-        if debug:
-            _rtext = (result or {}).get("result", "") if isinstance(result, dict) else ""
-            _dbg(f"parsed result: {'ok' if result else 'PARSE FAILED (raw dumped above)'}")
-            if _rtext:
-                _dbg(f"RESULT TEXT ({len(_rtext)} chars) head:\n{_rtext[:1200]}")
-            _dbg(f"wrote agent.log -> {log_file}")
 
         return 75 if rate_limited else 0
     finally:
