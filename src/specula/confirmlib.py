@@ -1,12 +1,14 @@
-"""Parallel per-finding bug confirmation (Phase 4).
+"""Parallel per-finding bug confirmation (Phase 4), with an optional debate.
 
 The default Phase-4 mode: instead of one agent confirming every finding in one
 context (the legacy single-agent path, still reachable via ``--legacy-confirm``),
-this fans out one Reproducer agent per finding, in parallel, after a step-0
-consolidate+dedup of the two finding sources into ``candidates.json``. The
-Reproducer follows the bug-confirmation skill (``guide.md`` + phase docs); this
-module is the dispatcher: it owns the per-finding work, serial RR-NNN allocation,
-and aggregation into ``confirmed-bugs.md``.
+this fans out one Reproducer agent per finding, in parallel. With debate enabled
+(``--debate``), a confirmation is then stress-tested by an adversarial Challenger
+to consensus. Roles, debate rules, and the verdict vocabulary follow the
+bug-confirmation skill (``guide.md`` + the challenge/defend prompts); this module
+is the dispatcher (the group-chat manager): it owns turn order, the shared
+``debate.md``, the round cap, VERDICT comparison, serial RR-NNN allocation, and
+aggregation into ``confirmed-bugs.md``.
 
 Every agent turn goes through :func:`specula.phaselib.run_agent_blocking` — the
 same adapter path, flags, and stop-gate env as ``Phase._launch``. Rate-limit
@@ -43,6 +45,8 @@ PHASE_KEY = "bug_confirmation"
 
 # Framework terminal/loop statuses (skills/bug-confirmation/guide.md).
 CANON = ["REPRODUCED", "REPRODUCTION FAILED", "FALSE POSITIVE", "NEEDS MORE INFO", "DROPPED", "PENDING REPAIR"]
+# A verdict asserting a real bug — the only case that opens a debate.
+CONFIRM = {"REPRODUCED", "REPRODUCTION FAILED"}
 VALID_SOURCES = {"model-checking", "code-review"}
 ID_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
 
@@ -109,6 +113,8 @@ class ConfirmConfig:
     adapter: Path
     repo_dir: str = ""
     max_parallel: int = 4
+    debate: bool = False
+    rounds: int = 5
     claude_alias: str = "claude"
     worktree: bool = True
     dry_run: bool = False
@@ -125,7 +131,7 @@ class Outcome:
     status: str
     consensus: bool
     rounds: int
-    body: str  # the Reproducer's response, used as the verdict body
+    body: str  # last A-turn response, used as the verdict body
     rr: str | None = None  # assigned RR-NNN when status is PENDING REPAIR
     bug_no: int = 0  # 1-based index in confirmed-bugs.md (the "## Bug N:" number)
 
@@ -160,7 +166,23 @@ def prompt_reproduce(cfg: ConfirmConfig, f: Finding, repo: str) -> str:
     )
 
 
-# ── one agent turn (blocking, via the shared phaselib primitive) ─────────────
+def prompt_challenge(cfg: ConfirmConfig, f: Finding, repo: str, debate: str) -> str:
+    return render(
+        "confirmation/challenge",
+        finding_id=f.id,
+        canon=" / ".join(CANON),
+        debate=debate,
+        context=_context(cfg, f, repo),
+    )
+
+
+def prompt_defend(cfg: ConfirmConfig, f: Finding, repo: str, debate: str) -> str:
+    return render(
+        "confirmation/defend", finding_id=f.id, canon=" / ".join(CANON), debate=debate, context=_context(cfg, f, repo)
+    )
+
+
+# ── one debate turn (blocking, via the shared phaselib primitive) ────────────
 
 
 def run_turn(cfg: ConfirmConfig, f: Finding, role: str, turn_no: int, prompt: str) -> tuple[str | None, str]:
@@ -220,22 +242,52 @@ def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]
     return str(wt), cleanup
 
 
-# ── one finding: reproduce → verdict ─────────────────────────────────────────
+# ── one finding: reproduce, then optional debate ─────────────────────────────
 
 
 def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
     f.fdir.mkdir(parents=True, exist_ok=True)
     (cfg.ws.work_dir(cfg.name) / "repro").mkdir(parents=True, exist_ok=True)
-    transcript = f.fdir / "debate.md"
+    debate = f.fdir / "debate.md"
     repo_for_agent, cleanup = setup_repo(cfg, f)
     try:
+        # Turn 1 — Reproducer (neutral): investigate + reproduce.
         a_verdict, a_text = run_turn(cfg, f, "A", 1, prompt_reproduce(cfg, f, repo_for_agent))
-        transcript.write_text(f"# {f.id}\n\n## Reproduce\n\n{a_text}\n")
+        debate.write_text(f"# Debate: {f.id}\n\n## A (turn 1 — reproduce)\n\n{a_text}\n")
         if a_verdict is None:
-            _log(f"  [{f.id}] Reproducer produced no VERDICT → NEEDS MORE INFO")
+            _log(f"  [{f.id}] A produced no VERDICT → NEEDS MORE INFO")
             return Outcome(f, "NEEDS MORE INFO", False, 0, a_text)
-        _log(f"  [{f.id}] {a_verdict}")
-        return Outcome(f, a_verdict, True, 0, a_text)
+        if a_verdict not in CONFIRM:
+            _log(f"  [{f.id}] A: {a_verdict} (dismissal) — no debate")
+            return Outcome(f, a_verdict, True, 0, a_text)
+        if not cfg.debate:
+            _log(f"  [{f.id}] A: {a_verdict} (debate off) — verdict final")
+            return Outcome(f, a_verdict, True, 0, a_text)
+
+        _log(f"  [{f.id}] A: {a_verdict} → opening debate")
+        last_a_text = a_text
+        turn = 1
+        for rnd in range(1, cfg.rounds + 1):
+            turn += 1
+            b_verdict, b_text = run_turn(
+                cfg, f, "B", turn, prompt_challenge(cfg, f, repo_for_agent, debate.read_text())
+            )
+            debate.write_text(debate.read_text() + f"\n## B (round {rnd})\n\n{b_text}\n")
+            # B agrees with A's current verdict → consensus already. Do NOT pull A
+            # into a defense it does not need: A only ever hears about the debate
+            # when B actually disagrees (the defend turn is where it is introduced).
+            if b_verdict is not None and b_verdict == a_verdict:
+                _log(f"  [{f.id}] round {rnd}: B={b_verdict} agrees — consensus, A not invoked")
+                return Outcome(f, a_verdict, True, rnd, last_a_text)
+            turn += 1
+            a_verdict, a_text = run_turn(cfg, f, "A", turn, prompt_defend(cfg, f, repo_for_agent, debate.read_text()))
+            debate.write_text(debate.read_text() + f"\n## A (round {rnd})\n\n{a_text}\n")
+            last_a_text = a_text or last_a_text
+            _log(f"  [{f.id}] round {rnd}: B={b_verdict} A={a_verdict}")
+            if a_verdict and b_verdict and a_verdict == b_verdict:
+                return Outcome(f, a_verdict, True, rnd, last_a_text)
+        _log(f"  [{f.id}] no consensus after {cfg.rounds} rounds → NEEDS MORE INFO")
+        return Outcome(f, "NEEDS MORE INFO", False, cfg.rounds, last_a_text)
     finally:
         cleanup()
 
@@ -482,6 +534,7 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
         lines.append("")
         lines.append(f"- **Finding ID**: {o.finding.id}")
         lines.append(f"- **Status**: {o.status}{rr}")
+        lines.append(f"- **Debate**: {'consensus' if o.consensus else 'NO CONSENSUS'} in {o.rounds} round(s)")
         lines.append(f"- **Transcript**: {o.finding.fdir / 'debate.md'}")
         lines.append("")
         lines.append(o.body.strip())
@@ -548,7 +601,10 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
         return _withhold(cfg, f"consolidate failed ({e}) — deliverable withheld; downstream gate + retry settle it")
 
     findings = load_findings(cfg)
-    _log(f"Parallel confirmation: {cfg.name} — {len(findings)} findings, max_parallel={cfg.max_parallel}")
+    _log(
+        f"Parallel confirmation: {cfg.name} — {len(findings)} findings, "
+        f"debate={'ON' if cfg.debate else 'OFF'}, max_parallel={cfg.max_parallel}"
+    )
     if not findings:
         if not cfg.dry_run:
             aggregate(cfg, [])

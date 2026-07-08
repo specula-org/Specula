@@ -62,6 +62,10 @@ class ConfirmCase(unittest.TestCase):
     def cfg(self, ws: Workspace, name: str, **kw: Any) -> C.ConfirmConfig:
         return C.ConfirmConfig(name=name, ws=ws, adapter=Path("/x"), worktree=False, repo_dir="", **kw)
 
+    def finding(self, ws: Workspace, name: str, fid: str = "MC-1") -> C.Finding:
+        fdir = ws.work_dir(name) / "confirmation" / fid
+        return C.Finding({"id": fid, "title": "t", "summary": "s"}, fdir)
+
 
 class TestVerdict(ConfirmCase):
     def test_parse_verdict(self) -> None:
@@ -239,6 +243,53 @@ class TestDriver(ConfirmCase):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
         self.assertEqual(rc, 0)
         self.assertFalse((ws.work_dir("T") / "spec" / "confirmed-bugs.md").is_file())  # stale removed too
+
+
+class TestDebateGate(ConfirmCase):
+    def test_debate_off_is_a_solo(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T", debate=False)
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn("VERDICT: REPRODUCED")):
+            o = C.run_finding(cfg, self.finding(ws, "T"))
+        self.assertEqual(o.status, "REPRODUCED")
+        self.assertEqual(o.rounds, 0)  # no debate opened
+
+    def test_debate_on_reaches_consensus(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T", debate=True, rounds=5)
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn("VERDICT: REPRODUCED")):
+            o = C.run_finding(cfg, self.finding(ws, "T", "MC-2"))
+        self.assertEqual(o.status, "REPRODUCED")
+        self.assertEqual(o.rounds, 1)  # B then A agree in round 1
+        self.assertTrue(o.consensus)
+
+    def test_dismissal_never_opens_debate(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T", debate=True, rounds=5)
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn("VERDICT: FALSE POSITIVE")):
+            o = C.run_finding(cfg, self.finding(ws, "T", "CR-9"))
+        self.assertEqual(o.status, "FALSE POSITIVE")
+        self.assertEqual(o.rounds, 0)  # debate exists to challenge confirmations, not dismissals
+
+    def test_b_agrees_skips_a_defense(self) -> None:
+        # A confirms, B agrees on its first turn → consensus WITHOUT pulling A into
+        # a defense (A never hears about the debate — turn-1 stays debate-blind).
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T", debate=True, rounds=5)
+        calls = {"n": 0}
+
+        def counting(*_a: object, **_k: object) -> tuple[int, str]:
+            calls["n"] += 1
+            return (0, "VERDICT: REPRODUCED")
+
+        with mock.patch.object(C, "run_agent_blocking", counting):
+            o = C.run_finding(cfg, self.finding(ws, "T", "MC-3"))
+        self.assertEqual(o.status, "REPRODUCED")
+        self.assertEqual(o.rounds, 1)
+        self.assertEqual(calls["n"], 2)  # A reproduce + B challenge; NO A defense turn
+        transcript = (ws.work_dir("T") / "confirmation" / "MC-3" / "debate.md").read_text()
+        self.assertIn("## B (round 1)", transcript)
+        self.assertNotIn("## A (round 1)", transcript)
 
 
 class TestAggregate(ConfirmCase):

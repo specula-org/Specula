@@ -1498,6 +1498,8 @@ Options:
   --dry-run           Print commands without executing
   --check             Only verify prerequisites exist
   --legacy-confirm    Single-agent confirmation (one agent, all findings) instead of parallel
+  --debate            Add an adversarial Challenger after each confirmation (parallel mode; default off)
+  --rounds=N          Max debate rounds with --debate (default: 5)
   --recheck           Re-check mode: settle RECHECK repair requests (confirmation back-edge; single-agent)
   --max-repair-rounds=N  Per-request repair cap honored in --recheck (default: 0 = unlimited)
   --max-parallel=N    Hard limit for concurrent findings in parallel mode, or concurrent target agents in
@@ -1528,6 +1530,12 @@ Prerequisites:
         if arg == "--legacy-confirm":
             extra["legacy"] = True
             return True
+        if arg == "--debate":
+            extra["debate"] = True
+            return True
+        if arg.startswith("--rounds="):
+            extra["rounds"] = arg[len("--rounds=") :]
+            return True
         return False
 
     def default_max_parallel(self, extra: dict[str, str | bool]) -> int:
@@ -1553,6 +1561,8 @@ Prerequisites:
         # would be circular.
         from specula.confirmlib import ConfirmConfig, run_parallel_confirmation
 
+        debate = bool(ws.opts.get("debate"))
+        rounds = int(str(ws.opts.get("rounds", "5")))
         rc = 0
         for name in names:
             if not dry_run:
@@ -1563,6 +1573,8 @@ Prerequisites:
                 adapter=adapter,
                 repo_dir=ws.find_repo_dir(name),
                 max_parallel=max_parallel,
+                debate=debate,
+                rounds=rounds,
                 claude_alias=claude_alias,
                 model=self._model,
                 effort=self._effort,
