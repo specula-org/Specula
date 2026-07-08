@@ -255,6 +255,14 @@ def main(argv: list[str]) -> int:
         )
         _dbg(f"raw_json={raw_json}")
         _dbg(f"launching: {' '.join(cmd)}")
+        if debug:
+            try:
+                _ptext = open(prompt_input, errors="replace").read()
+                _dbg(f"PROMPT ({len(_ptext)} chars) head:\n{_ptext[:800]}")
+                if len(_ptext) > 800:
+                    _dbg(f"PROMPT tail:\n{_ptext[-400:]}")
+            except OSError as e:
+                _dbg(f"could not read prompt for preview: {e}")
 
         done = threading.Event()
 
@@ -296,6 +304,9 @@ def main(argv: list[str]) -> int:
         # signal). Degrade to U+FFFD + parse_failed on the normal exit-code path
         # instead (test_adapters.py::test_nonutf8_output_degrades_gracefully).
         raw_text = open(raw_json, errors="replace").read()
+        _dbg(f"RAW OUTPUT ({len(raw_text)} chars) head:\n{raw_text[:1200]}")
+        if len(raw_text) > 1200:
+            _dbg(f"RAW OUTPUT tail:\n{raw_text[-600:]}")
 
         # ── Detect rate limit → exit 75 (EX_TEMPFAIL) so callers can wait/retry ──
         rate_limited = "hit your limit" in raw_text
@@ -305,6 +316,12 @@ def main(argv: list[str]) -> int:
         result = _parse_result(raw_text)
         _extract_log(result, raw_text, log_file)
         _extract_usage(result, _derived_path(log_file, ".usage.json"))
+        if debug:
+            _rtext = (result or {}).get("result", "") if isinstance(result, dict) else ""
+            _dbg(f"parsed result: {'ok' if result else 'PARSE FAILED (raw dumped above)'}")
+            if _rtext:
+                _dbg(f"RESULT TEXT ({len(_rtext)} chars) head:\n{_rtext[:1200]}")
+            _dbg(f"wrote agent.log -> {log_file}")
 
         return 75 if rate_limited else 0
     finally:
