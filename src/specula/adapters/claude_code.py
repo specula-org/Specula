@@ -26,6 +26,8 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from typing import Any
 
 HELP = __doc__
@@ -233,9 +235,47 @@ def main(argv: list[str]) -> int:
 
         # ── Run ──
         raw_json = _derived_path(log_file, ".raw.json")
+        # TEMPORARY WSL DEBUG: claude runs with --output-format json, which buffers
+        # the whole result and only writes agent.log at the end — so mid-run there
+        # is no signal the agent is alive. Loud debug is DEFAULT ON here; set
+        # SPECULA_DEBUG=off to silence. Revert this whole block after WSL testing.
+        # ponytail: heartbeat thread + stage prints; delete post-testing.
+        debug = os.environ.get("SPECULA_DEBUG", "on").lower() not in ("0", "off", "false", "no")
+        phase = os.environ.get("SPECULA_PHASE", "agent")
+
+        def _dbg(msg: str) -> None:
+            if debug:
+                print(f"[specula-debug] {phase}: {msg}", file=sys.stderr, flush=True)
+
+        _dbg(f"cwd={os.getcwd()}")
+        _dbg(f"log_file={log_file}")
+        _dbg(
+            f"prompt_input={prompt_input} "
+            f"({os.path.getsize(prompt_input) if os.path.exists(prompt_input) else '?'} bytes)"
+        )
+        _dbg(f"raw_json={raw_json}")
+        _dbg(f"launching: {' '.join(cmd)}")
+
+        done = threading.Event()
+
+        def _heartbeat() -> None:
+            start = time.monotonic()
+            while not done.wait(5):
+                elapsed = int(time.monotonic() - start)
+                size = os.path.getsize(raw_json) if os.path.exists(raw_json) else 0
+                print(
+                    f"[specula-debug] {phase}: claude working… {elapsed}s elapsed, "
+                    f"{size} bytes captured so far",
+                    file=sys.stderr, flush=True,
+                )
+
+        if debug:
+            threading.Thread(target=_heartbeat, daemon=True).start()
+        rc = None
         try:
             with open(prompt_input) as pin, open(raw_json, "w") as out:
-                subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT)  # ignore rc
+                proc = subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT)  # ignore rc
+                rc = proc.returncode
         except OSError as e:
             # Spawn failure (claude missing / not executable). Bash writes the
             # shell's "command not found" into RAW_JSON via 2>&1 and carries on;
@@ -243,8 +283,12 @@ def main(argv: list[str]) -> int:
             # error text, .usage.json = parse_failed. (A louder exit-1 failure
             # might be preferable, but changing it is a separate, deliberate
             # decision — this port stays behavior-identical to the bash.)
+            _dbg(f"SPAWN FAILED: {e} — is `claude` on PATH and executable?")
             with open(raw_json, "w") as out:
                 out.write(f"claude-code adapter: failed to run claude: {e}\n")
+        finally:
+            done.set()
+        _dbg(f"claude exited rc={rc}, captured {os.path.getsize(raw_json) if os.path.exists(raw_json) else 0} bytes")
 
         # errors="replace" is a deliberate deviation from the bash, which died on
         # non-UTF-8 claude output (UnicodeDecodeError under set -e: non-zero exit,
