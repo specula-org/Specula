@@ -43,6 +43,41 @@ def _derived_path(log_file: str, suffix: str) -> str:
     return stem + suffix
 
 
+def _trace_stream_line(line: str, dbg: Any) -> None:
+    """TEMPORARY WSL DEBUG: turn one claude stream-json NDJSON event into a
+    human-readable trace line on stderr. Best-effort; unknown shapes are ignored.
+    Delete along with the rest of the debug scaffolding after WSL testing."""
+    try:
+        evt = json.loads(line)
+    except Exception:
+        return
+    if not isinstance(evt, dict):
+        return
+    t = evt.get("type")
+    if t == "system":
+        dbg(f"[stream] system/{evt.get('subtype', '')} model={evt.get('model', '')}")
+    elif t == "assistant":
+        for block in (evt.get("message", {}) or {}).get("content", []) or []:
+            if not isinstance(block, dict):
+                continue
+            bt = block.get("type")
+            if bt == "text" and block.get("text", "").strip():
+                dbg(f"[stream] assistant: {block['text'].strip()[:500]}")
+            elif bt == "tool_use":
+                inp = json.dumps(block.get("input", {}))[:300]
+                dbg(f"[stream] tool_use {block.get('name', '?')}({inp})")
+    elif t == "user":
+        for block in (evt.get("message", {}) or {}).get("content", []) or []:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                content = block.get("content", "")
+                if isinstance(content, list):
+                    content = " ".join(str(c.get("text", "")) for c in content if isinstance(c, dict))
+                dbg(f"[stream] tool_result: {str(content).strip()[:400]}")
+    elif t == "result":
+        dbg(f"[stream] RESULT subtype={evt.get('subtype', '')} turns={evt.get('num_turns', '?')} "
+            f"cost=${evt.get('total_cost_usd', '?')}")
+
+
 def _parse_result(raw_text: str) -> dict[str, Any] | None:
     """The claude result JSON, parsed once for both extractors below; None when
     the output isn't a JSON object (crash text, spawn error, truncation)."""
@@ -224,7 +259,14 @@ def main(argv: list[str]) -> int:
                 )
 
         # ── Build command ──
-        cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", "json"]
+        # TEMPORARY WSL DEBUG: opt into stream-json (live message/tool trace) with
+        # SPECULA_STREAM=on. Default stays --output-format json so the pipeline's
+        # parsing + the adapter tests are byte-for-byte unchanged.
+        _stream = os.environ.get("SPECULA_STREAM", "").lower() in ("1", "on", "true", "yes")
+        _fmt = "stream-json" if _stream else "json"
+        cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", _fmt]
+        if _stream:
+            cmd += ["--verbose", "--include-partial-messages"]
         if effort and effort != "default":
             cmd += ["--effort", effort]
         if max_budget and max_budget != "0":
@@ -277,25 +319,56 @@ def main(argv: list[str]) -> int:
                     file=sys.stderr, flush=True,
                 )
 
-        if debug:
-            threading.Thread(target=_heartbeat, daemon=True).start()
         rc = None
-        try:
-            with open(prompt_input) as pin, open(raw_json, "w") as out:
-                proc = subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT)  # ignore rc
-                rc = proc.returncode
-        except OSError as e:
-            # Spawn failure (claude missing / not executable). Bash writes the
-            # shell's "command not found" into RAW_JSON via 2>&1 and carries on;
-            # mirror that so post-processing still runs → exit 0, .log with the
-            # error text, .usage.json = parse_failed. (A louder exit-1 failure
-            # might be preferable, but changing it is a separate, deliberate
-            # decision — this port stays behavior-identical to the bash.)
-            _dbg(f"SPAWN FAILED: {e} — is `claude` on PATH and executable?")
-            with open(raw_json, "w") as out:
-                out.write(f"claude-code adapter: failed to run claude: {e}\n")
-        finally:
-            done.set()
+        if debug and _stream:
+            # Stream mode: read claude's NDJSON events live, print a human trace to
+            # stderr, save the raw stream, and keep the LAST result event as raw_json
+            # so downstream parsing (_parse_result/_extract_usage) is unchanged.
+            stream_path = _derived_path(log_file, ".stream.jsonl")
+            result_line = ""
+            try:
+                with open(prompt_input) as pin, open(stream_path, "w") as sout:
+                    proc = subprocess.Popen(
+                        cmd, stdin=pin, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+                    )
+                    assert proc.stdout is not None
+                    for line in proc.stdout:
+                        sout.write(line)
+                        sout.flush()
+                        _trace_stream_line(line, _dbg)
+                        try:
+                            evt = json.loads(line)
+                        except Exception:
+                            continue
+                        if isinstance(evt, dict) and evt.get("type") == "result":
+                            result_line = line
+                    rc = proc.wait()
+                # raw_json must hold the single result object json-mode would have produced
+                with open(raw_json, "w") as out:
+                    out.write(result_line or "")
+                _dbg(f"stream saved -> {stream_path}")
+            except OSError as e:
+                _dbg(f"SPAWN FAILED: {e} — is `claude` on PATH and executable?")
+                with open(raw_json, "w") as out:
+                    out.write(f"claude-code adapter: failed to run claude: {e}\n")
+        else:
+            if debug:
+                threading.Thread(target=_heartbeat, daemon=True).start()
+            try:
+                with open(prompt_input) as pin, open(raw_json, "w") as out:
+                    proc = subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT)  # ignore rc
+                    rc = proc.returncode
+            except OSError as e:
+                # Spawn failure (claude missing / not executable). Bash writes the
+                # shell's "command not found" into RAW_JSON via 2>&1 and carries on;
+                # mirror that so post-processing still runs → exit 0, .log with the
+                # error text, .usage.json = parse_failed. (A louder exit-1 failure
+                # might be preferable, but changing it is a separate, deliberate
+                # decision — this port stays behavior-identical to the bash.)
+                _dbg(f"SPAWN FAILED: {e} — is `claude` on PATH and executable?")
+                with open(raw_json, "w") as out:
+                    out.write(f"claude-code adapter: failed to run claude: {e}\n")
+        done.set()
         _dbg(f"claude exited rc={rc}, captured {os.path.getsize(raw_json) if os.path.exists(raw_json) else 0} bytes")
 
         # errors="replace" is a deliberate deviation from the bash, which died on
