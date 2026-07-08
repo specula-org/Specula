@@ -65,6 +65,14 @@ class RateLimited(Exception):
     (terminal, never revisited), and never a special phase exit code."""
 
 
+class ConsolidateFailed(Exception):
+    """Consolidate ran (not rate-limited) but produced no valid candidates.json.
+    Treated like any batch-phase agent failure: the driver withholds the
+    deliverable and returns 0 so the downstream gate + the scheduler's
+    transient-log retry settle it — never a hard RuntimeError, which that probe
+    cannot retry and which would single this phase out from its batch siblings."""
+
+
 def _log(msg: str) -> None:
     with _print_lock:
         print(msg, flush=True)
@@ -412,7 +420,9 @@ def consolidate(cfg: ConfirmConfig) -> None:
         raise RateLimited(f"{cfg.name} consolidate")
     errs = _validate_candidates(out) if out.is_file() else ["no candidates.json produced"]
     if errs:
-        raise RuntimeError(f"consolidate produced no valid candidates.json for {cfg.name}: {errs[0]}")
+        if out.is_file():
+            out.unlink()  # drop the invalid file so load_findings does not choke on it
+        raise ConsolidateFailed(f"no valid candidates.json for {cfg.name}: {errs[0]}")
     doc = json.loads(out.read_text())
     cand = doc.get("findings", [])
     n_merged = sum(1 for c in cand if c.get("dedup_note"))
@@ -509,16 +519,25 @@ def run_parallel_confirmation(cfg: ConfirmConfig) -> int:
         _set_log_file(None)
 
 
+def _withhold(cfg: ConfirmConfig, reason: str) -> int:
+    """Withhold the phase deliverable and return 0. Removes any existing
+    confirmed-bugs.md so the classification gate sees a MISSING deliverable (and
+    the scheduler retries) rather than passing on a STALE report left by a prior
+    run — the batch-phase failure contract."""
+    report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
+    if report.is_file():
+        report.unlink()
+    _log(reason)
+    return 0
+
+
 def _drive_confirmation(cfg: ConfirmConfig) -> int:
     try:
         consolidate(cfg)
     except RateLimited:
-        # Batch-phase behavior: withhold the deliverable, don't propagate a code.
-        # candidates.json is absent (the next run re-consolidates) and
-        # confirmed-bugs.md is never written, so the classification gate stops the
-        # pipeline and the scheduler's transient-log retry re-runs us.
-        _log("consolidate rate-limited — deliverable withheld for scheduler retry")
-        return 0
+        return _withhold(cfg, "consolidate rate-limited — deliverable withheld for scheduler retry")
+    except ConsolidateFailed as e:
+        return _withhold(cfg, f"consolidate failed ({e}) — deliverable withheld; downstream gate + retry settle it")
 
     findings = load_findings(cfg)
     _log(f"Parallel confirmation: {cfg.name} — {len(findings)} findings, max_parallel={cfg.max_parallel}")
@@ -537,13 +556,14 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
             except RateLimited:
                 rate_limited = True
     if rate_limited:
-        # Do NOT aggregate a partial confirmed-bugs.md — it would look complete
-        # and the classification gate would pass with findings missing. Withhold
-        # it (as a batch phase does when its agent dies mid-run); the gate + the
-        # scheduler's transient-log retry re-run us, and verdict.json skips the
-        # findings already done. Return 0, consistent with every other batch phase.
-        _log("rate-limited mid-confirmation — deliverable withheld; completed findings cached for retry")
-        return 0
+        # Do NOT aggregate a partial confirmed-bugs.md — it would look complete and
+        # the classification gate would pass with findings missing. Withhold it (as
+        # a batch phase does when its agent dies mid-run): remove any stale report
+        # so the gate + the scheduler's transient-log retry re-run us; verdict.json
+        # skips the findings already done. Return 0, consistent with batch phases.
+        return _withhold(
+            cfg, "rate-limited mid-confirmation — deliverable withheld; completed findings cached for retry"
+        )
 
     order = {f.id: i for i, f in enumerate(findings)}
     outcomes.sort(key=lambda o: order[o.finding.id])

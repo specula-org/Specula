@@ -155,6 +155,29 @@ class TestDriver(ConfirmCase):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
         self.assertEqual(rc, 0)
 
+    def test_rate_limit_removes_stale_report(self) -> None:
+        # A prior run's confirmed-bugs.md must NOT survive a rate limit — else the
+        # 4b gate would pass on the stale report. Withhold = remove it.
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        stale = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
+        stale.write_text("# STALE REPORT from a prior run\n")
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn("", rc=75)):
+            rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
+        self.assertEqual(rc, 0)
+        self.assertFalse(stale.is_file())  # removed → 4b gate sees MISSING and retries
+
+    def test_consolidate_failure_withholds_not_raises(self) -> None:
+        # No candidates.json → consolidate runs the agent. A non-75 failure that
+        # yields no valid candidates.json must withhold + return 0 (batch-phase
+        # consistent), NOT raise (which the scheduler's log-probe cannot retry).
+        ws = Workspace(["T"])
+        (ws.work_dir("T") / "spec").mkdir(parents=True, exist_ok=True)
+        (ws.work_dir("T") / "spec" / "confirmed-bugs.md").write_text("# stale\n")
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn("", rc=1)):
+            rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
+        self.assertEqual(rc, 0)
+        self.assertFalse((ws.work_dir("T") / "spec" / "confirmed-bugs.md").is_file())  # stale removed too
+
 
 class TestAggregate(ConfirmCase):
     def _confirmed_bugs(self, body: str, name: str = "T") -> str:
