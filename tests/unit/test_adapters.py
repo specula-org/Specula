@@ -258,9 +258,7 @@ class ClaudeCodeAdapter(AdapterCase):
                     {
                         "type": "assistant",
                         "message": {
-                            "content": [
-                                {"type": "tool_use", "name": "Read", "input": {"file_path": "kilo.c"}}
-                            ]
+                            "content": [{"type": "tool_use", "name": "Read", "input": {"file_path": "kilo.c"}}]
                         },
                     }
                 ),
@@ -475,9 +473,7 @@ class CodexAdapter(AdapterCase):
             env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
-        self.assertEqual(
-            r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "--json", "the prompt"]
-        )
+        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "--json", "the prompt"])
         self.assertEqual(activity.read_text(), fixture)
         self.assertEqual((base / "out.log").read_text(), "running pwd\ndone\n")
 

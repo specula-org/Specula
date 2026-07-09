@@ -31,9 +31,7 @@ class TestProgressParsing(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             activity = root / "agent.activity.jsonl"
-            activity.write_text(
-                '{"type":"item.completed","item":{"type":"agent_message","text":"finished"}}'
-            )
+            activity.write_text('{"type":"item.completed","item":{"type":"agent_message","text":"finished"}}')
             proc = subprocess.Popen(["true"])
             proc.wait()
             agent = progress.RunningAgent(

@@ -355,9 +355,7 @@ class TestArgErrors(PhaseCase):
     def test_nonpositive_max_parallel(self) -> None:
         for value in ("0", "-1"):
             with self.subTest(value=value):
-                rc, out = self.run_phase(
-                    "code_analysis", [f"--max-parallel={value}", self.artifact_flag(), NAME]
-                )
+                rc, out = self.run_phase("code_analysis", [f"--max-parallel={value}", self.artifact_flag(), NAME])
                 self.assertEqual(rc, 1)
                 self.assertIn("expected an integer >= 1", out)
 
@@ -401,10 +399,7 @@ class TestProgressReporting(PhaseCase):
         )
 
     def test_reports_agent_created_workspace_files(self) -> None:
-        self.write_adapter(
-            'printf "draft\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
-            "sleep 0.04\n"
-        )
+        self.write_adapter('printf "draft\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\nsleep 0.04\n')
         rc, out = self.run_fake()
         self.assertEqual(rc, 0, out)
         self.assertIn(f"{NAME}: created modeling-brief.md", out)
@@ -477,10 +472,7 @@ class TestProgressReporting(PhaseCase):
                 },
             }
         )
-        self.write_adapter(
-            f"printf '%s\\n' {shlex.quote(event)} > \"$SPECULA_ACTIVITY_LOG\"\n"
-            "sleep 0.04\n"
-        )
+        self.write_adapter(f"printf '%s\\n' {shlex.quote(event)} > \"$SPECULA_ACTIVITY_LOG\"\nsleep 0.04\n")
         rc, out = self.run_fake()
         self.assertEqual(rc, 0, out)
         self.assertIn(f"{NAME}: Inspecting editor state.", out)
@@ -510,8 +502,7 @@ class TestProgressReporting(PhaseCase):
     def test_structured_adapter_errors_are_shown_in_cli_output(self) -> None:
         self.adapter = self.adapter.with_name("copilot-cli.sh")
         self.write_adapter(
-            'printf "%s\\n" "BYOK providers require an explicit model." > "$SPECULA_ACTIVITY_LOG"\n'
-            "exit 1\n"
+            'printf "%s\\n" "BYOK providers require an explicit model." > "$SPECULA_ACTIVITY_LOG"\nexit 1\n'
         )
         rc, out = self.run_fake()
         self.assertEqual(rc, 1, out)

@@ -94,9 +94,7 @@ def _elapsed(seconds: float) -> str:
     return f"{secs}s"
 
 
-def _changes(
-    before: dict[Path, tuple[int, int]], after: dict[Path, tuple[int, int]]
-) -> list[tuple[str, Path]]:
+def _changes(before: dict[Path, tuple[int, int]], after: dict[Path, tuple[int, int]]) -> list[tuple[str, Path]]:
     changes: list[tuple[str, Path]] = []
     for path in sorted(after, key=lambda p: p.as_posix()):
         if path not in before:
@@ -150,12 +148,8 @@ def _report_output_state(agent: RunningAgent, now: float, printed_event: bool, c
         print(f"[{_ts()}] {agent.name}: agent output is active")
         agent.reported_output = True
         agent.last_output_report_at = now
-    elif (
-        not agent.reported_sustained_output
-        and now - agent.last_output_report_at >= config.status_after_seconds
-    ) or (
-        agent.reported_sustained_output
-        and now - agent.last_output_report_at >= config.status_repeat_seconds
+    elif (not agent.reported_sustained_output and now - agent.last_output_report_at >= config.status_after_seconds) or (
+        agent.reported_sustained_output and now - agent.last_output_report_at >= config.status_repeat_seconds
     ):
         print(f"[{_ts()}] {agent.name}: agent output is still active")
         agent.reported_sustained_output = True
@@ -212,7 +206,6 @@ def report(running: list[RunningAgent], config: ProgressConfig) -> None:
         elif quiet_for >= config.status_after_seconds:
             if not agent.last_status_report_at or now - agent.last_status_report_at >= config.status_repeat_seconds:
                 print(
-                    f"[{_ts()}] {agent.name}: no observable activity for "
-                    f"{_elapsed(quiet_for)}; process is still alive"
+                    f"[{_ts()}] {agent.name}: no observable activity for {_elapsed(quiet_for)}; process is still alive"
                 )
                 agent.last_status_report_at = now

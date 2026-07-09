@@ -148,6 +148,7 @@ def parse_events(adapter_name: str, lines: list[str], *, concise: bool = True) -
         events.extend(parser(record, concise))
     return events
 
+
 _ADAPTER_NAMES = {
     "claude": "claude-code",
     "claude-code": "claude-code",
