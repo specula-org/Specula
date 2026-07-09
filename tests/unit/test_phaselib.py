@@ -28,7 +28,9 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
+import shlex
 import sys
 import tempfile
 import unittest
@@ -153,6 +155,7 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_PHASE",
             "SPECULA_WORK_DIR",
             "SPECULA_PROGRESS",
+            "SPECULA_ACTIVITY_LOG",
             "CLAUDE_ALIAS",
         ):
             self.set_env(var, str(self.run_dir) if var == "SPECULA_RUN_DIR" else None)
@@ -433,6 +436,49 @@ class TestProgressReporting(PhaseCase):
         self.assertIn(f"{NAME}: I am reading kilo.c and tracing editor state.", out)
         self.assertIn(f"{NAME}: running rg editorRefreshScreen kilo.c", out)
         self.assertIn(f"{NAME}: spawning subagent", out)
+
+    def test_claude_stream_events_are_shown_in_cli_output(self) -> None:
+        self.adapter = self.adapter.with_name("claude-code.sh")
+        event = json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {"type": "text", "text": "Inspecting editor state."},
+                        {"type": "tool_use", "name": "Read", "input": {"file_path": "kilo.c"}},
+                    ]
+                },
+            }
+        )
+        self.write_adapter(
+            f"printf '%s\\n' {shlex.quote(event)} > \"$SPECULA_ACTIVITY_LOG\"\n"
+            "sleep 0.04\n"
+        )
+        rc, out = self.run_fake()
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"{NAME}: Inspecting editor state.", out)
+        self.assertIn(f"{NAME}: reading kilo.c", out)
+
+    def test_copilot_stream_events_are_shown_in_cli_output(self) -> None:
+        self.adapter = self.adapter.with_name("copilot-cli.sh")
+        events = [
+            json.dumps({"type": "assistant.message", "data": {"content": "Tracing input handling."}}),
+            json.dumps(
+                {
+                    "type": "tool.execution_start",
+                    "data": {"toolName": "bash", "arguments": {"command": "rg editorReadKey kilo.c"}},
+                }
+            ),
+        ]
+        self.write_adapter(
+            f"printf '%s\\n' {' '.join(shlex.quote(event) for event in events)} "
+            '> "$SPECULA_ACTIVITY_LOG"\n'
+            "sleep 0.04\n"
+        )
+        rc, out = self.run_fake()
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"{NAME}: Tracing input handling.", out)
+        self.assertIn(f"{NAME}: running rg editorReadKey kilo.c", out)
 
     def test_quiet_liveness_is_sparse_and_can_be_disabled(self) -> None:
         self.write_adapter("sleep 0.06\n")

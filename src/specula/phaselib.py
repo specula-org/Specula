@@ -16,6 +16,7 @@ Usage:  python3 phaselib.py <phase> [options] "<target>" [...]
 from __future__ import annotations
 
 import contextlib
+import json
 import locale
 import os
 import re
@@ -195,6 +196,77 @@ def _codex_activity_events(lines: list[str], pending: str | None) -> tuple[str |
     return pending, events
 
 
+def _string_arg(arguments: object, *keys: str) -> str:
+    if not isinstance(arguments, dict):
+        return ""
+    for key in keys:
+        value = arguments.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
+def _tool_activity_summary(name: str, arguments: object) -> str:
+    """Common readable summaries for Claude/Copilot tool calls."""
+    lowered = name.casefold()
+    command = _string_arg(arguments, "command", "cmd")
+    path = _string_arg(arguments, "file_path", "path")
+    pattern = _string_arg(arguments, "pattern", "query")
+    description = _string_arg(arguments, "description", "intent", "prompt")
+    if lowered in {"bash", "shell", "powershell"} and command:
+        return f"running {_activity_summary(command, 160)}"
+    if lowered in {"read", "view", "read_file"} and path:
+        return f"reading {_activity_summary(path)}"
+    if lowered in {"edit", "write", "write_file", "notebookedit"} and path:
+        return f"editing {_activity_summary(path)}"
+    if lowered in {"grep", "glob", "search", "websearch"} and pattern:
+        return f"searching for {_activity_summary(pattern)}"
+    if lowered in {"task", "spawnagent"}:
+        detail = f": {_activity_summary(description)}" if description else ""
+        return f"spawning subagent{detail}"
+    if lowered in {"taskoutput", "wait"}:
+        return "waiting for subagents"
+    detail = f": {_activity_summary(description)}" if description else ""
+    return f"using {name}{detail}"
+
+
+def _claude_activity_events(record: object) -> list[str]:
+    if not isinstance(record, dict) or record.get("type") != "assistant":
+        return []
+    message = record.get("message")
+    if not isinstance(message, dict):
+        return []
+    content = message.get("content")
+    if not isinstance(content, list):
+        return []
+    events: list[str] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "text" and isinstance(block.get("text"), str):
+            events.append(_activity_summary(block["text"]))
+        elif block.get("type") == "tool_use" and isinstance(block.get("name"), str):
+            events.append(_tool_activity_summary(block["name"], block.get("input")))
+    return events
+
+
+def _copilot_activity_events(record: object) -> list[str]:
+    if not isinstance(record, dict):
+        return []
+    event_type = record.get("type")
+    data = record.get("data")
+    if not isinstance(data, dict):
+        return []
+    if event_type == "assistant.message" and isinstance(data.get("content"), str):
+        return [_activity_summary(data["content"])]
+    if event_type == "tool.execution_start" and isinstance(data.get("toolName"), str):
+        # report_intent duplicates assistant.message and is not actual work.
+        if data["toolName"] == "report_intent":
+            return []
+        return [_tool_activity_summary(data["toolName"], data.get("arguments"))]
+    return []
+
+
 def _wc_l(path: Path) -> int:
     """Line count matching bash `wc -l < file` (counts newlines, NOT splitlines —
     they differ by 1 when the file has no trailing newline). Byte-oriented like
@@ -242,11 +314,13 @@ class RunningAgent:
     proc: subprocess.Popen[bytes]
     work_dir: Path
     log: Path
+    activity_log: Path
     ignored: set[Path]
     snapshot: dict[Path, tuple[int, int]]
     reported_snapshot: dict[Path, tuple[int, int]]
     last_observed_at: float
     log_stamp: tuple[int, int] | None
+    activity_stamp: tuple[int, int] | None
     adapter_name: str
     last_change_report_at: float = 0.0
     last_status_report_at: float = 0.0
@@ -254,9 +328,9 @@ class RunningAgent:
     last_output_report_at: float = 0.0
     reported_log_activity: bool = False
     reported_sustained_output: bool = False
-    log_offset: int = 0
-    log_buffer: str = ""
-    log_started: bool = False
+    activity_offset: int = 0
+    activity_buffer: str = ""
+    activity_started: bool = False
     pending_log_event: str | None = None
     last_log_event: str = ""
 
@@ -399,27 +473,41 @@ class Phase:
         adapters keep the generic monitor until they have an equally stable
         event source. Any read or parse problem fails back to liveness output.
         """
-        if agent.adapter_name != "codex":
-            return []
         try:
-            size = agent.log.stat().st_size
-            if not agent.log_started or size < agent.log_offset:
-                agent.log_offset = 0
-                agent.log_buffer = ""
+            size = agent.activity_log.stat().st_size
+            if not agent.activity_started or size < agent.activity_offset:
+                agent.activity_offset = 0
+                agent.activity_buffer = ""
                 agent.pending_log_event = None
-                agent.log_started = True
-            with agent.log.open("rb") as stream:
-                stream.seek(agent.log_offset)
+                agent.activity_started = True
+            with agent.activity_log.open("rb") as stream:
+                stream.seek(agent.activity_offset)
                 data = stream.read()
-            agent.log_offset += len(data)
+            agent.activity_offset += len(data)
         except OSError:
             return []
         if not data:
             return []
 
-        chunks = (agent.log_buffer + data.decode(errors="replace")).split("\n")
-        agent.log_buffer = chunks.pop()
-        agent.pending_log_event, events = _codex_activity_events(chunks, agent.pending_log_event)
+        chunks = (agent.activity_buffer + data.decode(errors="replace")).split("\n")
+        agent.activity_buffer = chunks.pop()
+        if agent.adapter_name == "codex":
+            agent.pending_log_event, codex_events = _codex_activity_events(chunks, agent.pending_log_event)
+            return codex_events
+
+        if agent.adapter_name == "claude-code":
+            parser = _claude_activity_events
+        elif agent.adapter_name == "copilot-cli":
+            parser = _copilot_activity_events
+        else:
+            return []
+        events: list[str] = []
+        for line in chunks:
+            try:
+                record = json.loads(line)
+            except (TypeError, ValueError):
+                continue
+            events.extend(parser(record))
         return events
 
     def _report_progress(self, running: list[RunningAgent]) -> None:
@@ -434,10 +522,10 @@ class Phase:
             observed_changes = _workspace_changes(agent.snapshot, snapshot)
             agent.snapshot = snapshot
 
-            log_stamp = _file_stamp(agent.log)
-            log_changed = log_stamp != agent.log_stamp
-            if log_changed:
-                agent.log_stamp = log_stamp
+            activity_stamp = _file_stamp(agent.activity_log)
+            activity_changed = activity_stamp != agent.activity_stamp
+            if activity_changed:
+                agent.activity_stamp = activity_stamp
                 agent.last_observed_at = now
                 printed_event = False
                 for event in self._read_activity_events(agent):
@@ -460,6 +548,29 @@ class Phase:
                 ) or (
                     agent.reported_sustained_output
                     and now - agent.last_output_report_at >= PROGRESS_STATUS_REPEAT_SECONDS
+                ):
+                    print(f"[{_ts()}] {agent.name}: agent output is still active")
+                    agent.reported_sustained_output = True
+                    agent.last_output_report_at = now
+
+            log_stamp = _file_stamp(agent.log)
+            log_changed = log_stamp != agent.log_stamp
+            if log_changed:
+                agent.log_stamp = log_stamp
+                agent.last_observed_at = now
+                if not activity_changed and not agent.reported_log_activity:
+                    print(f"[{_ts()}] {agent.name}: agent output is active")
+                    agent.reported_log_activity = True
+                    agent.last_output_report_at = now
+                elif not activity_changed and (
+                    (
+                        not agent.reported_sustained_output
+                        and now - agent.last_output_report_at >= PROGRESS_STATUS_AFTER_SECONDS
+                    )
+                    or (
+                        agent.reported_sustained_output
+                        and now - agent.last_output_report_at >= PROGRESS_STATUS_REPEAT_SECONDS
+                    )
                 ):
                     print(f"[{_ts()}] {agent.name}: agent output is still active")
                     agent.reported_sustained_output = True
@@ -734,6 +845,10 @@ class Phase:
         env["SPECULA_PHASE"] = self.key
         env["SPECULA_WORK_DIR"] = str(ws.work_dir(name))
         work_dir = ws.work_dir(name)
+        activity_sidecar = files["log"].with_suffix(".activity.jsonl")
+        with contextlib.suppress(FileNotFoundError):
+            activity_sidecar.unlink()
+        env["SPECULA_ACTIVITY_LOG"] = str(activity_sidecar)
         # Do not report launcher plumbing as agent work. The generic adapter
         # contract derives raw/usage data from the .log stem, so ignore those
         # files as well when they live in the workspace.
@@ -741,6 +856,7 @@ class Phase:
             files["prompt"],
             files["pid"],
             files["log"],
+            activity_sidecar,
             files["log"].with_suffix(".raw.json"),
             files["log"].with_suffix(".usage.json"),
         )
@@ -751,6 +867,8 @@ class Phase:
         snapshot = _workspace_snapshot(work_dir, ignored)
         started_at = time.monotonic()
         prelaunch_log_stamp = _file_stamp(files["log"])
+        activity_log = files["log"] if adapter.stem == "codex" else activity_sidecar
+        prelaunch_activity_stamp = _file_stamp(activity_log)
         proc = subprocess.Popen(
             [
                 str(adapter),
@@ -770,11 +888,13 @@ class Phase:
             proc=proc,
             work_dir=work_dir,
             log=files["log"],
+            activity_log=activity_log,
             ignored=ignored,
             snapshot=snapshot,
             reported_snapshot=snapshot,
             last_observed_at=started_at,
             log_stamp=prelaunch_log_stamp,
+            activity_stamp=prelaunch_activity_stamp,
             adapter_name=adapter.stem,
         )
 

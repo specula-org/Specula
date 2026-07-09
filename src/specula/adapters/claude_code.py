@@ -70,13 +70,21 @@ def _maybe_wrap_sandbox(cmd: list[str], work_dir: str) -> list[str]:
 
 
 def _parse_result(raw_text: str) -> dict[str, Any] | None:
-    """The claude result JSON, parsed once for both extractors below; None when
-    the output isn't a JSON object (crash text, spawn error, truncation)."""
+    """Find the Claude result in single-result JSON or a stream-json capture."""
     try:
         d = json.loads(raw_text)
     except Exception:
-        return None
-    return d if isinstance(d, dict) else None
+        d = None
+    if isinstance(d, dict):
+        return d
+    for line in reversed(raw_text.splitlines()):
+        try:
+            candidate = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(candidate, dict) and (candidate.get("type") == "result" or "result" in candidate):
+            return candidate
+    return None
 
 
 def _extract_log(d: dict[str, Any] | None, raw_text: str, log_file: str) -> None:
@@ -250,7 +258,11 @@ def main(argv: list[str]) -> int:
                 )
 
         # ── Build command ──
-        cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", "json"]
+        activity_log = os.environ.get("SPECULA_ACTIVITY_LOG", "")
+        output_format = "stream-json" if activity_log else "json"
+        cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", output_format]
+        if activity_log:
+            cmd += ["--verbose"]
         if effort and effort != "default":
             cmd += ["--effort", effort]
         if max_budget and max_budget != "0":
@@ -262,8 +274,9 @@ def main(argv: list[str]) -> int:
 
         # ── Run ──
         raw_json = _derived_path(log_file, ".raw.json")
+        capture_path = activity_log or raw_json
         try:
-            with open(prompt_input) as pin, open(raw_json, "w") as out:
+            with open(prompt_input) as pin, open(capture_path, "w") as out:
                 subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT)  # ignore rc
         except OSError as e:
             # Spawn failure (claude missing / not executable). Bash writes the
@@ -272,7 +285,7 @@ def main(argv: list[str]) -> int:
             # error text, .usage.json = parse_failed. (A louder exit-1 failure
             # might be preferable, but changing it is a separate, deliberate
             # decision — this port stays behavior-identical to the bash.)
-            with open(raw_json, "w") as out:
+            with open(capture_path, "w") as out:
                 out.write(f"claude-code adapter: failed to run claude: {e}\n")
 
         # errors="replace" is a deliberate deviation from the bash, which died on
@@ -280,7 +293,7 @@ def main(argv: list[str]) -> int:
         # empty .log, no .usage.json — and a rate-limit hit lost its exit-75 retry
         # signal). Degrade to U+FFFD + parse_failed on the normal exit-code path
         # instead (test_adapters.py::test_nonutf8_output_degrades_gracefully).
-        raw_text = open(raw_json, errors="replace").read()
+        raw_text = open(capture_path, errors="replace").read()
 
         # ── Detect rate limit → exit 75 (EX_TEMPFAIL) so callers can wait/retry ──
         rate_limited = "hit your limit" in raw_text
@@ -288,6 +301,13 @@ def main(argv: list[str]) -> int:
             print("claude-code adapter: rate limit hit", file=sys.stderr)
 
         result = _parse_result(raw_text)
+        if activity_log:
+            with open(raw_json, "w") as out:
+                if result is not None:
+                    json.dump(result, out)
+                    out.write("\n")
+                else:
+                    out.write(raw_text)
         _extract_log(result, raw_text, log_file)
         _extract_usage(result, _derived_path(log_file, ".usage.json"))
 

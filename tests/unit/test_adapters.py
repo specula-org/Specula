@@ -61,6 +61,7 @@ _VOLATILE = (
     "SPECULA_PHASE",
     "SPECULA_WORK_DIR",
     "SPECULA_STOP_GATE",
+    "SPECULA_ACTIVITY_LOG",
     "CODEX_HOME",
 )
 
@@ -245,6 +246,40 @@ class ClaudeCodeAdapter(AdapterCase):
         usage = base / "out.usage.json"
         self.assertEqual(log.read_text(), "done\n")
         self.assertEqual(json.loads(usage.read_text())["total_cost_usd"], 0.5)
+
+    def test_specula_activity_uses_stream_json(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [
+                                {"type": "tool_use", "name": "Read", "input": {"file_path": "kilo.c"}}
+                            ]
+                        },
+                    }
+                ),
+                json.dumps({"type": "result", **CLAUDE_JSON}),
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=fixture,
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        argv = r["argv"]
+        self.assertEqual(argv[argv.index("--output-format") + 1], "stream-json")
+        self.assertIn("--verbose", argv)
+        self.assertEqual(activity.read_text(), fixture)
+        self.assertEqual((base / "out.log").read_text(), "done\n")
+        self.assertEqual(json.loads((base / "out.raw.json").read_text())["type"], "result")
 
     def test_rate_limit_exits_75(self) -> None:
         base = self.sandbox()
@@ -490,6 +525,39 @@ class CopilotAdapter(AdapterCase):
         base = self.sandbox()
         self.invoke(self.base_flags(base))
         self.assertEqual((base / "out.log").read_text(), "copilot ran\n")
+
+    def test_specula_activity_uses_json_stream(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "assistant.message",
+                        "data": {"content": "Inspecting input handling."},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "tool.execution_start",
+                        "data": {"toolName": "bash", "arguments": {"command": "pwd"}},
+                    }
+                ),
+                json.dumps({"type": "assistant.message", "data": {"content": "done"}}),
+                json.dumps({"type": "result", "exitCode": 0}),
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertEqual(r["argv"][-4:], ["--output-format", "json", "--stream", "on"])
+        self.assertEqual(activity.read_text(), fixture)
+        self.assertEqual((base / "out.log").read_text(), "Inspecting input handling.\n\ndone\n")
 
     def test_log_required(self) -> None:
         base = self.sandbox()

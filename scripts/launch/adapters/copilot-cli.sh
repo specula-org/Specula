@@ -90,4 +90,14 @@ if [[ -n "$MAX_TURNS" && "$MAX_TURNS" != "0" ]]; then
   CMD+=(--max-autopilot-continues "$MAX_TURNS")
 fi
 
-"${CMD[@]}" > "$LOG_FILE" 2>&1
+ACTIVITY_LOG="${SPECULA_ACTIVITY_LOG:-}"
+if [[ -z "$ACTIVITY_LOG" ]]; then
+  "${CMD[@]}" > "$LOG_FILE" 2>&1
+  exit $?
+fi
+
+CMD+=(--output-format json --stream on)
+ADAPTER_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EVENT_HELPER="$ADAPTER_DIR/../../../src/specula/adapters/copilot_events.py"
+
+"${CMD[@]}" 2>&1 | python3 "$EVENT_HELPER" "$ACTIVITY_LOG" "$LOG_FILE"
