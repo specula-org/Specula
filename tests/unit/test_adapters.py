@@ -280,7 +280,7 @@ class ClaudeCodeAdapter(AdapterCase):
         self.assertEqual(argv[argv.index("--output-format") + 1], "stream-json")
         self.assertIn("--verbose", argv)
         self.assertEqual(activity.read_text(), fixture)
-        self.assertEqual((base / "out.log").read_text(), "done\n")
+        self.assertEqual((base / "out.log").read_text(), "reading kilo.c\ndone\n")
         self.assertEqual(json.loads((base / "out.raw.json").read_text())["type"], "result")
 
     def test_rate_limit_exits_75(self) -> None:
@@ -479,7 +479,7 @@ class CodexAdapter(AdapterCase):
             r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "--json", "the prompt"]
         )
         self.assertEqual(activity.read_text(), fixture)
-        self.assertEqual((base / "out.log").read_text(), "done\n")
+        self.assertEqual((base / "out.log").read_text(), "running pwd\ndone\n")
 
     def test_usage_json_tags_agent_codex(self) -> None:
         base = self.sandbox()
@@ -601,7 +601,10 @@ class CopilotAdapter(AdapterCase):
         self.assertEqual(r["returncode"], 0, r["stderr"])
         self.assertEqual(r["argv"][-4:], ["--output-format", "json", "--stream", "on"])
         self.assertEqual(activity.read_text(), fixture)
-        self.assertEqual((base / "out.log").read_text(), "Inspecting input handling.\n\ndone\n")
+        self.assertEqual(
+            (base / "out.log").read_text(),
+            "Inspecting input handling.\nrunning pwd\ndone\n",
+        )
 
     def test_log_required(self) -> None:
         base = self.sandbox()

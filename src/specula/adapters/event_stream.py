@@ -1,58 +1,50 @@
-"""Tee adapter JSONL into an activity sidecar and readable agent log."""
+"""Tee adapter JSONL into raw and incrementally readable activity logs."""
 
 from __future__ import annotations
 
-import json
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+import specula.activity as activity
 
-def _message(adapter: str, record: object) -> str:
-    if not isinstance(record, dict):
-        return ""
-    if adapter == "copilot" and record.get("type") == "assistant.message":
-        data = record.get("data")
-        content = data.get("content") if isinstance(data, dict) else None
-        return content.strip() if isinstance(content, str) else ""
-    if adapter == "codex" and record.get("type") == "item.completed":
-        item = record.get("item")
-        if isinstance(item, dict) and item.get("type") == "agent_message":
-            text = item.get("text")
-            return text.strip() if isinstance(text, str) else ""
-    return ""
+_ADAPTER_NAMES = {
+    "claude": "claude-code",
+    "claude-code": "claude-code",
+    "codex": "codex",
+    "copilot": "copilot-cli",
+    "copilot-cli": "copilot-cli",
+}
 
 
-def stream_events(adapter: str, activity_path: Path, log_path: Path) -> None:
-    fallback: list[str] = []
-    wrote_message = False
-    with activity_path.open("wb") as activity, log_path.open("w") as log:
-        for raw_line in sys.stdin.buffer:
-            activity.write(raw_line)
-            activity.flush()
+def stream_events(
+    adapter: str,
+    activity_path: Path,
+    log_path: Path,
+    source: Iterable[bytes] | None = None,
+) -> None:
+    """Persist raw JSONL and flush readable activity after every event."""
+    source = source if source is not None else sys.stdin.buffer
+    adapter_name = _ADAPTER_NAMES[adapter]
+    last_event = ""
+    with activity_path.open("wb") as raw_log, log_path.open("w") as log:
+        for raw_line in source:
+            raw_log.write(raw_line)
+            raw_log.flush()
             line = raw_line.decode(errors="replace")
-            if not wrote_message:
-                fallback.append(line)
-            try:
-                record = json.loads(line)
-            except (TypeError, ValueError):
-                continue
-            message = _message(adapter, record)
-            if not message:
-                continue
-            if wrote_message:
-                log.write("\n")
-            log.write(message + "\n")
-            log.flush()
-            fallback.clear()
-            wrote_message = True
-
-        if not wrote_message:
-            log.write("".join(fallback))
+            for event in activity.parse_events(adapter_name, [line], concise=False):
+                if not event or event == last_event:
+                    continue
+                log.write(event.rstrip("\n") + "\n")
+                log.flush()
+                last_event = event
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3 or argv[0] not in {"codex", "copilot"}:
-        print("usage: event_stream.py {codex|copilot} ACTIVITY_JSONL LOG_FILE", file=sys.stderr)
+    if len(argv) != 3 or argv[0] not in _ADAPTER_NAMES:
+        print("usage: event_stream.py {claude|codex|copilot} ACTIVITY_JSONL LOG_FILE", file=sys.stderr)
         return 2
     try:
         stream_events(argv[0], Path(argv[1]), Path(argv[2]))

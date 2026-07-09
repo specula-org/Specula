@@ -4,23 +4,26 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import subprocess
 import tempfile
 import time
 import unittest
+from collections.abc import Iterator
 from pathlib import Path
 
-import specula.progress as progress
+from specula import activity, progress
+from specula.adapters.event_stream import stream_events
 
 
 class TestProgressParsing(unittest.TestCase):
     def test_summary_removes_terminal_control_sequences(self) -> None:
         text = "\x1b]0;spoofed title\x07hello \x1b[31mred\x1b[0m\rworld"
-        self.assertEqual(progress._summary(text), "hello red world")
+        self.assertEqual(activity.summary(text), "hello red world")
 
     def test_tool_summary_removes_shell_wrapper_quotes(self) -> None:
         self.assertEqual(
-            progress._tool_summary("command_execution", {"command": "/bin/bash -lc 'rg needle src'"}),
+            activity.tool_summary("command_execution", {"command": "/bin/bash -lc 'rg needle src'"}),
             "running rg needle src",
         )
 
@@ -51,6 +54,29 @@ class TestProgressParsing(unittest.TestCase):
             with contextlib.redirect_stdout(output):
                 progress.report([agent], progress.ProgressConfig())
             self.assertIn("target: finished", output.getvalue())
+
+    def test_readable_log_is_flushed_before_stream_interruption(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = root / "agent.activity.jsonl"
+            log = root / "agent.log"
+            event = json.dumps(
+                {
+                    "type": "tool.execution_start",
+                    "data": {"toolName": "view", "arguments": {"path": "kilo.c"}},
+                }
+            ).encode()
+
+            def interrupted_stream() -> Iterator[bytes]:
+                self.assertTrue(log.is_file())
+                yield event
+                raise KeyboardInterrupt
+
+            with self.assertRaises(KeyboardInterrupt):
+                stream_events("copilot", raw, log, interrupted_stream())
+
+            self.assertEqual(raw.read_bytes(), event)
+            self.assertEqual(log.read_text(), "reading kilo.c\n")
 
 
 if __name__ == "__main__":

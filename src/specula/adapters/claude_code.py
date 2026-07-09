@@ -26,7 +26,12 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 from typing import Any
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from specula.adapters.event_stream import stream_events
 
 HELP = __doc__
 
@@ -276,14 +281,34 @@ def main(argv: list[str]) -> int:
         raw_json = _derived_path(log_file, ".raw.json")
         capture_path = activity_log or raw_json
         cli_rc = 127
+        proc: subprocess.Popen[bytes] | None = None
         try:
-            with open(prompt_input) as pin, open(capture_path, "w") as out:
-                cli_rc = subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT).returncode
+            if activity_log:
+                with open(prompt_input) as pin:
+                    proc = subprocess.Popen(cmd, stdin=pin, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    if proc.stdout is None:  # pragma: no cover - guaranteed by PIPE
+                        raise RuntimeError("claude stdout pipe was not created")
+                    stream_events("claude-code", Path(activity_log), Path(log_file), proc.stdout)
+                    cli_rc = proc.wait()
+            else:
+                with open(prompt_input) as pin, open(capture_path, "w") as out:
+                    cli_rc = subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT).returncode
         except OSError as e:
             # Keep producing the normal diagnostics, then report a conventional
             # command-not-found status to the phase runner.
+            if proc is not None and proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+            error = f"claude-code adapter: failed to run claude: {e}\n"
             with open(capture_path, "w") as out:
-                out.write(f"claude-code adapter: failed to run claude: {e}\n")
+                out.write(error)
+            if activity_log:
+                with open(log_file, "w") as out:
+                    out.write(error)
 
         # errors="replace" is a deliberate deviation from the bash, which died on
         # non-UTF-8 claude output (UnicodeDecodeError under set -e: non-zero exit,
@@ -305,7 +330,8 @@ def main(argv: list[str]) -> int:
                     out.write("\n")
                 else:
                     out.write(raw_text)
-        _extract_log(result, raw_text, log_file)
+        if not activity_log:
+            _extract_log(result, raw_text, log_file)
         _extract_usage(result, _derived_path(log_file, ".usage.json"))
 
         return 75 if rate_limited else cli_rc

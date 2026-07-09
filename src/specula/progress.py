@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import os
-import re
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-_ESCAPE_RE = re.compile(r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])")
-_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
-_SUMMARY_LIMIT = 180
+from specula import activity
 
 
 @dataclass(frozen=True)
@@ -98,16 +94,6 @@ def _elapsed(seconds: float) -> str:
     return f"{secs}s"
 
 
-def _summary(text: str, limit: int = _SUMMARY_LIMIT) -> str:
-    """One terminal-safe line from agent-controlled text."""
-    text = _ESCAPE_RE.sub("", text)
-    text = _CONTROL_RE.sub(" ", text)
-    summary = " ".join(text.split())
-    if len(summary) > limit:
-        return summary[: limit - 3].rstrip() + "..."
-    return summary
-
-
 def _changes(
     before: dict[Path, tuple[int, int]], after: dict[Path, tuple[int, int]]
 ) -> list[tuple[str, Path]]:
@@ -131,123 +117,6 @@ def _describe_changes(changes: list[tuple[str, Path]]) -> str:
     return f"changed {len(changes)} files: {paths}{more}"
 
 
-def _string_arg(arguments: object, *keys: str) -> str:
-    if not isinstance(arguments, dict):
-        return ""
-    for key in keys:
-        value = arguments.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
-    return ""
-
-
-def _tool_summary(name: str, arguments: object) -> str:
-    lowered = name.casefold()
-    command = _string_arg(arguments, "command", "cmd")
-    path = _string_arg(arguments, "file_path", "path")
-    pattern = _string_arg(arguments, "pattern", "query")
-    description = _string_arg(arguments, "description", "intent", "prompt")
-    if lowered in {"bash", "shell", "powershell", "command_execution"} and command:
-        command = command.removeprefix("/bin/bash -lc ").removeprefix("/bin/sh -lc ")
-        if len(command) >= 2 and command[0] == command[-1] and command[0] in {'"', "'"}:
-            command = command[1:-1]
-        return f"running {_summary(command, 160)}"
-    if lowered in {"read", "view", "read_file"} and path:
-        return f"reading {_summary(path)}"
-    if lowered in {"edit", "write", "write_file", "notebookedit"} and path:
-        return f"editing {_summary(path)}"
-    if lowered in {"grep", "glob", "search", "websearch", "web_search"} and pattern:
-        return f"searching for {_summary(pattern)}"
-    if lowered in {"task", "spawnagent", "spawn_agent"}:
-        detail = f": {_summary(description)}" if description else ""
-        return f"spawning subagent{detail}"
-    if lowered in {"taskoutput", "wait"}:
-        return "waiting for subagents"
-    detail = f": {_summary(description)}" if description else ""
-    return f"using {name}{detail}"
-
-
-def _claude_events(record: object) -> list[str]:
-    if not isinstance(record, dict) or record.get("type") != "assistant":
-        return []
-    message = record.get("message")
-    content = message.get("content") if isinstance(message, dict) else None
-    if not isinstance(content, list):
-        return []
-    events: list[str] = []
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        text = block.get("text")
-        name = block.get("name")
-        if block.get("type") == "text" and isinstance(text, str):
-            events.append(_summary(text))
-        elif block.get("type") == "tool_use" and isinstance(name, str):
-            events.append(_tool_summary(name, block.get("input")))
-    return events
-
-
-def _copilot_events(record: object) -> list[str]:
-    if not isinstance(record, dict):
-        return []
-    data = record.get("data")
-    if not isinstance(data, dict):
-        return []
-    content = data.get("content")
-    tool_name = data.get("toolName")
-    if record.get("type") == "assistant.message" and isinstance(content, str):
-        return [_summary(content)]
-    if record.get("type") == "tool.execution_start" and isinstance(tool_name, str):
-        if tool_name == "report_intent":
-            return []
-        return [_tool_summary(tool_name, data.get("arguments"))]
-    return []
-
-
-def _codex_events(record: object) -> list[str]:
-    if not isinstance(record, dict) or record.get("type") not in {"item.started", "item.completed"}:
-        return []
-    item = record.get("item")
-    if not isinstance(item, dict):
-        return []
-    item_type = item.get("type")
-    if record.get("type") == "item.completed" and item_type == "agent_message":
-        text = item.get("text")
-        return [_summary(text)] if isinstance(text, str) else []
-    if record.get("type") != "item.started" or not isinstance(item_type, str):
-        return []
-    if item_type == "command_execution":
-        return [_tool_summary(item_type, {"command": item.get("command")})]
-    if item_type in {"mcp_tool_call", "web_search"}:
-        name = item.get("tool") or item_type
-        return [_tool_summary(str(name), item.get("arguments"))]
-    return []
-
-
-def _parse_events(adapter_name: str, lines: list[str]) -> list[str]:
-    parsers = {
-        "claude-code": _claude_events,
-        "codex": _codex_events,
-        "copilot-cli": _copilot_events,
-    }
-    parser = parsers.get(adapter_name)
-    if parser is None:
-        return []
-    events: list[str] = []
-    for line in lines:
-        try:
-            record = json.loads(line)
-        except (TypeError, ValueError):
-            summary = _summary(line)
-            if summary and any(
-                term in summary.casefold() for term in ("error", "failed", "require", "invalid", "unknown")
-            ):
-                events.append(f"adapter error: {summary}")
-            continue
-        events.extend(parser(record))
-    return events
-
-
 def _read_events(agent: RunningAgent, finished: bool) -> list[str]:
     try:
         size = agent.activity_log.stat().st_size
@@ -269,7 +138,7 @@ def _read_events(agent: RunningAgent, finished: bool) -> list[str]:
     if finished and agent.activity_buffer:
         chunks.append(agent.activity_buffer)
         agent.activity_buffer = ""
-    return _parse_events(agent.adapter_name, chunks)
+    return activity.parse_events(agent.adapter_name, chunks)
 
 
 def _report_output_state(agent: RunningAgent, now: float, printed_event: bool, config: ProgressConfig) -> None:
