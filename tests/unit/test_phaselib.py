@@ -355,7 +355,7 @@ class TestArgErrors(PhaseCase):
 
 
 class TestProgressReporting(PhaseCase):
-    """The generic monitor observes workspaces, not any adapter's log format."""
+    """Portable workspace monitoring plus richer events where supported."""
 
     def setUp(self) -> None:
         super().setUp()
@@ -378,7 +378,7 @@ class TestProgressReporting(PhaseCase):
     def run_fake(self) -> tuple[int, str]:
         return self.run_phase(
             "code_analysis",
-            ["--agent=fake", self.artifact_flag(), NAME],
+            [f"--agent={self.adapter.stem}", self.artifact_flag(), NAME],
         )
 
     def test_reports_agent_created_workspace_files(self) -> None:
@@ -415,6 +415,24 @@ class TestProgressReporting(PhaseCase):
         self.assertEqual(rc, 0, out)
         self.assertIn(f"{NAME}: agent output is active", out)
         self.assertIn(f"{NAME}: agent output is still active", out)
+
+    def test_codex_log_events_are_shown_in_cli_output(self) -> None:
+        self.adapter = self.adapter.with_name("codex.sh")
+        self.write_adapter(
+            "printf '%s\\n' "
+            "'codex' "
+            "'I am reading kilo.c and tracing editor state.' "
+            "'exec' "
+            "'/bin/bash -lc \"rg editorRefreshScreen kilo.c\" in /tmp' "
+            "'collab: SpawnAgent' "
+            '> "$SPECULA_WORK_DIR/agent.log"\n'
+            "sleep 0.04\n"
+        )
+        rc, out = self.run_fake()
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"{NAME}: I am reading kilo.c and tracing editor state.", out)
+        self.assertIn(f"{NAME}: running rg editorRefreshScreen kilo.c", out)
+        self.assertIn(f"{NAME}: spawning subagent", out)
 
     def test_quiet_liveness_is_sparse_and_can_be_disabled(self) -> None:
         self.write_adapter("sleep 0.06\n")

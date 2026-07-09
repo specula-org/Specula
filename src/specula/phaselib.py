@@ -41,6 +41,9 @@ PROGRESS_STATUS_REPEAT_SECONDS = 300.0
 PROGRESS_QUIET_AFTER_SECONDS = 300.0
 PROGRESS_QUIET_REPEAT_SECONDS = 300.0
 
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_ACTIVITY_SUMMARY_LIMIT = 180
+
 # bash pathname expansion (`for d in .../*/`) orders by the locale collating
 # sequence; adopt the ambient locale so find_repo_dir picks the same repo the
 # bash launcher did (codepoint sort can order e.g. 'Backup-old' before 'braft'
@@ -136,6 +139,62 @@ def _describe_changes(changes: list[tuple[str, Path]]) -> str:
     return f"changed {len(changes)} files: {paths}{more}"
 
 
+def _activity_summary(text: str, limit: int = _ACTIVITY_SUMMARY_LIMIT) -> str:
+    """Single safe terminal line from an adapter-provided activity record."""
+    summary = " ".join(_ANSI_ESCAPE_RE.sub("", text).split())
+    if len(summary) > limit:
+        return summary[: limit - 3].rstrip() + "..."
+    return summary
+
+
+def _codex_command_summary(line: str) -> str:
+    """Remove Codex's shell wrapper and cwd suffix from an exec record."""
+    command = line
+    for prefix in ("/bin/bash -lc ", "/bin/sh -lc "):
+        if command.startswith(prefix):
+            command = command[len(prefix) :]
+            break
+    if " in " in command:
+        command = command.rsplit(" in ", 1)[0]
+    if len(command) >= 2 and command[0] == command[-1] and command[0] in {'"', "'"}:
+        command = command[1:-1]
+    return f"running {_activity_summary(command, 160)}"
+
+
+def _codex_activity_events(lines: list[str], pending: str | None) -> tuple[str | None, list[str]]:
+    """Normalize useful records from Codex's human-readable exec log."""
+    events: list[str] = []
+    collab_actions = {
+        "SpawnAgent": "spawning subagent",
+        "Wait": "waiting for subagents",
+        "CloseAgent": "closing subagent",
+        "ResumeAgent": "resuming subagent",
+        "SendInput": "sending input to subagent",
+    }
+    for raw_line in lines:
+        line = raw_line.strip()
+        if line in {"codex", "exec", "apply_patch"}:
+            pending = line
+            continue
+        if line.startswith("collab: "):
+            action = line.removeprefix("collab: ").strip()
+            events.append(collab_actions.get(action, f"subagent activity: {_activity_summary(action)}"))
+            pending = None
+            continue
+        if not line:
+            continue
+        if pending == "codex":
+            events.append(_activity_summary(line))
+            pending = None
+        elif pending == "exec":
+            events.append(_codex_command_summary(line))
+            pending = None
+        elif pending == "apply_patch":
+            events.append("applying file changes")
+            pending = None
+    return pending, events
+
+
 def _wc_l(path: Path) -> int:
     """Line count matching bash `wc -l < file` (counts newlines, NOT splitlines —
     they differ by 1 when the file has no trailing newline). Byte-oriented like
@@ -177,7 +236,7 @@ class AgentFiles(TypedDict):
 
 @dataclass
 class RunningAgent:
-    """State required to describe one adapter process without parsing its CLI."""
+    """State required to describe one running adapter process."""
 
     name: str
     proc: subprocess.Popen[bytes]
@@ -188,12 +247,18 @@ class RunningAgent:
     reported_snapshot: dict[Path, tuple[int, int]]
     last_observed_at: float
     log_stamp: tuple[int, int] | None
+    adapter_name: str
     last_change_report_at: float = 0.0
     last_status_report_at: float = 0.0
     last_quiet_report_at: float = 0.0
     last_output_report_at: float = 0.0
     reported_log_activity: bool = False
     reported_sustained_output: bool = False
+    log_offset: int = 0
+    log_buffer: str = ""
+    log_started: bool = False
+    pending_log_event: str | None = None
+    last_log_event: str = ""
 
 
 class Workspace:
@@ -327,13 +392,41 @@ class Phase:
             return f"  Monitor: tail -f {ws.run_dir}/*/.specula-output/{logname}"
         return legacy
 
+    def _read_activity_events(self, agent: RunningAgent) -> list[str]:
+        """Read and normalize newly appended structured-ish adapter output.
+
+        Codex currently exposes useful markers in its regular exec log. Other
+        adapters keep the generic monitor until they have an equally stable
+        event source. Any read or parse problem fails back to liveness output.
+        """
+        if agent.adapter_name != "codex":
+            return []
+        try:
+            size = agent.log.stat().st_size
+            if not agent.log_started or size < agent.log_offset:
+                agent.log_offset = 0
+                agent.log_buffer = ""
+                agent.pending_log_event = None
+                agent.log_started = True
+            with agent.log.open("rb") as stream:
+                stream.seek(agent.log_offset)
+                data = stream.read()
+            agent.log_offset += len(data)
+        except OSError:
+            return []
+        if not data:
+            return []
+
+        chunks = (agent.log_buffer + data.decode(errors="replace")).split("\n")
+        agent.log_buffer = chunks.pop()
+        agent.pending_log_event, events = _codex_activity_events(chunks, agent.pending_log_event)
+        return events
+
     def _report_progress(self, running: list[RunningAgent]) -> None:
         """Report agent-created artifacts and sparse liveness information.
 
-        The launcher deliberately does not parse agent logs here: adapters have
-        different log formats. Output files are a portable, user-meaningful
-        signal for every adapter, while log activity only proves that the child
-        is still doing something.
+        Output files are the portable signal for every adapter. Adapters with a
+        useful event source may additionally provide richer activity summaries.
         """
         now = time.monotonic()
         for agent in running:
@@ -346,7 +439,18 @@ class Phase:
             if log_changed:
                 agent.log_stamp = log_stamp
                 agent.last_observed_at = now
-                if not agent.reported_log_activity:
+                printed_event = False
+                for event in self._read_activity_events(agent):
+                    if not event or event == agent.last_log_event:
+                        continue
+                    print(f"[{_ts()}] {agent.name}: {event}")
+                    agent.last_log_event = event
+                    printed_event = True
+                if printed_event:
+                    agent.reported_log_activity = True
+                    agent.reported_sustained_output = False
+                    agent.last_output_report_at = now
+                elif not agent.reported_log_activity:
                     print(f"[{_ts()}] {agent.name}: agent output is active")
                     agent.reported_log_activity = True
                     agent.last_output_report_at = now
@@ -646,6 +750,7 @@ class Phase:
                 ignored.add(path.relative_to(work_dir))
         snapshot = _workspace_snapshot(work_dir, ignored)
         started_at = time.monotonic()
+        prelaunch_log_stamp = _file_stamp(files["log"])
         proc = subprocess.Popen(
             [
                 str(adapter),
@@ -669,7 +774,8 @@ class Phase:
             snapshot=snapshot,
             reported_snapshot=snapshot,
             last_observed_at=started_at,
-            log_stamp=_file_stamp(files["log"]),
+            log_stamp=prelaunch_log_stamp,
+            adapter_name=adapter.stem,
         )
 
 
