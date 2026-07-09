@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
 
@@ -29,6 +30,16 @@ SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
 # the launch_*.sh shims and the agent adapters stay under scripts/launch/
 LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
+
+# Progress is intentionally governed by a single on/off switch. These internal
+# timings keep a useful signal in the console without turning a long agent run
+# into a stream of heartbeats; tests patch them to exercise the monitor quickly.
+PROGRESS_POLL_SECONDS = 1.0
+PROGRESS_CHANGE_REPORT_SECONDS = 5.0
+PROGRESS_STATUS_AFTER_SECONDS = 60.0
+PROGRESS_STATUS_REPEAT_SECONDS = 300.0
+PROGRESS_QUIET_AFTER_SECONDS = 300.0
+PROGRESS_QUIET_REPEAT_SECONDS = 300.0
 
 # bash pathname expansion (`for d in .../*/`) orders by the locale collating
 # sequence; adopt the ambient locale so find_repo_dir picks the same repo the
@@ -46,6 +57,83 @@ def _ts() -> str:
 def _trim(s: str) -> str:
     """Mirror bash `echo "$x" | xargs` word-trim (leading/trailing whitespace)."""
     return s.strip()
+
+
+def _progress_enabled() -> bool:
+    """Progress is on by default; ``SPECULA_PROGRESS=off`` suppresses it."""
+    return os.environ.get("SPECULA_PROGRESS", "").lower() not in {"0", "false", "no", "off"}
+
+
+def _elapsed(seconds: float) -> str:
+    """Human-sized elapsed duration for sparse liveness messages."""
+    total = max(0, int(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h{minutes:02}m"
+    if minutes:
+        return f"{minutes}m{secs:02}s"
+    return f"{secs}s"
+
+
+def _file_stamp(path: Path) -> tuple[int, int] | None:
+    """mtime + size, or None when a concurrently-changing file disappeared."""
+    with contextlib.suppress(OSError):
+        stat = path.stat()
+        if path.is_file():
+            return stat.st_mtime_ns, stat.st_size
+    return None
+
+
+def _workspace_snapshot(work_dir: Path, ignored: set[Path]) -> dict[Path, tuple[int, int]]:
+    """Observable deliverables in an agent workspace, keyed by relative path.
+
+    Prompt/pid/log files are launcher plumbing, and hidden paths include the
+    stop-gate state. They are deliberately excluded so the monitor describes
+    artifacts the agent is producing rather than its own bookkeeping.
+    """
+    snapshot: dict[Path, tuple[int, int]] = {}
+    if not work_dir.is_dir():
+        return snapshot
+    try:
+        candidates = work_dir.rglob("*")
+        for path in candidates:
+            with contextlib.suppress(OSError):
+                rel = path.relative_to(work_dir)
+                if rel in ignored or any(part.startswith(".") for part in rel.parts):
+                    continue
+                stamp = _file_stamp(path)
+                if stamp is not None:
+                    snapshot[rel] = stamp
+    except OSError:
+        # A concurrently removed directory must not interrupt the agent run.
+        pass
+    return snapshot
+
+
+def _workspace_changes(
+    before: dict[Path, tuple[int, int]], after: dict[Path, tuple[int, int]]
+) -> list[tuple[str, Path]]:
+    """Return the meaningful worktree deltas in a deterministic order."""
+    changes: list[tuple[str, Path]] = []
+    for path in sorted(after, key=lambda p: p.as_posix()):
+        if path not in before:
+            changes.append(("created", path))
+        elif before[path] != after[path]:
+            changes.append(("updated", path))
+    for path in sorted(before.keys() - after.keys(), key=lambda p: p.as_posix()):
+        changes.append(("removed", path))
+    return changes
+
+
+def _describe_changes(changes: list[tuple[str, Path]]) -> str:
+    """One concise activity line, even when an agent touches many files."""
+    if len(changes) == 1:
+        action, path = changes[0]
+        return f"{action} {path.as_posix()}"
+    paths = ", ".join(path.as_posix() for _, path in changes[:3])
+    more = f" (+{len(changes) - 3} more)" if len(changes) > 3 else ""
+    return f"changed {len(changes)} files: {paths}{more}"
 
 
 def _wc_l(path: Path) -> int:
@@ -85,6 +173,27 @@ class AgentFiles(TypedDict):
     pid: Path
     prompt: Path
     mkdirs: list[Path]
+
+
+@dataclass
+class RunningAgent:
+    """State required to describe one adapter process without parsing its CLI."""
+
+    name: str
+    proc: subprocess.Popen[bytes]
+    work_dir: Path
+    log: Path
+    ignored: set[Path]
+    snapshot: dict[Path, tuple[int, int]]
+    reported_snapshot: dict[Path, tuple[int, int]]
+    last_observed_at: float
+    log_stamp: tuple[int, int] | None
+    last_change_report_at: float = 0.0
+    last_status_report_at: float = 0.0
+    last_quiet_report_at: float = 0.0
+    last_output_report_at: float = 0.0
+    reported_log_activity: bool = False
+    reported_sustained_output: bool = False
 
 
 class Workspace:
@@ -218,6 +327,87 @@ class Phase:
             return f"  Monitor: tail -f {ws.run_dir}/*/.specula-output/{logname}"
         return legacy
 
+    def _report_progress(self, running: list[RunningAgent]) -> None:
+        """Report agent-created artifacts and sparse liveness information.
+
+        The launcher deliberately does not parse agent logs here: adapters have
+        different log formats. Output files are a portable, user-meaningful
+        signal for every adapter, while log activity only proves that the child
+        is still doing something.
+        """
+        now = time.monotonic()
+        for agent in running:
+            snapshot = _workspace_snapshot(agent.work_dir, agent.ignored)
+            observed_changes = _workspace_changes(agent.snapshot, snapshot)
+            agent.snapshot = snapshot
+
+            log_stamp = _file_stamp(agent.log)
+            log_changed = log_stamp != agent.log_stamp
+            if log_changed:
+                agent.log_stamp = log_stamp
+                agent.last_observed_at = now
+                if not agent.reported_log_activity:
+                    print(f"[{_ts()}] {agent.name}: agent output is active")
+                    agent.reported_log_activity = True
+                    agent.last_output_report_at = now
+                elif (
+                    not agent.reported_sustained_output
+                    and now - agent.last_output_report_at >= PROGRESS_STATUS_AFTER_SECONDS
+                ) or (
+                    agent.reported_sustained_output
+                    and now - agent.last_output_report_at >= PROGRESS_STATUS_REPEAT_SECONDS
+                ):
+                    print(f"[{_ts()}] {agent.name}: agent output is still active")
+                    agent.reported_sustained_output = True
+                    agent.last_output_report_at = now
+
+            if observed_changes:
+                agent.last_observed_at = now
+
+            # Compare against the last snapshot we actually described. This
+            # retains changes observed during the reporting cooldown instead
+            # of silently dropping them. A completed child flushes immediately.
+            reportable_changes = _workspace_changes(agent.reported_snapshot, snapshot)
+            if reportable_changes:
+                if (
+                    not agent.last_change_report_at
+                    or now - agent.last_change_report_at >= PROGRESS_CHANGE_REPORT_SECONDS
+                    or agent.proc.poll() is not None
+                ):
+                    print(f"[{_ts()}] {agent.name}: {_describe_changes(reportable_changes)}")
+                    agent.reported_snapshot = snapshot
+                    agent.last_change_report_at = now
+
+            quiet_for = now - agent.last_observed_at
+            if quiet_for >= PROGRESS_QUIET_AFTER_SECONDS:
+                if (
+                    not agent.last_quiet_report_at
+                    or now - agent.last_quiet_report_at >= PROGRESS_QUIET_REPEAT_SECONDS
+                ):
+                    print(f"[{_ts()}] {agent.name}: quiet for {_elapsed(quiet_for)}; process is still alive")
+                    agent.last_quiet_report_at = now
+            elif quiet_for >= PROGRESS_STATUS_AFTER_SECONDS:
+                if (
+                    not agent.last_status_report_at
+                    or now - agent.last_status_report_at >= PROGRESS_STATUS_REPEAT_SECONDS
+                ):
+                    print(
+                        f"[{_ts()}] {agent.name}: no observable activity for "
+                        f"{_elapsed(quiet_for)}; process is still alive"
+                    )
+                    agent.last_status_report_at = now
+
+    def _reap_agents(self, running: list[RunningAgent], progress: bool) -> list[RunningAgent]:
+        """Drop completed children, retaining the exit status in the console."""
+        live: list[RunningAgent] = []
+        for agent in running:
+            rc = agent.proc.poll()
+            if rc is None:
+                live.append(agent)
+            elif progress:
+                print(f"[{_ts()}] {agent.name}: completed (exit {rc})")
+        return live
+
     # ── shared prompt-extra injection (identical across phases) ──
     def _read_prompt_extra(self, ws: Workspace, name: str) -> str:
         """The target's .prompt-extra.md as an appendable block (with its section
@@ -331,15 +521,18 @@ class Phase:
         if alt is not None:
             return alt
 
-        running: list[subprocess.Popen[bytes]] = []
+        progress = _progress_enabled()
+        running: list[RunningAgent] = []
         for target in targets:
             name = self.target_name(target)
             prompt = self.build_prompt(ws, target)
             # Throttle.
             while len(running) >= max_parallel:
-                running = [p for p in running if p.poll() is None]
+                if progress:
+                    self._report_progress(running)
+                running = self._reap_agents(running, progress)
                 if len(running) >= max_parallel:
-                    time.sleep(5)
+                    time.sleep(PROGRESS_POLL_SECONDS)
             proc = self._launch(ws, name, prompt, dry_run, max_turns, claude_alias, adapter)
             if not dry_run and proc is not None:
                 running.append(proc)
@@ -351,8 +544,12 @@ class Phase:
             if monitor is not None:
                 print(monitor)
             print()
-            for p in running:
-                p.wait()
+            while running:
+                if progress:
+                    self._report_progress(running)
+                running = self._reap_agents(running, progress)
+                if running:
+                    time.sleep(PROGRESS_POLL_SECONDS)
             print(f"[{_ts()}] All agents completed.")
 
         self.summarize(ws, names)
@@ -412,7 +609,7 @@ class Phase:
         max_turns: str,
         claude_alias: str,
         adapter: Path,
-    ) -> subprocess.Popen[bytes] | None:
+    ) -> RunningAgent | None:
         files = self.agent_files(ws, name)
         for d in files["mkdirs"]:
             d.mkdir(parents=True, exist_ok=True)
@@ -432,6 +629,23 @@ class Phase:
         env = os.environ.copy()
         env["SPECULA_PHASE"] = self.key
         env["SPECULA_WORK_DIR"] = str(ws.work_dir(name))
+        work_dir = ws.work_dir(name)
+        # Do not report launcher plumbing as agent work. The generic adapter
+        # contract derives raw/usage data from the .log stem, so ignore those
+        # files as well when they live in the workspace.
+        runtime_files = (
+            files["prompt"],
+            files["pid"],
+            files["log"],
+            files["log"].with_suffix(".raw.json"),
+            files["log"].with_suffix(".usage.json"),
+        )
+        ignored: set[Path] = set()
+        for path in runtime_files:
+            with contextlib.suppress(ValueError):
+                ignored.add(path.relative_to(work_dir))
+        snapshot = _workspace_snapshot(work_dir, ignored)
+        started_at = time.monotonic()
         proc = subprocess.Popen(
             [
                 str(adapter),
@@ -446,7 +660,17 @@ class Phase:
         )
         files["pid"].write_text(f"{proc.pid}\n")
         print(f"  PID={proc.pid}  Log: {files['log']}")
-        return proc
+        return RunningAgent(
+            name=name,
+            proc=proc,
+            work_dir=work_dir,
+            log=files["log"],
+            ignored=ignored,
+            snapshot=snapshot,
+            reported_snapshot=snapshot,
+            last_observed_at=started_at,
+            log_stamp=_file_stamp(files["log"]),
+        )
 
 
 def run_agent_blocking(

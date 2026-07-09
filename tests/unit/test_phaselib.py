@@ -148,7 +148,13 @@ class PhaseCase(unittest.TestCase):
         self.run_dir = self.tmp()  # SPECULA_RUN_DIR: every output lands here
         self.patch_attr(phaselib, "SPECULA_ROOT", self.root)
         # Env the driver reads; restore so one test can't leak into the next.
-        for var in ("SPECULA_RUN_DIR", "SPECULA_PHASE", "SPECULA_WORK_DIR", "CLAUDE_ALIAS"):
+        for var in (
+            "SPECULA_RUN_DIR",
+            "SPECULA_PHASE",
+            "SPECULA_WORK_DIR",
+            "SPECULA_PROGRESS",
+            "CLAUDE_ALIAS",
+        ):
             self.set_env(var, str(self.run_dir) if var == "SPECULA_RUN_DIR" else None)
 
     def tmp(self) -> Path:
@@ -346,6 +352,83 @@ class TestArgErrors(PhaseCase):
                 self.assertEqual(rc, 0)
                 self.assertIn("Usage:", out)
                 self.assertIn(f"launch_{spec['key']}.sh", out)
+
+
+class TestProgressReporting(PhaseCase):
+    """The generic monitor observes workspaces, not any adapter's log format."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        adapters = self.tmp() / "adapters"
+        adapters.mkdir()
+        self.patch_attr(phaselib, "LAUNCH_DIR", adapters.parent)
+        self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
+        self.patch_attr(phaselib, "PROGRESS_POLL_SECONDS", 0.005)
+        self.patch_attr(phaselib, "PROGRESS_CHANGE_REPORT_SECONDS", 0.0)
+        self.patch_attr(phaselib, "PROGRESS_STATUS_AFTER_SECONDS", 0.01)
+        self.patch_attr(phaselib, "PROGRESS_STATUS_REPEAT_SECONDS", 0.01)
+        self.patch_attr(phaselib, "PROGRESS_QUIET_AFTER_SECONDS", 0.025)
+        self.patch_attr(phaselib, "PROGRESS_QUIET_REPEAT_SECONDS", 0.01)
+        self.adapter = adapters / "fake.sh"
+
+    def write_adapter(self, body: str) -> None:
+        self.adapter.write_text("#!/usr/bin/env sh\nset -eu\n" + body)
+        self.adapter.chmod(0o755)
+
+    def run_fake(self) -> tuple[int, str]:
+        return self.run_phase(
+            "code_analysis",
+            ["--agent=fake", self.artifact_flag(), NAME],
+        )
+
+    def test_reports_agent_created_workspace_files(self) -> None:
+        self.write_adapter(
+            'printf "draft\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            "sleep 0.04\n"
+        )
+        rc, out = self.run_fake()
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"{NAME}: created modeling-brief.md", out)
+        self.assertIn(f"{NAME}: completed (exit 0)", out)
+
+    def test_changes_during_cooldown_are_flushed_on_completion(self) -> None:
+        self.patch_attr(phaselib, "PROGRESS_CHANGE_REPORT_SECONDS", 10.0)
+        self.write_adapter(
+            'printf "first\\n" > "$SPECULA_WORK_DIR/first.md"\n'
+            "sleep 0.03\n"
+            'printf "second\\n" > "$SPECULA_WORK_DIR/second.md"\n'
+            "sleep 0.03\n"
+        )
+        rc, out = self.run_fake()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("first.md", out)
+        self.assertIn("second.md", out)
+
+    def test_sustained_agent_output_gets_sparse_status(self) -> None:
+        self.write_adapter(
+            'printf "starting\\n" > "$SPECULA_WORK_DIR/agent.log"\n'
+            "sleep 0.02\n"
+            'printf "working\\n" >> "$SPECULA_WORK_DIR/agent.log"\n'
+            "sleep 0.02\n"
+        )
+        rc, out = self.run_fake()
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"{NAME}: agent output is active", out)
+        self.assertIn(f"{NAME}: agent output is still active", out)
+
+    def test_quiet_liveness_is_sparse_and_can_be_disabled(self) -> None:
+        self.write_adapter("sleep 0.06\n")
+        rc, out = self.run_fake()
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"{NAME}: no observable activity", out)
+        self.assertIn(f"{NAME}: quiet for", out)
+
+        self.set_env("SPECULA_PROGRESS", "off")
+        rc, out = self.run_fake()
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn(f"{NAME}: no observable activity", out)
+        self.assertNotIn(f"{NAME}: quiet for", out)
+        self.assertNotIn(f"{NAME}: completed (exit", out)
 
 
 class TestSummarize(PhaseCase):
