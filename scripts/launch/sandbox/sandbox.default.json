@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "write": {
+    "allow": ["${WORKSPACE}", "${TMPDIR}", "/tmp"],
+    "deny": []
+  },
+  "read": {
+    "deny": [],
+    "allow": []
+  },
+  "network": {
+    "mode": "open",
+    "allow": [],
+    "deny": []
+  }
+}

@@ -195,10 +195,21 @@ run_codex() {
   local marker_file
   marker_file="$(mktemp)"
 
-  codex exec \
-    --dangerously-bypass-approvals-and-sandbox \
-    "$PROMPT" \
-    > "$log_file" 2>&1 || true
+  # ── Optional outer srt sandbox (M1.3) ──
+  # Opt-in via SPECULA_SANDBOX=on; additive — off/unset leaves the codex argv
+  # byte-for-byte. One outer layer wraps codex and every descendant (TLC/MCP/
+  # build); the inner --dangerously-bypass-approvals-and-sandbox stays (YOLO,
+  # no nested second sandbox). Backend path repo-relative, overridable.
+  local -a cmd=()
+  if [[ "${SPECULA_SANDBOX:-}" == "on" ]]; then
+    local adapter_dir backend
+    adapter_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    backend="${SPECULA_SANDBOX_BACKEND:-$adapter_dir/../sandbox/backend.mjs}"
+    cmd+=(node "$backend" --workspace "${SPECULA_WORK_DIR:-$PWD}" --)
+  fi
+  cmd+=(codex exec --dangerously-bypass-approvals-and-sandbox "$PROMPT")
+
+  "${cmd[@]}" > "$log_file" 2>&1 || true
 
   write_usage_file "$log_file" "$marker_file"
   rm -f "$marker_file"

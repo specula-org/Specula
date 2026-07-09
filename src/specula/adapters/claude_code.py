@@ -41,6 +41,34 @@ def _derived_path(log_file: str, suffix: str) -> str:
     return stem + suffix
 
 
+def _maybe_wrap_sandbox(cmd: list[str], work_dir: str) -> list[str]:
+    """Optionally wrap the agent command in the outer srt sandbox (M1.3).
+
+    Opt-in via ``SPECULA_SANDBOX=on``; additive — when off/unset the command is
+    returned byte-for-byte (legacy). One outer srt layer wraps claude and every
+    descendant it spawns (TLC / MCP / build); the inner
+    ``--dangerously-skip-permissions`` stays, so the agent runs YOLO with no
+    nested second sandbox. Backend path is repo-relative but overridable via
+    ``SPECULA_SANDBOX_BACKEND`` (e.g. an installed layout).
+    """
+    if os.environ.get("SPECULA_SANDBOX", "").lower() != "on":
+        return cmd
+    backend = os.environ.get("SPECULA_SANDBOX_BACKEND") or os.path.normpath(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..",
+            "..",
+            "..",
+            "scripts",
+            "launch",
+            "sandbox",
+            "backend.mjs",
+        )
+    )
+    workspace = work_dir or os.getcwd()
+    return ["node", backend, "--workspace", workspace, "--", *cmd]
+
+
 def _parse_result(raw_text: str) -> dict[str, Any] | None:
     """The claude result JSON, parsed once for both extractors below; None when
     the output isn't a JSON object (crash text, spawn error, truncation)."""
@@ -230,6 +258,7 @@ def main(argv: list[str]) -> int:
         if model:
             cmd += ["--model", model]
         cmd += settings_args
+        cmd = _maybe_wrap_sandbox(cmd, work_dir)
 
         # ── Run ──
         raw_json = _derived_path(log_file, ".raw.json")

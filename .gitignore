@@ -134,8 +134,6 @@ docs/pipeline-cost-time.md
 experiments/
 # RQ2 baseline target lists: machine-specific paths; libspdm one is confidential
 scripts/exp/ablation/targets_rq2*.txt
-# §6.5 model-sensitivity "answer-mask" sandbox scaffolding
-scripts/launch/sandbox/
 # Generated output / caches
 .specula-output/
 # Per-run isolated workspaces (launch_pipeline.sh --isolate); experiment
