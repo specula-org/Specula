@@ -17,6 +17,8 @@
 #   --prompt-file file.md  Read prompt from file (mutually exclusive with --prompt)
 #   --max-turns N          Mapped to --max-autopilot-continues (0=unlimited, omits flag)
 #   --model MODEL          AI model to use (default: $COPILOT_MODEL or Copilot CLI default)
+#   --claude-alias NAME    Accepted for adapter compatibility; ignored
+#   --effort LEVEL         Accepted for adapter compatibility; ignored
 #   --log output.log       Log file path (required)
 #   --background           Run in background, print PID to stdout (default: foreground)
 #   --help                 Show this help
@@ -36,6 +38,8 @@ for arg in "$@"; do
     --prompt-file=*) PROMPT_FILE="${arg#*=}" ;;
     --max-turns=*)   MAX_TURNS="${arg#*=}" ;;
     --model=*)       MODEL="${arg#*=}" ;;
+    --claude-alias=*) : ;;
+    --effort=*)      : ;;
     --log=*)         LOG_FILE="${arg#*=}" ;;
     --background)    BACKGROUND=true ;;
     --help|-h)

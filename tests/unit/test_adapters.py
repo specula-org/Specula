@@ -521,6 +521,12 @@ class CopilotAdapter(AdapterCase):
         r = self.invoke(self.base_flags(base) + ["--max-turns=0"])
         self.assertNotIn("--max-autopilot-continues", r["argv"])
 
+    def test_alias_and_effort_accepted_but_ignored(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(self.base_flags(base) + ["--claude-alias=claude", "--effort=max"])
+        self.assertEqual(r["returncode"], 0)
+        self.assertEqual(r["argv"], ["-p", "the prompt", "--allow-all"])
+
     def test_output_redirected_to_log(self) -> None:
         base = self.sandbox()
         self.invoke(self.base_flags(base))
