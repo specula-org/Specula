@@ -102,6 +102,6 @@ fi
 
 CMD+=(--output-format json --stream on)
 ADAPTER_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EVENT_HELPER="$ADAPTER_DIR/../../../src/specula/adapters/copilot_events.py"
+EVENT_HELPER="$ADAPTER_DIR/../../../src/specula/adapters/event_stream.py"
 
-"${CMD[@]}" 2>&1 | python3 "$EVENT_HELPER" "$ACTIVITY_LOG" "$LOG_FILE"
+"${CMD[@]}" 2>&1 | python3 "$EVENT_HELPER" copilot "$ACTIVITY_LOG" "$LOG_FILE"

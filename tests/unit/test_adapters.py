@@ -63,6 +63,7 @@ _VOLATILE = (
     "SPECULA_STOP_GATE",
     "SPECULA_ACTIVITY_LOG",
     "CODEX_HOME",
+    "ADAPTER_EXIT_CODE",
 )
 
 
@@ -109,6 +110,7 @@ class AdapterCase(unittest.TestCase):
                 'cat > "${ADAPTER_STDIN_FILE:-/dev/null}"',
             ]
         lines.append(f"cat {json.dumps(str(fixture))}")
+        lines.append('exit "${ADAPTER_EXIT_CODE:-0}"')
         stub = bindir / name
         stub.write_text("\n".join(lines) + "\n")
         stub.chmod(stub.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
@@ -292,6 +294,11 @@ class ClaudeCodeAdapter(AdapterCase):
         )
         self.assertEqual(r["returncode"], 75)
 
+    def test_cli_failure_is_propagated(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(self.base_flags(base), env_extra={"ADAPTER_EXIT_CODE": "9"})
+        self.assertEqual(r["returncode"], 9)
+
     def test_nonutf8_output_degrades_gracefully(self) -> None:
         # deliberate deviation from the bash (which died on non-UTF-8 output):
         # decode with errors="replace" -> exit 0, .usage.json = parse_failed.
@@ -306,14 +313,12 @@ class ClaudeCodeAdapter(AdapterCase):
         self.assertEqual(r["returncode"], 0)
         self.assertEqual(json.loads((base / "out.usage.json").read_text()), {"error": "parse_failed"})
 
-    def test_missing_claude_still_exits_zero(self) -> None:
-        # bash wrote the shell error into RAW_JSON and carried on; the port mirrors
-        # that: spawn failure -> exit 0, .log holds the error, .usage.json=parse_failed.
+    def test_missing_claude_exits_command_not_found(self) -> None:
         base = self.sandbox()
         r = self.run_adapter(
             self.CMD, self.base_flags(base), fake_name="claude", fixture_text="", with_fake=False, record_extra=True
         )
-        self.assertEqual(r["returncode"], 0)
+        self.assertEqual(r["returncode"], 127)
         self.assertEqual(json.loads((base / "out.usage.json").read_text()), {"error": "parse_failed"})
 
     def test_prompt_xor_prompt_file(self) -> None:
@@ -442,6 +447,39 @@ class CodexAdapter(AdapterCase):
         base = self.sandbox()
         self.invoke(self.base_flags(base))
         self.assertEqual((base / "out.log").read_text(), "codex ran\n")
+
+    def test_specula_activity_uses_json_stream(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.started",
+                        "item": {"type": "command_execution", "command": "/bin/bash -lc pwd"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {"type": "agent_message", "text": "done"},
+                    }
+                ),
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertEqual(
+            r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "--json", "the prompt"]
+        )
+        self.assertEqual(activity.read_text(), fixture)
+        self.assertEqual((base / "out.log").read_text(), "done\n")
 
     def test_usage_json_tags_agent_codex(self) -> None:
         base = self.sandbox()

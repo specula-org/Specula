@@ -31,9 +31,12 @@ import io
 import json
 import os
 import shlex
+import signal
+import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -42,6 +45,7 @@ if str(SRC) not in sys.path:  # test the tree this file lives in, installed or n
     sys.path.insert(0, str(SRC))
 
 from specula import phaselib  # noqa: E402
+from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
 
 NAME = "footest"
 
@@ -348,6 +352,15 @@ class TestArgErrors(PhaseCase):
         self.assertEqual(rc, 1)
         self.assertIn("Invalid --max-parallel", out)
 
+    def test_nonpositive_max_parallel(self) -> None:
+        for value in ("0", "-1"):
+            with self.subTest(value=value):
+                rc, out = self.run_phase(
+                    "code_analysis", [f"--max-parallel={value}", self.artifact_flag(), NAME]
+                )
+                self.assertEqual(rc, 1)
+                self.assertIn("expected an integer >= 1", out)
+
     def test_help_prints_usage(self) -> None:
         for spec in PHASES:
             with self.subTest(phase=spec["key"]):
@@ -366,12 +379,15 @@ class TestProgressReporting(PhaseCase):
         adapters.mkdir()
         self.patch_attr(phaselib, "LAUNCH_DIR", adapters.parent)
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
-        self.patch_attr(phaselib, "PROGRESS_POLL_SECONDS", 0.005)
-        self.patch_attr(phaselib, "PROGRESS_CHANGE_REPORT_SECONDS", 0.0)
-        self.patch_attr(phaselib, "PROGRESS_STATUS_AFTER_SECONDS", 0.01)
-        self.patch_attr(phaselib, "PROGRESS_STATUS_REPEAT_SECONDS", 0.01)
-        self.patch_attr(phaselib, "PROGRESS_QUIET_AFTER_SECONDS", 0.025)
-        self.patch_attr(phaselib, "PROGRESS_QUIET_REPEAT_SECONDS", 0.01)
+        self.config = ProgressConfig(
+            poll_seconds=0.005,
+            change_report_seconds=0.0,
+            status_after_seconds=0.01,
+            status_repeat_seconds=0.01,
+            quiet_after_seconds=0.025,
+            quiet_repeat_seconds=0.01,
+        )
+        self.patch_attr(phaselib.Phase, "progress_config", self.config)
         self.adapter = adapters / "fake.sh"
 
     def write_adapter(self, body: str) -> None:
@@ -395,7 +411,7 @@ class TestProgressReporting(PhaseCase):
         self.assertIn(f"{NAME}: completed (exit 0)", out)
 
     def test_changes_during_cooldown_are_flushed_on_completion(self) -> None:
-        self.patch_attr(phaselib, "PROGRESS_CHANGE_REPORT_SECONDS", 10.0)
+        self.patch_attr(phaselib.Phase, "progress_config", replace(self.config, change_report_seconds=10.0))
         self.write_adapter(
             'printf "first\\n" > "$SPECULA_WORK_DIR/first.md"\n'
             "sleep 0.03\n"
@@ -419,23 +435,34 @@ class TestProgressReporting(PhaseCase):
         self.assertIn(f"{NAME}: agent output is active", out)
         self.assertIn(f"{NAME}: agent output is still active", out)
 
-    def test_codex_log_events_are_shown_in_cli_output(self) -> None:
+    def test_codex_stream_events_are_shown_in_cli_output(self) -> None:
         self.adapter = self.adapter.with_name("codex.sh")
+        events = [
+            json.dumps(
+                {
+                    "type": "item.started",
+                    "item": {
+                        "type": "command_execution",
+                        "command": "/bin/bash -lc rg editorRefreshScreen kilo.c",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "I am tracing editor state."},
+                }
+            ),
+        ]
         self.write_adapter(
-            "printf '%s\\n' "
-            "'codex' "
-            "'I am reading kilo.c and tracing editor state.' "
-            "'exec' "
-            "'/bin/bash -lc \"rg editorRefreshScreen kilo.c\" in /tmp' "
-            "'collab: SpawnAgent' "
-            '> "$SPECULA_WORK_DIR/agent.log"\n'
+            f"printf '%s\\n' {' '.join(shlex.quote(event) for event in events)} "
+            '> "$SPECULA_ACTIVITY_LOG"\n'
             "sleep 0.04\n"
         )
         rc, out = self.run_fake()
         self.assertEqual(rc, 0, out)
-        self.assertIn(f"{NAME}: I am reading kilo.c and tracing editor state.", out)
         self.assertIn(f"{NAME}: running rg editorRefreshScreen kilo.c", out)
-        self.assertIn(f"{NAME}: spawning subagent", out)
+        self.assertIn(f"{NAME}: I am tracing editor state.", out)
 
     def test_claude_stream_events_are_shown_in_cli_output(self) -> None:
         self.adapter = self.adapter.with_name("claude-code.sh")
@@ -487,8 +514,9 @@ class TestProgressReporting(PhaseCase):
             "exit 1\n"
         )
         rc, out = self.run_fake()
-        self.assertEqual(rc, 0, out)
+        self.assertEqual(rc, 1, out)
         self.assertIn(f"{NAME}: adapter error: BYOK providers require an explicit model.", out)
+        self.assertIn(f"FAILED  {NAME}: adapter exited 1", out)
 
     def test_quiet_liveness_is_sparse_and_can_be_disabled(self) -> None:
         self.write_adapter("sleep 0.06\n")
@@ -503,6 +531,38 @@ class TestProgressReporting(PhaseCase):
         self.assertNotIn(f"{NAME}: no observable activity", out)
         self.assertNotIn(f"{NAME}: quiet for", out)
         self.assertNotIn(f"{NAME}: completed (exit", out)
+
+    def test_interrupt_cleanup_terminates_agent_process_group(self) -> None:
+        proc = subprocess.Popen(["sh", "-c", "sleep 30"], start_new_session=True)
+
+        def cleanup() -> None:
+            if proc.poll() is None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
+
+        self.addCleanup(cleanup)
+        root = self.work_dir()
+        root.mkdir(parents=True, exist_ok=True)
+        agent = RunningAgent(
+            name=NAME,
+            proc=proc,
+            work_dir=root,
+            log=root / "agent.log",
+            activity_log=root / "agent.activity.jsonl",
+            ignored=set(),
+            snapshot={},
+            reported_snapshot={},
+            last_observed_at=0.0,
+            log_stamp=None,
+            activity_stamp=None,
+            adapter_name="fake",
+        )
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            phaselib.Phase._terminate_agents([agent])
+        self.assertIsNotNone(proc.poll())
+        self.assertIn("stopping 1 agent", output.getvalue())
 
 
 class TestSummarize(PhaseCase):

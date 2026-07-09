@@ -275,16 +275,13 @@ def main(argv: list[str]) -> int:
         # ── Run ──
         raw_json = _derived_path(log_file, ".raw.json")
         capture_path = activity_log or raw_json
+        cli_rc = 127
         try:
             with open(prompt_input) as pin, open(capture_path, "w") as out:
-                subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT)  # ignore rc
+                cli_rc = subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT).returncode
         except OSError as e:
-            # Spawn failure (claude missing / not executable). Bash writes the
-            # shell's "command not found" into RAW_JSON via 2>&1 and carries on;
-            # mirror that so post-processing still runs → exit 0, .log with the
-            # error text, .usage.json = parse_failed. (A louder exit-1 failure
-            # might be preferable, but changing it is a separate, deliberate
-            # decision — this port stays behavior-identical to the bash.)
+            # Keep producing the normal diagnostics, then report a conventional
+            # command-not-found status to the phase runner.
             with open(capture_path, "w") as out:
                 out.write(f"claude-code adapter: failed to run claude: {e}\n")
 
@@ -311,7 +308,7 @@ def main(argv: list[str]) -> int:
         _extract_log(result, raw_text, log_file)
         _extract_usage(result, _derived_path(log_file, ".usage.json"))
 
-        return 75 if rate_limited else 0
+        return 75 if rate_limited else cli_rc
     finally:
         if tmp_prompt is not None:
             with contextlib.suppress(OSError):

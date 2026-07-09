@@ -193,6 +193,9 @@ PY
 run_codex() {
   local log_file="$1"
   local marker_file
+  local activity_log="${SPECULA_ACTIVITY_LOG:-}"
+  local adapter_dir
+  adapter_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   marker_file="$(mktemp)"
 
   # ── Optional outer srt sandbox (M1.3) ──
@@ -202,17 +205,28 @@ run_codex() {
   # no nested second sandbox). Backend path repo-relative, overridable.
   local -a cmd=()
   if [[ "${SPECULA_SANDBOX:-}" == "on" ]]; then
-    local adapter_dir backend
-    adapter_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local backend
     backend="${SPECULA_SANDBOX_BACKEND:-$adapter_dir/../sandbox/backend.mjs}"
     cmd+=(node "$backend" --workspace "${SPECULA_WORK_DIR:-$PWD}" --)
   fi
-  cmd+=(codex exec --dangerously-bypass-approvals-and-sandbox "$PROMPT")
+  cmd+=(codex exec --dangerously-bypass-approvals-and-sandbox)
 
-  "${cmd[@]}" > "$log_file" 2>&1 || true
+  local codex_rc=0
+  set +e
+  if [[ -n "$activity_log" ]]; then
+    local event_helper
+    event_helper="$adapter_dir/../../../src/specula/adapters/event_stream.py"
+    "${cmd[@]}" --json "$PROMPT" 2>&1 | python3 "$event_helper" codex "$activity_log" "$log_file"
+    codex_rc=$?
+  else
+    "${cmd[@]}" "$PROMPT" > "$log_file" 2>&1
+    codex_rc=$?
+  fi
+  set -e
 
   write_usage_file "$log_file" "$marker_file"
   rm -f "$marker_file"
+  return "$codex_rc"
 }
 
 # ── Stop gate (execution layer) ──

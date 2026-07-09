@@ -16,34 +16,24 @@ Usage:  python3 phaselib.py <phase> [options] "<target>" [...]
 from __future__ import annotations
 
 import contextlib
-import json
 import locale
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import specula.progress as progress
 
 SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
 # the launch_*.sh shims and the agent adapters stay under scripts/launch/
 LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
-
-# Progress is intentionally governed by a single on/off switch. These internal
-# timings keep a useful signal in the console without turning a long agent run
-# into a stream of heartbeats; tests patch them to exercise the monitor quickly.
-PROGRESS_POLL_SECONDS = 1.0
-PROGRESS_CHANGE_REPORT_SECONDS = 5.0
-PROGRESS_STATUS_AFTER_SECONDS = 60.0
-PROGRESS_STATUS_REPEAT_SECONDS = 300.0
-PROGRESS_QUIET_AFTER_SECONDS = 300.0
-PROGRESS_QUIET_REPEAT_SECONDS = 300.0
-
-_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
-_ACTIVITY_SUMMARY_LIMIT = 180
 
 # bash pathname expansion (`for d in .../*/`) orders by the locale collating
 # sequence; adopt the ambient locale so find_repo_dir picks the same repo the
@@ -61,210 +51,6 @@ def _ts() -> str:
 def _trim(s: str) -> str:
     """Mirror bash `echo "$x" | xargs` word-trim (leading/trailing whitespace)."""
     return s.strip()
-
-
-def _progress_enabled() -> bool:
-    """Progress is on by default; ``SPECULA_PROGRESS=off`` suppresses it."""
-    return os.environ.get("SPECULA_PROGRESS", "").lower() not in {"0", "false", "no", "off"}
-
-
-def _elapsed(seconds: float) -> str:
-    """Human-sized elapsed duration for sparse liveness messages."""
-    total = max(0, int(seconds))
-    hours, remainder = divmod(total, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if hours:
-        return f"{hours}h{minutes:02}m"
-    if minutes:
-        return f"{minutes}m{secs:02}s"
-    return f"{secs}s"
-
-
-def _file_stamp(path: Path) -> tuple[int, int] | None:
-    """mtime + size, or None when a concurrently-changing file disappeared."""
-    with contextlib.suppress(OSError):
-        stat = path.stat()
-        if path.is_file():
-            return stat.st_mtime_ns, stat.st_size
-    return None
-
-
-def _workspace_snapshot(work_dir: Path, ignored: set[Path]) -> dict[Path, tuple[int, int]]:
-    """Observable deliverables in an agent workspace, keyed by relative path.
-
-    Prompt/pid/log files are launcher plumbing, and hidden paths include the
-    stop-gate state. They are deliberately excluded so the monitor describes
-    artifacts the agent is producing rather than its own bookkeeping.
-    """
-    snapshot: dict[Path, tuple[int, int]] = {}
-    if not work_dir.is_dir():
-        return snapshot
-    try:
-        candidates = work_dir.rglob("*")
-        for path in candidates:
-            with contextlib.suppress(OSError):
-                rel = path.relative_to(work_dir)
-                if rel in ignored or any(part.startswith(".") for part in rel.parts):
-                    continue
-                stamp = _file_stamp(path)
-                if stamp is not None:
-                    snapshot[rel] = stamp
-    except OSError:
-        # A concurrently removed directory must not interrupt the agent run.
-        pass
-    return snapshot
-
-
-def _workspace_changes(
-    before: dict[Path, tuple[int, int]], after: dict[Path, tuple[int, int]]
-) -> list[tuple[str, Path]]:
-    """Return the meaningful worktree deltas in a deterministic order."""
-    changes: list[tuple[str, Path]] = []
-    for path in sorted(after, key=lambda p: p.as_posix()):
-        if path not in before:
-            changes.append(("created", path))
-        elif before[path] != after[path]:
-            changes.append(("updated", path))
-    for path in sorted(before.keys() - after.keys(), key=lambda p: p.as_posix()):
-        changes.append(("removed", path))
-    return changes
-
-
-def _describe_changes(changes: list[tuple[str, Path]]) -> str:
-    """One concise activity line, even when an agent touches many files."""
-    if len(changes) == 1:
-        action, path = changes[0]
-        return f"{action} {path.as_posix()}"
-    paths = ", ".join(path.as_posix() for _, path in changes[:3])
-    more = f" (+{len(changes) - 3} more)" if len(changes) > 3 else ""
-    return f"changed {len(changes)} files: {paths}{more}"
-
-
-def _activity_summary(text: str, limit: int = _ACTIVITY_SUMMARY_LIMIT) -> str:
-    """Single safe terminal line from an adapter-provided activity record."""
-    summary = " ".join(_ANSI_ESCAPE_RE.sub("", text).split())
-    if len(summary) > limit:
-        return summary[: limit - 3].rstrip() + "..."
-    return summary
-
-
-def _codex_command_summary(line: str) -> str:
-    """Remove Codex's shell wrapper and cwd suffix from an exec record."""
-    command = line
-    for prefix in ("/bin/bash -lc ", "/bin/sh -lc "):
-        if command.startswith(prefix):
-            command = command[len(prefix) :]
-            break
-    if " in " in command:
-        command = command.rsplit(" in ", 1)[0]
-    if len(command) >= 2 and command[0] == command[-1] and command[0] in {'"', "'"}:
-        command = command[1:-1]
-    return f"running {_activity_summary(command, 160)}"
-
-
-def _codex_activity_events(lines: list[str], pending: str | None) -> tuple[str | None, list[str]]:
-    """Normalize useful records from Codex's human-readable exec log."""
-    events: list[str] = []
-    collab_actions = {
-        "SpawnAgent": "spawning subagent",
-        "Wait": "waiting for subagents",
-        "CloseAgent": "closing subagent",
-        "ResumeAgent": "resuming subagent",
-        "SendInput": "sending input to subagent",
-    }
-    for raw_line in lines:
-        line = raw_line.strip()
-        if line in {"codex", "exec", "apply_patch"}:
-            pending = line
-            continue
-        if line.startswith("collab: "):
-            action = line.removeprefix("collab: ").strip()
-            events.append(collab_actions.get(action, f"subagent activity: {_activity_summary(action)}"))
-            pending = None
-            continue
-        if not line:
-            continue
-        if pending == "codex":
-            events.append(_activity_summary(line))
-            pending = None
-        elif pending == "exec":
-            events.append(_codex_command_summary(line))
-            pending = None
-        elif pending == "apply_patch":
-            events.append("applying file changes")
-            pending = None
-    return pending, events
-
-
-def _string_arg(arguments: object, *keys: str) -> str:
-    if not isinstance(arguments, dict):
-        return ""
-    for key in keys:
-        value = arguments.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
-    return ""
-
-
-def _tool_activity_summary(name: str, arguments: object) -> str:
-    """Common readable summaries for Claude/Copilot tool calls."""
-    lowered = name.casefold()
-    command = _string_arg(arguments, "command", "cmd")
-    path = _string_arg(arguments, "file_path", "path")
-    pattern = _string_arg(arguments, "pattern", "query")
-    description = _string_arg(arguments, "description", "intent", "prompt")
-    if lowered in {"bash", "shell", "powershell"} and command:
-        return f"running {_activity_summary(command, 160)}"
-    if lowered in {"read", "view", "read_file"} and path:
-        return f"reading {_activity_summary(path)}"
-    if lowered in {"edit", "write", "write_file", "notebookedit"} and path:
-        return f"editing {_activity_summary(path)}"
-    if lowered in {"grep", "glob", "search", "websearch"} and pattern:
-        return f"searching for {_activity_summary(pattern)}"
-    if lowered in {"task", "spawnagent"}:
-        detail = f": {_activity_summary(description)}" if description else ""
-        return f"spawning subagent{detail}"
-    if lowered in {"taskoutput", "wait"}:
-        return "waiting for subagents"
-    detail = f": {_activity_summary(description)}" if description else ""
-    return f"using {name}{detail}"
-
-
-def _claude_activity_events(record: object) -> list[str]:
-    if not isinstance(record, dict) or record.get("type") != "assistant":
-        return []
-    message = record.get("message")
-    if not isinstance(message, dict):
-        return []
-    content = message.get("content")
-    if not isinstance(content, list):
-        return []
-    events: list[str] = []
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        if block.get("type") == "text" and isinstance(block.get("text"), str):
-            events.append(_activity_summary(block["text"]))
-        elif block.get("type") == "tool_use" and isinstance(block.get("name"), str):
-            events.append(_tool_activity_summary(block["name"], block.get("input")))
-    return events
-
-
-def _copilot_activity_events(record: object) -> list[str]:
-    if not isinstance(record, dict):
-        return []
-    event_type = record.get("type")
-    data = record.get("data")
-    if not isinstance(data, dict):
-        return []
-    if event_type == "assistant.message" and isinstance(data.get("content"), str):
-        return [_activity_summary(data["content"])]
-    if event_type == "tool.execution_start" and isinstance(data.get("toolName"), str):
-        # report_intent duplicates assistant.message and is not actual work.
-        if data["toolName"] == "report_intent":
-            return []
-        return [_tool_activity_summary(data["toolName"], data.get("arguments"))]
-    return []
 
 
 def _wc_l(path: Path) -> int:
@@ -304,35 +90,6 @@ class AgentFiles(TypedDict):
     pid: Path
     prompt: Path
     mkdirs: list[Path]
-
-
-@dataclass
-class RunningAgent:
-    """State required to describe one running adapter process."""
-
-    name: str
-    proc: subprocess.Popen[bytes]
-    work_dir: Path
-    log: Path
-    activity_log: Path
-    ignored: set[Path]
-    snapshot: dict[Path, tuple[int, int]]
-    reported_snapshot: dict[Path, tuple[int, int]]
-    last_observed_at: float
-    log_stamp: tuple[int, int] | None
-    activity_stamp: tuple[int, int] | None
-    adapter_name: str
-    last_change_report_at: float = 0.0
-    last_status_report_at: float = 0.0
-    last_quiet_report_at: float = 0.0
-    last_output_report_at: float = 0.0
-    reported_log_activity: bool = False
-    reported_sustained_output: bool = False
-    activity_offset: int = 0
-    activity_buffer: str = ""
-    activity_started: bool = False
-    pending_log_event: str | None = None
-    last_log_event: str = ""
 
 
 class Workspace:
@@ -421,6 +178,7 @@ class Phase:
     check_ok_msg = "All prerequisites OK."  # code_analysis says "All repos OK."
     accepts_artifact = True  # bug_classification takes no --artifact (rejects it)
     dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
+    progress_config = progress.ProgressConfig()
 
     # ── per-phase hooks ──
     def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
@@ -466,167 +224,48 @@ class Phase:
             return f"  Monitor: tail -f {ws.run_dir}/*/.specula-output/{logname}"
         return legacy
 
-    def _read_activity_events(self, agent: RunningAgent) -> list[str]:
-        """Read and normalize newly appended structured-ish adapter output.
-
-        Codex currently exposes useful markers in its regular exec log. Other
-        adapters keep the generic monitor until they have an equally stable
-        event source. Any read or parse problem fails back to liveness output.
-        """
-        try:
-            size = agent.activity_log.stat().st_size
-            if not agent.activity_started or size < agent.activity_offset:
-                agent.activity_offset = 0
-                agent.activity_buffer = ""
-                agent.pending_log_event = None
-                agent.activity_started = True
-            with agent.activity_log.open("rb") as stream:
-                stream.seek(agent.activity_offset)
-                data = stream.read()
-            agent.activity_offset += len(data)
-        except OSError:
-            return []
-        if not data:
-            return []
-
-        chunks = (agent.activity_buffer + data.decode(errors="replace")).split("\n")
-        agent.activity_buffer = chunks.pop()
-        if agent.adapter_name == "codex":
-            agent.pending_log_event, codex_events = _codex_activity_events(chunks, agent.pending_log_event)
-            return codex_events
-
-        if agent.adapter_name == "claude-code":
-            parser = _claude_activity_events
-        elif agent.adapter_name == "copilot-cli":
-            parser = _copilot_activity_events
-        else:
-            return []
-        events: list[str] = []
-        for line in chunks:
-            try:
-                record = json.loads(line)
-            except (TypeError, ValueError):
-                summary = _activity_summary(line)
-                if summary and any(
-                    term in summary.casefold() for term in ("error", "failed", "require", "invalid", "unknown")
-                ):
-                    events.append(f"adapter error: {summary}")
-                continue
-            events.extend(parser(record))
-        return events
-
-    def _report_progress(self, running: list[RunningAgent]) -> None:
-        """Report agent-created artifacts and sparse liveness information.
-
-        Output files are the portable signal for every adapter. Adapters with a
-        useful event source may additionally provide richer activity summaries.
-        """
-        now = time.monotonic()
-        for agent in running:
-            snapshot = _workspace_snapshot(agent.work_dir, agent.ignored)
-            observed_changes = _workspace_changes(agent.snapshot, snapshot)
-            agent.snapshot = snapshot
-
-            activity_stamp = _file_stamp(agent.activity_log)
-            activity_changed = activity_stamp != agent.activity_stamp
-            if activity_changed:
-                agent.activity_stamp = activity_stamp
-                agent.last_observed_at = now
-                printed_event = False
-                for event in self._read_activity_events(agent):
-                    if not event or event == agent.last_log_event:
-                        continue
-                    print(f"[{_ts()}] {agent.name}: {event}")
-                    agent.last_log_event = event
-                    printed_event = True
-                if printed_event:
-                    agent.reported_log_activity = True
-                    agent.reported_sustained_output = False
-                    agent.last_output_report_at = now
-                elif not agent.reported_log_activity:
-                    print(f"[{_ts()}] {agent.name}: agent output is active")
-                    agent.reported_log_activity = True
-                    agent.last_output_report_at = now
-                elif (
-                    not agent.reported_sustained_output
-                    and now - agent.last_output_report_at >= PROGRESS_STATUS_AFTER_SECONDS
-                ) or (
-                    agent.reported_sustained_output
-                    and now - agent.last_output_report_at >= PROGRESS_STATUS_REPEAT_SECONDS
-                ):
-                    print(f"[{_ts()}] {agent.name}: agent output is still active")
-                    agent.reported_sustained_output = True
-                    agent.last_output_report_at = now
-
-            log_stamp = _file_stamp(agent.log)
-            log_changed = log_stamp != agent.log_stamp
-            if log_changed:
-                agent.log_stamp = log_stamp
-                agent.last_observed_at = now
-                if not activity_changed and not agent.reported_log_activity:
-                    print(f"[{_ts()}] {agent.name}: agent output is active")
-                    agent.reported_log_activity = True
-                    agent.last_output_report_at = now
-                elif not activity_changed and (
-                    (
-                        not agent.reported_sustained_output
-                        and now - agent.last_output_report_at >= PROGRESS_STATUS_AFTER_SECONDS
-                    )
-                    or (
-                        agent.reported_sustained_output
-                        and now - agent.last_output_report_at >= PROGRESS_STATUS_REPEAT_SECONDS
-                    )
-                ):
-                    print(f"[{_ts()}] {agent.name}: agent output is still active")
-                    agent.reported_sustained_output = True
-                    agent.last_output_report_at = now
-
-            if observed_changes:
-                agent.last_observed_at = now
-
-            # Compare against the last snapshot we actually described. This
-            # retains changes observed during the reporting cooldown instead
-            # of silently dropping them. A completed child flushes immediately.
-            reportable_changes = _workspace_changes(agent.reported_snapshot, snapshot)
-            if reportable_changes:
-                if (
-                    not agent.last_change_report_at
-                    or now - agent.last_change_report_at >= PROGRESS_CHANGE_REPORT_SECONDS
-                    or agent.proc.poll() is not None
-                ):
-                    print(f"[{_ts()}] {agent.name}: {_describe_changes(reportable_changes)}")
-                    agent.reported_snapshot = snapshot
-                    agent.last_change_report_at = now
-
-            quiet_for = now - agent.last_observed_at
-            if quiet_for >= PROGRESS_QUIET_AFTER_SECONDS:
-                if (
-                    not agent.last_quiet_report_at
-                    or now - agent.last_quiet_report_at >= PROGRESS_QUIET_REPEAT_SECONDS
-                ):
-                    print(f"[{_ts()}] {agent.name}: quiet for {_elapsed(quiet_for)}; process is still alive")
-                    agent.last_quiet_report_at = now
-            elif quiet_for >= PROGRESS_STATUS_AFTER_SECONDS:
-                if (
-                    not agent.last_status_report_at
-                    or now - agent.last_status_report_at >= PROGRESS_STATUS_REPEAT_SECONDS
-                ):
-                    print(
-                        f"[{_ts()}] {agent.name}: no observable activity for "
-                        f"{_elapsed(quiet_for)}; process is still alive"
-                    )
-                    agent.last_status_report_at = now
-
-    def _reap_agents(self, running: list[RunningAgent], progress: bool) -> list[RunningAgent]:
-        """Drop completed children, retaining the exit status in the console."""
-        live: list[RunningAgent] = []
+    def _reap_agents(
+        self, running: list[progress.RunningAgent], show_progress: bool
+    ) -> tuple[list[progress.RunningAgent], list[tuple[str, int]]]:
+        """Drop completed children and return their nonzero exit statuses."""
+        live: list[progress.RunningAgent] = []
+        failures: list[tuple[str, int]] = []
         for agent in running:
             rc = agent.proc.poll()
             if rc is None:
                 live.append(agent)
-            elif progress:
+            else:
+                if rc != 0:
+                    failures.append((agent.name, rc))
+            if rc is not None and show_progress:
                 print(f"[{_ts()}] {agent.name}: completed (exit {rc})")
-        return live
+        return live, failures
+
+    @staticmethod
+    def _terminate_agents(running: list[progress.RunningAgent]) -> None:
+        live = [agent for agent in running if agent.proc.poll() is None]
+        if not live:
+            return
+        print(f"\n[{_ts()}] Interrupt received; stopping {len(live)} agent(s)...")
+        for agent in live:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(agent.proc.pid, signal.SIGTERM)
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and any(agent.proc.poll() is None for agent in live):
+            time.sleep(0.05)
+        for agent in live:
+            if agent.proc.poll() is None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(agent.proc.pid, signal.SIGKILL)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                agent.proc.wait(timeout=0.5)
+
+    @staticmethod
+    def _failure_code(failures: list[tuple[str, int]]) -> int:
+        if not failures:
+            return 0
+        rc = failures[0][1]
+        return 128 - rc if rc < 0 else rc
 
     # ── shared prompt-extra injection (identical across phases) ──
     def _read_prompt_extra(self, ws: Workspace, name: str) -> str:
@@ -674,6 +313,9 @@ class Phase:
                     # loop forever (empty crashed the arithmetic mid-run). Fail fast
                     # instead — pinned by bad_max_parallel_code_analysis.
                     print(f"Invalid --max-parallel: '{val}' (expected an integer)")
+                    return 1
+                if max_parallel < 1:
+                    print(f"Invalid --max-parallel: '{val}' (expected an integer >= 1)")
                     return 1
             elif arg.startswith("--max-turns="):
                 # Deprecated passthrough the adapter ignores. bash forwarded it
@@ -741,41 +383,53 @@ class Phase:
         if alt is not None:
             return alt
 
-        progress = _progress_enabled()
-        running: list[RunningAgent] = []
-        for target in targets:
-            name = self.target_name(target)
-            prompt = self.build_prompt(ws, target)
-            # Throttle.
-            while len(running) >= max_parallel:
-                if progress:
-                    self._report_progress(running)
-                running = self._reap_agents(running, progress)
-                if len(running) >= max_parallel:
-                    time.sleep(PROGRESS_POLL_SECONDS)
-            proc = self._launch(ws, name, prompt, dry_run, max_turns, claude_alias, adapter)
-            if not dry_run and proc is not None:
-                running.append(proc)
-            print()
+        show_progress = progress.enabled()
+        running: list[progress.RunningAgent] = []
+        failures: list[tuple[str, int]] = []
+        try:
+            for target in targets:
+                name = self.target_name(target)
+                prompt = self.build_prompt(ws, target)
+                # Throttle.
+                while len(running) >= max_parallel:
+                    if show_progress:
+                        progress.report(running, self.progress_config)
+                    running, completed_failures = self._reap_agents(running, show_progress)
+                    failures.extend(completed_failures)
+                    if len(running) >= max_parallel:
+                        time.sleep(self.progress_config.poll_seconds)
+                proc = self._launch(ws, name, prompt, dry_run, max_turns, claude_alias, adapter)
+                if not dry_run and proc is not None:
+                    running.append(proc)
+                print()
 
-        if not dry_run:
-            print(f"[{_ts()}] All agents launched. Waiting...")
-            monitor = self.monitor_line(ws)
-            if monitor is not None:
-                print(monitor)
-            print()
-            while running:
-                if progress:
-                    self._report_progress(running)
-                running = self._reap_agents(running, progress)
-                if running:
-                    time.sleep(PROGRESS_POLL_SECONDS)
-            print(f"[{_ts()}] All agents completed.")
+            if not dry_run:
+                print(f"[{_ts()}] All agents launched. Waiting...")
+                monitor = self.monitor_line(ws)
+                if monitor is not None:
+                    print(monitor)
+                print()
+                while running:
+                    if show_progress:
+                        progress.report(running, self.progress_config)
+                    running, completed_failures = self._reap_agents(running, show_progress)
+                    failures.extend(completed_failures)
+                    if running:
+                        time.sleep(self.progress_config.poll_seconds)
+                print(f"[{_ts()}] All agents completed.")
+        except BaseException:
+            self._terminate_agents(running)
+            raise
 
         self.summarize(ws, names)
         if not dry_run:
             self._acceptance(ws, names)
-        return 0
+        if failures:
+            print()
+            print("Agent failures:")
+            for name, rc in failures:
+                print(f"  FAILED  {name}: adapter exited {rc}")
+        return self._failure_code(failures)
 
     def run_alternate(
         self,
@@ -829,7 +483,7 @@ class Phase:
         max_turns: str,
         claude_alias: str,
         adapter: Path,
-    ) -> RunningAgent | None:
+    ) -> progress.RunningAgent | None:
         files = self.agent_files(ws, name)
         for d in files["mkdirs"]:
             d.mkdir(parents=True, exist_ok=True)
@@ -869,11 +523,11 @@ class Phase:
         for path in runtime_files:
             with contextlib.suppress(ValueError):
                 ignored.add(path.relative_to(work_dir))
-        snapshot = _workspace_snapshot(work_dir, ignored)
+        snapshot = progress.workspace_snapshot(work_dir, ignored)
         started_at = time.monotonic()
-        prelaunch_log_stamp = _file_stamp(files["log"])
-        activity_log = files["log"] if adapter.stem == "codex" else activity_sidecar
-        prelaunch_activity_stamp = _file_stamp(activity_log)
+        prelaunch_log_stamp = progress.file_stamp(files["log"])
+        activity_log = activity_sidecar
+        prelaunch_activity_stamp = progress.file_stamp(activity_log)
         proc = subprocess.Popen(
             [
                 str(adapter),
@@ -885,10 +539,11 @@ class Phase:
                 "--background",
             ],
             env=env,
+            start_new_session=True,
         )
         files["pid"].write_text(f"{proc.pid}\n")
         print(f"  PID={proc.pid}  Log: {files['log']}")
-        return RunningAgent(
+        return progress.RunningAgent(
             name=name,
             proc=proc,
             work_dir=work_dir,
