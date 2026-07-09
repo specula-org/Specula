@@ -480,6 +480,16 @@ class TestProgressReporting(PhaseCase):
         self.assertIn(f"{NAME}: Tracing input handling.", out)
         self.assertIn(f"{NAME}: running rg editorReadKey kilo.c", out)
 
+    def test_structured_adapter_errors_are_shown_in_cli_output(self) -> None:
+        self.adapter = self.adapter.with_name("copilot-cli.sh")
+        self.write_adapter(
+            'printf "%s\\n" "BYOK providers require an explicit model." > "$SPECULA_ACTIVITY_LOG"\n'
+            "exit 1\n"
+        )
+        rc, out = self.run_fake()
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"{NAME}: adapter error: BYOK providers require an explicit model.", out)
+
     def test_quiet_liveness_is_sparse_and_can_be_disabled(self) -> None:
         self.write_adapter("sleep 0.06\n")
         rc, out = self.run_fake()

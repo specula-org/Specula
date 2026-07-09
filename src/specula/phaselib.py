@@ -506,6 +506,11 @@ class Phase:
             try:
                 record = json.loads(line)
             except (TypeError, ValueError):
+                summary = _activity_summary(line)
+                if summary and any(
+                    term in summary.casefold() for term in ("error", "failed", "require", "invalid", "unknown")
+                ):
+                    events.append(f"adapter error: {summary}")
                 continue
             events.extend(parser(record))
         return events
