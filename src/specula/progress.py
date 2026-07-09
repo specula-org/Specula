@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from specula import activity
+from specula.adapters import event_stream
 
 
 @dataclass(frozen=True)
@@ -138,7 +138,7 @@ def _read_events(agent: RunningAgent, finished: bool) -> list[str]:
     if finished and agent.activity_buffer:
         chunks.append(agent.activity_buffer)
         agent.activity_buffer = ""
-    return activity.parse_events(agent.adapter_name, chunks)
+    return event_stream.parse_events(agent.adapter_name, chunks)
 
 
 def _report_output_state(agent: RunningAgent, now: float, printed_event: bool, config: ProgressConfig) -> None:

@@ -12,18 +12,18 @@ import unittest
 from collections.abc import Iterator
 from pathlib import Path
 
-from specula import activity, progress
-from specula.adapters.event_stream import stream_events
+from specula import progress
+from specula.adapters.event_stream import stream_events, summary, tool_summary
 
 
 class TestProgressParsing(unittest.TestCase):
     def test_summary_removes_terminal_control_sequences(self) -> None:
         text = "\x1b]0;spoofed title\x07hello \x1b[31mred\x1b[0m\rworld"
-        self.assertEqual(activity.summary(text), "hello red world")
+        self.assertEqual(summary(text), "hello red world")
 
     def test_tool_summary_removes_shell_wrapper_quotes(self) -> None:
         self.assertEqual(
-            activity.tool_summary("command_execution", {"command": "/bin/bash -lc 'rg needle src'"}),
+            tool_summary("command_execution", {"command": "/bin/bash -lc 'rg needle src'"}),
             "running rg needle src",
         )
 

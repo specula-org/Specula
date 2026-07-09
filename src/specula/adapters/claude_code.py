@@ -27,11 +27,14 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from specula.adapters.event_stream import stream_events
+if TYPE_CHECKING:
+    from specula.adapters.event_stream import stream_events
+elif __package__:
+    from .event_stream import stream_events
+else:
+    from event_stream import stream_events
 
 HELP = __doc__
 
