@@ -209,6 +209,13 @@ def rr_set_status(path: str | Path, new_status: str, note: str) -> None:
 # ──────────────────────────────────────────────────────────
 # Quota gate
 # ──────────────────────────────────────────────────────────
+# The adapters exit 75 (EX_TEMPFAIL) when the API says the quota is exhausted.
+# A phase launcher forwards that code, and _run_launcher answers it by waiting
+# for the reset rather than aborting the run.
+RATE_LIMIT_RC = 75
+RATE_LIMIT_RETRIES = 2
+
+
 def _quota_check(usage_json: str, q5: str, q7: str) -> str | None:
     """The decision the bash embedded in a `python3 -c` heredoc: 'ok', an
     over-limit message, or None for any parse failure (the bash caught those as
@@ -612,8 +619,23 @@ class Pipeline:
         return args
 
     def _run_launcher(self, script: str, args: list[str]) -> None:
-        r = subprocess.run(["bash", str(LAUNCH_DIR / script), *args])
-        if r.returncode != 0:
+        for attempt in range(1, RATE_LIMIT_RETRIES + 2):
+            r = subprocess.run(["bash", str(LAUNCH_DIR / script), *args])
+            if r.returncode == 0:
+                return
+            if r.returncode == RATE_LIMIT_RC and attempt <= RATE_LIMIT_RETRIES:
+                # 75 is EX_TEMPFAIL: the adapter's "wait, then retry" signal, not a
+                # failure. The pre-phase quota gate only sees the API's reported
+                # percentage, so a phase that starts under the threshold can still
+                # walk into the wall halfway through — aborting the run there throws
+                # away every completed phase. Sleep until resets_at (the same gate
+                # machinery) and re-run. The launcher re-runs every target, not just
+                # the throttled one: agents rewrite their own outputs, so a redundant
+                # re-run costs time, not correctness.
+                log(f"RATE LIMITED: {script} exited {RATE_LIMIT_RC}, waiting for quota reset")
+                log(f"  retry {attempt}/{RATE_LIMIT_RETRIES}")
+                self.wait_for_quota()
+                continue
             # bash set -e: a failing phase aborts the run. Signal death arrives
             # as a negative returncode — report 128+N like the bash did (143,
             # not the mod-256 wraparound 241), schedulers classify kills by it.

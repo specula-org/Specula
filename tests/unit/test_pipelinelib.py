@@ -622,11 +622,17 @@ class TestRepairLoop(RRDirCase):
 # Exit-code and error-path parity (bash set -e / set -u / pipefail)
 # ──────────────────────────────────────────────────────────
 class TestRunLauncherExitCodes(TmpCwd):
-    def _launch(self, body: str) -> int | str | None:
+    def _pipeline(self, body: str) -> tuple[pl.Pipeline, list[int]]:
         (self.tmp / "fake.sh").write_text(body)
         p = make_pipeline(["t|g|l|r"])
         self.addCleanup(setattr, pl, "LAUNCH_DIR", pl.LAUNCH_DIR)
         pl.LAUNCH_DIR = self.tmp
+        waits: list[int] = []
+        p.wait_for_quota = lambda: waits.append(1)  # type: ignore[method-assign]
+        return p, waits
+
+    def _launch(self, body: str) -> int | str | None:
+        p, _ = self._pipeline(body)
         with self.assertRaises(SystemExit) as ctx:
             p._run_launcher("fake.sh", [])
         return ctx.exception.code
@@ -638,6 +644,23 @@ class TestRunLauncherExitCodes(TmpCwd):
 
     def test_plain_failure_passes_through(self) -> None:
         self.assertEqual(self._launch("exit 7\n"), 7)
+
+    def test_rate_limit_waits_for_quota_then_retries(self) -> None:
+        # 75 is EX_TEMPFAIL: wait for the reset and re-run, never throw the run away
+        runs, marker = self.tmp / "runs", self.tmp / "hit"
+        p, waits = self._pipeline(f'printf x >> "{runs}"\n[ -f "{marker}" ] && exit 0\n: > "{marker}"\nexit 75\n')
+        p._run_launcher("fake.sh", [])  # no SystemExit: the retry succeeds
+        self.assertEqual(runs.read_text(), "xx")
+        self.assertEqual(len(waits), 1)
+
+    def test_rate_limit_retries_are_bounded(self) -> None:
+        runs = self.tmp / "runs"
+        p, waits = self._pipeline(f'printf x >> "{runs}"\nexit 75\n')
+        with self.assertRaises(SystemExit) as ctx:
+            p._run_launcher("fake.sh", [])
+        self.assertEqual(ctx.exception.code, pl.RATE_LIMIT_RC)
+        self.assertEqual(len(runs.read_text()), pl.RATE_LIMIT_RETRIES + 1)
+        self.assertEqual(len(waits), pl.RATE_LIMIT_RETRIES)
 
 
 class TestSingleTargetGuards(TmpCwd):
