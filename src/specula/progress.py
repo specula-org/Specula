@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import stat
 import subprocess
 import time
 from dataclasses import dataclass
@@ -54,9 +55,9 @@ def enabled() -> bool:
 
 def file_stamp(path: Path) -> tuple[int, int] | None:
     with contextlib.suppress(OSError):
-        stat = path.stat()
-        if path.is_file():
-            return stat.st_mtime_ns, stat.st_size
+        st = path.stat()  # one stat, not stat() + is_file(): this runs per file per poll
+        if stat.S_ISREG(st.st_mode):
+            return st.st_mtime_ns, st.st_size
     return None
 
 
@@ -106,11 +107,17 @@ def _changes(before: dict[Path, tuple[int, int]], after: dict[Path, tuple[int, i
     return changes
 
 
+def _safe_path(path: Path) -> str:
+    """The agent picks these names, and they end up on the user's terminal —
+    sanitize them exactly like every other agent-controlled string."""
+    return event_stream.summary(path.as_posix(), 120)
+
+
 def _describe_changes(changes: list[tuple[str, Path]]) -> str:
     if len(changes) == 1:
         action, path = changes[0]
-        return f"{action} {path.as_posix()}"
-    paths = ", ".join(path.as_posix() for _, path in changes[:3])
+        return f"{action} {_safe_path(path)}"
+    paths = ", ".join(_safe_path(path) for _, path in changes[:3])
     more = f" (+{len(changes) - 3} more)" if len(changes) > 3 else ""
     return f"changed {len(changes)} files: {paths}{more}"
 

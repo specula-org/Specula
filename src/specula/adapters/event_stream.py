@@ -10,17 +10,31 @@ from pathlib import Path
 
 _ESCAPE_RE = re.compile(r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])")
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+_CONTROL_KEEP_NL_RE = re.compile(r"[\x00-\x09\x0b-\x1f\x7f-\x9f]")  # every control char but \n
 _SUMMARY_LIMIT = 180
 
 
+def _strip_escapes(text: str) -> str:
+    return _ESCAPE_RE.sub("", text)
+
+
 def summary(text: str, limit: int | None = _SUMMARY_LIMIT) -> str:
-    """Flatten agent-controlled text and remove terminal control sequences."""
-    text = _ESCAPE_RE.sub("", text)
-    text = _CONTROL_RE.sub(" ", text)
+    """Flatten agent-controlled text to one terminal-safe line."""
+    text = _CONTROL_RE.sub(" ", _strip_escapes(text))
     result = " ".join(text.split())
     if limit is not None and len(result) > limit:
         return result[: limit - 3].rstrip() + "..."
     return result
+
+
+def readable(text: str) -> str:
+    """Terminal-safe like `summary`, but line structure survives.
+
+    The agent's final answer is markdown; `summary` would collapse a whole
+    report into one line, which is fine for a CLI ticker and useless in
+    agent.log. Escapes and every other control character still go."""
+    text = _CONTROL_KEEP_NL_RE.sub(" ", _strip_escapes(text))
+    return "\n".join(line.rstrip() for line in text.split("\n")).strip("\n")
 
 
 def _string_arg(arguments: object, *keys: str) -> str:
@@ -34,6 +48,9 @@ def _string_arg(arguments: object, *keys: str) -> str:
 
 
 def tool_summary(name: str, arguments: object) -> str:
+    # `name` is as agent-controlled as the arguments are — an MCP server picks its
+    # own tool names, and this string goes straight to the user's terminal.
+    name = summary(name, 60) or "tool"
     lowered = name.casefold()
     command = _string_arg(arguments, "command", "cmd")
     path = _string_arg(arguments, "file_path", "path")
@@ -60,7 +77,7 @@ def tool_summary(name: str, arguments: object) -> str:
 
 
 def _text_event(text: str, concise: bool) -> str:
-    return summary(text, _SUMMARY_LIMIT if concise else None)
+    return summary(text) if concise else readable(text)
 
 
 def _claude_events(record: object, concise: bool) -> list[str]:
@@ -168,7 +185,9 @@ def stream_events(
     source = source if source is not None else sys.stdin.buffer
     adapter_name = _ADAPTER_NAMES[adapter]
     last_event = ""
-    with activity_path.open("wb") as raw_log, log_path.open("w") as log:
+    # encoding/errors explicitly: the agent writes whatever it likes, and the
+    # ambient locale must not be able to kill a run with a UnicodeEncodeError.
+    with activity_path.open("wb") as raw_log, log_path.open("w", encoding="utf-8", errors="replace") as log:
         for raw_line in source:
             raw_log.write(raw_line)
             raw_log.flush()

@@ -281,6 +281,23 @@ class ClaudeCodeAdapter(AdapterCase):
         self.assertEqual((base / "out.log").read_text(), "reading kilo.c\ndone\n")
         self.assertEqual(json.loads((base / "out.raw.json").read_text())["type"], "result")
 
+    def test_stream_json_log_keeps_result_line_structure(self) -> None:
+        # agent.log is the human-facing report; collapsing markdown to one line
+        # (as `summary` does for the CLI ticker) destroys it.
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        report = "# Findings\n\n1. Bug A\n2. Bug B\n"
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps({"type": "result", **CLAUDE_JSON, "result": report}),
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertEqual((base / "out.log").read_text(), "# Findings\n\n1. Bug A\n2. Bug B\n")
+
     def test_rate_limit_exits_75(self) -> None:
         base = self.sandbox()
         r = self.run_adapter(

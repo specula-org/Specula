@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from specula import progress
-from specula.adapters.event_stream import stream_events, summary, tool_summary
+from specula.adapters.event_stream import parse_events, readable, stream_events, summary, tool_summary
 
 
 class TestProgressParsing(unittest.TestCase):
@@ -26,6 +26,31 @@ class TestProgressParsing(unittest.TestCase):
             tool_summary("command_execution", {"command": "/bin/bash -lc 'rg needle src'"}),
             "running rg needle src",
         )
+
+    def test_unknown_tool_name_is_sanitized(self) -> None:
+        # an MCP server names its own tools, and the name reaches the terminal
+        self.assertEqual(tool_summary("evil\x1b[2J\x1b]0;pwn\x07", {}), "using evil")
+        self.assertEqual(tool_summary("\x1b[2J", {}), "using tool")
+
+    def test_stream_tool_names_are_sanitized(self) -> None:
+        cases = [
+            ("copilot-cli", {"type": "tool.execution_start", "data": {"toolName": "x\x1b]0;pwn\x07", "arguments": {}}}),
+            ("claude-code", {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "y\x1b[31m"}]}}),
+        ]
+        for adapter, record in cases:
+            with self.subTest(adapter=adapter):
+                events = parse_events(adapter, [json.dumps(record)])
+                self.assertNotIn("\x1b", "".join(events))
+
+    def test_workspace_change_paths_are_sanitized(self) -> None:
+        # the agent chooses these filenames
+        line = progress._describe_changes([("created", Path("re\x1b[2Jport.md"))])
+        self.assertEqual(line, "created report.md")
+
+    def test_readable_keeps_line_structure_but_drops_escapes(self) -> None:
+        # agent.log holds the final markdown report; only the CLI ticker flattens
+        self.assertEqual(readable("# H\n\n- a\x1b[31m\n- b  \n"), "# H\n\n- a\n- b")
+        self.assertEqual(summary("# H\n\n- a\n- b"), "# H - a - b")
 
     def test_final_unterminated_event_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
