@@ -125,6 +125,8 @@ bash ~/Specula/scripts/launch/launch_spec_validation.sh
 bash ~/Specula/scripts/launch/launch_bug_confirmation.sh
 ```
 
+**Progress reporting:** while a phase runs, each agent's activity is printed to the terminal and appended to its `agent.log` as it happens; the underlying event stream is kept beside it in `*.activity.jsonl`. Set `SPECULA_PROGRESS=off` to turn this off — the agents then run the way they did before, writing only their final report to `agent.log`.
+
 ## Case Studies
 
 Specula ships with built-in examples covering CometBFT, braft, Substrate GRANDPA, DPDK rte_ring, and libgomp. For additional reference, clone the [case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies. Placing it alongside your project gives the agent more examples to learn from.

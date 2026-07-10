@@ -19,16 +19,24 @@ import contextlib
 import locale
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import specula.progress as progress
+from specula import quota
 
 SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
 # the launch_*.sh shims and the agent adapters stay under scripts/launch/
 LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
+AGENT_TERMINATION_GRACE_SECONDS = 2.0
 
 # bash pathname expansion (`for d in .../*/`) orders by the locale collating
 # sequence; adopt the ambient locale so find_repo_dir picks the same repo the
@@ -41,6 +49,37 @@ with contextlib.suppress(locale.Error):
 def _ts() -> str:
     """[HH:MM:SS] — mirrors bash `date '+%H:%M:%S'`."""
     return time.strftime("%H:%M:%S")
+
+
+@contextlib.contextmanager
+def _cleanup_on_signal() -> Iterator[None]:
+    """Make SIGTERM/SIGHUP take the same exit path Ctrl-C already takes.
+
+    Agents run with start_new_session=True, so they are no longer in the
+    launcher's process group: a `kill <launcher>` (scheduler, timeout, a closing
+    terminal) that skips the cleanup handler leaves them orphaned and burning
+    quota. SystemExit unwinds through `run`'s `except BaseException` -> the agents
+    are terminated -> the interpreter exits 128+N without a traceback.
+
+    `signal.signal` is main-thread only; off-thread callers just get no handler.
+    """
+
+    def _raise(signum: int, _frame: Any) -> None:
+        raise SystemExit(128 + signum)
+
+    installed: list[tuple[int, Any]] = []
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is None:  # pragma: no cover - non-POSIX
+            continue
+        with contextlib.suppress(ValueError, OSError):
+            installed.append((sig, signal.signal(sig, _raise)))
+    try:
+        yield
+    finally:
+        for sig, previous in installed:
+            with contextlib.suppress(ValueError, OSError):
+                signal.signal(sig, previous)
 
 
 def _trim(s: str) -> str:
@@ -173,6 +212,7 @@ class Phase:
     check_ok_msg = "All prerequisites OK."  # code_analysis says "All repos OK."
     accepts_artifact = True  # bug_classification takes no --artifact (rejects it)
     dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
+    progress_config = progress.ProgressConfig()
 
     # ── per-phase hooks ──
     def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
@@ -217,6 +257,100 @@ class Phase:
         if ws.run_dir:
             return f"  Monitor: tail -f {ws.run_dir}/*/.specula-output/{logname}"
         return legacy
+
+    def _reap_agents(
+        self, running: list[progress.RunningAgent], show_progress: bool
+    ) -> tuple[list[progress.RunningAgent], list[tuple[progress.RunningAgent, int]]]:
+        """Final-drain completed children before dropping them."""
+        live: list[progress.RunningAgent] = []
+        completed: list[tuple[progress.RunningAgent, int]] = []
+        for agent in running:
+            rc = agent.proc.poll()
+            if rc is None:
+                live.append(agent)
+            else:
+                if show_progress:
+                    # The process may finish between the regular report and this
+                    # poll. Drain its last event and workspace changes now, before
+                    # removing the only object that carries the read offsets.
+                    progress.report([agent], self.progress_config)
+                    print(f"[{_ts()}] {agent.name}: completed (exit {rc})")
+                completed.append((agent, rc))
+                # A completed adapter can still leave background descendants in
+                # its session. They are phase-scoped and must not outlive it.
+                self._terminate_agents([agent], announce=False)
+        return live, completed
+
+    @staticmethod
+    def _group_exists(pgid: int) -> bool:
+        try:
+            os.killpg(pgid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    @classmethod
+    def _terminate_processes(cls, processes: list[subprocess.Popen[bytes]], *, announce: bool = True) -> None:
+        groups = [proc for proc in processes if cls._group_exists(proc.pid)]
+        if groups:
+            # Signal first. A closed stdout/tee must never prevent cleanup.
+            for proc in groups:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(proc.pid, signal.SIGTERM)
+            if announce:
+                with contextlib.suppress(OSError, ValueError):
+                    print(f"\n[{_ts()}] Interrupt received; stopping {len(groups)} agent(s)...")
+            deadline = time.monotonic() + AGENT_TERMINATION_GRACE_SECONDS
+            while time.monotonic() < deadline and any(cls._group_exists(proc.pid) for proc in groups):
+                time.sleep(0.05)
+            for proc in groups:
+                if cls._group_exists(proc.pid):
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(proc.pid, signal.SIGKILL)
+
+        # poll() normally reaps completed leaders, but an exception can enter
+        # cleanup before the next poll. Reap every tracked Popen even when its
+        # process group has already disappeared.
+        for proc in processes:
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=0.5)
+
+    @classmethod
+    def _terminate_agents(cls, running: list[progress.RunningAgent], *, announce: bool = True) -> None:
+        cls._terminate_processes([agent.proc for agent in running], announce=announce)
+
+    @staticmethod
+    def _failure_code(failures: list[tuple[str, int]]) -> int:
+        if not failures:
+            return 0
+        # A quota retry must never hide a permanent failure from another target.
+        rc = next((code for _, code in failures if code != quota.RATE_LIMIT_RC), failures[0][1])
+        return 128 - rc if rc < 0 else rc
+
+    @staticmethod
+    def _rate_limit_retries() -> int:
+        raw = os.environ.get("SPECULA_RATE_LIMIT_RETRIES", str(quota.RATE_LIMIT_RETRIES))
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return quota.RATE_LIMIT_RETRIES
+
+    @staticmethod
+    def _reactive_rate_limit_enabled() -> bool:
+        return os.environ.get("SPECULA_RATE_LIMIT_REACTIVE", "").lower() in {"1", "true", "yes", "on"}
+
+    def _wait_for_rate_limit(self) -> None:
+        quota.wait_for_quota(
+            usage_script=SPECULA_ROOT / "scripts" / "exp" / "usage.sh",
+            q5=os.environ.get("SPECULA_QUOTA_5H") or "85",
+            q7=os.environ.get("SPECULA_QUOTA_7D") or "95",
+            max_waits=os.environ.get("SPECULA_QUOTA_MAX_WAITS") or "6",
+            claude_alias=os.environ.get("SPECULA_CLAUDE_ALIAS") or "claude",
+            log_fn=lambda message: print(f"[{_ts()}] {message}"),
+            reactive=True,
+        )
 
     # ── shared prompt-extra injection (identical across phases) ──
     def _read_prompt_extra(self, ws: Workspace, name: str) -> str:
@@ -264,6 +398,9 @@ class Phase:
                     # loop forever (empty crashed the arithmetic mid-run). Fail fast
                     # instead — pinned by bad_max_parallel_code_analysis.
                     print(f"Invalid --max-parallel: '{val}' (expected an integer)")
+                    return 1
+                if max_parallel < 1:
+                    print(f"Invalid --max-parallel: '{val}' (expected an integer >= 1)")
                     return 1
             elif arg.startswith("--max-turns="):
                 # Deprecated passthrough the adapter ignores. bash forwarded it
@@ -331,34 +468,109 @@ class Phase:
         if alt is not None:
             return alt
 
-        running: list[subprocess.Popen[bytes]] = []
-        for target in targets:
-            name = self.target_name(target)
-            prompt = self.build_prompt(ws, target)
-            # Throttle.
-            while len(running) >= max_parallel:
-                running = [p for p in running if p.poll() is None]
-                if len(running) >= max_parallel:
-                    time.sleep(5)
-            proc = self._launch(ws, name, prompt, dry_run, max_turns, claude_alias, adapter)
-            if not dry_run and proc is not None:
-                running.append(proc)
-            print()
+        show_progress = progress.enabled()
+        running: list[progress.RunningAgent] = []
+        failures: list[tuple[str, int]] = []
+        pending: list[tuple[str, int]] = [(target, 1) for target in targets]
+        rate_limited: list[tuple[str, int]] = []
+        pause_for_rate_limit = False
+        stop_launching = False
+        waiting_announced = False
+        retry_limit = self._rate_limit_retries()
+        with _cleanup_on_signal():
+            try:
+                while pending or running:
+                    while pending and len(running) < max_parallel and not pause_for_rate_limit and not stop_launching:
+                        target, attempt = pending.pop(0)
+                        name = self.target_name(target)
+                        prompt = self.build_prompt(ws, target)
+                        self._launch(
+                            ws,
+                            name,
+                            prompt,
+                            dry_run,
+                            max_turns,
+                            claude_alias,
+                            adapter,
+                            owner=running,
+                            target=target,
+                            attempt=attempt,
+                        )
+                        print()
 
-        if not dry_run:
-            print(f"[{_ts()}] All agents launched. Waiting...")
-            monitor = self.monitor_line(ws)
-            if monitor is not None:
-                print(monitor)
-            print()
-            for p in running:
-                p.wait()
-            print(f"[{_ts()}] All agents completed.")
+                    if dry_run:
+                        continue
+
+                    if not waiting_announced and not pending and not stop_launching:
+                        print(f"[{_ts()}] All agents launched. Waiting...")
+                        monitor = self.monitor_line(ws)
+                        if monitor is not None:
+                            print(monitor)
+                        print()
+                        waiting_announced = True
+
+                    if show_progress and running:
+                        progress.report(running, self.progress_config)
+                    running, completed = self._reap_agents(running, show_progress)
+                    for completed_agent, rc in completed:
+                        if rc == 0:
+                            continue
+                        if rc == quota.RATE_LIMIT_RC:
+                            if self._reactive_rate_limit_enabled() and completed_agent.attempt <= retry_limit:
+                                rate_limited.append((completed_agent.target, completed_agent.attempt + 1))
+                                pause_for_rate_limit = True
+                            else:
+                                failures.append((completed_agent.name, rc))
+                                stop_launching = True
+                        else:
+                            failures.append((completed_agent.name, rc))
+
+                    if pause_for_rate_limit and any(rc != quota.RATE_LIMIT_RC for _, rc in failures):
+                        # A permanent failure wins over 75, but permanent failures
+                        # alone do not suppress independent batch targets.
+                        failures.extend((self.target_name(target), quota.RATE_LIMIT_RC) for target, _ in rate_limited)
+                        stop_launching = True
+
+                    if stop_launching:
+                        # A 75 that cannot be retried stops new quota-consuming
+                        # work. Let agents already in the current wave finish.
+                        if pending:
+                            skipped = [self.target_name(target) for target, _ in pending]
+                            print(
+                                f"[{_ts()}] Rate limit stopped new launches; "
+                                f"skipping {len(skipped)} unstarted target(s): {', '.join(skipped)}"
+                            )
+                        pending.clear()
+                        rate_limited.clear()
+                        pause_for_rate_limit = False
+                    elif pause_for_rate_limit and not running:
+                        names_to_retry = ", ".join(self.target_name(target) for target, _ in rate_limited)
+                        print(f"[{_ts()}] Rate limited: waiting before retrying {names_to_retry}")
+                        self._wait_for_rate_limit()
+                        # Retry only targets that returned 75. Successful targets
+                        # stay complete, and untouched targets retain their place.
+                        pending = rate_limited + pending
+                        rate_limited = []
+                        pause_for_rate_limit = False
+
+                    if running:
+                        time.sleep(self.progress_config.poll_seconds)
+
+                if not dry_run:
+                    print(f"[{_ts()}] All agents completed.")
+            except BaseException:
+                self._terminate_agents(running)
+                raise
 
         self.summarize(ws, names)
         if not dry_run:
             self._acceptance(ws, names)
-        return 0
+        if failures:
+            print()
+            print("Agent failures:")
+            for name, rc in failures:
+                print(f"  FAILED  {name}: adapter exited {rc}")
+        return self._failure_code(failures)
 
     def run_alternate(
         self,
@@ -412,7 +624,11 @@ class Phase:
         max_turns: str,
         claude_alias: str,
         adapter: Path,
-    ) -> subprocess.Popen[bytes] | None:
+        *,
+        owner: list[progress.RunningAgent] | None = None,
+        target: str = "",
+        attempt: int = 1,
+    ) -> progress.RunningAgent | None:
         files = self.agent_files(ws, name)
         for d in files["mkdirs"]:
             d.mkdir(parents=True, exist_ok=True)
@@ -432,21 +648,83 @@ class Phase:
         env = os.environ.copy()
         env["SPECULA_PHASE"] = self.key
         env["SPECULA_WORK_DIR"] = str(ws.work_dir(name))
-        proc = subprocess.Popen(
-            [
-                str(adapter),
-                f"--prompt-file={files['prompt']}",
-                f"--max-turns={max_turns}",
-                f"--claude-alias={claude_alias}",
-                "--effort=max",
-                f"--log={files['log']}",
-                "--background",
-            ],
-            env=env,
+        work_dir = ws.work_dir(name)
+        activity_sidecar = files["log"].with_suffix(".activity.jsonl")
+        with contextlib.suppress(OSError):
+            activity_sidecar.unlink()
+        # SPECULA_PROGRESS=off is a full opt-out, not a mute: without the sidecar
+        # the adapters fall back to their legacy argv (`--output-format json`, no
+        # `codex --json`, no copilot `--stream on`) and the legacy result-only
+        # agent.log. A CLI that predates the streaming flags would otherwise have
+        # no escape hatch — and an adapter failure now aborts the whole run.
+        env.pop("SPECULA_ACTIVITY_LOG", None)
+        if progress.enabled():
+            env["SPECULA_ACTIVITY_LOG"] = str(activity_sidecar)
+        # Do not report launcher plumbing as agent work. The generic adapter
+        # contract derives raw/usage data from the .log stem, so ignore those
+        # files as well when they live in the workspace.
+        runtime_files = (
+            files["prompt"],
+            files["pid"],
+            files["log"],
+            activity_sidecar,
+            files["log"].with_suffix(".raw.json"),
+            files["log"].with_suffix(".usage.json"),
         )
-        files["pid"].write_text(f"{proc.pid}\n")
-        print(f"  PID={proc.pid}  Log: {files['log']}")
-        return proc
+        ignored: set[Path] = set()
+        for path in runtime_files:
+            with contextlib.suppress(ValueError):
+                ignored.add(path.relative_to(work_dir))
+        snapshot = progress.workspace_snapshot(work_dir, ignored)
+        started_at = time.monotonic()
+        prelaunch_log_stamp = progress.file_stamp(files["log"])
+        activity_log = activity_sidecar
+        prelaunch_activity_stamp = progress.file_stamp(activity_log)
+        proc: subprocess.Popen[bytes] | None = None
+        launched: progress.RunningAgent | None = None
+        try:
+            proc = subprocess.Popen(
+                [
+                    str(adapter),
+                    f"--prompt-file={files['prompt']}",
+                    f"--max-turns={max_turns}",
+                    f"--claude-alias={claude_alias}",
+                    "--effort=max",
+                    f"--log={files['log']}",
+                    "--background",
+                ],
+                env=env,
+                start_new_session=True,
+            )
+            launched = progress.RunningAgent(
+                name=name,
+                proc=proc,
+                work_dir=work_dir,
+                log=files["log"],
+                activity_log=activity_log,
+                ignored=ignored,
+                snapshot=snapshot,
+                reported_snapshot=snapshot,
+                last_observed_at=started_at,
+                log_stamp=prelaunch_log_stamp,
+                activity_stamp=prelaunch_activity_stamp,
+                adapter_name=adapter.stem,
+                target=target,
+                attempt=attempt,
+            )
+            if owner is not None:
+                owner.append(launched)
+            files["pid"].write_text(f"{proc.pid}\n")
+            print(f"  PID={proc.pid}  Log: {files['log']}")
+        except BaseException:
+            # Own the Popen immediately: construction, registration, pid writes,
+            # logging, and signal delivery all stay inside the cleanup boundary.
+            if proc is not None:
+                self._terminate_processes([proc], announce=False)
+            if owner is not None and launched in owner:
+                owner.remove(launched)
+            raise
+        return launched
 
 
 def run_agent_blocking(
@@ -1396,19 +1674,26 @@ Output:
         print(f" Specula — Review Agent ({phase})")
         print("========================================")
 
-        for name in names:
-            rc = self._launch_review(ws, name, phase, adapter, claude_alias)
-            if rc != 0:
-                # bash ran under `set -euo pipefail`: a failing adapter (notably
-                # exit 75 = EX_TEMPFAIL on rate limit) aborted the launcher with
-                # that code so the pipeline can wait/retry instead of treating
-                # the review as done.
-                return rc
+        with _cleanup_on_signal():
+            for name in names:
+                attempt = 1
+                while True:
+                    rc = self._launch_review(ws, name, phase, adapter, claude_alias)
+                    if (
+                        rc == quota.RATE_LIMIT_RC
+                        and self._reactive_rate_limit_enabled()
+                        and attempt <= self._rate_limit_retries()
+                    ):
+                        print(f"[{_ts()}] Rate limited: waiting before retrying {name}")
+                        self._wait_for_rate_limit()
+                        attempt += 1
+                        continue
+                    if rc != 0:
+                        return self._failure_code([(name, rc)])
+                    break
 
         print()
-        print("Waiting for review agents to complete...")
-        # The adapter call ran synchronously above (mirroring bash's `pid=$(...)`
-        # command substitution), so there is nothing left to wait on here.
+        print("Review agents completed.")
 
         print()
         print("========================================")
@@ -1446,31 +1731,76 @@ Output:
             raise SystemExit(1)
         print(f"[{_ts()}] Reviewing {name} ({phase})...")
         log_dir.mkdir(parents=True, exist_ok=True)
-        # Capture only stdout (bash `pid=$(...)` command substitution); stderr is
-        # inherited so adapter diagnostics ("rate limit hit", arg errors) reach
-        # the console / pipeline log as they did under bash.
-        proc = subprocess.run(
-            [
-                str(adapter),
-                # bash: prompt=$(generate_..._prompt) — command substitution
-                # strips trailing newlines before the adapter sees the prompt.
-                f"--prompt={prompt.rstrip(chr(10))}",
-                "--max-turns=30",
-                f"--claude-alias={claude_alias}",
-                "--effort=max",
-                f"--log={log_file}",
-                "--background",
-            ],
-            stdout=subprocess.PIPE,
-            text=True,
-        )
-        if proc.returncode != 0:
-            # bash set -e aborted here, before the pid file write / PID line.
-            return proc.returncode
-        pid = proc.stdout.rstrip("\n")
-        (log_dir / f"review-{phase}.pid").write_text(f"{pid}\n")
-        print(f"  PID={pid}  Log: {log_file}")
-        return 0
+        pid_file = log_dir / f"review-{phase}.pid"
+        activity_log = log_file.with_suffix(".activity.jsonl")
+        with contextlib.suppress(OSError):
+            activity_log.unlink()
+        env = os.environ.copy()
+        env.pop("SPECULA_ACTIVITY_LOG", None)
+        show_progress = progress.enabled()
+        if show_progress:
+            env["SPECULA_ACTIVITY_LOG"] = str(activity_log)
+
+        ignored: set[Path] = set()
+        for path in (
+            log_file,
+            pid_file,
+            activity_log,
+            log_file.with_suffix(".raw.json"),
+            log_file.with_suffix(".usage.json"),
+        ):
+            with contextlib.suppress(ValueError):
+                ignored.add(path.relative_to(wd))
+        snapshot = progress.workspace_snapshot(wd, ignored)
+        prelaunch_log_stamp = progress.file_stamp(log_file)
+        prelaunch_activity_stamp = progress.file_stamp(activity_log)
+        started_at = time.monotonic()
+        proc: subprocess.Popen[bytes] | None = None
+        running: progress.RunningAgent | None = None
+        try:
+            proc = subprocess.Popen(
+                [
+                    str(adapter),
+                    # bash: prompt=$(generate_..._prompt) — command substitution
+                    # strips trailing newlines before the adapter sees the prompt.
+                    f"--prompt={prompt.rstrip(chr(10))}",
+                    "--max-turns=30",
+                    f"--claude-alias={claude_alias}",
+                    "--effort=max",
+                    f"--log={log_file}",
+                    "--background",
+                ],
+                env=env,
+                start_new_session=True,
+            )
+            running = progress.RunningAgent(
+                name=name,
+                proc=proc,
+                work_dir=wd,
+                log=log_file,
+                activity_log=activity_log,
+                ignored=ignored,
+                snapshot=snapshot,
+                reported_snapshot=snapshot,
+                last_observed_at=started_at,
+                log_stamp=prelaunch_log_stamp,
+                activity_stamp=prelaunch_activity_stamp,
+                adapter_name=adapter.stem,
+                target=name,
+            )
+            pid_file.write_text(f"{proc.pid}\n")
+            print(f"  PID={proc.pid}  Log: {log_file}")
+            while True:
+                if show_progress:
+                    progress.report([running], self.progress_config)
+                _, completed = self._reap_agents([running], show_progress)
+                if completed:
+                    return completed[0][1]
+                time.sleep(self.progress_config.poll_seconds)
+        except BaseException:
+            if proc is not None:
+                self._terminate_processes([proc])
+            raise
 
     def _analysis_prompt(self, wd: Path, name: str) -> str:
         return f"""# Code Analysis Review: {name}
@@ -1637,8 +1967,10 @@ def main(argv: list[str]) -> int:
     # bash echo flushed per line; python block-buffers when stdout is a pipe
     # (launch_pipeline.sh tees everything), which would hold progress lines —
     # including the Monitor hint — in the buffer for the hours p.wait() blocks.
+    # errors="replace": progress now relays agent-written text, and an ambient
+    # non-UTF-8 locale must not kill the launcher on the first non-ASCII byte.
     if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(line_buffering=True)
+        sys.stdout.reconfigure(line_buffering=True, errors="replace")
     if not argv or argv[0] not in PHASES:
         print(f"usage: phaselib.py <phase> [options] <target>...\nphases: {', '.join(PHASES)}", file=sys.stderr)
         return 2

@@ -15,9 +15,11 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from collections.abc import Callable
@@ -158,7 +160,15 @@ class TestRRSetStatus(TmpCwd):
 # Quota gate
 # ──────────────────────────────────────────────────────────
 def usage(
-    u5: Any, u7: Any, r5: str | None = "2099-01-01T00:00:00+00:00", r7: str | None = "2099-01-08T00:00:00+00:00"
+    u5: Any,
+    u7: Any,
+    r5: str | None = "2099-01-01T00:00:00+00:00",
+    r7: str | None = "2099-01-08T00:00:00+00:00",
+    *,
+    u7_opus: Any = None,
+    u7_sonnet: Any = None,
+    r7_opus: str | None = "2099-01-09T00:00:00+00:00",
+    r7_sonnet: str | None = "2099-01-10T00:00:00+00:00",
 ) -> str:
     import json
 
@@ -167,6 +177,10 @@ def usage(
         d["five_hour"] = {"utilization": u5, **({"resets_at": r5} if r5 else {})}
     if u7 is not None:
         d["seven_day"] = {"utilization": u7, **({"resets_at": r7} if r7 else {})}
+    if u7_opus is not None:
+        d["seven_day_opus"] = {"utilization": u7_opus, **({"resets_at": r7_opus} if r7_opus else {})}
+    if u7_sonnet is not None:
+        d["seven_day_sonnet"] = {"utilization": u7_sonnet, **({"resets_at": r7_sonnet} if r7_sonnet else {})}
     return json.dumps(d)
 
 
@@ -185,6 +199,21 @@ class TestQuotaCheck(unittest.TestCase):
 
     def test_over_7d(self) -> None:
         self.assertEqual(self.check(usage(50, 96)), "7d=96% (limit 95%) resets_at=2099-01-08T00:00:00+00:00")
+
+    def test_over_7d_opus_uses_7d_threshold(self) -> None:
+        self.assertEqual(
+            self.check(usage(50, 50, u7_opus=96)),
+            "7d_opus=96% (limit 95%) resets_at=2099-01-09T00:00:00+00:00",
+        )
+
+    def test_over_7d_sonnet_uses_7d_threshold(self) -> None:
+        self.assertEqual(
+            self.check(usage(50, 50, u7_sonnet=96)),
+            "7d_sonnet=96% (limit 95%) resets_at=2099-01-10T00:00:00+00:00",
+        )
+
+    def test_generic_7d_is_checked_before_model_windows(self) -> None:
+        self.assertTrue(self.check(usage(50, 96, u7_opus=99, u7_sonnet=99)).startswith("7d="))
 
     def test_5h_checked_before_7d(self) -> None:
         self.assertTrue(self.check(usage(86, 96)).startswith("5h="))
@@ -266,9 +295,44 @@ class TestWaitForQuota(TmpCwd):
         )
         self.assertEqual((rc, out), (0, ""))
 
+    def test_reactive_missing_script_always_backs_off(self) -> None:
+        sleeps: list[float] = []
+        rc, out = quiet(
+            pl.wait_for_quota,
+            usage_script=self.tmp / "nope.sh",
+            q5="85",
+            q7="95",
+            max_waits="1",
+            claude_alias="claude",
+            sleep_fn=sleeps.append,
+            reactive=True,
+        )
+        self.assertEqual(rc, 0)
+        self.assertEqual(sleeps, [pl.RATE_LIMIT_FALLBACK_SECONDS])
+        self.assertIn("sleeping 3600s after rate limit", out)
+
     def test_fetch_fail_warns_and_proceeds(self) -> None:
         rc, _, out = self.gate(exit_code=3)
         self.assertEqual(rc, 0)
+        self.assertIn("usage fetch failed", out)
+
+    def test_reactive_fetch_failure_backs_off(self) -> None:
+        script = self.tmp / "usage.sh"
+        script.write_text("#!/usr/bin/env bash\nexit 3\n")
+        script.chmod(0o755)
+        sleeps: list[float] = []
+        rc, out = quiet(
+            pl.wait_for_quota,
+            usage_script=script,
+            q5="85",
+            q7="95",
+            max_waits="1",
+            claude_alias="claude",
+            sleep_fn=sleeps.append,
+            reactive=True,
+        )
+        self.assertEqual(rc, 0)
+        self.assertEqual(sleeps, [pl.RATE_LIMIT_FALLBACK_SECONDS])
         self.assertIn("usage fetch failed", out)
 
     def test_parse_fail_warns_and_proceeds(self) -> None:
@@ -276,9 +340,48 @@ class TestWaitForQuota(TmpCwd):
         self.assertEqual(rc, 0)
         self.assertIn("usage parse failed", out)
 
+    def test_reactive_parse_failure_backs_off(self) -> None:
+        script = self.tmp / "usage.sh"
+        script.write_text("#!/usr/bin/env bash\nprintf 'not json'\n")
+        script.chmod(0o755)
+        sleeps: list[float] = []
+        rc, out = quiet(
+            pl.wait_for_quota,
+            usage_script=script,
+            q5="85",
+            q7="95",
+            max_waits="1",
+            claude_alias="claude",
+            sleep_fn=sleeps.append,
+            reactive=True,
+        )
+        self.assertEqual(rc, 0)
+        self.assertEqual(sleeps, [pl.RATE_LIMIT_FALLBACK_SECONDS])
+        self.assertIn("usage parse failed", out)
+
     def test_under_proceeds(self) -> None:
         rc, sleeps, _ = self.gate(usage(50, 50))
         self.assertEqual((rc, sleeps), (0, []))
+
+    def test_reactive_under_threshold_performs_real_backoff(self) -> None:
+        script = self.tmp / "usage.sh"
+        script.write_text(f"#!/usr/bin/env bash\nprintf '%s\\n' '{usage(50, 50)}'\n")
+        script.chmod(0o755)
+        started = time.monotonic()
+        rc, out = quiet(
+            pl.wait_for_quota,
+            usage_script=script,
+            q5="85",
+            q7="95",
+            max_waits="1",
+            claude_alias="claude",
+            reactive=True,
+            fallback_seconds=0.03,
+        )
+        elapsed = time.monotonic() - started
+        self.assertEqual(rc, 0)
+        self.assertGreaterEqual(elapsed, 0.025)
+        self.assertIn("below the configured thresholds", out)
 
     def test_nonutf8_output_is_a_parse_failure(self) -> None:
         # bash: undecodable bytes broke the `python3 -c` heredoc → WARN + proceed;
@@ -588,7 +691,11 @@ class TestRepairLoop(RRDirCase):
 
         self.p.run_phase3_repair = repair  # type: ignore[method-assign]
         self.p.run_phase4_recheck = lambda round_: None  # type: ignore[method-assign]
-        self.p.wait_for_quota = lambda: None  # type: ignore[method-assign]
+
+        def no_quota_wait(*, reactive: bool = False) -> None:
+            pass
+
+        self.p.wait_for_quota = no_quota_wait  # type: ignore[method-assign]
         _, out = quiet(self.p.run_repair_loop)
         return rounds, out
 
@@ -622,11 +729,15 @@ class TestRepairLoop(RRDirCase):
 # Exit-code and error-path parity (bash set -e / set -u / pipefail)
 # ──────────────────────────────────────────────────────────
 class TestRunLauncherExitCodes(TmpCwd):
-    def _launch(self, body: str) -> int | str | None:
+    def _pipeline(self, body: str) -> pl.Pipeline:
         (self.tmp / "fake.sh").write_text(body)
         p = make_pipeline(["t|g|l|r"])
         self.addCleanup(setattr, pl, "LAUNCH_DIR", pl.LAUNCH_DIR)
         pl.LAUNCH_DIR = self.tmp
+        return p
+
+    def _launch(self, body: str) -> int | str | None:
+        p = self._pipeline(body)
         with self.assertRaises(SystemExit) as ctx:
             p._run_launcher("fake.sh", [])
         return ctx.exception.code
@@ -638,6 +749,77 @@ class TestRunLauncherExitCodes(TmpCwd):
 
     def test_plain_failure_passes_through(self) -> None:
         self.assertEqual(self._launch("exit 7\n"), 7)
+
+    def test_rate_limit_is_not_retried_at_whole_phase_scope(self) -> None:
+        runs = self.tmp / "runs"
+        p = self._pipeline(f'printf x >> "{runs}"\nexit 75\n')
+        with self.assertRaises(SystemExit) as ctx:
+            p._run_launcher("fake.sh", [])
+        self.assertEqual(ctx.exception.code, pl.RATE_LIMIT_RC)
+        self.assertEqual(runs.read_text(), "x")
+
+    def test_phase_receives_rate_limit_contract(self) -> None:
+        captured = self.tmp / "env"
+        p = self._pipeline(
+            f'printf \'%s\\n\' "$SPECULA_RATE_LIMIT_REACTIVE" "$SPECULA_RATE_LIMIT_RETRIES" '
+            f'"$SPECULA_QUOTA_5H" "$SPECULA_QUOTA_7D" "$SPECULA_QUOTA_MAX_WAITS" '
+            f'"$SPECULA_CLAUDE_ALIAS" > "{captured}"\n'
+        )
+        p.quota_5h = "81"
+        p.quota_7d = "91"
+        p.quota_max_waits = "4"
+        p.claude_alias = "work"
+        p._run_launcher("fake.sh", [])
+        self.assertEqual(captured.read_text().splitlines(), ["1", "2", "81", "91", "4", "work"])
+
+    def test_sigterm_is_forwarded_to_active_phase(self) -> None:
+        forwarded = self.tmp / "forwarded"
+        p = self._pipeline(f"trap 'touch \"{forwarded}\"; exit 0' TERM\nwhile :; do sleep 0.05; done\n")
+        stop = threading.Event()
+
+        def terminate() -> None:
+            if not stop.wait(0.1):
+                os.kill(os.getpid(), signal.SIGTERM)
+
+        previous = signal.getsignal(signal.SIGTERM)
+        sender = threading.Thread(target=terminate)
+        sender.start()
+        try:
+            with self.assertRaises(SystemExit) as ctx:
+                p._run_launcher("fake.sh", [])
+        finally:
+            stop.set()
+            sender.join()
+        self.assertEqual(ctx.exception.code, 128 + signal.SIGTERM)
+        self.assertTrue(forwarded.is_file())
+        self.assertIs(signal.getsignal(signal.SIGTERM), previous)
+
+    def test_sigterm_escalates_when_phase_ignores_it(self) -> None:
+        pid_file = self.tmp / "pid"
+        p = self._pipeline(f"printf '%s\\n' $$ > \"{pid_file}\"\ntrap '' TERM\nwhile :; do sleep 1; done\n")
+        old_grace = pl.PHASE_TERMINATION_GRACE_SECONDS
+        pl.PHASE_TERMINATION_GRACE_SECONDS = 0.1
+        self.addCleanup(setattr, pl, "PHASE_TERMINATION_GRACE_SECONDS", old_grace)
+        stop = threading.Event()
+
+        def terminate() -> None:
+            if not stop.wait(0.1):
+                os.kill(os.getpid(), signal.SIGTERM)
+
+        sender = threading.Thread(target=terminate)
+        sender.start()
+        started = time.monotonic()
+        try:
+            with self.assertRaises(SystemExit) as ctx:
+                p._run_launcher("fake.sh", [])
+        finally:
+            stop.set()
+            sender.join()
+        self.assertEqual(ctx.exception.code, 128 + signal.SIGTERM)
+        self.assertLess(time.monotonic() - started, 1.0)
+        phase_pid = int(pid_file.read_text())
+        with self.assertRaises(ProcessLookupError):
+            os.kill(phase_pid, 0)
 
 
 class TestSingleTargetGuards(TmpCwd):

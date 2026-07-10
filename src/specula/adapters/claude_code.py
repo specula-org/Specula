@@ -26,13 +26,23 @@ import shlex
 import subprocess
 import sys
 import tempfile
-from typing import Any
+from pathlib import Path
+from typing import IO, TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from specula.adapters.event_stream import stream_events
+elif __package__:
+    from .event_stream import stream_events
+else:
+    from event_stream import stream_events
 
 HELP = __doc__
 
 # Nested-session markers stripped before spawning claude, so the child CLI does
 # not believe it is running inside another Claude Code session.
 SESSION_ENV_VARS = ("CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT")
+
+_RATE_LIMIT_MARKER = "hit your limit"
 
 
 def _derived_path(log_file: str, suffix: str) -> str:
@@ -70,13 +80,87 @@ def _maybe_wrap_sandbox(cmd: list[str], work_dir: str) -> list[str]:
 
 
 def _parse_result(raw_text: str) -> dict[str, Any] | None:
-    """The claude result JSON, parsed once for both extractors below; None when
-    the output isn't a JSON object (crash text, spawn error, truncation)."""
+    """Find the Claude result in single-result JSON or a stream-json capture."""
     try:
         d = json.loads(raw_text)
     except Exception:
-        return None
-    return d if isinstance(d, dict) else None
+        d = None
+    if isinstance(d, dict):
+        return d
+    for line in reversed(raw_text.splitlines()):
+        try:
+            candidate = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(candidate, dict) and (candidate.get("type") == "result" or "result" in candidate):
+            return candidate
+    return None
+
+
+def _rate_limited(raw_text: str, streaming: bool) -> bool:
+    """Did *claude* say it is rate limited?
+
+    It announces that either as a plain-text banner (no JSON at all) or inside
+    its final result record. A stream-json capture additionally holds every
+    assistant message and CLI diagnostic, so scanning it whole would turn a log
+    the agent merely *read* into a spurious EX_TEMPFAIL — and callers treat 75 as
+    "stop everything and wait for the quota to reset". Keep the scan on claude's
+    own verdict."""
+
+    def error_result(record: object) -> bool:
+        if not isinstance(record, dict):
+            return False
+        verdict = record.get("is_error")
+        if verdict is not True:
+            if verdict is False:
+                return False
+            subtype = record.get("subtype")
+            if not isinstance(subtype, str) or not subtype.startswith("error"):
+                return False
+        result = record.get("result")
+        return isinstance(result, str) and _RATE_LIMIT_MARKER in result.casefold()
+
+    # Non-streaming output is one JSON result. A successful result can quote an
+    # old rate-limit message in its report, so the phrase alone is not a verdict.
+    try:
+        record = json.loads(raw_text)
+    except Exception:
+        record = None
+    if isinstance(record, dict):
+        return error_result(record)
+    if not streaming:
+        return _RATE_LIMIT_MARKER in raw_text.casefold()
+
+    for line in raw_text.splitlines():
+        try:
+            record = json.loads(line)
+        except Exception:
+            if _RATE_LIMIT_MARKER in line.casefold():  # claude's plain-text banner
+                return True
+            continue
+        if isinstance(record, dict) and record.get("type") == "result" and error_result(record):
+            return True
+    return False
+
+
+def _drain(stream: IO[bytes]) -> None:
+    """Read a pipe to EOF and discard it, so the child never blocks writing."""
+    with contextlib.suppress(OSError):
+        while stream.read(1 << 16):
+            pass
+
+
+def _read_capture(path: str) -> str:
+    """The captured claude output, or "" when it could not be written/read.
+
+    errors="replace" is a deliberate deviation from the bash, which died on
+    non-UTF-8 claude output (UnicodeDecodeError under set -e: non-zero exit,
+    empty .log, no .usage.json — and a rate-limit hit lost its exit-75 retry
+    signal). Degrade to U+FFFD + parse_failed on the normal exit-code path
+    instead (test_adapters.py::test_nonutf8_output_degrades_gracefully)."""
+    with contextlib.suppress(OSError), open(path, errors="replace") as fh:
+        return fh.read()
+    return ""
 
 
 def _extract_log(d: dict[str, Any] | None, raw_text: str, log_file: str) -> None:
@@ -250,7 +334,11 @@ def main(argv: list[str]) -> int:
                 )
 
         # ── Build command ──
-        cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", "json"]
+        activity_log = os.environ.get("SPECULA_ACTIVITY_LOG", "")
+        output_format = "stream-json" if activity_log else "json"
+        cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", output_format]
+        if activity_log:
+            cmd += ["--verbose"]
         if effort and effort != "default":
             cmd += ["--effort", effort]
         if max_budget and max_budget != "0":
@@ -262,36 +350,95 @@ def main(argv: list[str]) -> int:
 
         # ── Run ──
         raw_json = _derived_path(log_file, ".raw.json")
+        capture_path = activity_log or raw_json
+        cli_rc = 127
+        proc: subprocess.Popen[bytes] | None = None
+        activity_failed = False
+        stream_failed = False
+        stream_terminal_record: object | None = None
+        stream_plain_diagnostics: tuple[str, ...] = ()
+        # This `try` covers the spawn ONLY. An OSError here means no agent work
+        # has happened (claude missing / not executable / unreadable prompt), so
+        # a conventional command-not-found status is the honest answer.
         try:
-            with open(prompt_input) as pin, open(raw_json, "w") as out:
-                subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT)  # ignore rc
+            if activity_log:
+                with open(prompt_input) as pin:
+                    proc = subprocess.Popen(cmd, stdin=pin, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            else:
+                with open(prompt_input) as pin, open(capture_path, "w") as out:
+                    cli_rc = subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT).returncode
         except OSError as e:
-            # Spawn failure (claude missing / not executable). Bash writes the
-            # shell's "command not found" into RAW_JSON via 2>&1 and carries on;
-            # mirror that so post-processing still runs → exit 0, .log with the
-            # error text, .usage.json = parse_failed. (A louder exit-1 failure
-            # might be preferable, but changing it is a separate, deliberate
-            # decision — this port stays behavior-identical to the bash.)
-            with open(raw_json, "w") as out:
-                out.write(f"claude-code adapter: failed to run claude: {e}\n")
+            error = f"claude-code adapter: failed to run claude: {e}\n"
+            for path in (capture_path, log_file) if activity_log else (capture_path,):
+                with contextlib.suppress(OSError), open(path, "w") as out:
+                    out.write(error)
 
-        # errors="replace" is a deliberate deviation from the bash, which died on
-        # non-UTF-8 claude output (UnicodeDecodeError under set -e: non-zero exit,
-        # empty .log, no .usage.json — and a rate-limit hit lost its exit-75 retry
-        # signal). Degrade to U+FFFD + parse_failed on the normal exit-code path
-        # instead (test_adapters.py::test_nonutf8_output_degrades_gracefully).
-        raw_text = open(raw_json, errors="replace").read()
+        if proc is not None:
+            if proc.stdout is not None:  # always, given stdout=PIPE
+                try:
+                    stream_status = stream_events("claude-code", Path(activity_log), Path(log_file), proc.stdout)
+                    activity_failed = not stream_status.activity_ok
+                    stream_failed = not stream_status.log_ok
+                    stream_terminal_record = stream_status.terminal_record
+                    stream_plain_diagnostics = stream_status.plain_diagnostics
+                except OSError as e:
+                    # Sink failures are returned after a full drain. An exception
+                    # here means the source pipe itself failed and neither output
+                    # can be trusted as a complete capture.
+                    activity_failed = True
+                    stream_failed = True
+                    print(f"claude-code adapter: event stream failed: {e}", file=sys.stderr)
+                    _drain(proc.stdout)
+            cli_rc = proc.wait()
+
+        # A failed activity sink may still point at stale data (or a
+        # non-terminating device such as /dev/full). Reconstruct the terminal
+        # result/CLI diagnostics retained by stream_events instead of reopening
+        # it; activity telemetry is never the only source of result semantics.
+        if activity_failed:
+            raw_text = (
+                json.dumps(stream_terminal_record)
+                if stream_terminal_record is not None
+                else "".join(stream_plain_diagnostics)
+            )
+        else:
+            raw_text = _read_capture(capture_path)
 
         # ── Detect rate limit → exit 75 (EX_TEMPFAIL) so callers can wait/retry ──
-        rate_limited = "hit your limit" in raw_text
+        rate_limited = _rate_limited(raw_text, bool(activity_log))
         if rate_limited:
             print("claude-code adapter: rate limit hit", file=sys.stderr)
 
         result = _parse_result(raw_text)
-        _extract_log(result, raw_text, log_file)
-        _extract_usage(result, _derived_path(log_file, ".usage.json"))
+        postprocess_failed = False
+        if activity_log:
+            try:
+                with open(raw_json, "w") as out:
+                    if result is not None:
+                        json.dump(result, out)
+                        out.write("\n")
+                    else:
+                        out.write(raw_text)
+            except OSError as e:
+                postprocess_failed = True
+                print(f"claude-code adapter: raw result write failed: {e}", file=sys.stderr)
+        if not activity_log:
+            try:
+                _extract_log(result, raw_text, log_file)
+            except OSError as e:
+                postprocess_failed = True
+                print(f"claude-code adapter: readable log write failed: {e}", file=sys.stderr)
+        try:
+            _extract_usage(result, _derived_path(log_file, ".usage.json"))
+        except OSError as e:
+            postprocess_failed = True
+            print(f"claude-code adapter: usage write failed: {e}", file=sys.stderr)
 
-        return 75 if rate_limited else 0
+        if rate_limited:
+            return 75
+        if cli_rc != 0:
+            return cli_rc
+        return 1 if stream_failed or postprocess_failed else 0
     finally:
         if tmp_prompt is not None:
             with contextlib.suppress(OSError):

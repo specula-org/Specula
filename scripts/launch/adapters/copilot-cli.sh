@@ -17,6 +17,8 @@
 #   --prompt-file file.md  Read prompt from file (mutually exclusive with --prompt)
 #   --max-turns N          Mapped to --max-autopilot-continues (0=unlimited, omits flag)
 #   --model MODEL          AI model to use (default: $COPILOT_MODEL or Copilot CLI default)
+#   --claude-alias NAME    Accepted for adapter compatibility; ignored
+#   --effort LEVEL         Accepted for adapter compatibility; ignored
 #   --log output.log       Log file path (required)
 #   --background           Run in background, print PID to stdout (default: foreground)
 #   --help                 Show this help
@@ -36,6 +38,8 @@ for arg in "$@"; do
     --prompt-file=*) PROMPT_FILE="${arg#*=}" ;;
     --max-turns=*)   MAX_TURNS="${arg#*=}" ;;
     --model=*)       MODEL="${arg#*=}" ;;
+    --claude-alias=*) : ;;
+    --effort=*)      : ;;
     --log=*)         LOG_FILE="${arg#*=}" ;;
     --background)    BACKGROUND=true ;;
     --help|-h)
@@ -90,4 +94,35 @@ if [[ -n "$MAX_TURNS" && "$MAX_TURNS" != "0" ]]; then
   CMD+=(--max-autopilot-continues "$MAX_TURNS")
 fi
 
-"${CMD[@]}" > "$LOG_FILE" 2>&1
+ACTIVITY_LOG="${SPECULA_ACTIVITY_LOG:-}"
+if [[ -z "$ACTIVITY_LOG" ]]; then
+  "${CMD[@]}" > "$LOG_FILE" 2>&1
+  exit $?
+fi
+
+ADAPTER_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EVENT_HELPER="$ADAPTER_DIR/../../../src/specula/adapters/event_stream.py"
+
+# JSON streaming arrived after the first Copilot CLI releases. Probe the
+# installed binary's help instead of imposing a minimum version: old clients
+# still stream their plain output through the helper, so activity logging stays
+# enabled without passing flags they do not understand.
+COPILOT_HELP="$(copilot --help 2>&1 || true)"
+if grep -q -- '--output-format' <<< "$COPILOT_HELP"; then
+  CMD+=(--output-format json)
+fi
+if grep -q -- '--stream' <<< "$COPILOT_HELP"; then
+  CMD+=(--stream on)
+fi
+
+set +e
+"${CMD[@]}" 2>&1 | python3 "$EVENT_HELPER" copilot "$ACTIVITY_LOG" "$LOG_FILE"
+PIPELINE_STATUS=("${PIPESTATUS[@]}")
+set -e
+
+COPILOT_RC="${PIPELINE_STATUS[0]}"
+STREAM_RC="${PIPELINE_STATUS[1]}"
+if (( COPILOT_RC != 0 )); then
+  exit "$COPILOT_RC"
+fi
+exit "$STREAM_RC"
