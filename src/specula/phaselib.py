@@ -23,8 +23,9 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -46,6 +47,37 @@ with contextlib.suppress(locale.Error):
 def _ts() -> str:
     """[HH:MM:SS] — mirrors bash `date '+%H:%M:%S'`."""
     return time.strftime("%H:%M:%S")
+
+
+@contextlib.contextmanager
+def _cleanup_on_signal() -> Iterator[None]:
+    """Make SIGTERM/SIGHUP take the same exit path Ctrl-C already takes.
+
+    Agents run with start_new_session=True, so they are no longer in the
+    launcher's process group: a `kill <launcher>` (scheduler, timeout, a closing
+    terminal) that skips the cleanup handler leaves them orphaned and burning
+    quota. SystemExit unwinds through `run`'s `except BaseException` -> the agents
+    are terminated -> the interpreter exits 128+N without a traceback.
+
+    `signal.signal` is main-thread only; off-thread callers just get no handler.
+    """
+
+    def _raise(signum: int, _frame: Any) -> None:
+        raise SystemExit(128 + signum)
+
+    installed: list[tuple[int, Any]] = []
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is None:  # pragma: no cover - non-POSIX
+            continue
+        with contextlib.suppress(ValueError, OSError):
+            installed.append((sig, signal.signal(sig, _raise)))
+    try:
+        yield
+    finally:
+        for sig, previous in installed:
+            with contextlib.suppress(ValueError, OSError):
+                signal.signal(sig, previous)
 
 
 def _trim(s: str) -> str:
@@ -386,40 +418,41 @@ class Phase:
         show_progress = progress.enabled()
         running: list[progress.RunningAgent] = []
         failures: list[tuple[str, int]] = []
-        try:
-            for target in targets:
-                name = self.target_name(target)
-                prompt = self.build_prompt(ws, target)
-                # Throttle.
-                while len(running) >= max_parallel:
-                    if show_progress:
-                        progress.report(running, self.progress_config)
-                    running, completed_failures = self._reap_agents(running, show_progress)
-                    failures.extend(completed_failures)
-                    if len(running) >= max_parallel:
-                        time.sleep(self.progress_config.poll_seconds)
-                proc = self._launch(ws, name, prompt, dry_run, max_turns, claude_alias, adapter)
-                if not dry_run and proc is not None:
-                    running.append(proc)
-                print()
+        with _cleanup_on_signal():
+            try:
+                for target in targets:
+                    name = self.target_name(target)
+                    prompt = self.build_prompt(ws, target)
+                    # Throttle.
+                    while len(running) >= max_parallel:
+                        if show_progress:
+                            progress.report(running, self.progress_config)
+                        running, completed_failures = self._reap_agents(running, show_progress)
+                        failures.extend(completed_failures)
+                        if len(running) >= max_parallel:
+                            time.sleep(self.progress_config.poll_seconds)
+                    proc = self._launch(ws, name, prompt, dry_run, max_turns, claude_alias, adapter)
+                    if not dry_run and proc is not None:
+                        running.append(proc)
+                    print()
 
-            if not dry_run:
-                print(f"[{_ts()}] All agents launched. Waiting...")
-                monitor = self.monitor_line(ws)
-                if monitor is not None:
-                    print(monitor)
-                print()
-                while running:
-                    if show_progress:
-                        progress.report(running, self.progress_config)
-                    running, completed_failures = self._reap_agents(running, show_progress)
-                    failures.extend(completed_failures)
-                    if running:
-                        time.sleep(self.progress_config.poll_seconds)
-                print(f"[{_ts()}] All agents completed.")
-        except BaseException:
-            self._terminate_agents(running)
-            raise
+                if not dry_run:
+                    print(f"[{_ts()}] All agents launched. Waiting...")
+                    monitor = self.monitor_line(ws)
+                    if monitor is not None:
+                        print(monitor)
+                    print()
+                    while running:
+                        if show_progress:
+                            progress.report(running, self.progress_config)
+                        running, completed_failures = self._reap_agents(running, show_progress)
+                        failures.extend(completed_failures)
+                        if running:
+                            time.sleep(self.progress_config.poll_seconds)
+                    print(f"[{_ts()}] All agents completed.")
+            except BaseException:
+                self._terminate_agents(running)
+                raise
 
         self.summarize(ws, names)
         if not dry_run:
@@ -1754,8 +1787,10 @@ def main(argv: list[str]) -> int:
     # bash echo flushed per line; python block-buffers when stdout is a pipe
     # (launch_pipeline.sh tees everything), which would hold progress lines —
     # including the Monitor hint — in the buffer for the hours p.wait() blocks.
+    # errors="replace": progress now relays agent-written text, and an ambient
+    # non-UTF-8 locale must not kill the launcher on the first non-ASCII byte.
     if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(line_buffering=True)
+        sys.stdout.reconfigure(line_buffering=True, errors="replace")
     if not argv or argv[0] not in PHASES:
         print(f"usage: phaselib.py <phase> [options] <target>...\nphases: {', '.join(PHASES)}", file=sys.stderr)
         return 2

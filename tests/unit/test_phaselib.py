@@ -35,6 +35,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -547,6 +548,18 @@ class TestProgressReporting(PhaseCase):
         rc, out = self.run_fake()
         self.assertEqual(rc, 0, out)
         self.assertEqual(seen.read_text().strip(), "<unset>")
+
+    def test_sigterm_reaches_the_agent_cleanup_path(self) -> None:
+        # agents live in their own session now, so a `kill <launcher>` that does
+        # not unwind through run()'s cleanup would orphan them
+        previous = signal.getsignal(signal.SIGTERM)
+        with self.assertRaises(SystemExit) as ctx, phaselib._cleanup_on_signal():
+            self.assertIsNot(signal.getsignal(signal.SIGTERM), previous)  # armed before we fire
+            os.kill(os.getpid(), signal.SIGTERM)
+            for _ in range(200):  # the handler runs at the next bytecode boundary
+                time.sleep(0.005)
+        self.assertEqual(ctx.exception.code, 128 + signal.SIGTERM)
+        self.assertIs(signal.getsignal(signal.SIGTERM), previous)
 
     def test_interrupt_cleanup_terminates_agent_process_group(self) -> None:
         proc = subprocess.Popen(["sh", "-c", "sleep 30"], start_new_session=True)
