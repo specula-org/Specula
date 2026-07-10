@@ -246,7 +246,11 @@ class TestDryRunCommand(PhaseCase):
         adapter = phaselib.LAUNCH_DIR / "adapters" / "claude-code.sh"
         for spec in PHASES:
             with self.subTest(phase=spec["key"]):
-                rc, out = self.dry_run(spec)
+                # bug_confirmation now defaults to parallel per-finding; the
+                # single-agent adapter command this test pins is the
+                # --legacy-confirm path (parallel default has its own test below).
+                extra = ["--legacy-confirm"] if spec["key"] == "bug_confirmation" else None
+                rc, out = self.dry_run(spec, extra=extra)
                 self.assertEqual(rc, 0, out)
 
                 wd = self.work_dir()
@@ -267,6 +271,22 @@ class TestDryRunCommand(PhaseCase):
                 body = prompt.read_text()
                 self.assertIn(spec["skill"], body)  # the skill guide it defers to
                 self.assertIn(str(wd / spec["out"]), body)  # a key output/inputs path
+
+    def test_bug_confirmation_defaults_to_parallel(self) -> None:
+        # No --legacy-confirm: Phase 4a runs parallel per-finding confirmation
+        # (confirmlib), NOT the single-agent adapter launch.
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Parallel confirmation", out)
+        self.assertIn("max_parallel=4", out)  # real concurrency default, not the target-concurrency 1
+        self.assertNotIn("--background", out)  # not the single-agent _launch command
+
+    def test_bug_confirmation_recheck_stays_single_agent(self) -> None:
+        # --recheck always uses the single-agent path, even without --legacy-confirm.
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--recheck"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("[DRY RUN]", out)  # single-agent adapter launch
+        self.assertNotIn("Parallel confirmation", out)
 
     def test_max_turns_forwarded_verbatim(self) -> None:
         rc, out = self.dry_run(BY_KEY["code_analysis"], extra=["--max-turns=7"])

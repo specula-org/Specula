@@ -14,6 +14,15 @@ Each finding goes through two phases in order: investigation (Phase 1) and repro
 
 **Confirmation loop.** When reproduction concludes — with a citation — that a counterexample is a spec / fault-model / invariant **artifact** rather than a real bug, it does not drop the finding. It emits a *repair request* that hands the finding back to Phase 3 for a scoped repair; the pipeline then re-runs this skill in `--recheck` mode (Phase 2′) to settle it. See `references/repair-request-format.md`. The loop is bounded by the run's token budget and by per-request anti-oscillation, not by a fixed iteration cap.
 
+## Execution modes
+
+The per-finding methodology below is identical however the phase runs; only the orchestration differs:
+
+- **Parallel per-finding (default).** A step-0 consolidate+dedup merges the two finding sources into `candidates.json`, then one Reproducer agent handles each finding, in parallel.
+- **Single-agent (`--legacy-confirm`).** One agent consolidates both sources and reproduces every finding in one context.
+
+Both modes write the same `confirmed-bugs.md`, emit the same `RR-NNN` repair requests, and use the same statuses. Re-check (`--recheck`, Phase 2′) is always single-agent.
+
 ## Per-bug output schema
 
 Each finding's entry in `confirmed-bugs.md` should include:
