@@ -110,6 +110,8 @@ class ConfirmConfig:
     repo_dir: str = ""
     max_parallel: int = 4
     claude_alias: str = "claude"
+    model: str = ""  # forwarded to the adapter (empty -> adapter default)
+    effort: str = ""  # reasoning effort forwarded to the adapter
     worktree: bool = True
     dry_run: bool = False
     prompt_extra: str = ""  # target's .prompt-extra.md, appended to every agent prompt
@@ -178,6 +180,8 @@ def run_turn(cfg: ConfirmConfig, f: Finding, role: str, turn_no: int, prompt: st
         phase_key=PHASE_KEY,
         work_dir=cfg.ws.work_dir(cfg.name),
         claude_alias=cfg.claude_alias,
+        model=cfg.model,
+        effort=cfg.effort,
     )
     if rc == 75:
         raise RateLimited(f"{f.id} turn {turn_no} {role}")
@@ -415,6 +419,8 @@ def consolidate(cfg: ConfirmConfig) -> None:
         phase_key=PHASE_KEY,
         work_dir=wd,
         claude_alias=cfg.claude_alias,
+        model=cfg.model,
+        effort=cfg.effort,
     )
     if rc == 75:
         raise RateLimited(f"{cfg.name} consolidate")

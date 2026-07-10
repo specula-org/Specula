@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Adapter: codex
-# Capabilities: max-turns, auto-approve, background, stop-gate
+# Capabilities: max-turns, model-select, effort-select, auto-approve, background, stop-gate
 #
 # Unified interface for invoking Codex CLI.
 #
@@ -14,7 +14,11 @@
 #   --log output.log       Log file path (required)
 #   --background           Run in background, print PID to stdout (default: foreground)
 #   --claude-alias NAME    Accepted for launcher compatibility; ignored.
-#   --effort LEVEL         Accepted for launcher compatibility; ignored.
+#   --model NAME           Model to use; passed to codex as -m. Env: CODEX_MODEL.
+#                          Empty -> codex config.toml default.
+#   --effort LEVEL         Reasoning effort (e.g. minimal|low|medium|high|ultra);
+#                          passed as -c model_reasoning_effort. Env: CODEX_EFFORT.
+#                          Empty -> codex config.toml default.
 #   --help                 Show this help
 
 set -euo pipefail
@@ -26,6 +30,7 @@ LOG_FILE=""
 BACKGROUND=false
 CLAUDE_ALIAS=""
 EFFORT=""
+MODEL=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -36,6 +41,7 @@ for arg in "$@"; do
     --background)    BACKGROUND=true ;;
     --claude-alias=*) CLAUDE_ALIAS="${arg#*=}" ;;
     --effort=*)      EFFORT="${arg#*=}" ;;
+    --model=*)       MODEL="${arg#*=}" ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -43,6 +49,10 @@ for arg in "$@"; do
     *) echo "codex adapter: unknown option: $arg" >&2; exit 1 ;;
   esac
 done
+
+# Flag wins over env; empty (neither set) -> codex config.toml default.
+MODEL="${MODEL:-${CODEX_MODEL:-}}"
+EFFORT="${EFFORT:-${CODEX_EFFORT:-}}"
 
 # ── Validate arguments ──
 
@@ -218,6 +228,9 @@ run_codex() {
     cmd+=(node "$backend" --workspace "${SPECULA_WORK_DIR:-$PWD}" --)
   fi
   cmd+=(codex exec --dangerously-bypass-approvals-and-sandbox)
+  # Model / reasoning effort (additive — empty leaves codex config.toml default).
+  [[ -n "$MODEL" ]] && cmd+=(-m "$MODEL")
+  [[ -n "$EFFORT" ]] && cmd+=(-c "model_reasoning_effort=$EFFORT")
 
   local codex_rc=0
   set +e

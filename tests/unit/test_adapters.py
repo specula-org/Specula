@@ -57,6 +57,8 @@ _VOLATILE = (
     "CLAUDE_EFFORT",
     "CLAUDE_MODEL",
     "COPILOT_MODEL",
+    "CODEX_MODEL",
+    "CODEX_EFFORT",
     "CLAUDECODE",
     "CLAUDE_CODE_SSE_PORT",
     "CLAUDE_CODE_ENTRYPOINT",
@@ -827,11 +829,43 @@ class CodexAdapter(AdapterCase):
         self.invoke(self.base_flags(base))
         self.assertEqual(json.loads((base / "out.usage.json").read_text())["agent"], "codex")
 
-    def test_alias_and_effort_accepted_but_ignored(self) -> None:
+    def test_model_and_effort_forwarded_alias_ignored(self) -> None:
         base = self.sandbox()
-        r = self.invoke(self.base_flags(base) + ["--claude-alias=x", "--effort=high"])
+        r = self.invoke(self.base_flags(base) + ["--claude-alias=x", "--model=gpt-5.5", "--effort=high"])
         self.assertEqual(r["returncode"], 0)
-        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "the prompt"])
+        # --claude-alias is ignored; --model -> -m, --effort -> -c model_reasoning_effort
+        self.assertEqual(
+            r["argv"],
+            [
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "-m",
+                "gpt-5.5",
+                "-c",
+                "model_reasoning_effort=high",
+                "the prompt",
+            ],
+        )
+
+    def test_model_effort_from_env(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(
+            self.base_flags(base),
+            env_extra={"CODEX_MODEL": "gpt-5.6-sol", "CODEX_EFFORT": "ultra"},
+        )
+        self.assertEqual(r["returncode"], 0)
+        argv = r["argv"]
+        self.assertEqual(argv[argv.index("-m") + 1], "gpt-5.6-sol")
+        self.assertEqual(argv[argv.index("-c") + 1], "model_reasoning_effort=ultra")
+
+    def test_flag_wins_over_env(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(
+            self.base_flags(base) + ["--model=flag-model"],
+            env_extra={"CODEX_MODEL": "env-model"},
+        )
+        argv = r["argv"]
+        self.assertEqual(argv[argv.index("-m") + 1], "flag-model")
 
     def test_max_turns_required(self) -> None:
         base = self.sandbox()

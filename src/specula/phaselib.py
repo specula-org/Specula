@@ -213,6 +213,8 @@ class Phase:
     accepts_artifact = True  # bug_classification takes no --artifact (rejects it)
     dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
     progress_config = progress.ProgressConfig()
+    _model = ""  # model / reasoning effort forwarded to the adapter; set in run()
+    _effort = ""
 
     # ── per-phase hooks ──
     def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
@@ -380,6 +382,8 @@ class Phase:
         agent = "claude-code"
         # `or`: bash ${CLAUDE_ALIAS:-claude} treats an exported-but-empty var as unset
         claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
+        model = ""
+        effort = ""
         artifact = ""
         targets: list[str] = []
         extra: dict[str, str | bool] = {}
@@ -411,6 +415,10 @@ class Phase:
                 agent = arg[len("--agent=") :]
             elif arg.startswith("--claude-alias="):
                 claude_alias = arg[len("--claude-alias=") :]
+            elif arg.startswith("--model="):
+                model = arg[len("--model=") :]
+            elif arg.startswith("--effort="):
+                effort = arg[len("--effort=") :]
             elif arg.startswith("--artifact=") and self.accepts_artifact:
                 artifact = arg[len("--artifact=") :]
             elif arg in ("--help", "-h"):
@@ -426,6 +434,12 @@ class Phase:
 
         if not targets:
             targets = [_logical_cwd().name]  # bash `basename "$PWD"` (logical under symlinks)
+
+        # Model / reasoning effort: flag wins, then a run-wide env, else empty —
+        # each adapter falls back to its own env / CLI default. Forwarded to the
+        # adapter (translated per-CLI) only when non-empty.
+        self._model = model or os.environ.get("SPECULA_MODEL") or ""
+        self._effort = effort or os.environ.get("SPECULA_EFFORT") or ""
 
         adapter = LAUNCH_DIR / "adapters" / f"{agent}.sh"
         if not adapter.is_file():
@@ -689,7 +703,7 @@ class Phase:
                     f"--prompt-file={files['prompt']}",
                     f"--max-turns={max_turns}",
                     f"--claude-alias={claude_alias}",
-                    "--effort=max",
+                    *_model_effort_argv(self._model, self._effort),
                     f"--log={files['log']}",
                     "--background",
                 ],
@@ -727,6 +741,21 @@ class Phase:
         return launched
 
 
+def _model_effort_argv(model: str, effort: str) -> list[str]:
+    """Adapter flags for model / reasoning effort, omitted when empty so the
+    adapter falls back to its own env (`CODEX_MODEL`, `CLAUDE_EFFORT`, …) or the
+    CLI default. Empty is the default on purpose: a hardcoded ``--effort=max`` is
+    a claude-ism the codex adapter rejects (codex has no ``max`` level). Each
+    adapter translates these to its native flags (codex ``-m`` / ``-c
+    model_reasoning_effort``, claude ``--model`` / ``--effort``)."""
+    argv: list[str] = []
+    if model:
+        argv.append(f"--model={model}")
+    if effort:
+        argv.append(f"--effort={effort}")
+    return argv
+
+
 def run_agent_blocking(
     adapter: Path,
     prompt: str,
@@ -738,12 +767,14 @@ def run_agent_blocking(
     claude_alias: str,
     max_turns: str = "0",
     stop_gate: bool = False,
+    model: str = "",
+    effort: str = "",
 ) -> tuple[int, str]:
     """Run ONE agent invocation, blocking, and return (returncode, log text).
 
     The blocking sibling of `Phase._launch`: it shares the same adapter path, the
     same flag set (`--prompt-file` / `--max-turns` / `--claude-alias` /
-    `--effort=max` / `--log`), and the same stop-gate env keys
+    `--model` / `--effort` / `--log`), and the same stop-gate env keys
     (`SPECULA_PHASE` / `SPECULA_WORK_DIR`) — but drops `--background` so the
     caller can read the result before issuing the next turn. That is the shape a
     per-finding confirmation debate needs (turn N+1 reads turn N's output),
@@ -767,7 +798,7 @@ def run_agent_blocking(
         f"--prompt-file={prompt_file}",
         f"--max-turns={max_turns}",
         f"--claude-alias={claude_alias}",
-        "--effort=max",
+        *_model_effort_argv(model, effort),
         f"--log={log_file}",
     ]
     rc = subprocess.run(cmd, env=env).returncode
@@ -1492,6 +1523,8 @@ Prerequisites:
                 repo_dir=ws.find_repo_dir(name),
                 max_parallel=findings_parallel,
                 claude_alias=claude_alias,
+                model=self._model,
+                effort=self._effort,
                 dry_run=dry_run,
                 prompt_extra=self._read_prompt_extra(ws, name),
             )
@@ -1646,17 +1679,26 @@ Output:
         phase = argv[0] if argv else ""
         agent = "claude-code"
         claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
+        model = ""
+        effort = ""
         targets: list[str] = []
         for arg in argv[1:]:
             if arg.startswith("--agent="):
                 agent = arg[len("--agent=") :]
             elif arg.startswith("--claude-alias="):
                 claude_alias = arg[len("--claude-alias=") :]
+            elif arg.startswith("--model="):
+                model = arg[len("--model=") :]
+            elif arg.startswith("--effort="):
+                effort = arg[len("--effort=") :]
             elif arg in ("--help", "-h"):
                 sys.stdout.write(self.usage)
                 return 0
             else:
                 targets.append(arg)
+
+        self._model = model or os.environ.get("SPECULA_MODEL") or ""
+        self._effort = effort or os.environ.get("SPECULA_EFFORT") or ""
 
         if not phase or not targets:
             print(f"Usage: {SCRIPT_DIR}/phaselib.py review <analysis|specgen|validation> name [name ...]")
@@ -1766,7 +1808,7 @@ Output:
                     f"--prompt={prompt.rstrip(chr(10))}",
                     "--max-turns=30",
                     f"--claude-alias={claude_alias}",
-                    "--effort=max",
+                    *_model_effort_argv(self._model, self._effort),
                     f"--log={log_file}",
                     "--background",
                 ],

@@ -40,6 +40,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, TypedDict, cast
+from unittest import mock
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 if str(SRC) not in sys.path:  # test the tree this file lives in, installed or not
@@ -1139,6 +1140,54 @@ class TestReviewPhase(PhaseCase):
         self.assertEqual(len(spawned), 1)
         self.assertIsNotNone(spawned[0].poll())
         self.assertFalse(phaselib.Phase._group_exists(spawned[0].pid))
+
+
+class TestModelEffortForwarding(unittest.TestCase):
+    """Uniform model / reasoning-effort forwarding: phaselib hands --model /
+    --effort to the adapter only when set (empty -> the adapter's own default),
+    so a codex run is never given the claude-only 'max' effort level."""
+
+    def test_argv_helper(self) -> None:
+        self.assertEqual(phaselib._model_effort_argv("", ""), [])
+        self.assertEqual(phaselib._model_effort_argv("gpt-5.5", ""), ["--model=gpt-5.5"])
+        self.assertEqual(phaselib._model_effort_argv("", "ultra"), ["--effort=ultra"])
+        self.assertEqual(phaselib._model_effort_argv("m", "e"), ["--model=m", "--effort=e"])
+
+    def _blocking_cmd(self, model: str = "", effort: str = "") -> list[str]:
+        captured: list[list[str]] = []
+
+        class _Result:
+            returncode = 0
+
+        def fake_run(cmd: list[str], **_: Any) -> _Result:
+            captured.append(cmd)
+            return _Result()
+
+        with tempfile.TemporaryDirectory() as d, mock.patch("specula.phaselib.subprocess.run", fake_run):
+            dp = Path(d)
+            phaselib.run_agent_blocking(
+                Path("/x/adapter.sh"),
+                "prompt",
+                dp / "p.md",
+                dp / "o.log",
+                phase_key="k",
+                work_dir=dp,
+                claude_alias="claude",
+                model=model,
+                effort=effort,
+            )
+        return captured[0]
+
+    def test_forwarded_when_set(self) -> None:
+        cmd = self._blocking_cmd(model="gpt-5.5", effort="ultra")
+        self.assertIn("--model=gpt-5.5", cmd)
+        self.assertIn("--effort=ultra", cmd)
+        self.assertNotIn("--effort=max", cmd)  # the removed claude-ism
+
+    def test_omitted_when_empty(self) -> None:
+        cmd = self._blocking_cmd()
+        self.assertFalse(any(c.startswith("--model=") for c in cmd))
+        self.assertFalse(any(c.startswith("--effort=") for c in cmd))
 
 
 if __name__ == "__main__":
