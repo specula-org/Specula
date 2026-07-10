@@ -1,11 +1,17 @@
-"""Tee adapter JSONL into raw and incrementally readable activity logs."""
+"""Tee adapter JSONL into raw and incrementally readable activity logs.
+
+The `.activity.jsonl` sidecar holds the adapter's event stream as emitted, minus
+the tool-result echo records (see `_is_tool_echo`), plus any non-JSON diagnostic
+the CLI wrote to stderr — both adapters merge stderr into the stream so an
+"unknown flag" line still reaches the reader.
+"""
 
 from __future__ import annotations
 
 import json
 import re
 import sys
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 _ESCAPE_RE = re.compile(r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])")
@@ -142,27 +148,60 @@ def _codex_events(record: object, concise: bool) -> list[str]:
     return []
 
 
+_PARSERS: dict[str, Callable[[object, bool], list[str]]] = {
+    "claude-code": _claude_events,
+    "codex": _codex_events,
+    "copilot-cli": _copilot_events,
+}
+
+
+def _is_tool_echo(adapter_name: str, record: object) -> bool:
+    """True for records that only replay a tool's output back to the model.
+
+    Nothing downstream reads them — not the parsers above, not the adapter's
+    result lookup — yet they carry the full text of every file the agent opened,
+    which is the bulk of a long phase's stream. Claude keeps its own complete
+    session JSONL under `CLAUDE_CONFIG_DIR/projects/`, so dropping them from our
+    sidecar costs no information that cannot be recovered."""
+    if not isinstance(record, dict):
+        return False
+    if adapter_name == "claude-code":
+        return record.get("type") == "user"
+    if adapter_name == "codex":
+        item = record.get("item")
+        return (
+            record.get("type") == "item.completed"
+            and isinstance(item, dict)
+            and item.get("type") == "command_execution"
+        )
+    return False  # copilot-cli: no pinned event for command output, keep it whole
+
+
+def _read_line(adapter_name: str, line: str, concise: bool) -> tuple[bool, list[str]]:
+    """One line of adapter output -> (persist the raw line?, readable events).
+
+    Never raises on malformed input: a line that is not JSON is the CLI's own
+    diagnostic, and losing it is worse than showing it."""
+    try:
+        record = json.loads(line)
+    except (TypeError, ValueError):
+        text = summary(line, _SUMMARY_LIMIT if concise else None)
+        is_error = any(term in text.casefold() for term in ("error", "failed", "require", "invalid", "unknown"))
+        if text and (is_error or not concise):
+            return True, [f"adapter error: {text}" if is_error else text]
+        return True, []
+    if _is_tool_echo(adapter_name, record):
+        return False, []
+    return True, _PARSERS[adapter_name](record, concise)
+
+
 def parse_events(adapter_name: str, lines: list[str], *, concise: bool = True) -> list[str]:
     """Convert raw JSONL records into readable activity without raising on malformed input."""
-    parsers = {
-        "claude-code": _claude_events,
-        "codex": _codex_events,
-        "copilot-cli": _copilot_events,
-    }
-    parser = parsers.get(adapter_name)
-    if parser is None:
+    if adapter_name not in _PARSERS:
         return []
     events: list[str] = []
     for line in lines:
-        try:
-            record = json.loads(line)
-        except (TypeError, ValueError):
-            text = summary(line, _SUMMARY_LIMIT if concise else None)
-            is_error = any(term in text.casefold() for term in ("error", "failed", "require", "invalid", "unknown"))
-            if text and (is_error or not concise):
-                events.append(f"adapter error: {text}" if is_error else text)
-            continue
-        events.extend(parser(record, concise))
+        events.extend(_read_line(adapter_name, line, concise)[1])
     return events
 
 
@@ -189,10 +228,11 @@ def stream_events(
     # ambient locale must not be able to kill a run with a UnicodeEncodeError.
     with activity_path.open("wb") as raw_log, log_path.open("w", encoding="utf-8", errors="replace") as log:
         for raw_line in source:
-            raw_log.write(raw_line)
-            raw_log.flush()
-            line = raw_line.decode(errors="replace")
-            for event in parse_events(adapter_name, [line], concise=False):
+            keep, events = _read_line(adapter_name, raw_line.decode(errors="replace"), concise=False)
+            if keep:
+                raw_log.write(raw_line)
+                raw_log.flush()
+            for event in events:
                 if not event or event == last_event:
                     continue
                 log.write(event.rstrip("\n") + "\n")

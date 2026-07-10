@@ -281,6 +281,26 @@ class ClaudeCodeAdapter(AdapterCase):
         self.assertEqual((base / "out.log").read_text(), "reading kilo.c\ndone\n")
         self.assertEqual(json.loads((base / "out.raw.json").read_text())["type"], "result")
 
+    def test_stream_json_drops_tool_result_echoes(self) -> None:
+        # `user` records replay the full text of every file the agent opened. No
+        # consumer reads them, and claude keeps its own session transcript.
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        assistant = json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "hi"}]}})
+        echo = json.dumps({"type": "user", "message": {"content": [{"type": "tool_result", "content": "x" * 4096}]}})
+        result = json.dumps({"type": "result", **CLAUDE_JSON})
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text="\n".join([assistant, echo, result]),
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertEqual(activity.read_text(), f"{assistant}\n{result}")
+        self.assertEqual((base / "out.log").read_text(), "hi\ndone\n")
+
     def test_stream_json_log_keeps_result_line_structure(self) -> None:
         # agent.log is the human-facing report; collapsing markdown to one line
         # (as `summary` does for the CLI ticker) destroys it.
