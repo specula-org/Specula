@@ -13,6 +13,7 @@ import json
 import re
 import sys
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, TextIO, cast
 
@@ -20,6 +21,17 @@ _ESCAPE_RE = re.compile(r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])"
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 _CONTROL_KEEP_NL_RE = re.compile(r"[\x00-\x09\x0b-\x1f\x7f-\x9f]")  # every control char but \n
 _SUMMARY_LIMIT = 180
+
+
+@dataclass(frozen=True)
+class StreamStatus:
+    activity_ok: bool
+    log_ok: bool
+    terminal_record: object | None
+    plain_diagnostics: tuple[str, ...]
+
+
+_INVALID_RECORD = object()
 
 
 def _strip_escapes(text: str) -> str:
@@ -221,21 +233,8 @@ def _is_tool_echo(adapter_name: str, record: object) -> bool:
     return False  # copilot-cli: no pinned event for command output, keep it whole
 
 
-def _is_fatal_record(adapter_name: str, record: object) -> bool:
-    if not isinstance(record, dict):
-        return False
-    record_type = record.get("type")
-    if adapter_name == "copilot-cli":
-        return record_type == "session.error"
-    if adapter_name == "codex":
-        # Top-level reconnect errors can be followed by a successful turn.
-        # turn.failed is Codex's terminal failure verdict.
-        return record_type == "turn.failed"
-    return False
-
-
-def _read_line(adapter_name: str, line: str, concise: bool) -> tuple[bool, list[str], bool]:
-    """One line -> (persist raw?, readable events, fatal adapter verdict?).
+def _read_line(adapter_name: str, line: str, concise: bool) -> tuple[bool, list[str], object]:
+    """One line -> (persist raw?, readable events, parsed record or sentinel).
 
     Never raises on malformed input: a line that is not JSON is the CLI's own
     diagnostic, and losing it is worse than showing it."""
@@ -243,16 +242,18 @@ def _read_line(adapter_name: str, line: str, concise: bool) -> tuple[bool, list[
         record = json.loads(line)
     except (TypeError, ValueError):
         text = summary(line, _SUMMARY_LIMIT if concise else None)
+        if adapter_name == "copilot-cli":
+            # Pre-JSON Copilot output is the agent's response, not a diagnostic
+            # channel. Preserve wording such as "tests failed before the fix"
+            # and literal "API Error:" markers without guessing their meaning.
+            return True, [text] if text else [], _INVALID_RECORD
         is_error = any(term in text.casefold() for term in ("error", "failed", "require", "invalid", "unknown"))
-        # Older Copilot CLIs can stream only plain text. Surface those lines in
-        # concise progress as well as agent.log so the compatibility fallback
-        # still provides live activity rather than only a final file change.
-        if text and (is_error or not concise or adapter_name == "copilot-cli"):
-            return True, [f"adapter error: {text}" if is_error else text], False
-        return True, [], False
+        if text and (is_error or not concise):
+            return True, [f"adapter error: {text}" if is_error else text], _INVALID_RECORD
+        return True, [], _INVALID_RECORD
     if _is_tool_echo(adapter_name, record):
-        return False, [], False
-    return True, _PARSERS[adapter_name](record, concise), _is_fatal_record(adapter_name, record)
+        return False, [], record
+    return True, _PARSERS[adapter_name](record, concise), record
 
 
 def parse_events(adapter_name: str, lines: list[str], *, concise: bool = True) -> list[str]:
@@ -279,17 +280,20 @@ def stream_events(
     activity_path: Path,
     log_path: Path,
     source: Iterable[bytes] | None = None,
-) -> bool:
-    """Persist both views independently; return whether the CLI reported failure.
+) -> StreamStatus:
+    """Persist both views independently and report sink health.
 
     A sink can fail after hours of work (disk full, revoked mount, broken pipe).
     Keep consuming the source and writing the other sink, then report all sink
-    failures at EOF so the underlying CLI never receives SIGPIPE from us.
+    failures at EOF so the underlying CLI never receives SIGPIPE from us. The
+    activity sidecar is progress telemetry; agent.log is the scheduler-facing
+    durable result and therefore the only sink that affects helper status.
     """
     source = source if source is not None else sys.stdin.buffer
     adapter_name = _ADAPTER_NAMES[adapter]
     last_event = ""
-    fatal_event = False
+    terminal_record: object | None = None
+    plain_diagnostics: list[str] = []
     raw_failures: list[str] = []
     readable_failures: list[str] = []
     raw_log: BinaryIO | None = None
@@ -320,9 +324,17 @@ def stream_events(
             raw_log = None
 
     def handle_line(raw_line: bytes, *, raw_already_written: bool) -> None:
-        nonlocal fatal_event, last_event, log
-        keep, events, fatal = _read_line(adapter_name, raw_line.decode(errors="replace"), concise=False)
-        fatal_event = fatal_event or fatal
+        nonlocal last_event, log, terminal_record
+        decoded = raw_line.decode(errors="replace")
+        keep, events, record = _read_line(adapter_name, decoded, concise=False)
+        if adapter_name == "claude-code":
+            if isinstance(record, dict) and record.get("type") == "result":
+                terminal_record = record
+            elif record is _INVALID_RECORD and decoded.strip():
+                # Claude's stream-json mode uses non-JSON only for CLI
+                # diagnostics. Retain those few lines so quota banners survive
+                # an activity-sidecar failure without buffering the full stream.
+                plain_diagnostics.append(decoded)
         if keep and not raw_already_written:
             write_raw(raw_line)
         for event in events:
@@ -379,11 +391,16 @@ def stream_events(
                 target = raw_failures if sink_name == "activity log" else readable_failures
                 target.append(f"{sink_name} {path}: {exc}")
 
-    for failure in readable_failures:
+    for failure in raw_failures:
         print(f"adapter event stream warning: {failure}", file=sys.stderr)
-    if raw_failures:
-        raise OSError("; ".join(raw_failures))
-    return fatal_event
+    for failure in readable_failures:
+        print(f"adapter event stream failed: {failure}", file=sys.stderr)
+    return StreamStatus(
+        activity_ok=not raw_failures,
+        log_ok=not readable_failures,
+        terminal_record=terminal_record,
+        plain_diagnostics=tuple(plain_diagnostics),
+    )
 
 
 def main(argv: list[str]) -> int:
@@ -391,11 +408,11 @@ def main(argv: list[str]) -> int:
         print("usage: event_stream.py {claude|codex|copilot} ACTIVITY_JSONL LOG_FILE", file=sys.stderr)
         return 2
     try:
-        fatal_event = stream_events(argv[0], Path(argv[1]), Path(argv[2]))
+        status = stream_events(argv[0], Path(argv[1]), Path(argv[2]))
     except OSError as exc:
         print(f"adapter event stream failed: {exc}", file=sys.stderr)
         return 1
-    return 1 if fatal_event else 0
+    return 0 if status.log_ok else 1
 
 
 if __name__ == "__main__":

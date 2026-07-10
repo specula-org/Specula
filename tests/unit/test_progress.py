@@ -46,6 +46,10 @@ class TestProgressParsing(unittest.TestCase):
         events = parse_events("copilot-cli", ["Inspecting\x1b[2J input handling."])
         self.assertEqual(events, ["Inspecting input handling."])
 
+    def test_old_copilot_plain_stream_does_not_guess_error_severity(self) -> None:
+        events = parse_events("copilot-cli", ["Tests failed before; fixed now.", "API Error: 529 overloaded_error"])
+        self.assertEqual(events, ["Tests failed before; fixed now.", "API Error: 529 overloaded_error"])
+
     def test_workspace_change_paths_are_sanitized(self) -> None:
         # the agent chooses these filenames
         line = progress._describe_changes([("created", Path("re\x1b[2Jport.md"))])
@@ -121,10 +125,14 @@ class TestProgressParsing(unittest.TestCase):
                 yield from records
                 drained = True
 
-            with self.assertRaises(OSError):
-                stream_events("copilot", Path("/dev/full"), log, source())
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                status = stream_events("copilot", Path("/dev/full"), log, source())
 
             self.assertTrue(drained)
+            self.assertFalse(status.activity_ok)
+            self.assertTrue(status.log_ok)
+            self.assertIn("activity log", stderr.getvalue())
             self.assertEqual(log.read_text(), "first\nfinal\n")
 
     def test_finished_agent_never_claims_process_is_still_alive(self) -> None:

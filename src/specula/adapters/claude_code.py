@@ -353,7 +353,10 @@ def main(argv: list[str]) -> int:
         capture_path = activity_log or raw_json
         cli_rc = 127
         proc: subprocess.Popen[bytes] | None = None
+        activity_failed = False
         stream_failed = False
+        stream_terminal_record: object | None = None
+        stream_plain_diagnostics: tuple[str, ...] = ()
         # This `try` covers the spawn ONLY. An OSError here means no agent work
         # has happened (claude missing / not executable / unreadable prompt), so
         # a conventional command-not-found status is the honest answer.
@@ -373,19 +376,33 @@ def main(argv: list[str]) -> int:
         if proc is not None:
             if proc.stdout is not None:  # always, given stdout=PIPE
                 try:
-                    stream_events("claude-code", Path(activity_log), Path(log_file), proc.stdout)
+                    stream_status = stream_events("claude-code", Path(activity_log), Path(log_file), proc.stdout)
+                    activity_failed = not stream_status.activity_ok
+                    stream_failed = not stream_status.log_ok
+                    stream_terminal_record = stream_status.terminal_record
+                    stream_plain_diagnostics = stream_status.plain_diagnostics
                 except OSError as e:
-                    # stream_events reports sink failures only after draining to
-                    # EOF, so a broken log never interrupts a healthy claude run.
-                    # _drain is still useful if the source pipe itself failed.
+                    # Sink failures are returned after a full drain. An exception
+                    # here means the source pipe itself failed and neither output
+                    # can be trusted as a complete capture.
+                    activity_failed = True
                     stream_failed = True
-                    print(f"claude-code adapter: activity log write failed: {e}", file=sys.stderr)
+                    print(f"claude-code adapter: event stream failed: {e}", file=sys.stderr)
                     _drain(proc.stdout)
             cli_rc = proc.wait()
 
-        # A failed raw sink is incomplete at best and may still point at stale
-        # data (or a non-terminating device such as /dev/full). Do not reopen it.
-        raw_text = "" if stream_failed else _read_capture(capture_path)
+        # A failed activity sink may still point at stale data (or a
+        # non-terminating device such as /dev/full). Reconstruct the terminal
+        # result/CLI diagnostics retained by stream_events instead of reopening
+        # it; activity telemetry is never the only source of result semantics.
+        if activity_failed:
+            raw_text = (
+                json.dumps(stream_terminal_record)
+                if stream_terminal_record is not None
+                else "".join(stream_plain_diagnostics)
+            )
+        else:
+            raw_text = _read_capture(capture_path)
 
         # ── Detect rate limit → exit 75 (EX_TEMPFAIL) so callers can wait/retry ──
         rate_limited = _rate_limited(raw_text, bool(activity_log))

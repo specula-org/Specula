@@ -510,9 +510,8 @@ class TestProgressReporting(PhaseCase):
 
     def test_structured_adapter_errors_are_shown_in_cli_output(self) -> None:
         self.adapter = self.adapter.with_name("copilot-cli.sh")
-        self.write_adapter(
-            'printf "%s\\n" "BYOK providers require an explicit model." > "$SPECULA_ACTIVITY_LOG"\nexit 1\n'
-        )
+        event = json.dumps({"type": "session.error", "data": {"message": "BYOK providers require an explicit model."}})
+        self.write_adapter(f"printf '%s\\n' {shlex.quote(event)} > \"$SPECULA_ACTIVITY_LOG\"\nexit 1\n")
         rc, out = self.run_fake()
         self.assertEqual(rc, 1, out)
         self.assertIn(f"{NAME}: adapter error: BYOK providers require an explicit model.", out)
@@ -808,6 +807,15 @@ class TestProgressReporting(PhaseCase):
         self.assertEqual((counts / "b").read_text(), "xx")
         self.assertEqual(waits, [1])
 
+    def test_all_agents_launched_is_announced_after_pending_is_empty(self) -> None:
+        self.write_adapter("sleep 0.02\n")
+        rc, out = self.run_phase(
+            "code_analysis",
+            ["--max-parallel=1", f"--agent={self.adapter.stem}", self.artifact_flag(), "a|g|Go|r", "b|g|Go|r"],
+        )
+        self.assertEqual(rc, 0, out)
+        self.assertLess(out.index("Launching agent: b"), out.index("All agents launched. Waiting..."))
+
     def test_rate_limit_stops_launching_unstarted_targets_without_reactive_retry(self) -> None:
         counts = self.tmp()
         self.write_adapter(
@@ -822,6 +830,8 @@ class TestProgressReporting(PhaseCase):
         self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
         self.assertEqual((counts / "a").read_text(), "x")
         self.assertFalse((counts / "b").exists())
+        self.assertIn("skipping 1 unstarted target(s): b", out)
+        self.assertNotIn("All agents launched. Waiting...", out)
 
     def test_rate_limit_retries_are_bounded_per_target(self) -> None:
         count = self.tmp() / "count"
@@ -834,6 +844,27 @@ class TestProgressReporting(PhaseCase):
         self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
         self.assertEqual(count.read_text(), "xx")
         self.assertEqual(waits, [1])
+
+    def test_exhausted_rate_limit_reports_unstarted_targets(self) -> None:
+        counts = self.tmp()
+        self.write_adapter(
+            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            f'printf x >> "{counts}/$name"\n'
+            '[ "$name" != a ] || exit 75\n'
+        )
+        waits: list[int] = []
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        rc, out = self.run_phase(
+            "code_analysis",
+            ["--max-parallel=1", f"--agent={self.adapter.stem}", self.artifact_flag(), "a|g|Go|r", "b|g|Go|r"],
+        )
+        self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
+        self.assertEqual((counts / "a").read_text(), "xx")
+        self.assertFalse((counts / "b").exists())
+        self.assertEqual(waits, [1])
+        self.assertIn("skipping 1 unstarted target(s): b", out)
 
     def test_concurrent_permanent_failure_prevents_rate_limit_retry(self) -> None:
         self.write_adapter('name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n[ "$name" = a ] && exit 75\nexit 9\n')

@@ -501,7 +501,7 @@ class Phase:
                     if dry_run:
                         continue
 
-                    if not waiting_announced:
+                    if not waiting_announced and not pending and not stop_launching:
                         print(f"[{_ts()}] All agents launched. Waiting...")
                         monitor = self.monitor_line(ws)
                         if monitor is not None:
@@ -534,6 +534,12 @@ class Phase:
                     if stop_launching:
                         # A 75 that cannot be retried stops new quota-consuming
                         # work. Let agents already in the current wave finish.
+                        if pending:
+                            skipped = [self.target_name(target) for target, _ in pending]
+                            print(
+                                f"[{_ts()}] Rate limit stopped new launches; "
+                                f"skipping {len(skipped)} unstarted target(s): {', '.join(skipped)}"
+                            )
                         pending.clear()
                         rate_limited.clear()
                         pause_for_rate_limit = False
