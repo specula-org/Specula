@@ -27,7 +27,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from specula.adapters.event_stream import stream_events
@@ -118,6 +118,26 @@ def _rate_limited(raw_text: str, streaming: bool) -> bool:
         if isinstance(record, dict) and record.get("type") == "result" and _RATE_LIMIT_MARKER in json.dumps(record):
             return True
     return False
+
+
+def _drain(stream: IO[bytes]) -> None:
+    """Read a pipe to EOF and discard it, so the child never blocks writing."""
+    with contextlib.suppress(OSError):
+        while stream.read(1 << 16):
+            pass
+
+
+def _read_capture(path: str) -> str:
+    """The captured claude output, or "" when it could not be written/read.
+
+    errors="replace" is a deliberate deviation from the bash, which died on
+    non-UTF-8 claude output (UnicodeDecodeError under set -e: non-zero exit,
+    empty .log, no .usage.json — and a rate-limit hit lost its exit-75 retry
+    signal). Degrade to U+FFFD + parse_failed on the normal exit-code path
+    instead (test_adapters.py::test_nonutf8_output_degrades_gracefully)."""
+    with contextlib.suppress(OSError), open(path, errors="replace") as fh:
+        return fh.read()
+    return ""
 
 
 def _extract_log(d: dict[str, Any] | None, raw_text: str, log_file: str) -> None:
@@ -310,40 +330,35 @@ def main(argv: list[str]) -> int:
         capture_path = activity_log or raw_json
         cli_rc = 127
         proc: subprocess.Popen[bytes] | None = None
+        # This `try` covers the spawn ONLY. An OSError here means no agent work
+        # has happened (claude missing / not executable / unreadable prompt), so
+        # a conventional command-not-found status is the honest answer.
         try:
             if activity_log:
                 with open(prompt_input) as pin:
                     proc = subprocess.Popen(cmd, stdin=pin, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-                    if proc.stdout is None:  # pragma: no cover - guaranteed by PIPE
-                        raise RuntimeError("claude stdout pipe was not created")
-                    stream_events("claude-code", Path(activity_log), Path(log_file), proc.stdout)
-                    cli_rc = proc.wait()
             else:
                 with open(prompt_input) as pin, open(capture_path, "w") as out:
                     cli_rc = subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT).returncode
         except OSError as e:
-            # Keep producing the normal diagnostics, then report a conventional
-            # command-not-found status to the phase runner.
-            if proc is not None and proc.poll() is None:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
             error = f"claude-code adapter: failed to run claude: {e}\n"
-            with open(capture_path, "w") as out:
-                out.write(error)
-            if activity_log:
-                with open(log_file, "w") as out:
+            for path in (capture_path, log_file) if activity_log else (capture_path,):
+                with contextlib.suppress(OSError), open(path, "w") as out:
                     out.write(error)
 
-        # errors="replace" is a deliberate deviation from the bash, which died on
-        # non-UTF-8 claude output (UnicodeDecodeError under set -e: non-zero exit,
-        # empty .log, no .usage.json — and a rate-limit hit lost its exit-75 retry
-        # signal). Degrade to U+FFFD + parse_failed on the normal exit-code path
-        # instead (test_adapters.py::test_nonutf8_output_degrades_gracefully).
-        raw_text = open(capture_path, errors="replace").read()
+        if proc is not None:
+            if proc.stdout is not None:  # always, given stdout=PIPE
+                try:
+                    stream_events("claude-code", Path(activity_log), Path(log_file), proc.stdout)
+                except OSError as e:
+                    # claude is alive and hours of agent work are already on disk:
+                    # a failed log write must not kill it. Keep draining the pipe
+                    # so it does not block, and report its real exit status.
+                    print(f"claude-code adapter: activity log write failed: {e}", file=sys.stderr)
+                    _drain(proc.stdout)
+            cli_rc = proc.wait()
+
+        raw_text = _read_capture(capture_path)
 
         # ── Detect rate limit → exit 75 (EX_TEMPFAIL) so callers can wait/retry ──
         rate_limited = _rate_limited(raw_text, bool(activity_log))
