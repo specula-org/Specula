@@ -28,9 +28,18 @@ the reproduction result. Apply **only** the skill's single pre-filter (code-revi
 developer suspicion or a TODO does NOT count). Invent no other pre-filter — never
 skip a candidate as "defensive coding", "style", or "theoretical-only".
 
+## Before any `REPRODUCED` — the reachability checklist (per finding)
+For every finding you are about to mark `REPRODUCED`, answer these explicitly in its entry (they are checked against the captured output):
+1. Did **Level 0 or Level 1 alone** trigger it — real public API / normal ops, timing help only? **yes / no**.
+2. If **no**, and you used Level 2 (state injection) or Level 3 (source patch): paste the **real-API call sequence** that actually produces the injected pre-condition, **or** cite the exact **counterexample-trace step** it instantiates. If your OWN Level-0/1 attempt failed to produce that state, that is proof it is NOT reachable — do not then label the injection "reachable".
+3. Which **real consumer/caller** observes a wrong outcome? Name it (`file:line`), or state the consequence is argued-only (a finding, not a reproduced bug).
+4. Is the bad state **permanent**, or does a downstream mechanism (sync / loopback / resend / a caller guard) later **resolve or mask** it? A transient snapshot the system afterwards fixes is NOT a reproduced bug; a real defect a safeguard currently masks → `MASKED` (a finding), naming the mechanism — not `REPRODUCED`, not `FALSE POSITIVE`.
+
+If you cannot honestly answer these in the finding's favour, do NOT manufacture a pass — settle it per the skill's decision table. Every honest outcome (MASKED / ENV_LIMITED / PENDING REPAIR / DROPPED / FALSE POSITIVE / NEEDS MORE INFO) beats a fabricated `REPRODUCED`.
+
 ## 3. Aggregate
 Write every finding's entry to {{report}} (one `repro/` test per non-dropped
 finding under {{repro_dir}}), and record two one-line headline splits at the top
 so confirmed **bugs** and the **finding** tier are counted separately:
 - `Reproduced: <N> = <M> NEW + <K> KNOWN-unfixed` — and, if any, `KNOWN-fixed: <J>` separately (each needs a version recheck).
-- `Findings: <J> = <R> unreproduced + <L> masked` — real defects that are not confirmed live bugs, surfaced so they are neither miscounted as bugs nor lost as false positives.
+- `Findings: <J> = <R> env-limited + <L> masked` — real defects that are not confirmed live bugs, surfaced so they are neither miscounted as bugs nor lost as false positives.

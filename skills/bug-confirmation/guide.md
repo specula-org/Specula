@@ -21,6 +21,18 @@ The finding goes through two phases in order: investigation (Phase 1) and reprod
 
 **The finding tier.** `REPRODUCED` is a confirmed **bug** (live consequence demonstrated). `ENV_LIMITED` (real defect, argued but untriggerable here) and `MASKED` (real defect, consequence masked today) are **findings** — real anomalies that are not confirmed live bugs but could bite if the mask is removed or the env allows the trigger. Findings are surfaced separately, never discarded as false positives.
 
+**Decision table — settle top-down.** A brief recap of each verdict's bar. 
+
+| Verdict | Tier | Settle here when |
+|---|---|---|
+| `REPRODUCED` | bug | You triggered the live harm through a real interface / an admissible CE step, and a real consumer/caller observes the wrong outcome. |
+| `MASKED` | finding | Real defect, but you PROVED a safeguard / downstream mechanism (sync / loopback / resend / guard) / a discarded output / a *separate* bug currently masks the consequence — name the mask. |
+| `ENV_LIMITED` | finding | Real defect with a SOUND argument production exhibits it, but this environment cannot trigger it (needs a real cluster / hardware / timing) — name the env limit. |
+| `PENDING REPAIR` | MC → repair | (MC only) the counterexample needs a state the code cannot reach, or flags a benign state — a spec / fault-model / invariant artifact. Cite it and emit an RR (`SPEC_REPAIR` / `FAULT_MODEL` / `INVARIANT`). |
+| `DROPPED` | pre-filter | Code-review-sourced AND an existing issue / PR / CVE already reported THIS exact defect (decided in Phase 1, before reproduction). Cite it. |
+| `FALSE POSITIVE` | not a bug | Not a defect at all — documented / intended, nothing reads the value, or a fabricated / unreachable trigger. |
+| `NEEDS MORE INFO` | fallback | You genuinely cannot decide even after investigation + reproduction. The last resort — never a shortcut past a row above. |
+
 Each finding's entry in `confirmed-bugs.md` should include:
 
 - **Source**: `MC` only if model checking produced an actual counterexample (a violation trace) for this finding; otherwise `Code Review`. A finding whose model-checking run returned *no violation* is **not** MC-sourced even if it was checked under a named `Family`/`MC` config — record it as `Code Review` (cite the issue/Family), noting the no-violation result.
