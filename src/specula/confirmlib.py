@@ -110,11 +110,13 @@ class ConfirmConfig:
     repo_dir: str = ""
     max_parallel: int = 4
     claude_alias: str = "claude"
-    model: str = ""  # forwarded to the adapter (empty -> adapter default)
-    effort: str = ""  # reasoning effort forwarded to the adapter
     worktree: bool = True
     dry_run: bool = False
     prompt_extra: str = ""  # target's .prompt-extra.md, appended to every agent prompt
+    # Appended after the original fields to preserve positional callers.
+    # None = no Specula override; "" = explicit reset to the CLI default.
+    model: str | None = None
+    effort: str | None = None
 
 
 @dataclass

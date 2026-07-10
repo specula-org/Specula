@@ -170,7 +170,10 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_QUOTA_7D",
             "SPECULA_QUOTA_MAX_WAITS",
             "SPECULA_CLAUDE_ALIAS",
+            "SPECULA_MODEL",
+            "SPECULA_EFFORT",
             "CLAUDE_ALIAS",
+            "CLAUDE_EFFORT",
         ):
             self.set_env(var, str(self.run_dir) if var == "SPECULA_RUN_DIR" else None)
 
@@ -285,6 +288,7 @@ class TestDryRunCommand(PhaseCase):
                 self.assertIn(str(adapter), out)
                 self.assertIn(f"{spec['flag']}=<prompt>", out)  # --prompt vs --prompt-file quirk
                 self.assertIn("--max-turns=0", out)
+                self.assertIn("--effort=max", out)  # Claude phase safety default
                 self.assertIn(f"--log={log}", out)
                 self.assertIn("--background", out)
                 self.assertIn(f"Prompt saved: {prompt}", out)
@@ -315,6 +319,29 @@ class TestDryRunCommand(PhaseCase):
         rc, out = self.dry_run(BY_KEY["code_analysis"], extra=["--max-turns=7"])
         self.assertEqual(rc, 0, out)
         self.assertIn("--max-turns=7", out)
+
+    def test_model_effort_and_explicit_empty_visible_in_dry_run(self) -> None:
+        rc, out = self.dry_run(
+            BY_KEY["code_analysis"],
+            extra=["--model=gpt-5.5", "--effort=high"],
+        )
+        self.assertEqual(rc, 0, out)
+        self.assertIn("--model=gpt-5.5", out)
+        self.assertIn("--effort=high", out)
+        self.assertNotIn("--effort=max", out)
+
+        self.set_env("SPECULA_MODEL", "env-model")
+        self.set_env("SPECULA_EFFORT", "low")
+        rc, out = self.dry_run(
+            BY_KEY["code_analysis"],
+            extra=["--model=", "--effort="],
+        )
+        self.assertEqual(rc, 0, out)
+        self.assertIn("--model= ", out)
+        self.assertIn("--effort= ", out)
+        self.assertNotIn("env-model", out)
+        self.assertNotIn("--effort=low", out)
+        self.assertNotIn("--effort=max", out)
 
     def test_bug_classification_rejects_artifact(self) -> None:
         # accepts_artifact=False: --artifact is not a known option here.
@@ -376,6 +403,8 @@ class TestArgErrors(PhaseCase):
                 self.assertEqual(rc, 0)
                 self.assertIn("Usage:", out)
                 self.assertIn(f"launch_{spec['key']}.sh", out)
+                self.assertIn("--model=NAME", out)
+                self.assertIn("--effort=LEVEL", out)
 
 
 class TestProgressReporting(PhaseCase):
@@ -1017,6 +1046,55 @@ class TestSummarize(PhaseCase):
                     self.assertIn(want.replace(NAME, name), got)
 
 
+class TestModelEffortLiveLaunch(PhaseCase):
+    """Normal batch launch path (the non-blocking sibling of confirmation)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.adapters = self.tmp() / "adapters"
+        self.adapters.mkdir()
+        self.patch_attr(phaselib, "LAUNCH_DIR", self.adapters.parent)
+        self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
+        self.set_env("SPECULA_PROGRESS", "off")
+
+    def launch(self, adapter_name: str, extra: list[str] | None = None) -> list[str]:
+        record = self.tmp() / "argv"
+        adapter = self.adapters / f"{adapter_name}.sh"
+        adapter.write_text(f'#!/usr/bin/env sh\nprintf "%s\\n" "$@" > "{record}"\n')
+        adapter.chmod(0o755)
+        rc, out = self.run_phase(
+            "code_analysis",
+            [f"--agent={adapter_name}", *(extra or []), self.artifact_flag(), NAME],
+        )
+        self.assertEqual(rc, 0, out)
+        return record.read_text().splitlines()
+
+    def test_claude_default_max_blocks_ambient_downgrade(self) -> None:
+        self.set_env("CLAUDE_EFFORT", "low")
+        argv = self.launch("claude-code")
+        self.assertIn("--effort=max", argv)
+
+    def test_non_claude_adapters_have_no_forced_effort(self) -> None:
+        for adapter in ("codex", "copilot-cli"):
+            with self.subTest(adapter=adapter):
+                argv = self.launch(adapter)
+                self.assertFalse(any(a.startswith("--effort=") for a in argv))
+
+    def test_specula_env_and_explicit_empty_precedence(self) -> None:
+        self.set_env("SPECULA_MODEL", "env-model")
+        self.set_env("SPECULA_EFFORT", "high")
+        argv = self.launch("codex")
+        self.assertIn("--model=env-model", argv)
+        self.assertIn("--effort=high", argv)
+
+        argv = self.launch("claude-code", ["--model=", "--effort="])
+        self.assertIn("--model=", argv)
+        self.assertIn("--effort=", argv)
+        self.assertNotIn("--effort=max", argv)
+        self.assertNotIn("--model=env-model", argv)
+        self.assertNotIn("--effort=high", argv)
+
+
 class TestReviewPhase(PhaseCase):
     """The review agent overrides run() wholesale; its contract is the prompt it
     assembles (no --dry-run, so drive the pure builders directly to stay off the
@@ -1070,6 +1148,8 @@ class TestReviewPhase(PhaseCase):
         rc, out = self.run_phase("review", ["analysis", "--help"])
         self.assertEqual(rc, 0)
         self.assertIn("Run a Claude Code review agent", out)
+        self.assertIn("--model=NAME", out)
+        self.assertIn("--effort=LEVEL", out)
 
     def test_review_streams_activity_through_shared_monitor(self) -> None:
         event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "reviewing"}})
@@ -1094,6 +1174,30 @@ class TestReviewPhase(PhaseCase):
         self.assertEqual(rc, 0, out)
         self.assertEqual(seen.read_text().strip(), "<unset>")
         self.assertFalse((self.work_dir() / "review-analysis.activity.jsonl").exists())
+
+    def test_review_claude_default_max_blocks_ambient_downgrade(self) -> None:
+        seen = self.tmp() / "argv"
+        self.install_adapter("claude-code", f'printf "%s\\n" "$@" > "{seen}"\n')
+        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("CLAUDE_EFFORT", "low")
+        rc, out = self.run_phase("review", ["analysis", NAME])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("--effort=max", seen.read_text().splitlines())
+
+    def test_review_explicit_empty_clears_specula_env(self) -> None:
+        seen = self.tmp() / "argv"
+        self.install_adapter("claude-code", f'printf "%s\\n" "$@" > "{seen}"\n')
+        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULA_MODEL", "env-model")
+        self.set_env("SPECULA_EFFORT", "high")
+        rc, out = self.run_phase("review", ["analysis", "--model=", "--effort=", NAME])
+        self.assertEqual(rc, 0, out)
+        argv = seen.read_text().splitlines()
+        self.assertIn("--model=", argv)
+        self.assertIn("--effort=", argv)
+        self.assertNotIn("--model=env-model", argv)
+        self.assertNotIn("--effort=high", argv)
+        self.assertNotIn("--effort=max", argv)
 
     def test_review_rate_limit_retries_only_current_target(self) -> None:
         count = self.tmp() / "count"
@@ -1143,17 +1247,27 @@ class TestReviewPhase(PhaseCase):
 
 
 class TestModelEffortForwarding(unittest.TestCase):
-    """Uniform model / reasoning-effort forwarding: phaselib hands --model /
-    --effort to the adapter only when set (empty -> the adapter's own default),
-    so a codex run is never given the claude-only 'max' effort level."""
+    """Agent-aware tuning for the blocking confirmation path."""
 
     def test_argv_helper(self) -> None:
-        self.assertEqual(phaselib._model_effort_argv("", ""), [])
-        self.assertEqual(phaselib._model_effort_argv("gpt-5.5", ""), ["--model=gpt-5.5"])
-        self.assertEqual(phaselib._model_effort_argv("", "ultra"), ["--effort=ultra"])
-        self.assertEqual(phaselib._model_effort_argv("m", "e"), ["--model=m", "--effort=e"])
+        codex = Path("/x/codex.sh")
+        claude = Path("/x/claude-code.sh")
+        self.assertEqual(phaselib._model_effort_argv(codex, None, None), [])
+        self.assertEqual(phaselib._model_effort_argv(claude, None, None), ["--effort=max"])
+        self.assertEqual(phaselib._model_effort_argv(codex, "gpt-5.5", None), ["--model=gpt-5.5"])
+        self.assertEqual(phaselib._model_effort_argv(codex, None, "ultra"), ["--effort=ultra"])
+        self.assertEqual(
+            phaselib._model_effort_argv(claude, "", ""),
+            ["--model=", "--effort="],
+        )
 
-    def _blocking_cmd(self, model: str = "", effort: str = "") -> list[str]:
+    def _blocking_cmd(
+        self,
+        *,
+        adapter_name: str = "codex",
+        model: str | None = None,
+        effort: str | None = None,
+    ) -> list[str]:
         captured: list[list[str]] = []
 
         class _Result:
@@ -1166,7 +1280,7 @@ class TestModelEffortForwarding(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, mock.patch("specula.phaselib.subprocess.run", fake_run):
             dp = Path(d)
             phaselib.run_agent_blocking(
-                Path("/x/adapter.sh"),
+                Path(f"/x/{adapter_name}.sh"),
                 "prompt",
                 dp / "p.md",
                 dp / "o.log",
@@ -1182,12 +1296,20 @@ class TestModelEffortForwarding(unittest.TestCase):
         cmd = self._blocking_cmd(model="gpt-5.5", effort="ultra")
         self.assertIn("--model=gpt-5.5", cmd)
         self.assertIn("--effort=ultra", cmd)
-        self.assertNotIn("--effort=max", cmd)  # the removed claude-ism
 
-    def test_omitted_when_empty(self) -> None:
-        cmd = self._blocking_cmd()
-        self.assertFalse(any(c.startswith("--model=") for c in cmd))
-        self.assertFalse(any(c.startswith("--effort=") for c in cmd))
+    def test_unspecified_effort_is_agent_specific(self) -> None:
+        claude = self._blocking_cmd(adapter_name="claude-code")
+        self.assertIn("--effort=max", claude)
+        for adapter in ("codex", "copilot-cli"):
+            with self.subTest(adapter=adapter):
+                cmd = self._blocking_cmd(adapter_name=adapter)
+                self.assertFalse(any(c.startswith("--effort=") for c in cmd))
+
+    def test_explicit_empty_is_forwarded_not_defaulted(self) -> None:
+        cmd = self._blocking_cmd(adapter_name="claude-code", model="", effort="")
+        self.assertIn("--model=", cmd)
+        self.assertIn("--effort=", cmd)
+        self.assertNotIn("--effort=max", cmd)
 
 
 if __name__ == "__main__":

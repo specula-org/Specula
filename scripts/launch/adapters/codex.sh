@@ -29,8 +29,10 @@ MAX_TURNS=""
 LOG_FILE=""
 BACKGROUND=false
 CLAUDE_ALIAS=""
-EFFORT=""
-MODEL=""
+# Read adapter-specific environment defaults before parsing so an explicit
+# empty flag can still win and clear them.
+EFFORT="${CODEX_EFFORT:-}"
+MODEL="${CODEX_MODEL:-}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -50,9 +52,10 @@ for arg in "$@"; do
   esac
 done
 
-# Flag wins over env; empty (neither set) -> codex config.toml default.
-MODEL="${MODEL:-${CODEX_MODEL:-}}"
-EFFORT="${EFFORT:-${CODEX_EFFORT:-}}"
+# The resolved values are carried by argv below.  Do not leak the wrapper's
+# fallback variables into Codex itself: an explicit `--model=` / `--effort=`
+# must genuinely return to config.toml defaults.
+unset CODEX_MODEL CODEX_EFFORT
 
 # ── Validate arguments ──
 

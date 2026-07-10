@@ -79,6 +79,8 @@ class AdapterRun(TypedDict):
     argv: list[str]
     configdir: str
     sessionenv: str
+    modelenv: str
+    effortenv: str
     stdin: str | None
     base: Path
 
@@ -115,6 +117,12 @@ class AdapterCase(unittest.TestCase):
                 "fi",
             ]
         lines.append('printf "%s\\n" "$@" > "${ADAPTER_ARGV_FILE:-/dev/null}"')
+        model_var = {"claude": "CLAUDE_MODEL", "codex": "CODEX_MODEL", "copilot": "COPILOT_MODEL"}.get(name)
+        effort_var = {"claude": "CLAUDE_EFFORT", "codex": "CODEX_EFFORT"}.get(name)
+        if model_var:
+            lines.append(f'printf "%s\\n" "${{{model_var}-<unset>}}" > "${{ADAPTER_MODEL_ENV_FILE:-/dev/null}}"')
+        if effort_var:
+            lines.append(f'printf "%s\\n" "${{{effort_var}-<unset>}}" > "${{ADAPTER_EFFORT_ENV_FILE:-/dev/null}}"')
         if record_extra:
             lines += [
                 'printf "%s\\n" "${CLAUDE_CONFIG_DIR:-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"',
@@ -150,6 +158,8 @@ class AdapterCase(unittest.TestCase):
             "ADAPTER_ARGV_FILE": base / "argv.txt",
             "ADAPTER_CONFIGDIR_FILE": base / "configdir.txt",
             "ADAPTER_SESSIONENV_FILE": base / "sessionenv.txt",
+            "ADAPTER_MODEL_ENV_FILE": base / "modelenv.txt",
+            "ADAPTER_EFFORT_ENV_FILE": base / "effortenv.txt",
             "ADAPTER_STDIN_FILE": base / "stdin.txt",
         }
         env = {k: v for k, v in os.environ.items() if k not in _VOLATILE}
@@ -173,6 +183,8 @@ class AdapterCase(unittest.TestCase):
             "argv": (read(record["ADAPTER_ARGV_FILE"]) or "").splitlines(),
             "configdir": (read(record["ADAPTER_CONFIGDIR_FILE"]) or "").strip(),
             "sessionenv": (read(record["ADAPTER_SESSIONENV_FILE"]) or "").strip(),
+            "modelenv": (read(record["ADAPTER_MODEL_ENV_FILE"]) or "").strip(),
+            "effortenv": (read(record["ADAPTER_EFFORT_ENV_FILE"]) or "").strip(),
             "stdin": read(record["ADAPTER_STDIN_FILE"]),
             "base": base,
         }
@@ -231,6 +243,22 @@ class ClaudeCodeAdapter(AdapterCase):
         base = self.sandbox()
         r = self.invoke(self.base_flags(base), env_extra={"CLAUDE_EFFORT": ""})
         self.assertEqual(r["argv"][r["argv"].index("--effort") + 1], "max")
+
+    def test_explicit_max_wins_over_low_env(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(self.base_flags(base) + ["--effort=max"], env_extra={"CLAUDE_EFFORT": "low"})
+        self.assertEqual(r["argv"][r["argv"].index("--effort") + 1], "max")
+
+    def test_explicit_empty_model_effort_clear_env(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(
+            self.base_flags(base) + ["--model=", "--effort="],
+            env_extra={"CLAUDE_MODEL": "env-model", "CLAUDE_EFFORT": "low"},
+        )
+        self.assertNotIn("--model", r["argv"])
+        self.assertNotIn("--effort", r["argv"])
+        self.assertEqual(r["modelenv"], "<unset>")
+        self.assertEqual(r["effortenv"], "<unset>")
 
     def test_alias_sets_config_dir(self) -> None:
         # HOME is run_adapter's own sandbox (returned as r["base"]); the config
@@ -857,6 +885,8 @@ class CodexAdapter(AdapterCase):
         argv = r["argv"]
         self.assertEqual(argv[argv.index("-m") + 1], "gpt-5.6-sol")
         self.assertEqual(argv[argv.index("-c") + 1], "model_reasoning_effort=ultra")
+        self.assertEqual(r["modelenv"], "<unset>")
+        self.assertEqual(r["effortenv"], "<unset>")
 
     def test_flag_wins_over_env(self) -> None:
         base = self.sandbox()
@@ -866,6 +896,17 @@ class CodexAdapter(AdapterCase):
         )
         argv = r["argv"]
         self.assertEqual(argv[argv.index("-m") + 1], "flag-model")
+
+    def test_explicit_empty_model_effort_clear_env(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(
+            self.base_flags(base) + ["--model=", "--effort="],
+            env_extra={"CODEX_MODEL": "env-model", "CODEX_EFFORT": "high"},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "the prompt"])
+        self.assertEqual(r["modelenv"], "<unset>")
+        self.assertEqual(r["effortenv"], "<unset>")
 
     def test_max_turns_required(self) -> None:
         base = self.sandbox()
@@ -923,6 +964,13 @@ class CopilotAdapter(AdapterCase):
         base = self.sandbox()
         r = self.invoke(self.base_flags(base), env_extra={"COPILOT_MODEL": "envmodel"})
         self.assertEqual(r["argv"][-2:], ["--model", "envmodel"])
+        self.assertEqual(r["modelenv"], "<unset>")
+
+    def test_explicit_empty_model_clears_env(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(self.base_flags(base) + ["--model="], env_extra={"COPILOT_MODEL": "envmodel"})
+        self.assertNotIn("--model", r["argv"])
+        self.assertEqual(r["modelenv"], "<unset>")
 
     def test_max_turns_maps_to_autopilot_continues(self) -> None:
         base = self.sandbox()
@@ -934,10 +982,38 @@ class CopilotAdapter(AdapterCase):
         r = self.invoke(self.base_flags(base) + ["--max-turns=0"])
         self.assertNotIn("--max-autopilot-continues", r["argv"])
 
-    def test_alias_and_effort_accepted_but_ignored(self) -> None:
+    def test_alias_ignored_and_effort_forwarded(self) -> None:
         base = self.sandbox()
-        r = self.invoke(self.base_flags(base) + ["--claude-alias=claude", "--effort=max"])
+        r = self.invoke(
+            self.base_flags(base) + ["--claude-alias=claude", "--effort=high"],
+            env_extra={"COPILOT_HELP_TEXT": "  --reasoning-effort <level>"},
+        )
         self.assertEqual(r["returncode"], 0)
+        self.assertEqual(
+            r["argv"],
+            ["-p", "the prompt", "--allow-all", "--reasoning-effort", "high"],
+        )
+
+    def test_effort_alias_fallback(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(
+            self.base_flags(base) + ["--effort=max"],
+            env_extra={"COPILOT_HELP_TEXT": "  --effort <level>"},
+        )
+        self.assertEqual(r["returncode"], 0)
+        self.assertEqual(r["argv"][-2:], ["--effort", "max"])
+
+    def test_effort_requires_supported_cli(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(self.base_flags(base) + ["--effort=high"])
+        self.assertEqual(r["returncode"], 1)
+        self.assertIn("requires Copilot CLI 1.0.4+", r["stderr"])
+        self.assertEqual(r["argv"], [])  # help probe only; task was never launched
+
+    def test_explicit_empty_effort_keeps_old_cli_compatible(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(self.base_flags(base) + ["--effort="])
+        self.assertEqual(r["returncode"], 0, r["stderr"])
         self.assertEqual(r["argv"], ["-p", "the prompt", "--allow-all"])
 
     def test_output_redirected_to_log(self) -> None:
@@ -968,12 +1044,17 @@ class CopilotAdapter(AdapterCase):
         )
         r = self.run_adapter(
             self.CMD,
-            self.base_flags(base),
+            self.base_flags(base) + ["--effort=high"],
             fake_name="copilot",
             fixture_text=fixture,
-            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "COPILOT_HELP_TEXT": "--output-format\n--stream"},
+            env_extra={
+                "SPECULA_ACTIVITY_LOG": str(activity),
+                "COPILOT_HELP_TEXT": "--reasoning-effort\n--output-format\n--stream",
+            },
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertIn("--reasoning-effort", r["argv"])
+        self.assertEqual(r["argv"][r["argv"].index("--reasoning-effort") + 1], "high")
         self.assertEqual(r["argv"][-4:], ["--output-format", "json", "--stream", "on"])
         self.assertEqual(activity.read_text(), fixture)
         self.assertEqual(
