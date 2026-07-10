@@ -47,6 +47,8 @@ class RunningAgent:
     activity_buffer: str = ""
     activity_started: bool = False
     last_event: str = ""
+    target: str = ""
+    attempt: int = 1
 
 
 def enabled() -> bool:
@@ -190,7 +192,7 @@ def report(running: list[RunningAgent], config: ProgressConfig) -> None:
             agent.log_stamp = log_stamp
             agent.last_observed_at = now
 
-        if activity_changed or log_changed or printed_event:
+        if not finished and (activity_changed or log_changed or printed_event):
             _report_output_state(agent, now, printed_event, config)
         if observed_changes:
             agent.last_observed_at = now
@@ -205,14 +207,16 @@ def report(running: list[RunningAgent], config: ProgressConfig) -> None:
             agent.reported_snapshot = snapshot
             agent.last_change_report_at = now
 
-        quiet_for = now - agent.last_observed_at
-        if quiet_for >= config.quiet_after_seconds:
-            if not agent.last_quiet_report_at or now - agent.last_quiet_report_at >= config.quiet_repeat_seconds:
-                print(f"[{_ts()}] {agent.name}: quiet for {_elapsed(quiet_for)}; process is still alive")
-                agent.last_quiet_report_at = now
-        elif quiet_for >= config.status_after_seconds:
-            if not agent.last_status_report_at or now - agent.last_status_report_at >= config.status_repeat_seconds:
-                print(
-                    f"[{_ts()}] {agent.name}: no observable activity for {_elapsed(quiet_for)}; process is still alive"
-                )
-                agent.last_status_report_at = now
+        if not finished:
+            quiet_for = now - agent.last_observed_at
+            if quiet_for >= config.quiet_after_seconds:
+                if not agent.last_quiet_report_at or now - agent.last_quiet_report_at >= config.quiet_repeat_seconds:
+                    print(f"[{_ts()}] {agent.name}: quiet for {_elapsed(quiet_for)}; process is still alive")
+                    agent.last_quiet_report_at = now
+            elif quiet_for >= config.status_after_seconds:
+                if not agent.last_status_report_at or now - agent.last_status_report_at >= config.status_repeat_seconds:
+                    print(
+                        f"[{_ts()}] {agent.name}: no observable activity for "
+                        f"{_elapsed(quiet_for)}; process is still alive"
+                    )
+                    agent.last_status_report_at = now

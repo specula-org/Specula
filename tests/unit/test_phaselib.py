@@ -39,12 +39,14 @@ import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 if str(SRC) not in sys.path:  # test the tree this file lives in, installed or not
     sys.path.insert(0, str(SRC))
 
+import specula.progress as progress_module  # noqa: E402
+import specula.quota as quota  # noqa: E402
 from specula import phaselib  # noqa: E402
 from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
 
@@ -161,6 +163,12 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_WORK_DIR",
             "SPECULA_PROGRESS",
             "SPECULA_ACTIVITY_LOG",
+            "SPECULA_RATE_LIMIT_REACTIVE",
+            "SPECULA_RATE_LIMIT_RETRIES",
+            "SPECULA_QUOTA_5H",
+            "SPECULA_QUOTA_7D",
+            "SPECULA_QUOTA_MAX_WAITS",
+            "SPECULA_CLAUDE_ALIAS",
             "CLAUDE_ALIAS",
         ):
             self.set_env(var, str(self.run_dir) if var == "SPECULA_RUN_DIR" else None)
@@ -593,6 +601,270 @@ class TestProgressReporting(PhaseCase):
         self.assertIsNotNone(proc.poll())
         self.assertIn("stopping 1 agent", output.getvalue())
 
+    @unittest.skipUnless(Path("/proc").is_dir(), "requires procfs")
+    def test_cleanup_kills_descendant_after_group_leader_exits(self) -> None:
+        child_code = (
+            "import os,signal,time; "
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            "print(os.getpid(), flush=True); time.sleep(30)"
+        )
+        parent_code = (
+            "import subprocess,sys,time; "
+            "child=subprocess.Popen([sys.executable,'-c',sys.argv[1]], stdout=subprocess.PIPE, text=True); "
+            "print(child.stdout.readline().strip(), flush=True); time.sleep(30)"
+        )
+        proc = subprocess.Popen(
+            [sys.executable, "-c", parent_code, child_code],
+            stdout=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        assert proc.stdout is not None
+        child_pid = int(proc.stdout.readline())
+        self.patch_attr(phaselib, "AGENT_TERMINATION_GRACE_SECONDS", 0.05)
+        root = self.work_dir()
+        root.mkdir(parents=True, exist_ok=True)
+        agent = RunningAgent(
+            name=NAME,
+            proc=proc,  # type: ignore[arg-type]  # text mode does not affect process-group operations
+            work_dir=root,
+            log=root / "agent.log",
+            activity_log=root / "agent.activity.jsonl",
+            ignored=set(),
+            snapshot={},
+            reported_snapshot={},
+            last_observed_at=0.0,
+            log_stamp=None,
+            activity_stamp=None,
+            adapter_name="fake",
+        )
+        try:
+            phaselib.Phase._terminate_agents([agent], announce=False)
+            deadline = time.time() + 1.0
+            while Path(f"/proc/{child_pid}/status").exists() and time.time() < deadline:
+                status = Path(f"/proc/{child_pid}/status").read_text(errors="replace")
+                if "State:\tZ" in status:
+                    break
+                time.sleep(0.01)
+            status_path = Path(f"/proc/{child_pid}/status")
+            self.assertTrue(
+                not status_path.exists() or "State:\tZ" in status_path.read_text(errors="replace"),
+                "SIGTERM-ignoring descendant remained active",
+            )
+        finally:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=1)
+
+    def test_cleanup_still_signals_when_progress_output_is_closed(self) -> None:
+        class BrokenOutput(io.StringIO):
+            def write(self, value: str) -> int:
+                raise BrokenPipeError
+
+        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        self.patch_attr(phaselib, "AGENT_TERMINATION_GRACE_SECONDS", 0.05)
+        root = self.work_dir()
+        root.mkdir(parents=True, exist_ok=True)
+        agent = RunningAgent(
+            name=NAME,
+            proc=proc,
+            work_dir=root,
+            log=root / "agent.log",
+            activity_log=root / "agent.activity.jsonl",
+            ignored=set(),
+            snapshot={},
+            reported_snapshot={},
+            last_observed_at=0.0,
+            log_stamp=None,
+            activity_stamp=None,
+            adapter_name="fake",
+        )
+        with contextlib.redirect_stdout(BrokenOutput()):
+            phaselib.Phase._terminate_agents([agent])
+        self.assertIsNotNone(proc.poll())
+
+    def test_cleanup_reaps_leader_after_process_group_disappears(self) -> None:
+        class ExitedProc:
+            pid = 12345
+            waits = 0
+
+            def wait(self, timeout: float | None = None) -> int:
+                self.waits += 1
+                return 0
+
+        proc = ExitedProc()
+        self.patch_attr(phaselib.Phase, "_group_exists", staticmethod(lambda _pgid: False))
+        root = self.work_dir()
+        agent = RunningAgent(
+            name=NAME,
+            proc=proc,  # type: ignore[arg-type]
+            work_dir=root,
+            log=root / "agent.log",
+            activity_log=root / "agent.activity.jsonl",
+            ignored=set(),
+            snapshot={},
+            reported_snapshot={},
+            last_observed_at=0.0,
+            log_stamp=None,
+            activity_stamp=None,
+            adapter_name="fake",
+        )
+        phaselib.Phase._terminate_agents([agent], announce=False)
+        self.assertEqual(proc.waits, 1)
+
+    def test_final_event_is_drained_when_reaper_first_observes_completion(self) -> None:
+        root = self.work_dir()
+        root.mkdir(parents=True, exist_ok=True)
+        activity = root / "agent.activity.jsonl"
+        activity.write_text("")
+        proc = subprocess.Popen(["true"], start_new_session=True)
+        proc.wait()
+        agent = RunningAgent(
+            name=NAME,
+            proc=proc,
+            work_dir=root,
+            log=root / "agent.log",
+            activity_log=activity,
+            ignored=set(),
+            snapshot={},
+            reported_snapshot={},
+            last_observed_at=time.monotonic(),
+            log_stamp=None,
+            activity_stamp=progress_module.file_stamp(activity),
+            adapter_name="codex",
+        )
+        activity.write_text(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "final"}}))
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            live, completed = phaselib.Phase()._reap_agents([agent], show_progress=True)
+        self.assertEqual(live, [])
+        self.assertEqual(completed[0][1], 0)
+        self.assertIn(f"{NAME}: final", output.getvalue())
+        self.assertIn(f"{NAME}: completed (exit 0)", output.getvalue())
+
+    def test_post_spawn_pid_write_failure_cleans_up_unregistered_agent(self) -> None:
+        self.write_adapter("sleep 30\n")
+        pid_path = self.work_dir() / "agent.pid"
+        pid_path.mkdir(parents=True)
+        spawned: list[subprocess.Popen[bytes]] = []
+        real_popen = subprocess.Popen
+
+        def recording_popen(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+            proc = cast("subprocess.Popen[bytes]", real_popen(*args, **kwargs))
+            spawned.append(proc)
+            return proc
+
+        self.patch_attr(subprocess, "Popen", recording_popen)
+        with self.assertRaises(IsADirectoryError):
+            self.run_fake()
+        self.assertEqual(len(spawned), 1)
+        self.assertIsNotNone(spawned[0].poll())
+        self.assertFalse(phaselib.Phase._group_exists(spawned[0].pid))
+
+    def test_post_spawn_agent_construction_failure_cleans_up_process(self) -> None:
+        class ConstructionFailure(Exception):
+            pass
+
+        self.write_adapter("sleep 30\n")
+        spawned: list[subprocess.Popen[bytes]] = []
+        real_popen = subprocess.Popen
+
+        def recording_popen(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+            proc = cast("subprocess.Popen[bytes]", real_popen(*args, **kwargs))
+            spawned.append(proc)
+            return proc
+
+        def fail_construction(*args: Any, **kwargs: Any) -> RunningAgent:
+            raise ConstructionFailure
+
+        self.patch_attr(subprocess, "Popen", recording_popen)
+        self.patch_attr(progress_module, "RunningAgent", fail_construction)
+        self.patch_attr(phaselib, "AGENT_TERMINATION_GRACE_SECONDS", 0.05)
+        with self.assertRaises(ConstructionFailure):
+            self.run_fake()
+        self.assertEqual(len(spawned), 1)
+        self.assertIsNotNone(spawned[0].poll())
+        self.assertFalse(phaselib.Phase._group_exists(spawned[0].pid))
+
+    def test_rate_limit_retries_only_the_failed_target(self) -> None:
+        marker = self.tmp() / "limited-once"
+        counts = self.tmp()
+        self.write_adapter(
+            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            f'printf x >> "{counts}/$name"\n'
+            f'if [ "$name" = b ] && [ ! -e "{marker}" ]; then touch "{marker}"; exit 75; fi\n'
+        )
+        waits: list[int] = []
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "2")
+        rc, out = self.run_phase(
+            "code_analysis",
+            ["--max-parallel=1", f"--agent={self.adapter.stem}", self.artifact_flag(), "a|g|Go|r", "b|g|Go|r"],
+        )
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((counts / "a").read_text(), "x")
+        self.assertEqual((counts / "b").read_text(), "xx")
+        self.assertEqual(waits, [1])
+
+    def test_rate_limit_stops_launching_unstarted_targets_without_reactive_retry(self) -> None:
+        counts = self.tmp()
+        self.write_adapter(
+            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            f'printf x >> "{counts}/$name"\n'
+            '[ "$name" != a ] || exit 75\n'
+        )
+        rc, out = self.run_phase(
+            "code_analysis",
+            ["--max-parallel=1", f"--agent={self.adapter.stem}", self.artifact_flag(), "a|g|Go|r", "b|g|Go|r"],
+        )
+        self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
+        self.assertEqual((counts / "a").read_text(), "x")
+        self.assertFalse((counts / "b").exists())
+
+    def test_rate_limit_retries_are_bounded_per_target(self) -> None:
+        count = self.tmp() / "count"
+        self.write_adapter(f'printf x >> "{count}"\nexit 75\n')
+        waits: list[int] = []
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        rc, out = self.run_fake()
+        self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
+        self.assertEqual(count.read_text(), "xx")
+        self.assertEqual(waits, [1])
+
+    def test_concurrent_permanent_failure_prevents_rate_limit_retry(self) -> None:
+        self.write_adapter('name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n[ "$name" = a ] && exit 75\nexit 9\n')
+        waits: list[int] = []
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        rc, out = self.run_phase(
+            "code_analysis",
+            ["--max-parallel=2", f"--agent={self.adapter.stem}", self.artifact_flag(), "a|g|Go|r", "b|g|Go|r"],
+        )
+        self.assertEqual(rc, 9, out)
+        self.assertEqual(waits, [])
+
+    def test_permanent_failure_does_not_skip_independent_pending_targets(self) -> None:
+        counts = self.tmp()
+        self.write_adapter(
+            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            f'printf x >> "{counts}/$name"\n'
+            '[ "$name" != a ] || exit 9\n'
+        )
+        rc, out = self.run_phase(
+            "code_analysis",
+            ["--max-parallel=1", f"--agent={self.adapter.stem}", self.artifact_flag(), "a|g|Go|r", "b|g|Go|r"],
+        )
+        self.assertEqual(rc, 9, out)
+        self.assertEqual((counts / "a").read_text(), "x")
+        self.assertEqual((counts / "b").read_text(), "x")
+
+    def test_permanent_failure_takes_precedence_over_rate_limit(self) -> None:
+        self.assertEqual(phaselib.Phase._failure_code([("limited", 75), ("broken", 9)]), 9)
+
 
 class TestSummarize(PhaseCase):
     """The post-launch Results block each phase prints. Dry-run/--check return
@@ -721,6 +993,15 @@ class TestReviewPhase(PhaseCase):
     def review(self) -> phaselib.ReviewPhase:
         return phaselib.ReviewPhase()
 
+    def install_adapter(self, name: str, body: str) -> Path:
+        adapters = self.tmp() / "adapters"
+        adapters.mkdir()
+        self.patch_attr(phaselib, "LAUNCH_DIR", adapters.parent)
+        adapter = adapters / f"{name}.sh"
+        adapter.write_text("#!/usr/bin/env sh\nset -eu\n" + body)
+        adapter.chmod(0o755)
+        return adapter
+
     def test_analysis_prompt_contract(self) -> None:
         wd = self.work_dir()
         body = self.review()._analysis_prompt(wd, NAME)
@@ -757,6 +1038,76 @@ class TestReviewPhase(PhaseCase):
         rc, out = self.run_phase("review", ["analysis", "--help"])
         self.assertEqual(rc, 0)
         self.assertIn("Run a Claude Code review agent", out)
+
+    def test_review_streams_activity_through_shared_monitor(self) -> None:
+        event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "reviewing"}})
+        self.install_adapter("codex", f"printf '%s\\n' {shlex.quote(event)} > \"$SPECULA_ACTIVITY_LOG\"\n")
+        self.patch_attr(
+            phaselib.Phase,
+            "progress_config",
+            ProgressConfig(poll_seconds=0.005, change_report_seconds=0.0),
+        )
+        rc, out = self.run_phase("review", ["analysis", "--agent=codex", NAME])
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"{NAME}: reviewing", out)
+        pid = self.work_dir() / "review-analysis.pid"
+        self.assertTrue(pid.read_text().strip().isdigit())
+        self.assertTrue((self.work_dir() / "review-analysis.activity.jsonl").is_file())
+
+    def test_review_progress_off_restores_legacy_adapter_contract(self) -> None:
+        seen = self.tmp() / "seen"
+        self.install_adapter("fake", f'printf "%s\\n" "${{SPECULA_ACTIVITY_LOG:-<unset>}}" > "{seen}"\n')
+        self.set_env("SPECULA_PROGRESS", "off")
+        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen.read_text().strip(), "<unset>")
+        self.assertFalse((self.work_dir() / "review-analysis.activity.jsonl").exists())
+
+    def test_review_rate_limit_retries_only_current_target(self) -> None:
+        count = self.tmp() / "count"
+        self.install_adapter(
+            "fake",
+            f'printf x >> "{count}"\n[ "$(wc -c < "{count}")" -gt 1 ] || exit 75\n',
+        )
+        waits: list[int] = []
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "2")
+        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(count.read_text(), "xx")
+        self.assertEqual(waits, [1])
+
+    def test_review_normalizes_signal_exit_status(self) -> None:
+        self.install_adapter("fake", "kill -TERM $$\n")
+        self.set_env("SPECULA_PROGRESS", "off")
+        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+        self.assertEqual(rc, 128 + signal.SIGTERM, out)
+
+    def test_review_construction_failure_cleans_up_process(self) -> None:
+        class ConstructionFailure(Exception):
+            pass
+
+        self.install_adapter("fake", "sleep 30\n")
+        spawned: list[subprocess.Popen[bytes]] = []
+        real_popen = subprocess.Popen
+
+        def recording_popen(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+            proc = cast("subprocess.Popen[bytes]", real_popen(*args, **kwargs))
+            spawned.append(proc)
+            return proc
+
+        def fail_construction(*args: Any, **kwargs: Any) -> RunningAgent:
+            raise ConstructionFailure
+
+        self.patch_attr(subprocess, "Popen", recording_popen)
+        self.patch_attr(progress_module, "RunningAgent", fail_construction)
+        self.patch_attr(phaselib, "AGENT_TERMINATION_GRACE_SECONDS", 0.05)
+        with self.assertRaises(ConstructionFailure):
+            self.run_phase("review", ["analysis", "--agent=fake", NAME])
+        self.assertEqual(len(spawned), 1)
+        self.assertIsNotNone(spawned[0].poll())
+        self.assertFalse(phaselib.Phase._group_exists(spawned[0].pid))
 
 
 if __name__ == "__main__":

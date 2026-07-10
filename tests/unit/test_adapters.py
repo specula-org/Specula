@@ -25,6 +25,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any, TypedDict
@@ -33,6 +34,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CLAUDE_PY = REPO_ROOT / "src" / "specula" / "adapters" / "claude_code.py"
 CODEX_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "codex.sh"
 COPILOT_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "copilot-cli.sh"
+EVENT_STREAM_PY = REPO_ROOT / "src" / "specula" / "adapters" / "event_stream.py"
 
 # A minimal well-formed claude result: the claude adapter parses this for
 # .log/.usage.json. codex/copilot don't parse it, so any text is fine for them.
@@ -64,6 +66,7 @@ _VOLATILE = (
     "SPECULA_ACTIVITY_LOG",
     "CODEX_HOME",
     "ADAPTER_EXIT_CODE",
+    "COPILOT_HELP_TEXT",
 )
 
 
@@ -101,8 +104,15 @@ class AdapterCase(unittest.TestCase):
         bindir.mkdir(parents=True, exist_ok=True)
         lines = [
             "#!/usr/bin/env bash",
-            'printf "%s\\n" "$@" > "${ADAPTER_ARGV_FILE:-/dev/null}"',
         ]
+        if name == "copilot":
+            lines += [
+                'if [[ "${1:-}" == "--help" ]]; then',
+                '  printf "%s\\n" "${COPILOT_HELP_TEXT:-}"',
+                "  exit 0",
+                "fi",
+            ]
+        lines.append('printf "%s\\n" "$@" > "${ADAPTER_ARGV_FILE:-/dev/null}"')
         if record_extra:
             lines += [
                 'printf "%s\\n" "${CLAUDE_CONFIG_DIR:-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"',
@@ -125,6 +135,7 @@ class AdapterCase(unittest.TestCase):
         env_extra: dict[str, str] | None = None,
         with_fake: bool = True,
         record_extra: bool = False,
+        timeout: float | None = None,
     ) -> AdapterRun:
         base = self.sandbox()
         bindir = base / "bin"
@@ -148,7 +159,7 @@ class AdapterCase(unittest.TestCase):
             env["PATH"] = "/usr/bin:/bin"
         env.update({k: str(v) for k, v in record.items()})
         env.update(env_extra or {})
-        proc = subprocess.run(cmd + flags, cwd=str(base), env=env, capture_output=True, text=True)
+        proc = subprocess.run(cmd + flags, cwd=str(base), env=env, capture_output=True, text=True, timeout=timeout)
 
         def read(p: Path) -> str | None:
             return p.read_text() if p.exists() else None
@@ -336,7 +347,9 @@ class ClaudeCodeAdapter(AdapterCase):
             self.CMD,
             self.base_flags(base),
             fake_name="claude",
-            fixture_text=json.dumps({"type": "result", **CLAUDE_JSON, "result": "you hit your limit for today"}),
+            fixture_text=json.dumps(
+                {"type": "result", **CLAUDE_JSON, "is_error": True, "result": "you hit your limit for today"}
+            ),
             record_extra=True,
             env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
         )
@@ -376,6 +389,100 @@ class ClaudeCodeAdapter(AdapterCase):
             env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
+
+    def test_rate_limit_phrase_in_successful_result_is_not_a_rate_limit(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(
+                {
+                    "type": "result",
+                    **CLAUDE_JSON,
+                    "is_error": False,
+                    "result": "The completed review mentions: you hit your limit for today",
+                }
+            ),
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+
+    @unittest.skipUnless(Path("/dev/full").exists(), "requires /dev/full")
+    def test_readable_log_failure_does_not_drop_stream_or_fail_cli(self) -> None:
+        base = self.sandbox()
+        log = base / "out.log"
+        log.symlink_to("/dev/full")
+        activity = base / "out.activity.jsonl"
+        assistant = json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "working"}]}})
+        result = json.dumps({"type": "result", **CLAUDE_JSON})
+        fixture = "\n".join([assistant, result])
+        r = self.run_adapter(
+            self.CMD,
+            [self.with_prompt_file(base), f"--log={log}"],
+            fake_name="claude",
+            fixture_text=fixture,
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertIn("readable log", r["stderr"])
+        self.assertEqual(activity.read_text(), fixture)
+        self.assertEqual(json.loads((base / "out.raw.json").read_text())["result"], "done")
+
+    def test_raw_activity_failure_drains_cli_and_fails_adapter(self) -> None:
+        base = self.sandbox()
+        activity = base / "bad-activity"
+        activity.mkdir()
+        log = base / "out.log"
+        result = json.dumps({"type": "result", **CLAUDE_JSON})
+        r = self.run_adapter(
+            self.CMD,
+            [self.with_prompt_file(base), f"--log={log}"],
+            fake_name="claude",
+            fixture_text=result,
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 1, r["stderr"])
+        self.assertIn("activity log", r["stderr"])
+        self.assertEqual(log.read_text(), "done\n")
+
+    @unittest.skipUnless(Path("/dev/full").exists(), "requires /dev/full")
+    def test_failed_raw_device_is_not_reopened(self) -> None:
+        base = self.sandbox()
+        log = base / "out.log"
+        r = self.run_adapter(
+            self.CMD,
+            [self.with_prompt_file(base), f"--log={log}"],
+            fake_name="claude",
+            fixture_text=json.dumps({"type": "result", **CLAUDE_JSON}),
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": "/dev/full"},
+            timeout=3,
+        )
+        self.assertEqual(r["returncode"], 1, r["stderr"])
+        self.assertEqual(log.read_text(), "done\n")
+
+    @unittest.skipUnless(Path("/proc").is_dir(), "requires procfs")
+    def test_postprocess_failure_preserves_cli_status(self) -> None:
+        for cli_rc, expected in (("0", 1), ("9", 9), ("75", 75)):
+            with self.subTest(cli_rc=cli_rc):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                fixture = json.dumps({"type": "result", **CLAUDE_JSON})
+                r = self.run_adapter(
+                    self.CMD,
+                    [self.with_prompt_file(base), "--log=/proc/specula-adapter.log"],
+                    fake_name="claude",
+                    fixture_text=fixture,
+                    record_extra=True,
+                    env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": cli_rc},
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
+                self.assertEqual(activity.read_text(), fixture)
 
     def test_cli_failure_is_propagated(self) -> None:
         base = self.sandbox()
@@ -562,6 +669,113 @@ class CodexAdapter(AdapterCase):
         self.assertEqual(activity.read_text(), fixture)
         self.assertEqual((base / "out.log").read_text(), "running pwd\ndone\n")
 
+    def test_structured_turn_failure_fails_and_is_logged_safely(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = json.dumps({"type": "turn.failed", "error": {"message": "quota\u001b[2J exhausted"}})
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 1, r["stderr"])
+        self.assertEqual((base / "out.log").read_text(), "adapter error: quota exhausted\n")
+
+    def test_recoverable_structured_errors_are_logged_without_failing(self) -> None:
+        cases = [
+            (
+                "top-level",
+                {"type": "error", "message": "websocket reconnecting"},
+                "adapter error: websocket reconnecting\n",
+            ),
+            (
+                "item",
+                {"type": "item.completed", "item": {"id": "item_1", "type": "error", "message": "lagged"}},
+                "adapter warning: lagged\n",
+            ),
+        ]
+        for name, record, expected_log in cases:
+            with self.subTest(name):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="codex",
+                    fixture_text=json.dumps(record),
+                    env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+                )
+                self.assertEqual(r["returncode"], 0, r["stderr"])
+                self.assertEqual((base / "out.log").read_text(), expected_log)
+
+    def test_cli_failure_wins_over_stream_failure(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text=json.dumps({"type": "turn.failed", "error": {"message": "fatal"}}),
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": "9"},
+        )
+        self.assertEqual(r["returncode"], 9, r["stderr"])
+
+    @unittest.skipUnless(Path("/proc").is_dir(), "requires procfs")
+    def test_usage_write_failure_preserves_cli_status(self) -> None:
+        for cli_rc, expected in (("0", 1), ("9", 9), ("75", 75)):
+            with self.subTest(cli_rc=cli_rc):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                fixture = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "done"}})
+                r = self.run_adapter(
+                    self.CMD,
+                    [self.with_prompt_file(base), "--log=/proc/specula-adapter.log", "--max-turns=0"],
+                    fake_name="codex",
+                    fixture_text=fixture,
+                    env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": cli_rc},
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
+                self.assertEqual(activity.read_text(), fixture)
+
+    @unittest.skipUnless(Path("/dev/full").exists(), "requires /dev/full")
+    def test_readable_log_failure_keeps_raw_stream_and_cli_status(self) -> None:
+        base = self.sandbox()
+        log = base / "out.log"
+        log.symlink_to("/dev/full")
+        activity = base / "out.activity.jsonl"
+        first = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "first"}})
+        final = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "final"}})
+        fixture = "\n".join([first, final])
+        r = self.run_adapter(
+            self.CMD,
+            [self.with_prompt_file(base), f"--log={log}", "--max-turns=0"],
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertIn("readable log", r["stderr"])
+        self.assertEqual(activity.read_text(), fixture)
+
+    def test_raw_activity_failure_drains_cli_and_fails_adapter(self) -> None:
+        base = self.sandbox()
+        activity = base / "bad-activity"
+        activity.mkdir()
+        log = base / "out.log"
+        final = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "final"}})
+        r = self.run_adapter(
+            self.CMD,
+            [self.with_prompt_file(base), f"--log={log}", "--max-turns=0"],
+            fake_name="codex",
+            fixture_text=final,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 1, r["stderr"])
+        self.assertIn("activity log", r["stderr"])
+        self.assertEqual(log.read_text(), "final\n")
+
     def test_usage_json_tags_agent_codex(self) -> None:
         base = self.sandbox()
         self.invoke(self.base_flags(base))
@@ -677,7 +891,7 @@ class CopilotAdapter(AdapterCase):
             self.base_flags(base),
             fake_name="copilot",
             fixture_text=fixture,
-            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "COPILOT_HELP_TEXT": "--output-format\n--stream"},
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
         self.assertEqual(r["argv"][-4:], ["--output-format", "json", "--stream", "on"])
@@ -686,6 +900,147 @@ class CopilotAdapter(AdapterCase):
             (base / "out.log").read_text(),
             "Inspecting input handling.\nrunning pwd\ndone\n",
         )
+
+    def test_old_cli_falls_back_to_plain_stream(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text="old copilot completed\n",
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "COPILOT_HELP_TEXT": "--stream"},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertNotIn("--output-format", r["argv"])
+        self.assertEqual(r["argv"][-2:], ["--stream", "on"])
+        self.assertEqual(activity.read_text(), "old copilot completed\n")
+        self.assertEqual((base / "out.log").read_text(), "old copilot completed\n")
+
+    def test_cli_without_stream_support_falls_back_without_new_flags(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text="legacy copilot completed\n",
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertNotIn("--output-format", r["argv"])
+        self.assertNotIn("--stream", r["argv"])
+        self.assertEqual(activity.read_text(), "legacy copilot completed\n")
+        self.assertEqual((base / "out.log").read_text(), "legacy copilot completed\n")
+
+    def test_plain_stream_updates_raw_activity_before_a_newline(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        log = base / "out.log"
+        proc = subprocess.Popen(
+            [sys.executable, str(EVENT_STREAM_PY), "copilot", str(activity), str(log)],
+            stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            self.assertIsNotNone(proc.stdin)
+            assert proc.stdin is not None
+            proc.stdin.write(b"partial token")
+            proc.stdin.flush()
+
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                if activity.is_file() and activity.read_bytes() == b"partial token":
+                    break
+                time.sleep(0.01)
+            self.assertEqual(activity.read_bytes(), b"partial token")
+
+            proc.stdin.write(b" final\n")
+            proc.stdin.close()
+            self.assertEqual(proc.wait(timeout=2), 0)
+            self.assertEqual(activity.read_bytes(), b"partial token final\n")
+            self.assertEqual(log.read_text(), "partial token final\n")
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+
+    def test_session_error_fails_and_is_logged_safely(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = json.dumps(
+            {
+                "type": "session.error",
+                "data": {
+                    "errorType": "rate_limit\u001b[2J",
+                    "message": "quota\u001b]0;spoof\u0007 exhausted",
+                    "statusCode": 429,
+                },
+            }
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "COPILOT_HELP_TEXT": "--output-format\n--stream"},
+        )
+        self.assertEqual(r["returncode"], 1, r["stderr"])
+        self.assertEqual((base / "out.log").read_text(), "adapter error: rate_limit / HTTP 429: quota exhausted\n")
+
+    def test_cli_failure_wins_over_session_error(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = json.dumps({"type": "session.error", "data": {"message": "fatal"}})
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra={
+                "SPECULA_ACTIVITY_LOG": str(activity),
+                "COPILOT_HELP_TEXT": "--output-format\n--stream",
+                "ADAPTER_EXIT_CODE": "9",
+            },
+        )
+        self.assertEqual(r["returncode"], 9, r["stderr"])
+
+    @unittest.skipUnless(Path("/dev/full").exists(), "requires /dev/full")
+    def test_readable_log_failure_keeps_raw_stream_and_cli_status(self) -> None:
+        base = self.sandbox()
+        log = base / "out.log"
+        log.symlink_to("/dev/full")
+        activity = base / "out.activity.jsonl"
+        first = json.dumps({"type": "assistant.message", "data": {"content": "first"}})
+        final = json.dumps({"type": "assistant.message", "data": {"content": "final"}})
+        fixture = "\n".join([first, final])
+        r = self.run_adapter(
+            self.CMD,
+            [self.with_prompt_file(base), f"--log={log}"],
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "COPILOT_HELP_TEXT": "--output-format\n--stream"},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertIn("readable log", r["stderr"])
+        self.assertEqual(activity.read_text(), fixture)
+
+    def test_raw_activity_failure_drains_cli_and_fails_adapter(self) -> None:
+        base = self.sandbox()
+        activity = base / "bad-activity"
+        activity.mkdir()
+        log = base / "out.log"
+        final = json.dumps({"type": "assistant.message", "data": {"content": "final"}})
+        r = self.run_adapter(
+            self.CMD,
+            [self.with_prompt_file(base), f"--log={log}"],
+            fake_name="copilot",
+            fixture_text=final,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "COPILOT_HELP_TEXT": "--output-format\n--stream"},
+        )
+        self.assertEqual(r["returncode"], 1, r["stderr"])
+        self.assertIn("activity log", r["stderr"])
+        self.assertEqual(log.read_text(), "final\n")
 
     def test_log_required(self) -> None:
         base = self.sandbox()

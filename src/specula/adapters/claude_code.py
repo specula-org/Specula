@@ -106,16 +106,39 @@ def _rate_limited(raw_text: str, streaming: bool) -> bool:
     the agent merely *read* into a spurious EX_TEMPFAIL — and callers treat 75 as
     "stop everything and wait for the quota to reset". Keep the scan on claude's
     own verdict."""
+
+    def error_result(record: object) -> bool:
+        if not isinstance(record, dict):
+            return False
+        verdict = record.get("is_error")
+        if verdict is not True:
+            if verdict is False:
+                return False
+            subtype = record.get("subtype")
+            if not isinstance(subtype, str) or not subtype.startswith("error"):
+                return False
+        result = record.get("result")
+        return isinstance(result, str) and _RATE_LIMIT_MARKER in result.casefold()
+
+    # Non-streaming output is one JSON result. A successful result can quote an
+    # old rate-limit message in its report, so the phrase alone is not a verdict.
+    try:
+        record = json.loads(raw_text)
+    except Exception:
+        record = None
+    if isinstance(record, dict):
+        return error_result(record)
     if not streaming:
-        return _RATE_LIMIT_MARKER in raw_text
+        return _RATE_LIMIT_MARKER in raw_text.casefold()
+
     for line in raw_text.splitlines():
         try:
             record = json.loads(line)
         except Exception:
-            if _RATE_LIMIT_MARKER in line:  # claude's plain-text banner
+            if _RATE_LIMIT_MARKER in line.casefold():  # claude's plain-text banner
                 return True
             continue
-        if isinstance(record, dict) and record.get("type") == "result" and _RATE_LIMIT_MARKER in json.dumps(record):
+        if isinstance(record, dict) and record.get("type") == "result" and error_result(record):
             return True
     return False
 
@@ -330,6 +353,7 @@ def main(argv: list[str]) -> int:
         capture_path = activity_log or raw_json
         cli_rc = 127
         proc: subprocess.Popen[bytes] | None = None
+        stream_failed = False
         # This `try` covers the spawn ONLY. An OSError here means no agent work
         # has happened (claude missing / not executable / unreadable prompt), so
         # a conventional command-not-found status is the honest answer.
@@ -351,14 +375,17 @@ def main(argv: list[str]) -> int:
                 try:
                     stream_events("claude-code", Path(activity_log), Path(log_file), proc.stdout)
                 except OSError as e:
-                    # claude is alive and hours of agent work are already on disk:
-                    # a failed log write must not kill it. Keep draining the pipe
-                    # so it does not block, and report its real exit status.
+                    # stream_events reports sink failures only after draining to
+                    # EOF, so a broken log never interrupts a healthy claude run.
+                    # _drain is still useful if the source pipe itself failed.
+                    stream_failed = True
                     print(f"claude-code adapter: activity log write failed: {e}", file=sys.stderr)
                     _drain(proc.stdout)
             cli_rc = proc.wait()
 
-        raw_text = _read_capture(capture_path)
+        # A failed raw sink is incomplete at best and may still point at stale
+        # data (or a non-terminating device such as /dev/full). Do not reopen it.
+        raw_text = "" if stream_failed else _read_capture(capture_path)
 
         # ── Detect rate limit → exit 75 (EX_TEMPFAIL) so callers can wait/retry ──
         rate_limited = _rate_limited(raw_text, bool(activity_log))
@@ -366,18 +393,35 @@ def main(argv: list[str]) -> int:
             print("claude-code adapter: rate limit hit", file=sys.stderr)
 
         result = _parse_result(raw_text)
+        postprocess_failed = False
         if activity_log:
-            with open(raw_json, "w") as out:
-                if result is not None:
-                    json.dump(result, out)
-                    out.write("\n")
-                else:
-                    out.write(raw_text)
+            try:
+                with open(raw_json, "w") as out:
+                    if result is not None:
+                        json.dump(result, out)
+                        out.write("\n")
+                    else:
+                        out.write(raw_text)
+            except OSError as e:
+                postprocess_failed = True
+                print(f"claude-code adapter: raw result write failed: {e}", file=sys.stderr)
         if not activity_log:
-            _extract_log(result, raw_text, log_file)
-        _extract_usage(result, _derived_path(log_file, ".usage.json"))
+            try:
+                _extract_log(result, raw_text, log_file)
+            except OSError as e:
+                postprocess_failed = True
+                print(f"claude-code adapter: readable log write failed: {e}", file=sys.stderr)
+        try:
+            _extract_usage(result, _derived_path(log_file, ".usage.json"))
+        except OSError as e:
+            postprocess_failed = True
+            print(f"claude-code adapter: usage write failed: {e}", file=sys.stderr)
 
-        return 75 if rate_limited else cli_rc
+        if rate_limited:
+            return 75
+        if cli_rc != 0:
+            return cli_rc
+        return 1 if stream_failed or postprocess_failed else 0
     finally:
         if tmp_prompt is not None:
             with contextlib.suppress(OSError):

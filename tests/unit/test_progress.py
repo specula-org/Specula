@@ -42,6 +42,10 @@ class TestProgressParsing(unittest.TestCase):
                 events = parse_events(adapter, [json.dumps(record)])
                 self.assertNotIn("\x1b", "".join(events))
 
+    def test_old_copilot_plain_stream_remains_live_and_sanitized(self) -> None:
+        events = parse_events("copilot-cli", ["Inspecting\x1b[2J input handling."])
+        self.assertEqual(events, ["Inspecting input handling."])
+
     def test_workspace_change_paths_are_sanitized(self) -> None:
         # the agent chooses these filenames
         line = progress._describe_changes([("created", Path("re\x1b[2Jport.md"))])
@@ -100,6 +104,80 @@ class TestProgressParsing(unittest.TestCase):
 
             self.assertEqual(raw.read_bytes(), event)
             self.assertEqual(log.read_text(), "reading kilo.c\n")
+
+    @unittest.skipUnless(Path("/dev/full").exists(), "requires /dev/full")
+    def test_raw_sink_failure_drains_source_and_preserves_readable_log(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = root / "agent.log"
+            records = [
+                json.dumps({"type": "assistant.message", "data": {"content": "first"}}).encode(),
+                json.dumps({"type": "assistant.message", "data": {"content": "final"}}).encode(),
+            ]
+            drained = False
+
+            def source() -> Iterator[bytes]:
+                nonlocal drained
+                yield from records
+                drained = True
+
+            with self.assertRaises(OSError):
+                stream_events("copilot", Path("/dev/full"), log, source())
+
+            self.assertTrue(drained)
+            self.assertEqual(log.read_text(), "first\nfinal\n")
+
+    def test_finished_agent_never_claims_process_is_still_alive(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            proc = subprocess.Popen(["true"])
+            proc.wait()
+            agent = progress.RunningAgent(
+                name="done",
+                proc=proc,
+                work_dir=root,
+                log=root / "agent.log",
+                activity_log=root / "agent.activity.jsonl",
+                ignored=set(),
+                snapshot={},
+                reported_snapshot={},
+                last_observed_at=time.monotonic() - 600,
+                log_stamp=None,
+                activity_stamp=None,
+                adapter_name="codex",
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                progress.report([agent], progress.ProgressConfig())
+            self.assertNotIn("process is still alive", output.getvalue())
+
+    def test_finished_agent_does_not_report_output_as_active(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = root / "agent.log"
+            log.write_text("final output\n")
+            proc = subprocess.Popen(["true"])
+            proc.wait()
+            agent = progress.RunningAgent(
+                name="done",
+                proc=proc,
+                work_dir=root,
+                log=log,
+                activity_log=root / "agent.activity.jsonl",
+                ignored={Path("agent.log")},
+                snapshot={},
+                reported_snapshot={},
+                last_observed_at=time.monotonic(),
+                log_stamp=None,
+                activity_stamp=None,
+                adapter_name="fake",
+                reported_output=True,
+                last_output_report_at=0.0,
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                progress.report([agent], progress.ProgressConfig(status_after_seconds=0.0))
+            self.assertNotIn("active", output.getvalue())
 
 
 if __name__ == "__main__":

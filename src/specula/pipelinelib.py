@@ -20,6 +20,7 @@ import math
 import os
 import re
 import secrets
+import signal
 import subprocess
 import sys
 import time
@@ -27,6 +28,7 @@ import traceback
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 # The sibling import works in both invocation modes: as a package module
 # (`from specula import pipelinelib`; src/ already importable) and as a file
@@ -36,7 +38,15 @@ from pathlib import Path
 # process (see scripts/launch/adapters/claude-code.sh for why that matters).
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from specula import quota as _quota
 from specula.phaselib import _logical_cwd, _wc_l
+
+RATE_LIMIT_FALLBACK_SECONDS = _quota.RATE_LIMIT_FALLBACK_SECONDS
+RATE_LIMIT_RC = _quota.RATE_LIMIT_RC
+RATE_LIMIT_RETRIES = _quota.RATE_LIMIT_RETRIES
+_epoch = _quota._epoch
+_quota_check = _quota._quota_check
+_wait_for_quota = _quota.wait_for_quota
 
 # bash pathname expansion (`for f in "$d"/RR-*.md`) orders by the locale
 # collating sequence — RR-file glob order feeds ledger rows and repair state
@@ -50,6 +60,7 @@ SPECULA_ROOT = SCRIPT_DIR.parent.parent
 # the launch_*.sh phase shims and the agent adapters stay under scripts/launch/
 LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
 USAGE_SCRIPT = SPECULA_ROOT / "scripts" / "exp" / "usage.sh"
+PHASE_TERMINATION_GRACE_SECONDS = 3.0
 
 USAGE = """
 Full Specula pipeline: Code Analysis → Spec Generation → Harness Generation → Validation + Bug Hunting
@@ -209,44 +220,6 @@ def rr_set_status(path: str | Path, new_status: str, note: str) -> None:
 # ──────────────────────────────────────────────────────────
 # Quota gate
 # ──────────────────────────────────────────────────────────
-# The adapters exit 75 (EX_TEMPFAIL) when the API says the quota is exhausted.
-# A phase launcher forwards that code, and _run_launcher answers it by waiting
-# for the reset rather than aborting the run.
-RATE_LIMIT_RC = 75
-RATE_LIMIT_RETRIES = 2
-
-
-def _quota_check(usage_json: str, q5: str, q7: str) -> str | None:
-    """The decision the bash embedded in a `python3 -c` heredoc: 'ok', an
-    over-limit message, or None for any parse failure (the bash caught those as
-    a non-zero exit → 'usage parse failed'). q5/q7 stay raw strings for display
-    parity; parse_args validates them at startup (wart fix, step 7 — the bash
-    let a garbage threshold read as a parse failure, silently disabling the
-    gate), so the float() here only fails for callers that skip parse_args."""
-    try:
-        d = json.loads(usage_json)
-        five = d.get("five_hour") or {}
-        seven = d.get("seven_day") or {}
-        u5 = five.get("utilization", 0) or 0
-        u7 = seven.get("utilization", 0) or 0
-        if u5 > float(q5):
-            return f"5h={u5}% (limit {q5}%) resets_at={five.get('resets_at', '')}"
-        if u7 > float(q7):
-            return f"7d={u7}% (limit {q7}%) resets_at={seven.get('resets_at', '')}"
-        return "ok"
-    except Exception:
-        return None
-
-
-def _epoch(ts: str) -> int:
-    """`date -d "$ts" +%s`; on unparseable input the bash arithmetic saw an empty
-    substitution → a hugely negative wait → the 60s floor. 0 reproduces that."""
-    try:
-        return int(datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp())
-    except ValueError:
-        return 0
-
-
 def wait_for_quota(
     usage_script: str | Path,
     q5: str,
@@ -254,48 +227,22 @@ def wait_for_quota(
     max_waits: str,
     claude_alias: str,
     sleep_fn: Callable[[float], object] = time.sleep,
+    *,
+    reactive: bool = False,
+    fallback_seconds: float | None = None,
 ) -> int:
-    """Block until usage is under both thresholds. 5h is checked before 7d,
-    strictly `>`; fetch/parse failures WARN and proceed; over-limit waits until
-    resets_at (+120s, 60s floor; 600s when absent), bounded by max_waits then
-    the whole run aborts (exit 1) — budget pressure is WAIT, never auto-defer."""
-    if not Path(usage_script).is_file():
-        return 0
-    waits = 0
-    while True:
-        env = dict(os.environ)
-        env["CLAUDE_ALIAS"] = claude_alias
-        try:
-            r = subprocess.run(["bash", str(usage_script)], env=env, capture_output=True)
-        except OSError:
-            r = None  # spawn failure surfaces like the bash `$( ) ||` fetch failure
-        if r is None or r.returncode != 0:
-            log("WARN: usage fetch failed, proceeding")
-            return 0
-        check = None
-        with contextlib.suppress(UnicodeDecodeError):
-            # undecodable bytes broke the bash `python3 -c` heredoc the same way:
-            # a parse failure, never an abort — the gate must not kill the run
-            check = _quota_check(r.stdout.decode(), q5, q7)
-        if check is None:
-            log("WARN: usage parse failed, proceeding")
-            return 0
-        if check == "ok":
-            return 0
-        waits += 1
-        if waits > int(max_waits):
-            log(f"ERROR: quota still over limit after {max_waits} waits, aborting")
-            raise SystemExit(1)
-        m = re.search(r"resets_at=(\S+)", check)
-        reset_at = m.group(1) if m else ""
-        if reset_at:
-            sleep_secs = _epoch(reset_at) - int(time.time()) + 120
-            if sleep_secs < 60:
-                sleep_secs = 60
-        else:
-            sleep_secs = 600
-        log(f"Quota: {check} — sleeping {sleep_secs}s (wait {waits}/{max_waits})")
-        sleep_fn(sleep_secs)
+    """Compatibility wrapper retaining pipelinelib's timestamped logging."""
+    return _wait_for_quota(
+        usage_script=usage_script,
+        q5=q5,
+        q7=q7,
+        max_waits=max_waits,
+        claude_alias=claude_alias,
+        sleep_fn=sleep_fn,
+        log_fn=log,
+        reactive=reactive,
+        fallback_seconds=fallback_seconds,
+    )
 
 
 class Pipeline:
@@ -525,13 +472,14 @@ class Pipeline:
             return f"{_logical_cwd()}/.specula-output"
         return f"{_logical_cwd()}/{name}/.specula-output"
 
-    def wait_for_quota(self) -> None:
+    def wait_for_quota(self, *, reactive: bool = False) -> None:
         wait_for_quota(
             usage_script=USAGE_SCRIPT,
             q5=self.quota_5h,
             q7=self.quota_7d,
             max_waits=self.quota_max_waits,
             claude_alias=self.claude_alias,
+            reactive=reactive,
         )
 
     # ── repair-loop helpers ──
@@ -619,28 +567,80 @@ class Pipeline:
         return args
 
     def _run_launcher(self, script: str, args: list[str]) -> None:
-        for attempt in range(1, RATE_LIMIT_RETRIES + 2):
-            r = subprocess.run(["bash", str(LAUNCH_DIR / script), *args])
-            if r.returncode == 0:
-                return
-            if r.returncode == RATE_LIMIT_RC and attempt <= RATE_LIMIT_RETRIES:
-                # 75 is EX_TEMPFAIL: the adapter's "wait, then retry" signal, not a
-                # failure. The pre-phase quota gate only sees the API's reported
-                # percentage, so a phase that starts under the threshold can still
-                # walk into the wall halfway through — aborting the run there throws
-                # away every completed phase. Sleep until resets_at (the same gate
-                # machinery) and re-run. The launcher re-runs every target, not just
-                # the throttled one: agents rewrite their own outputs, so a redundant
-                # re-run costs time, not correctness.
-                log(f"RATE LIMITED: {script} exited {RATE_LIMIT_RC}, waiting for quota reset")
-                log(f"  retry {attempt}/{RATE_LIMIT_RETRIES}")
-                self.wait_for_quota()
+        env = os.environ.copy()
+        env.update(
+            {
+                "SPECULA_RATE_LIMIT_REACTIVE": "1",
+                "SPECULA_RATE_LIMIT_RETRIES": str(RATE_LIMIT_RETRIES),
+                "SPECULA_QUOTA_5H": self.quota_5h,
+                "SPECULA_QUOTA_7D": self.quota_7d,
+                "SPECULA_QUOTA_MAX_WAITS": self.quota_max_waits,
+                "SPECULA_CLAUDE_ALIAS": self.claude_alias,
+            }
+        )
+
+        proc: subprocess.Popen[bytes] | None = None
+        received: list[tuple[int, float]] = []
+
+        def forward(signum: int, _frame: Any) -> None:
+            received.append((signum, time.monotonic()))
+            if proc is not None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(proc.pid, signum)
+
+        installed: list[tuple[int, Any]] = []
+        for name in ("SIGINT", "SIGTERM", "SIGHUP"):
+            signum = getattr(signal, name, None)
+            if signum is None:  # pragma: no cover - non-POSIX
                 continue
-            # bash set -e: a failing phase aborts the run. Signal death arrives
-            # as a negative returncode — report 128+N like the bash did (143,
-            # not the mod-256 wraparound 241), schedulers classify kills by it.
-            code = 128 - r.returncode if r.returncode < 0 else r.returncode
-            raise SystemExit(code)
+            with contextlib.suppress(ValueError, OSError):
+                installed.append((signum, signal.signal(signum, forward)))
+        forwarded_exit: int | None = None
+        try:
+            proc = subprocess.Popen(
+                ["bash", str(LAUNCH_DIR / script), *args],
+                env=env,
+                start_new_session=True,
+            )
+            if received:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(proc.pid, received[-1][0])
+            while True:
+                try:
+                    returncode = proc.wait(timeout=0.1)
+                    break
+                except subprocess.TimeoutExpired:
+                    if received and time.monotonic() >= received[0][1] + PHASE_TERMINATION_GRACE_SECONDS:
+                        with contextlib.suppress(ProcessLookupError):
+                            os.killpg(proc.pid, signal.SIGKILL)
+                        returncode = proc.wait()
+                        break
+            if received:
+                deadline = received[0][1] + PHASE_TERMINATION_GRACE_SECONDS
+                while time.monotonic() < deadline:
+                    try:
+                        os.killpg(proc.pid, 0)
+                    except ProcessLookupError:
+                        break
+                    time.sleep(0.05)
+                else:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(proc.pid, signal.SIGKILL)
+                forwarded_exit = 128 + received[0][0]
+        finally:
+            for signum, previous in installed:
+                with contextlib.suppress(ValueError, OSError):
+                    signal.signal(signum, previous)
+
+        if forwarded_exit is not None:
+            raise SystemExit(forwarded_exit)
+        if returncode == 0:
+            return
+        # Target-local rate-limit retry belongs to phaselib. Re-running this
+        # launcher would also re-run successful targets and can starve later
+        # targets forever when each quota window only covers a batch prefix.
+        code = 128 - returncode if returncode < 0 else returncode
+        raise SystemExit(code)
 
     def _phase(self, banner: str, script: str, args: list[str]) -> None:
         divider()
