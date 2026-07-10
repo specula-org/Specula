@@ -230,6 +230,10 @@ run_codex() {
     backend="${SPECULA_SANDBOX_BACKEND:-$adapter_dir/../sandbox/backend.mjs}"
     cmd+=(node "$backend" --workspace "${SPECULA_WORK_DIR:-$PWD}" --)
   fi
+  # Feed the prompt via stdin (`-`), never as one argv element: Linux caps a
+  # single argument at MAX_ARG_STRLEN, while confirmation/debate prompts can be
+  # substantially larger. Preserve the activity stream and the Codex exit code
+  # added by the progress lifecycle work.
   cmd+=(codex exec --dangerously-bypass-approvals-and-sandbox)
   # Model / reasoning effort (additive — empty leaves codex config.toml default).
   [[ -n "$MODEL" ]] && cmd+=(-m "$MODEL")
@@ -242,16 +246,18 @@ run_codex() {
     local -a pipeline_status
     local stream_rc
     event_helper="$adapter_dir/../../../src/specula/adapters/event_stream.py"
-    "${cmd[@]}" --json "$PROMPT" 2>&1 | python3 "$event_helper" codex "$activity_log" "$log_file"
+    printf '%s' "$PROMPT" | "${cmd[@]}" --json - 2>&1 | python3 "$event_helper" codex "$activity_log" "$log_file"
     pipeline_status=("${PIPESTATUS[@]}")
-    codex_rc="${pipeline_status[0]}"
-    stream_rc="${pipeline_status[1]}"
+    codex_rc="${pipeline_status[1]}"
+    stream_rc="${pipeline_status[2]}"
     if (( codex_rc == 0 )); then
       codex_rc="$stream_rc"
     fi
   else
-    "${cmd[@]}" "$PROMPT" > "$log_file" 2>&1
-    codex_rc=$?
+    local -a pipeline_status
+    printf '%s' "$PROMPT" | "${cmd[@]}" - > "$log_file" 2>&1
+    pipeline_status=("${PIPESTATUS[@]}")
+    codex_rc="${pipeline_status[1]}"
   fi
   set -e
 

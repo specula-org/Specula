@@ -684,7 +684,12 @@ class CodexAdapter(AdapterCase):
     CMD = ["bash", str(CODEX_SH)]
 
     def invoke(self, flags: list[str], *, env_extra: dict[str, str] | None = None) -> AdapterRun:
-        return self.run_adapter(self.CMD, flags, fake_name="codex", fixture_text="codex ran\n", env_extra=env_extra)
+        # record_extra=True captures the fake codex's stdin: the adapter feeds the
+        # prompt via stdin (not argv) to stay under MAX_ARG_STRLEN, so the prompt
+        # must show up there, not in argv.
+        return self.run_adapter(
+            self.CMD, flags, fake_name="codex", fixture_text="codex ran\n", record_extra=True, env_extra=env_extra
+        )
 
     def base_flags(self, base: Path) -> list[str]:
         return [self.with_prompt_file(base), f"--log={base}/out.log", "--max-turns=0"]
@@ -693,13 +698,16 @@ class CodexAdapter(AdapterCase):
         base = self.sandbox()
         r = self.invoke(self.base_flags(base))
         self.assertEqual(r["returncode"], 0)
-        # codex exec --dangerously-bypass-approvals-and-sandbox "<prompt>"
-        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "the prompt"])
+        # codex exec --dangerously-bypass-approvals-and-sandbox -   (prompt on stdin)
+        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "-"])
+        self.assertEqual(r["stdin"], "the prompt")
 
     def test_prompt_from_file_is_read(self) -> None:
         base = self.sandbox()
         r = self.invoke([self.with_prompt_file(base, "codex task\n"), f"--log={base}/out.log", "--max-turns=0"])
-        self.assertEqual(r["argv"][-1], "codex task")
+        # prompt is delivered via stdin, not argv (argv ends with the '-' sentinel)
+        self.assertEqual(r["argv"][-1], "-")
+        self.assertEqual(r["stdin"], "codex task")
 
     def test_output_redirected_to_log(self) -> None:
         base = self.sandbox()
@@ -871,9 +879,10 @@ class CodexAdapter(AdapterCase):
                 "gpt-5.5",
                 "-c",
                 "model_reasoning_effort=high",
-                "the prompt",
+                "-",
             ],
         )
+        self.assertEqual(r["stdin"], "the prompt")
 
     def test_model_effort_from_env(self) -> None:
         base = self.sandbox()
@@ -904,7 +913,8 @@ class CodexAdapter(AdapterCase):
             env_extra={"CODEX_MODEL": "env-model", "CODEX_EFFORT": "high"},
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
-        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "the prompt"])
+        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "-"])
+        self.assertEqual(r["stdin"], "the prompt")
         self.assertEqual(r["modelenv"], "<unset>")
         self.assertEqual(r["effortenv"], "<unset>")
 
@@ -1250,6 +1260,16 @@ class CopilotAdapter(AdapterCase):
         r = self.invoke(self.base_flags(base) + ["--bogus"])
         self.assertEqual(r["returncode"], 1)
         self.assertIn("unknown option", r["stderr"])
+
+    def test_oversized_prompt_rejected(self) -> None:
+        # copilot takes the prompt only as an argv argument (no stdin/prompt-file
+        # input into the CLI), so a prompt over MAX_ARG_STRLEN is rejected up front
+        # rather than sent to exec, where it would fail with E2BIG and no output.
+        base = self.sandbox()
+        r = self.invoke([self.with_prompt_file(base, "x" * 130000), f"--log={base}/out.log"])
+        self.assertEqual(r["returncode"], 1)
+        self.assertIn("the copilot CLI accepts", r["stderr"])
+        self.assertEqual(r["argv"], [])  # copilot was never invoked
 
     def test_help(self) -> None:
         r = self.invoke(["--help"])
