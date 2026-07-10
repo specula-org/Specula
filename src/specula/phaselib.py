@@ -505,9 +505,16 @@ class Phase:
         env["SPECULA_WORK_DIR"] = str(ws.work_dir(name))
         work_dir = ws.work_dir(name)
         activity_sidecar = files["log"].with_suffix(".activity.jsonl")
-        with contextlib.suppress(FileNotFoundError):
+        with contextlib.suppress(OSError):
             activity_sidecar.unlink()
-        env["SPECULA_ACTIVITY_LOG"] = str(activity_sidecar)
+        # SPECULA_PROGRESS=off is a full opt-out, not a mute: without the sidecar
+        # the adapters fall back to their legacy argv (`--output-format json`, no
+        # `codex --json`, no copilot `--stream on`) and the legacy result-only
+        # agent.log. A CLI that predates the streaming flags would otherwise have
+        # no escape hatch — and an adapter failure now aborts the whole run.
+        env.pop("SPECULA_ACTIVITY_LOG", None)
+        if progress.enabled():
+            env["SPECULA_ACTIVITY_LOG"] = str(activity_sidecar)
         # Do not report launcher plumbing as agent work. The generic adapter
         # contract derives raw/usage data from the .log stem, so ignore those
         # files as well when they live in the workspace.

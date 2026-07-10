@@ -523,6 +523,31 @@ class TestProgressReporting(PhaseCase):
         self.assertNotIn(f"{NAME}: quiet for", out)
         self.assertNotIn(f"{NAME}: completed (exit", out)
 
+    def test_progress_off_is_a_full_opt_out_not_a_mute(self) -> None:
+        # off must also restore the adapters' legacy argv: without the sidecar env
+        # they stay on --output-format json. It is the only escape hatch for a CLI
+        # that predates the streaming flags, and adapter failures now abort the run.
+        seen = self.work_dir() / "seen-env"
+        self.write_adapter(f'printf "%s\\n" "${{SPECULA_ACTIVITY_LOG:-<unset>}}" > "{seen}"\n')
+
+        rc, out = self.run_fake()
+        self.assertEqual(rc, 0, out)
+        self.assertTrue(seen.read_text().strip().endswith(".activity.jsonl"), seen.read_text())
+
+        self.set_env("SPECULA_PROGRESS", "off")
+        rc, out = self.run_fake()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen.read_text().strip(), "<unset>")
+
+    def test_progress_off_ignores_an_inherited_activity_log(self) -> None:
+        seen = self.work_dir() / "seen-env"
+        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULA_ACTIVITY_LOG", "/tmp/leaked.jsonl")
+        self.write_adapter(f'printf "%s\\n" "${{SPECULA_ACTIVITY_LOG:-<unset>}}" > "{seen}"\n')
+        rc, out = self.run_fake()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen.read_text().strip(), "<unset>")
+
     def test_interrupt_cleanup_terminates_agent_process_group(self) -> None:
         proc = subprocess.Popen(["sh", "-c", "sleep 30"], start_new_session=True)
 
