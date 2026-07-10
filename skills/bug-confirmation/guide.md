@@ -18,7 +18,7 @@ Each finding goes through two phases in order: investigation (Phase 1) and repro
 
 The per-finding methodology below is identical however the phase runs; only the orchestration differs:
 
-- **Parallel per-finding (default).** A step-0 consolidate+dedup merges the two finding sources into `candidates.json`, then one Reproducer agent handles each finding, in parallel.
+- **Parallel per-finding (default).** A step-0 consolidate+dedup merges the two finding sources into `candidates.json`, then one Reproducer agent handles each finding, in parallel. Add `--debate` to have an adversarial Challenger stress-test each *confirmation* (not dismissal) to consensus. The Reproducer's turn-1 prompt is debate-agnostic — it never mentions a Challenger — so a finding's first-pass result is identical with or without `--debate`; the Reproducer only learns of the debate if a Challenger actually disagrees.
 - **Single-agent (`--legacy-confirm`).** One agent consolidates both sources and reproduces every finding in one context.
 
 Both modes write the same `confirmed-bugs.md`, emit the same `RR-NNN` repair requests, and use the same statuses. Re-check (`--recheck`, Phase 2′) is always single-agent.
