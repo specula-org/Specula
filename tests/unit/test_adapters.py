@@ -329,6 +329,54 @@ class ClaudeCodeAdapter(AdapterCase):
         )
         self.assertEqual(r["returncode"], 75)
 
+    def test_rate_limit_in_stream_result_exits_75(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps({"type": "result", **CLAUDE_JSON, "result": "you hit your limit for today"}),
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 75)
+
+    def test_rate_limit_plain_text_banner_in_stream_exits_75(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text="Claude usage limit reached — you hit your limit for today\n",
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 75)
+
+    def test_rate_limit_phrase_the_agent_merely_read_is_not_a_rate_limit(self) -> None:
+        # The stream capture holds everything the agent said and every diagnostic
+        # the CLI printed. Only claude's own verdict may trip EX_TEMPFAIL: 75
+        # makes the pipeline stop and wait for a reset that never comes.
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        chatter = json.dumps(
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "The old log says: you hit your limit for today"}]},
+            }
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text="\n".join([chatter, json.dumps({"type": "result", **CLAUDE_JSON})]),
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+
     def test_cli_failure_is_propagated(self) -> None:
         base = self.sandbox()
         r = self.invoke(self.base_flags(base), env_extra={"ADAPTER_EXIT_CODE": "9"})

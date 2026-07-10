@@ -42,6 +42,8 @@ HELP = __doc__
 # not believe it is running inside another Claude Code session.
 SESSION_ENV_VARS = ("CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT")
 
+_RATE_LIMIT_MARKER = "hit your limit"
+
 
 def _derived_path(log_file: str, suffix: str) -> str:
     """Mirror bash `${LOG_FILE%.log}<suffix>`."""
@@ -93,6 +95,29 @@ def _parse_result(raw_text: str) -> dict[str, Any] | None:
         if isinstance(candidate, dict) and (candidate.get("type") == "result" or "result" in candidate):
             return candidate
     return None
+
+
+def _rate_limited(raw_text: str, streaming: bool) -> bool:
+    """Did *claude* say it is rate limited?
+
+    It announces that either as a plain-text banner (no JSON at all) or inside
+    its final result record. A stream-json capture additionally holds every
+    assistant message and CLI diagnostic, so scanning it whole would turn a log
+    the agent merely *read* into a spurious EX_TEMPFAIL — and callers treat 75 as
+    "stop everything and wait for the quota to reset". Keep the scan on claude's
+    own verdict."""
+    if not streaming:
+        return _RATE_LIMIT_MARKER in raw_text
+    for line in raw_text.splitlines():
+        try:
+            record = json.loads(line)
+        except Exception:
+            if _RATE_LIMIT_MARKER in line:  # claude's plain-text banner
+                return True
+            continue
+        if isinstance(record, dict) and record.get("type") == "result" and _RATE_LIMIT_MARKER in json.dumps(record):
+            return True
+    return False
 
 
 def _extract_log(d: dict[str, Any] | None, raw_text: str, log_file: str) -> None:
@@ -321,7 +346,7 @@ def main(argv: list[str]) -> int:
         raw_text = open(capture_path, errors="replace").read()
 
         # ── Detect rate limit → exit 75 (EX_TEMPFAIL) so callers can wait/retry ──
-        rate_limited = "hit your limit" in raw_text
+        rate_limited = _rate_limited(raw_text, bool(activity_log))
         if rate_limited:
             print("claude-code adapter: rate limit hit", file=sys.stderr)
 
