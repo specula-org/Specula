@@ -154,7 +154,7 @@ class Workspace:
         self.artifact = artifact
         self.cwd = Path(cwd) if cwd else _logical_cwd()  # bash $PWD, not the physical getcwd
         self.single = len(targets) == 1
-        # phase-specific run options (e.g. validation --repair, confirmation --recheck)
+        # phase-specific run options (e.g. validation/confirmation --repair)
         self.opts = opts or {}
         run_dir = os.environ.get("SPECULA_RUN_DIR", "")
         self.run_dir: Path | None = Path(run_dir) if run_dir else None
@@ -225,8 +225,8 @@ class Phase:
     # ── per-phase hooks ──
     def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
         """Consume a phase-specific flag into `extra`; return True if handled.
-        Override for extra flags (validation --repair; confirmation --recheck /
-        --max-repair-rounds). `extra` is exposed to hooks as `ws.opts`."""
+        Override for extra flags (e.g. validation --repair, confirmation
+        --legacy-confirm/--debate). `extra` is exposed to hooks as `ws.opts`."""
         return False
 
     def default_max_parallel(self, extra: dict[str, str | bool]) -> int:
@@ -1350,7 +1350,7 @@ Example:
 Options:
   --dry-run           Print commands without executing
   --check             Run a lightweight prerequisite path check
-  --repair            Repair mode: process OPEN/REOPENED repair requests (confirmation back-edge)
+  --repair            Repair mode: process OPEN repair requests (confirmation back-edge)
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --agent=NAME        Agent adapter to use (default: claude-code)
@@ -1421,20 +1421,21 @@ Prerequisites:
 You are running spec validation in **REPAIR MODE**. The bug-confirmation phase handed
 back counterexamples it judged to be spec / fault-model / invariant **artifacts** (not
 real bugs), each recorded as a repair request. Repair the spec so the artifact no longer
-arises, re-validate, then hand each request to re-check.
+arises, re-validate, re-run model checking, and mark each request CONSUMED. The pipeline
+then re-confirms the fresh output — you do not re-check anything here.
 
 ## Inputs
-- **Repair requests**: {spec_dir}/repair-requests/   (process ONLY status OPEN or REOPENED)
+- **Repair requests**: {spec_dir}/repair-requests/   (process ONLY status OPEN)
 - **Spec directory**: {spec_dir}   (base.tla, MC.tla, Trace.tla, *.cfg, MC_hunt_*.cfg)
 - **Source code**: {repo_dir}
 - **Modeling brief**: {wd}/modeling-brief.md
 - **Traces**: {wd}/traces/
 
 ## Methodology — use these installed skills and follow them exactly
-- {prompt_skill_ids("bug-confirmation")} — apply its repair-request format, request state machine, and per-request repair procedure (how to repair each target, the full-trace soundness gate, and the OPEN/REOPENED → IN_REPAIR → RECHECK transitions you own).
+- {prompt_skill_ids("bug-confirmation")} — apply its repair-request format, request state machine, and per-request repair procedure (how to repair each target, the full-trace soundness gate, and the OPEN → IN_REPAIR → CONSUMED transitions you own).
 - {prompt_skill_ids("validation-workflow")} — repair and re-validate without overfitting, including the {prompt_skill_ids("tla-trace-workflow")} and {prompt_skill_ids("tla-checking-workflow")} skills it delegates to.
 
-Process ONLY OPEN/REOPENED requests. Do everything those skills specify; do not add, relax, or override any step here.
+Process ONLY OPEN requests. Do everything those skills specify; do not add, relax, or override any step here.
 """
         else:
             prompt = f"""# Spec Validation Task: {name}
@@ -1502,10 +1503,8 @@ Options:
   --legacy-confirm    Single-agent confirmation (one agent, all findings) instead of parallel
   --debate            Add an adversarial Challenger after each confirmation (parallel mode; default off)
   --rounds=N          Max debate rounds with --debate (default: 5)
-  --recheck           Re-check mode: settle RECHECK repair requests (confirmation back-edge; single-agent)
-  --max-repair-rounds=N  Per-request repair cap honored in --recheck (default: 0 = unlimited)
   --max-parallel=N    Hard limit for concurrent findings in parallel mode, or concurrent target agents in
-                      --legacy-confirm/--recheck (defaults: 4 in parallel mode, 1 otherwise)
+                      --legacy-confirm (defaults: 4 in parallel mode, 1 otherwise)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
@@ -1523,12 +1522,6 @@ Prerequisites:
     check_fail_msg = "ERROR: Missing prerequisites. Run full pipeline first."
 
     def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
-        if arg == "--recheck":
-            extra["recheck"] = True
-            return True
-        if arg.startswith("--max-repair-rounds="):
-            extra["max_repair_rounds"] = arg[len("--max-repair-rounds=") :]
-            return True
         if arg == "--legacy-confirm":
             extra["legacy"] = True
             return True
@@ -1541,7 +1534,7 @@ Prerequisites:
         return False
 
     def default_max_parallel(self, extra: dict[str, str | bool]) -> int:
-        return 1 if extra.get("legacy") or extra.get("recheck") else 4
+        return 1 if extra.get("legacy") else 4
 
     def run_alternate(
         self,
@@ -1554,10 +1547,9 @@ Prerequisites:
         dry_run: bool,
     ) -> int | None:
         """Parallel per-finding confirmation — the DEFAULT first-pass mode.
-        `--legacy-confirm` falls back to the single-agent path; `--recheck`
-        always uses it (re-check is single-agent). None defers to the
+        `--legacy-confirm` falls back to the single-agent path. None defers to the
         single-agent loop in Phase.run."""
-        if ws.opts.get("legacy") or ws.opts.get("recheck"):
+        if ws.opts.get("legacy"):
             return None
         # Local import: confirmlib imports phaselib, so a top-level import here
         # would be circular.
@@ -1615,7 +1607,7 @@ Prerequisites:
 
     def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
         wd = ws.work_dir(name)
-        tag = "bug-recheck" if ws.opts.get("recheck") else "bug-confirmation"
+        tag = "bug-confirmation"
         return {
             "log": wd / f"{tag}.log",
             "pid": wd / "bug-confirmation.pid",  # bash always writes bug-confirmation.pid
@@ -1628,42 +1620,22 @@ Prerequisites:
         wd = ws.work_dir(name)
         spec_dir = wd / "spec"
         repo_dir = ws.find_repo_dir(name)
-        if ws.opts.get("recheck"):
-            rounds = ws.opts.get("max_repair_rounds", "0")
-            prompt = f"""# Bug Re-check Task (confirmation back-edge): {name}
-
-You are running the bug-confirmation **RE-CHECK** pass. Phase 3 (repair mode) has repaired
-the spec for the open repair requests and moved them to `status: RECHECK`. Settle each
-finding and transition its request out of RECHECK.
-
-## Inputs
-- **Repair requests**: {spec_dir}/repair-requests/   (process ONLY status RECHECK)
-- **Updated bug report + TLC output**: {spec_dir}/bug-report.md , {spec_dir}/output/
-- **Confirmed bugs (you update this)**: {spec_dir}/confirmed-bugs.md
-- **Source code**: {repo_dir}
-- **Per-request cap**: --max-repair-rounds={rounds}   (0 = unlimited)
-
-## Methodology
-Use the installed Specula skill {prompt_skill_ids("bug-confirmation")}. Follow its Phase 2′ re-check procedure and repair-request format exactly.
-
-## Instructions
-Process ONLY `status: RECHECK` requests, honor the per-request cap (`--max-repair-rounds` above), and do not add, relax, or override any step from the skill.
-"""
-        else:
-            # Multi-finding orchestration lives in a prompt file (like the parallel
-            # mode's reproduce.md), rendered here — the loop + aggregation around
-            # the single-bug skill (guide.md), which it applies to each candidate.
-            prompt = render(
-                "confirmation/orchestrate",
-                name=name,
-                bug_report=str(spec_dir / "bug-report.md"),
-                brief=str(wd / "modeling-brief.md"),
-                repo=repo_dir,
-                spec_dir=str(spec_dir),
-                repro_dir=str(wd / "repro"),
-                report=str(spec_dir / "confirmed-bugs.md"),
-                bug_confirmation_skill=prompt_skill_ids("bug-confirmation"),
-            )
+        # Multi-finding orchestration lives in a prompt file (like the parallel
+        # mode's reproduce.md), rendered here — the loop + aggregation around the
+        # single-bug skill (guide.md), which it applies to each candidate. After a
+        # Phase-3 repair the pipeline re-runs THIS same confirmation on the fresh
+        # bug-report (no separate re-check mode).
+        prompt = render(
+            "confirmation/orchestrate",
+            name=name,
+            bug_report=str(spec_dir / "bug-report.md"),
+            brief=str(wd / "modeling-brief.md"),
+            repo=repo_dir,
+            spec_dir=str(spec_dir),
+            repro_dir=str(wd / "repro"),
+            report=str(spec_dir / "confirmed-bugs.md"),
+            bug_confirmation_skill=prompt_skill_ids("bug-confirmation"),
+        )
         return self._with_extra(ws, name, prompt)
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
@@ -1685,8 +1657,8 @@ Process ONLY `status: RECHECK` requests, honor the per-request cap (`--max-repai
                 print(f"  {name}: (no report — check log; repro/ tests: {repro_count})")
 
     def monitor_line(self, ws: Workspace) -> str | None:
-        # bash glob omits the .specula-output/ segment and always bug-confirmation.log
-        # (even in --recheck, whose log is bug-recheck.log) — replicated verbatim in legacy.
+        # bash glob omits the .specula-output/ segment and always bug-confirmation.log —
+        # replicated verbatim in legacy.
         return self._monitor(ws, "bug-confirmation.log", "  Monitor: tail -f */bug-confirmation.log")
 
 

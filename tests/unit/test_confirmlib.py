@@ -120,11 +120,11 @@ class TestMergeRR(ConfirmCase):
         self.assertIn("hunt_cfgs: [MC_hunt.cfg]", out)
 
     def test_agent_lifecycle_fields_overridden(self) -> None:
-        sneaky = self.AGENT_BODY.replace("target: SPEC_REPAIR", "id: RR-999\nstatus: RESOLVED\ntarget: SPEC_REPAIR")
+        sneaky = self.AGENT_BODY.replace("target: SPEC_REPAIR", "id: RR-999\nstatus: CONSUMED\ntarget: SPEC_REPAIR")
         out = C._merge_rr("RR-002", "MC-1", "fb", sneaky)
         self.assertIn("id: RR-002", out)
         self.assertNotIn("RR-999", out)
-        self.assertNotIn("RESOLVED", out)
+        self.assertNotIn("CONSUMED", out)
 
     def test_fallback_when_no_frontmatter(self) -> None:
         out = C._merge_rr("RR-003", "MC-1", "spec/output/x.out", "## Trigger\nprose only\n")

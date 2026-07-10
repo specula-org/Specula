@@ -360,19 +360,10 @@ class TestDryRunCommand(PhaseCase):
         self.assertIn("Max parallel: 1", out)
         self.assertNotIn("Parallel confirmation", out)
 
-    def test_bug_confirmation_recheck_stays_single_agent(self) -> None:
-        # --recheck always uses the single-agent path, even without --legacy-confirm.
-        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--recheck"])
-        self.assertEqual(rc, 0, out)
-        self.assertIn("Max parallel: 1", out)
-        self.assertIn("[DRY RUN]", out)  # single-agent adapter launch
-        self.assertNotIn("Parallel confirmation", out)
-
     def test_ordinary_phase_default_max_parallel_stays_one(self) -> None:
         rc, out = self.dry_run(BY_KEY["code_analysis"])
         self.assertEqual(rc, 0, out)
         self.assertIn("Max parallel: 1", out)
-
     def test_max_turns_forwarded_verbatim(self) -> None:
         rc, out = self.dry_run(BY_KEY["code_analysis"], extra=["--max-turns=7"])
         self.assertEqual(rc, 0, out)
@@ -411,9 +402,9 @@ class TestDryRunCommand(PhaseCase):
         )
 
 
-class TestRepairAndRecheckModes(PhaseCase):
-    """The two back-edge modes swap the prompt template and the log/prompt
-    filenames (but keep the canonical .pid)."""
+class TestRepairMode(PhaseCase):
+    """Spec-validation repair mode swaps the prompt template and the log/prompt
+    filenames (but keeps the canonical .pid)."""
 
     def test_spec_validation_repair(self) -> None:
         rc, out = self.dry_run(BY_KEY["spec_validation"], extra=["--repair"])
@@ -429,23 +420,6 @@ class TestRepairAndRecheckModes(PhaseCase):
         self.assertNotIn("<!-- specula-skill:", body)
         self.assertNotIn("/skills/", body)
         self.assertNotIn(".claude/skills", body)
-
-    def test_bug_confirmation_recheck(self) -> None:
-        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--recheck"])
-        self.assertEqual(rc, 0, out)
-        wd = self.work_dir()
-        self.assertIn(f"--log={wd / 'bug-recheck.log'}", out)
-        body = (wd / ".bug-recheck-prompt.md").read_text()
-        self.assertIn("RE-CHECK", body)
-        self.assertIn("**bug-confirmation**", body)
-        self.assertNotIn("$bug-confirmation", body)
-        self.assertNotIn(f"${CODEX_PLUGIN_NAME}:bug-confirmation", body)
-        self.assertNotIn("<!-- specula-skill:", body)
-        self.assertIn("Phase 2′ re-check", body)
-        self.assertIn("repair-request format", body)
-        self.assertNotIn("/skills/", body)
-        self.assertNotIn(".claude/skills", body)
-
 
 class TestArgErrors(PhaseCase):
     def test_unknown_agent(self) -> None:

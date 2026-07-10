@@ -84,7 +84,7 @@ When reporting ENV_LIMITED:
 
 ## When a counterexample is an artifact — hand back to repair (confirmation loop)
 
-Reproduction failing is not always a statement about the bug — sometimes it is a statement about the **spec**. If the escalation ladder did not trigger the bug *because the counterexample requires something the implementation cannot actually do*, the finding is not dropped: it is handed back to Phase 3 for a scoped repair and returned to you (via `--recheck`, see `phases/03-recheck.md`) once the spec has changed. This is the confirmation-loop back-edge.
+Reproduction failing is not always a statement about the bug — sometimes it is a statement about the **spec**. If the escalation ladder did not trigger the bug *because the counterexample requires something the implementation cannot actually do*, the finding is not dropped: it is handed back to Phase 3 for a scoped repair (`PENDING REPAIR`). Phase 3 repairs the spec and re-runs model checking; the fresh output is then confirmed normally by another pass of this skill — there is no separate re-check. This is the confirmation-loop back-edge.
 
 Emit a repair request (write `repair-requests/RR-NNN.md`, `status: OPEN`, per `references/repair-request-format.md`) **only when you can cite** which of these holds:
 
@@ -104,4 +104,4 @@ When you emit a request: set the finding's `confirmed-bugs.md` status to `PENDIN
 - The test must have been actually executed (not just written); the output must be captured
 - The `confirmed-bugs.md` entry must include the actual test output (copy-paste) as evidence, not just a status label
 - ENV_LIMITED entries still get a `repro/` file — the file contains the attempt code at each escalation level and a comment explaining why each level didn't trigger
-- The final per-bug status is one of: REPRODUCED / ENV_LIMITED / MASKED / FALSE POSITIVE / NEEDS MORE INFO. `MASKED` is a **finding** (real defect, consequence masked today) — surfaced, not a false positive. A finding handed back to repair is recorded as **PENDING REPAIR (RR-NNN)** until the re-check pass (`phases/03-recheck.md`) resolves it to one of these (or to DEFERRED).
+- The final per-bug status is one of: REPRODUCED / ENV_LIMITED / MASKED / FALSE POSITIVE / NEEDS MORE INFO. `MASKED` is a **finding** (real defect, consequence masked today) — surfaced, not a false positive. A finding handed back to repair is recorded as **PENDING REPAIR (RR-NNN)**; after Phase 3 repairs the spec and re-runs MC, the fresh confirmation pass re-decides it (a repaired artifact simply disappears from the new output). If the repair loop is exhausted, the orchestrator files the request under `deferred/` and marks the finding `DEFERRED` — that is not your verdict to write.

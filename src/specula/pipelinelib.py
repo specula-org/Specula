@@ -90,7 +90,7 @@ Options:
   --skip-repair-loop     Skip the confirmation back-edge repair loop (default: enabled)
   --legacy-confirm       Phase 4a: single-agent confirmation instead of the default parallel per-finding
   --confirm-debate       Phase 4a: add the adversarial Challenger debate (parallel mode; default off)
-  --max-repair-rounds=N  Per-request repair cap, enforced by re-check (default: 0 = unlimited)
+  --max-repair-rounds=N  Global repair-loop round cap; unresolved requests are then filed under deferred/ (default: 10; 0 = unlimited)
   --enable-reviews        Enable review steps (disabled by default)
   --max-parallel=N       Hard limit for concurrent agents. When omitted, ordinary phases run 1 target
                          agent at a time and per-finding bug confirmation runs up to 4 at a time
@@ -269,7 +269,7 @@ class Pipeline:
         self.confirm_legacy = False  # --legacy-confirm: single-agent Phase 4a instead of the default parallel
         self.confirm_debate = False  # --confirm-debate: add the adversarial Challenger (parallel mode)
         # `or`: bash ${VAR:-default} treats an exported-but-empty var as unset
-        self.max_repair_rounds = os.environ.get("MAX_REPAIR_ROUNDS") or "0"
+        self.max_repair_rounds = os.environ.get("MAX_REPAIR_ROUNDS") or "10"
         self.skip_reviews = True
         self.agent = "claude-code"
         self.claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
@@ -565,14 +565,14 @@ class Pipeline:
     def has_any_request(self) -> bool:
         return any(self._rr_files(n) for n in self.extract_names())
 
-    def repair_work_remaining(self) -> bool:
-        """True if any RR is not yet terminal (anything other than RESOLVED /
-        DEFERRED). Repair handles OPEN/REOPENED, re-check handles RECHECK;
-        reset_stale_in_repair recovers IN_REPAIR. The loop runs until none
-        remain."""
+    def has_open_repair_requests(self) -> bool:
+        """True if any repair request in the active queue still needs repair
+        (status != CONSUMED). Requests already filed under deferred/ are excluded
+        — the RR-*.md glob is not recursive. The loop runs until none remain, or
+        the global round cap is hit (after which the orchestrator defers them)."""
         for n in self.extract_names():
             for f in self._rr_files(n):
-                if rr_status(f) not in ("RESOLVED", "DEFERRED"):
+                if rr_status(f) != "CONSUMED":
                     return True
         return False
 
@@ -799,24 +799,15 @@ class Pipeline:
         )
 
     def run_phase3_repair(self, round_: int) -> None:
-        """Phase 3 in repair mode: consume OPEN/REOPENED requests, repair the
-        spec, re-validate, transition each request to RECHECK."""
+        """Phase 3 in repair mode: consume OPEN repair requests, repair the spec,
+        re-run MC, and mark each repaired request CONSUMED. Whether the repair
+        settled the finding is answered by the next Phase 4 pass — a repaired
+        artifact no longer appears in the fresh output; a surviving or new
+        violation is confirmed fresh. There is no separate re-check pass."""
         self._phase(
             f"REPAIR ROUND {round_}: PHASE 3 (scoped spec/fault/invariant repair)",
             "launch_spec_validation.sh",
             self._phase_args(self.extract_names(), pre=["--repair"]),
-        )
-
-    def run_phase4_recheck(self, round_: int) -> None:
-        """Phase 4 in re-check mode: consume RECHECK requests, settle each
-        finding, transition to RESOLVED / REOPENED / DEFERRED (never RECHECK).
-        --max-repair-rounds is a PER-REQUEST cap the re-check agent enforces;
-        the agent, not the orchestrator, writes every RESOLVED / DEFERRED back
-        to confirmed-bugs.md."""
-        self._phase(
-            f"REPAIR ROUND {round_}: PHASE 4 (re-check repair requests)",
-            "launch_bug_confirmation.sh",
-            self._phase_args(self.extract_names(), pre=["--recheck", f"--max-repair-rounds={self.max_repair_rounds}"]),
         )
 
     def run_phase4b_classification(self) -> None:
@@ -827,39 +818,81 @@ class Pipeline:
         )
 
     def run_repair_loop(self) -> None:
-        """Confirmation back-edge: alternate Phase 3 repair and Phase 4 re-check
-        until every request is terminal (RESOLVED / DEFERRED). Budget pressure is
-        handled by wait_for_quota (WAIT, like every other phase) — the loop never
-        mass-defers on quota, since dumping findings to DEFERRED under throttling
-        would be an exploitable weakness. DEFERRED is only ever written by the
-        re-check agent, per finding, with evidence. The orchestrator never edits
-        confirmed-bugs.md."""
+        """Confirmation back-edge: repeat {Phase 3 repairs the spec per OPEN
+        repair requests and re-runs MC; Phase 4 confirms the fresh output
+        normally} until no open request remains or the global round cap is hit. A
+        repaired artifact simply no longer appears in the next Phase 4 output; a
+        surviving or new violation is confirmed fresh. There is no re-check pass
+        and no per-finding DEFERRED verdict — when the cap is reached the
+        orchestrator (not an agent) files any still-open request under
+        repair-requests/deferred/. Budget pressure -> wait_for_quota (WAIT), never
+        a mass-defer."""
         divider()
-        cap_disp = "unlimited" if self.max_repair_rounds == "0" else f"{self.max_repair_rounds} per request"
+        cap = int(self.max_repair_rounds)
+        cap_disp = "unlimited" if cap == 0 else f"{cap} rounds"
         log(f"REPAIR LOOP (confirmation back-edge) — cap={cap_disp}")
         divider()
 
         self.reset_stale_in_repair()  # recover crashed IN_REPAIR from a prior run
-        if not self.has_any_request():
+        if not self.has_open_repair_requests():
             log("No repair requests emitted by bug confirmation — repair loop is a no-op.")
             return
 
         round_ = 0
-        while self.repair_work_remaining():
+        while self.has_open_repair_requests() and (cap == 0 or round_ < cap):
             round_ += 1
             sig_before = self.repair_state_sig()
             self.wait_for_quota()  # budget pressure -> WAIT, never auto-defer
-            self.run_phase3_repair(round_)
+            self.run_phase3_repair(round_)  # OPEN -> CONSUMED, repair spec, re-run MC
             self.reset_stale_in_repair()  # recover if this round's repair phase died mid-turn
             self.wait_for_quota()
-            self.run_phase4_recheck(round_)
+            self.run_phase4_confirmation()  # normal Phase 4 on the fresh bug-report
+            self.snapshot_confirmed_bugs(round_)
             self.regenerate_ledger()
             if self.repair_state_sig() == sig_before:
-                log(f"Repair loop made no progress in round {round_} (no request changed) — stopping to avoid spin.")
+                log(f"Repair loop made no progress in round {round_} (no request changed) — stopping.")
                 break
 
+        self.move_open_requests_to_deferred()
         self.regenerate_ledger()
         log(f"Repair loop ended after {round_} round(s).")
+
+    def snapshot_confirmed_bugs(self, round_: int) -> None:
+        """Preserve each round's result: copy `confirmed-bugs.md` to
+        `confirmed-bugs-round-N.md`. The latest also stays as `confirmed-bugs.md`
+        for downstream Phase 4b."""
+        if self.dry_run:
+            return
+        for n in self.extract_names():
+            cb = Path(self.get_work_dir(n)) / "spec" / "confirmed-bugs.md"
+            if cb.is_file():
+                (cb.parent / f"confirmed-bugs-round-{round_}.md").write_text(cb.read_text())
+
+    def move_open_requests_to_deferred(self) -> None:
+        """When the loop ends with requests still open (cap reached or no
+        progress), file them under `repair-requests/deferred/` and mark the linked
+        finding `DEFERRED` in `confirmed-bugs.md`. This is the orchestrator's call,
+        not an agent verdict: 'deferred' means the repair loop ran out of rounds."""
+        if self.dry_run:
+            return
+        for n in self.extract_names():
+            remaining = [f for f in self._rr_files(n) if rr_status(f) != "CONSUMED"]
+            if not remaining:
+                continue
+            dd = Path(self.repair_dir(n)) / "deferred"
+            dd.mkdir(parents=True, exist_ok=True)
+            report = Path(self.get_work_dir(n)) / "spec" / "confirmed-bugs.md"
+            text = report.read_text() if report.is_file() else ""
+            for f in remaining:
+                rid = rr_field(f, "id")
+                text = text.replace(
+                    f"PENDING REPAIR ({rid})",
+                    f"DEFERRED (repair loop exhausted; {rid} in deferred/)",
+                )
+                f.rename(dd / f.name)
+                log(f"  deferred {f.name} -> {dd} (repair loop exhausted)")
+            if report.is_file():
+                report.write_text(text)
 
     # ── final summary ──
     def generate_summary(self) -> None:
@@ -942,11 +975,13 @@ class Pipeline:
                 out.append("- **Phase 4a (Bug Confirmation)**: SKIPPED")
 
             rr_files = self._rr_files(name)
-            if rr_files:
-                rr_resolved = self._status_file_count(rr_files, "RESOLVED")
-                rr_deferred = self._status_file_count(rr_files, "DEFERRED")
+            deferred_dir = Path(self.repair_dir(name)) / "deferred"
+            rr_deferred = len(list(deferred_dir.glob("RR-*.md"))) if deferred_dir.is_dir() else 0
+            if rr_files or rr_deferred:
+                rr_consumed = self._status_file_count(rr_files, "CONSUMED")
                 out.append(
-                    f"- **Repair loop**: {len(rr_files)} request(s) — {rr_resolved} resolved, {rr_deferred} deferred"
+                    f"- **Repair loop**: {len(rr_files) + rr_deferred} request(s) — "
+                    f"{rr_consumed} repaired, {rr_deferred} deferred"
                 )
 
             severity = spec_dir / "bug-severity.md"
@@ -1003,7 +1038,7 @@ class Pipeline:
         (step 7): the bash summary used `grep -lE '^status:[[:space:]]*X' |
         wc -l` — whole file, prefix match — so it could disagree with the
         repair loop's own reads (a buried `status:` line counted here but not
-        there) and RESOLVEDX counted as RESOLVED."""
+        there) and a botched CONSUMEDX counted as CONSUMED."""
         return sum(1 for f in files if rr_status(f) == status)
 
     # ── main (runs inside the tee) ──

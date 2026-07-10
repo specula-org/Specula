@@ -1,9 +1,9 @@
 # Repair-Request Format
 
-A **repair request** carries a confirmation-loop back-edge. When reproduction concludes — *with a citation* — that a counterexample is a spec / fault-model / invariant **artifact** rather than a real triggerable bug, the finding is not dropped: it is handed back to Phase 3 (spec validation) for a scoped repair, then returned here for re-check. This file defines the artifact and the state machine that keeps the loop **bounded** and **idempotent**.
+A **repair request** carries a confirmation-loop back-edge. When reproduction concludes — *with a citation* — that a counterexample is a spec / fault-model / invariant **artifact** rather than a real triggerable bug, the finding is not dropped: it is handed back to Phase 3 (spec validation) for a scoped repair. Phase 3 fixes the spec and **re-runs model checking**; the fresh output is then re-confirmed by a normal pass of the confirmation skill — **there is no separate re-check pass**. This file defines the artifact and the small state machine that keeps the loop **bounded** and **idempotent**.
 
-- **Produced by**: Phase 2 reproduction, first pass — see `phases/02-reproduction.md`.
-- **Consumed by**: Phase 3 spec validation in repair mode (`--repair=`), and this skill's re-check pass (`--recheck`) — see `phases/03-recheck.md`.
+- **Produced by**: Phase 2 reproduction — see `phases/02-reproduction.md`.
+- **Consumed by**: Phase 3 spec validation in repair mode (`--repair`), which repairs the spec, re-runs MC, and marks the request `CONSUMED`.
 
 ## Location
 
@@ -26,8 +26,8 @@ Markdown with a YAML frontmatter header (machine-routable by the orchestrator) a
 id: RR-001
 bug_id: <heading/label of the finding's entry in confirmed-bugs.md>
 target: SPEC_REPAIR            # SPEC_REPAIR | FAULT_MODEL | INVARIANT
-status: OPEN                   # OPEN | IN_REPAIR | RECHECK | REOPENED | RESOLVED | DEFERRED
-round: 0                       # times this request has entered repair; ++ on each REOPENED
+status: OPEN                   # OPEN | IN_REPAIR | CONSUMED
+round: 0                       # times Phase 3 has repaired this request
 counterexample: output/MC_hunt_log_div_20260531.out
 scope:                         # hint to the repair agent; not a hard constraint
   actions: [HandleAppendEntries]
@@ -58,40 +58,25 @@ What the repair agent might do. The agent decides; this is a hint, not an order.
 
 ## State machine
 
-Terminal: `RESOLVED`, `DEFERRED`. All others are non-terminal.
+Small and linear. Terminal: `CONSUMED`.
 
 | Transition | Owner | When |
 |---|---|---|
-| (new) → `OPEN` | Phase 2 confirm (first pass) | reproduction yields a **cited** artifact verdict |
-| `OPEN`/`REOPENED` → `IN_REPAIR` | Phase 3 repair | on entry, before editing the spec |
-| `IN_REPAIR` → `RECHECK` | Phase 3 repair | after editing + **full trace re-validation** + scoped MC; appends History |
-| `RECHECK` → `RESOLVED`/`REOPENED`/`DEFERRED` | Phase 2 re-check | exactly one; **never leaves `RECHECK`**; appends History; `round++` only on `REOPENED` |
+| (new) → `OPEN` | Phase 2 confirm | reproduction yields a **cited** artifact verdict |
+| `OPEN` → `IN_REPAIR` | Phase 3 repair | on entry, before editing the spec |
+| `IN_REPAIR` → `CONSUMED` | Phase 3 repair | after editing + **full trace re-validation** + re-running MC; appends History |
 
-`DEFERRED` is written **only** by the re-check agent, per finding, with evidence — on a genuine no-progress verdict or when the per-request `--max-repair-rounds` cap is reached. The orchestrator never sets `DEFERRED` and never edits `confirmed-bugs.md`. (It may flip a crashed `IN_REPAIR` back to `OPEN` for retry; that is lifecycle bookkeeping, not a verdict.)
+Whether the repair actually **settled** the finding is not decided by a status here — it is answered by the next Phase 4 confirmation on the fresh bug-report: a repaired artifact simply no longer appears (resolved); a surviving or new violation is confirmed from scratch and may emit a fresh `OPEN` request. There is no re-check pass, and no `RESOLVED` / `REOPENED` / `DEFERRED` agent status.
 
-### Idempotency rule (critical)
+`IN_REPAIR` doubles as a crash marker: if the orchestrator finds a request still `IN_REPAIR` at the top of a loop iteration (its repair phase died mid-turn), it resets it to `OPEN`.
 
-Each phase consumes requests in exactly **one** input status and **must** move them out of that status before its turn ends.
+### Termination — the orchestrator's job, not an agent's
 
-- Phase 2 re-check processes **only** `RECHECK` and always transitions them — a request it just rechecked cannot be re-rechecked next round.
-- Phase 3 repair processes **only** `OPEN` / `REOPENED`.
-- `RESOLVED` / `DEFERRED` are never touched again.
-
-`IN_REPAIR` and `RECHECK` double as crash markers: if the orchestrator finds a request still `IN_REPAIR` at the top of a loop iteration (its repair phase died mid-turn), it resets it to `OPEN`.
-
-### Termination
-
-No fixed iteration cap by default. The loop terminates when **every request is terminal** (`RESOLVED` / `DEFERRED`). Progress toward termination comes from:
-
-1. **The re-check agent**, which each round either resolves a request or — when it cannot cite a further repair — defers it (`phases/03-recheck.md`).
-2. **The per-request cap** `--max-repair-rounds=N` (default `0` = unlimited): when a request's own `round` reaches `N`, the re-check agent defers it instead of reopening.
-3. **Anti-oscillation**: `round` and `History` stop the agent re-requesting a repair already tried and failed.
-
-Budget pressure does **not** defer anything. The orchestrator waits for quota between rounds (like every other phase) rather than dumping work to `DEFERRED` — mass-deferring under throttling would be an exploitable weakness.
+The loop is bounded by a **global round cap** (`--max-repair-rounds=N`, default `10`; `0` = unlimited), enforced by the orchestrator. When the cap is reached with requests still `OPEN`, the orchestrator moves them to `repair-requests/deferred/` and marks the linked finding `DEFERRED` in `confirmed-bugs.md`. `DEFERRED` therefore means only "the repair loop ran out of rounds" — never an agent verdict. Budget pressure does **not** defer anything: the orchestrator waits for quota between rounds like every other phase.
 
 ## Repairing a request (Phase 3 repair mode)
 
-Phase 3 in repair mode (`--repair`) processes each request with status `OPEN` or `REOPENED`:
+Phase 3 in repair mode (`--repair`) processes each request with status `OPEN`:
 
 1. Set `status: IN_REPAIR` before editing anything.
 2. Read its Trigger / Evidence and its `History` — never repeat a repair a prior round already tried and recorded as failed.
@@ -102,9 +87,9 @@ Phase 3 in repair mode (`--repair`) processes each request with status `OPEN` or
 4. Re-validate (follow the validation-workflow skill):
    - Run **full trace validation on all traces** — the soundness gate. If the repair excludes a real trace, it is wrong; undo it and reconsider.
    - Re-run model checking on the request's `scope.hunt_cfgs`, and update `bug-report.md` for the affected cfg.
-5. Set `status: RECHECK` and append a `History` entry (tag `phase3-repair`) describing what changed and the re-run result (original CE gone / new CE / unchanged).
+5. Set `status: CONSUMED` and append a `History` entry (tag `phase3-repair`) describing what changed and the re-run result (original CE gone / new CE / unchanged).
 
-Process **only** `OPEN`/`REOPENED` here; never touch `RESOLVED`/`DEFERRED`/`RECHECK`. The implementation is ground truth — do not overfit the spec to make a trace pass (model checking catches overfit repairs; see the validation-workflow skill). Do not edit `confirmed-bugs.md` in repair mode — the re-check pass owns it.
+Process **only** `OPEN` here; never touch `CONSUMED`. The implementation is ground truth — do not overfit the spec to make a trace pass (model checking catches overfit repairs; see the validation-workflow skill). Do not edit `confirmed-bugs.md` in repair mode — the next Phase 4 confirmation pass owns it.
 
 ## When NOT to create a request
 

@@ -12,9 +12,8 @@ The finding goes through two phases in order: investigation (Phase 1) and reprod
 |---|-------|---|---|
 | 1 | [Investigation](phases/01-investigation.md) | Always | `investigation.md` — evidence only (code audit, reachability, developer knowledge, known-status). No verdict, except a code-review × known drop. |
 | 2 | [Reproduction](phases/02-reproduction.md) | Unless dropped (code-review × known) | `repro/test_bug*` + **the verdict** (decided here from the investigation record + reproduction result), or a repair request for a cited artifact |
-| 2′ | [Re-check](phases/03-recheck.md) | `--recheck` only (pipeline repair loop) | resolves `RECHECK` repair requests; transitions each to RESOLVED / REOPENED / DEFERRED |
 
-**Confirmation loop.** When reproduction concludes — with a citation — that a counterexample is a spec / fault-model / invariant **artifact** rather than a real bug, it does not drop the finding. It emits a *repair request* that hands the finding back to Phase 3 for a scoped repair; the pipeline then re-runs this skill in `--recheck` mode (Phase 2′) to settle it. See `references/repair-request-format.md`. The loop is bounded by the run's token budget and by per-request anti-oscillation, not by a fixed iteration cap.
+**Confirmation loop.** When reproduction concludes — with a citation — that a counterexample is a spec / fault-model / invariant **artifact** rather than a real bug, it does not drop the finding. It emits a *repair request* (`PENDING REPAIR`) that hands the finding back to Phase 3 for a scoped repair. Phase 3 repairs the spec and **re-runs model checking**; the pipeline then runs this same confirmation skill on the fresh output — **there is no separate re-check pass**. A repaired artifact simply no longer appears; a surviving or new violation is confirmed from scratch like any finding. The orchestrator caps the loop at a fixed number of rounds and files any still-open repair request under `repair-requests/deferred/` for a developer (the `DEFERRED` disposition is the orchestrator's, never your verdict). See `references/repair-request-format.md`.
 
 ## Per-bug output schema
 
@@ -26,7 +25,7 @@ Each finding's entry in `confirmed-bugs.md` should include:
 
 - **Source**: `MC` only if model checking produced an actual counterexample (a violation trace) for this finding; otherwise `Code Review`. A finding whose model-checking run returned *no violation* is **not** MC-sourced even if it was checked under a named `Family`/`MC` config — record it as `Code Review` (cite the issue/Family), noting the no-violation result.
 - **Novelty**: `NEW` or `KNOWN`. `KNOWN` = a public issue/PR/CVE/advisory **or** a prior Specula dataset entry describes the same mechanism at the same site — the determination the Phase 1 issue-tracker search + precedent re-check (Steps 2–3) already make; just record the outcome here. A `KNOWN` value MUST carry a citation and fix-status: `KNOWN (cite: <URL or dataset-id>; fix-status: unfixed|fixed)`.
-- **Status**: REPRODUCED / ENV_LIMITED / MASKED / FALSE POSITIVE / NEEDS MORE INFO / PENDING REPAIR / DEFERRED
+- **Status**: REPRODUCED / ENV_LIMITED / MASKED / FALSE POSITIVE / NEEDS MORE INFO / PENDING REPAIR (`DEFERRED` is set by the orchestrator, not you, when the repair loop is exhausted)
 - **Repair request**: RR-NNN if this finding was handed back to Phase 3 (omit otherwise)
 - **Severity**: Critical / High / Medium / Low
 - **Location**: file:line

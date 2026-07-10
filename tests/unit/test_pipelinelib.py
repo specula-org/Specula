@@ -99,7 +99,7 @@ class TestRRField(TmpCwd):
         self.assertEqual(pl.rr_field(f, "bug_id"), "a  b")
 
     def test_first_match_wins(self) -> None:
-        f = self._write("status: OPEN\nstatus: RESOLVED\n")
+        f = self._write("status: OPEN\nstatus: CONSUMED\n")
         self.assertEqual(pl.rr_field(f, "status"), "OPEN")
 
     def test_25_line_window(self) -> None:
@@ -139,14 +139,14 @@ class TestRRSetStatus(TmpCwd):
     def test_repairs_missing_trailing_newline(self) -> None:
         f = self.tmp / "RR-1.md"
         f.write_text("status: OPEN\nlast line")
-        pl.rr_set_status(f, "RESOLVED", "done")
-        self.assertEqual(f.read_text(), "status: RESOLVED\nlast line\n- done\n")
+        pl.rr_set_status(f, "CONSUMED", "done")
+        self.assertEqual(f.read_text(), "status: CONSUMED\nlast line\n- done\n")
 
     def test_rewrites_only_first_status(self) -> None:
         f = self.tmp / "RR-1.md"
-        f.write_text("status: OPEN\nstatus: RESOLVED\n")
+        f.write_text("status: OPEN\nstatus: CONSUMED\n")
         pl.rr_set_status(f, "IN_REPAIR", "n")
-        self.assertEqual(f.read_text(), "status: IN_REPAIR\nstatus: RESOLVED\n- n\n")
+        self.assertEqual(f.read_text(), "status: IN_REPAIR\nstatus: CONSUMED\n- n\n")
 
     def test_status_past_window_untouched(self) -> None:
         pad = "".join(f"k{i}: v\n" for i in range(25))
@@ -709,43 +709,41 @@ class TestRepairPredicates(RRDirCase):
     def test_no_dir_no_requests(self) -> None:
         p = make_pipeline(["other|g|l|r"])
         self.assertFalse(p.has_any_request())
-        self.assertFalse(p.repair_work_remaining())
+        self.assertFalse(p.has_open_repair_requests())
         self.assertEqual(p.repair_state_sig(), "")
 
     def test_terminal_statuses(self) -> None:
+        # New state machine: OPEN | IN_REPAIR | CONSUMED. Only CONSUMED is terminal.
         for status, remaining in [
             ("OPEN", True),
-            ("REOPENED", True),
-            ("RECHECK", True),
             ("IN_REPAIR", True),
-            ("RESOLVED", False),
-            ("DEFERRED", False),
+            ("CONSUMED", False),
         ]:
             for f in self.rr_dir.glob("RR-*.md"):
                 f.unlink()
             make_rr(self.rr_dir, "RR-1", status)
             self.assertTrue(self.p.has_any_request())
-            self.assertEqual(self.p.repair_work_remaining(), remaining, status)
+            self.assertEqual(self.p.has_open_repair_requests(), remaining, status)
 
     def test_mixed_terminal_and_open(self) -> None:
-        make_rr(self.rr_dir, "RR-1", "RESOLVED")
+        make_rr(self.rr_dir, "RR-1", "CONSUMED")
         make_rr(self.rr_dir, "RR-2", "OPEN")
-        self.assertTrue(self.p.repair_work_remaining())
+        self.assertTrue(self.p.has_open_repair_requests())
 
     def test_sig_tracks_status_and_round(self) -> None:
         f = make_rr(self.rr_dir, "RR-1", "OPEN", round_=1)
-        make_rr(self.rr_dir, "RR-2", "RECHECK", round_=2)
+        make_rr(self.rr_dir, "RR-2", "IN_REPAIR", round_=2)
         sig = self.p.repair_state_sig()
-        self.assertEqual(sig, "RR-1.md:OPEN:1\nRR-2.md:RECHECK:2")
-        pl.rr_set_status(f, "RECHECK", "n")
+        self.assertEqual(sig, "RR-1.md:OPEN:1\nRR-2.md:IN_REPAIR:2")
+        pl.rr_set_status(f, "CONSUMED", "n")
         self.assertNotEqual(self.p.repair_state_sig(), sig)
 
     def test_reset_stale_only_touches_in_repair(self) -> None:
         stale = make_rr(self.rr_dir, "RR-1", "IN_REPAIR")
-        untouched = make_rr(self.rr_dir, "RR-2", "RECHECK")
+        untouched = make_rr(self.rr_dir, "RR-2", "CONSUMED")
         _, out = quiet(self.p.reset_stale_in_repair)
         self.assertEqual(pl.rr_status(stale), "OPEN")
-        self.assertEqual(pl.rr_status(untouched), "RECHECK")
+        self.assertEqual(pl.rr_status(untouched), "CONSUMED")
         self.assertIn("reset RR-1.md IN_REPAIR -> OPEN (crash recovery)", out)
         self.assertIn("- reset (orchestrator): repair phase did not complete; retrying", stale.read_text())
 
@@ -760,12 +758,12 @@ class TestRepairPredicates(RRDirCase):
 class TestLedger(RRDirCase):
     def test_ledger_rows_and_pipe_escape(self) -> None:
         make_rr(self.rr_dir, "RR-1", "OPEN", bug_id="DA-1 | pipes", round_=1)
-        make_rr(self.rr_dir, "RR-2", "RESOLVED", bug_id="DA-2", round_=3)
+        make_rr(self.rr_dir, "RR-2", "CONSUMED", bug_id="DA-2", round_=3)
         self.p.regenerate_ledger()
         text = (self.tmp / ".specula-output" / "spec" / "repair-ledger.md").read_text()
         self.assertIn("# Repair Ledger — footest", text)
         self.assertIn("| RR-1 | DA-1 \\| pipes | base.tla | OPEN | 1 |", text)
-        self.assertIn("| RR-2 | DA-2 | base.tla | RESOLVED | 3 |", text)
+        self.assertIn("| RR-2 | DA-2 | base.tla | CONSUMED | 3 |", text)
 
     def test_no_requests_no_ledger(self) -> None:
         self.p.regenerate_ledger()
@@ -778,22 +776,22 @@ class TestLedger(RRDirCase):
         self.assertFalse((self.tmp / ".specula-output" / "spec" / "repair-ledger.md").exists())
 
     def test_status_file_count_exact_token(self) -> None:
-        # wart fix (step 7): the bash grep matched RESOLVED as a PREFIX, so a
-        # botched RESOLVEDX counted as resolved; the count is exact now
-        f1 = make_rr(self.rr_dir, "RR-1", "RESOLVEDX")
-        f2 = make_rr(self.rr_dir, "RR-2", "RESOLVED")
+        # wart fix (step 7): the bash grep matched CONSUMED as a PREFIX, so a
+        # botched CONSUMEDX counted as consumed; the count is exact now
+        f1 = make_rr(self.rr_dir, "RR-1", "CONSUMEDX")
+        f2 = make_rr(self.rr_dir, "RR-2", "CONSUMED")
         f3 = make_rr(self.rr_dir, "RR-3", "OPEN")
-        self.assertEqual(pl.Pipeline._status_file_count([f1, f2, f3], "RESOLVED"), 1)
+        self.assertEqual(pl.Pipeline._status_file_count([f1, f2, f3], "CONSUMED"), 1)
 
     def test_status_file_count_uses_state_machine_window(self) -> None:
         # wart fix (step 7): the bash summary grep scanned the whole file while
         # rr_status reads only the 25-line frontmatter window — the same RR
-        # could count as resolved in the summary yet stay OPEN to the repair
+        # could count as consumed in the summary yet stay OPEN to the repair
         # loop; both reads now share rr_status
         pad = "".join(f"k{i}: v\n" for i in range(30))
         f = self.rr_dir / "RR-1.md"
-        f.write_text(pad + "status: DEFERRED\n")
-        self.assertEqual(pl.Pipeline._status_file_count([f], "DEFERRED"), 0)
+        f.write_text(pad + "status: CONSUMED\n")
+        self.assertEqual(pl.Pipeline._status_file_count([f], "CONSUMED"), 0)
 
 
 class TestRepairLoop(RRDirCase):
@@ -810,7 +808,7 @@ class TestRepairLoop(RRDirCase):
             on_repair(round_)
 
         self.p.run_phase3_repair = repair  # type: ignore[method-assign]
-        self.p.run_phase4_recheck = lambda round_: None  # type: ignore[method-assign]
+        self.p.run_phase4_confirmation = lambda: None  # type: ignore[method-assign]
 
         def no_quota_wait(*, reactive: bool = False) -> None:
             pass
@@ -820,7 +818,7 @@ class TestRepairLoop(RRDirCase):
         return rounds, out
 
     def resolve(self, rr_id: str = "RR-1") -> Callable[[int], None]:
-        return lambda r: pl.rr_set_status(self.rr_dir / f"{rr_id}.md", "RESOLVED", "done")
+        return lambda r: pl.rr_set_status(self.rr_dir / f"{rr_id}.md", "CONSUMED", "done")
 
     def test_no_requests_is_noop(self) -> None:
         rounds, out = self.drive(lambda r: None)
@@ -842,7 +840,7 @@ class TestRepairLoop(RRDirCase):
     def test_stale_in_repair_recovered_before_loop(self) -> None:
         make_rr(self.rr_dir, "RR-1", "IN_REPAIR")  # crashed prior run -> reset to OPEN
         self.drive(self.resolve())
-        self.assertEqual(pl.rr_status(self.rr_dir / "RR-1.md"), "RESOLVED")
+        self.assertEqual(pl.rr_status(self.rr_dir / "RR-1.md"), "CONSUMED")
 
 
 # ──────────────────────────────────────────────────────────
