@@ -1,8 +1,15 @@
 # Phase 2: Mandatory Reproduction Attempt
 
-**Every bug must attempt reproduction.** New, known, or historical — no exemption. Work through the escalation ladder; either trigger the bug or mark it REPRODUCTION FAILED with an honest reason.
+**This phase decides the verdict.** Phase 1 only gathered evidence (in `investigation.md`) and judged nothing (except the code-review × known drop). Here you attempt reproduction, then choose exactly ONE verdict from the decision table (`guide.md`) using the Phase-1 investigation record **plus** the reproduction result together.
 
-The status REPRODUCTION FAILED is a valid final status when the escalation ladder is exhausted. It does NOT invalidate the finding — it is information for the reader about how confident we are the bug manifests in real execution. The bug claim still stands on its code audit and developer-intent evidence (Phase 1).
+**Every bug must attempt reproduction.** New, known, or historical — no exemption. Work through the escalation ladder; either you trigger the live harm (→ `REPRODUCED`) or you do not.
+
+**When you cannot reproduce the live harm of a REAL defect, it is exactly one of three — pick by WHY it did not manifest, never a vague "reproduction failed":**
+- **`ENV_LIMITED`** — the defect is real and *would* harm in production, but THIS environment cannot trigger it (needs a real cluster / hardware / timing). Requires a SOUND argument that production exhibits it, naming the exact env limitation. It is not a blanket "stands on code audit".
+- **`MASKED`** — the defect is real but a safeguard / downstream mechanism (sync / loopback / resend / guard) / a discarded output / a *separate* bug currently masks the harm, so it does not bite today. Name the mask (prove it fires — see below).
+- **`PENDING REPAIR`** — (MC only) the counterexample is a spec / fault-model / invariant artifact: the CE needs something the real code cannot do, or flags a benign state. Emit a repair request (see "When a counterexample is an artifact").
+
+(A finding that is not a real defect at all is `FALSE POSITIVE`; one you genuinely cannot judge is `NEEDS MORE INFO`. Neither is a "reproduction failed" bucket.)
 
 For every bug, you MUST:
 
@@ -11,7 +18,7 @@ For every bug, you MUST:
 3. Walk the escalation ladder strictly in order (Level 0 → 1 → 2 → 3); document at each level what was tried and what happened
 4. Report a final outcome:
    - **REPRODUCED** — bug triggered; include level reached, the exact command, and observable evidence
-   - **REPRODUCTION FAILED** — escalation ladder exhausted; include what was attempted at each level and a reasoned conclusion about why it didn't trigger
+   - **ENV_LIMITED** — escalation ladder exhausted; include what was attempted at each level and a reasoned conclusion about why it didn't trigger
    - **Hand back to repair** — if (and only if) you can cite that the counterexample is a spec/fault/invariant artifact, emit a repair request instead of a terminal status (see "When a counterexample is an artifact" below)
 
 "Code audit only" is NOT a permitted status. Every finding's entry in `confirmed-bugs.md` must show evidence of a reproduction attempt (the test file in `repro/` and the recorded output).
@@ -20,27 +27,21 @@ For every bug, you MUST:
 
 **Simulate a real-world trigger, not bypass normal flows to poke the bug directly.**
 
-### Prohibited approaches
+### Prohibited
 
 - Pre-populating data structures with illegal or inconsistent state, then calling a function to "prove" it can't handle it
 - Directly calling internal/private functions, skipping normal entry-point checks
 - Manually constructing inputs that could never occur through normal flows
-- Modifying the code under test to create the bug (e.g., commenting out validation logic)
+- Modifying the core logic of the system under test to create the bug (e.g., commenting out validation logic)
 
-### Correct approaches
+### Required
 
-- Trigger through the system's public interfaces or normal entry points
+- Trigger through the system's public interfaces or normal entry points; the trigger path must be consistent with real-world usage scenarios
 - For concurrency bugs, reproduce via real concurrent scenarios (multi-thread/multi-process). Small delays may be inserted into the code under test to widen the race window, but the logic must not be altered
 - For protocol bugs, trigger via sequences of messages that are legitimate but adversarial. The messages themselves must pass the system's normal validation
 - The reproduction program should compile and run independently, without requiring special environments beyond the test framework
-- The success criterion must be observable anomalous behavior (crash, deadlock, data inconsistency, safety property violation), not "some intermediate variable has an unexpected value"
-
-### Criteria for successful reproduction
-
-- The bug is triggered without modifying the core logic of the system under test
-- The trigger path is consistent with real-world usage scenarios
 - The reproduction is deterministic, or triggers with significant probability across multiple runs
-- The erroneous behavior caused by the bug is clearly observable
+- The success criterion must be observable anomalous behavior (crash, deadlock, data inconsistency, safety property violation), not "some intermediate variable has an unexpected value"
 
 ## Escalation ladder — strict, in order
 
@@ -48,10 +49,10 @@ Your goal is to either **prove the bug manifests** (trigger it) or **prove the e
 
 1. **Level 0 — Pure black-box.** Use only public APIs, normal operations, no failpoints. Always start here.
 2. **Level 1 — Timing assistance.** Add `sleep()` calls or use system-provided test hooks (e.g., `configureFailPoint`, `FAIL_POINT_DEFINE`) to widen race windows. The system logic is unchanged; you're only controlling timing.
-3. **Level 2 — State injection.** Directly inject the pre-condition state (e.g., insert a document that mimics a crash-recovery scenario) and verify the buggy code path handles it incorrectly. Clearly document that this is a state-injection test, not an end-to-end trigger.
+3. **Level 2 — State injection.** Inject the pre-condition state and verify the buggy code path handles it incorrectly. The injected state MUST be one the real system can actually reach: show the real-API call sequence that produces it, or cite the exact model-counterexample step it instantiates. Injecting a state the real system can never reach (an impossible / hand-built pre-condition — e.g. two peers simultaneously in a mutually-exclusive role, a mock that emits a value a real peer never sends) is unsound and does not reproduce anything. When that unreachability is the finding's real story, route it: an **MC finding** means the counterexample needs a state the code cannot reach — hand back to repair (`FAULT_MODEL` / `SPEC_REPAIR`, see below); a **code-review finding** is a FALSE POSITIVE. Clearly document that this is a state-injection test, not an end-to-end trigger.
 4. **Level 3 — Minimal code modification.** Add a small delay (`usleep`, `sleep`) inside the system's source code at the exact crash window location to make the race deterministic. Document the modification precisely.
 
-Walk the ladder strictly in order. Escalate ONLY when the current level genuinely failed; document why. **Do not stop at Level 0 failure.** If Level 3 also fails, the final status is REPRODUCTION FAILED — document the four attempts.
+Walk the ladder strictly in order. Escalate ONLY when the current level genuinely failed; document why. **Do not stop at Level 0 failure.** If Level 3 also fails, the final status is ENV_LIMITED — document the four attempts.
 
 For known/historical bugs that already have a working reproduction in the upstream tree, you may re-use or adapt that reproduction as your test — start at the level matching the upstream reproduction's invasiveness. Cite the upstream reproduction.
 
@@ -75,11 +76,11 @@ When reporting REPRODUCED, you MUST include:
 - Which line(s) of output demonstrate the bug was triggered
 - Comparison with expected (correct) behavior
 
-When reporting REPRODUCTION FAILED:
+When reporting ENV_LIMITED:
 
 - The four levels attempted (0 through 3); for each: what was tried, what happened, why it didn't trigger
 - Your conclusion: is the bug real but hard to trigger (timing-sensitive, requires specific cluster topology, needs a fault not in the test framework), or do you now believe it's a false positive given the failed escalation?
-- Whether you still believe the bug stands on code audit alone — and the evidence supporting that
+- Whether you can give a SOUND argument that the consequence still occurs in production despite the failed trigger (naming the environment limitation that blocks it here) — or whether, absent that argument and any reachable consequence, it is a FALSE POSITIVE (code-review) / a model-repair signal (MC)
 
 ## When a counterexample is an artifact — hand back to repair (confirmation loop)
 
@@ -91,9 +92,9 @@ Emit a repair request (write `repair-requests/RR-NNN.md`, `status: OPEN`, per `r
 - **FAULT_MODEL** — the counterexample depends on an injected fault that is not in the system's failure model, or a fault modeled with the wrong semantics. Cite the failure-model evidence.
 - **INVARIANT** — the path reproduces but has no observable consequence, AND developer-intent evidence (Phase 1, Step 2) shows the implementation does not promise the violated property. Cite the evidence.
 
-If the path reproduces with no consequence because a **downstream mechanism masks it**, do not hand back: keep the finding and extend the repro test to assert the masking mechanism actually fires.
+If the path reaches the bad state but a **downstream mechanism masks the consequence** (a guard, a sync/loopback/resend that later resolves it, a discarded output, or a separate bug that carries the harm), first PROVE that mechanism actually fires (extend the repro to assert it — do not assume it). If it does, distinguish two cases: (a) the **code has a real defect** but the mask currently prevents live harm → status `MASKED` (a finding — real anomaly, would bite if the mask were removed; name the mask), NOT FALSE POSITIVE; (b) the **code is correct** and only the MC invariant over-flagged a benign state → hand back to repair as `INVARIANT`. If you cannot prove the mask fires, the consequence stands (REPRODUCED).
 
-**A citation is mandatory.** If you cannot cite the missing guard / inadmissible fault / unpromised property, do not emit a request — fall back to REPRODUCTION FAILED (you believe it is real but hard to trigger) or NEEDS MORE INFO (you cannot tell). "I couldn't trigger it" is never, by itself, grounds for a repair request.
+**A citation is mandatory.** If you cannot cite the missing guard / inadmissible fault / unpromised property, do not emit a request — fall back to ENV_LIMITED (you believe it is real but hard to trigger) or NEEDS MORE INFO (you cannot tell). "I couldn't trigger it" is never, by itself, grounds for a repair request.
 
 When you emit a request: set the finding's `confirmed-bugs.md` status to `PENDING REPAIR (RR-NNN)` and stop processing that finding — the loop returns it to you in re-check.
 
@@ -102,5 +103,5 @@ When you emit a request: set the finding's `confirmed-bugs.md` status to `PENDIN
 - For each bug: one executable test file in `repro/test_bug<N>_*.{py,js,rs,go,c,sh}`
 - The test must have been actually executed (not just written); the output must be captured
 - The `confirmed-bugs.md` entry must include the actual test output (copy-paste) as evidence, not just a status label
-- REPRODUCTION FAILED entries still get a `repro/` file — the file contains the attempt code at each escalation level and a comment explaining why each level didn't trigger
-- The final per-bug status is one of: REPRODUCED / REPRODUCTION FAILED / FALSE POSITIVE / NEEDS MORE INFO. A finding handed back to repair is recorded as **PENDING REPAIR (RR-NNN)** until the re-check pass (`phases/03-recheck.md`) resolves it to one of these (or to DEFERRED).
+- ENV_LIMITED entries still get a `repro/` file — the file contains the attempt code at each escalation level and a comment explaining why each level didn't trigger
+- The final per-bug status is one of: REPRODUCED / ENV_LIMITED / MASKED / FALSE POSITIVE / NEEDS MORE INFO. `MASKED` is a **finding** (real defect, consequence masked today) — surfaced, not a false positive. A finding handed back to repair is recorded as **PENDING REPAIR (RR-NNN)** until the re-check pass (`phases/03-recheck.md`) resolves it to one of these (or to DEFERRED).

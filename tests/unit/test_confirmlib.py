@@ -319,6 +319,16 @@ class TestAggregate(ConfirmCase):
         cb = self._confirmed_bugs("VERDICT: REPRODUCED")
         self.assertIn("Reproduced: 1 = 1 NEW + 0 KNOWN-unfixed", cb)
 
+    def test_masked_is_a_finding_not_a_reproduced_bug(self) -> None:
+        cb = self._confirmed_bugs("VERDICT: MASKED")
+        self.assertIn("Reproduced: 0 = 0 NEW + 0 KNOWN-unfixed", cb)  # masked is NOT a bug
+        self.assertIn("Findings: 1 = 0 env-limited + 1 masked", cb)  # it is a finding
+        self.assertIn("| 1 | MC-1 | MASKED |", cb)
+
+    def test_env_limited_counted_as_finding(self) -> None:
+        cb = self._confirmed_bugs("VERDICT: ENV_LIMITED")
+        self.assertIn("Findings: 1 = 1 env-limited + 0 masked", cb)
+
 
 class TestPromptExtraAndLog(ConfirmCase):
     def test_prompt_extra_appended_to_reproduce(self) -> None:

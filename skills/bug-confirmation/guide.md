@@ -1,35 +1,32 @@
 # Bug Confirmation and Reproduction
 
-Confirm bugs found by model checking or code review are real, then reproduce them in the actual system.
+Confirm that ONE finding — from model checking or code review — is a real bug, then reproduce it in the actual system. This skill is **single-finding**: it is the methodology for the one finding you are handed. Confirming a whole batch — consolidate the sources, apply this skill to each finding, then aggregate — is a thin loop the pipeline wraps around it (the parallel mode does it in code; the single-agent mode via an orchestration prompt). This file adds no batch logic.
 
 ## Flow
 
-Each finding goes through two phases in order: investigation (Phase 1) and reproduction (Phase 2). Both phases run for every finding, with one exception: if Phase 1 establishes the finding is **code-review-sourced AND already-known** (a public issue/PR/CVE/advisory — **whether still open or already fixed** — describes the same mechanism at the same site), drop the finding before Phase 2 — mark its entry `Status: DROPPED (code-review × known, cite: <URL>)` and do not write a `repro/` test. **Open-vs-fixed does not matter: an open, unfixed issue still counts as already-known. A code-review reproduction of any already-reported bug is not a new bug (it is already in the tracker), so it is dropped regardless of fix status** — do not keep it on the grounds that the bug is still live. This is the only pre-filter. A finding proceeds to Phase 2 unfiltered **only** if it is MC-found *with an actual counterexample* (new or known), or is a code-review-found *new* bug. A model-checking run that returned **no violation** does **not** make a finding MC-found — such a finding is code-review-sourced, and if it is already-known it is dropped here like any other code-review × known finding. A `Family`/`MC` label alone never exempts a finding from this pre-filter.
+The finding goes through two phases in order: investigation (Phase 1) and reproduction (Phase 2). **Phase 1 only gathers evidence** (into `investigation.md`) and makes NO verdict — with one exception, the single pre-filter below. **The verdict is decided after Phase 2**, from the investigation record plus the reproduction result, per the decision table.
+
+**The only pre-filter (a Phase-1 drop): code-review × already-reported.** Drop before Phase 2 **only** if the finding is code-review-sourced **AND an existing issue / PR / CVE / advisory (or a prior Specula dataset entry) has already reported THIS exact defect** — the same mechanism at the same site, **whether still open or already fixed** (open-vs-fixed does not matter — an already-reported bug is not a *new* bug). It is a duplicate of an existing report, not a new find. Mark `Status: DROPPED (code-review × known, cite: <URL/dataset-id>)`, write no `repro/` test. This is about *a report already existing in the tracker*, **NOT** developer awareness: a developer merely suspecting a problem — a `TODO`/`FIXME`/"this might be unsafe"/"we don't handle X yet" comment, a "known limitation" about a *different* aspect, a same-shape precedent on a *different* site, or you spotting the gap yourself — does **NOT** count; finding and confirming an unreported problem is still a real bug. Everything else proceeds to Phase 2 unfiltered: MC-found *with an actual counterexample* (new or known), or any code-review finding not already reported. A model-checking run that returned **no violation** is code-review-sourced (not MC-found); a `Family`/`MC` label alone never exempts a finding.
 
 | # | Phase | When it runs | Output it adds |
 |---|-------|---|---|
-| 1 | [Investigation](phases/01-investigation.md) | Every finding | Code-audit result + dev-intent summary + precedent re-check |
-| 2 | [Reproduction](phases/02-reproduction.md) | Every finding except dropped (code-review × known) | `repro/test_bug*` file + REPRODUCED / REPRODUCTION FAILED status; or, for a **cited** artifact verdict, a repair request |
+| 1 | [Investigation](phases/01-investigation.md) | Always | `investigation.md` — evidence only (code audit, reachability, developer knowledge, known-status). No verdict, except a code-review × known drop. |
+| 2 | [Reproduction](phases/02-reproduction.md) | Unless dropped (code-review × known) | `repro/test_bug*` + **the verdict** (decided here from the investigation record + reproduction result), or a repair request for a cited artifact |
 | 2′ | [Re-check](phases/03-recheck.md) | `--recheck` only (pipeline repair loop) | resolves `RECHECK` repair requests; transitions each to RESOLVED / REOPENED / DEFERRED |
 
 **Confirmation loop.** When reproduction concludes — with a citation — that a counterexample is a spec / fault-model / invariant **artifact** rather than a real bug, it does not drop the finding. It emits a *repair request* that hands the finding back to Phase 3 for a scoped repair; the pipeline then re-runs this skill in `--recheck` mode (Phase 2′) to settle it. See `references/repair-request-format.md`. The loop is bounded by the run's token budget and by per-request anti-oscillation, not by a fixed iteration cap.
 
-## Execution modes
-
-The per-finding methodology below is identical however the phase runs; only the orchestration differs:
-
-- **Parallel per-finding (default).** A step-0 consolidate+dedup merges the two finding sources into `candidates.json`, then one Reproducer agent handles each finding, in parallel. Add `--debate` to have an adversarial Challenger stress-test each *confirmation* (not dismissal) to consensus. The Reproducer's turn-1 prompt is debate-agnostic — it never mentions a Challenger — so a finding's first-pass result is identical with or without `--debate`; the Reproducer only learns of the debate if a Challenger actually disagrees.
-- **Single-agent (`--legacy-confirm`).** One agent consolidates both sources and reproduces every finding in one context.
-
-Both modes write the same `confirmed-bugs.md`, emit the same `RR-NNN` repair requests, and use the same statuses. Re-check (`--recheck`, Phase 2′) is always single-agent.
-
 ## Per-bug output schema
+
+**Confirmation bar.** A finding is a confirmed bug only if it is (1) **reachable** — the triggering state is reached through the real interface or an admissible model-counterexample step, never a fabricated/unreachable pre-condition — and (2) has a **consequence** — a real consumer/caller experiences a wrong outcome. `REPRODUCED` = consequence demonstrated. A real-but-here-untriggerable consequence may be confirmed by a sound argument that production exhibits it (name the env limitation) as `ENV_LIMITED` — never as `REPRODUCED`. When a bar fails, split the "no live harm" cases — do not lump them all into FALSE POSITIVE: (a) **not a defect at all** (documented/intended/nothing-reads/fabricated) → `FALSE POSITIVE`; (b) a **real defect whose consequence is currently masked** by a safeguard / downstream mechanism (sync/loopback/resend/guard) / a discarded output / a *separate* bug → `MASKED` (a *finding*, see below), naming the mask; (c) an **MC counterexample that flags a benign state** the correct code never treats as bad → hand back to repair (`INVARIANT`); and an unreachable-trigger MC finding → repair (`FAULT_MODEL`/`SPEC_REPAIR`) as `PENDING REPAIR`. WIP status and "maybe intended" are never part of this judgment — developer intent counts only as evidence about whether a consequence exists.
+
+**The finding tier.** `REPRODUCED` is a confirmed **bug** (live consequence demonstrated). `ENV_LIMITED` (real defect, argued but untriggerable here) and `MASKED` (real defect, consequence masked today) are **findings** — real anomalies that are not confirmed live bugs but could bite if the mask is removed or the env allows the trigger. Findings are surfaced separately, never discarded as false positives.
 
 Each finding's entry in `confirmed-bugs.md` should include:
 
 - **Source**: `MC` only if model checking produced an actual counterexample (a violation trace) for this finding; otherwise `Code Review`. A finding whose model-checking run returned *no violation* is **not** MC-sourced even if it was checked under a named `Family`/`MC` config — record it as `Code Review` (cite the issue/Family), noting the no-violation result.
 - **Novelty**: `NEW` or `KNOWN`. `KNOWN` = a public issue/PR/CVE/advisory **or** a prior Specula dataset entry describes the same mechanism at the same site — the determination the Phase 1 issue-tracker search + precedent re-check (Steps 2–3) already make; just record the outcome here. A `KNOWN` value MUST carry a citation and fix-status: `KNOWN (cite: <URL or dataset-id>; fix-status: unfixed|fixed)`.
-- **Status**: REPRODUCED / REPRODUCTION FAILED / FALSE POSITIVE / NEEDS MORE INFO / PENDING REPAIR / DEFERRED
+- **Status**: REPRODUCED / ENV_LIMITED / MASKED / FALSE POSITIVE / NEEDS MORE INFO / PENDING REPAIR / DEFERRED
 - **Repair request**: RR-NNN if this finding was handed back to Phase 3 (omit otherwise)
 - **Severity**: Critical / High / Medium / Low
 - **Location**: file:line
@@ -39,10 +36,6 @@ Each finding's entry in `confirmed-bugs.md` should include:
 - **Reproduction test**: path to `repro/test_bug*` + the escalation level reached
 - **Reproduction result**: PASS (bug triggered, copy-paste output) / FAIL (escalation exhausted, per-level summary)
 - **Recommendation**: suggested fix or mitigation
-
-**Novelty split (aggregate).** Near the top of `confirmed-bugs.md`, record a one-line split so the headline count separates genuinely-new findings from re-found known ones:
-
-`Reproduced: <N> = <M> NEW + <K> KNOWN-unfixed` — and, if any, flag `KNOWN-fixed: <J>` separately (each needs a version recheck).
 
 ## Batch Mode Constraints (CRITICAL)
 

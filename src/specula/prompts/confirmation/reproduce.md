@@ -1,40 +1,31 @@
-# Reproduce & confirm ONE finding (neutral): {{finding_id}}
+# Confirm ONE finding: {{finding_id}}
 
-You are **the Reproducer** for finding **{{finding_id}}** only. Your stance is
-neutral — give this finding its best honest shot. If it is real, make it manifest.
+Confirm finding **{{finding_id}}** by following the bug-confirmation skill
+(`guide.md` + `phases/01-investigation.md` + `phases/02-reproduction.md`):
+investigate, reproduce, then emit ONE verdict chosen from the skill's decision
+table. Execute the skill — do not restate it.
 
 {{context}}
 
-## Do
-1. Investigate (Phase 1) and reproduce (Phase 2) this ONE finding, per the skill
-   above — write and ACTUALLY EXECUTE `repro/test_bug{{finding_id}}_*`, walking the
-   escalation ladder 0→3. A no-violation model-checking finding is Code Review.
-2. In your response, include these header fields (the dispatcher reads
-   `- **Novelty**:` for the NEW / KNOWN-unfixed / KNOWN-fixed count):
-     - `- **Source**: MC` (model-checking counterexample) or `Code Review` (no-violation / code-review finding)
-     - `- **Novelty**: NEW` or `KNOWN (cite: <URL/dataset-id>; fix-status: unfixed|fixed)`
-     - `- **Location**: file:line`
-   then these sections (they become the verdict body): `## Description`,
-   `## Trigger scenario`, `## Developer intent`, `## Reproduction result`
-   (paste real output), `## Recommendation`.
-3. End your ENTIRE response with a single line:
-   `VERDICT: <one of: {{canon}}>`
-   Use PENDING REPAIR (no number — the dispatcher assigns RR-NNN) only for a
-   CITED spec/fault/invariant artifact. If so, write the FULL repair request to
-   `{{fdir}}/repair-request.body.md` using the skill's repair-request format:
-   a YAML frontmatter — **OMIT `id`, `status`, `round`** (the dispatcher owns
-   those) — carrying
-     - `target:` SPEC_REPAIR | FAULT_MODEL | INVARIANT
-     - `counterexample:` the CE output path
-     - `scope:` fill `hunt_cfgs`, `invariants`, and `actions` with the concrete
-       hunt cfg / invariant / TLA action THIS counterexample actually came from.
-       You are the only one who knows them — do NOT leave them empty. Use `[]`
-       for `fault_actions` only if truly none.
-   then `## Trigger`, `## Evidence`, optional `## Proposed change`, and a
-   `## History` whose single seed entry is
-     `- r0 (phase4-confirm): created. <one factual line — why this CE is an artifact>`.
-   History must be truthful and signal-only: no filler boilerplate.
+## Output (the dispatcher parses these)
+- Write and ACTUALLY EXECUTE `repro/test_bug{{finding_id}}_*`.
+- Header fields:
+  - `- **Source**: MC` (real counterexample) or `Code Review` (no-violation / code-review)
+  - `- **Novelty**: NEW` or `KNOWN (cite: <URL/dataset-id>; fix-status: unfixed|fixed)` — set from evidence, not by default (see the skill); Code Review AND known → `VERDICT: DROPPED`.
+  - `- **Location**: file:line`
+- Body sections (they become the verdict body): `## Description`, `## Trigger scenario`, `## Developer intent`, `## Reproduction result` (paste real output), `## Recommendation`.
+- End your ENTIRE response with one line: `VERDICT: <one of: {{canon}}>`.
+- For `PENDING REPAIR`: also write `{{fdir}}/repair-request.body.md` using the installed skill's repair-request format — YAML frontmatter OMITTING `id`/`status`/`round` (the dispatcher owns those), carrying `target:` (SPEC_REPAIR | FAULT_MODEL | INVARIANT), `counterexample:`, and a `scope:` with the concrete `hunt_cfgs` / `invariants` / `actions` this CE came from; then `## Trigger`, `## Evidence`, optional `## Proposed change`, and a one-line `## History` seed.
+
+## Before any `VERDICT: REPRODUCED` — answer this checklist in your response
+State each answer explicitly (it will be checked against your captured output):
+1. Did **Level 0 or Level 1 alone** trigger it — real public API / normal ops, timing help only? **yes / no**.
+2. If **no**, and you used Level 2 (state injection) or Level 3 (source patch): paste the **real-API call sequence** that actually produces the injected pre-condition, **or** cite the exact **counterexample-trace step** it instantiates. If your OWN Level-0/1 attempt failed to produce that state, that is proof it is NOT reachable — do not then label the injection "reachable".
+3. Which **real consumer/caller** observes a wrong outcome? Name it (`file:line`), or state the consequence is argued-only (a finding, not a reproduced bug).
+4. Is the bad state **permanent**, or does a downstream mechanism (sync / loopback / resend / a caller guard) later **resolve or mask** it? A transient snapshot the system afterwards fixes is NOT a reproduced bug; a real defect a safeguard currently masks → `VERDICT: MASKED` (a finding), naming the mechanism — not `REPRODUCED`, not `FALSE POSITIVE`.
+
+If you cannot honestly answer these in the bug's favour, do NOT manufacture a pass — route per the skill's decision table. Every honest outcome (MASKED / a finding / PENDING REPAIR / DROPPED / FALSE POSITIVE / NEEDS MORE INFO) beats a fabricated `REPRODUCED`.
 
 ## Do NOT
-- Do not read or touch other findings, the spec files, bug-report.md, or
-  confirmed-bugs.md. Do not allocate an RR number yourself.
+- Do not read or touch other findings, the spec files, `bug-report.md`, or `confirmed-bugs.md`. Do not allocate an RR number yourself.
+- Do not fabricate or force the trigger to reach `REPRODUCED`: no hand-built unreachable pre-condition, no mock emitting what a real peer never sends, no source patch that creates the symptom.

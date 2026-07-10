@@ -33,6 +33,8 @@ import specula.progress as progress
 from specula import quota
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 
+from specula.prompts import render
+
 SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
 # the launch_*.sh shims and the agent adapters stay under scripts/launch/
@@ -1648,33 +1650,20 @@ Use the installed Specula skill {prompt_skill_ids("bug-confirmation")}. Follow i
 Process ONLY `status: RECHECK` requests, honor the per-request cap (`--max-repair-rounds` above), and do not add, relax, or override any step from the skill.
 """
         else:
-            prompt = f"""# Bug Confirmation Task: {name}
-
-You are confirming and reproducing bugs found in **{name}** by both model checking and code review.
-
-## Inputs
-
-- **Bug report (MC findings)**: {spec_dir}/bug-report.md
-- **Modeling brief (code review findings)**: {wd}/modeling-brief.md
-- **Source code**: {repo_dir}
-- **Spec directory**: {spec_dir}
-
-## Methodology
-
-Use the installed Specula skill {prompt_skill_ids("bug-confirmation")}. Read it in full and follow it exactly.
-
-## Task
-
-Consolidate the two finding sources into one candidate list:
-- **MC findings** (with counterexamples): `{spec_dir}/bug-report.md`
-- **Code-review findings**: `{wd}/modeling-brief.md`
-
-Then process every candidate **strictly per the bug-confirmation skill's Flow** — do not restate, relax, or override it here. In particular:
-- Apply **only** the skill's single pre-filter (code-review-sourced **and** already-known → drop before Phase 2, exactly as the skill defines it). Invent no other pre-filter — never skip a candidate as "defensive coding", "style", or "theoretical-only".
-- Follow the skill's Phase 1 (investigation) and Phase 2 (strict Level 0→3 escalation ladder), and use its per-bug output schema and statuses.
-
-Write the consolidated report to `{spec_dir}/confirmed-bugs.md`, with one `repro/` test per non-dropped finding under `{wd}/repro/`, exactly as the skill specifies.
-"""
+            # Multi-finding orchestration lives in a prompt file (like the parallel
+            # mode's reproduce.md), rendered here — the loop + aggregation around
+            # the single-bug skill (guide.md), which it applies to each candidate.
+            prompt = render(
+                "confirmation/orchestrate",
+                name=name,
+                bug_report=str(spec_dir / "bug-report.md"),
+                brief=str(wd / "modeling-brief.md"),
+                repo=repo_dir,
+                spec_dir=str(spec_dir),
+                repro_dir=str(wd / "repro"),
+                report=str(spec_dir / "confirmed-bugs.md"),
+                bug_confirmation_skill=prompt_skill_ids("bug-confirmation"),
+            )
         return self._with_extra(ws, name, prompt)
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:

@@ -44,9 +44,22 @@ from specula.skill_refs import prompt_skill_ids
 PHASE_KEY = "bug_confirmation"
 
 # Framework terminal/loop statuses (skills/bug-confirmation/guide.md).
-CANON = ["REPRODUCED", "REPRODUCTION FAILED", "FALSE POSITIVE", "NEEDS MORE INFO", "DROPPED", "PENDING REPAIR"]
-# A verdict asserting a real bug — the only case that opens a debate.
-CONFIRM = {"REPRODUCED", "REPRODUCTION FAILED"}
+CANON = [
+    "REPRODUCED",
+    "ENV_LIMITED",
+    "MASKED",
+    "FALSE POSITIVE",
+    "NEEDS MORE INFO",
+    "DROPPED",
+    "PENDING REPAIR",
+]
+# A verdict asserting a real defect — opens a debate so it is stress-tested.
+CONFIRM = {"REPRODUCED", "ENV_LIMITED", "MASKED"}
+# The "finding" tier: a real code defect that is NOT a confirmed live bug — either
+# argued-but-unreproduced (ENV_LIMITED) or real-defect-whose-consequence-is
+# currently-masked by a safeguard/downstream mechanism (MASKED). Surfaced
+# separately from confirmed bugs (REPRODUCED), never dropped as FALSE POSITIVE.
+FINDING = {"ENV_LIMITED", "MASKED"}
 VALID_SOURCES = {"model-checking", "code-review"}
 ID_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
 
@@ -516,11 +529,19 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     n_known_unfixed = nov.count("KNOWN-unfixed")
     n_known_fixed = nov.count("KNOWN-fixed")
 
+    env_limited = [o for o in outcomes if o.status == "ENV_LIMITED"]
+    masked = [o for o in outcomes if o.status == "MASKED"]
+
     lines = [f"# Confirmed Bugs — {cfg.name}", ""]
     split = f"Reproduced: {len(reproduced)} = {n_new} NEW + {n_known_unfixed} KNOWN-unfixed"
     if n_known_fixed:
         split += f"    (KNOWN-fixed: {n_known_fixed} — each needs a version recheck)"
     lines.append(split)
+    # The "finding" tier — real defects that are not confirmed live bugs: real but
+    # only triggerable in production (env-limited), or a real anomaly whose
+    # consequence a safeguard currently masks. Reported separately so they are
+    # neither miscounted as bugs nor lost as false positives.
+    lines.append(f"Findings: {len(env_limited) + len(masked)} = {len(env_limited)} env-limited + {len(masked)} masked")
     lines.append("")
     lines.append("| Bug | Finding | Status |")
     lines.append("|---|---|---|")

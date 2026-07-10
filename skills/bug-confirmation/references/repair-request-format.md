@@ -111,5 +111,5 @@ Process **only** `OPEN`/`REOPENED` here; never touch `RESOLVED`/`DEFERRED`/`RECH
 A request is a **positive, cited claim** that the counterexample is an artifact. Do **not** create one when:
 
 - The bug reproduced — it's real; report it.
-- Reproduction failed but you believe the bug is real-but-hard-to-trigger (timing-sensitive, needs a topology or fault the harness lacks). That stays `REPRODUCTION FAILED`; there is nothing to repair. A failed reproduction is not, by itself, evidence of a spec defect.
+- Reproduction failed but you believe the bug is real-but-hard-to-trigger (timing-sensitive, needs a topology or fault the harness lacks). That is `ENV_LIMITED`; there is nothing to repair. A failed reproduction is not, by itself, evidence of a spec defect.
 - You cannot cite the missing guard / inadmissible fault / unpromised property. Without a citation, fall back to a terminal defer (`NEEDS MORE INFO`); do not send Phase 3 on a fishing expedition.
