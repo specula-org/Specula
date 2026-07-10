@@ -16,19 +16,21 @@ same adapter path, flags, and stop-gate env as ``Phase._launch``. Rate-limit
 INFO`` is terminal and the pipeline never revisits it, so a transient blip would
 lose the finding forever). It is handled the way a batch phase handles a mid-run
 agent death: the deliverable is **withheld** — ``confirmed-bugs.md`` is not
-written — so the classification phase's prerequisite gate stops the pipeline and
-the scheduler's transient-log retry re-runs this phase. No special exit code is
-propagated: that would single this phase out from its batch siblings (all of
-which return 0 and let the downstream gate + scheduler log-probe drive retries).
-A retry skips findings that already carry a terminal verdict (idempotent
-``verdict.json``), so only the interrupted findings re-run.
+written — and exit 75 is propagated so the launcher can perform its bounded
+reactive retry. Permanent infrastructure or output-contract failures return a
+nonzero status. A retry skips findings whose fingerprinted terminal verdict and
+artifacts are still valid, so only interrupted or stale findings re-run.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
+import shutil
 import subprocess
+import sys
 import threading
 import traceback
 from collections.abc import Callable
@@ -37,10 +39,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from specula.phaselib import Workspace, run_agent_blocking
+from specula import quota
+from specula.phaselib import SPECULA_ROOT, Workspace, run_agent_blocking
 from specula.prompts import render
 from specula.skill_refs import prompt_skill_ids
 
+SKILLS = SPECULA_ROOT / "skills"
 PHASE_KEY = "bug_confirmation"
 
 # Framework terminal/loop statuses (skills/bug-confirmation/guide.md).
@@ -62,6 +66,8 @@ CONFIRM = {"REPRODUCED", "ENV_LIMITED", "MASKED"}
 FINDING = {"ENV_LIMITED", "MASKED"}
 VALID_SOURCES = {"model-checking", "code-review"}
 ID_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+_CACHE_VERSION = 2
+_CANDIDATE_CACHE = ".candidates-cache.json"
 
 _VERDICT_RE = re.compile(r"^\s*VERDICT:\s*(.+?)\s*$", re.MULTILINE)
 _rr_lock = threading.Lock()
@@ -78,16 +84,29 @@ class RateLimited(Exception):
     """A turn hit adapter exit 75 (rate limit). A purely internal control-flow
     signal: run_parallel_confirmation catches it and withholds the deliverable
     (writes no confirmed-bugs.md) so the classification gate + the scheduler's
-    transient-log retry re-run the phase. Never a per-finding NEEDS MORE INFO
-    (terminal, never revisited), and never a special phase exit code."""
+    bounded retry re-runs the phase. Never a per-finding NEEDS MORE INFO
+    (terminal, never revisited); the driver propagates exit 75."""
 
 
 class ConsolidateFailed(Exception):
     """Consolidate ran (not rate-limited) but produced no valid candidates.json.
-    Treated like any batch-phase agent failure: the driver withholds the
-    deliverable and returns 0 so the downstream gate + the scheduler's
-    transient-log retry settle it — never a hard RuntimeError, which that probe
-    cannot retry and which would single this phase out from its batch siblings."""
+    The driver withholds the deliverable and returns a permanent nonzero status."""
+
+
+class ConfirmationFailed(Exception):
+    """Infrastructure or invalid-agent-output failure.
+
+    Unlike a genuine ``NEEDS MORE INFO`` verdict, this is retryable and must not
+    be persisted as a business conclusion.
+    """
+
+
+class InvalidAgentOutput(ConfirmationFailed):
+    """An agent returned success but violated the dispatcher's stable contract."""
+
+
+class InvalidRepairRequest(InvalidAgentOutput):
+    """A PENDING REPAIR verdict did not include an executable repair request."""
 
 
 def _log(msg: str) -> None:
@@ -126,16 +145,17 @@ class ConfirmConfig:
     adapter: Path
     repo_dir: str = ""
     max_parallel: int = 4
-    debate: bool = False
-    rounds: int = 5
     claude_alias: str = "claude"
     worktree: bool = True
     dry_run: bool = False
     prompt_extra: str = ""  # target's .prompt-extra.md, appended to every agent prompt
-    # Appended after the original fields to preserve positional callers.
+    # New controls stay after the original fields to preserve positional callers.
     # None = no Specula override; "" = explicit reset to the CLI default.
     model: str | None = None
     effort: str | None = None
+    debate: bool = False
+    rounds: int = 5
+    max_turns: str = "0"
 
 
 @dataclass
@@ -144,7 +164,7 @@ class Outcome:
     status: str
     consensus: bool
     rounds: int
-    body: str  # last A-turn response, used as the verdict body
+    body: str  # initial A evidence plus any later A defenses
     rr: str | None = None  # assigned RR-NNN when status is PENDING REPAIR
     bug_no: int = 0  # 1-based index in confirmed-bugs.md (the "## Bug N:" number)
 
@@ -180,18 +200,28 @@ def prompt_reproduce(cfg: ConfirmConfig, f: Finding, repo: str) -> str:
 
 
 def prompt_challenge(cfg: ConfirmConfig, f: Finding, repo: str, debate: str) -> str:
-    return render(
-        "confirmation/challenge",
-        finding_id=f.id,
-        canon=" / ".join(CANON),
-        debate=debate,
-        context=_context(cfg, f, repo),
+    return (
+        render(
+            "confirmation/challenge",
+            finding_id=f.id,
+            canon=" / ".join(CANON),
+            debate=debate,
+            context=_context(cfg, f, repo),
+        )
+        + cfg.prompt_extra
     )
 
 
 def prompt_defend(cfg: ConfirmConfig, f: Finding, repo: str, debate: str) -> str:
-    return render(
-        "confirmation/defend", finding_id=f.id, canon=" / ".join(CANON), debate=debate, context=_context(cfg, f, repo)
+    return (
+        render(
+            "confirmation/defend",
+            finding_id=f.id,
+            canon=" / ".join(CANON),
+            debate=debate,
+            context=_context(cfg, f, repo),
+        )
+        + cfg.prompt_extra
     )
 
 
@@ -217,11 +247,16 @@ def run_turn(cfg: ConfirmConfig, f: Finding, role: str, turn_no: int, prompt: st
         phase_key=PHASE_KEY,
         work_dir=cfg.ws.work_dir(cfg.name),
         claude_alias=cfg.claude_alias,
+        max_turns=cfg.max_turns,
         model=cfg.model,
         effort=cfg.effort,
     )
     if rc == 75:
         raise RateLimited(f"{f.id} turn {turn_no} {role}")
+    if rc != 0:
+        raise ConfirmationFailed(f"{f.id} turn {turn_no} {role}: adapter exited {rc}")
+    if not text.strip():
+        raise InvalidAgentOutput(f"{f.id} turn {turn_no} {role}: empty agent output")
     return parse_verdict(text), text
 
 
@@ -232,25 +267,104 @@ def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]
     """Return (repo_path_for_agent, cleanup). With worktree (default) each finding
     gets its own detached worktree so parallel builds do not collide."""
     repo = cfg.repo_dir.rstrip("/")
-    if not cfg.worktree or not repo or cfg.dry_run:
+    if not cfg.worktree or cfg.dry_run:
         return repo, lambda: None
-    if not (Path(repo) / ".git").exists():
-        _log(f"  [{f.id}] repo is not a git checkout — sharing tree (no worktree)")
-        return repo, lambda: None
+    if not repo:
+        raise ConfirmationFailed(f"{f.id}: worktree isolation requested but no repository was configured")
+    probe = subprocess.run(["git", "-C", repo, "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True)
+    if probe.returncode != 0 or probe.stdout.strip() != "true":
+        raise ConfirmationFailed(f"{f.id}: worktree isolation requested but {repo!r} is not a git checkout")
+    root_result = subprocess.run(["git", "-C", repo, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    if root_result.returncode != 0:
+        raise ConfirmationFailed(f"{f.id}: could not resolve repository root: {root_result.stderr.strip()}")
+    root = Path(root_result.stdout.strip()).resolve()
+    status_cmd = ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=all"]
+    pathspec = ["--", "."]
+    try:
+        output_rel = cfg.ws.work_dir(cfg.name).resolve().relative_to(root)
+    except ValueError:
+        output_rel = None
+    if output_rel is not None and output_rel.parts:
+        # Ignore only this dispatcher's own output. Every other tracked or
+        # untracked change is copied into the isolated worktree below.
+        rel = output_rel.as_posix()
+        pathspec += [f":(exclude){rel}", f":(exclude){rel}/**"]
+    status_cmd += pathspec
+    dirty = subprocess.run(status_cmd, capture_output=True, text=True)
+    if dirty.returncode != 0:
+        raise ConfirmationFailed(f"{f.id}: could not inspect repository state: {dirty.stderr.strip()}")
+    patch = subprocess.run(["git", "-C", str(root), "diff", "--binary", "HEAD", *pathspec], capture_output=True)
+    untracked = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "--others", "--exclude-standard", "-z", *pathspec],
+        capture_output=True,
+    )
+    if patch.returncode != 0 or untracked.returncode != 0:
+        raise ConfirmationFailed(f"{f.id}: could not snapshot local repository changes")
     wt = f.fdir / "worktree"
     try:
+        wt.parent.resolve().relative_to(cfg.ws.work_dir(cfg.name).resolve())
+    except ValueError as exc:
+        raise ConfirmationFailed(f"{f.id}: worktree destination escapes the confirmation output") from exc
+    wt.parent.mkdir(parents=True, exist_ok=True)
+    if wt.is_symlink():
+        raise ConfirmationFailed(f"{f.id}: refusing stale worktree symlink")
+    # Target only this dispatcher-owned path. Avoid global `worktree prune`,
+    # which can affect unrelated user worktrees.
+    subprocess.run(["git", "-C", str(root), "worktree", "remove", "--force", str(wt)], capture_output=True)
+    if wt.exists():
+        if wt.is_dir():
+            shutil.rmtree(wt)
+        else:
+            wt.unlink()
+    try:
         subprocess.run(
-            ["git", "-C", repo, "worktree", "add", "--detach", "--force", str(wt)],
+            ["git", "-C", str(root), "worktree", "add", "--detach", "--force", str(wt)],
             check=True,
             capture_output=True,
             text=True,
         )
     except subprocess.CalledProcessError as e:
-        _log(f"  [{f.id}] worktree add failed ({e.stderr.strip()[:80]}) — sharing tree")
-        return repo, lambda: None
+        raise ConfirmationFailed(f"{f.id}: worktree isolation failed: {e.stderr.strip()[:200]}") from e
+
+    try:
+        if patch.stdout:
+            applied = subprocess.run(
+                ["git", "-C", str(wt), "apply", "--binary", "-"], input=patch.stdout, capture_output=True
+            )
+            if applied.returncode != 0:
+                raise ConfirmationFailed(
+                    f"{f.id}: could not apply tracked local changes to isolated worktree: "
+                    f"{applied.stderr.decode(errors='replace').strip()[:200]}"
+                )
+        for raw_name in (name for name in untracked.stdout.split(b"\0") if name):
+            relative = Path(os.fsdecode(raw_name))
+            source = root / relative
+            destination = wt / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_symlink():
+                destination.symlink_to(os.readlink(source))
+            else:
+                shutil.copy2(source, destination)
+    except Exception:
+        subprocess.run(["git", "-C", str(root), "worktree", "remove", "--force", str(wt)], capture_output=True)
+        raise
+
+    if dirty.stdout.strip():
+        _log(f"  [{f.id}] copied tracked/untracked local changes into isolated worktree")
 
     def cleanup() -> None:
-        subprocess.run(["git", "-C", repo, "worktree", "remove", "--force", str(wt)], capture_output=True)
+        result = subprocess.run(
+            ["git", "-C", str(root), "worktree", "remove", "--force", str(wt)], capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            message = f"{f.id}: failed to remove isolated worktree: {result.stderr.strip()[:200]}"
+            if sys.exc_info()[0] is not None:
+                try:
+                    _log(f"  WARNING: {message}")
+                except OSError:
+                    print(f"  WARNING: {message}", flush=True)
+                return
+            raise ConfirmationFailed(message)
 
     return str(wt), cleanup
 
@@ -258,27 +372,135 @@ def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]
 # ── one finding: reproduce, then optional debate ─────────────────────────────
 
 
+def _source_kind(f: Finding) -> str:
+    source = str(f.data.get("source") or "").strip().lower().replace("_", "-")
+    if source in {"model-checking", "mc"} or (not source and f.id.startswith("MC-")):
+        return "model-checking"
+    if source in {"code-review", "code review", "cr"} or (not source and f.id.startswith("CR-")):
+        return "code-review"
+    raise InvalidAgentOutput(f"{f.id}: unknown finding source {f.data.get('source')!r}")
+
+
+def _validate_status_source(f: Finding, status: str) -> None:
+    source = _source_kind(f)
+    if status == "PENDING REPAIR" and source != "model-checking":
+        raise InvalidAgentOutput(f"{f.id}: PENDING REPAIR is only valid for model-checking findings")
+    if status == "DROPPED" and source != "code-review":
+        raise InvalidAgentOutput(f"{f.id}: {status} is not a valid model-checking disposition")
+
+
+def _without_verdict_lines(text: str) -> str:
+    return "\n".join(line for line in text.splitlines() if not re.match(r"^\s*VERDICT\s*:", line, re.I)).strip()
+
+
+def _repro_files(cfg: ConfirmConfig, f: Finding) -> list[Path]:
+    return [p for p in (cfg.ws.work_dir(cfg.name) / "repro").glob(f"test_bug{f.id}_*") if p.is_file()]
+
+
+def _validate_turn_output(f: Finding, status: str | None, text: str) -> str:
+    if status is None:
+        raise InvalidAgentOutput(f"{f.id}: output has no canonical VERDICT")
+    _validate_status_source(f, status)
+    evidence = _without_verdict_lines(text)
+    if len(evidence) < 20:
+        raise InvalidAgentOutput(f"{f.id}: VERDICT has no substantive supporting evidence")
+    return evidence
+
+
+def _validate_final_artifacts(cfg: ConfirmConfig, f: Finding, status: str) -> None:
+    _validate_status_source(f, status)
+    if status == "REPRODUCED":
+        repros = _repro_files(cfg, f)
+        if not repros or any(p.stat().st_size == 0 for p in repros):
+            raise InvalidAgentOutput(f"{f.id}: REPRODUCED requires a non-empty repro/test_bug{f.id}_* artifact")
+    if status == "PENDING REPAIR":
+        body_file = f.fdir / "repair-request.body.md"
+        body = body_file.read_text() if body_file.is_file() else ""
+        _validate_repair_body(body)
+        fm, _ = _repair_frontmatter(body)
+        counterexamples = [line.split(":", 1)[1].strip() for line in fm if line.startswith("counterexample:")]
+        if len(counterexamples) != 1:
+            raise InvalidRepairRequest("repair request must have exactly one counterexample")
+        raw = Path(counterexamples[0])
+        work_dir = cfg.ws.work_dir(cfg.name).resolve()
+        if raw.is_absolute() or ".." in raw.parts:
+            raise InvalidRepairRequest("repair counterexample must stay under the work directory")
+        resolved = (work_dir / raw).resolve()
+        try:
+            resolved.relative_to(work_dir)
+        except ValueError as exc:
+            raise InvalidRepairRequest("repair counterexample escapes the work directory") from exc
+        if not resolved.is_file() or resolved.stat().st_size == 0:
+            raise InvalidRepairRequest(f"repair counterexample is missing or empty: {raw}")
+        source_value = f.data.get("counterexample")
+        if isinstance(source_value, str) and source_value.strip():
+            source_raw = Path(source_value)
+            if source_raw.is_absolute() or ".." in source_raw.parts:
+                raise InvalidRepairRequest("finding counterexample is not a safe work-directory-relative path")
+            if (work_dir / source_raw).resolve() != resolved:
+                raise InvalidRepairRequest("repair counterexample does not match the finding counterexample")
+
+
+def _validate_initial_output(cfg: ConfirmConfig, f: Finding, status: str | None, text: str) -> str:
+    """Validate stable machine-level output without prescribing prose headings."""
+    evidence = _validate_turn_output(f, status, text)
+    assert status is not None
+    _validate_final_artifacts(cfg, f, status)
+    return evidence
+
+
+def _final_outcome(
+    cfg: ConfirmConfig,
+    f: Finding,
+    status: str,
+    consensus: bool,
+    rounds: int,
+    body: str,
+) -> Outcome:
+    _validate_final_artifacts(cfg, f, status)
+    return Outcome(f, status, consensus, rounds, body)
+
+
+def _compose_evidence(initial: str, defenses: list[str]) -> str:
+    body = _without_verdict_lines(initial)
+    additions = [_without_verdict_lines(text) for text in defenses]
+    additions = [text for text in additions if text]
+    if additions:
+        body += "\n\n## Debate addendum\n\n" + "\n\n".join(additions)
+    return body
+
+
 def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
+    if not f.id or set(f.id) - ID_CHARS or f.id in {".", ".."}:
+        raise InvalidAgentOutput(f"unsafe finding id: {f.id!r}")
     f.fdir.mkdir(parents=True, exist_ok=True)
-    (cfg.ws.work_dir(cfg.name) / "repro").mkdir(parents=True, exist_ok=True)
+    repro_dir = cfg.ws.work_dir(cfg.name) / "repro"
+    repro_dir.mkdir(parents=True, exist_ok=True)
+    # Fresh generations must create fresh artifacts. Completed findings in a
+    # rate-limit retry are skipped by the fingerprinted verdict cache.
+    for stale in _repro_files(cfg, f):
+        stale.unlink()
+    rr_body = f.fdir / "repair-request.body.md"
+    if rr_body.is_file():
+        rr_body.unlink()
     debate = f.fdir / "debate.md"
     repo_for_agent, cleanup = setup_repo(cfg, f)
     try:
         # Turn 1 — Reproducer (neutral): investigate + reproduce.
         a_verdict, a_text = run_turn(cfg, f, "A", 1, prompt_reproduce(cfg, f, repo_for_agent))
         debate.write_text(f"# Debate: {f.id}\n\n## A (turn 1 — reproduce)\n\n{a_text}\n")
-        if a_verdict is None:
-            _log(f"  [{f.id}] A produced no VERDICT → NEEDS MORE INFO")
-            return Outcome(f, "NEEDS MORE INFO", False, 0, a_text)
+        _validate_initial_output(cfg, f, a_verdict, a_text)
+        assert a_verdict is not None
+        initial_text = a_text
         if a_verdict not in CONFIRM:
             _log(f"  [{f.id}] A: {a_verdict} (dismissal) — no debate")
-            return Outcome(f, a_verdict, True, 0, a_text)
+            return _final_outcome(cfg, f, a_verdict, True, 0, _compose_evidence(a_text, []))
         if not cfg.debate:
             _log(f"  [{f.id}] A: {a_verdict} (debate off) — verdict final")
-            return Outcome(f, a_verdict, True, 0, a_text)
+            return _final_outcome(cfg, f, a_verdict, True, 0, _compose_evidence(a_text, []))
 
         _log(f"  [{f.id}] A: {a_verdict} → opening debate")
-        last_a_text = a_text
+        defenses: list[str] = []
         turn = 1
         for rnd in range(1, cfg.rounds + 1):
             turn += 1
@@ -286,21 +508,25 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
                 cfg, f, "B", turn, prompt_challenge(cfg, f, repo_for_agent, debate.read_text())
             )
             debate.write_text(debate.read_text() + f"\n## B (round {rnd})\n\n{b_text}\n")
+            _validate_turn_output(f, b_verdict, b_text)
+            assert b_verdict is not None
             # B agrees with A's current verdict → consensus already. Do NOT pull A
             # into a defense it does not need: A only ever hears about the debate
             # when B actually disagrees (the defend turn is where it is introduced).
             if b_verdict is not None and b_verdict == a_verdict:
                 _log(f"  [{f.id}] round {rnd}: B={b_verdict} agrees — consensus, A not invoked")
-                return Outcome(f, a_verdict, True, rnd, last_a_text)
+                return _final_outcome(cfg, f, a_verdict, True, rnd, _compose_evidence(initial_text, defenses))
             turn += 1
             a_verdict, a_text = run_turn(cfg, f, "A", turn, prompt_defend(cfg, f, repo_for_agent, debate.read_text()))
             debate.write_text(debate.read_text() + f"\n## A (round {rnd})\n\n{a_text}\n")
-            last_a_text = a_text or last_a_text
+            _validate_turn_output(f, a_verdict, a_text)
+            assert a_verdict is not None
+            defenses.append(a_text)
             _log(f"  [{f.id}] round {rnd}: B={b_verdict} A={a_verdict}")
             if a_verdict and b_verdict and a_verdict == b_verdict:
-                return Outcome(f, a_verdict, True, rnd, last_a_text)
+                return _final_outcome(cfg, f, a_verdict, True, rnd, _compose_evidence(initial_text, defenses))
         _log(f"  [{f.id}] no consensus after {cfg.rounds} rounds → NEEDS MORE INFO")
-        return Outcome(f, "NEEDS MORE INFO", False, cfg.rounds, last_a_text)
+        return _final_outcome(cfg, f, "NEEDS MORE INFO", False, cfg.rounds, _compose_evidence(initial_text, defenses))
     finally:
         cleanup()
 
@@ -308,17 +534,225 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
 # ── idempotent per-finding verdict cache (survives a rate-limit phase retry) ──
 
 
-def _save_verdict(o: Outcome) -> None:
-    o.finding.fdir.mkdir(parents=True, exist_ok=True)
-    (o.finding.fdir / "verdict.json").write_text(
-        json.dumps(
-            {"status": o.status, "consensus": o.consensus, "rounds": o.rounds, "rr": o.rr, "body": o.body},
-            ensure_ascii=False,
-        )
+def _generation_content(cfg: ConfirmConfig) -> str:
+    path = cfg.ws.work_dir(cfg.name) / "spec" / "confirmation-generation.json"
+    try:
+        return path.read_text() if path.is_file() else "0"
+    except OSError as exc:
+        raise ConfirmationFailed(f"cannot read confirmation generation: {exc}") from exc
+
+
+def _digest(value: Any) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _adapter_identity(cfg: ConfirmConfig) -> dict[str, str]:
+    path = cfg.adapter.expanduser()
+    try:
+        resolved = path.resolve(strict=True)
+        content = hashlib.sha256(resolved.read_bytes()).hexdigest()
+    except OSError:
+        resolved = path.resolve()
+        content = "missing"
+    return {"path": str(resolved), "content": content}
+
+
+def _skill_identity() -> dict[str, str]:
+    root = SKILLS / "bug-confirmation"
+    result: dict[str, str] = {}
+    if root.is_dir():
+        for path in sorted(p for p in root.rglob("*") if p.is_file()):
+            result[str(path.relative_to(root))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return result
+
+
+def _repo_cache_identity(cfg: ConfirmConfig) -> dict[str, str]:
+    repo = cfg.repo_dir.rstrip("/")
+    if not repo:
+        return {"path": "", "head": "", "isolation": str(cfg.worktree)}
+    head = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"], capture_output=True)
+    if head.returncode != 0:
+        if cfg.worktree:
+            raise ConfirmationFailed(f"worktree isolation requested but {repo!r} is not a git checkout")
+        return {"path": str(Path(repo).resolve()), "head": "non-git", "isolation": "False"}
+    root_result = subprocess.run(["git", "-C", repo, "rev-parse", "--show-toplevel"], capture_output=True)
+    if root_result.returncode != 0:
+        raise ConfirmationFailed(f"could not resolve repository root for cache identity: {repo!r}")
+    root = Path(root_result.stdout.decode(errors="replace").strip()).resolve()
+    identity = {
+        "path": str(root),
+        "head": head.stdout.decode(errors="replace").strip(),
+        "isolation": str(cfg.worktree),
+    }
+    # Bind all local state in every mode. In worktree mode this ensures the
+    # cached verdict matches the dirty snapshot copied into each isolation.
+    pathspec = ["--", "."]
+    try:
+        output_rel = cfg.ws.work_dir(cfg.name).resolve().relative_to(root)
+    except ValueError:
+        output_rel = None
+    if output_rel is not None and output_rel.parts:
+        rel = output_rel.as_posix()
+        pathspec += [f":(exclude){rel}", f":(exclude){rel}/**"]
+    diff = subprocess.run(["git", "-C", str(root), "diff", "--binary", "HEAD", *pathspec], capture_output=True)
+    status = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=all", *pathspec],
+        capture_output=True,
+    )
+    untracked = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "--others", "--exclude-standard", "-z", *pathspec],
+        capture_output=True,
+    )
+    if any(result.returncode != 0 for result in (diff, status, untracked)):
+        raise ConfirmationFailed(f"could not inspect repository state for cache identity: {root}")
+    local = hashlib.sha256(diff.stdout + b"\0" + status.stdout)
+    for raw_name in sorted(name for name in untracked.stdout.split(b"\0") if name):
+        local.update(b"\0" + raw_name + b"\0")
+        try:
+            local.update((root / raw_name.decode(errors="surrogateescape")).read_bytes())
+        except OSError as exc:
+            local.update(f"<unreadable:{exc}>".encode())
+    identity["local"] = local.hexdigest()
+    return identity
+
+
+def _prompt_sources() -> dict[str, str]:
+    root = Path(__file__).resolve().parent / "prompts" / "confirmation"
+    result: dict[str, str] = {}
+    for name in ("context.md", "reproduce.md", "challenge.md", "defend.md"):
+        path = root / name
+        result[name] = path.read_text() if path.is_file() else ""
+    return result
+
+
+def _spec_identity(cfg: ConfirmConfig, f: Finding) -> dict[str, str]:
+    work_dir = cfg.ws.work_dir(cfg.name).resolve()
+    spec_dir = work_dir / "spec"
+    result: dict[str, str] = {}
+    if spec_dir.is_dir():
+        for path in sorted(p for p in spec_dir.rglob("*") if p.is_file() and p.suffix.lower() in {".tla", ".cfg"}):
+            relative = str(path.relative_to(work_dir))
+            if path.is_symlink():
+                resolved = path.resolve()
+                try:
+                    resolved.relative_to(work_dir)
+                except ValueError:
+                    result[relative] = "unsafe-symlink"
+                else:
+                    target_hash = hashlib.sha256(resolved.read_bytes()).hexdigest() if resolved.is_file() else "missing"
+                    result[relative] = f"symlink:{os.readlink(path)}:{target_hash}"
+            else:
+                result[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+        # Bug numbers and RR links are assigned from candidate order. Bind the
+        # complete candidate set so a reorder cannot reuse a verdict carrying an
+        # RR whose ``bug_id: Bug N`` now points at a different report entry.
+        candidates = spec_dir / "candidates.json"
+        if candidates.is_file():
+            result["spec/candidates.json"] = hashlib.sha256(candidates.read_bytes()).hexdigest()
+    counterexample = f.data.get("counterexample")
+    if isinstance(counterexample, str) and counterexample.strip():
+        raw = Path(counterexample)
+        if raw.is_absolute() or ".." in raw.parts:
+            result["finding-counterexample"] = "unsafe-path"
+        else:
+            path = work_dir / raw
+            resolved = path.resolve()
+            try:
+                resolved.relative_to(work_dir)
+            except ValueError:
+                result["finding-counterexample"] = "unsafe-path"
+            else:
+                if path.is_file() and not path.is_symlink():
+                    result["finding-counterexample"] = hashlib.sha256(path.read_bytes()).hexdigest()
+                elif path.is_symlink():
+                    target_hash = hashlib.sha256(resolved.read_bytes()).hexdigest() if resolved.is_file() else "missing"
+                    result["finding-counterexample"] = f"symlink:{os.readlink(path)}:{target_hash}"
+                else:
+                    result["finding-counterexample"] = "missing"
+    return result
+
+
+def _verdict_fingerprint(cfg: ConfirmConfig, f: Finding) -> str:
+    return _digest(
+        {
+            "version": _CACHE_VERSION,
+            "generation": _generation_content(cfg),
+            "finding": f.data,
+            "spec": _spec_identity(cfg, f),
+            "repo": _repo_cache_identity(cfg),
+            "adapter": _adapter_identity(cfg),
+            "claude_alias": cfg.claude_alias,
+            "debate": cfg.debate,
+            "rounds": cfg.rounds,
+            "prompt_extra": cfg.prompt_extra,
+            "max_turns": cfg.max_turns,
+            "model": cfg.model,
+            "effort": cfg.effort,
+            "prompts": _prompt_sources(),
+            "skill": _skill_identity(),
+        }
     )
 
 
-def _load_verdict(f: Finding) -> Outcome | None:
+def _rr_field_text(text: str, key: str) -> list[str]:
+    prefix = key + ":"
+    return [line[len(prefix) :].strip() for line in text.splitlines()[:25] if line.startswith(prefix)]
+
+
+def _artifact_identity(cfg: ConfirmConfig, o: Outcome) -> dict[str, Any]:
+    _validate_final_artifacts(cfg, o.finding, o.status)
+    result: dict[str, Any] = {}
+    if o.status == "REPRODUCED":
+        result["repro"] = {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(_repro_files(cfg, o.finding))
+        }
+    if o.status == "PENDING REPAIR":
+        body_file = o.finding.fdir / "repair-request.body.md"
+        result["repair_body"] = hashlib.sha256(body_file.read_bytes()).hexdigest()
+    if o.rr is not None:
+        if not re.fullmatch(r"RR-\d+", str(o.rr)):
+            raise InvalidRepairRequest(f"invalid cached repair id: {o.rr!r}")
+        rr_dir = cfg.ws.work_dir(cfg.name) / "spec" / "repair-requests"
+        matches = list(rr_dir.rglob(f"{o.rr}.md")) if rr_dir.is_dir() else []
+        if len(matches) != 1:
+            raise InvalidRepairRequest(f"cached repair {o.rr} must have exactly one active/deferred file")
+        rr_file = matches[0]
+        text = rr_file.read_text(errors="replace")
+        ids = _rr_field_text(text, "id")
+        statuses = _rr_field_text(text, "status")
+        if ids != [o.rr] or len(statuses) != 1 or statuses[0] not in {"OPEN", "IN_REPAIR", "CONSUMED"}:
+            raise InvalidRepairRequest(f"cached repair {o.rr} has invalid id/status frontmatter")
+        result["repair_request"] = {
+            "path": str(rr_file.relative_to(rr_dir)),
+            "content": hashlib.sha256(rr_file.read_bytes()).hexdigest(),
+        }
+    return result
+
+
+def _save_verdict(o: Outcome, cfg: ConfirmConfig) -> None:
+    o.finding.fdir.mkdir(parents=True, exist_ok=True)
+    vf = o.finding.fdir / "verdict.json"
+    tmp = vf.with_suffix(".json.tmp")
+    tmp.write_text(
+        json.dumps(
+            {
+                "cache_version": _CACHE_VERSION,
+                "fingerprint": _verdict_fingerprint(cfg, o.finding),
+                "status": o.status,
+                "consensus": o.consensus,
+                "rounds": o.rounds,
+                "rr": o.rr,
+                "body": o.body,
+                "artifacts": _artifact_identity(cfg, o),
+            },
+            ensure_ascii=False,
+        )
+    )
+    tmp.replace(vf)
+
+
+def _load_verdict(f: Finding, cfg: ConfirmConfig) -> Outcome | None:
     vf = f.fdir / "verdict.json"
     if not vf.is_file():
         return None
@@ -326,27 +760,44 @@ def _load_verdict(f: Finding) -> Outcome | None:
         d = json.loads(vf.read_text())
     except (OSError, ValueError):
         return None
-    return Outcome(f, str(d["status"]), bool(d["consensus"]), int(d["rounds"]), str(d["body"]), d.get("rr"))
+    try:
+        if d.get("cache_version") != _CACHE_VERSION or d.get("fingerprint") != _verdict_fingerprint(cfg, f):
+            return None
+        status = str(d["status"])
+        if status not in CANON:
+            return None
+        _validate_status_source(f, status)
+        outcome = Outcome(f, status, bool(d["consensus"]), int(d["rounds"]), str(d["body"]), d.get("rr"))
+        if d.get("artifacts") != _artifact_identity(cfg, outcome):
+            return None
+        return outcome
+    except (KeyError, TypeError, ValueError, OSError, ConfirmationFailed):
+        return None
 
 
 def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
     """One finding, isolated. A cached terminal verdict short-circuits (idempotent
-    retry). A RateLimited turn propagates (aborts the phase). Any other exception
-    is contained as NEEDS MORE INFO so one finding cannot abort the batch."""
-    cached = _load_verdict(f)
+    retry). Rate limiting and permanent/infrastructure failures propagate to the
+    driver; neither is persisted as a business verdict."""
+    cached = _load_verdict(f, cfg)
     if cached is not None:
         _log(f"  [{f.id}] cached {cached.status} — skip (idempotent)")
         return cached
     try:
         o = run_finding(cfg, f)
+        _save_verdict(o, cfg)
     except RateLimited:
         raise  # rate limit aborts the phase; do NOT persist or downgrade
-    except Exception:
-        f.fdir.mkdir(parents=True, exist_ok=True)
-        (f.fdir / "error.txt").write_text(traceback.format_exc())
-        _log(f"  [{f.id}] CRASHED — see {f.fdir / 'error.txt'} → NEEDS MORE INFO")
-        o = Outcome(f, "NEEDS MORE INFO", False, 0, "(finding crashed during confirmation; see error.txt)")
-    _save_verdict(o)
+    except Exception as exc:
+        try:
+            f.fdir.mkdir(parents=True, exist_ok=True)
+            (f.fdir / "error.txt").write_text(traceback.format_exc())
+        except OSError:
+            pass
+        _log(f"  [{f.id}] FAILED — see {f.fdir / 'error.txt'}; no verdict cached")
+        if isinstance(exc, ConfirmationFailed):
+            raise
+        raise ConfirmationFailed(f"{f.id}: confirmation crashed") from exc
     return o
 
 
@@ -355,43 +806,99 @@ def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
 # Lifecycle frontmatter fields the dispatcher owns and always overrides; every
 # other frontmatter line (target, counterexample, the whole scope: block) is the
 # agent's and passes through verbatim.
-_RR_OWNED = ("id:", "bug_id:", "status:", "round:")
+_RR_OWNED = ("id:", "bug_id:", "status:", "round:", "finding_id:", "allocation_key:")
+_RR_TARGETS = {"SPEC_REPAIR", "FAULT_MODEL", "INVARIANT"}
+_RR_SCOPE_KEYS = {"actions", "invariants", "hunt_cfgs", "fault_actions"}
 
 
-def _merge_rr(rid: str, finding_id: str, cx_fallback: str, body: str) -> str:
+def _repair_frontmatter(body: str) -> tuple[list[str], str]:
+    if not body.startswith("---"):
+        raise InvalidRepairRequest("PENDING REPAIR requires YAML frontmatter")
+    parts = body.split("---", 2)
+    if len(parts) != 3:
+        raise InvalidRepairRequest("repair request has unterminated frontmatter")
+    return parts[1].splitlines(), parts[2]
+
+
+def _validate_repair_body(body: str) -> None:
+    """Reject non-routable repair work before Phase 3 can consume it."""
+    fm, rest = _repair_frontmatter(body)
+    top: dict[str, str] = {}
+    seen_top: set[str] = set()
+    scope_index: int | None = None
+    for i, line in enumerate(fm):
+        if line == line.lstrip() and ":" in line:
+            raw_key, value = line.split(":", 1)
+            raw_key = raw_key.strip()
+            key = raw_key.lower()
+            if key in seen_top:
+                raise InvalidRepairRequest(f"repair request has duplicate top-level key: {raw_key}")
+            seen_top.add(key)
+            if key in {"id", "bug_id", "status", "round", "finding_id", "allocation_key"}:
+                raise InvalidRepairRequest(f"agent repair body must omit dispatcher-owned key: {raw_key}")
+            if key in {"target", "counterexample", "scope"} and raw_key != key:
+                raise InvalidRepairRequest(f"repair request key must use canonical lowercase spelling: {raw_key}")
+            top[key] = value.strip()
+            if key == "scope":
+                scope_index = i
+    if top.get("target") not in _RR_TARGETS:
+        raise InvalidRepairRequest("repair request target must be SPEC_REPAIR, FAULT_MODEL, or INVARIANT")
+    if not top.get("counterexample") or top["counterexample"].lower() in {"null", "none", "n/a"}:
+        raise InvalidRepairRequest("repair request requires a concrete counterexample")
+    if scope_index is None:
+        raise InvalidRepairRequest("repair request requires scope")
+
+    concrete_scope = False
+    active_scope_key = False
+    for line in fm[scope_index + 1 :]:
+        if line and line == line.lstrip():
+            break
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if ":" in stripped and not stripped.startswith("-"):
+            key, value = stripped.split(":", 1)
+            active_scope_key = key.strip() in _RR_SCOPE_KEYS
+            value = value.strip()
+            if active_scope_key and value and value not in {"[]", "{}", "null", "None"}:
+                concrete_scope = True
+        elif active_scope_key and stripped.startswith("-") and stripped[1:].strip():
+            concrete_scope = True
+    if not concrete_scope:
+        raise InvalidRepairRequest("repair request scope must name at least one concrete item")
+
+    if len(rest.strip()) < 20:
+        raise InvalidRepairRequest("repair request requires substantive evidence text")
+
+
+def _merge_rr(
+    rid: str,
+    finding_id: str,
+    cx_fallback: str,
+    body: str,
+    *,
+    raw_finding_id: str = "",
+    allocation_key: str = "",
+) -> str:
     """Stamp dispatcher-owned lifecycle fields onto the agent-authored RR body.
 
-    Keeps the agent's target/counterexample/scope untouched; injects
-    target/counterexample only when the agent omitted them; never fabricates
-    scope. Falls back to a minimal stub only when the agent produced no
-    frontmatter at all — an agent-side defect, flagged in the body."""
+    Keeps the agent's target/counterexample/scope untouched. Missing routing or
+    scope is rejected rather than fabricated into an executable-looking request.
+    ``cx_fallback`` remains in the signature for API compatibility but is never
+    used to repair invalid agent output."""
+    del cx_fallback
+    _validate_repair_body(body)
     lifecycle = f"id: {rid}\nbug_id: {finding_id}\nstatus: OPEN\nround: 0\n"
-    fm = None
-    rest = body
-    if body.startswith("---"):
-        parts = body.split("---", 2)  # ["", <frontmatter>, <rest>]
-        if len(parts) == 3:
-            fm, rest = parts[1], parts[2]
-    if fm is None:  # agent wrote no frontmatter — honest stub, empty scope, flagged
-        note = (
-            "" if body.strip() else "## Trigger\n(agent returned PENDING REPAIR but wrote no repair-request.body.md)\n"
-        )
-        stub = (
-            f"---\n{lifecycle}target: SPEC_REPAIR\ncounterexample: {cx_fallback}\n"
-            f"scope:\n  actions: []\n  invariants: []\n  hunt_cfgs: []\n  fault_actions: []\n---\n\n"
-        )
-        return stub + note + body
+    if raw_finding_id:
+        lifecycle += f"finding_id: {raw_finding_id}\n"
+    if allocation_key:
+        lifecycle += f"allocation_key: {allocation_key}\n"
+    fm_lines, rest = _repair_frontmatter(body)
     # top-level (unindented) frontmatter lines only; the indented scope children
     # keep their leading whitespace so they are never mistaken for owned fields.
-    kept = [ln for ln in fm.splitlines() if not (ln == ln.lstrip() and ln.startswith(_RR_OWNED))]
-    top = {ln.split(":", 1)[0] for ln in kept if ln == ln.lstrip() and ":" in ln}
-    inject = ""
-    if "target" not in top:
-        inject += "target: SPEC_REPAIR\n"
-    if "counterexample" not in top:
-        inject += f"counterexample: {cx_fallback}\n"
+    kept = [ln for ln in fm_lines if not (ln == ln.lstrip() and ln.startswith(_RR_OWNED))]
     kept_fm = "\n".join(kept).strip("\n")
-    return f"---\n{lifecycle}{inject}{kept_fm}\n---{rest}"
+    return f"---\n{lifecycle}{kept_fm}\n---{rest}"
 
 
 def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
@@ -401,19 +908,74 @@ def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
     rr_dir = cfg.ws.work_dir(cfg.name) / "spec" / "repair-requests"
     with _rr_lock:
         rr_dir.mkdir(parents=True, exist_ok=True)
-        nums = [int(m.group(1)) for p in rr_dir.glob("RR-*.md") if (m := re.match(r"RR-(\d+)\.md$", p.name))]
-        rid = f"RR-{max(nums, default=0) + 1:03d}"
+        allocation_key = _digest(
+            {
+                "verdict": _verdict_fingerprint(cfg, o.finding),
+                "repair_body": hashlib.sha256(body.encode()).hexdigest(),
+                "cache_version": _CACHE_VERSION,
+            }
+        )
+        existing: list[str] = []
+        for path in rr_dir.rglob("RR-*.md"):
+            text = path.read_text(errors="replace")
+            keys = _rr_field_text(text, "allocation_key")
+            statuses = _rr_field_text(text, "status")
+            ids = _rr_field_text(text, "id")
+            finding_ids = _rr_field_text(text, "finding_id")
+            if keys == [allocation_key] and statuses and statuses[0] in {"OPEN", "IN_REPAIR"}:
+                if finding_ids != [o.finding.id]:
+                    raise InvalidRepairRequest(f"existing allocation key has wrong finding_id for {o.finding.id}")
+                if len(ids) != 1 or path.name != f"{ids[0]}.md":
+                    raise InvalidRepairRequest(f"existing allocation for {o.finding.id} has inconsistent id")
+                existing.append(ids[0])
+        if len(existing) > 1:
+            raise InvalidRepairRequest(f"multiple repair requests already exist for {o.finding.id} in this generation")
+        if existing:
+            return existing[0]
+        nums = [int(m.group(1)) for p in rr_dir.rglob("RR-*.md") if (m := re.fullmatch(r"RR-(\d+)\.md", p.name))]
+        next_num = max(nums, default=0) + 1
         cx = str(o.finding.data.get("counterexample") or "")
-        # bug_id points at the confirmed-bugs.md heading (## Bug N:), the label the
-        # re-check pass correlates against — not the raw finding id.
-        (rr_dir / f"{rid}.md").write_text(_merge_rr(rid, f"Bug {o.bug_no}", cx, body))
+        # bug_id points at the confirmed-bugs.md heading (## Bug N:) used by the
+        # report and ledger; finding_id separately preserves the stable raw id.
+        while True:
+            rid = f"RR-{next_num:03d}"
+            merged = _merge_rr(
+                rid,
+                f"Bug {o.bug_no}",
+                cx,
+                body,
+                raw_finding_id=o.finding.id,
+                allocation_key=allocation_key,
+            )
+            try:
+                # Final guard against an external writer racing the in-process
+                # lock. Never overwrite or renumber repair history.
+                with (rr_dir / f"{rid}.md").open("x") as fh:
+                    fh.write(merged)
+                break
+            except FileExistsError:
+                next_num += 1
     return rid
 
 
 # ── step 0: consolidate + dedup the two finding sources into candidates.json ──
 
 
-def _validate_candidates(path: Path) -> list[str]:
+def _family_refs(value: Any) -> set[str]:
+    if isinstance(value, int):
+        return {f"Family {value}"}
+    if not isinstance(value, str):
+        return set()
+    if value.strip().isdigit():
+        return {f"Family {int(value.strip())}"}
+    return {f"Family {number}" for number in re.findall(r"\bFamily\s+(\d+)\b", value, re.I)}
+
+
+def _validate_candidates(
+    path: Path,
+    expected_mc_ids: set[str] | dict[str, dict[str, Any]] | None = None,
+    expected_families: set[str] | None = None,
+) -> list[str]:
     errs: list[str] = []
     try:
         doc = json.loads(path.read_text())
@@ -425,25 +987,219 @@ def _validate_candidates(path: Path) -> list[str]:
     if not isinstance(findings, list):
         return ["'findings' missing or not a list"]
     seen: set[str] = set()
+    seen_mc: set[str] = set()
+    mc_by_id: dict[str, dict[str, Any]] = {}
+    covered_families: set[str] = set()
+    mc_families: set[str] = set()
+    cr_family_counts: dict[str, int] = {}
     for i, f in enumerate(findings):
         where = f"findings[{i}]"
         if not isinstance(f, dict):
             errs.append(f"{where}: not an object")
             continue
         fid = f.get("id")
-        if not isinstance(fid, str) or not fid or set(fid) - ID_CHARS:
+        if not isinstance(fid, str) or not fid or len(fid) > 128 or set(fid) - ID_CHARS or fid in {".", ".."}:
             errs.append(f"{where}: id missing or not filesystem-safe: {fid!r}")
         elif fid in seen:
             errs.append(f"{where}: duplicate id {fid!r}")
         else:
             seen.add(fid)
-        if f.get("source") not in VALID_SOURCES:
+        source = f.get("source")
+        if source not in VALID_SOURCES:
             errs.append(f"{where}: source not in {VALID_SOURCES}: {f.get('source')!r}")
-        if not f.get("title"):
+        elif source == "model-checking" and isinstance(fid, str):
+            if not fid.startswith("MC-"):
+                errs.append(f"{where}: model-checking id must start with 'MC-'")
+            seen_mc.add(fid)
+            mc_by_id[fid] = f
+            refs = _family_refs(f.get("dedup_note"))
+            if expected_families is not None and refs - expected_families:
+                errs.append(f"{where}: dedup_note references unknown family: {sorted(refs - expected_families)}")
+            mc_families.update(refs)
+            covered_families.update(refs)
+        elif source == "code-review":
+            if not isinstance(fid, str) or not fid.startswith("CR-"):
+                errs.append(f"{where}: code-review id must start with 'CR-'")
+            refs = _family_refs(f.get("family"))
+            if expected_families is not None:
+                if len(refs) != 1:
+                    errs.append(f"{where}: code-review candidate must reference exactly one expected family")
+                elif not refs <= expected_families:
+                    errs.append(f"{where}: code-review candidate references unknown family: {sorted(refs)}")
+            covered_families.update(refs)
+            for family in refs:
+                cr_family_counts[family] = cr_family_counts.get(family, 0) + 1
+        title = f.get("title")
+        if not isinstance(title, str) or not title.strip():
             errs.append(f"{where}: empty title")
-        if not f.get("summary"):
+        elif "\n" in title or "\r" in title:
+            errs.append(f"{where}: title must be one line")
+        summary = f.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
             errs.append(f"{where}: empty summary")
+    if expected_mc_ids is not None:
+        expected_ids = set(expected_mc_ids)
+        missing = sorted(expected_ids - seen_mc)
+        extra = sorted(seen_mc - expected_ids)
+        if missing:
+            errs.append(f"missing model-checking finding id(s): {missing}")
+        if extra:
+            errs.append(f"unexpected model-checking finding id(s): {extra}")
+        if isinstance(expected_mc_ids, dict):
+            for fid in sorted(expected_ids & seen_mc):
+                source_finding = expected_mc_ids[fid]
+                candidate = mc_by_id[fid]
+                for key, value in source_finding.items():
+                    if candidate.get(key) != value:
+                        errs.append(f"model-checking finding {fid}: source field {key!r} was changed or removed")
+                counterexample = source_finding.get("counterexample")
+                if isinstance(counterexample, str) and counterexample.strip():
+                    cx = Path(counterexample)
+                    possible = [cx] if cx.is_absolute() else [path.parent.parent / cx, path.parent / cx]
+                    if not any(item.is_file() and item.stat().st_size > 0 for item in possible):
+                        errs.append(
+                            f"model-checking finding {fid}: counterexample is missing or empty: {counterexample}"
+                        )
+    if expected_families is not None:
+        missing_families = sorted(expected_families - covered_families)
+        if missing_families:
+            errs.append(f"missing code-review family coverage: {missing_families}")
+        for family in sorted(expected_families):
+            if cr_family_counts.get(family, 0) > 1:
+                errs.append(f"duplicate code-review candidates for {family}")
+            if family in mc_families and cr_family_counts.get(family, 0):
+                errs.append(f"{family} is both emitted and marked deduplicated")
     return errs
+
+
+def _expected_mc_ids(spec_dir: Path) -> tuple[dict[str, dict[str, Any]] | None, list[str]]:
+    path = spec_dir / "findings.json"
+    if not path.is_file():
+        return None, []
+    try:
+        doc = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        return None, [f"invalid findings.json: {exc}"]
+    findings = doc.get("findings") if isinstance(doc, dict) else None
+    if not isinstance(findings, list):
+        return None, ["invalid findings.json: 'findings' missing or not a list"]
+    findings_by_id: dict[str, dict[str, Any]] = {}
+    errs: list[str] = []
+    for i, finding in enumerate(findings):
+        fid = finding.get("id") if isinstance(finding, dict) else None
+        if not isinstance(fid, str) or not fid:
+            errs.append(f"invalid findings.json: findings[{i}] has no id")
+        elif fid in findings_by_id:
+            errs.append(f"invalid findings.json: duplicate id {fid!r}")
+        else:
+            findings_by_id[fid] = finding
+            if not fid.startswith("MC-") or set(fid) - ID_CHARS or fid in {".", ".."}:
+                errs.append(f"invalid findings.json: unsafe model-checking id {fid!r}")
+            if finding.get("source") != "model-checking":
+                errs.append(f"invalid findings.json: {fid} source must be 'model-checking'")
+            for field in ("invariant", "config", "counterexample"):
+                if not isinstance(finding.get(field), str) or not str(finding[field]).strip():
+                    errs.append(f"invalid findings.json: {fid} requires non-empty {field}")
+            counterexample = finding.get("counterexample")
+            if isinstance(counterexample, str) and counterexample.strip():
+                raw = Path(counterexample)
+                if raw.is_absolute() or ".." in raw.parts:
+                    errs.append(f"invalid findings.json: {fid} counterexample must stay under the work directory")
+                else:
+                    work_dir = spec_dir.parent.resolve()
+                    cx = (work_dir / raw).resolve()
+                    try:
+                        cx.relative_to(work_dir)
+                    except ValueError:
+                        errs.append(f"invalid findings.json: {fid} counterexample escapes the work directory")
+                    else:
+                        if not cx.is_file() or cx.stat().st_size == 0:
+                            errs.append(f"invalid findings.json: {fid} counterexample is missing or empty")
+    return findings_by_id, errs
+
+
+def _expected_brief_families(brief: Path) -> set[str] | None:
+    if not brief.is_file():
+        return set()
+    text = brief.read_text(errors="replace")
+    return {f"Family {number}" for number in re.findall(r"(?im)^#{2,4}\s+Family\s+(\d+)\s*:", text)}
+
+
+def _candidate_fingerprint(cfg: ConfirmConfig) -> str:
+    wd = cfg.ws.work_dir(cfg.name)
+    spec_dir = wd / "spec"
+    files: dict[str, str] = {}
+    for label, path in (
+        ("findings", spec_dir / "findings.json"),
+        ("bug_report", spec_dir / "bug-report.md"),
+        ("brief", wd / "modeling-brief.md"),
+        ("prompt", Path(__file__).resolve().parent / "prompts" / "confirmation" / "consolidate.md"),
+        ("schema", SKILLS / "validation-workflow" / "references" / "findings-json-format.md"),
+    ):
+        files[label] = path.read_text(errors="replace") if path.is_file() else ""
+    return _digest(
+        {
+            "version": _CACHE_VERSION,
+            "generation": _generation_content(cfg),
+            "prompt_extra": cfg.prompt_extra,
+            "adapter": _adapter_identity(cfg),
+            "claude_alias": cfg.claude_alias,
+            "max_turns": cfg.max_turns,
+            "model": cfg.model,
+            "effort": cfg.effort,
+            "files": files,
+        }
+    )
+
+
+def _candidate_output_digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _candidate_cache_valid(
+    cfg: ConfirmConfig,
+    out: Path,
+    expected: set[str] | dict[str, dict[str, Any]] | None,
+    expected_families: set[str] | None = None,
+) -> bool:
+    if _validate_candidates(out, expected, expected_families):
+        return False
+    sidecar = out.parent / _CANDIDATE_CACHE
+    if not sidecar.is_file():
+        # A candidates-only workspace is an explicit caller-provided input (and
+        # is useful for unit/in-process callers). Real consolidation inputs need
+        # a dispatcher-owned sidecar before they may be reused.
+        wd = cfg.ws.work_dir(cfg.name)
+        has_sources = any(
+            path.is_file()
+            for path in (out.parent / "findings.json", out.parent / "bug-report.md", wd / "modeling-brief.md")
+        )
+        return not has_sources and not (out.parent / "confirmation-generation.json").is_file()
+    try:
+        meta = json.loads(sidecar.read_text())
+        return bool(
+            meta.get("cache_version") == _CACHE_VERSION
+            and meta.get("fingerprint") == _candidate_fingerprint(cfg)
+            and meta.get("output_digest") == _candidate_output_digest(out)
+        )
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def _write_candidate_cache(cfg: ConfirmConfig, out: Path) -> None:
+    sidecar = out.parent / _CANDIDATE_CACHE
+    tmp = sidecar.with_suffix(sidecar.suffix + ".tmp")
+    tmp.write_text(
+        json.dumps(
+            {
+                "cache_version": _CACHE_VERSION,
+                "fingerprint": _candidate_fingerprint(cfg),
+                "output_digest": _candidate_output_digest(out),
+            },
+            sort_keys=True,
+        )
+    )
+    tmp.replace(sidecar)
 
 
 def consolidate(cfg: ConfirmConfig) -> None:
@@ -454,12 +1210,23 @@ def consolidate(cfg: ConfirmConfig) -> None:
     wd = cfg.ws.work_dir(cfg.name)
     spec_dir = wd / "spec"
     out = spec_dir / "candidates.json"
-    if out.is_file() and not _validate_candidates(out):
+    expected_mc_ids, source_errs = _expected_mc_ids(spec_dir)
+    brief = wd / "modeling-brief.md"
+    external_candidates = (
+        out.is_file()
+        and not (spec_dir / "findings.json").is_file()
+        and not (spec_dir / "bug-report.md").is_file()
+        and not brief.is_file()
+        and not (spec_dir / "confirmation-generation.json").is_file()
+    )
+    expected_families = None if external_candidates else _expected_brief_families(brief)
+    if source_errs:
+        raise ConsolidateFailed(f"invalid model-checking input for {cfg.name}: {source_errs[0]}")
+    if out.is_file() and _candidate_cache_valid(cfg, out, expected_mc_ids, expected_families):
         _log(f"  {cfg.name}: candidates.json present and valid — skipping consolidate")
         return
     bug_report = spec_dir / "bug-report.md"
     findings_json = spec_dir / "findings.json"
-    brief = wd / "modeling-brief.md"
     mc_src = (
         f"`{findings_json}` (structured MC findings — prefer this)" if findings_json.is_file() else f"`{bug_report}`"
     )
@@ -478,6 +1245,9 @@ def consolidate(cfg: ConfirmConfig) -> None:
         _log(f"  {cfg.name}: [DRY] consolidate → {out}")
         return
     spec_dir.mkdir(parents=True, exist_ok=True)
+    # Do not let a failed agent make a stale output look fresh.
+    out.unlink(missing_ok=True)
+    (spec_dir / _CANDIDATE_CACHE).unlink(missing_ok=True)
     rc, _ = run_agent_blocking(
         cfg.adapter,
         prompt,
@@ -486,16 +1256,25 @@ def consolidate(cfg: ConfirmConfig) -> None:
         phase_key=PHASE_KEY,
         work_dir=wd,
         claude_alias=cfg.claude_alias,
+        max_turns=cfg.max_turns,
         model=cfg.model,
         effort=cfg.effort,
     )
     if rc == 75:
         raise RateLimited(f"{cfg.name} consolidate")
-    errs = _validate_candidates(out) if out.is_file() else ["no candidates.json produced"]
+    if rc != 0:
+        out.unlink(missing_ok=True)
+        raise ConsolidateFailed(f"consolidate adapter exited {rc}")
+    errs = (
+        _validate_candidates(out, expected_mc_ids, expected_families)
+        if out.is_file()
+        else ["no candidates.json produced"]
+    )
     if errs:
         if out.is_file():
             out.unlink()  # drop the invalid file so load_findings does not choke on it
         raise ConsolidateFailed(f"no valid candidates.json for {cfg.name}: {errs[0]}")
+    _write_candidate_cache(cfg, out)
     doc = json.loads(out.read_text())
     cand = doc.get("findings", [])
     n_merged = sum(1 for c in cand if c.get("dedup_note"))
@@ -507,12 +1286,34 @@ def consolidate(cfg: ConfirmConfig) -> None:
 
 def _novelty(body: str) -> str:
     """Parse the Reproducer's per-bug Novelty: NEW / KNOWN-unfixed / KNOWN-fixed.
-    Defaults to NEW when absent (a bug with no novelty claim is treated as new)."""
-    m = re.search(r"\*\*Novelty\*\*:\s*(NEW|KNOWN)", body, re.IGNORECASE)
-    if not m or m.group(1).upper() == "NEW":
+    Missing claims stay UNKNOWN; absence is not evidence that a bug is new."""
+    claims = re.findall(r"(?im)^\s*-?\s*\*\*Novelty\*\*:\s*([^\r\n]+)", body)
+    if not claims:
+        return "UNKNOWN"
+    claim = claims[-1]
+    kind = re.match(r"\s*(NEW|KNOWN)\b", claim, re.IGNORECASE)
+    if not kind:
+        return "UNKNOWN"
+    if kind.group(1).upper() == "NEW":
         return "NEW"
-    fix = re.search(r"fix-status:\s*(unfixed|fixed)", body, re.IGNORECASE)
-    return "KNOWN-fixed" if (fix and fix.group(1).lower() == "fixed") else "KNOWN-unfixed"
+    # Bind fix-status to the same (last) Novelty declaration. An older claim's
+    # metadata must not leak into a debate correction.
+    fix = re.search(r"fix-status:\s*(unfixed|fixed)", claim, re.IGNORECASE)
+    if not fix:
+        return "UNKNOWN"
+    return "KNOWN-fixed" if fix.group(1).lower() == "fixed" else "KNOWN-unfixed"
+
+
+def _report_body(body: str) -> str:
+    """Prevent nested agent prose from injecting canonical report records."""
+    lines: list[str] = []
+    for line in body.splitlines():
+        if re.match(r"^\s*VERDICT\s*:", line, re.I):
+            continue
+        if re.match(r"^##\s+Bug\s+\d+\s*:", line, re.I):
+            line = "\\" + line
+        lines.append(line)
+    return "\n".join(lines).strip()
 
 
 def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
@@ -523,25 +1324,37 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     "one row per ``## Bug N:`` header" parsing aligns; the finding id (MC-1 / CR-2)
     is carried as a body field and a table column."""
     report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
+    invalid_statuses = sorted({o.status for o in outcomes if o.status not in CANON})
+    if invalid_statuses:
+        raise ConfirmationFailed(f"cannot aggregate non-canonical status(es): {invalid_statuses}")
+    status_counts = {status: sum(o.status == status for o in outcomes) for status in CANON}
     reproduced = [o for o in outcomes if o.status == "REPRODUCED"]
     nov = [_novelty(o.body) for o in reproduced]
     n_new = nov.count("NEW")
     n_known_unfixed = nov.count("KNOWN-unfixed")
     n_known_fixed = nov.count("KNOWN-fixed")
+    n_unknown = nov.count("UNKNOWN")
 
     env_limited = [o for o in outcomes if o.status == "ENV_LIMITED"]
     masked = [o for o in outcomes if o.status == "MASKED"]
 
     lines = [f"# Confirmed Bugs — {cfg.name}", ""]
-    split = f"Reproduced: {len(reproduced)} = {n_new} NEW + {n_known_unfixed} KNOWN-unfixed"
-    if n_known_fixed:
-        split += f"    (KNOWN-fixed: {n_known_fixed} — each needs a version recheck)"
+    split = (
+        f"Reproduced: {len(reproduced)} = {n_new} NEW + {n_known_unfixed} KNOWN-unfixed"
+        f" + {n_known_fixed} KNOWN-fixed + {n_unknown} UNKNOWN"
+    )
     lines.append(split)
     # The "finding" tier — real defects that are not confirmed live bugs: real but
     # only triggerable in production (env-limited), or a real anomaly whose
     # consequence a safeguard currently masks. Reported separately so they are
     # neither miscounted as bugs nor lost as false positives.
     lines.append(f"Findings: {len(env_limited) + len(masked)} = {len(env_limited)} env-limited + {len(masked)} masked")
+    lines.append(
+        f"Dispositions: {len(outcomes)} total = {status_counts['REPRODUCED']} reproduced"
+        f" + {status_counts['ENV_LIMITED']} env-limited + {status_counts['MASKED']} masked"
+        f" + {status_counts['FALSE POSITIVE']} false-positive + {status_counts['NEEDS MORE INFO']} needs-more-info"
+        f" + {status_counts['DROPPED']} dropped + {status_counts['PENDING REPAIR']} pending-repair + 0 deferred"
+    )
     lines.append("")
     lines.append("| Bug | Finding | Status |")
     lines.append("|---|---|---|")
@@ -551,14 +1364,18 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     lines.append("")
     for o in outcomes:
         rr = f" ({o.rr})" if o.rr else ""
-        lines.append(f"## Bug {o.bug_no}: {o.finding.data.get('title', '')}")
+        title = re.sub(r"[\r\n]+", " ", str(o.finding.data.get("title", ""))).strip()
+        lines.append(f"## Bug {o.bug_no}: {title}")
         lines.append("")
         lines.append(f"- **Finding ID**: {o.finding.id}")
         lines.append(f"- **Status**: {o.status}{rr}")
-        lines.append(f"- **Debate**: {'consensus' if o.consensus else 'NO CONSENSUS'} in {o.rounds} round(s)")
+        debate_summary = (
+            "not run" if o.rounds == 0 else (f"{'consensus' if o.consensus else 'NO CONSENSUS'} in {o.rounds} round(s)")
+        )
+        lines.append(f"- **Debate**: {debate_summary}")
         lines.append(f"- **Transcript**: {o.finding.fdir / 'debate.md'}")
         lines.append("")
-        lines.append(o.body.strip())
+        lines.append(_report_body(o.body))
         lines.append("")
         lines.append("---")
         lines.append("")
@@ -581,58 +1398,92 @@ def load_findings(cfg: ConfirmConfig) -> list[Finding]:
         return []
     conf_root = wd / "confirmation"
     doc = json.loads(path.read_text())
-    return [Finding(d, conf_root / str(d["id"])) for d in doc.get("findings", [])]
+    errs = _validate_candidates(path) if path.name == "candidates.json" else []
+    if errs:
+        raise ConfirmationFailed(f"invalid candidate input: {errs[0]}")
+    findings: list[Finding] = []
+    for data in doc.get("findings", []):
+        fid = str(data.get("id", ""))
+        if not fid or set(fid) - ID_CHARS or fid in {".", ".."}:
+            raise ConfirmationFailed(f"unsafe finding id: {fid!r}")
+        findings.append(Finding(data, conf_root / fid))
+    return findings
 
 
 def run_parallel_confirmation(cfg: ConfirmConfig) -> int:
     """Drive step 0 (consolidate) → per-finding fan-out → aggregate for ONE
-    target. Always returns 0, like every other batch phase: on a rate limit it
-    withholds confirmed-bugs.md rather than propagating a special exit code, and
-    the missing deliverable is what the classification gate + the scheduler's
-    transient-log retry act on."""
-    if not cfg.dry_run:
-        log_path = cfg.ws.work_dir(cfg.name) / "bug-confirmation.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text("")  # fresh per run so the summary link + `tail -f` follow THIS run
-        _set_log_file(log_path)
+    target. Returns 75 for rate limiting, nonzero for permanent/infrastructure
+    failures, and always removes a stale deliverable on failure."""
     try:
-        return _drive_confirmation(cfg)
+        try:
+            if not cfg.dry_run:
+                log_path = cfg.ws.work_dir(cfg.name) / "bug-confirmation.log"
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                log_path.write_text("")  # summary link + `tail -f` follow THIS run
+                _set_log_file(log_path)
+            return _drive_confirmation(cfg)
+        except Exception as exc:
+            try:
+                _log(f"confirmation driver crashed ({exc})")
+            except OSError:
+                print(f"confirmation driver crashed ({exc})", flush=True)
+            if cfg.dry_run:
+                return 1
+            return _withhold(cfg, "confirmation driver failure — deliverable withheld")
     finally:
         _set_log_file(None)
 
 
-def _withhold(cfg: ConfirmConfig, reason: str) -> int:
-    """Withhold the phase deliverable and return 0. Removes any existing
-    confirmed-bugs.md so the classification gate sees a MISSING deliverable (and
-    the scheduler retries) rather than passing on a STALE report left by a prior
-    run — the batch-phase failure contract."""
+def _withhold(cfg: ConfirmConfig, reason: str, code: int = 1) -> int:
+    """Remove a stale deliverable and return an actionable failure code."""
     report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
-    if report.is_file():
-        report.unlink()
-    _log(reason)
-    return 0
+    if not cfg.dry_run and report.is_file():
+        try:
+            report.unlink()
+        except OSError as exc:
+            print(f"failed to remove stale {report}: {exc}", flush=True)
+    try:
+        _log(reason)
+    except OSError:
+        print(reason, flush=True)
+    return code
 
 
 def _drive_confirmation(cfg: ConfirmConfig) -> int:
+    if cfg.max_parallel < 1:
+        return _withhold(cfg, "invalid max_parallel; expected a positive integer")
+    if cfg.debate and cfg.rounds < 1:
+        return _withhold(cfg, "invalid debate rounds; expected a positive integer")
     try:
         consolidate(cfg)
     except RateLimited:
-        return _withhold(cfg, "consolidate rate-limited — deliverable withheld for scheduler retry")
+        return _withhold(
+            cfg,
+            "consolidate rate-limited — deliverable withheld for scheduler retry",
+            quota.RATE_LIMIT_RC,
+        )
     except ConsolidateFailed as e:
         return _withhold(cfg, f"consolidate failed ({e}) — deliverable withheld; downstream gate + retry settle it")
 
-    findings = load_findings(cfg)
+    try:
+        findings = load_findings(cfg)
+    except (ConfirmationFailed, OSError, ValueError, TypeError) as exc:
+        return _withhold(cfg, f"candidate loading failed ({exc}) — deliverable withheld")
     _log(
         f"Parallel confirmation: {cfg.name} — {len(findings)} findings, "
         f"debate={'ON' if cfg.debate else 'OFF'}, max_parallel={cfg.max_parallel}"
     )
+    if cfg.dry_run:
+        for finding in findings:
+            _log(f"    [{finding.id}] [DRY] would run confirmation")
+        return 0
     if not findings:
-        if not cfg.dry_run:
-            aggregate(cfg, [])
+        aggregate(cfg, [])
         return 0
 
     outcomes: list[Outcome] = []
     rate_limited = False
+    failed = False
     with ThreadPoolExecutor(max_workers=cfg.max_parallel) as ex:
         futures = [ex.submit(run_finding_safe, cfg, f) for f in findings]
         for fut in futures:
@@ -640,6 +1491,16 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
                 outcomes.append(fut.result())
             except RateLimited:
                 rate_limited = True
+            except ConfirmationFailed as exc:
+                failed = True
+                _log(f"confirmation failed ({exc})")
+            except Exception as exc:
+                failed = True
+                _log(f"confirmation worker crashed ({exc})")
+    # A permanent failure dominates a simultaneous transient one; otherwise the
+    # launcher could keep retrying a batch that can never succeed.
+    if failed:
+        return _withhold(cfg, "confirmation infrastructure/output failure — deliverable withheld for retry")
     if rate_limited:
         # Do NOT aggregate a partial confirmed-bugs.md — it would look complete and
         # the classification gate would pass with findings missing. Withhold it (as
@@ -647,17 +1508,20 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
         # so the gate + the scheduler's transient-log retry re-run us; verdict.json
         # skips the findings already done. Return 0, consistent with batch phases.
         return _withhold(
-            cfg, "rate-limited mid-confirmation — deliverable withheld; completed findings cached for retry"
+            cfg,
+            "rate-limited mid-confirmation — deliverable withheld; completed findings cached for retry",
+            quota.RATE_LIMIT_RC,
         )
-
     order = {f.id: i for i, f in enumerate(findings)}
     outcomes.sort(key=lambda o: order[o.finding.id])
     for i, o in enumerate(outcomes, 1):
         o.bug_no = i  # the "## Bug N:" number, in table order (drives aggregate + the RR bug_id)
-    for o in outcomes:
-        if o.status.startswith("PENDING REPAIR") and o.rr is None and not cfg.dry_run:
-            o.rr = allocate_rr(cfg, o)
-            _save_verdict(o)  # persist the assigned RR into the idempotent cache
-    if not cfg.dry_run:
+    try:
+        for o in outcomes:
+            if o.status.startswith("PENDING REPAIR") and o.rr is None and not cfg.dry_run:
+                o.rr = allocate_rr(cfg, o)
+                _save_verdict(o, cfg)  # persist the assigned RR into the idempotent cache
         aggregate(cfg, outcomes)
+    except (ConfirmationFailed, OSError, ValueError) as exc:
+        return _withhold(cfg, f"confirmation aggregation failed ({exc}) — deliverable withheld")
     return 0

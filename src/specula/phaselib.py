@@ -40,6 +40,7 @@ SPECULA_ROOT = SCRIPT_DIR.parent.parent
 # the launch_*.sh shims and the agent adapters stay under scripts/launch/
 LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
 AGENT_TERMINATION_GRACE_SECONDS = 2.0
+MAX_DEBATE_ROUNDS = 5
 
 # bash pathname expansion (`for d in .../*/`) orders by the locale collating
 # sequence; adopt the ambient locale so find_repo_dir picks the same repo the
@@ -233,6 +234,10 @@ class Phase:
         """Concurrent-agent default when ``--max-parallel`` is omitted."""
         return 1
 
+    def validate_options(self, extra: dict[str, str | bool]) -> str | None:
+        """Return a user-facing error for an invalid option combination."""
+        return None
+
     def target_name(self, target: str) -> str:
         """Extract the display/work name from a target string. Downstream phases
         get name-only targets, so the whole (trimmed) string is the name;
@@ -418,9 +423,8 @@ class Phase:
                     print(f"Invalid --max-parallel: '{val}' (expected an integer >= 1)")
                     return 1
             elif arg.startswith("--max-turns="):
-                # Deprecated passthrough the adapter ignores. bash forwarded it
-                # verbatim, so keep it a string: `--max-turns=$VAR` with VAR unset
-                # or non-numeric must not crash the launcher.
+                # Adapter-specific passthrough. Keep it a string: an adapter may
+                # deliberately accept values beyond the launcher's vocabulary.
                 max_turns = arg[len("--max-turns=") :]
             elif arg.startswith("--agent="):
                 agent = arg[len("--agent=") :]
@@ -449,6 +453,11 @@ class Phase:
 
         if artifact_provided and (not artifact or not Path(artifact).is_dir()):
             print(f"ERROR: --artifact must be an existing directory: {artifact}")
+            return 1
+
+        option_error = self.validate_options(extra)
+        if option_error is not None:
+            print(option_error)
             return 1
 
         if max_parallel is None:
@@ -501,6 +510,7 @@ class Phase:
             adapter=adapter,
             claude_alias=claude_alias,
             max_parallel=max_parallel,
+            max_turns=max_turns,
             dry_run=dry_run,
         )
         if alt is not None:
@@ -618,6 +628,7 @@ class Phase:
         adapter: Path,
         claude_alias: str,
         max_parallel: int,
+        max_turns: str,
         dry_run: bool,
     ) -> int | None:
         """Hook: let a phase run its targets its own way instead of the default
@@ -813,20 +824,21 @@ def run_agent_blocking(
     per-finding confirmation debate needs (turn N+1 reads turn N's output),
     which the fire-all-then-wait `_launch` loop cannot express.
 
-    The completion stop-gate is OFF per turn by default: it audits a *phase*
-    deliverable (`confirmed-bugs.md`) that exists only after all findings are
-    aggregated, never after a single turn; the phase-level acceptance check
-    (`Phase._acceptance`) covers it once at the end. Rate-limit (exit 75) is the
+    Per-turn calls keep the execution gate (notably its live-background-PID
+    check), but use a phase key with no deliverable contract by default: a phase
+    deliverable (`confirmed-bugs.md`) exists only after all findings aggregate,
+    never after one turn. ``stop_gate=True`` opts back into the original phase
+    key and therefore its deliverable contract. Rate-limit (exit 75) is the
     caller's concern — this runs exactly one invocation.
     """
     prompt = materialize_skill_refs(prompt, adapter)
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     prompt_file.write_text(prompt)
+    with contextlib.suppress(OSError):
+        log_file.unlink()
     env = os.environ.copy()
-    env["SPECULA_PHASE"] = phase_key
+    env["SPECULA_PHASE"] = phase_key if stop_gate else f"{phase_key}_turn"
     env["SPECULA_WORK_DIR"] = str(work_dir)
-    if not stop_gate:
-        env["SPECULA_STOP_GATE"] = "off"
     cmd = [
         str(adapter),
         f"--prompt-file={prompt_file}",
@@ -1502,7 +1514,7 @@ Options:
   --check             Only verify prerequisites exist
   --legacy-confirm    Single-agent confirmation (one agent, all findings) instead of parallel
   --debate            Add an adversarial Challenger after each confirmation (parallel mode; default off)
-  --rounds=N          Max debate rounds with --debate (default: 5)
+  --rounds=N          Max debate rounds with --debate (default: 5; range: 1-5)
   --max-parallel=N    Hard limit for concurrent findings in parallel mode, or concurrent target agents in
                       --legacy-confirm (defaults: 4 in parallel mode, 1 otherwise)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
@@ -1536,6 +1548,18 @@ Prerequisites:
     def default_max_parallel(self, extra: dict[str, str | bool]) -> int:
         return 1 if extra.get("legacy") else 4
 
+    def validate_options(self, extra: dict[str, str | bool]) -> str | None:
+        if extra.get("legacy") and extra.get("debate"):
+            return "Invalid options: --legacy-confirm and --debate cannot be used together"
+        raw_rounds = str(extra.get("rounds", "5"))
+        try:
+            rounds = int(raw_rounds)
+        except ValueError:
+            return f"Invalid --rounds: '{raw_rounds}' (expected an integer from 1 to {MAX_DEBATE_ROUNDS})"
+        if not 1 <= rounds <= MAX_DEBATE_ROUNDS:
+            return f"Invalid --rounds: '{raw_rounds}' (expected an integer from 1 to {MAX_DEBATE_ROUNDS})"
+        return None
+
     def run_alternate(
         self,
         ws: Workspace,
@@ -1544,6 +1568,7 @@ Prerequisites:
         adapter: Path,
         claude_alias: str,
         max_parallel: int,
+        max_turns: str,
         dry_run: bool,
     ) -> int | None:
         """Parallel per-finding confirmation — the DEFAULT first-pass mode.
@@ -1557,7 +1582,8 @@ Prerequisites:
 
         debate = bool(ws.opts.get("debate"))
         rounds = int(str(ws.opts.get("rounds", "5")))
-        rc = 0
+        failures: list[tuple[str, int]] = []
+        retry_limit = self._rate_limit_retries()
         for name in names:
             if not dry_run:
                 print(f"  Monitor: tail -f {ws.work_dir(name)}/bug-confirmation.log")
@@ -1567,6 +1593,7 @@ Prerequisites:
                 adapter=adapter,
                 repo_dir=ws.find_repo_dir(name),
                 max_parallel=max_parallel,
+                max_turns=max_turns,
                 debate=debate,
                 rounds=rounds,
                 claude_alias=claude_alias,
@@ -1575,13 +1602,28 @@ Prerequisites:
                 dry_run=dry_run,
                 prompt_extra=self._read_prompt_extra(ws, name),
             )
-            code = run_parallel_confirmation(cfg)
+            attempt = 1
+            while True:
+                code = run_parallel_confirmation(cfg)
+                if (
+                    code == quota.RATE_LIMIT_RC
+                    and not failures
+                    and self._reactive_rate_limit_enabled()
+                    and attempt <= retry_limit
+                ):
+                    print(f"[{_ts()}] Rate limited: waiting before retrying {name}")
+                    self._wait_for_rate_limit()
+                    attempt += 1
+                    continue
+                break
             if code != 0:
-                rc = code
+                failures.append((name, code))
+                if code == quota.RATE_LIMIT_RC:
+                    break
         self.summarize(ws, names)
         if not dry_run:
             self._acceptance(ws, names)
-        return rc
+        return self._failure_code(failures)
 
     def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True

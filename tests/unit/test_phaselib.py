@@ -163,6 +163,7 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_RUN_DIR",
             "SPECULA_PHASE",
             "SPECULA_WORK_DIR",
+            "SPECULA_STOP_GATE",
             "SPECULA_PROGRESS",
             "SPECULA_ACTIVITY_LOG",
             "SPECULA_RATE_LIMIT_REACTIVE",
@@ -234,6 +235,23 @@ class PhaseCase(unittest.TestCase):
             args.append(self.artifact_flag())
         args.append(name)
         return self.run_phase(spec["key"], args)
+
+
+class TestDirectExecution(unittest.TestCase):
+    def test_clean_path_invocation_bootstraps_package_imports(self) -> None:
+        with tempfile.TemporaryDirectory() as cwd:
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+            env["PYTHONNOUSERSITE"] = "1"
+            proc = subprocess.run(
+                [sys.executable, "-S", str(SRC / "specula" / "phaselib.py"), "bug_confirmation", "--help"],
+                cwd=cwd,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("Bug confirmation", proc.stdout)
 
 
 class TestPreconditionGate(PhaseCase):
@@ -364,6 +382,24 @@ class TestDryRunCommand(PhaseCase):
         rc, out = self.dry_run(BY_KEY["code_analysis"])
         self.assertEqual(rc, 0, out)
         self.assertIn("Max parallel: 1", out)
+
+    def test_bug_confirmation_forwards_max_turns(self) -> None:
+        from specula import confirmlib
+
+        seen: list[tuple[int, str]] = []
+
+        def fake_confirmation(cfg: confirmlib.ConfirmConfig) -> int:
+            seen.append((cfg.max_parallel, cfg.max_turns))
+            return 0
+
+        self.patch_attr(confirmlib, "run_parallel_confirmation", fake_confirmation)
+        rc, out = self.dry_run(
+            BY_KEY["bug_confirmation"],
+            extra=["--max-parallel=1", "--max-turns=7"],
+        )
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen, [(1, "7")])
+
     def test_max_turns_forwarded_verbatim(self) -> None:
         rc, out = self.dry_run(BY_KEY["code_analysis"], extra=["--max-turns=7"])
         self.assertEqual(rc, 0, out)
@@ -455,6 +491,23 @@ class TestArgErrors(PhaseCase):
         self.assertEqual(rc, 1)
         self.assertIn("--artifact must be an existing directory", out)
 
+    def test_bug_confirmation_rejects_invalid_rounds(self) -> None:
+        for value in ("abc", "0", "-1", "6"):
+            with self.subTest(value=value):
+                rc, out = self.run_phase("bug_confirmation", [f"--rounds={value}", NAME])
+                self.assertEqual(rc, 1)
+                self.assertIn("Invalid --rounds", out)
+                self.assertIn("integer from 1 to 5", out)
+
+    def test_bug_confirmation_accepts_round_five(self) -> None:
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--rounds=5"])
+        self.assertEqual(rc, 0, out)
+
+    def test_bug_confirmation_rejects_legacy_debate_combination(self) -> None:
+        rc, out = self.run_phase("bug_confirmation", ["--legacy-confirm", "--debate", NAME])
+        self.assertEqual(rc, 1)
+        self.assertIn("--legacy-confirm and --debate cannot be used together", out)
+
     def test_help_prints_usage(self) -> None:
         for spec in PHASES:
             with self.subTest(phase=spec["key"]):
@@ -464,6 +517,82 @@ class TestArgErrors(PhaseCase):
                 self.assertIn(f"launch_{spec['key']}.sh", out)
                 self.assertIn("--model=NAME", out)
                 self.assertIn("--effort=LEVEL", out)
+
+
+class TestBugConfirmationAlternate(PhaseCase):
+    def _patch_confirmation(self, codes: list[int]) -> list[tuple[int, str]]:
+        from specula import confirmlib
+
+        calls: list[tuple[int, str]] = []
+
+        def fake_confirmation(cfg: confirmlib.ConfirmConfig) -> int:
+            calls.append((cfg.max_parallel, cfg.max_turns))
+            return codes[min(len(calls) - 1, len(codes) - 1)]
+
+        self.patch_attr(confirmlib, "run_parallel_confirmation", fake_confirmation)
+        return calls
+
+    def test_permanent_failure_propagates(self) -> None:
+        calls = self._patch_confirmation([9])
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"])
+        self.assertEqual(rc, 9, out)
+        self.assertEqual(calls, [(4, "0")])
+
+    def test_rate_limit_retries_current_target(self) -> None:
+        calls = self._patch_confirmation([quota.RATE_LIMIT_RC, 0])
+        waits: list[int] = []
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(waits, [1])
+        self.assertIn("Rate limited: waiting before retrying", out)
+
+    def test_rate_limit_retries_are_bounded(self) -> None:
+        calls = self._patch_confirmation([quota.RATE_LIMIT_RC])
+        waits: list[int] = []
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"])
+        self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(waits, [1])
+
+
+class TestRunAgentBlocking(PhaseCase):
+    def test_turn_phase_keeps_stop_gate_and_removes_stale_log(self) -> None:
+        adapter = self.tmp() / "adapter.sh"
+        capture = self.tmp() / "capture.txt"
+        adapter.write_text(
+            '#!/bin/sh\nprintf \'%s\\n\' "$SPECULA_PHASE" "${SPECULA_STOP_GATE-unset}" "$@" > "$CAPTURE_FILE"\nexit 9\n'
+        )
+        adapter.chmod(0o755)
+        prompt_file = self.tmp() / "prompt.md"
+        log_file = self.tmp() / "turn.log"
+        log_file.write_text("stale output\n")
+        self.set_env("CAPTURE_FILE", str(capture))
+        self.set_env("SPECULA_STOP_GATE", "on")
+
+        rc, text = phaselib.run_agent_blocking(
+            adapter,
+            "prompt body",
+            prompt_file,
+            log_file,
+            phase_key="bug_confirmation",
+            work_dir=self.work_dir(),
+            claude_alias="profile",
+            max_turns="7",
+        )
+
+        self.assertEqual(rc, 9)
+        self.assertEqual(text, "")
+        self.assertFalse(log_file.exists())
+        recorded = capture.read_text().splitlines()
+        self.assertEqual(recorded[:2], ["bug_confirmation_turn", "on"])
+        self.assertIn("--max-turns=7", recorded)
 
 
 class TestProgressReporting(PhaseCase):

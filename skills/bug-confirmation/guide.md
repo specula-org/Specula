@@ -21,7 +21,7 @@ The finding goes through two phases in order: investigation (Phase 1) and reprod
 
 **The finding tier.** `REPRODUCED` is a confirmed **bug** (live consequence demonstrated). `ENV_LIMITED` (real defect, argued but untriggerable here) and `MASKED` (real defect, consequence masked today) are **findings** — real anomalies that are not confirmed live bugs but could bite if the mask is removed or the env allows the trigger. Findings are surfaced separately, never discarded as false positives.
 
-**Decision table — settle top-down.** A brief recap of each verdict's bar. 
+**Decision table — settle top-down.** A brief recap of each verdict's bar.
 
 | Verdict | Tier | Settle here when |
 |---|---|---|

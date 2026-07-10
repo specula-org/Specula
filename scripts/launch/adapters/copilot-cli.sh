@@ -97,7 +97,11 @@ fi
 PROMPT_BYTES=$(printf '%s' "$PROMPT" | wc -c)
 MAX_PROMPT_BYTES=124000
 if (( PROMPT_BYTES > MAX_PROMPT_BYTES )); then
-  echo "copilot-cli adapter: prompt is ${PROMPT_BYTES} bytes, over the ~${MAX_PROMPT_BYTES}-byte limit the copilot CLI accepts as a command-line argument (it has no stdin/prompt-file input). Use --agent=codex or --agent=claude-code for large-context or --debate prompts." >&2
+  ERROR="copilot-cli adapter: prompt is ${PROMPT_BYTES} bytes, over the ~${MAX_PROMPT_BYTES}-byte limit the copilot CLI accepts as a command-line argument (it has no stdin/prompt-file input). Use --agent=codex or --agent=claude-code for large-context or --debate prompts."
+  printf '%s\n' "$ERROR" >&2
+  if ! printf '%s\n' "$ERROR" > "$LOG_FILE"; then
+    printf 'copilot-cli adapter: unable to write diagnostic log: %s\n' "$LOG_FILE" >&2
+  fi
   exit 1
 fi
 

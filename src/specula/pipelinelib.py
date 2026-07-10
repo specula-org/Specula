@@ -373,6 +373,18 @@ class Pipeline:
             # The legacy single-target flow may chdir before launching phases.
             # Stabilize a relative CLI path while it still refers to the caller's cwd.
             self.artifact = str(Path(self.artifact).resolve())
+
+        # Validate the repair budget before any phase starts.  int() in
+        # run_repair_loop used to make malformed values fail only after the
+        # expensive foreground phases had completed, while a negative value
+        # silently skipped every round and immediately deferred all OPEN work.
+        if not re.fullmatch(r"[0-9]+", self.max_repair_rounds):
+            print(
+                "ERROR: MAX_REPAIR_ROUNDS/--max-repair-rounds must be a non-negative integer, "
+                f"got '{self.max_repair_rounds}'",
+                file=sys.stderr,
+            )
+            return 1
         # wart fix (step 7): garbage quota config fails fast (pre-tee, like the
         # option errors). The bash pushed the values into the gate's arithmetic,
         # where a bad threshold read as "usage parse failed" and silently
@@ -562,6 +574,12 @@ class Pipeline:
         # bash `for f in "$d"/RR-*.md` — pathname expansion orders by LC_COLLATE
         return sorted(d.glob("RR-*.md"), key=lambda p: locale.strxfrm(p.name))
 
+    def _deferred_rr_files(self, name: str) -> list[Path]:
+        d = Path(self.repair_dir(name)) / "deferred"
+        if not d.is_dir():
+            return []
+        return sorted(d.glob("RR-*.md"), key=lambda p: locale.strxfrm(p.name))
+
     def has_any_request(self) -> bool:
         return any(self._rr_files(n) for n in self.extract_names())
 
@@ -597,15 +615,170 @@ class Pipeline:
                     rr_set_status(f, "OPEN", "reset (orchestrator): repair phase did not complete; retrying")
                     log(f"  reset {f.name} IN_REPAIR -> OPEN (crash recovery)")
 
+    def snapshot_open_repair_requests(self) -> dict[Path, str]:
+        """Capture the exact requests a repair Phase 3 is responsible for.
+
+        A failing agent may update a request to CONSUMED before its process
+        exits non-zero. Those partial state transitions are not a successful
+        repair and must be reversible as one round-level unit.
+        """
+        return {f: f.read_text() for n in self.extract_names() for f in self._rr_files(n) if rr_status(f) == "OPEN"}
+
+    def restore_open_repair_requests(self, snapshot: dict[Path, str], round_: int) -> None:
+        """Restore a failed Phase 3's original OPEN set with an audit entry."""
+        if self.dry_run:
+            return
+        reason = f"reset (orchestrator): repair round {round_} Phase 3 failed; restored OPEN for retry"
+        for f, original in snapshot.items():
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(original)
+            rr_set_status(f, "OPEN", reason)
+            log(f"  restored {f.name} to OPEN after failed repair Phase 3")
+
+    @staticmethod
+    def _repair_request_text_with_status(text: str, status: str, note: str) -> str:
+        """Return a complete request with a canonical status and history note."""
+        lines = text.splitlines(keepends=True)
+        found = False
+        for i, line in enumerate(lines[:25]):
+            if line.startswith("status:"):
+                lines[i] = f"status: {status}\n"
+                found = True
+                break
+        if not found:
+            insert_at = 1 if lines and lines[0].strip() == "---" else 0
+            lines.insert(insert_at, f"status: {status}\n")
+        if lines and not lines[-1].endswith("\n"):
+            lines[-1] += "\n"
+        lines.append(f"- {note}\n")
+        return "".join(lines)
+
+    @staticmethod
+    def _atomic_replace_text(path: Path, text: str) -> None:
+        """Publish text atomically, replacing only the named mutable artifact."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+        try:
+            with tmp.open("x") as fh:
+                fh.write(text)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
+        finally:
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
+
+    @staticmethod
+    def _publish_deferred_no_replace(path: Path, text: str) -> None:
+        """Atomically publish a complete deferred request without overwriting."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+        try:
+            with tmp.open("x") as fh:
+                fh.write(text)
+                fh.flush()
+                os.fsync(fh.fileno())
+            # A same-directory hard-link is an atomic, non-overwriting publish:
+            # readers see either no destination or the complete fsynced file.
+            os.link(tmp, path)
+        finally:
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
+
+    def _assert_no_active_deferred_conflicts(self) -> None:
+        conflicts: list[tuple[str, Path, Path]] = []
+        for n in self.extract_names():
+            active = {f.name: f for f in self._rr_files(n)}
+            deferred = {f.name: f for f in self._deferred_rr_files(n)}
+            conflicts.extend((n, active[name], deferred[name]) for name in sorted(active.keys() & deferred.keys()))
+        if conflicts:
+            detail = ", ".join(f"{n}: {active} conflicts with {deferred}" for n, active, deferred in conflicts)
+            log(f"ERROR: active/deferred repair request name conflict; refusing to overwrite: {detail}")
+            raise SystemExit(1)
+
+    @staticmethod
+    def _reconcile_disposition_counts(text: str) -> str:
+        """Make the disposition summary agree with the report's status table."""
+        statuses: list[str] = []
+        in_table = False
+        for line in text.splitlines():
+            cells = line.split("|")
+            if len(cells) >= 5 and cells[1].strip() == "Bug" and cells[3].strip() == "Status":
+                in_table = True
+                continue
+            if not in_table:
+                continue
+            if not line.lstrip().startswith("|"):
+                break
+            if len(cells) >= 5 and cells[1].strip().isdigit():
+                statuses.append(cells[3].strip())
+        if not statuses:
+            return text
+        pending = sum(status.startswith("PENDING REPAIR") for status in statuses)
+        deferred = sum(status.startswith("DEFERRED") for status in statuses)
+        pattern = re.compile(r"(?m)^(Dispositions: .*? \+ )\d+ pending-repair(?: \+ \d+ deferred)?\s*$")
+        return pattern.sub(
+            lambda match: f"{match.group(1)}{pending} pending-repair + {deferred} deferred",
+            text,
+            count=1,
+        )
+
+    def reconcile_deferred_state(self) -> None:
+        """Idempotently finish interrupted defer publication.
+
+        The deferred directory is authoritative. Legacy files can still say
+        OPEN, and a prior report write may have failed after the source was
+        moved; normalize both before the repair loop makes any decision.
+        """
+        if self.dry_run:
+            return
+        self._assert_no_active_deferred_conflicts()
+        for n in self.extract_names():
+            deferred = self._deferred_rr_files(n)
+            for f in deferred:
+                if rr_status(f) != "DEFERRED":
+                    text = self._repair_request_text_with_status(
+                        f.read_text(),
+                        "DEFERRED",
+                        "reconciled (orchestrator): deferred directory is authoritative",
+                    )
+                    self._atomic_replace_text(f, text)
+                    log(f"  reconciled legacy deferred status: {f}")
+
+            report = Path(self.get_work_dir(n)) / "spec" / "confirmed-bugs.md"
+            if not report.is_file():
+                continue
+            old_text = report.read_text()
+            new_text = old_text
+            for f in deferred:
+                rid = rr_field(f, "id") or f.stem
+                new_text = new_text.replace(
+                    f"PENDING REPAIR ({rid})",
+                    f"DEFERRED (repair loop exhausted; {rid} in deferred/)",
+                )
+            new_text = self._reconcile_disposition_counts(new_text)
+            if new_text != old_text:
+                self._atomic_replace_text(report, new_text)
+                log(f"  reconciled deferred statuses in {report}")
+
     def regenerate_ledger(self) -> None:
-        """Regenerate the human-readable rollup index per target."""
+        """Regenerate the human-readable rollup index per target.
+
+        Deferred requests remain part of the audit trail, so the ledger is
+        rebuilt from both the active queue and deferred/.  Conversely, when no
+        request exists in either place, remove an old ledger rather than leave
+        a stale snapshot behind.
+        """
         if self.dry_run:
             return
         for n in self.extract_names():
-            files = self._rr_files(n)
-            if not files:
-                continue
+            active = self._rr_files(n)
+            deferred = self._deferred_rr_files(n)
             ledger = Path(self.get_work_dir(n)) / "spec" / "repair-ledger.md"
+            files = [(f, False) for f in active] + [(f, True) for f in deferred]
+            if not files:
+                ledger.unlink(missing_ok=True)
+                continue
             rows = [
                 f"# Repair Ledger — {n}",
                 "",
@@ -614,12 +787,53 @@ class Pipeline:
                 "| Request | Bug | Target | Status | Round |",
                 "|---------|-----|--------|--------|-------|",
             ]
-            for f in files:
+            for f, is_deferred in files:
                 bug = rr_field(f, "bug_id").replace("|", "\\|")
-                rows.append(
-                    f"| {rr_field(f, 'id')} | {bug} | {rr_field(f, 'target')} | {rr_status(f)} | {rr_field(f, 'round')} |"
-                )
+                target = rr_field(f, "target").replace("|", "\\|")
+                # Legacy versions moved an OPEN file into deferred/ without
+                # changing its frontmatter.  Location is authoritative for
+                # those historical files; new moves also stamp DEFERRED.
+                status = "DEFERRED" if is_deferred else rr_status(f)
+                rows.append(f"| {rr_field(f, 'id')} | {bug} | {target} | {status} | {rr_field(f, 'round')} |")
             ledger.write_text("\n".join(rows) + "\n")
+
+    def advance_confirmation_generation(self, repair_round: int) -> None:
+        """Atomically advance the Phase-4 cache generation for every target.
+
+        This marker is written after every successful Phase 3, both normal and
+        repair runs, and before the corresponding Phase 4. Confirmation cache
+        fingerprints include its contents, so a resumed validation or repair
+        can never reuse a verdict or candidate set from an earlier generation.
+        """
+        if self.dry_run:
+            return
+        for n in self.extract_names():
+            marker = Path(self.get_work_dir(n)) / "spec" / "confirmation-generation.json"
+            previous = 0
+            if marker.is_file():
+                try:
+                    doc = json.loads(marker.read_text())
+                    value = doc.get("generation") if isinstance(doc, dict) else None
+                    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                        raise ValueError("generation is not a non-negative integer")
+                    previous = value
+                except (OSError, ValueError) as exc:
+                    # A damaged legacy marker must not block a completed repair
+                    # from reaching Phase 4. Replacing it changes the cache key,
+                    # and subsequent generations continue monotonically from 1.
+                    log(f"  WARNING: replacing invalid confirmation generation marker for {n}: {exc}")
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "generation": previous + 1,
+                "repair_round": repair_round,
+                "updated_at": _date_iseconds(),
+            }
+            tmp = marker.with_name(f".{marker.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+            try:
+                tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+                os.replace(tmp, marker)
+            finally:
+                tmp.unlink(missing_ok=True)
 
     # ── phase runners ──
     def _model_effort_args(self) -> list[str]:
@@ -783,6 +997,7 @@ class Pipeline:
             "launch_spec_validation.sh",
             self._phase_args(self.extract_names()),
         )
+        self.advance_confirmation_generation(0)
 
     def run_phase4_confirmation(self) -> None:
         pre: list[str] = []
@@ -795,6 +1010,10 @@ class Pipeline:
         self._phase(
             f"PHASE 4: BUG CONFIRMATION ({mode}{debate})",
             "launch_bug_confirmation.sh",
+            # Confirmation distinguishes an omitted generic default from an
+            # explicit --max-parallel=1: omitted fans findings out to four,
+            # while explicit 1 deliberately runs them serially. Other phases
+            # still receive Pipeline's implicit default of one.
             self._phase_args(self.extract_names(), pre=pre or None),
         )
 
@@ -809,6 +1028,7 @@ class Pipeline:
             "launch_spec_validation.sh",
             self._phase_args(self.extract_names(), pre=["--repair"]),
         )
+        self.advance_confirmation_generation(round_)
 
     def run_phase4b_classification(self) -> None:
         self._phase(
@@ -828,34 +1048,88 @@ class Pipeline:
         repair-requests/deferred/. Budget pressure -> wait_for_quota (WAIT), never
         a mass-defer."""
         divider()
+        # parse_args validates normal CLI/environment input.  Keep this guard
+        # for embedders and tests that configure Pipeline directly.
+        if not re.fullmatch(r"[0-9]+", self.max_repair_rounds):
+            log(f"ERROR: repair loop cap must be a non-negative integer; got '{self.max_repair_rounds}'")
+            raise SystemExit(1)
         cap = int(self.max_repair_rounds)
         cap_disp = "unlimited" if cap == 0 else f"{cap} rounds"
         log(f"REPAIR LOOP (confirmation back-edge) — cap={cap_disp}")
         divider()
 
+        self.reconcile_deferred_state()
         self.reset_stale_in_repair()  # recover crashed IN_REPAIR from a prior run
+        self.regenerate_ledger()
         if not self.has_open_repair_requests():
-            log("No repair requests emitted by bug confirmation — repair loop is a no-op.")
+            log("No OPEN repair requests — repair loop is a no-op.")
             return
 
         round_ = 0
-        while self.has_open_repair_requests() and (cap == 0 or round_ < cap):
+        while self.has_open_repair_requests():
+            if cap != 0 and round_ >= cap:
+                deferred = self.move_open_requests_to_deferred()
+                self.regenerate_ledger()
+                log(f"Repair loop reached its {cap}-round cap; deferred {deferred} still-OPEN request(s).")
+                return
+
             round_ += 1
             sig_before = self.repair_state_sig()
-            self.wait_for_quota()  # budget pressure -> WAIT, never auto-defer
-            self.run_phase3_repair(round_)  # OPEN -> CONSUMED, repair spec, re-run MC
-            self.reset_stale_in_repair()  # recover if this round's repair phase died mid-turn
-            self.wait_for_quota()
-            self.run_phase4_confirmation()  # normal Phase 4 on the fresh bug-report
+            open_before: dict[Path, str] = {}
+            phase3_started = False
+            phase3_succeeded = False
+            stage = "quota wait before Phase 3"
+            try:
+                self.wait_for_quota()  # budget pressure -> WAIT, never auto-defer
+                open_before = self.snapshot_open_repair_requests()
+                phase3_started = True
+                stage = "Phase 3"
+                self.run_phase3_repair(round_)  # OPEN -> CONSUMED, repair spec, re-run MC
+                phase3_succeeded = True
+                stage = "post-Phase-3 recovery"
+                self.reset_stale_in_repair()  # recover a semantic mid-turn failure despite rc=0
+                stage = "quota wait before Phase 4"
+                self.wait_for_quota()
+                stage = "Phase 4"
+                self.run_phase4_confirmation()  # normal Phase 4 on the fresh bug-report
+            except BaseException as exc:
+                # Infrastructure/launcher failure is not repair exhaustion.
+                # A failed Phase 3 owns no state transition: restore every
+                # request that was OPEN at round start, even if the agent wrote
+                # CONSUMED before exiting non-zero. Once Phase 3 returns
+                # successfully its transitions are durable; a later Phase 4
+                # failure is retried by the next full pipeline run, whose normal
+                # Phase 4 always runs before this repair loop.
+                if phase3_started and not phase3_succeeded:
+                    self.restore_open_repair_requests(open_before, round_)
+                self.reset_stale_in_repair()
+                self.regenerate_ledger()
+                detail = f"exit {exc.code}" if isinstance(exc, SystemExit) else type(exc).__name__
+                if phase3_succeeded:
+                    disposition = (
+                        "successful Phase 3 request states were retained; "
+                        "rerun the full pipeline to retry Phase 4 before the repair loop"
+                    )
+                elif phase3_started:
+                    disposition = "the round's original OPEN requests were restored for retry"
+                else:
+                    disposition = "repair requests were left unchanged for retry"
+                log(f"ERROR: repair loop execution failed in round {round_} during {stage} ({detail}); {disposition}.")
+                raise
             self.snapshot_confirmed_bugs(round_)
             self.regenerate_ledger()
             if self.repair_state_sig() == sig_before:
-                log(f"Repair loop made no progress in round {round_} (no request changed) — stopping.")
-                break
+                if self.dry_run:
+                    log(f"[DRY RUN] Repair state is unchanged after simulated round {round_}; leaving requests OPEN.")
+                    return
+                log(
+                    f"ERROR: repair loop made no progress in round {round_} (no request changed); "
+                    "OPEN requests were retained for retry."
+                )
+                raise SystemExit(1)
 
-        self.move_open_requests_to_deferred()
         self.regenerate_ledger()
-        log(f"Repair loop ended after {round_} round(s).")
+        log(f"Repair loop resolved all requests after {round_} round(s).")
 
     def snapshot_confirmed_bugs(self, round_: int) -> None:
         """Preserve each round's result: copy `confirmed-bugs.md` to
@@ -868,31 +1142,63 @@ class Pipeline:
             if cb.is_file():
                 (cb.parent / f"confirmed-bugs-round-{round_}.md").write_text(cb.read_text())
 
-    def move_open_requests_to_deferred(self) -> None:
-        """When the loop ends with requests still open (cap reached or no
-        progress), file them under `repair-requests/deferred/` and mark the linked
-        finding `DEFERRED` in `confirmed-bugs.md`. This is the orchestrator's call,
-        not an agent verdict: 'deferred' means the repair loop ran out of rounds."""
+    def move_open_requests_to_deferred(self) -> int:
+        """File legal OPEN requests under deferred/ after the cap is reached.
+
+        The move is deliberately strict: CONSUMED requests stay in the active
+        audit trail, while IN_REPAIR/malformed/unknown states are an execution
+        error rather than exhaustion.  Existing destinations are rejected so a
+        reused RR id can never overwrite historical evidence.
+        """
         if self.dry_run:
-            return
+            return 0
+
+        self._assert_no_active_deferred_conflicts()
+
+        moves: list[tuple[str, Path, Path]] = []
+        invalid: list[tuple[Path, str]] = []
         for n in self.extract_names():
-            remaining = [f for f in self._rr_files(n) if rr_status(f) != "CONSUMED"]
-            if not remaining:
-                continue
             dd = Path(self.repair_dir(n)) / "deferred"
-            dd.mkdir(parents=True, exist_ok=True)
-            report = Path(self.get_work_dir(n)) / "spec" / "confirmed-bugs.md"
-            text = report.read_text() if report.is_file() else ""
-            for f in remaining:
-                rid = rr_field(f, "id")
-                text = text.replace(
-                    f"PENDING REPAIR ({rid})",
-                    f"DEFERRED (repair loop exhausted; {rid} in deferred/)",
-                )
-                f.rename(dd / f.name)
-                log(f"  deferred {f.name} -> {dd} (repair loop exhausted)")
-            if report.is_file():
-                report.write_text(text)
+            for f in self._rr_files(n):
+                status = rr_status(f)
+                if status == "OPEN":
+                    moves.append((n, f, dd / f.name))
+                elif status != "CONSUMED":
+                    invalid.append((f, status))
+
+        if invalid:
+            detail = ", ".join(f"{f.name}={status or '<missing>'}" for f, status in invalid)
+            log(f"ERROR: refusing to defer repair requests in non-OPEN states: {detail}")
+            raise SystemExit(1)
+
+        for _n, f, dest in moves:
+            deferred_text = self._repair_request_text_with_status(
+                f.read_text(),
+                "DEFERRED",
+                "deferred (orchestrator): repair loop round cap reached",
+            )
+            try:
+                self._publish_deferred_no_replace(dest, deferred_text)
+            except FileExistsError:
+                log(f"ERROR: refusing to overwrite existing deferred repair request: {dest}")
+                raise SystemExit(1) from None
+            try:
+                f.unlink()
+            except BaseException:
+                try:
+                    dest.unlink()
+                except BaseException as rollback_error:
+                    raise RuntimeError(
+                        f"failed to remove active repair request {f} and could not roll back {dest}"
+                    ) from rollback_error
+                raise
+            log(f"  deferred {f.name} -> {dest.parent} (repair loop exhausted)")
+
+        # Statuses are already complete in each published destination. This
+        # final reconciliation updates reports; if it fails, the next repair
+        # loop startup repeats it idempotently from the authoritative directory.
+        self.reconcile_deferred_state()
+        return len(moves)
 
     # ── final summary ──
     def generate_summary(self) -> None:
@@ -975,14 +1281,22 @@ class Pipeline:
                 out.append("- **Phase 4a (Bug Confirmation)**: SKIPPED")
 
             rr_files = self._rr_files(name)
-            deferred_dir = Path(self.repair_dir(name)) / "deferred"
-            rr_deferred = len(list(deferred_dir.glob("RR-*.md"))) if deferred_dir.is_dir() else 0
+            deferred_files = self._deferred_rr_files(name)
+            rr_deferred = len(deferred_files)
             if rr_files or rr_deferred:
                 rr_consumed = self._status_file_count(rr_files, "CONSUMED")
-                out.append(
+                rr_open = self._status_file_count(rr_files, "OPEN")
+                rr_in_repair = self._status_file_count(rr_files, "IN_REPAIR")
+                rr_invalid = len(rr_files) - rr_consumed - rr_open - rr_in_repair
+                line = (
                     f"- **Repair loop**: {len(rr_files) + rr_deferred} request(s) — "
-                    f"{rr_consumed} repaired, {rr_deferred} deferred"
+                    f"{rr_consumed} repaired, {rr_deferred} deferred, {rr_open} open"
                 )
+                if rr_in_repair:
+                    line += f", {rr_in_repair} in repair"
+                if rr_invalid:
+                    line += f", {rr_invalid} invalid"
+                out.append(line)
 
             severity = spec_dir / "bug-severity.md"
             if severity.is_file() and severity.stat().st_size > 0:
@@ -1061,7 +1375,7 @@ class Pipeline:
             f" reviews={_b(self.skip_reviews)}"
         )
         cap = "unlimited" if self.max_repair_rounds == "0" else self.max_repair_rounds
-        print(f"Repair loop:  skip={_b(self.skip_repair_loop)} per_request_cap={cap}")
+        print(f"Repair loop:  skip={_b(self.skip_repair_loop)} global_cap={cap}")
         print()
 
         self.validate_agent_adapter()

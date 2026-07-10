@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import signal
 import subprocess
@@ -25,6 +26,7 @@ import unittest
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
@@ -617,6 +619,30 @@ class TestParsing(TmpCwd):
         self.assertIn("--model=", empty_args)
         self.assertIn("--effort=", empty_args)
 
+    def test_invalid_repair_round_cap_rejected_at_parse(self) -> None:
+        for value in ("", "bad", "1.5", "-1", "+1"):
+            with self.subTest(value=value):
+                p = pl.Pipeline()
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    rc = p.parse_args([f"--max-repair-rounds={value}", "t|g|l|r"])
+                self.assertEqual(rc, 1)
+                self.assertIn("must be a non-negative integer", err.getvalue())
+
+    def test_invalid_repair_round_cap_env_rejected_at_parse(self) -> None:
+        os.environ["MAX_REPAIR_ROUNDS"] = "-2"
+        self.addCleanup(os.environ.pop, "MAX_REPAIR_ROUNDS", None)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = pl.Pipeline().parse_args(["t|g|l|r"])
+        self.assertEqual(rc, 1)
+        self.assertIn("must be a non-negative integer", err.getvalue())
+
+    def test_zero_repair_round_cap_is_valid_unlimited_value(self) -> None:
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--max-repair-rounds=0", "t|g|l|r"]))
+        self.assertEqual(p.max_repair_rounds, "0")
+
     def test_parse_args_unknown_option(self) -> None:
         p = pl.Pipeline()
         rc, out = quiet(p.parse_args, ["--bogus"])
@@ -646,6 +672,37 @@ class TestParsing(TmpCwd):
         self.assertEqual(single.get_work_dir("a"), f"{self.tmp}/.specula-output")
         batch = make_pipeline(["a|x|y|z", "b|x|y|z"])
         self.assertEqual(batch.get_work_dir("a"), f"{self.tmp}/a/.specula-output")
+
+
+class TestPhaseParallelArgs(TmpCwd):
+    def capture_main(self, p: pl.Pipeline) -> dict[str, list[str]]:
+        calls: dict[str, list[str]] = {}
+        p.skip_repair_loop = True
+        p.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+        p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        p.generate_summary = lambda: None  # type: ignore[method-assign]
+        p._phase = lambda banner, script, args: calls.__setitem__(script, args)  # type: ignore[method-assign]
+        quiet(p.main)
+        return calls
+
+    def test_full_pipeline_default_preserves_each_phase_default(self) -> None:
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["a|g|l|r", "b|g|l|r"]))
+        calls = self.capture_main(p)
+        for script, args in calls.items():
+            self.assertFalse(any(arg.startswith("--max-parallel=") for arg in args), script)
+
+    def test_explicit_one_reaches_confirmation_and_stays_serial(self) -> None:
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--max-parallel=1", "a|g|l|r", "b|g|l|r"]))
+        calls = self.capture_main(p)
+        self.assertIn("--max-parallel=1", calls["launch_bug_confirmation.sh"])
+
+    def test_explicit_nondefault_reaches_confirmation(self) -> None:
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--max-parallel=7", "a|g|l|r", "b|g|l|r"]))
+        calls = self.capture_main(p)
+        self.assertIn("--max-parallel=7", calls["launch_bug_confirmation.sh"])
 
 
 class TestRunReview(TmpCwd):
@@ -769,6 +826,20 @@ class TestLedger(RRDirCase):
         self.p.regenerate_ledger()
         self.assertFalse((self.tmp / ".specula-output" / "spec" / "repair-ledger.md").exists())
 
+    def test_deferred_requests_remain_in_ledger(self) -> None:
+        deferred = self.rr_dir / "deferred"
+        deferred.mkdir()
+        make_rr(deferred, "RR-1", "OPEN", bug_id="legacy", round_=2)
+        self.p.regenerate_ledger()
+        text = (self.tmp / ".specula-output" / "spec" / "repair-ledger.md").read_text()
+        self.assertIn("| RR-1 | legacy | base.tla | DEFERRED | 2 |", text)
+
+    def test_empty_state_removes_stale_ledger(self) -> None:
+        ledger = self.tmp / ".specula-output" / "spec" / "repair-ledger.md"
+        ledger.write_text("stale\n")
+        self.p.regenerate_ledger()
+        self.assertFalse(ledger.exists())
+
     def test_dry_run_noop(self) -> None:
         make_rr(self.rr_dir, "RR-1", "OPEN")
         self.p.dry_run = True
@@ -798,9 +869,8 @@ class TestRepairLoop(RRDirCase):
     """run_repair_loop orchestration: round counting + the no-progress spin guard,
     with the phase bodies stubbed. Replaces the pipeline_repair_* goldens."""
 
-    def drive(self, on_repair: Callable[[int], None]) -> tuple[list[int], str]:
-        """Run the loop with the phase bodies + quota wait stubbed; return the
-        rounds run_phase3_repair saw and the captured log."""
+    def configure(self, on_repair: Callable[[int], None]) -> list[int]:
+        """Stub the phase bodies + quota wait and return observed rounds."""
         rounds: list[int] = []
 
         def repair(round_: int) -> None:
@@ -814,6 +884,11 @@ class TestRepairLoop(RRDirCase):
             pass
 
         self.p.wait_for_quota = no_quota_wait  # type: ignore[method-assign]
+        return rounds
+
+    def drive(self, on_repair: Callable[[int], None]) -> tuple[list[int], str]:
+        """Run the configured loop and return observed rounds and its log."""
+        rounds = self.configure(on_repair)
         _, out = quiet(self.p.run_repair_loop)
         return rounds, out
 
@@ -829,18 +904,330 @@ class TestRepairLoop(RRDirCase):
         make_rr(self.rr_dir, "RR-1", "OPEN")
         rounds, out = self.drive(self.resolve())
         self.assertEqual(rounds, [1])
-        self.assertIn("ended after 1 round", out)
+        self.assertIn("resolved all requests after 1 round", out)
 
-    def test_no_progress_guard_breaks_spin(self) -> None:
+    def test_no_progress_is_failure_and_keeps_request_open(self) -> None:
         make_rr(self.rr_dir, "RR-1", "OPEN")
-        rounds, out = self.drive(lambda r: None)  # status never changes -> stop after 1
+        rounds = self.configure(lambda r: None)
+        out = io.StringIO()
+        with self.assertRaises(SystemExit) as ctx, contextlib.redirect_stdout(out):
+            self.p.run_repair_loop()
+        self.assertEqual(ctx.exception.code, 1)
         self.assertEqual(rounds, [1])
-        self.assertIn("made no progress in round 1", out)
+        self.assertIn("made no progress in round 1", out.getvalue())
+        self.assertEqual(pl.rr_status(self.rr_dir / "RR-1.md"), "OPEN")
+        self.assertFalse((self.rr_dir / "deferred" / "RR-1.md").exists())
 
     def test_stale_in_repair_recovered_before_loop(self) -> None:
         make_rr(self.rr_dir, "RR-1", "IN_REPAIR")  # crashed prior run -> reset to OPEN
         self.drive(self.resolve())
         self.assertEqual(pl.rr_status(self.rr_dir / "RR-1.md"), "CONSUMED")
+
+    def test_phase_failure_is_not_exhaustion(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+
+        def fail(round_: int) -> None:
+            pl.rr_set_status(request, "IN_REPAIR", "started")
+            raise SystemExit(7)
+
+        self.p.run_phase3_repair = fail  # type: ignore[method-assign]
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        out = io.StringIO()
+        with self.assertRaises(SystemExit) as ctx, contextlib.redirect_stdout(out):
+            self.p.run_repair_loop()
+        self.assertEqual(ctx.exception.code, 7)
+        self.assertEqual(pl.rr_status(request), "OPEN")
+        self.assertFalse((self.rr_dir / "deferred" / request.name).exists())
+        self.assertFalse((self.rr_dir.parent / "confirmation-generation.json").exists())
+        self.assertIn("execution failed in round 1", out.getvalue())
+        ledger = self.rr_dir.parent / "repair-ledger.md"
+        self.assertIn("| RR-1 | B-1 | base.tla | OPEN | 1 |", ledger.read_text())
+
+    def test_phase3_consumes_then_raises_restores_original_open_set(self) -> None:
+        first = make_rr(self.rr_dir, "RR-1", "OPEN")
+        second = make_rr(self.rr_dir, "RR-2", "OPEN", bug_id="B-2")
+        already_done = make_rr(self.rr_dir, "RR-3", "CONSUMED", bug_id="B-3")
+
+        def fail_after_partial_commit(round_: int) -> None:
+            self.assertEqual(round_, 1)
+            pl.rr_set_status(first, "CONSUMED", "agent committed too early")
+            pl.rr_set_status(second, "CONSUMED", "agent committed too early")
+            raise RuntimeError("repair process failed after writes")
+
+        self.p.run_phase3_repair = fail_after_partial_commit  # type: ignore[method-assign]
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        with self.assertRaisesRegex(RuntimeError, "failed after writes"):
+            quiet(self.p.run_repair_loop)
+
+        self.assertEqual(pl.rr_status(first), "OPEN")
+        self.assertEqual(pl.rr_status(second), "OPEN")
+        self.assertEqual(pl.rr_status(already_done), "CONSUMED")
+        for request in (first, second):
+            self.assertIn("Phase 3 failed; restored OPEN for retry", request.read_text())
+
+    def test_phase4_failure_keeps_consumed_and_full_rerun_retries_phase4(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        phase4_calls: list[int] = []
+
+        def successful_repair(_banner: str, _script: str, _args: list[str]) -> None:
+            pl.rr_set_status(request, "CONSUMED", "Phase 3 completed")
+
+        def confirmation() -> None:
+            phase4_calls.append(len(phase4_calls) + 1)
+            if len(phase4_calls) == 1:
+                raise SystemExit(8)
+
+        self.p._phase = successful_repair  # type: ignore[assignment]
+        self.p.run_phase4_confirmation = confirmation  # type: ignore[method-assign]
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        out = io.StringIO()
+        with self.assertRaises(SystemExit) as ctx, contextlib.redirect_stdout(out):
+            self.p.run_repair_loop()
+        self.assertEqual(ctx.exception.code, 8)
+        self.assertEqual(pl.rr_status(request), "CONSUMED")
+        self.assertEqual(json.loads((self.rr_dir.parent / "confirmation-generation.json").read_text())["generation"], 1)
+        self.assertIn("successful Phase 3 request states were retained", out.getvalue())
+
+        # A full pipeline retry invokes normal Phase 4 before entering the
+        # repair loop. With no OPEN request the loop then safely becomes a no-op.
+        self.p.skip_analysis = True
+        self.p.skip_specgen = True
+        self.p.skip_harness = True
+        self.p.skip_validation = True
+        self.p.skip_classification = True
+        self.p.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+        self.p.generate_summary = lambda: None  # type: ignore[method-assign]
+        rc, retry_out = quiet(self.p.main)
+        self.assertEqual(rc, 0)
+        self.assertEqual(phase4_calls, [1, 2])
+        self.assertIn("No OPEN repair requests", retry_out)
+        self.assertEqual(pl.rr_status(request), "CONSUMED")
+
+    def test_only_progress_followed_by_cap_defers(self) -> None:
+        first = make_rr(self.rr_dir, "RR-1", "OPEN")
+        report = self.rr_dir.parent / "confirmed-bugs.md"
+        report.write_text("Status: PENDING REPAIR (RR-2)\n")
+        self.p.max_repair_rounds = "1"
+
+        def replace_request(round_: int) -> None:
+            pl.rr_set_status(first, "CONSUMED", "fixed")
+            make_rr(self.rr_dir, "RR-2", "OPEN", bug_id="B-2", round_=round_)
+
+        rounds, out = self.drive(replace_request)
+        self.assertEqual(rounds, [1])
+        self.assertIn("reached its 1-round cap", out)
+        self.assertEqual(pl.rr_status(first), "CONSUMED")
+        deferred = self.rr_dir / "deferred" / "RR-2.md"
+        self.assertEqual(pl.rr_status(deferred), "DEFERRED")
+        self.assertFalse((self.rr_dir / "RR-2.md").exists())
+        self.assertIn("DEFERRED (repair loop exhausted; RR-2 in deferred/)", report.read_text())
+        ledger = self.rr_dir.parent / "repair-ledger.md"
+        ledger_text = ledger.read_text()
+        self.assertIn("| RR-1 | B-1 | base.tla | CONSUMED | 1 |", ledger_text)
+        self.assertIn("| RR-2 | B-2 | base.tla | DEFERRED | 1 |", ledger_text)
+
+    def test_no_progress_at_cap_still_fails_instead_of_deferring(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        self.p.max_repair_rounds = "1"
+        self.configure(lambda round_: None)
+        with self.assertRaises(SystemExit) as ctx:
+            quiet(self.p.run_repair_loop)
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertTrue(request.exists())
+        self.assertEqual(pl.rr_status(request), "OPEN")
+        self.assertFalse((self.rr_dir / "deferred" / request.name).exists())
+
+    def test_direct_invalid_cap_fails_before_mutation(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        self.p.max_repair_rounds = "-1"
+        with self.assertRaises(SystemExit) as ctx:
+            quiet(self.p.run_repair_loop)
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertTrue(request.exists())
+
+
+class TestConfirmationGeneration(RRDirCase):
+    def marker(self) -> Path:
+        return self.rr_dir.parent / "confirmation-generation.json"
+
+    def test_generation_increments_atomically(self) -> None:
+        self.p.advance_confirmation_generation(1)
+        first = json.loads(self.marker().read_text())
+        self.assertEqual(first["generation"], 1)
+        self.assertEqual(first["repair_round"], 1)
+        self.p.advance_confirmation_generation(2)
+        second = json.loads(self.marker().read_text())
+        self.assertEqual(second["generation"], 2)
+        self.assertEqual(second["repair_round"], 2)
+        self.assertEqual(list(self.marker().parent.glob(".confirmation-generation.json.*.tmp")), [])
+
+    def test_invalid_legacy_marker_is_replaced(self) -> None:
+        self.marker().write_text("not json\n")
+        _, out = quiet(self.p.advance_confirmation_generation, 3)
+        doc = json.loads(self.marker().read_text())
+        self.assertEqual(doc["generation"], 1)
+        self.assertEqual(doc["repair_round"], 3)
+        self.assertIn("replacing invalid confirmation generation marker", out)
+
+    def test_normal_phase3_success_and_resume_each_advance_generation(self) -> None:
+        self.p._phase = lambda _banner, _script, _args: None  # type: ignore[assignment]
+
+        self.p.run_phase3_validation()
+        first = json.loads(self.marker().read_text())
+        self.assertEqual((first["generation"], first["repair_round"]), (1, 0))
+
+        self.p.run_phase3_validation()
+        second = json.loads(self.marker().read_text())
+        self.assertEqual((second["generation"], second["repair_round"]), (2, 0))
+
+    def test_failed_normal_phase3_does_not_advance_generation(self) -> None:
+        self.p.advance_confirmation_generation(0)
+        before = self.marker().read_text()
+
+        def fail(_banner: str, _script: str, _args: list[str]) -> None:
+            raise SystemExit(7)
+
+        self.p._phase = fail  # type: ignore[assignment]
+        with self.assertRaises(SystemExit) as ctx:
+            self.p.run_phase3_validation()
+        self.assertEqual(ctx.exception.code, 7)
+        self.assertEqual(self.marker().read_text(), before)
+
+    def test_marker_exists_before_fresh_phase4(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        seen: list[dict[str, Any]] = []
+
+        def repair(_banner: str, _script: str, _args: list[str]) -> None:
+            pl.rr_set_status(request, "CONSUMED", "fixed")
+
+        self.p._phase = repair  # type: ignore[assignment]
+        self.p.run_phase4_confirmation = lambda: seen.append(json.loads(self.marker().read_text()))  # type: ignore[method-assign]
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        quiet(self.p.run_repair_loop)
+        self.assertEqual([(d["generation"], d["repair_round"]) for d in seen], [(1, 1)])
+        self.assertEqual(json.loads(self.marker().read_text())["generation"], 1)
+
+    def test_dry_run_does_not_write_marker(self) -> None:
+        self.p.dry_run = True
+        quiet(self.p.run_phase3_validation)
+        self.assertFalse(self.marker().exists())
+
+
+class TestDeferredMoves(RRDirCase):
+    def test_only_open_moves_consumed_stays_active(self) -> None:
+        consumed = make_rr(self.rr_dir, "RR-1", "CONSUMED")
+        opened = make_rr(self.rr_dir, "RR-2", "OPEN")
+        moved, _ = quiet(self.p.move_open_requests_to_deferred)
+        self.assertEqual(moved, 1)
+        self.assertTrue(consumed.exists())
+        self.assertFalse(opened.exists())
+        self.assertEqual(pl.rr_status(self.rr_dir / "deferred" / "RR-2.md"), "DEFERRED")
+
+    def test_unknown_or_in_repair_state_is_rejected(self) -> None:
+        for status in ("IN_REPAIR", "BROKEN"):
+            with self.subTest(status=status):
+                for f in self.rr_dir.glob("RR-*.md"):
+                    f.unlink()
+                request = make_rr(self.rr_dir, "RR-1", status)
+                with self.assertRaises(SystemExit) as ctx:
+                    quiet(self.p.move_open_requests_to_deferred)
+                self.assertEqual(ctx.exception.code, 1)
+                self.assertTrue(request.exists())
+
+    def test_existing_deferred_request_is_never_overwritten(self) -> None:
+        source = make_rr(self.rr_dir, "RR-1", "OPEN", bug_id="new")
+        deferred_dir = self.rr_dir / "deferred"
+        deferred_dir.mkdir()
+        existing = make_rr(deferred_dir, "RR-1", "OPEN", bug_id="old")
+        old_text = existing.read_text()
+        with self.assertRaises(SystemExit) as ctx:
+            quiet(self.p.move_open_requests_to_deferred)
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertTrue(source.exists())
+        self.assertEqual(existing.read_text(), old_text)
+
+    def test_source_unlink_failure_rolls_back_published_destination(self) -> None:
+        source = make_rr(self.rr_dir, "RR-1", "OPEN")
+        original = source.read_text()
+        destination = self.rr_dir / "deferred" / source.name
+        real_unlink = Path.unlink
+
+        def fail_source_unlink(path: Path, *args: Any, **kwargs: Any) -> None:
+            if path == source:
+                raise OSError("injected source unlink failure")
+            real_unlink(path, *args, **kwargs)
+
+        with (
+            mock.patch.object(Path, "unlink", fail_source_unlink),
+            self.assertRaisesRegex(OSError, "injected source unlink failure"),
+        ):
+            quiet(self.p.move_open_requests_to_deferred)
+
+        self.assertEqual(source.read_text(), original)
+        self.assertFalse(destination.exists())
+        self.assertEqual(list(destination.parent.glob(".*.tmp")), [])
+
+    def test_startup_reconciles_legacy_deferred_status_and_report(self) -> None:
+        deferred_dir = self.rr_dir / "deferred"
+        deferred_dir.mkdir()
+        request = make_rr(deferred_dir, "RR-1", "OPEN")
+        report = self.rr_dir.parent / "confirmed-bugs.md"
+        report.write_text(
+            "# Confirmed Bugs\n\n"
+            "Dispositions: 2 total = 0 reproduced + 0 env-limited + 0 masked + 0 false-positive "
+            "+ 0 needs-more-info + 0 dropped + 2 pending-repair\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-1) |\n"
+            "| 2 | MC-2 | PENDING REPAIR (RR-2) |\n\n"
+            "- **Status**: PENDING REPAIR (RR-1)\n"
+        )
+
+        quiet(self.p.run_repair_loop)
+        self.assertEqual(pl.rr_status(request), "DEFERRED")
+        self.assertIn("deferred directory is authoritative", request.read_text())
+        self.assertIn("DEFERRED (repair loop exhausted; RR-1 in deferred/)", report.read_text())
+        self.assertIn("+ 1 pending-repair + 1 deferred", report.read_text())
+
+        request_after = request.read_text()
+        report_after = report.read_text()
+        quiet(self.p.run_repair_loop)
+        self.assertEqual(request.read_text(), request_after)
+        self.assertEqual(report.read_text(), report_after)
+
+    def test_report_write_failure_is_recovered_on_next_startup(self) -> None:
+        source = make_rr(self.rr_dir, "RR-1", "OPEN")
+        destination = self.rr_dir / "deferred" / source.name
+        report = self.rr_dir.parent / "confirmed-bugs.md"
+        report.write_text(
+            "Dispositions: 1 total = 0 reproduced + 0 env-limited + 0 masked + 0 false-positive "
+            "+ 0 needs-more-info + 0 dropped + 1 pending-repair\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-1) |\n"
+        )
+        real_replace = self.p._atomic_replace_text
+        failed = False
+
+        def fail_first_report_write(path: Path, text: str) -> None:
+            nonlocal failed
+            if path == report and not failed:
+                failed = True
+                raise OSError("injected report write failure")
+            real_replace(path, text)
+
+        self.p._atomic_replace_text = fail_first_report_write  # type: ignore[method-assign]
+        with self.assertRaisesRegex(OSError, "injected report write failure"):
+            quiet(self.p.move_open_requests_to_deferred)
+        self.assertFalse(source.exists())
+        self.assertEqual(pl.rr_status(destination), "DEFERRED")
+        self.assertIn("PENDING REPAIR (RR-1)", report.read_text())
+
+        self.p._atomic_replace_text = real_replace  # type: ignore[method-assign]
+        quiet(self.p.run_repair_loop)
+        self.assertIn("DEFERRED (repair loop exhausted; RR-1 in deferred/)", report.read_text())
+        self.assertIn("+ 0 pending-repair + 1 deferred", report.read_text())
+        self.assertEqual(pl.rr_status(destination), "DEFERRED")
 
 
 # ──────────────────────────────────────────────────────────

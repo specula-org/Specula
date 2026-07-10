@@ -739,11 +739,37 @@ class CodexAdapter(AdapterCase):
             fake_name="codex",
             fixture_text=fixture,
             env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+            record_extra=True,
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
-        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "--json", "the prompt"])
+        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "--json", "-"])
+        self.assertEqual(r["stdin"], "the prompt")
         self.assertEqual(activity.read_text(), fixture)
         self.assertEqual((base / "out.log").read_text(), "running pwd\ndone\n")
+
+    def test_large_prompt_uses_stdin_with_activity_stream(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        prompt = "x" * 200000
+        fixture = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "done"}})
+        r = self.run_adapter(
+            self.CMD,
+            [self.with_prompt_file(base, prompt), f"--log={base}/out.log", "--max-turns=0"],
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertEqual(r["argv"][-2:], ["--json", "-"])
+        self.assertEqual(r["stdin"], prompt)
+
+    def test_cli_failure_is_preserved_without_activity_stream(self) -> None:
+        for cli_rc in ("9", "75"):
+            with self.subTest(cli_rc=cli_rc):
+                base = self.sandbox()
+                r = self.invoke(self.base_flags(base), env_extra={"ADAPTER_EXIT_CODE": cli_rc})
+                self.assertEqual(r["returncode"], int(cli_rc), r["stderr"])
 
     def test_structured_turn_failure_is_logged_but_cli_owns_status(self) -> None:
         base = self.sandbox()
@@ -1266,10 +1292,14 @@ class CopilotAdapter(AdapterCase):
         # input into the CLI), so a prompt over MAX_ARG_STRLEN is rejected up front
         # rather than sent to exec, where it would fail with E2BIG and no output.
         base = self.sandbox()
+        log = base / "out.log"
+        log.write_text("stale output\n")
         r = self.invoke([self.with_prompt_file(base, "x" * 130000), f"--log={base}/out.log"])
         self.assertEqual(r["returncode"], 1)
         self.assertIn("the copilot CLI accepts", r["stderr"])
         self.assertEqual(r["argv"], [])  # copilot was never invoked
+        self.assertEqual(log.read_text(), r["stderr"])
+        self.assertNotIn("stale output", log.read_text())
 
     def test_help(self) -> None:
         r = self.invoke(["--help"])
