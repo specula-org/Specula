@@ -171,6 +171,10 @@ class Outcome:
     body: str  # initial A evidence plus any later A defenses
     rr: str | None = None  # assigned RR-NNN when status is PENDING REPAIR
     bug_no: int = 0  # 1-based index in confirmed-bugs.md (the "## Bug N:" number)
+    # Normalized phase return code for an INCOMPLETE outcome: 75 means the
+    # scheduler may retry after rate limiting; 1 means a permanent/format/infra
+    # failure. Canonical outcomes leave this at zero.
+    failure_code: int = 0
 
 
 # ── prompt builders ──────────────────────────────────────────────────────────
@@ -236,8 +240,8 @@ def run_turn(cfg: ConfirmConfig, f: Finding, role: str, turn_no: int, prompt: st
     """Run one agent turn synchronously; return (verdict, response text).
 
     Raises :class:`RateLimited` on adapter exit 75 — the turn is never silently
-    downgraded to a terminal verdict; the caller withholds the deliverable so the
-    scheduler retries."""
+    downgraded to a terminal verdict; the caller records an uncached INCOMPLETE
+    outcome and returns 75 after writing the partial report so the scheduler retries."""
     prompt_file = f.fdir / f"turn{turn_no:02d}_{role}.prompt.md"
     log = f.fdir / f"turn{turn_no:02d}_{role}.log"
     if cfg.dry_run:
@@ -753,7 +757,14 @@ def _artifact_identity(cfg: ConfirmConfig, o: Outcome) -> dict[str, Any]:
         }
     if o.status == "PENDING REPAIR":
         body_file = o.finding.fdir / "repair-request.body.md"
-        result["repair_body"] = hashlib.sha256(body_file.read_bytes()).hexdigest()
+        try:
+            body = body_file.read_bytes()
+        except FileNotFoundError:
+            # RR bodies are best-effort. Hash the same empty body allocate_rr will
+            # merge when the agent omitted the file, instead of losing the
+            # otherwise valid PENDING REPAIR verdict before allocation.
+            body = b""
+        result["repair_body"] = hashlib.sha256(body).hexdigest()
     if o.rr is not None:
         if not re.fullmatch(r"RR-\d+", str(o.rr)):
             raise InvalidRepairRequest(f"invalid cached repair id: {o.rr!r}")
@@ -839,6 +850,7 @@ def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
             (f.fdir / "error.txt").write_text(traceback.format_exc())
         except OSError:
             pass
+        failure_code = quota.RATE_LIMIT_RC if isinstance(exc, RateLimited) else 1
         reason = "rate-limited" if isinstance(exc, RateLimited) else str(exc) or type(exc).__name__
         _log(f"  [{f.id}] INCOMPLETE ({reason}) — see {f.fdir / 'error.txt'}; not cached, a retry re-attempts it")
         return Outcome(
@@ -851,6 +863,7 @@ def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
                 f"INCOMPLETE — this finding could not be confirmed ({reason}). It was NOT judged; "
                 f"see `{f.fdir.name}/error.txt`. Re-run to retry."
             ),
+            failure_code=failure_code,
         )
 
 
@@ -901,7 +914,10 @@ def _merge_rr(
     # keep their leading whitespace so they are never mistaken for owned fields.
     kept = [ln for ln in fm_lines if not (ln == ln.lstrip() and ln.startswith(_RR_OWNED))]
     kept_fm = "\n".join(kept).strip("\n")
-    return f"---\n{lifecycle}{kept_fm}\n---{rest}"
+    # Normalize the fence/prose boundary. In particular a prose-only body must
+    # become ``---\nprose``, not the invalid ``---prose`` produced previously.
+    rest = rest.lstrip("\r\n")
+    return f"---\n{lifecycle}{kept_fm}\n---\n{rest}"
 
 
 def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
@@ -1357,8 +1373,9 @@ def load_findings(cfg: ConfirmConfig) -> list[Finding]:
 
 def run_parallel_confirmation(cfg: ConfirmConfig) -> int:
     """Drive step 0 (consolidate) → per-finding fan-out → aggregate for ONE
-    target. Returns 75 for rate limiting, nonzero for permanent/infrastructure
-    failures, and always removes a stale deliverable on failure."""
+    target. Returns 75 for exclusively rate-limited incomplete findings and 1 for
+    permanent/format/infrastructure incomplete findings while retaining their
+    partial report. Pre-fan-out or aggregation failures withhold the deliverable."""
     try:
         try:
             if not cfg.dry_run:
@@ -1441,6 +1458,7 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
                         consensus=False,
                         rounds=0,
                         body=f"## Confirmation result\nINCOMPLETE — worker crashed: {exc}.",
+                        failure_code=1,
                     )
                 )
     # Partial delivery beats total loss: a finding that could not finish is an
@@ -1458,4 +1476,12 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
         aggregate(cfg, outcomes)
     except (ConfirmationFailed, OSError, ValueError) as exc:
         return _withhold(cfg, f"confirmation aggregation failed ({exc}) — deliverable withheld")
+    # Keep the partial report, but do not tell the scheduler/downstream that an
+    # incomplete target succeeded. A permanent failure wins over rate limiting;
+    # only an exclusively rate-limited partial result is retryable with rc 75.
+    incomplete_codes = [o.failure_code or 1 for o in outcomes if o.status == INCOMPLETE]
+    if any(code != quota.RATE_LIMIT_RC for code in incomplete_codes):
+        return 1
+    if incomplete_codes:
+        return quota.RATE_LIMIT_RC
     return 0

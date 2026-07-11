@@ -3,7 +3,7 @@
 Run in-process: agent turns are monkeypatched (no adapter spawn, no network), so
 these pin the dispatcher's control flow that the phase/pipeline tests don't reach
 — verdict parsing, the debate gate, the RR lifecycle merge, candidate validation,
-the rate-limit withhold, and idempotent retry.
+partial-delivery return codes, and idempotent retry.
 
     uv run python -m unittest tests.unit.test_confirmlib -v
 """
@@ -153,7 +153,8 @@ class TestMergeRR(ConfirmCase):
         # and _merge_rr still emits a well-formed request (never rejects the verdict).
         out = C._merge_rr("RR-003", "MC-1", "spec/output/x.out", "prose only")
         self.assertIn("id: RR-003", out)
-        self.assertIn("prose only", out)
+        self.assertIn("---\nprose only", out)
+        self.assertNotIn("---prose only", out)
 
 
 class TestValidateCandidates(ConfirmCase):
@@ -228,7 +229,7 @@ class TestDriver(ConfirmCase):
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
         with mock.patch.object(C, "run_agent_blocking", _fake_turn("", rc=75)):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 75)
         cb = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
         self.assertTrue(cb.is_file())  # delivered, not withheld
         self.assertIn("INCOMPLETE", cb.read_text())
@@ -251,7 +252,7 @@ class TestDriver(ConfirmCase):
         stale.write_text("# STALE REPORT from a prior run\n")
         with mock.patch.object(C, "run_agent_blocking", _fake_turn("", rc=75)):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 75)
         text = stale.read_text()
         self.assertNotIn("STALE REPORT", text)  # overwritten, not left stale
         self.assertIn("INCOMPLETE", text)
@@ -301,7 +302,7 @@ class TestDriver(ConfirmCase):
 
         with mock.patch.object(C, "run_agent_blocking", agent):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 1)  # permanent failure wins over the simultaneous rate limit
         cb = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
         self.assertTrue(cb.is_file())
         self.assertIn("2 incomplete", cb.read_text())  # both marked in the disposition summary
@@ -317,9 +318,25 @@ class TestDriver(ConfirmCase):
             mock.patch.object(C, "_save_verdict", side_effect=OSError("disk full")),
         ):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 1)
         self.assertTrue(report.is_file())
         self.assertIn("INCOMPLETE", report.read_text())
+
+    def test_pending_repair_without_body_is_allocated_best_effort(self) -> None:
+        data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
+        ws = self.seed("T", [data])
+        fdir = ws.work_dir("T") / "confirmation" / "MC-1"
+
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("PENDING REPAIR"))):
+            rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
+
+        self.assertEqual(rc, 0)
+        self.assertFalse((fdir / "repair-request.body.md").exists())
+        rr = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
+        self.assertTrue(rr.is_file())
+        self.assertIn("status: OPEN", rr.read_text())
+        self.assertIn("PENDING REPAIR (RR-001)", (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text())
+        self.assertTrue((fdir / "verdict.json").is_file())
 
     def test_log_tee_failure_does_not_block_stale_deliverable_cleanup(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
@@ -486,6 +503,17 @@ class TestAggregate(ConfirmCase):
 
 
 class TestPromptExtraAndLog(ConfirmCase):
+    def test_confirmation_prompts_keep_source_specific_outcomes(self) -> None:
+        expected = "| MC | `MASKED`, `ENV_LIMITED`, `PENDING REPAIR`, `NEEDS MORE INFO` | `FALSE POSITIVE`, `DROPPED` |"
+        for template in ("reproduce", "orchestrate"):
+            text = (P.PROMPTS_DIR / "confirmation" / f"{template}.md").read_text()
+            self.assertIn(expected, text)
+            self.assertIn(
+                "| Code Review | `MASKED`, `ENV_LIMITED`, `FALSE POSITIVE`, `DROPPED`, `NEEDS MORE INFO` "
+                "| `PENDING REPAIR` |",
+                text,
+            )
+
     def test_prompt_extra_appended_to_reproduce(self) -> None:
         ws = self.seed("T", [])
         cfg = self.cfg(ws, "T", prompt_extra="\n## Target-Specific Instructions\n\nCHECK THE FOO RACE")
@@ -635,9 +663,9 @@ class TestCacheContracts(ConfirmCase):
             return (75, "") if fid == "MC-2" else (0, _response("FALSE POSITIVE"))
 
         with mock.patch.object(C, "run_agent_blocking", first):
-            # MC-2 rate-limited -> INCOMPLETE (delivers, rc 0); its verdict is NOT
+            # MC-2 rate-limited -> INCOMPLETE (delivers, rc 75); its verdict is NOT
             # cached, so the retry re-runs only MC-2 and reuses MC-1's completed one.
-            self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 0)
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 75)
 
         retry_calls: list[str] = []
 
@@ -876,7 +904,7 @@ class TestValidationContracts(ConfirmCase):
         for response, rc in (("", 2), ("VERDICT: REPRODUCED", 0)):
             ws = self.seed(f"T{rc}", [data])
             with mock.patch.object(C, "run_agent_blocking", _fake_turn(response, rc=rc)):
-                self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, f"T{rc}")), 0)
+                self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, f"T{rc}")), 1)
             verdict = ws.work_dir(f"T{rc}") / "confirmation" / "MC-1" / "verdict.json"
             self.assertFalse(verdict.exists())  # not cached
 

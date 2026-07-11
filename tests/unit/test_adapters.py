@@ -385,6 +385,67 @@ class ClaudeCodeAdapter(AdapterCase):
         )
         self.assertEqual(r["returncode"], 75)
 
+    def test_structured_session_limit_exits_75(self) -> None:
+        """Claude 2.1 reports quota exhaustion in a `success` envelope."""
+        base = self.sandbox()
+        record = {
+            "type": "result",
+            **CLAUDE_JSON,
+            "subtype": "success",
+            "is_error": True,
+            "api_error_status": 429,
+            "terminal_reason": "api_error",
+            "result": "You've hit your session limit · resets 7:50am (UTC)",
+        }
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 75, r["stderr"])
+
+    def test_structured_429_does_not_depend_on_message_wording(self) -> None:
+        base = self.sandbox()
+        record = {
+            "type": "result",
+            **CLAUDE_JSON,
+            "subtype": "success",
+            "is_error": True,
+            "api_error_status": 429,
+            "terminal_reason": "api_error",
+            "result": "Quota temporarily unavailable",
+        }
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 75, r["stderr"])
+
+    def test_api_error_terminal_reason_recognizes_session_limit(self) -> None:
+        base = self.sandbox()
+        record = {
+            "type": "result",
+            **CLAUDE_JSON,
+            "subtype": "success",
+            "is_error": False,
+            "api_error_status": None,
+            "terminal_reason": "api_error",
+            "result": "You've hit your session limit · resets soon",
+        }
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 75, r["stderr"])
+
     def test_rate_limit_plain_text_banner_in_stream_exits_75(self) -> None:
         base = self.sandbox()
         activity = base / "out.activity.jsonl"
@@ -432,11 +493,34 @@ class ClaudeCodeAdapter(AdapterCase):
                     "type": "result",
                     **CLAUDE_JSON,
                     "is_error": False,
-                    "result": "The completed review mentions: you hit your limit for today",
+                    "api_error_status": None,
+                    "terminal_reason": "completed",
+                    "result": "The old log says: You've hit your session limit · resets tomorrow",
                 }
             ),
             record_extra=True,
             env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+
+    def test_prefixed_diagnostic_does_not_make_successful_quote_a_rate_limit(self) -> None:
+        base = self.sandbox()
+        result = json.dumps(
+            {
+                "type": "result",
+                **CLAUDE_JSON,
+                "is_error": False,
+                "api_error_status": None,
+                "terminal_reason": "completed",
+                "result": "The old log says: You've hit your session limit · resets tomorrow",
+            }
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=f"benign CLI diagnostic\n{result}\n",
+            record_extra=True,
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
 
@@ -698,8 +782,18 @@ class CodexAdapter(AdapterCase):
         base = self.sandbox()
         r = self.invoke(self.base_flags(base))
         self.assertEqual(r["returncode"], 0)
-        # codex exec --dangerously-bypass-approvals-and-sandbox -   (prompt on stdin)
-        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "-"])
+        # The CLI transcript stays in out.log; Codex writes the final assistant
+        # response to a distinct sidecar for blocking confirmation turns.
+        self.assertEqual(
+            r["argv"],
+            [
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--output-last-message",
+                str(base / "out.last-message.txt"),
+                "-",
+            ],
+        )
         self.assertEqual(r["stdin"], "the prompt")
 
     def test_prompt_from_file_is_read(self) -> None:
@@ -713,6 +807,13 @@ class CodexAdapter(AdapterCase):
         base = self.sandbox()
         self.invoke(self.base_flags(base))
         self.assertEqual((base / "out.log").read_text(), "codex ran\n")
+
+    def test_non_log_suffix_preserved_in_last_message_path(self) -> None:
+        base = self.sandbox()
+        log = base / "out.output"
+        r = self.invoke([self.with_prompt_file(base), f"--log={log}", "--max-turns=0"])
+        output_flag = r["argv"].index("--output-last-message")
+        self.assertEqual(r["argv"][output_flag + 1], str(log) + ".last-message.txt")
 
     def test_specula_activity_uses_json_stream(self) -> None:
         base = self.sandbox()
@@ -742,7 +843,17 @@ class CodexAdapter(AdapterCase):
             record_extra=True,
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
-        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "--json", "-"])
+        self.assertEqual(
+            r["argv"],
+            [
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--output-last-message",
+                str(base / "out.last-message.txt"),
+                "--json",
+                "-",
+            ],
+        )
         self.assertEqual(r["stdin"], "the prompt")
         self.assertEqual(activity.read_text(), fixture)
         self.assertEqual((base / "out.log").read_text(), "running pwd\ndone\n")
@@ -901,6 +1012,8 @@ class CodexAdapter(AdapterCase):
             [
                 "exec",
                 "--dangerously-bypass-approvals-and-sandbox",
+                "--output-last-message",
+                str(base / "out.last-message.txt"),
                 "-m",
                 "gpt-5.5",
                 "-c",
@@ -939,7 +1052,16 @@ class CodexAdapter(AdapterCase):
             env_extra={"CODEX_MODEL": "env-model", "CODEX_EFFORT": "high"},
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
-        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "-"])
+        self.assertEqual(
+            r["argv"],
+            [
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--output-last-message",
+                str(base / "out.last-message.txt"),
+                "-",
+            ],
+        )
         self.assertEqual(r["stdin"], "the prompt")
         self.assertEqual(r["modelenv"], "<unset>")
         self.assertEqual(r["effortenv"], "<unset>")

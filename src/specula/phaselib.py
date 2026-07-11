@@ -720,6 +720,7 @@ class Phase:
             files["prompt"],
             files["pid"],
             files["log"],
+            _last_message_path(files["log"]),
             activity_sidecar,
             files["log"].with_suffix(".raw.json"),
             files["log"].with_suffix(".usage.json"),
@@ -800,6 +801,13 @@ def _model_effort_argv(adapter: Path, model: str | None, effort: str | None) -> 
     return argv
 
 
+def _last_message_path(log_file: Path) -> Path:
+    """Mirror the Codex adapter's bash `${log_file%.log}` derivation."""
+    raw = str(log_file)
+    stem = raw[:-4] if raw.endswith(".log") else raw
+    return Path(stem + ".last-message.txt")
+
+
 def run_agent_blocking(
     adapter: Path,
     prompt: str,
@@ -836,6 +844,10 @@ def run_agent_blocking(
     prompt_file.write_text(prompt)
     with contextlib.suppress(OSError):
         log_file.unlink()
+    last_message_file = _last_message_path(log_file)
+    if adapter.stem == "codex":
+        with contextlib.suppress(OSError):
+            last_message_file.unlink()
     env = os.environ.copy()
     env["SPECULA_PHASE"] = phase_key if stop_gate else f"{phase_key}_turn"
     env["SPECULA_WORK_DIR"] = str(work_dir)
@@ -848,7 +860,14 @@ def run_agent_blocking(
         f"--log={log_file}",
     ]
     rc = subprocess.run(cmd, env=env).returncode
-    text = log_file.read_text(errors="replace") if log_file.is_file() else ""
+    # Codex stdout is a complete CLI transcript, not the assistant's final
+    # response.  The adapter keeps that transcript in `log_file` for diagnosis
+    # and asks `codex exec --output-last-message` for the response separately.
+    # A missing Codex sidecar is an incomplete turn; never reinterpret the CLI
+    # transcript as an assistant answer. Other adapters' log contract remains
+    # result-only.
+    result_file = last_message_file if adapter.stem == "codex" else log_file
+    text = result_file.read_text(errors="replace") if result_file.is_file() else ""
     return rc, text
 
 
@@ -1847,6 +1866,7 @@ Output:
         for path in (
             log_file,
             pid_file,
+            _last_message_path(log_file),
             activity_log,
             log_file.with_suffix(".raw.json"),
             log_file.with_suffix(".usage.json"),

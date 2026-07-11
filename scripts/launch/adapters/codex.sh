@@ -213,6 +213,7 @@ PY
 
 run_codex() {
   local log_file="$1"
+  local last_message_file="${log_file%.log}.last-message.txt"
   local marker_file
   local activity_log="${SPECULA_ACTIVITY_LOG:-}"
   local adapter_dir
@@ -234,12 +235,14 @@ run_codex() {
   # single argument at MAX_ARG_STRLEN, while confirmation/debate prompts can be
   # substantially larger. Preserve the activity stream and the Codex exit code
   # added by the progress lifecycle work.
-  cmd+=(codex exec --dangerously-bypass-approvals-and-sandbox)
+  cmd+=(codex exec --dangerously-bypass-approvals-and-sandbox --output-last-message "$last_message_file")
   # Model / reasoning effort (additive — empty leaves codex config.toml default).
   [[ -n "$MODEL" ]] && cmd+=(-m "$MODEL")
   [[ -n "$EFFORT" ]] && cmd+=(-c "model_reasoning_effort=$EFFORT")
 
   local codex_rc=0
+  # Never let a failed/retried turn reuse the preceding turn's answer.
+  rm -f "$last_message_file"
   set +e
   if [[ -n "$activity_log" ]]; then
     local event_helper

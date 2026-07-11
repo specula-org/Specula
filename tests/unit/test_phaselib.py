@@ -594,6 +594,119 @@ class TestRunAgentBlocking(PhaseCase):
         self.assertEqual(recorded[:2], ["bug_confirmation_turn", "on"])
         self.assertIn("--max-turns=7", recorded)
 
+    def test_codex_returns_final_message_and_keeps_transcript(self) -> None:
+        adapter = self.tmp() / "codex.sh"
+        adapter.write_text("#!/bin/sh\nexit 0\n")
+        adapter.chmod(0o755)
+        prompt_file = self.tmp() / "prompt.md"
+        log_file = self.tmp() / "turn.log"
+
+        class _Result:
+            returncode = 0
+
+        def fake_run(_cmd: list[str], **_kwargs: Any) -> _Result:
+            log_file.write_text("Codex CLI transcript\ncommand output\n")
+            log_file.with_suffix(".last-message.txt").write_text("VERDICT: REPRODUCED\n")
+            return _Result()
+
+        with mock.patch("specula.phaselib.subprocess.run", fake_run):
+            rc, text = phaselib.run_agent_blocking(
+                adapter,
+                "prompt body",
+                prompt_file,
+                log_file,
+                phase_key="bug_confirmation",
+                work_dir=self.work_dir(),
+                claude_alias="profile",
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(text, "VERDICT: REPRODUCED\n")
+        self.assertEqual(log_file.read_text(), "Codex CLI transcript\ncommand output\n")
+
+    def test_codex_missing_final_message_does_not_return_transcript(self) -> None:
+        adapter = self.tmp() / "codex.sh"
+        adapter.write_text("#!/bin/sh\nexit 0\n")
+        adapter.chmod(0o755)
+        prompt_file = self.tmp() / "prompt.md"
+        log_file = self.tmp() / "turn.log"
+
+        class _Result:
+            returncode = 0
+
+        def fake_run(_cmd: list[str], **_kwargs: Any) -> _Result:
+            log_file.write_text("successful CLI transcript without a final-message sidecar\n")
+            return _Result()
+
+        with mock.patch("specula.phaselib.subprocess.run", fake_run):
+            rc, text = phaselib.run_agent_blocking(
+                adapter,
+                "prompt body",
+                prompt_file,
+                log_file,
+                phase_key="bug_confirmation",
+                work_dir=self.work_dir(),
+                claude_alias="profile",
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(text, "")
+        self.assertIn("successful CLI transcript", log_file.read_text())
+
+    def test_codex_non_log_suffix_uses_bash_compatible_sidecar(self) -> None:
+        adapter = self.tmp() / "codex.sh"
+        adapter.write_text("#!/bin/sh\nexit 0\n")
+        adapter.chmod(0o755)
+        prompt_file = self.tmp() / "prompt.md"
+        log_file = self.tmp() / "turn.output"
+        last_message_file = Path(str(log_file) + ".last-message.txt")
+
+        class _Result:
+            returncode = 0
+
+        def fake_run(_cmd: list[str], **_kwargs: Any) -> _Result:
+            log_file.write_text("transcript\n")
+            last_message_file.write_text("final answer\n")
+            return _Result()
+
+        with mock.patch("specula.phaselib.subprocess.run", fake_run):
+            rc, text = phaselib.run_agent_blocking(
+                adapter,
+                "prompt body",
+                prompt_file,
+                log_file,
+                phase_key="bug_confirmation",
+                work_dir=self.work_dir(),
+                claude_alias="profile",
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(text, "final answer\n")
+        self.assertTrue(last_message_file.is_file())
+
+    def test_codex_does_not_reuse_stale_final_message(self) -> None:
+        adapter = self.tmp() / "codex.sh"
+        adapter.write_text("#!/bin/sh\nexit 9\n")
+        adapter.chmod(0o755)
+        prompt_file = self.tmp() / "prompt.md"
+        log_file = self.tmp() / "turn.log"
+        log_file.write_text("old transcript\n")
+        log_file.with_suffix(".last-message.txt").write_text("old answer\n")
+
+        rc, text = phaselib.run_agent_blocking(
+            adapter,
+            "prompt body",
+            prompt_file,
+            log_file,
+            phase_key="bug_confirmation",
+            work_dir=self.work_dir(),
+            claude_alias="profile",
+        )
+
+        self.assertEqual(rc, 9)
+        self.assertEqual(text, "")
+        self.assertFalse(log_file.with_suffix(".last-message.txt").exists())
+
 
 class TestProgressReporting(PhaseCase):
     """Portable workspace monitoring plus richer events where supported."""
