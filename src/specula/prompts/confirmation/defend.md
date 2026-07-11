@@ -7,8 +7,8 @@ don't defend: if the case does not actually hold up, concede.
 
 {{context}}
 
-## Debate so far (shared transcript)
-{{debate}}
+## Debate so far
+The debate index is the file `{{debate}}`. **Read it first** — it lists every prior turn with that turn's verdict and a path to its full agent log. Open the turn logs you need (at least the Challenger's most recent turn) before you respond; the full arguments live in those logs, not in this prompt.
 
 ## Do
 - First, honestly judge whether the **reproduction itself is sound** — do not just

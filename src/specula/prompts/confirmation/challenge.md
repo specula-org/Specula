@@ -7,8 +7,8 @@ attack Agent A's reproduction and demand concrete changes to it.
 
 {{context}}
 
-## Debate so far (shared transcript)
-{{debate}}
+## Debate so far
+The debate index is the file `{{debate}}`. **Read it first** — it lists every prior turn with that turn's verdict and a path to its full agent log. Open the turn logs you need (at least the most recent Reproducer turn) before you respond; the full arguments live in those logs, not in this prompt.
 
 You cannot rule this finding out on your own — it is only removed if **A agrees**
 (your `VERDICT:` and A's must match). Convince A with cited evidence; do not merely assert.

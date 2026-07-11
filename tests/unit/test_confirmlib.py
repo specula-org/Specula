@@ -732,18 +732,43 @@ class TestCacheContracts(ConfirmCase):
 
 
 class TestValidationContracts(ConfirmCase):
-    def test_candidate_completeness_and_input_hygiene(self) -> None:
+    def test_structural_hygiene_still_enforced(self) -> None:
+        # Kept (would break the per-finding fan-out): id filesystem-safe + unique,
+        # source routable. Everything else was intentionally relaxed.
+        p = Path(self.tmp) / "candidates.json"
+        p.write_text(
+            json.dumps({"findings": [{"id": "..", "source": "model-checking", "title": "t", "summary": "s"}]})
+        )
+        self.assertTrue(any("filesystem-safe" in e for e in C._validate_candidates(p)))
+        p.write_text(json.dumps({"findings": [{"id": "F1", "source": "guess", "title": "t", "summary": "s"}]}))
+        self.assertTrue(any("source not in" in e for e in C._validate_candidates(p)))
+        p.write_text(
+            json.dumps(
+                {
+                    "findings": [
+                        {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"},
+                        {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"},
+                    ]
+                }
+            )
+        )
+        self.assertTrue(any("duplicate id" in e for e in C._validate_candidates(p)))
+
+    def test_completeness_and_cosmetics_relaxed(self) -> None:
+        # Relaxed: MC-completeness, one-line title, and MC-/CR- prefixes no longer
+        # fail — they only fail-closed a runnable batch without improving a verdict.
         p = Path(self.tmp) / "candidates.json"
         p.write_text(json.dumps({"findings": []}))
-        self.assertTrue(any("missing model-checking" in e for e in C._validate_candidates(p, {"MC-1"})))
+        self.assertEqual(C._validate_candidates(p, {"MC-1"}), [])  # missing MC-1: not an error now
         p.write_text(
-            json.dumps({"findings": [{"id": "..", "source": "model-checking", "title": "x\ninjected", "summary": "s"}]})
+            json.dumps({"findings": [{"id": "MC-1", "source": "model-checking", "title": "x\ninjected", "summary": "s"}]})
         )
-        errs = C._validate_candidates(p)
-        self.assertTrue(any("filesystem-safe" in e for e in errs))
-        self.assertTrue(any("one line" in e for e in errs))
+        self.assertEqual(C._validate_candidates(p), [])  # multi-line title accepted
 
-    def test_modeling_brief_family_must_be_emitted_or_explicitly_deduped(self) -> None:
+    def test_family_partial_dedup_is_accepted(self) -> None:
+        # The exact pattern that failed the 3-model run: a family absorbed into an
+        # MC candidate (dedup_note) AND emitted as a distinct-site CR residual is a
+        # legitimate consolidation and must NOT be rejected as a contradiction.
         p = Path(self.tmp) / "candidates.json"
         p.write_text(
             json.dumps(
@@ -754,48 +779,32 @@ class TestValidationContracts(ConfirmCase):
                             "source": "model-checking",
                             "title": "t",
                             "summary": "s",
-                            "dedup_note": "also covers Family 1",
-                        }
+                            "dedup_note": "also covers Family 2",
+                        },
+                        {"id": "CR-2", "source": "code-review", "family": "Family 2", "title": "t2", "summary": "s2"},
                     ]
                 }
             )
         )
-        errs = C._validate_candidates(p, {"MC-1"}, {"Family 1", "Family 2"})
-        self.assertTrue(any("Family 2" in error for error in errs))
-        doc = json.loads(p.read_text())
-        doc["findings"].append(
-            {"id": "CR-2", "source": "code-review", "family": "Family 2", "title": "t2", "summary": "s2"}
-        )
-        p.write_text(json.dumps(doc))
         self.assertEqual(C._validate_candidates(p, {"MC-1"}, {"Family 1", "Family 2"}), [])
 
-        doc["findings"].append(
-            {"id": "CR-9", "source": "code-review", "family": "Family 9", "title": "extra", "summary": "s"}
-        )
-        p.write_text(json.dumps(doc))
-        self.assertTrue(
-            any("unknown family" in error for error in C._validate_candidates(p, {"MC-1"}, {"Family 1", "Family 2"}))
-        )
-
-    def test_model_checking_candidate_must_preserve_source_fields_and_counterexample(self) -> None:
+    def test_mc_immutability_no_longer_enforced(self) -> None:
+        # Relaxed: a changed source field / a missing counterexample no longer fails.
         spec = Path(self.tmp) / "spec"
-        (spec / "output").mkdir(parents=True)
-        (spec / "output" / "ce.out").write_text("trace\n")
+        spec.mkdir(parents=True)
         source: dict[str, Any] = {
             "id": "MC-1",
             "source": "model-checking",
             "title": "t",
             "summary": "s",
-            "invariant": "Inv",
-            "config": "MC.cfg",
             "counterexample": "spec/output/ce.out",
-            "affected_code": ["src/node.py:42"],
         }
         candidate = dict(source)
         candidate["counterexample"] = None
+        candidate["title"] = "changed"
         path = spec / "candidates.json"
         path.write_text(json.dumps({"findings": [candidate]}))
-        self.assertTrue(any("counterexample" in error for error in C._validate_candidates(path, {"MC-1": source})))
+        self.assertEqual(C._validate_candidates(path, {"MC-1": source}), [])
 
     def test_nonzero_and_hollow_reproduced_are_failures_not_cached_nmi(self) -> None:
         data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}

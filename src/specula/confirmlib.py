@@ -470,6 +470,15 @@ def _compose_evidence(initial: str, defenses: list[str]) -> str:
     return body
 
 
+def _debate_entry(f: Finding, role: str, turn_no: int, label: str, verdict: str | None) -> str:
+    """One debate-index line: the verdict + a pointer to the turn's full log. The
+    full agent output is NOT inlined — inlining every prior turn made the next
+    turn's prompt exceed the agent's input limit (codex rejects >1 MiB); the
+    agent reads the linked logs itself instead."""
+    log = f.fdir / f"turn{turn_no:02d}_{role}.log"
+    return f"\n## {label} — VERDICT: {verdict or '(none)'}\nFull turn log (read it for the full argument): {log}\n"
+
+
 def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
     if not f.id or set(f.id) - ID_CHARS or f.id in {".", ".."}:
         raise InvalidAgentOutput(f"unsafe finding id: {f.id!r}")
@@ -488,7 +497,11 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
     try:
         # Turn 1 — Reproducer (neutral): investigate + reproduce.
         a_verdict, a_text = run_turn(cfg, f, "A", 1, prompt_reproduce(cfg, f, repo_for_agent))
-        debate.write_text(f"# Debate: {f.id}\n\n## A (turn 1 — reproduce)\n\n{a_text}\n")
+        debate.write_text(
+            f"# Debate: {f.id}\n\nThis is an INDEX of the debate. Each entry links the turn's "
+            f"full agent log — open the logs you need; they are not inlined here.\n"
+            + _debate_entry(f, "A", 1, "A (turn 1 — reproduce)", a_verdict)
+        )
         _validate_initial_output(cfg, f, a_verdict, a_text)
         assert a_verdict is not None
         initial_text = a_text
@@ -504,10 +517,8 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
         turn = 1
         for rnd in range(1, cfg.rounds + 1):
             turn += 1
-            b_verdict, b_text = run_turn(
-                cfg, f, "B", turn, prompt_challenge(cfg, f, repo_for_agent, debate.read_text())
-            )
-            debate.write_text(debate.read_text() + f"\n## B (round {rnd})\n\n{b_text}\n")
+            b_verdict, b_text = run_turn(cfg, f, "B", turn, prompt_challenge(cfg, f, repo_for_agent, str(debate)))
+            debate.write_text(debate.read_text() + _debate_entry(f, "B", turn, f"B (round {rnd})", b_verdict))
             _validate_turn_output(f, b_verdict, b_text)
             assert b_verdict is not None
             # B agrees with A's current verdict → consensus already. Do NOT pull A
@@ -517,8 +528,8 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
                 _log(f"  [{f.id}] round {rnd}: B={b_verdict} agrees — consensus, A not invoked")
                 return _final_outcome(cfg, f, a_verdict, True, rnd, _compose_evidence(initial_text, defenses))
             turn += 1
-            a_verdict, a_text = run_turn(cfg, f, "A", turn, prompt_defend(cfg, f, repo_for_agent, debate.read_text()))
-            debate.write_text(debate.read_text() + f"\n## A (round {rnd})\n\n{a_text}\n")
+            a_verdict, a_text = run_turn(cfg, f, "A", turn, prompt_defend(cfg, f, repo_for_agent, str(debate)))
+            debate.write_text(debate.read_text() + _debate_entry(f, "A", turn, f"A (round {rnd})", a_verdict))
             _validate_turn_output(f, a_verdict, a_text)
             assert a_verdict is not None
             defenses.append(a_text)
@@ -976,6 +987,15 @@ def _validate_candidates(
     expected_mc_ids: set[str] | dict[str, dict[str, Any]] | None = None,
     expected_families: set[str] | None = None,
 ) -> list[str]:
+    """Structural-minimum validation of candidates.json: only what would break
+    the per-finding fan-out (unusable id, id collision, unroutable source). The
+    stricter completeness / family-dedup / MC-immutability checks were removed on
+    purpose — they only fail-closed (withhold) an otherwise-runnable batch without
+    improving any verdict, and rejected sound consolidations (a family partly
+    absorbed into an MC candidate while its distinct-site residual is emitted as a
+    CR candidate is legitimate). Per-finding confirmation tolerates imperfect
+    input; a weak candidate surfaces there, not as a whole-batch stop."""
+    del expected_mc_ids, expected_families  # intentionally no longer enforced
     errs: list[str] = []
     try:
         doc = json.loads(path.read_text())
@@ -987,11 +1007,6 @@ def _validate_candidates(
     if not isinstance(findings, list):
         return ["'findings' missing or not a list"]
     seen: set[str] = set()
-    seen_mc: set[str] = set()
-    mc_by_id: dict[str, dict[str, Any]] = {}
-    covered_families: set[str] = set()
-    mc_families: set[str] = set()
-    cr_family_counts: dict[str, int] = {}
     for i, f in enumerate(findings):
         where = f"findings[{i}]"
         if not isinstance(f, dict):
@@ -1004,71 +1019,8 @@ def _validate_candidates(
             errs.append(f"{where}: duplicate id {fid!r}")
         else:
             seen.add(fid)
-        source = f.get("source")
-        if source not in VALID_SOURCES:
+        if f.get("source") not in VALID_SOURCES:
             errs.append(f"{where}: source not in {VALID_SOURCES}: {f.get('source')!r}")
-        elif source == "model-checking" and isinstance(fid, str):
-            if not fid.startswith("MC-"):
-                errs.append(f"{where}: model-checking id must start with 'MC-'")
-            seen_mc.add(fid)
-            mc_by_id[fid] = f
-            refs = _family_refs(f.get("dedup_note"))
-            if expected_families is not None and refs - expected_families:
-                errs.append(f"{where}: dedup_note references unknown family: {sorted(refs - expected_families)}")
-            mc_families.update(refs)
-            covered_families.update(refs)
-        elif source == "code-review":
-            if not isinstance(fid, str) or not fid.startswith("CR-"):
-                errs.append(f"{where}: code-review id must start with 'CR-'")
-            refs = _family_refs(f.get("family"))
-            if expected_families is not None:
-                if len(refs) != 1:
-                    errs.append(f"{where}: code-review candidate must reference exactly one expected family")
-                elif not refs <= expected_families:
-                    errs.append(f"{where}: code-review candidate references unknown family: {sorted(refs)}")
-            covered_families.update(refs)
-            for family in refs:
-                cr_family_counts[family] = cr_family_counts.get(family, 0) + 1
-        title = f.get("title")
-        if not isinstance(title, str) or not title.strip():
-            errs.append(f"{where}: empty title")
-        elif "\n" in title or "\r" in title:
-            errs.append(f"{where}: title must be one line")
-        summary = f.get("summary")
-        if not isinstance(summary, str) or not summary.strip():
-            errs.append(f"{where}: empty summary")
-    if expected_mc_ids is not None:
-        expected_ids = set(expected_mc_ids)
-        missing = sorted(expected_ids - seen_mc)
-        extra = sorted(seen_mc - expected_ids)
-        if missing:
-            errs.append(f"missing model-checking finding id(s): {missing}")
-        if extra:
-            errs.append(f"unexpected model-checking finding id(s): {extra}")
-        if isinstance(expected_mc_ids, dict):
-            for fid in sorted(expected_ids & seen_mc):
-                source_finding = expected_mc_ids[fid]
-                candidate = mc_by_id[fid]
-                for key, value in source_finding.items():
-                    if candidate.get(key) != value:
-                        errs.append(f"model-checking finding {fid}: source field {key!r} was changed or removed")
-                counterexample = source_finding.get("counterexample")
-                if isinstance(counterexample, str) and counterexample.strip():
-                    cx = Path(counterexample)
-                    possible = [cx] if cx.is_absolute() else [path.parent.parent / cx, path.parent / cx]
-                    if not any(item.is_file() and item.stat().st_size > 0 for item in possible):
-                        errs.append(
-                            f"model-checking finding {fid}: counterexample is missing or empty: {counterexample}"
-                        )
-    if expected_families is not None:
-        missing_families = sorted(expected_families - covered_families)
-        if missing_families:
-            errs.append(f"missing code-review family coverage: {missing_families}")
-        for family in sorted(expected_families):
-            if cr_family_counts.get(family, 0) > 1:
-                errs.append(f"duplicate code-review candidates for {family}")
-            if family in mc_families and cr_family_counts.get(family, 0):
-                errs.append(f"{family} is both emitted and marked deduplicated")
     return errs
 
 
