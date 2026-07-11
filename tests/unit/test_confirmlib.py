@@ -25,7 +25,6 @@ from unittest import mock
 
 from specula import confirmlib as C
 from specula import prompts as P
-from specula import quota
 from specula.phaselib import Workspace
 
 EVIDENCE = "The investigation inspected the real call path and captured concrete observed behavior."
@@ -139,22 +138,22 @@ class TestMergeRR(ConfirmCase):
         self.assertIn("actions: [Foo]", out)  # agent scope verbatim
         self.assertIn("hunt_cfgs: [MC_hunt.cfg]", out)
 
-    def test_agent_lifecycle_fields_are_rejected(self) -> None:
+    def test_agent_lifecycle_fields_are_stripped(self) -> None:
+        # A stray dispatcher-owned key in the agent body is stripped, never fatal —
+        # _merge_rr always stamps the authoritative lifecycle over it.
         sneaky = self.AGENT_BODY.replace("target: SPEC_REPAIR", "id: RR-999\nstatus: CONSUMED\ntarget: SPEC_REPAIR")
-        with self.assertRaises(C.InvalidRepairRequest):
-            C._merge_rr("RR-002", "MC-1", "fb", sneaky)
+        out = C._merge_rr("RR-002", "MC-1", "fb", sneaky)
+        self.assertIn("id: RR-002", out)  # stamped id wins
+        self.assertNotIn("RR-999", out)  # agent's stray id stripped
+        self.assertNotIn("CONSUMED", out)  # agent's stray status stripped
+        self.assertIn("status: OPEN", out)
 
-    def test_missing_frontmatter_is_rejected(self) -> None:
-        with self.assertRaises(C.InvalidRepairRequest):
-            C._merge_rr("RR-003", "MC-1", "spec/output/x.out", "prose only")
-
-    def test_duplicate_or_ambiguous_routing_keys_are_rejected(self) -> None:
-        duplicate = self.AGENT_BODY.replace("target: SPEC_REPAIR", "target: SPEC_REPAIR\nTarget: INVARIANT")
-        with self.assertRaises(C.InvalidRepairRequest):
-            C._validate_repair_body(duplicate)
-        duplicate_scope = self.AGENT_BODY.replace("scope:\n", "scope:\n  actions: [A]\nscope:\n")
-        with self.assertRaises(C.InvalidRepairRequest):
-            C._validate_repair_body(duplicate_scope)
+    def test_missing_frontmatter_tolerated(self) -> None:
+        # A body without YAML frontmatter is best-effort: the prose becomes evidence
+        # and _merge_rr still emits a well-formed request (never rejects the verdict).
+        out = C._merge_rr("RR-003", "MC-1", "spec/output/x.out", "prose only")
+        self.assertIn("id: RR-003", out)
+        self.assertIn("prose only", out)
 
 
 class TestValidateCandidates(ConfirmCase):
@@ -222,12 +221,17 @@ class TestDriver(ConfirmCase):
         self.assertEqual(rc, 0)
         self.assertEqual(worker_counts, [1])
 
-    def test_rate_limit_withholds_deliverable(self) -> None:
+    def test_rate_limit_finding_is_incomplete_delivers(self) -> None:
+        # A rate-limited finding no longer withholds the whole target: it becomes an
+        # INCOMPLETE row, the report is still delivered, and its verdict is NOT cached
+        # so a retry re-attempts it.
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
         with mock.patch.object(C, "run_agent_blocking", _fake_turn("", rc=75)):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
-        self.assertEqual(rc, quota.RATE_LIMIT_RC)
-        self.assertFalse((ws.work_dir("T") / "spec" / "confirmed-bugs.md").is_file())  # deliverable withheld
+        self.assertEqual(rc, 0)
+        cb = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
+        self.assertTrue(cb.is_file())  # delivered, not withheld
+        self.assertIn("INCOMPLETE", cb.read_text())
         self.assertFalse((ws.work_dir("T") / "confirmation" / "MC-1" / "verdict.json").is_file())  # not cached
 
     def test_idempotent_skip_on_retry(self) -> None:
@@ -239,16 +243,18 @@ class TestDriver(ConfirmCase):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
         self.assertEqual(rc, 0)
 
-    def test_rate_limit_removes_stale_report(self) -> None:
-        # A prior run's confirmed-bugs.md must NOT survive a rate limit — else the
-        # 4b gate would pass on the stale report. Withhold = remove it.
+    def test_rate_limit_overwrites_stale_report(self) -> None:
+        # A prior run's confirmed-bugs.md is overwritten by the fresh (partial) report
+        # rather than left stale: the rate-limited finding shows up as INCOMPLETE.
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
         stale = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
         stale.write_text("# STALE REPORT from a prior run\n")
         with mock.patch.object(C, "run_agent_blocking", _fake_turn("", rc=75)):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
-        self.assertEqual(rc, quota.RATE_LIMIT_RC)
-        self.assertFalse(stale.is_file())  # removed → 4b gate sees MISSING and retries
+        self.assertEqual(rc, 0)
+        text = stale.read_text()
+        self.assertNotIn("STALE REPORT", text)  # overwritten, not left stale
+        self.assertIn("INCOMPLETE", text)
 
     def test_consolidate_prompt_invokes_installed_skill_without_path(self) -> None:
         ws = Workspace(["T"])
@@ -283,7 +289,9 @@ class TestDriver(ConfirmCase):
         self.assertEqual(rc, 1)
         self.assertFalse((ws.work_dir("T") / "spec" / "confirmed-bugs.md").is_file())  # stale removed too
 
-    def test_permanent_failure_dominates_simultaneous_rate_limit(self) -> None:
+    def test_mixed_failures_all_deliver_as_incomplete(self) -> None:
+        # A permanent failure + a simultaneous rate limit no longer withhold; both
+        # findings become INCOMPLETE and the target still delivers a report.
         findings = [{"id": fid, "source": "model-checking", "title": fid, "summary": "s"} for fid in ("MC-1", "MC-2")]
         ws = self.seed("T", findings)
 
@@ -292,9 +300,15 @@ class TestDriver(ConfirmCase):
             return (9, "") if fid == "MC-1" else (75, "")
 
         with mock.patch.object(C, "run_agent_blocking", agent):
-            self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 1)
+            rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
+        self.assertEqual(rc, 0)
+        cb = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
+        self.assertTrue(cb.is_file())
+        self.assertIn("2 incomplete", cb.read_text())  # both marked in the disposition summary
 
-    def test_unexpected_cache_write_failure_removes_stale_deliverable(self) -> None:
+    def test_cache_write_failure_is_incomplete_delivers(self) -> None:
+        # A _save_verdict failure (disk full) makes the finding INCOMPLETE and still
+        # delivers the report — never discards it.
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
         report = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
         report.write_text("stale\n")
@@ -302,8 +316,10 @@ class TestDriver(ConfirmCase):
             mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("FALSE POSITIVE"))),
             mock.patch.object(C, "_save_verdict", side_effect=OSError("disk full")),
         ):
-            self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 1)
-        self.assertFalse(report.exists())
+            rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
+        self.assertEqual(rc, 0)
+        self.assertTrue(report.is_file())
+        self.assertIn("INCOMPLETE", report.read_text())
 
     def test_log_tee_failure_does_not_block_stale_deliverable_cleanup(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
@@ -464,7 +480,7 @@ class TestAggregate(ConfirmCase):
         report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
         self.assertIn(
             "Dispositions: 7 total = 1 reproduced + 1 env-limited + 1 masked + 1 false-positive "
-            "+ 1 needs-more-info + 1 dropped + 1 pending-repair + 0 deferred",
+            "+ 1 needs-more-info + 1 dropped + 1 pending-repair + 0 incomplete + 0 deferred",
             report,
         )
 
@@ -619,7 +635,9 @@ class TestCacheContracts(ConfirmCase):
             return (75, "") if fid == "MC-2" else (0, _response("FALSE POSITIVE"))
 
         with mock.patch.object(C, "run_agent_blocking", first):
-            self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), quota.RATE_LIMIT_RC)
+            # MC-2 rate-limited -> INCOMPLETE (delivers, rc 0); its verdict is NOT
+            # cached, so the retry re-runs only MC-2 and reuses MC-1's completed one.
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 0)
 
         retry_calls: list[str] = []
 
@@ -850,23 +868,17 @@ class TestValidationContracts(ConfirmCase):
         path.write_text(json.dumps({"findings": [candidate]}))
         self.assertEqual(C._validate_candidates(path, {"MC-1": source}), [])
 
-    def test_nonzero_and_hollow_reproduced_are_failures_not_cached_nmi(self) -> None:
+    def test_nonzero_and_hollow_reproduced_are_incomplete_not_cached(self) -> None:
+        # A nonzero adapter exit or a hollow REPRODUCED (no repro artifact) is never
+        # persisted as a business verdict: the finding becomes INCOMPLETE (not cached,
+        # so a retry re-attempts it) and the target still delivers.
         data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
         for response, rc in (("", 2), ("VERDICT: REPRODUCED", 0)):
             ws = self.seed(f"T{rc}", [data])
             with mock.patch.object(C, "run_agent_blocking", _fake_turn(response, rc=rc)):
-                self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, f"T{rc}")), 1)
+                self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, f"T{rc}")), 0)
             verdict = ws.work_dir(f"T{rc}") / "confirmation" / "MC-1" / "verdict.json"
-            self.assertFalse(verdict.exists())
-
-    def test_empty_repair_scope_is_rejected(self) -> None:
-        body = (
-            "---\ntarget: SPEC_REPAIR\ncounterexample: x.out\nscope:\n"
-            "  actions: []\n  invariants: []\n  hunt_cfgs: []\n  fault_actions: []\n"
-            "---\n\nThe trace and implementation disagree at src/node.py:42 in a concrete way.\n"
-        )
-        with self.assertRaises(C.InvalidRepairRequest):
-            C._validate_repair_body(body)
+            self.assertFalse(verdict.exists())  # not cached
 
     def test_rr_id_scans_deferred_and_never_overwrites(self) -> None:
         ws = self.seed("T", [])

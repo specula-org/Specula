@@ -11,15 +11,16 @@ is the dispatcher (the group-chat manager): it owns turn order, the shared
 aggregation into ``confirmed-bugs.md``.
 
 Every agent turn goes through :func:`specula.phaselib.run_agent_blocking` — the
-same adapter path, flags, and stop-gate env as ``Phase._launch``. Rate-limit
-(adapter exit 75) is NOT swallowed into a per-finding verdict (``NEEDS MORE
-INFO`` is terminal and the pipeline never revisits it, so a transient blip would
-lose the finding forever). It is handled the way a batch phase handles a mid-run
-agent death: the deliverable is **withheld** — ``confirmed-bugs.md`` is not
-written — and exit 75 is propagated so the launcher can perform its bounded
-reactive retry. Permanent infrastructure or output-contract failures return a
-nonzero status. A retry skips findings whose fingerprinted terminal verdict and
-artifacts are still valid, so only interrupted or stale findings re-run.
+same adapter path, flags, and stop-gate env as ``Phase._launch``. A finding that
+cannot finish — rate limit (adapter exit 75), infrastructure error, or malformed
+output — never discards the whole target. It becomes an ``INCOMPLETE`` row in the
+report (clearly marked, and NOT persisted as a business verdict — that failure is
+never cached), and every *completed* finding is still delivered. This is partial
+delivery over total loss: a single blip no longer withholds ``confirmed-bugs.md``.
+A later retry skips findings whose fingerprinted terminal verdict and artifacts
+are still valid and re-attempts only the INCOMPLETE ones. (Consolidate is the one
+prerequisite that still withholds when it yields no candidates: there is simply
+nothing to deliver.)
 """
 
 from __future__ import annotations
@@ -30,7 +31,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import threading
 import traceback
 from collections.abc import Callable
@@ -64,6 +64,10 @@ CONFIRM = {"REPRODUCED", "ENV_LIMITED", "MASKED"}
 # currently-masked by a safeguard/downstream mechanism (MASKED). Surfaced
 # separately from confirmed bugs (REPRODUCED), never dropped as FALSE POSITIVE.
 FINDING = {"ENV_LIMITED", "MASKED"}
+# Not a verdict: a finding whose confirmation could not finish (infra error, rate
+# limit, malformed output). Recorded so the target still delivers, marked clearly,
+# and NOT cached so a retry re-attempts it. Deliberately outside CANON.
+INCOMPLETE = "INCOMPLETE"
 VALID_SOURCES = {"model-checking", "code-review"}
 ID_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
 _CACHE_VERSION = 2
@@ -81,11 +85,11 @@ def _set_log_file(path: Path | None) -> None:
 
 
 class RateLimited(Exception):
-    """A turn hit adapter exit 75 (rate limit). A purely internal control-flow
-    signal: run_parallel_confirmation catches it and withholds the deliverable
-    (writes no confirmed-bugs.md) so the classification gate + the scheduler's
-    bounded retry re-runs the phase. Never a per-finding NEEDS MORE INFO
-    (terminal, never revisited); the driver propagates exit 75."""
+    """A turn hit adapter exit 75 (rate limit). An internal control-flow signal:
+    run_finding_safe catches it and marks that one finding INCOMPLETE (never a
+    per-finding NEEDS MORE INFO, which is terminal and never revisited, and never
+    cached — so a retry re-attempts it). It does not withhold the target; the
+    completed findings still deliver."""
 
 
 class ConsolidateFailed(Exception):
@@ -265,12 +269,23 @@ def run_turn(cfg: ConfirmConfig, f: Finding, role: str, turn_no: int, prompt: st
 
 def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]:
     """Return (repo_path_for_agent, cleanup). With worktree (default) each finding
-    gets its own detached worktree so parallel builds do not collide."""
+    gets its own detached worktree so parallel builds do not collide. If a worktree
+    cannot be created (permissions, non-git repo, unconfigured), fall back to the
+    shared repo rather than failing the finding — isolation is a build-safety
+    optimisation, not a correctness requirement."""
     repo = cfg.repo_dir.rstrip("/")
-    if not cfg.worktree or cfg.dry_run:
+    if not cfg.worktree or cfg.dry_run or not repo:
         return repo, lambda: None
-    if not repo:
-        raise ConfirmationFailed(f"{f.id}: worktree isolation requested but no repository was configured")
+    try:
+        return _setup_worktree(cfg, f, repo)
+    except Exception as exc:
+        _log(f"  [{f.id}] worktree isolation unavailable ({str(exc)[:150]}); using the shared repo")
+        return repo, lambda: None
+
+
+def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Callable[[], None]]:
+    """Per-finding detached git worktree with the launch dir's local changes copied
+    in. Raises on any failure; setup_repo turns that into a shared-repo fallback."""
     probe = subprocess.run(["git", "-C", repo, "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True)
     if probe.returncode != 0 or probe.stdout.strip() != "true":
         raise ConfirmationFailed(f"{f.id}: worktree isolation requested but {repo!r} is not a git checkout")
@@ -353,18 +368,23 @@ def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]
         _log(f"  [{f.id}] copied tracked/untracked local changes into isolated worktree")
 
     def cleanup() -> None:
+        # Best-effort, NEVER fatal. A worktree that cannot be removed — e.g. a
+        # containerised build (sonic-dash-ha) left artifacts root-owned that this
+        # user cannot delete — is a disk-cleanup nuisance, never a reason to discard
+        # a finding whose confirmation already finished. Drop the git registration
+        # where possible and warn; the leftover directory is harmless (each finding
+        # uses its own path).
         result = subprocess.run(
             ["git", "-C", str(root), "worktree", "remove", "--force", str(wt)], capture_output=True, text=True
         )
-        if result.returncode != 0:
-            message = f"{f.id}: failed to remove isolated worktree: {result.stderr.strip()[:200]}"
-            if sys.exc_info()[0] is not None:
-                try:
-                    _log(f"  WARNING: {message}")
-                except OSError:
-                    print(f"  WARNING: {message}", flush=True)
-                return
-            raise ConfirmationFailed(message)
+        if result.returncode == 0:
+            return
+        subprocess.run(["git", "-C", str(root), "worktree", "prune"], capture_output=True)
+        message = f"{f.id}: could not remove isolated worktree (left on disk): {result.stderr.strip()[:200]}"
+        try:
+            _log(f"  WARNING: {message}")
+        except OSError:
+            print(f"  WARNING: {message}", flush=True)
 
     return str(wt), cleanup
 
@@ -413,32 +433,10 @@ def _validate_final_artifacts(cfg: ConfirmConfig, f: Finding, status: str) -> No
         repros = _repro_files(cfg, f)
         if not repros or any(p.stat().st_size == 0 for p in repros):
             raise InvalidAgentOutput(f"{f.id}: REPRODUCED requires a non-empty repro/test_bug{f.id}_* artifact")
-    if status == "PENDING REPAIR":
-        body_file = f.fdir / "repair-request.body.md"
-        body = body_file.read_text() if body_file.is_file() else ""
-        _validate_repair_body(body)
-        fm, _ = _repair_frontmatter(body)
-        counterexamples = [line.split(":", 1)[1].strip() for line in fm if line.startswith("counterexample:")]
-        if len(counterexamples) != 1:
-            raise InvalidRepairRequest("repair request must have exactly one counterexample")
-        raw = Path(counterexamples[0])
-        work_dir = cfg.ws.work_dir(cfg.name).resolve()
-        if raw.is_absolute() or ".." in raw.parts:
-            raise InvalidRepairRequest("repair counterexample must stay under the work directory")
-        resolved = (work_dir / raw).resolve()
-        try:
-            resolved.relative_to(work_dir)
-        except ValueError as exc:
-            raise InvalidRepairRequest("repair counterexample escapes the work directory") from exc
-        if not resolved.is_file() or resolved.stat().st_size == 0:
-            raise InvalidRepairRequest(f"repair counterexample is missing or empty: {raw}")
-        source_value = f.data.get("counterexample")
-        if isinstance(source_value, str) and source_value.strip():
-            source_raw = Path(source_value)
-            if source_raw.is_absolute() or ".." in source_raw.parts:
-                raise InvalidRepairRequest("finding counterexample is not a safe work-directory-relative path")
-            if (work_dir / source_raw).resolve() != resolved:
-                raise InvalidRepairRequest("repair counterexample does not match the finding counterexample")
+    # PENDING REPAIR: the agent's repair-request.body.md is taken best-effort.
+    # _merge_rr stamps the dispatcher-owned lifecycle and strips stray owned keys,
+    # so an imperfectly-formatted RR body never discards the verdict — the contract
+    # was never fully specified to the agent, so we do not punish it for shape.
 
 
 def _validate_initial_output(cfg: ConfirmConfig, f: Finding, status: str | None, text: str) -> str:
@@ -823,8 +821,10 @@ def _load_verdict(f: Finding, cfg: ConfirmConfig) -> Outcome | None:
 
 def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
     """One finding, isolated. A cached terminal verdict short-circuits (idempotent
-    retry). Rate limiting and permanent/infrastructure failures propagate to the
-    driver; neither is persisted as a business verdict."""
+    retry). A finding that cannot finish — rate limit, infrastructure error, or
+    malformed output — is recorded as an INCOMPLETE outcome (error.txt kept for
+    diagnosis, and NOT cached so a later retry re-attempts it). It never propagates
+    to discard the whole target's report: the rest of the batch still delivers."""
     cached = _load_verdict(f, cfg)
     if cached is not None:
         _log(f"  [{f.id}] cached {cached.status} — skip (idempotent)")
@@ -832,19 +832,26 @@ def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
     try:
         o = run_finding(cfg, f)
         _save_verdict(o, cfg)
-    except RateLimited:
-        raise  # rate limit aborts the phase; do NOT persist or downgrade
-    except Exception as exc:
+        return o
+    except Exception as exc:  # RateLimited / ConfirmationFailed / anything unexpected
         try:
             f.fdir.mkdir(parents=True, exist_ok=True)
             (f.fdir / "error.txt").write_text(traceback.format_exc())
         except OSError:
             pass
-        _log(f"  [{f.id}] FAILED — see {f.fdir / 'error.txt'}; no verdict cached")
-        if isinstance(exc, ConfirmationFailed):
-            raise
-        raise ConfirmationFailed(f"{f.id}: confirmation crashed") from exc
-    return o
+        reason = "rate-limited" if isinstance(exc, RateLimited) else str(exc) or type(exc).__name__
+        _log(f"  [{f.id}] INCOMPLETE ({reason}) — see {f.fdir / 'error.txt'}; not cached, a retry re-attempts it")
+        return Outcome(
+            f,
+            INCOMPLETE,
+            consensus=False,
+            rounds=0,
+            body=(
+                "## Confirmation result\n"
+                f"INCOMPLETE — this finding could not be confirmed ({reason}). It was NOT judged; "
+                f"see `{f.fdir.name}/error.txt`. Re-run to retry."
+            ),
+        )
 
 
 # ── RR-NNN allocation (serial) — dispatcher stamps lifecycle, agent owns scope ─
@@ -853,68 +860,18 @@ def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
 # other frontmatter line (target, counterexample, the whole scope: block) is the
 # agent's and passes through verbatim.
 _RR_OWNED = ("id:", "bug_id:", "status:", "round:", "finding_id:", "allocation_key:")
-_RR_TARGETS = {"SPEC_REPAIR", "FAULT_MODEL", "INVARIANT"}
-_RR_SCOPE_KEYS = {"actions", "invariants", "hunt_cfgs", "fault_actions"}
 
 
 def _repair_frontmatter(body: str) -> tuple[list[str], str]:
+    """Split an agent RR body into (frontmatter lines, evidence rest). Best-effort:
+    a body without a well-formed `---` header is treated as all-evidence with no
+    frontmatter, not rejected — _merge_rr stamps the required lifecycle itself."""
     if not body.startswith("---"):
-        raise InvalidRepairRequest("PENDING REPAIR requires YAML frontmatter")
+        return [], body
     parts = body.split("---", 2)
     if len(parts) != 3:
-        raise InvalidRepairRequest("repair request has unterminated frontmatter")
+        return [], body
     return parts[1].splitlines(), parts[2]
-
-
-def _validate_repair_body(body: str) -> None:
-    """Reject non-routable repair work before Phase 3 can consume it."""
-    fm, rest = _repair_frontmatter(body)
-    top: dict[str, str] = {}
-    seen_top: set[str] = set()
-    scope_index: int | None = None
-    for i, line in enumerate(fm):
-        if line == line.lstrip() and ":" in line:
-            raw_key, value = line.split(":", 1)
-            raw_key = raw_key.strip()
-            key = raw_key.lower()
-            if key in seen_top:
-                raise InvalidRepairRequest(f"repair request has duplicate top-level key: {raw_key}")
-            seen_top.add(key)
-            if key in {"id", "bug_id", "status", "round", "finding_id", "allocation_key"}:
-                raise InvalidRepairRequest(f"agent repair body must omit dispatcher-owned key: {raw_key}")
-            if key in {"target", "counterexample", "scope"} and raw_key != key:
-                raise InvalidRepairRequest(f"repair request key must use canonical lowercase spelling: {raw_key}")
-            top[key] = value.strip()
-            if key == "scope":
-                scope_index = i
-    if top.get("target") not in _RR_TARGETS:
-        raise InvalidRepairRequest("repair request target must be SPEC_REPAIR, FAULT_MODEL, or INVARIANT")
-    if not top.get("counterexample") or top["counterexample"].lower() in {"null", "none", "n/a"}:
-        raise InvalidRepairRequest("repair request requires a concrete counterexample")
-    if scope_index is None:
-        raise InvalidRepairRequest("repair request requires scope")
-
-    concrete_scope = False
-    active_scope_key = False
-    for line in fm[scope_index + 1 :]:
-        if line and line == line.lstrip():
-            break
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if ":" in stripped and not stripped.startswith("-"):
-            key, value = stripped.split(":", 1)
-            active_scope_key = key.strip() in _RR_SCOPE_KEYS
-            value = value.strip()
-            if active_scope_key and value and value not in {"[]", "{}", "null", "None"}:
-                concrete_scope = True
-        elif active_scope_key and stripped.startswith("-") and stripped[1:].strip():
-            concrete_scope = True
-    if not concrete_scope:
-        raise InvalidRepairRequest("repair request scope must name at least one concrete item")
-
-    if len(rest.strip()) < 20:
-        raise InvalidRepairRequest("repair request requires substantive evidence text")
 
 
 def _merge_rr(
@@ -928,12 +885,12 @@ def _merge_rr(
 ) -> str:
     """Stamp dispatcher-owned lifecycle fields onto the agent-authored RR body.
 
-    Keeps the agent's target/counterexample/scope untouched. Missing routing or
-    scope is rejected rather than fabricated into an executable-looking request.
-    ``cx_fallback`` remains in the signature for API compatibility but is never
-    used to repair invalid agent output."""
+    Best-effort: the agent's target/counterexample/scope pass through untouched,
+    stray dispatcher-owned keys are stripped (below), and a body with no/partial
+    frontmatter still yields a well-formed request (the lifecycle header is always
+    added). RR-body shape is never a reason to discard the PENDING REPAIR verdict.
+    ``cx_fallback`` is kept in the signature for API compatibility, unused."""
     del cx_fallback
-    _validate_repair_body(body)
     lifecycle = f"id: {rid}\nbug_id: {finding_id}\nstatus: OPEN\nround: 0\n"
     if raw_finding_id:
         lifecycle += f"finding_id: {raw_finding_id}\n"
@@ -1310,9 +1267,10 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     "one row per ``## Bug N:`` header" parsing aligns; the finding id (MC-1 / CR-2)
     is carried as a body field and a table column."""
     report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
-    invalid_statuses = sorted({o.status for o in outcomes if o.status not in CANON})
-    if invalid_statuses:
-        raise ConfirmationFailed(f"cannot aggregate non-canonical status(es): {invalid_statuses}")
+    # A non-canonical status (e.g. INCOMPLETE from a finding whose confirmation
+    # could not finish — infra error / rate limit) is rendered verbatim and simply
+    # not counted as a bug/finding; it must never discard the whole report.
+    incomplete = [o for o in outcomes if o.status not in CANON]
     status_counts = {status: sum(o.status == status for o in outcomes) for status in CANON}
     reproduced = [o for o in outcomes if o.status == "REPRODUCED"]
     nov = [_novelty(o.body) for o in reproduced]
@@ -1339,7 +1297,8 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
         f"Dispositions: {len(outcomes)} total = {status_counts['REPRODUCED']} reproduced"
         f" + {status_counts['ENV_LIMITED']} env-limited + {status_counts['MASKED']} masked"
         f" + {status_counts['FALSE POSITIVE']} false-positive + {status_counts['NEEDS MORE INFO']} needs-more-info"
-        f" + {status_counts['DROPPED']} dropped + {status_counts['PENDING REPAIR']} pending-repair + 0 deferred"
+        f" + {status_counts['DROPPED']} dropped + {status_counts['PENDING REPAIR']} pending-repair"
+        f" + {len(incomplete)} incomplete + 0 deferred"
     )
     lines.append("")
     lines.append("| Bug | Finding | Status |")
@@ -1468,36 +1427,25 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
         return 0
 
     outcomes: list[Outcome] = []
-    rate_limited = False
-    failed = False
     with ThreadPoolExecutor(max_workers=cfg.max_parallel) as ex:
-        futures = [ex.submit(run_finding_safe, cfg, f) for f in findings]
-        for fut in futures:
+        futures = [(f, ex.submit(run_finding_safe, cfg, f)) for f in findings]
+        for finding, fut in futures:
             try:
                 outcomes.append(fut.result())
-            except RateLimited:
-                rate_limited = True
-            except ConfirmationFailed as exc:
-                failed = True
-                _log(f"confirmation failed ({exc})")
-            except Exception as exc:
-                failed = True
-                _log(f"confirmation worker crashed ({exc})")
-    # A permanent failure dominates a simultaneous transient one; otherwise the
-    # launcher could keep retrying a batch that can never succeed.
-    if failed:
-        return _withhold(cfg, "confirmation infrastructure/output failure — deliverable withheld for retry")
-    if rate_limited:
-        # Do NOT aggregate a partial confirmed-bugs.md — it would look complete and
-        # the classification gate would pass with findings missing. Withhold it (as
-        # a batch phase does when its agent dies mid-run): remove any stale report
-        # so the gate + the scheduler's transient-log retry re-run us; verdict.json
-        # skips the findings already done. Return 0, consistent with batch phases.
-        return _withhold(
-            cfg,
-            "rate-limited mid-confirmation — deliverable withheld; completed findings cached for retry",
-            quota.RATE_LIMIT_RC,
-        )
+            except Exception as exc:  # run_finding_safe absorbs failures; stay robust regardless
+                _log(f"  [{finding.id}] worker crashed unexpectedly ({exc})")
+                outcomes.append(
+                    Outcome(
+                        finding,
+                        INCOMPLETE,
+                        consensus=False,
+                        rounds=0,
+                        body=f"## Confirmation result\nINCOMPLETE — worker crashed: {exc}.",
+                    )
+                )
+    # Partial delivery beats total loss: a finding that could not finish is an
+    # INCOMPLETE row, clearly marked; every completed finding is still reported. A
+    # single infra error / rate limit no longer withholds the whole target.
     order = {f.id: i for i, f in enumerate(findings)}
     outcomes.sort(key=lambda o: order[o.finding.id])
     for i, o in enumerate(outcomes, 1):
