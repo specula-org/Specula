@@ -1,16 +1,269 @@
-# Usage
+# Usage Guide
 
-## Skills
+## Getting Started
 
-| Skill | Purpose |
-|-------|---------|
-| `/code-analysis` | Analyze target codebase, mine git history and issues, produce a modeling brief |
-| `/spec-generation` | Generate TLA+ specifications (base, model-checking, trace validation, instrumentation mapping) |
-| `/harness-generation` | Instrument source code to emit NDJSON traces, write test scenarios, collect traces |
-| `/validation-workflow` | Iterative trace validation + model checking until convergence, then bug hunting |
-| `/tla-trace-workflow` | Validate a single trace against a TLA+ spec (used by validation-workflow) |
-| `/tla-checking-workflow` | Run TLC model checking and classify counterexamples (used by validation-workflow) |
-| `/bug-confirmation` | Validate TLA+ counterexamples against real code, reproduce bugs |
-| `/bug-recording` | Record confirmed bugs to the shared bug tracker |
+### Supported platforms
 
-Each skill has a detailed guide in `skills/<skill-name>/guide.md`.
+- **Linux:** supported directly.
+- **macOS:** supported. Specula's long-running-job helpers use GNU `timeout` and `tail --pid`; install GNU coreutils and put its `gnubin` directory on `PATH` (for Homebrew: `brew install coreutils`, then add `$(brew --prefix coreutils)/libexec/gnubin` to `PATH`).
+- **Windows:** use [WSL2](https://learn.microsoft.com/windows/wsl/install) and run Specula inside its Linux environment. Native Windows terminals are not supported because the launchers and setup use Bash and other POSIX tools.
+
+When using WSL2, install the prerequisites and agent CLI inside WSL2, then clone and run Specula there. The target repository must also be accessible from that environment.
+
+### Requirements
+
+| Dependency | Used for | Installed by `specula setup`? |
+|---|---|---|
+| [uv](https://docs.astral.sh/uv/) | Running the packaged `specula` command | No |
+| Python 3.10+ with `pip` and `venv` | CLI, launchers, MCP tool environments | No |
+| JDK 21+ and Maven | TLC, SANY, and building the CFA tool | No |
+| Git and Bash | Source/history analysis, worktrees, and launch scripts | No |
+| Standard POSIX utilities (`tee`, `tail`, `du`, and others) | Logging and process coordination | No |
+| `curl` or `wget` | Downloading TLA+ JARs during setup | No |
+| GitHub CLI (`gh`) | Issue and repository research | No |
+| Claude Code, Codex, or GitHub Copilot CLI | Agent execution | No |
+| Target language toolchain and test dependencies | Harness generation and bug reproduction | No |
+
+The first setup needs network access to GitHub, PyPI, and Maven Central. Agent runs also need access to the selected model provider and any remote repositories the analysis uses. Claude subscription quota monitoring specifically uses `curl`; if it is unavailable, the quota check warns and fails open rather than stopping the pipeline.
+
+Specula relies on the selected agent to analyze code and reason about counterexamples, so use a strong reasoning model at high effort. Harness generation builds and instruments the target project; verify that the target builds normally before starting a full pipeline.
+
+### Optional sandbox dependencies
+
+The agent sandbox is **disabled by default** and its dependencies are **not installed** by `specula setup`. Normal runs do not need SRT or Bubblewrap.
+
+To enable the sandbox for Claude Code or Codex, install Node.js 20+ and SRT:
+
+```bash
+npm install -g @anthropic-ai/sandbox-runtime
+```
+
+Linux and WSL2 also require:
+
+- `bubblewrap` (the executable is named `bwrap`)
+- `socat`
+- `ripgrep`
+- unprivileged user namespaces enabled
+
+macOS uses the built-in Seatbelt sandbox instead of Bubblewrap. The sandbox is a guardrail rather than a security boundary; its default policy restricts writes but leaves reads and network access open.
+
+Enable it per run with `SPECULA_SANDBOX=on`. A full pipeline also needs write access to the target checkout and its build caches, for example:
+
+```bash
+export SPECULA_SANDBOX=on
+export SPECULA_SANDBOX_EXTRA_WRITE="/path/to/source:$HOME/.cache"
+uv run specula run --artifact=/path/to/source "name|owner/repository|language|reference"
+```
+
+If neither `.specula/sandbox.json` in the launch directory nor `~/.specula/sandbox.json` exists, the first sandboxed run copies the default policy to `~/.specula/sandbox.json`. Review the [sandbox guide](../scripts/launch/sandbox/README.md) before enabling it or tightening read/network access.
+
+Clone Specula and run its interactive setup:
+
+```bash
+git clone https://github.com/specula-org/Specula.git
+cd Specula
+uv run specula setup
+```
+
+Setup downloads the TLA+ JARs, builds the CFA tool, prepares the MCP tool environments, and offers integration for each supported agent. It prompts for global or project-local skill installation. Codex users can choose the skills/MCP setup or the generated Specula plugin.
+
+More precisely, setup manages:
+
+| Component | Setup behavior |
+|---|---|
+| `tla2tools.jar` and Community Modules | Downloads them into `lib/` if missing |
+| CFA transformer | Builds it with Maven |
+| MCP Python packages | Creates tool-specific virtual environments and installs `mcp` and `jsonschema` where required |
+| Claude Code | Installs skills and registers all three MCP servers |
+| Codex | Installs skills and MCP servers, or generates/updates the Specula plugin |
+| GitHub Copilot CLI | Installs skills only; MCP servers must currently be configured manually |
+
+Setup does **not** install `uv`, Python, a JDK, Maven, Git, `gh`, an agent CLI, target-language dependencies, GNU coreutils, or the optional sandbox dependencies.
+
+The setup is safe to rerun when updating the checkout. Confirm the CLI afterward:
+
+```bash
+uv run specula --help
+```
+
+### First run
+
+From the Specula checkout, point Specula at the source repository to analyze:
+
+```bash
+uv run specula run \
+  --artifact=/absolute/path/to/source \
+  "name|github-owner/repository|language|reference"
+```
+
+For example:
+
+```bash
+uv run specula run \
+  --artifact=/work/cometbft \
+  "cometbft|cometbft/cometbft|Go|Tendermint BFT"
+```
+
+Quote the target descriptor because `|` has special meaning in the shell. Its fields identify the output name, GitHub repository, primary language, and reference algorithm or design document.
+
+With the default isolated workspace, an external source checkout must be supplied with `--artifact`. Alternatively, Specula finds canonical checkouts under `case-studies/<name>/artifact/`.
+
+Select an agent, model, and reasoning effort when needed:
+
+```bash
+uv run specula run \
+  --agent=codex \
+  --model=<model-name> \
+  --effort=high \
+  --artifact=/absolute/path/to/source \
+  "name|owner/repository|language|reference"
+```
+
+Supported adapters are `claude-code` (default), `codex`, and `copilot-cli`. Model names and effort values are interpreted by the selected agent.
+
+## Agents and Authentication
+
+| Agent | `--agent` value | Authentication |
+|---|---|---|
+| Claude Code | `claude-code` | Existing Claude CLI profile; select another with `--claude-alias=NAME` |
+| Codex | `codex` | Existing Codex CLI login or configuration |
+| GitHub Copilot CLI | `copilot-cli` | Existing Copilot CLI login or token configuration |
+
+Specula launches the installed agent CLI directly and uses its existing credentials. Authenticate the CLI before starting a pipeline. Claude Code runs default to maximum reasoning effort; Codex and Copilot use their configured defaults unless `--effort` is supplied.
+
+Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. Codex currently accepts `--max-turns` for adapter compatibility but does not enforce it because `codex exec` has no corresponding limit.
+
+## Output Structure
+
+Runs are isolated by default under:
+
+```text
+runs/<run-id>/
+├── run.json
+├── pipeline.log
+├── pipeline-summary.md
+└── <name>/.specula-output/
+```
+
+The `.specula-output/` directory contains the modeling brief, specifications, harness, traces, reproduction tests, reports, and phase logs. `runs/latest` points to the newest run.
+
+The source supplied through `--artifact` is not copied into the isolated workspace. Harness and reproduction work may build or modify that checkout. Use `--no-isolate` to write `.specula-output/` in the current project instead.
+
+TLC can use substantial memory and temporary disk space during model checking. The bundled `scripts/tlc/run_model_check.sh` stores states under `TMPDIR` (or `/tmp`) by default; set `TLC_STATE_DIR` to a larger or faster filesystem when necessary.
+
+## Resuming a Run
+
+Use a stable ID when a run may need to be resumed:
+
+```bash
+uv run specula run \
+  --run-id=my-run \
+  --artifact=/path/to/source \
+  "name|owner/repository|language|reference"
+```
+
+Attach to the same run and skip completed phases. This resumes at validation:
+
+```bash
+uv run specula run \
+  --run-id=my-run \
+  --skip-analysis \
+  --skip-specgen \
+  --skip-harness \
+  --artifact=/path/to/source \
+  "name|owner/repository|language|reference"
+```
+
+Specula reuses `runs/<run-id>/<name>/.specula-output/`. Pass the target, artifact, agent, model, and effort again when resuming; `run.json` is an audit record, not a source of arguments for the new invocation.
+
+## Individual Phases
+
+Most users should run `uv run specula run`, which executes every phase in order. The commands below are for running or debugging one phase at a time.
+
+| Command | What it does | Required input | Main output |
+|---|---|---|---|
+| `analyze` | Launches an agent to inspect the source, mine Git history and issues, identify bug families, and decide what should be modeled | Target source and the four-field target descriptor | `modeling-brief.md`, `analysis-report.md` |
+| `specgen` | Converts the modeling brief into code-faithful TLA+ specifications | Source and `modeling-brief.md` | `spec/base.tla`, `spec/MC.tla`, `spec/Trace.tla`, configs, and `instrumentation-spec.md` |
+| `harness` | Instruments the implementation and runs scenarios to collect execution traces | Source and generated specifications | `harness/` and `traces/*.ndjson` |
+| `validate` | Checks real traces against the specification, runs TLC, and investigates counterexamples | Source, specifications, harness, and traces | `spec/bug-report.md`, `spec/findings.json`, TLC output, and `spec/changelog.md` |
+| `confirm` | Audits and reproduces each candidate bug against the real implementation | Source, modeling brief, and bug report | `spec/confirmed-bugs.md`, reproduction tests, and any repair requests |
+| `classify` | Assigns a severity to confirmed bugs | `spec/confirmed-bugs.md` | `spec/bug-severity.md` |
+
+For example, run only Phase 1 with Codex:
+
+```bash
+uv run specula analyze \
+  --agent=codex \
+  --artifact=/path/to/source \
+  "name|owner/repository|language|reference"
+```
+
+This writes `.specula-output/modeling-brief.md` and `.specula-output/analysis-report.md` in the current directory. By interface, downstream phase commands take only the target `name`; continue passing `--artifact` so they can access the source:
+
+```bash
+uv run specula specgen --agent=codex --artifact=/path/to/source name
+```
+
+Individual commands share `.specula-output/` in the current directory unless `SPECULA_RUN_DIR` is set. A downstream command stops if its required files from the preceding phase are missing.
+
+Use `--check` to validate a phase's prerequisites without starting an agent:
+
+```bash
+uv run specula validate --check --artifact=/path/to/source name
+```
+
+## CLI Reference
+
+### `specula run`
+
+Run the complete analysis-to-classification pipeline:
+
+```bash
+uv run specula run [options] "name|owner/repository|language|reference"
+```
+
+| Option | Purpose |
+|---|---|
+| `--dry-run` | Print phase commands without starting agents |
+| `--agent=NAME` | Select `claude-code`, `codex`, or `copilot-cli` |
+| `--model=NAME` | Override the configured model |
+| `--effort=LEVEL` | Override reasoning effort |
+| `--artifact=PATH` | Set the target source checkout |
+| `--max-parallel=N` | Run phase agents concurrently |
+| `--enable-reviews` | Enable inter-phase reviews |
+| `--legacy-confirm` | Use one confirmation agent instead of per-finding agents |
+| `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse early-phase outputs |
+| `--skip-validation`, `--skip-confirmation`, `--skip-classification` | Reuse later-phase outputs |
+| `--run-id=ID` | Create or attach to an isolated run |
+| `--no-isolate` | Write outputs in the current project |
+
+`--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default; disable it with `--skip-repair-loop` or cap attempts per request with `--max-repair-rounds=N`.
+
+Use command-specific help for the authoritative option list:
+
+```bash
+uv run specula run --help
+uv run specula validate --help
+uv run specula confirm --help
+```
+
+## Batch Runs
+
+Create a tab-separated queue with one target per line and optional pipeline flags after a literal tab:
+
+```text
+alpha|owner/alpha|Go|Raft
+beta|owner/beta|Rust|Concurrent queue<TAB>--agent=codex --effort=high
+```
+
+Run it with:
+
+```bash
+uv run specula batch --queue /path/to/tasks.queue --workers 3
+```
+
+The scheduler clones missing repositories under `case-studies/` and creates an isolated workspace for every task. See all scheduler options with `uv run specula batch --help`.
+
+## Progress and Logs
+
+Agent activity is printed during each phase and written to its log. Set `SPECULA_PROGRESS=off` to disable live reporting. After a run, start with `pipeline-summary.md` for deliverable status and log locations.
