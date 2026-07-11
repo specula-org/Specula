@@ -19,6 +19,7 @@ stdlib unittest, collected natively by pytest:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -49,6 +50,9 @@ _VOLATILE = (
     "CLAUDE_ALIAS",
     "CLAUDE_EFFORT",
     "CLAUDE_MODEL",
+    "CODEX_MODEL",
+    "CODEX_EFFORT",
+    "COPILOT_MODEL",
 )
 
 
@@ -164,10 +168,11 @@ class CliE2E(unittest.TestCase):
                     self.assertIn(f"--model={model}", line)
                     self.assertIn(f"--effort={effort}", line)
                 self.assertIn("launch_review.sh analysis --agent=codex", review_line)
+                meta = json.loads((self.sole_run_dir(root) / "run.json").read_text())
+                self.assertEqual(meta["model"], model or None)
+                self.assertEqual(meta["effort"], effort or None)
 
     def test_run_json_records_argv(self) -> None:
-        import json
-
         root = self.specroot()
         work = self.workdir()
         self.run_cli(root, ["run", "--dry-run", "footest"], cwd=work)

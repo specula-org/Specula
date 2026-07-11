@@ -434,18 +434,59 @@ class Pipeline:
                 )
                 if r.returncode == 0:
                     artifact_sha = r.stdout.decode(errors="replace").strip()
+        model, effort = self._resolved_run_tuning()
         meta = {
             "run_id": self.run_id,
             "created": _date_iseconds(),
             "argv": self.argv,
             "targets": self.targets,
             "agent": self.agent,
+            "model": model,
+            "effort": effort,
             "claude_alias": self.claude_alias,
             "artifact": self.artifact,
             "artifact_git_sha": artifact_sha,
         }
         with contextlib.suppress(OSError):
             meta_file.write_text(json.dumps(meta, indent=2) + "\n")
+
+    def _resolved_run_tuning(self) -> tuple[str | None, str | None]:
+        """Return model/effort values that are knowable at run creation.
+
+        Pipeline flags win even when explicitly empty. An empty flag resets the
+        adapter to its own configuration, whose resulting value is unknown here
+        and therefore recorded as null. Otherwise mirror the phase and adapter
+        environment fallbacks; never guess values selected by CLI config files.
+        """
+        if self.model is not None:
+            model = self.model or None
+        else:
+            model = os.environ.get("SPECULA_MODEL") or None
+            if model is None:
+                adapter_model_env = {
+                    "claude-code": "CLAUDE_MODEL",
+                    "codex": "CODEX_MODEL",
+                    "copilot-cli": "COPILOT_MODEL",
+                }.get(self.agent)
+                if adapter_model_env is not None:
+                    model = os.environ.get(adapter_model_env) or None
+
+        if self.effort is not None:
+            effort = self.effort or None
+        else:
+            effort = os.environ.get("SPECULA_EFFORT") or None
+            if effort is None:
+                if self.agent == "claude-code":
+                    # Phase launchers explicitly pass max, overriding any
+                    # ambient CLAUDE_EFFORT value.
+                    effort = "max"
+                elif self.agent == "codex":
+                    effort = os.environ.get("CODEX_EFFORT") or None
+
+        # The Claude adapter omits --effort for this explicit reset sentinel.
+        if self.agent == "claude-code" and effort == "default":
+            effort = None
+        return model, effort
 
     # ── utilities ──
     def extract_names(self) -> list[str]:
