@@ -35,7 +35,14 @@ For every finding you are about to mark `REPRODUCED`, answer these explicitly in
 3. Which **real consumer/caller** observes a wrong outcome? Name it (`file:line`), or state the consequence is argued-only (a finding, not a reproduced bug).
 4. Is the bad state **permanent**, or does a downstream mechanism (sync / loopback / resend / a caller guard) later **resolve or mask** it? A transient snapshot the system afterwards fixes is NOT a reproduced bug; a real defect a safeguard currently masks → `MASKED` (a finding), naming the mechanism — not `REPRODUCED`, not `FALSE POSITIVE`.
 
-If you cannot honestly answer these in the finding's favour, do NOT manufacture a pass — settle it per the skill's decision table. Every honest outcome (MASKED / ENV_LIMITED / PENDING REPAIR / DROPPED / FALSE POSITIVE / NEEDS MORE INFO) beats a fabricated `REPRODUCED`.
+If you cannot honestly answer these in the finding's favour, do NOT manufacture a pass. Route by source:
+
+| Source | Other valid outcomes | Never use |
+|---|---|---|
+| MC | `MASKED`, `ENV_LIMITED`, `PENDING REPAIR`, `NEEDS MORE INFO` | `FALSE POSITIVE`, `DROPPED` |
+| Code Review | `MASKED`, `ENV_LIMITED`, `FALSE POSITIVE`, `DROPPED`, `NEEDS MORE INFO` | `PENDING REPAIR` |
+
+`DROPPED` remains only for the code-review × already-reported pre-filter. Every honest outcome beats a fabricated `REPRODUCED`.
 
 ## 3. Aggregate
 Write every finding's entry to {{report}} (one `repro/` test per non-dropped
