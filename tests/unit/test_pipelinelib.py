@@ -687,8 +687,13 @@ class TestPhaseParallelArgs(TmpCwd):
 
     def test_full_pipeline_default_preserves_each_phase_default(self) -> None:
         p = pl.Pipeline()
-        self.assertIsNone(p.parse_args(["a|g|l|r", "b|g|l|r"]))
+        self.assertIsNone(p.parse_args(["--max-turns=9", "--model=gpt-5.5", "--effort=high", "a|g|l|r", "b|g|l|r"]))
         calls = self.capture_main(p)
+        confirmation = calls["launch_bug_confirmation.sh"]
+        self.assertFalse(any(arg.startswith("--max-parallel=") for arg in confirmation))
+        self.assertIn("--max-turns=9", confirmation)
+        self.assertIn("--model=gpt-5.5", confirmation)
+        self.assertIn("--effort=high", confirmation)
         for script, args in calls.items():
             self.assertFalse(any(arg.startswith("--max-parallel=") for arg in args), script)
 

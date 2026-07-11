@@ -667,6 +667,26 @@ class TestCacheContracts(ConfirmCase):
         with mock.patch.object(C, "_skill_identity", return_value={"guide": "v2"}):
             self.assertIsNone(C._load_verdict(f, cfg))
 
+    def test_cache_binds_model_and_effort(self) -> None:
+        finding_data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
+        ws = self.seed("T", [finding_data])
+        adapter = Path(self.tmp) / "adapter.sh"
+        adapter.write_text("#!/bin/sh\nexit 0\n")
+        cfg = C.ConfirmConfig(name="T", ws=ws, adapter=adapter, worktree=False)
+        candidates = ws.work_dir("T") / "spec" / "candidates.json"
+        finding = C.Finding(finding_data, ws.work_dir("T") / "confirmation" / "MC-1")
+        with mock.patch.object(C, "_skill_identity", return_value={"guide": "v1"}):
+            C._write_candidate_cache(cfg, candidates)
+            C._save_verdict(C.Outcome(finding, "FALSE POSITIVE", True, 0, EVIDENCE), cfg)
+            for field, value in (("model", "gpt-5.5"), ("model", ""), ("effort", "high"), ("effort", "")):
+                with self.subTest(field=field, value=value):
+                    setattr(cfg, field, value)
+                    self.assertFalse(C._candidate_cache_valid(cfg, candidates, None))
+                    self.assertIsNone(C._load_verdict(finding, cfg))
+                    setattr(cfg, field, None)
+                    self.assertTrue(C._candidate_cache_valid(cfg, candidates, None))
+                    self.assertIsNotNone(C._load_verdict(finding, cfg))
+
     def test_cached_verdict_revalidates_repro_and_repair_request_artifacts(self) -> None:
         data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
         ws = self.seed("T", [data])
@@ -736,9 +756,7 @@ class TestValidationContracts(ConfirmCase):
         # Kept (would break the per-finding fan-out): id filesystem-safe + unique,
         # source routable. Everything else was intentionally relaxed.
         p = Path(self.tmp) / "candidates.json"
-        p.write_text(
-            json.dumps({"findings": [{"id": "..", "source": "model-checking", "title": "t", "summary": "s"}]})
-        )
+        p.write_text(json.dumps({"findings": [{"id": "..", "source": "model-checking", "title": "t", "summary": "s"}]}))
         self.assertTrue(any("filesystem-safe" in e for e in C._validate_candidates(p)))
         p.write_text(json.dumps({"findings": [{"id": "F1", "source": "guess", "title": "t", "summary": "s"}]}))
         self.assertTrue(any("source not in" in e for e in C._validate_candidates(p)))
@@ -761,7 +779,9 @@ class TestValidationContracts(ConfirmCase):
         p.write_text(json.dumps({"findings": []}))
         self.assertEqual(C._validate_candidates(p, {"MC-1"}), [])  # missing MC-1: not an error now
         p.write_text(
-            json.dumps({"findings": [{"id": "MC-1", "source": "model-checking", "title": "x\ninjected", "summary": "s"}]})
+            json.dumps(
+                {"findings": [{"id": "MC-1", "source": "model-checking", "title": "x\ninjected", "summary": "s"}]}
+            )
         )
         self.assertEqual(C._validate_candidates(p), [])  # multi-line title accepted
 
