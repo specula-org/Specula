@@ -569,6 +569,42 @@ def _adapter_identity(cfg: ConfirmConfig) -> dict[str, str]:
     return {"path": str(resolved), "content": content}
 
 
+def _tuning_identity(cfg: ConfirmConfig) -> dict[str, dict[str, str | None]]:
+    """Effective tuning inputs known before an adapter starts.
+
+    Explicit Specula values, including an empty reset, win over adapter-specific
+    environment fallbacks. CLI config-file defaults remain intentionally opaque.
+    """
+    adapter = cfg.adapter.stem
+    model: dict[str, str | None]
+    effort: dict[str, str | None]
+    if cfg.model is not None:
+        model = {"source": "specula", "value": cfg.model}
+    else:
+        model_env = {
+            "claude-code": "CLAUDE_MODEL",
+            "codex": "CODEX_MODEL",
+            "copilot-cli": "COPILOT_MODEL",
+        }.get(adapter)
+        model_value = (os.environ.get(model_env) or None) if model_env is not None else None
+        model = {"source": model_env if model_value is not None else "adapter-default", "value": model_value}
+
+    if cfg.effort is not None:
+        effort = {"source": "specula", "value": cfg.effort}
+    elif adapter == "claude-code":
+        # run_agent_blocking explicitly injects max, overriding CLAUDE_EFFORT.
+        effort = {"source": "specula-default", "value": "max"}
+    elif adapter == "codex":
+        effort_value = os.environ.get("CODEX_EFFORT") or None
+        effort = {
+            "source": "CODEX_EFFORT" if effort_value is not None else "adapter-default",
+            "value": effort_value,
+        }
+    else:
+        effort = {"source": "adapter-default", "value": None}
+    return {"model": model, "effort": effort}
+
+
 def _skill_identity() -> dict[str, str]:
     root = SKILLS / "bug-confirmation"
     result: dict[str, str] = {}
@@ -698,8 +734,7 @@ def _verdict_fingerprint(cfg: ConfirmConfig, f: Finding) -> str:
             "rounds": cfg.rounds,
             "prompt_extra": cfg.prompt_extra,
             "max_turns": cfg.max_turns,
-            "model": cfg.model,
-            "effort": cfg.effort,
+            "tuning": _tuning_identity(cfg),
             "prompts": _prompt_sources(),
             "skill": _skill_identity(),
         }
@@ -1097,8 +1132,7 @@ def _candidate_fingerprint(cfg: ConfirmConfig) -> str:
             "adapter": _adapter_identity(cfg),
             "claude_alias": cfg.claude_alias,
             "max_turns": cfg.max_turns,
-            "model": cfg.model,
-            "effort": cfg.effort,
+            "tuning": _tuning_identity(cfg),
             "files": files,
         }
     )

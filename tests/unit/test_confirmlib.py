@@ -687,6 +687,30 @@ class TestCacheContracts(ConfirmCase):
                     self.assertTrue(C._candidate_cache_valid(cfg, candidates, None))
                     self.assertIsNotNone(C._load_verdict(finding, cfg))
 
+    def test_cache_binds_adapter_environment_tuning(self) -> None:
+        finding_data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
+        ws = self.seed("T", [finding_data])
+        adapter = Path(self.tmp) / "codex.sh"
+        adapter.write_text("#!/bin/sh\nexit 0\n")
+        cfg = C.ConfirmConfig(name="T", ws=ws, adapter=adapter, worktree=False)
+        candidates = ws.work_dir("T") / "spec" / "candidates.json"
+        finding = C.Finding(finding_data, ws.work_dir("T") / "confirmation" / "MC-1")
+        with (
+            mock.patch.dict(os.environ, {"CODEX_MODEL": "model-a", "CODEX_EFFORT": "low"}),
+            mock.patch.object(C, "_skill_identity", return_value={"guide": "v1"}),
+        ):
+            C._write_candidate_cache(cfg, candidates)
+            C._save_verdict(C.Outcome(finding, "FALSE POSITIVE", True, 0, EVIDENCE), cfg)
+            for name, value in (("CODEX_MODEL", "model-b"), ("CODEX_EFFORT", "high")):
+                with self.subTest(name=name):
+                    original = os.environ[name]
+                    os.environ[name] = value
+                    self.assertFalse(C._candidate_cache_valid(cfg, candidates, None))
+                    self.assertIsNone(C._load_verdict(finding, cfg))
+                    os.environ[name] = original
+                    self.assertTrue(C._candidate_cache_valid(cfg, candidates, None))
+                    self.assertIsNotNone(C._load_verdict(finding, cfg))
+
     def test_cached_verdict_revalidates_repro_and_repair_request_artifacts(self) -> None:
         data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
         ws = self.seed("T", [data])
