@@ -232,6 +232,31 @@ class TestPromptExtra(EnvIsolatedCase):
 
 
 class TestRunMetaAndAttach(EnvIsolatedCase):
+    _TUNING_ENV = (
+        "SPECULA_MODEL",
+        "SPECULA_EFFORT",
+        "CLAUDE_MODEL",
+        "CLAUDE_EFFORT",
+        "CODEX_MODEL",
+        "CODEX_EFFORT",
+        "COPILOT_MODEL",
+    )
+
+    def setUp(self) -> None:
+        super().setUp()
+        original = {name: os.environ.get(name) for name in self._TUNING_ENV}
+
+        def restore() -> None:
+            for name, value in original.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+        self.addCleanup(restore)
+        for name in self._TUNING_ENV:
+            os.environ.pop(name, None)
+
     def _pipeline(self, argv: list[str], root: Path) -> pl.Pipeline:
         self.patch_root(pl, root)
         p = pl.Pipeline()
@@ -251,10 +276,98 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         self.assertEqual(meta["argv"], argv)
         self.assertEqual(meta["targets"], ["foo|o/r|Go|ref"])
         self.assertEqual(meta["agent"], "claude-code")
+        self.assertIsNone(meta["model"])
+        self.assertEqual(meta["effort"], "max")
         self.assertIsNone(meta["artifact_git_sha"])  # no artifact given
         self.assertIn("created", meta)
         # env exported for the phase subprocesses
         self.assertEqual(os.environ["SPECULA_RUN_DIR"], str(p.run_dir))
+
+    def test_meta_records_cli_tuning_over_environment(self) -> None:
+        root = self.tmp()
+        os.environ["SPECULA_MODEL"] = "env-model"
+        os.environ["SPECULA_EFFORT"] = "low"
+        os.environ["CODEX_MODEL"] = "adapter-model"
+        os.environ["CODEX_EFFORT"] = "medium"
+        p = self._pipeline(
+            ["--agent=codex", "--model=gpt-5.5", "--effort=high", "foo|o/r|Go|ref"],
+            root,
+        )
+        assert p.run_dir is not None
+        meta = json.loads((p.run_dir / "run.json").read_text())
+        self.assertEqual(meta["model"], "gpt-5.5")
+        self.assertEqual(meta["effort"], "high")
+
+    def test_meta_records_specula_environment_tuning(self) -> None:
+        root = self.tmp()
+        os.environ["SPECULA_MODEL"] = "env-model"
+        os.environ["SPECULA_EFFORT"] = "low"
+        os.environ["CODEX_MODEL"] = "adapter-model"
+        os.environ["CODEX_EFFORT"] = "medium"
+        p = self._pipeline(["--agent=codex", "foo|o/r|Go|ref"], root)
+        assert p.run_dir is not None
+        meta = json.loads((p.run_dir / "run.json").read_text())
+        self.assertEqual(meta["model"], "env-model")
+        self.assertEqual(meta["effort"], "low")
+
+    def test_meta_records_adapter_environment_tuning(self) -> None:
+        cases = (
+            ("claude-code", {"CLAUDE_MODEL": "opus", "CLAUDE_EFFORT": "low"}, "opus", "max"),
+            (
+                "codex",
+                {
+                    "SPECULA_MODEL": "",
+                    "SPECULA_EFFORT": "",
+                    "CODEX_MODEL": "gpt-env",
+                    "CODEX_EFFORT": "high",
+                },
+                "gpt-env",
+                "high",
+            ),
+            ("copilot-cli", {"COPILOT_MODEL": "copilot-env"}, "copilot-env", None),
+        )
+        for agent, environment, expected_model, expected_effort in cases:
+            with self.subTest(agent=agent):
+                for name in self._TUNING_ENV:
+                    os.environ.pop(name, None)
+                os.environ.update(environment)
+                os.environ.pop("SPECULA_RUN_DIR", None)
+                p = self._pipeline([f"--agent={agent}", "foo|o/r|Go|ref"], self.tmp())
+                assert p.run_dir is not None
+                meta = json.loads((p.run_dir / "run.json").read_text())
+                self.assertEqual(meta["model"], expected_model)
+                self.assertEqual(meta["effort"], expected_effort)
+
+    def test_meta_records_unknown_defaults_as_null(self) -> None:
+        for agent in ("codex", "copilot-cli"):
+            with self.subTest(agent=agent):
+                os.environ.pop("SPECULA_RUN_DIR", None)
+                p = self._pipeline([f"--agent={agent}", "foo|o/r|Go|ref"], self.tmp())
+                assert p.run_dir is not None
+                meta = json.loads((p.run_dir / "run.json").read_text())
+                self.assertIsNone(meta["model"])
+                self.assertIsNone(meta["effort"])
+
+    def test_meta_records_explicit_resets_as_null(self) -> None:
+        root = self.tmp()
+        os.environ["SPECULA_MODEL"] = "env-model"
+        os.environ["SPECULA_EFFORT"] = "low"
+        os.environ["CLAUDE_MODEL"] = "opus"
+        os.environ["CLAUDE_EFFORT"] = "high"
+        argv = ["--agent=claude-code", "--model=", "--effort=", "foo|o/r|Go|ref"]
+        p = self._pipeline(argv, root)
+        assert p.run_dir is not None
+        meta = json.loads((p.run_dir / "run.json").read_text())
+        self.assertIsNone(meta["model"])
+        self.assertIsNone(meta["effort"])
+        self.assertEqual(meta["argv"], argv)
+
+    def test_meta_records_claude_default_effort_as_unknown(self) -> None:
+        root = self.tmp()
+        p = self._pipeline(["--agent=claude-code", "--effort=default", "foo|o/r|Go|ref"], root)
+        assert p.run_dir is not None
+        meta = json.loads((p.run_dir / "run.json").read_text())
+        self.assertIsNone(meta["effort"])
 
     def test_meta_records_artifact_sha(self) -> None:
         root = self.tmp()

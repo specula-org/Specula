@@ -269,6 +269,12 @@ def main(argv: list[str]) -> int:
         else:
             return _die(f"claude-code adapter: unknown option: {arg}")
 
+    # Environment variables are wrapper fallbacks, not a second input channel
+    # for the child process.  The resolved values are expressed through argv;
+    # removing them here makes an explicit empty flag a real reset.
+    os.environ.pop("CLAUDE_MODEL", None)
+    os.environ.pop("CLAUDE_EFFORT", None)
+
     # ── Validate arguments ──
     if prompt and prompt_file:
         return _die("claude-code adapter: --prompt and --prompt-file are mutually exclusive")

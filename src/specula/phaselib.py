@@ -213,6 +213,10 @@ class Phase:
     accepts_artifact = True  # bug_classification takes no --artifact (rejects it)
     dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
     progress_config = progress.ProgressConfig()
+    # Tri-state tuning values set in run(): None = unspecified, "" = explicit
+    # reset to the adapter/CLI default, non-empty = explicit override.
+    _model: str | None = None
+    _effort: str | None = None
 
     # ── per-phase hooks ──
     def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
@@ -380,6 +384,8 @@ class Phase:
         agent = "claude-code"
         # `or`: bash ${CLAUDE_ALIAS:-claude} treats an exported-but-empty var as unset
         claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
+        model: str | None = None
+        effort: str | None = None
         artifact = ""
         targets: list[str] = []
         extra: dict[str, str | bool] = {}
@@ -411,6 +417,10 @@ class Phase:
                 agent = arg[len("--agent=") :]
             elif arg.startswith("--claude-alias="):
                 claude_alias = arg[len("--claude-alias=") :]
+            elif arg.startswith("--model="):
+                model = arg[len("--model=") :]
+            elif arg.startswith("--effort="):
+                effort = arg[len("--effort=") :]
             elif arg.startswith("--artifact=") and self.accepts_artifact:
                 artifact = arg[len("--artifact=") :]
             elif arg in ("--help", "-h"):
@@ -426,6 +436,14 @@ class Phase:
 
         if not targets:
             targets = [_logical_cwd().name]  # bash `basename "$PWD"` (logical under symlinks)
+
+        # An explicit flag wins even when its value is empty.  Only an absent
+        # flag consults the run-wide environment; an empty environment value is
+        # treated as unset.  Keeping None distinct from "" is also what lets an
+        # unspecified Claude run retain its deliberate max-effort default while
+        # `--effort=` can still reset the underlying CLI to its own default.
+        self._model = model if model is not None else (os.environ.get("SPECULA_MODEL") or None)
+        self._effort = effort if effort is not None else (os.environ.get("SPECULA_EFFORT") or None)
 
         adapter = LAUNCH_DIR / "adapters" / f"{agent}.sh"
         if not adapter.is_file():
@@ -635,9 +653,12 @@ class Phase:
         files["prompt"].write_text(prompt)
         print(f"[{_ts()}] Launching agent: {name}")
         if dry_run:
+            tuning = _model_effort_argv(adapter, self._model, self._effort)
+            tuning_text = (" " + " ".join(tuning)) if tuning else ""
             print(
                 f"  [DRY RUN] {adapter} {self.dry_prompt_flag}=<prompt> "
-                f"--max-turns={max_turns} --log={files['log']} --background"
+                f"--max-turns={max_turns} --claude-alias={claude_alias}{tuning_text} "
+                f"--log={files['log']} --background"
             )
             print(f"  Prompt saved: {files['prompt']}")
             return None
@@ -689,7 +710,7 @@ class Phase:
                     f"--prompt-file={files['prompt']}",
                     f"--max-turns={max_turns}",
                     f"--claude-alias={claude_alias}",
-                    "--effort=max",
+                    *_model_effort_argv(adapter, self._model, self._effort),
                     f"--log={files['log']}",
                     "--background",
                 ],
@@ -727,6 +748,26 @@ class Phase:
         return launched
 
 
+def _model_effort_argv(adapter: Path, model: str | None, effort: str | None) -> list[str]:
+    """Build adapter tuning flags without collapsing "unset" and "empty".
+
+    Claude phase launches deliberately default to ``max`` so an ambient
+    ``CLAUDE_EFFORT`` injected by an IDE cannot silently downgrade a pipeline.
+    Codex and Copilot receive no effort flag when unspecified and therefore use
+    their own environment/config defaults.  An explicit empty value is always
+    forwarded so the adapter can clear its environment fallback and return to
+    the underlying CLI's configured default.
+    """
+    argv: list[str] = []
+    if model is not None:
+        argv.append(f"--model={model}")
+    if effort is not None:
+        argv.append(f"--effort={effort}")
+    elif adapter.stem == "claude-code":
+        argv.append("--effort=max")
+    return argv
+
+
 def run_agent_blocking(
     adapter: Path,
     prompt: str,
@@ -738,12 +779,14 @@ def run_agent_blocking(
     claude_alias: str,
     max_turns: str = "0",
     stop_gate: bool = False,
+    model: str | None = None,
+    effort: str | None = None,
 ) -> tuple[int, str]:
     """Run ONE agent invocation, blocking, and return (returncode, log text).
 
     The blocking sibling of `Phase._launch`: it shares the same adapter path, the
     same flag set (`--prompt-file` / `--max-turns` / `--claude-alias` /
-    `--effort=max` / `--log`), and the same stop-gate env keys
+    `--model` / `--effort` / `--log`), and the same stop-gate env keys
     (`SPECULA_PHASE` / `SPECULA_WORK_DIR`) — but drops `--background` so the
     caller can read the result before issuing the next turn. That is the shape a
     per-finding confirmation debate needs (turn N+1 reads turn N's output),
@@ -767,7 +810,7 @@ def run_agent_blocking(
         f"--prompt-file={prompt_file}",
         f"--max-turns={max_turns}",
         f"--claude-alias={claude_alias}",
-        "--effort=max",
+        *_model_effort_argv(adapter, model, effort),
         f"--log={log_file}",
     ]
     rc = subprocess.run(cmd, env=env).returncode
@@ -802,6 +845,8 @@ Options:
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
   --artifact=PATH     Source code path (default: $PWD for single target,
                       $PWD/<name>/artifact/<repo>/ for batch)
 
@@ -918,6 +963,8 @@ Options:
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
   --artifact=PATH     Explicit path to the artifact repo (bypasses auto-detection)
 
 Prerequisites:
@@ -1049,6 +1096,8 @@ Options:
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
   --artifact=PATH     Explicit path to artifact repo (overrides auto-detection)
 
 Prerequisites:
@@ -1176,6 +1225,8 @@ Options:
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
 
 Prerequisites:
   - Confirmed bug report at <name>/spec/confirmed-bugs.md (from Phase 4a)
@@ -1282,6 +1333,8 @@ Options:
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
   --artifact=PATH     Explicit path to the artifact repo (overrides auto-detection)
 
 Prerequisites:
@@ -1432,6 +1485,8 @@ Options:
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
   --artifact=PATH     Explicit path to the artifact repo (overrides auto-detection)
 
 Prerequisites:
@@ -1492,6 +1547,8 @@ Prerequisites:
                 repo_dir=ws.find_repo_dir(name),
                 max_parallel=findings_parallel,
                 claude_alias=claude_alias,
+                model=self._model,
+                effort=self._effort,
                 dry_run=dry_run,
                 prompt_extra=self._read_prompt_extra(ws, name),
             )
@@ -1632,6 +1689,12 @@ Used by launch_pipeline.sh between phases. Can also be used standalone.
 Usage:
   bash scripts/launch/launch_review.sh <phase> <name> [name ...]
 
+Options (after <phase>):
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+
 Phases:
   analysis    — Review code analysis output (modeling-brief.md, analysis-report.md)
   specgen     — Review spec generation output (base.tla, MC.tla, Trace.tla)
@@ -1646,17 +1709,26 @@ Output:
         phase = argv[0] if argv else ""
         agent = "claude-code"
         claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
+        model: str | None = None
+        effort: str | None = None
         targets: list[str] = []
         for arg in argv[1:]:
             if arg.startswith("--agent="):
                 agent = arg[len("--agent=") :]
             elif arg.startswith("--claude-alias="):
                 claude_alias = arg[len("--claude-alias=") :]
+            elif arg.startswith("--model="):
+                model = arg[len("--model=") :]
+            elif arg.startswith("--effort="):
+                effort = arg[len("--effort=") :]
             elif arg in ("--help", "-h"):
                 sys.stdout.write(self.usage)
                 return 0
             else:
                 targets.append(arg)
+
+        self._model = model if model is not None else (os.environ.get("SPECULA_MODEL") or None)
+        self._effort = effort if effort is not None else (os.environ.get("SPECULA_EFFORT") or None)
 
         if not phase or not targets:
             print(f"Usage: {SCRIPT_DIR}/phaselib.py review <analysis|specgen|validation> name [name ...]")
@@ -1766,7 +1838,7 @@ Output:
                     f"--prompt={prompt.rstrip(chr(10))}",
                     "--max-turns=30",
                     f"--claude-alias={claude_alias}",
-                    "--effort=max",
+                    *_model_effort_argv(adapter, self._model, self._effort),
                     f"--log={log_file}",
                     "--background",
                 ],

@@ -95,6 +95,8 @@ Options:
   --max-turns=N          Max agent turns (default: 0 = unlimited)
   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli)
   --claude-alias=NAME    Claude CLI profile (default: claude)
+  --model=NAME           Model forwarded to every agent adapter
+  --effort=LEVEL         Reasoning effort forwarded to every agent adapter
   --artifact=PATH        Path to system artifact/source code
   --isolate              Isolated workspace (the default): all outputs go to
                          runs/<run-id>/ — parallel-safe, keeps case-studies/
@@ -265,6 +267,11 @@ class Pipeline:
         self.skip_reviews = True
         self.agent = "claude-code"
         self.claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
+        # None means no pipeline CLI override: phase launchers may consult
+        # SPECULA_MODEL / SPECULA_EFFORT.  "" is an explicit empty flag and
+        # must survive into the child so it can clear those environment values.
+        self.model: str | None = None
+        self.effort: str | None = None
         self.artifact = ""
         self.targets: list[str] = []
         self.quota_5h = os.environ.get("QUOTA_5H") or "85"
@@ -328,6 +335,10 @@ class Pipeline:
                 self.agent = arg.split("=", 1)[1]
             elif arg.startswith("--claude-alias="):
                 self.claude_alias = arg.split("=", 1)[1]
+            elif arg.startswith("--model="):
+                self.model = arg.split("=", 1)[1]
+            elif arg.startswith("--effort="):
+                self.effort = arg.split("=", 1)[1]
             elif arg.startswith("--artifact="):
                 self.artifact = arg.split("=", 1)[1]
             elif arg in ("--help", "-h"):
@@ -423,18 +434,59 @@ class Pipeline:
                 )
                 if r.returncode == 0:
                     artifact_sha = r.stdout.decode(errors="replace").strip()
+        model, effort = self._resolved_run_tuning()
         meta = {
             "run_id": self.run_id,
             "created": _date_iseconds(),
             "argv": self.argv,
             "targets": self.targets,
             "agent": self.agent,
+            "model": model,
+            "effort": effort,
             "claude_alias": self.claude_alias,
             "artifact": self.artifact,
             "artifact_git_sha": artifact_sha,
         }
         with contextlib.suppress(OSError):
             meta_file.write_text(json.dumps(meta, indent=2) + "\n")
+
+    def _resolved_run_tuning(self) -> tuple[str | None, str | None]:
+        """Return model/effort values that are knowable at run creation.
+
+        Pipeline flags win even when explicitly empty. An empty flag resets the
+        adapter to its own configuration, whose resulting value is unknown here
+        and therefore recorded as null. Otherwise mirror the phase and adapter
+        environment fallbacks; never guess values selected by CLI config files.
+        """
+        if self.model is not None:
+            model = self.model or None
+        else:
+            model = os.environ.get("SPECULA_MODEL") or None
+            if model is None:
+                adapter_model_env = {
+                    "claude-code": "CLAUDE_MODEL",
+                    "codex": "CODEX_MODEL",
+                    "copilot-cli": "COPILOT_MODEL",
+                }.get(self.agent)
+                if adapter_model_env is not None:
+                    model = os.environ.get(adapter_model_env) or None
+
+        if self.effort is not None:
+            effort = self.effort or None
+        else:
+            effort = os.environ.get("SPECULA_EFFORT") or None
+            if effort is None:
+                if self.agent == "claude-code":
+                    # Phase launchers explicitly pass max, overriding any
+                    # ambient CLAUDE_EFFORT value.
+                    effort = "max"
+                elif self.agent == "codex":
+                    effort = os.environ.get("CODEX_EFFORT") or None
+
+        # The Claude adapter omits --effort for this explicit reset sentinel.
+        if self.agent == "claude-code" and effort == "default":
+            effort = None
+        return model, effort
 
     # ── utilities ──
     def extract_names(self) -> list[str]:
@@ -553,6 +605,20 @@ class Pipeline:
             ledger.write_text("\n".join(rows) + "\n")
 
     # ── phase runners ──
+    def _model_effort_args(self) -> list[str]:
+        """Explicit pipeline tuning flags, preserving an explicit empty value.
+
+        An absent flag stays absent so phase launchers can apply their run-wide
+        SPECULA_* fallback and adapter-specific defaults.  An explicit empty
+        flag must be forwarded to override (and clear) those fallbacks.
+        """
+        args: list[str] = []
+        if self.model is not None:
+            args.append(f"--model={self.model}")
+        if self.effort is not None:
+            args.append(f"--effort={self.effort}")
+        return args
+
     def _phase_args(self, positional: list[str], pre: list[str] | None = None, with_artifact: bool = True) -> list[str]:
         args = list(pre or [])
         args += [
@@ -560,6 +626,7 @@ class Pipeline:
             f"--max-turns={self.max_turns}",
             f"--agent={self.agent}",
             f"--claude-alias={self.claude_alias}",
+            *self._model_effort_args(),
         ]
         if with_artifact and self.artifact:
             args.append(f"--artifact={self.artifact}")
@@ -665,7 +732,13 @@ class Pipeline:
         # died with "Unknown phase" — invisible under --dry-run, which only logs
         # the command without executing it. Phase goes first: a deliberate
         # divergence from the buggy bash order (git history has the original).
-        args = [phase, f"--agent={self.agent}", f"--claude-alias={self.claude_alias}", *names]
+        args = [
+            phase,
+            f"--agent={self.agent}",
+            f"--claude-alias={self.claude_alias}",
+            *self._model_effort_args(),
+            *names,
+        ]
         self._phase(f"REVIEW: {phase}", "launch_review.sh", args)
 
     def run_phase2_specgen(self) -> None:

@@ -72,6 +72,27 @@ class TestVerdict(ConfirmCase):
         self.assertEqual(C.parse_verdict("VERDICT: DROPPED\nVERDICT: FALSE POSITIVE"), "FALSE POSITIVE")
 
 
+class TestConfirmConfigCompatibility(ConfirmCase):
+    def test_legacy_positional_arguments_keep_their_meaning(self) -> None:
+        ws = Workspace(["T"])
+        cfg = C.ConfirmConfig("T", ws, Path("/adapter"), "/repo", 7, "alias", False, True, "EXTRA")
+        self.assertFalse(cfg.worktree)
+        self.assertTrue(cfg.dry_run)
+        self.assertEqual(cfg.prompt_extra, "EXTRA")
+        self.assertIsNone(cfg.model)
+        self.assertIsNone(cfg.effort)
+
+    def test_turn_threads_explicit_empty_tuning(self) -> None:
+        ws = Workspace(["T"])
+        cfg = C.ConfirmConfig("T", ws, Path("/adapter"), worktree=False, model="", effort="")
+        finding = C.Finding({"id": "MC-1"}, ws.work_dir("T") / "confirmation" / "MC-1")
+        with mock.patch.object(C, "run_agent_blocking", return_value=(0, "VERDICT: FALSE POSITIVE")) as run:
+            verdict, _ = C.run_turn(cfg, finding, "A", 1, "prompt")
+        self.assertEqual(verdict, "FALSE POSITIVE")
+        self.assertEqual(run.call_args.kwargs["model"], "")
+        self.assertEqual(run.call_args.kwargs["effort"], "")
+
+
 class TestMergeRR(ConfirmCase):
     AGENT_BODY = (
         "---\n"

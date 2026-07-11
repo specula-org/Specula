@@ -19,6 +19,7 @@ stdlib unittest, collected natively by pytest:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -43,10 +44,15 @@ _VOLATILE = (
     "SPECULA_PHASE",
     "SPECULA_WORK_DIR",
     "SPECULA_STOP_GATE",
+    "SPECULA_MODEL",
+    "SPECULA_EFFORT",
     "CLAUDE_CONFIG_DIR",
     "CLAUDE_ALIAS",
     "CLAUDE_EFFORT",
     "CLAUDE_MODEL",
+    "CODEX_MODEL",
+    "CODEX_EFFORT",
+    "COPILOT_MODEL",
 )
 
 
@@ -137,9 +143,36 @@ class CliE2E(unittest.TestCase):
         self.assertIn("[DRY RUN] bash scripts/launch/launch_code_analysis.sh", out)
         self.assertIn("Pipeline completed", out)
 
-    def test_run_json_records_argv(self) -> None:
-        import json
+    def test_run_model_effort_reach_phase_and_review_commands(self) -> None:
+        for model, effort in (("gpt-5.5", "high"), ("", "")):
+            with self.subTest(model=model, effort=effort):
+                root = self.specroot()
+                work = self.workdir()
+                proc = self.run_cli(
+                    root,
+                    [
+                        "run",
+                        "--dry-run",
+                        "--enable-reviews",
+                        "--agent=codex",
+                        f"--model={model}",
+                        f"--effort={effort}",
+                        "footest",
+                    ],
+                    cwd=work,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                phase_line = next(line for line in proc.stdout.splitlines() if "launch_code_analysis.sh" in line)
+                review_line = next(line for line in proc.stdout.splitlines() if "launch_review.sh" in line)
+                for line in (phase_line, review_line):
+                    self.assertIn(f"--model={model}", line)
+                    self.assertIn(f"--effort={effort}", line)
+                self.assertIn("launch_review.sh analysis --agent=codex", review_line)
+                meta = json.loads((self.sole_run_dir(root) / "run.json").read_text())
+                self.assertEqual(meta["model"], model or None)
+                self.assertEqual(meta["effort"], effort or None)
 
+    def test_run_json_records_argv(self) -> None:
         root = self.specroot()
         work = self.workdir()
         self.run_cli(root, ["run", "--dry-run", "footest"], cwd=work)

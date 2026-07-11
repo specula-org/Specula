@@ -508,14 +508,41 @@ class TestParsing(TmpCwd):
     def test_parse_args_skips_and_values(self) -> None:
         p = pl.Pipeline()
         rc = p.parse_args(
-            ["--skip-analysis", "--skip-repair-loop", "--max-repair-rounds=2", "--max-parallel=4", "t|g|l|r"]
+            [
+                "--skip-analysis",
+                "--skip-repair-loop",
+                "--max-repair-rounds=2",
+                "--max-parallel=4",
+                "--model=gpt-5.5",
+                "--effort=high",
+                "t|g|l|r",
+            ]
         )
         self.assertIsNone(rc)
         self.assertTrue(p.skip_analysis)
         self.assertTrue(p.skip_repair_loop)
         self.assertEqual(p.max_repair_rounds, "2")
         self.assertEqual(p.max_parallel, "4")
+        self.assertEqual(p.model, "gpt-5.5")
+        self.assertEqual(p.effort, "high")
         self.assertEqual(p.targets, ["t|g|l|r"])
+
+    def test_model_effort_absent_and_explicit_empty_are_distinct(self) -> None:
+        absent = pl.Pipeline()
+        self.assertIsNone(absent.parse_args(["t"]))
+        self.assertIsNone(absent.model)
+        self.assertIsNone(absent.effort)
+        absent_args = absent._phase_args(["t"])
+        self.assertFalse(any(a.startswith("--model=") for a in absent_args))
+        self.assertFalse(any(a.startswith("--effort=") for a in absent_args))
+
+        empty = pl.Pipeline()
+        self.assertIsNone(empty.parse_args(["--model=", "--effort=", "t"]))
+        self.assertEqual(empty.model, "")
+        self.assertEqual(empty.effort, "")
+        empty_args = empty._phase_args(["t"])
+        self.assertIn("--model=", empty_args)
+        self.assertIn("--effort=", empty_args)
 
     def test_parse_args_unknown_option(self) -> None:
         p = pl.Pipeline()
@@ -528,6 +555,8 @@ class TestParsing(TmpCwd):
         rc, out = quiet(p.parse_args, ["--help"])
         self.assertEqual(rc, 0)
         self.assertIn("Full Specula pipeline", out)
+        self.assertIn("--model=NAME", out)
+        self.assertIn("--effort=LEVEL", out)
 
     def test_default_target_is_cwd_basename(self) -> None:
         p = pl.Pipeline()
@@ -554,8 +583,13 @@ class TestRunReview(TmpCwd):
     as "--agent=..." and abort with "Unknown phase"; --dry-run only logs the
     command, so the sequencing golden never caught it. Pin the arg order here."""
 
-    def _capture(self, phase: str) -> list[str]:
-        p = make_pipeline(["footest|foo/bar|Go|ref"], skip_reviews=False)
+    def _capture(self, phase: str, *, model: str | None = None, effort: str | None = None) -> list[str]:
+        p = make_pipeline(
+            ["footest|foo/bar|Go|ref"],
+            skip_reviews=False,
+            model=model,
+            effort=effort,
+        )
         seen: list[list[str]] = []
         p._phase = lambda banner, script, args: seen.append(args)  # type: ignore[method-assign]
         p.run_review(phase, ["footest"])
@@ -572,6 +606,19 @@ class TestRunReview(TmpCwd):
         args = self._capture("specgen")
         self.assertIn("--agent=claude-code", args)
         self.assertIn("--claude-alias=claude", args)
+        self.assertEqual(args[-1], "footest")
+
+    def test_model_effort_values_and_empty_are_forwarded(self) -> None:
+        args = self._capture("analysis", model="gpt-5.5", effort="high")
+        self.assertIn("--model=gpt-5.5", args)
+        self.assertIn("--effort=high", args)
+        self.assertEqual(args[0], "analysis")
+        self.assertEqual(args[-1], "footest")
+
+        args = self._capture("analysis", model="", effort="")
+        self.assertIn("--model=", args)
+        self.assertIn("--effort=", args)
+        self.assertEqual(args[0], "analysis")
         self.assertEqual(args[-1], "footest")
 
 
