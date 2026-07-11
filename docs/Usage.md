@@ -32,7 +32,7 @@ Specula relies on the selected agent to analyze code and reason about counterexa
 
 The agent sandbox is **disabled by default** and its dependencies are **not installed** by `specula setup`. Normal runs do not need SRT or Bubblewrap.
 
-To enable the sandbox for Claude Code or Codex, install Node.js 20+ and SRT:
+To enable the sandbox for Claude Code or Codex, install Node.js 20.11+ and SRT:
 
 ```bash
 npm install -g @anthropic-ai/sandbox-runtime
@@ -113,7 +113,7 @@ Select an agent, model, and reasoning effort when needed:
 ```bash
 uv run specula run \
   --agent=codex \
-  --model=<model-name> \
+  --model=MODEL_NAME \
   --effort=high \
   --artifact=/absolute/path/to/source \
   "name|owner/repository|language|reference"
@@ -131,7 +131,7 @@ Supported adapters are `claude-code` (default), `codex`, and `copilot-cli`. Mode
 
 Specula launches the installed agent CLI directly and uses its existing credentials. Authenticate the CLI before starting a pipeline. Claude Code runs default to maximum reasoning effort; Codex and Copilot use their configured defaults unless `--effort` is supplied.
 
-Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. Codex currently accepts `--max-turns` for adapter compatibility but does not enforce it because `codex exec` has no corresponding limit.
+Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. `--max-turns` maps to Copilot's autopilot continuation limit. Claude Code and Codex accept the option for adapter compatibility but do not enforce it. Inter-phase reviews pass a fixed value of 30 instead of the pipeline option; Claude Code and Codex still ignore it.
 
 ## Output Structure
 
@@ -147,7 +147,7 @@ runs/<run-id>/
 
 The `.specula-output/` directory contains the modeling brief, specifications, harness, traces, reproduction tests, reports, and phase logs. `runs/latest` points to the newest run.
 
-The source supplied through `--artifact` is not copied into the isolated workspace. Harness and reproduction work may build or modify that checkout. Use `--no-isolate` to write `.specula-output/` in the current project instead.
+The source supplied through `--artifact` is not copied into the isolated workspace. Harness and reproduction work may build or modify that checkout. `--no-isolate` selects the legacy layout: a single target writes phase outputs under `$PWD/.specula-output/`, or under `case-studies/<name>/.specula-output/` when that canonical case study exists; multiple targets use `$PWD/<name>/.specula-output/`. For a canonical single target, `pipeline.log` remains under the launch directory's `.specula-output/` while the phase outputs and summary use the case-study directory.
 
 TLC can use substantial memory and temporary disk space during model checking. The bundled `scripts/tlc/run_model_check.sh` stores states under `TMPDIR` (or `/tmp`) by default; set `TLC_STATE_DIR` to a larger or faster filesystem when necessary.
 
@@ -198,13 +198,13 @@ uv run specula analyze \
   "name|owner/repository|language|reference"
 ```
 
-This writes `.specula-output/modeling-brief.md` and `.specula-output/analysis-report.md` in the current directory. By interface, downstream phase commands take only the target `name`; continue passing `--artifact` so they can access the source:
+This writes `.specula-output/modeling-brief.md` and `.specula-output/analysis-report.md` in the current directory. By interface, downstream phase commands take only the target `name`. Continue passing `--artifact` to `specgen`, `harness`, `validate`, and `confirm` so they can access the source; `classify` reads only the generated report and does not accept `--artifact`:
 
 ```bash
 uv run specula specgen --agent=codex --artifact=/path/to/source name
 ```
 
-Individual commands share `.specula-output/` in the current directory unless `SPECULA_RUN_DIR` is set. A downstream command stops if its required files from the preceding phase are missing.
+A single-target individual command uses `.specula-output/` in the current directory; a multi-target command uses `<name>/.specula-output/` for each target. When `SPECULA_RUN_DIR` is set, every target uses `$SPECULA_RUN_DIR/<name>/.specula-output/`. A downstream command stops if its required files from the preceding phase are missing.
 
 Use `--check` to validate a phase's prerequisites without starting an agent:
 
@@ -230,12 +230,13 @@ uv run specula run [options] "name|owner/repository|language|reference"
 | `--effort=LEVEL` | Override reasoning effort |
 | `--artifact=PATH` | Set the target source checkout |
 | `--max-parallel=N` | Run phase agents concurrently |
+| `--max-turns=N` | Set Copilot's autopilot continuation limit; accepted but ignored by Claude Code and Codex |
 | `--enable-reviews` | Enable inter-phase reviews |
 | `--legacy-confirm` | Use one confirmation agent instead of per-finding agents |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse early-phase outputs |
 | `--skip-validation`, `--skip-confirmation`, `--skip-classification` | Reuse later-phase outputs |
 | `--run-id=ID` | Create or attach to an isolated run |
-| `--no-isolate` | Write outputs in the current project |
+| `--no-isolate` | Use the legacy output layout described above |
 
 `--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default; disable it with `--skip-repair-loop` or cap attempts per request with `--max-repair-rounds=N`.
 
