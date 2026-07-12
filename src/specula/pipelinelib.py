@@ -277,6 +277,7 @@ class Pipeline:
         self.model: str | None = None
         self.effort: str | None = None
         self.artifact = ""
+        self._artifact_given = False
         self.targets: list[str] = []
         self.quota_5h = os.environ.get("QUOTA_5H") or "85"
         self.quota_7d = os.environ.get("QUOTA_7D") or "95"
@@ -345,6 +346,7 @@ class Pipeline:
                 self.effort = arg.split("=", 1)[1]
             elif arg.startswith("--artifact="):
                 self.artifact = arg.split("=", 1)[1]
+                self._artifact_given = True
             elif arg in ("--help", "-h"):
                 sys.stdout.write(USAGE)
                 return 0
@@ -360,6 +362,13 @@ class Pipeline:
         if self._run_id_given and self._no_isolate_given:
             print("ERROR: --no-isolate conflicts with --run-id", file=sys.stderr)
             return 1
+        if self._artifact_given:
+            if not self.artifact or not Path(self.artifact).is_dir():
+                print(f"ERROR: --artifact must be an existing directory: {self.artifact}", file=sys.stderr)
+                return 1
+            # The legacy single-target flow may chdir before launching phases.
+            # Stabilize a relative CLI path while it still refers to the caller's cwd.
+            self.artifact = str(Path(self.artifact).resolve())
         # wart fix (step 7): garbage quota config fails fast (pre-tee, like the
         # option errors). The bash pushed the values into the gate's arithmetic,
         # where a bad threshold read as "usage parse failed" and silently
@@ -641,7 +650,7 @@ class Pipeline:
             f"--claude-alias={self.claude_alias}",
             *self._model_effort_args(),
         ]
-        if with_artifact and self.artifact:
+        if with_artifact and self._artifact_given:
             args.append(f"--artifact={self.artifact}")
         args += positional
         return args
