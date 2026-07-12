@@ -265,6 +265,8 @@ uv run specula batch --queue /path/to/tasks.queue --workers 3
 
 The scheduler clones missing repositories under `case-studies/` and creates an isolated workspace for every task. See all scheduler options with `uv run specula batch --help`.
 
+The scheduler owns `--run-id`, `--isolate`, and `--no-isolate` so that each task keeps a separate workspace. Do not include these flags in a queue; Specula rejects the queue and reports the affected line and flag.
+
 ## Progress and Logs
 
 Agent activity is printed during each phase and written to its log. Set `SPECULA_PROGRESS=off` to disable live reporting. After a run, start with `pipeline-summary.md` for deliverable status and log locations.

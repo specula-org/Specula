@@ -221,6 +221,22 @@ class TestLoadQueue(Base):
         s = self.load("a|g/h|Go|r\nb|i/j|Rust|r2")
         self.assertEqual(s.task_targets, ["a|g/h|Go|r", "b|i/j|Rust|r2"])
 
+    def test_scheduler_owned_isolation_flags_rejected(self) -> None:
+        for flag in ("--run-id", "--run-id=shared", "--isolate", "--no-isolate"):
+            with self.subTest(flag=flag):
+                s = self.sched()
+                qf = self.tmp() / "tasks.queue"
+                qf.write_text(f"# comment\n\na|g/h|Go|r\t--agent=codex {flag}\n")
+                s.queue_file = str(qf)
+                with self.assertRaises(SystemExit) as cm:
+                    s.load_queue()
+                self.assertEqual(cm.exception.code, 1)
+                self.assertEqual(s.lines[-1], f"Queue line 3: scheduler-reserved flag {flag}")
+
+    def test_similar_queue_flag_is_not_reserved(self) -> None:
+        s = self.load("a|g/h|Go|r\t--run-id-suffix=shared\n")
+        self.assertEqual(s.task_flags, ["--run-id-suffix=shared"])
+
     def test_missing_queue_file(self) -> None:
         s = self.sched()
         s.queue_file = "/nonexistent/tasks.queue"

@@ -110,6 +110,7 @@ Queue format (tab-separated):
   name|github|lang|reference[TAB]flags
 
   - flags: optional launch_pipeline.sh flags (e.g. --skip-analysis)
+  - --run-id, --isolate, and --no-isolate are reserved for the scheduler
 
 Workspace: every task's pipeline runs isolated under runs/<run>-<n>-<name>/
 (scheduler passes --run-id; canonical inputs stay in case-studies/<name>/).
@@ -319,7 +320,7 @@ class Scheduler:
         # final line is kept (bash silently dropped the task), and a
         # whitespace-only line is blank (bash stripped spaces only, so a
         # tabs-only line became a phantom task with an empty name)
-        for line in text.split("\n"):
+        for line_number, line in enumerate(text.split("\n"), start=1):
             if not line.strip() or re.match(r"^\s*#", line):
                 continue
             if "\t" in line:
@@ -327,6 +328,10 @@ class Scheduler:
                 flags = flags.lstrip("\t")
             else:
                 target, flags = line, ""
+            for flag in flags.split():
+                if flag in {"--run-id", "--isolate", "--no-isolate"} or flag.startswith("--run-id="):
+                    self.log(f"Queue line {line_number}: scheduler-reserved flag {flag}")
+                    raise SystemExit(1)
             self.task_targets.append(target)
             self.task_flags.append(flags)
         self.log(f"Loaded {len(self.task_targets)} tasks from {self.queue_file}")
@@ -393,11 +398,11 @@ class Scheduler:
         self.log(f"START #{idx + 1} {name}")
         self._write_status(idx, "running")
 
-        # every task runs in an isolated per-task workspace: runs/<run-id>/.
-        # --run-id implies --isolate; queue flags come later, so they can still
-        # override. One run dir per TASK (not per scheduler run): the run-scoped
-        # artifacts (pipeline.log, run.json, pipeline-summary.md) live at the
-        # run root and would collide across parallel workers.
+        # Every task runs in an isolated per-task workspace: runs/<run-id>/.
+        # load_queue rejects isolation flags before dispatch, so this generated
+        # ID cannot be overridden. One run dir per TASK (not per scheduler run):
+        # the run-scoped artifacts (pipeline.log, run.json,
+        # pipeline-summary.md) would otherwise collide across workers.
         task_run_id = self.task_run_id(idx)
         cmd = [
             "bash",
@@ -437,8 +442,7 @@ class Scheduler:
             # per task, not per attempt), so an attempt that dies before phase 1
             # truncates agent.log can read the previous attempt's API error and
             # misclassify a real failure as transient — costs at most the
-            # remaining bounded backoffs. And a queue-flag --run-id override
-            # moves the run dir, degrading the probe to the task-log grep above.
+            # remaining bounded backoffs.
             agent_log = f"{SPECULA_ROOT}/runs/{task_run_id}/{name}/.specula-output/agent.log"
             if os.path.isfile(agent_log) and _grep(agent_log, "API Error:"):
                 is_transient = True
