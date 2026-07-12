@@ -36,6 +36,14 @@ complete: validate each draft, scan active and deferred RR ids serially, stamp
 the dispatcher-owned lifecycle and History fields, and publish the final file.
 Never let an individual finding allocate while it is being investigated.
 
+Every published RR MUST contain `finding_id: <candidate-id>` copied exactly from
+that candidate's stable input `id`. This is the request's immutable identity.
+`bug_id: Bug N` is only the current report display label and MUST NOT be used to
+identify or reuse a request; it may change when candidates are reordered. Before
+publishing, cross-check that the table row, `## Bug N` detail, RR link, and
+`finding_id` all refer to the same candidate. If that cannot be proved, do not
+publish the request or silently allocate another id; mark the entry `INCOMPLETE`.
+
 ## Before any `REPRODUCED` — the reachability checklist (per finding)
 For every finding you are about to mark `REPRODUCED`, answer these explicitly in its entry (they are checked against the captured output):
 1. Did **Level 0 or Level 1 alone** trigger it — real public API / normal ops, timing help only? **yes / no**.

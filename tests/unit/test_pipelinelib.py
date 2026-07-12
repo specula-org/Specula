@@ -977,6 +977,198 @@ class TestRepairLoop(RRDirCase):
         self.assertFalse(restarted.repair_phase3_snapshot_path("footest").exists())
         self.assertIn("recovered durable Phase 3 snapshot", out)
 
+    def test_restart_after_durable_phase3_commit_keeps_consumed(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        snapshot = self.p.snapshot_open_repair_requests("footest")
+        self.p.persist_open_repair_snapshot("footest", snapshot, 2)
+        snapshot_doc = json.loads(self.p.repair_phase3_snapshot_path("footest").read_text())
+
+        # The launcher returned success: CONSUMED is complete, then the
+        # generation marker commits this exact attempt. Simulate SIGKILL before
+        # the obsolete durable snapshot can be unlinked.
+        pl.rr_set_status(request, "CONSUMED", "repair completed")
+        self.p.advance_confirmation_generation(2, ["footest"])
+        generation = json.loads((self.rr_dir.parent / "confirmation-generation.json").read_text())
+        self.assertEqual(generation["repair_phase3_commit"], snapshot_doc["commit_token"])
+
+        restarted = make_pipeline(["footest|g|l|r"])
+        recovered, out = quiet(restarted.prepare_repair_state)
+
+        self.assertEqual(recovered, {"footest"})
+        self.assertEqual(pl.rr_status(request), "CONSUMED")
+        self.assertNotIn("retrying OPEN", request.read_text())
+        self.assertFalse(restarted.repair_phase3_snapshot_path("footest").exists())
+        self.assertIn("finalized committed repair Phase 3", out)
+
+    def test_main_committed_recovery_goes_directly_to_fresh_phase4(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        snapshot = self.p.snapshot_open_repair_requests("footest")
+        self.p.persist_open_repair_snapshot("footest", snapshot, 2)
+        pl.rr_set_status(request, "CONSUMED", "repair completed")
+        self.p.advance_confirmation_generation(2, ["footest"])
+        events: list[str] = []
+
+        self.p.skip_analysis = True
+        self.p.skip_specgen = True
+        self.p.skip_harness = True
+        self.p.skip_classification = True
+        self.p.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+        self.p.generate_summary = lambda: None  # type: ignore[method-assign]
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        self.p.run_phase3_validation = lambda: self.fail("committed repair was rerun as ordinary Phase 3")  # type: ignore[method-assign]
+        self.p.run_phase3_repair = lambda *_args: self.fail("committed repair was reopened")  # type: ignore[method-assign]
+        self.p.run_phase4_confirmation = lambda: events.append("fresh-phase4")  # type: ignore[method-assign]
+
+        rc, out = quiet(self.p.main)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(events, ["fresh-phase4"])
+        self.assertEqual(pl.rr_status(request), "CONSUMED")
+        self.assertIn("Ordinary Phase 3 covered for every target by the recovered committed repairs", out)
+        self.assertIn("repair loop is a no-op", out)
+
+    def test_default_upstream_rerun_forces_fresh_ordinary_phase3_after_commit_recovery(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        snapshot = self.p.snapshot_open_repair_requests("footest")
+        self.p.persist_open_repair_snapshot("footest", snapshot, 2)
+        pl.rr_set_status(request, "CONSUMED", "repair completed")
+        self.p.advance_confirmation_generation(2, ["footest"])
+        snapshot_path = self.p.repair_phase3_snapshot_path("footest")
+        events: list[str] = []
+
+        def phase1() -> None:
+            # Recovery must precede the first default upstream mutation.
+            self.assertFalse(snapshot_path.exists())
+            self.assertEqual(pl.rr_status(request), "CONSUMED")
+            events.append("phase1")
+
+        self.p.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+        self.p.generate_summary = lambda: None  # type: ignore[method-assign]
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        self.p.run_phase1_analysis = phase1  # type: ignore[method-assign]
+        self.p.run_phase2_specgen = lambda: events.append("phase2")  # type: ignore[method-assign]
+        self.p.run_phase2_5_harness = lambda: events.append("phase2.5")  # type: ignore[method-assign]
+        self.p.run_phase3_validation = lambda: events.append("ordinary-phase3")  # type: ignore[method-assign]
+        self.p.run_phase3_repair = lambda *_args: self.fail("committed RR was reopened as scoped repair")  # type: ignore[method-assign]
+        self.p.run_phase4_confirmation = lambda: events.append("phase4")  # type: ignore[method-assign]
+        self.p.run_phase4b_classification = lambda: events.append("phase4b")  # type: ignore[method-assign]
+
+        rc, _out = quiet(self.p.main)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(events, ["phase1", "phase2", "phase2.5", "ordinary-phase3", "phase4", "phase4b"])
+        self.assertEqual(pl.rr_status(request), "CONSUMED")
+
+    def test_partial_multitarget_commit_never_covers_new_target_phase3(self) -> None:
+        p = make_pipeline(["old|g|l|r", "new|g|l|r"])
+        old_rr_dir = self.tmp / "old" / ".specula-output" / "spec" / "repair-requests"
+        new_rr_dir = self.tmp / "new" / ".specula-output" / "spec" / "repair-requests"
+        old_rr_dir.mkdir(parents=True)
+        new_rr_dir.mkdir(parents=True)
+        old_request = make_rr(old_rr_dir, "RR-1", "OPEN", bug_id="OLD-1")
+        snapshot = p.snapshot_open_repair_requests("old")
+        p.persist_open_repair_snapshot("old", snapshot, 3)
+        pl.rr_set_status(old_request, "CONSUMED", "old target repair completed")
+        p.advance_confirmation_generation(3, ["old"])
+        events: list[str] = []
+
+        p.skip_analysis = True
+        p.skip_specgen = True
+        p.skip_harness = True
+        p.skip_classification = True
+        p.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+        p.generate_summary = lambda: None  # type: ignore[method-assign]
+        p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        p.run_phase3_validation = lambda: events.append("all-target-ordinary-phase3")  # type: ignore[method-assign]
+        p.run_phase3_repair = lambda *_args: self.fail("old committed target was reopened")  # type: ignore[method-assign]
+        p.run_phase4_confirmation = lambda: events.append("phase4")  # type: ignore[method-assign]
+
+        rc, out = quiet(p.main)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(events, ["all-target-ordinary-phase3", "phase4"])
+        self.assertEqual(pl.rr_status(old_request), "CONSUMED")
+        self.assertNotIn("covered for every target", out)
+
+    def test_direct_repair_loop_consumes_committed_recovery_with_fresh_phase4(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        snapshot = self.p.snapshot_open_repair_requests("footest")
+        self.p.persist_open_repair_snapshot("footest", snapshot, 2)
+        pl.rr_set_status(request, "CONSUMED", "repair completed")
+        self.p.advance_confirmation_generation(2, ["footest"])
+        events: list[str] = []
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        self.p.run_phase3_repair = lambda *_args: self.fail("committed repair was reopened")  # type: ignore[method-assign]
+        self.p.run_phase4_confirmation = lambda: events.append("fresh-phase4")  # type: ignore[method-assign]
+
+        covered, out = quiet(self.p.run_repair_loop)
+
+        self.assertEqual(covered, {"footest"})
+        self.assertEqual(events, ["fresh-phase4"])
+        self.assertEqual(pl.rr_status(request), "CONSUMED")
+        self.assertFalse(self.p.repair_phase3_snapshot_path("footest").exists())
+        self.assertIn("completed its pending fresh Phase 4", out)
+
+    def test_direct_committed_recovery_repairs_requests_opened_by_fresh_phase4(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        snapshot = self.p.snapshot_open_repair_requests("footest")
+        self.p.persist_open_repair_snapshot("footest", snapshot, 2)
+        pl.rr_set_status(request, "CONSUMED", "repair completed")
+        self.p.advance_confirmation_generation(2, ["footest"])
+        confirmations: list[int] = []
+        repairs: list[int] = []
+
+        def confirm() -> None:
+            confirmations.append(len(confirmations) + 1)
+            if len(confirmations) == 1:
+                make_rr(self.rr_dir, "RR-2", "OPEN", bug_id="B-2")
+
+        def repair(round_: int, names: list[str] | None = None) -> None:
+            self.assertEqual(names, ["footest"])
+            repairs.append(round_)
+            pl.rr_set_status(self.rr_dir / "RR-2.md", "CONSUMED", "follow-up repaired")
+
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        self.p.run_phase3_repair = repair  # type: ignore[method-assign]
+        self.p.run_phase4_confirmation = confirm  # type: ignore[method-assign]
+
+        covered, out = quiet(self.p.run_repair_loop)
+
+        self.assertEqual(covered, {"footest"})
+        self.assertEqual(confirmations, [1, 2])
+        self.assertEqual(repairs, [1])
+        self.assertEqual(pl.rr_status(self.rr_dir / "RR-2.md"), "CONSUMED")
+        self.assertIn("Fresh Phase 4 opened repair requests", out)
+
+    def test_restart_before_phase3_commit_reopens_early_consumed_write(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        snapshot = self.p.snapshot_open_repair_requests("footest")
+        self.p.persist_open_repair_snapshot("footest", snapshot, 2)
+
+        # CONSUMED written by the child is not a commit: the child may still
+        # fail or be killed before returning zero to the orchestrator.
+        pl.rr_set_status(request, "CONSUMED", "agent wrote status before exit")
+        restarted = make_pipeline(["footest|g|l|r"])
+        _, out = quiet(restarted.prepare_repair_state)
+
+        self.assertEqual(pl.rr_status(request), "OPEN")
+        self.assertIn("agent wrote status before exit", request.read_text())
+        self.assertIn("recovered durable Phase 3 snapshot", out)
+
+    def test_same_round_generation_without_attempt_token_is_not_commit(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        # A prior run can have the same repair-round number. Its generation
+        # marker must not prove success for this new snapshot.
+        self.p.advance_confirmation_generation(2, ["footest"])
+        snapshot = self.p.snapshot_open_repair_requests("footest")
+        self.p.persist_open_repair_snapshot("footest", snapshot, 2)
+        pl.rr_set_status(request, "CONSUMED", "uncommitted attempt")
+
+        restarted = make_pipeline(["footest|g|l|r"])
+        quiet(restarted.prepare_repair_state)
+
+        self.assertEqual(pl.rr_status(request), "OPEN")
+
     def test_malformed_legacy_in_repair_without_snapshot_fails_closed(self) -> None:
         request = self.rr_dir / "RR-1.md"
         request.write_text("---\nid: RR-1\nstatus: IN_REPAIR\n---\n")
@@ -1052,6 +1244,34 @@ class TestRepairLoop(RRDirCase):
             self.assertIn("agent committed too early", text)
             self.assertIn("partial spec/output changes were retained", text)
 
+    def test_snapshot_cleanup_failure_never_rolls_back_committed_phase3(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+
+        def successful_repair(_banner: str, _script: str, _args: list[str]) -> None:
+            pl.rr_set_status(request, "CONSUMED", "repair process returned success")
+
+        self.p._phase = successful_repair  # type: ignore[assignment]
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        self.p.clear_open_repair_snapshot = mock.Mock(side_effect=OSError("injected unlink failure"))  # type: ignore[method-assign]
+
+        out = io.StringIO()
+        with self.assertRaisesRegex(OSError, "injected unlink failure"), contextlib.redirect_stdout(out):
+            self.p.run_repair_loop()
+
+        snapshot_path = self.p.repair_phase3_snapshot_path("footest")
+        snapshot_doc = json.loads(snapshot_path.read_text())
+        generation = json.loads((self.rr_dir.parent / "confirmation-generation.json").read_text())
+        self.assertEqual(generation["repair_phase3_commit"], snapshot_doc["commit_token"])
+        self.assertEqual(pl.rr_status(request), "CONSUMED")
+        self.assertNotIn("partial spec/output changes were retained", request.read_text())
+        self.assertIn("CONSUMED state was retained for startup recovery", out.getvalue())
+
+        restarted = make_pipeline(["footest|g|l|r"])
+        _, recovery_out = quiet(restarted.prepare_repair_state)
+        self.assertEqual(pl.rr_status(request), "CONSUMED")
+        self.assertFalse(snapshot_path.exists())
+        self.assertIn("finalized committed repair Phase 3", recovery_out)
+
     def test_phase3_truncation_restores_complete_snapshot_semantics(self) -> None:
         request = make_rr(self.rr_dir, "RR-1", "OPEN")
 
@@ -1107,7 +1327,7 @@ class TestRepairLoop(RRDirCase):
         self.assertIn("beta wrote partial state", beta.read_text())
         self.assertIn("partial spec/output changes were retained", beta.read_text())
 
-    def test_main_recovers_in_repair_before_initial_confirmation(self) -> None:
+    def test_main_resumes_in_repair_before_ordinary_phase3(self) -> None:
         request = make_rr(self.rr_dir, "RR-1", "IN_REPAIR")
         events: list[str] = []
 
@@ -1120,20 +1340,62 @@ class TestRepairLoop(RRDirCase):
         self.p.skip_analysis = True
         self.p.skip_specgen = True
         self.p.skip_harness = True
-        self.p.skip_validation = True
+        self.p.skip_validation = False
         self.p.skip_classification = True
         self.p.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
         self.p.generate_summary = lambda: None  # type: ignore[method-assign]
         self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
         self.p.run_phase3_repair = repair  # type: ignore[method-assign]
+        self.p.run_phase3_validation = lambda: self.fail("ordinary Phase 3 ran before recovery")  # type: ignore[method-assign]
         self.p.run_phase4_confirmation = lambda: events.append("confirm")  # type: ignore[method-assign]
 
         rc, out = quiet(self.p.main)
 
         self.assertEqual(rc, 0)
         self.assertEqual(events, ["repair:OPEN", "confirm"])
-        self.assertIn("Resuming pending repair requests before the initial Phase 4 pass", out)
+        self.assertIn("Resuming pending repair requests before the ordinary Phase 3 pass", out)
+        self.assertIn("Ordinary Phase 3 covered for every target by the resumed repair loop", out)
         self.assertIn("Initial Phase 4 completed by the resumed repair loop", out)
+
+    def _assert_skip_flag_still_recovers_before_phase3(self, *, skip_confirmation: bool, skip_repair: bool) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        snapshot = self.p.snapshot_open_repair_requests("footest")
+        self.p.persist_open_repair_snapshot("footest", snapshot, 2)
+        request.write_text("---\nid: RR-1\nstatus: IN_REPAIR\n")
+        observed: list[str] = []
+
+        def ordinary_phase3() -> None:
+            text = request.read_text()
+            self.assertEqual(pl.rr_status(request), "OPEN")
+            self.assertIn("target: SPEC_REPAIR", text)
+            self.assertIn("## Evidence", text)
+            observed.append("ordinary-phase3-after-recovery")
+
+        self.p.skip_analysis = True
+        self.p.skip_specgen = True
+        self.p.skip_harness = True
+        self.p.skip_confirmation = skip_confirmation
+        self.p.skip_repair_loop = skip_repair
+        self.p.skip_classification = True
+        self.p.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+        self.p.generate_summary = lambda: None  # type: ignore[method-assign]
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        self.p.run_phase3_validation = ordinary_phase3  # type: ignore[method-assign]
+        self.p.run_phase3_repair = lambda *_args: self.fail("skip flag did not prevent repair resume")  # type: ignore[method-assign]
+        self.p.run_phase4_confirmation = lambda: observed.append("phase4")  # type: ignore[method-assign]
+
+        rc, _out = quiet(self.p.main)
+
+        self.assertEqual(rc, 0)
+        expected = ["ordinary-phase3-after-recovery"] + ([] if skip_confirmation else ["phase4"])
+        self.assertEqual(observed, expected)
+        self.assertFalse(self.p.repair_phase3_snapshot_path("footest").exists())
+
+    def test_skip_confirmation_still_recovers_before_ordinary_phase3(self) -> None:
+        self._assert_skip_flag_still_recovers_before_phase3(skip_confirmation=True, skip_repair=False)
+
+    def test_skip_repair_loop_still_recovers_before_ordinary_phase3(self) -> None:
+        self._assert_skip_flag_still_recovers_before_phase3(skip_confirmation=False, skip_repair=True)
 
     def test_phase4_failure_keeps_consumed_and_full_rerun_retries_phase4(self) -> None:
         request = make_rr(self.rr_dir, "RR-1", "OPEN")

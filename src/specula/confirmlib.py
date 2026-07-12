@@ -1011,6 +1011,14 @@ class RepairDraft:
     proposed_change: str
 
 
+@dataclass(frozen=True)
+class TerminalRRSnapshot:
+    relative_path: str
+    content: bytes
+    finding_id: str
+    status: str
+
+
 def _repair_frontmatter(body: str) -> tuple[list[str], str]:
     """Split a strict semantic RR draft into frontmatter and Markdown payload."""
     lines = body.splitlines()
@@ -1219,11 +1227,11 @@ def _read_repair_draft(cfg: ConfirmConfig, f: Finding) -> RepairDraft:
 
 def _merge_rr(
     rid: str,
-    finding_id: str,
+    bug_id: str,
     cx_fallback: str,
     body: str,
     *,
-    raw_finding_id: str = "",
+    finding_id: str,
     allocation_key: str = "",
     status: str = "OPEN",
     round_: int = 0,
@@ -1231,13 +1239,13 @@ def _merge_rr(
 ) -> str:
     """Render a validated semantic draft with dispatcher-owned lifecycle."""
     del cx_fallback
+    if not finding_id or set(finding_id) - ID_CHARS or finding_id in {".", ".."}:
+        raise InvalidRepairRequest(f"invalid stable finding_id {finding_id!r}")
     draft = _parse_repair_draft(body)
-    lifecycle = f"id: {rid}\nbug_id: {finding_id}\nstatus: {status}\nround: {round_}\n"
-    if raw_finding_id:
-        lifecycle += f"finding_id: {raw_finding_id}\n"
+    lifecycle = f"id: {rid}\nfinding_id: {finding_id}\nbug_id: {bug_id}\nstatus: {status}\nround: {round_}\n"
     if allocation_key:
         lifecycle += f"allocation_key: {allocation_key}\n"
-    entries = list(history or [f"- r{round_} (phase4-confirm): created from {raw_finding_id or finding_id}"])
+    entries = list(history or [f"- r{round_} (phase4-confirm): created from {finding_id}"])
     semantic_frontmatter = "\n".join(draft.frontmatter)
     history_text = "\n".join(entries)
     return f"---\n{lifecycle}{semantic_frontmatter}\n---\n\n{draft.payload.rstrip()}\n\n## History\n{history_text}\n"
@@ -1276,6 +1284,338 @@ def _atomic_create_rr(path: Path, text: str) -> None:
         tmp.unlink(missing_ok=True)
 
 
+_REPORT_RR_ROW_RE = re.compile(r"(?m)^\|\s*(\d+)\s*\|\s*([^|\s]+)\s*\|\s*([^|]+?)\s*\|\s*$")
+_REPORT_DETAIL_RE = re.compile(r"(?m)^##\s+Bug\s+(\d+)\s*:")
+
+
+def _legacy_rr_report_identity(
+    cfg: ConfirmConfig,
+    rid: str,
+    *,
+    require_reference: bool = True,
+) -> tuple[str, str] | None:
+    """Prove the stable identity of a pre-``finding_id`` legacy request.
+
+    The stored ``bug_id`` is deliberately ignored: ``Bug N`` is only a display
+    label and may already be stale after candidates were reordered. The report
+    is accepted only when its RR-bearing table row and matching detail section
+    independently name the same stable Finding ID. Anything less fails closed
+    so switching confirmation modes cannot silently create a duplicate OPEN.
+    """
+    report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
+    if report.is_symlink():
+        raise InvalidRepairRequest(f"cannot migrate legacy repair {rid}: confirmed-bugs.md is missing or unsafe")
+    if not report.is_file():
+        if not require_reference:
+            return None
+        raise InvalidRepairRequest(f"cannot migrate legacy repair {rid}: confirmed-bugs.md is missing or unsafe")
+    text = report.read_text()
+    rows: list[tuple[int, str]] = []
+    for match in _REPORT_RR_ROW_RE.finditer(text):
+        rr_refs = re.findall(r"\bRR-\d+\b", match.group(3))
+        if rid in rr_refs:
+            rows.append((int(match.group(1)), match.group(2)))
+    if not rows and not require_reference:
+        return None
+    if len(rows) != 1:
+        raise InvalidRepairRequest(
+            f"cannot migrate legacy repair {rid}: expected exactly one RR-bearing report row, found {len(rows)}"
+        )
+    bug_no, finding_id = rows[0]
+    if not finding_id or set(finding_id) - ID_CHARS or finding_id in {".", ".."}:
+        raise InvalidRepairRequest(f"cannot migrate legacy repair {rid}: unsafe finding id {finding_id!r}")
+
+    details = list(_REPORT_DETAIL_RE.finditer(text))
+    detail_ids: list[str] = []
+    for index, match in enumerate(details):
+        if int(match.group(1)) != bug_no:
+            continue
+        end = details[index + 1].start() if index + 1 < len(details) else len(text)
+        detail_ids.extend(re.findall(r"(?m)^- \*\*Finding ID\*\*:\s*([^\s]+)\s*$", text[match.end() : end]))
+    if detail_ids != [finding_id]:
+        raise InvalidRepairRequest(
+            f"cannot migrate legacy repair {rid}: report detail does not prove finding_id {finding_id}"
+        )
+    if sum(1 for match in _REPORT_RR_ROW_RE.finditer(text) if match.group(2) == finding_id) != 1:
+        raise InvalidRepairRequest(
+            f"cannot migrate legacy repair {rid}: finding_id {finding_id} is not unique in the report"
+        )
+    return finding_id, f"Bug {bug_no}"
+
+
+def _rr_with_identity_fields(text: str, finding_id: str, allocation_key: str, bug_id: str | None) -> str:
+    """Add missing dispatcher identity fields without changing semantic payload."""
+    lines = text.splitlines()
+    if not lines or lines[0] != "---":
+        raise InvalidRepairRequest("legacy repair request is missing fenced frontmatter")
+    try:
+        end = lines.index("---", 1)
+    except ValueError as exc:
+        raise InvalidRepairRequest("legacy repair request is missing its closing frontmatter fence") from exc
+    insert_at = next((i + 1 for i, line in enumerate(lines[1:end], 1) if line.startswith("id:")), 1)
+    if not _rr_field_text(text, "finding_id"):
+        lines.insert(insert_at, f"finding_id: {finding_id}")
+        end += 1
+        insert_at += 1
+    if not _rr_field_text(text, "allocation_key"):
+        lines.insert(insert_at, f"allocation_key: {allocation_key}")
+        end += 1
+    if bug_id is not None and _rr_field_text(text, "bug_id") != [bug_id]:
+        bug_indexes = [i for i, line in enumerate(lines[1:end], 1) if line.startswith("bug_id:")]
+        if len(bug_indexes) != 1:
+            raise InvalidRepairRequest("legacy repair request has invalid bug_id")
+        lines[bug_indexes[0]] = f"bug_id: {bug_id}"
+    return "\n".join(lines) + "\n"
+
+
+def _ensure_rr_stable_identities(
+    cfg: ConfirmConfig,
+    rr_dir: Path,
+    *,
+    verify_against_report: bool = False,
+    require_active_report_link: bool = False,
+) -> None:
+    """Normalize legacy RRs before any identity lookup or new allocation."""
+    active_by_finding: dict[str, list[str]] = {}
+    for path in sorted(rr_dir.rglob("RR-*.md")):
+        if path.is_symlink():
+            raise InvalidRepairRequest(f"repair request {path.name} must not be a symlink")
+        text = path.read_text()
+        ids = _rr_field_text(text, "id")
+        bug_ids = _rr_field_text(text, "bug_id")
+        finding_ids = _rr_field_text(text, "finding_id")
+        keys = _rr_field_text(text, "allocation_key")
+        statuses = _rr_field_text(text, "status")
+        if ids != [path.stem] or len(bug_ids) != 1:
+            raise InvalidRepairRequest(f"repair request {path.name} has invalid legacy identity fields")
+        if len(finding_ids) > 1 or len(keys) > 1:
+            raise InvalidRepairRequest(f"repair request {path.name} repeats a stable identity field")
+        if len(statuses) != 1 or statuses[0] not in {"OPEN", "IN_REPAIR", "CONSUMED", "DEFERRED"}:
+            raise InvalidRepairRequest(f"repair request {path.name} has invalid status")
+        report_identity = None
+        if not finding_ids:
+            report_identity = _legacy_rr_report_identity(cfg, ids[0])
+        elif verify_against_report:
+            report_identity = _legacy_rr_report_identity(
+                cfg,
+                ids[0],
+                require_reference=False,
+            )
+            if report_identity is None and require_active_report_link and statuses[0] in {"OPEN", "IN_REPAIR"}:
+                raise InvalidRepairRequest(
+                    f"repair request {ids[0]} is {statuses[0]} but is not linked from confirmed-bugs.md"
+                )
+        reported_finding_id = report_identity[0] if report_identity is not None else None
+        reported_bug_id = (
+            report_identity[1] if report_identity is not None and statuses[0] in {"OPEN", "IN_REPAIR"} else None
+        )
+        if finding_ids and reported_finding_id is not None and finding_ids[0] != reported_finding_id:
+            raise InvalidRepairRequest(
+                f"repair request {ids[0]} finding_id {finding_ids[0]!r} conflicts with report identity "
+                f"{reported_finding_id!r}"
+            )
+        if finding_ids:
+            finding_id = finding_ids[0]
+        else:
+            assert reported_finding_id is not None
+            finding_id = reported_finding_id
+        if not finding_id or set(finding_id) - ID_CHARS or finding_id in {".", ".."}:
+            raise InvalidRepairRequest(f"repair request {path.name} has invalid finding_id")
+        expected_parent = rr_dir / "deferred" if statuses[0] == "DEFERRED" else rr_dir
+        if path.parent != expected_parent:
+            raise InvalidRepairRequest(f"repair request {ids[0]} has invalid location for status {statuses[0]}")
+        if statuses[0] in {"OPEN", "IN_REPAIR"}:
+            active_by_finding.setdefault(finding_id, []).append(ids[0])
+        bug_id_changed = reported_bug_id is not None and bug_ids != [reported_bug_id]
+        if keys and finding_ids and not bug_id_changed:
+            continue
+        try:
+            allocation_key = (
+                keys[0] if keys else _repair_allocation_key(cfg, finding_id, _repair_draft_from_request(text))
+            )
+        except InvalidRepairRequest as exc:
+            raise InvalidRepairRequest(
+                f"cannot migrate legacy repair {ids[0]}: semantic request is invalid ({exc})"
+            ) from exc
+        migrated = _rr_with_identity_fields(text, finding_id, allocation_key, reported_bug_id)
+        _atomic_replace_rr(path, migrated)
+    duplicates = {finding_id: rids for finding_id, rids in active_by_finding.items() if len(rids) > 1}
+    if duplicates:
+        finding_id, rids = next(iter(duplicates.items()))
+        raise InvalidRepairRequest(
+            f"finding_id {finding_id} has multiple active repair requests: {', '.join(sorted(rids))}"
+        )
+
+
+def validate_report_repair_references(cfg: ConfirmConfig) -> None:
+    """Validate canonical report links against RR location and lifecycle state."""
+    report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
+    if report.is_symlink() or not report.is_file():
+        raise InvalidRepairRequest("confirmed-bugs.md is missing or unsafe")
+    text = report.read_text()
+    rr_dir = cfg.ws.work_dir(cfg.name) / "spec" / "repair-requests"
+    details = list(_REPORT_DETAIL_RE.finditer(text))
+    seen: set[str] = set()
+    for row in _REPORT_RR_ROW_RE.finditer(text):
+        bug_no = int(row.group(1))
+        rendered_status = row.group(3).strip()
+        pending = re.fullmatch(r"PENDING REPAIR \((RR-\d+)\)", rendered_status)
+        deferred = re.fullmatch(r"DEFERRED \(repair loop exhausted; (RR-\d+) in deferred/\)", rendered_status)
+        refs = re.findall(r"\bRR-\d+\b", rendered_status)
+        if pending is None and deferred is None:
+            if refs or rendered_status.startswith(("PENDING REPAIR", "DEFERRED")):
+                raise InvalidRepairRequest(
+                    f"report Bug {bug_no} has an RR reference with invalid status {rendered_status!r}"
+                )
+            continue
+        match = pending or deferred
+        assert match is not None
+        rid = match.group(1)
+        if refs != [rid] or rid in seen:
+            raise InvalidRepairRequest(f"report repair reference {rid} is not unique")
+        seen.add(rid)
+
+        detail_statuses: list[str] = []
+        for index, detail in enumerate(details):
+            if int(detail.group(1)) != bug_no:
+                continue
+            end = details[index + 1].start() if index + 1 < len(details) else len(text)
+            detail_statuses.extend(re.findall(r"(?m)^- \*\*Status\*\*:\s*(.+?)\s*$", text[detail.end() : end]))
+        if detail_statuses != [rendered_status]:
+            raise InvalidRepairRequest(f"report Bug {bug_no} table/detail repair status is inconsistent")
+
+        matches = list(rr_dir.rglob(f"{rid}.md")) if rr_dir.is_dir() and not rr_dir.is_symlink() else []
+        if len(matches) != 1:
+            raise InvalidRepairRequest(f"report repair reference {rid} resolves to {len(matches)} files")
+        expected_path = rr_dir / f"{rid}.md"
+        expected_status = "OPEN"
+        if deferred is not None:
+            expected_path = rr_dir / "deferred" / f"{rid}.md"
+            expected_status = "DEFERRED"
+        path = matches[0]
+        if path != expected_path or path.is_symlink():
+            raise InvalidRepairRequest(f"report repair reference {rid} must be {expected_path.relative_to(rr_dir)}")
+        statuses = _rr_field_text(path.read_text(), "status")
+        if statuses != [expected_status]:
+            raise InvalidRepairRequest(
+                f"report repair reference {rid} requires status {expected_status}, found "
+                f"{statuses[0] if len(statuses) == 1 else '<invalid>'}"
+            )
+
+
+def snapshot_terminal_rr_audit(cfg: ConfirmConfig) -> dict[str, TerminalRRSnapshot]:
+    """Capture terminal bytes and active identity after identity preflight."""
+    rr_dir = cfg.ws.work_dir(cfg.name) / "spec" / "repair-requests"
+    if not rr_dir.is_dir() or rr_dir.is_symlink():
+        return {}
+    snapshot: dict[str, TerminalRRSnapshot] = {}
+    for path in sorted(rr_dir.rglob("RR-*.md")):
+        text = path.read_text()
+        statuses = _rr_field_text(text, "status")
+        ids = _rr_field_text(text, "id")
+        finding_ids = _rr_field_text(text, "finding_id")
+        if len(ids) != 1 or len(finding_ids) != 1 or len(statuses) != 1 or ids[0] in snapshot:
+            raise InvalidRepairRequest(f"repair audit {path.name} has a duplicate or invalid identity")
+        snapshot[ids[0]] = TerminalRRSnapshot(
+            str(path.relative_to(rr_dir)),
+            path.read_bytes(),
+            finding_ids[0],
+            statuses[0],
+        )
+    return snapshot
+
+
+def _atomic_replace_rr_bytes(path: Path, content: bytes) -> None:
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(4)}.tmp")
+    try:
+        with tmp.open("xb") as fh:
+            fh.write(content)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _remove_rr_path(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink(missing_ok=True)
+    elif path.exists():
+        shutil.rmtree(path)
+
+
+def restore_terminal_rr_audit(
+    cfg: ConfirmConfig,
+    snapshot: dict[str, TerminalRRSnapshot],
+) -> list[str]:
+    """Restore terminal paths/bytes and report every attempted mutation."""
+    if not snapshot:
+        return []
+    rr_dir = cfg.ws.work_dir(cfg.name) / "spec" / "repair-requests"
+    if rr_dir.is_symlink() or (rr_dir.exists() and not rr_dir.is_dir()):
+        _remove_rr_path(rr_dir)
+    rr_dir.mkdir(parents=True, exist_ok=True)
+    violations: list[str] = []
+    for rid, saved in snapshot.items():
+        expected = rr_dir / saved.relative_path
+        changed = False
+        for path in list(rr_dir.rglob(f"{rid}.md")):
+            if path != expected:
+                _remove_rr_path(path)
+                changed = True
+        if expected.parent.is_symlink() or (expected.parent.exists() and not expected.parent.is_dir()):
+            _remove_rr_path(expected.parent)
+        expected.parent.mkdir(parents=True, exist_ok=True)
+        current = None
+        current_identity: tuple[list[str], list[str], list[str]] | None = None
+        if expected.is_file() and not expected.is_symlink():
+            current = expected.read_bytes()
+            text = current.decode(errors="replace")
+            current_identity = (
+                _rr_field_text(text, "id"),
+                _rr_field_text(text, "finding_id"),
+                _rr_field_text(text, "status"),
+            )
+        expected_identity = ([rid], [saved.finding_id], [saved.status])
+        terminal_changed = saved.status in {"CONSUMED", "DEFERRED"} and current != saved.content
+        active_identity_changed = saved.status in {"OPEN", "IN_REPAIR"} and current_identity != expected_identity
+        if terminal_changed or active_identity_changed:
+            if expected.exists() and expected.is_dir() and not expected.is_symlink():
+                shutil.rmtree(expected)
+            _atomic_replace_rr_bytes(expected, saved.content)
+            changed = True
+        if changed:
+            kind = "terminal audit" if saved.status in {"CONSUMED", "DEFERRED"} else "active identity"
+            violations.append(f"{rid} {kind} was modified, moved, or deleted and was restored")
+    return violations
+
+
+def ensure_rr_stable_identities(
+    cfg: ConfirmConfig,
+    *,
+    verify_against_report: bool = False,
+    require_active_report_link: bool = False,
+) -> None:
+    """Validate/migrate every RR before legacy output or parallel reuse.
+
+    The legacy Phase-4 launcher calls this after its agent exits; the parallel
+    allocator calls it before looking up an existing request.  Keeping the same
+    fail-closed implementation on both paths makes switching modes safe.
+    """
+    rr_dir = cfg.ws.work_dir(cfg.name) / "spec" / "repair-requests"
+    if not rr_dir.exists():
+        return
+    if rr_dir.is_symlink() or not rr_dir.is_dir():
+        raise InvalidRepairRequest("repair-requests must be a real directory")
+    with _rr_lock:
+        _ensure_rr_stable_identities(
+            cfg,
+            rr_dir,
+            verify_against_report=verify_against_report,
+            require_active_report_link=require_active_report_link,
+        )
+
+
 def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
     """Serially assign the next RR-NNN and file the agent-authored request."""
     draft = _read_repair_draft(cfg, o.finding)
@@ -1283,6 +1623,7 @@ def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
     rr_dir = cfg.ws.work_dir(cfg.name) / "spec" / "repair-requests"
     with _rr_lock:
         rr_dir.mkdir(parents=True, exist_ok=True)
+        ensure_rr_stable_identities(cfg)
         # Confirmation generation, repo identity, adapter, and prompts decide
         # whether Phase 4 must run again; they do not by themselves describe a
         # different repair. Terminal DEFERRED requests reopen only when this
@@ -1356,7 +1697,7 @@ def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
                     expected_bug_id,
                     str(o.finding.data.get("counterexample") or ""),
                     body,
-                    raw_finding_id=o.finding.id,
+                    finding_id=o.finding.id,
                     allocation_key=allocation_key,
                     status="OPEN",
                     round_=round_,
@@ -1382,7 +1723,7 @@ def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
             f"Bug {o.bug_no}",
             cx,
             body,
-            raw_finding_id=o.finding.id,
+            finding_id=o.finding.id,
             allocation_key=allocation_key,
         )
         try:
@@ -1854,11 +2195,41 @@ def _withhold(cfg: ConfirmConfig, reason: str, code: int = 1) -> int:
     return code
 
 
+def _post_validate_repair_state(cfg: ConfirmConfig) -> int:
+    if cfg.dry_run:
+        return 0
+    try:
+        ensure_rr_stable_identities(
+            cfg,
+            verify_against_report=True,
+            require_active_report_link=True,
+        )
+        validate_report_repair_references(cfg)
+    except (ConfirmationFailed, OSError, UnicodeError, ValueError) as exc:
+        _log(f"repair identity post-validation failed ({exc}) — report retained for inspection")
+        return 1
+    return 0
+
+
 def _drive_confirmation(cfg: ConfirmConfig) -> int:
     if cfg.max_parallel < 1:
         return _withhold(cfg, "invalid max_parallel; expected a positive integer")
     if cfg.debate and cfg.rounds < 1:
         return _withhold(cfg, "invalid debate rounds; expected a positive integer")
+    if not cfg.dry_run:
+        try:
+            # This must precede consolidate/aggregation: the previous canonical
+            # report may be the only proof that binds a pre-finding_id legacy RR
+            # to its stable candidate. A zero-PENDING run still replaces that
+            # report, so waiting until allocate_rr would lose the evidence.
+            ensure_rr_stable_identities(
+                cfg,
+                verify_against_report=True,
+                require_active_report_link=False,
+            )
+        except (ConfirmationFailed, OSError, UnicodeError, ValueError) as exc:
+            _log(f"repair identity preflight failed ({exc}) — existing report retained")
+            return 1
     try:
         consolidate(cfg)
     except RateLimited:
@@ -1884,7 +2255,7 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
         return 0
     if not findings:
         aggregate(cfg, [])
-        return 0
+        return _post_validate_repair_state(cfg)
 
     outcomes: list[Outcome] = []
     unstarted: list[Finding] = []
@@ -1986,6 +2357,9 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
         aggregate(cfg, outcomes)
     except (ConfirmationFailed, OSError, ValueError) as exc:
         return _withhold(cfg, f"confirmation aggregation failed ({exc}) — deliverable withheld")
+    post_validation = _post_validate_repair_state(cfg)
+    if post_validation != 0:
+        return post_validation
     # Keep the partial report, but do not tell the scheduler/downstream that an
     # incomplete target succeeded. A permanent failure wins over rate limiting;
     # only an exclusively rate-limited partial result is retryable with rc 75.

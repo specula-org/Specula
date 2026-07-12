@@ -649,7 +649,13 @@ class Pipeline:
         return Path(self.get_work_dir(name)) / "spec" / ".repair-phase3-snapshot.json"
 
     def persist_open_repair_snapshot(self, name: str, snapshot: dict[Path, str], round_: int) -> None:
-        """Durably publish the OPEN inputs before a repair subprocess starts."""
+        """Durably publish the OPEN inputs before a repair subprocess starts.
+
+        The unique commit token is copied into confirmation-generation.json
+        only after the repair launcher returns success.  Recovery can therefore
+        distinguish a completed Phase 3 whose snapshot cleanup was interrupted
+        from an attempt killed after merely writing CONSUMED into its requests.
+        """
         if self.dry_run:
             return
         rr_dir = Path(self.repair_dir(name))
@@ -668,7 +674,12 @@ class Pipeline:
         marker = self.repair_phase3_snapshot_path(name)
         payload = (
             json.dumps(
-                {"version": 1, "round": round_, "requests": requests},
+                {
+                    "version": 2,
+                    "round": round_,
+                    "commit_token": secrets.token_hex(16),
+                    "requests": requests,
+                },
                 ensure_ascii=False,
                 sort_keys=True,
             )
@@ -680,7 +691,7 @@ class Pipeline:
             log(f"ERROR: durable Phase 3 snapshot already exists for {name}: {marker}")
             raise SystemExit(1) from None
 
-    def load_open_repair_snapshot(self, name: str) -> tuple[dict[Path, str], int] | None:
+    def load_open_repair_snapshot(self, name: str) -> tuple[dict[Path, str], int, str | None] | None:
         marker = self.repair_phase3_snapshot_path(name)
         if not marker.is_file():
             return None
@@ -689,8 +700,15 @@ class Pipeline:
             version = doc.get("version") if isinstance(doc, dict) else None
             round_ = doc.get("round") if isinstance(doc, dict) else None
             requests = doc.get("requests") if isinstance(doc, dict) else None
-            if version != 1 or not isinstance(round_, int) or isinstance(round_, bool) or round_ < 1:
+            commit_token = doc.get("commit_token") if isinstance(doc, dict) else None
+            if version not in {1, 2} or not isinstance(round_, int) or isinstance(round_, bool) or round_ < 1:
                 raise ValueError("invalid version/round")
+            if version == 1:
+                # Version 1 had no attempt identity, so an old generation
+                # marker cannot prove that this exact snapshot committed.
+                commit_token = None
+            elif not isinstance(commit_token, str) or re.fullmatch(r"[0-9a-f]{32}", commit_token) is None:
+                raise ValueError("invalid commit token")
             if not isinstance(requests, dict) or not requests:
                 raise ValueError("requests must be a non-empty object")
             snapshot: dict[Path, str] = {}
@@ -706,24 +724,71 @@ class Pipeline:
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             log(f"ERROR: invalid durable Phase 3 snapshot for {name}: {marker} ({exc})")
             raise SystemExit(1) from exc
-        return snapshot, round_
+        return snapshot, round_, commit_token
 
     def clear_open_repair_snapshot(self, name: str) -> None:
         if not self.dry_run:
             self.repair_phase3_snapshot_path(name).unlink(missing_ok=True)
 
-    def recover_interrupted_phase3(self) -> None:
-        """Restore an OPEN request set left by a killed repair subprocess."""
+    def recover_interrupted_phase3(self) -> set[str]:
+        """Finalize a committed attempt or restore one killed before commit.
+
+        Return the exact targets whose Phase-3 commit was recovered. Callers
+        must not treat one target's commit as coverage for any other target.
+        """
         if self.dry_run:
-            return
+            return set()
+        recovered_commits: set[str] = set()
         for name in self.extract_names():
             loaded = self.load_open_repair_snapshot(name)
             if loaded is None:
                 continue
-            snapshot, round_ = loaded
+            snapshot, round_, commit_token = loaded
+            if self._repair_phase3_snapshot_committed(name, snapshot, round_, commit_token):
+                self.clear_open_repair_snapshot(name)
+                recovered_commits.add(name)
+                log(f"  finalized committed repair Phase 3 for {name} after interrupted snapshot cleanup")
+                continue
             self.restore_open_repair_requests(snapshot, round_)
             self.clear_open_repair_snapshot(name)
             log(f"  recovered durable Phase 3 snapshot for {name} after interrupted repair")
+        return recovered_commits
+
+    def _repair_phase3_snapshot_committed(
+        self,
+        name: str,
+        snapshot: dict[Path, str],
+        round_: int,
+        commit_token: str | None,
+    ) -> bool:
+        """Whether the exact snapshotted attempt crossed its durable commit point.
+
+        CONSUMED alone is not proof: an agent can write it before failing.  The
+        generation marker is published by the orchestrator only after a zero
+        exit, and contains the snapshot's unique attempt token.
+        Complete, executable CONSUMED requests are required as a second guard.
+        """
+        if commit_token is None:
+            return False
+        marker = Path(self.get_work_dir(name)) / "spec" / "confirmation-generation.json"
+        try:
+            doc = json.loads(marker.read_text())
+        except (OSError, json.JSONDecodeError):
+            return False
+        if not isinstance(doc, dict):
+            return False
+        if doc.get("repair_round") != round_ or doc.get("repair_phase3_commit") != commit_token:
+            return False
+        for path in snapshot:
+            try:
+                current = path.read_text()
+            except OSError:
+                return False
+            if self._repair_request_field(current, "status") != "CONSUMED" or not self._repair_request_is_executable(
+                current, path.stem
+            ):
+                return False
+        return True
 
     def restore_open_repair_requests(self, snapshot: dict[Path, str], round_: int) -> None:
         """Make one failed target's original OPEN set retryable without lying.
@@ -1098,12 +1163,13 @@ class Pipeline:
                 rows.append(f"| {rr_field(f, 'id')} | {bug} | {target} | {status} | {rr_field(f, 'round')} |")
             ledger.write_text("\n".join(rows) + "\n")
 
-    def prepare_repair_state(self) -> None:
-        """Idempotent startup recovery that must run before an initial Phase 4."""
+    def prepare_repair_state(self) -> set[str]:
+        """Reconcile startup state and return exactly recovered commit targets."""
         self.reconcile_deferred_state()
-        self.recover_interrupted_phase3()
+        recovered_commits = self.recover_interrupted_phase3()
         self.reset_stale_in_repair()
         self.regenerate_ledger()
+        return recovered_commits
 
     def advance_confirmation_generation(self, repair_round: int, names: list[str] | None = None) -> None:
         """Atomically advance the Phase-4 cache generation for selected targets.
@@ -1112,11 +1178,20 @@ class Pipeline:
         repair runs, and before the corresponding Phase 4. Confirmation cache
         fingerprints include its contents, so a resumed validation or repair
         can never reuse a verdict or candidate set from an earlier generation.
+        For repair Phase 3, it also commits the durable snapshot's unique token;
+        that token proves success if the process dies before snapshot cleanup.
         """
         if self.dry_run:
             return
         for n in names if names is not None else self.extract_names():
             marker = Path(self.get_work_dir(n)) / "spec" / "confirmation-generation.json"
+            repair_commit: str | None = None
+            if repair_round > 0:
+                loaded = self.load_open_repair_snapshot(n)
+                if loaded is not None:
+                    _snapshot, snapshot_round, commit_token = loaded
+                    if snapshot_round == repair_round:
+                        repair_commit = commit_token
             previous = 0
             if marker.is_file():
                 try:
@@ -1136,12 +1211,9 @@ class Pipeline:
                 "repair_round": repair_round,
                 "updated_at": _date_iseconds(),
             }
-            tmp = marker.with_name(f".{marker.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
-            try:
-                tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-                os.replace(tmp, marker)
-            finally:
-                tmp.unlink(missing_ok=True)
+            if repair_commit is not None:
+                payload["repair_phase3_commit"] = repair_commit
+            self._atomic_replace_text(marker, json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
     # ── phase runners ──
     def _model_effort_args(self) -> list[str]:
@@ -1346,7 +1418,7 @@ class Pipeline:
             self._phase_args(self.extract_names(), with_artifact=False),
         )
 
-    def run_repair_loop(self) -> None:
+    def run_repair_loop(self, prepared_commits: set[str] | None = None) -> set[str]:
         """Confirmation back-edge: repeat {Phase 3 repairs the spec per OPEN
         repair requests and re-runs MC; Phase 4 confirms the fresh output
         normally} until no open request remains or the global round cap is hit. A
@@ -1355,7 +1427,14 @@ class Pipeline:
         and no per-finding DEFERRED verdict — when the cap is reached the
         orchestrator (not an agent) files any still-open request under
         repair-requests/deferred/. Budget pressure -> wait_for_quota (WAIT), never
-        a mass-defer."""
+        a mass-defer.
+
+        A caller that already ran startup reconciliation passes its exact
+        committed-target set. A direct caller leaves it unset; this method then
+        reconciles and consumes any recovered commit with its pending fresh
+        Phase 4. The returned set is exactly the targets covered by a recovered
+        or newly successful repair Phase 3 during this invocation.
+        """
         divider()
         # parse_args validates normal CLI/environment input.  Keep this guard
         # for embedders and tests that configure Pipeline directly.
@@ -1367,10 +1446,22 @@ class Pipeline:
         log(f"REPAIR LOOP (confirmation back-edge) — cap={cap_disp}")
         divider()
 
-        self.prepare_repair_state()
+        recovered_commits = self.prepare_repair_state() if prepared_commits is None else set(prepared_commits)
+        phase3_targets = set(recovered_commits)
         if not self.has_open_repair_requests():
-            log("No OPEN repair requests — repair loop is a no-op.")
-            return
+            if recovered_commits:
+                self.wait_for_quota()
+                self.run_phase4_confirmation()
+                self.regenerate_ledger()
+                names = ", ".join(sorted(recovered_commits))
+                log(f"Recovered committed repair Phase 3 for {names}; completed its pending fresh Phase 4.")
+                if self.has_open_repair_requests():
+                    log("Fresh Phase 4 opened repair requests; continuing the repair loop.")
+                else:
+                    return phase3_targets
+            else:
+                log("No OPEN repair requests — repair loop is a no-op.")
+                return phase3_targets
 
         round_ = 0
         while self.has_open_repair_requests():
@@ -1378,7 +1469,7 @@ class Pipeline:
                 deferred = self.move_open_requests_to_deferred()
                 self.regenerate_ledger()
                 log(f"Repair loop reached its {cap}-round cap; deferred {deferred} still-OPEN request(s).")
-                return
+                return phase3_targets
 
             round_ += 1
             sig_before = self.repair_state_sig()
@@ -1406,8 +1497,6 @@ class Pipeline:
                         if unfinished:
                             detail = ", ".join(f"{f.name}={rr_status(f) or '<missing>'}" for f in unfinished)
                             raise RuntimeError(f"Phase 3 returned success without consuming {detail}")
-                    self.clear_open_repair_snapshot(name)
-                    repaired_names.append(name)
                 except BaseException as exc:
                     self.restore_open_repair_requests(open_before, round_)
                     try:
@@ -1422,6 +1511,21 @@ class Pipeline:
                         "only that target was reset OPEN, with partial artifacts/history retained."
                     )
                     raise
+                try:
+                    self.clear_open_repair_snapshot(name)
+                except OSError as cleanup_exc:
+                    # Phase 3 already crossed its tokenized durable commit
+                    # point. Never turn cleanup failure into repair failure:
+                    # retain CONSUMED + snapshot so startup can finalize the
+                    # exact commit and continue with fresh Phase 4.
+                    self.regenerate_ledger()
+                    log(
+                        f"ERROR: committed repair Phase 3 for {name}, but could not clear its durable snapshot "
+                        f"({cleanup_exc}); CONSUMED state was retained for startup recovery."
+                    )
+                    raise
+                repaired_names.append(name)
+                phase3_targets.add(name)
 
             try:
                 self.wait_for_quota()
@@ -1441,7 +1545,7 @@ class Pipeline:
             if self.repair_state_sig() == sig_before:
                 if self.dry_run:
                     log(f"[DRY RUN] Repair state is unchanged after simulated round {round_}; leaving requests OPEN.")
-                    return
+                    return phase3_targets
                 log(
                     f"ERROR: repair loop made no progress in round {round_} (no request changed); "
                     "OPEN requests were retained for retry."
@@ -1450,6 +1554,7 @@ class Pipeline:
 
         self.regenerate_ledger()
         log(f"Repair loop resolved all requests after {round_} round(s).")
+        return phase3_targets
 
     def snapshot_confirmed_bugs(self, round_: int) -> None:
         """Preserve each round's result: copy `confirmed-bugs.md` to
@@ -1705,6 +1810,12 @@ class Pipeline:
 
         start_time = int(time.time())
 
+        # Recover before Phase 1/2/2.5 can mutate the artifacts that the
+        # snapshot token commits. Skip flags control later work, never whether
+        # durable crash state is reconciled.
+        recovered_phase3_commits = self.prepare_repair_state()
+        upstream_all_skipped = self.skip_analysis and self.skip_specgen and self.skip_harness
+
         if not self.skip_analysis:
             self.wait_for_quota()
             self.run_phase1_analysis()
@@ -1725,34 +1836,47 @@ class Pipeline:
         else:
             log("Skipping Phase 2.5 (--skip-harness)")
 
-        if not self.skip_validation:
+        # An uncommitted snapshot is OPEN again after reconciliation. Resume it
+        # when both halves of the repair loop are enabled. The resumed loop
+        # itself performs repair Phase 3 and fresh Phase 4.
+        resumed_repair = False
+        phase3_targets = set(recovered_phase3_commits)
+        if not self.skip_confirmation and not self.skip_repair_loop and self.has_open_repair_requests():
+            log("Resuming pending repair requests before the ordinary Phase 3 pass")
+            phase3_targets = self.run_repair_loop(prepared_commits=recovered_phase3_commits)
+            resumed_repair = True
+
+        current_targets = set(names)
+        phase3_covered = (
+            bool(current_targets)
+            and upstream_all_skipped
+            and phase3_targets == current_targets
+            and not self.has_open_repair_requests()
+        )
+        normal_phase3_ran = False
+        if not self.skip_validation and not phase3_covered:
             self.wait_for_quota()
             self.run_phase3_validation()
             self.run_review("validation", names)
+            normal_phase3_ran = True
+        elif phase3_covered:
+            source = "resumed repair loop" if resumed_repair else "recovered committed repairs"
+            log(f"Ordinary Phase 3 covered for every target by the {source}")
         else:
             log("Skipping Phase 3 (--skip-validation)")
 
-        # Recover the durable RR queue before Phase 4 reads or rewrites its
-        # report.  In particular, an IN_REPAIR marker means a previous repair
-        # Phase 3 may have left partial spec/output edits; retry that scoped
-        # repair first instead of confirming the half-finished artifacts.
-        resumed_repair = False
-        if not self.skip_confirmation and not self.skip_repair_loop:
-            self.prepare_repair_state()
-            if self.has_open_repair_requests():
-                log("Resuming pending repair requests before the initial Phase 4 pass")
-                self.run_repair_loop()
-                resumed_repair = True
-
-        if not self.skip_confirmation and not resumed_repair:
+        phase4_covered = resumed_repair and not normal_phase3_ran
+        fresh_phase4_ran = False
+        if not self.skip_confirmation and not phase4_covered:
             self.wait_for_quota()
             self.run_phase4_confirmation()
+            fresh_phase4_ran = True
         elif self.skip_confirmation:
             log("Skipping Phase 4a (--skip-confirmation)")
         else:
             log("Initial Phase 4 completed by the resumed repair loop")
 
-        if not self.skip_confirmation and not self.skip_repair_loop and not resumed_repair:
+        if fresh_phase4_ran and not self.skip_repair_loop:
             self.run_repair_loop()
         elif self.skip_repair_loop:
             log("Skipping repair loop (--skip-repair-loop)")

@@ -18,7 +18,7 @@ A **repair request** carries a confirmation-loop back-edge. When reproduction co
 └── repair-ledger.md      # rollup index; maintained by the orchestrator (pipeline)
 ```
 
-One file per request. `id` is `RR-NNN`, zero-padded. Only the dispatcher allocates it: scan active and `deferred/` `RR-*.md` files and take max + 1. Per-finding workers must not inspect or write this shared directory. Never reuse or renumber terminal ids. The per-request frontmatter is always the source of truth; a `DEFERRED` request lives under `repair-requests/deferred/`. `repair-ledger.md` is a derived rollup and is owned by the pipeline orchestrator, not by this skill.
+One file per request. `id` is `RR-NNN`, zero-padded. Only the dispatcher allocates it: scan active and `deferred/` `RR-*.md` files and take max + 1. Per-finding workers must not inspect or write this shared directory. Never reuse or renumber terminal ids. Every final file MUST carry the candidate's stable `finding_id`; all reuse and lifecycle decisions use that field. `bug_id: Bug N` is only a mutable report/display label and is never identity. The per-request frontmatter is always the source of truth; a `DEFERRED` request lives under `repair-requests/deferred/`. `repair-ledger.md` is a derived rollup and is owned by the pipeline orchestrator, not by this skill.
 
 ## Finding-local semantic draft
 
@@ -56,6 +56,7 @@ Markdown with a YAML frontmatter header (machine-routable by the orchestrator) a
 ```markdown
 ---
 id: RR-001
+finding_id: MC-1              # immutable candidate identity; never derive from Bug N
 bug_id: <heading/label of the finding's entry in confirmed-bugs.md>
 target: SPEC_REPAIR            # SPEC_REPAIR | FAULT_MODEL | INVARIANT
 status: OPEN                   # OPEN | IN_REPAIR | CONSUMED | DEFERRED
@@ -103,7 +104,14 @@ Whether a `CONSUMED` repair actually **settled** the finding is answered by the 
 
 `IN_REPAIR` doubles as a crash marker: if the orchestrator finds a request still `IN_REPAIR` at the top of a loop iteration (its repair phase died mid-turn), it resets it to `OPEN`.
 
-If a new validated draft arrives for the same finding while its request is still `OPEN`, the dispatcher reuses that id and atomically refreshes the semantic payload while preserving `status`, `round`, and History. It never rewrites `IN_REPAIR`. `CONSUMED` and `DEFERRED` are immutable audit records: a later, different allocation receives a new `OPEN` id; an exact retry may only point back to the unchanged `DEFERRED` record.
+If a new validated draft arrives for the same finding while its request is still `OPEN`, the dispatcher reuses that id and atomically refreshes the semantic payload while preserving `status`, `round`, and History. A `finding_id` may have at most one active (`OPEN` or `IN_REPAIR`) request; multiple terminal audit records are allowed. It never rewrites `IN_REPAIR`. `CONSUMED` and `DEFERRED` are immutable audit records: a later, different allocation receives a new `OPEN` id; an exact retry may only point back to the unchanged `DEFERRED` record.
+
+Identity is always `finding_id`, never `bug_id`. Candidate order may change
+between confirmations, so the dispatcher refreshes a stale display-only `bug_id`
+without changing request identity. When importing an older request that lacks
+`finding_id`, migration is allowed only if the prior canonical report uniquely
+links the RR id and its `Bug N` row to the same explicit Finding ID; otherwise
+the dispatcher fails closed and must not create a possible duplicate request.
 
 ### Termination — the orchestrator's job, not an agent's
 

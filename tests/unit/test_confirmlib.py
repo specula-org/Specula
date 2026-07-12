@@ -197,8 +197,10 @@ class TestMergeRR(ConfirmCase):
     )
 
     def test_agent_scope_preserved_lifecycle_stamped(self) -> None:
-        out = C._merge_rr("RR-001", "MC-1", "fallback.out", self.AGENT_BODY)
+        out = C._merge_rr("RR-001", "Bug 1", "fallback.out", self.AGENT_BODY, finding_id="MC-1")
         self.assertIn("id: RR-001", out)
+        self.assertIn("finding_id: MC-1", out)
+        self.assertIn("bug_id: Bug 1", out)
         self.assertIn("status: OPEN", out)
         self.assertIn("round: 0", out)
         self.assertIn("actions: [Foo]", out)  # agent scope verbatim
@@ -207,15 +209,15 @@ class TestMergeRR(ConfirmCase):
     def test_agent_lifecycle_fields_are_rejected(self) -> None:
         sneaky = self.AGENT_BODY.replace("target: SPEC_REPAIR", "id: RR-999\nstatus: CONSUMED\ntarget: SPEC_REPAIR")
         with self.assertRaisesRegex(C.InvalidRepairRequest, "dispatcher-owned field id"):
-            C._merge_rr("RR-002", "MC-1", "fb", sneaky)
+            C._merge_rr("RR-002", "Bug 1", "fb", sneaky, finding_id="MC-1")
 
     def test_missing_frontmatter_rejected(self) -> None:
         with self.assertRaisesRegex(C.InvalidRepairRequest, "must start"):
-            C._merge_rr("RR-003", "MC-1", "spec/output/x.out", "prose only")
+            C._merge_rr("RR-003", "Bug 1", "spec/output/x.out", "prose only", finding_id="MC-1")
 
     def test_body_text_cannot_inject_a_second_lifecycle_field(self) -> None:
         body = self.AGENT_BODY.replace("## Trigger\n", "## Trigger\nstatus: OPEN\n")
-        merged = C._merge_rr("RR-001", "MC-1", "fallback.out", body)
+        merged = C._merge_rr("RR-001", "Bug 1", "fallback.out", body, finding_id="MC-1")
         self.assertEqual(C._rr_field_text(merged, "status"), ["OPEN"])
 
     def test_draft_counterexample_must_match_finding(self) -> None:
@@ -764,6 +766,14 @@ class TestPromptExtraAndLog(ConfirmCase):
                 text,
             )
 
+    def test_legacy_allocator_uses_finding_id_and_treats_bug_number_as_display_only(self) -> None:
+        prompt = (P.PROMPTS_DIR / "confirmation" / "orchestrate.md").read_text()
+        self.assertIn("finding_id: <candidate-id>", prompt)
+        self.assertIn("immutable identity", prompt)
+        self.assertIn("bug_id: Bug N", prompt)
+        self.assertIn("only the current report display label", prompt)
+        self.assertIn("do not publish the request or silently allocate another id", re.sub(r"\s+", " ", prompt))
+
     def test_level_two_or_three_requires_positive_reachability_evidence(self) -> None:
         prompts = [
             (P.PROMPTS_DIR / "confirmation" / f"{template}.md").read_text()
@@ -1240,6 +1250,17 @@ class TestCacheContracts(ConfirmCase):
 
 
 class TestValidationContracts(ConfirmCase):
+    @staticmethod
+    def _write_repair_report(spec: Path, status: str, *, bug_no: int = 1, finding_id: str = "MC-1") -> None:
+        (spec / "confirmed-bugs.md").write_text(
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            f"| {bug_no} | {finding_id} | {status} |\n\n"
+            f"## Bug {bug_no}: one\n\n"
+            f"- **Finding ID**: {finding_id}\n"
+            f"- **Status**: {status}\n"
+        )
+
     def test_structural_hygiene_still_enforced(self) -> None:
         # Kept (would break the per-finding fan-out): id filesystem-safe + unique,
         # source routable. Everything else was intentionally relaxed.
@@ -1332,13 +1353,368 @@ class TestValidationContracts(ConfirmCase):
         deferred = rr_dir / "deferred"
         deferred.mkdir(parents=True)
         old = deferred / "RR-007.md"
-        old.write_text("old history\n")
+        old.write_text(
+            C._merge_rr(
+                "RR-007",
+                "Bug 9",
+                "fallback.out",
+                TestMergeRR.AGENT_BODY,
+                finding_id="MC-OLD",
+                allocation_key="old-allocation-key",
+                status="DEFERRED",
+            )
+        )
+        old_bytes = old.read_bytes()
         f = self.finding(ws, "T")
         f.fdir.mkdir(parents=True)
         (f.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
         rid = C.allocate_rr(self.cfg(ws, "T"), C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1))
         self.assertEqual(rid, "RR-008")
-        self.assertEqual(old.read_text(), "old history\n")
+        self.assertEqual(old.read_bytes(), old_bytes)
+
+    def test_legacy_rr_migrates_by_report_finding_id_across_candidate_reorder(self) -> None:
+        current = [
+            {"id": "MC-2", "source": "model-checking", "title": "two", "summary": "s"},
+            {"id": "MC-1", "source": "model-checking", "title": "one", "summary": "s"},
+        ]
+        ws = self.seed("T", current)
+        spec = ws.work_dir("T") / "spec"
+        (spec / "confirmed-bugs.md").write_text(
+            "# Confirmed Bugs — T\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n"
+            "| 2 | MC-2 | FALSE POSITIVE |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n\n"
+            "## Bug 2: two\n\n"
+            "- **Finding ID**: MC-2\n"
+            "- **Status**: FALSE POSITIVE\n"
+        )
+        rr_dir = spec / "repair-requests"
+        rr_dir.mkdir()
+        legacy = C._merge_rr("RR-001", "Bug 1", "fallback.out", TestMergeRR.AGENT_BODY, finding_id="MC-1").replace(
+            "finding_id: MC-1\n", "", 1
+        )
+        request = rr_dir / "RR-001.md"
+        request.write_text(legacy)
+
+        finding = C.Finding(current[1], ws.work_dir("T") / "confirmation" / "MC-1")
+        finding.fdir.mkdir(parents=True)
+        (finding.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        outcome = C.Outcome(finding, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=2)
+
+        self.assertEqual(C.allocate_rr(self.cfg(ws, "T"), outcome), "RR-001")
+        migrated = request.read_text()
+        self.assertEqual(C._rr_field_text(migrated, "finding_id"), ["MC-1"])
+        self.assertEqual(C._rr_field_text(migrated, "bug_id"), ["Bug 2"])
+        self.assertEqual(len(C._rr_field_text(migrated, "allocation_key")), 1)
+        self.assertEqual([path.name for path in rr_dir.glob("RR-*.md")], ["RR-001.md"])
+
+    def test_legacy_missing_identity_ignores_stale_bug_label_and_refreshes_it_from_report(self) -> None:
+        ws = self.seed("T", [])
+        spec = ws.work_dir("T") / "spec"
+        (spec / "confirmed-bugs.md").write_text(
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n"
+        )
+        rr_dir = spec / "repair-requests"
+        rr_dir.mkdir()
+        request = rr_dir / "RR-001.md"
+        request.write_text(
+            C._merge_rr("RR-001", "Bug 9", "fallback.out", TestMergeRR.AGENT_BODY, finding_id="MC-1").replace(
+                "finding_id: MC-1\n", "", 1
+            )
+        )
+
+        C.ensure_rr_stable_identities(self.cfg(ws, "T"), verify_against_report=True)
+
+        migrated = request.read_text()
+        self.assertEqual(C._rr_field_text(migrated, "finding_id"), ["MC-1"])
+        self.assertEqual(C._rr_field_text(migrated, "bug_id"), ["Bug 1"])
+
+    def test_terminal_stable_identity_preserves_historical_bug_id_after_reorder(self) -> None:
+        ws = self.seed("T", [])
+        spec = ws.work_dir("T") / "spec"
+        (spec / "confirmed-bugs.md").write_text(
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 2 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 2: one\n\n"
+            "- **Finding ID**: MC-1\n"
+        )
+        rr_dir = spec / "repair-requests"
+        rr_dir.mkdir()
+        request = rr_dir / "RR-001.md"
+        original = C._merge_rr(
+            "RR-001",
+            "Bug 1",
+            "fallback.out",
+            TestMergeRR.AGENT_BODY,
+            finding_id="MC-1",
+            allocation_key="stable-key",
+            status="CONSUMED",
+            history=["- retained terminal history"],
+        )
+        request.write_text(original)
+
+        C.ensure_rr_stable_identities(self.cfg(ws, "T"), verify_against_report=True)
+
+        self.assertEqual(request.read_text(), original)
+
+    def test_same_finding_cannot_have_multiple_active_requests(self) -> None:
+        ws = self.seed("T", [])
+        rr_dir = ws.work_dir("T") / "spec" / "repair-requests"
+        rr_dir.mkdir()
+        for rid, status in (("RR-001", "OPEN"), ("RR-002", "IN_REPAIR")):
+            (rr_dir / f"{rid}.md").write_text(
+                C._merge_rr(
+                    rid,
+                    "Bug 1",
+                    "fallback.out",
+                    TestMergeRR.AGENT_BODY,
+                    finding_id="MC-1",
+                    allocation_key=f"key-{rid}",
+                    status=status,
+                )
+            )
+        (rr_dir / "RR-003.md").write_text(
+            C._merge_rr(
+                "RR-003",
+                "Bug 1",
+                "fallback.out",
+                TestMergeRR.AGENT_BODY,
+                finding_id="MC-1",
+                allocation_key="terminal-key",
+                status="CONSUMED",
+            )
+        )
+
+        with self.assertRaisesRegex(
+            C.InvalidRepairRequest,
+            "finding_id MC-1 has multiple active repair requests: RR-001, RR-002",
+        ):
+            C.ensure_rr_stable_identities(self.cfg(ws, "T"))
+
+    def test_terminal_audit_restore_preserves_consumed_and_deferred_bytes_and_paths(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T")
+        rr_dir = ws.work_dir("T") / "spec" / "repair-requests"
+        deferred_dir = rr_dir / "deferred"
+        deferred_dir.mkdir(parents=True)
+        consumed = rr_dir / "RR-001.md"
+        deferred = deferred_dir / "RR-002.md"
+        consumed.write_text(
+            C._merge_rr(
+                "RR-001",
+                "Bug 1",
+                "fallback.out",
+                TestMergeRR.AGENT_BODY,
+                finding_id="MC-1",
+                allocation_key="consumed-key",
+                status="CONSUMED",
+            )
+        )
+        deferred.write_text(
+            C._merge_rr(
+                "RR-002",
+                "Bug 2",
+                "fallback.out",
+                TestMergeRR.AGENT_BODY,
+                finding_id="MC-2",
+                allocation_key="deferred-key",
+                status="DEFERRED",
+            )
+        )
+        consumed_bytes = consumed.read_bytes()
+        deferred_bytes = deferred.read_bytes()
+        snapshot = C.snapshot_terminal_rr_audit(cfg)
+
+        consumed.write_text("tampered\n")
+        moved = rr_dir / deferred.name
+        deferred.replace(moved)
+        moved.write_text("repurposed\n")
+        violations = C.restore_terminal_rr_audit(cfg, snapshot)
+
+        self.assertEqual(len(violations), 2)
+        self.assertEqual(consumed.read_bytes(), consumed_bytes)
+        self.assertEqual(deferred.read_bytes(), deferred_bytes)
+        self.assertFalse(moved.exists())
+
+    def test_report_validation_rejects_unlinked_active_request(self) -> None:
+        ws = self.seed("T", [])
+        spec = ws.work_dir("T") / "spec"
+        (spec / "confirmed-bugs.md").write_text(
+            "| Bug | Finding | Status |\n|---|---|---|\n| 1 | MC-1 | FALSE POSITIVE |\n"
+        )
+        rr_dir = spec / "repair-requests"
+        rr_dir.mkdir()
+        (rr_dir / "RR-001.md").write_text(
+            C._merge_rr(
+                "RR-001",
+                "Bug 1",
+                "fallback.out",
+                TestMergeRR.AGENT_BODY,
+                finding_id="MC-1",
+                allocation_key="stable-key",
+            )
+        )
+
+        with self.assertRaisesRegex(
+            C.InvalidRepairRequest,
+            "repair request RR-001 is OPEN but is not linked from confirmed-bugs.md",
+        ):
+            C.ensure_rr_stable_identities(
+                self.cfg(ws, "T"),
+                verify_against_report=True,
+                require_active_report_link=True,
+            )
+
+    def test_report_pending_reference_requires_one_root_open_file(self) -> None:
+        ws = self.seed("T", [])
+        spec = ws.work_dir("T") / "spec"
+        self._write_repair_report(spec, "PENDING REPAIR (RR-001)")
+
+        with self.assertRaisesRegex(C.InvalidRepairRequest, "RR-001 resolves to 0 files"):
+            C.validate_report_repair_references(self.cfg(ws, "T"))
+
+        rr_dir = spec / "repair-requests"
+        deferred = rr_dir / "deferred"
+        deferred.mkdir(parents=True)
+        for path, status in ((rr_dir / "RR-001.md", "OPEN"), (deferred / "RR-001.md", "DEFERRED")):
+            path.write_text(
+                C._merge_rr(
+                    "RR-001",
+                    "Bug 1",
+                    "fallback.out",
+                    TestMergeRR.AGENT_BODY,
+                    finding_id="MC-1",
+                    allocation_key=f"key-{status}",
+                    status=status,
+                )
+            )
+        with self.assertRaisesRegex(C.InvalidRepairRequest, "RR-001 resolves to 2 files"):
+            C.validate_report_repair_references(self.cfg(ws, "T"))
+
+    def test_report_deferred_reference_requires_deferred_file_and_status(self) -> None:
+        ws = self.seed("T", [])
+        spec = ws.work_dir("T") / "spec"
+        rendered = "DEFERRED (repair loop exhausted; RR-001 in deferred/)"
+        self._write_repair_report(spec, rendered)
+        rr_dir = spec / "repair-requests"
+        rr_dir.mkdir()
+        (rr_dir / "RR-001.md").write_text(
+            C._merge_rr(
+                "RR-001",
+                "Bug 1",
+                "fallback.out",
+                TestMergeRR.AGENT_BODY,
+                finding_id="MC-1",
+                allocation_key="key",
+                status="OPEN",
+            )
+        )
+
+        with self.assertRaisesRegex(C.InvalidRepairRequest, "must be deferred/RR-001.md"):
+            C.validate_report_repair_references(self.cfg(ws, "T"))
+
+        deferred = rr_dir / "deferred" / "RR-001.md"
+        deferred.parent.mkdir()
+        (rr_dir / "RR-001.md").replace(deferred)
+        with self.assertRaisesRegex(C.InvalidRepairRequest, "requires status DEFERRED, found OPEN"):
+            C.validate_report_repair_references(self.cfg(ws, "T"))
+
+    def test_report_repair_disposition_without_canonical_rr_link_is_invalid(self) -> None:
+        for rendered in ("PENDING REPAIR", "PENDING REPAIR (missing)", "DEFERRED"):
+            with self.subTest(rendered=rendered):
+                ws = self.seed(rendered.replace(" ", "_"), [])
+                spec = ws.work_dir(rendered.replace(" ", "_")) / "spec"
+                self._write_repair_report(spec, rendered)
+                with self.assertRaisesRegex(C.InvalidRepairRequest, "invalid status"):
+                    C.validate_report_repair_references(self.cfg(ws, rendered.replace(" ", "_")))
+
+    def test_unprovable_legacy_rr_identity_fails_closed_without_duplicate(self) -> None:
+        ws = self.seed("T", [])
+        spec = ws.work_dir("T") / "spec"
+        rr_dir = spec / "repair-requests"
+        rr_dir.mkdir()
+        legacy = C._merge_rr("RR-001", "Bug 1", "fallback.out", TestMergeRR.AGENT_BODY, finding_id="MC-1").replace(
+            "finding_id: MC-1\n", "", 1
+        )
+        request = rr_dir / "RR-001.md"
+        request.write_text(legacy)
+        original = request.read_bytes()
+        finding = self.finding(ws, "T")
+        finding.fdir.mkdir(parents=True)
+        (finding.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+
+        with self.assertRaisesRegex(C.InvalidRepairRequest, "confirmed-bugs.md is missing or unsafe"):
+            C.allocate_rr(self.cfg(ws, "T"), C.Outcome(finding, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1))
+        self.assertEqual(request.read_bytes(), original)
+        self.assertEqual([path.name for path in rr_dir.glob("RR-*.md")], ["RR-001.md"])
+
+    def test_parallel_preflight_migrates_legacy_rr_before_zero_pending_report_replaces_evidence(self) -> None:
+        data = {"id": "MC-1", "source": "model-checking", "title": "one", "summary": "s"}
+        ws = self.seed("T", [data])
+        spec = ws.work_dir("T") / "spec"
+        (spec / "confirmed-bugs.md").write_text(
+            "# Confirmed Bugs — T\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n"
+        )
+        rr_dir = spec / "repair-requests"
+        rr_dir.mkdir()
+        request = rr_dir / "RR-001.md"
+        request.write_text(
+            C._merge_rr("RR-001", "Bug 1", "fallback.out", TestMergeRR.AGENT_BODY, finding_id="MC-1").replace(
+                "finding_id: MC-1\n", "", 1
+            )
+        )
+
+        with (
+            mock.patch.object(C, "consolidate", return_value=None),
+            mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("FALSE POSITIVE"))),
+        ):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 1)
+
+        new_report = (spec / "confirmed-bugs.md").read_text()
+        self.assertIn("| 1 | MC-1 | FALSE POSITIVE |", new_report)
+        self.assertNotIn("RR-001", new_report)
+        migrated = request.read_text()
+        self.assertEqual(C._rr_field_text(migrated, "finding_id"), ["MC-1"])
+        self.assertEqual(len(C._rr_field_text(migrated, "allocation_key")), 1)
+
+    def test_zero_findings_still_rejects_active_rr_unlinked_by_empty_report(self) -> None:
+        ws = self.seed("T", [])
+        spec = ws.work_dir("T") / "spec"
+        self._write_repair_report(spec, "PENDING REPAIR (RR-001)")
+        rr_dir = spec / "repair-requests"
+        rr_dir.mkdir()
+        (rr_dir / "RR-001.md").write_text(
+            C._merge_rr(
+                "RR-001",
+                "Bug 1",
+                "fallback.out",
+                TestMergeRR.AGENT_BODY,
+                finding_id="MC-1",
+                allocation_key="stable-key",
+            )
+        )
+
+        with mock.patch.object(C, "consolidate", return_value=None):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 1)
+
+        report = (spec / "confirmed-bugs.md").read_text()
+        self.assertIn("Dispositions: 0 total", report)
+        self.assertNotIn("RR-001", report)
 
     def test_initial_rr_publish_failure_leaves_no_partial_final_file(self) -> None:
         ws = self.seed("T", [])

@@ -611,6 +611,349 @@ class TestBugConfirmationAlternate(PhaseCase):
         self.assertEqual(waits, [1])
 
 
+class TestLegacyRepairIdentityFinalization(PhaseCase):
+    def setUp(self) -> None:
+        super().setUp()
+        adapters = self.tmp() / "adapters"
+        adapters.mkdir()
+        self.patch_attr(phaselib, "LAUNCH_DIR", adapters.parent)
+        self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
+        self.patch_attr(
+            phaselib.Phase,
+            "progress_config",
+            replace(phaselib.Phase.progress_config, poll_seconds=0.005),
+        )
+        self.adapter = adapters / "fake.sh"
+        self.adapter.write_text(
+            "#!/usr/bin/env sh\n"
+            "set -eu\n"
+            'cp "$LEGACY_REPORT_FIXTURE" "$SPECULA_WORK_DIR/spec/confirmed-bugs.md"\n'
+            'if [ "${LEGACY_NO_RR:-0}" != 1 ]; then\n'
+            '  mkdir -p "$SPECULA_WORK_DIR/spec/repair-requests"\n'
+            '  if [ "${LEGACY_DELETE_RR:-0}" = 1 ]; then rm -f "$SPECULA_WORK_DIR/spec/repair-requests/RR-001.md"; fi\n'
+            '  cp "$LEGACY_RR_FIXTURE" "$SPECULA_WORK_DIR/spec/repair-requests/${LEGACY_RR_NAME:-RR-001.md}"\n'
+            "fi\n"
+            'exit "${LEGACY_ADAPTER_RC:-0}"\n'
+        )
+        self.adapter.chmod(0o755)
+        self.seed(BY_KEY["bug_confirmation"]["inputs"])
+
+    def _legacy_fixture(
+        self,
+        report: str,
+        *,
+        emitted_finding_id: str | None = None,
+        emitted_rid: str = "RR-001",
+    ) -> Path:
+        from specula import confirmlib
+
+        rr = confirmlib._merge_rr(
+            emitted_rid,
+            "Bug 1",
+            "fallback.out",
+            (
+                "---\n"
+                "target: SPEC_REPAIR\n"
+                "counterexample: spec/output/x.out\n"
+                "scope:\n"
+                "  actions: [Foo]\n"
+                "  invariants: [Inv]\n"
+                "  hunt_cfgs: [MC_hunt.cfg]\n"
+                "  fault_actions: []\n"
+                "---\n\n"
+                "## Trigger\n"
+                "The counterexample requires a transition the implementation rejects.\n\n"
+                "## Evidence\n"
+                "The trace disagrees with src/node.py:42.\n"
+            ),
+            finding_id=emitted_finding_id or "MC-1",
+        )
+        if emitted_finding_id is None:
+            rr = rr.replace("finding_id: MC-1\n", "", 1)
+        fixtures = self.tmp()
+        report_path = fixtures / "confirmed-bugs.md"
+        request_path = fixtures / f"{emitted_rid}.md"
+        report_path.write_text(report)
+        request_path.write_text(rr)
+        self.set_env("LEGACY_REPORT_FIXTURE", str(report_path))
+        self.set_env("LEGACY_RR_FIXTURE", str(request_path))
+        return request_path
+
+    def _run_legacy(self) -> tuple[int, str]:
+        return self.run_phase(
+            "bug_confirmation",
+            ["--legacy-confirm", f"--agent={self.adapter.stem}", self.artifact_flag(), NAME],
+        )
+
+    def _seed_consumed_audit(self) -> tuple[Path, bytes]:
+        from specula import confirmlib
+
+        rr_dir = self.work_dir() / "spec" / "repair-requests"
+        rr_dir.mkdir(parents=True, exist_ok=True)
+        request = rr_dir / "RR-001.md"
+        request.write_text(
+            confirmlib._merge_rr(
+                "RR-001",
+                "Bug 7",
+                "fallback.out",
+                (
+                    "---\n"
+                    "target: SPEC_REPAIR\n"
+                    "counterexample: spec/output/x.out\n"
+                    "scope:\n"
+                    "  actions: [Foo]\n"
+                    "  invariants: [Inv]\n"
+                    "  hunt_cfgs: [MC_hunt.cfg]\n"
+                    "  fault_actions: []\n"
+                    "---\n\n"
+                    "## Trigger\n"
+                    "Historical trigger.\n\n"
+                    "## Evidence\n"
+                    "Historical evidence at src/node.py:42.\n"
+                ),
+                finding_id="MC-1",
+                allocation_key="terminal-key",
+                status="CONSUMED",
+                history=["- immutable consumed audit"],
+            )
+        )
+        return request, request.read_bytes()
+
+    def _seed_active_audit(self) -> tuple[Path, bytes]:
+        request, _ = self._seed_consumed_audit()
+        request.write_text(request.read_text().replace("status: CONSUMED", "status: OPEN", 1))
+        return request, request.read_bytes()
+
+    def test_successful_legacy_phase_enriches_agent_output_with_stable_identity(self) -> None:
+        self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n"
+        )
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 0, out)
+        request = self.work_dir() / "spec" / "repair-requests" / "RR-001.md"
+        text = request.read_text()
+        self.assertIn("finding_id: MC-1", text)
+        self.assertRegex(text, r"(?m)^allocation_key: [0-9a-f]{64}$")
+
+    def test_ambiguous_legacy_identity_turns_zero_adapter_exit_into_failure(self) -> None:
+        original = self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n"
+            "| 2 | MC-2 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n\n"
+            "## Bug 2: two\n\n"
+            "- **Finding ID**: MC-2\n"
+        ).read_bytes()
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("legacy repair identity validation FAILED", out)
+        self.assertIn("expected exactly one RR-bearing report row, found 2", out)
+        self.assertIn("Output validation failures:", out)
+        request = self.work_dir() / "spec" / "repair-requests" / "RR-001.md"
+        self.assertEqual(request.read_bytes(), original)
+        self.assertNotIn("finding_id:", request.read_text())
+
+    def test_legacy_phase_rejects_agent_supplied_finding_id_that_conflicts_with_report(self) -> None:
+        self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n",
+            emitted_finding_id="MC-WRONG",
+        )
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("finding_id 'MC-WRONG' conflicts with report identity 'MC-1'", out)
+
+    def test_report_referenced_terminal_rr_cannot_bypass_identity_check(self) -> None:
+        request = self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n",
+            emitted_finding_id="MC-WRONG",
+        )
+        request.write_text(request.read_text().replace("status: OPEN", "status: CONSUMED", 1))
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("finding_id 'MC-WRONG' conflicts with report identity 'MC-1'", out)
+
+    def test_legacy_report_without_repair_requests_is_a_noop(self) -> None:
+        self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | FALSE POSITIVE |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: FALSE POSITIVE\n"
+        )
+        self.set_env("LEGACY_NO_RR", "1")
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 0, out)
+        self.assertFalse((self.work_dir() / "spec" / "repair-requests").exists())
+
+    def test_legacy_preflight_migrates_old_rr_before_zero_pending_report_overwrite(self) -> None:
+        from specula import confirmlib
+
+        work_spec = self.work_dir() / "spec"
+        (work_spec / "confirmed-bugs.md").write_text(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: old\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n"
+        )
+        rr_dir = work_spec / "repair-requests"
+        rr_dir.mkdir()
+        request = rr_dir / "RR-001.md"
+        request.write_text(
+            confirmlib._merge_rr(
+                "RR-001",
+                "Bug 1",
+                "fallback.out",
+                (
+                    "---\n"
+                    "target: SPEC_REPAIR\n"
+                    "counterexample: spec/output/x.out\n"
+                    "scope:\n"
+                    "  actions: [Foo]\n"
+                    "  invariants: [Inv]\n"
+                    "  hunt_cfgs: [MC_hunt.cfg]\n"
+                    "  fault_actions: []\n"
+                    "---\n\n"
+                    "## Trigger\n"
+                    "The counterexample requires an impossible transition.\n\n"
+                    "## Evidence\n"
+                    "The real guard is at src/node.py:42.\n"
+                ),
+                finding_id="MC-1",
+            ).replace("finding_id: MC-1\n", "", 1)
+        )
+        self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | FALSE POSITIVE |\n\n"
+            "## Bug 1: fresh\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: FALSE POSITIVE\n"
+        )
+        self.set_env("LEGACY_NO_RR", "1")
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("RR-001 is OPEN but is not linked", out)
+        self.assertNotIn("RR-001", (work_spec / "confirmed-bugs.md").read_text())
+        migrated = request.read_text()
+        self.assertIn("finding_id: MC-1", migrated)
+        self.assertRegex(migrated, r"(?m)^allocation_key: [0-9a-f]{64}$")
+
+    def test_failed_legacy_agent_leaves_partial_request_untouched(self) -> None:
+        original = self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n"
+        ).read_bytes()
+        self.set_env("LEGACY_ADAPTER_RC", "9")
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 9, out)
+        request = self.work_dir() / "spec" / "repair-requests" / "RR-001.md"
+        self.assertEqual(request.read_bytes(), original)
+        self.assertNotIn("legacy repair identity validation", out)
+
+    def test_successful_legacy_agent_cannot_overwrite_consumed_audit(self) -> None:
+        request, original = self._seed_consumed_audit()
+        self._legacy_fixture(
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: fresh\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n"
+        )
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(request.read_bytes(), original)
+        self.assertIn("RR-001 terminal audit was modified, moved, or deleted and was restored", out)
+        self.assertIn("Output integrity failures:", out)
+
+    def test_failed_legacy_agent_tamper_is_restored_before_returning_adapter_error(self) -> None:
+        request, original = self._seed_consumed_audit()
+        self._legacy_fixture(
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: fresh\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n"
+        )
+        self.set_env("LEGACY_ADAPTER_RC", "9")
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 9, out)
+        self.assertEqual(request.read_bytes(), original)
+        self.assertIn("RR-001 terminal audit was modified, moved, or deleted and was restored", out)
+        self.assertIn("Output integrity failures:", out)
+
+    def test_legacy_agent_cannot_delete_active_id_and_reallocate_same_finding(self) -> None:
+        request, original = self._seed_active_audit()
+        self._legacy_fixture(
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-002) |\n\n"
+            "## Bug 1: fresh\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-002)\n",
+            emitted_finding_id="MC-1",
+            emitted_rid="RR-002",
+        )
+        self.set_env("LEGACY_DELETE_RR", "1")
+        self.set_env("LEGACY_RR_NAME", "RR-002.md")
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(request.read_bytes(), original)
+        self.assertIn("RR-001 active identity was modified, moved, or deleted and was restored", out)
+
+
 class TestRunAgentBlocking(PhaseCase):
     def test_turn_phase_scopes_stop_gate_sets_cwd_and_removes_stale_log(self) -> None:
         adapter = self.tmp() / "adapter.sh"

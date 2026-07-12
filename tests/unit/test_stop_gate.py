@@ -19,6 +19,7 @@ import sys
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 sys.path.insert(0, str(SRC))
@@ -195,6 +196,13 @@ class TestLivePids(GateCase):
         self.assertIn("MC_run1.out.pid", reason)
         self.assertIn("wait_for_pid.sh", reason)
 
+    def test_live_background_job_at_finding_root_blocks(self) -> None:
+        self.deliver()
+        self.spawn_sleeper(self.wd / "root-job.pid")
+        allow, reason = sg.decide("spec_validation", self.wd)
+        self.assertFalse(allow)
+        self.assertIn("root-job.pid", reason)
+
     def test_dead_pid_allows(self) -> None:
         self.deliver()
         proc = subprocess.Popen(["true"])
@@ -253,18 +261,63 @@ class TestLivePids(GateCase):
         allow, _ = sg.decide("spec_validation", self.wd)
         self.assertTrue(allow)
 
-    def test_pid_beyond_depth_limit_ignored(self) -> None:
+    def test_deep_pid_is_found_without_topology_false_block(self) -> None:
         self.deliver()
-        deep = self.wd / "a" / "b" / "c" / "d" / "e" / "f"
+        deep = self.wd.joinpath(*(f"d{i}" for i in range(16)))
         self.spawn_sleeper(deep / "x.pid")
+        allow, _reason = sg.decide("spec_validation", self.wd)
+        self.assertFalse(allow)
+
+    def test_deep_empty_repository_does_not_block(self) -> None:
+        self.deliver()
+        self.wd.joinpath(*(f"d{i}" for i in range(16))).mkdir(parents=True)
         allow, _ = sg.decide("spec_validation", self.wd)
         self.assertTrue(allow)
 
-    def test_pid_within_depth_limit_found(self) -> None:
+    def test_real_scan_timeout_blocks_instead_of_assuming_no_jobs(self) -> None:
         self.deliver()
-        self.spawn_sleeper(self.wd / "a" / "b" / "c" / "d" / "x.pid")
-        allow, _ = sg.decide("spec_validation", self.wd)
+        (self.wd / "child").mkdir()
+        with mock.patch.object(sg, "SCAN_TIMEOUT_S", -1.0):
+            allow, reason = sg.decide("spec_validation", self.wd)
         self.assertFalse(allow)
+        self.assertIn("timed out", reason)
+
+    def test_registered_job_blocks_when_pid_file_is_outside_scan_scope(self) -> None:
+        self.deliver()
+        outside = self.wd / "states" / "external-log"
+        outside.mkdir(parents=True)
+        proc = self.spawn_sleeper(outside / "job.out.pid")
+        registry = self.wd / sg.STATE_DIRNAME / sg.BACKGROUND_PID_DIRNAME
+        registry.mkdir(parents=True)
+        (registry / f"{proc.pid}.pid").write_text(f"{proc.pid}\n{outside / 'job.out.pid'}\n")
+
+        allow, reason = sg.decide("spec_validation", self.wd)
+
+        self.assertFalse(allow)
+        self.assertIn(f"{proc.pid}.pid", reason)
+
+    def test_malformed_managed_registry_blocks_instead_of_hiding_job(self) -> None:
+        self.deliver()
+        registry = self.wd / sg.STATE_DIRNAME / sg.BACKGROUND_PID_DIRNAME
+        registry.mkdir(parents=True)
+        (registry / "broken.pid").write_text("not-a-pid\n")
+
+        allow, reason = sg.decide("spec_validation", self.wd)
+
+        self.assertFalse(allow)
+        self.assertIn("cannot prove", reason)
+
+    def test_target_level_scan_finds_nested_worker_registry(self) -> None:
+        self.deliver()
+        proc = self.spawn_sleeper(self.wd / "states" / "worker-job.pid")
+        registry = self.wd / "confirmation" / "MC-1" / sg.STATE_DIRNAME / sg.BACKGROUND_PID_DIRNAME
+        registry.mkdir(parents=True)
+        (registry / f"{proc.pid}.pid").write_text(f"{proc.pid}\n")
+
+        allow, reason = sg.decide("spec_validation", self.wd)
+
+        self.assertFalse(allow)
+        self.assertIn(f"{proc.pid}.pid", reason)
 
 
 class TestHookEntry(GateCase):
@@ -353,8 +406,6 @@ class TestHookEntry(GateCase):
     def test_decide_exception_fails_open(self) -> None:
         # the load-bearing guarantee: a crash inside decide() must allow the
         # stop (exit 0, no block), never wedge a healthy run
-        import unittest.mock as mock
-
         env = os.environ.copy()
         env["SPECULA_PHASE"] = "spec_validation"
         env["SPECULA_WORK_DIR"] = str(self.wd)
@@ -384,6 +435,18 @@ class TestAcceptEntry(GateCase):
         self.deliver()
         rc, out = self.accept("spec_validation")
         self.assertEqual((rc, out), (0, ""))
+
+    def test_deliverable_cannot_hide_nested_registered_worker(self) -> None:
+        self.deliver()
+        proc = self.spawn_sleeper(self.wd / "states" / "worker-job.pid")
+        registry = self.wd / "confirmation" / "MC-1" / sg.STATE_DIRNAME / sg.BACKGROUND_PID_DIRNAME
+        registry.mkdir(parents=True)
+        (registry / f"{proc.pid}.pid").write_text(f"{proc.pid}\n")
+
+        rc, out = self.accept("spec_validation")
+
+        self.assertEqual(rc, 1)
+        self.assertIn(f"{proc.pid}.pid", out)
 
     def test_missing_deliverable_exit_1(self) -> None:
         rc, out = self.accept("spec_validation")

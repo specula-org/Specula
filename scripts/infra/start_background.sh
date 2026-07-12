@@ -69,6 +69,28 @@ PID=$!
 PID_FILE="$LOG_PATH.pid"
 echo "$PID" > "$PID_FILE"
 
+# A parallel confirmation worker deliberately narrows its stop-gate scan to the
+# finding directory. Register managed jobs there as well as next to their logs,
+# so an absolute/out-of-scope log path or a pruned TLC directory cannot hide a
+# live process from the gate. Outside a Specula agent run the env var is absent
+# and this helper keeps its historical standalone behaviour.
+if [[ -n "${SPECULA_STOP_GATE_WORK_DIR:-}" ]]; then
+    REGISTRY_DIR="${SPECULA_STOP_GATE_WORK_DIR}/.stop-gate/background-pids"
+    REGISTRY_TMP="$REGISTRY_DIR/.${PID}.$$.tmp"
+    if mkdir -p "$REGISTRY_DIR" \
+        && printf '%s\n%s\n' "$PID" "$PID_FILE" > "$REGISTRY_TMP" \
+        && mv -f "$REGISTRY_TMP" "$REGISTRY_DIR/${PID}.pid"; then
+        echo "  Gate registry: $REGISTRY_DIR/${PID}.pid"
+    else
+        rm -f "$REGISTRY_TMP" 2>/dev/null || true
+        echo "ERROR: could not register PID with the Specula stop gate; stopping untracked job $PID" >&2
+        kill "$PID" 2>/dev/null || true
+        wait "$PID" 2>/dev/null || true
+        rm -f "$PID_FILE"
+        exit 1
+    fi
+fi
+
 echo ""
 echo "✓ Process started! PID: $PID"
 echo "  PID file:    $PID_FILE"

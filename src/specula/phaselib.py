@@ -515,9 +515,17 @@ class Phase:
         if alt is not None:
             return alt
 
+        integrity_snapshot = self.capture_output_integrity(
+            ws,
+            names,
+            adapter=adapter,
+            dry_run=dry_run,
+        )
         show_progress = progress.enabled()
         running: list[progress.RunningAgent] = []
         failures: list[tuple[str, int]] = []
+        successful_names: set[str] = set()
+        completed_names: set[str] = set()
         pending: list[tuple[str, int]] = [(target, 1) for target in targets]
         rate_limited: list[tuple[str, int]] = []
         pause_for_rate_limit = False
@@ -560,7 +568,9 @@ class Phase:
                         progress.report(running, self.progress_config)
                     running, completed = self._reap_agents(running, show_progress)
                     for completed_agent, rc in completed:
+                        completed_names.add(completed_agent.name)
                         if rc == 0:
+                            successful_names.add(completed_agent.name)
                             continue
                         if rc == quota.RATE_LIMIT_RC:
                             if self._reactive_rate_limit_enabled() and completed_agent.attempt <= retry_limit:
@@ -609,6 +619,22 @@ class Phase:
                 self._terminate_agents(running)
                 raise
 
+        integrity_failures = self.audit_output_integrity(
+            ws,
+            [name for name in names if name in completed_names],
+            integrity_snapshot,
+            adapter=adapter,
+            dry_run=dry_run,
+        )
+        finalized = self.finalize_outputs(
+            ws,
+            [name for name in names if name in successful_names],
+            adapter=adapter,
+            dry_run=dry_run,
+        )
+        failed_names = {name for name, _ in failures}
+        finalized = [(name, rc) for name, rc in finalized if name not in failed_names]
+
         self.summarize(ws, names)
         if not dry_run:
             self._acceptance(ws, names)
@@ -617,7 +643,17 @@ class Phase:
             print("Agent failures:")
             for name, rc in failures:
                 print(f"  FAILED  {name}: adapter exited {rc}")
-        return self._failure_code(failures)
+        if finalized:
+            print()
+            print("Output validation failures:")
+            for name, rc in finalized:
+                print(f"  FAILED  {name}: invalid phase output (exit {rc})")
+        if integrity_failures:
+            print()
+            print("Output integrity failures:")
+            for name, rc in integrity_failures:
+                print(f"  FAILED  {name}: protected output was restored (exit {rc})")
+        return self._failure_code(failures + integrity_failures + finalized)
 
     def run_alternate(
         self,
@@ -636,6 +672,45 @@ class Phase:
         loop. Overridden by BugConfirmationPhase for parallel per-finding
         confirmation."""
         return None
+
+    def finalize_outputs(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        """Validate phase-specific output that cannot be trusted to the agent.
+
+        The default has no extra contract. A returned target/code pair is folded
+        into normal agent failures so downstream phases cannot consume an
+        invalid artifact after a nominally successful adapter exit.
+        """
+        return []
+
+    def capture_output_integrity(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> Any:
+        """Capture phase-owned immutable output before any adapter runs."""
+        return None
+
+    def audit_output_integrity(
+        self,
+        ws: Workspace,
+        names: list[str],
+        snapshot: Any,
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        """Restore protected output after every adapter that actually ended."""
+        return []
 
     # ── acceptance layer (stop gate) ──
     def _acceptance(self, ws: Workspace, names: list[str]) -> None:
@@ -1629,6 +1704,22 @@ Prerequisites:
         `--legacy-confirm` falls back to the single-agent path. None defers to the
         single-agent loop in Phase.run."""
         if ws.opts.get("legacy"):
+            if dry_run:
+                return None
+            preflight_failures = self._legacy_rr_identity_failures(
+                ws,
+                names,
+                adapter=adapter,
+                verify_against_report=True,
+                require_active_report_link=False,
+                stage="preflight",
+            )
+            if preflight_failures:
+                print()
+                print("Repair identity preflight failures:")
+                for name, rc in preflight_failures:
+                    print(f"  FAILED  {name}: invalid existing repair identity (exit {rc})")
+                return self._failure_code(preflight_failures)
             return None
         # Local import: confirmlib imports phaselib, so a top-level import here
         # would be circular.
@@ -1678,6 +1769,113 @@ Prerequisites:
         if not dry_run:
             self._acceptance(ws, names)
         return self._failure_code(failures)
+
+    def finalize_outputs(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        """Make legacy agent-authored RRs safe before returning success."""
+        if dry_run or not ws.opts.get("legacy"):
+            return []
+        return self._legacy_rr_identity_failures(
+            ws,
+            names,
+            adapter=adapter,
+            verify_against_report=True,
+            require_active_report_link=True,
+            stage="validation",
+        )
+
+    def capture_output_integrity(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> Any:
+        if dry_run or not ws.opts.get("legacy"):
+            return {}
+        from specula.confirmlib import ConfirmConfig, snapshot_terminal_rr_audit
+
+        snapshots: dict[str, Any] = {}
+        for name in names:
+            cfg = ConfirmConfig(name=name, ws=ws, adapter=adapter)
+            snapshots[name] = snapshot_terminal_rr_audit(cfg)
+        return snapshots
+
+    def audit_output_integrity(
+        self,
+        ws: Workspace,
+        names: list[str],
+        snapshot: Any,
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        if dry_run or not ws.opts.get("legacy") or not isinstance(snapshot, dict):
+            return []
+        from specula.confirmlib import ConfirmConfig, restore_terminal_rr_audit
+
+        failures: list[tuple[str, int]] = []
+        for name in names:
+            cfg = ConfirmConfig(name=name, ws=ws, adapter=adapter)
+            try:
+                violations = restore_terminal_rr_audit(cfg, snapshot.get(name, {}))
+            except (OSError, UnicodeError, ValueError) as exc:
+                print(f"  {name}: terminal repair audit restore FAILED ({exc})")
+                failures.append((name, 1))
+                continue
+            if violations:
+                for violation in violations:
+                    print(f"  {name}: {violation}")
+                failures.append((name, 1))
+        return failures
+
+    def _legacy_rr_identity_failures(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        verify_against_report: bool,
+        require_active_report_link: bool,
+        stage: str,
+    ) -> list[tuple[str, int]]:
+        from specula.confirmlib import (
+            ConfirmationFailed,
+            ConfirmConfig,
+            ensure_rr_stable_identities,
+            validate_report_repair_references,
+        )
+
+        failures: list[tuple[str, int]] = []
+        for name in names:
+            cfg = ConfirmConfig(
+                name=name,
+                ws=ws,
+                adapter=adapter,
+                repo_dir=ws.find_repo_dir(name),
+                model=self._model,
+                effort=self._effort,
+                prompt_extra=self._read_prompt_extra(ws, name),
+            )
+            try:
+                ensure_rr_stable_identities(
+                    cfg,
+                    verify_against_report=verify_against_report,
+                    require_active_report_link=require_active_report_link,
+                )
+                if require_active_report_link:
+                    validate_report_repair_references(cfg)
+            except (ConfirmationFailed, OSError, UnicodeError, ValueError) as exc:
+                print(f"  {name}: legacy repair identity {stage} FAILED ({exc})")
+                failures.append((name, 1))
+        return failures
 
     def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True
