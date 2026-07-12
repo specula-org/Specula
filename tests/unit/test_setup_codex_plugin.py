@@ -133,7 +133,7 @@ class TestCodexPluginSkillContract(unittest.TestCase):
             prompts["confirmation consolidate"] = (captured[0], ("validation-workflow",))
             return prompts
 
-    def test_plugin_only_ids_cover_every_production_prompt(self) -> None:
+    def test_codex_ids_cover_every_production_prompt(self) -> None:
         plugin_dir, manifest = self.generate_plugin()
         plugin_name = str(manifest["name"])
         self.assertEqual(plugin_name, CODEX_PLUGIN_NAME)
@@ -152,7 +152,10 @@ class TestCodexPluginSkillContract(unittest.TestCase):
                     namespaced = f"{plugin_name}:{skill}"
                     self.assertIn(namespaced, plugin_skill_ids)
                     self.assertIn(f"**{skill}**", prompt)
-                    self.assertIn(f"**{namespaced}**", prompt)
+                    self.assertIn(f"${skill}", prompt)
+                    self.assertIn(f"${namespaced}", prompt)
+                    self.assertIn("explicitly invoke exactly one ID listed in your Skills", prompt)
+                    self.assertIn("Never invoke both or an ID that is not listed", prompt)
 
 
 if __name__ == "__main__":

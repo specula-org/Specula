@@ -311,7 +311,9 @@ class TestDryRunCommand(PhaseCase):
                 self.assertTrue(prompt.is_file(), "prompt file not written")
                 body = prompt.read_text()
                 self.assertIn(f"**{spec['skill']}**", body)  # standalone installed skill ID
-                self.assertIn(f"**{CODEX_PLUGIN_NAME}:{spec['skill']}**", body)  # Codex plugin-only installed skill ID
+                self.assertIn(f"${spec['skill']}", body)  # Codex standalone explicit invocation marker
+                self.assertIn(f"${CODEX_PLUGIN_NAME}:{spec['skill']}", body)  # Codex plugin explicit invocation marker
+                self.assertIn("explicitly invoke exactly one ID listed in your Skills", body)
                 self.assertNotIn("/skills/", body)
                 self.assertNotIn(".claude/skills", body)
                 self.assertIn(str(wd / spec["out"]), body)  # a key output/inputs path
@@ -403,7 +405,8 @@ class TestRepairAndRecheckModes(PhaseCase):
         self.assertIn("REPAIR MODE", body)
         for skill in ("bug-confirmation", "validation-workflow", "tla-trace-workflow", "tla-checking-workflow"):
             self.assertIn(f"**{skill}**", body)
-            self.assertIn(f"**{CODEX_PLUGIN_NAME}:{skill}**", body)
+            self.assertIn(f"${skill}", body)
+            self.assertIn(f"${CODEX_PLUGIN_NAME}:{skill}", body)
         self.assertNotIn("/skills/", body)
         self.assertNotIn(".claude/skills", body)
 
@@ -415,7 +418,8 @@ class TestRepairAndRecheckModes(PhaseCase):
         body = (wd / ".bug-recheck-prompt.md").read_text()
         self.assertIn("RE-CHECK", body)
         self.assertIn("**bug-confirmation**", body)
-        self.assertIn(f"**{CODEX_PLUGIN_NAME}:bug-confirmation**", body)
+        self.assertIn("$bug-confirmation", body)
+        self.assertIn(f"${CODEX_PLUGIN_NAME}:bug-confirmation", body)
         self.assertIn("Phase 2′ re-check", body)
         self.assertIn("repair-request format", body)
         self.assertNotIn("/skills/", body)

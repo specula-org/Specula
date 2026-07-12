@@ -76,21 +76,16 @@ setup_skills() {
   local target_dir="$1"
   local skills_source="$2"
   shift 2
-  local python_path="$PROJECT_ROOT/src"
   local -a install_args=(
     --source "$skills_source"
     --target "$target_dir"
   )
 
-  if [[ -n "${PYTHONPATH:-}" ]]; then
-    python_path="$python_path:$PYTHONPATH"
-  fi
-  for legacy_root in "$@"; do
-    install_args+=(--legacy-root "$legacy_root")
-  done
+  install_args+=("$@")
 
   print_status "Installing Specula skills into $target_dir..."
-  if PYTHONPATH="$python_path" python3 -m specula.skill_install "${install_args[@]}"; then
+  # Isolated mode keeps the caller's CWD and PYTHONPATH from shadowing trusted setup code.
+  if python3 -I "$PROJECT_ROOT/src/specula/skill_install.py" "${install_args[@]}"; then
     print_success "Skills configured in $target_dir"
   else
     SKILL_SETUP_INCOMPLETE=true
@@ -156,7 +151,7 @@ setup_codex_plugin() {
   local plugin_root="$2"
 
   print_status "Generating Specula Codex plugin..."
-  python3 "$SCRIPT_DIR/setup_codex_plugin.py" \
+  python3 -I "$SCRIPT_DIR/setup_codex_plugin.py" \
     --project-root "$project_root" \
     --plugin-root "$plugin_root"
   print_success "Codex plugin configured: specula-codex@specula"
@@ -176,13 +171,13 @@ setup_python_tool_env() {
   fi
 
   print_status "Setting up $tool_name Python environment..."
-  python3 -m venv "$venv_dir"
-  "$python_path" -m pip install --upgrade pip
+  python3 -I -m venv "$venv_dir"
+  "$python_path" -I -m pip install --upgrade pip
 
   if [[ -n "$requirements_file" && -f "$requirements_file" ]]; then
-    "$python_path" -m pip install -r "$requirements_file"
+    "$python_path" -I -m pip install -r "$requirements_file"
   else
-    "$python_path" -m pip install mcp
+    "$python_path" -I -m pip install mcp
   fi
 
   print_success "$tool_name dependencies installed"
@@ -214,6 +209,8 @@ build_cfa_jar() {
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Run the remaining setup from the trusted checkout rather than the caller's directory.
+cd "$PROJECT_ROOT"
 TRACE_DEBUGGER_DIR="$PROJECT_ROOT/tools/trace_debugger"
 TRACE_DEBUGGER_VENV="$TRACE_DEBUGGER_DIR/.venv"
 TRACE_DEBUGGER_PYTHON="$TRACE_DEBUGGER_VENV/bin/python"
@@ -354,7 +351,10 @@ if ask_yn "Install Specula for Claude Code?"; then
       setup_claude_mcp "$PROJECT_ROOT" "$mcp_name" "$mcp_python" "$mcp_server" "user"
     done
   else
-    setup_skills "$PROJECT_ROOT/.claude/skills" "$SKILLS_SOURCE"
+    setup_skills \
+      "$PROJECT_ROOT/.claude/skills" \
+      "$SKILLS_SOURCE" \
+      --shadow-root "$CLAUDE_USER_CONFIG_DIR/skills"
     warn_local_skills_scope
     for entry in "${MCP_SERVERS[@]}"; do
       IFS='|' read -r mcp_name mcp_python mcp_server <<< "$entry"
@@ -373,7 +373,7 @@ case "$codex_install" in
   legacy)
     scope="$(ask_scope "Codex")"
     if [[ "$scope" == "global" ]]; then
-      setup_skills "$HOME/.agents/skills" "$SKILLS_SOURCE" "$HOME/.codex/skills"
+      setup_skills "$HOME/.agents/skills" "$SKILLS_SOURCE" --legacy-root "$HOME/.codex/skills"
     else
       setup_skills "$PROJECT_ROOT/.agents/skills" "$SKILLS_SOURCE"
       warn_local_skills_scope
@@ -397,7 +397,7 @@ echo -e "${BLUE}[3/3] GitHub Copilot CLI${NC}"
 if ask_yn "Install Specula for GitHub Copilot CLI?"; then
   scope="$(ask_scope "Copilot CLI")"
   if [[ "$scope" == "global" ]]; then
-    setup_skills "$HOME/.agents/skills" "$SKILLS_SOURCE" "$HOME/.github/skills"
+    setup_skills "$HOME/.agents/skills" "$SKILLS_SOURCE" --legacy-root "$HOME/.github/skills"
   else
     setup_skills "$PROJECT_ROOT/.github/skills" "$SKILLS_SOURCE"
     warn_local_skills_scope

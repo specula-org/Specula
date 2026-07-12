@@ -22,12 +22,57 @@ class SkillInstallCase(unittest.TestCase):
         self.target = self.root / "target"
         self.source.mkdir()
 
-    def skill(self, folder: str, name: str, *, root: Path | None = None) -> Path:
+    def skill(
+        self,
+        folder: str,
+        name: str,
+        *,
+        root: Path | None = None,
+        name_line: str | None = None,
+    ) -> Path:
         parent = root or self.source
         path = parent / folder
         path.mkdir(parents=True)
-        (path / "SKILL.md").write_text(f"---\nname: {name}\ndescription: test\n---\n\nInstructions.\n")
+        name_line = name_line or f"name: {name}"
+        (path / "SKILL.md").write_text(f"---\n{name_line}\ndescription: test\n---\n\nInstructions.\n")
         return path
+
+    def checkout(self, folder: str) -> Path:
+        checkout = self.root / folder
+        (checkout / "scripts" / "infra").mkdir(parents=True)
+        (checkout / "src" / "specula").mkdir(parents=True)
+        (checkout / "skills").mkdir()
+        (checkout / "pyproject.toml").write_text('[project]\nname = "specula"\n')
+        (checkout / "README.md").write_text("# Specula: test checkout\n")
+        (checkout / "scripts" / "infra" / "setup.sh").write_text('SKILLS_SOURCE="$PROJECT_ROOT/skills"\n')
+        (checkout / "src" / "specula" / "__init__.py").write_text("")
+        return checkout
+
+    def legacy_checkout(self, folder: str) -> Path:
+        checkout = self.root / folder
+        (checkout / "scripts" / "infra").mkdir(parents=True)
+        (checkout / "skills").mkdir()
+        (checkout / "README.md").write_text("# Specula: legacy checkout\n")
+        (checkout / "scripts" / "infra" / "setup.sh").write_text(
+            'SKILLS_SOURCE="$PROJECT_ROOT/skills"\n'
+            "setup_skills_symlink() {\n"
+            '  ln -s "$skills_source" "$target_link"\n'
+            "}\n"
+        )
+        return checkout
+
+    def legacy_src_checkout(self, folder: str) -> Path:
+        checkout = self.root / folder
+        (checkout / "scripts" / "infra").mkdir(parents=True)
+        (checkout / "src" / "skills").mkdir(parents=True)
+        (checkout / "README.md").write_text("# Specula: legacy checkout\n")
+        (checkout / "scripts" / "infra" / "setup.sh").write_text(
+            'SKILLS_SOURCE="$PROJECT_ROOT/src/skills"\n'
+            "setup_skills_root_symlink() {\n"
+            '  ln -s "$skills_source" "$target_link"\n'
+            "}\n"
+        )
+        return checkout
 
 
 class TestInstallSkills(SkillInstallCase):
@@ -66,6 +111,44 @@ class TestInstallSkills(SkillInstallCase):
         self.assertEqual((self.target / "code-analysis").resolve(), code.resolve())
         self.assertEqual((self.target / "validation-workflow").resolve(), validation.resolve())
         self.assertFalse((self.target / "workflow-overview.md").exists())
+
+    def test_registered_names_accept_yaml_comments_and_quotes(self) -> None:
+        self.skill("bare", "bare-name", name_line="name: bare-name # explanation")
+        self.skill("single", "single-name", name_line="name: 'single-name' # explanation")
+        self.skill("double", "double-name", name_line='name: "double-name" # explanation')
+
+        self.assertEqual(
+            [skill.name for skill in skill_install.discover_skills(self.source)],
+            ["bare-name", "double-name", "single-name"],
+        )
+
+    def test_registered_name_ignores_nested_name_before_top_level_name(self) -> None:
+        skill = self.skill("code_analysis", "code-analysis")
+        (skill / "SKILL.md").write_text("---\nmetadata:\n  name: unrelated\nname: code-analysis\n---\n")
+
+        self.assertEqual(skill_install.discover_skills(self.source)[0].name, "code-analysis")
+
+    def test_existing_unclosed_frontmatter_fails_closed(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        invalid = self.skill("custom", "ignored", root=self.target)
+        (invalid / "SKILL.md").write_text("---\nname: code-analysis\n")
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertFalse(result.complete)
+        self.assertEqual(result.conflicts, (invalid,))
+        self.assertFalse((self.target / "code-analysis").exists())
+
+    def test_existing_duplicate_top_level_name_fails_closed(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        invalid = self.skill("custom", "ignored", root=self.target)
+        (invalid / "SKILL.md").write_text("---\nname: unrelated\nname: code-analysis\n---\n")
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertFalse(result.complete)
+        self.assertEqual(result.conflicts, (invalid,))
+        self.assertFalse((self.target / "code-analysis").exists())
 
     def test_existing_third_party_skill_is_preserved(self) -> None:
         self.skill("code_analysis", "code-analysis")
@@ -117,7 +200,7 @@ class TestInstallSkills(SkillInstallCase):
         self.assertEqual(canonical.read_text(), "keep\n")
         self.assertEqual(old.resolve(), source.resolve())
 
-    def test_same_name_directory_conflict_does_not_block_other_skills(self) -> None:
+    def test_same_name_directory_conflict_still_installs_other_skills(self) -> None:
         self.skill("code_analysis", "code-analysis")
         self.skill("spec_generation", "spec-generation")
         existing = self.skill("code-analysis", "code-analysis", root=self.target)
@@ -139,6 +222,61 @@ class TestInstallSkills(SkillInstallCase):
 
         self.assertEqual(result.conflicts, (existing,))
         self.assertFalse((self.target / "code-analysis").exists())
+
+    def test_commented_registered_name_under_another_directory_conflicts(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        existing = self.skill(
+            "custom-folder",
+            "code-analysis",
+            root=self.target,
+            name_line="name: code-analysis # third-party skill",
+        )
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertEqual(result.conflicts, (existing,))
+        self.assertFalse((self.target / "code-analysis").exists())
+
+    def test_invalid_existing_skill_fails_closed_before_writing(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        self.skill("spec_generation", "spec-generation")
+        invalid = self.skill("custom-folder", "ignored", root=self.target, name_line="name: [code-analysis]")
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertFalse(result.complete)
+        self.assertEqual(result.conflicts, (invalid,))
+        self.assertEqual(result.linked, ())
+        self.assertFalse((self.target / "code-analysis").exists())
+        self.assertFalse((self.target / "spec-generation").exists())
+
+    def test_duplicate_unrelated_registered_names_are_preserved(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        self.skill("spec_generation", "spec-generation")
+        first = self.skill("first", "third-party", root=self.target)
+        second = self.skill("second", "third-party", root=self.target)
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertTrue(result.complete)
+        self.assertEqual(result.conflicts, ())
+        self.assertTrue(first.is_dir())
+        self.assertTrue(second.is_dir())
+        self.assertTrue((self.target / "code-analysis").is_symlink())
+        self.assertTrue((self.target / "spec-generation").is_symlink())
+
+    def test_duplicate_relevant_registered_names_fail_before_writing(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        self.skill("spec_generation", "spec-generation")
+        first = self.skill("first", "code-analysis", root=self.target)
+        second = self.skill("second", "code-analysis", root=self.target)
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertFalse(result.complete)
+        self.assertEqual(result.conflicts, (first, second))
+        self.assertFalse((self.target / "code-analysis").exists())
+        self.assertFalse((self.target / "spec-generation").exists())
 
     def test_unrelated_skill_symlink_is_preserved(self) -> None:
         self.skill("code_analysis", "code-analysis")
@@ -165,6 +303,183 @@ class TestInstallSkills(SkillInstallCase):
         self.assertEqual((self.target / "code-analysis").resolve(), skill.resolve())
         self.assertEqual(second.existing, ("code-analysis",))
 
+    def test_live_old_checkout_whole_directory_link_is_migrated(self) -> None:
+        current = self.skill("code_analysis", "code-analysis")
+        current_canonical = self.skill("bug-confirmation", "bug-confirmation")
+        old_checkout = self.checkout("checkout-a")
+        old_skill = self.skill("code_analysis", "code-analysis", root=old_checkout / "skills")
+        old_canonical = self.skill("bug-confirmation", "bug-confirmation", root=old_checkout / "skills")
+        self.target.symlink_to(old_checkout / "skills", target_is_directory=True)
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertTrue(result.complete)
+        self.assertTrue(result.migrated_legacy_root)
+        self.assertTrue(self.target.is_dir() and not self.target.is_symlink())
+        self.assertEqual((self.target / "code-analysis").resolve(), current.resolve())
+        self.assertEqual((self.target / "bug-confirmation").resolve(), current_canonical.resolve())
+        self.assertTrue(old_skill.exists())
+        self.assertTrue(old_canonical.exists())
+
+    def test_modern_checkout_named_src_is_recognized(self) -> None:
+        for folder, name in (
+            ("code_analysis", "code-analysis"),
+            ("spec_generation", "spec-generation"),
+            ("harness-generation", "harness-generation"),
+        ):
+            self.skill(folder, name)
+        old_checkout = self.checkout("src")
+        for folder, name in (
+            ("code_analysis", "code-analysis"),
+            ("spec_generation", "spec-generation"),
+            ("harness-generation", "harness-generation"),
+        ):
+            self.skill(folder, name, root=old_checkout / "skills")
+        self.target.symlink_to(old_checkout / "skills", target_is_directory=True)
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertTrue(result.complete)
+        self.assertTrue(result.migrated_legacy_root)
+        self.assertTrue((self.target / "code-analysis").is_symlink())
+
+    def test_unrelated_project_named_specula_is_not_treated_as_owned(self) -> None:
+        for folder, name in (
+            ("code_analysis", "code-analysis"),
+            ("spec_generation", "spec-generation"),
+            ("harness-generation", "harness-generation"),
+        ):
+            self.skill(folder, name)
+        lookalike = self.root / "lookalike"
+        (lookalike / "scripts" / "infra").mkdir(parents=True)
+        (lookalike / "src" / "specula").mkdir(parents=True)
+        (lookalike / "skills").mkdir()
+        (lookalike / "pyproject.toml").write_text('[project]\nname = "specula"\n')
+        (lookalike / "README.md").write_text("# A different project\n")
+        (lookalike / "scripts" / "infra" / "setup.sh").write_text("#!/bin/sh\n")
+        (lookalike / "src" / "specula" / "__init__.py").write_text("")
+        for folder, name in (
+            ("code_analysis", "code-analysis"),
+            ("spec_generation", "spec-generation"),
+            ("harness-generation", "harness-generation"),
+        ):
+            self.skill(folder, name, root=lookalike / "skills")
+        self.target.symlink_to(lookalike / "skills", target_is_directory=True)
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertFalse(result.complete)
+        self.assertFalse(result.migrated_legacy_root)
+        self.assertTrue(self.target.is_symlink())
+
+    def test_live_old_checkout_with_third_party_skill_is_preserved(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        old_checkout = self.checkout("checkout-a")
+        self.skill("code_analysis", "code-analysis", root=old_checkout / "skills")
+        third_party = self.skill("mine", "third-party", root=old_checkout / "skills")
+        self.target.symlink_to(old_checkout / "skills", target_is_directory=True)
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertFalse(result.complete)
+        self.assertTrue(self.target.is_symlink())
+        self.assertEqual((self.target / "mine").resolve(), third_party.resolve())
+        self.assertIn((self.target / "mine").resolve(), {path.resolve() for path in result.conflicts})
+
+    def test_live_old_checkout_with_duplicate_registered_name_is_preserved(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        old_checkout = self.checkout("checkout-a")
+        first = self.skill("code_analysis", "code-analysis", root=old_checkout / "skills")
+        second = self.skill("duplicate", "code-analysis", root=old_checkout / "skills")
+        self.target.symlink_to(old_checkout / "skills", target_is_directory=True)
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertFalse(result.complete)
+        self.assertTrue(self.target.is_symlink())
+        self.assertEqual(
+            {path.resolve() for path in result.conflicts},
+            {first.resolve(), second.resolve()},
+        )
+
+    def test_725d9303_layout_whole_directory_link_is_migrated(self) -> None:
+        for folder, name in (
+            ("code_analysis", "code-analysis"),
+            ("spec_generation", "spec-generation"),
+            ("harness-generation", "harness-generation"),
+            ("validation-workflow", "validation-workflow"),
+        ):
+            self.skill(folder, name)
+        old_checkout = self.legacy_checkout("checkout-725d9303")
+        for folder, name in (
+            ("code_analysis", "code-analysis"),
+            ("spec_generation", "spec-generation"),
+            ("harness-generation", "harness-generation"),
+            ("validation-workflow", "tla-verification-workflow"),
+        ):
+            self.skill(folder, name, root=old_checkout / "skills")
+        self.target.symlink_to(old_checkout / "skills", target_is_directory=True)
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertTrue(result.complete)
+        self.assertTrue(result.migrated_legacy_root)
+        self.assertFalse((old_checkout / "pyproject.toml").exists())
+        self.assertTrue((self.target / "validation-workflow").is_symlink())
+
+    def test_d3ec93db_src_layout_whole_directory_link_is_migrated(self) -> None:
+        for folder, name in (
+            ("code_analysis", "code-analysis"),
+            ("spec_generation", "spec-generation"),
+            ("harness-generation", "harness-generation"),
+            ("validation-workflow", "validation-workflow"),
+        ):
+            self.skill(folder, name)
+        old_checkout = self.legacy_src_checkout("checkout-d3ec93db")
+        for folder, name in (
+            ("code_analysis", "code-analysis"),
+            ("spec_generation", "spec-generation"),
+            ("harness-generation", "harness-generation"),
+            ("validation-workflow", "tla-verification-workflow"),
+        ):
+            self.skill(folder, name, root=old_checkout / "src" / "skills")
+        self.target.symlink_to(old_checkout / "src" / "skills", target_is_directory=True)
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertTrue(result.complete)
+        self.assertTrue(result.migrated_legacy_root)
+        self.assertTrue((self.target / "validation-workflow").is_symlink())
+
+    def test_broken_same_checkout_src_layout_link_is_migrated(self) -> None:
+        checkout = self.root / "current-checkout"
+        current_source = checkout / "skills"
+        current_skill = self.skill("code_analysis", "code-analysis", root=current_source)
+        target = checkout / ".claude" / "skills"
+        target.parent.mkdir(parents=True)
+        target.symlink_to(checkout / "src" / "skills", target_is_directory=True)
+
+        result = skill_install.install_skills(current_source, target)
+
+        self.assertTrue(result.complete)
+        self.assertTrue(result.migrated_legacy_root)
+        self.assertEqual((target / "code-analysis").resolve(), current_skill.resolve())
+
+    def test_rerun_across_checkouts_updates_owned_skill_link(self) -> None:
+        current = self.skill("code_analysis", "code-analysis")
+        old_checkout = self.checkout("checkout-a")
+        old_skill = self.skill("code_analysis", "code-analysis", root=old_checkout / "skills")
+        self.target.mkdir()
+        installed = self.target / "code-analysis"
+        installed.symlink_to(old_skill, target_is_directory=True)
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertTrue(result.complete)
+        self.assertEqual(result.updated_links, (installed,))
+        self.assertEqual(installed.resolve(), current.resolve())
+        self.assertTrue(old_skill.exists())
+
     def test_user_managed_root_symlink_is_preserved_and_merged(self) -> None:
         source = self.skill("code_analysis", "code-analysis")
         elsewhere = self.root / "elsewhere"
@@ -177,6 +492,21 @@ class TestInstallSkills(SkillInstallCase):
         self.assertTrue(self.target.is_symlink())
         self.assertEqual(self.target.resolve(), elsewhere.resolve())
         self.assertEqual((elsewhere / "code-analysis").resolve(), source.resolve())
+
+    def test_user_managed_root_conflict_prevents_partial_install(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        self.skill("spec_generation", "spec-generation")
+        elsewhere = self.root / "elsewhere"
+        existing = self.skill("custom", "code-analysis", root=elsewhere)
+        self.target.symlink_to(elsewhere, target_is_directory=True)
+
+        result = skill_install.install_skills(self.source, self.target)
+
+        self.assertFalse(result.complete)
+        self.assertEqual(len(result.conflicts), 1)
+        self.assertEqual(result.conflicts[0].resolve(), existing.resolve())
+        self.assertTrue(self.target.is_symlink())
+        self.assertFalse((elsewhere / "spec-generation").exists())
 
     def test_broken_root_symlink_is_preserved_as_conflict(self) -> None:
         self.skill("code_analysis", "code-analysis")
@@ -264,6 +594,256 @@ class TestCli(SkillInstallCase):
         self.assertEqual(rc, 0)
         self.assertTrue(legacy.is_symlink())
         self.assertEqual(legacy.resolve(), unrelated.resolve())
+
+    def test_shadow_root_removes_live_old_checkout_link(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        old_checkout = self.checkout("checkout-a")
+        self.skill("code_analysis", "code-analysis", root=old_checkout / "skills")
+        shadow = self.root / "personal-skills"
+        shadow.symlink_to(old_checkout / "skills", target_is_directory=True)
+
+        rc = skill_install.main(
+            [
+                "--source",
+                str(self.source),
+                "--target",
+                str(self.target),
+                "--shadow-root",
+                str(shadow),
+            ]
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertFalse(shadow.exists() or shadow.is_symlink())
+        self.assertTrue((self.target / "code-analysis").is_symlink())
+
+    def test_shadow_whole_root_with_third_party_skill_is_preserved(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        old_checkout = self.checkout("checkout-a")
+        self.skill("code_analysis", "code-analysis", root=old_checkout / "skills")
+        third_party = self.skill("mine", "third-party", root=old_checkout / "skills")
+        shadow = self.root / "personal-skills"
+        shadow.symlink_to(old_checkout / "skills", target_is_directory=True)
+
+        rc = skill_install.main(
+            [
+                "--source",
+                str(self.source),
+                "--target",
+                str(self.target),
+                "--shadow-root",
+                str(shadow),
+            ]
+        )
+
+        self.assertEqual(rc, 1)
+        self.assertTrue(shadow.is_symlink())
+        self.assertEqual((shadow / "mine").resolve(), third_party.resolve())
+        self.assertFalse(self.target.exists())
+
+    def test_shadow_whole_root_with_invalid_skill_is_preserved(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        old_checkout = self.checkout("checkout-a")
+        self.skill("code_analysis", "code-analysis", root=old_checkout / "skills")
+        invalid = self.skill("mine", "ignored", root=old_checkout / "skills")
+        (invalid / "SKILL.md").write_text("---\nname: third-party\n")
+        shadow = self.root / "personal-skills"
+        shadow.symlink_to(old_checkout / "skills", target_is_directory=True)
+
+        rc = skill_install.main(
+            [
+                "--source",
+                str(self.source),
+                "--target",
+                str(self.target),
+                "--shadow-root",
+                str(shadow),
+            ]
+        )
+
+        self.assertEqual(rc, 1)
+        self.assertTrue(shadow.is_symlink())
+        self.assertEqual((shadow / "mine").resolve(), invalid.resolve())
+        self.assertFalse(self.target.exists())
+
+    def test_legacy_whole_root_with_invalid_skill_is_preserved_and_fails(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        old_checkout = self.checkout("checkout-a")
+        self.skill("code_analysis", "code-analysis", root=old_checkout / "skills")
+        invalid = self.skill("mine", "ignored", root=old_checkout / "skills")
+        (invalid / "SKILL.md").write_text("---\nname: third-party\n")
+        legacy = self.root / "legacy-skills"
+        legacy.symlink_to(old_checkout / "skills", target_is_directory=True)
+
+        rc = skill_install.main(
+            [
+                "--source",
+                str(self.source),
+                "--target",
+                str(self.target),
+                "--legacy-root",
+                str(legacy),
+            ]
+        )
+
+        self.assertEqual(rc, 1)
+        self.assertTrue(legacy.is_symlink())
+        self.assertEqual((legacy / "mine").resolve(), invalid.resolve())
+        self.assertFalse(self.target.exists())
+
+    def test_legacy_whole_root_with_top_level_skill_creator_is_preserved(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        old_checkout = self.checkout("checkout-a")
+        self.skill("code_analysis", "code-analysis", root=old_checkout / "skills")
+        third_party = self.skill("skill-creator", "skill-creator", root=old_checkout / "skills")
+        legacy = self.root / "legacy-skills"
+        legacy.symlink_to(old_checkout / "skills", target_is_directory=True)
+
+        rc = skill_install.main(
+            [
+                "--source",
+                str(self.source),
+                "--target",
+                str(self.target),
+                "--legacy-root",
+                str(legacy),
+            ]
+        )
+
+        self.assertEqual(rc, 1)
+        self.assertTrue(legacy.is_symlink())
+        self.assertEqual((legacy / "skill-creator").resolve(), third_party.resolve())
+        self.assertFalse(self.target.exists())
+
+    def test_shadow_root_removes_owned_old_checkout_skill_link(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        old_checkout = self.checkout("checkout-a")
+        old_skill = self.skill("code_analysis", "code-analysis", root=old_checkout / "skills")
+        shadow = self.root / "personal-skills"
+        shadow.mkdir()
+        old_link = shadow / "code-analysis"
+        old_link.symlink_to(old_skill, target_is_directory=True)
+
+        rc = skill_install.main(
+            [
+                "--source",
+                str(self.source),
+                "--target",
+                str(self.target),
+                "--shadow-root",
+                str(shadow),
+            ]
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertTrue(shadow.is_dir())
+        self.assertFalse(old_link.exists() or old_link.is_symlink())
+
+    def test_shadow_root_preserves_unrelated_duplicate_skills(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        shadow = self.root / "personal-skills"
+        first = self.skill("first", "third-party", root=shadow)
+        second = self.skill("second", "third-party", root=shadow)
+
+        rc = skill_install.main(
+            [
+                "--source",
+                str(self.source),
+                "--target",
+                str(self.target),
+                "--shadow-root",
+                str(shadow),
+            ]
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertTrue(first.is_dir())
+        self.assertTrue(second.is_dir())
+        self.assertTrue((self.target / "code-analysis").is_symlink())
+
+    def test_target_aliasing_shadow_root_fails_without_removing_skills(self) -> None:
+        source = self.skill("code_analysis", "code-analysis")
+        shadow = self.root / "personal-skills"
+        shadow.mkdir()
+        installed = shadow / "code-analysis"
+        installed.symlink_to(source, target_is_directory=True)
+        self.target.symlink_to(shadow, target_is_directory=True)
+
+        rc = skill_install.main(
+            [
+                "--source",
+                str(self.source),
+                "--target",
+                str(self.target),
+                "--shadow-root",
+                str(shadow),
+            ]
+        )
+
+        self.assertEqual(rc, 1)
+        self.assertTrue(self.target.is_symlink())
+        self.assertEqual(installed.resolve(), source.resolve())
+
+    def test_distinct_owned_root_links_to_same_source_are_migrated(self) -> None:
+        source = self.skill("code_analysis", "code-analysis")
+        shadow = self.root / "personal-skills"
+        self.target.symlink_to(self.source, target_is_directory=True)
+        shadow.symlink_to(self.source, target_is_directory=True)
+
+        rc = skill_install.main(
+            [
+                "--source",
+                str(self.source),
+                "--target",
+                str(self.target),
+                "--shadow-root",
+                str(shadow),
+            ]
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertTrue(self.target.is_dir() and not self.target.is_symlink())
+        self.assertEqual((self.target / "code-analysis").resolve(), source.resolve())
+        self.assertFalse(shadow.exists() or shadow.is_symlink())
+
+    def test_ambiguous_shadow_root_fails_before_installing(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        shadow = self.root / "personal-skills"
+        self.skill("custom-folder", "code-analysis", root=shadow)
+
+        rc = skill_install.main(
+            [
+                "--source",
+                str(self.source),
+                "--target",
+                str(self.target),
+                "--shadow-root",
+                str(shadow),
+            ]
+        )
+
+        self.assertEqual(rc, 1)
+        self.assertFalse(self.target.exists())
+
+    def test_broken_shadow_root_fails_before_installing(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        shadow = self.root / "personal-skills"
+        shadow.symlink_to(self.root / "missing", target_is_directory=True)
+
+        rc = skill_install.main(
+            [
+                "--source",
+                str(self.source),
+                "--target",
+                str(self.target),
+                "--shadow-root",
+                str(shadow),
+            ]
+        )
+
+        self.assertEqual(rc, 1)
+        self.assertTrue(shadow.is_symlink())
+        self.assertFalse(self.target.exists())
 
 
 if __name__ == "__main__":

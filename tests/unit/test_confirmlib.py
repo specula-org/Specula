@@ -223,7 +223,9 @@ class TestDriver(ConfirmCase):
 
         self.assertEqual(len(prompts), 1)
         self.assertIn("installed Specula skill **validation-workflow**", prompts[0])
-        self.assertIn(f"**{CODEX_PLUGIN_NAME}:validation-workflow**", prompts[0])
+        self.assertIn("$validation-workflow", prompts[0])
+        self.assertIn(f"${CODEX_PLUGIN_NAME}:validation-workflow", prompts[0])
+        self.assertIn("explicitly invoke exactly one ID listed in your Skills", prompts[0])
         self.assertNotIn("/skills/", prompts[0])
         self.assertNotIn(".claude/skills", prompts[0])
 
@@ -283,7 +285,9 @@ class TestPromptExtraAndLog(ConfirmCase):
         prompt = C.prompt_reproduce(cfg, f, "/repo")
 
         self.assertIn("installed Specula skill **bug-confirmation**", prompt)
-        self.assertIn(f"**{CODEX_PLUGIN_NAME}:bug-confirmation**", prompt)
+        self.assertIn("$bug-confirmation", prompt)
+        self.assertIn(f"${CODEX_PLUGIN_NAME}:bug-confirmation", prompt)
+        self.assertIn("explicitly invoke exactly one ID listed in your Skills", prompt)
         self.assertNotIn("/skills/", prompt)
         self.assertNotIn(".claude/skills", prompt)
 
