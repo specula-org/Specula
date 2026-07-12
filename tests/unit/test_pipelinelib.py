@@ -529,6 +529,18 @@ class TestParsing(TmpCwd):
         self.assertEqual(p.effort, "high")
         self.assertEqual(p.targets, ["t|g|l|r"])
 
+    def test_legacy_confirmation_rejects_debate_in_either_order(self) -> None:
+        for args in (
+            ["--legacy-confirm", "--confirm-debate", "t|g|l|r"],
+            ["--confirm-debate", "--legacy-confirm", "t|g|l|r"],
+        ):
+            with self.subTest(args=args):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    rc = pl.Pipeline().parse_args(args)
+                self.assertEqual(rc, 1)
+                self.assertIn("--legacy-confirm conflicts with --confirm-debate", err.getvalue())
+
     def test_artifact_omitted_preserves_auto_discovery(self) -> None:
         p = pl.Pipeline()
         self.assertIsNone(p.parse_args(["t|g|l|r"]))
@@ -1119,6 +1131,21 @@ class TestConfirmationGeneration(RRDirCase):
 
 
 class TestDeferredMoves(RRDirCase):
+    def test_reconcile_disposition_counts_supports_current_aggregate_format(self) -> None:
+        report = (
+            "Dispositions: 3 total = 0 reproduced + 0 env-limited + 0 masked + 0 false-positive "
+            "+ 0 needs-more-info + 0 dropped + 2 pending-repair + 1 incomplete + 0 deferred\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | DEFERRED (repair loop exhausted; RR-1 in deferred/) |\n"
+            "| 2 | MC-2 | PENDING REPAIR (RR-2) |\n"
+            "| 3 | MC-3 | INCOMPLETE |\n"
+        )
+
+        reconciled = self.p._reconcile_disposition_counts(report)
+
+        self.assertIn("+ 1 pending-repair + 1 incomplete + 1 deferred", reconciled)
+
     def test_only_open_moves_consumed_stays_active(self) -> None:
         consumed = make_rr(self.rr_dir, "RR-1", "CONSUMED")
         opened = make_rr(self.rr_dir, "RR-2", "OPEN")

@@ -16,9 +16,11 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import wait as futures_wait
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -221,6 +223,91 @@ class TestDriver(ConfirmCase):
 
         self.assertEqual(rc, 0)
         self.assertEqual(worker_counts, [1])
+
+    def test_serial_rate_limit_stops_launching_and_preserves_later_cache(self) -> None:
+        findings = [
+            {"id": fid, "source": "model-checking", "title": fid, "summary": "s"} for fid in ("MC-1", "MC-2", "MC-3")
+        ]
+        ws = self.seed("T", findings)
+        cfg = self.cfg(ws, "T", max_parallel=1)
+        loaded = C.load_findings(cfg)
+        C._save_verdict(C.Outcome(loaded[2], "NEEDS MORE INFO", True, 0, EVIDENCE), cfg)
+        calls: list[str] = []
+
+        def worker(_cfg: C.ConfirmConfig, finding: C.Finding) -> C.Outcome:
+            calls.append(finding.id)
+            return C.Outcome(
+                finding,
+                C.INCOMPLETE,
+                False,
+                0,
+                "rate limited while confirming",
+                failure_code=75,
+            )
+
+        with mock.patch.object(C, "run_finding_safe", side_effect=worker):
+            rc = C.run_parallel_confirmation(cfg)
+
+        self.assertEqual(rc, 75)
+        self.assertEqual(calls, ["MC-1"])
+        report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
+        self.assertIn("| 2 | MC-2 | INCOMPLETE |", report)
+        self.assertIn("not started because another finding was rate-limited", report)
+        self.assertIn("| 3 | MC-3 | NEEDS MORE INFO |", report)
+        self.assertFalse((ws.work_dir("T") / "confirmation" / "MC-2" / "verdict.json").exists())
+        self.assertTrue((ws.work_dir("T") / "confirmation" / "MC-3" / "verdict.json").is_file())
+
+    def test_rate_limit_stops_next_parallel_wave_but_running_finishes(self) -> None:
+        findings = [
+            {"id": fid, "source": "model-checking", "title": fid, "summary": "s"}
+            for fid in ("MC-1", "MC-2", "MC-3", "MC-4")
+        ]
+        ws = self.seed("T", findings)
+        barrier = threading.Barrier(2)
+        calls: list[str] = []
+
+        def worker(_cfg: C.ConfirmConfig, finding: C.Finding) -> C.Outcome:
+            calls.append(finding.id)
+            barrier.wait(timeout=2)
+            if finding.id == "MC-1":
+                return C.Outcome(
+                    finding,
+                    C.INCOMPLETE,
+                    False,
+                    0,
+                    "rate limited while confirming",
+                    failure_code=75,
+                )
+            return C.Outcome(finding, "NEEDS MORE INFO", True, 0, EVIDENCE)
+
+        real_wait = futures_wait
+        wait_calls = 0
+
+        def observe_rate_future_first(
+            futures: tuple[Future[C.Outcome | None], ...], *, return_when: str
+        ) -> tuple[set[Future[C.Outcome | None]], set[Future[C.Outcome | None]]]:
+            nonlocal wait_calls
+            wait_calls += 1
+            if wait_calls == 1:
+                # The first submitted future is MC-1. Observe its rate-limit
+                # result before collecting MC-2's already-running completion.
+                return real_wait((futures[0],), return_when=return_when)
+            return real_wait(futures, return_when=return_when)
+
+        with (
+            mock.patch.object(C, "run_finding_safe", side_effect=worker),
+            mock.patch("specula.confirmlib.wait", side_effect=observe_rate_future_first),
+        ):
+            rc = C.run_parallel_confirmation(self.cfg(ws, "T", max_parallel=2))
+
+        self.assertEqual(rc, 75)
+        self.assertEqual(set(calls), {"MC-1", "MC-2"})
+        report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
+        self.assertIn("| 2 | MC-2 | NEEDS MORE INFO |", report)
+        self.assertIn("| 3 | MC-3 | INCOMPLETE |", report)
+        self.assertIn("| 4 | MC-4 | INCOMPLETE |", report)
+        self.assertFalse((ws.work_dir("T") / "confirmation" / "MC-3" / "verdict.json").exists())
+        self.assertFalse((ws.work_dir("T") / "confirmation" / "MC-4" / "verdict.json").exists())
 
     def test_rate_limit_finding_is_incomplete_delivers(self) -> None:
         # A rate-limited finding no longer withholds the whole target: it becomes an
@@ -440,6 +527,38 @@ class TestDebateGate(ConfirmCase):
         transcript = (ws.work_dir("T") / "confirmation" / "MC-3" / "debate.md").read_text()
         self.assertIn("## B (round 1)", transcript)
         self.assertNotIn("## A (round 1)", transcript)
+
+    def test_b_agreement_keeps_corrective_novelty_evidence_for_aggregate(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T", debate=True, rounds=5)
+        responses = iter(
+            (
+                _response("REPRODUCED", "- **Novelty**: NEW"),
+                _response(
+                    "REPRODUCED",
+                    "Challenger verified the prior fix and corrected the novelty classification.\n"
+                    "- **Novelty**: KNOWN (cite: issue-123; fix-status: fixed)",
+                ),
+            )
+        )
+
+        def agent(*_args: object, **_kwargs: object) -> tuple[int, str]:
+            repro = ws.work_dir("T") / "repro" / "test_bugMC-4_case.py"
+            repro.parent.mkdir(parents=True, exist_ok=True)
+            repro.write_text("assert True\n")
+            return (0, next(responses))
+
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            outcome = C.run_finding(cfg, self.finding(ws, "T", "MC-4"))
+
+        self.assertEqual(outcome.status, "REPRODUCED")
+        self.assertEqual(outcome.rounds, 1)
+        self.assertEqual(C._novelty(outcome.body), "KNOWN-fixed")
+        self.assertIn("Challenger verified the prior fix", outcome.body)
+        outcome.bug_no = 1
+        C.aggregate(cfg, [outcome])
+        report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
+        self.assertIn("Reproduced: 1 = 0 NEW + 0 KNOWN-unfixed + 1 KNOWN-fixed + 0 UNKNOWN", report)
 
 
 class TestAggregate(ConfirmCase):

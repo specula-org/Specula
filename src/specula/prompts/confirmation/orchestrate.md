@@ -46,7 +46,14 @@ If you cannot honestly answer these in the finding's favour, do NOT manufacture 
 
 ## 3. Aggregate
 Write every finding's entry to {{report}} (one `repro/` test per non-dropped
-finding under {{repro_dir}}), and record two one-line headline splits at the top
-so confirmed **bugs** and the **finding** tier are counted separately:
-- `Reproduced: <N> = <M> NEW + <K> KNOWN-unfixed` — and, if any, `KNOWN-fixed: <J>` separately (each needs a version recheck).
-- `Findings: <J> = <R> env-limited + <L> masked` — real defects that are not confirmed live bugs, surfaced so they are neither miscounted as bugs nor lost as false positives.
+finding under {{repro_dir}}). The report is consumed by Phase 4b and the repair
+loop, so use this canonical structure exactly:
+
+- `Reproduced: <N> = <NEW> NEW + <KU> KNOWN-unfixed + <KF> KNOWN-fixed + <U> UNKNOWN`
+- `Findings: <N> = <E> env-limited + <M> masked`
+- `Dispositions: <N> total = <R> reproduced + <E> env-limited + <M> masked + <FP> false-positive + <NMI> needs-more-info + <D> dropped + <PR> pending-repair + <I> incomplete + <DEF> deferred`
+- A table headed exactly `| Bug | Finding | Status |`, followed by one row per entry.
+- One detail section per table row, headed `## Bug N: <title>`. Number sections consecutively from 1, keep table and section order identical, and emit exactly one row and one section for each entry.
+
+Use zero for absent disposition categories; never omit `incomplete` or `deferred`
+from the `Dispositions:` line.

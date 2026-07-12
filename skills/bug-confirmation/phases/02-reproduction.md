@@ -95,7 +95,7 @@ If the path reaches the bad state but a **downstream mechanism masks the consequ
 
 **A citation is mandatory.** If you cannot cite the missing guard / inadmissible fault / unpromised property, do not emit a request — fall back to ENV_LIMITED (you believe it is real but hard to trigger) or NEEDS MORE INFO (you cannot tell). "I couldn't trigger it" is never, by itself, grounds for a repair request.
 
-When you emit a request: set the finding's `confirmed-bugs.md` status to `PENDING REPAIR (RR-NNN)` and stop processing that finding — the loop returns it to you in re-check.
+When you emit a request: set the finding's `confirmed-bugs.md` status to `PENDING REPAIR (RR-NNN)` and stop processing that finding. Phase 3 repair and the next normal Phase 4 pass own the later steps.
 
 ## Output requirements
 

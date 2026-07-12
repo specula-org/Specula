@@ -1255,11 +1255,12 @@ class BugClassificationPhase(Phase):
     key = "bug_classification"
     title = "Specula — Bug Classification Batch Runner"
     usage = r"""
-Batch launcher: spawn one Claude Code agent per target system for Phase 4b
-severity classification. Each agent reads the confirmed-bugs.md produced by
-Phase 4a (bug-confirmation) and writes a separate bug-severity.md table
-assigning Critical / High / Medium / Low per bug. No new analysis, no repro
-work, no modification to confirmed-bugs.md.
+Batch launcher: spawn one agent per target system for Phase 4b severity
+classification. Each agent reads the confirmed-bugs.md produced by Phase 4a
+(bug-confirmation) and writes a separate bug-severity.md table. REPRODUCED bugs
+and ENV_LIMITED/MASKED findings receive Critical / High / Medium / Low; other
+dispositions receive no severity. No new analysis, no repro work, no
+modification to confirmed-bugs.md.
 
 Usage:
   bash scripts/launch/launch_bug_classification.sh [options] "name" [...]
@@ -1318,7 +1319,7 @@ Prerequisites:
         spec_dir = ws.work_dir(name) / "spec"
         return f"""# Bug Classification Task: {name}
 
-You are assigning a Severity tier to each bug in **{name}**'s already-confirmed bug report.
+You are classifying the Phase 4 entries for **{name}**.
 
 ## Input
 
@@ -1330,7 +1331,7 @@ You are assigning a Severity tier to each bug in **{name}**'s already-confirmed 
 
 ## Methodology
 
-Use the installed Specula skill {prompt_skill_ids("bug-classification")}. Read it in full and follow it exactly — it is the single source of methodology (the four-tier Severity rubric, the per-bug output schema and mandatory Summary block, the single-responsibility constraints — do not modify confirmed-bugs.md or its Status fields — the rule that Severity is independent of reproduction status, and the output validation checklist).
+Use the installed Specula skill {prompt_skill_ids("bug-classification")}. Read it in full and follow it exactly — it is the single source of methodology. Assign a four-tier Severity only to `REPRODUCED`, `ENV_LIMITED`, and `MASKED`; use `—` for `FALSE POSITIVE`, `NEEDS MORE INFO`, `DROPPED`, `PENDING REPAIR`, `DEFERRED`, and `INCOMPLETE`. Keep reproduced bugs, finding-tier entries, and no-severity dispositions separate in the mandatory Summary. Do not modify confirmed-bugs.md or any Status field.
 
 Do everything the skill specifies. Do not add, relax, or override any step here.
 """
@@ -1344,13 +1345,18 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
             report = ws.work_dir(name) / "spec" / "bug-severity.md"
             if report.is_file() and report.stat().st_size > 0:
                 text = report.read_text(errors="replace")  # bash grep is byte-safe
-                total = _grep_num(text, "- Total bugs:")
-                c = _grep_num(text, "- Critical:")
-                h = _grep_num(text, "- High:")
-                m = _grep_num(text, "- Medium:")
+                total = _grep_num(text, "- Total entries:")
+                bugs = _grep_num(text, "- Reproduced bugs:")
+                findings = _grep_num(text, "- Findings:")
+                critical = _grep_num(text, "- Critical:")
+                high = _grep_num(text, "- High:")
+                medium = _grep_num(text, "- Medium:")
                 low = _grep_num(text, "- Low:")
-                fp = _grep_num(text, "- FALSE POSITIVE")
-                print(f"  {name}: total={total}  C={c} H={h} M={m} L={low} FP={fp}")
+                dispositions = _grep_num(text, "- No-severity dispositions:")
+                print(
+                    f"  {name}: entries={total}  bugs={bugs} findings={findings}  "
+                    f"C={critical} H={high} M={medium} L={low}  dispositions={dispositions}"
+                )
             elif report.is_file():
                 print(f"  {name}: bug-severity.md empty (check log)")
             else:

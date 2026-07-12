@@ -378,6 +378,51 @@ class TestDryRunCommand(PhaseCase):
         self.assertIn("Max parallel: 1", out)
         self.assertNotIn("Parallel confirmation", out)
 
+    def test_bug_confirmation_legacy_prompt_has_canonical_report_contract(self) -> None:
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--legacy-confirm"])
+        self.assertEqual(rc, 0, out)
+        body = (self.work_dir() / ".bug-confirmation-prompt.md").read_text()
+        self.assertIn("Dispositions: <N> total =", body)
+        self.assertIn("<I> incomplete + <DEF> deferred", body)
+        self.assertIn("| Bug | Finding | Status |", body)
+        self.assertIn("## Bug N: <title>", body)
+        self.assertIn("Number sections consecutively from 1", body)
+        self.assertIn("exactly one row and one section for each entry", body)
+
+    def test_bug_classification_uses_current_phase4_status_contract(self) -> None:
+        rc, out = self.dry_run(BY_KEY["bug_classification"])
+        self.assertEqual(rc, 0, out)
+        body = (self.work_dir() / ".bug-classification-prompt.md").read_text()
+        for status in (
+            "REPRODUCED",
+            "ENV_LIMITED",
+            "MASKED",
+            "FALSE POSITIVE",
+            "NEEDS MORE INFO",
+            "DROPPED",
+            "PENDING REPAIR",
+            "DEFERRED",
+            "INCOMPLETE",
+        ):
+            self.assertIn(status, body)
+
+        guide = (SRC.parent / "skills" / "bug-classification" / "guide.md").read_text()
+        self.assertNotIn("REPRODUCTION FAILED", guide)
+        self.assertIn("- Total entries: N", guide)
+        self.assertIn("- Reproduced bugs: N", guide)
+        self.assertIn("- Findings: N", guide)
+        self.assertIn("- No-severity dispositions: N", guide)
+
+    def test_confirmation_docs_have_no_recheck_pass_and_allow_deferred_terminal(self) -> None:
+        skill = SRC.parent / "skills" / "bug-confirmation"
+        reproduction = (skill / "phases" / "02-reproduction.md").read_text()
+        self.assertNotIn("returns it to you in re-check", reproduction)
+
+        repair_format = (skill / "references" / "repair-request-format.md").read_text()
+        self.assertIn("OPEN | IN_REPAIR | CONSUMED | DEFERRED", repair_format)
+        self.assertIn("| `OPEN` → `DEFERRED` | pipeline orchestrator |", repair_format)
+        self.assertIn("Terminal states: `CONSUMED`", repair_format)
+
     def test_ordinary_phase_default_max_parallel_stays_one(self) -> None:
         rc, out = self.dry_run(BY_KEY["code_analysis"])
         self.assertEqual(rc, 0, out)
@@ -1322,10 +1367,17 @@ class TestSummarize(PhaseCase):
             "phase": "bug_classification",
             "files": {
                 "spec/bug-severity.md": (
-                    "- Total bugs: 7\n- Critical: 1\n- High: 2\n- Medium: 3\n- Low: 1\n- FALSE POSITIVE: 0\n"
+                    "- Total entries: 9\n"
+                    "- Reproduced bugs: 2\n"
+                    "- Findings: 2\n"
+                    "- Critical: 1\n"
+                    "- High: 1\n"
+                    "- Medium: 1\n"
+                    "- Low: 1\n"
+                    "- No-severity dispositions: 5\n"
                 )
             },
-            "want": [f"{NAME}: total=7  C=1 H=2 M=3 L=1 FP=0"],
+            "want": [f"{NAME}: entries=9  bugs=2 findings=2  C=1 H=1 M=1 L=1  dispositions=5"],
         },
         {
             "name": "bug_classification/no-report",

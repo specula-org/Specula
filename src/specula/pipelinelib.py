@@ -359,6 +359,9 @@ class Pipeline:
                 return 1
             else:
                 self.targets.append(arg)
+        if self.confirm_legacy and self.confirm_debate:
+            print("ERROR: --legacy-confirm conflicts with --confirm-debate", file=sys.stderr)
+            return 1
         if not self.targets:
             self.targets.append(_logical_cwd().name)  # bash `basename "$PWD"` (logical)
         # order-independent: the two are contradictory however they arrive
@@ -716,9 +719,12 @@ class Pipeline:
             return text
         pending = sum(status.startswith("PENDING REPAIR") for status in statuses)
         deferred = sum(status.startswith("DEFERRED") for status in statuses)
-        pattern = re.compile(r"(?m)^(Dispositions: .*? \+ )\d+ pending-repair(?: \+ \d+ deferred)?\s*$")
+        pattern = re.compile(
+            r"(?m)^(Dispositions: .*? \+ )\d+ pending-repair"
+            r"( \+ \d+ incomplete)?(?: \+ \d+ deferred)?\s*$"
+        )
         return pattern.sub(
-            lambda match: f"{match.group(1)}{pending} pending-repair + {deferred} deferred",
+            lambda match: f"{match.group(1)}{pending} pending-repair{match.group(2) or ''} + {deferred} deferred",
             text,
             count=1,
         )

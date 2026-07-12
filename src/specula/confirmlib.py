@@ -34,7 +34,7 @@ import subprocess
 import threading
 import traceback
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -528,7 +528,14 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
             # when B actually disagrees (the defend turn is where it is introduced).
             if b_verdict is not None and b_verdict == a_verdict:
                 _log(f"  [{f.id}] round {rnd}: B={b_verdict} agrees — consensus, A not invoked")
-                return _final_outcome(cfg, f, a_verdict, True, rnd, _compose_evidence(initial_text, defenses))
+                return _final_outcome(
+                    cfg,
+                    f,
+                    a_verdict,
+                    True,
+                    rnd,
+                    _compose_evidence(initial_text, [*defenses, b_text]),
+                )
             turn += 1
             a_verdict, a_text = run_turn(cfg, f, "A", turn, prompt_defend(cfg, f, repo_for_agent, str(debate)))
             debate.write_text(debate.read_text() + _debate_entry(f, "A", turn, f"A (round {rnd})", a_verdict))
@@ -1444,15 +1451,44 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
         return 0
 
     outcomes: list[Outcome] = []
+    unstarted: list[Finding] = []
+    next_finding = 0
+    rate_limit_seen = threading.Event()
+
+    def run_scheduled(finding: Finding) -> Outcome | None:
+        # A future may have been submitted before another worker reports a rate
+        # limit but not have started confirmation yet. Keep that finding untouched
+        # so the scheduler retry can run it later.
+        if rate_limit_seen.is_set():
+            return None
+        outcome = run_finding_safe(cfg, finding)
+        if outcome.status == INCOMPLETE and outcome.failure_code == quota.RATE_LIMIT_RC:
+            # Set this in the worker before it releases its executor slot. That
+            # closes the race where a queued future could otherwise begin between
+            # this result becoming available and the dispatcher observing it.
+            rate_limit_seen.set()
+        return outcome
+
     with ThreadPoolExecutor(max_workers=cfg.max_parallel) as ex:
-        futures = [(f, ex.submit(run_finding_safe, cfg, f)) for f in findings]
-        for finding, fut in futures:
-            try:
-                outcomes.append(fut.result())
-            except Exception as exc:  # run_finding_safe absorbs failures; stay robust regardless
-                _log(f"  [{finding.id}] worker crashed unexpectedly ({exc})")
-                outcomes.append(
-                    Outcome(
+        in_flight: dict[Future[Outcome | None], Finding] = {}
+
+        def fill_wave() -> None:
+            nonlocal next_finding
+            while not rate_limit_seen.is_set() and next_finding < len(findings) and len(in_flight) < cfg.max_parallel:
+                finding = findings[next_finding]
+                next_finding += 1
+                in_flight[ex.submit(run_scheduled, finding)] = finding
+
+        fill_wave()
+        while in_flight:
+            done, _ = wait(tuple(in_flight), return_when=FIRST_COMPLETED)
+            for fut in done:
+                finding = in_flight.pop(fut)
+                try:
+                    outcome = fut.result()
+                except Exception as exc:  # run_finding_safe absorbs failures; stay robust regardless
+                    _log(f"  [{finding.id}] worker crashed unexpectedly ({exc})")
+                    outcome = Outcome(
                         finding,
                         INCOMPLETE,
                         consensus=False,
@@ -1460,7 +1496,45 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
                         body=f"## Confirmation result\nINCOMPLETE — worker crashed: {exc}.",
                         failure_code=1,
                     )
+                if outcome is None:
+                    unstarted.append(finding)
+                else:
+                    outcomes.append(outcome)
+
+            if rate_limit_seen.is_set():
+                # Futures that have not entered run_scheduled can still be
+                # cancelled. A concurrently running finding returns normally and
+                # remains in in_flight until its result is collected.
+                for fut, finding in list(in_flight.items()):
+                    if fut.cancel():
+                        in_flight.pop(fut)
+                        unstarted.append(finding)
+            else:
+                fill_wave()
+
+    if rate_limit_seen.is_set():
+        unstarted.extend(findings[next_finding:])
+        for finding in unstarted:
+            cached = _load_verdict(finding, cfg)
+            if cached is not None:
+                _log(f"  [{finding.id}] cached {cached.status} — preserve after batch rate limit")
+                outcomes.append(cached)
+                continue
+            _log(f"  [{finding.id}] INCOMPLETE (not started after batch rate limit) — not cached; retry later")
+            outcomes.append(
+                Outcome(
+                    finding,
+                    INCOMPLETE,
+                    consensus=False,
+                    rounds=0,
+                    body=(
+                        "## Confirmation result\n"
+                        "INCOMPLETE — this finding was not started because another finding was rate-limited. "
+                        "It was NOT judged and was NOT cached. Re-run to retry."
+                    ),
+                    failure_code=quota.RATE_LIMIT_RC,
                 )
+            )
     # Partial delivery beats total loss: a finding that could not finish is an
     # INCOMPLETE row, clearly marked; every completed finding is still reported. A
     # single infra error / rate limit no longer withholds the whole target.
