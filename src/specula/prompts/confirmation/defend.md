@@ -13,9 +13,9 @@ The debate index is the file `{{debate}}`. **Read it first** — it lists every 
 ## Do
 - First, honestly judge whether the **reproduction itself is sound** — do not just
   check whether the Challenger has a citation:
-  - Is the triggering state reached through the **real interface** (or an admissible
-    counterexample step) — not fabricated / injected-unreachable / a lying mock /
-    a source patch? If your own Level-0/1 attempt failed to produce it, it is not reachable.
+  - For a Level 2/3 reproduction, the injected pre-condition must be reachable
+    through a **real-API sequence** or correspond to an admissible **counterexample
+    step**.
   - Does a **real consumer/caller** experience a wrong outcome — or is the
     consequence masked by a safeguard, discarded, borrowed from a *separate* bug,
     or only a transient state a downstream mechanism later resolves?

@@ -31,9 +31,8 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import specula.progress as progress
 from specula import quota
-from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
-
 from specula.prompts import render
+from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 
 SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
 SPECULA_ROOT = SCRIPT_DIR.parent.parent

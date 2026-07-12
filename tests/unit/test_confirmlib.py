@@ -215,7 +215,7 @@ class TestDriver(ConfirmCase):
 
         with (
             mock.patch.object(C, "ThreadPoolExecutor", side_effect=executor),
-            mock.patch.object(C, "run_agent_blocking", _fake_turn("VERDICT: FALSE POSITIVE")),
+            mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("FALSE POSITIVE"))),
         ):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T", max_parallel=1))
 
@@ -513,6 +513,33 @@ class TestPromptExtraAndLog(ConfirmCase):
                 "| `PENDING REPAIR` |",
                 text,
             )
+
+    def test_level_two_or_three_requires_positive_reachability_evidence(self) -> None:
+        prompts = [
+            (P.PROMPTS_DIR / "confirmation" / f"{template}.md").read_text()
+            for template in ("reproduce", "orchestrate", "challenge", "defend")
+        ]
+        rule = re.compile(
+            r"injected pre-condition must be reachable through a real-API (?:call )?sequence "
+            r"or correspond to an admissible (?:counterexample-trace|counterexample|CE) step"
+        )
+        for text in prompts:
+            normalized = re.sub(r"\s+", " ", re.sub(r"[*`]", "", text))
+            self.assertRegex(normalized, rule)
+            self.assertNotIn("that is proof it is NOT reachable", text)
+            self.assertNotIn("whose own Level 0/1 attempt failed is UNREACHABLE", text)
+
+        reproduction = (C.SKILLS / "bug-confirmation" / "phases" / "02-reproduction.md").read_text()
+        self.assertIn("The injected state MUST be one the real system can actually reach", reproduction)
+
+    def test_level_three_failure_uses_decision_table(self) -> None:
+        reproduction = (C.SKILLS / "bug-confirmation" / "phases" / "02-reproduction.md").read_text()
+        self.assertIn(
+            "If Level 3 also fails, document the attempts and choose the final verdict from the decision table.",
+            reproduction,
+        )
+        self.assertIn("Choose exactly one final outcome from the decision table", reproduction)
+        self.assertNotIn("If Level 3 also fails, the final status is ENV_LIMITED", reproduction)
 
     def test_prompt_extra_appended_to_reproduce(self) -> None:
         ws = self.seed("T", [])

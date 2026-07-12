@@ -457,6 +457,7 @@ class TestRepairMode(PhaseCase):
         self.assertNotIn("/skills/", body)
         self.assertNotIn(".claude/skills", body)
 
+
 class TestArgErrors(PhaseCase):
     def test_unknown_agent(self) -> None:
         rc, out = self.run_phase("code_analysis", ["--agent=bogus", NAME])

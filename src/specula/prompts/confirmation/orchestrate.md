@@ -31,7 +31,7 @@ skip a candidate as "defensive coding", "style", or "theoretical-only".
 ## Before any `REPRODUCED` — the reachability checklist (per finding)
 For every finding you are about to mark `REPRODUCED`, answer these explicitly in its entry (they are checked against the captured output):
 1. Did **Level 0 or Level 1 alone** trigger it — real public API / normal ops, timing help only? **yes / no**.
-2. If **no**, and you used Level 2 (state injection) or Level 3 (source patch): paste the **real-API call sequence** that actually produces the injected pre-condition, **or** cite the exact **counterexample-trace step** it instantiates. If your OWN Level-0/1 attempt failed to produce that state, that is proof it is NOT reachable — do not then label the injection "reachable". Likewise, if the code that would drive that state is dead in the shipped build (commented out, never spawned, a dead channel/feed), the injection is unreachable → route to repair, never `REPRODUCED`.
+2. If **no**, and you used Level 2 (state injection) or Level 3 (source patch): the injected pre-condition must be reachable through a **real-API call sequence** or correspond to an admissible **counterexample-trace step**. Paste the sequence or cite the exact step.
 3. Which **real consumer/caller** observes a wrong outcome? Name it (`file:line`), or state the consequence is argued-only (a finding, not a reproduced bug).
 4. Is the bad state **permanent**, or does a downstream mechanism (sync / loopback / resend / a caller guard) later **resolve or mask** it? A transient snapshot the system afterwards fixes is NOT a reproduced bug; a real defect a safeguard currently masks → `MASKED` (a finding), naming the mechanism — not `REPRODUCED`, not `FALSE POSITIVE`.
 

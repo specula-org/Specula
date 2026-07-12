@@ -66,15 +66,10 @@ this is really NEW.
 - Anti-sycophancy: do NOT invent objections you cannot cite; if the bug clears
   both bars, concede it. Facts decide.
 - Before you AGREE to `REPRODUCED`, apply the reachability checklist yourself: did
-  Level 0/1 alone trigger it? If A only reached it via Level 2/3 injection, is the
-  injected state's reachability actually shown (a real-API sequence or a CE step)?
-  An injection whose own Level 0/1 attempt failed is UNREACHABLE — push to repair
-  (MC) / `FALSE POSITIVE` (code-review), never `REPRODUCED`. **Specifically hunt for
-  an injection driven by dead code: if the producer that would create the injected
-  state is commented out, never spawned, or a dead channel/feed (often A's own
-  investigation says so), the injection is unreachable — push to repair, not
-  `REPRODUCED`.** If you genuinely cannot settle it, prefer `NEEDS MORE INFO` over
-  conceding a fabricated reproduction.
+  Level 0/1 alone trigger it? For a Level 2/3 reproduction, the injected pre-condition
+  must be reachable through a real-API sequence or correspond to an admissible CE
+  step. If you genuinely cannot settle it, prefer `NEEDS MORE INFO` over conceding a
+  fabricated reproduction.
 
 End your ENTIRE response with a single line:
 `VERDICT: <one of: {{canon}}>`

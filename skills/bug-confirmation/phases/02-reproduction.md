@@ -16,10 +16,7 @@ For every bug, you MUST:
 1. Write a self-contained reproduction test to `repro/test_bug<N>_<name>.{py,js,rs,go,c,sh}`
 2. Actually EXECUTE the test and record the output
 3. Walk the escalation ladder strictly in order (Level 0 → 1 → 2 → 3); document at each level what was tried and what happened
-4. Report a final outcome:
-   - **REPRODUCED** — bug triggered; include level reached, the exact command, and observable evidence
-   - **ENV_LIMITED** — escalation ladder exhausted; include what was attempted at each level and a reasoned conclusion about why it didn't trigger
-   - **Hand back to repair** — if (and only if) you can cite that the counterexample is a spec/fault/invariant artifact, emit a repair request instead of a terminal status (see "When a counterexample is an artifact" below)
+4. Choose exactly one final outcome from the decision table and include the evidence it requires
 
 "Code audit only" is NOT a permitted status. Every finding's entry in `confirmed-bugs.md` must show evidence of a reproduction attempt (the test file in `repro/` and the recorded output).
 
@@ -51,10 +48,10 @@ Your goal is to either **prove the bug manifests** (trigger it) or **prove the e
 
 1. **Level 0 — Pure black-box.** Use only public APIs, normal operations, no failpoints. Always start here.
 2. **Level 1 — Timing assistance.** Add `sleep()` calls or use system-provided test hooks (e.g., `configureFailPoint`, `FAIL_POINT_DEFINE`) to widen race windows. The system logic is unchanged; you're only controlling timing.
-3. **Level 2 — State injection.** Inject the pre-condition state and verify the buggy code path handles it incorrectly. The injected state MUST be one the real system can actually reach: show the real-API call sequence that produces it, or cite the exact model-counterexample step it instantiates. Injecting a state the real system can never reach (an impossible / hand-built pre-condition — e.g. two peers simultaneously in a mutually-exclusive role, a mock that emits a value a real peer never sends, **or feeding an input/channel whose only producer is dead code**) is unsound and does not reproduce anything. **If your own Phase-1 audit found that the code which would drive the injected state is unreachable in the shipped build — commented out, never spawned, a dead channel/feed — that is proof the injection is unreachable: route to repair (`FAULT_MODEL`/`SPEC_REPAIR`), never `REPRODUCED`. Do not inject into a path you have already documented as dead.** When that unreachability is the finding's real story, route it: an **MC finding** means the counterexample needs a state the code cannot reach — hand back to repair (`FAULT_MODEL` / `SPEC_REPAIR`, see below); a **code-review finding** is a FALSE POSITIVE. Clearly document that this is a state-injection test, not an end-to-end trigger.
+3. **Level 2 — State injection.** Inject the pre-condition state and verify the buggy code path handles it incorrectly. The injected state MUST be one the real system can actually reach: show the real-API call sequence that produces it, or cite the exact model-counterexample step it instantiates. Injecting a state the real system can never reach (an impossible / hand-built pre-condition — e.g. two peers simultaneously in a mutually-exclusive role, a mock that emits a value a real peer never sends, **or feeding an input/channel whose only producer is dead code**) is unsound and does not reproduce anything. When that unreachability is the finding's real story, route it: an **MC finding** means the counterexample needs a state the code cannot reach — hand back to repair (`FAULT_MODEL` / `SPEC_REPAIR`, see below); a **code-review finding** is a FALSE POSITIVE. Clearly document that this is a state-injection test, not an end-to-end trigger.
 4. **Level 3 — Minimal code modification.** Add a small delay (`usleep`, `sleep`) inside the system's source code at the exact crash window location to make the race deterministic. Document the modification precisely.
 
-Walk the ladder strictly in order. Escalate ONLY when the current level genuinely failed; document why. **Do not stop at Level 0 failure.** If Level 3 also fails, the final status is ENV_LIMITED — document the four attempts.
+Walk the ladder strictly in order. Escalate ONLY when the current level genuinely failed; document why. **Do not stop at Level 0 failure.** If Level 3 also fails, document the attempts and choose the final verdict from the decision table.
 
 For known/historical bugs that already have a working reproduction in the upstream tree, you may re-use or adapt that reproduction as your test — start at the level matching the upstream reproduction's invasiveness. Cite the upstream reproduction.
 
