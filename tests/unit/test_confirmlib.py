@@ -1828,6 +1828,68 @@ class TestValidationContracts(ConfirmCase):
         second = first.with_name("RR-002.md")
         self.assertEqual(C._rr_field_text(second.read_text(), "status"), ["OPEN"])
 
+    def test_reallocation_after_consumed_seeds_prior_attempt_history(self) -> None:
+        ws = self.seed("T", [])
+        f = self.finding(ws, "T")
+        f.fdir.mkdir(parents=True)
+        (f.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        cfg = self.cfg(ws, "T")
+        outcome = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+        first = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
+        consumed = first.read_text().replace("status: OPEN", "status: CONSUMED", 1)
+        first.write_text(consumed + "- r1 (phase3-repair): tightened HandleFoo guard; original CE unchanged\n")
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-002")
+        second = first.with_name("RR-002.md").read_text()
+        self.assertIn("- r0 (phase4-confirm): created from MC-1", second)
+        self.assertIn(
+            "- r0 (phase4-confirm): prior attempt RR-001 (CONSUMED): "
+            "r1 (phase3-repair): tightened HandleFoo guard; original CE unchanged",
+            second,
+        )
+
+    def test_fresh_request_threads_all_terminal_prior_attempts_in_rr_order(self) -> None:
+        ws = self.seed("T", [])
+        f = self.finding(ws, "T")
+        f.fdir.mkdir(parents=True)
+        body_file = f.fdir / "repair-request.body.md"
+        body_file.write_text(TestMergeRR.AGENT_BODY)
+        cfg = self.cfg(ws, "T")
+        outcome = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+        rr_dir = ws.work_dir("T") / "spec" / "repair-requests"
+        first = rr_dir / "RR-001.md"
+        first.write_text(first.read_text().replace("status: OPEN", "status: CONSUMED", 1))
+        body_file.write_text(TestMergeRR.AGENT_BODY.replace("src/node.py:42", "src/node.py:84"))
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-002")
+        second = rr_dir / "RR-002.md"
+        deferred_dir = rr_dir / "deferred"
+        deferred_dir.mkdir()
+        (deferred_dir / "RR-002.md").write_text(second.read_text().replace("status: OPEN", "status: DEFERRED", 1))
+        second.unlink()
+        body_file.write_text(TestMergeRR.AGENT_BODY.replace("src/node.py:42", "src/node.py:99"))
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-003")
+        third = (rr_dir / "RR-003.md").read_text()
+        self.assertIn("prior attempt RR-001 (CONSUMED):", third)
+        self.assertIn("prior attempt RR-002 (DEFERRED):", third)
+        self.assertLess(third.index("prior attempt RR-001"), third.index("prior attempt RR-002"))
+
+    def test_prior_attempt_with_empty_history_quotes_placeholder(self) -> None:
+        ws = self.seed("T", [])
+        f = self.finding(ws, "T")
+        f.fdir.mkdir(parents=True)
+        (f.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        cfg = self.cfg(ws, "T")
+        outcome = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+        first = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
+        consumed = first.read_text().replace("status: OPEN", "status: CONSUMED", 1)
+        head, _, _ = consumed.partition("## History")
+        first.write_text(head + "## History\n")
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-002")
+        second = first.with_name("RR-002.md").read_text()
+        self.assertIn("prior attempt RR-001 (CONSUMED): no recorded History", second)
+
     def test_in_repair_request_is_never_refreshed(self) -> None:
         ws = self.seed("T", [])
         f = self.finding(ws, "T")

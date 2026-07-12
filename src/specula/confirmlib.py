@@ -1259,6 +1259,22 @@ def _rr_history(text: str, round_: int) -> list[str]:
     return history.splitlines() if history else []
 
 
+def _prior_attempt_history(finding_id: str, records: list[tuple[str, Path, str, str, str]]) -> list[str]:
+    """Seed a fresh request's History with the finding's terminal predecessors.
+
+    A surviving finding re-enters repair as a new OPEN request; Phase 3 only
+    reads that request, so without this thread it never learns what earlier
+    rounds tried. One bullet per terminal record quotes its newest History
+    line so a repair recorded as failed is never silently repeated.
+    """
+    entries = [f"- r0 (phase4-confirm): created from {finding_id}"]
+    for rid, _path, text, status, _key in sorted(records, key=lambda record: record[0]):
+        bullets = _rr_history(text, 0)
+        last = bullets[-1].lstrip("- ").strip() if bullets else "no recorded History"
+        entries.append(f"- r0 (phase4-confirm): prior attempt {rid} ({status}): {last}")
+    return entries
+
+
 def _atomic_replace_rr(path: Path, text: str) -> None:
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(4)}.tmp")
     try:
@@ -1725,6 +1741,7 @@ def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
             body,
             finding_id=o.finding.id,
             allocation_key=allocation_key,
+            history=_prior_attempt_history(o.finding.id, records) if records else None,
         )
         try:
             # Final guard against an external writer racing the in-process
