@@ -228,6 +228,7 @@ SKILLS_SOURCE="$PROJECT_ROOT/skills"
 CODEX_PLUGIN_ROOT="$PROJECT_ROOT/.specula-codex"
 # Match the launcher's --claude-alias contract exactly: NAME uses ~/.NAME.
 CLAUDE_USER_CONFIG_DIR="$HOME/.${CLAUDE_ALIAS:-claude}"
+COPILOT_USER_CONFIG_DIR="${COPILOT_HOME:-$HOME/.copilot}"
 
 print_status "Project root: $PROJECT_ROOT"
 
@@ -397,7 +398,11 @@ echo -e "${BLUE}[3/3] GitHub Copilot CLI${NC}"
 if ask_yn "Install Specula for GitHub Copilot CLI?"; then
   scope="$(ask_scope "Copilot CLI")"
   if [[ "$scope" == "global" ]]; then
-    setup_skills "$HOME/.agents/skills" "$SKILLS_SOURCE" --legacy-root "$HOME/.github/skills"
+    setup_skills \
+      "$HOME/.agents/skills" \
+      "$SKILLS_SOURCE" \
+      --legacy-root "$HOME/.github/skills" \
+      --shadow-root "$COPILOT_USER_CONFIG_DIR/skills"
   else
     setup_skills "$PROJECT_ROOT/.github/skills" "$SKILLS_SOURCE"
     warn_local_skills_scope

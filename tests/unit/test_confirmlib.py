@@ -23,7 +23,6 @@ from unittest import mock
 
 from specula import confirmlib as C
 from specula.phaselib import Workspace
-from specula.skill_refs import CODEX_PLUGIN_NAME
 
 
 def _fake_turn(text: str, rc: int = 0) -> Callable[..., tuple[int, str]]:
@@ -223,9 +222,9 @@ class TestDriver(ConfirmCase):
 
         self.assertEqual(len(prompts), 1)
         self.assertIn("installed Specula skill **validation-workflow**", prompts[0])
-        self.assertIn("$validation-workflow", prompts[0])
-        self.assertIn(f"${CODEX_PLUGIN_NAME}:validation-workflow", prompts[0])
-        self.assertIn("explicitly invoke exactly one ID listed in your Skills", prompts[0])
+        self.assertIn("<!-- specula-skill:", prompts[0])
+        self.assertIn(":validation-workflow -->", prompts[0])
+        self.assertNotIn("$validation-workflow", prompts[0])
         self.assertNotIn("/skills/", prompts[0])
         self.assertNotIn(".claude/skills", prompts[0])
 
@@ -285,9 +284,9 @@ class TestPromptExtraAndLog(ConfirmCase):
         prompt = C.prompt_reproduce(cfg, f, "/repo")
 
         self.assertIn("installed Specula skill **bug-confirmation**", prompt)
-        self.assertIn("$bug-confirmation", prompt)
-        self.assertIn(f"${CODEX_PLUGIN_NAME}:bug-confirmation", prompt)
-        self.assertIn("explicitly invoke exactly one ID listed in your Skills", prompt)
+        self.assertIn("<!-- specula-skill:", prompt)
+        self.assertIn(":bug-confirmation -->", prompt)
+        self.assertNotIn("$bug-confirmation", prompt)
         self.assertNotIn("/skills/", prompt)
         self.assertNotIn(".claude/skills", prompt)
 

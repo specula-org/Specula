@@ -65,6 +65,30 @@ def _same_directory_entry(path: Path, expected: Path) -> bool:
         return False
 
 
+def _symlink_targets_entry(path: Path, expected: Path) -> bool:
+    """Whether *path* is a symlink whose immediate target names *expected*."""
+
+    if not path.is_symlink():
+        return False
+    try:
+        target = path.readlink()
+        if not target.is_absolute():
+            target = path.parent / target
+        return _same_directory_entry(target, expected)
+    except (OSError, RuntimeError):
+        return False
+
+
+def _same_root_alias(path: Path, expected: Path) -> bool:
+    """Whether roots are the same entry or one directly aliases the other."""
+
+    return (
+        _same_directory_entry(path, expected)
+        or _symlink_targets_entry(path, expected)
+        or _symlink_targets_entry(expected, path)
+    )
+
+
 _SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _KNOWN_LEGACY_SKILL_NAMES = {"tla-verification-workflow"}
 _HISTORICAL_CORE_SKILL_NAMES = {
@@ -490,14 +514,20 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        shadow_plans = [plan_shadow_cleanup(args.source, root) for root in args.shadow_root]
+        shadow_plans = [
+            ShadowCleanupPlan(root, (), ())
+            if _same_root_alias(args.target, root)
+            else plan_shadow_cleanup(args.source, root)
+            for root in args.shadow_root
+        ]
         legacy_plans = [plan_legacy_cleanup(args.source, root) for root in args.legacy_root]
         target_is_owned_root = _owned_legacy_root(args.source, args.target)
         alias_conflicts = [
             plan.root
             for plan in shadow_plans
-            if _same_directory_entry(args.target, plan.root)
-            or (_same_path(args.target, plan.root) and not target_is_owned_root)
+            if not _same_root_alias(args.target, plan.root)
+            and _same_path(args.target, plan.root)
+            and not target_is_owned_root
         ]
         cleanup_conflicts = list(
             dict.fromkeys(

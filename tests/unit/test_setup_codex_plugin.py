@@ -14,7 +14,7 @@ from unittest import mock
 
 from specula import confirmlib as confirmation
 from specula import phaselib, skill_install
-from specula.skill_refs import CODEX_PLUGIN_NAME
+from specula.skill_refs import CODEX_PLUGIN_NAME, materialize_skill_refs
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SETUP_SCRIPT = REPO_ROOT / "scripts" / "infra" / "setup_codex_plugin.py"
@@ -152,10 +152,26 @@ class TestCodexPluginSkillContract(unittest.TestCase):
                     namespaced = f"{plugin_name}:{skill}"
                     self.assertIn(namespaced, plugin_skill_ids)
                     self.assertIn(f"**{skill}**", prompt)
-                    self.assertIn(f"${skill}", prompt)
-                    self.assertIn(f"${namespaced}", prompt)
-                    self.assertIn("explicitly invoke exactly one ID listed in your Skills", prompt)
-                    self.assertIn("Never invoke both or an ID that is not listed", prompt)
+                    self.assertNotIn(f"${skill}", prompt)
+                    self.assertNotIn(f"${namespaced}", prompt)
+
+                    plugin_prompt = materialize_skill_refs(
+                        prompt,
+                        Path("/adapter/codex.sh"),
+                        codex_plugin_enabled=True,
+                    )
+                    self.assertIn(f"${namespaced}", plugin_prompt)
+                    self.assertNotIn(f"${skill}", plugin_prompt)
+                    self.assertNotIn("<!-- specula-skill:", plugin_prompt)
+
+                    standalone_prompt = materialize_skill_refs(
+                        prompt,
+                        Path("/adapter/codex.sh"),
+                        codex_plugin_enabled=False,
+                    )
+                    self.assertIn(f"${skill}", standalone_prompt)
+                    self.assertNotIn(f"${namespaced}", standalone_prompt)
+                    self.assertNotIn("<!-- specula-skill:", standalone_prompt)
 
 
 if __name__ == "__main__":

@@ -761,7 +761,7 @@ class TestCli(SkillInstallCase):
         self.assertTrue(second.is_dir())
         self.assertTrue((self.target / "code-analysis").is_symlink())
 
-    def test_target_aliasing_shadow_root_fails_without_removing_skills(self) -> None:
+    def test_target_aliasing_shadow_root_is_a_noop(self) -> None:
         source = self.skill("code_analysis", "code-analysis")
         shadow = self.root / "personal-skills"
         shadow.mkdir()
@@ -780,9 +780,51 @@ class TestCli(SkillInstallCase):
             ]
         )
 
-        self.assertEqual(rc, 1)
+        self.assertEqual(rc, 0)
         self.assertTrue(self.target.is_symlink())
         self.assertEqual(installed.resolve(), source.resolve())
+
+    def test_broken_shadow_alias_to_target_becomes_valid_after_install(self) -> None:
+        source = self.skill("code_analysis", "code-analysis")
+        shadow = self.root / "personal-skills"
+        shadow.symlink_to(self.target, target_is_directory=True)
+
+        rc = skill_install.main(
+            [
+                "--source",
+                str(self.source),
+                "--target",
+                str(self.target),
+                "--shadow-root",
+                str(shadow),
+            ]
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertTrue(shadow.is_symlink())
+        self.assertTrue(self.target.is_dir())
+        self.assertEqual((shadow / "code-analysis").resolve(), source.resolve())
+
+    def test_shadow_alias_third_party_collision_is_preserved(self) -> None:
+        self.skill("code_analysis", "code-analysis")
+        shadow = self.root / "personal-skills"
+        third_party = self.skill("custom", "code-analysis", root=shadow)
+        self.target.symlink_to(shadow, target_is_directory=True)
+
+        rc = skill_install.main(
+            [
+                "--source",
+                str(self.source),
+                "--target",
+                str(self.target),
+                "--shadow-root",
+                str(shadow),
+            ]
+        )
+
+        self.assertEqual(rc, 1)
+        self.assertTrue(self.target.is_symlink())
+        self.assertEqual((shadow / "custom").resolve(), third_party.resolve())
 
     def test_distinct_owned_root_links_to_same_source_are_migrated(self) -> None:
         source = self.skill("code_analysis", "code-analysis")

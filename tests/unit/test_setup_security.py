@@ -24,6 +24,9 @@ class TestSetupPythonIsolation(unittest.TestCase):
         self.assertIn('python3 -I -m venv "$venv_dir"', setup)
         self.assertIn('"$python_path" -I -m pip', setup)
         self.assertIn('--shadow-root "$CLAUDE_USER_CONFIG_DIR/skills"', setup)
+        self.assertIn('COPILOT_USER_CONFIG_DIR="${COPILOT_HOME:-$HOME/.copilot}"', setup)
+        self.assertIn('--shadow-root "$COPILOT_USER_CONFIG_DIR/skills"', setup)
+        self.assertIn('--legacy-root "$HOME/.github/skills"', setup)
         self.assertNotIn("python3 -m specula.skill_install", setup)
 
     def test_skill_installer_ignores_hostile_cwd_and_pythonpath(self) -> None:

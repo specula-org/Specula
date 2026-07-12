@@ -31,7 +31,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import specula.progress as progress
 from specula import quota
-from specula.skill_refs import prompt_skill_ids
+from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 
 SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
@@ -668,6 +668,7 @@ class Phase:
         files = self.agent_files(ws, name)
         for d in files["mkdirs"]:
             d.mkdir(parents=True, exist_ok=True)
+        prompt = materialize_skill_refs(prompt, adapter)
         files["prompt"].write_text(prompt)
         print(f"[{_ts()}] Launching agent: {name}")
         if dry_run:
@@ -816,6 +817,7 @@ def run_agent_blocking(
     (`Phase._acceptance`) covers it once at the end. Rate-limit (exit 75) is the
     caller's concern — this runs exactly one invocation.
     """
+    prompt = materialize_skill_refs(prompt, adapter)
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     prompt_file.write_text(prompt)
     env = os.environ.copy()
