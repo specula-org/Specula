@@ -538,6 +538,23 @@ class TestParsing(TmpCwd):
         self.assertIsNone(p.parse_args(["--max-parallel=1", "t|g|l|r"]))
         self.assertEqual(p.max_parallel, "1")
         self.assertIn("--max-parallel=1", p._phase_args(["t"]))
+        self.assertEqual(p._max_parallel_summary(), "1")
+
+    def test_max_parallel_summary_reports_per_finding_default(self) -> None:
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["t|g|l|r"]))
+        self.assertEqual(
+            p._max_parallel_summary(),
+            "phase defaults (ordinary phases 1 at a time; per-finding confirmation 4 at a time)",
+        )
+
+    def test_max_parallel_summary_reports_legacy_confirmation_default(self) -> None:
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--legacy-confirm", "t|g|l|r"]))
+        self.assertEqual(
+            p._max_parallel_summary(),
+            "phase defaults (ordinary phases 1 at a time; legacy confirmation 1 at a time)",
+        )
 
     def test_model_effort_absent_and_explicit_empty_are_distinct(self) -> None:
         absent = pl.Pipeline()

@@ -623,6 +623,14 @@ class Pipeline:
             args.append(f"--effort={self.effort}")
         return args
 
+    def _max_parallel_summary(self) -> str:
+        if self.max_parallel is not None:
+            return self.max_parallel
+        confirmation_default = (
+            "legacy confirmation 1 at a time" if self.confirm_legacy else "per-finding confirmation 4 at a time"
+        )
+        return f"phase defaults (ordinary phases 1 at a time; {confirmation_default})"
+
     def _phase_args(self, positional: list[str], pre: list[str] | None = None, with_artifact: bool = True) -> list[str]:
         args = list(pre or [])
         if self.max_parallel is not None:
@@ -989,8 +997,7 @@ class Pipeline:
         print("╚══════════════════════════════════════════════════════════╝")
         print()
         print(f"Targets:      {len(self.targets)}")
-        max_parallel = self.max_parallel if self.max_parallel is not None else "phase defaults (1; confirmation 4)"
-        print(f"Max parallel: {max_parallel}")
+        print(f"Max parallel: {self._max_parallel_summary()}")
         print(f"Max turns:    {self.max_turns}")
         print(f"Agent:        {self.agent}  (claude-alias={self.claude_alias})")
         if self.run_dir:
