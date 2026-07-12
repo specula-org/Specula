@@ -52,6 +52,8 @@ suspected it:
 - a same-shape precedent applied to a **different** field/message/step — re-verify EACH of the precedent's prerequisites at the new site; a matching shape alone is not the same bug;
 - you spotting the gap yourself.
 
+**Before you record `Novelty: NEW`, confirm you actually ran the Step-2 tracker search — and that it covered recently merged / closed PRs, not just open issues (a fix that landed days ago still makes the bug KNOWN, not NEW). `NEW` asserts you looked and found nothing reporting THIS mechanism at THIS site; it is never the default for "I didn't check". If you cite a `KNOWN` match, it must be the same mechanism — a report about a different site/field/message is not a match.**
+
 Then apply the single pre-filter:
 
 - **Code-review-sourced AND an existing issue/PR/CVE has already reported this exact defect** → **DROP** now: a code-review reproduction of an already-reported bug is a duplicate, not a new bug. Record `Status: DROPPED (code-review × known, cite: <URL/dataset-id>)` and write no `repro/` test.

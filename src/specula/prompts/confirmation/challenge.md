@@ -47,7 +47,10 @@ When you defeat a finding on a bar, push for the RIGHT verdict by source, not
 just removal: a **code-review** finding → `FALSE POSITIVE`; an **MC** finding →
 `PENDING REPAIR` (the counterexample is a model artifact — unreachable state means
 `FAULT_MODEL`/`SPEC_REPAIR`, no consequence means `INVARIANT`), because a spurious
-CE is a spec defect to fix, not a bug to keep.
+CE is a spec defect to fix, not a bug to keep. **An MC finding is NEVER `FALSE
+POSITIVE` or `DROPPED`** — those are code-review-only outcomes. When an MC finding
+is not a confirmed live bug, its only verdicts are `MASKED`, `ENV_LIMITED`,
+`PENDING REPAIR`, or `NEEDS MORE INFO`; do not push it (or agree) to `FALSE POSITIVE`.
 
 ## Investigate to settle the decisive question
 The turn-1 "no fresh research" rule does NOT bind you when the decisive question
@@ -66,8 +69,12 @@ this is really NEW.
   Level 0/1 alone trigger it? If A only reached it via Level 2/3 injection, is the
   injected state's reachability actually shown (a real-API sequence or a CE step)?
   An injection whose own Level 0/1 attempt failed is UNREACHABLE — push to repair
-  (MC) / `FALSE POSITIVE` (code-review), never `REPRODUCED`. If you genuinely
-  cannot settle it, prefer `NEEDS MORE INFO` over conceding a fabricated reproduction.
+  (MC) / `FALSE POSITIVE` (code-review), never `REPRODUCED`. **Specifically hunt for
+  an injection driven by dead code: if the producer that would create the injected
+  state is commented out, never spawned, or a dead channel/feed (often A's own
+  investigation says so), the injection is unreachable — push to repair, not
+  `REPRODUCED`.** If you genuinely cannot settle it, prefer `NEEDS MORE INFO` over
+  conceding a fabricated reproduction.
 
 End your ENTIRE response with a single line:
 `VERDICT: <one of: {{canon}}>`

@@ -24,8 +24,10 @@ The debate index is the file `{{debate}}`. **Read it first** — it lists every 
   level with a documented delay, or a sharper consumer-harm demonstration. Modify
   `repro/test_bug{{finding_id}}_*`, RE-RUN it, and paste the new output.
 - If it does NOT hold up, do not force it — move to the honest verdict per the
-  skill's decision table (MASKED / a finding / PENDING REPAIR / DROPPED / FALSE
-  POSITIVE / NEEDS MORE INFO). Conceding beats a fabricated `REPRODUCED`.
+  skill's decision table, routing by source: a **code-review** finding → `MASKED` /
+  `ENV_LIMITED` / `FALSE POSITIVE` / `DROPPED` / `NEEDS MORE INFO`; an **MC** finding
+  → `MASKED` / `ENV_LIMITED` / `PENDING REPAIR` / `NEEDS MORE INFO`, and **never
+  `FALSE POSITIVE` or `DROPPED`**. Conceding beats a fabricated `REPRODUCED`.
 - Anti-sycophancy: move your verdict only on a real reason — in either direction,
   not to reach agreement.
 - Keep an up-to-date `## Reproduction result` and `## Recommendation` (they may be

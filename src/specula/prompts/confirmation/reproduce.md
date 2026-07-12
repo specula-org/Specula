@@ -11,7 +11,7 @@ table. Execute the skill — do not restate it.
 - Write and ACTUALLY EXECUTE `repro/test_bug{{finding_id}}_*`.
 - Header fields:
   - `- **Source**: MC` (real counterexample) or `Code Review` (no-violation / code-review)
-  - `- **Novelty**: NEW` or `KNOWN (cite: <URL/dataset-id>; fix-status: unfixed|fixed)` — set from evidence, not by default (see the skill); Code Review AND known → `VERDICT: DROPPED`.
+  - `- **Novelty**: NEW` or `KNOWN (cite: <URL/dataset-id>; fix-status: unfixed|fixed)` — set from evidence, not by default (see the skill); Code Review AND known → `VERDICT: DROPPED`. Before writing `NEW`, do at least one prior-report search — upstream issues **and recently merged/closed PRs** (a fix that landed days ago still makes it KNOWN); `NEW` means you looked and found nothing for THIS mechanism, not that you skipped looking. (Do this via the issue tracker / git history only — do NOT open `bug-report.md` or other findings, per the "Do NOT" list below.)
   - `- **Location**: file:line`
 - Body sections (they become the verdict body): `## Description`, `## Trigger scenario`, `## Developer intent`, `## Reproduction result` (paste real output), `## Recommendation`.
 - End your ENTIRE response with one line: `VERDICT: <one of: {{canon}}>`.
@@ -20,7 +20,7 @@ table. Execute the skill — do not restate it.
 ## Before any `VERDICT: REPRODUCED` — answer this checklist in your response
 State each answer explicitly (it will be checked against your captured output):
 1. Did **Level 0 or Level 1 alone** trigger it — real public API / normal ops, timing help only? **yes / no**.
-2. If **no**, and you used Level 2 (state injection) or Level 3 (source patch): paste the **real-API call sequence** that actually produces the injected pre-condition, **or** cite the exact **counterexample-trace step** it instantiates. If your OWN Level-0/1 attempt failed to produce that state, that is proof it is NOT reachable — do not then label the injection "reachable".
+2. If **no**, and you used Level 2 (state injection) or Level 3 (source patch): paste the **real-API call sequence** that actually produces the injected pre-condition, **or** cite the exact **counterexample-trace step** it instantiates. If your OWN Level-0/1 attempt failed to produce that state, that is proof it is NOT reachable — do not then label the injection "reachable". Likewise, if the code that would drive that state is dead in the shipped build (commented out, never spawned, a dead channel/feed), the injection is unreachable → route to repair, never `REPRODUCED`.
 3. Which **real consumer/caller** observes a wrong outcome? Name it (`file:line`), or state the consequence is argued-only (a finding, not a reproduced bug).
 4. Is the bad state **permanent**, or does a downstream mechanism (sync / loopback / resend / a caller guard) later **resolve or mask** it? A transient snapshot the system afterwards fixes is NOT a reproduced bug; a real defect a safeguard currently masks → `VERDICT: MASKED` (a finding), naming the mechanism — not `REPRODUCED`, not `FALSE POSITIVE`.
 
