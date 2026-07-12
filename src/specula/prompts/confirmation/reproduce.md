@@ -7,7 +7,7 @@ neutral — give this finding its best honest shot. If it is real, make it manif
 
 ## Do
 1. Investigate (Phase 1) and reproduce (Phase 2) this ONE finding, per the skill
-   docs above — write and ACTUALLY EXECUTE `repro/test_bug{{finding_id}}_*`, walking the
+   above — write and ACTUALLY EXECUTE `repro/test_bug{{finding_id}}_*`, walking the
    escalation ladder 0→3. A no-violation model-checking finding is Code Review.
 2. In your response, include these header fields (the dispatcher reads
    `- **Novelty**:` for the NEW / KNOWN-unfixed / KNOWN-fixed count):
@@ -21,7 +21,7 @@ neutral — give this finding its best honest shot. If it is real, make it manif
    `VERDICT: <one of: {{canon}}>`
    Use PENDING REPAIR (no number — the dispatcher assigns RR-NNN) only for a
    CITED spec/fault/invariant artifact. If so, write the FULL repair request to
-   `{{fdir}}/repair-request.body.md` per references/repair-request-format.md:
+   `{{fdir}}/repair-request.body.md` using the skill's repair-request format:
    a YAML frontmatter — **OMIT `id`, `status`, `round`** (the dispatcher owns
    those) — carrying
      - `target:` SPEC_REPAIR | FAULT_MODEL | INVARIANT

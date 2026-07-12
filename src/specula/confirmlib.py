@@ -35,10 +35,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from specula.phaselib import SPECULA_ROOT, Workspace, run_agent_blocking
+from specula.phaselib import Workspace, run_agent_blocking
 from specula.prompts import render
+from specula.skill_refs import prompt_skill_ids
 
-SKILLS = SPECULA_ROOT / "skills"
 PHASE_KEY = "bug_confirmation"
 
 # Framework terminal/loop statuses (skills/bug-confirmation/guide.md).
@@ -143,7 +143,7 @@ def _context(cfg: ConfirmConfig, f: Finding, repo_for_agent: str) -> str:
         repro_dir=str(wd / "repro"),
         fdir=str(f.fdir),
         finding_id=f.id,
-        skills=str(SKILLS),
+        bug_confirmation_skill=prompt_skill_ids("bug-confirmation"),
     )
 
 
@@ -405,7 +405,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
             mc_src=mc_src,
             brief=str(brief),
             out=str(out),
-            schema_doc=str(SKILLS / "validation-workflow" / "references" / "findings-json-format.md"),
+            validation_workflow_skill=prompt_skill_ids("validation-workflow"),
         )
         + cfg.prompt_extra
     )

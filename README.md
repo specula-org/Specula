@@ -48,7 +48,7 @@ bash scripts/infra/setup.sh
 <summary>Alternative: Manual Agent Setup</summary>
 You will need to set up the Specula Agent Skills and MCP with your coding agent.
 
-- To set up skills, symlink [the Specula `skills` folder](https://github.com/specula-org/Specula/tree/main/skills) to the appropriate folder read by your coding agent. For Claude, this is `~/.claude/skills` or `.claude/skills`. For Codex, this is `~/.codex/skills` or `.agents/skills`. For Copilot CLI, this is `.github/skills`.
+- To set up skills manually, link each directory under [the Specula `skills` folder](https://github.com/specula-org/Specula/tree/main/skills) into the appropriate skills directory, using the `name` in its `SKILL.md` as the destination name. Do not replace the skills directory or its existing third-party skills. For Claude, use `~/.claude/skills` or `.claude/skills`. For Codex, use `~/.agents/skills` or `.agents/skills`. For Copilot CLI, use `~/.agents/skills` or `.github/skills`. Project-local locations apply only when the agent starts in that repository; choose global installation for scripted runs launched elsewhere. For a non-default Claude profile, set `CLAUDE_ALIAS=NAME` while running setup so skills and MCP configuration use `~/.NAME`.
 - To set up the MCP, add the `trace_debugger`, `spec_analyzer`, and `inv_checking_tool` MCPs [here](https://github.com/specula-org/Specula/tree/main/tools/) to your agent config. Be sure to build the CFA tool [here](./tools/cfa) with Maven before adding the `spec_analyzer`.
 
 ```bash
@@ -82,18 +82,26 @@ Optionally, clone the [case-studies repository](https://github.com/specula-org/s
 
 Open your coding agent in the Specula directory. The workflow is a sequence of skills, each producing input for the next:
 
-`/code-analysis` → `/spec-generation` → `/harness-generation` → `/validation-workflow` → `/bug-confirmation`
+`code-analysis` → `spec-generation` → `harness-generation` → `validation-workflow` → `bug-confirmation`
 
-(Codex will use `$code-analysis`, `$spec-generation`, etc.)
+Claude Code and Copilot use the registered skill names above. In Codex, explicitly invoke exactly one ID shown by `/skills`: use `$specula-codex:code-analysis` when the plugin ID is listed, otherwise use the standalone `$code-analysis`. Apply the same rule to later skills; never invoke both IDs or one that is not listed.
 
-**To start**, tell the agent your target and invoke the first skill:
+**To start with Claude Code or Copilot**, tell the agent your target and name the first skill:
 
 ```
 This project is a Go implementation of Tendermint BFT consensus (cometbft/cometbft).
-The reference algorithm is the Tendermint paper (arXiv:1807.04938). Run /code-analysis.
+The reference algorithm is the Tendermint paper (arXiv:1807.04938). Run the installed code-analysis skill.
 ```
 
-Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) in `.specula-output/` that the next skill consumes. When one skill completes, invoke the next. You can also run any skill independently — for example, `/validation-workflow` on an existing spec.
+For a Codex plugin installation, invoke the namespaced ID explicitly:
+
+```
+$specula-codex:code-analysis Analyze this project as a Go implementation of Tendermint BFT consensus (cometbft/cometbft), using the Tendermint paper (arXiv:1807.04938) as the reference algorithm.
+```
+
+For standalone Codex skills, use `$code-analysis` instead.
+
+Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) in `.specula-output/` that the next skill consumes. When one skill completes, invoke the next. You can also run any skill independently — for example, `validation-workflow` on an existing spec.
 
 ### Scripted Mode
 

@@ -50,6 +50,7 @@ import specula.progress as progress_module  # noqa: E402
 import specula.quota as quota  # noqa: E402
 from specula import phaselib  # noqa: E402
 from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
+from specula.skill_refs import CODEX_PLUGIN_NAME, prompt_skill_ids  # noqa: E402
 
 NAME = "footest"
 
@@ -63,12 +64,12 @@ class PhaseSpec(TypedDict):
     log: str  # agent log filename
     prompt: str  # written prompt filename
     flag: str  # dry-run prompt flag: --prompt or --prompt-file
-    skill: str  # skill guide the prompt defers to
+    skill: str  # installed skill name the prompt invokes
     out: str  # a key output/input path the prompt must carry
 
 
 # Per-phase contract table. `fail`/`ok`/`skill`/`out` are spelled out here rather
-# than read back off the phase object, so a reworded gate, a typo'd skill path,
+# than read back off the phase object, so a reworded gate, a typo'd skill name,
 # or a dropped output path is caught rather than mirrored.
 PHASES: list[PhaseSpec] = [
     {
@@ -80,7 +81,7 @@ PHASES: list[PhaseSpec] = [
         "log": "agent.log",
         "prompt": ".prompt.md",
         "flag": "--prompt",
-        "skill": ".claude/skills/code_analysis/guide.md",
+        "skill": "code-analysis",
         "out": "modeling-brief.md",
     },
     {
@@ -92,7 +93,7 @@ PHASES: list[PhaseSpec] = [
         "log": "spec-gen.log",
         "prompt": ".spec-gen-prompt.md",
         "flag": "--prompt",
-        "skill": ".claude/skills/spec_generation/guide.md",
+        "skill": "spec-generation",
         "out": "spec/base.tla",
     },
     {
@@ -104,7 +105,7 @@ PHASES: list[PhaseSpec] = [
         "log": "harness-gen.log",
         "prompt": ".harness-gen-prompt.md",
         "flag": "--prompt",
-        "skill": ".claude/skills/harness-generation/guide.md",
+        "skill": "harness-generation",
         "out": "harness",
     },
     {
@@ -116,7 +117,7 @@ PHASES: list[PhaseSpec] = [
         "log": "spec-validation.log",
         "prompt": ".spec-validation-prompt.md",
         "flag": "--prompt",
-        "skill": ".claude/skills/validation-workflow/guide.md",
+        "skill": "validation-workflow",
         "out": "modeling-brief.md",
     },
     {
@@ -128,7 +129,7 @@ PHASES: list[PhaseSpec] = [
         "log": "bug-confirmation.log",
         "prompt": ".bug-confirmation-prompt.md",
         "flag": "--prompt",
-        "skill": ".claude/skills/bug-confirmation/guide.md",
+        "skill": "bug-confirmation",
         "out": "spec/confirmed-bugs.md",
     },
     {
@@ -142,7 +143,7 @@ PHASES: list[PhaseSpec] = [
         "log": "bug-classification.log",
         "prompt": ".bug-classification-prompt.md",
         "flag": "--prompt-file",
-        "skill": ".claude/skills/bug-classification/guide.md",
+        "skill": "bug-classification",
         "out": "spec/bug-severity.md",
     },
 ]
@@ -309,8 +310,32 @@ class TestDryRunCommand(PhaseCase):
                 # the prompt file the agent would receive
                 self.assertTrue(prompt.is_file(), "prompt file not written")
                 body = prompt.read_text()
-                self.assertIn(spec["skill"], body)  # the skill guide it defers to
+                self.assertIn(f"**{spec['skill']}**", body)  # standalone installed skill ID
+                self.assertNotIn(f"${spec['skill']}", body)
+                self.assertNotIn(f"${CODEX_PLUGIN_NAME}:{spec['skill']}", body)
+                self.assertNotIn("<!-- specula-skill:", body)
+                self.assertNotIn("/skills/", body)
+                self.assertNotIn(".claude/skills", body)
                 self.assertIn(str(wd / spec["out"]), body)  # a key output/inputs path
+
+    def test_codex_prompt_materializes_exactly_one_installed_id(self) -> None:
+        spec = BY_KEY["code_analysis"]
+        for plugin_enabled in (False, True):
+            with (
+                self.subTest(plugin_enabled=plugin_enabled),
+                mock.patch(
+                    "specula.skill_refs._codex_plugin_enabled",
+                    return_value=plugin_enabled,
+                ),
+            ):
+                rc, out = self.dry_run(spec, extra=["--agent=codex"])
+                self.assertEqual(rc, 0, out)
+                body = (self.work_dir() / spec["prompt"]).read_text()
+                selected = f"${CODEX_PLUGIN_NAME}:{spec['skill']}" if plugin_enabled else f"${spec['skill']}"
+                rejected = f"${spec['skill']}" if plugin_enabled else f"${CODEX_PLUGIN_NAME}:{spec['skill']}"
+                self.assertIn(selected, body)
+                self.assertNotIn(rejected, body)
+                self.assertNotIn("<!-- specula-skill:", body)
 
     def test_bug_confirmation_defaults_to_parallel(self) -> None:
         # No --legacy-confirm: Phase 4a runs parallel per-finding confirmation
@@ -397,7 +422,13 @@ class TestRepairAndRecheckModes(PhaseCase):
         self.assertIn(f"--log={wd / 'spec-repair.log'}", out)
         body = (wd / ".spec-repair-prompt.md").read_text()
         self.assertIn("REPAIR MODE", body)
-        self.assertIn("repair-request-format.md", body)
+        for skill in ("bug-confirmation", "validation-workflow", "tla-trace-workflow", "tla-checking-workflow"):
+            self.assertIn(f"**{skill}**", body)
+            self.assertNotIn(f"${skill}", body)
+            self.assertNotIn(f"${CODEX_PLUGIN_NAME}:{skill}", body)
+        self.assertNotIn("<!-- specula-skill:", body)
+        self.assertNotIn("/skills/", body)
+        self.assertNotIn(".claude/skills", body)
 
     def test_bug_confirmation_recheck(self) -> None:
         rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--recheck"])
@@ -406,7 +437,14 @@ class TestRepairAndRecheckModes(PhaseCase):
         self.assertIn(f"--log={wd / 'bug-recheck.log'}", out)
         body = (wd / ".bug-recheck-prompt.md").read_text()
         self.assertIn("RE-CHECK", body)
-        self.assertIn("03-recheck.md", body)
+        self.assertIn("**bug-confirmation**", body)
+        self.assertNotIn("$bug-confirmation", body)
+        self.assertNotIn(f"${CODEX_PLUGIN_NAME}:bug-confirmation", body)
+        self.assertNotIn("<!-- specula-skill:", body)
+        self.assertIn("Phase 2′ re-check", body)
+        self.assertIn("repair-request format", body)
+        self.assertNotIn("/skills/", body)
+        self.assertNotIn(".claude/skills", body)
 
 
 class TestArgErrors(PhaseCase):
@@ -1360,6 +1398,32 @@ class TestModelEffortForwarding(unittest.TestCase):
         self.assertIn("--model=", cmd)
         self.assertIn("--effort=", cmd)
         self.assertNotIn("--effort=max", cmd)
+
+    def test_blocking_codex_prompt_materializes_one_plugin_id(self) -> None:
+        class _Result:
+            returncode = 0
+
+        with (
+            tempfile.TemporaryDirectory() as d,
+            mock.patch("specula.phaselib.subprocess.run", return_value=_Result()),
+            mock.patch("specula.skill_refs._codex_plugin_enabled", return_value=True),
+        ):
+            root = Path(d)
+            prompt_file = root / "prompt.md"
+            phaselib.run_agent_blocking(
+                Path("/x/codex.sh"),
+                f"Use {prompt_skill_ids('bug-confirmation')}",
+                prompt_file,
+                root / "out.log",
+                phase_key="bug_confirmation",
+                work_dir=root,
+                claude_alias="claude",
+            )
+
+            prompt = prompt_file.read_text()
+            self.assertIn(f"${CODEX_PLUGIN_NAME}:bug-confirmation", prompt)
+            self.assertNotIn("$bug-confirmation", prompt)
+            self.assertNotIn("<!-- specula-skill:", prompt)
 
 
 if __name__ == "__main__":

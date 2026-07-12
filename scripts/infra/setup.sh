@@ -9,6 +9,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
+SKILL_SETUP_INCOMPLETE=false
 
 print_status() {
   echo -e "${BLUE}[INFO]${NC} $1"
@@ -49,7 +50,7 @@ ask_scope() {
   local agent_name="$1"
   local answer
   while true; do
-    read -rp "$(echo -e "${BLUE}[?]${NC} Install ${agent_name} skills globally (~/) or locally (project only)? (global/local): ")" answer
+    read -rp "$(echo -e "${BLUE}[?]${NC} Install ${agent_name} skills globally (all projects) or locally (this Specula checkout only)? (global/local): ")" answer
     case "$answer" in
       [Gg]|[Gg][Ll][Oo][Bb][Aa][Ll]) echo "global"; return 0 ;;
       [Ll]|[Ll][Oo][Cc][Aa][Ll]) echo "local"; return 0 ;;
@@ -71,29 +72,29 @@ ask_codex_install() {
   done
 }
 
-setup_skills_symlink() {
-  local target_link="$1"
+setup_skills() {
+  local target_dir="$1"
   local skills_source="$2"
-  local parent_dir
-  local existing_target
+  shift 2
+  local -a install_args=(
+    --source "$skills_source"
+    --target "$target_dir"
+  )
 
-  parent_dir="$(dirname "$target_link")"
-  mkdir -p "$parent_dir"
+  install_args+=("$@")
 
-  if [[ -L "$target_link" ]]; then
-    existing_target="$(readlink "$target_link" || true)"
-    if [[ "$existing_target" == "$skills_source" ]]; then
-      print_success "Skills symlink already configured: $target_link -> $skills_source"
-      return 0
-    fi
-    rm -f "$target_link"
-  elif [[ -e "$target_link" ]]; then
-    print_warning "Skipping $target_link (exists and is not a symlink)"
-    return 0
+  print_status "Installing Specula skills into $target_dir..."
+  # Isolated mode keeps the caller's CWD and PYTHONPATH from shadowing trusted setup code.
+  if python3 -I "$PROJECT_ROOT/src/specula/skill_install.py" "${install_args[@]}"; then
+    print_success "Skills configured in $target_dir"
+  else
+    SKILL_SETUP_INCOMPLETE=true
+    print_warning "Specula skill installation is incomplete in $target_dir"
   fi
+}
 
-  ln -s "$skills_source" "$target_link"
-  print_success "Skills configured: $target_link -> $skills_source"
+warn_local_skills_scope() {
+  print_warning "Local skills are discoverable only when the agent starts in $PROJECT_ROOT or one of its subdirectories."
 }
 
 setup_claude_mcp() {
@@ -105,7 +106,7 @@ setup_claude_mcp() {
 
   print_status "Configuring $mcp_name MCP for Claude Code (scope: $scope)..."
   set +e
-  claude mcp add --transport stdio --scope "$scope" \
+  CLAUDE_CONFIG_DIR="$CLAUDE_USER_CONFIG_DIR" claude mcp add --transport stdio --scope "$scope" \
     "$mcp_name" \
     --env "SPECULA_ROOT=$project_root" \
     -- \
@@ -118,7 +119,7 @@ setup_claude_mcp() {
     print_success "Claude MCP configured: $mcp_name (scope: $scope)"
   else
     print_warning "Claude MCP auto-config failed. Run manually:"
-    echo "  claude mcp add --transport stdio --scope $scope --env SPECULA_ROOT=$project_root $mcp_name -- $python_path $server_path"
+    echo "  CLAUDE_CONFIG_DIR=$CLAUDE_USER_CONFIG_DIR claude mcp add --transport stdio --scope $scope --env SPECULA_ROOT=$project_root $mcp_name -- $python_path $server_path"
   fi
 }
 
@@ -150,7 +151,7 @@ setup_codex_plugin() {
   local plugin_root="$2"
 
   print_status "Generating Specula Codex plugin..."
-  python3 "$SCRIPT_DIR/setup_codex_plugin.py" \
+  python3 -I "$SCRIPT_DIR/setup_codex_plugin.py" \
     --project-root "$project_root" \
     --plugin-root "$plugin_root"
   print_success "Codex plugin configured: specula-codex@specula"
@@ -170,13 +171,13 @@ setup_python_tool_env() {
   fi
 
   print_status "Setting up $tool_name Python environment..."
-  python3 -m venv "$venv_dir"
-  "$python_path" -m pip install --upgrade pip
+  python3 -I -m venv "$venv_dir"
+  "$python_path" -I -m pip install --upgrade pip
 
   if [[ -n "$requirements_file" && -f "$requirements_file" ]]; then
-    "$python_path" -m pip install -r "$requirements_file"
+    "$python_path" -I -m pip install -r "$requirements_file"
   else
-    "$python_path" -m pip install mcp
+    "$python_path" -I -m pip install mcp
   fi
 
   print_success "$tool_name dependencies installed"
@@ -208,6 +209,8 @@ build_cfa_jar() {
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Run the remaining setup from the trusted checkout rather than the caller's directory.
+cd "$PROJECT_ROOT"
 TRACE_DEBUGGER_DIR="$PROJECT_ROOT/tools/trace_debugger"
 TRACE_DEBUGGER_VENV="$TRACE_DEBUGGER_DIR/.venv"
 TRACE_DEBUGGER_PYTHON="$TRACE_DEBUGGER_VENV/bin/python"
@@ -223,6 +226,9 @@ INV_CHECKING_TOOL_PYTHON="$INV_CHECKING_TOOL_VENV/bin/python"
 INV_CHECKING_TOOL_SERVER="$INV_CHECKING_TOOL_DIR/mcp_server.py"
 SKILLS_SOURCE="$PROJECT_ROOT/skills"
 CODEX_PLUGIN_ROOT="$PROJECT_ROOT/.specula-codex"
+# Match the launcher's --claude-alias contract exactly: NAME uses ~/.NAME.
+CLAUDE_USER_CONFIG_DIR="$HOME/.${CLAUDE_ALIAS:-claude}"
+COPILOT_USER_CONFIG_DIR="${COPILOT_HOME:-$HOME/.copilot}"
 
 print_status "Project root: $PROJECT_ROOT"
 
@@ -340,13 +346,17 @@ echo -e "${BLUE}[1/3] Claude Code${NC}"
 if ask_yn "Install Specula for Claude Code?"; then
   scope="$(ask_scope "Claude Code")"
   if [[ "$scope" == "global" ]]; then
-    setup_skills_symlink "$HOME/.claude/skills" "$SKILLS_SOURCE"
+    setup_skills "$CLAUDE_USER_CONFIG_DIR/skills" "$SKILLS_SOURCE"
     for entry in "${MCP_SERVERS[@]}"; do
       IFS='|' read -r mcp_name mcp_python mcp_server <<< "$entry"
       setup_claude_mcp "$PROJECT_ROOT" "$mcp_name" "$mcp_python" "$mcp_server" "user"
     done
   else
-    setup_skills_symlink "$PROJECT_ROOT/.claude/skills" "$SKILLS_SOURCE"
+    setup_skills \
+      "$PROJECT_ROOT/.claude/skills" \
+      "$SKILLS_SOURCE" \
+      --shadow-root "$CLAUDE_USER_CONFIG_DIR/skills"
+    warn_local_skills_scope
     for entry in "${MCP_SERVERS[@]}"; do
       IFS='|' read -r mcp_name mcp_python mcp_server <<< "$entry"
       setup_claude_mcp "$PROJECT_ROOT" "$mcp_name" "$mcp_python" "$mcp_server" "project"
@@ -364,9 +374,10 @@ case "$codex_install" in
   legacy)
     scope="$(ask_scope "Codex")"
     if [[ "$scope" == "global" ]]; then
-      setup_skills_symlink "$HOME/.codex/skills" "$SKILLS_SOURCE"
+      setup_skills "$HOME/.agents/skills" "$SKILLS_SOURCE" --legacy-root "$HOME/.codex/skills"
     else
-      setup_skills_symlink "$PROJECT_ROOT/.agents/skills" "$SKILLS_SOURCE"
+      setup_skills "$PROJECT_ROOT/.agents/skills" "$SKILLS_SOURCE"
+      warn_local_skills_scope
     fi
     for entry in "${MCP_SERVERS[@]}"; do
       IFS='|' read -r mcp_name mcp_python mcp_server <<< "$entry"
@@ -387,9 +398,14 @@ echo -e "${BLUE}[3/3] GitHub Copilot CLI${NC}"
 if ask_yn "Install Specula for GitHub Copilot CLI?"; then
   scope="$(ask_scope "Copilot CLI")"
   if [[ "$scope" == "global" ]]; then
-    setup_skills_symlink "$HOME/.github/skills" "$SKILLS_SOURCE"
+    setup_skills \
+      "$HOME/.agents/skills" \
+      "$SKILLS_SOURCE" \
+      --legacy-root "$HOME/.github/skills" \
+      --shadow-root "$COPILOT_USER_CONFIG_DIR/skills"
   else
-    setup_skills_symlink "$PROJECT_ROOT/.github/skills" "$SKILLS_SOURCE"
+    setup_skills "$PROJECT_ROOT/.github/skills" "$SKILLS_SOURCE"
+    warn_local_skills_scope
   fi
   print_warning "Copilot CLI MCP must be configured manually. See README for details."
 else
@@ -399,10 +415,17 @@ echo ""
 
 # ─── Done ────────────────────────────────────────────────────────────────────
 
-print_success "Setup completed."
+if [[ "$SKILL_SETUP_INCOMPLETE" == true ]]; then
+  print_warning "Setup completed with an incomplete Specula skill installation."
+  setup_rc=1
+else
+  print_success "Setup completed."
+  setup_rc=0
+fi
 print_status "Trace debugger Python: $TRACE_DEBUGGER_PYTHON"
 print_status "Trace debugger server: $TRACE_DEBUGGER_SERVER"
 print_status "Spec analyzer Python: $SPEC_ANALYZER_PYTHON"
 print_status "Spec analyzer server: $SPEC_ANALYZER_SERVER"
 print_status "Invariant checking tool Python: $INV_CHECKING_TOOL_PYTHON"
 print_status "Invariant checking tool server: $INV_CHECKING_TOOL_SERVER"
+exit "$setup_rc"
