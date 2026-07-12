@@ -392,6 +392,7 @@ class Phase:
         model: str | None = None
         effort: str | None = None
         artifact = ""
+        artifact_provided = False
         targets: list[str] = []
         extra: dict[str, str | bool] = {}
 
@@ -430,6 +431,7 @@ class Phase:
                 if not self.accepts_artifact:
                     print(self.artifact_rejection_message or f"Unknown option: {arg}")
                     return 1
+                artifact_provided = True
                 artifact = arg[len("--artifact=") :]
             elif arg in ("--help", "-h"):
                 sys.stdout.write(self.usage)
@@ -441,6 +443,10 @@ class Phase:
                 return 1
             else:
                 targets.append(arg)
+
+        if artifact_provided and (not artifact or not Path(artifact).is_dir()):
+            print(f"ERROR: --artifact must be an existing directory: {artifact}")
+            return 1
 
         if max_parallel is None:
             max_parallel = self.default_max_parallel(extra)
@@ -877,9 +883,9 @@ Options:
         for name in names:
             repo_dir = ws.find_repo_dir(name)
             if repo_dir:
-                # --artifact is returned verbatim (may not exist); mirror bash
-                # `cd "$repo_dir" && git ... || echo "?"` — degrade to "?" on a
-                # bad/unreadable path instead of crashing on subprocess cwd.
+                # An explicit --artifact has already been validated as a
+                # directory, but it need not be a Git checkout. Degrade the
+                # optional commit count to "?" when git cannot inspect it.
                 commits = "?"
                 if Path(repo_dir).is_dir():
                     r = subprocess.run(
@@ -1342,7 +1348,7 @@ Example:
 
 Options:
   --dry-run           Print commands without executing
-  --check             Only verify prerequisites exist
+  --check             Run a lightweight prerequisite path check
   --repair            Repair mode: process OPEN/REOPENED repair requests (confirmation back-edge)
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
@@ -1359,6 +1365,7 @@ Prerequisites:
 """
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites. Run spec generation first."
+    check_ok_msg = "Required path checks passed; review any warnings above."
 
     def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
         if arg == "--repair":

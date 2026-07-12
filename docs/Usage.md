@@ -206,7 +206,7 @@ uv run specula specgen --agent=codex --artifact=/path/to/source name
 
 A single-target individual command uses `.specula-output/` in the current directory; a multi-target command uses `<name>/.specula-output/` for each target. When `SPECULA_RUN_DIR` is set, every target uses `$SPECULA_RUN_DIR/<name>/.specula-output/`. A downstream command stops if its required files from the preceding phase are missing.
 
-Use `--check` to validate a phase's prerequisites without starting an agent:
+Use `--check` to run a lightweight path-level preflight without starting an agent. It checks the paths currently gated by that phase, but does not validate file contents; warnings such as zero trace files remain non-fatal:
 
 ```bash
 uv run specula validate --check --artifact=/path/to/source name
