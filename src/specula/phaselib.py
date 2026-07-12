@@ -211,6 +211,7 @@ class Phase:
     check_fail_msg = "ERROR: Missing prerequisites."
     check_ok_msg = "All prerequisites OK."  # code_analysis says "All repos OK."
     accepts_artifact = True  # bug_classification takes no --artifact (rejects it)
+    artifact_rejection_message: str | None = None
     dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
     progress_config = progress.ProgressConfig()
     # Tri-state tuning values set in run(): None = unspecified, "" = explicit
@@ -224,6 +225,10 @@ class Phase:
         Override for extra flags (validation --repair; confirmation --recheck /
         --max-repair-rounds). `extra` is exposed to hooks as `ws.opts`."""
         return False
+
+    def default_max_parallel(self, extra: dict[str, str | bool]) -> int:
+        """Concurrent-agent default when ``--max-parallel`` is omitted."""
+        return 1
 
     def target_name(self, target: str) -> str:
         """Extract the display/work name from a target string. Downstream phases
@@ -377,7 +382,7 @@ class Phase:
 
     # ── shared driver ──
     def run(self, argv: list[str]) -> int:
-        max_parallel = 1
+        max_parallel: int | None = None
         max_turns = "0"
         dry_run = False
         check_only = False
@@ -387,6 +392,7 @@ class Phase:
         model: str | None = None
         effort: str | None = None
         artifact = ""
+        artifact_provided = False
         targets: list[str] = []
         extra: dict[str, str | bool] = {}
 
@@ -421,7 +427,11 @@ class Phase:
                 model = arg[len("--model=") :]
             elif arg.startswith("--effort="):
                 effort = arg[len("--effort=") :]
-            elif arg.startswith("--artifact=") and self.accepts_artifact:
+            elif arg.startswith("--artifact="):
+                if not self.accepts_artifact:
+                    print(self.artifact_rejection_message or f"Unknown option: {arg}")
+                    return 1
+                artifact_provided = True
                 artifact = arg[len("--artifact=") :]
             elif arg in ("--help", "-h"):
                 sys.stdout.write(self.usage)
@@ -433,6 +443,13 @@ class Phase:
                 return 1
             else:
                 targets.append(arg)
+
+        if artifact_provided and (not artifact or not Path(artifact).is_dir()):
+            print(f"ERROR: --artifact must be an existing directory: {artifact}")
+            return 1
+
+        if max_parallel is None:
+            max_parallel = self.default_max_parallel(extra)
 
         if not targets:
             targets = [_logical_cwd().name]  # bash `basename "$PWD"` (logical under symlinks)
@@ -866,9 +883,9 @@ Options:
         for name in names:
             repo_dir = ws.find_repo_dir(name)
             if repo_dir:
-                # --artifact is returned verbatim (may not exist); mirror bash
-                # `cd "$repo_dir" && git ... || echo "?"` — degrade to "?" on a
-                # bad/unreadable path instead of crashing on subprocess cwd.
+                # An explicit --artifact has already been validated as a
+                # directory, but it need not be a Git checkout. Degrade the
+                # optional commit count to "?" when git cannot inspect it.
                 commits = "?"
                 if Path(repo_dir).is_dir():
                     r = subprocess.run(
@@ -1235,6 +1252,10 @@ Prerequisites:
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites. Run Phase 4a (launch_bug_confirmation.sh) first."
     accepts_artifact = False  # this launcher takes no --artifact
+    artifact_rejection_message = (
+        "ERROR: classify does not accept --artifact; this phase reads the existing "
+        ".specula-output/spec/confirmed-bugs.md and does not inspect source code."
+    )
     dry_prompt_flag = "--prompt-file"  # its dry-run line shows --prompt-file=<prompt>
 
     def check(self, ws: Workspace, names: list[str]) -> bool:
@@ -1327,7 +1348,7 @@ Example:
 
 Options:
   --dry-run           Print commands without executing
-  --check             Only verify prerequisites exist
+  --check             Run a lightweight prerequisite path check
   --repair            Repair mode: process OPEN/REOPENED repair requests (confirmation back-edge)
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
@@ -1344,6 +1365,7 @@ Prerequisites:
 """
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites. Run spec generation first."
+    check_ok_msg = "Required path checks passed; review any warnings above."
 
     def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
         if arg == "--repair":
@@ -1481,7 +1503,8 @@ Options:
   --legacy-confirm    Single-agent confirmation (one agent, all findings) instead of parallel
   --recheck           Re-check mode: settle RECHECK repair requests (confirmation back-edge; single-agent)
   --max-repair-rounds=N  Per-request repair cap honored in --recheck (default: 0 = unlimited)
-  --max-parallel=N    Concurrent findings in parallel mode / concurrent agents in --legacy-confirm (default: 1)
+  --max-parallel=N    Hard limit for concurrent findings in parallel mode, or concurrent target agents in
+                      --legacy-confirm/--recheck (defaults: 4 in parallel mode, 1 otherwise)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
@@ -1510,6 +1533,9 @@ Prerequisites:
             return True
         return False
 
+    def default_max_parallel(self, extra: dict[str, str | bool]) -> int:
+        return 1 if extra.get("legacy") or extra.get("recheck") else 4
+
     def run_alternate(
         self,
         ws: Workspace,
@@ -1530,12 +1556,6 @@ Prerequisites:
         # would be circular.
         from specula.confirmlib import ConfirmConfig, run_parallel_confirmation
 
-        # `max_parallel` here is the per-finding concurrency. The pipeline default
-        # is 1 — it means "concurrent targets" for the other phases, but that is
-        # degenerate for per-finding fan-out (findings would run one at a time, so
-        # "parallel" would not actually be parallel). Use a real concurrency
-        # default; an explicit --max-parallel=N>1 still wins.
-        findings_parallel = max_parallel if max_parallel > 1 else 4
         rc = 0
         for name in names:
             if not dry_run:
@@ -1545,7 +1565,7 @@ Prerequisites:
                 ws=ws,
                 adapter=adapter,
                 repo_dir=ws.find_repo_dir(name),
-                max_parallel=findings_parallel,
+                max_parallel=max_parallel,
                 claude_alias=claude_alias,
                 model=self._model,
                 effort=self._effort,

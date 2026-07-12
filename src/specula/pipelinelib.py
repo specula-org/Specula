@@ -91,7 +91,8 @@ Options:
   --legacy-confirm       Phase 4a: single-agent confirmation instead of the default parallel per-finding
   --max-repair-rounds=N  Per-request repair cap, enforced by re-check (default: 0 = unlimited)
   --enable-reviews        Enable review steps (disabled by default)
-  --max-parallel=N       Max concurrent agents per phase (default: 1)
+  --max-parallel=N       Hard limit for concurrent agents. When omitted, ordinary phases run 1 target
+                         agent at a time and per-finding bug confirmation runs up to 4 at a time
   --max-turns=N          Max agent turns (default: 0 = unlimited)
   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli)
   --claude-alias=NAME    Claude CLI profile (default: claude)
@@ -251,7 +252,10 @@ class Pipeline:
     """Parsed configuration + the phase sequencing of the bash `main`."""
 
     def __init__(self) -> None:
-        self.max_parallel = "1"  # verbatim passthrough; the launchers validate
+        # None means the user omitted the flag, so each phase applies its own
+        # default (1 normally; 4 for per-finding bug confirmation). A string,
+        # including "", is an explicit value forwarded for launcher validation.
+        self.max_parallel: str | None = None
         self.max_turns = "0"  # deprecated verbatim passthrough
         self.dry_run = False
         self.skip_analysis = False
@@ -273,6 +277,7 @@ class Pipeline:
         self.model: str | None = None
         self.effort: str | None = None
         self.artifact = ""
+        self._artifact_given = False
         self.targets: list[str] = []
         self.quota_5h = os.environ.get("QUOTA_5H") or "85"
         self.quota_7d = os.environ.get("QUOTA_7D") or "95"
@@ -341,6 +346,7 @@ class Pipeline:
                 self.effort = arg.split("=", 1)[1]
             elif arg.startswith("--artifact="):
                 self.artifact = arg.split("=", 1)[1]
+                self._artifact_given = True
             elif arg in ("--help", "-h"):
                 sys.stdout.write(USAGE)
                 return 0
@@ -356,6 +362,13 @@ class Pipeline:
         if self._run_id_given and self._no_isolate_given:
             print("ERROR: --no-isolate conflicts with --run-id", file=sys.stderr)
             return 1
+        if self._artifact_given:
+            if not self.artifact or not Path(self.artifact).is_dir():
+                print(f"ERROR: --artifact must be an existing directory: {self.artifact}", file=sys.stderr)
+                return 1
+            # The legacy single-target flow may chdir before launching phases.
+            # Stabilize a relative CLI path while it still refers to the caller's cwd.
+            self.artifact = str(Path(self.artifact).resolve())
         # wart fix (step 7): garbage quota config fails fast (pre-tee, like the
         # option errors). The bash pushed the values into the gate's arithmetic,
         # where a bad threshold read as "usage parse failed" and silently
@@ -619,16 +632,25 @@ class Pipeline:
             args.append(f"--effort={self.effort}")
         return args
 
+    def _max_parallel_summary(self) -> str:
+        if self.max_parallel is not None:
+            return self.max_parallel
+        confirmation_default = (
+            "legacy confirmation 1 at a time" if self.confirm_legacy else "per-finding confirmation 4 at a time"
+        )
+        return f"phase defaults (ordinary phases 1 at a time; {confirmation_default})"
+
     def _phase_args(self, positional: list[str], pre: list[str] | None = None, with_artifact: bool = True) -> list[str]:
         args = list(pre or [])
+        if self.max_parallel is not None:
+            args.append(f"--max-parallel={self.max_parallel}")
         args += [
-            f"--max-parallel={self.max_parallel}",
             f"--max-turns={self.max_turns}",
             f"--agent={self.agent}",
             f"--claude-alias={self.claude_alias}",
             *self._model_effort_args(),
         ]
-        if with_artifact and self.artifact:
+        if with_artifact and self._artifact_given:
             args.append(f"--artifact={self.artifact}")
         args += positional
         return args
@@ -984,7 +1006,7 @@ class Pipeline:
         print("╚══════════════════════════════════════════════════════════╝")
         print()
         print(f"Targets:      {len(self.targets)}")
-        print(f"Max parallel: {self.max_parallel}")
+        print(f"Max parallel: {self._max_parallel_summary()}")
         print(f"Max turns:    {self.max_turns}")
         print(f"Agent:        {self.agent}  (claude-alias={self.claude_alias})")
         if self.run_dir:

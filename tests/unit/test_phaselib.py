@@ -112,7 +112,7 @@ PHASES: list[PhaseSpec] = [
         "artifact": True,
         "inputs": ["spec/base.tla", "spec/MC.tla", "spec/Trace.tla", "spec/instrumentation-spec.md"],
         "fail": "Run spec generation first.",
-        "ok": "All prerequisites OK.",
+        "ok": "Required path checks passed; review any warnings above.",
         "log": "spec-validation.log",
         "prompt": ".spec-validation-prompt.md",
         "flag": "--prompt",
@@ -216,9 +216,9 @@ class PhaseCase(unittest.TestCase):
             p.write_text("seeded\n")  # non-empty: some gates check st_size > 0
 
     def artifact_flag(self) -> str:
-        # A path find_repo_dir returns verbatim (need not exist), so the repo
-        # prerequisite is satisfied without a real checkout or a git call.
-        return f"--artifact={self.tmp() / 'repo'}"
+        repo = self.tmp() / "repo"
+        repo.mkdir()
+        return f"--artifact={repo}"
 
     def run_phase(self, key: str, args: list[str]) -> tuple[int, str]:
         buf = io.StringIO()
@@ -264,6 +264,19 @@ class TestCheckOnly(PhaseCase):
                 self.assertIn(spec["ok"], out)
                 self.assertNotIn("[DRY RUN]", out)
 
+    def test_validation_check_remains_a_shallow_preflight(self) -> None:
+        spec_dir = self.work_dir() / "spec"
+        spec_dir.mkdir(parents=True)
+        for name in ("base.tla", "MC.tla", "Trace.tla", "instrumentation-spec.md"):
+            (spec_dir / name).touch()
+
+        rc, out = self.run_phase("spec_validation", ["--check", self.artifact_flag(), NAME])
+
+        self.assertEqual(rc, 0, out)
+        self.assertIn("specs OK (0L)", out)
+        self.assertIn("traces WARN (0 ndjson files)", out)
+        self.assertIn("Required path checks passed; review any warnings above.", out)
+
 
 class TestDryRunCommand(PhaseCase):
     """The dry-run adapter command line + the assembled prompt file."""
@@ -304,16 +317,36 @@ class TestDryRunCommand(PhaseCase):
         # (confirmlib), NOT the single-agent adapter launch.
         rc, out = self.dry_run(BY_KEY["bug_confirmation"])
         self.assertEqual(rc, 0, out)
+        self.assertIn("Max parallel: 4", out)
         self.assertIn("Parallel confirmation", out)
-        self.assertIn("max_parallel=4", out)  # real concurrency default, not the target-concurrency 1
+        self.assertIn("max_parallel=4", out)
         self.assertNotIn("--background", out)  # not the single-agent _launch command
+
+    def test_bug_confirmation_explicit_one_is_a_hard_limit(self) -> None:
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--max-parallel=1"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Max parallel: 1", out)
+        self.assertIn("Parallel confirmation", out)
+        self.assertIn("max_parallel=1", out)
+
+    def test_bug_confirmation_legacy_default_stays_one(self) -> None:
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--legacy-confirm"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Max parallel: 1", out)
+        self.assertNotIn("Parallel confirmation", out)
 
     def test_bug_confirmation_recheck_stays_single_agent(self) -> None:
         # --recheck always uses the single-agent path, even without --legacy-confirm.
         rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--recheck"])
         self.assertEqual(rc, 0, out)
+        self.assertIn("Max parallel: 1", out)
         self.assertIn("[DRY RUN]", out)  # single-agent adapter launch
         self.assertNotIn("Parallel confirmation", out)
+
+    def test_ordinary_phase_default_max_parallel_stays_one(self) -> None:
+        rc, out = self.dry_run(BY_KEY["code_analysis"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Max parallel: 1", out)
 
     def test_max_turns_forwarded_verbatim(self) -> None:
         rc, out = self.dry_run(BY_KEY["code_analysis"], extra=["--max-turns=7"])
@@ -344,10 +377,13 @@ class TestDryRunCommand(PhaseCase):
         self.assertNotIn("--effort=max", out)
 
     def test_bug_classification_rejects_artifact(self) -> None:
-        # accepts_artifact=False: --artifact is not a known option here.
         rc, out = self.run_phase("bug_classification", ["--artifact=/x", NAME])
         self.assertEqual(rc, 1)
-        self.assertIn("Unknown option", out)
+        self.assertEqual(
+            out,
+            "ERROR: classify does not accept --artifact; this phase reads the existing "
+            ".specula-output/spec/confirmed-bugs.md and does not inspect source code.\n",
+        )
 
 
 class TestRepairAndRecheckModes(PhaseCase):
@@ -396,6 +432,17 @@ class TestArgErrors(PhaseCase):
                 self.assertEqual(rc, 1)
                 self.assertIn("expected an integer >= 1", out)
 
+    def test_missing_artifact_directory_is_rejected(self) -> None:
+        missing = self.tmp() / "missing"
+        rc, out = self.run_phase("code_analysis", ["--check", f"--artifact={missing}", NAME])
+        self.assertEqual(rc, 1)
+        self.assertIn("--artifact must be an existing directory", out)
+
+    def test_empty_artifact_value_is_rejected(self) -> None:
+        rc, out = self.run_phase("code_analysis", ["--check", "--artifact=", NAME])
+        self.assertEqual(rc, 1)
+        self.assertIn("--artifact must be an existing directory", out)
+
     def test_help_prints_usage(self) -> None:
         for spec in PHASES:
             with self.subTest(phase=spec["key"]):
@@ -416,6 +463,9 @@ class TestProgressReporting(PhaseCase):
         adapters.mkdir()
         self.patch_attr(phaselib, "LAUNCH_DIR", adapters.parent)
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
+        # These tests exercise process/progress handling, not the analysis gate.
+        # Keep its optional `git rev-list` probe out of subprocess accounting.
+        self.patch_attr(phaselib.CodeAnalysisPhase, "check", lambda _self, _ws, _names: True)
         self.config = ProgressConfig(
             poll_seconds=0.005,
             change_report_seconds=0.0,

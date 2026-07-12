@@ -527,6 +527,79 @@ class TestParsing(TmpCwd):
         self.assertEqual(p.effort, "high")
         self.assertEqual(p.targets, ["t|g|l|r"])
 
+    def test_artifact_omitted_preserves_auto_discovery(self) -> None:
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["t|g|l|r"]))
+        self.assertFalse(p._artifact_given)
+        self.assertFalse(any(arg.startswith("--artifact=") for arg in p._phase_args(["t"])))
+
+    def test_valid_artifact_directory_is_forwarded(self) -> None:
+        repo = self.tmp / "repo"
+        repo.mkdir()
+        p = pl.Pipeline()
+
+        self.assertIsNone(p.parse_args([f"--artifact={repo}", "t|g|l|r"]))
+
+        self.assertTrue(p._artifact_given)
+        self.assertEqual(p.artifact, str(repo))
+        self.assertIn(f"--artifact={repo}", p._phase_args(["t"]))
+        self.assertNotIn(f"--artifact={repo}", p._phase_args(["t"], with_artifact=False))
+
+    def test_relative_artifact_is_stable_after_working_directory_changes(self) -> None:
+        repo = self.tmp / "repo"
+        repo.mkdir()
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--artifact=repo", "t|g|l|r"]))
+
+        later_cwd = self.tmp / "case-studies" / "t"
+        later_cwd.mkdir(parents=True)
+        os.chdir(later_cwd)
+
+        self.assertEqual(p.artifact, str(repo))
+        self.assertEqual(p.argv, ["--artifact=repo", "t|g|l|r"])
+        self.assertIn(f"--artifact={repo}", p._phase_args(["t"]))
+
+    def test_invalid_artifact_path_is_rejected(self) -> None:
+        file_path = self.tmp / "artifact.txt"
+        file_path.write_text("not a directory\n")
+        for value in ("", str(self.tmp / "missing"), str(file_path)):
+            with self.subTest(value=value):
+                p = pl.Pipeline()
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    rc = p.parse_args([f"--artifact={value}", "t|g|l|r"])
+                self.assertEqual(rc, 1)
+                self.assertIn("--artifact must be an existing directory", err.getvalue())
+
+    def test_max_parallel_omitted_preserves_phase_defaults(self) -> None:
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["t|g|l|r"]))
+        self.assertIsNone(p.max_parallel)
+        self.assertFalse(any(a.startswith("--max-parallel=") for a in p._phase_args(["t"])))
+
+    def test_explicit_max_parallel_one_is_forwarded(self) -> None:
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--max-parallel=1", "t|g|l|r"]))
+        self.assertEqual(p.max_parallel, "1")
+        self.assertIn("--max-parallel=1", p._phase_args(["t"]))
+        self.assertEqual(p._max_parallel_summary(), "1")
+
+    def test_max_parallel_summary_reports_per_finding_default(self) -> None:
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["t|g|l|r"]))
+        self.assertEqual(
+            p._max_parallel_summary(),
+            "phase defaults (ordinary phases 1 at a time; per-finding confirmation 4 at a time)",
+        )
+
+    def test_max_parallel_summary_reports_legacy_confirmation_default(self) -> None:
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--legacy-confirm", "t|g|l|r"]))
+        self.assertEqual(
+            p._max_parallel_summary(),
+            "phase defaults (ordinary phases 1 at a time; legacy confirmation 1 at a time)",
+        )
+
     def test_model_effort_absent_and_explicit_empty_are_distinct(self) -> None:
         absent = pl.Pipeline()
         self.assertIsNone(absent.parse_args(["t"]))
