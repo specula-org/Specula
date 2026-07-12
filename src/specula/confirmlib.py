@@ -273,23 +273,23 @@ def run_turn(cfg: ConfirmConfig, f: Finding, role: str, turn_no: int, prompt: st
 
 def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]:
     """Return (repo_path_for_agent, cleanup). With worktree (default) each finding
-    gets its own detached worktree so parallel builds do not collide. If a worktree
-    cannot be created (permissions, non-git repo, unconfigured), fall back to the
-    shared repo rather than failing the finding — isolation is a build-safety
-    optimisation, not a correctness requirement."""
+    gets its own detached worktree so parallel builds and source patches do not
+    collide. If isolation was requested, never fall back to the shared source
+    checkout: a valid Level-3 reproduction may modify it."""
     repo = cfg.repo_dir.rstrip("/")
     if not cfg.worktree or cfg.dry_run or not repo:
         return repo, lambda: None
     try:
         return _setup_worktree(cfg, f, repo)
+    except ConfirmationFailed:
+        raise
     except Exception as exc:
-        _log(f"  [{f.id}] worktree isolation unavailable ({str(exc)[:150]}); using the shared repo")
-        return repo, lambda: None
+        raise ConfirmationFailed(f"{f.id}: worktree isolation failed: {exc}") from exc
 
 
 def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Callable[[], None]]:
     """Per-finding detached git worktree with the launch dir's local changes copied
-    in. Raises on any failure; setup_repo turns that into a shared-repo fallback."""
+    in. Raises on any failure; the finding then remains uncached and retryable."""
     probe = subprocess.run(["git", "-C", repo, "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True)
     if probe.returncode != 0 or probe.stdout.strip() != "true":
         raise ConfirmationFailed(f"{f.id}: worktree isolation requested but {repo!r} is not a git checkout")
@@ -755,6 +755,40 @@ def _rr_field_text(text: str, key: str) -> list[str]:
     return [line[len(prefix) :].strip() for line in text.splitlines()[:25] if line.startswith(prefix)]
 
 
+def _replace_rr_field_text(text: str, key: str, value: str) -> str:
+    lines = text.splitlines(keepends=True)
+    prefix = key + ":"
+    for i, line in enumerate(lines[:25]):
+        if line.startswith(prefix):
+            newline = "\n" if line.endswith("\n") else ""
+            lines[i] = f"{key}: {value}{newline}"
+            return "".join(lines)
+    raise InvalidRepairRequest(f"repair request is missing {key}")
+
+
+def _repair_request_cache_content(text: str, status: str) -> bytes:
+    """Canonical RR bytes for cache validation.
+
+    OPEN -> DEFERRED is orchestrator bookkeeping, not a new confirmation
+    result. Normalize only that transition so the cached PENDING verdict remains
+    reusable. IN_REPAIR and CONSUMED stay byte-distinct and therefore invalidate
+    the old verdict as before.
+    """
+    lines = text.splitlines()
+    if status == "DEFERRED":
+        for i, line in enumerate(lines[:25]):
+            if line.startswith("status:"):
+                lines[i] = "status: OPEN"
+                break
+        defer_notes = {
+            "- deferred (orchestrator): repair loop round cap reached",
+            "- reconciled (orchestrator): deferred directory is authoritative",
+        }
+        if lines and lines[-1] in defer_notes:
+            lines.pop()
+    return ("\n".join(lines) + "\n").encode()
+
+
 def _artifact_identity(cfg: ConfirmConfig, o: Outcome) -> dict[str, Any]:
     _validate_final_artifacts(cfg, o.finding, o.status)
     result: dict[str, Any] = {}
@@ -783,11 +817,29 @@ def _artifact_identity(cfg: ConfirmConfig, o: Outcome) -> dict[str, Any]:
         text = rr_file.read_text(errors="replace")
         ids = _rr_field_text(text, "id")
         statuses = _rr_field_text(text, "status")
-        if ids != [o.rr] or len(statuses) != 1 or statuses[0] not in {"OPEN", "IN_REPAIR", "CONSUMED"}:
+        if (
+            ids != [o.rr]
+            or len(statuses) != 1
+            or statuses[0]
+            not in {
+                "OPEN",
+                "IN_REPAIR",
+                "CONSUMED",
+                "DEFERRED",
+            }
+        ):
             raise InvalidRepairRequest(f"cached repair {o.rr} has invalid id/status frontmatter")
+        finding_ids = _rr_field_text(text, "finding_id")
+        if finding_ids != [o.finding.id]:
+            raise InvalidRepairRequest(f"cached repair {o.rr} has wrong finding_id")
+        relative = rr_file.relative_to(rr_dir)
+        expected = Path("deferred") / rr_file.name if statuses[0] == "DEFERRED" else Path(rr_file.name)
+        if relative != expected:
+            raise InvalidRepairRequest(f"cached repair {o.rr} has invalid location for status {statuses[0]}")
+        cache_path = Path(rr_file.name) if statuses[0] == "DEFERRED" else relative
         result["repair_request"] = {
-            "path": str(rr_file.relative_to(rr_dir)),
-            "content": hashlib.sha256(rr_file.read_bytes()).hexdigest(),
+            "path": str(cache_path),
+            "content": hashlib.sha256(_repair_request_cache_content(text, statuses[0])).hexdigest(),
         }
     return result
 
@@ -941,23 +993,47 @@ def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
                 "cache_version": _CACHE_VERSION,
             }
         )
-        existing: list[str] = []
+        existing: list[tuple[str, Path, str]] = []
         for path in rr_dir.rglob("RR-*.md"):
             text = path.read_text(errors="replace")
             keys = _rr_field_text(text, "allocation_key")
             statuses = _rr_field_text(text, "status")
             ids = _rr_field_text(text, "id")
             finding_ids = _rr_field_text(text, "finding_id")
-            if keys == [allocation_key] and statuses and statuses[0] in {"OPEN", "IN_REPAIR"}:
-                if finding_ids != [o.finding.id]:
-                    raise InvalidRepairRequest(f"existing allocation key has wrong finding_id for {o.finding.id}")
+            same_finding = finding_ids == [o.finding.id]
+            same_allocation = keys == [allocation_key]
+            if not same_finding and not same_allocation:
+                continue
+            if same_allocation and not same_finding:
+                raise InvalidRepairRequest(f"existing allocation key has wrong finding_id for {o.finding.id}")
+            status = statuses[0] if len(statuses) == 1 else ""
+            if status in {"OPEN", "IN_REPAIR", "DEFERRED"}:
                 if len(ids) != 1 or path.name != f"{ids[0]}.md":
                     raise InvalidRepairRequest(f"existing allocation for {o.finding.id} has inconsistent id")
-                existing.append(ids[0])
+                expected_parent = rr_dir / "deferred" if status == "DEFERRED" else rr_dir
+                if path.parent != expected_parent:
+                    raise InvalidRepairRequest(
+                        f"existing allocation for {o.finding.id} has invalid location for status {status}"
+                    )
+                existing.append((ids[0], path, text))
+            elif same_finding and status != "CONSUMED":
+                raise InvalidRepairRequest(
+                    f"existing repair request for {o.finding.id} has invalid reusable status {status or '<missing>'}"
+                )
         if len(existing) > 1:
-            raise InvalidRepairRequest(f"multiple repair requests already exist for {o.finding.id} in this generation")
+            raise InvalidRepairRequest(f"multiple non-consumed repair requests already exist for {o.finding.id}")
         if existing:
-            return existing[0]
+            rid, path, text = existing[0]
+            expected_bug_id = f"Bug {o.bug_no}"
+            if o.bug_no > 0 and _rr_field_text(text, "bug_id") != [expected_bug_id]:
+                updated = _replace_rr_field_text(text, "bug_id", expected_bug_id)
+                tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+                try:
+                    tmp.write_text(updated)
+                    os.replace(tmp, path)
+                finally:
+                    tmp.unlink(missing_ok=True)
+            return rid
         nums = [int(m.group(1)) for p in rr_dir.rglob("RR-*.md") if (m := re.fullmatch(r"RR-(\d+)\.md", p.name))]
         next_num = max(nums, default=0) + 1
         cx = str(o.finding.data.get("counterexample") or "")
@@ -1290,20 +1366,34 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     "one row per ``## Bug N:`` header" parsing aligns; the finding id (MC-1 / CR-2)
     is carried as a body field and a table column."""
     report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
+
+    def effective_status(outcome: Outcome) -> str:
+        if outcome.status != "PENDING REPAIR" or outcome.rr is None:
+            return outcome.status
+        deferred = cfg.ws.work_dir(cfg.name) / "spec" / "repair-requests" / "deferred" / f"{outcome.rr}.md"
+        if not deferred.is_file():
+            return outcome.status
+        text = deferred.read_text(errors="replace")
+        if _rr_field_text(text, "id") == [outcome.rr] and _rr_field_text(text, "status") == ["DEFERRED"]:
+            return "DEFERRED"
+        return outcome.status
+
+    effective = [(outcome, effective_status(outcome)) for outcome in outcomes]
     # A non-canonical status (e.g. INCOMPLETE from a finding whose confirmation
     # could not finish — infra error / rate limit) is rendered verbatim and simply
     # not counted as a bug/finding; it must never discard the whole report.
-    incomplete = [o for o in outcomes if o.status not in CANON]
-    status_counts = {status: sum(o.status == status for o in outcomes) for status in CANON}
-    reproduced = [o for o in outcomes if o.status == "REPRODUCED"]
+    incomplete = [o for o, status in effective if status not in CANON and status != "DEFERRED"]
+    status_counts = {status: sum(effective_status == status for _, effective_status in effective) for status in CANON}
+    deferred_count = sum(status == "DEFERRED" for _, status in effective)
+    reproduced = [o for o, status in effective if status == "REPRODUCED"]
     nov = [_novelty(o.body) for o in reproduced]
     n_new = nov.count("NEW")
     n_known_unfixed = nov.count("KNOWN-unfixed")
     n_known_fixed = nov.count("KNOWN-fixed")
     n_unknown = nov.count("UNKNOWN")
 
-    env_limited = [o for o in outcomes if o.status == "ENV_LIMITED"]
-    masked = [o for o in outcomes if o.status == "MASKED"]
+    env_limited = [o for o, status in effective if status == "ENV_LIMITED"]
+    masked = [o for o, status in effective if status == "MASKED"]
 
     lines = [f"# Confirmed Bugs — {cfg.name}", ""]
     split = (
@@ -1321,22 +1411,30 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
         f" + {status_counts['ENV_LIMITED']} env-limited + {status_counts['MASKED']} masked"
         f" + {status_counts['FALSE POSITIVE']} false-positive + {status_counts['NEEDS MORE INFO']} needs-more-info"
         f" + {status_counts['DROPPED']} dropped + {status_counts['PENDING REPAIR']} pending-repair"
-        f" + {len(incomplete)} incomplete + 0 deferred"
+        f" + {len(incomplete)} incomplete + {deferred_count} deferred"
     )
     lines.append("")
     lines.append("| Bug | Finding | Status |")
     lines.append("|---|---|---|")
-    for o in outcomes:
-        rr = f" ({o.rr})" if o.rr else ""
-        lines.append(f"| {o.bug_no} | {o.finding.id} | {o.status}{rr} |")
+    for o, status in effective:
+        if status == "DEFERRED":
+            rendered_status = f"DEFERRED (repair loop exhausted; {o.rr} in deferred/)"
+        else:
+            rr = f" ({o.rr})" if o.rr else ""
+            rendered_status = f"{status}{rr}"
+        lines.append(f"| {o.bug_no} | {o.finding.id} | {rendered_status} |")
     lines.append("")
-    for o in outcomes:
-        rr = f" ({o.rr})" if o.rr else ""
+    for o, status in effective:
+        if status == "DEFERRED":
+            rendered_status = f"DEFERRED (repair loop exhausted; {o.rr} in deferred/)"
+        else:
+            rr = f" ({o.rr})" if o.rr else ""
+            rendered_status = f"{status}{rr}"
         title = re.sub(r"[\r\n]+", " ", str(o.finding.data.get("title", ""))).strip()
         lines.append(f"## Bug {o.bug_no}: {title}")
         lines.append("")
         lines.append(f"- **Finding ID**: {o.finding.id}")
-        lines.append(f"- **Status**: {o.status}{rr}")
+        lines.append(f"- **Status**: {rendered_status}")
         debate_summary = (
             "not run" if o.rounds == 0 else (f"{'consensus' if o.consensus else 'NO CONSENSUS'} in {o.rounds} round(s)")
         )

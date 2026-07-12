@@ -930,6 +930,59 @@ class TestCacheContracts(ConfirmCase):
         rr.unlink()
         self.assertIsNone(C._load_verdict(f, cfg))
 
+    def test_deferred_pending_cache_stays_terminal_without_rerunning_agent(self) -> None:
+        data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
+        ws = self.seed("T", [data])
+        cfg = self.cfg(ws, "T")
+        f = C.Finding(data, ws.work_dir("T") / "confirmation" / "MC-1")
+        f.fdir.mkdir(parents=True)
+        (f.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        pending = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
+        pending.rr = C.allocate_rr(cfg, pending)
+        C._save_verdict(pending, cfg)
+
+        rr_dir = ws.work_dir("T") / "spec" / "repair-requests"
+        active = rr_dir / f"{pending.rr}.md"
+        deferred_dir = rr_dir / "deferred"
+        deferred_dir.mkdir()
+        deferred_text = active.read_text().replace("status: OPEN", "status: DEFERRED", 1)
+        if not deferred_text.endswith("\n"):
+            deferred_text += "\n"
+        deferred_text += "- deferred (orchestrator): repair loop round cap reached\n"
+        deferred = deferred_dir / active.name
+        deferred.write_text(deferred_text)
+        active.unlink()
+
+        self.assertIsNotNone(C._load_verdict(f, cfg))
+        with mock.patch.object(C, "run_agent_blocking", _boom):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+
+        self.assertFalse(active.exists())
+        self.assertEqual(list(rr_dir.rglob("RR-*.md")), [deferred])
+        report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
+        self.assertIn("| 1 | MC-1 | DEFERRED (repair loop exhausted; RR-001 in deferred/) |", report)
+        self.assertIn("+ 0 pending-repair + 0 incomplete + 1 deferred", report)
+
+        # A fresh generation still reuses the terminal request instead of
+        # allocating a new OPEN RR.
+        (ws.work_dir("T") / "spec" / "confirmation-generation.json").write_text('{"generation": 1}\n')
+        self.assertEqual(C.allocate_rr(cfg, pending), "RR-001")
+        self.assertFalse(active.exists())
+
+    def test_consumed_repair_invalidates_cached_pending_verdict(self) -> None:
+        data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
+        ws = self.seed("T", [data])
+        cfg = self.cfg(ws, "T")
+        f = C.Finding(data, ws.work_dir("T") / "confirmation" / "MC-1")
+        f.fdir.mkdir(parents=True)
+        (f.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        pending = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
+        pending.rr = C.allocate_rr(cfg, pending)
+        C._save_verdict(pending, cfg)
+        rr = ws.work_dir("T") / "spec" / "repair-requests" / f"{pending.rr}.md"
+        rr.write_text(rr.read_text().replace("status: OPEN", "status: CONSUMED", 1) + "\n- repaired\n")
+        self.assertIsNone(C._load_verdict(f, cfg))
+
     def test_standalone_spec_or_counterexample_change_invalidates_verdict(self) -> None:
         data = {
             "id": "MC-1",
@@ -1068,7 +1121,7 @@ class TestValidationContracts(ConfirmCase):
         self.assertEqual(rid, "RR-008")
         self.assertEqual(old.read_text(), "old history\n")
 
-    def test_changed_repair_body_gets_a_new_allocation(self) -> None:
+    def test_changed_repair_body_reuses_open_then_allocates_after_consumed(self) -> None:
         ws = self.seed("T", [])
         f = self.finding(ws, "T")
         f.fdir.mkdir(parents=True)
@@ -1078,7 +1131,45 @@ class TestValidationContracts(ConfirmCase):
         outcome = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
         self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
         body_file.write_text(TestMergeRR.AGENT_BODY + "\nAdditional corrected evidence changes the request.\n")
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+        first = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
+        first.write_text(first.read_text().replace("status: OPEN", "status: CONSUMED", 1))
         self.assertEqual(C.allocate_rr(cfg, outcome), "RR-002")
+
+    def test_generation_change_reuses_open_repair_for_same_finding(self) -> None:
+        ws = self.seed("T", [])
+        f = self.finding(ws, "T")
+        f.fdir.mkdir(parents=True)
+        (f.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        cfg = self.cfg(ws, "T")
+        outcome = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=2)
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+        (ws.work_dir("T") / "spec" / "confirmation-generation.json").write_text('{"generation": 1}\n')
+        outcome.bug_no = 1
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+        requests = ws.work_dir("T") / "spec" / "repair-requests"
+        self.assertEqual([path.name for path in requests.glob("RR-*.md")], ["RR-001.md"])
+        self.assertIn("bug_id: Bug 1", (requests / "RR-001.md").read_text())
+
+    def test_reused_repair_bug_id_update_is_atomic(self) -> None:
+        ws = self.seed("T", [])
+        f = self.finding(ws, "T")
+        f.fdir.mkdir(parents=True)
+        (f.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        cfg = self.cfg(ws, "T")
+        outcome = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=2)
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+        request = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
+        original = request.read_text()
+
+        outcome.bug_no = 1
+        with (
+            mock.patch("specula.confirmlib.os.replace", side_effect=OSError("interrupted")),
+            self.assertRaisesRegex(OSError, "interrupted"),
+        ):
+            C.allocate_rr(cfg, outcome)
+        self.assertEqual(request.read_text(), original)
+        self.assertEqual(list(request.parent.glob(".RR-001.md.*.tmp")), [])
 
 
 class TestEvidenceAndRendering(ConfirmCase):
@@ -1260,7 +1351,7 @@ class TestRepoIsolation(ConfirmCase):
         (repo / "untracked.txt").write_text("new\n")
         self.assertIsNone(C._load_verdict(f, cfg))
 
-    def test_repo_change_prevents_reusing_open_repair_allocation(self) -> None:
+    def test_repo_change_reuses_open_repair_then_allocates_after_consumed(self) -> None:
         repo = self._repo()
         cfg, ws = self._repo_cfg(repo, worktree=False)
         f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
@@ -1269,7 +1360,39 @@ class TestRepoIsolation(ConfirmCase):
         outcome = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
         self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
         (repo / "tracked.txt").write_text("new source bytes\n")
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+        first = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
+        first.write_text(first.read_text().replace("status: OPEN", "status: CONSUMED", 1))
         self.assertEqual(C.allocate_rr(cfg, outcome), "RR-002")
+
+    def test_worktree_setup_failure_is_incomplete_without_running_agent(self) -> None:
+        repo = self._repo()
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+        with (
+            mock.patch.object(C, "_setup_worktree", side_effect=PermissionError("denied")),
+            mock.patch.object(C, "run_agent_blocking") as run_agent,
+        ):
+            outcome = C.run_finding_safe(cfg, f)
+        run_agent.assert_not_called()
+        self.assertEqual((outcome.status, outcome.failure_code), (C.INCOMPLETE, 1))
+        self.assertIn("worktree isolation failed: denied", (f.fdir / "error.txt").read_text())
+        self.assertFalse((f.fdir / "verdict.json").exists())
+        self.assertEqual((repo / "tracked.txt").read_text(), "base\n")
+
+    def test_non_git_repo_never_falls_back_to_running_agent(self) -> None:
+        repo = Path(self.tmp) / "not-git"
+        repo.mkdir()
+        source = repo / "source.c"
+        source.write_text("original\n")
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+        with mock.patch.object(C, "run_agent_blocking") as run_agent:
+            outcome = C.run_finding_safe(cfg, f)
+        run_agent.assert_not_called()
+        self.assertEqual((outcome.status, outcome.failure_code), (C.INCOMPLETE, 1))
+        self.assertIn("not a git checkout", (f.fdir / "error.txt").read_text())
+        self.assertEqual(source.read_text(), "original\n")
 
     def test_cleanup_failure_does_not_replace_active_rate_limit(self) -> None:
         repo = self._repo()
