@@ -229,7 +229,7 @@ uv run specula run [options] "name|owner/repository|language|reference"
 | `--model=NAME` | Override the configured model |
 | `--effort=LEVEL` | Override reasoning effort |
 | `--artifact=PATH` | Set the target source checkout |
-| `--max-parallel=N` | Run phase agents concurrently |
+| `--max-parallel=N` | Set a hard concurrency limit. If omitted, ordinary phases run 1 target agent at a time and per-finding Phase 4 confirmation runs up to 4 Reproducer agents at a time |
 | `--max-turns=N` | Set Copilot's autopilot continuation limit; accepted but ignored by Claude Code and Codex |
 | `--enable-reviews` | Enable inter-phase reviews |
 | `--legacy-confirm` | Use one confirmation agent instead of per-finding agents |

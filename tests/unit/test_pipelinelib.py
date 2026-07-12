@@ -527,6 +527,18 @@ class TestParsing(TmpCwd):
         self.assertEqual(p.effort, "high")
         self.assertEqual(p.targets, ["t|g|l|r"])
 
+    def test_max_parallel_omitted_preserves_phase_defaults(self) -> None:
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["t|g|l|r"]))
+        self.assertIsNone(p.max_parallel)
+        self.assertFalse(any(a.startswith("--max-parallel=") for a in p._phase_args(["t"])))
+
+    def test_explicit_max_parallel_one_is_forwarded(self) -> None:
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--max-parallel=1", "t|g|l|r"]))
+        self.assertEqual(p.max_parallel, "1")
+        self.assertIn("--max-parallel=1", p._phase_args(["t"]))
+
     def test_model_effort_absent_and_explicit_empty_are_distinct(self) -> None:
         absent = pl.Pipeline()
         self.assertIsNone(absent.parse_args(["t"]))

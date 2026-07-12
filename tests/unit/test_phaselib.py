@@ -304,16 +304,36 @@ class TestDryRunCommand(PhaseCase):
         # (confirmlib), NOT the single-agent adapter launch.
         rc, out = self.dry_run(BY_KEY["bug_confirmation"])
         self.assertEqual(rc, 0, out)
+        self.assertIn("Max parallel: 4", out)
         self.assertIn("Parallel confirmation", out)
-        self.assertIn("max_parallel=4", out)  # real concurrency default, not the target-concurrency 1
+        self.assertIn("max_parallel=4", out)
         self.assertNotIn("--background", out)  # not the single-agent _launch command
+
+    def test_bug_confirmation_explicit_one_is_a_hard_limit(self) -> None:
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--max-parallel=1"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Max parallel: 1", out)
+        self.assertIn("Parallel confirmation", out)
+        self.assertIn("max_parallel=1", out)
+
+    def test_bug_confirmation_legacy_default_stays_one(self) -> None:
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--legacy-confirm"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Max parallel: 1", out)
+        self.assertNotIn("Parallel confirmation", out)
 
     def test_bug_confirmation_recheck_stays_single_agent(self) -> None:
         # --recheck always uses the single-agent path, even without --legacy-confirm.
         rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--recheck"])
         self.assertEqual(rc, 0, out)
+        self.assertIn("Max parallel: 1", out)
         self.assertIn("[DRY RUN]", out)  # single-agent adapter launch
         self.assertNotIn("Parallel confirmation", out)
+
+    def test_ordinary_phase_default_max_parallel_stays_one(self) -> None:
+        rc, out = self.dry_run(BY_KEY["code_analysis"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Max parallel: 1", out)
 
     def test_max_turns_forwarded_verbatim(self) -> None:
         rc, out = self.dry_run(BY_KEY["code_analysis"], extra=["--max-turns=7"])

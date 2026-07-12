@@ -226,6 +226,10 @@ class Phase:
         --max-repair-rounds). `extra` is exposed to hooks as `ws.opts`."""
         return False
 
+    def default_max_parallel(self, extra: dict[str, str | bool]) -> int:
+        """Concurrent-agent default when ``--max-parallel`` is omitted."""
+        return 1
+
     def target_name(self, target: str) -> str:
         """Extract the display/work name from a target string. Downstream phases
         get name-only targets, so the whole (trimmed) string is the name;
@@ -378,7 +382,7 @@ class Phase:
 
     # ── shared driver ──
     def run(self, argv: list[str]) -> int:
-        max_parallel = 1
+        max_parallel: int | None = None
         max_turns = "0"
         dry_run = False
         check_only = False
@@ -437,6 +441,9 @@ class Phase:
                 return 1
             else:
                 targets.append(arg)
+
+        if max_parallel is None:
+            max_parallel = self.default_max_parallel(extra)
 
         if not targets:
             targets = [_logical_cwd().name]  # bash `basename "$PWD"` (logical under symlinks)
@@ -1489,7 +1496,8 @@ Options:
   --legacy-confirm    Single-agent confirmation (one agent, all findings) instead of parallel
   --recheck           Re-check mode: settle RECHECK repair requests (confirmation back-edge; single-agent)
   --max-repair-rounds=N  Per-request repair cap honored in --recheck (default: 0 = unlimited)
-  --max-parallel=N    Concurrent findings in parallel mode / concurrent agents in --legacy-confirm (default: 1)
+  --max-parallel=N    Hard limit for concurrent findings in parallel mode, or concurrent target agents in
+                      --legacy-confirm/--recheck (defaults: 4 in parallel mode, 1 otherwise)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
@@ -1518,6 +1526,9 @@ Prerequisites:
             return True
         return False
 
+    def default_max_parallel(self, extra: dict[str, str | bool]) -> int:
+        return 1 if extra.get("legacy") or extra.get("recheck") else 4
+
     def run_alternate(
         self,
         ws: Workspace,
@@ -1538,12 +1549,6 @@ Prerequisites:
         # would be circular.
         from specula.confirmlib import ConfirmConfig, run_parallel_confirmation
 
-        # `max_parallel` here is the per-finding concurrency. The pipeline default
-        # is 1 — it means "concurrent targets" for the other phases, but that is
-        # degenerate for per-finding fan-out (findings would run one at a time, so
-        # "parallel" would not actually be parallel). Use a real concurrency
-        # default; an explicit --max-parallel=N>1 still wins.
-        findings_parallel = max_parallel if max_parallel > 1 else 4
         rc = 0
         for name in names:
             if not dry_run:
@@ -1553,7 +1558,7 @@ Prerequisites:
                 ws=ws,
                 adapter=adapter,
                 repo_dir=ws.find_repo_dir(name),
-                max_parallel=findings_parallel,
+                max_parallel=max_parallel,
                 claude_alias=claude_alias,
                 model=self._model,
                 effort=self._effort,

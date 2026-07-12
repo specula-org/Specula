@@ -16,6 +16,7 @@ import shutil
 import tempfile
 import unittest
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -158,6 +159,24 @@ class TestDriver(ConfirmCase):
         self.assertEqual(rc, 0)
         cb = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
         self.assertTrue(cb.is_file() and cb.stat().st_size > 0)
+
+    def test_configured_max_parallel_reaches_executor(self) -> None:
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        real_executor = ThreadPoolExecutor
+        worker_counts: list[int] = []
+
+        def executor(*args: Any, **kwargs: Any) -> ThreadPoolExecutor:
+            worker_counts.append(kwargs["max_workers"])
+            return real_executor(*args, **kwargs)
+
+        with (
+            mock.patch.object(C, "ThreadPoolExecutor", side_effect=executor),
+            mock.patch.object(C, "run_agent_blocking", _fake_turn("VERDICT: FALSE POSITIVE")),
+        ):
+            rc = C.run_parallel_confirmation(self.cfg(ws, "T", max_parallel=1))
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(worker_counts, [1])
 
     def test_rate_limit_withholds_deliverable(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
