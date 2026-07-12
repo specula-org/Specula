@@ -99,7 +99,7 @@ load_copilot_help() {
 #
 # Note: --background is handled by the caller (launch scripts use & directly).
 # The adapter always runs the command in the foreground and redirects to log.
-# Copilot CLI reads skills from .github/skills/ in the repo root.
+# Copilot CLI reads skills from project .github/skills/ or global ~/.agents/skills/.
 
 CMD=(copilot -p "$PROMPT" --allow-all)
 

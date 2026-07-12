@@ -48,7 +48,7 @@ bash scripts/infra/setup.sh
 <summary>Alternative: Manual Agent Setup</summary>
 You will need to set up the Specula Agent Skills and MCP with your coding agent.
 
-- To set up skills, symlink [the Specula `skills` folder](https://github.com/specula-org/Specula/tree/main/skills) to the appropriate folder read by your coding agent. For Claude, this is `~/.claude/skills` or `.claude/skills`. For Codex, this is `~/.codex/skills` or `.agents/skills`. For Copilot CLI, this is `.github/skills`.
+- To set up skills manually, link each directory under [the Specula `skills` folder](https://github.com/specula-org/Specula/tree/main/skills) into the appropriate skills directory, using the `name` in its `SKILL.md` as the destination name. Do not replace the skills directory or its existing third-party skills. For Claude, use `~/.claude/skills` or `.claude/skills`. For Codex, use `~/.agents/skills` or `.agents/skills`. For Copilot CLI, use `~/.agents/skills` or `.github/skills`. Project-local locations apply only when the agent starts in that repository; choose global installation for scripted runs launched elsewhere. For a non-default Claude profile, set `CLAUDE_ALIAS=NAME` while running setup so skills and MCP configuration use `~/.NAME`.
 - To set up the MCP, add the `trace_debugger`, `spec_analyzer`, and `inv_checking_tool` MCPs [here](https://github.com/specula-org/Specula/tree/main/tools/) to your agent config. Be sure to build the CFA tool [here](./tools/cfa) with Maven before adding the `spec_analyzer`.
 
 ```bash

@@ -1,5 +1,5 @@
 ---
-name: tla-verification-workflow
+name: validation-workflow
 description: "TLA+ Verification workflow (orchestration). Use when: running the full verification loop — iterating between trace validation and model checking until both pass, ensuring spec faithfully models the system."
 ---
 
