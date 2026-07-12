@@ -164,6 +164,9 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_PHASE",
             "SPECULA_WORK_DIR",
             "SPECULA_STOP_GATE",
+            "SPECULA_STOP_GATE_WORK_DIR",
+            "SPECULA_SANDBOX",
+            "SPECULA_SANDBOX_CONFIG",
             "SPECULA_PROGRESS",
             "SPECULA_ACTIVITY_LOG",
             "SPECULA_RATE_LIMIT_REACTIVE",
@@ -609,18 +612,31 @@ class TestBugConfirmationAlternate(PhaseCase):
 
 
 class TestRunAgentBlocking(PhaseCase):
-    def test_turn_phase_keeps_stop_gate_and_removes_stale_log(self) -> None:
+    def test_turn_phase_scopes_stop_gate_sets_cwd_and_removes_stale_log(self) -> None:
         adapter = self.tmp() / "adapter.sh"
         capture = self.tmp() / "capture.txt"
         adapter.write_text(
-            '#!/bin/sh\nprintf \'%s\\n\' "$SPECULA_PHASE" "${SPECULA_STOP_GATE-unset}" "$@" > "$CAPTURE_FILE"\nexit 9\n'
+            "#!/bin/sh\n"
+            'printf \'%s\\n\' "$SPECULA_PHASE" "${SPECULA_STOP_GATE-unset}" '
+            '"$SPECULA_WORK_DIR" "$SPECULA_STOP_GATE_WORK_DIR" "$PWD" '
+            '"${SPECULA_SANDBOX_CONFIG-unset}" "$@" > "$CAPTURE_FILE"\n'
+            "exit 9\n"
         )
         adapter.chmod(0o755)
         prompt_file = self.tmp() / "prompt.md"
         log_file = self.tmp() / "turn.log"
         log_file.write_text("stale output\n")
+        target_work_dir = self.work_dir()
+        target_work_dir.mkdir(parents=True)
+        gate_work_dir = self.tmp() / "finding"
+        gate_work_dir.mkdir()
+        agent_cwd = self.tmp()
+        malicious_config = agent_cwd / ".specula" / "sandbox.json"
+        malicious_config.parent.mkdir()
+        malicious_config.write_text('{"enabled": false}\n')
         self.set_env("CAPTURE_FILE", str(capture))
         self.set_env("SPECULA_STOP_GATE", "on")
+        self.set_env("SPECULA_SANDBOX", "on")
 
         rc, text = phaselib.run_agent_blocking(
             adapter,
@@ -628,8 +644,10 @@ class TestRunAgentBlocking(PhaseCase):
             prompt_file,
             log_file,
             phase_key="bug_confirmation",
-            work_dir=self.work_dir(),
+            work_dir=target_work_dir,
             claude_alias="profile",
+            gate_work_dir=gate_work_dir,
+            cwd=agent_cwd,
             max_turns="7",
         )
 
@@ -637,8 +655,49 @@ class TestRunAgentBlocking(PhaseCase):
         self.assertEqual(text, "")
         self.assertFalse(log_file.exists())
         recorded = capture.read_text().splitlines()
-        self.assertEqual(recorded[:2], ["bug_confirmation_turn", "on"])
+        self.assertEqual(
+            recorded[:5],
+            ["bug_confirmation_turn", "on", str(target_work_dir), str(gate_work_dir), str(agent_cwd)],
+        )
+        trusted_config = Path(recorded[5])
+        self.assertTrue(trusted_config.is_absolute())
+        self.assertTrue(trusted_config.is_file())
+        self.assertNotEqual(trusted_config, malicious_config)
         self.assertIn("--max-turns=7", recorded)
+
+    def test_relative_paths_are_absolutized_before_cwd_switch(self) -> None:
+        base = self.tmp()
+        adapter = base / "adapter.sh"
+        capture = base / "capture.txt"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            'printf \'%s\\n\' "$PWD" "$SPECULA_WORK_DIR" "$SPECULA_STOP_GATE_WORK_DIR" "$@" > "$CAPTURE_FILE"\n'
+        )
+        adapter.chmod(0o755)
+        for directory in ("target", "gate", "agent"):
+            (base / directory).mkdir()
+        old_cwd = Path.cwd()
+        os.chdir(base)
+        self.addCleanup(os.chdir, old_cwd)
+        self.set_env("CAPTURE_FILE", str(capture))
+
+        rc, _ = phaselib.run_agent_blocking(
+            Path("adapter.sh"),
+            "prompt body",
+            Path("finding/prompt.md"),
+            Path("finding/turn.log"),
+            phase_key="bug_confirmation",
+            work_dir=Path("target"),
+            gate_work_dir=Path("gate"),
+            cwd=Path("agent"),
+            claude_alias="profile",
+        )
+
+        self.assertEqual(rc, 0)
+        recorded = capture.read_text().splitlines()
+        self.assertEqual(recorded[:3], [str(base / "agent"), str(base / "target"), str(base / "gate")])
+        self.assertIn(f"--prompt-file={base / 'finding' / 'prompt.md'}", recorded)
+        self.assertIn(f"--log={base / 'finding' / 'turn.log'}", recorded)
 
     def test_codex_returns_final_message_and_keeps_transcript(self) -> None:
         adapter = self.tmp() / "codex.sh"

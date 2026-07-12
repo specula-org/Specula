@@ -29,13 +29,39 @@ class SandboxWrapTests(unittest.TestCase):
 
     def test_on_wraps_and_preserves_inner_flag(self) -> None:
         with mock.patch.dict(os.environ, {"SPECULA_SANDBOX": "on", "SPECULA_SANDBOX_BACKEND": "/x/backend.mjs"}):
+            os.environ.pop("SPECULA_SANDBOX_CONFIG", None)
             got = _maybe_wrap_sandbox(list(BASE), "/tmp/ws")
         self.assertEqual(got, ["node", "/x/backend.mjs", "--workspace", "/tmp/ws", "--", *BASE])
         self.assertIn("--dangerously-skip-permissions", got)  # inner YOLO preserved
 
+    def test_explicit_trusted_config_is_forwarded(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {
+                "SPECULA_SANDBOX": "on",
+                "SPECULA_SANDBOX_BACKEND": "/x/backend.mjs",
+                "SPECULA_SANDBOX_CONFIG": "/trusted/sandbox.json",
+            },
+        ):
+            got = _maybe_wrap_sandbox(list(BASE), "/tmp/ws")
+        self.assertEqual(
+            got,
+            [
+                "node",
+                "/x/backend.mjs",
+                "--workspace",
+                "/tmp/ws",
+                "--config",
+                "/trusted/sandbox.json",
+                "--",
+                *BASE,
+            ],
+        )
+
     def test_on_repo_relative_backend_resolves(self) -> None:
         with mock.patch.dict(os.environ, {"SPECULA_SANDBOX": "on"}, clear=False):
             os.environ.pop("SPECULA_SANDBOX_BACKEND", None)
+            os.environ.pop("SPECULA_SANDBOX_CONFIG", None)
             got = _maybe_wrap_sandbox(list(BASE), "/tmp/ws")
         backend = got[1]
         self.assertTrue(backend.endswith(os.path.join("scripts", "launch", "sandbox", "backend.mjs")))

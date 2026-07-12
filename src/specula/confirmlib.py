@@ -29,6 +29,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import threading
@@ -70,11 +71,11 @@ FINDING = {"ENV_LIMITED", "MASKED"}
 INCOMPLETE = "INCOMPLETE"
 VALID_SOURCES = {"model-checking", "code-review"}
 ID_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
-_CACHE_VERSION = 2
+_CACHE_VERSION = 3
 _CANDIDATE_CACHE = ".candidates-cache.json"
 
 _VERDICT_RE = re.compile(r"^\s*VERDICT:\s*(.+?)\s*$", re.MULTILINE)
-_rr_lock = threading.Lock()
+_rr_lock = threading.RLock()
 _print_lock = threading.Lock()
 _log_file: Path | None = None  # when set, _log also tees here (the phase's bug-confirmation.log)
 
@@ -181,14 +182,14 @@ class Outcome:
 
 
 def _context(cfg: ConfirmConfig, f: Finding, repo_for_agent: str) -> str:
-    wd = cfg.ws.work_dir(cfg.name)
+    wd = cfg.ws.work_dir(cfg.name).absolute()
     return render(
         "confirmation/context",
         finding_json=json.dumps(f.data, indent=2, ensure_ascii=False),
         repo=repo_for_agent,
         spec_dir=str(wd / "spec"),
         repro_dir=str(wd / "repro"),
-        fdir=str(f.fdir),
+        fdir=str(f.fdir.absolute()),
         finding_id=f.id,
         bug_confirmation_skill=prompt_skill_ids("bug-confirmation"),
     )
@@ -200,7 +201,7 @@ def prompt_reproduce(cfg: ConfirmConfig, f: Finding, repo: str) -> str:
             "confirmation/reproduce",
             finding_id=f.id,
             canon=" / ".join(CANON),
-            fdir=str(f.fdir),
+            fdir=str(f.fdir.absolute()),
             context=_context(cfg, f, repo),
         )
         + cfg.prompt_extra
@@ -227,6 +228,7 @@ def prompt_defend(cfg: ConfirmConfig, f: Finding, repo: str, debate: str) -> str
             finding_id=f.id,
             canon=" / ".join(CANON),
             debate=debate,
+            fdir=str(f.fdir.absolute()),
             context=_context(cfg, f, repo),
         )
         + cfg.prompt_extra
@@ -236,7 +238,15 @@ def prompt_defend(cfg: ConfirmConfig, f: Finding, repo: str, debate: str) -> str
 # ── one debate turn (blocking, via the shared phaselib primitive) ────────────
 
 
-def run_turn(cfg: ConfirmConfig, f: Finding, role: str, turn_no: int, prompt: str) -> tuple[str | None, str]:
+def run_turn(
+    cfg: ConfirmConfig,
+    f: Finding,
+    role: str,
+    turn_no: int,
+    prompt: str,
+    *,
+    cwd: str | Path | None = None,
+) -> tuple[str | None, str]:
     """Run one agent turn synchronously; return (verdict, response text).
 
     Raises :class:`RateLimited` on adapter exit 75 — the turn is never silently
@@ -253,7 +263,9 @@ def run_turn(cfg: ConfirmConfig, f: Finding, role: str, turn_no: int, prompt: st
         prompt_file,
         log,
         phase_key=PHASE_KEY,
-        work_dir=cfg.ws.work_dir(cfg.name),
+        work_dir=cfg.ws.work_dir(cfg.name).absolute(),
+        gate_work_dir=f.fdir.absolute(),
+        cwd=cwd,
         claude_alias=cfg.claude_alias,
         max_turns=cfg.max_turns,
         model=cfg.model,
@@ -268,6 +280,35 @@ def run_turn(cfg: ConfirmConfig, f: Finding, role: str, turn_no: int, prompt: st
     return parse_verdict(text), text
 
 
+def _fresh_turn_cwd(f: Finding, role: str, turn_no: int) -> Path:
+    """Create a trusted per-turn cwd outside the untrusted source checkout.
+
+    Agent prompts carry the absolute source-repo path. Keeping adapter startup
+    here prevents repository-owned Codex/Claude hooks or sandbox config from
+    executing before the agent can inspect them as data.
+    """
+    root = f.fdir.absolute() / ".agent-cwd"
+    if root.is_symlink() or (root.exists() and not root.is_dir()):
+        root.unlink()
+    root.mkdir(parents=True, exist_ok=True)
+    cwd = root / f"turn{turn_no:02d}_{role}"
+    if cwd.is_symlink():
+        cwd.unlink()
+    elif cwd.exists():
+        shutil.rmtree(cwd)
+    cwd.mkdir(parents=True)
+    try:
+        subprocess.run(
+            ["git", "init", "--quiet", str(cwd)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise ConfirmationFailed(f"{f.id}: could not create trusted per-turn cwd: {exc}") from exc
+    return cwd
+
+
 # ── per-finding git worktree (build isolation) ───────────────────────────────
 
 
@@ -276,7 +317,7 @@ def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]
     gets its own detached worktree so parallel builds and source patches do not
     collide. If isolation was requested, never fall back to the shared source
     checkout: a valid Level-3 reproduction may modify it."""
-    repo = cfg.repo_dir.rstrip("/")
+    repo = str(Path(cfg.repo_dir).absolute()) if cfg.repo_dir else ""
     if not cfg.worktree or cfg.dry_run or not repo:
         return repo, lambda: None
     try:
@@ -319,7 +360,7 @@ def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Cal
     )
     if patch.returncode != 0 or untracked.returncode != 0:
         raise ConfirmationFailed(f"{f.id}: could not snapshot local repository changes")
-    wt = f.fdir / "worktree"
+    wt = f.fdir.absolute() / "worktree"
     try:
         wt.parent.resolve().relative_to(cfg.ws.work_dir(cfg.name).resolve())
     except ValueError as exc:
@@ -437,10 +478,8 @@ def _validate_final_artifacts(cfg: ConfirmConfig, f: Finding, status: str) -> No
         repros = _repro_files(cfg, f)
         if not repros or any(p.stat().st_size == 0 for p in repros):
             raise InvalidAgentOutput(f"{f.id}: REPRODUCED requires a non-empty repro/test_bug{f.id}_* artifact")
-    # PENDING REPAIR: the agent's repair-request.body.md is taken best-effort.
-    # _merge_rr stamps the dispatcher-owned lifecycle and strips stray owned keys,
-    # so an imperfectly-formatted RR body never discards the verdict — the contract
-    # was never fully specified to the agent, so we do not punish it for shape.
+    if status == "PENDING REPAIR":
+        _read_repair_draft(cfg, f)
 
 
 def _validate_initial_output(cfg: ConfirmConfig, f: Finding, status: str | None, text: str) -> str:
@@ -485,7 +524,7 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
     if not f.id or set(f.id) - ID_CHARS or f.id in {".", ".."}:
         raise InvalidAgentOutput(f"unsafe finding id: {f.id!r}")
     f.fdir.mkdir(parents=True, exist_ok=True)
-    repro_dir = cfg.ws.work_dir(cfg.name) / "repro"
+    repro_dir = cfg.ws.work_dir(cfg.name).absolute() / "repro"
     repro_dir.mkdir(parents=True, exist_ok=True)
     # Fresh generations must create fresh artifacts. Completed findings in a
     # rate-limit retry are skipped by the fingerprinted verdict cache.
@@ -498,7 +537,14 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
     repo_for_agent, cleanup = setup_repo(cfg, f)
     try:
         # Turn 1 — Reproducer (neutral): investigate + reproduce.
-        a_verdict, a_text = run_turn(cfg, f, "A", 1, prompt_reproduce(cfg, f, repo_for_agent))
+        a_verdict, a_text = run_turn(
+            cfg,
+            f,
+            "A",
+            1,
+            prompt_reproduce(cfg, f, repo_for_agent),
+            cwd=_fresh_turn_cwd(f, "A", 1),
+        )
         debate.write_text(
             f"# Debate: {f.id}\n\nThis is an INDEX of the debate. Each entry links the turn's "
             f"full agent log — open the logs you need; they are not inlined here.\n"
@@ -519,7 +565,14 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
         turn = 1
         for rnd in range(1, cfg.rounds + 1):
             turn += 1
-            b_verdict, b_text = run_turn(cfg, f, "B", turn, prompt_challenge(cfg, f, repo_for_agent, str(debate)))
+            b_verdict, b_text = run_turn(
+                cfg,
+                f,
+                "B",
+                turn,
+                prompt_challenge(cfg, f, repo_for_agent, str(debate)),
+                cwd=_fresh_turn_cwd(f, "B", turn),
+            )
             debate.write_text(debate.read_text() + _debate_entry(f, "B", turn, f"B (round {rnd})", b_verdict))
             _validate_turn_output(f, b_verdict, b_text)
             assert b_verdict is not None
@@ -537,7 +590,14 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
                     _compose_evidence(initial_text, [*defenses, b_text]),
                 )
             turn += 1
-            a_verdict, a_text = run_turn(cfg, f, "A", turn, prompt_defend(cfg, f, repo_for_agent, str(debate)))
+            a_verdict, a_text = run_turn(
+                cfg,
+                f,
+                "A",
+                turn,
+                prompt_defend(cfg, f, repo_for_agent, str(debate)),
+                cwd=_fresh_turn_cwd(f, "A", turn),
+            )
             debate.write_text(debate.read_text() + _debate_entry(f, "A", turn, f"A (round {rnd})", a_verdict))
             _validate_turn_output(f, a_verdict, a_text)
             assert a_verdict is not None
@@ -751,19 +811,18 @@ def _verdict_fingerprint(cfg: ConfirmConfig, f: Finding) -> str:
 
 
 def _rr_field_text(text: str, key: str) -> list[str]:
+    lines = text.splitlines()
+    if lines and lines[0] == "---":
+        try:
+            end = lines.index("---", 1)
+        except ValueError:
+            return []
+        lines = lines[1:end]
+    else:
+        # Legacy requests without a fenced header retain the old bounded read.
+        lines = lines[:25]
     prefix = key + ":"
-    return [line[len(prefix) :].strip() for line in text.splitlines()[:25] if line.startswith(prefix)]
-
-
-def _replace_rr_field_text(text: str, key: str, value: str) -> str:
-    lines = text.splitlines(keepends=True)
-    prefix = key + ":"
-    for i, line in enumerate(lines[:25]):
-        if line.startswith(prefix):
-            newline = "\n" if line.endswith("\n") else ""
-            lines[i] = f"{key}: {value}{newline}"
-            return "".join(lines)
-    raise InvalidRepairRequest(f"repair request is missing {key}")
+    return [line[len(prefix) :].strip() for line in lines if line.startswith(prefix)]
 
 
 def _repair_request_cache_content(text: str, status: str) -> bytes:
@@ -798,13 +857,7 @@ def _artifact_identity(cfg: ConfirmConfig, o: Outcome) -> dict[str, Any]:
         }
     if o.status == "PENDING REPAIR":
         body_file = o.finding.fdir / "repair-request.body.md"
-        try:
-            body = body_file.read_bytes()
-        except FileNotFoundError:
-            # RR bodies are best-effort. Hash the same empty body allocate_rr will
-            # merge when the agent omitted the file, instead of losing the
-            # otherwise valid PENDING REPAIR verdict before allocation.
-            body = b""
+        body = body_file.read_bytes()
         result["repair_body"] = hashlib.sha256(body).hexdigest()
     if o.rr is not None:
         if not re.fullmatch(r"RR-\d+", str(o.rr)):
@@ -926,24 +979,242 @@ def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
         )
 
 
-# ── RR-NNN allocation (serial) — dispatcher stamps lifecycle, agent owns scope ─
+# ── RR-NNN allocation (serial) — dispatcher owns the shared queue/lifecycle ──
 
-# Lifecycle frontmatter fields the dispatcher owns and always overrides; every
-# other frontmatter line (target, counterexample, the whole scope: block) is the
-# agent's and passes through verbatim.
-_RR_OWNED = ("id:", "bug_id:", "status:", "round:", "finding_id:", "allocation_key:")
+# A per-finding agent writes only a semantic draft. The dispatcher is the sole
+# owner of shared RR ids, lifecycle fields, locations, and append-only History.
+_RR_LIFECYCLE_KEYS = {"id", "bug_id", "status", "round", "finding_id", "allocation_key"}
+_RR_SEMANTIC_KEYS = {"target", "counterexample", "scope"}
+_RR_SCOPE_KEYS = ("actions", "invariants", "hunt_cfgs", "fault_actions")
+_RR_TARGET_SCOPE = {
+    "SPEC_REPAIR": "actions",
+    "FAULT_MODEL": "fault_actions",
+    "INVARIANT": "invariants",
+}
+_RR_CITATION_RE = re.compile(
+    r"(?:[A-Za-z0-9_.@/+~-]+\.[A-Za-z0-9]+:\d+|https?://\S+|\b[0-9a-f]{7,40}\b|"
+    r"\b(?:issue|pr)\s*#\d+\b|\btests?/[A-Za-z0-9_.@/+~-]+|\btest_[A-Za-z0-9_]+\b)",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class RepairDraft:
+    raw: str
+    frontmatter: tuple[str, ...]
+    payload: str
+    target: str
+    counterexample: str
+    scope: dict[str, tuple[str, ...]]
+    trigger: str
+    evidence: str
+    proposed_change: str
 
 
 def _repair_frontmatter(body: str) -> tuple[list[str], str]:
-    """Split an agent RR body into (frontmatter lines, evidence rest). Best-effort:
-    a body without a well-formed `---` header is treated as all-evidence with no
-    frontmatter, not rejected — _merge_rr stamps the required lifecycle itself."""
-    if not body.startswith("---"):
-        return [], body
-    parts = body.split("---", 2)
-    if len(parts) != 3:
-        return [], body
-    return parts[1].splitlines(), parts[2]
+    """Split a strict semantic RR draft into frontmatter and Markdown payload."""
+    lines = body.splitlines()
+    if not lines or lines[0] != "---":
+        raise InvalidRepairRequest("repair draft must start with an exact --- frontmatter fence")
+    try:
+        end = lines.index("---", 1)
+    except ValueError as exc:
+        raise InvalidRepairRequest("repair draft is missing its closing --- frontmatter fence") from exc
+    if end == 1:
+        raise InvalidRepairRequest("repair draft frontmatter is empty")
+    return lines[1:end], "\n".join(lines[end + 1 :]).strip()
+
+
+def _scope_list(value: str, key: str) -> tuple[str, ...]:
+    value = value.strip()
+    if not (value.startswith("[") and value.endswith("]")):
+        raise InvalidRepairRequest(f"repair draft scope.{key} must be a flow-style list")
+    inner = value[1:-1].strip()
+    if not inner:
+        return ()
+    result: list[str] = []
+    for raw in inner.split(","):
+        item = raw.strip()
+        if len(item) >= 2 and item[0] == item[-1] and item[0] in {'"', "'"}:
+            item = item[1:-1].strip()
+        if not item or any(char in item for char in "[]\r\n"):
+            raise InvalidRepairRequest(f"repair draft scope.{key} contains an invalid item")
+        result.append(item)
+    return tuple(result)
+
+
+def _safe_rr_path(value: str, field: str) -> None:
+    path = Path(value)
+    if not value or value == "." or path.is_absolute() or ".." in path.parts or re.match(r"^[A-Za-z]:[\\/]", value):
+        raise InvalidRepairRequest(f"repair draft {field} must be a safe relative path")
+
+
+def _rr_resolved_path(cfg: ConfirmConfig, value: str) -> Path:
+    raw = Path(value)
+    work_dir = cfg.ws.work_dir(cfg.name)
+    base = work_dir if raw.parts and raw.parts[0] == "spec" else work_dir / "spec"
+    return (base / raw).resolve()
+
+
+def _parse_repair_draft(body: str, cfg: ConfirmConfig | None = None, f: Finding | None = None) -> RepairDraft:
+    fm_lines, payload = _repair_frontmatter(body)
+    top: dict[str, str] = {}
+    scope: dict[str, tuple[str, ...]] = {}
+    in_scope = False
+    for line in fm_lines:
+        if not line.strip():
+            continue
+        if line[0].isspace():
+            if not in_scope:
+                raise InvalidRepairRequest("repair draft has an indented field outside scope")
+            match = re.fullmatch(r"  ([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)", line)
+            if match is None:
+                raise InvalidRepairRequest("repair draft scope fields must use exactly two-space indentation")
+            key, value = match.groups()
+            if key not in _RR_SCOPE_KEYS:
+                raise InvalidRepairRequest(f"repair draft has unknown scope field {key}")
+            if key in scope:
+                raise InvalidRepairRequest(f"repair draft repeats scope.{key}")
+            scope[key] = _scope_list(value, key)
+            continue
+
+        match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)", line)
+        if match is None:
+            raise InvalidRepairRequest(f"repair draft has malformed frontmatter line: {line!r}")
+        key, value = match.groups()
+        in_scope = key == "scope"
+        if key in _RR_LIFECYCLE_KEYS:
+            raise InvalidRepairRequest(f"repair draft must not set dispatcher-owned field {key}")
+        if key not in _RR_SEMANTIC_KEYS:
+            raise InvalidRepairRequest(f"repair draft has unknown frontmatter field {key}")
+        if key in top:
+            raise InvalidRepairRequest(f"repair draft repeats {key}")
+        if key == "scope" and value.strip():
+            raise InvalidRepairRequest("repair draft scope must be a mapping")
+        top[key] = value.strip()
+
+    missing = sorted(_RR_SEMANTIC_KEYS - top.keys())
+    if missing:
+        raise InvalidRepairRequest(f"repair draft is missing {', '.join(missing)}")
+    missing_scope = sorted(set(_RR_SCOPE_KEYS) - scope.keys())
+    if missing_scope:
+        raise InvalidRepairRequest(f"repair draft is missing scope.{', scope.'.join(missing_scope)}")
+
+    target = top["target"]
+    if target not in _RR_TARGET_SCOPE:
+        raise InvalidRepairRequest(f"repair draft has invalid target {target!r}")
+    if not scope["hunt_cfgs"]:
+        raise InvalidRepairRequest("repair draft scope.hunt_cfgs must not be empty")
+    target_scope = _RR_TARGET_SCOPE[target]
+    if not scope[target_scope]:
+        raise InvalidRepairRequest(f"repair draft target {target} requires non-empty scope.{target_scope}")
+
+    counterexample = top["counterexample"].strip().strip("\"'")
+    _safe_rr_path(counterexample, "counterexample")
+    for hunt_cfg in scope["hunt_cfgs"]:
+        _safe_rr_path(hunt_cfg, "scope.hunt_cfgs")
+    if cfg is not None and f is not None:
+        expected_counterexample = f.data.get("counterexample")
+        if isinstance(expected_counterexample, str) and expected_counterexample.strip():
+            _safe_rr_path(expected_counterexample.strip(), "finding counterexample")
+            if _rr_resolved_path(cfg, counterexample) != _rr_resolved_path(cfg, expected_counterexample.strip()):
+                raise InvalidRepairRequest(
+                    f"repair draft counterexample does not match finding {f.id}: {counterexample!r}"
+                )
+
+    section_matches = list(re.finditer(r"(?m)^##\s+([^\n]+?)\s*$", payload))
+    sections: dict[str, str] = {}
+    allowed_sections = {"Trigger", "Evidence", "Proposed change"}
+    for index, match in enumerate(section_matches):
+        name = match.group(1)
+        if name == "History":
+            raise InvalidRepairRequest("repair draft must not contain dispatcher-owned History")
+        if name not in allowed_sections:
+            raise InvalidRepairRequest(f"repair draft has unknown section {name!r}")
+        if name in sections:
+            raise InvalidRepairRequest(f"repair draft repeats section {name}")
+        end = section_matches[index + 1].start() if index + 1 < len(section_matches) else len(payload)
+        sections[name] = payload[match.end() : end].strip()
+    for required in ("Trigger", "Evidence"):
+        if not sections.get(required):
+            raise InvalidRepairRequest(f"repair draft is missing non-empty ## {required}")
+    if not _RR_CITATION_RE.search(sections["Evidence"]):
+        raise InvalidRepairRequest("repair draft Evidence must contain a code, issue, commit, or test citation")
+    return RepairDraft(
+        body,
+        tuple(fm_lines),
+        payload,
+        target,
+        counterexample,
+        scope,
+        sections["Trigger"],
+        sections["Evidence"],
+        sections.get("Proposed change", ""),
+    )
+
+
+def _repair_allocation_key(cfg: ConfirmConfig, finding_id: str, draft: RepairDraft) -> str:
+    """Stable identity of the executable repair, excluding advisory formatting."""
+
+    def prose(value: str) -> str:
+        return re.sub(r"\s+", " ", value).strip()
+
+    scope: dict[str, list[str]] = {}
+    for key, values in draft.scope.items():
+        normalized = (
+            [str(_rr_resolved_path(cfg, value)) for value in values]
+            if key == "hunt_cfgs"
+            else [prose(value) for value in values]
+        )
+        scope[key] = sorted(normalized)
+    return _digest(
+        {
+            "finding_id": finding_id,
+            "target": draft.target,
+            "counterexample": str(_rr_resolved_path(cfg, draft.counterexample)),
+            "scope": scope,
+            "trigger": prose(draft.trigger),
+            "evidence": prose(draft.evidence),
+        }
+    )
+
+
+def _repair_draft_from_request(text: str) -> RepairDraft:
+    """Recover semantic content from a published RR, ignoring lifecycle/history.
+
+    This lets workspaces written by the earlier allocation-key algorithm retain
+    an unchanged DEFERRED request after upgrading: actual target/scope/evidence,
+    rather than the historical key formula, decides semantic equality.
+    """
+    frontmatter, payload = _repair_frontmatter(text)
+    semantic_frontmatter: list[str] = []
+    for line in frontmatter:
+        match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)", line)
+        if match is not None and match.group(1) in _RR_LIFECYCLE_KEYS:
+            continue
+        semantic_frontmatter.append(line)
+    history = re.search(r"(?m)^##\s+History\s*$", payload)
+    if history is not None:
+        payload = payload[: history.start()].rstrip()
+    frontmatter_text = "\n".join(semantic_frontmatter)
+    semantic = f"---\n{frontmatter_text}\n---\n\n{payload}\n"
+    return _parse_repair_draft(semantic)
+
+
+def _read_repair_draft(cfg: ConfirmConfig, f: Finding) -> RepairDraft:
+    path = f.fdir / "repair-request.body.md"
+    if path.is_symlink() or not path.is_file():
+        raise InvalidRepairRequest(f"{f.id}: PENDING REPAIR requires repair-request.body.md")
+    try:
+        body = path.read_text()
+    except (OSError, UnicodeError) as exc:
+        raise InvalidRepairRequest(f"{f.id}: cannot read repair-request.body.md: {exc}") from exc
+    if not body.strip():
+        raise InvalidRepairRequest(f"{f.id}: repair-request.body.md is empty")
+    try:
+        return _parse_repair_draft(body, cfg, f)
+    except InvalidRepairRequest as exc:
+        raise InvalidRepairRequest(f"{f.id}: {exc}") from exc
 
 
 def _merge_rr(
@@ -954,109 +1225,176 @@ def _merge_rr(
     *,
     raw_finding_id: str = "",
     allocation_key: str = "",
+    status: str = "OPEN",
+    round_: int = 0,
+    history: list[str] | None = None,
 ) -> str:
-    """Stamp dispatcher-owned lifecycle fields onto the agent-authored RR body.
-
-    Best-effort: the agent's target/counterexample/scope pass through untouched,
-    stray dispatcher-owned keys are stripped (below), and a body with no/partial
-    frontmatter still yields a well-formed request (the lifecycle header is always
-    added). RR-body shape is never a reason to discard the PENDING REPAIR verdict.
-    ``cx_fallback`` is kept in the signature for API compatibility, unused."""
+    """Render a validated semantic draft with dispatcher-owned lifecycle."""
     del cx_fallback
-    lifecycle = f"id: {rid}\nbug_id: {finding_id}\nstatus: OPEN\nround: 0\n"
+    draft = _parse_repair_draft(body)
+    lifecycle = f"id: {rid}\nbug_id: {finding_id}\nstatus: {status}\nround: {round_}\n"
     if raw_finding_id:
         lifecycle += f"finding_id: {raw_finding_id}\n"
     if allocation_key:
         lifecycle += f"allocation_key: {allocation_key}\n"
-    fm_lines, rest = _repair_frontmatter(body)
-    # top-level (unindented) frontmatter lines only; the indented scope children
-    # keep their leading whitespace so they are never mistaken for owned fields.
-    kept = [ln for ln in fm_lines if not (ln == ln.lstrip() and ln.startswith(_RR_OWNED))]
-    kept_fm = "\n".join(kept).strip("\n")
-    # Normalize the fence/prose boundary. In particular a prose-only body must
-    # become ``---\nprose``, not the invalid ``---prose`` produced previously.
-    rest = rest.lstrip("\r\n")
-    return f"---\n{lifecycle}{kept_fm}\n---\n{rest}"
+    entries = list(history or [f"- r{round_} (phase4-confirm): created from {raw_finding_id or finding_id}"])
+    semantic_frontmatter = "\n".join(draft.frontmatter)
+    history_text = "\n".join(entries)
+    return f"---\n{lifecycle}{semantic_frontmatter}\n---\n\n{draft.payload.rstrip()}\n\n## History\n{history_text}\n"
+
+
+def _rr_history(text: str, round_: int) -> list[str]:
+    match = re.search(r"(?m)^##\s+History\s*$", text)
+    if match is None:
+        return [f"- r{round_} (phase4-confirm): imported legacy request without dispatcher History"]
+    history = text[match.end() :].strip()
+    return history.splitlines() if history else []
+
+
+def _atomic_replace_rr(path: Path, text: str) -> None:
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(4)}.tmp")
+    try:
+        with tmp.open("x") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _atomic_create_rr(path: Path, text: str) -> None:
+    """Publish one complete RR without ever exposing a partial final path."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(4)}.tmp")
+    try:
+        with tmp.open("x") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.link(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
     """Serially assign the next RR-NNN and file the agent-authored request."""
-    body_file = o.finding.fdir / "repair-request.body.md"
-    body = body_file.read_text() if body_file.is_file() else ""
+    draft = _read_repair_draft(cfg, o.finding)
+    body = draft.raw
     rr_dir = cfg.ws.work_dir(cfg.name) / "spec" / "repair-requests"
     with _rr_lock:
         rr_dir.mkdir(parents=True, exist_ok=True)
-        allocation_key = _digest(
-            {
-                "verdict": _verdict_fingerprint(cfg, o.finding),
-                "repair_body": hashlib.sha256(body.encode()).hexdigest(),
-                "cache_version": _CACHE_VERSION,
-            }
-        )
-        existing: list[tuple[str, Path, str]] = []
+        # Confirmation generation, repo identity, adapter, and prompts decide
+        # whether Phase 4 must run again; they do not by themselves describe a
+        # different repair. Terminal DEFERRED requests reopen only when this
+        # finding's semantic handoff (target/scope/trigger/evidence) changes.
+        allocation_key = _repair_allocation_key(cfg, o.finding.id, draft)
+        records: list[tuple[str, Path, str, str, str]] = []
         for path in rr_dir.rglob("RR-*.md"):
             text = path.read_text(errors="replace")
             keys = _rr_field_text(text, "allocation_key")
             statuses = _rr_field_text(text, "status")
             ids = _rr_field_text(text, "id")
             finding_ids = _rr_field_text(text, "finding_id")
-            same_finding = finding_ids == [o.finding.id]
-            same_allocation = keys == [allocation_key]
+            same_finding = o.finding.id in finding_ids
+            same_allocation = allocation_key in keys
             if not same_finding and not same_allocation:
                 continue
             if same_allocation and not same_finding:
                 raise InvalidRepairRequest(f"existing allocation key has wrong finding_id for {o.finding.id}")
+            if path.is_symlink():
+                raise InvalidRepairRequest(f"existing allocation for {o.finding.id} must not be a symlink")
+            if finding_ids != [o.finding.id]:
+                raise InvalidRepairRequest(f"existing allocation for {o.finding.id} has invalid finding_id")
+            if len(keys) != 1:
+                raise InvalidRepairRequest(f"existing allocation for {o.finding.id} has invalid allocation_key")
             status = statuses[0] if len(statuses) == 1 else ""
-            if status in {"OPEN", "IN_REPAIR", "DEFERRED"}:
-                if len(ids) != 1 or path.name != f"{ids[0]}.md":
-                    raise InvalidRepairRequest(f"existing allocation for {o.finding.id} has inconsistent id")
-                expected_parent = rr_dir / "deferred" if status == "DEFERRED" else rr_dir
-                if path.parent != expected_parent:
-                    raise InvalidRepairRequest(
-                        f"existing allocation for {o.finding.id} has invalid location for status {status}"
-                    )
-                existing.append((ids[0], path, text))
-            elif same_finding and status != "CONSUMED":
+            if status not in {"OPEN", "IN_REPAIR", "DEFERRED", "CONSUMED"}:
                 raise InvalidRepairRequest(
-                    f"existing repair request for {o.finding.id} has invalid reusable status {status or '<missing>'}"
+                    f"existing repair request for {o.finding.id} has invalid status {status or '<missing>'}"
                 )
-        if len(existing) > 1:
-            raise InvalidRepairRequest(f"multiple non-consumed repair requests already exist for {o.finding.id}")
-        if existing:
-            rid, path, text = existing[0]
-            expected_bug_id = f"Bug {o.bug_no}"
-            if o.bug_no > 0 and _rr_field_text(text, "bug_id") != [expected_bug_id]:
-                updated = _replace_rr_field_text(text, "bug_id", expected_bug_id)
-                tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-                try:
-                    tmp.write_text(updated)
-                    os.replace(tmp, path)
-                finally:
-                    tmp.unlink(missing_ok=True)
+            if len(ids) != 1 or path.name != f"{ids[0]}.md":
+                raise InvalidRepairRequest(f"existing allocation for {o.finding.id} has inconsistent id")
+            expected_parent = rr_dir / "deferred" if status == "DEFERRED" else rr_dir
+            if path.parent != expected_parent:
+                raise InvalidRepairRequest(
+                    f"existing allocation for {o.finding.id} has invalid location for status {status}"
+                )
+            rounds = _rr_field_text(text, "round")
+            if len(rounds) != 1 or not rounds[0].isdigit():
+                raise InvalidRepairRequest(f"existing allocation for {o.finding.id} has invalid round")
+            try:
+                existing_key = _repair_allocation_key(cfg, o.finding.id, _repair_draft_from_request(text))
+            except InvalidRepairRequest:
+                # A malformed body cannot prove semantic equality. OPEN will be
+                # refreshed from the valid draft; DEFERRED remains immutable and
+                # a new OPEN id is allocated.
+                existing_key = ""
+            records.append((ids[0], path, text, status, existing_key))
+
+        active = [record for record in records if record[3] in {"OPEN", "IN_REPAIR"}]
+        if len(active) > 1:
+            raise InvalidRepairRequest(f"multiple active repair requests already exist for {o.finding.id}")
+        if active:
+            rid, path, text, status, old_key = active[0]
+            if status == "IN_REPAIR":
+                raise InvalidRepairRequest(
+                    f"existing repair request {rid} for {o.finding.id} is IN_REPAIR and cannot be refreshed"
+                )
+            current_bug_ids = _rr_field_text(text, "bug_id")
+            if len(current_bug_ids) != 1:
+                raise InvalidRepairRequest(f"existing repair request {rid} has invalid bug_id")
+            expected_bug_id = f"Bug {o.bug_no}" if o.bug_no > 0 else current_bug_ids[0]
+            bug_changed = current_bug_ids != [expected_bug_id]
+            semantic_changed = old_key != allocation_key
+            if semantic_changed or bug_changed:
+                round_ = int(_rr_field_text(text, "round")[0])
+                history = _rr_history(text, round_)
+                if semantic_changed:
+                    history.append(f"- r{round_} (phase4-confirm): refreshed semantic payload for {o.finding.id}")
+                updated = _merge_rr(
+                    rid,
+                    expected_bug_id,
+                    str(o.finding.data.get("counterexample") or ""),
+                    body,
+                    raw_finding_id=o.finding.id,
+                    allocation_key=allocation_key,
+                    status="OPEN",
+                    round_=round_,
+                    history=history,
+                )
+                _atomic_replace_rr(path, updated)
             return rid
+
+        exact_deferred = [record for record in records if record[3] == "DEFERRED" and record[4] == allocation_key]
+        if len(exact_deferred) > 1:
+            raise InvalidRepairRequest(f"multiple deferred allocations match {o.finding.id}")
+        if exact_deferred:
+            return exact_deferred[0][0]
+
         nums = [int(m.group(1)) for p in rr_dir.rglob("RR-*.md") if (m := re.fullmatch(r"RR-(\d+)\.md", p.name))]
         next_num = max(nums, default=0) + 1
         cx = str(o.finding.data.get("counterexample") or "")
         # bug_id points at the confirmed-bugs.md heading (## Bug N:) used by the
         # report and ledger; finding_id separately preserves the stable raw id.
-        while True:
-            rid = f"RR-{next_num:03d}"
-            merged = _merge_rr(
-                rid,
-                f"Bug {o.bug_no}",
-                cx,
-                body,
-                raw_finding_id=o.finding.id,
-                allocation_key=allocation_key,
-            )
-            try:
-                # Final guard against an external writer racing the in-process
-                # lock. Never overwrite or renumber repair history.
-                with (rr_dir / f"{rid}.md").open("x") as fh:
-                    fh.write(merged)
-                break
-            except FileExistsError:
-                next_num += 1
+        rid = f"RR-{next_num:03d}"
+        merged = _merge_rr(
+            rid,
+            f"Bug {o.bug_no}",
+            cx,
+            body,
+            raw_finding_id=o.finding.id,
+            allocation_key=allocation_key,
+        )
+        try:
+            # Final guard against an external writer racing the in-process
+            # lock. The hard-link publish is atomic and non-overwriting, so
+            # readers never observe an empty/partial final RR.
+            _atomic_create_rr(rr_dir / f"{rid}.md", merged)
+        except FileExistsError:
+            # Another dispatcher won the cross-process publish race. Rescan its
+            # complete file before choosing/reusing an id; blindly incrementing
+            # could create two active requests for one finding.
+            return allocate_rr(cfg, o)
     return rid
 
 
@@ -1453,7 +1791,7 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
 
 
 def load_findings(cfg: ConfirmConfig) -> list[Finding]:
-    wd = cfg.ws.work_dir(cfg.name)
+    wd = cfg.ws.work_dir(cfg.name).absolute()
     spec_dir = wd / "spec"
     path = spec_dir / "candidates.json"
     if not path.is_file():

@@ -37,7 +37,7 @@ class GateCase(unittest.TestCase):
         self.addCleanup(self._td.cleanup)
         self.wd = Path(self._td.name).resolve()
         (self.wd / "spec").mkdir()
-        for var in ("SPECULA_STOP_GATE", "SPECULA_STOP_GATE_CAP"):
+        for var in ("SPECULA_STOP_GATE", "SPECULA_STOP_GATE_CAP", "SPECULA_STOP_GATE_WORK_DIR"):
             self._stash(var)
 
     def _stash(self, var: str) -> None:
@@ -271,10 +271,17 @@ class TestHookEntry(GateCase):
     """The claude/codex subcommands, driven exactly as the CLIs drive them:
     by file path, hook JSON on stdin, decision JSON on stdout."""
 
-    def run_hook(self, flavor: str, phase: str = "spec_validation") -> tuple[int, str]:
+    def run_hook(
+        self,
+        flavor: str,
+        phase: str = "spec_validation",
+        gate_work_dir: Path | None = None,
+    ) -> tuple[int, str]:
         env = os.environ.copy()
         env["SPECULA_PHASE"] = phase
         env["SPECULA_WORK_DIR"] = str(self.wd)
+        if gate_work_dir is not None:
+            env["SPECULA_STOP_GATE_WORK_DIR"] = str(gate_work_dir)
         r = subprocess.run(
             [sys.executable, str(GATE), flavor],
             input=json.dumps({"hook_event_name": "Stop", "stop_hook_active": False}),
@@ -308,6 +315,22 @@ class TestHookEntry(GateCase):
         self.assertEqual(sg._read_blocks(self.wd), 2)
         log = (self.wd / sg.STATE_DIRNAME / "gate.log").read_text()
         self.assertEqual(log.count("block"), 2)
+
+    def test_parallel_worker_scope_ignores_sibling_pid_and_isolates_fuse(self) -> None:
+        scope_a = self.wd / "confirmation" / "MC-1"
+        scope_b = self.wd / "confirmation" / "MC-2"
+        scope_a.mkdir(parents=True)
+        scope_b.mkdir(parents=True)
+        self.spawn_sleeper(scope_b / "worktree" / "job.out.pid")
+
+        rc_a, out_a = self.run_hook("claude", "bug_confirmation_turn", scope_a)
+        rc_b, out_b = self.run_hook("claude", "bug_confirmation_turn", scope_b)
+
+        self.assertEqual((rc_a, out_a), (0, ""))
+        self.assertEqual(rc_b, 0)
+        self.assertIn("job.out.pid", json.loads(out_b)["reason"])
+        self.assertEqual(sg._read_blocks(scope_a), 0)
+        self.assertEqual(sg._read_blocks(scope_b), 1)
 
     def test_unwritable_state_fails_open(self) -> None:
         os.chmod(self.wd, 0o500)

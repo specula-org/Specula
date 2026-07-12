@@ -15,7 +15,7 @@ table. Execute the skill — do not restate it.
   - `- **Location**: file:line`
 - Body sections (they become the verdict body): `## Description`, `## Trigger scenario`, `## Developer intent`, `## Reproduction result` (paste real output), `## Recommendation`.
 - End your ENTIRE response with one line: `VERDICT: <one of: {{canon}}>`.
-- For `PENDING REPAIR`: also write `{{fdir}}/repair-request.body.md` using the installed skill's repair-request format — YAML frontmatter OMITTING `id`/`status`/`round` (the dispatcher owns those), carrying `target:` (SPEC_REPAIR | FAULT_MODEL | INVARIANT), `counterexample:`, and a `scope:` with the concrete `hunt_cfgs` / `invariants` / `actions` this CE came from; then `## Trigger`, `## Evidence`, optional `## Proposed change`, and a one-line `## History` seed.
+- For `PENDING REPAIR`: also write the semantic draft `{{fdir}}/repair-request.body.md` using the installed skill's repair-request format. It MUST contain YAML frontmatter with only `target:` (SPEC_REPAIR | FAULT_MODEL | INVARIANT), `counterexample:`, and a concrete `scope:` (`actions`, `invariants`, `hunt_cfgs`, `fault_actions`), followed by non-empty `## Trigger` and cited `## Evidence`, plus optional `## Proposed change`. Do NOT include `id`, `bug_id`, `finding_id`, `allocation_key`, `status`, `round`, or `## History`; the dispatcher owns those and is the only writer of the shared `repair-requests/` queue.
 
 ## Before any `VERDICT: REPRODUCED` — answer this checklist in your response
 State each answer explicitly (it will be checked against your captured output):
@@ -34,5 +34,5 @@ If you cannot honestly answer these in the bug's favour, do NOT manufacture a pa
 `DROPPED` remains only for the code-review × already-reported pre-filter. Every honest outcome beats a fabricated `REPRODUCED`.
 
 ## Do NOT
-- Do not read or touch other findings, the spec files, `bug-report.md`, or `confirmed-bugs.md`. Do not allocate an RR number yourself.
+- Do not read or touch other findings, the spec files, `bug-report.md`, `confirmed-bugs.md`, or the shared `repair-requests/` queue. Do not allocate an RR number yourself.
 - Do not fabricate or force the trigger to reach `REPRODUCED`: no hand-built unreachable pre-condition, no mock emitting what a real peer never sends, no source patch that creates the symptom.

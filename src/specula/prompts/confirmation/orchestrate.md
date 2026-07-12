@@ -28,6 +28,14 @@ the reproduction result. Apply **only** the skill's single pre-filter (code-revi
 developer suspicion or a TODO does NOT count). Invent no other pre-filter — never
 skip a candidate as "defensive coding", "style", or "theoretical-only".
 
+For `PENDING REPAIR`, the per-finding step produces only a semantic draft under
+`{{spec_dir}}/../confirmation/<finding-id>/repair-request.body.md`; it never
+allocates an RR or writes the shared queue. In this legacy single-agent mode you
+also serve as the sole allocator, but only after the per-finding decisions are
+complete: validate each draft, scan active and deferred RR ids serially, stamp
+the dispatcher-owned lifecycle and History fields, and publish the final file.
+Never let an individual finding allocate while it is being investigated.
+
 ## Before any `REPRODUCED` — the reachability checklist (per finding)
 For every finding you are about to mark `REPRODUCED`, answer these explicitly in its entry (they are checked against the captured output):
 1. Did **Level 0 or Level 1 alone** trigger it — real public API / normal ops, timing help only? **yes / no**.

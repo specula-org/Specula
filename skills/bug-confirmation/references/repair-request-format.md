@@ -2,7 +2,8 @@
 
 A **repair request** carries a confirmation-loop back-edge. When reproduction concludes — *with a citation* — that a counterexample is a spec / fault-model / invariant **artifact** rather than a real triggerable bug, the finding is not dropped: it is handed back to Phase 3 (spec validation) for a scoped repair. Phase 3 fixes the spec and **re-runs model checking**; the fresh output is then re-confirmed by a normal pass of the confirmation skill — **there is no separate re-check pass**. This file defines the artifact and the small state machine that keeps the loop **bounded** and **idempotent**.
 
-- **Produced by**: Phase 2 reproduction — see `phases/02-reproduction.md`.
+- **Drafted by**: Phase 2 reproduction — see `phases/02-reproduction.md`.
+- **Validated and published by**: the invoking dispatcher / legacy outer orchestrator, which is the sole allocator and shared-queue writer.
 - **Consumed by**: Phase 3 spec validation in repair mode (`--repair`), which repairs the spec, re-runs MC, and marks the request `CONSUMED`.
 
 ## Location
@@ -17,9 +18,38 @@ A **repair request** carries a confirmation-loop back-edge. When reproduction co
 └── repair-ledger.md      # rollup index; maintained by the orchestrator (pipeline)
 ```
 
-One file per request. `id` is `RR-NNN`, zero-padded. To allocate a new id, scan active and `deferred/` `RR-*.md` files and take max + 1. Never reuse or renumber ids. The per-request frontmatter is always the source of truth; a `DEFERRED` request lives under `repair-requests/deferred/`. `repair-ledger.md` is a derived rollup and is owned by the pipeline orchestrator, not by this skill.
+One file per request. `id` is `RR-NNN`, zero-padded. Only the dispatcher allocates it: scan active and `deferred/` `RR-*.md` files and take max + 1. Per-finding workers must not inspect or write this shared directory. Never reuse or renumber terminal ids. The per-request frontmatter is always the source of truth; a `DEFERRED` request lives under `repair-requests/deferred/`. `repair-ledger.md` is a derived rollup and is owned by the pipeline orchestrator, not by this skill.
 
-## File schema
+## Finding-local semantic draft
+
+For `PENDING REPAIR`, the per-finding worker writes the caller-supplied `repair-request.body.md`. It contains only the semantic fields `target`, `counterexample`, and `scope`, followed by non-empty `## Trigger` and cited `## Evidence` sections (and optional `## Proposed change`). All four scope lists (`actions`, `invariants`, `hunt_cfgs`, `fault_actions`) must be present; `hunt_cfgs` and the list corresponding to `target` must be non-empty.
+
+The draft MUST NOT contain `id`, `bug_id`, `finding_id`, `allocation_key`, `status`, `round`, or `## History`. Those fields, the final `RR-NNN.md` path, and `confirmed-bugs.md` are dispatcher-owned. A missing or malformed draft makes the finding `INCOMPLETE`; it must never create an empty OPEN request.
+
+Use this exact shape (no inline YAML comments):
+
+```markdown
+---
+target: SPEC_REPAIR
+counterexample: output/MC_hunt_log_div_20260531.out
+scope:
+  actions: [HandleAppendEntries]
+  invariants: [LogMatching]
+  hunt_cfgs: [MC_hunt_log_div.cfg]
+  fault_actions: []
+---
+
+## Trigger
+The counterexample requires a transition the implementation rejects.
+
+## Evidence
+The missing implementation guard is at src/node.py:42.
+
+## Proposed change
+Add the guard to the modeled action.
+```
+
+## Final file schema (dispatcher output)
 
 Markdown with a YAML frontmatter header (machine-routable by the orchestrator) and an evidence body (read by the repair agent).
 
@@ -64,7 +94,7 @@ Small. Terminal states: `CONSUMED` (Phase 3 completed the scoped repair) and `DE
 
 | Transition | Owner | When |
 |---|---|---|
-| (new) → `OPEN` | Phase 2 confirm | reproduction yields a **cited** artifact verdict |
+| (new) → `OPEN` | confirmation dispatcher | validates a finding-local draft after reproduction yields a **cited** artifact verdict |
 | `OPEN` → `IN_REPAIR` | Phase 3 repair | on entry, before editing the spec |
 | `IN_REPAIR` → `CONSUMED` | Phase 3 repair | after editing + **full trace re-validation** + re-running MC; appends History |
 | `OPEN` → `DEFERRED` | pipeline orchestrator | the global repair-loop round cap is reached; move the file under `repair-requests/deferred/` and update the linked report entry |
@@ -72,6 +102,8 @@ Small. Terminal states: `CONSUMED` (Phase 3 completed the scoped repair) and `DE
 Whether a `CONSUMED` repair actually **settled** the finding is answered by the next Phase 4 confirmation on the fresh bug-report: a repaired artifact simply no longer appears (resolved); a surviving or new violation is confirmed from scratch and may emit a fresh `OPEN` request. There is no re-check pass and no `RESOLVED` / `REOPENED` status. `DEFERRED` is legal only as the orchestrator-owned terminal state; an agent never emits it as a verdict or writes that transition.
 
 `IN_REPAIR` doubles as a crash marker: if the orchestrator finds a request still `IN_REPAIR` at the top of a loop iteration (its repair phase died mid-turn), it resets it to `OPEN`.
+
+If a new validated draft arrives for the same finding while its request is still `OPEN`, the dispatcher reuses that id and atomically refreshes the semantic payload while preserving `status`, `round`, and History. It never rewrites `IN_REPAIR`. `CONSUMED` and `DEFERRED` are immutable audit records: a later, different allocation receives a new `OPEN` id; an exact retry may only point back to the unchanged `DEFERRED` record.
 
 ### Termination — the orchestrator's job, not an agent's
 

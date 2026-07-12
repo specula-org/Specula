@@ -28,6 +28,12 @@ The debate index is the file `{{debate}}`. **Read it first** — it lists every 
   `ENV_LIMITED` / `FALSE POSITIVE` / `DROPPED` / `NEEDS MORE INFO`; an **MC** finding
   → `MASKED` / `ENV_LIMITED` / `PENDING REPAIR` / `NEEDS MORE INFO`, and **never
   `FALSE POSITIVE` or `DROPPED`**. Conceding beats a fabricated `REPRODUCED`.
+- If you move to `PENDING REPAIR`, write or replace the semantic draft
+  `{{fdir}}/repair-request.body.md` exactly as the installed skill specifies:
+  only `target` / `counterexample` / concrete `scope` frontmatter, then non-empty
+  `## Trigger` and cited `## Evidence` (optional `## Proposed change`). Do not
+  allocate an RR, write the shared queue, or include lifecycle fields / History;
+  the dispatcher does that only after the debate reaches its final verdict.
 - Anti-sycophancy: move your verdict only on a real reason — in either direction,
   not to reach agreement.
 - Keep an up-to-date `## Reproduction result` and `## Recommendation` (they may be

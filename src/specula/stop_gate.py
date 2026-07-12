@@ -26,15 +26,18 @@ hook simply never read these, and the gate fails open by construction):
 
   SPECULA_PHASE          phase key (phaselib Phase.key, e.g. "spec_validation")
   SPECULA_WORK_DIR       the target's .specula-output directory
+  SPECULA_STOP_GATE_WORK_DIR
+                         optional worker-local gate state/PID-scan directory;
+                         defaults to SPECULA_WORK_DIR
   SPECULA_STOP_GATE      set to "off" to disable the gate entirely
   SPECULA_STOP_GATE_CAP  blocks allowed per agent run before the fuse opens
                          (default 5; the fuse writes FAILED-HOOK-CAP and lets
                          the stop through so a confused agent can never loop
                          forever)
 
-Per-run state lives under $SPECULA_WORK_DIR/.stop-gate/ (block counter,
-FAILED-HOOK-CAP marker, gate.log audit trail); adapters reset the counter and
-marker when they launch a fresh agent.
+Per-run state lives under $SPECULA_STOP_GATE_WORK_DIR/.stop-gate/ (block
+counter, FAILED-HOOK-CAP marker, gate.log audit trail); adapters reset the
+counter and marker when they launch a fresh agent.
 
 Fail-open principle: any error in the gate itself — unreadable state, garbage
 input, missing directories — allows the stop. A broken gate must never wedge
@@ -324,7 +327,8 @@ def _hook_main(flavor: str) -> int:
     except Exception:
         payload = {}
     phase = os.environ.get("SPECULA_PHASE", "")
-    work_dir = Path(os.environ.get("SPECULA_WORK_DIR") or "/nonexistent")
+    target_work_dir = os.environ.get("SPECULA_WORK_DIR") or "/nonexistent"
+    work_dir = Path(os.environ.get("SPECULA_STOP_GATE_WORK_DIR") or target_work_dir)
 
     try:
         allow, reason = decide(phase, work_dir)

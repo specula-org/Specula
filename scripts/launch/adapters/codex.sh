@@ -229,7 +229,9 @@ run_codex() {
   if [[ "${SPECULA_SANDBOX:-}" == "on" ]]; then
     local backend
     backend="${SPECULA_SANDBOX_BACKEND:-$adapter_dir/../sandbox/backend.mjs}"
-    cmd+=(node "$backend" --workspace "${SPECULA_WORK_DIR:-$PWD}" --)
+    cmd+=(node "$backend" --workspace "${SPECULA_WORK_DIR:-$PWD}")
+    [[ -n "${SPECULA_SANDBOX_CONFIG:-}" ]] && cmd+=(--config "$SPECULA_SANDBOX_CONFIG")
+    cmd+=(--)
   fi
   # Feed the prompt via stdin (`-`), never as one argv element: Linux caps a
   # single argument at MAX_ARG_STRLEN, while confirmation/debate prompts can be
@@ -275,9 +277,10 @@ run_codex() {
 
 # ── Stop gate (execution layer) ──
 # Generic gate interface: the phase launcher exports SPECULA_PHASE +
-# SPECULA_WORK_DIR (see src/specula/stop_gate.py). Codex discovers hooks from
-# the project layer (<git toplevel of cwd>/.codex/hooks.json), so arm the gate
-# by writing a Stop hook there; per-run specifics travel via env, so the file
+# SPECULA_WORK_DIR (see src/specula/stop_gate.py). Parallel workers may narrow
+# gate state/PID scanning with SPECULA_STOP_GATE_WORK_DIR. Codex discovers
+# hooks from the project layer (<git toplevel of cwd>/.codex/hooks.json), so arm
+# the gate by writing a Stop hook there; per-run specifics travel via env, so the file
 # content is identical for every run. A hooks.json THIS run created is removed
 # again on exit (an EXIT trap), so foreign checkouts are not left polluted; a
 # pre-existing foreign hooks.json is never touched — the gate disarms with a
@@ -288,8 +291,10 @@ run_codex() {
 # The whole block is fail-open: under this script's `set -e`, any setup
 # failure (no python3, read-only fs) must disarm the gate with a warning,
 # never kill the adapter before codex even starts.
+GATE_WORK_DIR="${SPECULA_STOP_GATE_WORK_DIR:-${SPECULA_WORK_DIR:-}}"
 if [[ -n "${SPECULA_PHASE:-}" && -n "${SPECULA_WORK_DIR:-}" \
-      && "${SPECULA_STOP_GATE:-on}" != "off" && -d "${SPECULA_WORK_DIR:-}" ]]; then
+      && "${SPECULA_STOP_GATE:-on}" != "off" && -d "${SPECULA_WORK_DIR:-}" \
+      && -d "$GATE_WORK_DIR" ]]; then
   ADAPTER_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   GATE_PY="$ADAPTER_DIR/../../../src/specula/stop_gate.py"
   HOOKS_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -297,7 +302,7 @@ if [[ -n "${SPECULA_PHASE:-}" && -n "${SPECULA_WORK_DIR:-}" \
   HOOKS_PREEXISTED=false
   [[ -e "$HOOKS_FILE" ]] && HOOKS_PREEXISTED=true
   {
-    python3 "$GATE_PY" reset "$SPECULA_WORK_DIR" &&   # fresh fuse per agent run
+    python3 "$GATE_PY" reset "$GATE_WORK_DIR" &&   # fresh fuse per agent run
     if ! $HOOKS_PREEXISTED; then
       mkdir -p "$HOOKS_ROOT/.codex" &&
       printf '{\n  "hooks": {\n    "Stop": [\n      { "hooks": [ { "type": "command", "command": "python3 %s codex", "timeout": 60 } ] }\n    ]\n  }\n}\n' \

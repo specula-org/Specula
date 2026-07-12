@@ -37,14 +37,26 @@ RR_TEMPLATE = """\
 ---
 id: {rr_id}
 bug_id: {bug_id}
-target: base.tla
+target: SPEC_REPAIR
 status: {status}
 round: {round}
+counterexample: output/{rr_id}.out
+scope:
+  actions: [RepairAction]
+  invariants: []
+  hunt_cfgs: [MC_repair.cfg]
+  fault_actions: []
 ---
 
 # Repair Request {rr_id}
 
 body
+
+## Trigger
+The counterexample requires an impossible transition.
+
+## Evidence
+The real guard is enforced at src/base.tla:1.
 
 ## History
 - created
@@ -836,8 +848,8 @@ class TestLedger(RRDirCase):
         self.p.regenerate_ledger()
         text = (self.tmp / ".specula-output" / "spec" / "repair-ledger.md").read_text()
         self.assertIn("# Repair Ledger — footest", text)
-        self.assertIn("| RR-1 | DA-1 \\| pipes | base.tla | OPEN | 1 |", text)
-        self.assertIn("| RR-2 | DA-2 | base.tla | CONSUMED | 3 |", text)
+        self.assertIn("| RR-1 | DA-1 \\| pipes | SPEC_REPAIR | OPEN | 1 |", text)
+        self.assertIn("| RR-2 | DA-2 | SPEC_REPAIR | CONSUMED | 3 |", text)
 
     def test_no_requests_no_ledger(self) -> None:
         self.p.regenerate_ledger()
@@ -849,7 +861,7 @@ class TestLedger(RRDirCase):
         make_rr(deferred, "RR-1", "OPEN", bug_id="legacy", round_=2)
         self.p.regenerate_ledger()
         text = (self.tmp / ".specula-output" / "spec" / "repair-ledger.md").read_text()
-        self.assertIn("| RR-1 | legacy | base.tla | DEFERRED | 2 |", text)
+        self.assertIn("| RR-1 | legacy | SPEC_REPAIR | DEFERRED | 2 |", text)
 
     def test_empty_state_removes_stale_ledger(self) -> None:
         ledger = self.tmp / ".specula-output" / "spec" / "repair-ledger.md"
@@ -890,7 +902,8 @@ class TestRepairLoop(RRDirCase):
         """Stub the phase bodies + quota wait and return observed rounds."""
         rounds: list[int] = []
 
-        def repair(round_: int) -> None:
+        def repair(round_: int, names: list[str] | None = None) -> None:
+            self.assertEqual(names, ["footest"])
             rounds.append(round_)
             on_repair(round_)
 
@@ -918,20 +931,27 @@ class TestRepairLoop(RRDirCase):
         self.assertIn("repair loop is a no-op", out)
 
     def test_resolves_then_stops(self) -> None:
-        make_rr(self.rr_dir, "RR-1", "OPEN")
-        rounds, out = self.drive(self.resolve())
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+
+        def resolve_with_durable_snapshot(round_: int) -> None:
+            marker = self.p.repair_phase3_snapshot_path("footest")
+            self.assertTrue(marker.is_file())
+            self.assertIn('"RR-1.md"', marker.read_text())
+            pl.rr_set_status(request, "CONSUMED", "done")
+
+        rounds, out = self.drive(resolve_with_durable_snapshot)
         self.assertEqual(rounds, [1])
         self.assertIn("resolved all requests after 1 round", out)
+        self.assertFalse(self.p.repair_phase3_snapshot_path("footest").exists())
 
-    def test_no_progress_is_failure_and_keeps_request_open(self) -> None:
+    def test_success_without_consuming_is_failure_and_keeps_request_open(self) -> None:
         make_rr(self.rr_dir, "RR-1", "OPEN")
         rounds = self.configure(lambda r: None)
         out = io.StringIO()
-        with self.assertRaises(SystemExit) as ctx, contextlib.redirect_stdout(out):
+        with self.assertRaisesRegex(RuntimeError, "without consuming"), contextlib.redirect_stdout(out):
             self.p.run_repair_loop()
-        self.assertEqual(ctx.exception.code, 1)
         self.assertEqual(rounds, [1])
-        self.assertIn("made no progress in round 1", out.getvalue())
+        self.assertIn("only that target was reset OPEN", out.getvalue())
         self.assertEqual(pl.rr_status(self.rr_dir / "RR-1.md"), "OPEN")
         self.assertFalse((self.rr_dir / "deferred" / "RR-1.md").exists())
 
@@ -940,10 +960,57 @@ class TestRepairLoop(RRDirCase):
         self.drive(self.resolve())
         self.assertEqual(pl.rr_status(self.rr_dir / "RR-1.md"), "CONSUMED")
 
+    def test_restart_restores_truncated_in_repair_from_durable_snapshot(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        snapshot = self.p.snapshot_open_repair_requests("footest")
+        self.p.persist_open_repair_snapshot("footest", snapshot, 2)
+        request.write_text("---\nid: RR-1\nstatus: IN_REPAIR\n")
+
+        restarted = make_pipeline(["footest|g|l|r"])
+        _, out = quiet(restarted.prepare_repair_state)
+
+        restored = request.read_text()
+        self.assertEqual(pl.rr_status(request), "OPEN")
+        self.assertIn("target: SPEC_REPAIR", restored)
+        self.assertIn("## Evidence", restored)
+        self.assertIn("partial spec/output changes were retained", restored)
+        self.assertFalse(restarted.repair_phase3_snapshot_path("footest").exists())
+        self.assertIn("recovered durable Phase 3 snapshot", out)
+
+    def test_malformed_legacy_in_repair_without_snapshot_fails_closed(self) -> None:
+        request = self.rr_dir / "RR-1.md"
+        request.write_text("---\nid: RR-1\nstatus: IN_REPAIR\n---\n")
+        original = request.read_bytes()
+
+        with self.assertRaises(SystemExit) as ctx:
+            quiet(self.p.prepare_repair_state)
+
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertEqual(request.read_bytes(), original)
+        self.assertEqual(pl.rr_status(request), "IN_REPAIR")
+
+    def test_quota_failure_before_phase3_leaves_request_bytes_unchanged(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        original = request.read_bytes()
+        self.p.wait_for_quota = mock.Mock(side_effect=SystemExit(9))  # type: ignore[method-assign]
+        phase3 = mock.Mock()
+        self.p.run_phase3_repair = phase3  # type: ignore[method-assign]
+        out = io.StringIO()
+
+        with self.assertRaises(SystemExit) as ctx, contextlib.redirect_stdout(out):
+            self.p.run_repair_loop()
+
+        self.assertEqual(ctx.exception.code, 9)
+        self.assertEqual(request.read_bytes(), original)
+        phase3.assert_not_called()
+        self.assertIn("before Phase 3", out.getvalue())
+        self.assertIn("repair requests were left unchanged", out.getvalue())
+
     def test_phase_failure_is_not_exhaustion(self) -> None:
         request = make_rr(self.rr_dir, "RR-1", "OPEN")
 
-        def fail(round_: int) -> None:
+        def fail(round_: int, names: list[str] | None = None) -> None:
+            self.assertEqual(names, ["footest"])
             pl.rr_set_status(request, "IN_REPAIR", "started")
             raise SystemExit(7)
 
@@ -956,17 +1023,18 @@ class TestRepairLoop(RRDirCase):
         self.assertEqual(pl.rr_status(request), "OPEN")
         self.assertFalse((self.rr_dir / "deferred" / request.name).exists())
         self.assertFalse((self.rr_dir.parent / "confirmation-generation.json").exists())
-        self.assertIn("execution failed in round 1", out.getvalue())
+        self.assertIn("failed in round 1 for footest during Phase 3", out.getvalue())
         ledger = self.rr_dir.parent / "repair-ledger.md"
-        self.assertIn("| RR-1 | B-1 | base.tla | OPEN | 1 |", ledger.read_text())
+        self.assertIn("| RR-1 | B-1 | SPEC_REPAIR | OPEN | 1 |", ledger.read_text())
 
     def test_phase3_consumes_then_raises_restores_original_open_set(self) -> None:
         first = make_rr(self.rr_dir, "RR-1", "OPEN")
         second = make_rr(self.rr_dir, "RR-2", "OPEN", bug_id="B-2")
         already_done = make_rr(self.rr_dir, "RR-3", "CONSUMED", bug_id="B-3")
 
-        def fail_after_partial_commit(round_: int) -> None:
+        def fail_after_partial_commit(round_: int, names: list[str] | None = None) -> None:
             self.assertEqual(round_, 1)
+            self.assertEqual(names, ["footest"])
             pl.rr_set_status(first, "CONSUMED", "agent committed too early")
             pl.rr_set_status(second, "CONSUMED", "agent committed too early")
             raise RuntimeError("repair process failed after writes")
@@ -980,7 +1048,92 @@ class TestRepairLoop(RRDirCase):
         self.assertEqual(pl.rr_status(second), "OPEN")
         self.assertEqual(pl.rr_status(already_done), "CONSUMED")
         for request in (first, second):
-            self.assertIn("Phase 3 failed; restored OPEN for retry", request.read_text())
+            text = request.read_text()
+            self.assertIn("agent committed too early", text)
+            self.assertIn("partial spec/output changes were retained", text)
+
+    def test_phase3_truncation_restores_complete_snapshot_semantics(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+
+        def truncate_then_fail(round_: int, names: list[str] | None = None) -> None:
+            self.assertEqual((round_, names), (1, ["footest"]))
+            request.write_text("---\nid: RR-1\nstatus: CONSUMED\n")
+            raise RuntimeError("truncated request")
+
+        self.p.run_phase3_repair = truncate_then_fail  # type: ignore[method-assign]
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+
+        with self.assertRaisesRegex(RuntimeError, "truncated request"):
+            quiet(self.p.run_repair_loop)
+
+        restored = request.read_text()
+        self.assertEqual(pl.rr_status(request), "OPEN")
+        self.assertIn("target: SPEC_REPAIR", restored)
+        self.assertIn("# Repair Request RR-1", restored)
+        self.assertIn("## History\n- created", restored)
+        self.assertIn("partial spec/output changes were retained", restored)
+
+    def test_failure_in_later_target_keeps_earlier_target_consumed(self) -> None:
+        p = make_pipeline(["alpha|g|l|r", "beta|g|l|r"])
+        alpha_dir = self.tmp / "alpha" / ".specula-output" / "spec" / "repair-requests"
+        beta_dir = self.tmp / "beta" / ".specula-output" / "spec" / "repair-requests"
+        alpha_dir.mkdir(parents=True)
+        beta_dir.mkdir(parents=True)
+        alpha = make_rr(alpha_dir, "RR-1", "OPEN", bug_id="A-1")
+        beta = make_rr(beta_dir, "RR-1", "OPEN", bug_id="B-1")
+        calls: list[str] = []
+
+        def repair(round_: int, names: list[str] | None = None) -> None:
+            self.assertEqual(round_, 1)
+            assert names is not None
+            name = names[0]
+            calls.append(name)
+            request = alpha if name == "alpha" else beta
+            pl.rr_set_status(request, "CONSUMED", f"{name} wrote partial state")
+            if name == "beta":
+                raise RuntimeError("beta failed")
+
+        p.run_phase3_repair = repair  # type: ignore[method-assign]
+        p.run_phase4_confirmation = lambda: self.fail("Phase 4 must not run")  # type: ignore[method-assign]
+        p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+
+        with self.assertRaisesRegex(RuntimeError, "beta failed"):
+            quiet(p.run_repair_loop)
+
+        self.assertEqual(calls, ["alpha", "beta"])
+        self.assertEqual(pl.rr_status(alpha), "CONSUMED")
+        self.assertEqual(pl.rr_status(beta), "OPEN")
+        self.assertNotIn("partial spec/output changes were retained", alpha.read_text())
+        self.assertIn("beta wrote partial state", beta.read_text())
+        self.assertIn("partial spec/output changes were retained", beta.read_text())
+
+    def test_main_recovers_in_repair_before_initial_confirmation(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "IN_REPAIR")
+        events: list[str] = []
+
+        def repair(round_: int, names: list[str] | None = None) -> None:
+            self.assertEqual(round_, 1)
+            self.assertEqual(names, ["footest"])
+            events.append(f"repair:{pl.rr_status(request)}")
+            pl.rr_set_status(request, "CONSUMED", "retry completed")
+
+        self.p.skip_analysis = True
+        self.p.skip_specgen = True
+        self.p.skip_harness = True
+        self.p.skip_validation = True
+        self.p.skip_classification = True
+        self.p.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+        self.p.generate_summary = lambda: None  # type: ignore[method-assign]
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        self.p.run_phase3_repair = repair  # type: ignore[method-assign]
+        self.p.run_phase4_confirmation = lambda: events.append("confirm")  # type: ignore[method-assign]
+
+        rc, out = quiet(self.p.main)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(events, ["repair:OPEN", "confirm"])
+        self.assertIn("Resuming pending repair requests before the initial Phase 4 pass", out)
+        self.assertIn("Initial Phase 4 completed by the resumed repair loop", out)
 
     def test_phase4_failure_keeps_consumed_and_full_rerun_retries_phase4(self) -> None:
         request = make_rr(self.rr_dir, "RR-1", "OPEN")
@@ -1040,16 +1193,15 @@ class TestRepairLoop(RRDirCase):
         self.assertIn("DEFERRED (repair loop exhausted; RR-2 in deferred/)", report.read_text())
         ledger = self.rr_dir.parent / "repair-ledger.md"
         ledger_text = ledger.read_text()
-        self.assertIn("| RR-1 | B-1 | base.tla | CONSUMED | 1 |", ledger_text)
-        self.assertIn("| RR-2 | B-2 | base.tla | DEFERRED | 1 |", ledger_text)
+        self.assertIn("| RR-1 | B-1 | SPEC_REPAIR | CONSUMED | 1 |", ledger_text)
+        self.assertIn("| RR-2 | B-2 | SPEC_REPAIR | DEFERRED | 1 |", ledger_text)
 
     def test_no_progress_at_cap_still_fails_instead_of_deferring(self) -> None:
         request = make_rr(self.rr_dir, "RR-1", "OPEN")
         self.p.max_repair_rounds = "1"
         self.configure(lambda round_: None)
-        with self.assertRaises(SystemExit) as ctx:
+        with self.assertRaisesRegex(RuntimeError, "without consuming"):
             quiet(self.p.run_repair_loop)
-        self.assertEqual(ctx.exception.code, 1)
         self.assertTrue(request.exists())
         self.assertEqual(pl.rr_status(request), "OPEN")
         self.assertFalse((self.rr_dir / "deferred" / request.name).exists())
@@ -1178,7 +1330,39 @@ class TestDeferredMoves(RRDirCase):
         self.assertTrue(source.exists())
         self.assertEqual(existing.read_text(), old_text)
 
-    def test_source_unlink_failure_rolls_back_published_destination(self) -> None:
+    def test_startup_finishes_exact_publish_then_unlink_crash_copy(self) -> None:
+        source = make_rr(self.rr_dir, "RR-1", "OPEN")
+        destination = self.rr_dir / "deferred" / source.name
+        destination.parent.mkdir()
+        destination.write_text(
+            self.p._repair_request_text_with_status(
+                source.read_text(),
+                "DEFERRED",
+                "deferred (orchestrator): repair loop round cap reached",
+            )
+        )
+
+        _, out = quiet(self.p.run_repair_loop)
+
+        self.assertFalse(source.exists())
+        self.assertEqual(pl.rr_status(destination), "DEFERRED")
+        self.assertIn("completed interrupted defer move", out)
+        self.assertIn("repair loop is a no-op", out)
+
+    def test_startup_rejects_divergent_active_and_deferred_copy(self) -> None:
+        source = make_rr(self.rr_dir, "RR-1", "OPEN", bug_id="active")
+        deferred_dir = self.rr_dir / "deferred"
+        deferred_dir.mkdir()
+        destination = make_rr(deferred_dir, "RR-1", "DEFERRED", bug_id="different")
+
+        with self.assertRaises(SystemExit) as ctx:
+            quiet(self.p.run_repair_loop)
+
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertTrue(source.exists())
+        self.assertTrue(destination.exists())
+
+    def test_source_unlink_failure_is_completed_from_durable_intent(self) -> None:
         source = make_rr(self.rr_dir, "RR-1", "OPEN")
         original = source.read_text()
         destination = self.rr_dir / "deferred" / source.name
@@ -1196,8 +1380,42 @@ class TestDeferredMoves(RRDirCase):
             quiet(self.p.move_open_requests_to_deferred)
 
         self.assertEqual(source.read_text(), original)
-        self.assertFalse(destination.exists())
+        self.assertEqual(pl.rr_status(destination), "DEFERRED")
+        self.assertTrue(self.p.repair_defer_intent_path().is_file())
         self.assertEqual(list(destination.parent.glob(".*.tmp")), [])
+
+        quiet(self.p.reconcile_deferred_state)
+        self.assertFalse(source.exists())
+        self.assertEqual(pl.rr_status(destination), "DEFERRED")
+        self.assertFalse(self.p.repair_defer_intent_path().exists())
+
+    def test_startup_completes_every_request_in_partially_applied_cap_batch(self) -> None:
+        first = make_rr(self.rr_dir, "RR-1", "OPEN")
+        second = make_rr(self.rr_dir, "RR-2", "OPEN", bug_id="B-2")
+        real_publish = self.p._publish_deferred_no_replace
+
+        def fail_second_publish(path: Path, text: str) -> None:
+            if path.name == "RR-2.md":
+                raise OSError("injected second publish failure")
+            real_publish(path, text)
+
+        with (
+            mock.patch.object(self.p, "_publish_deferred_no_replace", side_effect=fail_second_publish),
+            self.assertRaisesRegex(OSError, "injected second publish failure"),
+        ):
+            quiet(self.p.move_open_requests_to_deferred)
+
+        self.assertFalse(first.exists())
+        self.assertTrue(second.exists())
+        self.assertEqual(pl.rr_status(self.rr_dir / "deferred" / "RR-1.md"), "DEFERRED")
+        self.assertTrue(self.p.repair_defer_intent_path().is_file())
+
+        quiet(self.p.reconcile_deferred_state)
+        self.assertFalse(first.exists())
+        self.assertFalse(second.exists())
+        self.assertEqual(pl.rr_status(self.rr_dir / "deferred" / "RR-1.md"), "DEFERRED")
+        self.assertEqual(pl.rr_status(self.rr_dir / "deferred" / "RR-2.md"), "DEFERRED")
+        self.assertFalse(self.p.repair_defer_intent_path().exists())
 
     def test_startup_reconciles_legacy_deferred_status_and_report(self) -> None:
         deferred_dir = self.rr_dir / "deferred"

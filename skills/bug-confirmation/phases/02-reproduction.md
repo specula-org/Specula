@@ -85,7 +85,7 @@ When reporting ENV_LIMITED:
 
 Reproduction failing is not always a statement about the bug — sometimes it is a statement about the **spec**. If the escalation ladder did not trigger the bug *because the counterexample requires something the implementation cannot actually do*, the finding is not dropped: it is handed back to Phase 3 for a scoped repair (`PENDING REPAIR`). Phase 3 repairs the spec and re-runs model checking; the fresh output is then confirmed normally by another pass of this skill — there is no separate re-check. This is the confirmation-loop back-edge.
 
-Emit a repair request (write `repair-requests/RR-NNN.md`, `status: OPEN`, per `references/repair-request-format.md`) **only when you can cite** which of these holds:
+Emit a semantic repair-request draft at the caller-supplied finding-local path (per `references/repair-request-format.md`) **only when you can cite** which of these holds. Never allocate `RR-NNN`, set lifecycle fields, edit `confirmed-bugs.md`, or write the shared `repair-requests/` queue while acting as a per-finding worker; the dispatcher validates and publishes the final request serially:
 
 - **SPEC_REPAIR** — a step the counterexample requires is impossible at the code level: the model under-models a guard or branch the implementation has. Cite the missing guard (`file:line`). This is the common case — an over-permissive action, or an overfit repair that survived convergence.
 - **FAULT_MODEL** — the counterexample depends on an injected fault that is not in the system's failure model, or a fault modeled with the wrong semantics. Cite the failure-model evidence.
@@ -95,7 +95,7 @@ If the path reaches the bad state but a **downstream mechanism masks the consequ
 
 **A citation is mandatory.** If you cannot cite the missing guard / inadmissible fault / unpromised property, do not emit a request — fall back to ENV_LIMITED (you believe it is real but hard to trigger) or NEEDS MORE INFO (you cannot tell). "I couldn't trigger it" is never, by itself, grounds for a repair request.
 
-When you emit a request: set the finding's `confirmed-bugs.md` status to `PENDING REPAIR (RR-NNN)` and stop processing that finding. Phase 3 repair and the next normal Phase 4 pass own the later steps.
+When you emit a draft: return `PENDING REPAIR` and stop processing that finding. The dispatcher allocates the RR and writes `PENDING REPAIR (RR-NNN)` to `confirmed-bugs.md`; Phase 3 repair and the next normal Phase 4 pass own the later steps.
 
 ## Output requirements
 

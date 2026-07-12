@@ -26,6 +26,7 @@ from typing import Any
 from unittest import mock
 
 from specula import confirmlib as C
+from specula import pipelinelib as PL
 from specula import prompts as P
 from specula.phaselib import Workspace
 
@@ -113,10 +114,69 @@ class TestConfirmConfigCompatibility(ConfirmCase):
         cfg = C.ConfirmConfig("T", ws, Path("/adapter"), worktree=False, model="", effort="")
         finding = C.Finding({"id": "MC-1"}, ws.work_dir("T") / "confirmation" / "MC-1")
         with mock.patch.object(C, "run_agent_blocking", return_value=(0, "VERDICT: FALSE POSITIVE")) as run:
-            verdict, _ = C.run_turn(cfg, finding, "A", 1, "prompt")
+            verdict, _ = C.run_turn(cfg, finding, "A", 1, "prompt", cwd="/repo-worktree")
         self.assertEqual(verdict, "FALSE POSITIVE")
         self.assertEqual(run.call_args.kwargs["model"], "")
         self.assertEqual(run.call_args.kwargs["effort"], "")
+        self.assertEqual(run.call_args.kwargs["gate_work_dir"], finding.fdir)
+        self.assertEqual(run.call_args.kwargs["cwd"], "/repo-worktree")
+
+    def test_finding_turn_starts_in_clean_dispatcher_cwd_not_untrusted_repo(self) -> None:
+        ws = Workspace(["T"])
+        repo = Path(self.tmp) / "repo"
+        for relative in (".specula/sandbox.json", ".codex/hooks.json", ".claude/settings.json"):
+            path = repo / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n")
+        fdir = ws.work_dir("T") / "confirmation" / "CR-1"
+        finding = C.Finding({"id": "CR-1", "source": "code-review"}, fdir)
+        cfg = C.ConfirmConfig("T", ws, Path("/adapter"), repo_dir=str(repo), worktree=False)
+        seen: list[Path] = []
+
+        def agent(_adapter: Path, prompt: str, *_args: object, **kwargs: object) -> tuple[int, str]:
+            cwd = Path(str(kwargs["cwd"]))
+            seen.append(cwd)
+            self.assertNotEqual(cwd, repo)
+            self.assertTrue(cwd.is_dir())
+            self.assertEqual([path.name for path in cwd.iterdir()], [".git"])
+            root = subprocess.run(
+                ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            self.assertEqual(Path(root), cwd)
+            self.assertIn(str(repo.absolute()), prompt)
+            return (0, _response("FALSE POSITIVE"))
+
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            outcome = C.run_finding(cfg, finding)
+
+        self.assertEqual(outcome.status, "FALSE POSITIVE")
+        self.assertEqual(seen, [fdir.absolute() / ".agent-cwd" / "turn01_A"])
+
+    def test_relative_run_dir_is_rendered_as_absolute_agent_paths(self) -> None:
+        base = Path(self.tmp) / "caller"
+        base.mkdir()
+        old_cwd = Path.cwd()
+        os.chdir(base)
+        self.addCleanup(os.chdir, old_cwd)
+        os.environ["SPECULA_RUN_DIR"] = "runs/demo"
+        ws = Workspace(["T"])
+        spec = ws.work_dir("T") / "spec"
+        spec.mkdir(parents=True)
+        (spec / "candidates.json").write_text(json.dumps({"findings": [{"id": "MC-1", "source": "model-checking"}]}))
+        cfg = C.ConfirmConfig("T", ws, Path("/adapter"), repo_dir="repo", worktree=False)
+
+        finding = C.load_findings(cfg)[0]
+        repo, _cleanup = C.setup_repo(cfg, finding)
+        prompt = C.prompt_reproduce(cfg, finding, repo)
+
+        expected_work = (base / "runs" / "demo" / "T" / ".specula-output").absolute()
+        self.assertEqual(finding.fdir, expected_work / "confirmation" / "MC-1")
+        self.assertIn(f"Source repo (build/run here): {base / 'repo'}", prompt)
+        self.assertIn(f"Spec dir (counterexamples, bug-report): {expected_work / 'spec'}", prompt)
+        self.assertIn(f"Reproduction test → write to: {expected_work / 'repro'}", prompt)
 
 
 class TestMergeRR(ConfirmCase):
@@ -129,7 +189,11 @@ class TestMergeRR(ConfirmCase):
         "  invariants: [Inv]\n"
         "  hunt_cfgs: [MC_hunt.cfg]\n"
         "  fault_actions: []\n"
-        "---\n\nThe counterexample disagrees with src/node.py:42 and the captured trace demonstrates the mismatch.\n"
+        "---\n\n"
+        "## Trigger\n"
+        "The counterexample requires a transition the implementation rejects.\n\n"
+        "## Evidence\n"
+        "The counterexample disagrees with src/node.py:42 and the captured trace demonstrates the mismatch.\n"
     )
 
     def test_agent_scope_preserved_lifecycle_stamped(self) -> None:
@@ -140,23 +204,29 @@ class TestMergeRR(ConfirmCase):
         self.assertIn("actions: [Foo]", out)  # agent scope verbatim
         self.assertIn("hunt_cfgs: [MC_hunt.cfg]", out)
 
-    def test_agent_lifecycle_fields_are_stripped(self) -> None:
-        # A stray dispatcher-owned key in the agent body is stripped, never fatal —
-        # _merge_rr always stamps the authoritative lifecycle over it.
+    def test_agent_lifecycle_fields_are_rejected(self) -> None:
         sneaky = self.AGENT_BODY.replace("target: SPEC_REPAIR", "id: RR-999\nstatus: CONSUMED\ntarget: SPEC_REPAIR")
-        out = C._merge_rr("RR-002", "MC-1", "fb", sneaky)
-        self.assertIn("id: RR-002", out)  # stamped id wins
-        self.assertNotIn("RR-999", out)  # agent's stray id stripped
-        self.assertNotIn("CONSUMED", out)  # agent's stray status stripped
-        self.assertIn("status: OPEN", out)
+        with self.assertRaisesRegex(C.InvalidRepairRequest, "dispatcher-owned field id"):
+            C._merge_rr("RR-002", "MC-1", "fb", sneaky)
 
-    def test_missing_frontmatter_tolerated(self) -> None:
-        # A body without YAML frontmatter is best-effort: the prose becomes evidence
-        # and _merge_rr still emits a well-formed request (never rejects the verdict).
-        out = C._merge_rr("RR-003", "MC-1", "spec/output/x.out", "prose only")
-        self.assertIn("id: RR-003", out)
-        self.assertIn("---\nprose only", out)
-        self.assertNotIn("---prose only", out)
+    def test_missing_frontmatter_rejected(self) -> None:
+        with self.assertRaisesRegex(C.InvalidRepairRequest, "must start"):
+            C._merge_rr("RR-003", "MC-1", "spec/output/x.out", "prose only")
+
+    def test_body_text_cannot_inject_a_second_lifecycle_field(self) -> None:
+        body = self.AGENT_BODY.replace("## Trigger\n", "## Trigger\nstatus: OPEN\n")
+        merged = C._merge_rr("RR-001", "MC-1", "fallback.out", body)
+        self.assertEqual(C._rr_field_text(merged, "status"), ["OPEN"])
+
+    def test_draft_counterexample_must_match_finding(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T")
+        f = C.Finding(
+            {"id": "MC-1", "counterexample": "spec/output/expected.out"},
+            ws.work_dir("T") / "confirmation" / "MC-1",
+        )
+        with self.assertRaisesRegex(C.InvalidRepairRequest, "does not match finding"):
+            C._parse_repair_draft(self.AGENT_BODY, cfg, f)
 
 
 class TestValidateCandidates(ConfirmCase):
@@ -409,7 +479,7 @@ class TestDriver(ConfirmCase):
         self.assertTrue(report.is_file())
         self.assertIn("INCOMPLETE", report.read_text())
 
-    def test_pending_repair_without_body_is_allocated_best_effort(self) -> None:
+    def test_pending_repair_without_body_is_incomplete_and_not_allocated(self) -> None:
         data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
         ws = self.seed("T", [data])
         fdir = ws.work_dir("T") / "confirmation" / "MC-1"
@@ -417,13 +487,48 @@ class TestDriver(ConfirmCase):
         with mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("PENDING REPAIR"))):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
 
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 1)
         self.assertFalse((fdir / "repair-request.body.md").exists())
         rr = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
-        self.assertTrue(rr.is_file())
-        self.assertIn("status: OPEN", rr.read_text())
-        self.assertIn("PENDING REPAIR (RR-001)", (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text())
-        self.assertTrue((fdir / "verdict.json").is_file())
+        self.assertFalse(rr.exists())
+        self.assertIn("INCOMPLETE", (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text())
+        self.assertFalse((fdir / "verdict.json").exists())
+
+    def test_malformed_pending_repair_draft_is_incomplete_and_not_allocated(self) -> None:
+        data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
+        invalid_bodies = {
+            "prose only": "must start",
+            TestMergeRR.AGENT_BODY.replace("target: SPEC_REPAIR", "target: UNKNOWN"): "invalid target",
+            TestMergeRR.AGENT_BODY.replace("  hunt_cfgs: [MC_hunt.cfg]", "  hunt_cfgs: []"): "must not be empty",
+            TestMergeRR.AGENT_BODY.replace("## Evidence", "## Notes"): "unknown section",
+            TestMergeRR.AGENT_BODY.replace("src/node.py:42", "the source code"): "must contain a code",
+            TestMergeRR.AGENT_BODY.replace("src/node.py:42", "test failed"): "must contain a code",
+            TestMergeRR.AGENT_BODY + "\n## History\n- agent-owned history\n": "dispatcher-owned History",
+            TestMergeRR.AGENT_BODY.replace("target: SPEC_REPAIR", "status: OPEN\ntarget: SPEC_REPAIR"): (
+                "dispatcher-owned field status"
+            ),
+        }
+        for index, (body, error) in enumerate(invalid_bodies.items()):
+            with self.subTest(error=error):
+                name = f"T{index}"
+                ws = self.seed(name, [data])
+                fdir = ws.work_dir(name) / "confirmation" / "MC-1"
+
+                def pending(
+                    *_args: object,
+                    draft_dir: Path = fdir,
+                    draft_body: str = body,
+                    **_kwargs: object,
+                ) -> tuple[int, str]:
+                    draft_dir.mkdir(parents=True, exist_ok=True)
+                    (draft_dir / "repair-request.body.md").write_text(draft_body)
+                    return (0, _response("PENDING REPAIR"))
+
+                with mock.patch.object(C, "run_agent_blocking", pending):
+                    self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, name)), 1)
+                self.assertFalse((ws.work_dir(name) / "spec" / "repair-requests").exists())
+                self.assertFalse((fdir / "verdict.json").exists())
+                self.assertIn(error, (fdir / "error.txt").read_text())
 
     def test_log_tee_failure_does_not_block_stale_deliverable_cleanup(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
@@ -527,6 +632,32 @@ class TestDebateGate(ConfirmCase):
         transcript = (ws.work_dir("T") / "confirmation" / "MC-3" / "debate.md").read_text()
         self.assertIn("## B (round 1)", transcript)
         self.assertNotIn("## A (round 1)", transcript)
+
+    def test_a_conceding_to_pending_repair_writes_valid_draft(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T", debate=True, rounds=1)
+        finding = self.finding(ws, "T", "MC-5")
+        responses = iter(("REPRODUCED", "PENDING REPAIR", "PENDING REPAIR"))
+        calls = 0
+
+        def agent(*_args: object, **_kwargs: object) -> tuple[int, str]:
+            nonlocal calls
+            calls += 1
+            status = next(responses)
+            if status == "REPRODUCED":
+                repro = ws.work_dir("T") / "repro" / "test_bugMC-5_case.py"
+                repro.parent.mkdir(parents=True, exist_ok=True)
+                repro.write_text("assert True\n")
+            elif calls == 3:
+                finding.fdir.mkdir(parents=True, exist_ok=True)
+                (finding.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+            return (0, _response(status))
+
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            outcome = C.run_finding(cfg, finding)
+        self.assertEqual(outcome.status, "PENDING REPAIR")
+        self.assertEqual(outcome.rounds, 1)
+        self.assertEqual(C._read_repair_draft(cfg, finding).target, "SPEC_REPAIR")
 
     def test_b_agreement_keeps_corrective_novelty_evidence_for_aggregate(self) -> None:
         ws = self.seed("T", [])
@@ -666,6 +797,19 @@ class TestPromptExtraAndLog(ConfirmCase):
         f = C.Finding({"id": "MC-1", "title": "t", "summary": "s"}, ws.work_dir("T") / "confirmation" / "MC-1")
         self.assertIn("CHECK THE FOO RACE", C.prompt_reproduce(cfg, f, "/repo"))
 
+    def test_parallel_prompts_assign_rr_queue_only_to_dispatcher(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T")
+        f = C.Finding({"id": "MC-1", "title": "t", "summary": "s"}, ws.work_dir("T") / "confirmation" / "MC-1")
+        reproduce = C.prompt_reproduce(cfg, f, "/repo")
+        defend = C.prompt_defend(cfg, f, "/repo", "/debate.md")
+        for prompt in (reproduce, defend):
+            self.assertIn(str(f.fdir / "repair-request.body.md"), prompt)
+            self.assertIn("dispatcher", prompt)
+            self.assertIn("shared", prompt)
+        self.assertIn("Do NOT include `id`", reproduce)
+        self.assertIn("Do not\n  allocate an RR", defend)
+
     def test_reproduce_prompt_invokes_installed_skill_without_path(self) -> None:
         ws = self.seed("T", [])
         cfg = self.cfg(ws, "T")
@@ -704,7 +848,11 @@ class TestPromptExtraAndLog(ConfirmCase):
             "  invariants: []\n"
             "  hunt_cfgs: [MC_hunt.cfg]\n"
             "  fault_actions: []\n"
-            "---\n\nThe trace step conflicts with the real guard at src/node.py:42 and needs a scoped repair.\n"
+            "---\n\n"
+            "## Trigger\n"
+            "The model permits a transition rejected by the implementation.\n\n"
+            "## Evidence\n"
+            "The trace step conflicts with the real guard at src/node.py:42 and needs a scoped repair.\n"
         )
         o = C.Outcome(f, "PENDING REPAIR", True, 0, "body", bug_no=3)
         rid = C.allocate_rr(self.cfg(ws, "T"), o)
@@ -939,10 +1087,14 @@ class TestCacheContracts(ConfirmCase):
         (f.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
         pending = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
         pending.rr = C.allocate_rr(cfg, pending)
-        C._save_verdict(pending, cfg)
 
         rr_dir = ws.work_dir("T") / "spec" / "repair-requests"
         active = rr_dir / f"{pending.rr}.md"
+        # Simulate a workspace created by the PR's earlier key formula. The
+        # semantic fallback must compare the published body, not reopen it just
+        # because the allocation-key algorithm changed during upgrade.
+        active.write_text(re.sub(r"(?m)^allocation_key:.*$", "allocation_key: legacy-v2-key", active.read_text()))
+        C._save_verdict(pending, cfg)
         deferred_dir = rr_dir / "deferred"
         deferred_dir.mkdir()
         deferred_text = active.read_text().replace("status: OPEN", "status: DEFERRED", 1)
@@ -963,11 +1115,78 @@ class TestCacheContracts(ConfirmCase):
         self.assertIn("| 1 | MC-1 | DEFERRED (repair loop exhausted; RR-001 in deferred/) |", report)
         self.assertIn("+ 0 pending-repair + 0 incomplete + 1 deferred", report)
 
-        # A fresh generation still reuses the terminal request instead of
-        # allocating a new OPEN RR.
+        terminal_bytes = deferred.read_bytes()
+        # A later Phase 4 generation with identical repair semantics remains
+        # terminal; generation invalidates the verdict cache, not the RR.
         (ws.work_dir("T") / "spec" / "confirmation-generation.json").write_text('{"generation": 1}\n')
+        equivalent_draft = (
+            "---\n"
+            "target: SPEC_REPAIR\n"
+            'counterexample: "output/x.out"\n'
+            "scope:\n"
+            "  fault_actions: []\n"
+            "  hunt_cfgs: [MC_hunt.cfg]\n"
+            "  invariants: [Inv]\n"
+            '  actions: ["Foo"]\n'
+            "---\n\n"
+            "## Trigger\n"
+            "The counterexample requires a transition\n"
+            "the implementation rejects.\n\n"
+            "## Evidence\n"
+            "The counterexample disagrees with src/node.py:42\n"
+            "and the captured trace demonstrates the mismatch.\n\n"
+            "## Proposed change\n"
+            "An advisory hint that does not change the executable repair.\n"
+        )
+        (f.fdir / "repair-request.body.md").write_text(equivalent_draft)
         self.assertEqual(C.allocate_rr(cfg, pending), "RR-001")
-        self.assertFalse(active.exists())
+        self.assertEqual(deferred.read_bytes(), terminal_bytes)
+
+        # A changed semantic allocation never mutates/reopens the terminal
+        # request: it gets a new active OPEN id visible to the repair loop.
+        changed_draft = (
+            TestMergeRR.AGENT_BODY.replace("target: SPEC_REPAIR", "target: INVARIANT")
+            .replace("  actions: [Foo]", "  actions: []")
+            .replace("  invariants: [Inv]", "  invariants: [NewInvariant]")
+            .replace("implementation rejects", "implementation permits")
+            .replace("src/node.py:42", "src/new_node.py:84")
+        )
+        (f.fdir / "repair-request.body.md").write_text(changed_draft)
+        (ws.work_dir("T") / "spec" / "confirmation-generation.json").write_text('{"generation": 2}\n')
+        self.assertEqual(C.allocate_rr(cfg, pending), "RR-002")
+        new_active = active.with_name("RR-002.md")
+        self.assertEqual(deferred.read_bytes(), terminal_bytes)
+        self.assertEqual([path.name for path in rr_dir.glob("RR-*.md")], ["RR-002.md"])
+        new_text = new_active.read_text()
+        self.assertEqual(C._rr_field_text(new_text, "status"), ["OPEN"])
+        self.assertIn("target: INVARIANT", new_text)
+        self.assertIn("invariants: [NewInvariant]", new_text)
+        self.assertIn("src/new_node.py:84", new_text)
+        self.assertNotIn("target: SPEC_REPAIR", new_text)
+        self.assertNotIn("src/node.py:42", new_text)
+        self.assertEqual(C._rr_field_text(deferred.read_text(), "status"), ["DEFERRED"])
+        pipeline = PL.Pipeline()
+        pipeline.targets = ["T"]
+        pipeline.run_dir = Path(self.tmp)
+        self.assertTrue(pipeline.has_open_repair_requests())
+        repair_calls: list[tuple[int, list[str] | None]] = []
+
+        def consume_new_request(round_: int, names: list[str] | None = None) -> None:
+            repair_calls.append((round_, names))
+            self.assertEqual(names, ["T"])
+            self.assertEqual([path.name for path in rr_dir.glob("RR-*.md")], ["RR-002.md"])
+            self.assertEqual(C._rr_field_text(new_active.read_text(), "finding_id"), ["MC-1"])
+            PL.rr_set_status(new_active, "CONSUMED", "experiment repair completed")
+
+        phase4_calls: list[str] = []
+        pipeline.run_phase3_repair = consume_new_request  # type: ignore[method-assign]
+        pipeline.run_phase4_confirmation = lambda: phase4_calls.append("confirmed")  # type: ignore[method-assign]
+        pipeline.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        pipeline.run_repair_loop()
+        self.assertEqual(repair_calls, [(1, ["T"])])
+        self.assertEqual(phase4_calls, ["confirmed"])
+        self.assertEqual(PL.rr_status(new_active), "CONSUMED")
+        self.assertEqual(deferred.read_bytes(), terminal_bytes)
 
     def test_consumed_repair_invalidates_cached_pending_verdict(self) -> None:
         data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
@@ -1121,7 +1340,80 @@ class TestValidationContracts(ConfirmCase):
         self.assertEqual(rid, "RR-008")
         self.assertEqual(old.read_text(), "old history\n")
 
-    def test_changed_repair_body_reuses_open_then_allocates_after_consumed(self) -> None:
+    def test_initial_rr_publish_failure_leaves_no_partial_final_file(self) -> None:
+        ws = self.seed("T", [])
+        f = self.finding(ws, "T")
+        f.fdir.mkdir(parents=True)
+        (f.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        cfg = self.cfg(ws, "T")
+        outcome = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
+        rr_dir = ws.work_dir("T") / "spec" / "repair-requests"
+
+        with (
+            mock.patch("specula.confirmlib.os.fsync", side_effect=OSError("disk full")),
+            self.assertRaisesRegex(OSError, "disk full"),
+        ):
+            C.allocate_rr(cfg, outcome)
+
+        self.assertEqual(list(rr_dir.glob("RR-*.md")), [])
+        self.assertEqual(list(rr_dir.glob(".RR-*.tmp")), [])
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+
+    def test_cross_process_publish_race_rescans_instead_of_creating_duplicate(self) -> None:
+        ws = self.seed("T", [])
+        f = self.finding(ws, "T")
+        f.fdir.mkdir(parents=True)
+        (f.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        cfg = self.cfg(ws, "T")
+        outcome = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
+        real_create = C._atomic_create_rr
+        raced = False
+
+        def publish_elsewhere_then_conflict(path: Path, text: str) -> None:
+            nonlocal raced
+            if not raced:
+                raced = True
+                real_create(path, text)
+                raise FileExistsError(path)
+            real_create(path, text)
+
+        with mock.patch.object(C, "_atomic_create_rr", side_effect=publish_elsewhere_then_conflict):
+            self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+
+        rr_dir = ws.work_dir("T") / "spec" / "repair-requests"
+        self.assertEqual([path.name for path in rr_dir.glob("RR-*.md")], ["RR-001.md"])
+
+    def test_malformed_existing_body_is_never_treated_as_exact(self) -> None:
+        ws = self.seed("T", [])
+        f = self.finding(ws, "T")
+        f.fdir.mkdir(parents=True)
+        (f.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        cfg = self.cfg(ws, "T")
+        outcome = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+        rr_dir = ws.work_dir("T") / "spec" / "repair-requests"
+        active = rr_dir / "RR-001.md"
+        active.write_text(active.read_text().replace("## Evidence", "## Broken"))
+
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+        self.assertIn("## Evidence", active.read_text())
+        self.assertNotIn("## Broken", active.read_text())
+
+        deferred_dir = rr_dir / "deferred"
+        deferred_dir.mkdir()
+        malformed = (
+            active.read_text().replace("status: OPEN", "status: DEFERRED", 1).replace("## Evidence", "## Broken")
+        )
+        deferred = deferred_dir / active.name
+        deferred.write_text(malformed)
+        active.unlink()
+        terminal_bytes = deferred.read_bytes()
+
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-002")
+        self.assertEqual(deferred.read_bytes(), terminal_bytes)
+        self.assertEqual(C._rr_field_text((rr_dir / "RR-002.md").read_text(), "status"), ["OPEN"])
+
+    def test_changed_repair_body_atomically_refreshes_open_then_allocates_after_consumed(self) -> None:
         ws = self.seed("T", [])
         f = self.finding(ws, "T")
         f.fdir.mkdir(parents=True)
@@ -1130,11 +1422,53 @@ class TestValidationContracts(ConfirmCase):
         cfg = self.cfg(ws, "T")
         outcome = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
         self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
-        body_file.write_text(TestMergeRR.AGENT_BODY + "\nAdditional corrected evidence changes the request.\n")
-        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
         first = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
-        first.write_text(first.read_text().replace("status: OPEN", "status: CONSUMED", 1))
+        original = first.read_text().replace("round: 0", "round: 3")
+        first.write_text(original + "- r3 (orchestrator): retained audit entry\n")
+        corrected = (
+            TestMergeRR.AGENT_BODY.replace("target: SPEC_REPAIR", "target: INVARIANT")
+            .replace("  actions: [Foo]", "  actions: []")
+            .replace("  invariants: [Inv]", "  invariants: [NewInvariant]")
+            .replace("implementation rejects", "implementation permits")
+            .replace("src/node.py:42", "src/new_node.py:84")
+        )
+        body_file.write_text(corrected)
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+        refreshed = first.read_text()
+        self.assertIn("id: RR-001", refreshed)
+        self.assertIn("status: OPEN", refreshed)
+        self.assertIn("round: 3", refreshed)
+        self.assertIn("target: INVARIANT", refreshed)
+        self.assertIn("invariants: [NewInvariant]", refreshed)
+        self.assertIn("src/new_node.py:84", refreshed)
+        self.assertNotIn("target: SPEC_REPAIR", refreshed)
+        self.assertNotIn("src/node.py:42", refreshed)
+        self.assertIn("retained audit entry", refreshed)
+        self.assertIn("refreshed semantic payload", refreshed)
+        consumed = first.read_text().replace("status: OPEN", "status: CONSUMED", 1)
+        first.write_text(consumed)
         self.assertEqual(C.allocate_rr(cfg, outcome), "RR-002")
+        self.assertEqual(first.read_text(), consumed)
+        second = first.with_name("RR-002.md")
+        self.assertEqual(C._rr_field_text(second.read_text(), "status"), ["OPEN"])
+
+    def test_in_repair_request_is_never_refreshed(self) -> None:
+        ws = self.seed("T", [])
+        f = self.finding(ws, "T")
+        f.fdir.mkdir(parents=True)
+        body_file = f.fdir / "repair-request.body.md"
+        body_file.write_text(TestMergeRR.AGENT_BODY)
+        cfg = self.cfg(ws, "T")
+        outcome = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
+        self.assertEqual(C.allocate_rr(cfg, outcome), "RR-001")
+        request = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
+        in_repair = request.read_text().replace("status: OPEN", "status: IN_REPAIR", 1)
+        request.write_text(in_repair)
+        body_file.write_text(TestMergeRR.AGENT_BODY.replace("src/node.py:42", "src/new_node.py:84"))
+
+        with self.assertRaisesRegex(C.InvalidRepairRequest, "IN_REPAIR and cannot be refreshed"):
+            C.allocate_rr(cfg, outcome)
+        self.assertEqual(request.read_text(), in_repair)
 
     def test_generation_change_reuses_open_repair_for_same_finding(self) -> None:
         ws = self.seed("T", [])

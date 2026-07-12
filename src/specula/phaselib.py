@@ -816,6 +816,8 @@ def run_agent_blocking(
     phase_key: str,
     work_dir: Path,
     claude_alias: str,
+    gate_work_dir: Path | None = None,
+    cwd: str | Path | None = None,
     max_turns: str = "0",
     stop_gate: bool = False,
     model: str | None = None,
@@ -825,19 +827,32 @@ def run_agent_blocking(
 
     The blocking sibling of `Phase._launch`: it shares the same adapter path, the
     same flag set (`--prompt-file` / `--max-turns` / `--claude-alias` /
-    `--model` / `--effort` / `--log`), and the same stop-gate env keys
-    (`SPECULA_PHASE` / `SPECULA_WORK_DIR`) — but drops `--background` so the
-    caller can read the result before issuing the next turn. That is the shape a
-    per-finding confirmation debate needs (turn N+1 reads turn N's output),
-    which the fire-all-then-wait `_launch` loop cannot express.
+    `--model` / `--effort` / `--log`), and the same stop-gate env keys — but
+    drops `--background` so the caller can read the result before issuing the
+    next turn. That is the shape a per-finding confirmation debate needs (turn
+    N+1 reads turn N's output), which the fire-all-then-wait `_launch` loop
+    cannot express.
 
-    Per-turn calls keep the execution gate (notably its live-background-PID
-    check), but use a phase key with no deliverable contract by default: a phase
-    deliverable (`confirmed-bugs.md`) exists only after all findings aggregate,
-    never after one turn. ``stop_gate=True`` opts back into the original phase
-    key and therefore its deliverable contract. Rate-limit (exit 75) is the
-    caller's concern — this runs exactly one invocation.
+    ``SPECULA_WORK_DIR`` remains the target workspace used by the outer sandbox.
+    ``gate_work_dir`` may narrow the execution gate's state and PID scan to one
+    parallel worker without narrowing that sandbox; it defaults to ``work_dir``.
+    Per-turn calls use a phase key with no deliverable contract by default: a
+    phase deliverable (`confirmed-bugs.md`) exists only after all findings
+    aggregate, never after one turn. ``stop_gate=True`` opts back into the
+    original phase key and therefore its deliverable contract. Rate-limit (exit
+    75) is the caller's concern — this runs exactly one invocation.
     """
+    caller_cwd = Path.cwd()
+    adapter = adapter if adapter.is_absolute() else (caller_cwd / adapter).resolve()
+    prompt_file = prompt_file if prompt_file.is_absolute() else (caller_cwd / prompt_file).resolve()
+    log_file = log_file if log_file.is_absolute() else (caller_cwd / log_file).resolve()
+    work_dir = work_dir if work_dir.is_absolute() else (caller_cwd / work_dir).resolve()
+    gate_dir = gate_work_dir or work_dir
+    gate_dir = gate_dir if gate_dir.is_absolute() else (caller_cwd / gate_dir).resolve()
+    run_cwd = None if cwd is None else Path(cwd)
+    if run_cwd is not None and not run_cwd.is_absolute():
+        run_cwd = (caller_cwd / run_cwd).resolve()
+
     prompt = materialize_skill_refs(prompt, adapter)
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     prompt_file.write_text(prompt)
@@ -850,6 +865,21 @@ def run_agent_blocking(
     env = os.environ.copy()
     env["SPECULA_PHASE"] = phase_key if stop_gate else f"{phase_key}_turn"
     env["SPECULA_WORK_DIR"] = str(work_dir)
+    env["SPECULA_STOP_GATE_WORK_DIR"] = str(gate_dir)
+    if env.get("SPECULA_SANDBOX", "").lower() == "on" and run_cwd is not None:
+        configured = env.get("SPECULA_SANDBOX_CONFIG")
+        if configured:
+            config = Path(configured).expanduser()
+            if not config.is_absolute():
+                config = (caller_cwd / config).resolve()
+        else:
+            candidates = [
+                caller_cwd / ".specula" / "sandbox.json",
+                Path.home() / ".specula" / "sandbox.json",
+            ]
+            default_config = (LAUNCH_DIR / "sandbox" / "sandbox.default.json").resolve()
+            config = next((path.resolve() for path in candidates if path.is_file()), default_config)
+        env["SPECULA_SANDBOX_CONFIG"] = str(config)
     cmd = [
         str(adapter),
         f"--prompt-file={prompt_file}",
@@ -858,7 +888,7 @@ def run_agent_blocking(
         *_model_effort_argv(adapter, model, effort),
         f"--log={log_file}",
     ]
-    rc = subprocess.run(cmd, env=env).returncode
+    rc = subprocess.run(cmd, env=env, cwd=run_cwd).returncode
     # Codex stdout is a complete CLI transcript, not the assistant's final
     # response.  The adapter keeps that transcript in `log_file` for diagnosis
     # and asks `codex exec --output-last-message` for the response separately.

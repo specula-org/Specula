@@ -597,6 +597,10 @@ class Pipeline:
                     return True
         return False
 
+    def names_with_open_repair_requests(self) -> list[str]:
+        """Targets whose active queue contains a non-terminal request."""
+        return [n for n in self.extract_names() if any(rr_status(f) != "CONSUMED" for f in self._rr_files(n))]
+
     def repair_state_sig(self) -> str:
         """Stable signature of every request's (id, status, round). A round that
         leaves this unchanged made no progress — stop, rather than spin (covers
@@ -607,36 +611,219 @@ class Pipeline:
                 lines.append(f"{f.name}:{rr_status(f)}:{rr_field(f, 'round')}")
         return "\n".join(lines)
 
-    def reset_stale_in_repair(self) -> None:
+    def reset_stale_in_repair(self, name: str | None = None) -> None:
         """Crash recovery: a request stuck IN_REPAIR means its repair phase died
         mid-turn. Reset to OPEN so the next round retries it."""
         if self.dry_run:
             return
-        for n in self.extract_names():
+        names = [name] if name is not None else self.extract_names()
+        for n in names:
             for f in self._rr_files(n):
                 if rr_status(f) == "IN_REPAIR":
-                    rr_set_status(f, "OPEN", "reset (orchestrator): repair phase did not complete; retrying")
+                    text = f.read_text(errors="replace")
+                    if not self._repair_request_is_executable(text, f.stem):
+                        log(
+                            f"ERROR: stale {f.name} is malformed and has no durable Phase 3 snapshot; "
+                            "refusing to reset it to OPEN."
+                        )
+                        raise SystemExit(1)
+                    recovered = self._repair_request_text_with_status(
+                        text,
+                        "OPEN",
+                        "reset (orchestrator): repair phase did not complete; retrying",
+                    )
+                    self._atomic_replace_text(f, recovered)
                     log(f"  reset {f.name} IN_REPAIR -> OPEN (crash recovery)")
 
-    def snapshot_open_repair_requests(self) -> dict[Path, str]:
+    def snapshot_open_repair_requests(self, name: str | None = None) -> dict[Path, str]:
         """Capture the exact requests a repair Phase 3 is responsible for.
 
         A failing agent may update a request to CONSUMED before its process
-        exits non-zero. Those partial state transitions are not a successful
-        repair and must be reversible as one round-level unit.
+        exits non-zero. The snapshot lets recovery recreate a deleted/corrupt
+        request, while a surviving request keeps the failed attempt's history.
         """
-        return {f: f.read_text() for n in self.extract_names() for f in self._rr_files(n) if rr_status(f) == "OPEN"}
+        names = [name] if name is not None else self.extract_names()
+        return {f: f.read_text() for n in names for f in self._rr_files(n) if rr_status(f) == "OPEN"}
 
-    def restore_open_repair_requests(self, snapshot: dict[Path, str], round_: int) -> None:
-        """Restore a failed Phase 3's original OPEN set with an audit entry."""
+    def repair_phase3_snapshot_path(self, name: str) -> Path:
+        return Path(self.get_work_dir(name)) / "spec" / ".repair-phase3-snapshot.json"
+
+    def persist_open_repair_snapshot(self, name: str, snapshot: dict[Path, str], round_: int) -> None:
+        """Durably publish the OPEN inputs before a repair subprocess starts."""
         if self.dry_run:
             return
-        reason = f"reset (orchestrator): repair round {round_} Phase 3 failed; restored OPEN for retry"
+        rr_dir = Path(self.repair_dir(name))
+        requests: dict[str, str] = {}
+        for path, text in snapshot.items():
+            if path.parent != rr_dir or re.fullmatch(r"RR-\d+\.md", path.name) is None:
+                raise RuntimeError(f"invalid repair snapshot path for {name}: {path}")
+            if (
+                not self._repair_request_is_executable(text, path.stem)
+                or self._repair_request_field(text, "status") != "OPEN"
+            ):
+                raise RuntimeError(f"refusing to snapshot malformed/non-OPEN repair request: {path}")
+            requests[path.name] = text
+        if not requests:
+            raise RuntimeError(f"refusing to publish an empty repair snapshot for {name}")
+        marker = self.repair_phase3_snapshot_path(name)
+        payload = (
+            json.dumps(
+                {"version": 1, "round": round_, "requests": requests},
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        try:
+            self._publish_deferred_no_replace(marker, payload)
+        except FileExistsError:
+            log(f"ERROR: durable Phase 3 snapshot already exists for {name}: {marker}")
+            raise SystemExit(1) from None
+
+    def load_open_repair_snapshot(self, name: str) -> tuple[dict[Path, str], int] | None:
+        marker = self.repair_phase3_snapshot_path(name)
+        if not marker.is_file():
+            return None
+        try:
+            doc = json.loads(marker.read_text())
+            version = doc.get("version") if isinstance(doc, dict) else None
+            round_ = doc.get("round") if isinstance(doc, dict) else None
+            requests = doc.get("requests") if isinstance(doc, dict) else None
+            if version != 1 or not isinstance(round_, int) or isinstance(round_, bool) or round_ < 1:
+                raise ValueError("invalid version/round")
+            if not isinstance(requests, dict) or not requests:
+                raise ValueError("requests must be a non-empty object")
+            snapshot: dict[Path, str] = {}
+            rr_dir = Path(self.repair_dir(name))
+            for filename, text in requests.items():
+                if not isinstance(filename, str) or re.fullmatch(r"RR-\d+\.md", filename) is None:
+                    raise ValueError(f"unsafe request filename {filename!r}")
+                if not isinstance(text, str) or not self._repair_request_is_executable(text, Path(filename).stem):
+                    raise ValueError(f"malformed request snapshot {filename}")
+                if self._repair_request_field(text, "status") != "OPEN":
+                    raise ValueError(f"snapshot request {filename} is not OPEN")
+                snapshot[rr_dir / filename] = text
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            log(f"ERROR: invalid durable Phase 3 snapshot for {name}: {marker} ({exc})")
+            raise SystemExit(1) from exc
+        return snapshot, round_
+
+    def clear_open_repair_snapshot(self, name: str) -> None:
+        if not self.dry_run:
+            self.repair_phase3_snapshot_path(name).unlink(missing_ok=True)
+
+    def recover_interrupted_phase3(self) -> None:
+        """Restore an OPEN request set left by a killed repair subprocess."""
+        if self.dry_run:
+            return
+        for name in self.extract_names():
+            loaded = self.load_open_repair_snapshot(name)
+            if loaded is None:
+                continue
+            snapshot, round_ = loaded
+            self.restore_open_repair_requests(snapshot, round_)
+            self.clear_open_repair_snapshot(name)
+            log(f"  recovered durable Phase 3 snapshot for {name} after interrupted repair")
+
+    def restore_open_repair_requests(self, snapshot: dict[Path, str], round_: int) -> None:
+        """Make one failed target's original OPEN set retryable without lying.
+
+        Phase 3 may have partially edited the spec/output before it exits
+        non-zero. Those arbitrary filesystem changes cannot be rolled back by
+        rewriting the RR alone. Restore the snapshot's complete executable
+        semantics, merge only newly appended audit bullets from an identifiable
+        current file, reset it to OPEN, and note that partial artifacts remain.
+        """
+        if self.dry_run:
+            return
+        reason = (
+            f"reset (orchestrator): repair round {round_} Phase 3 failed; "
+            "partial spec/output changes were retained for inspection; retrying OPEN"
+        )
         for f, original in snapshot.items():
             f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_text(original)
-            rr_set_status(f, "OPEN", reason)
-            log(f"  restored {f.name} to OPEN after failed repair Phase 3")
+            current = ""
+            with contextlib.suppress(OSError):
+                current = f.read_text(errors="replace")
+            base = original
+            if current and self._repair_request_field(current, "id") == f.stem:
+                original_history = set(self._repair_request_history_bullets(original))
+                additions = [
+                    line for line in self._repair_request_history_bullets(current) if line not in original_history
+                ]
+                if additions:
+                    base = original.rstrip("\n") + "\n" + "\n".join(additions) + "\n"
+            restored = self._repair_request_text_with_status(base, "OPEN", reason)
+            self._atomic_replace_text(f, restored)
+            log(f"  reset {f.name} to OPEN after failed repair Phase 3 (partial artifacts retained)")
+
+    @staticmethod
+    def _repair_request_history_bullets(text: str) -> list[str]:
+        """Single-line audit entries after the request's History heading."""
+        match = re.search(r"(?m)^##\s+History\s*$", text)
+        if match is None:
+            return []
+        return [line for line in text[match.end() :].splitlines() if line.startswith("- ")]
+
+    @staticmethod
+    def _repair_request_field(text: str, key: str) -> str:
+        lines = text.splitlines()
+        if lines and lines[0] == "---":
+            try:
+                lines = lines[1 : lines.index("---", 1)]
+            except ValueError:
+                return ""
+        else:
+            lines = lines[:25]
+        prefix = key + ":"
+        for line in lines:
+            if line.startswith(prefix):
+                return line[len(prefix) :].strip()
+        return ""
+
+    @classmethod
+    def _repair_request_is_executable(cls, text: str, expected_id: str) -> bool:
+        """Minimum safe shape before the orchestrator exposes an RR as OPEN."""
+        lines = text.splitlines()
+        if not lines or lines[0] != "---":
+            return False
+        try:
+            frontmatter_end = lines.index("---", 1)
+        except ValueError:
+            return False
+        frontmatter = "\n".join(lines[1:frontmatter_end])
+        if cls._repair_request_field(text, "id") != expected_id:
+            return False
+        if cls._repair_request_field(text, "status") not in {"OPEN", "IN_REPAIR", "CONSUMED"}:
+            return False
+        if not cls._repair_request_field(text, "round").isdigit():
+            return False
+        target = cls._repair_request_field(text, "target")
+        target_scope = {
+            "SPEC_REPAIR": "actions",
+            "FAULT_MODEL": "fault_actions",
+            "INVARIANT": "invariants",
+        }.get(target)
+        if target_scope is None or not cls._repair_request_field(text, "counterexample"):
+            return False
+        scope: dict[str, str] = {}
+        for key in ("actions", "invariants", "hunt_cfgs", "fault_actions"):
+            match = re.search(rf"(?m)^  {key}:\s*\[(.*?)\]\s*$", frontmatter)
+            if match is None:
+                return False
+            scope[key] = match.group(1).strip()
+        if not scope["hunt_cfgs"] or not scope[target_scope]:
+            return False
+        for section in ("Trigger", "Evidence"):
+            match = re.search(rf"(?m)^##\s+{section}\s*$", text)
+            if match is None:
+                return False
+            following = text[match.end() :]
+            next_section = re.search(r"(?m)^##\s+", following)
+            body = following[: next_section.start()] if next_section is not None else following
+            if not body.strip():
+                return False
+        return re.search(r"(?m)^##\s+History\s*$", text) is not None
 
     @staticmethod
     def _repair_request_text_with_status(text: str, status: str, note: str) -> str:
@@ -688,6 +875,112 @@ class Pipeline:
             with contextlib.suppress(OSError):
                 tmp.unlink(missing_ok=True)
 
+    def repair_defer_intent_path(self) -> Path:
+        root = self.run_dir if self.run_dir else Path(_logical_cwd()) / ".specula-output"
+        return root / ".repair-defer-intent.json"
+
+    def _persist_defer_intent(self, moves: list[tuple[str, Path, Path]]) -> None:
+        if self.dry_run or not moves:
+            return
+        targets: dict[str, dict[str, str]] = {}
+        for name, source, _destination in moves:
+            targets.setdefault(name, {})[source.name] = source.read_text()
+        payload = json.dumps({"version": 1, "targets": targets}, ensure_ascii=False, sort_keys=True) + "\n"
+        marker = self.repair_defer_intent_path()
+        try:
+            self._publish_deferred_no_replace(marker, payload)
+        except FileExistsError:
+            log(f"ERROR: durable defer intent already exists: {marker}")
+            raise SystemExit(1) from None
+
+    def _load_defer_intent(self) -> dict[str, dict[str, str]] | None:
+        marker = self.repair_defer_intent_path()
+        if not marker.is_file():
+            return None
+        try:
+            doc = json.loads(marker.read_text())
+            targets = doc.get("targets") if isinstance(doc, dict) and doc.get("version") == 1 else None
+            if not isinstance(targets, dict) or not targets:
+                raise ValueError("targets must be a non-empty object")
+            known = set(self.extract_names())
+            result: dict[str, dict[str, str]] = {}
+            for name, requests in targets.items():
+                if name not in known or not isinstance(requests, dict) or not requests:
+                    raise ValueError(f"invalid target entry {name!r}")
+                parsed: dict[str, str] = {}
+                for filename, text in requests.items():
+                    if not isinstance(filename, str) or re.fullmatch(r"RR-\d+\.md", filename) is None:
+                        raise ValueError(f"unsafe request filename {filename!r}")
+                    if not isinstance(text, str) or not self._repair_request_is_executable(text, Path(filename).stem):
+                        raise ValueError(f"malformed request intent {name}/{filename}")
+                    if self._repair_request_field(text, "status") != "OPEN":
+                        raise ValueError(f"intent request {name}/{filename} is not OPEN")
+                    parsed[filename] = text
+                result[name] = parsed
+        except (OSError, ValueError) as exc:
+            log(f"ERROR: invalid durable defer intent: {marker} ({exc})")
+            raise SystemExit(1) from exc
+        return result
+
+    def _complete_defer_intent(self) -> int:
+        """Idempotently finish every move named by the durable cap intent."""
+        targets = self._load_defer_intent()
+        if targets is None:
+            return 0
+        completed = 0
+        note = "deferred (orchestrator): repair loop round cap reached"
+        for name, requests in targets.items():
+            rr_dir = Path(self.repair_dir(name))
+            deferred_dir = rr_dir / "deferred"
+            for filename, source_text in requests.items():
+                source = rr_dir / filename
+                destination = deferred_dir / filename
+                expected = self._repair_request_text_with_status(source_text, "DEFERRED", note)
+                source_exists = source.is_file()
+                destination_exists = destination.is_file()
+                if source_exists and source.read_text() != source_text:
+                    log(f"ERROR: active request diverged from durable defer intent: {source}")
+                    raise SystemExit(1)
+                if destination_exists and destination.read_text() != expected:
+                    log(f"ERROR: deferred request diverged from durable defer intent: {destination}")
+                    raise SystemExit(1)
+                if not source_exists and not destination_exists:
+                    log(f"ERROR: defer intent lost both source and destination: {name}/{filename}")
+                    raise SystemExit(1)
+                if not destination_exists:
+                    self._publish_deferred_no_replace(destination, expected)
+                if source_exists:
+                    source.unlink()
+                completed += 1
+                log(f"  deferred {filename} -> {destination.parent} (repair loop exhausted)")
+        self.repair_defer_intent_path().unlink()
+        return completed
+
+    def _reconcile_interrupted_deferred_moves(self) -> None:
+        """Finish the publish-then-unlink crash window for deferred requests.
+
+        A SIGKILL after the complete deferred file is published but before the
+        active OPEN source is unlinked leaves both names present. Only collapse
+        the pair when the deferred bytes are exactly the canonical transform of
+        the active bytes; divergent pairs remain a real conflict.
+        """
+        note = "deferred (orchestrator): repair loop round cap reached"
+        for n in self.extract_names():
+            active = {f.name: f for f in self._rr_files(n)}
+            deferred = {f.name: f for f in self._deferred_rr_files(n)}
+            for name in sorted(active.keys() & deferred.keys()):
+                source = active[name]
+                destination = deferred[name]
+                try:
+                    expected = self._repair_request_text_with_status(source.read_text(), "DEFERRED", note)
+                    actual = destination.read_text()
+                except OSError:
+                    continue
+                if rr_status(source) != "OPEN" or rr_status(destination) != "DEFERRED" or actual != expected:
+                    continue
+                source.unlink()
+                log(f"  completed interrupted defer move for {n}: {name}")
+
     def _assert_no_active_deferred_conflicts(self) -> None:
         conflicts: list[tuple[str, Path, Path]] = []
         for n in self.extract_names():
@@ -738,6 +1031,8 @@ class Pipeline:
         """
         if self.dry_run:
             return
+        self._complete_defer_intent()
+        self._reconcile_interrupted_deferred_moves()
         self._assert_no_active_deferred_conflicts()
         for n in self.extract_names():
             deferred = self._deferred_rr_files(n)
@@ -803,8 +1098,15 @@ class Pipeline:
                 rows.append(f"| {rr_field(f, 'id')} | {bug} | {target} | {status} | {rr_field(f, 'round')} |")
             ledger.write_text("\n".join(rows) + "\n")
 
-    def advance_confirmation_generation(self, repair_round: int) -> None:
-        """Atomically advance the Phase-4 cache generation for every target.
+    def prepare_repair_state(self) -> None:
+        """Idempotent startup recovery that must run before an initial Phase 4."""
+        self.reconcile_deferred_state()
+        self.recover_interrupted_phase3()
+        self.reset_stale_in_repair()
+        self.regenerate_ledger()
+
+    def advance_confirmation_generation(self, repair_round: int, names: list[str] | None = None) -> None:
+        """Atomically advance the Phase-4 cache generation for selected targets.
 
         This marker is written after every successful Phase 3, both normal and
         repair runs, and before the corresponding Phase 4. Confirmation cache
@@ -813,7 +1115,7 @@ class Pipeline:
         """
         if self.dry_run:
             return
-        for n in self.extract_names():
+        for n in names if names is not None else self.extract_names():
             marker = Path(self.get_work_dir(n)) / "spec" / "confirmation-generation.json"
             previous = 0
             if marker.is_file():
@@ -1023,18 +1325,19 @@ class Pipeline:
             self._phase_args(self.extract_names(), pre=pre or None),
         )
 
-    def run_phase3_repair(self, round_: int) -> None:
+    def run_phase3_repair(self, round_: int, names: list[str] | None = None) -> None:
         """Phase 3 in repair mode: consume OPEN repair requests, repair the spec,
         re-run MC, and mark each repaired request CONSUMED. Whether the repair
         settled the finding is answered by the next Phase 4 pass — a repaired
         artifact no longer appears in the fresh output; a surviving or new
         violation is confirmed fresh. There is no separate re-check pass."""
+        selected = names if names is not None else self.extract_names()
         self._phase(
             f"REPAIR ROUND {round_}: PHASE 3 (scoped spec/fault/invariant repair)",
             "launch_spec_validation.sh",
-            self._phase_args(self.extract_names(), pre=["--repair"]),
+            self._phase_args(selected, pre=["--repair"]),
         )
-        self.advance_confirmation_generation(round_)
+        self.advance_confirmation_generation(round_, selected)
 
     def run_phase4b_classification(self) -> None:
         self._phase(
@@ -1064,9 +1367,7 @@ class Pipeline:
         log(f"REPAIR LOOP (confirmation back-edge) — cap={cap_disp}")
         divider()
 
-        self.reconcile_deferred_state()
-        self.reset_stale_in_repair()  # recover crashed IN_REPAIR from a prior run
-        self.regenerate_ledger()
+        self.prepare_repair_state()
         if not self.has_open_repair_requests():
             log("No OPEN repair requests — repair loop is a no-op.")
             return
@@ -1081,46 +1382,59 @@ class Pipeline:
 
             round_ += 1
             sig_before = self.repair_state_sig()
-            open_before: dict[Path, str] = {}
-            phase3_started = False
-            phase3_succeeded = False
-            stage = "quota wait before Phase 3"
+            repaired_names: list[str] = []
+            for name in self.names_with_open_repair_requests():
+                try:
+                    self.wait_for_quota()  # budget pressure -> WAIT, never auto-defer
+                except BaseException as exc:
+                    detail = f"exit {exc.code}" if isinstance(exc, SystemExit) else f"{type(exc).__name__}: {exc}"
+                    log(
+                        f"ERROR: repair loop stopped in round {round_} for {name} before Phase 3 ({detail}); "
+                        "repair requests were left unchanged."
+                    )
+                    raise
+                open_before = self.snapshot_open_repair_requests(name)
+                if not open_before:
+                    states = ", ".join(f"{f.name}={rr_status(f) or '<missing>'}" for f in self._rr_files(name))
+                    log(f"ERROR: {name} has no repairable OPEN request ({states}); refusing Phase 3.")
+                    raise SystemExit(1)
+                self.persist_open_repair_snapshot(name, open_before, round_)
+                try:
+                    self.run_phase3_repair(round_, [name])  # OPEN -> CONSUMED, repair spec, re-run MC
+                    if not self.dry_run:
+                        unfinished = [f for f in open_before if rr_status(f) != "CONSUMED"]
+                        if unfinished:
+                            detail = ", ".join(f"{f.name}={rr_status(f) or '<missing>'}" for f in unfinished)
+                            raise RuntimeError(f"Phase 3 returned success without consuming {detail}")
+                    self.clear_open_repair_snapshot(name)
+                    repaired_names.append(name)
+                except BaseException as exc:
+                    self.restore_open_repair_requests(open_before, round_)
+                    try:
+                        self.clear_open_repair_snapshot(name)
+                    except OSError as cleanup_exc:
+                        log(f"ERROR: could not clear durable Phase 3 snapshot for {name}: {cleanup_exc}")
+                    self.reset_stale_in_repair(name)
+                    self.regenerate_ledger()
+                    detail = f"exit {exc.code}" if isinstance(exc, SystemExit) else f"{type(exc).__name__}: {exc}"
+                    log(
+                        f"ERROR: repair loop failed in round {round_} for {name} during Phase 3 ({detail}); "
+                        "only that target was reset OPEN, with partial artifacts/history retained."
+                    )
+                    raise
+
             try:
-                self.wait_for_quota()  # budget pressure -> WAIT, never auto-defer
-                open_before = self.snapshot_open_repair_requests()
-                phase3_started = True
-                stage = "Phase 3"
-                self.run_phase3_repair(round_)  # OPEN -> CONSUMED, repair spec, re-run MC
-                phase3_succeeded = True
-                stage = "post-Phase-3 recovery"
-                self.reset_stale_in_repair()  # recover a semantic mid-turn failure despite rc=0
-                stage = "quota wait before Phase 4"
                 self.wait_for_quota()
-                stage = "Phase 4"
                 self.run_phase4_confirmation()  # normal Phase 4 on the fresh bug-report
             except BaseException as exc:
-                # Infrastructure/launcher failure is not repair exhaustion.
-                # A failed Phase 3 owns no state transition: restore every
-                # request that was OPEN at round start, even if the agent wrote
-                # CONSUMED before exiting non-zero. Once Phase 3 returns
-                # successfully its transitions are durable; a later Phase 4
-                # failure is retried by the next full pipeline run, whose normal
-                # Phase 4 always runs before this repair loop.
-                if phase3_started and not phase3_succeeded:
-                    self.restore_open_repair_requests(open_before, round_)
-                self.reset_stale_in_repair()
                 self.regenerate_ledger()
                 detail = f"exit {exc.code}" if isinstance(exc, SystemExit) else type(exc).__name__
-                if phase3_succeeded:
-                    disposition = (
-                        "successful Phase 3 request states were retained; "
-                        "rerun the full pipeline to retry Phase 4 before the repair loop"
-                    )
-                elif phase3_started:
-                    disposition = "the round's original OPEN requests were restored for retry"
-                else:
-                    disposition = "repair requests were left unchanged for retry"
-                log(f"ERROR: repair loop execution failed in round {round_} during {stage} ({detail}); {disposition}.")
+                names = ", ".join(repaired_names) or "none"
+                log(
+                    f"ERROR: repair loop failed in round {round_} during Phase 4 ({detail}); "
+                    f"successful Phase 3 request states were retained for: {names}. "
+                    "Rerun the pipeline; startup recovery will retry Phase 4 safely."
+                )
                 raise
             self.snapshot_confirmed_bugs(round_)
             self.regenerate_ledger()
@@ -1177,34 +1491,16 @@ class Pipeline:
             log(f"ERROR: refusing to defer repair requests in non-OPEN states: {detail}")
             raise SystemExit(1)
 
-        for _n, f, dest in moves:
-            deferred_text = self._repair_request_text_with_status(
-                f.read_text(),
-                "DEFERRED",
-                "deferred (orchestrator): repair loop round cap reached",
-            )
-            try:
-                self._publish_deferred_no_replace(dest, deferred_text)
-            except FileExistsError:
-                log(f"ERROR: refusing to overwrite existing deferred repair request: {dest}")
-                raise SystemExit(1) from None
-            try:
-                f.unlink()
-            except BaseException:
-                try:
-                    dest.unlink()
-                except BaseException as rollback_error:
-                    raise RuntimeError(
-                        f"failed to remove active repair request {f} and could not roll back {dest}"
-                    ) from rollback_error
-                raise
-            log(f"  deferred {f.name} -> {dest.parent} (repair loop exhausted)")
+        self._persist_defer_intent(moves)
+        moved = self._complete_defer_intent()
+        if moved != len(moves):
+            raise RuntimeError(f"durable defer intent completed {moved} requests; expected {len(moves)}")
 
         # Statuses are already complete in each published destination. This
         # final reconciliation updates reports; if it fails, the next repair
         # loop startup repeats it idempotently from the authoritative directory.
         self.reconcile_deferred_state()
-        return len(moves)
+        return moved
 
     # ── final summary ──
     def generate_summary(self) -> None:
@@ -1436,13 +1732,27 @@ class Pipeline:
         else:
             log("Skipping Phase 3 (--skip-validation)")
 
-        if not self.skip_confirmation:
+        # Recover the durable RR queue before Phase 4 reads or rewrites its
+        # report.  In particular, an IN_REPAIR marker means a previous repair
+        # Phase 3 may have left partial spec/output edits; retry that scoped
+        # repair first instead of confirming the half-finished artifacts.
+        resumed_repair = False
+        if not self.skip_confirmation and not self.skip_repair_loop:
+            self.prepare_repair_state()
+            if self.has_open_repair_requests():
+                log("Resuming pending repair requests before the initial Phase 4 pass")
+                self.run_repair_loop()
+                resumed_repair = True
+
+        if not self.skip_confirmation and not resumed_repair:
             self.wait_for_quota()
             self.run_phase4_confirmation()
-        else:
+        elif self.skip_confirmation:
             log("Skipping Phase 4a (--skip-confirmation)")
+        else:
+            log("Initial Phase 4 completed by the resumed repair loop")
 
-        if not self.skip_confirmation and not self.skip_repair_loop:
+        if not self.skip_confirmation and not self.skip_repair_loop and not resumed_repair:
             self.run_repair_loop()
         elif self.skip_repair_loop:
             log("Skipping repair loop (--skip-repair-loop)")

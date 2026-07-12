@@ -76,7 +76,11 @@ def _maybe_wrap_sandbox(cmd: list[str], work_dir: str) -> list[str]:
         )
     )
     workspace = work_dir or os.getcwd()
-    return ["node", backend, "--workspace", workspace, "--", *cmd]
+    wrapped = ["node", backend, "--workspace", workspace]
+    config = os.environ.get("SPECULA_SANDBOX_CONFIG", "")
+    if config:
+        wrapped += ["--config", config]
+    return [*wrapped, "--", *cmd]
 
 
 def _parse_result(raw_text: str) -> dict[str, Any] | None:
@@ -322,26 +326,32 @@ def main(argv: list[str]) -> int:
 
         # ── Stop gate (execution layer) ──
         # Generic gate interface: the phase launcher exports SPECULA_PHASE +
-        # SPECULA_WORK_DIR (see src/specula/stop_gate.py). When both are present,
-        # register a Stop hook so the agent cannot end its turn while background
-        # jobs it started run unobserved, or without the phase deliverable.
+        # SPECULA_WORK_DIR (see src/specula/stop_gate.py). Parallel workers may
+        # additionally narrow gate state/PID scanning with
+        # SPECULA_STOP_GATE_WORK_DIR while retaining the target workspace for the
+        # outer sandbox. When the required context is present, register a Stop
+        # hook so the agent cannot end its turn while background jobs it started
+        # run unobserved, or without the phase deliverable.
         # Without them (interactive use, tests, other callers) nothing is
         # injected and the claude argv is unchanged.
         settings_args: list[str] = []
         work_dir = os.environ.get("SPECULA_WORK_DIR", "")
+        gate_work_dir = os.environ.get("SPECULA_STOP_GATE_WORK_DIR", "") or work_dir
         if (
             work_dir
+            and gate_work_dir
             and os.environ.get("SPECULA_PHASE")
             and os.environ.get("SPECULA_STOP_GATE", "").lower() != "off"
             and os.path.isdir(work_dir)
+            and os.path.isdir(gate_work_dir)
         ):
             try:
                 gate = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stop_gate.py"))
-                state_dir = os.path.join(work_dir, ".stop-gate")
+                state_dir = os.path.join(gate_work_dir, ".stop-gate")
                 os.makedirs(state_dir, exist_ok=True)
                 # Fresh fuse per agent run — via the gate's own CLI (like
                 # codex.sh) so the state-file list has exactly one owner.
-                subprocess.run([sys.executable, gate, "reset", work_dir], check=False)
+                subprocess.run([sys.executable, gate, "reset", gate_work_dir], check=False)
                 hook = {"type": "command", "command": f"python3 {shlex.quote(gate)} claude", "timeout": 60}
                 settings_path = os.path.join(state_dir, "claude-settings.json")
                 with open(settings_path, "w") as sf:

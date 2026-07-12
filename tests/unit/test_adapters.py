@@ -65,6 +65,10 @@ _VOLATILE = (
     "SPECULA_PHASE",
     "SPECULA_WORK_DIR",
     "SPECULA_STOP_GATE",
+    "SPECULA_STOP_GATE_WORK_DIR",
+    "SPECULA_SANDBOX",
+    "SPECULA_SANDBOX_BACKEND",
+    "SPECULA_SANDBOX_CONFIG",
     "SPECULA_ACTIVITY_LOG",
     "CODEX_HOME",
     "ADAPTER_EXIT_CODE",
@@ -219,6 +223,31 @@ class ClaudeCodeAdapter(AdapterCase):
         )
         self.assertIn("--effort", r["argv"])
         self.assertEqual(r["argv"][r["argv"].index("--effort") + 1], "max")
+
+    def test_stop_gate_state_and_settings_use_worker_scope(self) -> None:
+        base = self.sandbox()
+        target = base / "target"
+        gate_scope = base / "finding"
+        for path in (target, gate_scope):
+            state = path / ".stop-gate"
+            state.mkdir(parents=True)
+            (state / "blocks").write_text("3\n")
+
+        r = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_PHASE": "bug_confirmation_turn",
+                "SPECULA_WORK_DIR": str(target),
+                "SPECULA_STOP_GATE_WORK_DIR": str(gate_scope),
+            },
+        )
+
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertTrue((target / ".stop-gate" / "blocks").is_file())
+        self.assertFalse((gate_scope / ".stop-gate" / "blocks").exists())
+        settings = gate_scope / ".stop-gate" / "claude-settings.json"
+        self.assertTrue(settings.is_file())
+        self.assertEqual(r["argv"][r["argv"].index("--settings") + 1], str(settings))
 
     def test_effort_model_budget_assembled(self) -> None:
         base = self.sandbox()
@@ -795,6 +824,28 @@ class CodexAdapter(AdapterCase):
             ],
         )
         self.assertEqual(r["stdin"], "the prompt")
+
+    def test_stop_gate_reset_uses_worker_scope(self) -> None:
+        base = self.sandbox()
+        target = base / "target"
+        gate_scope = base / "finding"
+        for path in (target, gate_scope):
+            state = path / ".stop-gate"
+            state.mkdir(parents=True)
+            (state / "blocks").write_text("3\n")
+
+        r = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_PHASE": "bug_confirmation_turn",
+                "SPECULA_WORK_DIR": str(target),
+                "SPECULA_STOP_GATE_WORK_DIR": str(gate_scope),
+            },
+        )
+
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertTrue((target / ".stop-gate" / "blocks").is_file())
+        self.assertFalse((gate_scope / ".stop-gate" / "blocks").exists())
 
     def test_prompt_from_file_is_read(self) -> None:
         base = self.sandbox()
