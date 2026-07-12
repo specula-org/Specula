@@ -32,7 +32,8 @@ needs an issue-tracker search — leave it to confirmation). Removing DUPLICATES
 the only removal you do.
 
 ## Schema — read it first
-Read `{{schema_doc}}` and follow it. Same schema; the top-level object uses
+Use the installed **validation-workflow** skill. Within it, read and follow the
+findings JSON format. The top-level object uses
 `generated_by: "consolidate"` and the list key `findings`. Each entry: `id`
 (unique, filesystem-safe), `title`, `source`, `family`, `severity`,
 `invariant`/`config`/`counterexample` (null for code-review), `affected_code`

@@ -180,7 +180,7 @@ def _valid_run_id(run_id: str) -> bool:
 #
 # Repair requests live at <work_dir>/spec/repair-requests/RR-*.md. Their
 # frontmatter `status:` is the single source of truth. See
-# .claude/skills/bug-confirmation/references/repair-request-format.md.
+# the bug-confirmation skill's repair-request format.
 # ──────────────────────────────────────────────────────────
 def rr_field(path: str | Path, field: str) -> str:
     """First frontmatter `<field>:` value within the top 25 lines, trailing

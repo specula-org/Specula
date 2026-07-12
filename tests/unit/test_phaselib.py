@@ -63,12 +63,12 @@ class PhaseSpec(TypedDict):
     log: str  # agent log filename
     prompt: str  # written prompt filename
     flag: str  # dry-run prompt flag: --prompt or --prompt-file
-    skill: str  # skill guide the prompt defers to
+    skill: str  # installed skill name the prompt invokes
     out: str  # a key output/input path the prompt must carry
 
 
 # Per-phase contract table. `fail`/`ok`/`skill`/`out` are spelled out here rather
-# than read back off the phase object, so a reworded gate, a typo'd skill path,
+# than read back off the phase object, so a reworded gate, a typo'd skill name,
 # or a dropped output path is caught rather than mirrored.
 PHASES: list[PhaseSpec] = [
     {
@@ -80,7 +80,7 @@ PHASES: list[PhaseSpec] = [
         "log": "agent.log",
         "prompt": ".prompt.md",
         "flag": "--prompt",
-        "skill": ".claude/skills/code_analysis/guide.md",
+        "skill": "code-analysis",
         "out": "modeling-brief.md",
     },
     {
@@ -92,7 +92,7 @@ PHASES: list[PhaseSpec] = [
         "log": "spec-gen.log",
         "prompt": ".spec-gen-prompt.md",
         "flag": "--prompt",
-        "skill": ".claude/skills/spec_generation/guide.md",
+        "skill": "spec-generation",
         "out": "spec/base.tla",
     },
     {
@@ -104,7 +104,7 @@ PHASES: list[PhaseSpec] = [
         "log": "harness-gen.log",
         "prompt": ".harness-gen-prompt.md",
         "flag": "--prompt",
-        "skill": ".claude/skills/harness-generation/guide.md",
+        "skill": "harness-generation",
         "out": "harness",
     },
     {
@@ -116,7 +116,7 @@ PHASES: list[PhaseSpec] = [
         "log": "spec-validation.log",
         "prompt": ".spec-validation-prompt.md",
         "flag": "--prompt",
-        "skill": ".claude/skills/validation-workflow/guide.md",
+        "skill": "validation-workflow",
         "out": "modeling-brief.md",
     },
     {
@@ -128,7 +128,7 @@ PHASES: list[PhaseSpec] = [
         "log": "bug-confirmation.log",
         "prompt": ".bug-confirmation-prompt.md",
         "flag": "--prompt",
-        "skill": ".claude/skills/bug-confirmation/guide.md",
+        "skill": "bug-confirmation",
         "out": "spec/confirmed-bugs.md",
     },
     {
@@ -142,7 +142,7 @@ PHASES: list[PhaseSpec] = [
         "log": "bug-classification.log",
         "prompt": ".bug-classification-prompt.md",
         "flag": "--prompt-file",
-        "skill": ".claude/skills/bug-classification/guide.md",
+        "skill": "bug-classification",
         "out": "spec/bug-severity.md",
     },
 ]
@@ -309,7 +309,8 @@ class TestDryRunCommand(PhaseCase):
                 # the prompt file the agent would receive
                 self.assertTrue(prompt.is_file(), "prompt file not written")
                 body = prompt.read_text()
-                self.assertIn(spec["skill"], body)  # the skill guide it defers to
+                self.assertIn(spec["skill"], body)  # the installed skill it invokes
+                self.assertNotIn(".claude/skills", body)
                 self.assertIn(str(wd / spec["out"]), body)  # a key output/inputs path
 
     def test_bug_confirmation_defaults_to_parallel(self) -> None:
@@ -397,7 +398,9 @@ class TestRepairAndRecheckModes(PhaseCase):
         self.assertIn(f"--log={wd / 'spec-repair.log'}", out)
         body = (wd / ".spec-repair-prompt.md").read_text()
         self.assertIn("REPAIR MODE", body)
-        self.assertIn("repair-request-format.md", body)
+        for skill in ("bug-confirmation", "validation-workflow", "tla-trace-workflow", "tla-checking-workflow"):
+            self.assertIn(skill, body)
+        self.assertNotIn(".claude/skills", body)
 
     def test_bug_confirmation_recheck(self) -> None:
         rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--recheck"])
@@ -406,7 +409,10 @@ class TestRepairAndRecheckModes(PhaseCase):
         self.assertIn(f"--log={wd / 'bug-recheck.log'}", out)
         body = (wd / ".bug-recheck-prompt.md").read_text()
         self.assertIn("RE-CHECK", body)
-        self.assertIn("03-recheck.md", body)
+        self.assertIn("bug-confirmation", body)
+        self.assertIn("Phase 2′ re-check", body)
+        self.assertIn("repair-request format", body)
+        self.assertNotIn(".claude/skills", body)
 
 
 class TestArgErrors(PhaseCase):

@@ -9,7 +9,6 @@
 - Reproduction test → write to: {{repro_dir}}/test_bug{{finding_id}}_<name>.<ext>
 - Your finding work dir (notes): {{fdir}}
 
-## Rules (read, follow exactly — do not restate or relax)
-- Confirmation flow: {{skills}}/bug-confirmation/guide.md
-- Investigation: {{skills}}/bug-confirmation/phases/01-investigation.md
-- Reproduction: {{skills}}/bug-confirmation/phases/02-reproduction.md
+## Required skill
+Use the installed **bug-confirmation** skill. Read it in full and follow its
+Phase 1 investigation, Phase 2 reproduction, and repair-request format exactly.

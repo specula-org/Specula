@@ -206,6 +206,25 @@ class TestDriver(ConfirmCase):
         self.assertEqual(rc, 0)
         self.assertFalse(stale.is_file())  # removed → 4b gate sees MISSING and retries
 
+    def test_consolidate_prompt_invokes_installed_skill_without_path(self) -> None:
+        ws = Workspace(["T"])
+        spec = ws.work_dir("T") / "spec"
+        spec.mkdir(parents=True)
+        prompts: list[str] = []
+
+        def run(_adapter: Path, prompt: str, *_args: object, **_kwargs: object) -> tuple[int, str]:
+            prompts.append(prompt)
+            (spec / "candidates.json").write_text('{"generated_by":"consolidate","findings":[]}')
+            return (0, "")
+
+        with mock.patch.object(C, "run_agent_blocking", run):
+            C.consolidate(self.cfg(ws, "T"))
+
+        self.assertEqual(len(prompts), 1)
+        self.assertIn("installed **validation-workflow** skill", prompts[0])
+        self.assertNotIn("/skills/", prompts[0])
+        self.assertNotIn(".claude/skills", prompts[0])
+
     def test_consolidate_failure_withholds_not_raises(self) -> None:
         # No candidates.json → consolidate runs the agent. A non-75 failure that
         # yields no valid candidates.json must withhold + return 0 (batch-phase
@@ -253,6 +272,17 @@ class TestPromptExtraAndLog(ConfirmCase):
         cfg = self.cfg(ws, "T", prompt_extra="\n## Target-Specific Instructions\n\nCHECK THE FOO RACE")
         f = C.Finding({"id": "MC-1", "title": "t", "summary": "s"}, ws.work_dir("T") / "confirmation" / "MC-1")
         self.assertIn("CHECK THE FOO RACE", C.prompt_reproduce(cfg, f, "/repo"))
+
+    def test_reproduce_prompt_invokes_installed_skill_without_path(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T")
+        f = C.Finding({"id": "MC-1", "title": "t", "summary": "s"}, ws.work_dir("T") / "confirmation" / "MC-1")
+
+        prompt = C.prompt_reproduce(cfg, f, "/repo")
+
+        self.assertIn("installed **bug-confirmation** skill", prompt)
+        self.assertNotIn("/skills/", prompt)
+        self.assertNotIn(".claude/skills", prompt)
 
     def test_bug_confirmation_log_written_and_global_reset(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
