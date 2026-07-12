@@ -23,6 +23,7 @@ from unittest import mock
 
 from specula import confirmlib as C
 from specula.phaselib import Workspace
+from specula.skill_refs import CODEX_PLUGIN_NAME
 
 
 def _fake_turn(text: str, rc: int = 0) -> Callable[..., tuple[int, str]]:
@@ -221,7 +222,8 @@ class TestDriver(ConfirmCase):
             C.consolidate(self.cfg(ws, "T"))
 
         self.assertEqual(len(prompts), 1)
-        self.assertIn("installed **validation-workflow** skill", prompts[0])
+        self.assertIn("installed Specula skill **validation-workflow**", prompts[0])
+        self.assertIn(f"**{CODEX_PLUGIN_NAME}:validation-workflow**", prompts[0])
         self.assertNotIn("/skills/", prompts[0])
         self.assertNotIn(".claude/skills", prompts[0])
 
@@ -280,7 +282,8 @@ class TestPromptExtraAndLog(ConfirmCase):
 
         prompt = C.prompt_reproduce(cfg, f, "/repo")
 
-        self.assertIn("installed **bug-confirmation** skill", prompt)
+        self.assertIn("installed Specula skill **bug-confirmation**", prompt)
+        self.assertIn(f"**{CODEX_PLUGIN_NAME}:bug-confirmation**", prompt)
         self.assertNotIn("/skills/", prompt)
         self.assertNotIn(".claude/skills", prompt)
 

@@ -37,6 +37,7 @@ from typing import Any
 
 from specula.phaselib import Workspace, run_agent_blocking
 from specula.prompts import render
+from specula.skill_refs import prompt_skill_ids
 
 PHASE_KEY = "bug_confirmation"
 
@@ -142,6 +143,7 @@ def _context(cfg: ConfirmConfig, f: Finding, repo_for_agent: str) -> str:
         repro_dir=str(wd / "repro"),
         fdir=str(f.fdir),
         finding_id=f.id,
+        bug_confirmation_skill=prompt_skill_ids("bug-confirmation"),
     )
 
 
@@ -403,6 +405,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
             mc_src=mc_src,
             brief=str(brief),
             out=str(out),
+            validation_workflow_skill=prompt_skill_ids("validation-workflow"),
         )
         + cfg.prompt_extra
     )

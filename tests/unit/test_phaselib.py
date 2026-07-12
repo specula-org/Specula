@@ -50,6 +50,7 @@ import specula.progress as progress_module  # noqa: E402
 import specula.quota as quota  # noqa: E402
 from specula import phaselib  # noqa: E402
 from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
+from specula.skill_refs import CODEX_PLUGIN_NAME  # noqa: E402
 
 NAME = "footest"
 
@@ -309,7 +310,9 @@ class TestDryRunCommand(PhaseCase):
                 # the prompt file the agent would receive
                 self.assertTrue(prompt.is_file(), "prompt file not written")
                 body = prompt.read_text()
-                self.assertIn(spec["skill"], body)  # the installed skill it invokes
+                self.assertIn(f"**{spec['skill']}**", body)  # standalone installed skill ID
+                self.assertIn(f"**{CODEX_PLUGIN_NAME}:{spec['skill']}**", body)  # Codex plugin-only installed skill ID
+                self.assertNotIn("/skills/", body)
                 self.assertNotIn(".claude/skills", body)
                 self.assertIn(str(wd / spec["out"]), body)  # a key output/inputs path
 
@@ -399,7 +402,9 @@ class TestRepairAndRecheckModes(PhaseCase):
         body = (wd / ".spec-repair-prompt.md").read_text()
         self.assertIn("REPAIR MODE", body)
         for skill in ("bug-confirmation", "validation-workflow", "tla-trace-workflow", "tla-checking-workflow"):
-            self.assertIn(skill, body)
+            self.assertIn(f"**{skill}**", body)
+            self.assertIn(f"**{CODEX_PLUGIN_NAME}:{skill}**", body)
+        self.assertNotIn("/skills/", body)
         self.assertNotIn(".claude/skills", body)
 
     def test_bug_confirmation_recheck(self) -> None:
@@ -409,9 +414,11 @@ class TestRepairAndRecheckModes(PhaseCase):
         self.assertIn(f"--log={wd / 'bug-recheck.log'}", out)
         body = (wd / ".bug-recheck-prompt.md").read_text()
         self.assertIn("RE-CHECK", body)
-        self.assertIn("bug-confirmation", body)
+        self.assertIn("**bug-confirmation**", body)
+        self.assertIn(f"**{CODEX_PLUGIN_NAME}:bug-confirmation**", body)
         self.assertIn("Phase 2′ re-check", body)
         self.assertIn("repair-request format", body)
+        self.assertNotIn("/skills/", body)
         self.assertNotIn(".claude/skills", body)
 
 

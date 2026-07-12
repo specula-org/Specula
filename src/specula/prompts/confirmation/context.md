@@ -10,5 +10,5 @@
 - Your finding work dir (notes): {{fdir}}
 
 ## Required skill
-Use the installed **bug-confirmation** skill. Read it in full and follow its
+Use the installed Specula skill {{bug_confirmation_skill}}. Read it in full and follow its
 Phase 1 investigation, Phase 2 reproduction, and repair-request format exactly.

@@ -31,6 +31,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import specula.progress as progress
 from specula import quota
+from specula.skill_refs import prompt_skill_ids
 
 SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
@@ -927,7 +928,7 @@ You are analyzing the following system:
 
 ## Instructions
 
-Use the installed **code-analysis** skill. Read it in full and follow it exactly — it is the single source of methodology (its 4 phases, references, rules, bug-family modeling-brief format, and Category A/B handling).
+Use the installed Specula skill {prompt_skill_ids("code-analysis")}. Read it in full and follow it exactly — it is the single source of methodology (its 4 phases, references, rules, bug-family modeling-brief format, and Category A/B handling).
 
 Do everything the skill specifies. Do not add, relax, or override any step here.
 
@@ -1036,7 +1037,7 @@ You are generating a TLA+ specification for: **{name}**
 
 ## Instructions
 
-Use the installed **spec-generation** skill. Read it in full and follow it exactly — it is the single source of methodology (its phases, references, rules, Category A/B handling, and the mandatory brief-coverage self-audit).
+Use the installed Specula skill {prompt_skill_ids("spec-generation")}. Read it in full and follow it exactly — it is the single source of methodology (its phases, references, rules, Category A/B handling, and the mandatory brief-coverage self-audit).
 
 Do everything the skill specifies. Do not add, relax, or override any step here.
 
@@ -1173,7 +1174,7 @@ You are generating a trace harness for **{name}** — instrumenting the real sou
 
 ## Workflow
 
-Use the installed **harness-generation** skill. Read it in full and follow it exactly — it is the single source of methodology (instrument real code, trace format, run.sh, end-to-end validation).
+Use the installed Specula skill {prompt_skill_ids("harness-generation")}. Read it in full and follow it exactly — it is the single source of methodology (instrument real code, trace format, run.sh, end-to-end validation).
 
 Do everything the skill specifies. Do not add, relax, or override any step here.
 
@@ -1295,7 +1296,7 @@ You are assigning a Severity tier to each bug in **{name}**'s already-confirmed 
 
 ## Methodology
 
-Use the installed **bug-classification** skill. Read it in full and follow it exactly — it is the single source of methodology (the four-tier Severity rubric, the per-bug output schema and mandatory Summary block, the single-responsibility constraints — do not modify confirmed-bugs.md or its Status fields — the rule that Severity is independent of reproduction status, and the output validation checklist).
+Use the installed Specula skill {prompt_skill_ids("bug-classification")}. Read it in full and follow it exactly — it is the single source of methodology (the four-tier Severity rubric, the per-bug output schema and mandatory Summary block, the single-responsibility constraints — do not modify confirmed-bugs.md or its Status fields — the rule that Severity is independent of reproduction status, and the output validation checklist).
 
 Do everything the skill specifies. Do not add, relax, or override any step here.
 """
@@ -1426,8 +1427,8 @@ arises, re-validate, then hand each request to re-check.
 - **Traces**: {wd}/traces/
 
 ## Methodology — use these installed skills and follow them exactly
-- **bug-confirmation** — apply its repair-request format, request state machine, and per-request repair procedure (how to repair each target, the full-trace soundness gate, and the OPEN/REOPENED → IN_REPAIR → RECHECK transitions you own).
-- **validation-workflow** — repair and re-validate without overfitting, including the **tla-trace-workflow** and **tla-checking-workflow** skills it delegates to.
+- {prompt_skill_ids("bug-confirmation")} — apply its repair-request format, request state machine, and per-request repair procedure (how to repair each target, the full-trace soundness gate, and the OPEN/REOPENED → IN_REPAIR → RECHECK transitions you own).
+- {prompt_skill_ids("validation-workflow")} — repair and re-validate without overfitting, including the {prompt_skill_ids("tla-trace-workflow")} and {prompt_skill_ids("tla-checking-workflow")} skills it delegates to.
 
 Process ONLY OPEN/REOPENED requests. Do everything those skills specify; do not add, relax, or override any step here.
 """
@@ -1448,7 +1449,7 @@ You are validating the TLA+ specification for **{name}** through iterative trace
 
 ## Workflow
 
-Use the installed **validation-workflow** skill. Read it in full and follow it exactly — it is the single source of methodology (its iterative trace-validation ↔ model-checking loop, the Case A/B/C classification, convergence, bug hunting, and required artifacts such as changelog.md / bug-report.md), including the **tla-trace-workflow** and **tla-checking-workflow** skills it delegates to.
+Use the installed Specula skill {prompt_skill_ids("validation-workflow")}. Read it in full and follow it exactly — it is the single source of methodology (its iterative trace-validation ↔ model-checking loop, the Case A/B/C classification, convergence, bug hunting, and required artifacts such as changelog.md / bug-report.md), including the {prompt_skill_ids("tla-trace-workflow")} and {prompt_skill_ids("tla-checking-workflow")} skills it delegates to.
 
 Do everything the skill specifies. Do not add, relax, or override any step here. Harness and traces already exist from Phase 2.5 under `{wd}/traces/` and `{wd}/harness/`; the skill's Phase 0 covers verifying and (if needed) regenerating them.
 """
@@ -1627,7 +1628,7 @@ finding and transition its request out of RECHECK.
 - **Per-request cap**: --max-repair-rounds={rounds}   (0 = unlimited)
 
 ## Methodology
-Use the installed **bug-confirmation** skill. Follow its Phase 2′ re-check procedure and repair-request format exactly.
+Use the installed Specula skill {prompt_skill_ids("bug-confirmation")}. Follow its Phase 2′ re-check procedure and repair-request format exactly.
 
 ## Instructions
 Process ONLY `status: RECHECK` requests, honor the per-request cap (`--max-repair-rounds` above), and do not add, relax, or override any step from the skill.
@@ -1646,7 +1647,7 @@ You are confirming and reproducing bugs found in **{name}** by both model checki
 
 ## Methodology
 
-Use the installed **bug-confirmation** skill. Read it in full and follow it exactly.
+Use the installed Specula skill {prompt_skill_ids("bug-confirmation")}. Read it in full and follow it exactly.
 
 ## Task
 

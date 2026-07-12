@@ -32,7 +32,7 @@ needs an issue-tracker search — leave it to confirmation). Removing DUPLICATES
 the only removal you do.
 
 ## Schema — read it first
-Use the installed **validation-workflow** skill. Within it, read and follow the
+Use the installed Specula skill {{validation_workflow_skill}}. Within it, read and follow the
 findings JSON format. The top-level object uses
 `generated_by: "consolidate"` and the list key `findings`. Each entry: `id`
 (unique, filesystem-safe), `title`, `source`, `family`, `severity`,
