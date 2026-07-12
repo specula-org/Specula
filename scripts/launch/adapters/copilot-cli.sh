@@ -84,6 +84,27 @@ if [[ -n "$PROMPT_FILE" ]]; then
   PROMPT="$(cat "$PROMPT_FILE")"
 fi
 
+# ── Guard prompt size ──
+#
+# Unlike codex (stdin) and claude-code (stdin), the copilot CLI accepts the
+# prompt ONLY as a command-line argument (-p <text>) — it exposes no stdin or
+# prompt-file input. A single argv argument is capped at MAX_ARG_STRLEN (128 KiB
+# on Linux), so an oversized prompt (e.g. a debate turn embedding a prior
+# transcript) would otherwise fail deep in exec with a cryptic "Argument list
+# too long" and no output. Fail loudly and early, and steer to an agent that can
+# take large prompts. (printf is a bash builtin, so measuring is not itself
+# subject to ARG_MAX.)
+PROMPT_BYTES=$(printf '%s' "$PROMPT" | wc -c)
+MAX_PROMPT_BYTES=124000
+if (( PROMPT_BYTES > MAX_PROMPT_BYTES )); then
+  ERROR="copilot-cli adapter: prompt is ${PROMPT_BYTES} bytes, over the ~${MAX_PROMPT_BYTES}-byte limit the copilot CLI accepts as a command-line argument (it has no stdin/prompt-file input). Use --agent=codex or --agent=claude-code for large-context or --debate prompts."
+  printf '%s\n' "$ERROR" >&2
+  if ! printf '%s\n' "$ERROR" > "$LOG_FILE"; then
+    printf 'copilot-cli adapter: unable to write diagnostic log: %s\n' "$LOG_FILE" >&2
+  fi
+  exit 1
+fi
+
 # Probe optional CLI features once per adapter invocation.  Capability probing
 # is more robust than parsing version strings across stable/prerelease channels.
 COPILOT_HELP=""

@@ -1,47 +1,64 @@
-# Phase 1: Investigation
+# Phase 1: Investigation (evidence only — no verdict)
 
-Confirm whether the finding is a real bug, what the bug claim depends on, and why the code supports or refutes the claim. Investigate every finding the input lists — do not prejudge or pre-filter. Each step's output feeds the next.
+Gather the evidence needed to decide the finding's verdict later: what the code
+actually does, whether the buggy path is reachable, and what the developers know
+about it. **Phase 1 records; it does not judge.** With ONE exception (the
+code-review × known drop in Step 3), you do NOT decide here whether it is a bug —
+that verdict is chosen *after* Phase 2 (reproduction), from the full evidence. Do
+not prejudge; investigate every finding.
 
-The three steps are: code audit → developer intent investigation → precedent re-check.
+**Write everything to `investigation.md` in this finding's work directory** — the
+cited code, call chain, reachability, safeguards, developer evidence, and
+known-status. Phase 2 and the final verdict read this file; it is the evidence
+record, not a verdict.
 
-## Step 1: Code audit
+The three steps are: code audit → developer-knowledge search → known-status / precedent.
 
-Confirm the bug's validity by reading the source code.
+## Step 1: Code audit (record facts, do not conclude)
 
-1. **Locate the relevant code.** Find the specific functions and lines mentioned in the bug report. Read these functions in full and understand their context.
-2. **Trace the call chain.** Starting from public APIs or entry points, trace the path to the buggy code. Confirm whether this path is reachable during normal usage.
-3. **Check for existing safeguards.** Check whether callers already have precondition checks, lock guards, or other mechanisms that prevent this bug from being triggered in practice. If they do, report the finding as a false positive with the safeguard cited and stop.
-4. **Construct a trigger scenario.** Describe in words a concrete sequence of events that could naturally occur at the user/system level and would reach the buggy code path. If you cannot construct one after genuine effort, note that explicitly — the bug may still be real but unreachable, in which case Phase 2 reproduction will likely fail and surface that.
+Read the source to establish what the code does — not whether it is a bug.
 
-Record what you found: the cited file:line(s), the call chain, any safeguards encountered, and the constructed trigger scenario.
+1. **Locate the relevant code.** Find the specific functions and lines the finding cites. Read them in full, in context.
+2. **Trace the call chain.** From public APIs / entry points, trace the path to the cited code, and record whether that path is reachable during normal usage.
+3. **Construct a trigger scenario.** Describe a concrete sequence of events that could naturally occur and would reach the code. Note any caller-side safeguards (precondition checks, lock guards, downstream sync/resend) that might prevent or mask it — **record them; do not dismiss on a spotted safeguard, Phase 2 proves whether it fires.** If you cannot construct a trigger after genuine effort, record that (it may still be real but hard to reach; Phase 2 will surface it).
 
-## Step 2: Developer intent investigation
+Record: cited `file:line`(s), the call chain, the reachability assessment, safeguards encountered, and the trigger scenario.
 
-A bug is defined by the developers' own requirements and expectations — not by the researcher's intuition about what should be correct, and not by what an internally-consistent TLA+ model says. Investigate what the developers themselves believe about this behavior.
+## Step 2: Developer-knowledge search (record evidence, do not classify)
 
-### What to investigate
+Search what the developers themselves know and believe about this behavior — as
+**evidence** the later verdict weighs, never a verdict now.
 
-1. **Issue tracker.** Search for open and closed issues, PRs, and discussions mentioning the relevant code, function names, or the behavior in question. Developers may have already discussed this exact scenario.
-2. **Commit messages and PR discussions.** Use `git log` and `git blame` on the affected code. Read the commit messages and linked PRs to understand why the code was written this way. Look for statements of intent ("this is a trade-off", "we accept this because...", "this should be safe even if...").
-3. **Code comments and documentation.** Look for comments near the code (TODOs, FIXMEs, "known issue", "by design", "trade-off"), as well as design documents, RFCs, or architecture docs in the repository.
-4. **Test cases.** Check what the existing tests assert. Tests encode developer expectations — if a test explicitly sets up the scenario you found and asserts the current behavior, the developers likely consider it correct.
+1. **Issue tracker.** Open/closed issues, PRs, discussions naming the code, the function, or the behavior.
+2. **Commits / blame.** `git log` / `git blame` on the site; read messages and linked PRs for stated intent ("trade-off", "we accept this", "should be safe even if…").
+3. **Comments / docs.** Comments near the code (TODO, FIXME, "known issue", "by design"), plus design docs / RFCs.
+4. **Tests.** What existing tests assert — a test that sets up this exact scenario and asserts the current behavior is evidence the developers consider it correct.
 
-### How to use what you find
+Record what you find, verbatim, with cites. **Do NOT classify it bug/not-bug here.** Developer intent is one input the verdict weighs later; it is admissible only as *evidence about whether a consequence exists* (e.g. "downstream is built to tolerate this" is evidence of no consequence). A reachable behavior with a real consequence is a bug regardless of intent; a consequence-free inconsistency is not, regardless of how wrong it looks. WIP status / an open TODO is not evidence either way. Just record.
 
-- **Developer says "we know about this, it's a deliberate trade-off"** → Classify as NOT a bug unless you can show their trade-off analysis is flawed (e.g., they accepted a liveness cost but didn't realize it also affects safety).
-- **Developer says "this should be safe even under condition X"** → If your counterexample shows it is NOT safe under condition X, this IS a bug — the developers' own stated requirement is violated.
-- **No developer commentary found** → Fall back to code quality analysis: assess whether the behavior constitutes a bug based on established engineering standards (e.g., violating API contracts, ignoring error returns, TOCTOU races, missing atomicity). These are bugs by any reasonable standard regardless of developer intent. Note the absence of developer evidence in your report and explain which engineering principle the code violates.
+## Step 3: Known-status / precedent — the ONE allowed drop
 
-The two symmetric cases above are the key insight: developer intent can both *dismiss* a finding that looks like a bug to a researcher, and *validate* a finding that a researcher would have dismissed. Always let the evidence speak.
+Determine whether this finding merely **duplicates an already-reported bug**. It
+counts as *known* **only** if an existing **issue / PR / CVE / advisory (or a prior
+Specula dataset entry) has already reported THIS exact defect** — the SAME
+mechanism at the SAME site — as a filed bug. The bar is about *a report already
+existing in the tracker*, **not** about developer awareness. So the following do
+**NOT** count as known — KEEP the finding and let Phase 2 decide it, because
+finding-and-confirming an unreported problem is a real bug even if someone
+suspected it:
 
-**Report what you find.** Whether the investigation confirms or refutes the bug, include a brief summary of the developer evidence in your final report.
+- a developer merely being **aware** it might be a problem — a comment / `TODO` / `FIXME` / "this might be unsafe" / "could be racy" / "we don't handle X yet". Suspicion is not a filed report; if we find and confirm it, it is our bug.
+- a "known limitation" note about a *different* aspect;
+- a same-shape precedent applied to a **different** field/message/step — re-verify EACH of the precedent's prerequisites at the new site; a matching shape alone is not the same bug;
+- you spotting the gap yourself.
 
-## Step 3: Precedent prerequisite re-check
+**Before you record `Novelty: NEW`, confirm you actually ran the Step-2 tracker search — and that it covered recently merged / closed PRs, not just open issues (a fix that landed days ago still makes the bug KNOWN, not NEW). `NEW` asserts you looked and found nothing reporting THIS mechanism at THIS site; it is never the default for "I didn't check". If you cite a `KNOWN` match, it must be the same mechanism — a report about a different site/field/message is not a match.**
 
-If the finding cites a precedent — an upstream-accepted issue, a prior-round acceptance, a similar pattern in a sister project — the precedent endorses *the pattern under its prerequisites*, not the pattern's applicability to a new field, message, or protocol step. Re-verify each of the precedent's prerequisites at the new site explicitly. Do not treat *"this is the same shape as accepted bug X"* as sufficient: the same shape on a different field can be a real bug, an artifact of spec asymmetry, or by design — only the per-site prerequisite check distinguishes these.
+Then apply the single pre-filter:
 
-If the finding does not cite a precedent, skip this step.
+- **Code-review-sourced AND an existing issue/PR/CVE has already reported this exact defect** → **DROP** now: a code-review reproduction of an already-reported bug is a duplicate, not a new bug. Record `Status: DROPPED (code-review × known, cite: <URL/dataset-id>)` and write no `repro/` test.
+- **Otherwise** (MC-found with an actual counterexample — new or known; or any finding not already reported) → proceed to Phase 2. Do not drop; the verdict is decided after reproduction.
 
 ---
 
-After completing the steps and being confident the bug stands (or has been firmly invalidated), proceed to Phase 2 (Reproduction).
+Proceed to Phase 2 with the evidence recorded in `investigation.md`. Decide the verdict AFTER reproduction — except the code-review × known drop above.

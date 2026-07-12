@@ -26,19 +26,23 @@ hook simply never read these, and the gate fails open by construction):
 
   SPECULA_PHASE          phase key (phaselib Phase.key, e.g. "spec_validation")
   SPECULA_WORK_DIR       the target's .specula-output directory
+  SPECULA_STOP_GATE_WORK_DIR
+                         optional worker-local gate state/PID-scan directory;
+                         defaults to SPECULA_WORK_DIR
   SPECULA_STOP_GATE      set to "off" to disable the gate entirely
   SPECULA_STOP_GATE_CAP  blocks allowed per agent run before the fuse opens
                          (default 5; the fuse writes FAILED-HOOK-CAP and lets
                          the stop through so a confused agent can never loop
                          forever)
 
-Per-run state lives under $SPECULA_WORK_DIR/.stop-gate/ (block counter,
-FAILED-HOOK-CAP marker, gate.log audit trail); adapters reset the counter and
-marker when they launch a fresh agent.
+Per-run state lives under $SPECULA_STOP_GATE_WORK_DIR/.stop-gate/ (block
+counter, FAILED-HOOK-CAP marker, gate.log audit trail); adapters reset the
+counter and marker when they launch a fresh agent.
 
-Fail-open principle: any error in the gate itself — unreadable state, garbage
-input, missing directories — allows the stop. A broken gate must never wedge
-a healthy run.
+Fail-open principle: an internal exception, malformed hook input, or missing
+workspace allows the stop. A completed decision that cannot finish PID
+discovery is different: it blocks subject to the normal fuse, because silently
+assuming an unobserved job ended is the exact failure this gate prevents.
 
 Invoked by file path, never `-m` (see adapters/claude-code.sh for why).
 Stdlib-only; runs under any python3 >= 3.10.
@@ -74,12 +78,17 @@ DEFAULT_CAP = 5
 # assumed to be a reused pid, not the recorded job.
 PID_REUSE_TOLERANCE_S = 300
 
-# Pid-file scan bounds. A TLC hunt's metadir (states/, checkpoints) can hold
-# millions of files; an unbounded walk would blow the hook's timeout and
-# silently disarm the gate, so prune known-huge dirs and cap depth/volume.
+# PID-file discovery has two sources. ``start_background.sh`` registers every
+# managed job in the worker-local gate state, so a log/PID file may live outside
+# the worker directory (or below a pruned TLC metadir) without becoming
+# invisible.  We also scan ordinary workspace directories for ad-hoc PID files.
+# Known huge/generated trees are pruned, but there is deliberately no fixed
+# depth or directory-count limit: repository topology alone must never block a
+# healthy stop. A real timeout/read error remains fail-closed, subject to the
+# normal fuse.
 SCAN_EXCLUDE_DIRS = frozenset({".git", "states", ".tlacache", "node_modules", "__pycache__", STATE_DIRNAME})
-SCAN_MAX_DEPTH = 5
-SCAN_DIR_BUDGET = 2000
+BACKGROUND_PID_DIRNAME = "background-pids"
+SCAN_TIMEOUT_S = 5.0
 
 
 # ──────────────────────────────────────────────────────────
@@ -194,52 +203,77 @@ def _started_long_after(pid: int, pid_file: Path) -> bool:
         return False
 
 
-def _find_pid_files(work_dir: Path) -> list[Path]:
-    """Bounded *.pid search: prunes SCAN_EXCLUDE_DIRS, descends at most
-    SCAN_MAX_DEPTH levels, and visits at most SCAN_DIR_BUDGET directories."""
-    found: list[Path] = []
-    root_depth = len(work_dir.parts)
-    budget = SCAN_DIR_BUDGET
+def _registered_pid_files(state_dir: Path) -> tuple[list[Path], bool]:
+    """Return the flat, launcher-managed background PID registry."""
+    registry = state_dir / BACKGROUND_PID_DIRNAME
     try:
-        for dirpath, dirnames, filenames in os.walk(work_dir):
-            depth = len(Path(dirpath).parts) - root_depth
-            if depth >= SCAN_MAX_DEPTH:
-                dirnames[:] = []
-            else:
-                dirnames[:] = sorted(d for d in dirnames if d not in SCAN_EXCLUDE_DIRS)
-            found.extend(Path(dirpath) / f for f in filenames if f.endswith(".pid"))
-            budget -= 1
-            if budget <= 0:
-                break
+        if not registry.exists():
+            return [], False
+        if registry.is_symlink() or not registry.is_dir():
+            return [], True
+        return sorted(path for path in registry.iterdir() if path.is_file() and path.name.endswith(".pid")), False
     except OSError:
-        pass
-    return sorted(found)
+        return [], True
 
 
-def _live_pid_files(work_dir: Path) -> list[tuple[Path, int]]:
+def _find_pid_files(work_dir: Path) -> tuple[list[Path], bool]:
+    """Find registered and ordinary PID files without topology false blocks.
+
+    Managed background jobs are found through each worker's ``.stop-gate``
+    registry even though that state directory is pruned from the ordinary walk.
+    The boolean reports only an actual timeout/read failure, never merely a
+    deep or broad repository.
+    """
+    found: list[Path] = []
+    incomplete = False
+    deadline = time.monotonic() + SCAN_TIMEOUT_S
+
+    def scan_error(_error: OSError) -> None:
+        nonlocal incomplete
+        incomplete = True
+
+    try:
+        for dirpath, dirnames, filenames in os.walk(work_dir, onerror=scan_error):
+            if time.monotonic() > deadline:
+                incomplete = True
+                break
+            current = Path(dirpath)
+            if STATE_DIRNAME in dirnames:
+                registered, registry_incomplete = _registered_pid_files(current / STATE_DIRNAME)
+                found.extend(registered)
+                incomplete = incomplete or registry_incomplete
+            dirnames[:] = sorted(d for d in dirnames if d not in SCAN_EXCLUDE_DIRS)
+            found.extend(current / f for f in filenames if f.endswith(".pid"))
+    except OSError:
+        incomplete = True
+    return sorted(set(found)), incomplete
+
+
+def _live_pid_files(work_dir: Path) -> tuple[list[tuple[Path, int]], bool]:
     """Pid files under the work dir whose process is still alive.
 
-    Skipped: the gate's own state dir; pid files at the work-dir root (the
-    launcher writes the phase agent's OWN pid there — spec-validation.pid
-    etc. — and that agent is alive by definition while its hook runs); and
-    anything in this process's ancestor chain (same reason, belt-and-braces
-    for layouts the root rule misses)."""
+    The gate's own state dir is pruned. Adapter/agent pid files are ignored by
+    checking the actual ancestor chain, regardless of where the marker lives;
+    unrelated live jobs at the finding root therefore remain visible.
+    """
     ancestors = _ancestor_pids()
     live: list[tuple[Path, int]] = []
-    for pf in _find_pid_files(work_dir):
-        if pf.parent == work_dir:
-            continue
+    pid_files, incomplete = _find_pid_files(work_dir)
+    for pf in pid_files:
+        registered = pf.parent.name == BACKGROUND_PID_DIRNAME and pf.parent.parent.name == STATE_DIRNAME
         try:
             text = pf.read_text().strip().splitlines()[0].strip()
         except (OSError, IndexError):
+            incomplete = incomplete or registered
             continue
         if not text.isdigit():
+            incomplete = incomplete or registered
             continue
         pid = int(text)
         if pid in ancestors or not _alive(pid) or _started_long_after(pid, pf):
             continue
         live.append((pf, pid))
-    return live
+    return live, incomplete
 
 
 # ──────────────────────────────────────────────────────────
@@ -256,10 +290,12 @@ def decide(phase: str, work_dir: Path) -> tuple[bool, str]:
     if blocked is not None:
         # Surrender is terminal — but never silent about what it leaves behind.
         reason = f"agent declared failure in {blocked}"
-        leftovers = _live_pid_files(work_dir)
+        leftovers, incomplete = _live_pid_files(work_dir)
         if leftovers:
             jobs = ", ".join(f"{pf} (pid {pid})" for pf, pid in leftovers)
             reason += f"; WARNING: live background job(s) left behind: {jobs}"
+        if incomplete:
+            reason += "; WARNING: background-job PID scan was incomplete"
         return True, reason
 
     try:
@@ -277,7 +313,7 @@ def decide(phase: str, work_dir: Path) -> tuple[bool, str]:
             pass
         return True, f"fuse open after {blocks} blocks (cap {cap})"
 
-    live = _live_pid_files(work_dir)
+    live, incomplete = _live_pid_files(work_dir)
     if live:
         jobs = ", ".join(f"{pf} (pid {pid})" for pf, pid in live)
         waiter = SPECULA_ROOT / "scripts" / "infra" / "wait_for_pid.sh"
@@ -290,6 +326,12 @@ def decide(phase: str, work_dir: Path) -> tuple[bool, str]:
             f"If you are genuinely unable to proceed, kill the jobs and write "
             f"{work_dir / BLOCKED_LOCATIONS[0]} describing what you tried and why — "
             f"then you may stop."
+        )
+    if incomplete:
+        return False, (
+            f"Background-job PID discovery under {work_dir} timed out or hit an unreadable path. "
+            "The gate cannot prove that all registered jobs finished, so stopping is blocked. "
+            "Wait for the job or record the failure in BLOCKED.md, then try again."
         )
 
     contract = CONTRACTS.get(phase)
@@ -324,7 +366,8 @@ def _hook_main(flavor: str) -> int:
     except Exception:
         payload = {}
     phase = os.environ.get("SPECULA_PHASE", "")
-    work_dir = Path(os.environ.get("SPECULA_WORK_DIR") or "/nonexistent")
+    target_work_dir = os.environ.get("SPECULA_WORK_DIR") or "/nonexistent"
+    work_dir = Path(os.environ.get("SPECULA_STOP_GATE_WORK_DIR") or target_work_dir)
 
     try:
         allow, reason = decide(phase, work_dir)
@@ -346,10 +389,15 @@ def _hook_main(flavor: str) -> int:
 
 
 def _orphan_note(work_dir: Path) -> str:
-    leftovers = _live_pid_files(work_dir)
-    if not leftovers:
+    leftovers, incomplete = _live_pid_files(work_dir)
+    if not leftovers and not incomplete:
         return ""
-    return "; live background job(s) left behind: " + ", ".join(f"{pf} (pid {pid})" for pf, pid in leftovers)
+    details: list[str] = []
+    if leftovers:
+        details.append("live background job(s) left behind: " + ", ".join(f"{pf} (pid {pid})" for pf, pid in leftovers))
+    if incomplete:
+        details.append("background-job PID scan was incomplete")
+    return "; " + "; ".join(details)
 
 
 def _accept_main(phase: str, work_dir_arg: str) -> int:
@@ -369,6 +417,10 @@ def _accept_main(phase: str, work_dir_arg: str) -> int:
         except OSError:
             delivered = True  # unreadable ≠ missing: don't false-alarm
         if delivered:
+            orphan = _orphan_note(work_dir)
+            if orphan:
+                print(f"phase deliverable exists, but completion audit failed{orphan}")
+                return 1
             return 0
         if blocked is not None:
             print(f"agent declared failure — no {contract}; see {blocked}{_orphan_note(work_dir)}")
@@ -383,6 +435,10 @@ def _accept_main(phase: str, work_dir_arg: str) -> int:
     if blocked is not None:
         print(f"agent declared failure; see {blocked}{_orphan_note(work_dir)}")
         return 3
+    orphan = _orphan_note(work_dir)
+    if orphan:
+        print(f"phase left unfinished background work{orphan}")
+        return 1
     return 0
 
 

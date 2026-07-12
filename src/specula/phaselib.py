@@ -31,6 +31,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import specula.progress as progress
 from specula import quota
+from specula.prompts import render
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 
 SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
@@ -38,6 +39,7 @@ SPECULA_ROOT = SCRIPT_DIR.parent.parent
 # the launch_*.sh shims and the agent adapters stay under scripts/launch/
 LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
 AGENT_TERMINATION_GRACE_SECONDS = 2.0
+MAX_DEBATE_ROUNDS = 5
 
 # bash pathname expansion (`for d in .../*/`) orders by the locale collating
 # sequence; adopt the ambient locale so find_repo_dir picks the same repo the
@@ -152,7 +154,7 @@ class Workspace:
         self.artifact = artifact
         self.cwd = Path(cwd) if cwd else _logical_cwd()  # bash $PWD, not the physical getcwd
         self.single = len(targets) == 1
-        # phase-specific run options (e.g. validation --repair, confirmation --recheck)
+        # phase-specific run options (e.g. validation/confirmation --repair)
         self.opts = opts or {}
         run_dir = os.environ.get("SPECULA_RUN_DIR", "")
         self.run_dir: Path | None = Path(run_dir) if run_dir else None
@@ -223,13 +225,17 @@ class Phase:
     # ── per-phase hooks ──
     def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
         """Consume a phase-specific flag into `extra`; return True if handled.
-        Override for extra flags (validation --repair; confirmation --recheck /
-        --max-repair-rounds). `extra` is exposed to hooks as `ws.opts`."""
+        Override for extra flags (e.g. validation --repair, confirmation
+        --legacy-confirm/--debate). `extra` is exposed to hooks as `ws.opts`."""
         return False
 
     def default_max_parallel(self, extra: dict[str, str | bool]) -> int:
         """Concurrent-agent default when ``--max-parallel`` is omitted."""
         return 1
+
+    def validate_options(self, extra: dict[str, str | bool]) -> str | None:
+        """Return a user-facing error for an invalid option combination."""
+        return None
 
     def target_name(self, target: str) -> str:
         """Extract the display/work name from a target string. Downstream phases
@@ -416,9 +422,8 @@ class Phase:
                     print(f"Invalid --max-parallel: '{val}' (expected an integer >= 1)")
                     return 1
             elif arg.startswith("--max-turns="):
-                # Deprecated passthrough the adapter ignores. bash forwarded it
-                # verbatim, so keep it a string: `--max-turns=$VAR` with VAR unset
-                # or non-numeric must not crash the launcher.
+                # Adapter-specific passthrough. Keep it a string: an adapter may
+                # deliberately accept values beyond the launcher's vocabulary.
                 max_turns = arg[len("--max-turns=") :]
             elif arg.startswith("--agent="):
                 agent = arg[len("--agent=") :]
@@ -447,6 +452,11 @@ class Phase:
 
         if artifact_provided and (not artifact or not Path(artifact).is_dir()):
             print(f"ERROR: --artifact must be an existing directory: {artifact}")
+            return 1
+
+        option_error = self.validate_options(extra)
+        if option_error is not None:
+            print(option_error)
             return 1
 
         if max_parallel is None:
@@ -499,14 +509,23 @@ class Phase:
             adapter=adapter,
             claude_alias=claude_alias,
             max_parallel=max_parallel,
+            max_turns=max_turns,
             dry_run=dry_run,
         )
         if alt is not None:
             return alt
 
+        integrity_snapshot = self.capture_output_integrity(
+            ws,
+            names,
+            adapter=adapter,
+            dry_run=dry_run,
+        )
         show_progress = progress.enabled()
         running: list[progress.RunningAgent] = []
         failures: list[tuple[str, int]] = []
+        successful_names: set[str] = set()
+        completed_names: set[str] = set()
         pending: list[tuple[str, int]] = [(target, 1) for target in targets]
         rate_limited: list[tuple[str, int]] = []
         pause_for_rate_limit = False
@@ -549,7 +568,9 @@ class Phase:
                         progress.report(running, self.progress_config)
                     running, completed = self._reap_agents(running, show_progress)
                     for completed_agent, rc in completed:
+                        completed_names.add(completed_agent.name)
                         if rc == 0:
+                            successful_names.add(completed_agent.name)
                             continue
                         if rc == quota.RATE_LIMIT_RC:
                             if self._reactive_rate_limit_enabled() and completed_agent.attempt <= retry_limit:
@@ -598,6 +619,22 @@ class Phase:
                 self._terminate_agents(running)
                 raise
 
+        integrity_failures = self.audit_output_integrity(
+            ws,
+            [name for name in names if name in completed_names],
+            integrity_snapshot,
+            adapter=adapter,
+            dry_run=dry_run,
+        )
+        finalized = self.finalize_outputs(
+            ws,
+            [name for name in names if name in successful_names],
+            adapter=adapter,
+            dry_run=dry_run,
+        )
+        failed_names = {name for name, _ in failures}
+        finalized = [(name, rc) for name, rc in finalized if name not in failed_names]
+
         self.summarize(ws, names)
         if not dry_run:
             self._acceptance(ws, names)
@@ -606,7 +643,17 @@ class Phase:
             print("Agent failures:")
             for name, rc in failures:
                 print(f"  FAILED  {name}: adapter exited {rc}")
-        return self._failure_code(failures)
+        if finalized:
+            print()
+            print("Output validation failures:")
+            for name, rc in finalized:
+                print(f"  FAILED  {name}: invalid phase output (exit {rc})")
+        if integrity_failures:
+            print()
+            print("Output integrity failures:")
+            for name, rc in integrity_failures:
+                print(f"  FAILED  {name}: protected output was restored (exit {rc})")
+        return self._failure_code(failures + integrity_failures + finalized)
 
     def run_alternate(
         self,
@@ -616,6 +663,7 @@ class Phase:
         adapter: Path,
         claude_alias: str,
         max_parallel: int,
+        max_turns: str,
         dry_run: bool,
     ) -> int | None:
         """Hook: let a phase run its targets its own way instead of the default
@@ -624,6 +672,45 @@ class Phase:
         loop. Overridden by BugConfirmationPhase for parallel per-finding
         confirmation."""
         return None
+
+    def finalize_outputs(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        """Validate phase-specific output that cannot be trusted to the agent.
+
+        The default has no extra contract. A returned target/code pair is folded
+        into normal agent failures so downstream phases cannot consume an
+        invalid artifact after a nominally successful adapter exit.
+        """
+        return []
+
+    def capture_output_integrity(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> Any:
+        """Capture phase-owned immutable output before any adapter runs."""
+        return None
+
+    def audit_output_integrity(
+        self,
+        ws: Workspace,
+        names: list[str],
+        snapshot: Any,
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        """Restore protected output after every adapter that actually ended."""
+        return []
 
     # ── acceptance layer (stop gate) ──
     def _acceptance(self, ws: Workspace, names: list[str]) -> None:
@@ -707,6 +794,7 @@ class Phase:
             files["prompt"],
             files["pid"],
             files["log"],
+            _last_message_path(files["log"]),
             activity_sidecar,
             files["log"].with_suffix(".raw.json"),
             files["log"].with_suffix(".usage.json"),
@@ -787,6 +875,13 @@ def _model_effort_argv(adapter: Path, model: str | None, effort: str | None) -> 
     return argv
 
 
+def _last_message_path(log_file: Path) -> Path:
+    """Mirror the Codex adapter's bash `${log_file%.log}` derivation."""
+    raw = str(log_file)
+    stem = raw[:-4] if raw.endswith(".log") else raw
+    return Path(stem + ".last-message.txt")
+
+
 def run_agent_blocking(
     adapter: Path,
     prompt: str,
@@ -796,6 +891,8 @@ def run_agent_blocking(
     phase_key: str,
     work_dir: Path,
     claude_alias: str,
+    gate_work_dir: Path | None = None,
+    cwd: str | Path | None = None,
     max_turns: str = "0",
     stop_gate: bool = False,
     model: str | None = None,
@@ -805,26 +902,59 @@ def run_agent_blocking(
 
     The blocking sibling of `Phase._launch`: it shares the same adapter path, the
     same flag set (`--prompt-file` / `--max-turns` / `--claude-alias` /
-    `--model` / `--effort` / `--log`), and the same stop-gate env keys
-    (`SPECULA_PHASE` / `SPECULA_WORK_DIR`) — but drops `--background` so the
-    caller can read the result before issuing the next turn. That is the shape a
-    per-finding confirmation debate needs (turn N+1 reads turn N's output),
-    which the fire-all-then-wait `_launch` loop cannot express.
+    `--model` / `--effort` / `--log`), and the same stop-gate env keys — but
+    drops `--background` so the caller can read the result before issuing the
+    next turn. That is the shape a per-finding confirmation debate needs (turn
+    N+1 reads turn N's output), which the fire-all-then-wait `_launch` loop
+    cannot express.
 
-    The completion stop-gate is OFF per turn by default: it audits a *phase*
-    deliverable (`confirmed-bugs.md`) that exists only after all findings are
-    aggregated, never after a single turn; the phase-level acceptance check
-    (`Phase._acceptance`) covers it once at the end. Rate-limit (exit 75) is the
-    caller's concern — this runs exactly one invocation.
+    ``SPECULA_WORK_DIR`` remains the target workspace used by the outer sandbox.
+    ``gate_work_dir`` may narrow the execution gate's state and PID scan to one
+    parallel worker without narrowing that sandbox; it defaults to ``work_dir``.
+    Per-turn calls use a phase key with no deliverable contract by default: a
+    phase deliverable (`confirmed-bugs.md`) exists only after all findings
+    aggregate, never after one turn. ``stop_gate=True`` opts back into the
+    original phase key and therefore its deliverable contract. Rate-limit (exit
+    75) is the caller's concern — this runs exactly one invocation.
     """
+    caller_cwd = Path.cwd()
+    adapter = adapter if adapter.is_absolute() else (caller_cwd / adapter).resolve()
+    prompt_file = prompt_file if prompt_file.is_absolute() else (caller_cwd / prompt_file).resolve()
+    log_file = log_file if log_file.is_absolute() else (caller_cwd / log_file).resolve()
+    work_dir = work_dir if work_dir.is_absolute() else (caller_cwd / work_dir).resolve()
+    gate_dir = gate_work_dir or work_dir
+    gate_dir = gate_dir if gate_dir.is_absolute() else (caller_cwd / gate_dir).resolve()
+    run_cwd = None if cwd is None else Path(cwd)
+    if run_cwd is not None and not run_cwd.is_absolute():
+        run_cwd = (caller_cwd / run_cwd).resolve()
+
     prompt = materialize_skill_refs(prompt, adapter)
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     prompt_file.write_text(prompt)
+    with contextlib.suppress(OSError):
+        log_file.unlink()
+    last_message_file = _last_message_path(log_file)
+    if adapter.stem == "codex":
+        with contextlib.suppress(OSError):
+            last_message_file.unlink()
     env = os.environ.copy()
-    env["SPECULA_PHASE"] = phase_key
+    env["SPECULA_PHASE"] = phase_key if stop_gate else f"{phase_key}_turn"
     env["SPECULA_WORK_DIR"] = str(work_dir)
-    if not stop_gate:
-        env["SPECULA_STOP_GATE"] = "off"
+    env["SPECULA_STOP_GATE_WORK_DIR"] = str(gate_dir)
+    if env.get("SPECULA_SANDBOX", "").lower() == "on" and run_cwd is not None:
+        configured = env.get("SPECULA_SANDBOX_CONFIG")
+        if configured:
+            config = Path(configured).expanduser()
+            if not config.is_absolute():
+                config = (caller_cwd / config).resolve()
+        else:
+            candidates = [
+                caller_cwd / ".specula" / "sandbox.json",
+                Path.home() / ".specula" / "sandbox.json",
+            ]
+            default_config = (LAUNCH_DIR / "sandbox" / "sandbox.default.json").resolve()
+            config = next((path.resolve() for path in candidates if path.is_file()), default_config)
+        env["SPECULA_SANDBOX_CONFIG"] = str(config)
     cmd = [
         str(adapter),
         f"--prompt-file={prompt_file}",
@@ -833,8 +963,15 @@ def run_agent_blocking(
         *_model_effort_argv(adapter, model, effort),
         f"--log={log_file}",
     ]
-    rc = subprocess.run(cmd, env=env).returncode
-    text = log_file.read_text(errors="replace") if log_file.is_file() else ""
+    rc = subprocess.run(cmd, env=env, cwd=run_cwd).returncode
+    # Codex stdout is a complete CLI transcript, not the assistant's final
+    # response.  The adapter keeps that transcript in `log_file` for diagnosis
+    # and asks `codex exec --output-last-message` for the response separately.
+    # A missing Codex sidecar is an incomplete turn; never reinterpret the CLI
+    # transcript as an assistant answer. Other adapters' log contract remains
+    # result-only.
+    result_file = last_message_file if adapter.stem == "codex" else log_file
+    text = result_file.read_text(errors="replace") if result_file.is_file() else ""
     return rc, text
 
 
@@ -1223,11 +1360,12 @@ class BugClassificationPhase(Phase):
     key = "bug_classification"
     title = "Specula — Bug Classification Batch Runner"
     usage = r"""
-Batch launcher: spawn one Claude Code agent per target system for Phase 4b
-severity classification. Each agent reads the confirmed-bugs.md produced by
-Phase 4a (bug-confirmation) and writes a separate bug-severity.md table
-assigning Critical / High / Medium / Low per bug. No new analysis, no repro
-work, no modification to confirmed-bugs.md.
+Batch launcher: spawn one agent per target system for Phase 4b severity
+classification. Each agent reads the confirmed-bugs.md produced by Phase 4a
+(bug-confirmation) and writes a separate bug-severity.md table. REPRODUCED bugs
+and ENV_LIMITED/MASKED findings receive Critical / High / Medium / Low; other
+dispositions receive no severity. No new analysis, no repro work, no
+modification to confirmed-bugs.md.
 
 Usage:
   bash scripts/launch/launch_bug_classification.sh [options] "name" [...]
@@ -1286,7 +1424,7 @@ Prerequisites:
         spec_dir = ws.work_dir(name) / "spec"
         return f"""# Bug Classification Task: {name}
 
-You are assigning a Severity tier to each bug in **{name}**'s already-confirmed bug report.
+You are classifying the Phase 4 entries for **{name}**.
 
 ## Input
 
@@ -1298,7 +1436,7 @@ You are assigning a Severity tier to each bug in **{name}**'s already-confirmed 
 
 ## Methodology
 
-Use the installed Specula skill {prompt_skill_ids("bug-classification")}. Read it in full and follow it exactly — it is the single source of methodology (the four-tier Severity rubric, the per-bug output schema and mandatory Summary block, the single-responsibility constraints — do not modify confirmed-bugs.md or its Status fields — the rule that Severity is independent of reproduction status, and the output validation checklist).
+Use the installed Specula skill {prompt_skill_ids("bug-classification")}. Read it in full and follow it exactly — it is the single source of methodology. Assign a four-tier Severity only to `REPRODUCED`, `ENV_LIMITED`, and `MASKED`; use `—` for `FALSE POSITIVE`, `NEEDS MORE INFO`, `DROPPED`, `PENDING REPAIR`, `DEFERRED`, and `INCOMPLETE`. Keep reproduced bugs, finding-tier entries, and no-severity dispositions separate in the mandatory Summary. Do not modify confirmed-bugs.md or any Status field.
 
 Do everything the skill specifies. Do not add, relax, or override any step here.
 """
@@ -1312,13 +1450,18 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
             report = ws.work_dir(name) / "spec" / "bug-severity.md"
             if report.is_file() and report.stat().st_size > 0:
                 text = report.read_text(errors="replace")  # bash grep is byte-safe
-                total = _grep_num(text, "- Total bugs:")
-                c = _grep_num(text, "- Critical:")
-                h = _grep_num(text, "- High:")
-                m = _grep_num(text, "- Medium:")
+                total = _grep_num(text, "- Total entries:")
+                bugs = _grep_num(text, "- Reproduced bugs:")
+                findings = _grep_num(text, "- Findings:")
+                critical = _grep_num(text, "- Critical:")
+                high = _grep_num(text, "- High:")
+                medium = _grep_num(text, "- Medium:")
                 low = _grep_num(text, "- Low:")
-                fp = _grep_num(text, "- FALSE POSITIVE")
-                print(f"  {name}: total={total}  C={c} H={h} M={m} L={low} FP={fp}")
+                dispositions = _grep_num(text, "- No-severity dispositions:")
+                print(
+                    f"  {name}: entries={total}  bugs={bugs} findings={findings}  "
+                    f"C={critical} H={high} M={medium} L={low}  dispositions={dispositions}"
+                )
             elif report.is_file():
                 print(f"  {name}: bug-severity.md empty (check log)")
             else:
@@ -1348,7 +1491,7 @@ Example:
 Options:
   --dry-run           Print commands without executing
   --check             Run a lightweight prerequisite path check
-  --repair            Repair mode: process OPEN/REOPENED repair requests (confirmation back-edge)
+  --repair            Repair mode: process OPEN repair requests (confirmation back-edge)
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --agent=NAME        Agent adapter to use (default: claude-code)
@@ -1419,20 +1562,21 @@ Prerequisites:
 You are running spec validation in **REPAIR MODE**. The bug-confirmation phase handed
 back counterexamples it judged to be spec / fault-model / invariant **artifacts** (not
 real bugs), each recorded as a repair request. Repair the spec so the artifact no longer
-arises, re-validate, then hand each request to re-check.
+arises, re-validate, re-run model checking, and mark each request CONSUMED. The pipeline
+then re-confirms the fresh output — you do not re-check anything here.
 
 ## Inputs
-- **Repair requests**: {spec_dir}/repair-requests/   (process ONLY status OPEN or REOPENED)
+- **Repair requests**: {spec_dir}/repair-requests/   (process ONLY status OPEN)
 - **Spec directory**: {spec_dir}   (base.tla, MC.tla, Trace.tla, *.cfg, MC_hunt_*.cfg)
 - **Source code**: {repo_dir}
 - **Modeling brief**: {wd}/modeling-brief.md
 - **Traces**: {wd}/traces/
 
 ## Methodology — use these installed skills and follow them exactly
-- {prompt_skill_ids("bug-confirmation")} — apply its repair-request format, request state machine, and per-request repair procedure (how to repair each target, the full-trace soundness gate, and the OPEN/REOPENED → IN_REPAIR → RECHECK transitions you own).
+- {prompt_skill_ids("bug-confirmation")} — apply its repair-request format, request state machine, and per-request repair procedure (how to repair each target, the full-trace soundness gate, and the OPEN → IN_REPAIR → CONSUMED transitions you own).
 - {prompt_skill_ids("validation-workflow")} — repair and re-validate without overfitting, including the {prompt_skill_ids("tla-trace-workflow")} and {prompt_skill_ids("tla-checking-workflow")} skills it delegates to.
 
-Process ONLY OPEN/REOPENED requests. Do everything those skills specify; do not add, relax, or override any step here.
+Process ONLY OPEN requests. Do everything those skills specify; do not add, relax, or override any step here.
 """
         else:
             prompt = f"""# Spec Validation Task: {name}
@@ -1498,10 +1642,10 @@ Options:
   --dry-run           Print commands without executing
   --check             Only verify prerequisites exist
   --legacy-confirm    Single-agent confirmation (one agent, all findings) instead of parallel
-  --recheck           Re-check mode: settle RECHECK repair requests (confirmation back-edge; single-agent)
-  --max-repair-rounds=N  Per-request repair cap honored in --recheck (default: 0 = unlimited)
+  --debate            Add an adversarial Challenger after each confirmation (parallel mode; default off)
+  --rounds=N          Max debate rounds with --debate (default: 5; range: 1-5)
   --max-parallel=N    Hard limit for concurrent findings in parallel mode, or concurrent target agents in
-                      --legacy-confirm/--recheck (defaults: 4 in parallel mode, 1 otherwise)
+                      --legacy-confirm (defaults: 4 in parallel mode, 1 otherwise)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
@@ -1519,19 +1663,31 @@ Prerequisites:
     check_fail_msg = "ERROR: Missing prerequisites. Run full pipeline first."
 
     def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
-        if arg == "--recheck":
-            extra["recheck"] = True
-            return True
-        if arg.startswith("--max-repair-rounds="):
-            extra["max_repair_rounds"] = arg[len("--max-repair-rounds=") :]
-            return True
         if arg == "--legacy-confirm":
             extra["legacy"] = True
+            return True
+        if arg == "--debate":
+            extra["debate"] = True
+            return True
+        if arg.startswith("--rounds="):
+            extra["rounds"] = arg[len("--rounds=") :]
             return True
         return False
 
     def default_max_parallel(self, extra: dict[str, str | bool]) -> int:
-        return 1 if extra.get("legacy") or extra.get("recheck") else 4
+        return 1 if extra.get("legacy") else 4
+
+    def validate_options(self, extra: dict[str, str | bool]) -> str | None:
+        if extra.get("legacy") and extra.get("debate"):
+            return "Invalid options: --legacy-confirm and --debate cannot be used together"
+        raw_rounds = str(extra.get("rounds", "5"))
+        try:
+            rounds = int(raw_rounds)
+        except ValueError:
+            return f"Invalid --rounds: '{raw_rounds}' (expected an integer from 1 to {MAX_DEBATE_ROUNDS})"
+        if not 1 <= rounds <= MAX_DEBATE_ROUNDS:
+            return f"Invalid --rounds: '{raw_rounds}' (expected an integer from 1 to {MAX_DEBATE_ROUNDS})"
+        return None
 
     def run_alternate(
         self,
@@ -1541,19 +1697,38 @@ Prerequisites:
         adapter: Path,
         claude_alias: str,
         max_parallel: int,
+        max_turns: str,
         dry_run: bool,
     ) -> int | None:
         """Parallel per-finding confirmation — the DEFAULT first-pass mode.
-        `--legacy-confirm` falls back to the single-agent path; `--recheck`
-        always uses it (re-check is single-agent). None defers to the
+        `--legacy-confirm` falls back to the single-agent path. None defers to the
         single-agent loop in Phase.run."""
-        if ws.opts.get("legacy") or ws.opts.get("recheck"):
+        if ws.opts.get("legacy"):
+            if dry_run:
+                return None
+            preflight_failures = self._legacy_rr_identity_failures(
+                ws,
+                names,
+                adapter=adapter,
+                verify_against_report=True,
+                require_active_report_link=False,
+                stage="preflight",
+            )
+            if preflight_failures:
+                print()
+                print("Repair identity preflight failures:")
+                for name, rc in preflight_failures:
+                    print(f"  FAILED  {name}: invalid existing repair identity (exit {rc})")
+                return self._failure_code(preflight_failures)
             return None
         # Local import: confirmlib imports phaselib, so a top-level import here
         # would be circular.
         from specula.confirmlib import ConfirmConfig, run_parallel_confirmation
 
-        rc = 0
+        debate = bool(ws.opts.get("debate"))
+        rounds = int(str(ws.opts.get("rounds", "5")))
+        failures: list[tuple[str, int]] = []
+        retry_limit = self._rate_limit_retries()
         for name in names:
             if not dry_run:
                 print(f"  Monitor: tail -f {ws.work_dir(name)}/bug-confirmation.log")
@@ -1563,19 +1738,144 @@ Prerequisites:
                 adapter=adapter,
                 repo_dir=ws.find_repo_dir(name),
                 max_parallel=max_parallel,
+                max_turns=max_turns,
+                debate=debate,
+                rounds=rounds,
                 claude_alias=claude_alias,
                 model=self._model,
                 effort=self._effort,
                 dry_run=dry_run,
                 prompt_extra=self._read_prompt_extra(ws, name),
             )
-            code = run_parallel_confirmation(cfg)
+            attempt = 1
+            while True:
+                code = run_parallel_confirmation(cfg)
+                if (
+                    code == quota.RATE_LIMIT_RC
+                    and not failures
+                    and self._reactive_rate_limit_enabled()
+                    and attempt <= retry_limit
+                ):
+                    print(f"[{_ts()}] Rate limited: waiting before retrying {name}")
+                    self._wait_for_rate_limit()
+                    attempt += 1
+                    continue
+                break
             if code != 0:
-                rc = code
+                failures.append((name, code))
+                if code == quota.RATE_LIMIT_RC:
+                    break
         self.summarize(ws, names)
         if not dry_run:
             self._acceptance(ws, names)
-        return rc
+        return self._failure_code(failures)
+
+    def finalize_outputs(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        """Make legacy agent-authored RRs safe before returning success."""
+        if dry_run or not ws.opts.get("legacy"):
+            return []
+        return self._legacy_rr_identity_failures(
+            ws,
+            names,
+            adapter=adapter,
+            verify_against_report=True,
+            require_active_report_link=True,
+            stage="validation",
+        )
+
+    def capture_output_integrity(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> Any:
+        if dry_run or not ws.opts.get("legacy"):
+            return {}
+        from specula.confirmlib import ConfirmConfig, snapshot_terminal_rr_audit
+
+        snapshots: dict[str, Any] = {}
+        for name in names:
+            cfg = ConfirmConfig(name=name, ws=ws, adapter=adapter)
+            snapshots[name] = snapshot_terminal_rr_audit(cfg)
+        return snapshots
+
+    def audit_output_integrity(
+        self,
+        ws: Workspace,
+        names: list[str],
+        snapshot: Any,
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        if dry_run or not ws.opts.get("legacy") or not isinstance(snapshot, dict):
+            return []
+        from specula.confirmlib import ConfirmConfig, restore_terminal_rr_audit
+
+        failures: list[tuple[str, int]] = []
+        for name in names:
+            cfg = ConfirmConfig(name=name, ws=ws, adapter=adapter)
+            try:
+                violations = restore_terminal_rr_audit(cfg, snapshot.get(name, {}))
+            except (OSError, UnicodeError, ValueError) as exc:
+                print(f"  {name}: terminal repair audit restore FAILED ({exc})")
+                failures.append((name, 1))
+                continue
+            if violations:
+                for violation in violations:
+                    print(f"  {name}: {violation}")
+                failures.append((name, 1))
+        return failures
+
+    def _legacy_rr_identity_failures(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        verify_against_report: bool,
+        require_active_report_link: bool,
+        stage: str,
+    ) -> list[tuple[str, int]]:
+        from specula.confirmlib import (
+            ConfirmationFailed,
+            ConfirmConfig,
+            ensure_rr_stable_identities,
+            validate_report_repair_references,
+        )
+
+        failures: list[tuple[str, int]] = []
+        for name in names:
+            cfg = ConfirmConfig(
+                name=name,
+                ws=ws,
+                adapter=adapter,
+                repo_dir=ws.find_repo_dir(name),
+                model=self._model,
+                effort=self._effort,
+                prompt_extra=self._read_prompt_extra(ws, name),
+            )
+            try:
+                ensure_rr_stable_identities(
+                    cfg,
+                    verify_against_report=verify_against_report,
+                    require_active_report_link=require_active_report_link,
+                )
+                if require_active_report_link:
+                    validate_report_repair_references(cfg)
+            except (ConfirmationFailed, OSError, UnicodeError, ValueError) as exc:
+                print(f"  {name}: legacy repair identity {stage} FAILED ({exc})")
+                failures.append((name, 1))
+        return failures
 
     def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True
@@ -1601,7 +1901,7 @@ Prerequisites:
 
     def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
         wd = ws.work_dir(name)
-        tag = "bug-recheck" if ws.opts.get("recheck") else "bug-confirmation"
+        tag = "bug-confirmation"
         return {
             "log": wd / f"{tag}.log",
             "pid": wd / "bug-confirmation.pid",  # bash always writes bug-confirmation.pid
@@ -1614,55 +1914,22 @@ Prerequisites:
         wd = ws.work_dir(name)
         spec_dir = wd / "spec"
         repo_dir = ws.find_repo_dir(name)
-        if ws.opts.get("recheck"):
-            rounds = ws.opts.get("max_repair_rounds", "0")
-            prompt = f"""# Bug Re-check Task (confirmation back-edge): {name}
-
-You are running the bug-confirmation **RE-CHECK** pass. Phase 3 (repair mode) has repaired
-the spec for the open repair requests and moved them to `status: RECHECK`. Settle each
-finding and transition its request out of RECHECK.
-
-## Inputs
-- **Repair requests**: {spec_dir}/repair-requests/   (process ONLY status RECHECK)
-- **Updated bug report + TLC output**: {spec_dir}/bug-report.md , {spec_dir}/output/
-- **Confirmed bugs (you update this)**: {spec_dir}/confirmed-bugs.md
-- **Source code**: {repo_dir}
-- **Per-request cap**: --max-repair-rounds={rounds}   (0 = unlimited)
-
-## Methodology
-Use the installed Specula skill {prompt_skill_ids("bug-confirmation")}. Follow its Phase 2′ re-check procedure and repair-request format exactly.
-
-## Instructions
-Process ONLY `status: RECHECK` requests, honor the per-request cap (`--max-repair-rounds` above), and do not add, relax, or override any step from the skill.
-"""
-        else:
-            prompt = f"""# Bug Confirmation Task: {name}
-
-You are confirming and reproducing bugs found in **{name}** by both model checking and code review.
-
-## Inputs
-
-- **Bug report (MC findings)**: {spec_dir}/bug-report.md
-- **Modeling brief (code review findings)**: {wd}/modeling-brief.md
-- **Source code**: {repo_dir}
-- **Spec directory**: {spec_dir}
-
-## Methodology
-
-Use the installed Specula skill {prompt_skill_ids("bug-confirmation")}. Read it in full and follow it exactly.
-
-## Task
-
-Consolidate the two finding sources into one candidate list:
-- **MC findings** (with counterexamples): `{spec_dir}/bug-report.md`
-- **Code-review findings**: `{wd}/modeling-brief.md`
-
-Then process every candidate **strictly per the bug-confirmation skill's Flow** — do not restate, relax, or override it here. In particular:
-- Apply **only** the skill's single pre-filter (code-review-sourced **and** already-known → drop before Phase 2, exactly as the skill defines it). Invent no other pre-filter — never skip a candidate as "defensive coding", "style", or "theoretical-only".
-- Follow the skill's Phase 1 (investigation) and Phase 2 (strict Level 0→3 escalation ladder), and use its per-bug output schema and statuses.
-
-Write the consolidated report to `{spec_dir}/confirmed-bugs.md`, with one `repro/` test per non-dropped finding under `{wd}/repro/`, exactly as the skill specifies.
-"""
+        # Multi-finding orchestration lives in a prompt file (like the parallel
+        # mode's reproduce.md), rendered here — the loop + aggregation around the
+        # single-bug skill (guide.md), which it applies to each candidate. After a
+        # Phase-3 repair the pipeline re-runs THIS same confirmation on the fresh
+        # bug-report (no separate re-check mode).
+        prompt = render(
+            "confirmation/orchestrate",
+            name=name,
+            bug_report=str(spec_dir / "bug-report.md"),
+            brief=str(wd / "modeling-brief.md"),
+            repo=repo_dir,
+            spec_dir=str(spec_dir),
+            repro_dir=str(wd / "repro"),
+            report=str(spec_dir / "confirmed-bugs.md"),
+            bug_confirmation_skill=prompt_skill_ids("bug-confirmation"),
+        )
         return self._with_extra(ws, name, prompt)
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
@@ -1684,8 +1951,8 @@ Write the consolidated report to `{spec_dir}/confirmed-bugs.md`, with one `repro
                 print(f"  {name}: (no report — check log; repro/ tests: {repro_count})")
 
     def monitor_line(self, ws: Workspace) -> str | None:
-        # bash glob omits the .specula-output/ segment and always bug-confirmation.log
-        # (even in --recheck, whose log is bug-recheck.log) — replicated verbatim in legacy.
+        # bash glob omits the .specula-output/ segment and always bug-confirmation.log —
+        # replicated verbatim in legacy.
         return self._monitor(ws, "bug-confirmation.log", "  Monitor: tail -f */bug-confirmation.log")
 
 
@@ -1832,6 +2099,7 @@ Output:
         for path in (
             log_file,
             pid_file,
+            _last_message_path(log_file),
             activity_log,
             log_file.with_suffix(".raw.json"),
             log_file.with_suffix(".usage.json"),

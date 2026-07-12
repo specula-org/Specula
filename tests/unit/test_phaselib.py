@@ -163,6 +163,10 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_RUN_DIR",
             "SPECULA_PHASE",
             "SPECULA_WORK_DIR",
+            "SPECULA_STOP_GATE",
+            "SPECULA_STOP_GATE_WORK_DIR",
+            "SPECULA_SANDBOX",
+            "SPECULA_SANDBOX_CONFIG",
             "SPECULA_PROGRESS",
             "SPECULA_ACTIVITY_LOG",
             "SPECULA_RATE_LIMIT_REACTIVE",
@@ -234,6 +238,23 @@ class PhaseCase(unittest.TestCase):
             args.append(self.artifact_flag())
         args.append(name)
         return self.run_phase(spec["key"], args)
+
+
+class TestDirectExecution(unittest.TestCase):
+    def test_clean_path_invocation_bootstraps_package_imports(self) -> None:
+        with tempfile.TemporaryDirectory() as cwd:
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+            env["PYTHONNOUSERSITE"] = "1"
+            proc = subprocess.run(
+                [sys.executable, "-S", str(SRC / "specula" / "phaselib.py"), "bug_confirmation", "--help"],
+                cwd=cwd,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("Bug confirmation", proc.stdout)
 
 
 class TestPreconditionGate(PhaseCase):
@@ -360,18 +381,72 @@ class TestDryRunCommand(PhaseCase):
         self.assertIn("Max parallel: 1", out)
         self.assertNotIn("Parallel confirmation", out)
 
-    def test_bug_confirmation_recheck_stays_single_agent(self) -> None:
-        # --recheck always uses the single-agent path, even without --legacy-confirm.
-        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--recheck"])
+    def test_bug_confirmation_legacy_prompt_has_canonical_report_contract(self) -> None:
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--legacy-confirm"])
         self.assertEqual(rc, 0, out)
-        self.assertIn("Max parallel: 1", out)
-        self.assertIn("[DRY RUN]", out)  # single-agent adapter launch
-        self.assertNotIn("Parallel confirmation", out)
+        body = (self.work_dir() / ".bug-confirmation-prompt.md").read_text()
+        self.assertIn("Dispositions: <N> total =", body)
+        self.assertIn("<I> incomplete + <DEF> deferred", body)
+        self.assertIn("| Bug | Finding | Status |", body)
+        self.assertIn("## Bug N: <title>", body)
+        self.assertIn("Number sections consecutively from 1", body)
+        self.assertIn("exactly one row and one section for each entry", body)
+
+    def test_bug_classification_uses_current_phase4_status_contract(self) -> None:
+        rc, out = self.dry_run(BY_KEY["bug_classification"])
+        self.assertEqual(rc, 0, out)
+        body = (self.work_dir() / ".bug-classification-prompt.md").read_text()
+        for status in (
+            "REPRODUCED",
+            "ENV_LIMITED",
+            "MASKED",
+            "FALSE POSITIVE",
+            "NEEDS MORE INFO",
+            "DROPPED",
+            "PENDING REPAIR",
+            "DEFERRED",
+            "INCOMPLETE",
+        ):
+            self.assertIn(status, body)
+
+        guide = (SRC.parent / "skills" / "bug-classification" / "guide.md").read_text()
+        self.assertNotIn("REPRODUCTION FAILED", guide)
+        self.assertIn("- Total entries: N", guide)
+        self.assertIn("- Reproduced bugs: N", guide)
+        self.assertIn("- Findings: N", guide)
+        self.assertIn("- No-severity dispositions: N", guide)
+
+    def test_confirmation_docs_have_no_recheck_pass_and_allow_deferred_terminal(self) -> None:
+        skill = SRC.parent / "skills" / "bug-confirmation"
+        reproduction = (skill / "phases" / "02-reproduction.md").read_text()
+        self.assertNotIn("returns it to you in re-check", reproduction)
+
+        repair_format = (skill / "references" / "repair-request-format.md").read_text()
+        self.assertIn("OPEN | IN_REPAIR | CONSUMED | DEFERRED", repair_format)
+        self.assertIn("| `OPEN` → `DEFERRED` | pipeline orchestrator |", repair_format)
+        self.assertIn("Terminal states: `CONSUMED`", repair_format)
 
     def test_ordinary_phase_default_max_parallel_stays_one(self) -> None:
         rc, out = self.dry_run(BY_KEY["code_analysis"])
         self.assertEqual(rc, 0, out)
         self.assertIn("Max parallel: 1", out)
+
+    def test_bug_confirmation_forwards_max_turns(self) -> None:
+        from specula import confirmlib
+
+        seen: list[tuple[int, str]] = []
+
+        def fake_confirmation(cfg: confirmlib.ConfirmConfig) -> int:
+            seen.append((cfg.max_parallel, cfg.max_turns))
+            return 0
+
+        self.patch_attr(confirmlib, "run_parallel_confirmation", fake_confirmation)
+        rc, out = self.dry_run(
+            BY_KEY["bug_confirmation"],
+            extra=["--max-parallel=1", "--max-turns=7"],
+        )
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen, [(1, "7")])
 
     def test_max_turns_forwarded_verbatim(self) -> None:
         rc, out = self.dry_run(BY_KEY["code_analysis"], extra=["--max-turns=7"])
@@ -411,9 +486,9 @@ class TestDryRunCommand(PhaseCase):
         )
 
 
-class TestRepairAndRecheckModes(PhaseCase):
-    """The two back-edge modes swap the prompt template and the log/prompt
-    filenames (but keep the canonical .pid)."""
+class TestRepairMode(PhaseCase):
+    """Spec-validation repair mode swaps the prompt template and the log/prompt
+    filenames (but keeps the canonical .pid)."""
 
     def test_spec_validation_repair(self) -> None:
         rc, out = self.dry_run(BY_KEY["spec_validation"], extra=["--repair"])
@@ -427,22 +502,6 @@ class TestRepairAndRecheckModes(PhaseCase):
             self.assertNotIn(f"${skill}", body)
             self.assertNotIn(f"${CODEX_PLUGIN_NAME}:{skill}", body)
         self.assertNotIn("<!-- specula-skill:", body)
-        self.assertNotIn("/skills/", body)
-        self.assertNotIn(".claude/skills", body)
-
-    def test_bug_confirmation_recheck(self) -> None:
-        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--recheck"])
-        self.assertEqual(rc, 0, out)
-        wd = self.work_dir()
-        self.assertIn(f"--log={wd / 'bug-recheck.log'}", out)
-        body = (wd / ".bug-recheck-prompt.md").read_text()
-        self.assertIn("RE-CHECK", body)
-        self.assertIn("**bug-confirmation**", body)
-        self.assertNotIn("$bug-confirmation", body)
-        self.assertNotIn(f"${CODEX_PLUGIN_NAME}:bug-confirmation", body)
-        self.assertNotIn("<!-- specula-skill:", body)
-        self.assertIn("Phase 2′ re-check", body)
-        self.assertIn("repair-request format", body)
         self.assertNotIn("/skills/", body)
         self.assertNotIn(".claude/skills", body)
 
@@ -481,6 +540,23 @@ class TestArgErrors(PhaseCase):
         self.assertEqual(rc, 1)
         self.assertIn("--artifact must be an existing directory", out)
 
+    def test_bug_confirmation_rejects_invalid_rounds(self) -> None:
+        for value in ("abc", "0", "-1", "6"):
+            with self.subTest(value=value):
+                rc, out = self.run_phase("bug_confirmation", [f"--rounds={value}", NAME])
+                self.assertEqual(rc, 1)
+                self.assertIn("Invalid --rounds", out)
+                self.assertIn("integer from 1 to 5", out)
+
+    def test_bug_confirmation_accepts_round_five(self) -> None:
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--rounds=5"])
+        self.assertEqual(rc, 0, out)
+
+    def test_bug_confirmation_rejects_legacy_debate_combination(self) -> None:
+        rc, out = self.run_phase("bug_confirmation", ["--legacy-confirm", "--debate", NAME])
+        self.assertEqual(rc, 1)
+        self.assertIn("--legacy-confirm and --debate cannot be used together", out)
+
     def test_help_prints_usage(self) -> None:
         for spec in PHASES:
             with self.subTest(phase=spec["key"]):
@@ -490,6 +566,594 @@ class TestArgErrors(PhaseCase):
                 self.assertIn(f"launch_{spec['key']}.sh", out)
                 self.assertIn("--model=NAME", out)
                 self.assertIn("--effort=LEVEL", out)
+
+
+class TestBugConfirmationAlternate(PhaseCase):
+    def _patch_confirmation(self, codes: list[int]) -> list[tuple[int, str]]:
+        from specula import confirmlib
+
+        calls: list[tuple[int, str]] = []
+
+        def fake_confirmation(cfg: confirmlib.ConfirmConfig) -> int:
+            calls.append((cfg.max_parallel, cfg.max_turns))
+            return codes[min(len(calls) - 1, len(codes) - 1)]
+
+        self.patch_attr(confirmlib, "run_parallel_confirmation", fake_confirmation)
+        return calls
+
+    def test_permanent_failure_propagates(self) -> None:
+        calls = self._patch_confirmation([9])
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"])
+        self.assertEqual(rc, 9, out)
+        self.assertEqual(calls, [(4, "0")])
+
+    def test_rate_limit_retries_current_target(self) -> None:
+        calls = self._patch_confirmation([quota.RATE_LIMIT_RC, 0])
+        waits: list[int] = []
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(waits, [1])
+        self.assertIn("Rate limited: waiting before retrying", out)
+
+    def test_rate_limit_retries_are_bounded(self) -> None:
+        calls = self._patch_confirmation([quota.RATE_LIMIT_RC])
+        waits: list[int] = []
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"])
+        self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(waits, [1])
+
+
+class TestLegacyRepairIdentityFinalization(PhaseCase):
+    def setUp(self) -> None:
+        super().setUp()
+        adapters = self.tmp() / "adapters"
+        adapters.mkdir()
+        self.patch_attr(phaselib, "LAUNCH_DIR", adapters.parent)
+        self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
+        self.patch_attr(
+            phaselib.Phase,
+            "progress_config",
+            replace(phaselib.Phase.progress_config, poll_seconds=0.005),
+        )
+        self.adapter = adapters / "fake.sh"
+        self.adapter.write_text(
+            "#!/usr/bin/env sh\n"
+            "set -eu\n"
+            'cp "$LEGACY_REPORT_FIXTURE" "$SPECULA_WORK_DIR/spec/confirmed-bugs.md"\n'
+            'if [ "${LEGACY_NO_RR:-0}" != 1 ]; then\n'
+            '  mkdir -p "$SPECULA_WORK_DIR/spec/repair-requests"\n'
+            '  if [ "${LEGACY_DELETE_RR:-0}" = 1 ]; then rm -f "$SPECULA_WORK_DIR/spec/repair-requests/RR-001.md"; fi\n'
+            '  cp "$LEGACY_RR_FIXTURE" "$SPECULA_WORK_DIR/spec/repair-requests/${LEGACY_RR_NAME:-RR-001.md}"\n'
+            "fi\n"
+            'exit "${LEGACY_ADAPTER_RC:-0}"\n'
+        )
+        self.adapter.chmod(0o755)
+        self.seed(BY_KEY["bug_confirmation"]["inputs"])
+
+    def _legacy_fixture(
+        self,
+        report: str,
+        *,
+        emitted_finding_id: str | None = None,
+        emitted_rid: str = "RR-001",
+    ) -> Path:
+        from specula import confirmlib
+
+        rr = confirmlib._merge_rr(
+            emitted_rid,
+            "Bug 1",
+            "fallback.out",
+            (
+                "---\n"
+                "target: SPEC_REPAIR\n"
+                "counterexample: spec/output/x.out\n"
+                "scope:\n"
+                "  actions: [Foo]\n"
+                "  invariants: [Inv]\n"
+                "  hunt_cfgs: [MC_hunt.cfg]\n"
+                "  fault_actions: []\n"
+                "---\n\n"
+                "## Trigger\n"
+                "The counterexample requires a transition the implementation rejects.\n\n"
+                "## Evidence\n"
+                "The trace disagrees with src/node.py:42.\n"
+            ),
+            finding_id=emitted_finding_id or "MC-1",
+        )
+        if emitted_finding_id is None:
+            rr = rr.replace("finding_id: MC-1\n", "", 1)
+        fixtures = self.tmp()
+        report_path = fixtures / "confirmed-bugs.md"
+        request_path = fixtures / f"{emitted_rid}.md"
+        report_path.write_text(report)
+        request_path.write_text(rr)
+        self.set_env("LEGACY_REPORT_FIXTURE", str(report_path))
+        self.set_env("LEGACY_RR_FIXTURE", str(request_path))
+        return request_path
+
+    def _run_legacy(self) -> tuple[int, str]:
+        return self.run_phase(
+            "bug_confirmation",
+            ["--legacy-confirm", f"--agent={self.adapter.stem}", self.artifact_flag(), NAME],
+        )
+
+    def _seed_consumed_audit(self) -> tuple[Path, bytes]:
+        from specula import confirmlib
+
+        rr_dir = self.work_dir() / "spec" / "repair-requests"
+        rr_dir.mkdir(parents=True, exist_ok=True)
+        request = rr_dir / "RR-001.md"
+        request.write_text(
+            confirmlib._merge_rr(
+                "RR-001",
+                "Bug 7",
+                "fallback.out",
+                (
+                    "---\n"
+                    "target: SPEC_REPAIR\n"
+                    "counterexample: spec/output/x.out\n"
+                    "scope:\n"
+                    "  actions: [Foo]\n"
+                    "  invariants: [Inv]\n"
+                    "  hunt_cfgs: [MC_hunt.cfg]\n"
+                    "  fault_actions: []\n"
+                    "---\n\n"
+                    "## Trigger\n"
+                    "Historical trigger.\n\n"
+                    "## Evidence\n"
+                    "Historical evidence at src/node.py:42.\n"
+                ),
+                finding_id="MC-1",
+                allocation_key="terminal-key",
+                status="CONSUMED",
+                history=["- immutable consumed audit"],
+            )
+        )
+        return request, request.read_bytes()
+
+    def _seed_active_audit(self) -> tuple[Path, bytes]:
+        request, _ = self._seed_consumed_audit()
+        request.write_text(request.read_text().replace("status: CONSUMED", "status: OPEN", 1))
+        return request, request.read_bytes()
+
+    def test_successful_legacy_phase_enriches_agent_output_with_stable_identity(self) -> None:
+        self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n"
+        )
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 0, out)
+        request = self.work_dir() / "spec" / "repair-requests" / "RR-001.md"
+        text = request.read_text()
+        self.assertIn("finding_id: MC-1", text)
+        self.assertRegex(text, r"(?m)^allocation_key: [0-9a-f]{64}$")
+
+    def test_ambiguous_legacy_identity_turns_zero_adapter_exit_into_failure(self) -> None:
+        original = self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n"
+            "| 2 | MC-2 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n\n"
+            "## Bug 2: two\n\n"
+            "- **Finding ID**: MC-2\n"
+        ).read_bytes()
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("legacy repair identity validation FAILED", out)
+        self.assertIn("expected exactly one RR-bearing report row, found 2", out)
+        self.assertIn("Output validation failures:", out)
+        request = self.work_dir() / "spec" / "repair-requests" / "RR-001.md"
+        self.assertEqual(request.read_bytes(), original)
+        self.assertNotIn("finding_id:", request.read_text())
+
+    def test_legacy_phase_rejects_agent_supplied_finding_id_that_conflicts_with_report(self) -> None:
+        self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n",
+            emitted_finding_id="MC-WRONG",
+        )
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("finding_id 'MC-WRONG' conflicts with report identity 'MC-1'", out)
+
+    def test_report_referenced_terminal_rr_cannot_bypass_identity_check(self) -> None:
+        request = self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n",
+            emitted_finding_id="MC-WRONG",
+        )
+        request.write_text(request.read_text().replace("status: OPEN", "status: CONSUMED", 1))
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("finding_id 'MC-WRONG' conflicts with report identity 'MC-1'", out)
+
+    def test_legacy_report_without_repair_requests_is_a_noop(self) -> None:
+        self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | FALSE POSITIVE |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: FALSE POSITIVE\n"
+        )
+        self.set_env("LEGACY_NO_RR", "1")
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 0, out)
+        self.assertFalse((self.work_dir() / "spec" / "repair-requests").exists())
+
+    def test_legacy_preflight_migrates_old_rr_before_zero_pending_report_overwrite(self) -> None:
+        from specula import confirmlib
+
+        work_spec = self.work_dir() / "spec"
+        (work_spec / "confirmed-bugs.md").write_text(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: old\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n"
+        )
+        rr_dir = work_spec / "repair-requests"
+        rr_dir.mkdir()
+        request = rr_dir / "RR-001.md"
+        request.write_text(
+            confirmlib._merge_rr(
+                "RR-001",
+                "Bug 1",
+                "fallback.out",
+                (
+                    "---\n"
+                    "target: SPEC_REPAIR\n"
+                    "counterexample: spec/output/x.out\n"
+                    "scope:\n"
+                    "  actions: [Foo]\n"
+                    "  invariants: [Inv]\n"
+                    "  hunt_cfgs: [MC_hunt.cfg]\n"
+                    "  fault_actions: []\n"
+                    "---\n\n"
+                    "## Trigger\n"
+                    "The counterexample requires an impossible transition.\n\n"
+                    "## Evidence\n"
+                    "The real guard is at src/node.py:42.\n"
+                ),
+                finding_id="MC-1",
+            ).replace("finding_id: MC-1\n", "", 1)
+        )
+        self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | FALSE POSITIVE |\n\n"
+            "## Bug 1: fresh\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: FALSE POSITIVE\n"
+        )
+        self.set_env("LEGACY_NO_RR", "1")
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("RR-001 is OPEN but is not linked", out)
+        self.assertNotIn("RR-001", (work_spec / "confirmed-bugs.md").read_text())
+        migrated = request.read_text()
+        self.assertIn("finding_id: MC-1", migrated)
+        self.assertRegex(migrated, r"(?m)^allocation_key: [0-9a-f]{64}$")
+
+    def test_failed_legacy_agent_leaves_partial_request_untouched(self) -> None:
+        original = self._legacy_fixture(
+            "# Confirmed Bugs — footest\n\n"
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: one\n\n"
+            "- **Finding ID**: MC-1\n"
+        ).read_bytes()
+        self.set_env("LEGACY_ADAPTER_RC", "9")
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 9, out)
+        request = self.work_dir() / "spec" / "repair-requests" / "RR-001.md"
+        self.assertEqual(request.read_bytes(), original)
+        self.assertNotIn("legacy repair identity validation", out)
+
+    def test_successful_legacy_agent_cannot_overwrite_consumed_audit(self) -> None:
+        request, original = self._seed_consumed_audit()
+        self._legacy_fixture(
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: fresh\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n"
+        )
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(request.read_bytes(), original)
+        self.assertIn("RR-001 terminal audit was modified, moved, or deleted and was restored", out)
+        self.assertIn("Output integrity failures:", out)
+
+    def test_failed_legacy_agent_tamper_is_restored_before_returning_adapter_error(self) -> None:
+        request, original = self._seed_consumed_audit()
+        self._legacy_fixture(
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
+            "## Bug 1: fresh\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-001)\n"
+        )
+        self.set_env("LEGACY_ADAPTER_RC", "9")
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 9, out)
+        self.assertEqual(request.read_bytes(), original)
+        self.assertIn("RR-001 terminal audit was modified, moved, or deleted and was restored", out)
+        self.assertIn("Output integrity failures:", out)
+
+    def test_legacy_agent_cannot_delete_active_id_and_reallocate_same_finding(self) -> None:
+        request, original = self._seed_active_audit()
+        self._legacy_fixture(
+            "| Bug | Finding | Status |\n"
+            "|---|---|---|\n"
+            "| 1 | MC-1 | PENDING REPAIR (RR-002) |\n\n"
+            "## Bug 1: fresh\n\n"
+            "- **Finding ID**: MC-1\n"
+            "- **Status**: PENDING REPAIR (RR-002)\n",
+            emitted_finding_id="MC-1",
+            emitted_rid="RR-002",
+        )
+        self.set_env("LEGACY_DELETE_RR", "1")
+        self.set_env("LEGACY_RR_NAME", "RR-002.md")
+
+        rc, out = self._run_legacy()
+
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(request.read_bytes(), original)
+        self.assertIn("RR-001 active identity was modified, moved, or deleted and was restored", out)
+
+
+class TestRunAgentBlocking(PhaseCase):
+    def test_turn_phase_scopes_stop_gate_sets_cwd_and_removes_stale_log(self) -> None:
+        adapter = self.tmp() / "adapter.sh"
+        capture = self.tmp() / "capture.txt"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            'printf \'%s\\n\' "$SPECULA_PHASE" "${SPECULA_STOP_GATE-unset}" '
+            '"$SPECULA_WORK_DIR" "$SPECULA_STOP_GATE_WORK_DIR" "$PWD" '
+            '"${SPECULA_SANDBOX_CONFIG-unset}" "$@" > "$CAPTURE_FILE"\n'
+            "exit 9\n"
+        )
+        adapter.chmod(0o755)
+        prompt_file = self.tmp() / "prompt.md"
+        log_file = self.tmp() / "turn.log"
+        log_file.write_text("stale output\n")
+        target_work_dir = self.work_dir()
+        target_work_dir.mkdir(parents=True)
+        gate_work_dir = self.tmp() / "finding"
+        gate_work_dir.mkdir()
+        agent_cwd = self.tmp()
+        malicious_config = agent_cwd / ".specula" / "sandbox.json"
+        malicious_config.parent.mkdir()
+        malicious_config.write_text('{"enabled": false}\n')
+        self.set_env("CAPTURE_FILE", str(capture))
+        self.set_env("SPECULA_STOP_GATE", "on")
+        self.set_env("SPECULA_SANDBOX", "on")
+
+        rc, text = phaselib.run_agent_blocking(
+            adapter,
+            "prompt body",
+            prompt_file,
+            log_file,
+            phase_key="bug_confirmation",
+            work_dir=target_work_dir,
+            claude_alias="profile",
+            gate_work_dir=gate_work_dir,
+            cwd=agent_cwd,
+            max_turns="7",
+        )
+
+        self.assertEqual(rc, 9)
+        self.assertEqual(text, "")
+        self.assertFalse(log_file.exists())
+        recorded = capture.read_text().splitlines()
+        self.assertEqual(
+            recorded[:5],
+            ["bug_confirmation_turn", "on", str(target_work_dir), str(gate_work_dir), str(agent_cwd)],
+        )
+        trusted_config = Path(recorded[5])
+        self.assertTrue(trusted_config.is_absolute())
+        self.assertTrue(trusted_config.is_file())
+        self.assertNotEqual(trusted_config, malicious_config)
+        self.assertIn("--max-turns=7", recorded)
+
+    def test_relative_paths_are_absolutized_before_cwd_switch(self) -> None:
+        base = self.tmp()
+        adapter = base / "adapter.sh"
+        capture = base / "capture.txt"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            'printf \'%s\\n\' "$PWD" "$SPECULA_WORK_DIR" "$SPECULA_STOP_GATE_WORK_DIR" "$@" > "$CAPTURE_FILE"\n'
+        )
+        adapter.chmod(0o755)
+        for directory in ("target", "gate", "agent"):
+            (base / directory).mkdir()
+        old_cwd = Path.cwd()
+        os.chdir(base)
+        self.addCleanup(os.chdir, old_cwd)
+        self.set_env("CAPTURE_FILE", str(capture))
+
+        rc, _ = phaselib.run_agent_blocking(
+            Path("adapter.sh"),
+            "prompt body",
+            Path("finding/prompt.md"),
+            Path("finding/turn.log"),
+            phase_key="bug_confirmation",
+            work_dir=Path("target"),
+            gate_work_dir=Path("gate"),
+            cwd=Path("agent"),
+            claude_alias="profile",
+        )
+
+        self.assertEqual(rc, 0)
+        recorded = capture.read_text().splitlines()
+        self.assertEqual(recorded[:3], [str(base / "agent"), str(base / "target"), str(base / "gate")])
+        self.assertIn(f"--prompt-file={base / 'finding' / 'prompt.md'}", recorded)
+        self.assertIn(f"--log={base / 'finding' / 'turn.log'}", recorded)
+
+    def test_codex_returns_final_message_and_keeps_transcript(self) -> None:
+        adapter = self.tmp() / "codex.sh"
+        adapter.write_text("#!/bin/sh\nexit 0\n")
+        adapter.chmod(0o755)
+        prompt_file = self.tmp() / "prompt.md"
+        log_file = self.tmp() / "turn.log"
+
+        class _Result:
+            returncode = 0
+
+        def fake_run(_cmd: list[str], **_kwargs: Any) -> _Result:
+            log_file.write_text("Codex CLI transcript\ncommand output\n")
+            log_file.with_suffix(".last-message.txt").write_text("VERDICT: REPRODUCED\n")
+            return _Result()
+
+        with mock.patch("specula.phaselib.subprocess.run", fake_run):
+            rc, text = phaselib.run_agent_blocking(
+                adapter,
+                "prompt body",
+                prompt_file,
+                log_file,
+                phase_key="bug_confirmation",
+                work_dir=self.work_dir(),
+                claude_alias="profile",
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(text, "VERDICT: REPRODUCED\n")
+        self.assertEqual(log_file.read_text(), "Codex CLI transcript\ncommand output\n")
+
+    def test_codex_missing_final_message_does_not_return_transcript(self) -> None:
+        adapter = self.tmp() / "codex.sh"
+        adapter.write_text("#!/bin/sh\nexit 0\n")
+        adapter.chmod(0o755)
+        prompt_file = self.tmp() / "prompt.md"
+        log_file = self.tmp() / "turn.log"
+
+        class _Result:
+            returncode = 0
+
+        def fake_run(_cmd: list[str], **_kwargs: Any) -> _Result:
+            log_file.write_text("successful CLI transcript without a final-message sidecar\n")
+            return _Result()
+
+        with mock.patch("specula.phaselib.subprocess.run", fake_run):
+            rc, text = phaselib.run_agent_blocking(
+                adapter,
+                "prompt body",
+                prompt_file,
+                log_file,
+                phase_key="bug_confirmation",
+                work_dir=self.work_dir(),
+                claude_alias="profile",
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(text, "")
+        self.assertIn("successful CLI transcript", log_file.read_text())
+
+    def test_codex_non_log_suffix_uses_bash_compatible_sidecar(self) -> None:
+        adapter = self.tmp() / "codex.sh"
+        adapter.write_text("#!/bin/sh\nexit 0\n")
+        adapter.chmod(0o755)
+        prompt_file = self.tmp() / "prompt.md"
+        log_file = self.tmp() / "turn.output"
+        last_message_file = Path(str(log_file) + ".last-message.txt")
+
+        class _Result:
+            returncode = 0
+
+        def fake_run(_cmd: list[str], **_kwargs: Any) -> _Result:
+            log_file.write_text("transcript\n")
+            last_message_file.write_text("final answer\n")
+            return _Result()
+
+        with mock.patch("specula.phaselib.subprocess.run", fake_run):
+            rc, text = phaselib.run_agent_blocking(
+                adapter,
+                "prompt body",
+                prompt_file,
+                log_file,
+                phase_key="bug_confirmation",
+                work_dir=self.work_dir(),
+                claude_alias="profile",
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(text, "final answer\n")
+        self.assertTrue(last_message_file.is_file())
+
+    def test_codex_does_not_reuse_stale_final_message(self) -> None:
+        adapter = self.tmp() / "codex.sh"
+        adapter.write_text("#!/bin/sh\nexit 9\n")
+        adapter.chmod(0o755)
+        prompt_file = self.tmp() / "prompt.md"
+        log_file = self.tmp() / "turn.log"
+        log_file.write_text("old transcript\n")
+        log_file.with_suffix(".last-message.txt").write_text("old answer\n")
+
+        rc, text = phaselib.run_agent_blocking(
+            adapter,
+            "prompt body",
+            prompt_file,
+            log_file,
+            phase_key="bug_confirmation",
+            work_dir=self.work_dir(),
+            claude_alias="profile",
+        )
+
+        self.assertEqual(rc, 9)
+        self.assertEqual(text, "")
+        self.assertFalse(log_file.with_suffix(".last-message.txt").exists())
 
 
 class TestProgressReporting(PhaseCase):
@@ -1105,10 +1769,17 @@ class TestSummarize(PhaseCase):
             "phase": "bug_classification",
             "files": {
                 "spec/bug-severity.md": (
-                    "- Total bugs: 7\n- Critical: 1\n- High: 2\n- Medium: 3\n- Low: 1\n- FALSE POSITIVE: 0\n"
+                    "- Total entries: 9\n"
+                    "- Reproduced bugs: 2\n"
+                    "- Findings: 2\n"
+                    "- Critical: 1\n"
+                    "- High: 1\n"
+                    "- Medium: 1\n"
+                    "- Low: 1\n"
+                    "- No-severity dispositions: 5\n"
                 )
             },
-            "want": [f"{NAME}: total=7  C=1 H=2 M=3 L=1 FP=0"],
+            "want": [f"{NAME}: entries=9  bugs=2 findings=2  C=1 H=1 M=1 L=1  dispositions=5"],
         },
         {
             "name": "bug_classification/no-report",
