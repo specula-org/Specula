@@ -344,10 +344,13 @@ class TestDryRunCommand(PhaseCase):
         self.assertNotIn("--effort=max", out)
 
     def test_bug_classification_rejects_artifact(self) -> None:
-        # accepts_artifact=False: --artifact is not a known option here.
         rc, out = self.run_phase("bug_classification", ["--artifact=/x", NAME])
         self.assertEqual(rc, 1)
-        self.assertIn("Unknown option", out)
+        self.assertEqual(
+            out,
+            "ERROR: classify does not accept --artifact; this phase reads the existing "
+            ".specula-output/spec/confirmed-bugs.md and does not inspect source code.\n",
+        )
 
 
 class TestRepairAndRecheckModes(PhaseCase):

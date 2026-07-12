@@ -211,6 +211,7 @@ class Phase:
     check_fail_msg = "ERROR: Missing prerequisites."
     check_ok_msg = "All prerequisites OK."  # code_analysis says "All repos OK."
     accepts_artifact = True  # bug_classification takes no --artifact (rejects it)
+    artifact_rejection_message: str | None = None
     dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
     progress_config = progress.ProgressConfig()
     # Tri-state tuning values set in run(): None = unspecified, "" = explicit
@@ -421,7 +422,10 @@ class Phase:
                 model = arg[len("--model=") :]
             elif arg.startswith("--effort="):
                 effort = arg[len("--effort=") :]
-            elif arg.startswith("--artifact=") and self.accepts_artifact:
+            elif arg.startswith("--artifact="):
+                if not self.accepts_artifact:
+                    print(self.artifact_rejection_message or f"Unknown option: {arg}")
+                    return 1
                 artifact = arg[len("--artifact=") :]
             elif arg in ("--help", "-h"):
                 sys.stdout.write(self.usage)
@@ -1235,6 +1239,10 @@ Prerequisites:
     check_header = "Checking prerequisites..."
     check_fail_msg = "ERROR: Missing prerequisites. Run Phase 4a (launch_bug_confirmation.sh) first."
     accepts_artifact = False  # this launcher takes no --artifact
+    artifact_rejection_message = (
+        "ERROR: classify does not accept --artifact; this phase reads the existing "
+        ".specula-output/spec/confirmed-bugs.md and does not inspect source code."
+    )
     dry_prompt_flag = "--prompt-file"  # its dry-run line shows --prompt-file=<prompt>
 
     def check(self, ws: Workspace, names: list[str]) -> bool:
