@@ -14,7 +14,7 @@ When using WSL2, install the prerequisites and agent CLI inside WSL2, then clone
 
 | Dependency | Used for | Installed by `specula setup`? |
 |---|---|---|
-| [uv](https://docs.astral.sh/uv/) | Running the packaged `specula` command | No |
+| [uv](https://docs.astral.sh/uv/) | Installing the `specula` command | No |
 | Python 3.10+ with `pip` and `venv` | CLI, launchers, MCP tool environments | No |
 | JDK 21+ and Maven | TLC, SANY, and building the CFA tool | No |
 | Git and Bash | Source/history analysis, worktrees, and launch scripts | No |
@@ -52,18 +52,21 @@ Enable it per run with `SPECULA_SANDBOX=on`. A full pipeline also needs write ac
 ```bash
 export SPECULA_SANDBOX=on
 export SPECULA_SANDBOX_EXTRA_WRITE="/path/to/source:$HOME/.cache"
-uv run specula run --artifact=/path/to/source "name|owner/repository|language|reference"
+specula run --artifact=/path/to/source "name|owner/repository|language|reference"
 ```
 
 If neither `.specula/sandbox.json` in the launch directory nor `~/.specula/sandbox.json` exists, the first sandboxed run copies the default policy to `~/.specula/sandbox.json`. Review the [sandbox guide](../scripts/launch/sandbox/README.md) before enabling it or tightening read/network access.
 
-Clone Specula and run its interactive setup:
+Clone Specula, install the CLI, and run its interactive setup:
 
 ```bash
 git clone https://github.com/specula-org/Specula.git
 cd Specula
-uv run specula setup
+uv tool install -e .
+specula setup
 ```
+
+Install with `-e` (editable): the `specula` command dispatches to scripts inside the checkout, so it must stay linked to it.
 
 Setup downloads the TLA+ JARs, builds the CFA tool, prepares the MCP tool environments, and offers integration for each supported agent. It prompts for global or project-local skill installation. Codex users can choose the skills/MCP setup or the generated Specula plugin.
 
@@ -78,12 +81,12 @@ More precisely, setup manages:
 | Codex | Installs skills and MCP servers, or generates/updates the Specula plugin |
 | GitHub Copilot CLI | Installs skills only; MCP servers must currently be configured manually |
 
-Setup does **not** install `uv`, Python, a JDK, Maven, Git, `gh`, an agent CLI, target-language dependencies, GNU coreutils, or the optional sandbox dependencies.
+Setup does **not** install `uv`, Python, a JDK, Maven, Git, `gh`, an agent CLI, target-language dependencies, GNU coreutils, or the optional sandbox dependencies. It does not install the `specula` command either; that is the `uv tool install -e .` step above.
 
 The setup is safe to rerun when updating the checkout. Confirm the CLI afterward:
 
 ```bash
-uv run specula --help
+specula --help
 ```
 
 ### First run
@@ -91,7 +94,7 @@ uv run specula --help
 From the Specula checkout, point Specula at the source repository to analyze:
 
 ```bash
-uv run specula run \
+specula run \
   --artifact=/absolute/path/to/source \
   "name|github-owner/repository|language|reference"
 ```
@@ -99,7 +102,7 @@ uv run specula run \
 For example:
 
 ```bash
-uv run specula run \
+specula run \
   --artifact=/work/cometbft \
   "cometbft|cometbft/cometbft|Go|Tendermint BFT"
 ```
@@ -111,7 +114,7 @@ With the default isolated workspace, an external source checkout must be supplie
 Select an agent, model, and reasoning effort when needed:
 
 ```bash
-uv run specula run \
+specula run \
   --agent=codex \
   --model=MODEL_NAME \
   --effort=high \
@@ -131,7 +134,7 @@ Supported adapters are `claude-code` (default), `codex`, and `copilot-cli`. Mode
 
 Specula launches the installed agent CLI directly and uses its existing credentials. Authenticate the CLI before starting a pipeline. Claude Code runs default to maximum reasoning effort; Codex and Copilot use their configured defaults unless `--effort` is supplied.
 
-Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. `--max-turns` maps to Copilot's autopilot continuation limit. Claude Code and Codex accept the option for adapter compatibility but do not enforce it. Inter-phase reviews pass a fixed value of 30 instead of the pipeline option; Claude Code and Codex still ignore it.
+Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. `--max-turns` maps to Copilot's autopilot continuation limit. Claude Code and Codex accept the option for adapter compatibility but do not enforce it. The reviews between steps pass a fixed value of 30 instead of the pipeline option; Claude Code and Codex still ignore it.
 
 ## Output Structure
 
@@ -145,9 +148,9 @@ runs/<run-id>/
 └── <name>/.specula-output/
 ```
 
-The `.specula-output/` directory contains the modeling brief, specifications, harness, traces, reproduction tests, reports, and phase logs. `runs/latest` points to the newest run.
+The `.specula-output/` directory contains the modeling brief, specifications, harness, traces, reproduction tests, reports, and per-step logs. `runs/latest` points to the newest run.
 
-The source supplied through `--artifact` is not copied into the isolated workspace. Harness and reproduction work may build or modify that checkout. `--no-isolate` selects the legacy layout: a single target writes phase outputs under `$PWD/.specula-output/`, or under `case-studies/<name>/.specula-output/` when that canonical case study exists; multiple targets use `$PWD/<name>/.specula-output/`. For a canonical single target, `pipeline.log` remains under the launch directory's `.specula-output/` while the phase outputs and summary use the case-study directory.
+The source supplied through `--artifact` is not copied into the isolated workspace. Harness and reproduction work may build or modify that checkout. `--no-isolate` selects the legacy layout: a single target writes step outputs under `$PWD/.specula-output/`, or under `case-studies/<name>/.specula-output/` when that canonical case study exists; multiple targets use `$PWD/<name>/.specula-output/`. For a canonical single target, `pipeline.log` remains under the launch directory's `.specula-output/` while the step outputs and summary use the case-study directory.
 
 TLC can use substantial memory and temporary disk space during model checking. The bundled `scripts/tlc/run_model_check.sh` stores states under `TMPDIR` (or `/tmp`) by default; set `TLC_STATE_DIR` to a larger or faster filesystem when necessary.
 
@@ -156,16 +159,16 @@ TLC can use substantial memory and temporary disk space during model checking. T
 Use a stable ID when a run may need to be resumed:
 
 ```bash
-uv run specula run \
+specula run \
   --run-id=my-run \
   --artifact=/path/to/source \
   "name|owner/repository|language|reference"
 ```
 
-Attach to the same run and skip completed phases. This resumes at validation:
+Attach to the same run and skip completed steps. This resumes at validation:
 
 ```bash
-uv run specula run \
+specula run \
   --run-id=my-run \
   --skip-analysis \
   --skip-specgen \
@@ -176,9 +179,9 @@ uv run specula run \
 
 Specula reuses `runs/<run-id>/<name>/.specula-output/`. Pass the target, artifact, agent, model, and effort again when resuming; `run.json` is an audit record, not a source of arguments for the new invocation.
 
-## Individual Phases
+## Individual Steps
 
-Most users should run `uv run specula run`, which executes every phase in order. The commands below are for running or debugging one phase at a time.
+Most users should run `specula run`, which executes every step in order. The commands below are for running or debugging one step at a time.
 
 | Command | What it does | Required input | Main output |
 |---|---|---|---|
@@ -189,27 +192,27 @@ Most users should run `uv run specula run`, which executes every phase in order.
 | `confirm` | Audits and reproduces each candidate bug against the real implementation | Source, modeling brief, and bug report | `spec/confirmed-bugs.md`, reproduction tests, and any repair requests |
 | `classify` | Assigns severity to reproduced bugs and finding-tier entries; records other dispositions without severity | `spec/confirmed-bugs.md` | `spec/bug-severity.md` |
 
-For example, run only Phase 1 with Codex:
+For example, run only the code analysis with Codex:
 
 ```bash
-uv run specula analyze \
+specula analyze \
   --agent=codex \
   --artifact=/path/to/source \
   "name|owner/repository|language|reference"
 ```
 
-This writes `.specula-output/modeling-brief.md` and `.specula-output/analysis-report.md` in the current directory. By interface, downstream phase commands take only the target `name`. Continue passing `--artifact` to `specgen`, `harness`, `validate`, and `confirm` so they can access the source; `classify` reads only the generated report and does not accept `--artifact`:
+This writes `.specula-output/modeling-brief.md` and `.specula-output/analysis-report.md` in the current directory. By interface, downstream commands take only the target `name`. Continue passing `--artifact` to `specgen`, `harness`, `validate`, and `confirm` so they can access the source; `classify` reads only the generated report and does not accept `--artifact`:
 
 ```bash
-uv run specula specgen --agent=codex --artifact=/path/to/source name
+specula specgen --agent=codex --artifact=/path/to/source name
 ```
 
-A single-target individual command uses `.specula-output/` in the current directory; a multi-target command uses `<name>/.specula-output/` for each target. When `SPECULA_RUN_DIR` is set, every target uses `$SPECULA_RUN_DIR/<name>/.specula-output/`. A downstream command stops if its required files from the preceding phase are missing.
+A single-target individual command uses `.specula-output/` in the current directory; a multi-target command uses `<name>/.specula-output/` for each target. When `SPECULA_RUN_DIR` is set, every target uses `$SPECULA_RUN_DIR/<name>/.specula-output/`. A downstream command stops if its required files from the preceding step are missing.
 
-Use `--check` to run a lightweight path-level preflight without starting an agent. It checks the paths currently gated by that phase, but does not validate file contents; warnings such as zero trace files remain non-fatal:
+Use `--check` to run a lightweight path-level preflight without starting an agent. It checks the paths currently gated by that step, but does not validate file contents; warnings such as zero trace files remain non-fatal:
 
 ```bash
-uv run specula validate --check --artifact=/path/to/source name
+specula validate --check --artifact=/path/to/source name
 ```
 
 ## CLI Reference
@@ -219,20 +222,22 @@ uv run specula validate --check --artifact=/path/to/source name
 Run the complete analysis-to-classification pipeline:
 
 ```bash
-uv run specula run [options] "name|owner/repository|language|reference"
+specula run [options] "name|owner/repository|language|reference"
 ```
 
 | Option | Purpose |
 |---|---|
-| `--dry-run` | Print phase commands without starting agents |
+| `--dry-run` | Print the step commands without starting agents |
 | `--agent=NAME` | Select `claude-code`, `codex`, or `copilot-cli` |
 | `--model=NAME` | Override the configured model |
 | `--effort=LEVEL` | Override reasoning effort |
 | `--artifact=PATH` | Set the target source checkout |
-| `--max-parallel=N` | Set a hard concurrency limit. If omitted, ordinary phases run 1 target agent at a time and per-finding Phase 4 confirmation runs up to 4 Reproducer agents at a time |
+| `--max-parallel=N` | Set a hard concurrency limit. If omitted, ordinary steps run 1 target agent at a time and per-finding confirmation runs up to 4 Reproducer agents at a time |
 | `--max-turns=N` | Set Copilot's autopilot continuation limit; accepted but ignored by Claude Code and Codex |
-| `--enable-reviews` | Enable inter-phase reviews |
+| `--enable-reviews` | Enable reviews between steps |
 | `--legacy-confirm` | Use one confirmation agent instead of per-finding agents |
+| `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse earlier outputs |
+| `--skip-validation`, `--skip-confirmation`, `--skip-classification` | Reuse later outputs |
 | `--confirm-debate` | Add the adversarial confirmation debate in parallel Phase 4 mode |
 | `--skip-repair-loop` | Disable the confirmation back-edge repair loop |
 | `--max-repair-rounds=N` | Set the global repair-loop round cap (default `10`; `0` means unlimited) |
@@ -246,9 +251,9 @@ uv run specula run [options] "name|owner/repository|language|reference"
 Use command-specific help for the authoritative option list:
 
 ```bash
-uv run specula run --help
-uv run specula validate --help
-uv run specula confirm --help
+specula run --help
+specula validate --help
+specula confirm --help
 ```
 
 ## Batch Runs
@@ -263,13 +268,13 @@ beta|owner/beta|Rust|Concurrent queue<TAB>--agent=codex --effort=high
 Run it with:
 
 ```bash
-uv run specula batch --queue /path/to/tasks.queue --workers 3
+specula batch --queue /path/to/tasks.queue --workers 3
 ```
 
-The scheduler clones missing repositories under `case-studies/` and creates an isolated workspace for every task. See all scheduler options with `uv run specula batch --help`.
+The scheduler clones missing repositories under `case-studies/` and creates an isolated workspace for every task. See all scheduler options with `specula batch --help`.
 
 The scheduler owns `--run-id`, `--isolate`, and `--no-isolate` so that each task keeps a separate workspace. Do not include these flags in a queue; Specula rejects the queue and reports the affected line and flag.
 
 ## Progress and Logs
 
-Agent activity is printed during each phase and written to its log. Set `SPECULA_PROGRESS=off` to disable live reporting. After a run, start with `pipeline-summary.md` for deliverable status and log locations.
+Agent activity is printed during each step and written to its log. Set `SPECULA_PROGRESS=off` to disable live reporting. After a run, start with `pipeline-summary.md` for deliverable status and log locations.

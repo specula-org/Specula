@@ -129,6 +129,7 @@ scripts/tlc/cleanup-tmp-tlc.sh
 # ── Release-prep: local-only / confidential / generated (not for the public repo) ──
 # Paper checked out inside the tree (own private repo specula-org/Specula-Paper)
 docs/Specula-Paper/
+docs/main.pdf
 docs/pipeline-cost-time.md
 # All experiment outputs / run data (nothing here is tracked)
 experiments/
