@@ -86,8 +86,11 @@ One line: why this counterexample is judged an artifact, naming the target categ
 What the repair agent might do. The agent decides; this is a hint, not an order.
 
 ## History  (append-only; one entry per round, newest last)
-- r0 (phase4-confirm): created. <verdict summary>
+- r0 (phase4-confirm): created from MC-1
+- r0 (phase4-confirm): prior attempt RR-003 (CONSUMED): r1 (phase3-repair): <what it changed and the re-run result>
 ```
+
+When the finding already has terminal (`CONSUMED` / `DEFERRED`) requests, the dispatcher seeds the fresh request's History with one `prior attempt` bullet per terminal record, quoting that record's newest History line. This is the cross-round memory: the repair agent starts from what earlier rounds already tried.
 
 ## State machine
 
@@ -100,7 +103,7 @@ Small. Terminal states: `CONSUMED` (Phase 3 completed the scoped repair) and `DE
 | `IN_REPAIR` → `CONSUMED` | Phase 3 repair | after editing + **full trace re-validation** + re-running MC; appends History |
 | `OPEN` → `DEFERRED` | pipeline orchestrator | the global repair-loop round cap is reached; move the file under `repair-requests/deferred/` and update the linked report entry |
 
-Whether a `CONSUMED` repair actually **settled** the finding is answered by the next Phase 4 confirmation on the fresh bug-report: a repaired artifact simply no longer appears (resolved); a surviving or new violation is confirmed from scratch and may emit a fresh `OPEN` request. There is no re-check pass and no `RESOLVED` / `REOPENED` status. `DEFERRED` is legal only as the orchestrator-owned terminal state; an agent never emits it as a verdict or writes that transition.
+Whether a `CONSUMED` repair actually **settled** the finding is answered by the next Phase 4 confirmation on the fresh bug-report: a repaired artifact simply no longer appears (resolved); a surviving or new violation is confirmed from scratch and may emit a fresh `OPEN` request, whose History is seeded with one `prior attempt` bullet per terminal record for the same finding. There is no re-check pass and no `RESOLVED` / `REOPENED` status. `DEFERRED` is legal only as the orchestrator-owned terminal state; an agent never emits it as a verdict or writes that transition.
 
 `IN_REPAIR` doubles as a crash marker: if the orchestrator finds a request still `IN_REPAIR` at the top of a loop iteration (its repair phase died mid-turn), it resets it to `OPEN`.
 
@@ -122,7 +125,7 @@ The loop is bounded by a **global round cap** (`--max-repair-rounds=N`, default 
 Phase 3 in repair mode (`--repair`) processes each request with status `OPEN`:
 
 1. Set `status: IN_REPAIR` before editing anything.
-2. Read its Trigger / Evidence and its `History` — never repeat a repair a prior round already tried and recorded as failed.
+2. Read its Trigger / Evidence and its `History`. If History cites `prior attempt RR-NNN` bullets, read those request files too — they are this finding's earlier rounds. Never repeat a repair a prior round already tried and recorded as failed.
 3. Apply the repair for its `target`:
    - **SPEC_REPAIR** — tighten the cited action / add the missing guard in `base.tla` so the model matches the implementation at the cited `file:line`.
    - **FAULT_MODEL** — correct the fault model as a whole: the fault action's semantics in `base.tla`, its counter/wrapper in `MC.tla`, the cfg constants, or removing a fault that is not in the system's failure model. Not just `MC.cfg` bounds.
