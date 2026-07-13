@@ -1,28 +1,15 @@
 # Specula: Scaling formal specifications for autonomous model checking of system code
 
-Specula is a push-button agentic system that finds deep bugs in concurrent and distributed system code. It uses LLM-based coding agents to write TLA+ specifications of your system: invariants that capture its correctness properties, and formal models that describe the implementation at the right level of abstraction. It then model-checks the specifications and reproduces every violation at the code level.
+Specula is an agentic system that finds deep bugs in concurrent and distributed system code. 
+It uses LLM-based coding agents to write TLA+ specifications of the target system, including invariants that capture its correctness properties and formal models that describe the implementation at the right level of abstraction. 
+It then model-checks the specifications and reproduces violations at the code level.
 
-We have applied Specula to 48 open-source system projects written in seven languages (including MongoDB, etcd-raft, CometBFT, GCC libgomp, and SONiC), where it found 249 bugs, including deadlocks and hangs, data loss and corruption, crashes, and loss of availability. See the [running list of bugs](https://docs.google.com/spreadsheets/d/1AVXdKjNfD4952hZqyB-_wTdrzeTw0SD73f3F0zWJ0as) found by Specula.
-
-## How Specula works
-
-Formal specifications are historically expensive: specifying a real system by hand takes months of expert effort. Asking an LLM to write them directly does not work either; the specifications it produces are imprecise, hallucinated, or oversimplified, and agents asked to repair them tend to game the process. Specula makes coding agents produce specifications that are precise, conformant to the code, and effective for bug finding.
-
-**Invariants grounded in evidence.** Agents mine the system's artifacts (code and comments, issue trackers, commit history, tests, and documentation) for the correctness properties the system must hold, at both the protocol level and the code level. Every invariant must cite concrete evidence from these sources, which keeps it auditable and curbs hallucination.
-
-**Models at the right abstraction.** Agents generate a TLA+ model that follows the control flow of the code, then derive focused variants that target the system's most suspicious behaviors. This keeps the state space tractable for model checking while concentrating the search where bugs are likely.
-
-**Model-code conformance.** Specula automatically instruments the system, collects execution traces, and validates that the model can replay every traced behavior. Trace validation is paired with model checking, so agents cannot "fix" a failure by overfitting the model to traces: the model must admit real behavior and satisfy the invariants at the same time.
-
-**Bugs reproduced, not just reported.** Every invariant violation is replayed at the code level. The agent turns the model's counterexample into a test that triggers the bug in the real system through its public interfaces; shortcuts such as injecting illegal state or calling private internals are forbidden.
-
-**Iteration until convergence.** Invariants, models, and instrumentation all start imperfect. Specula runs repair loops in which agents collect new evidence (a counterexample, a model-code gap, a failed reproduction) and improve the specification, until traces validate and model checking is clean, or a real bug is found.
-
-Specula applies to system code in any programming language, since the code is abstracted into TLA+ models.
+Specula has been used to find deep bugs in many open-source projects.
+See the [running list of bugs](https://docs.google.com/spreadsheets/d/1AVXdKjNfD4952hZqyB-_wTdrzeTw0SD73f3F0zWJ0as) found by Specula.
 
 ## Quick Start
 
-Specula runs as a set of code agent skills and MCP tools. It currently supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://openai.com/codex/), and [GitHub Copilot CLI](https://docs.github.com/en/copilot), with more agents to be supported in the future.
+Specula runs as a set of agent skills and MCP tools. It currently supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://openai.com/codex/), and [GitHub Copilot CLI](https://docs.github.com/en/copilot).
 
 ### Prerequisites
 
@@ -99,8 +86,9 @@ This project is a Go implementation of Tendermint BFT consensus (cometbft/cometb
 The reference algorithm is the Tendermint paper (arXiv:1807.04938). Run /code-analysis.
 ```
 
-Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) in `.specula-output/` that the next skill consumes. When one skill completes, invoke the next. You can also run any skill independently, for example `/validation-workflow` on an existing spec.
+Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) in `.specula-output` that the next skill consumes. 
+When one skill completes, invoke the next. You can also run any skill independently, e.g., `validation-workflow` on an existing spec.
 
-## License and Contributing
+## License
 
-See [LICENSE](LICENSE) for details. Also see [CONTRIBUTING](./CONTRIBUTING.md) for contributor sign-off requirements.
+See [LICENSE](LICENSE).
