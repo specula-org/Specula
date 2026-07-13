@@ -6,11 +6,11 @@
 </p>
 
 <h2 align="center">
-Scaling formal specifications for autonomous model checking of system code
+Scaling formal specs for autonomous model checking of system code
 </h2>
 
 Specula finds deep bugs in concurrent and distributed system code. 
-It uses coding agents to write TLA+ specifications of the target system, including invariants that capture the system's correctness properties and formal models that describe the system implementation. It then model-checks the specifications and reproduces violations at the code level. Specula has been used to find deep bugs in many open-source projects.
+It uses coding agents to write TLA+ specs of the target system, including invariants that capture the system's correctness properties and formal models that describe the system implementation. It then model-checks the specs and reproduces violations at the code level. Specula has been used to find deep bugs in many open-source projects.
 
 We maintain [a list of bugs found by Specula](https://docs.google.com/spreadsheets/d/1AVXdKjNfD4952hZqyB-_wTdrzeTw0SD73f3F0zWJ0as). We would love to hear about the bugs you find using Specula.
 
@@ -95,7 +95,7 @@ The reference algorithm is the Tendermint paper (arXiv:1807.04938). Run /code-an
 ```
 
 Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) in `.specula-output` that the next skill will consume. 
-When one skill completes, invoke the next. You can also run any skill independently, e.g., `validation-workflow` on an existing specification.
+When one skill completes, invoke the next. You can also run any skill independently, e.g., `validation-workflow` on an existing spec.
 
 # License
 
