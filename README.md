@@ -14,10 +14,6 @@ It uses coding agents to write TLA+ specs of the target system, including invari
 
 We maintain [a list of bugs found by Specula](https://docs.google.com/spreadsheets/d/1AVXdKjNfD4952hZqyB-_wTdrzeTw0SD73f3F0zWJ0as). We would love to hear about the bugs you find using Specula.
 
-# Quick Start
-
-Specula runs as a set of agent skills and MCP tools. It currently supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://openai.com/codex/), and [GitHub Copilot CLI](https://docs.github.com/en/copilot).
-
 ## Prerequisites
 
 - Python 3.10+ with pip
@@ -97,6 +93,6 @@ The reference algorithm is the Tendermint paper (arXiv:1807.04938). Run /code-an
 Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) in `.specula-output` that the next skill will consume. 
 When one skill completes, invoke the next. You can also run any skill independently, e.g., `validation-workflow` on an existing spec.
 
-# License
+## License
 
 See [LICENSE](LICENSE).
