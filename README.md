@@ -47,19 +47,20 @@ cd tools/trace_debugger
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
+cd ../..  # return to the Specula repository root
 
 # for Claude Code
 claude mcp add --transport stdio --scope project \
-    --env SPECULA_ROOT=$PWD \
-    tracedebugger -- \
-    $PWD/tools/trace_debugger/.venv/bin/python \
-    $PWD/tools/trace_debugger/mcp_server.py
+    tracedebugger \
+    --env "SPECULA_ROOT=$PWD" -- \
+    "$PWD/tools/trace_debugger/.venv/bin/python" \
+    "$PWD/tools/trace_debugger/mcp_server.py"
 
 # for Codex
 codex mcp add tracedebugger \
-	--env SPECULA_ROOT=$PWD -- \
-	$PWD/tools/trace_debugger/.venv/bin/python \
-	$PWD/tools/trace_debugger/mcp_server.py
+	--env "SPECULA_ROOT=$PWD" -- \
+	"$PWD/tools/trace_debugger/.venv/bin/python" \
+	"$PWD/tools/trace_debugger/mcp_server.py"
 ```
 
 </details>

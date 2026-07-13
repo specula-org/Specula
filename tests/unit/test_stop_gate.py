@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shlex
 import subprocess
 import sys
 import unittest
@@ -195,6 +196,7 @@ class TestLivePids(GateCase):
         self.assertFalse(allow)
         self.assertIn("MC_run1.out.pid", reason)
         self.assertIn("wait_for_pid.sh", reason)
+        self.assertIn(f"--pid-file {self.wd / 'spec' / 'output' / 'MC_run1.out.pid'}", reason)
 
     def test_live_background_job_at_finding_root_blocks(self) -> None:
         self.deliver()
@@ -295,6 +297,40 @@ class TestLivePids(GateCase):
 
         self.assertFalse(allow)
         self.assertIn(f"{proc.pid}.pid", reason)
+        self.assertIn(f"--pid {proc.pid}", reason)
+        self.assertNotIn("--pid-file", reason)
+
+    def test_registered_job_wait_command_is_executable(self) -> None:
+        self.deliver()
+        proc = subprocess.Popen(["sleep", "300"])
+        self.addCleanup(proc.wait)
+        self.addCleanup(proc.kill)
+        outside = self.wd / "states" / "external-log"
+        outside.mkdir(parents=True)
+        original_pid_file = outside / "job.out.pid"
+        original_pid_file.write_text(f"{proc.pid}\n")
+        registry = self.wd / sg.STATE_DIRNAME / sg.BACKGROUND_PID_DIRNAME
+        registry.mkdir(parents=True)
+        (registry / f"{proc.pid}.pid").write_text(f"{proc.pid}\n{original_pid_file}\n")
+
+        allow, reason = sg.decide("spec_validation", self.wd)
+
+        self.assertFalse(allow)
+        command = reason.split("`", 2)[1]
+        waiter = subprocess.Popen(shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            assert waiter.stdout is not None
+            first_line = waiter.stdout.readline()
+            self.assertIn(f"waiting on pid {proc.pid}", first_line)
+            proc.terminate()
+            proc.wait(timeout=5)
+            stdout, stderr = waiter.communicate(timeout=5)
+        finally:
+            if waiter.poll() is None:
+                waiter.kill()
+                waiter.wait()
+        self.assertEqual(waiter.returncode, 0, stderr)
+        self.assertIn(f"pid {proc.pid} exited", stdout)
 
     def test_malformed_managed_registry_blocks_instead_of_hiding_job(self) -> None:
         self.deliver()

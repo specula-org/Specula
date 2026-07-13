@@ -216,6 +216,10 @@ def _registered_pid_files(state_dir: Path) -> tuple[list[Path], bool]:
         return [], True
 
 
+def _is_registered_pid_file(pid_file: Path) -> bool:
+    return pid_file.parent.name == BACKGROUND_PID_DIRNAME and pid_file.parent.parent.name == STATE_DIRNAME
+
+
 def _find_pid_files(work_dir: Path) -> tuple[list[Path], bool]:
     """Find registered and ordinary PID files without topology false blocks.
 
@@ -260,7 +264,7 @@ def _live_pid_files(work_dir: Path) -> tuple[list[tuple[Path, int]], bool]:
     live: list[tuple[Path, int]] = []
     pid_files, incomplete = _find_pid_files(work_dir)
     for pf in pid_files:
-        registered = pf.parent.name == BACKGROUND_PID_DIRNAME and pf.parent.parent.name == STATE_DIRNAME
+        registered = _is_registered_pid_file(pf)
         try:
             text = pf.read_text().strip().splitlines()[0].strip()
         except (OSError, IndexError):
@@ -317,11 +321,18 @@ def decide(phase: str, work_dir: Path) -> tuple[bool, str]:
     if live:
         jobs = ", ".join(f"{pf} (pid {pid})" for pf, pid in live)
         waiter = SPECULA_ROOT / "scripts" / "infra" / "wait_for_pid.sh"
+        waiter_arg = shlex.quote(str(waiter))
+        first_pid_file, first_pid = live[0]
+        wait_target = (
+            f"--pid {first_pid}"
+            if _is_registered_pid_file(first_pid_file)
+            else f"--pid-file {shlex.quote(str(first_pid_file))}"
+        )
         return False, (
             f"Background job(s) you started are still running: {jobs}. "
             f"Do NOT stop while they run unobserved — nothing re-invokes you when they finish. "
             f"Wait on each in the foreground now, e.g. "
-            f"`bash {waiter} --pid-file {shlex.quote(str(live[0][0]))} --timeout 45m`, "
+            f"`bash {waiter_arg} {wait_target} --timeout 45m`, "
             f"then harvest the results and finish the phase deliverables. "
             f"If you are genuinely unable to proceed, kill the jobs and write "
             f"{work_dir / BLOCKED_LOCATIONS[0]} describing what you tried and why — "
