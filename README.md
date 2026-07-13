@@ -1,15 +1,24 @@
-# Specula: Scaling formal specifications for autonomous model checking of system code
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="pics/logo.png">
+    <img alt="specula" src="pics/logo.png" width=55%>
+  </picture>
+</p>
+
+<h2 align="center">
+Scaling formal specifications for autonomous model checking of system code
+</h2>
 
 Specula finds deep bugs in concurrent and distributed system code. 
 It uses coding agents to write TLA+ specifications of the target system, including invariants that capture the system's correctness properties and formal models that describe the system implementation. It then model-checks the specifications and reproduces violations at the code level. Specula has been used to find deep bugs in many open-source projects.
 
 We maintain [a list of bugs found by Specula](https://docs.google.com/spreadsheets/d/1AVXdKjNfD4952hZqyB-_wTdrzeTw0SD73f3F0zWJ0as). We would love to hear about the bugs you find using Specula.
 
-## Quick Start
+# Quick Start
 
 Specula runs as a set of agent skills and MCP tools. It currently supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://openai.com/codex/), and [GitHub Copilot CLI](https://docs.github.com/en/copilot).
 
-### Prerequisites
+## Prerequisites
 
 - Python 3.10+ with pip
 - [uv](https://docs.astral.sh/uv/)
@@ -20,7 +29,7 @@ Specula runs as a set of agent skills and MCP tools. It currently supports [Clau
 
 > **Windows:** run Specula inside [WSL2](https://learn.microsoft.com/windows/wsl/install). Native Windows (outside WSL2) is not supported yet.
 
-### Setup
+## Setup
 
 ```bash
 git clone https://github.com/specula-org/Specula.git && cd Specula
@@ -29,12 +38,12 @@ specula setup          # installs the agent skills and MCP tools, builds the bun
 ```
 
 <details>
-<summary>Alternative: Manual Agent Setup</summary>
+<summary>Manual Setup</summary>
 
-You will need to set up the Specula Agent Skills and MCP with your coding agent.
+You need to set up the Specula Agent Skills and MCP with your coding agent.
 
-- To set up skills, symlink [the Specula `skills` folder](https://github.com/specula-org/Specula/tree/main/skills) to the appropriate folder read by your coding agent. For Claude, this is `~/.claude/skills` or `.claude/skills`. For Codex, this is `~/.codex/skills` or `.agents/skills`. For Copilot CLI, this is `.github/skills`.
-- To set up the MCP, add the `trace_debugger`, `spec_analyzer`, and `inv_checking_tool` MCPs [here](https://github.com/specula-org/Specula/tree/main/tools/) to your agent config. Be sure to build the CFA tool [here](./tools/cfa) with Maven before adding the `spec_analyzer`.
+- Symlink [the Specula `skills` directory](https://github.com/specula-org/Specula/tree/main/skills) to the one read by your coding agent, e.g., `~/.claude/skills` or `.claude/skills` for Claude Code, `~/.codex/skills` or `.agents/skills` for Codex, and `.github/skills` for Copilot CLI.
+- Add the `trace_debugger`, `spec_analyzer`, and `inv_checking_tool` [MCP tools](https://github.com/specula-org/Specula/tree/main/tools/) to your agent config. Please [build the CFA tool](./tools/cfa) with Maven before adding `spec_analyzer`.
 
 ```bash
 # for trace debugger MCP
@@ -59,7 +68,7 @@ codex mcp add tracedebugger \
 
 </details>
 
-### Auto Mode
+## Auto Mode
 
 Point Specula at the target repository to analyze, with a name for the run:
 
@@ -70,7 +79,7 @@ specula run --artifact=/path/to/source mysystem
 Outputs are stored in `runs/<run-id>`. 
 The detailed usage and configurations can be found in the [Usage Guide](./docs/Usage.md).
 
-### Interactive Mode
+## Interactive Mode
 
 Open your coding agent in the Specula directory. The workflow is a sequence of skills, each producing input for the next:
 
@@ -88,6 +97,6 @@ The reference algorithm is the Tendermint paper (arXiv:1807.04938). Run /code-an
 Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) in `.specula-output` that the next skill will consume. 
 When one skill completes, invoke the next. You can also run any skill independently, e.g., `validation-workflow` on an existing specification.
 
-## License
+# License
 
 See [LICENSE](LICENSE).
