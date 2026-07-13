@@ -1,28 +1,35 @@
-# Specula: Scaling formal specifications for autonomous model checking of system code
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="pics/logo.png">
+    <img alt="specula" src="pics/logo.png" width=55%>
+  </picture>
+</p>
 
-Specula is an agentic system that finds deep bugs in concurrent and distributed system code. 
-It uses LLM-based coding agents to write TLA+ specifications of the target system, including invariants that capture its correctness properties and formal models that describe the implementation at the right level of abstraction. 
-It then model-checks the specifications and reproduces violations at the code level.
+<h2 align="center">
+Scaling formal specs for autonomous bug finding
+</h2>
 
-Specula has been used to find deep bugs in many open-source projects.
-See the [running list of bugs](https://docs.google.com/spreadsheets/d/1AVXdKjNfD4952hZqyB-_wTdrzeTw0SD73f3F0zWJ0as) found by Specula.
+Specula finds deep bugs in concurrent and distributed system code. 
+It uses coding agents to write TLA+ specs of the target system, including invariants that capture the system's correctness properties and formal models that describe the system implementation. It then model-checks the specs and reproduces violations at the code level. Specula has been used to find deep bugs in many open-source projects.
 
-## Quick Start
+We maintain [a list of bugs found by Specula](https://docs.google.com/spreadsheets/d/1AVXdKjNfD4952hZqyB-_wTdrzeTw0SD73f3F0zWJ0as). We would love to hear about the bugs you find using Specula.
+
+# Quick Start
 
 Specula runs as a set of agent skills and MCP tools. It currently supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://openai.com/codex/), and [GitHub Copilot CLI](https://docs.github.com/en/copilot).
 
-### Prerequisites
+## Prerequisites
 
 - Python 3.10+ with pip
 - [uv](https://docs.astral.sh/uv/)
 - Java 21+ with Maven
 - GitHub CLI `gh`
-- A supported code agent (Claude Code, Codex, or Copilot CLI); you can contribute an adapter for your favourite agent [here](./scripts/launch/adapters)!
-- **A model with strong reasoning capability, configured at high reasoning effort.** Specula relies on the model to read code, infer protocol invariants, and reason about counterexamples; lower reasoning settings noticeably reduce bug yield.
+- Supported agents (Claude Code, Codex, or Copilot CLI). Please contribute [adapters](./scripts/launch/adapters) for new agents.
+- **LLM with strong reasoning capability at high reasoning effort.** Specula relies on the LLM to read code, infer invariants, and reason about counterexamples.
 
-> **Windows:** run Specula inside [WSL2](https://learn.microsoft.com/windows/wsl/install) (the Linux environment built into Windows), where everything below works exactly as on Linux. Native Windows (outside WSL2) is not supported.
+> **Windows:** run Specula inside [WSL2](https://learn.microsoft.com/windows/wsl/install). Native Windows (outside WSL2) is not supported yet.
 
-### Setup
+## Setup
 
 ```bash
 git clone https://github.com/specula-org/Specula.git && cd Specula
@@ -31,12 +38,12 @@ specula setup          # installs the agent skills and MCP tools, builds the bun
 ```
 
 <details>
-<summary>Alternative: Manual Agent Setup</summary>
+<summary>Manual Setup</summary>
 
-You will need to set up the Specula Agent Skills and MCP with your coding agent.
+You need to set up the Specula Agent Skills and MCP with your coding agent.
 
-- To set up skills, symlink [the Specula `skills` folder](https://github.com/specula-org/Specula/tree/main/skills) to the appropriate folder read by your coding agent. For Claude, this is `~/.claude/skills` or `.claude/skills`. For Codex, this is `~/.codex/skills` or `.agents/skills`. For Copilot CLI, this is `.github/skills`.
-- To set up the MCP, add the `trace_debugger`, `spec_analyzer`, and `inv_checking_tool` MCPs [here](https://github.com/specula-org/Specula/tree/main/tools/) to your agent config. Be sure to build the CFA tool [here](./tools/cfa) with Maven before adding the `spec_analyzer`.
+- Symlink [the Specula `skills` directory](https://github.com/specula-org/Specula/tree/main/skills) to the one read by your coding agent, e.g., `~/.claude/skills` or `.claude/skills` for Claude Code, `~/.codex/skills` or `.agents/skills` for Codex, and `.github/skills` for Copilot CLI.
+- Add the `trace_debugger`, `spec_analyzer`, and `inv_checking_tool` [MCP tools](https://github.com/specula-org/Specula/tree/main/tools/) to your agent config. Please [build the CFA tool](./tools/cfa) with Maven before adding `spec_analyzer`.
 
 ```bash
 # for trace debugger MCP
@@ -61,34 +68,35 @@ codex mcp add tracedebugger \
 
 </details>
 
-### Scripted Mode
+## Auto Mode
 
-Point Specula at the source repository to analyze, with a name for the run:
+Point Specula at the target repository to analyze, with a name for the run:
 
 ```bash
 specula run --artifact=/path/to/source mysystem
 ```
 
-Outputs land under `runs/<run-id>/` in the Specula checkout. See the [Usage Guide](./docs/Usage.md) for detailed configuration: giving the agents more context about the target, agent and model selection, running steps individually, resuming a run, output layout, and batch runs.
+Outputs are stored in `runs/<run-id>`. 
+The detailed usage and configurations can be found in the [Usage Guide](./docs/Usage.md).
 
-### Interactive Mode
+## Interactive Mode
 
 Open your coding agent in the Specula directory. The workflow is a sequence of skills, each producing input for the next:
 
-`/code-analysis` → `/spec-generation` → `/harness-generation` → `/validation-workflow` → `/bug-confirmation`
+`code-analysis` → `spec-generation` → `harness-generation` → `validation-workflow` → `bug-confirmation`
 
 (Codex will use `$code-analysis`, `$spec-generation`, etc.)
 
-**To start**, tell the agent your target and invoke the first skill:
+To start, tell the agent your target and invoke the first skill:
 
 ```
 This project is a Go implementation of Tendermint BFT consensus (cometbft/cometbft).
 The reference algorithm is the Tendermint paper (arXiv:1807.04938). Run /code-analysis.
 ```
 
-Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) in `.specula-output` that the next skill consumes. 
+Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) in `.specula-output` that the next skill will consume. 
 When one skill completes, invoke the next. You can also run any skill independently, e.g., `validation-workflow` on an existing spec.
 
-## License
+# License
 
 See [LICENSE](LICENSE).
