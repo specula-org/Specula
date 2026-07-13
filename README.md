@@ -6,7 +6,7 @@
 </p>
 
 <h2 align="center">
-Scaling formal specs for autonomous model checking of system code
+Scaling formal specs for autonomous bug finding
 </h2>
 
 Specula finds deep bugs in concurrent and distributed system code. 
