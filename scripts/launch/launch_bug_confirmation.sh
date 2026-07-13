@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Batch launcher: bug confirmation + reproduction (Phase 4a), incl. --recheck mode.
+# Batch launcher: bug confirmation + reproduction (Phase 4a).
 # Thin shim → Python phase framework (src/specula/phaselib.py). Same CLI; every argument is
 # forwarded verbatim and the exit code propagates via exec. The original bash
 # implementation is in git history; the behavior is pinned by tests/unit and

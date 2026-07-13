@@ -53,12 +53,6 @@ class TestCodexPluginSkillContract(unittest.TestCase):
         with mock.patch.dict(os.environ, {"SPECULA_RUN_DIR": ""}):
             ws = phaselib.Workspace(["T"], artifact="/repo", cwd=self.root)
             repair_ws = phaselib.Workspace(["T"], artifact="/repo", cwd=self.root, opts={"repair": True})
-            recheck_ws = phaselib.Workspace(
-                ["T"],
-                artifact="/repo",
-                cwd=self.root,
-                opts={"recheck": True, "max_repair_rounds": "2"},
-            )
             prompts: dict[str, tuple[str, tuple[str, ...]]] = {
                 "code analysis": (
                     phaselib.PHASES["code_analysis"].build_prompt(ws, "T|owner/repo|Go|reference"),
@@ -87,10 +81,6 @@ class TestCodexPluginSkillContract(unittest.TestCase):
                 ),
                 "legacy confirmation": (
                     phaselib.PHASES["bug_confirmation"].build_prompt(ws, "T"),
-                    ("bug-confirmation",),
-                ),
-                "confirmation recheck": (
-                    phaselib.PHASES["bug_confirmation"].build_prompt(recheck_ws, "T"),
                     ("bug-confirmation",),
                 ),
                 "classification": (

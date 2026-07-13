@@ -190,7 +190,7 @@ Most users should run `specula run`, which executes every step in order. The com
 | `harness` | Instruments the implementation and runs scenarios to collect execution traces | Source and generated specifications | `harness/` and `traces/*.ndjson` |
 | `validate` | Checks real traces against the specification, runs TLC, and investigates counterexamples | Source, specifications, harness, and traces | `spec/bug-report.md`, `spec/findings.json`, TLC output, and `spec/changelog.md` |
 | `confirm` | Audits and reproduces each candidate bug against the real implementation | Source, modeling brief, and bug report | `spec/confirmed-bugs.md`, reproduction tests, and any repair requests |
-| `classify` | Assigns a severity to confirmed bugs | `spec/confirmed-bugs.md` | `spec/bug-severity.md` |
+| `classify` | Assigns severity to reproduced bugs and finding-tier entries; records other dispositions without severity | `spec/confirmed-bugs.md` | `spec/bug-severity.md` |
 
 For example, run only the code analysis with Codex:
 
@@ -238,10 +238,15 @@ specula run [options] "name|owner/repository|language|reference"
 | `--legacy-confirm` | Use one confirmation agent instead of per-finding agents |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse earlier outputs |
 | `--skip-validation`, `--skip-confirmation`, `--skip-classification` | Reuse later outputs |
+| `--confirm-debate` | Add the adversarial confirmation debate in parallel Phase 4 mode |
+| `--skip-repair-loop` | Disable the confirmation back-edge repair loop |
+| `--max-repair-rounds=N` | Set the global repair-loop round cap (default `10`; `0` means unlimited) |
+| `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse early-phase outputs |
+| `--skip-validation`, `--skip-confirmation`, `--skip-classification` | Reuse later-phase outputs |
 | `--run-id=ID` | Create or attach to an isolated run |
 | `--no-isolate` | Use the legacy output layout described above |
 
-`--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default; disable it with `--skip-repair-loop` or cap attempts per request with `--max-repair-rounds=N`.
+`--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default. `--max-repair-rounds=N` caps rounds across the whole loop, not attempts per request; when the cap is reached, remaining open requests are deferred. For the individual `specula confirm` command, the corresponding debate flags are `--debate` and `--rounds=N` (range `1` through `5`).
 
 Use command-specific help for the authoritative option list:
 

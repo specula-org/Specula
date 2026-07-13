@@ -511,8 +511,10 @@ class TestParallelIsolation(EnvIsolatedCase):
     ]
     RR = "---\nid: {rid}\nbug_id: B-1\ntarget: base.tla\nstatus: {status}\nround: 1\n---\n\n## History\n- created\n"
 
-    def _seed_rr(self, run: Path, name: str, statuses: list[str]) -> None:
+    def _seed_rr(self, run: Path, name: str, statuses: list[str], subdir: str | None = None) -> None:
         d = run / name / ".specula-output" / "spec" / "repair-requests"
+        if subdir:
+            d = d / subdir
         d.mkdir(parents=True)
         for i, status in enumerate(statuses, 1):
             (d / f"RR-{i}.md").write_text(self.RR.format(rid=f"RR-{i}", status=status))
@@ -520,8 +522,10 @@ class TestParallelIsolation(EnvIsolatedCase):
     def test_two_runs_do_not_interfere(self) -> None:
         launch_cwd = self.tmp()
         run_a, run_b = self.tmp() / "runA", self.tmp() / "runB"
-        self._seed_rr(run_a, "footest", ["RESOLVED"])
-        self._seed_rr(run_b, "footest", ["DEFERRED", "DEFERRED"])
+        # run A: one repaired (CONSUMED) request in the active dir
+        self._seed_rr(run_a, "footest", ["CONSUMED"])
+        # run B: two requests the loop gave up on, filed under deferred/
+        self._seed_rr(run_b, "footest", ["OPEN", "OPEN"], subdir="deferred")
 
         env = dict(os.environ)
         for var in ("MAX_REPAIR_ROUNDS", "QUOTA_5H", "QUOTA_7D", "QUOTA_MAX_WAITS", "CLAUDE_ALIAS"):
@@ -545,8 +549,8 @@ class TestParallelIsolation(EnvIsolatedCase):
         # each run has its own log + summary, reflecting only its own requests
         sum_a = (run_a / "pipeline-summary.md").read_text()
         sum_b = (run_b / "pipeline-summary.md").read_text()
-        self.assertIn("1 request(s) — 1 resolved, 0 deferred", sum_a)
-        self.assertIn("2 request(s) — 0 resolved, 2 deferred", sum_b)
+        self.assertIn("1 request(s) — 1 repaired, 0 deferred", sum_a)
+        self.assertIn("2 request(s) — 0 repaired, 2 deferred", sum_b)
         for run, out in zip((run_a, run_b), outs, strict=True):
             self.assertTrue((run / "pipeline.log").is_file())
             self.assertIn(f"Run:          {run.name}", out)

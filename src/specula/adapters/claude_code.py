@@ -42,7 +42,7 @@ HELP = __doc__
 # not believe it is running inside another Claude Code session.
 SESSION_ENV_VARS = ("CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT")
 
-_RATE_LIMIT_MARKER = "hit your limit"
+_RATE_LIMIT_MARKERS = ("hit your limit", "hit your session limit")
 
 
 def _derived_path(log_file: str, suffix: str) -> str:
@@ -76,7 +76,11 @@ def _maybe_wrap_sandbox(cmd: list[str], work_dir: str) -> list[str]:
         )
     )
     workspace = work_dir or os.getcwd()
-    return ["node", backend, "--workspace", workspace, "--", *cmd]
+    wrapped = ["node", backend, "--workspace", workspace]
+    config = os.environ.get("SPECULA_SANDBOX_CONFIG", "")
+    if config:
+        wrapped += ["--config", config]
+    return [*wrapped, "--", *cmd]
 
 
 def _parse_result(raw_text: str) -> dict[str, Any] | None:
@@ -110,15 +114,21 @@ def _rate_limited(raw_text: str, streaming: bool) -> bool:
     def error_result(record: object) -> bool:
         if not isinstance(record, dict):
             return False
+        # Recent Claude CLI versions return a structurally successful `result`
+        # envelope for API failures.  The payload is still unambiguous: HTTP
+        # 429 plus terminal_reason=api_error.  Prefer that machine-readable
+        # signal over wording, which changes between CLI releases.
+        api_status = record.get("api_error_status")
+        if api_status == 429 or api_status == "429":
+            return True
         verdict = record.get("is_error")
-        if verdict is not True:
-            if verdict is False:
-                return False
-            subtype = record.get("subtype")
-            if not isinstance(subtype, str) or not subtype.startswith("error"):
-                return False
+        subtype = record.get("subtype")
+        terminal_reason = record.get("terminal_reason")
+        subtype_is_error = isinstance(subtype, str) and subtype.startswith("error")
+        if verdict is not True and not subtype_is_error and terminal_reason != "api_error":
+            return False
         result = record.get("result")
-        return isinstance(result, str) and _RATE_LIMIT_MARKER in result.casefold()
+        return isinstance(result, str) and any(marker in result.casefold() for marker in _RATE_LIMIT_MARKERS)
 
     # Non-streaming output is one JSON result. A successful result can quote an
     # old rate-limit message in its report, so the phrase alone is not a verdict.
@@ -129,13 +139,22 @@ def _rate_limited(raw_text: str, streaming: bool) -> bool:
     if isinstance(record, dict):
         return error_result(record)
     if not streaming:
-        return _RATE_LIMIT_MARKER in raw_text.casefold()
+        # A CLI diagnostic may precede the otherwise valid final JSON record.
+        # Prefer that structured verdict to scanning the entire capture: the
+        # successful assistant response may legitimately quote an old limit.
+        record = _parse_result(raw_text)
+        if record is not None:
+            return error_result(record)
+        folded = raw_text.casefold()
+        return any(marker in folded for marker in _RATE_LIMIT_MARKERS)
 
     for line in raw_text.splitlines():
         try:
             record = json.loads(line)
         except Exception:
-            if _RATE_LIMIT_MARKER in line.casefold():  # claude's plain-text banner
+            folded = line.casefold()
+            # Claude's plain-text banner (as opposed to an assistant event).
+            if any(marker in folded for marker in _RATE_LIMIT_MARKERS):
                 return True
             continue
         if isinstance(record, dict) and record.get("type") == "result" and error_result(record):
@@ -307,26 +326,32 @@ def main(argv: list[str]) -> int:
 
         # ── Stop gate (execution layer) ──
         # Generic gate interface: the phase launcher exports SPECULA_PHASE +
-        # SPECULA_WORK_DIR (see src/specula/stop_gate.py). When both are present,
-        # register a Stop hook so the agent cannot end its turn while background
-        # jobs it started run unobserved, or without the phase deliverable.
+        # SPECULA_WORK_DIR (see src/specula/stop_gate.py). Parallel workers may
+        # additionally narrow gate state/PID scanning with
+        # SPECULA_STOP_GATE_WORK_DIR while retaining the target workspace for the
+        # outer sandbox. When the required context is present, register a Stop
+        # hook so the agent cannot end its turn while background jobs it started
+        # run unobserved, or without the phase deliverable.
         # Without them (interactive use, tests, other callers) nothing is
         # injected and the claude argv is unchanged.
         settings_args: list[str] = []
         work_dir = os.environ.get("SPECULA_WORK_DIR", "")
+        gate_work_dir = os.environ.get("SPECULA_STOP_GATE_WORK_DIR", "") or work_dir
         if (
             work_dir
+            and gate_work_dir
             and os.environ.get("SPECULA_PHASE")
             and os.environ.get("SPECULA_STOP_GATE", "").lower() != "off"
             and os.path.isdir(work_dir)
+            and os.path.isdir(gate_work_dir)
         ):
             try:
                 gate = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stop_gate.py"))
-                state_dir = os.path.join(work_dir, ".stop-gate")
+                state_dir = os.path.join(gate_work_dir, ".stop-gate")
                 os.makedirs(state_dir, exist_ok=True)
                 # Fresh fuse per agent run — via the gate's own CLI (like
                 # codex.sh) so the state-file list has exactly one owner.
-                subprocess.run([sys.executable, gate, "reset", work_dir], check=False)
+                subprocess.run([sys.executable, gate, "reset", gate_work_dir], check=False)
                 hook = {"type": "command", "command": f"python3 {shlex.quote(gate)} claude", "timeout": 60}
                 settings_path = os.path.join(state_dir, "claude-settings.json")
                 with open(settings_path, "w") as sf:

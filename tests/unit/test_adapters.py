@@ -65,6 +65,10 @@ _VOLATILE = (
     "SPECULA_PHASE",
     "SPECULA_WORK_DIR",
     "SPECULA_STOP_GATE",
+    "SPECULA_STOP_GATE_WORK_DIR",
+    "SPECULA_SANDBOX",
+    "SPECULA_SANDBOX_BACKEND",
+    "SPECULA_SANDBOX_CONFIG",
     "SPECULA_ACTIVITY_LOG",
     "CODEX_HOME",
     "ADAPTER_EXIT_CODE",
@@ -219,6 +223,31 @@ class ClaudeCodeAdapter(AdapterCase):
         )
         self.assertIn("--effort", r["argv"])
         self.assertEqual(r["argv"][r["argv"].index("--effort") + 1], "max")
+
+    def test_stop_gate_state_and_settings_use_worker_scope(self) -> None:
+        base = self.sandbox()
+        target = base / "target"
+        gate_scope = base / "finding"
+        for path in (target, gate_scope):
+            state = path / ".stop-gate"
+            state.mkdir(parents=True)
+            (state / "blocks").write_text("3\n")
+
+        r = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_PHASE": "bug_confirmation_turn",
+                "SPECULA_WORK_DIR": str(target),
+                "SPECULA_STOP_GATE_WORK_DIR": str(gate_scope),
+            },
+        )
+
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertTrue((target / ".stop-gate" / "blocks").is_file())
+        self.assertFalse((gate_scope / ".stop-gate" / "blocks").exists())
+        settings = gate_scope / ".stop-gate" / "claude-settings.json"
+        self.assertTrue(settings.is_file())
+        self.assertEqual(r["argv"][r["argv"].index("--settings") + 1], str(settings))
 
     def test_effort_model_budget_assembled(self) -> None:
         base = self.sandbox()
@@ -385,6 +414,67 @@ class ClaudeCodeAdapter(AdapterCase):
         )
         self.assertEqual(r["returncode"], 75)
 
+    def test_structured_session_limit_exits_75(self) -> None:
+        """Claude 2.1 reports quota exhaustion in a `success` envelope."""
+        base = self.sandbox()
+        record = {
+            "type": "result",
+            **CLAUDE_JSON,
+            "subtype": "success",
+            "is_error": True,
+            "api_error_status": 429,
+            "terminal_reason": "api_error",
+            "result": "You've hit your session limit · resets 7:50am (UTC)",
+        }
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 75, r["stderr"])
+
+    def test_structured_429_does_not_depend_on_message_wording(self) -> None:
+        base = self.sandbox()
+        record = {
+            "type": "result",
+            **CLAUDE_JSON,
+            "subtype": "success",
+            "is_error": True,
+            "api_error_status": 429,
+            "terminal_reason": "api_error",
+            "result": "Quota temporarily unavailable",
+        }
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 75, r["stderr"])
+
+    def test_api_error_terminal_reason_recognizes_session_limit(self) -> None:
+        base = self.sandbox()
+        record = {
+            "type": "result",
+            **CLAUDE_JSON,
+            "subtype": "success",
+            "is_error": False,
+            "api_error_status": None,
+            "terminal_reason": "api_error",
+            "result": "You've hit your session limit · resets soon",
+        }
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 75, r["stderr"])
+
     def test_rate_limit_plain_text_banner_in_stream_exits_75(self) -> None:
         base = self.sandbox()
         activity = base / "out.activity.jsonl"
@@ -432,11 +522,34 @@ class ClaudeCodeAdapter(AdapterCase):
                     "type": "result",
                     **CLAUDE_JSON,
                     "is_error": False,
-                    "result": "The completed review mentions: you hit your limit for today",
+                    "api_error_status": None,
+                    "terminal_reason": "completed",
+                    "result": "The old log says: You've hit your session limit · resets tomorrow",
                 }
             ),
             record_extra=True,
             env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+
+    def test_prefixed_diagnostic_does_not_make_successful_quote_a_rate_limit(self) -> None:
+        base = self.sandbox()
+        result = json.dumps(
+            {
+                "type": "result",
+                **CLAUDE_JSON,
+                "is_error": False,
+                "api_error_status": None,
+                "terminal_reason": "completed",
+                "result": "The old log says: You've hit your session limit · resets tomorrow",
+            }
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=f"benign CLI diagnostic\n{result}\n",
+            record_extra=True,
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
 
@@ -684,7 +797,12 @@ class CodexAdapter(AdapterCase):
     CMD = ["bash", str(CODEX_SH)]
 
     def invoke(self, flags: list[str], *, env_extra: dict[str, str] | None = None) -> AdapterRun:
-        return self.run_adapter(self.CMD, flags, fake_name="codex", fixture_text="codex ran\n", env_extra=env_extra)
+        # record_extra=True captures the fake codex's stdin: the adapter feeds the
+        # prompt via stdin (not argv) to stay under MAX_ARG_STRLEN, so the prompt
+        # must show up there, not in argv.
+        return self.run_adapter(
+            self.CMD, flags, fake_name="codex", fixture_text="codex ran\n", record_extra=True, env_extra=env_extra
+        )
 
     def base_flags(self, base: Path) -> list[str]:
         return [self.with_prompt_file(base), f"--log={base}/out.log", "--max-turns=0"]
@@ -693,18 +811,60 @@ class CodexAdapter(AdapterCase):
         base = self.sandbox()
         r = self.invoke(self.base_flags(base))
         self.assertEqual(r["returncode"], 0)
-        # codex exec --dangerously-bypass-approvals-and-sandbox "<prompt>"
-        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "the prompt"])
+        # The CLI transcript stays in out.log; Codex writes the final assistant
+        # response to a distinct sidecar for blocking confirmation turns.
+        self.assertEqual(
+            r["argv"],
+            [
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--output-last-message",
+                str(base / "out.last-message.txt"),
+                "-",
+            ],
+        )
+        self.assertEqual(r["stdin"], "the prompt")
+
+    def test_stop_gate_reset_uses_worker_scope(self) -> None:
+        base = self.sandbox()
+        target = base / "target"
+        gate_scope = base / "finding"
+        for path in (target, gate_scope):
+            state = path / ".stop-gate"
+            state.mkdir(parents=True)
+            (state / "blocks").write_text("3\n")
+
+        r = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_PHASE": "bug_confirmation_turn",
+                "SPECULA_WORK_DIR": str(target),
+                "SPECULA_STOP_GATE_WORK_DIR": str(gate_scope),
+            },
+        )
+
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertTrue((target / ".stop-gate" / "blocks").is_file())
+        self.assertFalse((gate_scope / ".stop-gate" / "blocks").exists())
 
     def test_prompt_from_file_is_read(self) -> None:
         base = self.sandbox()
         r = self.invoke([self.with_prompt_file(base, "codex task\n"), f"--log={base}/out.log", "--max-turns=0"])
-        self.assertEqual(r["argv"][-1], "codex task")
+        # prompt is delivered via stdin, not argv (argv ends with the '-' sentinel)
+        self.assertEqual(r["argv"][-1], "-")
+        self.assertEqual(r["stdin"], "codex task")
 
     def test_output_redirected_to_log(self) -> None:
         base = self.sandbox()
         self.invoke(self.base_flags(base))
         self.assertEqual((base / "out.log").read_text(), "codex ran\n")
+
+    def test_non_log_suffix_preserved_in_last_message_path(self) -> None:
+        base = self.sandbox()
+        log = base / "out.output"
+        r = self.invoke([self.with_prompt_file(base), f"--log={log}", "--max-turns=0"])
+        output_flag = r["argv"].index("--output-last-message")
+        self.assertEqual(r["argv"][output_flag + 1], str(log) + ".last-message.txt")
 
     def test_specula_activity_uses_json_stream(self) -> None:
         base = self.sandbox()
@@ -731,11 +891,47 @@ class CodexAdapter(AdapterCase):
             fake_name="codex",
             fixture_text=fixture,
             env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+            record_extra=True,
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
-        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "--json", "the prompt"])
+        self.assertEqual(
+            r["argv"],
+            [
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--output-last-message",
+                str(base / "out.last-message.txt"),
+                "--json",
+                "-",
+            ],
+        )
+        self.assertEqual(r["stdin"], "the prompt")
         self.assertEqual(activity.read_text(), fixture)
         self.assertEqual((base / "out.log").read_text(), "running pwd\ndone\n")
+
+    def test_large_prompt_uses_stdin_with_activity_stream(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        prompt = "x" * 200000
+        fixture = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "done"}})
+        r = self.run_adapter(
+            self.CMD,
+            [self.with_prompt_file(base, prompt), f"--log={base}/out.log", "--max-turns=0"],
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertEqual(r["argv"][-2:], ["--json", "-"])
+        self.assertEqual(r["stdin"], prompt)
+
+    def test_cli_failure_is_preserved_without_activity_stream(self) -> None:
+        for cli_rc in ("9", "75"):
+            with self.subTest(cli_rc=cli_rc):
+                base = self.sandbox()
+                r = self.invoke(self.base_flags(base), env_extra={"ADAPTER_EXIT_CODE": cli_rc})
+                self.assertEqual(r["returncode"], int(cli_rc), r["stderr"])
 
     def test_structured_turn_failure_is_logged_but_cli_owns_status(self) -> None:
         base = self.sandbox()
@@ -867,13 +1063,16 @@ class CodexAdapter(AdapterCase):
             [
                 "exec",
                 "--dangerously-bypass-approvals-and-sandbox",
+                "--output-last-message",
+                str(base / "out.last-message.txt"),
                 "-m",
                 "gpt-5.5",
                 "-c",
                 "model_reasoning_effort=high",
-                "the prompt",
+                "-",
             ],
         )
+        self.assertEqual(r["stdin"], "the prompt")
 
     def test_model_effort_from_env(self) -> None:
         base = self.sandbox()
@@ -904,7 +1103,17 @@ class CodexAdapter(AdapterCase):
             env_extra={"CODEX_MODEL": "env-model", "CODEX_EFFORT": "high"},
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
-        self.assertEqual(r["argv"], ["exec", "--dangerously-bypass-approvals-and-sandbox", "the prompt"])
+        self.assertEqual(
+            r["argv"],
+            [
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--output-last-message",
+                str(base / "out.last-message.txt"),
+                "-",
+            ],
+        )
+        self.assertEqual(r["stdin"], "the prompt")
         self.assertEqual(r["modelenv"], "<unset>")
         self.assertEqual(r["effortenv"], "<unset>")
 
@@ -1250,6 +1459,20 @@ class CopilotAdapter(AdapterCase):
         r = self.invoke(self.base_flags(base) + ["--bogus"])
         self.assertEqual(r["returncode"], 1)
         self.assertIn("unknown option", r["stderr"])
+
+    def test_oversized_prompt_rejected(self) -> None:
+        # copilot takes the prompt only as an argv argument (no stdin/prompt-file
+        # input into the CLI), so a prompt over MAX_ARG_STRLEN is rejected up front
+        # rather than sent to exec, where it would fail with E2BIG and no output.
+        base = self.sandbox()
+        log = base / "out.log"
+        log.write_text("stale output\n")
+        r = self.invoke([self.with_prompt_file(base, "x" * 130000), f"--log={base}/out.log"])
+        self.assertEqual(r["returncode"], 1)
+        self.assertIn("the copilot CLI accepts", r["stderr"])
+        self.assertEqual(r["argv"], [])  # copilot was never invoked
+        self.assertEqual(log.read_text(), r["stderr"])
+        self.assertNotIn("stale output", log.read_text())
 
     def test_help(self) -> None:
         r = self.invoke(["--help"])

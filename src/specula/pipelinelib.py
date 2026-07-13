@@ -89,7 +89,8 @@ Options:
   --skip-classification  Skip Phase 4b severity classification
   --skip-repair-loop     Skip the confirmation back-edge repair loop (default: enabled)
   --legacy-confirm       Phase 4a: single-agent confirmation instead of the default parallel per-finding
-  --max-repair-rounds=N  Per-request repair cap, enforced by re-check (default: 0 = unlimited)
+  --confirm-debate       Phase 4a: add the adversarial Challenger debate (parallel mode; default off)
+  --max-repair-rounds=N  Global repair-loop round cap; unresolved requests are then filed under deferred/ (default: 10; 0 = unlimited)
   --enable-reviews        Enable review steps (disabled by default)
   --max-parallel=N       Hard limit for concurrent agents. When omitted, ordinary phases run 1 target
                          agent at a time and per-finding bug confirmation runs up to 4 at a time
@@ -266,8 +267,9 @@ class Pipeline:
         self.skip_classification = False
         self.skip_repair_loop = False
         self.confirm_legacy = False  # --legacy-confirm: single-agent Phase 4a instead of the default parallel
+        self.confirm_debate = False  # --confirm-debate: add the adversarial Challenger (parallel mode)
         # `or`: bash ${VAR:-default} treats an exported-but-empty var as unset
-        self.max_repair_rounds = os.environ.get("MAX_REPAIR_ROUNDS") or "0"
+        self.max_repair_rounds = os.environ.get("MAX_REPAIR_ROUNDS") or "10"
         self.skip_reviews = True
         self.agent = "claude-code"
         self.claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
@@ -316,6 +318,8 @@ class Pipeline:
                 self.skip_repair_loop = True
             elif arg == "--legacy-confirm":
                 self.confirm_legacy = True
+            elif arg == "--confirm-debate":
+                self.confirm_debate = True
             elif arg.startswith("--max-repair-rounds="):
                 self.max_repair_rounds = arg.split("=", 1)[1]
             elif arg == "--enable-reviews":
@@ -355,6 +359,9 @@ class Pipeline:
                 return 1
             else:
                 self.targets.append(arg)
+        if self.confirm_legacy and self.confirm_debate:
+            print("ERROR: --legacy-confirm conflicts with --confirm-debate", file=sys.stderr)
+            return 1
         if not self.targets:
             self.targets.append(_logical_cwd().name)  # bash `basename "$PWD"` (logical)
         # order-independent: the two are contradictory however they arrive
@@ -369,6 +376,18 @@ class Pipeline:
             # The legacy single-target flow may chdir before launching phases.
             # Stabilize a relative CLI path while it still refers to the caller's cwd.
             self.artifact = str(Path(self.artifact).resolve())
+
+        # Validate the repair budget before any phase starts.  int() in
+        # run_repair_loop used to make malformed values fail only after the
+        # expensive foreground phases had completed, while a negative value
+        # silently skipped every round and immediately deferred all OPEN work.
+        if not re.fullmatch(r"[0-9]+", self.max_repair_rounds):
+            print(
+                "ERROR: MAX_REPAIR_ROUNDS/--max-repair-rounds must be a non-negative integer, "
+                f"got '{self.max_repair_rounds}'",
+                file=sys.stderr,
+            )
+            return 1
         # wart fix (step 7): garbage quota config fails fast (pre-tee, like the
         # option errors). The bash pushed the values into the gate's arithmetic,
         # where a bad threshold read as "usage parse failed" and silently
@@ -558,19 +577,29 @@ class Pipeline:
         # bash `for f in "$d"/RR-*.md` — pathname expansion orders by LC_COLLATE
         return sorted(d.glob("RR-*.md"), key=lambda p: locale.strxfrm(p.name))
 
+    def _deferred_rr_files(self, name: str) -> list[Path]:
+        d = Path(self.repair_dir(name)) / "deferred"
+        if not d.is_dir():
+            return []
+        return sorted(d.glob("RR-*.md"), key=lambda p: locale.strxfrm(p.name))
+
     def has_any_request(self) -> bool:
         return any(self._rr_files(n) for n in self.extract_names())
 
-    def repair_work_remaining(self) -> bool:
-        """True if any RR is not yet terminal (anything other than RESOLVED /
-        DEFERRED). Repair handles OPEN/REOPENED, re-check handles RECHECK;
-        reset_stale_in_repair recovers IN_REPAIR. The loop runs until none
-        remain."""
+    def has_open_repair_requests(self) -> bool:
+        """True if any repair request in the active queue still needs repair
+        (status != CONSUMED). Requests already filed under deferred/ are excluded
+        — the RR-*.md glob is not recursive. The loop runs until none remain, or
+        the global round cap is hit (after which the orchestrator defers them)."""
         for n in self.extract_names():
             for f in self._rr_files(n):
-                if rr_status(f) not in ("RESOLVED", "DEFERRED"):
+                if rr_status(f) != "CONSUMED":
                     return True
         return False
+
+    def names_with_open_repair_requests(self) -> list[str]:
+        """Targets whose active queue contains a non-terminal request."""
+        return [n for n in self.extract_names() if any(rr_status(f) != "CONSUMED" for f in self._rr_files(n))]
 
     def repair_state_sig(self) -> str:
         """Stable signature of every request's (id, status, round). A round that
@@ -582,26 +611,540 @@ class Pipeline:
                 lines.append(f"{f.name}:{rr_status(f)}:{rr_field(f, 'round')}")
         return "\n".join(lines)
 
-    def reset_stale_in_repair(self) -> None:
+    def reset_stale_in_repair(self, name: str | None = None) -> None:
         """Crash recovery: a request stuck IN_REPAIR means its repair phase died
         mid-turn. Reset to OPEN so the next round retries it."""
         if self.dry_run:
             return
-        for n in self.extract_names():
+        names = [name] if name is not None else self.extract_names()
+        for n in names:
             for f in self._rr_files(n):
                 if rr_status(f) == "IN_REPAIR":
-                    rr_set_status(f, "OPEN", "reset (orchestrator): repair phase did not complete; retrying")
+                    text = f.read_text(errors="replace")
+                    if not self._repair_request_is_executable(text, f.stem):
+                        log(
+                            f"ERROR: stale {f.name} is malformed and has no durable Phase 3 snapshot; "
+                            "refusing to reset it to OPEN."
+                        )
+                        raise SystemExit(1)
+                    recovered = self._repair_request_text_with_status(
+                        text,
+                        "OPEN",
+                        "reset (orchestrator): repair phase did not complete; retrying",
+                    )
+                    self._atomic_replace_text(f, recovered)
                     log(f"  reset {f.name} IN_REPAIR -> OPEN (crash recovery)")
 
+    def snapshot_open_repair_requests(self, name: str | None = None) -> dict[Path, str]:
+        """Capture the exact requests a repair Phase 3 is responsible for.
+
+        A failing agent may update a request to CONSUMED before its process
+        exits non-zero. The snapshot lets recovery recreate a deleted/corrupt
+        request, while a surviving request keeps the failed attempt's history.
+        """
+        names = [name] if name is not None else self.extract_names()
+        return {f: f.read_text() for n in names for f in self._rr_files(n) if rr_status(f) == "OPEN"}
+
+    def repair_phase3_snapshot_path(self, name: str) -> Path:
+        return Path(self.get_work_dir(name)) / "spec" / ".repair-phase3-snapshot.json"
+
+    def persist_open_repair_snapshot(self, name: str, snapshot: dict[Path, str], round_: int) -> None:
+        """Durably publish the OPEN inputs before a repair subprocess starts.
+
+        The unique commit token is copied into confirmation-generation.json
+        only after the repair launcher returns success.  Recovery can therefore
+        distinguish a completed Phase 3 whose snapshot cleanup was interrupted
+        from an attempt killed after merely writing CONSUMED into its requests.
+        """
+        if self.dry_run:
+            return
+        rr_dir = Path(self.repair_dir(name))
+        requests: dict[str, str] = {}
+        for path, text in snapshot.items():
+            if path.parent != rr_dir or re.fullmatch(r"RR-\d+\.md", path.name) is None:
+                raise RuntimeError(f"invalid repair snapshot path for {name}: {path}")
+            if (
+                not self._repair_request_is_executable(text, path.stem)
+                or self._repair_request_field(text, "status") != "OPEN"
+            ):
+                raise RuntimeError(f"refusing to snapshot malformed/non-OPEN repair request: {path}")
+            requests[path.name] = text
+        if not requests:
+            raise RuntimeError(f"refusing to publish an empty repair snapshot for {name}")
+        marker = self.repair_phase3_snapshot_path(name)
+        payload = (
+            json.dumps(
+                {
+                    "version": 2,
+                    "round": round_,
+                    "commit_token": secrets.token_hex(16),
+                    "requests": requests,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        try:
+            self._publish_deferred_no_replace(marker, payload)
+        except FileExistsError:
+            log(f"ERROR: durable Phase 3 snapshot already exists for {name}: {marker}")
+            raise SystemExit(1) from None
+
+    def load_open_repair_snapshot(self, name: str) -> tuple[dict[Path, str], int, str | None] | None:
+        marker = self.repair_phase3_snapshot_path(name)
+        if not marker.is_file():
+            return None
+        try:
+            doc = json.loads(marker.read_text())
+            version = doc.get("version") if isinstance(doc, dict) else None
+            round_ = doc.get("round") if isinstance(doc, dict) else None
+            requests = doc.get("requests") if isinstance(doc, dict) else None
+            commit_token = doc.get("commit_token") if isinstance(doc, dict) else None
+            if version not in {1, 2} or not isinstance(round_, int) or isinstance(round_, bool) or round_ < 1:
+                raise ValueError("invalid version/round")
+            if version == 1:
+                # Version 1 had no attempt identity, so an old generation
+                # marker cannot prove that this exact snapshot committed.
+                commit_token = None
+            elif not isinstance(commit_token, str) or re.fullmatch(r"[0-9a-f]{32}", commit_token) is None:
+                raise ValueError("invalid commit token")
+            if not isinstance(requests, dict) or not requests:
+                raise ValueError("requests must be a non-empty object")
+            snapshot: dict[Path, str] = {}
+            rr_dir = Path(self.repair_dir(name))
+            for filename, text in requests.items():
+                if not isinstance(filename, str) or re.fullmatch(r"RR-\d+\.md", filename) is None:
+                    raise ValueError(f"unsafe request filename {filename!r}")
+                if not isinstance(text, str) or not self._repair_request_is_executable(text, Path(filename).stem):
+                    raise ValueError(f"malformed request snapshot {filename}")
+                if self._repair_request_field(text, "status") != "OPEN":
+                    raise ValueError(f"snapshot request {filename} is not OPEN")
+                snapshot[rr_dir / filename] = text
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            log(f"ERROR: invalid durable Phase 3 snapshot for {name}: {marker} ({exc})")
+            raise SystemExit(1) from exc
+        return snapshot, round_, commit_token
+
+    def clear_open_repair_snapshot(self, name: str) -> None:
+        if not self.dry_run:
+            self.repair_phase3_snapshot_path(name).unlink(missing_ok=True)
+
+    def recover_interrupted_phase3(self) -> set[str]:
+        """Finalize a committed attempt or restore one killed before commit.
+
+        Return the exact targets whose Phase-3 commit was recovered. Callers
+        must not treat one target's commit as coverage for any other target.
+        """
+        if self.dry_run:
+            return set()
+        recovered_commits: set[str] = set()
+        for name in self.extract_names():
+            loaded = self.load_open_repair_snapshot(name)
+            if loaded is None:
+                continue
+            snapshot, round_, commit_token = loaded
+            if self._repair_phase3_snapshot_committed(name, snapshot, round_, commit_token):
+                self.clear_open_repair_snapshot(name)
+                recovered_commits.add(name)
+                log(f"  finalized committed repair Phase 3 for {name} after interrupted snapshot cleanup")
+                continue
+            self.restore_open_repair_requests(snapshot, round_)
+            self.clear_open_repair_snapshot(name)
+            log(f"  recovered durable Phase 3 snapshot for {name} after interrupted repair")
+        return recovered_commits
+
+    def _repair_phase3_snapshot_committed(
+        self,
+        name: str,
+        snapshot: dict[Path, str],
+        round_: int,
+        commit_token: str | None,
+    ) -> bool:
+        """Whether the exact snapshotted attempt crossed its durable commit point.
+
+        CONSUMED alone is not proof: an agent can write it before failing.  The
+        generation marker is published by the orchestrator only after a zero
+        exit, and contains the snapshot's unique attempt token.
+        Complete, executable CONSUMED requests are required as a second guard.
+        """
+        if commit_token is None:
+            return False
+        marker = Path(self.get_work_dir(name)) / "spec" / "confirmation-generation.json"
+        try:
+            doc = json.loads(marker.read_text())
+        except (OSError, json.JSONDecodeError):
+            return False
+        if not isinstance(doc, dict):
+            return False
+        if doc.get("repair_round") != round_ or doc.get("repair_phase3_commit") != commit_token:
+            return False
+        for path in snapshot:
+            try:
+                current = path.read_text()
+            except OSError:
+                return False
+            if self._repair_request_field(current, "status") != "CONSUMED" or not self._repair_request_is_executable(
+                current, path.stem
+            ):
+                return False
+        return True
+
+    def restore_open_repair_requests(self, snapshot: dict[Path, str], round_: int) -> None:
+        """Make one failed target's original OPEN set retryable without lying.
+
+        Phase 3 may have partially edited the spec/output before it exits
+        non-zero. Those arbitrary filesystem changes cannot be rolled back by
+        rewriting the RR alone. Restore the snapshot's complete executable
+        semantics, merge only newly appended audit bullets from an identifiable
+        current file, reset it to OPEN, and note that partial artifacts remain.
+        """
+        if self.dry_run:
+            return
+        reason = (
+            f"reset (orchestrator): repair round {round_} Phase 3 failed; "
+            "partial spec/output changes were retained for inspection; retrying OPEN"
+        )
+        for f, original in snapshot.items():
+            f.parent.mkdir(parents=True, exist_ok=True)
+            current = ""
+            with contextlib.suppress(OSError):
+                current = f.read_text(errors="replace")
+            base = original
+            if current and self._repair_request_field(current, "id") == f.stem:
+                original_history = set(self._repair_request_history_bullets(original))
+                additions = [
+                    line for line in self._repair_request_history_bullets(current) if line not in original_history
+                ]
+                if additions:
+                    base = original.rstrip("\n") + "\n" + "\n".join(additions) + "\n"
+            restored = self._repair_request_text_with_status(base, "OPEN", reason)
+            self._atomic_replace_text(f, restored)
+            log(f"  reset {f.name} to OPEN after failed repair Phase 3 (partial artifacts retained)")
+
+    @staticmethod
+    def _repair_request_history_bullets(text: str) -> list[str]:
+        """Single-line audit entries after the request's History heading."""
+        match = re.search(r"(?m)^##\s+History\s*$", text)
+        if match is None:
+            return []
+        return [line for line in text[match.end() :].splitlines() if line.startswith("- ")]
+
+    @staticmethod
+    def _repair_request_field(text: str, key: str) -> str:
+        lines = text.splitlines()
+        if lines and lines[0] == "---":
+            try:
+                lines = lines[1 : lines.index("---", 1)]
+            except ValueError:
+                return ""
+        else:
+            lines = lines[:25]
+        prefix = key + ":"
+        for line in lines:
+            if line.startswith(prefix):
+                return line[len(prefix) :].strip()
+        return ""
+
+    @classmethod
+    def _repair_request_is_executable(cls, text: str, expected_id: str) -> bool:
+        """Minimum safe shape before the orchestrator exposes an RR as OPEN."""
+        lines = text.splitlines()
+        if not lines or lines[0] != "---":
+            return False
+        try:
+            frontmatter_end = lines.index("---", 1)
+        except ValueError:
+            return False
+        frontmatter = "\n".join(lines[1:frontmatter_end])
+        if cls._repair_request_field(text, "id") != expected_id:
+            return False
+        if cls._repair_request_field(text, "status") not in {"OPEN", "IN_REPAIR", "CONSUMED"}:
+            return False
+        if not cls._repair_request_field(text, "round").isdigit():
+            return False
+        target = cls._repair_request_field(text, "target")
+        target_scope = {
+            "SPEC_REPAIR": "actions",
+            "FAULT_MODEL": "fault_actions",
+            "INVARIANT": "invariants",
+        }.get(target)
+        if target_scope is None or not cls._repair_request_field(text, "counterexample"):
+            return False
+        scope: dict[str, str] = {}
+        for key in ("actions", "invariants", "hunt_cfgs", "fault_actions"):
+            match = re.search(rf"(?m)^  {key}:\s*\[(.*?)\]\s*$", frontmatter)
+            if match is None:
+                return False
+            scope[key] = match.group(1).strip()
+        if not scope["hunt_cfgs"] or not scope[target_scope]:
+            return False
+        for section in ("Trigger", "Evidence"):
+            match = re.search(rf"(?m)^##\s+{section}\s*$", text)
+            if match is None:
+                return False
+            following = text[match.end() :]
+            next_section = re.search(r"(?m)^##\s+", following)
+            body = following[: next_section.start()] if next_section is not None else following
+            if not body.strip():
+                return False
+        return re.search(r"(?m)^##\s+History\s*$", text) is not None
+
+    @staticmethod
+    def _repair_request_text_with_status(text: str, status: str, note: str) -> str:
+        """Return a complete request with a canonical status and history note."""
+        lines = text.splitlines(keepends=True)
+        found = False
+        for i, line in enumerate(lines[:25]):
+            if line.startswith("status:"):
+                lines[i] = f"status: {status}\n"
+                found = True
+                break
+        if not found:
+            insert_at = 1 if lines and lines[0].strip() == "---" else 0
+            lines.insert(insert_at, f"status: {status}\n")
+        if lines and not lines[-1].endswith("\n"):
+            lines[-1] += "\n"
+        lines.append(f"- {note}\n")
+        return "".join(lines)
+
+    @staticmethod
+    def _atomic_replace_text(path: Path, text: str) -> None:
+        """Publish text atomically, replacing only the named mutable artifact."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+        try:
+            with tmp.open("x") as fh:
+                fh.write(text)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
+        finally:
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
+
+    @staticmethod
+    def _publish_deferred_no_replace(path: Path, text: str) -> None:
+        """Atomically publish a complete deferred request without overwriting."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+        try:
+            with tmp.open("x") as fh:
+                fh.write(text)
+                fh.flush()
+                os.fsync(fh.fileno())
+            # A same-directory hard-link is an atomic, non-overwriting publish:
+            # readers see either no destination or the complete fsynced file.
+            os.link(tmp, path)
+        finally:
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
+
+    def repair_defer_intent_path(self) -> Path:
+        root = self.run_dir if self.run_dir else Path(_logical_cwd()) / ".specula-output"
+        return root / ".repair-defer-intent.json"
+
+    def _persist_defer_intent(self, moves: list[tuple[str, Path, Path]]) -> None:
+        if self.dry_run or not moves:
+            return
+        targets: dict[str, dict[str, str]] = {}
+        for name, source, _destination in moves:
+            targets.setdefault(name, {})[source.name] = source.read_text()
+        payload = json.dumps({"version": 1, "targets": targets}, ensure_ascii=False, sort_keys=True) + "\n"
+        marker = self.repair_defer_intent_path()
+        try:
+            self._publish_deferred_no_replace(marker, payload)
+        except FileExistsError:
+            log(f"ERROR: durable defer intent already exists: {marker}")
+            raise SystemExit(1) from None
+
+    def _load_defer_intent(self) -> dict[str, dict[str, str]] | None:
+        marker = self.repair_defer_intent_path()
+        if not marker.is_file():
+            return None
+        try:
+            doc = json.loads(marker.read_text())
+            targets = doc.get("targets") if isinstance(doc, dict) and doc.get("version") == 1 else None
+            if not isinstance(targets, dict) or not targets:
+                raise ValueError("targets must be a non-empty object")
+            known = set(self.extract_names())
+            result: dict[str, dict[str, str]] = {}
+            for name, requests in targets.items():
+                if name not in known or not isinstance(requests, dict) or not requests:
+                    raise ValueError(f"invalid target entry {name!r}")
+                parsed: dict[str, str] = {}
+                for filename, text in requests.items():
+                    if not isinstance(filename, str) or re.fullmatch(r"RR-\d+\.md", filename) is None:
+                        raise ValueError(f"unsafe request filename {filename!r}")
+                    if not isinstance(text, str) or not self._repair_request_is_executable(text, Path(filename).stem):
+                        raise ValueError(f"malformed request intent {name}/{filename}")
+                    if self._repair_request_field(text, "status") != "OPEN":
+                        raise ValueError(f"intent request {name}/{filename} is not OPEN")
+                    parsed[filename] = text
+                result[name] = parsed
+        except (OSError, ValueError) as exc:
+            log(f"ERROR: invalid durable defer intent: {marker} ({exc})")
+            raise SystemExit(1) from exc
+        return result
+
+    def _complete_defer_intent(self) -> int:
+        """Idempotently finish every move named by the durable cap intent."""
+        targets = self._load_defer_intent()
+        if targets is None:
+            return 0
+        completed = 0
+        note = "deferred (orchestrator): repair loop round cap reached"
+        for name, requests in targets.items():
+            rr_dir = Path(self.repair_dir(name))
+            deferred_dir = rr_dir / "deferred"
+            for filename, source_text in requests.items():
+                source = rr_dir / filename
+                destination = deferred_dir / filename
+                expected = self._repair_request_text_with_status(source_text, "DEFERRED", note)
+                source_exists = source.is_file()
+                destination_exists = destination.is_file()
+                if source_exists and source.read_text() != source_text:
+                    log(f"ERROR: active request diverged from durable defer intent: {source}")
+                    raise SystemExit(1)
+                if destination_exists and destination.read_text() != expected:
+                    log(f"ERROR: deferred request diverged from durable defer intent: {destination}")
+                    raise SystemExit(1)
+                if not source_exists and not destination_exists:
+                    log(f"ERROR: defer intent lost both source and destination: {name}/{filename}")
+                    raise SystemExit(1)
+                if not destination_exists:
+                    self._publish_deferred_no_replace(destination, expected)
+                if source_exists:
+                    source.unlink()
+                completed += 1
+                log(f"  deferred {filename} -> {destination.parent} (repair loop exhausted)")
+        self.repair_defer_intent_path().unlink()
+        return completed
+
+    def _reconcile_interrupted_deferred_moves(self) -> None:
+        """Finish the publish-then-unlink crash window for deferred requests.
+
+        A SIGKILL after the complete deferred file is published but before the
+        active OPEN source is unlinked leaves both names present. Only collapse
+        the pair when the deferred bytes are exactly the canonical transform of
+        the active bytes; divergent pairs remain a real conflict.
+        """
+        note = "deferred (orchestrator): repair loop round cap reached"
+        for n in self.extract_names():
+            active = {f.name: f for f in self._rr_files(n)}
+            deferred = {f.name: f for f in self._deferred_rr_files(n)}
+            for name in sorted(active.keys() & deferred.keys()):
+                source = active[name]
+                destination = deferred[name]
+                try:
+                    expected = self._repair_request_text_with_status(source.read_text(), "DEFERRED", note)
+                    actual = destination.read_text()
+                except OSError:
+                    continue
+                if rr_status(source) != "OPEN" or rr_status(destination) != "DEFERRED" or actual != expected:
+                    continue
+                source.unlink()
+                log(f"  completed interrupted defer move for {n}: {name}")
+
+    def _assert_no_active_deferred_conflicts(self) -> None:
+        conflicts: list[tuple[str, Path, Path]] = []
+        for n in self.extract_names():
+            active = {f.name: f for f in self._rr_files(n)}
+            deferred = {f.name: f for f in self._deferred_rr_files(n)}
+            conflicts.extend((n, active[name], deferred[name]) for name in sorted(active.keys() & deferred.keys()))
+        if conflicts:
+            detail = ", ".join(f"{n}: {active} conflicts with {deferred}" for n, active, deferred in conflicts)
+            log(f"ERROR: active/deferred repair request name conflict; refusing to overwrite: {detail}")
+            raise SystemExit(1)
+
+    @staticmethod
+    def _reconcile_disposition_counts(text: str) -> str:
+        """Make the disposition summary agree with the report's status table."""
+        statuses: list[str] = []
+        in_table = False
+        for line in text.splitlines():
+            cells = line.split("|")
+            if len(cells) >= 5 and cells[1].strip() == "Bug" and cells[3].strip() == "Status":
+                in_table = True
+                continue
+            if not in_table:
+                continue
+            if not line.lstrip().startswith("|"):
+                break
+            if len(cells) >= 5 and cells[1].strip().isdigit():
+                statuses.append(cells[3].strip())
+        if not statuses:
+            return text
+        pending = sum(status.startswith("PENDING REPAIR") for status in statuses)
+        deferred = sum(status.startswith("DEFERRED") for status in statuses)
+        pattern = re.compile(
+            r"(?m)^(Dispositions: .*? \+ )\d+ pending-repair"
+            r"( \+ \d+ incomplete)?(?: \+ \d+ deferred)?\s*$"
+        )
+        return pattern.sub(
+            lambda match: f"{match.group(1)}{pending} pending-repair{match.group(2) or ''} + {deferred} deferred",
+            text,
+            count=1,
+        )
+
+    def reconcile_deferred_state(self) -> None:
+        """Idempotently finish interrupted defer publication.
+
+        The deferred directory is authoritative. Legacy files can still say
+        OPEN, and a prior report write may have failed after the source was
+        moved; normalize both before the repair loop makes any decision.
+        """
+        if self.dry_run:
+            return
+        self._complete_defer_intent()
+        self._reconcile_interrupted_deferred_moves()
+        self._assert_no_active_deferred_conflicts()
+        for n in self.extract_names():
+            deferred = self._deferred_rr_files(n)
+            for f in deferred:
+                if rr_status(f) != "DEFERRED":
+                    text = self._repair_request_text_with_status(
+                        f.read_text(),
+                        "DEFERRED",
+                        "reconciled (orchestrator): deferred directory is authoritative",
+                    )
+                    self._atomic_replace_text(f, text)
+                    log(f"  reconciled legacy deferred status: {f}")
+
+            report = Path(self.get_work_dir(n)) / "spec" / "confirmed-bugs.md"
+            if not report.is_file():
+                continue
+            old_text = report.read_text()
+            new_text = old_text
+            for f in deferred:
+                rid = rr_field(f, "id") or f.stem
+                new_text = new_text.replace(
+                    f"PENDING REPAIR ({rid})",
+                    f"DEFERRED (repair loop exhausted; {rid} in deferred/)",
+                )
+            new_text = self._reconcile_disposition_counts(new_text)
+            if new_text != old_text:
+                self._atomic_replace_text(report, new_text)
+                log(f"  reconciled deferred statuses in {report}")
+
     def regenerate_ledger(self) -> None:
-        """Regenerate the human-readable rollup index per target."""
+        """Regenerate the human-readable rollup index per target.
+
+        Deferred requests remain part of the audit trail, so the ledger is
+        rebuilt from both the active queue and deferred/.  Conversely, when no
+        request exists in either place, remove an old ledger rather than leave
+        a stale snapshot behind.
+        """
         if self.dry_run:
             return
         for n in self.extract_names():
-            files = self._rr_files(n)
-            if not files:
-                continue
+            active = self._rr_files(n)
+            deferred = self._deferred_rr_files(n)
             ledger = Path(self.get_work_dir(n)) / "spec" / "repair-ledger.md"
+            files = [(f, False) for f in active] + [(f, True) for f in deferred]
+            if not files:
+                ledger.unlink(missing_ok=True)
+                continue
             rows = [
                 f"# Repair Ledger — {n}",
                 "",
@@ -610,12 +1153,67 @@ class Pipeline:
                 "| Request | Bug | Target | Status | Round |",
                 "|---------|-----|--------|--------|-------|",
             ]
-            for f in files:
+            for f, is_deferred in files:
                 bug = rr_field(f, "bug_id").replace("|", "\\|")
-                rows.append(
-                    f"| {rr_field(f, 'id')} | {bug} | {rr_field(f, 'target')} | {rr_status(f)} | {rr_field(f, 'round')} |"
-                )
+                target = rr_field(f, "target").replace("|", "\\|")
+                # Legacy versions moved an OPEN file into deferred/ without
+                # changing its frontmatter.  Location is authoritative for
+                # those historical files; new moves also stamp DEFERRED.
+                status = "DEFERRED" if is_deferred else rr_status(f)
+                rows.append(f"| {rr_field(f, 'id')} | {bug} | {target} | {status} | {rr_field(f, 'round')} |")
             ledger.write_text("\n".join(rows) + "\n")
+
+    def prepare_repair_state(self) -> set[str]:
+        """Reconcile startup state and return exactly recovered commit targets."""
+        self.reconcile_deferred_state()
+        recovered_commits = self.recover_interrupted_phase3()
+        self.reset_stale_in_repair()
+        self.regenerate_ledger()
+        return recovered_commits
+
+    def advance_confirmation_generation(self, repair_round: int, names: list[str] | None = None) -> None:
+        """Atomically advance the Phase-4 cache generation for selected targets.
+
+        This marker is written after every successful Phase 3, both normal and
+        repair runs, and before the corresponding Phase 4. Confirmation cache
+        fingerprints include its contents, so a resumed validation or repair
+        can never reuse a verdict or candidate set from an earlier generation.
+        For repair Phase 3, it also commits the durable snapshot's unique token;
+        that token proves success if the process dies before snapshot cleanup.
+        """
+        if self.dry_run:
+            return
+        for n in names if names is not None else self.extract_names():
+            marker = Path(self.get_work_dir(n)) / "spec" / "confirmation-generation.json"
+            repair_commit: str | None = None
+            if repair_round > 0:
+                loaded = self.load_open_repair_snapshot(n)
+                if loaded is not None:
+                    _snapshot, snapshot_round, commit_token = loaded
+                    if snapshot_round == repair_round:
+                        repair_commit = commit_token
+            previous = 0
+            if marker.is_file():
+                try:
+                    doc = json.loads(marker.read_text())
+                    value = doc.get("generation") if isinstance(doc, dict) else None
+                    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                        raise ValueError("generation is not a non-negative integer")
+                    previous = value
+                except (OSError, ValueError) as exc:
+                    # A damaged legacy marker must not block a completed repair
+                    # from reaching Phase 4. Replacing it changes the cache key,
+                    # and subsequent generations continue monotonically from 1.
+                    log(f"  WARNING: replacing invalid confirmation generation marker for {n}: {exc}")
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "generation": previous + 1,
+                "repair_round": repair_round,
+                "updated_at": _date_iseconds(),
+            }
+            if repair_commit is not None:
+                payload["repair_phase3_commit"] = repair_commit
+            self._atomic_replace_text(marker, json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
     # ── phase runners ──
     def _model_effort_args(self) -> list[str]:
@@ -779,38 +1377,39 @@ class Pipeline:
             "launch_spec_validation.sh",
             self._phase_args(self.extract_names()),
         )
+        self.advance_confirmation_generation(0)
 
     def run_phase4_confirmation(self) -> None:
         pre: list[str] = []
         if self.confirm_legacy:
             pre.append("--legacy-confirm")
+        if self.confirm_debate:
+            pre.append("--debate")
         mode = "single-agent, legacy" if self.confirm_legacy else "parallel per-finding"
+        debate = " + debate" if self.confirm_debate and not self.confirm_legacy else ""
         self._phase(
-            f"PHASE 4: BUG CONFIRMATION ({mode})",
+            f"PHASE 4: BUG CONFIRMATION ({mode}{debate})",
             "launch_bug_confirmation.sh",
+            # Confirmation distinguishes an omitted generic default from an
+            # explicit --max-parallel=1: omitted fans findings out to four,
+            # while explicit 1 deliberately runs them serially. Other phases
+            # still receive Pipeline's implicit default of one.
             self._phase_args(self.extract_names(), pre=pre or None),
         )
 
-    def run_phase3_repair(self, round_: int) -> None:
-        """Phase 3 in repair mode: consume OPEN/REOPENED requests, repair the
-        spec, re-validate, transition each request to RECHECK."""
+    def run_phase3_repair(self, round_: int, names: list[str] | None = None) -> None:
+        """Phase 3 in repair mode: consume OPEN repair requests, repair the spec,
+        re-run MC, and mark each repaired request CONSUMED. Whether the repair
+        settled the finding is answered by the next Phase 4 pass — a repaired
+        artifact no longer appears in the fresh output; a surviving or new
+        violation is confirmed fresh. There is no separate re-check pass."""
+        selected = names if names is not None else self.extract_names()
         self._phase(
             f"REPAIR ROUND {round_}: PHASE 3 (scoped spec/fault/invariant repair)",
             "launch_spec_validation.sh",
-            self._phase_args(self.extract_names(), pre=["--repair"]),
+            self._phase_args(selected, pre=["--repair"]),
         )
-
-    def run_phase4_recheck(self, round_: int) -> None:
-        """Phase 4 in re-check mode: consume RECHECK requests, settle each
-        finding, transition to RESOLVED / REOPENED / DEFERRED (never RECHECK).
-        --max-repair-rounds is a PER-REQUEST cap the re-check agent enforces;
-        the agent, not the orchestrator, writes every RESOLVED / DEFERRED back
-        to confirmed-bugs.md."""
-        self._phase(
-            f"REPAIR ROUND {round_}: PHASE 4 (re-check repair requests)",
-            "launch_bug_confirmation.sh",
-            self._phase_args(self.extract_names(), pre=["--recheck", f"--max-repair-rounds={self.max_repair_rounds}"]),
-        )
+        self.advance_confirmation_generation(round_, selected)
 
     def run_phase4b_classification(self) -> None:
         self._phase(
@@ -819,40 +1418,194 @@ class Pipeline:
             self._phase_args(self.extract_names(), with_artifact=False),
         )
 
-    def run_repair_loop(self) -> None:
-        """Confirmation back-edge: alternate Phase 3 repair and Phase 4 re-check
-        until every request is terminal (RESOLVED / DEFERRED). Budget pressure is
-        handled by wait_for_quota (WAIT, like every other phase) — the loop never
-        mass-defers on quota, since dumping findings to DEFERRED under throttling
-        would be an exploitable weakness. DEFERRED is only ever written by the
-        re-check agent, per finding, with evidence. The orchestrator never edits
-        confirmed-bugs.md."""
+    def run_repair_loop(self, prepared_commits: set[str] | None = None) -> set[str]:
+        """Confirmation back-edge: repeat {Phase 3 repairs the spec per OPEN
+        repair requests and re-runs MC; Phase 4 confirms the fresh output
+        normally} until no open request remains or the global round cap is hit. A
+        repaired artifact simply no longer appears in the next Phase 4 output; a
+        surviving or new violation is confirmed fresh. There is no re-check pass
+        and no per-finding DEFERRED verdict — when the cap is reached the
+        orchestrator (not an agent) files any still-open request under
+        repair-requests/deferred/. Budget pressure -> wait_for_quota (WAIT), never
+        a mass-defer.
+
+        A caller that already ran startup reconciliation passes its exact
+        committed-target set. A direct caller leaves it unset; this method then
+        reconciles and consumes any recovered commit with its pending fresh
+        Phase 4. The returned set is exactly the targets covered by a recovered
+        or newly successful repair Phase 3 during this invocation.
+        """
         divider()
-        cap_disp = "unlimited" if self.max_repair_rounds == "0" else f"{self.max_repair_rounds} per request"
+        # parse_args validates normal CLI/environment input.  Keep this guard
+        # for embedders and tests that configure Pipeline directly.
+        if not re.fullmatch(r"[0-9]+", self.max_repair_rounds):
+            log(f"ERROR: repair loop cap must be a non-negative integer; got '{self.max_repair_rounds}'")
+            raise SystemExit(1)
+        cap = int(self.max_repair_rounds)
+        cap_disp = "unlimited" if cap == 0 else f"{cap} rounds"
         log(f"REPAIR LOOP (confirmation back-edge) — cap={cap_disp}")
         divider()
 
-        self.reset_stale_in_repair()  # recover crashed IN_REPAIR from a prior run
-        if not self.has_any_request():
-            log("No repair requests emitted by bug confirmation — repair loop is a no-op.")
-            return
+        recovered_commits = self.prepare_repair_state() if prepared_commits is None else set(prepared_commits)
+        phase3_targets = set(recovered_commits)
+        if not self.has_open_repair_requests():
+            if recovered_commits:
+                self.wait_for_quota()
+                self.run_phase4_confirmation()
+                self.regenerate_ledger()
+                names = ", ".join(sorted(recovered_commits))
+                log(f"Recovered committed repair Phase 3 for {names}; completed its pending fresh Phase 4.")
+                if self.has_open_repair_requests():
+                    log("Fresh Phase 4 opened repair requests; continuing the repair loop.")
+                else:
+                    return phase3_targets
+            else:
+                log("No OPEN repair requests — repair loop is a no-op.")
+                return phase3_targets
 
         round_ = 0
-        while self.repair_work_remaining():
+        while self.has_open_repair_requests():
+            if cap != 0 and round_ >= cap:
+                deferred = self.move_open_requests_to_deferred()
+                self.regenerate_ledger()
+                log(f"Repair loop reached its {cap}-round cap; deferred {deferred} still-OPEN request(s).")
+                return phase3_targets
+
             round_ += 1
             sig_before = self.repair_state_sig()
-            self.wait_for_quota()  # budget pressure -> WAIT, never auto-defer
-            self.run_phase3_repair(round_)
-            self.reset_stale_in_repair()  # recover if this round's repair phase died mid-turn
-            self.wait_for_quota()
-            self.run_phase4_recheck(round_)
+            repaired_names: list[str] = []
+            for name in self.names_with_open_repair_requests():
+                try:
+                    self.wait_for_quota()  # budget pressure -> WAIT, never auto-defer
+                except BaseException as exc:
+                    detail = f"exit {exc.code}" if isinstance(exc, SystemExit) else f"{type(exc).__name__}: {exc}"
+                    log(
+                        f"ERROR: repair loop stopped in round {round_} for {name} before Phase 3 ({detail}); "
+                        "repair requests were left unchanged."
+                    )
+                    raise
+                open_before = self.snapshot_open_repair_requests(name)
+                if not open_before:
+                    states = ", ".join(f"{f.name}={rr_status(f) or '<missing>'}" for f in self._rr_files(name))
+                    log(f"ERROR: {name} has no repairable OPEN request ({states}); refusing Phase 3.")
+                    raise SystemExit(1)
+                self.persist_open_repair_snapshot(name, open_before, round_)
+                try:
+                    self.run_phase3_repair(round_, [name])  # OPEN -> CONSUMED, repair spec, re-run MC
+                    if not self.dry_run:
+                        unfinished = [f for f in open_before if rr_status(f) != "CONSUMED"]
+                        if unfinished:
+                            detail = ", ".join(f"{f.name}={rr_status(f) or '<missing>'}" for f in unfinished)
+                            raise RuntimeError(f"Phase 3 returned success without consuming {detail}")
+                except BaseException as exc:
+                    self.restore_open_repair_requests(open_before, round_)
+                    try:
+                        self.clear_open_repair_snapshot(name)
+                    except OSError as cleanup_exc:
+                        log(f"ERROR: could not clear durable Phase 3 snapshot for {name}: {cleanup_exc}")
+                    self.reset_stale_in_repair(name)
+                    self.regenerate_ledger()
+                    detail = f"exit {exc.code}" if isinstance(exc, SystemExit) else f"{type(exc).__name__}: {exc}"
+                    log(
+                        f"ERROR: repair loop failed in round {round_} for {name} during Phase 3 ({detail}); "
+                        "only that target was reset OPEN, with partial artifacts/history retained."
+                    )
+                    raise
+                try:
+                    self.clear_open_repair_snapshot(name)
+                except OSError as cleanup_exc:
+                    # Phase 3 already crossed its tokenized durable commit
+                    # point. Never turn cleanup failure into repair failure:
+                    # retain CONSUMED + snapshot so startup can finalize the
+                    # exact commit and continue with fresh Phase 4.
+                    self.regenerate_ledger()
+                    log(
+                        f"ERROR: committed repair Phase 3 for {name}, but could not clear its durable snapshot "
+                        f"({cleanup_exc}); CONSUMED state was retained for startup recovery."
+                    )
+                    raise
+                repaired_names.append(name)
+                phase3_targets.add(name)
+
+            try:
+                self.wait_for_quota()
+                self.run_phase4_confirmation()  # normal Phase 4 on the fresh bug-report
+            except BaseException as exc:
+                self.regenerate_ledger()
+                detail = f"exit {exc.code}" if isinstance(exc, SystemExit) else type(exc).__name__
+                names = ", ".join(repaired_names) or "none"
+                log(
+                    f"ERROR: repair loop failed in round {round_} during Phase 4 ({detail}); "
+                    f"successful Phase 3 request states were retained for: {names}. "
+                    "Rerun the pipeline; startup recovery will retry Phase 4 safely."
+                )
+                raise
+            self.snapshot_confirmed_bugs(round_)
             self.regenerate_ledger()
             if self.repair_state_sig() == sig_before:
-                log(f"Repair loop made no progress in round {round_} (no request changed) — stopping to avoid spin.")
-                break
+                if self.dry_run:
+                    log(f"[DRY RUN] Repair state is unchanged after simulated round {round_}; leaving requests OPEN.")
+                    return phase3_targets
+                log(
+                    f"ERROR: repair loop made no progress in round {round_} (no request changed); "
+                    "OPEN requests were retained for retry."
+                )
+                raise SystemExit(1)
 
         self.regenerate_ledger()
-        log(f"Repair loop ended after {round_} round(s).")
+        log(f"Repair loop resolved all requests after {round_} round(s).")
+        return phase3_targets
+
+    def snapshot_confirmed_bugs(self, round_: int) -> None:
+        """Preserve each round's result: copy `confirmed-bugs.md` to
+        `confirmed-bugs-round-N.md`. The latest also stays as `confirmed-bugs.md`
+        for downstream Phase 4b."""
+        if self.dry_run:
+            return
+        for n in self.extract_names():
+            cb = Path(self.get_work_dir(n)) / "spec" / "confirmed-bugs.md"
+            if cb.is_file():
+                (cb.parent / f"confirmed-bugs-round-{round_}.md").write_text(cb.read_text())
+
+    def move_open_requests_to_deferred(self) -> int:
+        """File legal OPEN requests under deferred/ after the cap is reached.
+
+        The move is deliberately strict: CONSUMED requests stay in the active
+        audit trail, while IN_REPAIR/malformed/unknown states are an execution
+        error rather than exhaustion.  Existing destinations are rejected so a
+        reused RR id can never overwrite historical evidence.
+        """
+        if self.dry_run:
+            return 0
+
+        self._assert_no_active_deferred_conflicts()
+
+        moves: list[tuple[str, Path, Path]] = []
+        invalid: list[tuple[Path, str]] = []
+        for n in self.extract_names():
+            dd = Path(self.repair_dir(n)) / "deferred"
+            for f in self._rr_files(n):
+                status = rr_status(f)
+                if status == "OPEN":
+                    moves.append((n, f, dd / f.name))
+                elif status != "CONSUMED":
+                    invalid.append((f, status))
+
+        if invalid:
+            detail = ", ".join(f"{f.name}={status or '<missing>'}" for f, status in invalid)
+            log(f"ERROR: refusing to defer repair requests in non-OPEN states: {detail}")
+            raise SystemExit(1)
+
+        self._persist_defer_intent(moves)
+        moved = self._complete_defer_intent()
+        if moved != len(moves):
+            raise RuntimeError(f"durable defer intent completed {moved} requests; expected {len(moves)}")
+
+        # Statuses are already complete in each published destination. This
+        # final reconciliation updates reports; if it fails, the next repair
+        # loop startup repeats it idempotently from the authoritative directory.
+        self.reconcile_deferred_state()
+        return moved
 
     # ── final summary ──
     def generate_summary(self) -> None:
@@ -935,12 +1688,22 @@ class Pipeline:
                 out.append("- **Phase 4a (Bug Confirmation)**: SKIPPED")
 
             rr_files = self._rr_files(name)
-            if rr_files:
-                rr_resolved = self._status_file_count(rr_files, "RESOLVED")
-                rr_deferred = self._status_file_count(rr_files, "DEFERRED")
-                out.append(
-                    f"- **Repair loop**: {len(rr_files)} request(s) — {rr_resolved} resolved, {rr_deferred} deferred"
+            deferred_files = self._deferred_rr_files(name)
+            rr_deferred = len(deferred_files)
+            if rr_files or rr_deferred:
+                rr_consumed = self._status_file_count(rr_files, "CONSUMED")
+                rr_open = self._status_file_count(rr_files, "OPEN")
+                rr_in_repair = self._status_file_count(rr_files, "IN_REPAIR")
+                rr_invalid = len(rr_files) - rr_consumed - rr_open - rr_in_repair
+                line = (
+                    f"- **Repair loop**: {len(rr_files) + rr_deferred} request(s) — "
+                    f"{rr_consumed} repaired, {rr_deferred} deferred, {rr_open} open"
                 )
+                if rr_in_repair:
+                    line += f", {rr_in_repair} in repair"
+                if rr_invalid:
+                    line += f", {rr_invalid} invalid"
+                out.append(line)
 
             severity = spec_dir / "bug-severity.md"
             if severity.is_file() and severity.stat().st_size > 0:
@@ -996,7 +1759,7 @@ class Pipeline:
         (step 7): the bash summary used `grep -lE '^status:[[:space:]]*X' |
         wc -l` — whole file, prefix match — so it could disagree with the
         repair loop's own reads (a buried `status:` line counted here but not
-        there) and RESOLVEDX counted as RESOLVED."""
+        there) and a botched CONSUMEDX counted as CONSUMED."""
         return sum(1 for f in files if rr_status(f) == status)
 
     # ── main (runs inside the tee) ──
@@ -1019,7 +1782,7 @@ class Pipeline:
             f" reviews={_b(self.skip_reviews)}"
         )
         cap = "unlimited" if self.max_repair_rounds == "0" else self.max_repair_rounds
-        print(f"Repair loop:  skip={_b(self.skip_repair_loop)} per_request_cap={cap}")
+        print(f"Repair loop:  skip={_b(self.skip_repair_loop)} global_cap={cap}")
         print()
 
         self.validate_agent_adapter()
@@ -1047,6 +1810,12 @@ class Pipeline:
 
         start_time = int(time.time())
 
+        # Recover before Phase 1/2/2.5 can mutate the artifacts that the
+        # snapshot token commits. Skip flags control later work, never whether
+        # durable crash state is reconciled.
+        recovered_phase3_commits = self.prepare_repair_state()
+        upstream_all_skipped = self.skip_analysis and self.skip_specgen and self.skip_harness
+
         if not self.skip_analysis:
             self.wait_for_quota()
             self.run_phase1_analysis()
@@ -1067,20 +1836,47 @@ class Pipeline:
         else:
             log("Skipping Phase 2.5 (--skip-harness)")
 
-        if not self.skip_validation:
+        # An uncommitted snapshot is OPEN again after reconciliation. Resume it
+        # when both halves of the repair loop are enabled. The resumed loop
+        # itself performs repair Phase 3 and fresh Phase 4.
+        resumed_repair = False
+        phase3_targets = set(recovered_phase3_commits)
+        if not self.skip_confirmation and not self.skip_repair_loop and self.has_open_repair_requests():
+            log("Resuming pending repair requests before the ordinary Phase 3 pass")
+            phase3_targets = self.run_repair_loop(prepared_commits=recovered_phase3_commits)
+            resumed_repair = True
+
+        current_targets = set(names)
+        phase3_covered = (
+            bool(current_targets)
+            and upstream_all_skipped
+            and phase3_targets == current_targets
+            and not self.has_open_repair_requests()
+        )
+        normal_phase3_ran = False
+        if not self.skip_validation and not phase3_covered:
             self.wait_for_quota()
             self.run_phase3_validation()
             self.run_review("validation", names)
+            normal_phase3_ran = True
+        elif phase3_covered:
+            source = "resumed repair loop" if resumed_repair else "recovered committed repairs"
+            log(f"Ordinary Phase 3 covered for every target by the {source}")
         else:
             log("Skipping Phase 3 (--skip-validation)")
 
-        if not self.skip_confirmation:
+        phase4_covered = resumed_repair and not normal_phase3_ran
+        fresh_phase4_ran = False
+        if not self.skip_confirmation and not phase4_covered:
             self.wait_for_quota()
             self.run_phase4_confirmation()
-        else:
+            fresh_phase4_ran = True
+        elif self.skip_confirmation:
             log("Skipping Phase 4a (--skip-confirmation)")
+        else:
+            log("Initial Phase 4 completed by the resumed repair loop")
 
-        if not self.skip_confirmation and not self.skip_repair_loop:
+        if fresh_phase4_ran and not self.skip_repair_loop:
             self.run_repair_loop()
         elif self.skip_repair_loop:
             log("Skipping repair loop (--skip-repair-loop)")
