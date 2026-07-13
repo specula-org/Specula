@@ -217,7 +217,6 @@ Pauses when API usage exceeds threshold, waits for reset, resumes automatically.
 | `tla-trace-workflow` | 3A | `skills/tla-trace-workflow/` |
 | `tla-checking-workflow` | 3B | `skills/tla-checking-workflow/` |
 | `bug-confirmation` | 4 | `skills/bug-confirmation/` |
-| `bug_recording` | Any | `skills/bug_recording/` |
 
 ## MCP Tools
 

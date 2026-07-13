@@ -84,7 +84,6 @@ class TestInstallSkills(SkillInstallCase):
             [
                 "bug-classification",
                 "bug-confirmation",
-                "bug-recording",
                 "code-analysis",
                 "harness-generation",
                 "spec-generation",
