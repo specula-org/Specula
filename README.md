@@ -66,10 +66,10 @@ codex mcp add tracedebugger \
 
 ## Auto Mode
 
-Point Specula at the target repository to analyze, with a name for the run:
+Point Specula to the target software repo, with a name (`$mysys`) for the run:
 
 ```bash
-specula run --artifact=/path/to/source mysystem
+specula run --artifact=/path/to/repo mysys
 ```
 
 Outputs are stored in `runs/<run-id>`. 
