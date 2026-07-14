@@ -77,10 +77,10 @@ class TestSetupHelp(unittest.TestCase):
             launcher, setup, env, sentinel = self.make_checkout(root)
 
             for command in (
-                ["/bin/bash", str(setup), "--help"],
-                ["/bin/bash", str(setup), "-h"],
-                ["/bin/bash", str(launcher), "setup", "--help"],
-                ["/bin/bash", str(launcher), "setup", "-h"],
+                ["bash", str(setup), "--help"],
+                ["bash", str(setup), "-h"],
+                ["bash", str(launcher), "setup", "--help"],
+                ["bash", str(launcher), "setup", "-h"],
             ):
                 with self.subTest(command=command):
                     result = subprocess.run(
@@ -100,11 +100,17 @@ class TestSetupHelp(unittest.TestCase):
             root = Path(tmp)
             launcher, setup, env, sentinel = self.make_checkout(root)
 
-            for arguments in (["--hlep"], [""], ["--help", "extra"], ["", "--hlep"]):
-                expected_error = f"specula setup: unexpected argument '{arguments[0]}'\n\n" + SETUP_HELP
+            for arguments, unexpected in (
+                (["--hlep"], "--hlep"),
+                ([""], ""),
+                (["--help", "extra"], "extra"),
+                (["-h", "extra"], "extra"),
+                (["", "--hlep"], ""),
+            ):
+                expected_error = f"specula setup: unexpected argument '{unexpected}'\n\n" + SETUP_HELP
                 for command in (
-                    ["/bin/bash", str(setup), *arguments],
-                    ["/bin/bash", str(launcher), "setup", *arguments],
+                    ["bash", str(setup), *arguments],
+                    ["bash", str(launcher), "setup", *arguments],
                 ):
                     with self.subTest(command=command):
                         result = subprocess.run(

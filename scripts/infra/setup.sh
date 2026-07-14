@@ -25,7 +25,11 @@ elif (( $# == 1 )) && [[ "$1" == "-h" || "$1" == "--help" ]]; then
   usage
   exit 0
 else
-  printf "specula setup: unexpected argument '%s'\n\n" "$1" >&2
+  unexpected="$1"
+  if [[ "$unexpected" == "-h" || "$unexpected" == "--help" ]]; then
+    unexpected="$2"
+  fi
+  printf "specula setup: unexpected argument '%s'\n\n" "$unexpected" >&2
   usage >&2
   exit 2
 fi
