@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 PROG = "specula"
+VERSION = "0.2.0"
 
 SPECULA_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = SPECULA_ROOT / "scripts"
@@ -66,6 +67,9 @@ def _exec(argv: list[str]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
+    if args == ["--version"]:
+        sys.stdout.write(f"{PROG} {VERSION}\n")
+        return 0
     if not args or args[0] in ("-h", "--help", "help"):
         sys.stdout.write(help_text())
         return 0

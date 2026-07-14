@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "specula"
-version = "0.0.0"
+version = "0.2.0"
 description = "Specula: a framework for finding deep bugs in system code using TLA+."
 readme = "README.md"
 requires-python = ">=3.10"
