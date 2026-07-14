@@ -3,7 +3,7 @@
 A **repair request** carries a confirmation-loop back-edge. When reproduction concludes — *with a citation* — that a counterexample is a spec / fault-model / invariant **artifact** rather than a real triggerable bug, the finding is not dropped: it is handed back to Phase 3 (spec validation) for a scoped repair. Phase 3 fixes the spec and **re-runs model checking**; the fresh output is then re-confirmed by a normal pass of the confirmation skill — **there is no separate re-check pass**. This file defines the artifact and the small state machine that keeps the loop **bounded** and **idempotent**.
 
 - **Drafted by**: Phase 2 reproduction — see `phases/02-reproduction.md`.
-- **Checked and published by**: the invoking dispatcher / legacy outer orchestrator, which is the sole allocator and shared-queue writer.
+- **Validated and published by**: the invoking dispatcher / legacy outer orchestrator, which is the sole allocator and shared-queue writer.
 - **Consumed by**: Phase 3 spec validation in repair mode (`--repair`), which repairs the spec, re-runs MC, and marks the request `CONSUMED`.
 
 ## Location
@@ -22,11 +22,11 @@ One file per request. `id` is `RR-NNN`, zero-padded. Only the dispatcher allocat
 
 ## Finding-local semantic draft
 
-For `PENDING REPAIR`, the per-finding worker must write a readable, non-empty caller-supplied `repair-request.body.md`. Prefer the semantic fields `target`, `counterexample`, and `scope`, followed by `## Trigger` and cited `## Evidence` sections (and optional `## Proposed change`). The preferred scope contains all four lists (`actions`, `invariants`, `hunt_cfgs`, `fault_actions`), with non-empty `hunt_cfgs` and the list corresponding to `target`.
+For `PENDING REPAIR`, the per-finding worker writes the caller-supplied `repair-request.body.md`. It contains only the semantic fields `target`, `counterexample`, and `scope`, followed by non-empty `## Trigger` and cited `## Evidence` sections (and optional `## Proposed change`). All four scope lists (`actions`, `invariants`, `hunt_cfgs`, `fault_actions`) must be present; `hunt_cfgs` and the list corresponding to `target` must be non-empty.
 
-Leave `id`, `bug_id`, `finding_id`, `allocation_key`, `status`, `round`, and `## History` out of the draft. Those fields, the final `RR-NNN.md` path, and `confirmed-bugs.md` are dispatcher-owned. Format and schema problems are advisory: the dispatcher logs a warning and may give the worker at most one focused correction turn. If the result remains malformed but is readable and non-empty, the dispatcher continues with it. Only a draft that is still missing, unreadable, or empty after that attempt makes the finding `INCOMPLETE`; an empty `OPEN` request is never created.
+The draft MUST NOT contain `id`, `bug_id`, `finding_id`, `allocation_key`, `status`, `round`, or `## History`. Those fields, the final `RR-NNN.md` path, and `confirmed-bugs.md` are dispatcher-owned. A missing or malformed draft makes the finding `INCOMPLETE`; it must never create an empty OPEN request.
 
-The preferred shape is:
+Use this exact shape (no inline YAML comments):
 
 ```markdown
 ---
@@ -98,7 +98,7 @@ Small. Terminal states: `CONSUMED` (Phase 3 completed the scoped repair) and `DE
 
 | Transition | Owner | When |
 |---|---|---|
-| (new) → `OPEN` | confirmation dispatcher | accepts a readable, non-empty finding-local draft after reproduction yields a **cited** artifact verdict |
+| (new) → `OPEN` | confirmation dispatcher | validates a finding-local draft after reproduction yields a **cited** artifact verdict |
 | `OPEN` → `IN_REPAIR` | Phase 3 repair | on entry, before editing the spec |
 | `IN_REPAIR` → `CONSUMED` | Phase 3 repair | after editing + **full trace re-validation** + re-running MC; appends History |
 | `OPEN` → `DEFERRED` | pipeline orchestrator | the global repair-loop round cap is reached; move the file under `repair-requests/deferred/` and update the linked report entry |
@@ -107,7 +107,7 @@ Whether a `CONSUMED` repair actually **settled** the finding is answered by the 
 
 `IN_REPAIR` doubles as a crash marker: if the orchestrator finds a request still `IN_REPAIR` at the top of a loop iteration (its repair phase died mid-turn), it resets it to `OPEN`.
 
-If a new accepted draft arrives for the same finding while its request is still `OPEN`, the dispatcher reuses that id and atomically refreshes the semantic payload while preserving `status`, `round`, and History. A `finding_id` may have at most one active (`OPEN` or `IN_REPAIR`) request; multiple terminal audit records are allowed. It never rewrites `IN_REPAIR`. `CONSUMED` and `DEFERRED` are immutable audit records: a later, different allocation receives a new `OPEN` id; an exact retry may only point back to the unchanged `DEFERRED` record.
+If a new validated draft arrives for the same finding while its request is still `OPEN`, the dispatcher reuses that id and atomically refreshes the semantic payload while preserving `status`, `round`, and History. A `finding_id` may have at most one active (`OPEN` or `IN_REPAIR`) request; multiple terminal audit records are allowed. It never rewrites `IN_REPAIR`. `CONSUMED` and `DEFERRED` are immutable audit records: a later, different allocation receives a new `OPEN` id; an exact retry may only point back to the unchanged `DEFERRED` record.
 
 Identity is always `finding_id`, never `bug_id`. Candidate order may change
 between confirmations, so the dispatcher refreshes a stale display-only `bug_id`

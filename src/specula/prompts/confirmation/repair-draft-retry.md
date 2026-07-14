@@ -8,7 +8,6 @@ missing or make one focused attempt to improve the existing draft.
 - Draft to edit: {{draft}}
 - Dispatcher warning: {{warning}}
 
-The dispatcher will continue with any non-empty draft even if this warning remains.
 Do not edit the shared repair queue or allocate an RR id. End with
 `VERDICT: PENDING REPAIR`.
 

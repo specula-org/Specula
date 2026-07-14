@@ -969,8 +969,8 @@ class TestPromptExtraAndLog(ConfirmCase):
             self.assertIn(str(f.fdir / "repair-request.body.md"), prompt)
             self.assertIn("dispatcher", prompt)
             self.assertIn("shared", prompt)
-        self.assertIn("Leave out `id`", reproduce)
-        self.assertIn("do not allocate an RR", defend)
+        self.assertIn("Do NOT include `id`", reproduce)
+        self.assertIn("Do not\n  allocate an RR", defend)
 
     def test_reproduce_prompt_invokes_installed_skill_without_path(self) -> None:
         ws = self.seed("T", [])

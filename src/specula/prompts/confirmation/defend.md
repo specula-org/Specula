@@ -29,15 +29,11 @@ The debate index is the file `{{debate}}`. **Read it first** — it lists every 
   → `MASKED` / `ENV_LIMITED` / `PENDING REPAIR` / `NEEDS MORE INFO`, and **never
   `FALSE POSITIVE` or `DROPPED`**. Conceding beats a fabricated `REPRODUCED`.
 - If you move to `PENDING REPAIR`, write or replace the semantic draft
-  `{{fdir}}/repair-request.body.md`; it must be readable and non-empty. Prefer
-  the installed skill's format: `target` / `counterexample` / concrete `scope`
-  frontmatter, then `## Trigger` and cited `## Evidence` (optional
-  `## Proposed change`). Leave lifecycle fields and History to the dispatcher,
-  and do not allocate an RR or write the shared queue. A format or schema problem
-  is only a warning: the dispatcher may give you one focused correction turn,
-  then continues with any readable, non-empty draft even if the warning remains.
-  Only a draft that is still missing, unreadable, or empty after that attempt
-  makes the finding `INCOMPLETE`.
+  `{{fdir}}/repair-request.body.md` exactly as the installed skill specifies:
+  only `target` / `counterexample` / concrete `scope` frontmatter, then non-empty
+  `## Trigger` and cited `## Evidence` (optional `## Proposed change`). Do not
+  allocate an RR, write the shared queue, or include lifecycle fields / History;
+  the dispatcher does that only after the debate reaches its final verdict.
 - Anti-sycophancy: move your verdict only on a real reason — in either direction,
   not to reach agreement.
 - Keep an up-to-date `## Reproduction result` and `## Recommendation` (they may be
