@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import re
 import sys
 from collections.abc import Callable, Iterable
@@ -29,6 +30,50 @@ class StreamStatus:
     log_ok: bool
     terminal_record: object | None
     plain_diagnostics: tuple[str, ...]
+    usage: dict[str, object]
+
+
+@dataclass
+class UsageTotals:
+    session_id: str | None = None
+    total_cost_usd: float | None = None
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    cache_write_input_tokens: int = 0
+    output_tokens: int = 0
+    reasoning_output_tokens: int = 0
+
+    def add_cost(self, value: object) -> None:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            try:
+                cost = float(value)
+            except OverflowError:
+                return
+            if cost >= 0 and math.isfinite(cost):
+                self.total_cost_usd = (self.total_cost_usd or 0.0) + cost
+
+    def as_payload(self, agent: str) -> dict[str, object]:
+        total = (
+            self.input_tokens
+            + self.cached_input_tokens
+            + self.cache_write_input_tokens
+            + self.output_tokens
+            + self.reasoning_output_tokens
+        )
+        return {
+            "agent": agent,
+            "session_id": self.session_id,
+            "session_file": None,
+            "total_cost_usd": self.total_cost_usd,
+            "usage": {
+                "input_tokens": self.input_tokens,
+                "cached_input_tokens": self.cached_input_tokens,
+                "cache_write_input_tokens": self.cache_write_input_tokens,
+                "output_tokens": self.output_tokens,
+                "reasoning_output_tokens": self.reasoning_output_tokens,
+                "total_tokens": total,
+            },
+        }
 
 
 _INVALID_RECORD = object()
@@ -204,11 +249,112 @@ def _codex_events(record: object, concise: bool) -> list[str]:
     return []
 
 
+def _opencode_events(record: object, concise: bool) -> list[str]:
+    if not isinstance(record, dict):
+        return []
+    if record.get("type") == "error":
+        return _diagnostic_event("error", _diagnostic_message(record.get("error")), concise)
+    part = record.get("part")
+    if not isinstance(part, dict):
+        return []
+    if part.get("type") == "text":
+        text = part.get("text")
+        return [_text_event(text, concise)] if isinstance(text, str) else []
+    if part.get("type") != "tool":
+        return []
+    name = part.get("tool")
+    state = part.get("state")
+    arguments = state.get("input") if isinstance(state, dict) else None
+    return [tool_summary(name, arguments)] if isinstance(name, str) else []
+
+
+def _pi_events(record: object, concise: bool) -> list[str]:
+    if not isinstance(record, dict):
+        return []
+    record_type = record.get("type")
+    if record_type == "error" or record_type == "warning":
+        nested = record.get(record_type)
+        message = _diagnostic_message(nested) or _diagnostic_message(record)
+        return _diagnostic_event(record_type, message, concise)
+    if record_type == "message_update":
+        update = record.get("assistantMessageEvent")
+        if isinstance(update, dict) and update.get("type") == "text_delta":
+            delta = update.get("delta")
+            return [_text_event(delta, concise)] if isinstance(delta, str) else []
+        return []
+    if record_type == "tool_execution_start":
+        name = record.get("toolName")
+        return [tool_summary(name, record.get("args"))] if isinstance(name, str) else []
+    return []
+
+
 _PARSERS: dict[str, Callable[[object, bool], list[str]]] = {
     "claude-code": _claude_events,
     "codex": _codex_events,
     "copilot-cli": _copilot_events,
+    "opencode": _opencode_events,
+    "pi": _pi_events,
 }
+
+
+def _token_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value if value >= 0 else 0
+    if not isinstance(value, float):
+        return 0
+    if value < 0 or not math.isfinite(value) or not value.is_integer():
+        return 0
+    return int(value)
+
+
+def _accumulate_usage(adapter_name: str, record: object, totals: UsageTotals) -> None:
+    if not isinstance(record, dict):
+        return
+    if adapter_name == "opencode":
+        session_id = record.get("sessionID")
+        if totals.session_id is None and isinstance(session_id, str):
+            totals.session_id = session_id
+        if record.get("type") != "step_finish":
+            return
+        part = record.get("part")
+        if not isinstance(part, dict):
+            return
+        totals.add_cost(part.get("cost"))
+        tokens = part.get("tokens")
+        if not isinstance(tokens, dict):
+            return
+        cache = tokens.get("cache")
+        totals.input_tokens += _token_count(tokens.get("input"))
+        totals.output_tokens += _token_count(tokens.get("output"))
+        totals.reasoning_output_tokens += _token_count(tokens.get("reasoning"))
+        if isinstance(cache, dict):
+            totals.cached_input_tokens += _token_count(cache.get("read"))
+            totals.cache_write_input_tokens += _token_count(cache.get("write"))
+        return
+    if adapter_name != "pi":
+        return
+    if record.get("type") == "session":
+        session_id = record.get("id")
+        if totals.session_id is None and isinstance(session_id, str):
+            totals.session_id = session_id
+        return
+    if record.get("type") != "message_end":
+        return
+    message = record.get("message")
+    if not isinstance(message, dict) or message.get("role") != "assistant":
+        return
+    usage = message.get("usage")
+    if not isinstance(usage, dict):
+        return
+    totals.input_tokens += _token_count(usage.get("input"))
+    totals.output_tokens += _token_count(usage.get("output"))
+    totals.cached_input_tokens += _token_count(usage.get("cacheRead"))
+    totals.cache_write_input_tokens += _token_count(usage.get("cacheWrite"))
+    cost = usage.get("cost")
+    if isinstance(cost, dict):
+        totals.add_cost(cost.get("total"))
 
 
 def _is_tool_echo(adapter_name: str, record: object) -> bool:
@@ -272,6 +418,8 @@ _ADAPTER_NAMES = {
     "codex": "codex",
     "copilot": "copilot-cli",
     "copilot-cli": "copilot-cli",
+    "opencode": "opencode",
+    "pi": "pi",
 }
 
 
@@ -291,6 +439,7 @@ def stream_events(
     """
     source = source if source is not None else sys.stdin.buffer
     adapter_name = _ADAPTER_NAMES[adapter]
+    usage_totals = UsageTotals()
     last_event = ""
     terminal_record: object | None = None
     plain_diagnostics: list[str] = []
@@ -327,6 +476,7 @@ def stream_events(
         nonlocal last_event, log, terminal_record
         decoded = raw_line.decode(errors="replace")
         keep, events, record = _read_line(adapter_name, decoded, concise=False)
+        _accumulate_usage(adapter_name, record, usage_totals)
         if adapter_name == "claude-code":
             if isinstance(record, dict) and record.get("type") == "result":
                 terminal_record = record
@@ -400,12 +550,16 @@ def stream_events(
         log_ok=not readable_failures,
         terminal_record=terminal_record,
         plain_diagnostics=tuple(plain_diagnostics),
+        usage=usage_totals.as_payload(adapter_name),
     )
 
 
 def main(argv: list[str]) -> int:
     if len(argv) != 3 or argv[0] not in _ADAPTER_NAMES:
-        print("usage: event_stream.py {claude|codex|copilot} ACTIVITY_JSONL LOG_FILE", file=sys.stderr)
+        print(
+            "usage: event_stream.py {claude|codex|copilot|opencode|pi} ACTIVITY_JSONL LOG_FILE",
+            file=sys.stderr,
+        )
         return 2
     try:
         status = stream_events(argv[0], Path(argv[1]), Path(argv[2]))

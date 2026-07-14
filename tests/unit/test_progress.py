@@ -17,6 +17,195 @@ from specula.adapters.event_stream import parse_events, readable, stream_events,
 
 
 class TestProgressParsing(unittest.TestCase):
+    def test_opencode_text_tool_and_error_events(self) -> None:
+        records = [
+            {
+                "type": "text",
+                "sessionID": "ses_1",
+                "part": {"type": "text", "text": "finished"},
+            },
+            {
+                "type": "tool_use",
+                "sessionID": "ses_1",
+                "part": {
+                    "type": "tool",
+                    "tool": "bash",
+                    "state": {"input": {"command": "pytest -q"}},
+                },
+            },
+            {"type": "error", "error": {"message": "provider unavailable"}},
+        ]
+        self.assertEqual(
+            parse_events("opencode", [json.dumps(record) for record in records]),
+            ["finished", "running pytest -q", "adapter error: provider unavailable"],
+        )
+
+    def test_pi_delta_tool_and_error_events(self) -> None:
+        records = [
+            {
+                "type": "message_update",
+                "assistantMessageEvent": {"type": "text_delta", "delta": "working"},
+            },
+            {
+                "type": "tool_execution_start",
+                "toolName": "read",
+                "args": {"path": "src/main.py"},
+            },
+            {"type": "error", "message": "request failed"},
+        ]
+        self.assertEqual(
+            parse_events("pi", [json.dumps(record) for record in records]),
+            ["working", "reading src/main.py", "adapter error: request failed"],
+        )
+
+    def test_opencode_stream_accumulates_step_finish_usage(self) -> None:
+        records = [
+            {
+                "type": "step_finish",
+                "sessionID": "ses_first",
+                "part": {
+                    "tokens": {
+                        "input": 10,
+                        "output": 20,
+                        "reasoning": 30,
+                        "cache": {"read": 40, "write": 50},
+                    },
+                    "cost": 0.25,
+                },
+            },
+            {
+                "type": "step_finish",
+                "sessionID": "ses_later",
+                "part": {
+                    "tokens": {
+                        "input": 1,
+                        "output": 2,
+                        "reasoning": 3,
+                        "cache": {"read": 4, "write": 5},
+                    },
+                    "cost": 0.75,
+                },
+            },
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status = stream_events(
+                "opencode",
+                root / "agent.activity.jsonl",
+                root / "agent.log",
+                (json.dumps(record).encode() + b"\n" for record in records),
+            )
+
+        self.assertEqual(
+            status.usage,
+            {
+                "agent": "opencode",
+                "session_id": "ses_first",
+                "session_file": None,
+                "total_cost_usd": 1.0,
+                "usage": {
+                    "input_tokens": 11,
+                    "cached_input_tokens": 44,
+                    "cache_write_input_tokens": 55,
+                    "output_tokens": 22,
+                    "reasoning_output_tokens": 33,
+                    "total_tokens": 165,
+                },
+            },
+        )
+
+    def test_opencode_step_cost_does_not_require_token_usage(self) -> None:
+        record = {"type": "step_finish", "sessionID": "ses_cost", "part": {"cost": 0.5}}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status = stream_events(
+                "opencode",
+                root / "agent.activity.jsonl",
+                root / "agent.log",
+                [json.dumps(record).encode()],
+            )
+
+        self.assertEqual(status.usage["total_cost_usd"], 0.5)
+
+    def test_pi_stream_accumulates_only_assistant_message_usage(self) -> None:
+        records = [
+            {
+                "type": "session",
+                "version": 3,
+                "id": "pi_session",
+                "timestamp": "2026-07-14T00:00:00.000Z",
+                "cwd": "/workspace",
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "user",
+                    "usage": {
+                        "input": 100,
+                        "output": 100,
+                        "cacheRead": 100,
+                        "cacheWrite": 100,
+                        "cost": {"total": 100.0},
+                    },
+                },
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "duplicated full text"}],
+                    "usage": {
+                        "input": 10,
+                        "output": 20,
+                        "cacheRead": 30,
+                        "cacheWrite": 40,
+                        "cost": {"total": 0.25},
+                    },
+                },
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "usage": {
+                        "input": 1,
+                        "output": 2,
+                        "cacheRead": 3,
+                        "cacheWrite": 4,
+                        "cost": {"total": 0.75},
+                    },
+                },
+            },
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = root / "agent.log"
+            status = stream_events(
+                "pi",
+                root / "agent.activity.jsonl",
+                log,
+                (json.dumps(record).encode() + b"\n" for record in records),
+            )
+            self.assertEqual(log.read_text(), "")
+
+        self.assertEqual(
+            status.usage,
+            {
+                "agent": "pi",
+                "session_id": "pi_session",
+                "session_file": None,
+                "total_cost_usd": 1.0,
+                "usage": {
+                    "input_tokens": 11,
+                    "cached_input_tokens": 33,
+                    "cache_write_input_tokens": 44,
+                    "output_tokens": 22,
+                    "reasoning_output_tokens": 0,
+                    "total_tokens": 110,
+                },
+            },
+        )
+
     def test_summary_removes_terminal_control_sequences(self) -> None:
         text = "\x1b]0;spoofed title\x07hello \x1b[31mred\x1b[0m\rworld"
         self.assertEqual(summary(text), "hello red world")
