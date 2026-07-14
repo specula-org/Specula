@@ -91,7 +91,7 @@ Pauses when usage exceeds threshold, waits for 5-hour window reset, resumes.
 Stops after exhausting MAX_WINDOWS resets.
 
 Usage:
-  bash scripts/exp/scheduler.sh [options]
+  specula batch [options]
 
 Options:
   --workers N         Parallel workers (default: 3)
@@ -100,16 +100,17 @@ Options:
   --windows N         Max resets to wait through (default: 3)
   --queue FILE     Task queue file (default: scripts/exp/tasks.queue)
   --max-turns N    Max agent turns per task (default: 0 = unlimited)
+  --prompt FILE     Copy extra instructions into every task workspace
   --setup-only     Only clone repos and write prompts, don't run pipeline
   --dry-run        Print commands without executing
   --claude-alias NAME  Claude CLI profile (default: claude).
-                       Forwarded to launch_pipeline.sh and used by usage.sh
-                       so quota checks target the same account.
+                       Forwarded to specula run so quota checks target the
+                       same account.
 
 Queue format (tab-separated):
   name|github|lang|reference[TAB]flags
 
-  - flags: optional launch_pipeline.sh flags (e.g. --skip-analysis)
+  - flags: optional specula run flags (e.g. --skip-analysis)
   - --run-id, --isolate, and --no-isolate are reserved for the scheduler
 
 Workspace: every task's pipeline runs isolated under runs/<run>-<n>-<name>/

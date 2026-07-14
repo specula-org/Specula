@@ -983,15 +983,15 @@ Batch launcher: spawn one agent per target system for code analysis.
 Each agent follows the code-analysis skill methodology and produces a modeling brief.
 
 Usage:
-  bash scripts/launch/launch_code_analysis.sh [options] "name|github|lang|reference" [...]
+  specula analyze [options] "name|github|lang|reference" [...]
 
 Single-target (run from your project directory):
   cd my-project
-  bash ~/Specula/scripts/launch/launch_code_analysis.sh "myproject|me/myproject|Go|Raft"
+  specula analyze "myproject|me/myproject|Go|Raft"
 
 Batch (run from a directory containing multiple targets):
   cd case-studies
-  bash ../scripts/launch/launch_code_analysis.sh \
+  specula analyze \
     "braft|brpc/braft|C++|Raft (Ongaro 2014)" \
     "sofa-jraft|sofastack/sofa-jraft|Java|Raft (Ongaro 2014)"
 
@@ -1102,15 +1102,15 @@ class SpecGenerationPhase(Phase):
     key = "spec_generation"
     title = "Specula — Spec Generation Batch Runner"
     usage = r"""
-Batch launcher: spawn one Claude Code agent per target system for TLA+ spec generation.
+Batch launcher: spawn one agent per target system for TLA+ spec generation.
 Each agent follows the spec-generation skill methodology and produces base/MC/Trace specs.
 
 Usage:
-  bash scripts/launch/launch_spec_generation.sh [options] "name" [...]
+  specula specgen [options] "name" [...]
 
 Example:
-  bash scripts/launch/launch_spec_generation.sh cometbft
-  bash scripts/launch/launch_spec_generation.sh braft sofa-jraft dragonboat
+  specula specgen cometbft
+  specula specgen braft sofa-jraft dragonboat
 
 Options:
   --dry-run           Print commands without executing
@@ -1124,7 +1124,7 @@ Options:
   --artifact=PATH     Explicit path to the artifact repo (bypasses auto-detection)
 
 Prerequisites:
-  - claude CLI installed and authenticated
+  - Selected agent CLI installed and authenticated
   - modeling-brief.md exists at <name>/.specula-output/modeling-brief.md
   - Source repo cloned at <name>/artifact/<repo>/ (or supplied via --artifact)
 
@@ -1233,16 +1233,16 @@ class HarnessGenerationPhase(Phase):
     key = "harness_generation"
     title = "Specula — Harness Generation (Phase 2.5)"
     usage = r"""
-Batch launcher: spawn one Claude Code agent per target system for harness generation (Phase 2.5).
+Batch launcher: spawn one agent per target system for harness generation (Phase 2.5).
 Each agent instruments the source code and collects NDJSON traces for spec validation.
 
 Usage:
-  bash scripts/launch/launch_harness_generation.sh [options] "name" [...]
+  specula harness [options] "name" [...]
 
 Example:
-  bash scripts/launch/launch_harness_generation.sh cometbft
-  bash scripts/launch/launch_harness_generation.sh braft sofa-jraft dragonboat
-  bash scripts/launch/launch_harness_generation.sh --artifact=/path/to/repo myproject
+  specula harness cometbft
+  specula harness braft sofa-jraft dragonboat
+  specula harness --artifact=/path/to/repo myproject
 
 Options:
   --dry-run           Print commands without executing
@@ -1256,7 +1256,7 @@ Options:
   --artifact=PATH     Explicit path to artifact repo (overrides auto-detection)
 
 Prerequisites:
-  - claude CLI installed and authenticated
+  - Selected agent CLI installed and authenticated
   - Phase 2 complete: spec/base.tla, spec/Trace.tla, spec/instrumentation-spec.md
   - Source repo at <name>/artifact/<repo>/ or specified via --artifact
 
@@ -1368,10 +1368,10 @@ dispositions receive no severity. No new analysis, no repro work, no
 modification to confirmed-bugs.md.
 
 Usage:
-  bash scripts/launch/launch_bug_classification.sh [options] "name" [...]
+  specula classify [options] "name" [...]
 
 Example:
-  bash scripts/launch/launch_bug_classification.sh libgomp_3 autobahn_3
+  specula classify libgomp_3 autobahn_3
 
 Options:
   --dry-run           Print commands without executing
@@ -1388,7 +1388,7 @@ Prerequisites:
 
 """
     check_header = "Checking prerequisites..."
-    check_fail_msg = "ERROR: Missing prerequisites. Run Phase 4a (launch_bug_confirmation.sh) first."
+    check_fail_msg = "ERROR: Missing prerequisites. Run Phase 4a ('specula confirm') first."
     accepts_artifact = False  # this launcher takes no --artifact
     artifact_rejection_message = (
         "ERROR: classify does not accept --artifact; this phase reads the existing "
@@ -1476,17 +1476,17 @@ class SpecValidationPhase(Phase):
     key = "spec_validation"
     title = "Specula — Spec Validation Batch Runner"
     usage = r"""
-Batch launcher: spawn one Claude Code agent per target system for spec validation.
+Batch launcher: spawn one agent per target system for spec validation.
 Each agent iteratively runs trace validation and invariant checking using existing
 skills until both pass. Harness and traces must already exist (Phase 2.5).
 
 Usage:
-  bash scripts/launch/launch_spec_validation.sh [options] "name" [...]
+  specula validate [options] "name" [...]
 
 Example:
-  bash scripts/launch/launch_spec_validation.sh cometbft
-  bash scripts/launch/launch_spec_validation.sh braft sofa-jraft dragonboat
-  bash scripts/launch/launch_spec_validation.sh --artifact=/path/to/repo myproject
+  specula validate cometbft
+  specula validate braft sofa-jraft dragonboat
+  specula validate --artifact=/path/to/repo myproject
 
 Options:
   --dry-run           Print commands without executing
@@ -1633,10 +1633,10 @@ per finding, in parallel — see confirmlib.py). `--legacy-confirm` reverts to t
 single agent that consolidates and reproduces every finding in one context.
 
 Usage:
-  bash scripts/launch/launch_bug_confirmation.sh [options] "name" [...]
+  specula confirm [options] "name" [...]
 
 Example:
-  bash scripts/launch/launch_bug_confirmation.sh hashicorp-raft nuraft
+  specula confirm hashicorp-raft nuraft
 
 Options:
   --dry-run           Print commands without executing
@@ -1965,11 +1965,11 @@ class ReviewPhase(Phase):
 
     key = "review"
     usage = r"""
-Run a Claude Code review agent on phase outputs.
-Used by launch_pipeline.sh between phases. Can also be used standalone.
+Run a review agent on phase outputs.
+Used by specula run between phases. Can also be used standalone.
 
 Usage:
-  bash scripts/launch/launch_review.sh <phase> <name> [name ...]
+  specula review <phase> <name> [name ...]
 
 Options (after <phase>):
   --agent=NAME        Agent adapter to use (default: claude-code)
@@ -1983,12 +1983,17 @@ Phases:
   validation  — Review validation results (validation-report.md)
 
 Output:
-  .specula-output/review-<phase>.md
+  analysis:    .specula-output/review-analysis.md
+  specgen:     .specula-output/spec/review-specgen.md
+  validation:  .specula-output/spec/review-validation.md
 
 """
 
     def run(self, argv: list[str]) -> int:
         phase = argv[0] if argv else ""
+        if phase in ("--help", "-h"):
+            sys.stdout.write(self.usage)
+            return 0
         agent = "claude-code"
         claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
         model: str | None = None
