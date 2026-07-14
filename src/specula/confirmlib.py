@@ -235,6 +235,27 @@ def prompt_defend(cfg: ConfirmConfig, f: Finding, repo: str, debate: str) -> str
     )
 
 
+def prompt_repair_draft_retry(
+    cfg: ConfirmConfig,
+    f: Finding,
+    repo: str,
+    warning: str,
+    previous_log: Path,
+) -> str:
+    return (
+        render(
+            "confirmation/repair-draft-retry",
+            finding_id=f.id,
+            fdir=str(f.fdir.absolute()),
+            draft=str((f.fdir / "repair-request.body.md").absolute()),
+            previous_log=str(previous_log.absolute()),
+            warning=warning,
+            context=_context(cfg, f, repo),
+        )
+        + cfg.prompt_extra
+    )
+
+
 # ── one debate turn (blocking, via the shared phaselib primitive) ────────────
 
 
@@ -482,12 +503,24 @@ def _validate_final_artifacts(cfg: ConfirmConfig, f: Finding, status: str) -> No
         _read_repair_draft(cfg, f)
 
 
-def _validate_initial_output(cfg: ConfirmConfig, f: Finding, status: str | None, text: str) -> str:
-    """Validate stable machine-level output without prescribing prose headings."""
-    evidence = _validate_turn_output(f, status, text)
-    assert status is not None
-    _validate_final_artifacts(cfg, f, status)
-    return evidence
+def _repair_draft_warning(cfg: ConfirmConfig, f: Finding, draft: RepairDraft) -> str | None:
+    """Return the legacy schema diagnostic without making it a gate."""
+    try:
+        _parse_repair_draft(draft.raw, cfg, f)
+    except Exception as exc:
+        return f"{f.id}: {exc or type(exc).__name__}"
+    return None
+
+
+def _restore_repair_draft(path: Path, body: str) -> None:
+    """Restore a usable pre-correction draft if the advisory turn damages it."""
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+    elif path.exists():
+        path.unlink()
+    path.write_text(body)
 
 
 def _final_outcome(
@@ -536,6 +569,86 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
     debate = f.fdir / "debate.md"
     repo_for_agent, cleanup = setup_repo(cfg, f)
     try:
+        turn = 1
+        repair_retry_used = False
+
+        def prepare_pending(previous_turn: int, previous_role: str = "A") -> int:
+            """Warn about a draft problem and make at most one correction turn.
+
+            A readable, non-empty draft is always usable.  If the optional
+            correction fails, retain that original draft rather than turning a
+            parser complaint into an INCOMPLETE finding.
+            """
+            nonlocal repair_retry_used
+            original: str | None = None
+            problem: Exception | str | None = None
+            try:
+                draft = _read_repair_draft(cfg, f)
+                original = draft.raw
+                problem = _repair_draft_warning(cfg, f, draft)
+            except InvalidRepairRequest as exc:
+                problem = exc
+
+            if problem is None:
+                return previous_turn
+
+            warning = str(problem)
+            _log(f"  WARNING: {warning}")
+            if repair_retry_used:
+                if original is None:
+                    assert isinstance(problem, Exception)
+                    raise problem
+                return previous_turn
+
+            repair_retry_used = True
+            correction_turn = previous_turn + 1
+            draft_path = f.fdir / "repair-request.body.md"
+            try:
+                correction_verdict, _ = run_turn(
+                    cfg,
+                    f,
+                    "A-repair",
+                    correction_turn,
+                    prompt_repair_draft_retry(
+                        cfg,
+                        f,
+                        repo_for_agent,
+                        warning,
+                        f.fdir / f"turn{previous_turn:02d}_{previous_role}.log",
+                    ),
+                    cwd=_fresh_turn_cwd(f, "A-repair", correction_turn),
+                )
+                debate.write_text(
+                    debate.read_text()
+                    + _debate_entry(
+                        f,
+                        "A-repair",
+                        correction_turn,
+                        "A (repair-draft correction)",
+                        correction_verdict,
+                    )
+                )
+            except Exception as exc:
+                if original is None:
+                    raise
+                _log(f"  WARNING: {f.id}: repair-draft correction failed ({exc}); keeping the original draft")
+                _restore_repair_draft(draft_path, original)
+                return correction_turn
+
+            try:
+                corrected = _read_repair_draft(cfg, f)
+            except InvalidRepairRequest:
+                if original is None:
+                    raise
+                _log(f"  WARNING: {f.id}: correction removed the usable draft; keeping the original draft")
+                _restore_repair_draft(draft_path, original)
+                return correction_turn
+
+            corrected_warning = _repair_draft_warning(cfg, f, corrected)
+            if corrected_warning is not None:
+                _log(f"  WARNING: {corrected_warning} (continuing with the non-empty draft)")
+            return correction_turn
+
         # Turn 1 — Reproducer (neutral): investigate + reproduce.
         a_verdict, a_text = run_turn(
             cfg,
@@ -550,8 +663,10 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
             f"full agent log — open the logs you need; they are not inlined here.\n"
             + _debate_entry(f, "A", 1, "A (turn 1 — reproduce)", a_verdict)
         )
-        _validate_initial_output(cfg, f, a_verdict, a_text)
+        _validate_turn_output(f, a_verdict, a_text)
         assert a_verdict is not None
+        if a_verdict == "PENDING REPAIR":
+            turn = prepare_pending(turn)
         initial_text = a_text
         if a_verdict not in CONFIRM:
             _log(f"  [{f.id}] A: {a_verdict} (dismissal) — no debate")
@@ -562,7 +677,6 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
 
         _log(f"  [{f.id}] A: {a_verdict} → opening debate")
         defenses: list[str] = []
-        turn = 1
         for rnd in range(1, cfg.rounds + 1):
             turn += 1
             b_verdict, b_text = run_turn(
@@ -581,6 +695,8 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
             # when B actually disagrees (the defend turn is where it is introduced).
             if b_verdict is not None and b_verdict == a_verdict:
                 _log(f"  [{f.id}] round {rnd}: B={b_verdict} agrees — consensus, A not invoked")
+                if a_verdict == "PENDING REPAIR":
+                    turn = prepare_pending(turn, "B")
                 return _final_outcome(
                     cfg,
                     f,
@@ -601,6 +717,8 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
             debate.write_text(debate.read_text() + _debate_entry(f, "A", turn, f"A (round {rnd})", a_verdict))
             _validate_turn_output(f, a_verdict, a_text)
             assert a_verdict is not None
+            if a_verdict == "PENDING REPAIR":
+                turn = prepare_pending(turn)
             defenses.append(a_text)
             _log(f"  [{f.id}] round {rnd}: B={b_verdict} A={a_verdict}")
             if a_verdict and b_verdict and a_verdict == b_verdict:
@@ -736,7 +854,7 @@ def _repo_cache_identity(cfg: ConfirmConfig) -> dict[str, str]:
 def _prompt_sources() -> dict[str, str]:
     root = Path(__file__).resolve().parent / "prompts" / "confirmation"
     result: dict[str, str] = {}
-    for name in ("context.md", "reproduce.md", "challenge.md", "defend.md"):
+    for name in ("context.md", "reproduce.md", "challenge.md", "defend.md", "repair-draft-retry.md"):
         path = root / name
         result[name] = path.read_text() if path.is_file() else ""
     return result
@@ -1051,6 +1169,15 @@ def _scope_list(value: str, key: str) -> tuple[str, ...]:
     return tuple(result)
 
 
+def _scope_block_item(value: str, key: str) -> str:
+    item = value.strip()
+    if len(item) >= 2 and item[0] == item[-1] and item[0] in {'"', "'"}:
+        item = item[1:-1].strip()
+    if not item or any(char in item for char in "[]\r\n"):
+        raise InvalidRepairRequest(f"repair draft scope.{key} contains an invalid item")
+    return item
+
+
 def _safe_rr_path(value: str, field: str) -> None:
     path = Path(value)
     if not value or value == "." or path.is_absolute() or ".." in path.parts or re.match(r"^[A-Za-z]:[\\/]", value):
@@ -1069,21 +1196,40 @@ def _parse_repair_draft(body: str, cfg: ConfirmConfig | None = None, f: Finding 
     top: dict[str, str] = {}
     scope: dict[str, tuple[str, ...]] = {}
     in_scope = False
-    for line in fm_lines:
+    index = 0
+    while index < len(fm_lines):
+        line = fm_lines[index]
         if not line.strip():
+            index += 1
             continue
         if line[0].isspace():
             if not in_scope:
                 raise InvalidRepairRequest("repair draft has an indented field outside scope")
-            match = re.fullmatch(r"  ([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)", line)
+            match = re.fullmatch(r"\s+([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)", line)
             if match is None:
-                raise InvalidRepairRequest("repair draft scope fields must use exactly two-space indentation")
+                raise InvalidRepairRequest("repair draft scope fields must be indented")
             key, value = match.groups()
             if key not in _RR_SCOPE_KEYS:
                 raise InvalidRepairRequest(f"repair draft has unknown scope field {key}")
             if key in scope:
                 raise InvalidRepairRequest(f"repair draft repeats scope.{key}")
-            scope[key] = _scope_list(value, key)
+            if value.strip():
+                scope[key] = _scope_list(value, key)
+                index += 1
+                continue
+            items: list[str] = []
+            index += 1
+            while index < len(fm_lines):
+                candidate = fm_lines[index]
+                if not candidate.strip():
+                    index += 1
+                    continue
+                item_match = re.fullmatch(r"\s+-\s+(.+?)\s*", candidate)
+                if item_match is None:
+                    break
+                items.append(_scope_block_item(item_match.group(1), key))
+                index += 1
+            scope[key] = tuple(items)
             continue
 
         match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)", line)
@@ -1100,6 +1246,7 @@ def _parse_repair_draft(body: str, cfg: ConfirmConfig | None = None, f: Finding 
         if key == "scope" and value.strip():
             raise InvalidRepairRequest("repair draft scope must be a mapping")
         top[key] = value.strip()
+        index += 1
 
     missing = sorted(_RR_SEMANTIC_KEYS - top.keys())
     if missing:
@@ -1161,52 +1308,79 @@ def _parse_repair_draft(body: str, cfg: ConfirmConfig | None = None, f: Finding 
     )
 
 
-def _repair_allocation_key(cfg: ConfirmConfig, finding_id: str, draft: RepairDraft) -> str:
-    """Stable identity of the executable repair, excluding advisory formatting."""
+def _permissive_repair_draft(body: str) -> RepairDraft:
+    """Best-effort reader for agent-authored repair text.
 
-    def prose(value: str) -> str:
-        return re.sub(r"\s+", " ", value).strip()
-
-    scope: dict[str, list[str]] = {}
-    for key, values in draft.scope.items():
-        normalized = (
-            [str(_rr_resolved_path(cfg, value)) for value in values]
-            if key == "hunt_cfgs"
-            else [prose(value) for value in values]
-        )
-        scope[key] = sorted(normalized)
-    return _digest(
-        {
-            "finding_id": finding_id,
-            "target": draft.target,
-            "counterexample": str(_rr_resolved_path(cfg, draft.counterexample)),
-            "scope": scope,
-            "trigger": prose(draft.trigger),
-            "evidence": prose(draft.evidence),
-        }
-    )
-
-
-def _repair_draft_from_request(text: str) -> RepairDraft:
-    """Recover semantic content from a published RR, ignoring lifecycle/history.
-
-    This lets workspaces written by the earlier allocation-key algorithm retain
-    an unchanged DEFERRED request after upgrading: actual target/scope/evidence,
-    rather than the historical key formula, decides semantic equality.
+    The strict parser remains useful for a correction warning, but formatting or
+    schema disagreements must not block a non-empty handoff to the repair agent.
     """
-    frontmatter, payload = _repair_frontmatter(text)
-    semantic_frontmatter: list[str] = []
-    for line in frontmatter:
+    try:
+        return _parse_repair_draft(body)
+    except Exception:
+        try:
+            frontmatter, payload = _repair_frontmatter(body)
+        except Exception:
+            frontmatter, payload = [], body.strip()
+
+        top: dict[str, str] = {}
+        for line in frontmatter:
+            match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)", line)
+            if match is not None and match.group(1) not in top:
+                top[match.group(1)] = match.group(2).strip()
+        sections: dict[str, str] = {}
+        matches = list(re.finditer(r"(?m)^##\s+([^\n]+?)\s*$", payload))
+        for index, match in enumerate(matches):
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(payload)
+            sections.setdefault(match.group(1), payload[match.end() : end].strip())
+        return RepairDraft(
+            body,
+            tuple(frontmatter),
+            payload,
+            top.get("target", ""),
+            top.get("counterexample", "").strip("\"'"),
+            {},
+            sections.get("Trigger", ""),
+            sections.get("Evidence", ""),
+            sections.get("Proposed change", ""),
+        )
+
+
+def _repair_semantic_parts(draft: RepairDraft) -> tuple[list[str], str]:
+    frontmatter: list[str] = []
+    for line in draft.frontmatter:
         match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)", line)
         if match is not None and match.group(1) in _RR_LIFECYCLE_KEYS:
             continue
-        semantic_frontmatter.append(line)
+        frontmatter.append(line)
+    payload = draft.payload
     history = re.search(r"(?m)^##\s+History\s*$", payload)
     if history is not None:
         payload = payload[: history.start()].rstrip()
-    frontmatter_text = "\n".join(semantic_frontmatter)
-    semantic = f"---\n{frontmatter_text}\n---\n\n{payload}\n"
-    return _parse_repair_draft(semantic)
+    return frontmatter, payload.strip()
+
+
+def _repair_semantic_text(draft: RepairDraft) -> str:
+    frontmatter, payload = _repair_semantic_parts(draft)
+    if frontmatter:
+        head = "\n".join(frontmatter)
+        return f"---\n{head}\n---\n\n{payload}".strip()
+    return payload.strip()
+
+
+def _repair_allocation_key(cfg: ConfirmConfig, finding_id: str, draft: RepairDraft) -> str:
+    """Stable identity without requiring the agent payload to match a schema."""
+    del cfg
+    return _digest({"finding_id": finding_id, "draft": _repair_semantic_text(draft)})
+
+
+def _repair_draft_from_request(text: str) -> RepairDraft:
+    """Recover agent-authored content from a published RR.
+
+    This lets workspaces written by the earlier allocation-key algorithm retain
+    an unchanged DEFERRED request after upgrading: the raw handoff, excluding
+    dispatcher lifecycle and History, decides equality.
+    """
+    return _permissive_repair_draft(_repair_semantic_text(_permissive_repair_draft(text)))
 
 
 def _read_repair_draft(cfg: ConfirmConfig, f: Finding) -> RepairDraft:
@@ -1219,10 +1393,7 @@ def _read_repair_draft(cfg: ConfirmConfig, f: Finding) -> RepairDraft:
         raise InvalidRepairRequest(f"{f.id}: cannot read repair-request.body.md: {exc}") from exc
     if not body.strip():
         raise InvalidRepairRequest(f"{f.id}: repair-request.body.md is empty")
-    try:
-        return _parse_repair_draft(body, cfg, f)
-    except InvalidRepairRequest as exc:
-        raise InvalidRepairRequest(f"{f.id}: {exc}") from exc
+    return _permissive_repair_draft(body)
 
 
 def _merge_rr(
@@ -1237,18 +1408,21 @@ def _merge_rr(
     round_: int = 0,
     history: list[str] | None = None,
 ) -> str:
-    """Render a validated semantic draft with dispatcher-owned lifecycle."""
+    """Wrap a non-empty agent draft with dispatcher-owned lifecycle fields."""
     del cx_fallback
     if not finding_id or set(finding_id) - ID_CHARS or finding_id in {".", ".."}:
         raise InvalidRepairRequest(f"invalid stable finding_id {finding_id!r}")
-    draft = _parse_repair_draft(body)
+    draft = _permissive_repair_draft(body)
     lifecycle = f"id: {rid}\nfinding_id: {finding_id}\nbug_id: {bug_id}\nstatus: {status}\nround: {round_}\n"
     if allocation_key:
         lifecycle += f"allocation_key: {allocation_key}\n"
     entries = list(history or [f"- r{round_} (phase4-confirm): created from {finding_id}"])
-    semantic_frontmatter = "\n".join(draft.frontmatter)
+    semantic_frontmatter, payload = _repair_semantic_parts(draft)
+    semantic_text = "\n".join(semantic_frontmatter)
+    if semantic_text:
+        semantic_text += "\n"
     history_text = "\n".join(entries)
-    return f"---\n{lifecycle}{semantic_frontmatter}\n---\n\n{draft.payload.rstrip()}\n\n## History\n{history_text}\n"
+    return f"---\n{lifecycle}{semantic_text}---\n\n{payload}\n\n## History\n{history_text}\n"
 
 
 def _rr_history(text: str, round_: int) -> list[str]:
@@ -1643,7 +1817,7 @@ def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
         # Confirmation generation, repo identity, adapter, and prompts decide
         # whether Phase 4 must run again; they do not by themselves describe a
         # different repair. Terminal DEFERRED requests reopen only when this
-        # finding's semantic handoff (target/scope/trigger/evidence) changes.
+        # finding's raw handoff changes.
         allocation_key = _repair_allocation_key(cfg, o.finding.id, draft)
         records: list[tuple[str, Path, str, str, str]] = []
         for path in rr_dir.rglob("RR-*.md"):

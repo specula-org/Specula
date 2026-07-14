@@ -792,6 +792,20 @@ class RRDirCase(TmpCwd):
 
 
 class TestRepairPredicates(RRDirCase):
+    def test_executable_accepts_dispatcher_lifecycle_only(self) -> None:
+        text = "---\nid: RR-1\nstatus: OPEN\nround: 1\n---\n\nagent prose\n"
+        self.assertTrue(self.p._repair_request_is_executable(text, "RR-1"))
+
+    def test_executable_rejects_invalid_dispatcher_lifecycle(self) -> None:
+        cases = {
+            "wrong id": "---\nid: RR-2\nstatus: OPEN\nround: 1\n---\n",
+            "invalid status": "---\nid: RR-1\nstatus: PENDING\nround: 1\n---\n",
+            "non-digit round": "---\nid: RR-1\nstatus: OPEN\nround: one\n---\n",
+        }
+        for label, text in cases.items():
+            with self.subTest(label):
+                self.assertFalse(self.p._repair_request_is_executable(text, "RR-1"))
+
     def test_no_dir_no_requests(self) -> None:
         p = make_pipeline(["other|g|l|r"])
         self.assertFalse(p.has_any_request())

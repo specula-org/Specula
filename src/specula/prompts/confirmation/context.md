@@ -11,4 +11,5 @@
 
 ## Required skill
 Use the installed Specula skill {{bug_confirmation_skill}}. Read it in full and follow its
-Phase 1 investigation, Phase 2 reproduction, and repair-request format exactly.
+Phase 1 investigation and Phase 2 reproduction; use its repair-request format as
+the preferred draft shape.
