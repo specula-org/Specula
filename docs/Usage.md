@@ -23,7 +23,7 @@ The dependencies below are not installed by `specula setup`; install them separa
 | Standard POSIX utilities (`tee`, `tail`, `du`, and others) | Logging and process coordination |
 | `curl` or `wget` | Downloading TLA+ JARs during setup |
 | GitHub CLI (`gh`) | Issue and repository research |
-| Claude Code, Codex, or GitHub Copilot CLI | Agent execution |
+| Claude Code, Codex, GitHub Copilot CLI, OpenCode, or Pi | Agent execution |
 | Target language toolchain and test dependencies | Harness generation and bug reproduction |
 
 The first setup needs network access to GitHub, PyPI, and Maven Central. Agent runs also need access to the selected model provider and any remote repositories the analysis uses. Claude subscription quota monitoring specifically uses `curl`; if it is unavailable, the quota check warns and fails open rather than stopping the pipeline.
@@ -89,6 +89,18 @@ Copilot MCP registration is user-level and follows `COPILOT_HOME`; the global/lo
 
 Setup does **not** install `uv`, Python, a JDK, Maven, Git, `gh`, an agent CLI, target-language dependencies, GNU coreutils, or the optional sandbox dependencies. It does not install the `specula` command either; that is the `uv tool install -e .` step above.
 
+Install and authenticate the selected agent CLI separately. The OpenCode installation used by SREGym is:
+
+```bash
+npm install -g opencode-ai
+```
+
+The Pi installation used by tlaps-bench is:
+
+```bash
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+```
+
 The setup is safe to rerun when updating the checkout. Confirm the CLI afterward:
 
 ```bash
@@ -128,7 +140,7 @@ specula run \
   "name|owner/repository|language|reference"
 ```
 
-Supported adapters are `claude-code` (default), `codex`, and `copilot-cli`. Model names and effort values are interpreted by the selected agent.
+Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencode`, and `pi`. Model names and effort values are interpreted by the selected agent. OpenCode and Pi model names use `provider/model` syntax.
 
 ## Agents and Authentication
 
@@ -137,10 +149,16 @@ Supported adapters are `claude-code` (default), `codex`, and `copilot-cli`. Mode
 | Claude Code | `claude-code` | Existing Claude CLI profile; select another with `--claude-alias=NAME` |
 | Codex | `codex` | Existing Codex CLI login or configuration |
 | GitHub Copilot CLI | `copilot-cli` | Existing Copilot CLI login or token configuration |
+| OpenCode | `opencode` | Existing provider authentication configured in the native OpenCode CLI |
+| Pi | `pi` | Existing provider authentication configured in the native Pi CLI |
 
-Specula launches the installed agent CLI directly and uses its existing credentials. Authenticate the CLI before starting a pipeline. Claude Code runs default to maximum reasoning effort; Codex and Copilot use their configured defaults unless `--effort` is supplied.
+Specula launches the installed agent CLI directly and uses its existing credentials. Authentication is managed by each native CLI and model provider; authenticate the CLI before starting a pipeline. Specula does not install agent CLIs or credentials.
 
-Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. `--max-turns` maps to Copilot's autopilot continuation limit. Claude Code and Codex accept the option for adapter compatibility but do not enforce it. The reviews between steps pass a fixed value of 30 instead of the pipeline option; Claude Code and Codex still ignore it.
+Claude Code runs default to maximum reasoning effort; Codex and Copilot use their configured defaults unless `--effort` is supplied. Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. OpenCode passes effort through its native `--variant` option. Pi maps Specula's `max` effort to its native `xhigh` value.
+
+`--max-turns` maps to Copilot's autopilot continuation limit. Claude Code, Codex, OpenCode, and Pi accept the option for adapter compatibility but do not enforce it. OpenCode and Pi also do not support Specula's agent-side stop gate. The reviews between steps pass a fixed value of 30 instead of the pipeline option; these four adapters still ignore it.
+
+When configured in their native CLIs, OpenCode and Pi can use providers that expose local or OpenAI-compatible models.
 
 ## Output Structure
 
@@ -247,14 +265,14 @@ specula run [options] "name|owner/repository|language|reference"
 | Option | Purpose |
 |---|---|
 | `--dry-run` | Print the step commands without starting agents |
-| `--agent=NAME` | Select `claude-code`, `codex`, or `copilot-cli` |
+| `--agent=NAME` | Select `claude-code`, `codex`, `copilot-cli`, `opencode`, or `pi` |
 | `--model=NAME` | Override the configured model |
 | `--effort=LEVEL` | Override reasoning effort |
 | `--artifact=PATH` | Set the target source checkout |
 | `--tlc-memory-limit=SIZE` | Set the run-wide aggregate TLC heap + direct-memory budget; default is 80% of effective available memory at the first TLC start |
 | `--tlc-worker-limit=N` | Optionally bound aggregate TLC exploration workers; omitted means report-only |
 | `--max-parallel=N` | Set a hard concurrency limit. If omitted, ordinary steps run 1 target agent at a time and per-finding confirmation runs up to 4 Reproducer agents at a time |
-| `--max-turns=N` | Set Copilot's autopilot continuation limit; accepted but ignored by Claude Code and Codex |
+| `--max-turns=N` | Set Copilot's autopilot continuation limit; accepted but ignored by Claude Code, Codex, OpenCode, and Pi |
 | `--enable-reviews` | Enable reviews between steps |
 | `--legacy-confirm` | Use one confirmation agent instead of per-finding agents |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse earlier outputs |

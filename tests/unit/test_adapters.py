@@ -223,6 +223,15 @@ class AdapterCase(unittest.TestCase):
         return f"--prompt-file={p}"
 
 
+class AdapterDocumentation(unittest.TestCase):
+    def test_usage_docs_list_all_shipped_adapters(self) -> None:
+        usage = (REPO_ROOT / "docs" / "Usage.md").read_text()
+        for name in ("claude-code", "codex", "copilot-cli", "opencode", "pi"):
+            self.assertIn(name, usage)
+        self.assertIn("npm install -g opencode-ai", usage)
+        self.assertIn("@earendil-works/pi-coding-agent", usage)
+
+
 # ── claude-code (Python port) ────────────────────────────────────────────────
 class ClaudeCodeAdapter(AdapterCase):
     CMD = [sys.executable, str(CLAUDE_PY)]
