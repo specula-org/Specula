@@ -1,4 +1,4 @@
-"""Behavior tests for the agent adapters (claude-code, codex, copilot-cli, opencode).
+"""Behavior tests for the agent adapters (claude-code, codex, copilot-cli, opencode, pi).
 
 These pin the *command-construction contract*: given the launcher-facing flags,
 what does each adapter invoke the underlying CLI with, which flags map/skip, and
@@ -7,7 +7,7 @@ now that the characterization goldens are gone — a wrong flag here silently
 breaks every agent call.
 
 Each case runs the real adapter as a subprocess with a fake `claude`/`codex`/
-`copilot`/`opencode` on PATH that records the argv (and, for claude, stdin + the exported
+`copilot`/`opencode`/`pi` on PATH that records the argv (and, for Python adapters, stdin + the exported
 CLAUDE_CONFIG_DIR + a session-env marker) it observed, then asserts on the
 recording. `claude-code` is the Python port (adapters/claude_code.py); `codex`
 and `copilot-cli` are still bash (scripts/launch/adapters/*.sh).
@@ -34,6 +34,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CLAUDE_PY = REPO_ROOT / "src" / "specula" / "adapters" / "claude_code.py"
 OPENCODE_PY = REPO_ROOT / "src" / "specula" / "adapters" / "opencode.py"
 OPENCODE_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "opencode.sh"
+PI_PY = REPO_ROOT / "src" / "specula" / "adapters" / "pi.py"
+PI_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "pi.sh"
 CODEX_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "codex.sh"
 COPILOT_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "copilot-cli.sh"
 EVENT_STREAM_PY = REPO_ROOT / "src" / "specula" / "adapters" / "event_stream.py"
@@ -63,6 +65,8 @@ _VOLATILE = (
     "CODEX_EFFORT",
     "OPENCODE_MODEL",
     "OPENCODE_EFFORT",
+    "PI_MODEL",
+    "PI_EFFORT",
     "CLAUDECODE",
     "CLAUDE_CODE_SSE_PORT",
     "CLAUDE_CODE_ENTRYPOINT",
@@ -131,11 +135,13 @@ class AdapterCase(unittest.TestCase):
             "codex": "CODEX_MODEL",
             "copilot": "COPILOT_MODEL",
             "opencode": "OPENCODE_MODEL",
+            "pi": "PI_MODEL",
         }.get(name)
         effort_var = {
             "claude": "CLAUDE_EFFORT",
             "codex": "CODEX_EFFORT",
             "opencode": "OPENCODE_EFFORT",
+            "pi": "PI_EFFORT",
         }.get(name)
         if model_var:
             lines.append(f'printf "%s\\n" "${{{model_var}-<unset>}}" > "${{ADAPTER_MODEL_ENV_FILE:-/dev/null}}"')
@@ -1025,6 +1031,270 @@ class OpenCodeAdapter(AdapterCase):
         )
         self.assertEqual(result["returncode"], 0, result["stderr"])
         self.assertIn("Adapter: opencode", result["stdout"])
+        self.assertIn("--prompt-file", result["stdout"])
+
+
+# ── pi (Python) ──────────────────────────────────────────────────────────────
+class PiAdapter(AdapterCase):
+    CMD = [sys.executable, str(PI_PY)]
+    RECORDS = [
+        {
+            "type": "session",
+            "version": 3,
+            "id": "pi_session",
+            "timestamp": "2026-07-14T00:00:00.000Z",
+            "cwd": "/workspace",
+        },
+        {
+            "type": "message_update",
+            "assistantMessageEvent": {"type": "text_delta", "delta": "working"},
+        },
+        {
+            "type": "tool_execution_start",
+            "toolName": "read",
+            "args": {"path": "src/main.py"},
+        },
+        {
+            "type": "message_end",
+            "message": {
+                "role": "user",
+                "usage": {
+                    "input": 100,
+                    "output": 100,
+                    "cacheRead": 100,
+                    "cacheWrite": 100,
+                    "cost": {"total": 100.0},
+                },
+            },
+        },
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "usage": {
+                    "input": 10,
+                    "output": 20,
+                    "cacheRead": 30,
+                    "cacheWrite": 40,
+                    "cost": {"total": 0.25},
+                },
+            },
+        },
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "usage": {
+                    "input": 1,
+                    "output": 2,
+                    "cacheRead": 3,
+                    "cacheWrite": 4,
+                    "cost": {"total": 0.75},
+                },
+            },
+        },
+    ]
+    FIXTURE = "\n".join(json.dumps(record) for record in RECORDS) + "\n"
+
+    def invoke(
+        self,
+        flags: list[str],
+        *,
+        env_extra: dict[str, str] | None = None,
+        with_fake: bool = True,
+    ) -> AdapterRun:
+        return self.run_adapter(
+            self.CMD,
+            flags,
+            fake_name="pi",
+            fixture_text=self.FIXTURE,
+            record_extra=True,
+            env_extra=env_extra,
+            with_fake=with_fake,
+        )
+
+    def base_flags(self, base: Path) -> list[str]:
+        return [self.with_prompt_file(base), f"--log={base}/out.log"]
+
+    def test_baseline_command_uses_environment_defaults_and_stdin(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"PI_MODEL": "openai/gpt-5.5", "PI_EFFORT": "high"},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(
+            result["argv"],
+            [
+                "--print",
+                "--mode",
+                "json",
+                "--no-session",
+                "--approve",
+                "--model",
+                "openai/gpt-5.5",
+                "--thinking",
+                "high",
+            ],
+        )
+        self.assertEqual(result["stdin"], "the prompt\n")
+        self.assertEqual(result["modelenv"], "<unset>")
+        self.assertEqual(result["effortenv"], "<unset>")
+
+    def test_max_effort_maps_to_xhigh(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(self.base_flags(base) + ["--effort=max"])
+        self.assertEqual(
+            result["argv"],
+            ["--print", "--mode", "json", "--no-session", "--approve", "--thinking", "xhigh"],
+        )
+
+    def test_all_other_efforts_forward_unchanged(self) -> None:
+        for effort in ("low", "medium", "high", "xhigh"):
+            with self.subTest(effort=effort):
+                base = self.sandbox()
+                result = self.invoke(self.base_flags(base) + [f"--effort={effort}"])
+                self.assertEqual(result["argv"][-2:], ["--thinking", effort])
+
+    def test_flag_values_override_environment_defaults(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base) + ["--model=flag-model", "--effort=medium"],
+            env_extra={"PI_MODEL": "env-model", "PI_EFFORT": "low"},
+        )
+        self.assertEqual(
+            result["argv"],
+            [
+                "--print",
+                "--mode",
+                "json",
+                "--no-session",
+                "--approve",
+                "--model",
+                "flag-model",
+                "--thinking",
+                "medium",
+            ],
+        )
+        self.assertEqual(result["modelenv"], "<unset>")
+        self.assertEqual(result["effortenv"], "<unset>")
+
+    def test_explicit_empty_model_and_effort_clear_environment_defaults(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base) + ["--model=", "--effort="],
+            env_extra={"PI_MODEL": "env-model", "PI_EFFORT": "low"},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["argv"], ["--print", "--mode", "json", "--no-session", "--approve"])
+        self.assertEqual(result["modelenv"], "<unset>")
+        self.assertEqual(result["effortenv"], "<unset>")
+
+    def test_compatibility_flags_are_accepted_but_not_forwarded(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(self.base_flags(base) + ["--max-turns=8", "--background", "--claude-alias=profile"])
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["argv"], ["--print", "--mode", "json", "--no-session", "--approve"])
+
+    def test_large_prompt_file_uses_stdin(self) -> None:
+        base = self.sandbox()
+        prompt = "x" * 200_000
+        result = self.invoke([self.with_prompt_file(base, prompt), f"--log={base}/out.log"])
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["stdin"], prompt)
+        self.assertEqual(result["argv"], ["--print", "--mode", "json", "--no-session", "--approve"])
+
+    def test_readable_deltas_and_tool_summaries_reach_log(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(activity.read_text(), self.FIXTURE)
+        self.assertEqual((base / "out.log").read_text(), "working\nreading src/main.py\n")
+
+    def test_session_header_and_assistant_usage_reach_usage_sidecar(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(self.base_flags(base))
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(
+            json.loads((base / "out.usage.json").read_text()),
+            {
+                "agent": "pi",
+                "session_id": "pi_session",
+                "session_file": None,
+                "total_cost_usd": 1.0,
+                "usage": {
+                    "input_tokens": 11,
+                    "cached_input_tokens": 33,
+                    "cache_write_input_tokens": 44,
+                    "output_tokens": 22,
+                    "reasoning_output_tokens": 0,
+                    "total_tokens": 110,
+                },
+            },
+        )
+
+    @unittest.skipUnless(Path("/proc").is_dir(), "requires procfs")
+    def test_postprocessing_failure_defers_to_native_status(self) -> None:
+        for native_status, expected in ((0, 1), (9, 9), (75, 75)):
+            with self.subTest(native_status=native_status):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                result = self.invoke(
+                    [self.with_prompt_file(base), "--log=/proc/specula-pi-adapter.log"],
+                    env_extra={
+                        "SPECULA_ACTIVITY_LOG": str(activity),
+                        "ADAPTER_EXIT_CODE": str(native_status),
+                    },
+                )
+                self.assertEqual(result["returncode"], expected, result["stderr"])
+                self.assertEqual(activity.read_text(), self.FIXTURE)
+
+    def test_missing_executable_returns_127_and_writes_diagnostic(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(self.base_flags(base), env_extra={"PATH": ""}, with_fake=False)
+        self.assertEqual(result["returncode"], 127, result["stderr"])
+        self.assertIn("pi adapter: failed to launch pi", (base / "out.log").read_text())
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["agent"], "pi")
+        self.assertIsNone(usage["session_id"])
+        self.assertEqual(usage["usage"]["total_tokens"], 0)
+
+    def test_invalid_options_fail_before_launch(self) -> None:
+        for name, flags, diagnostic in (
+            (
+                "both-prompts",
+                ["--prompt=inline", self.with_prompt_file(self.sandbox()), f"--log={self.sandbox()}/out.log"],
+                "mutually exclusive",
+            ),
+            ("neither-prompt", [f"--log={self.sandbox()}/out.log"], "one of --prompt or --prompt-file is required"),
+            ("missing-log", [self.with_prompt_file(self.sandbox())], "--log is required"),
+            (
+                "missing-prompt-file",
+                [f"--prompt-file={self.sandbox()}/missing.md", f"--log={self.sandbox()}/out.log"],
+                "prompt file not found",
+            ),
+            ("unknown-option", [*self.base_flags(self.sandbox()), "--bogus"], "unknown option"),
+        ):
+            with self.subTest(name=name):
+                result = self.invoke(flags)
+                self.assertEqual(result["returncode"], 1)
+                self.assertIn(diagnostic, result["stderr"])
+                self.assertEqual(result["argv"], [])
+
+    def test_executable_shim_reaches_python_help(self) -> None:
+        self.assertTrue(PI_SH.stat().st_mode & stat.S_IXUSR)
+        result = self.run_adapter(
+            [str(PI_SH)],
+            ["--help"],
+            fake_name="pi",
+            fixture_text=self.FIXTURE,
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertIn("Adapter: pi", result["stdout"])
         self.assertIn("--prompt-file", result["stdout"])
 
 
