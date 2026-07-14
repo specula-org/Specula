@@ -12,6 +12,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SETUP_SCRIPT = REPO_ROOT / "scripts" / "infra" / "setup.sh"
+COPILOT_MCP_HELPER = REPO_ROOT / "scripts" / "infra" / "copilot_mcp.sh"
 SKILL_INSTALLER = REPO_ROOT / "src" / "specula" / "skill_install.py"
 SETUP_HELP = """\
 Usage:
@@ -129,8 +130,10 @@ class TestSetupHelp(unittest.TestCase):
 class TestSetupPythonIsolation(unittest.TestCase):
     def test_setup_invokes_trusted_installers_in_isolated_mode(self) -> None:
         setup = SETUP_SCRIPT.read_text()
+        copilot_mcp = COPILOT_MCP_HELPER.read_text()
 
         self.assertIn('cd "$PROJECT_ROOT"', setup)
+        self.assertIn('source "$SCRIPT_DIR/copilot_mcp.sh"', setup)
         self.assertIn('python3 -I "$PROJECT_ROOT/src/specula/skill_install.py"', setup)
         self.assertIn('python3 -I "$SCRIPT_DIR/setup_codex_plugin.py"', setup)
         self.assertIn('python3 -I -m venv "$venv_dir"', setup)
@@ -139,6 +142,13 @@ class TestSetupPythonIsolation(unittest.TestCase):
         self.assertIn('COPILOT_USER_CONFIG_DIR="${COPILOT_HOME:-$HOME/.copilot}"', setup)
         self.assertIn('--shadow-root "$COPILOT_USER_CONFIG_DIR/skills"', setup)
         self.assertIn('--legacy-root "$HOME/.github/skills"', setup)
+        self.assertIn('COPILOT_HOME="$config_dir" copilot mcp add', copilot_mcp)
+        self.assertIn("copilot --version </dev/null", copilot_mcp)
+        self.assertIn("copilot mcp list --json </dev/null", copilot_mcp)
+        self.assertIn('"$server_path" </dev/null 2>&1', copilot_mcp)
+        self.assertIn('local config_file="$config_dir/mcp-config.json"', copilot_mcp)
+        self.assertIn("python3 -I -c", copilot_mcp)
+        self.assertNotIn("copilot mcp remove", copilot_mcp)
         self.assertNotIn("python3 -m specula.skill_install", setup)
 
     def test_skill_installer_ignores_hostile_cwd_and_pythonpath(self) -> None:
