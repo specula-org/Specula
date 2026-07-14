@@ -429,16 +429,35 @@ class TestCopilotMcpSetup(unittest.TestCase):
             self.assertEqual(calls[-1]["argv"][:3], ["mcp", "add", "tracedebugger"])
             self.assertIn("Copilot MCP configured: tracedebugger", result.stdout)
 
+    def test_supported_cli_versions_attempt_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            for version in ("1.0.21", "1.0.69"):
+                with self.subTest(version=version):
+                    case_root = root / version
+                    case_root.mkdir()
+                    entry = f"tracedebugger|{case_root / 'python'}|{case_root / 'mcp_server.py'}"
+
+                    result, calls = self.run_setup(case_root, [entry], version=version)
+
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(
+                        [call["argv"][:3] for call in calls],
+                        [["--version"], ["mcp", "list", "--json"], ["mcp", "add", "tracedebugger"]],
+                    )
+                    self.assertIn("Copilot MCP configured: tracedebugger", result.stdout)
+
     def test_old_cli_warns_without_attempting_configuration(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             entry = f"tracedebugger|{root / 'python'}|{root / 'mcp_server.py'}"
 
-            result, calls = self.run_setup(root, [entry], version="1.0.69")
+            result, calls = self.run_setup(root, [entry], version="1.0.20")
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual([call["argv"] for call in calls], [["--version"]])
-            self.assertIn("requires Copilot CLI 1.0.70 or newer", result.stdout)
+            self.assertIn("requires Copilot CLI 1.0.21 or newer", result.stdout)
 
     def test_failed_or_unrecognized_version_warns_without_configuration(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

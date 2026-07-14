@@ -62,7 +62,7 @@ codex mcp add tracedebugger \
 	"$PWD/tools/trace_debugger/.venv/bin/python" \
 	"$PWD/tools/trace_debugger/mcp_server.py"
 
-# for GitHub Copilot CLI 1.0.70+
+# for GitHub Copilot CLI 1.0.21+
 copilot mcp add tracedebugger \
     --env "SPECULA_ROOT=$PWD" -- \
     "$PWD/tools/trace_debugger/.venv/bin/python" \

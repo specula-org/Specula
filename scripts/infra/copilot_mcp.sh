@@ -26,7 +26,7 @@ copilot_mcp_cli_available() {
   ((
     version_major > 1 ||
       (version_major == 1 && version_minor > 0) ||
-      (version_major == 1 && version_minor == 0 && version_patch >= 70)
+      (version_major == 1 && version_minor == 0 && version_patch >= 21)
   ))
 }
 
@@ -220,7 +220,7 @@ setup_copilot_mcp_servers() {
   fi
 
   if ! copilot_mcp_cli_available "$config_dir"; then
-    print_warning "Automatic Copilot MCP setup requires Copilot CLI 1.0.70 or newer; upgrade to the latest Copilot CLI."
+    print_warning "Automatic Copilot MCP setup requires Copilot CLI 1.0.21 or newer; upgrade to the latest Copilot CLI."
     return 0
   fi
 
