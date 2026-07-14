@@ -33,6 +33,13 @@ class StreamStatus:
     usage: dict[str, object]
 
 
+@dataclass(frozen=True)
+class _LogEvent:
+    text: str = ""
+    fragment: bool = False
+    message_end: bool = False
+
+
 @dataclass
 class UsageTotals:
     session_id: str | None = None
@@ -102,6 +109,11 @@ def readable(text: str) -> str:
     return "\n".join(line.rstrip() for line in text.split("\n")).strip("\n")
 
 
+def _readable_fragment(text: str) -> str:
+    """Sanitize streamed text without changing its spacing or line breaks."""
+    return _CONTROL_KEEP_NL_RE.sub(" ", _strip_escapes(text))
+
+
 def _string_arg(arguments: object, *keys: str) -> str:
     if not isinstance(arguments, dict):
         return ""
@@ -141,8 +153,12 @@ def tool_summary(name: str, arguments: object) -> str:
     return f"using {name}{detail}"
 
 
-def _text_event(text: str, concise: bool) -> str:
-    return summary(text) if concise else readable(text)
+def _line_event(text: str) -> _LogEvent:
+    return _LogEvent(text=text)
+
+
+def _text_event(text: str, concise: bool) -> _LogEvent:
+    return _line_event(summary(text) if concise else readable(text))
 
 
 def _diagnostic_message(value: object) -> str:
@@ -156,12 +172,12 @@ def _diagnostic_message(value: object) -> str:
     return ""
 
 
-def _diagnostic_event(kind: str, message: str, concise: bool) -> list[str]:
-    text = _text_event(message, concise)
-    return [f"adapter {kind}: {text}"] if text else []
+def _diagnostic_event(kind: str, message: str, concise: bool) -> list[_LogEvent]:
+    text = _text_event(message, concise).text
+    return [_line_event(f"adapter {kind}: {text}")] if text else []
 
 
-def _claude_events(record: object, concise: bool) -> list[str]:
+def _claude_events(record: object, concise: bool) -> list[_LogEvent]:
     if not isinstance(record, dict):
         return []
     if record.get("type") == "result":
@@ -173,7 +189,7 @@ def _claude_events(record: object, concise: bool) -> list[str]:
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, list):
         return []
-    events: list[str] = []
+    events: list[_LogEvent] = []
     for block in content:
         if not isinstance(block, dict):
             continue
@@ -182,11 +198,11 @@ def _claude_events(record: object, concise: bool) -> list[str]:
         if block.get("type") == "text" and isinstance(text, str):
             events.append(_text_event(text, concise))
         elif block.get("type") == "tool_use" and isinstance(name, str):
-            events.append(tool_summary(name, block.get("input")))
+            events.append(_line_event(tool_summary(name, block.get("input"))))
     return events
 
 
-def _copilot_events(record: object, concise: bool) -> list[str]:
+def _copilot_events(record: object, concise: bool) -> list[_LogEvent]:
     if not isinstance(record, dict):
         return []
     data = record.get("data")
@@ -213,11 +229,11 @@ def _copilot_events(record: object, concise: bool) -> list[str]:
     if record.get("type") == "tool.execution_start" and isinstance(tool_name, str):
         if tool_name == "report_intent":
             return []
-        return [tool_summary(tool_name, data.get("arguments"))]
+        return [_line_event(tool_summary(tool_name, data.get("arguments")))]
     return []
 
 
-def _codex_events(record: object, concise: bool) -> list[str]:
+def _codex_events(record: object, concise: bool) -> list[_LogEvent]:
     if not isinstance(record, dict):
         return []
     record_type = record.get("type")
@@ -242,18 +258,25 @@ def _codex_events(record: object, concise: bool) -> list[str]:
     if record_type != "item.started" or not isinstance(item_type, str):
         return []
     if item_type == "command_execution":
-        return [tool_summary(item_type, {"command": item.get("command")})]
+        return [_line_event(tool_summary(item_type, {"command": item.get("command")}))]
     if item_type in {"mcp_tool_call", "web_search"}:
         name = item.get("tool") or item_type
-        return [tool_summary(str(name), item.get("arguments"))]
+        return [_line_event(tool_summary(str(name), item.get("arguments")))]
     return []
 
 
-def _opencode_events(record: object, concise: bool) -> list[str]:
+def _opencode_events(record: object, concise: bool) -> list[_LogEvent]:
     if not isinstance(record, dict):
         return []
     if record.get("type") == "error":
-        return _diagnostic_event("error", _diagnostic_message(record.get("error")), concise)
+        error = record.get("error")
+        message = _diagnostic_message(error)
+        if isinstance(error, dict):
+            message = _diagnostic_message(error.get("data")) or message
+            name = error.get("name")
+            if not message and isinstance(name, str):
+                message = name
+        return _diagnostic_event("error", message, concise)
     part = record.get("part")
     if not isinstance(part, dict):
         return []
@@ -265,30 +288,55 @@ def _opencode_events(record: object, concise: bool) -> list[str]:
     name = part.get("tool")
     state = part.get("state")
     arguments = state.get("input") if isinstance(state, dict) else None
-    return [tool_summary(name, arguments)] if isinstance(name, str) else []
+    return [_line_event(tool_summary(name, arguments))] if isinstance(name, str) else []
 
 
-def _pi_events(record: object, concise: bool) -> list[str]:
+def _pi_message_text(message: object) -> str:
+    if not isinstance(message, dict) or message.get("role") != "assistant":
+        return ""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    return "".join(
+        text
+        for block in content
+        if isinstance(block, dict) and block.get("type") == "text" and isinstance((text := block.get("text")), str)
+    )
+
+
+def _pi_events(record: object, concise: bool) -> list[_LogEvent]:
     if not isinstance(record, dict):
         return []
     record_type = record.get("type")
     if record_type == "error" or record_type == "warning":
         nested = record.get(record_type)
-        message = _diagnostic_message(nested) or _diagnostic_message(record)
-        return _diagnostic_event(record_type, message, concise)
+        diagnostic = _diagnostic_message(nested) or _diagnostic_message(record)
+        return _diagnostic_event(record_type, diagnostic, concise)
     if record_type == "message_update":
         update = record.get("assistantMessageEvent")
         if isinstance(update, dict) and update.get("type") == "text_delta":
             delta = update.get("delta")
-            return [_text_event(delta, concise)] if isinstance(delta, str) else []
+            if not isinstance(delta, str) or concise:
+                return []
+            return [_LogEvent(text=_readable_fragment(delta), fragment=True)]
         return []
+    if record_type == "message_end":
+        message = record.get("message")
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            return []
+        if not concise:
+            return [_LogEvent(message_end=True)]
+        text = _pi_message_text(message)
+        return [_text_event(text, concise=True)] if text else []
     if record_type == "tool_execution_start":
         name = record.get("toolName")
-        return [tool_summary(name, record.get("args"))] if isinstance(name, str) else []
+        return [_line_event(tool_summary(name, record.get("args")))] if isinstance(name, str) else []
     return []
 
 
-_PARSERS: dict[str, Callable[[object, bool], list[str]]] = {
+_PARSERS: dict[str, Callable[[object, bool], list[_LogEvent]]] = {
     "claude-code": _claude_events,
     "codex": _codex_events,
     "copilot-cli": _copilot_events,
@@ -379,7 +427,7 @@ def _is_tool_echo(adapter_name: str, record: object) -> bool:
     return False  # copilot-cli: no pinned event for command output, keep it whole
 
 
-def _read_line(adapter_name: str, line: str, concise: bool) -> tuple[bool, list[str], object]:
+def _read_line(adapter_name: str, line: str, concise: bool) -> tuple[bool, list[_LogEvent], object]:
     """One line -> (persist raw?, readable events, parsed record or sentinel).
 
     Never raises on malformed input: a line that is not JSON is the CLI's own
@@ -392,10 +440,10 @@ def _read_line(adapter_name: str, line: str, concise: bool) -> tuple[bool, list[
             # Pre-JSON Copilot output is the agent's response, not a diagnostic
             # channel. Preserve wording such as "tests failed before the fix"
             # and literal "API Error:" markers without guessing their meaning.
-            return True, [text] if text else [], _INVALID_RECORD
+            return True, [_line_event(text)] if text else [], _INVALID_RECORD
         is_error = any(term in text.casefold() for term in ("error", "failed", "require", "invalid", "unknown"))
         if text and (is_error or not concise):
-            return True, [f"adapter error: {text}" if is_error else text], _INVALID_RECORD
+            return True, [_line_event(f"adapter error: {text}" if is_error else text)], _INVALID_RECORD
         return True, [], _INVALID_RECORD
     if _is_tool_echo(adapter_name, record):
         return False, [], record
@@ -408,7 +456,7 @@ def parse_events(adapter_name: str, lines: list[str], *, concise: bool = True) -
         return []
     events: list[str] = []
     for line in lines:
-        events.extend(_read_line(adapter_name, line, concise)[1])
+        events.extend(event.text for event in _read_line(adapter_name, line, concise)[1] if event.text)
     return events
 
 
@@ -441,6 +489,8 @@ def stream_events(
     adapter_name = _ADAPTER_NAMES[adapter]
     usage_totals = UsageTotals()
     last_event = ""
+    fragment_active = False
+    line_open = False
     terminal_record: object | None = None
     plain_diagnostics: list[str] = []
     raw_failures: list[str] = []
@@ -472,8 +522,21 @@ def stream_events(
                 raw_log.close()
             raw_log = None
 
+    def write_readable(data: str) -> None:
+        nonlocal log
+        if not data or log is None:
+            return
+        try:
+            log.write(data)
+            log.flush()
+        except OSError as exc:
+            readable_failures.append(f"readable log {log_path}: {exc}")
+            with contextlib.suppress(OSError):
+                log.close()
+            log = None
+
     def handle_line(raw_line: bytes, *, raw_already_written: bool) -> None:
-        nonlocal last_event, log, terminal_record
+        nonlocal fragment_active, last_event, line_open, terminal_record
         decoded = raw_line.decode(errors="replace")
         keep, events, record = _read_line(adapter_name, decoded, concise=False)
         _accumulate_usage(adapter_name, record, usage_totals)
@@ -488,18 +551,28 @@ def stream_events(
         if keep and not raw_already_written:
             write_raw(raw_line)
         for event in events:
-            if not event or event == last_event:
+            if event.message_end:
+                if fragment_active and line_open:
+                    write_readable("\n")
+                fragment_active = False
+                line_open = False
                 continue
-            last_event = event
-            if log is not None:
-                try:
-                    log.write(event.rstrip("\n") + "\n")
-                    log.flush()
-                except OSError as exc:
-                    readable_failures.append(f"readable log {log_path}: {exc}")
-                    with contextlib.suppress(OSError):
-                        log.close()
-                    log = None
+            if event.fragment:
+                if not event.text:
+                    continue
+                last_event = ""
+                fragment_active = True
+                write_readable(event.text)
+                line_open = not event.text.endswith("\n")
+                continue
+            if not event.text or event.text == last_event:
+                continue
+            if fragment_active and line_open:
+                write_readable("\n")
+            fragment_active = False
+            line_open = False
+            last_event = event.text
+            write_readable(event.text.rstrip("\n") + "\n")
 
     try:
         read1 = getattr(source, "read1", None)

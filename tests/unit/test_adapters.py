@@ -1216,13 +1216,51 @@ class PiAdapter(AdapterCase):
     def test_readable_deltas_and_tool_summaries_reach_log(self) -> None:
         base = self.sandbox()
         activity = base / "out.activity.jsonl"
-        result = self.invoke(
+        records = [
+            {
+                "type": "message_update",
+                "assistantMessageEvent": {"type": "text_delta", "delta": "work"},
+            },
+            {
+                "type": "message_update",
+                "assistantMessageEvent": {"type": "text_delta", "delta": "ing"},
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "working"}],
+                },
+            },
+            {
+                "type": "tool_execution_start",
+                "toolName": "read",
+                "args": {"path": "src/main.py"},
+            },
+            {
+                "type": "message_update",
+                "assistantMessageEvent": {"type": "text_delta", "delta": "done"},
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "done"}],
+                },
+            },
+        ]
+        fixture = "\n".join(json.dumps(record) for record in records) + "\n"
+        result = self.run_adapter(
+            self.CMD,
             self.base_flags(base),
+            fake_name="pi",
+            fixture_text=fixture,
+            record_extra=True,
             env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
         )
         self.assertEqual(result["returncode"], 0, result["stderr"])
-        self.assertEqual(activity.read_text(), self.FIXTURE)
-        self.assertEqual((base / "out.log").read_text(), "working\nreading src/main.py\n")
+        self.assertEqual(activity.read_text(), fixture)
+        self.assertEqual((base / "out.log").read_text(), "working\nreading src/main.py\ndone\n")
 
     def test_session_header_and_assistant_usage_reach_usage_sidecar(self) -> None:
         base = self.sandbox()
