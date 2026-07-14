@@ -628,6 +628,8 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
                         correction_verdict,
                     )
                 )
+            except RateLimited:
+                raise
             except Exception as exc:
                 if original is None:
                     raise

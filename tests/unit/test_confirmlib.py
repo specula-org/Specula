@@ -616,7 +616,7 @@ class TestDriver(ConfirmCase):
                 draft.write_text("prose only")
                 return (0, _response("PENDING REPAIR"))
             draft.unlink()
-            return (75, "")
+            return (1, "")
 
         with mock.patch.object(C, "run_agent_blocking", pending):
             self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 0)
@@ -625,6 +625,41 @@ class TestDriver(ConfirmCase):
         rr = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
         self.assertIn("prose only", rr.read_text())
         self.assertFalse((fdir / "error.txt").exists())
+
+    def test_advisory_correction_rate_limit_stops_serial_batch(self) -> None:
+        findings = [{"id": fid, "source": "model-checking", "title": fid, "summary": "s"} for fid in ("MC-1", "MC-2")]
+        ws = self.seed("T", findings)
+        first_fdir = ws.work_dir("T") / "confirmation" / "MC-1"
+        calls: list[str] = []
+
+        def rate_limited_correction(
+            _adapter: Path,
+            prompt: str,
+            *_args: object,
+            **_kwargs: object,
+        ) -> tuple[int, str]:
+            calls.append(prompt.splitlines()[0])
+            if len(calls) == 1:
+                first_fdir.mkdir(parents=True, exist_ok=True)
+                (first_fdir / "repair-request.body.md").write_text("prose only")
+                return (0, _response("PENDING REPAIR"))
+            if len(calls) == 2:
+                return (75, "")
+            raise AssertionError("later finding started after repair-draft correction was rate-limited")
+
+        with mock.patch.object(C, "run_agent_blocking", rate_limited_correction):
+            rc = C.run_parallel_confirmation(self.cfg(ws, "T", max_parallel=1))
+
+        self.assertEqual(rc, 75)
+        self.assertEqual(
+            calls,
+            ["# Confirm ONE finding: MC-1", "# Best-effort repair-draft correction: MC-1"],
+        )
+        report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
+        self.assertIn("| 1 | MC-1 | INCOMPLETE |", report)
+        self.assertIn("| 2 | MC-2 | INCOMPLETE |", report)
+        self.assertIn("not started because another finding was rate-limited", report)
+        self.assertFalse((ws.work_dir("T") / "spec" / "repair-requests").exists())
 
     def test_block_style_scope_draft_needs_no_correction(self) -> None:
         data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
