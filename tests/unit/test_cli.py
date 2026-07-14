@@ -120,3 +120,21 @@ class TestShim(unittest.TestCase):
             text=True,
         )
         self.assertEqual((r.returncode, r.stdout, r.stderr), (0, BASH_HELP, ""))
+
+    def test_subcommand_help_uses_public_cli_and_succeeds(self) -> None:
+        for command, _, _ in cli.COMMANDS:
+            if command == "setup":
+                continue  # setup's full public path is exercised hermetically in test_setup_security.py
+            with self.subTest(command=command):
+                r = subprocess.run(
+                    ["bash", str(REPO_ROOT / "specula"), command, "--help"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                self.assertEqual((r.returncode, r.stderr), (0, ""), r.stdout)
+                self.assertIn(f"specula {command}", r.stdout)
+                self.assertNotIn("bash scripts/", r.stdout)
+                self.assertNotIn("launch_", r.stdout)
+                self.assertNotIn("Claude Code agent", r.stdout)
+                self.assertNotIn("claude CLI installed", r.stdout)

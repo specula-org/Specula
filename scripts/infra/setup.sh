@@ -4,6 +4,36 @@
 
 set -euo pipefail
 
+usage() {
+  cat <<'EOF'
+Usage:
+  specula setup
+
+Install Specula's TLA+ tools, Python environments, agent skills, and MCP integrations.
+
+This interactive command may download dependencies, build local tools, and
+update agent configuration.
+
+Options:
+  -h, --help  Show this help and exit
+EOF
+}
+
+if (( $# == 0 )); then
+  :
+elif (( $# == 1 )) && [[ "$1" == "-h" || "$1" == "--help" ]]; then
+  usage
+  exit 0
+else
+  unexpected="$1"
+  if [[ "$unexpected" == "-h" || "$unexpected" == "--help" ]]; then
+    unexpected="$2"
+  fi
+  printf "specula setup: unexpected argument '%s'\n\n" "$unexpected" >&2
+  usage >&2
+  exit 2
+fi
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'

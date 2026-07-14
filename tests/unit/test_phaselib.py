@@ -138,7 +138,7 @@ PHASES: list[PhaseSpec] = [
         "key": "bug_classification",
         "artifact": False,
         "inputs": ["spec/confirmed-bugs.md"],
-        "fail": "Run Phase 4a (launch_bug_confirmation.sh) first.",
+        "fail": "Run Phase 4a ('specula confirm') first.",
         "ok": "All prerequisites OK.",
         "log": "bug-classification.log",
         "prompt": ".bug-classification-prompt.md",
@@ -148,6 +148,14 @@ PHASES: list[PhaseSpec] = [
     },
 ]
 BY_KEY = {p["key"]: p for p in PHASES}
+PUBLIC_COMMANDS = {
+    "code_analysis": "analyze",
+    "spec_generation": "specgen",
+    "harness_generation": "harness",
+    "spec_validation": "validate",
+    "bug_confirmation": "confirm",
+    "bug_classification": "classify",
+}
 
 
 class PhaseCase(unittest.TestCase):
@@ -563,7 +571,9 @@ class TestArgErrors(PhaseCase):
                 rc, out = self.run_phase(spec["key"], ["--help"])
                 self.assertEqual(rc, 0)
                 self.assertIn("Usage:", out)
-                self.assertIn(f"launch_{spec['key']}.sh", out)
+                self.assertIn(f"specula {PUBLIC_COMMANDS[spec['key']]}", out)
+                self.assertNotIn("bash scripts/", out)
+                self.assertNotIn("launch_", out)
                 self.assertIn("--model=NAME", out)
                 self.assertIn("--effort=LEVEL", out)
 
@@ -1904,11 +1914,17 @@ class TestReviewPhase(PhaseCase):
         self.assertIn("Unknown agent 'bogus'", out)
 
     def test_help(self) -> None:
-        rc, out = self.run_phase("review", ["analysis", "--help"])
-        self.assertEqual(rc, 0)
-        self.assertIn("Run a Claude Code review agent", out)
-        self.assertIn("--model=NAME", out)
-        self.assertIn("--effort=LEVEL", out)
+        for argv in (["--help"], ["-h"], ["analysis", "--help"], ["analysis", "-h"]):
+            with self.subTest(argv=argv):
+                rc, out = self.run_phase("review", argv)
+                self.assertEqual(rc, 0)
+                self.assertIn("Run a review agent", out)
+                self.assertIn("specula review <phase>", out)
+                self.assertIn("--model=NAME", out)
+                self.assertIn("--effort=LEVEL", out)
+                self.assertIn(".specula-output/review-analysis.md", out)
+                self.assertIn(".specula-output/spec/review-specgen.md", out)
+                self.assertIn(".specula-output/spec/review-validation.md", out)
 
     def test_review_streams_activity_through_shared_monitor(self) -> None:
         event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "reviewing"}})

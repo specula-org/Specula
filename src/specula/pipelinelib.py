@@ -69,13 +69,13 @@ Runs all phases with optional review agents between each phase.
 All agent logs and review results are saved for inspection.
 
 Usage:
-  bash scripts/launch/launch_pipeline.sh [options] "name|github|lang|reference" [...]
+  specula run [options] "name|github|lang|reference" [...]
 
 Example (single system):
-  bash scripts/launch/launch_pipeline.sh "cometbft|cometbft/cometbft|Go|Tendermint BFT"
+  specula run "cometbft|cometbft/cometbft|Go|Tendermint BFT"
 
 Example (multiple systems):
-  bash scripts/launch/launch_pipeline.sh \\
+  specula run \\
     "braft|brpc/braft|C++|Raft (Ongaro 2014)" \\
     "sofa-jraft|sofastack/sofa-jraft|Java|Raft (Ongaro 2014)"
 

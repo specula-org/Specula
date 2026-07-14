@@ -136,6 +136,7 @@ class TestParseArgs(Base):
             rc = s.parse_args(["--help", "--bogus"])  # --bogus never reached
         self.assertEqual(rc, 0)
         self.assertIn("Overnight batch scheduler", out.getvalue())
+        self.assertIn("--prompt FILE", out.getvalue())
         self.assertIn("Queue format (tab-separated):", out.getvalue())
 
     def test_unknown_flag(self) -> None:
