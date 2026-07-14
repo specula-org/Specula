@@ -1,0 +1,327 @@
+"""Hermetic behavior tests for GitHub Copilot CLI MCP setup."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import tempfile
+import textwrap
+import unittest
+from pathlib import Path
+from typing import TypedDict
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+COPILOT_MCP_HELPER = REPO_ROOT / "scripts" / "infra" / "copilot_mcp.sh"
+
+RUNNER = r"""
+set -euo pipefail
+print_status() { printf '[INFO] %s\n' "$1"; }
+print_success() { printf '[SUCCESS] %s\n' "$1"; }
+print_warning() { printf '[WARNING] %s\n' "$1"; }
+source "$1"
+shift
+setup_copilot_mcp_servers "$@"
+"""
+
+FAKE_COPILOT = r"""#!/usr/bin/env python3
+import json
+import os
+import sys
+
+args = sys.argv[1:]
+with open(os.environ["FAKE_COPILOT_LOG"], "a", encoding="utf-8") as stream:
+    stream.write(json.dumps({"argv": args, "copilot_home": os.environ.get("COPILOT_HOME")}) + "\n")
+
+if args == ["mcp", "add", "--help"]:
+    if os.environ.get("FAKE_COPILOT_MODE") == "old":
+        print("Usage: copilot [options] [command]")
+        print("Options:\n  --additional-mcp-config <json>  Add session MCP configuration")
+        print("Commands:\n  help [topic]  Display help information")
+    else:
+        print("Usage: copilot mcp add [options] <name> [-- <command> [args...]]")
+    raise SystemExit(0)
+
+if args[:2] == ["mcp", "add"]:
+    add_rc = int(os.environ.get("FAKE_COPILOT_ADD_RC", "0"))
+    if add_rc:
+        print("simulated add failure", file=sys.stderr)
+        raise SystemExit(add_rc)
+    print(f'Added server "{args[2]}"')
+    raise SystemExit(0)
+
+print(f"unexpected arguments: {args!r}", file=sys.stderr)
+raise SystemExit(2)
+"""
+
+
+class CopilotCall(TypedDict):
+    argv: list[str]
+    copilot_home: str | None
+
+
+class TestCopilotMcpSetup(unittest.TestCase):
+    def run_setup(
+        self,
+        root: Path,
+        entries: list[str],
+        *,
+        existing: str = "absent",
+        mode: str = "new",
+        add_rc: int = 0,
+    ) -> tuple[subprocess.CompletedProcess[str], list[CopilotCall]]:
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        fake_copilot = bin_dir / "copilot"
+        fake_copilot.write_text(textwrap.dedent(FAKE_COPILOT))
+        fake_copilot.chmod(0o755)
+
+        home = root / "home"
+        home.mkdir()
+        config_dir = root / "copilot config"
+        config_dir.mkdir()
+        project_root = root / "Specula checkout"
+        log_file = root / "copilot-calls.jsonl"
+        first_name, first_python, first_server = entries[0].split("|")
+        if existing == "invalid":
+            (config_dir / "mcp-config.json").write_text("{")
+        elif existing == "wrong_shape":
+            (config_dir / "mcp-config.json").write_text("[]")
+        elif existing == "invalid_servers":
+            (config_dir / "mcp-config.json").write_text(json.dumps({"mcpServers": []}))
+        elif existing == "null_servers":
+            (config_dir / "mcp-config.json").write_text(json.dumps({"mcpServers": None}))
+        elif existing == "null_entry":
+            (config_dir / "mcp-config.json").write_text(json.dumps({"mcpServers": {first_name: None}}))
+        elif existing == "top_level_collision":
+            (config_dir / "mcp-config.json").write_text(
+                json.dumps(
+                    {
+                        first_name: {
+                            "tools": ["*"],
+                            "type": "local",
+                            "command": first_python,
+                            "args": [first_server],
+                            "env": {"SPECULA_ROOT": str(project_root)},
+                        },
+                        "mcpServers": {},
+                    }
+                )
+            )
+        elif existing != "absent":
+            command = first_python
+            server = first_server
+            configured_project = str(project_root)
+            if existing == "conflict":
+                command = "/other/python"
+                server = "/other/server.py"
+                configured_project = "/other/checkout"
+            server_config: dict[str, object] = {
+                "type": "local",
+                "command": command,
+                "args": [server],
+                "env": {
+                    "SPECULA_ROOT": configured_project,
+                    "USER_SETTING": "preserved",
+                },
+            }
+            if existing != "omitted_tools":
+                server_config["tools"] = [] if existing == "restricted" else ["*"]
+            (config_dir / "mcp-config.json").write_text(
+                json.dumps(
+                    {
+                        "$schema": "https://example.test/copilot-mcp.schema.json",
+                        "unrelatedTopLevelField": {"preserve": True},
+                        "mcpServers": {
+                            "third_party": {
+                                "type": "local",
+                                "command": "/third-party/server",
+                                "args": [],
+                                "tools": ["*"],
+                            },
+                            first_name: server_config,
+                        },
+                    },
+                    indent=2,
+                )
+            )
+
+        env = os.environ.copy()
+        env.update(
+            {
+                "PATH": f"{bin_dir}:{env['PATH']}",
+                "HOME": str(home),
+                "FAKE_COPILOT_LOG": str(log_file),
+                "FAKE_COPILOT_MODE": mode,
+                "FAKE_COPILOT_ADD_RC": str(add_rc),
+            }
+        )
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                RUNNER,
+                "copilot-mcp-test",
+                str(COPILOT_MCP_HELPER),
+                str(config_dir),
+                str(project_root),
+                *entries,
+            ],
+            cwd=root,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        calls = [json.loads(line) for line in log_file.read_text().splitlines()]
+        return result, calls
+
+    def test_adds_all_servers_to_copilot_home(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            entries = [
+                f"tracedebugger|{root / 'trace venv/bin/python'}|{root / 'trace tool/mcp_server.py'}",
+                f"spec_analyzer|{root / 'spec venv/bin/python'}|{root / 'spec tool/mcp_server.py'}",
+                f"inv_checking_tool|{root / 'inv venv/bin/python'}|{root / 'inv tool/mcp_server.py'}",
+            ]
+
+            result, calls = self.run_setup(root, entries)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            config_dir = str(root / "copilot config")
+            project_root = str(root / "Specula checkout")
+            add_calls = [call for call in calls if call["argv"][:2] == ["mcp", "add"] and call["argv"][2] != "--help"]
+            self.assertEqual(len(add_calls), 3)
+            for entry, call in zip(entries, add_calls, strict=True):
+                name, python_path, server_path = entry.split("|")
+                self.assertEqual(
+                    call["argv"],
+                    [
+                        "mcp",
+                        "add",
+                        name,
+                        "--env",
+                        f"SPECULA_ROOT={project_root}",
+                        "--",
+                        python_path,
+                        server_path,
+                    ],
+                )
+            self.assertTrue(all(call["copilot_home"] == config_dir for call in calls))
+            self.assertEqual(result.stdout.count("Copilot MCP configured:"), 3)
+            self.assertFalse((root / "home/.copilot").exists())
+
+    def test_matching_existing_server_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            entry = f"tracedebugger|{root / 'python'}|{root / 'mcp_server.py'}"
+
+            result, calls = self.run_setup(root, [entry], existing="match")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual([call["argv"] for call in calls], [["mcp", "add", "--help"]])
+            self.assertIn("Copilot MCP already configured: tracedebugger", result.stdout)
+
+    def test_conflicting_existing_server_is_left_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            entry = f"tracedebugger|{root / 'python'}|{root / 'mcp_server.py'}"
+
+            result, calls = self.run_setup(root, [entry], existing="conflict")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual([call["argv"] for call in calls], [["mcp", "add", "--help"]])
+            self.assertIn("Copilot user MCP 'tracedebugger' already exists and was left unchanged", result.stdout)
+            self.assertNotIn("mcp remove", result.stdout)
+            config = json.loads((root / "copilot config/mcp-config.json").read_text())
+            self.assertEqual(config["mcpServers"]["tracedebugger"]["command"], "/other/python")
+            self.assertIn("third_party", config["mcpServers"])
+            self.assertIn("unrelatedTopLevelField", config)
+
+    def test_existing_server_with_no_enabled_tools_is_a_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            entry = f"tracedebugger|{root / 'python'}|{root / 'mcp_server.py'}"
+
+            result, calls = self.run_setup(root, [entry], existing="restricted")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual([call["argv"] for call in calls], [["mcp", "add", "--help"]])
+            self.assertIn("Copilot user MCP 'tracedebugger' already exists and was left unchanged", result.stdout)
+
+    def test_existing_server_with_omitted_tools_uses_default_all(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            entry = f"tracedebugger|{root / 'python'}|{root / 'mcp_server.py'}"
+
+            result, calls = self.run_setup(root, [entry], existing="omitted_tools")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual([call["argv"] for call in calls], [["mcp", "add", "--help"]])
+            self.assertIn("Copilot MCP already configured: tracedebugger", result.stdout)
+
+    def test_unrecognized_existing_config_is_left_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            entry = f"tracedebugger|{root / 'python'}|{root / 'mcp_server.py'}"
+
+            result, calls = self.run_setup(root, [entry], existing="invalid")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual([call["argv"] for call in calls], [["mcp", "add", "--help"]])
+            self.assertIn("could not be read safely and was left unchanged", result.stdout)
+
+    def test_valid_but_wrong_shaped_config_is_left_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            entry = f"tracedebugger|{root / 'python'}|{root / 'mcp_server.py'}"
+
+            for existing in ("wrong_shape", "invalid_servers", "null_servers", "null_entry"):
+                with self.subTest(existing=existing):
+                    case_root = root / existing
+                    case_root.mkdir()
+                    result, calls = self.run_setup(case_root, [entry], existing=existing)
+
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual([call["argv"] for call in calls], [["mcp", "add", "--help"]])
+                    self.assertIn("could not be read safely and was left unchanged", result.stdout)
+
+    def test_top_level_name_does_not_hide_missing_wrapped_server(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            entry = f"tracedebugger|{root / 'python'}|{root / 'mcp_server.py'}"
+
+            result, calls = self.run_setup(root, [entry], existing="top_level_collision")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(calls[-1]["argv"][:3], ["mcp", "add", "tracedebugger"])
+            self.assertIn("Copilot MCP configured: tracedebugger", result.stdout)
+
+    def test_old_cli_warns_without_attempting_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            entry = f"tracedebugger|{root / 'python'}|{root / 'mcp_server.py'}"
+
+            result, calls = self.run_setup(root, [entry], mode="old")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual([call["argv"] for call in calls], [["mcp", "add", "--help"]])
+            self.assertIn("requires Copilot CLI 1.0.21 or newer", result.stdout)
+
+    def test_add_failure_warns_without_failing_setup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            entry = f"tracedebugger|{root / 'python'}|{root / 'mcp_server.py'}"
+
+            result, calls = self.run_setup(root, [entry], add_rc=7)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(calls[-1]["argv"][:2], ["mcp", "add"])
+            self.assertIn("auto-config failed", result.stdout)
+            self.assertIn("simulated add failure", result.stdout)
+            self.assertIn("copilot mcp add", result.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()

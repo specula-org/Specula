@@ -239,6 +239,7 @@ build_cfa_jar() {
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+source "$SCRIPT_DIR/copilot_mcp.sh"
 # Run the remaining setup from the trusted checkout rather than the caller's directory.
 cd "$PROJECT_ROOT"
 TRACE_DEBUGGER_DIR="$PROJECT_ROOT/tools/trace_debugger"
@@ -437,7 +438,10 @@ if ask_yn "Install Specula for GitHub Copilot CLI?"; then
     setup_skills "$PROJECT_ROOT/.github/skills" "$SKILLS_SOURCE"
     warn_local_skills_scope
   fi
-  print_warning "Copilot CLI MCP must be configured manually. See README for details."
+  setup_copilot_mcp_servers \
+    "$COPILOT_USER_CONFIG_DIR" \
+    "$PROJECT_ROOT" \
+    "${MCP_SERVERS[@]}"
 else
   print_status "Skipped Copilot CLI."
 fi
