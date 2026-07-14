@@ -206,29 +206,35 @@ class TestMergeRR(ConfirmCase):
         self.assertIn("actions: [Foo]", out)  # agent scope verbatim
         self.assertIn("hunt_cfgs: [MC_hunt.cfg]", out)
 
-    def test_agent_lifecycle_fields_are_rejected(self) -> None:
+    def test_agent_lifecycle_fields_are_ignored(self) -> None:
         sneaky = self.AGENT_BODY.replace("target: SPEC_REPAIR", "id: RR-999\nstatus: CONSUMED\ntarget: SPEC_REPAIR")
-        with self.assertRaisesRegex(C.InvalidRepairRequest, "dispatcher-owned field id"):
-            C._merge_rr("RR-002", "Bug 1", "fb", sneaky, finding_id="MC-1")
+        out = C._merge_rr("RR-002", "Bug 1", "fb", sneaky, finding_id="MC-1")
+        self.assertEqual(C._rr_field_text(out, "id"), ["RR-002"])
+        self.assertEqual(C._rr_field_text(out, "status"), ["OPEN"])
+        self.assertNotIn("id: RR-999", out)
+        self.assertNotIn("status: CONSUMED", out)
 
-    def test_missing_frontmatter_rejected(self) -> None:
-        with self.assertRaisesRegex(C.InvalidRepairRequest, "must start"):
-            C._merge_rr("RR-003", "Bug 1", "spec/output/x.out", "prose only", finding_id="MC-1")
+    def test_missing_frontmatter_prose_is_preserved(self) -> None:
+        out = C._merge_rr("RR-003", "Bug 1", "spec/output/x.out", "prose only", finding_id="MC-1")
+        self.assertEqual(C._rr_field_text(out, "id"), ["RR-003"])
+        self.assertIn("\nprose only\n", out)
 
     def test_body_text_cannot_inject_a_second_lifecycle_field(self) -> None:
         body = self.AGENT_BODY.replace("## Trigger\n", "## Trigger\nstatus: OPEN\n")
         merged = C._merge_rr("RR-001", "Bug 1", "fallback.out", body, finding_id="MC-1")
         self.assertEqual(C._rr_field_text(merged, "status"), ["OPEN"])
 
-    def test_draft_counterexample_must_match_finding(self) -> None:
+    def test_counterexample_mismatch_is_only_a_strict_lint_warning(self) -> None:
         ws = self.seed("T", [])
         cfg = self.cfg(ws, "T")
         f = C.Finding(
             {"id": "MC-1", "counterexample": "spec/output/expected.out"},
             ws.work_dir("T") / "confirmation" / "MC-1",
         )
-        with self.assertRaisesRegex(C.InvalidRepairRequest, "does not match finding"):
-            C._parse_repair_draft(self.AGENT_BODY, cfg, f)
+        f.fdir.mkdir(parents=True)
+        (f.fdir / "repair-request.body.md").write_text(self.AGENT_BODY)
+        draft = C._read_repair_draft(cfg, f)
+        self.assertIn("does not match finding", C._repair_draft_warning(cfg, f, draft) or "")
 
 
 class TestValidateCandidates(ConfirmCase):
@@ -486,21 +492,56 @@ class TestDriver(ConfirmCase):
         ws = self.seed("T", [data])
         fdir = ws.work_dir("T") / "confirmation" / "MC-1"
 
-        with mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("PENDING REPAIR"))):
+        calls = 0
+        prompts: list[str] = []
+
+        def pending(_adapter: Path, prompt: str, *_args: object, **_kwargs: object) -> tuple[int, str]:
+            nonlocal calls
+            calls += 1
+            prompts.append(prompt)
+            return (0, _response("PENDING REPAIR"))
+
+        with mock.patch.object(C, "run_agent_blocking", pending):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
 
         self.assertEqual(rc, 1)
+        self.assertEqual(calls, 2)
+        self.assertIn("PENDING REPAIR requires repair-request.body.md", prompts[1])
         self.assertFalse((fdir / "repair-request.body.md").exists())
         rr = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
         self.assertFalse(rr.exists())
         self.assertIn("INCOMPLETE", (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text())
         self.assertFalse((fdir / "verdict.json").exists())
 
-    def test_malformed_pending_repair_draft_is_incomplete_and_not_allocated(self) -> None:
+    def test_empty_pending_repair_draft_retries_once_then_is_incomplete(self) -> None:
+        data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
+        ws = self.seed("T", [data])
+        fdir = ws.work_dir("T") / "confirmation" / "MC-1"
+        calls = 0
+
+        def pending(*_args: object, **_kwargs: object) -> tuple[int, str]:
+            nonlocal calls
+            calls += 1
+            fdir.mkdir(parents=True, exist_ok=True)
+            (fdir / "repair-request.body.md").write_text(" \n")
+            return (0, _response("PENDING REPAIR"))
+
+        with mock.patch.object(C, "run_agent_blocking", pending):
+            rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
+
+        self.assertEqual(rc, 1)
+        self.assertEqual(calls, 2)
+        self.assertFalse((ws.work_dir("T") / "spec" / "repair-requests").exists())
+        self.assertFalse((fdir / "verdict.json").exists())
+
+    def test_malformed_pending_repair_draft_warns_once_then_is_allocated(self) -> None:
         data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
         invalid_bodies = {
             "prose only": "must start",
             TestMergeRR.AGENT_BODY.replace("target: SPEC_REPAIR", "target: UNKNOWN"): "invalid target",
+            TestMergeRR.AGENT_BODY.replace("counterexample: spec/output/x.out", "counterexample: /tmp/x.out"): (
+                "safe relative path"
+            ),
             TestMergeRR.AGENT_BODY.replace("  hunt_cfgs: [MC_hunt.cfg]", "  hunt_cfgs: []"): "must not be empty",
             TestMergeRR.AGENT_BODY.replace("## Evidence", "## Notes"): "unknown section",
             TestMergeRR.AGENT_BODY.replace("src/node.py:42", "the source code"): "must contain a code",
@@ -515,6 +556,7 @@ class TestDriver(ConfirmCase):
                 name = f"T{index}"
                 ws = self.seed(name, [data])
                 fdir = ws.work_dir(name) / "confirmation" / "MC-1"
+                calls = 0
 
                 def pending(
                     *_args: object,
@@ -522,15 +564,130 @@ class TestDriver(ConfirmCase):
                     draft_body: str = body,
                     **_kwargs: object,
                 ) -> tuple[int, str]:
+                    nonlocal calls
+                    calls += 1
                     draft_dir.mkdir(parents=True, exist_ok=True)
                     (draft_dir / "repair-request.body.md").write_text(draft_body)
                     return (0, _response("PENDING REPAIR"))
 
                 with mock.patch.object(C, "run_agent_blocking", pending):
-                    self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, name)), 1)
-                self.assertFalse((ws.work_dir(name) / "spec" / "repair-requests").exists())
-                self.assertFalse((fdir / "verdict.json").exists())
-                self.assertIn(error, (fdir / "error.txt").read_text())
+                    self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, name)), 0)
+                self.assertEqual(calls, 2)
+                rr = ws.work_dir(name) / "spec" / "repair-requests" / "RR-001.md"
+                self.assertTrue(rr.is_file())
+                self.assertEqual(C._rr_field_text(rr.read_text(), "status"), ["OPEN"])
+                self.assertTrue((fdir / "verdict.json").is_file())
+                self.assertFalse((fdir / "error.txt").exists())
+
+    def test_malformed_pending_repair_draft_can_be_corrected_once(self) -> None:
+        data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
+        ws = self.seed("T", [data])
+        fdir = ws.work_dir("T") / "confirmation" / "MC-1"
+        calls = 0
+
+        def pending(*_args: object, **_kwargs: object) -> tuple[int, str]:
+            nonlocal calls
+            calls += 1
+            fdir.mkdir(parents=True, exist_ok=True)
+            body = "prose only" if calls == 1 else TestMergeRR.AGENT_BODY
+            (fdir / "repair-request.body.md").write_text(body)
+            return (0, _response("PENDING REPAIR"))
+
+        with mock.patch.object(C, "run_agent_blocking", pending):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 0)
+
+        self.assertEqual(calls, 2)
+        rr = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
+        self.assertIn("target: SPEC_REPAIR", rr.read_text())
+        self.assertNotIn("prose only", rr.read_text())
+
+    def test_advisory_correction_failure_keeps_original_nonempty_draft(self) -> None:
+        data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
+        ws = self.seed("T", [data])
+        fdir = ws.work_dir("T") / "confirmation" / "MC-1"
+        calls = 0
+
+        def pending(*_args: object, **_kwargs: object) -> tuple[int, str]:
+            nonlocal calls
+            calls += 1
+            fdir.mkdir(parents=True, exist_ok=True)
+            draft = fdir / "repair-request.body.md"
+            if calls == 1:
+                draft.write_text("prose only")
+                return (0, _response("PENDING REPAIR"))
+            draft.unlink()
+            return (1, "")
+
+        with mock.patch.object(C, "run_agent_blocking", pending):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 0)
+
+        self.assertEqual(calls, 2)
+        rr = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
+        self.assertIn("prose only", rr.read_text())
+        self.assertFalse((fdir / "error.txt").exists())
+
+    def test_advisory_correction_rate_limit_stops_serial_batch(self) -> None:
+        findings = [{"id": fid, "source": "model-checking", "title": fid, "summary": "s"} for fid in ("MC-1", "MC-2")]
+        ws = self.seed("T", findings)
+        first_fdir = ws.work_dir("T") / "confirmation" / "MC-1"
+        calls: list[str] = []
+
+        def rate_limited_correction(
+            _adapter: Path,
+            prompt: str,
+            *_args: object,
+            **_kwargs: object,
+        ) -> tuple[int, str]:
+            calls.append(prompt.splitlines()[0])
+            if len(calls) == 1:
+                first_fdir.mkdir(parents=True, exist_ok=True)
+                (first_fdir / "repair-request.body.md").write_text("prose only")
+                return (0, _response("PENDING REPAIR"))
+            if len(calls) == 2:
+                return (75, "")
+            raise AssertionError("later finding started after repair-draft correction was rate-limited")
+
+        with mock.patch.object(C, "run_agent_blocking", rate_limited_correction):
+            rc = C.run_parallel_confirmation(self.cfg(ws, "T", max_parallel=1))
+
+        self.assertEqual(rc, 75)
+        self.assertEqual(
+            calls,
+            ["# Confirm ONE finding: MC-1", "# Best-effort repair-draft correction: MC-1"],
+        )
+        report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
+        self.assertIn("| 1 | MC-1 | INCOMPLETE |", report)
+        self.assertIn("| 2 | MC-2 | INCOMPLETE |", report)
+        self.assertIn("not started because another finding was rate-limited", report)
+        self.assertFalse((ws.work_dir("T") / "spec" / "repair-requests").exists())
+
+    def test_block_style_scope_draft_needs_no_correction(self) -> None:
+        data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
+        ws = self.seed("T", [data])
+        fdir = ws.work_dir("T") / "confirmation" / "MC-1"
+        block_body = (
+            TestMergeRR.AGENT_BODY.replace("  actions: [Foo]", "  actions:\n    - Foo")
+            .replace("  invariants: [Inv]", "  invariants:\n    - Inv")
+            .replace("  hunt_cfgs: [MC_hunt.cfg]", "  hunt_cfgs:\n    - MC_hunt.cfg")
+            .replace("  fault_actions: []", "  fault_actions:\n    - Recover")
+        )
+        calls = 0
+
+        def pending(*_args: object, **_kwargs: object) -> tuple[int, str]:
+            nonlocal calls
+            calls += 1
+            fdir.mkdir(parents=True, exist_ok=True)
+            (fdir / "repair-request.body.md").write_text(block_body)
+            return (0, _response("PENDING REPAIR"))
+
+        with mock.patch.object(C, "run_agent_blocking", pending):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 0)
+
+        self.assertEqual(calls, 1)
+        rr = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
+        text = rr.read_text()
+        self.assertIn("  actions:\n    - Foo", text)
+        self.assertIn("  hunt_cfgs:\n    - MC_hunt.cfg", text)
 
     def test_log_tee_failure_does_not_block_stale_deliverable_cleanup(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
@@ -659,6 +816,36 @@ class TestDebateGate(ConfirmCase):
             outcome = C.run_finding(cfg, finding)
         self.assertEqual(outcome.status, "PENDING REPAIR")
         self.assertEqual(outcome.rounds, 1)
+        self.assertEqual(C._read_repair_draft(cfg, finding).target, "SPEC_REPAIR")
+
+    def test_a_conceding_with_malformed_draft_gets_one_numbered_correction(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T", debate=True, rounds=1)
+        finding = self.finding(ws, "T", "MC-6")
+        responses = iter(("REPRODUCED", "PENDING REPAIR", "PENDING REPAIR", "PENDING REPAIR"))
+        calls = 0
+
+        def agent(*_args: object, **_kwargs: object) -> tuple[int, str]:
+            nonlocal calls
+            calls += 1
+            status = next(responses)
+            if calls == 1:
+                repro = ws.work_dir("T") / "repro" / "test_bugMC-6_case.py"
+                repro.parent.mkdir(parents=True, exist_ok=True)
+                repro.write_text("assert True\n")
+            elif calls == 3:
+                (finding.fdir / "repair-request.body.md").write_text("prose only")
+            elif calls == 4:
+                (finding.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+            return (0, _response(status))
+
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            outcome = C.run_finding(cfg, finding)
+
+        self.assertEqual(outcome.status, "PENDING REPAIR")
+        self.assertEqual(calls, 4)
+        debate = (finding.fdir / "debate.md").read_text()
+        self.assertIn("turn04_A-repair.log", debate)
         self.assertEqual(C._read_repair_draft(cfg, finding).target, "SPEC_REPAIR")
 
     def test_b_agreement_keeps_corrective_novelty_evidence_for_aggregate(self) -> None:
@@ -1126,34 +1313,21 @@ class TestCacheContracts(ConfirmCase):
         self.assertIn("+ 0 pending-repair + 0 incomplete + 1 deferred", report)
 
         terminal_bytes = deferred.read_bytes()
-        # A later Phase 4 generation with identical repair semantics remains
+        # A later Phase 4 generation with the byte-identical agent draft remains
         # terminal; generation invalidates the verdict cache, not the RR.
         (ws.work_dir("T") / "spec" / "confirmation-generation.json").write_text('{"generation": 1}\n')
-        equivalent_draft = (
-            "---\n"
-            "target: SPEC_REPAIR\n"
-            'counterexample: "output/x.out"\n'
-            "scope:\n"
-            "  fault_actions: []\n"
-            "  hunt_cfgs: [MC_hunt.cfg]\n"
-            "  invariants: [Inv]\n"
-            '  actions: ["Foo"]\n'
-            "---\n\n"
-            "## Trigger\n"
-            "The counterexample requires a transition\n"
-            "the implementation rejects.\n\n"
-            "## Evidence\n"
-            "The counterexample disagrees with src/node.py:42\n"
-            "and the captured trace demonstrates the mismatch.\n\n"
-            "## Proposed change\n"
-            "An advisory hint that does not change the executable repair.\n"
-        )
-        (f.fdir / "repair-request.body.md").write_text(equivalent_draft)
+        (f.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
         self.assertEqual(C.allocate_rr(cfg, pending), "RR-001")
         self.assertEqual(deferred.read_bytes(), terminal_bytes)
 
-        # A changed semantic allocation never mutates/reopens the terminal
-        # request: it gets a new active OPEN id visible to the repair loop.
+        # Formatting is intentionally part of the relaxed raw-draft identity:
+        # no parser canonicalization decides whether two drafts are equivalent.
+        block_formatted = TestMergeRR.AGENT_BODY.replace("  actions: [Foo]", "  actions:\n    - Foo")
+        (f.fdir / "repair-request.body.md").write_text(block_formatted)
+        self.assertEqual(C.allocate_rr(cfg, pending), "RR-002")
+
+        # A later content change refreshes that active request without mutating
+        # or reopening the terminal audit record.
         changed_draft = (
             TestMergeRR.AGENT_BODY.replace("target: SPEC_REPAIR", "target: INVARIANT")
             .replace("  actions: [Foo]", "  actions: []")

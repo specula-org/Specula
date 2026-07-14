@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -12,12 +13,19 @@ from pathlib import Path
 from typing import cast
 from unittest import mock
 
+from specula import cli, phaselib, skill_install
 from specula import confirmlib as confirmation
-from specula import phaselib, skill_install
 from specula.skill_refs import CODEX_PLUGIN_NAME, materialize_skill_refs
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SETUP_SCRIPT = REPO_ROOT / "scripts" / "infra" / "setup_codex_plugin.py"
+
+
+def extract_version(pattern: str, text: str) -> str:
+    match = re.search(pattern, text, flags=re.MULTILINE)
+    if match is None:
+        raise AssertionError(f"Version not found with pattern: {pattern}")
+    return match.group(1)
 
 
 class TestCodexPluginSkillContract(unittest.TestCase):
@@ -162,6 +170,27 @@ class TestCodexPluginSkillContract(unittest.TestCase):
                     self.assertIn(f"${skill}", standalone_prompt)
                     self.assertNotIn(f"${namespaced}", standalone_prompt)
                     self.assertNotIn("<!-- specula-skill:", standalone_prompt)
+
+    def test_release_versions_stay_in_sync(self) -> None:
+        _, manifest = self.generate_plugin()
+        project_version = extract_version(
+            r'^version = "([^"]+)"$',
+            (REPO_ROOT / "pyproject.toml").read_text(),
+        )
+        lock_version = extract_version(
+            r'^\[\[package\]\]\nname = "specula"\nversion = "([^"]+)"$',
+            (REPO_ROOT / "uv.lock").read_text(),
+        )
+
+        self.assertEqual(
+            {
+                cli.VERSION,
+                project_version,
+                lock_version,
+                cast(str, manifest["version"]),
+            },
+            {"0.2.0"},
+        )
 
 
 if __name__ == "__main__":

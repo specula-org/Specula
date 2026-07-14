@@ -81,6 +81,11 @@ class TestHelp(CaptureExec):
         self.assertEqual(err, "specula: unknown command 'bogus'\n\n" + BASH_HELP)
         self.assertEqual(self.execs, [])
 
+    def test_version(self) -> None:
+        rc, out, err = self._main(["--version"])
+        self.assertEqual((rc, out, err), (0, "specula 0.2.0\n", ""))
+        self.assertEqual(self.execs, [])
+
 
 class TestDispatch(CaptureExec):
     def test_every_command_maps_to_its_script(self) -> None:
@@ -138,3 +143,11 @@ class TestShim(unittest.TestCase):
                 self.assertNotIn("launch_", r.stdout)
                 self.assertNotIn("Claude Code agent", r.stdout)
                 self.assertNotIn("claude CLI installed", r.stdout)
+
+    def test_root_launcher_prints_version(self) -> None:
+        r = subprocess.run(
+            ["bash", str(REPO_ROOT / "specula"), "--version"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "specula 0.2.0\n", ""))

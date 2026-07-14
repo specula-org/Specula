@@ -848,47 +848,19 @@ class Pipeline:
 
     @classmethod
     def _repair_request_is_executable(cls, text: str, expected_id: str) -> bool:
-        """Minimum safe shape before the orchestrator exposes an RR as OPEN."""
+        """Minimum dispatcher-owned lifecycle shape for a repair request."""
         lines = text.splitlines()
         if not lines or lines[0] != "---":
             return False
         try:
-            frontmatter_end = lines.index("---", 1)
+            lines.index("---", 1)
         except ValueError:
             return False
-        frontmatter = "\n".join(lines[1:frontmatter_end])
         if cls._repair_request_field(text, "id") != expected_id:
             return False
         if cls._repair_request_field(text, "status") not in {"OPEN", "IN_REPAIR", "CONSUMED"}:
             return False
-        if not cls._repair_request_field(text, "round").isdigit():
-            return False
-        target = cls._repair_request_field(text, "target")
-        target_scope = {
-            "SPEC_REPAIR": "actions",
-            "FAULT_MODEL": "fault_actions",
-            "INVARIANT": "invariants",
-        }.get(target)
-        if target_scope is None or not cls._repair_request_field(text, "counterexample"):
-            return False
-        scope: dict[str, str] = {}
-        for key in ("actions", "invariants", "hunt_cfgs", "fault_actions"):
-            match = re.search(rf"(?m)^  {key}:\s*\[(.*?)\]\s*$", frontmatter)
-            if match is None:
-                return False
-            scope[key] = match.group(1).strip()
-        if not scope["hunt_cfgs"] or not scope[target_scope]:
-            return False
-        for section in ("Trigger", "Evidence"):
-            match = re.search(rf"(?m)^##\s+{section}\s*$", text)
-            if match is None:
-                return False
-            following = text[match.end() :]
-            next_section = re.search(r"(?m)^##\s+", following)
-            body = following[: next_section.start()] if next_section is not None else following
-            if not body.strip():
-                return False
-        return re.search(r"(?m)^##\s+History\s*$", text) is not None
+        return cls._repair_request_field(text, "round").isdigit()
 
     @staticmethod
     def _repair_request_text_with_status(text: str, status: str, note: str) -> str:
