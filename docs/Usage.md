@@ -79,9 +79,9 @@ More precisely, setup manages:
 | MCP Python packages | Creates tool-specific virtual environments and installs `mcp` and `jsonschema` where required |
 | Claude Code | Installs skills and registers all three MCP servers |
 | Codex | Installs skills and MCP servers, or generates/updates the Specula plugin |
-| GitHub Copilot CLI | Installs skills and, with Copilot CLI 1.0.21+, registers all three MCP servers |
+| GitHub Copilot CLI | Installs skills and, with Copilot CLI 1.0.70+, registers all three MCP servers |
 
-Copilot MCP registration is user-level and follows `COPILOT_HOME`; the global/local setup choice controls only where skills are installed. Setup leaves an existing same-named user MCP server unchanged and reports the conflict instead of overwriting it. Older Copilot CLI versions still install the skills but require an upgrade or manual MCP configuration.
+Copilot MCP registration is user-level and follows `COPILOT_HOME`; the global/local setup choice controls only where skills are installed. Setup leaves an existing same-named MCP server unchanged and reports the conflict instead of overwriting it. Older Copilot CLI versions still install the skills, but MCP registration is skipped with an upgrade warning.
 
 Setup does **not** install `uv`, Python, a JDK, Maven, Git, `gh`, an agent CLI, target-language dependencies, GNU coreutils, or the optional sandbox dependencies. It does not install the `specula` command either; that is the `uv tool install -e .` step above.
 

@@ -62,14 +62,14 @@ codex mcp add tracedebugger \
 	"$PWD/tools/trace_debugger/.venv/bin/python" \
 	"$PWD/tools/trace_debugger/mcp_server.py"
 
-# for GitHub Copilot CLI 1.0.21+
+# for GitHub Copilot CLI 1.0.70+
 copilot mcp add tracedebugger \
     --env "SPECULA_ROOT=$PWD" -- \
     "$PWD/tools/trace_debugger/.venv/bin/python" \
     "$PWD/tools/trace_debugger/mcp_server.py"
 ```
 
-Older Copilot CLI versions require an upgrade or manual MCP configuration in `$COPILOT_HOME/mcp-config.json` (default: `~/.copilot/mcp-config.json`).
+Automatic MCP configuration is skipped for older Copilot CLI versions; upgrade to the latest version to enable it.
 
 </details>
 

@@ -4,14 +4,30 @@
 
 copilot_mcp_cli_available() {
   local config_dir="$1"
-  local help_text
+  local version_text
+  local version_major
+  local version_minor
+  local version_patch
 
   if ! command -v copilot >/dev/null 2>&1; then
     return 1
   fi
 
-  help_text="$(COPILOT_HOME="$config_dir" copilot mcp add --help 2>&1 || true)"
-  grep -Eq '^Usage:[[:space:]]+copilot[[:space:]]+mcp[[:space:]]+add([[:space:]]|$)' <<< "$help_text"
+  if ! version_text="$(COPILOT_HOME="$config_dir" copilot --version </dev/null 2>&1)"; then
+    return 1
+  fi
+  if [[ ! "$version_text" =~ ([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+    return 1
+  fi
+  version_major="${BASH_REMATCH[1]}"
+  version_minor="${BASH_REMATCH[2]}"
+  version_patch="${BASH_REMATCH[3]}"
+
+  ((
+    version_major > 1 ||
+      (version_major == 1 && version_minor > 0) ||
+      (version_major == 1 && version_minor == 0 && version_patch >= 70)
+  ))
 }
 
 copilot_mcp_config_status() {
@@ -80,15 +96,18 @@ copilot_user_mcp_config_status() {
   local config_file="$config_dir/mcp-config.json"
   local config_json
 
-  if [[ ! -e "$config_file" && ! -L "$config_file" ]]; then
-    printf '%s\n' "absent"
+  if [[ -L "$config_file" ]]; then
+    printf '%s\n' "symlink"
     return 0
   fi
-  if [[ ! -f "$config_file" || ! -r "$config_file" ]]; then
+  if [[ -e "$config_file" && (! -f "$config_file" || ! -r "$config_file") ]]; then
     printf '%s\n' "invalid"
     return 0
   fi
-  if ! config_json="$(< "$config_file")"; then
+  if ! config_json="$(
+    cd /
+    COPILOT_HOME="$config_dir" copilot mcp list --json </dev/null 2>/dev/null
+  )"; then
     printf '%s\n' "invalid"
     return 0
   fi
@@ -123,8 +142,9 @@ setup_copilot_mcp_server() {
   local python_path="$4"
   local server_path="$5"
   local config_status
+  local config_source
   local add_output
-  local add_rc
+  local add_rc=0
 
   print_status "Configuring $mcp_name MCP for GitHub Copilot CLI..."
 
@@ -136,16 +156,23 @@ setup_copilot_mcp_server() {
     "$server_path")"
   case "$config_status" in
     match:*)
-      print_success "Copilot MCP already configured: $mcp_name (source: user)"
+      config_source="${config_status#match:}"
+      print_success "Copilot MCP already configured: $mcp_name (source: $config_source)"
       return 0
       ;;
     conflict:*)
-      print_warning "Copilot user MCP '$mcp_name' already exists and was left unchanged."
-      print_status "Review or remove it in $config_dir/mcp-config.json before rerunning setup."
+      config_source="${config_status#conflict:}"
+      print_warning "Copilot MCP '$mcp_name' from $config_source configuration conflicts with Specula and was left unchanged."
+      print_status "Review the active Copilot MCP configuration before rerunning setup."
       return 0
       ;;
     invalid)
-      print_warning "Copilot user MCP configuration at $config_dir/mcp-config.json could not be read safely and was left unchanged."
+      print_warning "Copilot MCP configuration could not be validated by Copilot and was left unchanged."
+      return 0
+      ;;
+    symlink)
+      print_warning "Copilot MCP configuration at $config_dir/mcp-config.json is a symbolic link and was left unchanged."
+      print_status "Configure the Specula MCP servers manually to preserve the symbolic link."
       return 0
       ;;
     absent)
@@ -156,13 +183,10 @@ setup_copilot_mcp_server() {
       ;;
   esac
 
-  set +e
   add_output="$(COPILOT_HOME="$config_dir" copilot mcp add "$mcp_name" \
     --env "SPECULA_ROOT=$project_root" -- \
     "$python_path" \
-    "$server_path" 2>&1)"
-  add_rc=$?
-  set -e
+    "$server_path" </dev/null 2>&1)" || add_rc=$?
 
   if [[ $add_rc -eq 0 ]]; then
     print_success "Copilot MCP configured: $mcp_name"
@@ -191,8 +215,12 @@ setup_copilot_mcp_servers() {
   local mcp_python
   local mcp_server
 
+  if [[ "$config_dir" != /* ]]; then
+    config_dir="$project_root/$config_dir"
+  fi
+
   if ! copilot_mcp_cli_available "$config_dir"; then
-    print_warning "Automatic Copilot MCP setup requires Copilot CLI 1.0.21 or newer; upgrade the CLI or configure the MCP servers manually."
+    print_warning "Automatic Copilot MCP setup requires Copilot CLI 1.0.70 or newer; upgrade to the latest Copilot CLI."
     return 0
   fi
 
