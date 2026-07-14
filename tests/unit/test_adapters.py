@@ -1,4 +1,4 @@
-"""Behavior tests for the agent adapters (claude-code, codex, copilot-cli).
+"""Behavior tests for the agent adapters (claude-code, codex, copilot-cli, opencode).
 
 These pin the *command-construction contract*: given the launcher-facing flags,
 what does each adapter invoke the underlying CLI with, which flags map/skip, and
@@ -7,7 +7,7 @@ now that the characterization goldens are gone — a wrong flag here silently
 breaks every agent call.
 
 Each case runs the real adapter as a subprocess with a fake `claude`/`codex`/
-`copilot` on PATH that records the argv (and, for claude, stdin + the exported
+`copilot`/`opencode` on PATH that records the argv (and, for claude, stdin + the exported
 CLAUDE_CONFIG_DIR + a session-env marker) it observed, then asserts on the
 recording. `claude-code` is the Python port (adapters/claude_code.py); `codex`
 and `copilot-cli` are still bash (scripts/launch/adapters/*.sh).
@@ -32,6 +32,8 @@ from typing import Any, TypedDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLAUDE_PY = REPO_ROOT / "src" / "specula" / "adapters" / "claude_code.py"
+OPENCODE_PY = REPO_ROOT / "src" / "specula" / "adapters" / "opencode.py"
+OPENCODE_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "opencode.sh"
 CODEX_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "codex.sh"
 COPILOT_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "copilot-cli.sh"
 EVENT_STREAM_PY = REPO_ROOT / "src" / "specula" / "adapters" / "event_stream.py"
@@ -59,6 +61,8 @@ _VOLATILE = (
     "COPILOT_MODEL",
     "CODEX_MODEL",
     "CODEX_EFFORT",
+    "OPENCODE_MODEL",
+    "OPENCODE_EFFORT",
     "CLAUDECODE",
     "CLAUDE_CODE_SSE_PORT",
     "CLAUDE_CODE_ENTRYPOINT",
@@ -85,6 +89,7 @@ class AdapterRun(TypedDict):
     sessionenv: str
     modelenv: str
     effortenv: str
+    vcsenv: str
     stdin: str | None
     base: Path
 
@@ -121,12 +126,23 @@ class AdapterCase(unittest.TestCase):
                 "fi",
             ]
         lines.append('printf "%s\\n" "$@" > "${ADAPTER_ARGV_FILE:-/dev/null}"')
-        model_var = {"claude": "CLAUDE_MODEL", "codex": "CODEX_MODEL", "copilot": "COPILOT_MODEL"}.get(name)
-        effort_var = {"claude": "CLAUDE_EFFORT", "codex": "CODEX_EFFORT"}.get(name)
+        model_var = {
+            "claude": "CLAUDE_MODEL",
+            "codex": "CODEX_MODEL",
+            "copilot": "COPILOT_MODEL",
+            "opencode": "OPENCODE_MODEL",
+        }.get(name)
+        effort_var = {
+            "claude": "CLAUDE_EFFORT",
+            "codex": "CODEX_EFFORT",
+            "opencode": "OPENCODE_EFFORT",
+        }.get(name)
         if model_var:
             lines.append(f'printf "%s\\n" "${{{model_var}-<unset>}}" > "${{ADAPTER_MODEL_ENV_FILE:-/dev/null}}"')
         if effort_var:
             lines.append(f'printf "%s\\n" "${{{effort_var}-<unset>}}" > "${{ADAPTER_EFFORT_ENV_FILE:-/dev/null}}"')
+        if name == "opencode":
+            lines.append('printf "%s\\n" "${OPENCODE_FAKE_VCS-<unset>}" > "${ADAPTER_VCS_ENV_FILE:-/dev/null}"')
         if record_extra:
             lines += [
                 'printf "%s\\n" "${CLAUDE_CONFIG_DIR:-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"',
@@ -164,6 +180,7 @@ class AdapterCase(unittest.TestCase):
             "ADAPTER_SESSIONENV_FILE": base / "sessionenv.txt",
             "ADAPTER_MODEL_ENV_FILE": base / "modelenv.txt",
             "ADAPTER_EFFORT_ENV_FILE": base / "effortenv.txt",
+            "ADAPTER_VCS_ENV_FILE": base / "vcsenv.txt",
             "ADAPTER_STDIN_FILE": base / "stdin.txt",
         }
         env = {k: v for k, v in os.environ.items() if k not in _VOLATILE}
@@ -189,6 +206,7 @@ class AdapterCase(unittest.TestCase):
             "sessionenv": (read(record["ADAPTER_SESSIONENV_FILE"]) or "").strip(),
             "modelenv": (read(record["ADAPTER_MODEL_ENV_FILE"]) or "").strip(),
             "effortenv": (read(record["ADAPTER_EFFORT_ENV_FILE"]) or "").strip(),
+            "vcsenv": (read(record["ADAPTER_VCS_ENV_FILE"]) or "").strip(),
             "stdin": read(record["ADAPTER_STDIN_FILE"]),
             "base": base,
         }
@@ -792,7 +810,225 @@ class ClaudeCodeAdapter(AdapterCase):
         return usage
 
 
-# ── codex (bash) ─────────────────────────────────────────────────────────────
+# ── opencode (Python) ───────────────────────────────────────────
+class OpenCodeAdapter(AdapterCase):
+    CMD = [sys.executable, str(OPENCODE_PY)]
+    RECORDS = [
+        {
+            "type": "text",
+            "sessionID": "ses_first",
+            "part": {"type": "text", "text": "finished"},
+        },
+        {
+            "type": "step_finish",
+            "sessionID": "ses_first",
+            "part": {
+                "tokens": {
+                    "input": 10,
+                    "output": 20,
+                    "reasoning": 30,
+                    "cache": {"read": 40, "write": 50},
+                },
+                "cost": 0.25,
+            },
+        },
+        {
+            "type": "step_finish",
+            "sessionID": "ses_later",
+            "part": {
+                "tokens": {
+                    "input": 1,
+                    "output": 2,
+                    "reasoning": 3,
+                    "cache": {"read": 4, "write": 5},
+                },
+                "cost": 0.75,
+            },
+        },
+    ]
+    FIXTURE = "\n".join(json.dumps(record) for record in RECORDS) + "\n"
+
+    def invoke(
+        self,
+        flags: list[str],
+        *,
+        env_extra: dict[str, str] | None = None,
+        with_fake: bool = True,
+    ) -> AdapterRun:
+        return self.run_adapter(
+            self.CMD,
+            flags,
+            fake_name="opencode",
+            fixture_text=self.FIXTURE,
+            record_extra=True,
+            env_extra=env_extra,
+            with_fake=with_fake,
+        )
+
+    def base_flags(self, base: Path) -> list[str]:
+        return [self.with_prompt_file(base), f"--log={base}/out.log"]
+
+    def test_command_construction_from_environment(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "OPENCODE_MODEL": "zai-coding-plan/glm-5.2",
+                "OPENCODE_EFFORT": "high",
+            },
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(
+            result["argv"],
+            ["run", "--format=json", "--thinking", "--model", "zai-coding-plan/glm-5.2", "--variant", "high"],
+        )
+        self.assertEqual(result["stdin"], "the prompt\n")
+        self.assertEqual(result["modelenv"], "<unset>")
+        self.assertEqual(result["effortenv"], "<unset>")
+        self.assertEqual(result["vcsenv"], "git")
+
+    def test_prompt_file_and_large_prompt_use_stdin(self) -> None:
+        for prompt in ("prompt from file\n", "x" * 200_000):
+            with self.subTest(size=len(prompt)):
+                base = self.sandbox()
+                result = self.invoke([self.with_prompt_file(base, prompt), f"--log={base}/out.log"])
+                self.assertEqual(result["returncode"], 0, result["stderr"])
+                self.assertEqual(result["stdin"], prompt)
+                self.assertEqual(result["argv"], ["run", "--format=json", "--thinking"])
+
+    def test_direct_prompt_uses_stdin(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(["--prompt=the prompt\n", f"--log={base}/out.log"])
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["stdin"], "the prompt\n")
+        self.assertEqual(result["argv"], ["run", "--format=json", "--thinking"])
+
+    def test_compatibility_flags_are_accepted_but_not_forwarded(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(self.base_flags(base) + ["--max-turns=8", "--background", "--claude-alias=profile"])
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["argv"], ["run", "--format=json", "--thinking"])
+
+    def test_flag_values_override_environment_defaults(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base) + ["--model=flag-model", "--effort=max"],
+            env_extra={"OPENCODE_MODEL": "env-model", "OPENCODE_EFFORT": "low"},
+        )
+        self.assertEqual(
+            result["argv"],
+            ["run", "--format=json", "--thinking", "--model", "flag-model", "--variant", "max"],
+        )
+        self.assertEqual(result["modelenv"], "<unset>")
+        self.assertEqual(result["effortenv"], "<unset>")
+
+    def test_explicit_empty_model_and_effort_clear_environment_defaults(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base) + ["--model=", "--effort="],
+            env_extra={"OPENCODE_MODEL": "env-model", "OPENCODE_EFFORT": "low"},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["argv"], ["run", "--format=json", "--thinking"])
+        self.assertEqual(result["modelenv"], "<unset>")
+        self.assertEqual(result["effortenv"], "<unset>")
+
+    def test_stream_and_normalized_usage_reach_sidecars(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(activity.read_text(), self.FIXTURE)
+        self.assertEqual((base / "out.log").read_text(), "finished\n")
+        self.assertEqual(
+            json.loads((base / "out.usage.json").read_text()),
+            {
+                "agent": "opencode",
+                "session_id": "ses_first",
+                "session_file": None,
+                "total_cost_usd": 1.0,
+                "usage": {
+                    "input_tokens": 11,
+                    "cached_input_tokens": 44,
+                    "cache_write_input_tokens": 55,
+                    "output_tokens": 22,
+                    "reasoning_output_tokens": 33,
+                    "total_tokens": 165,
+                },
+            },
+        )
+
+    def test_native_failures_are_preserved(self) -> None:
+        for native_status in (9, 75):
+            with self.subTest(native_status=native_status):
+                base = self.sandbox()
+                result = self.invoke(
+                    self.base_flags(base),
+                    env_extra={"ADAPTER_EXIT_CODE": str(native_status)},
+                )
+                self.assertEqual(result["returncode"], native_status, result["stderr"])
+
+    def test_raw_activity_failure_does_not_fail_adapter(self) -> None:
+        base = self.sandbox()
+        activity = base / "bad-activity"
+        activity.mkdir()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertIn("activity log", result["stderr"])
+        self.assertEqual((base / "out.log").read_text(), "finished\n")
+
+    def test_missing_executable_returns_127_and_writes_diagnostic(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(self.base_flags(base), env_extra={"PATH": ""}, with_fake=False)
+        self.assertEqual(result["returncode"], 127, result["stderr"])
+        self.assertIn("opencode adapter: failed to launch opencode", (base / "out.log").read_text())
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["agent"], "opencode")
+        self.assertIsNone(usage["session_id"])
+        self.assertEqual(usage["usage"]["total_tokens"], 0)
+
+    def test_invalid_options_fail_before_launch(self) -> None:
+        for name, flags, diagnostic in (
+            (
+                "both-prompts",
+                ["--prompt=inline", self.with_prompt_file(self.sandbox()), f"--log={self.sandbox()}/out.log"],
+                "mutually exclusive",
+            ),
+            ("neither-prompt", [f"--log={self.sandbox()}/out.log"], "one of --prompt or --prompt-file is required"),
+            ("missing-log", [self.with_prompt_file(self.sandbox())], "--log is required"),
+            (
+                "missing-prompt-file",
+                [f"--prompt-file={self.sandbox()}/missing.md", f"--log={self.sandbox()}/out.log"],
+                "prompt file not found",
+            ),
+            ("unknown-option", [*self.base_flags(self.sandbox()), "--bogus"], "unknown option"),
+        ):
+            with self.subTest(name=name):
+                result = self.invoke(flags)
+                self.assertEqual(result["returncode"], 1)
+                self.assertIn(diagnostic, result["stderr"])
+                self.assertEqual(result["argv"], [])
+
+    def test_executable_shim_reaches_python_help(self) -> None:
+        self.assertTrue(OPENCODE_SH.stat().st_mode & stat.S_IXUSR)
+        result = self.run_adapter(
+            [str(OPENCODE_SH)],
+            ["--help"],
+            fake_name="opencode",
+            fixture_text=self.FIXTURE,
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertIn("Adapter: opencode", result["stdout"])
+        self.assertIn("--prompt-file", result["stdout"])
+
+
+# ── codex (bash) ────────────────────────────────────────────
 class CodexAdapter(AdapterCase):
     CMD = ["bash", str(CODEX_SH)]
 
