@@ -1224,6 +1224,33 @@ class TestCacheContracts(ConfirmCase):
                     self.assertTrue(C._candidate_cache_valid(cfg, candidates, None))
                     self.assertIsNotNone(C._load_verdict(finding, cfg))
 
+    def test_tuning_identity_records_opencode_and_pi_environment_sources(self) -> None:
+        cases = (
+            ("opencode", "OPENCODE_MODEL", "zai/glm-5.2", "OPENCODE_EFFORT", "high"),
+            ("pi", "PI_MODEL", "openai/gpt-5.5", "PI_EFFORT", "xhigh"),
+        )
+        for adapter, model_source, model_value, effort_source, effort_value in cases:
+            with (
+                self.subTest(adapter=adapter),
+                mock.patch.dict(
+                    os.environ,
+                    {model_source: model_value, effort_source: effort_value},
+                ),
+            ):
+                cfg = C.ConfirmConfig(
+                    name="T",
+                    ws=Workspace(["T"]),
+                    adapter=Path(f"/x/{adapter}.sh"),
+                    worktree=False,
+                )
+                self.assertEqual(
+                    C._tuning_identity(cfg),
+                    {
+                        "model": {"source": model_source, "value": model_value},
+                        "effort": {"source": effort_source, "value": effort_value},
+                    },
+                )
+
     def test_cache_binds_adapter_environment_tuning(self) -> None:
         finding_data = {"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}
         ws = self.seed("T", [finding_data])

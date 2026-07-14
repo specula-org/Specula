@@ -774,6 +774,8 @@ def _tuning_identity(cfg: ConfirmConfig) -> dict[str, dict[str, str | None]]:
             "claude-code": "CLAUDE_MODEL",
             "codex": "CODEX_MODEL",
             "copilot-cli": "COPILOT_MODEL",
+            "opencode": "OPENCODE_MODEL",
+            "pi": "PI_MODEL",
         }.get(adapter)
         model_value = (os.environ.get(model_env) or None) if model_env is not None else None
         model = {"source": model_env if model_value is not None else "adapter-default", "value": model_value}
@@ -783,14 +785,17 @@ def _tuning_identity(cfg: ConfirmConfig) -> dict[str, dict[str, str | None]]:
     elif adapter == "claude-code":
         # run_agent_blocking explicitly injects max, overriding CLAUDE_EFFORT.
         effort = {"source": "specula-default", "value": "max"}
-    elif adapter == "codex":
-        effort_value = os.environ.get("CODEX_EFFORT") or None
+    else:
+        effort_env = {
+            "codex": "CODEX_EFFORT",
+            "opencode": "OPENCODE_EFFORT",
+            "pi": "PI_EFFORT",
+        }.get(adapter)
+        effort_value = (os.environ.get(effort_env) or None) if effort_env is not None else None
         effort = {
-            "source": "CODEX_EFFORT" if effort_value is not None else "adapter-default",
+            "source": effort_env if effort_value is not None else "adapter-default",
             "value": effort_value,
         }
-    else:
-        effort = {"source": "adapter-default", "value": None}
     return {"model": model, "effort": effort}
 
 

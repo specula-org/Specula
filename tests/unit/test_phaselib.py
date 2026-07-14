@@ -268,6 +268,15 @@ class TestDirectExecution(unittest.TestCase):
         self.assertIn("Bug confirmation", proc.stdout)
 
 
+class TestShippedAdapters(unittest.TestCase):
+    def test_opencode_and_pi_adapter_paths_are_executable_files(self) -> None:
+        for name in ("opencode", "pi"):
+            with self.subTest(adapter=name):
+                adapter = phaselib.LAUNCH_DIR / "adapters" / f"{name}.sh"
+                self.assertTrue(adapter.is_file(), adapter)
+                self.assertTrue(os.access(adapter, os.X_OK), adapter)
+
+
 class TestPreconditionGate(PhaseCase):
     """Missing inputs -> the phase's fail message on stdout + exit 1, before any
     agent is launched."""

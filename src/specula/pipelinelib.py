@@ -103,7 +103,7 @@ Options:
   --max-parallel=N       Hard limit for concurrent agents. When omitted, ordinary phases run 1 target
                          agent at a time and per-finding bug confirmation runs up to 4 at a time
   --max-turns=N          Max agent turns (default: 0 = unlimited)
-  --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli)
+  --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli, opencode, pi)
   --claude-alias=NAME    Claude CLI profile (default: claude)
   --model=NAME           Model forwarded to every agent adapter
   --effort=LEVEL         Reasoning effort forwarded to every agent adapter
@@ -639,13 +639,15 @@ class Pipeline:
         else:
             model = os.environ.get("SPECULA_MODEL") or None
             if model is None:
-                adapter_model_env = {
+                model_env = {
                     "claude-code": "CLAUDE_MODEL",
                     "codex": "CODEX_MODEL",
                     "copilot-cli": "COPILOT_MODEL",
+                    "opencode": "OPENCODE_MODEL",
+                    "pi": "PI_MODEL",
                 }.get(self.agent)
-                if adapter_model_env is not None:
-                    model = os.environ.get(adapter_model_env) or None
+                if model_env is not None:
+                    model = os.environ.get(model_env) or None
 
         if self.effort is not None:
             effort = self.effort or None
@@ -656,8 +658,14 @@ class Pipeline:
                     # Phase launchers explicitly pass max, overriding any
                     # ambient CLAUDE_EFFORT value.
                     effort = "max"
-                elif self.agent == "codex":
-                    effort = os.environ.get("CODEX_EFFORT") or None
+                else:
+                    effort_env = {
+                        "codex": "CODEX_EFFORT",
+                        "opencode": "OPENCODE_EFFORT",
+                        "pi": "PI_EFFORT",
+                    }.get(self.agent)
+                    if effort_env is not None:
+                        effort = os.environ.get(effort_env) or None
 
         # The Claude adapter omits --effort for this explicit reset sentinel.
         if self.agent == "claude-code" and effort == "default":
