@@ -75,6 +75,9 @@ _VOLATILE = (
     "CODEX_EFFORT",
     "OPENCODE_MODEL",
     "OPENCODE_EFFORT",
+    "OPENCODE_CONFIG",
+    "OPENCODE_CONFIG_CONTENT",
+    "OPENCODE_PERMISSION",
     "PI_MODEL",
     "PI_EFFORT",
     "CLAUDECODE",
@@ -108,6 +111,7 @@ class AdapterRun(TypedDict):
     effortenv: str
     vcsenv: str
     opencode_config: str
+    opencode_permission: str
     stdin: str | None
     base: Path
 
@@ -165,6 +169,9 @@ class AdapterCase(unittest.TestCase):
             lines.append('printf "%s\\n" "${OPENCODE_FAKE_VCS-<unset>}" > "${ADAPTER_VCS_ENV_FILE:-/dev/null}"')
             lines.append('printf "%s\\n" "${OPENCODE_CONFIG-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"')
             lines.append(
+                'printf "%s\\n" "${OPENCODE_PERMISSION-<unset>}" > "${ADAPTER_OPENCODE_PERMISSION_FILE:-/dev/null}"'
+            )
+            lines.append(
                 'if [[ -n "${OPENCODE_CONFIG:-}" && -f "$OPENCODE_CONFIG" ]]; then '
                 'cat "$OPENCODE_CONFIG" > "${ADAPTER_OPENCODE_CONFIG_FILE:-/dev/null}"; fi'
             )
@@ -221,6 +228,7 @@ class AdapterCase(unittest.TestCase):
             "ADAPTER_EFFORT_ENV_FILE": base / "effortenv.txt",
             "ADAPTER_VCS_ENV_FILE": base / "vcsenv.txt",
             "ADAPTER_OPENCODE_CONFIG_FILE": base / "opencode_config.json",
+            "ADAPTER_OPENCODE_PERMISSION_FILE": base / "opencode_permission.json",
             "ADAPTER_STDIN_FILE": base / "stdin.txt",
         }
         env = {k: v for k, v in os.environ.items() if k not in _VOLATILE}
@@ -248,6 +256,7 @@ class AdapterCase(unittest.TestCase):
             "effortenv": (read(record["ADAPTER_EFFORT_ENV_FILE"]) or "").strip(),
             "vcsenv": (read(record["ADAPTER_VCS_ENV_FILE"]) or "").strip(),
             "opencode_config": read(record["ADAPTER_OPENCODE_CONFIG_FILE"]) or "",
+            "opencode_permission": (read(record["ADAPTER_OPENCODE_PERMISSION_FILE"]) or "").strip(),
             "stdin": read(record["ADAPTER_STDIN_FILE"]),
             "base": base,
         }
@@ -945,16 +954,73 @@ class OpenCodeAdapter(AdapterCase):
         )
 
         self.assertEqual(result["returncode"], 0, result["stderr"])
-        config_path = Path(result["configdir"])
-        self.assertFalse(config_path.exists())
-        config = json.loads(result["opencode_config"])
-        external = config["permission"]["external_directory"]
+        self.assertEqual(result["configdir"], "<unset>")
+        external = json.loads(result["opencode_permission"])["external_directory"]
         self.assertEqual(external[str(specula_root)], "allow")
         self.assertEqual(external[f"{specula_root}/**"], "allow")
         self.assertEqual(external[str(target_repo)], "allow")
         self.assertEqual(external[f"{target_repo}/**"], "allow")
         self.assertEqual(external[str(work_dir)], "allow")
         self.assertEqual(external[f"{work_dir}/**"], "allow")
+
+    def test_native_config_is_not_copied_or_rebased(self) -> None:
+        base = self.sandbox()
+        config_path = base / "config" / "custom.jsonc"
+        config_path.parent.mkdir()
+        config_text = """{
+  // OpenCode accepts JSONC and resolves these relative to this file.
+  \"plugin\": [\"./plugin.js\"],
+  \"instructions\": [\"{file:./instructions.md}\"],
+}
+"""
+        config_path.write_text(config_text)
+
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"OPENCODE_CONFIG": str(config_path)},
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["configdir"], str(config_path))
+        self.assertEqual(result["opencode_config"], config_text)
+        self.assertIn("external_directory", json.loads(result["opencode_permission"]))
+
+    def test_native_permission_override_is_preserved(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_ROOT": str(base / "Specula"),
+                "OPENCODE_PERMISSION": json.dumps(
+                    {
+                        "bash": "deny",
+                        "external_directory": {"*": "deny", "/keep-denied": "deny"},
+                    }
+                ),
+            },
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        permission = json.loads(result["opencode_permission"])
+        self.assertEqual(permission["bash"], "deny")
+        self.assertEqual(permission["external_directory"]["*"], "deny")
+        self.assertEqual(permission["external_directory"]["/keep-denied"], "deny")
+        self.assertEqual(permission["external_directory"][str(base / "Specula")], "allow")
+
+    def test_scalar_native_permission_becomes_catch_all(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_ROOT": str(base / "Specula"),
+                "OPENCODE_PERMISSION": json.dumps("deny"),
+            },
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        permission = json.loads(result["opencode_permission"])
+        self.assertEqual(permission["*"], "deny")
+        self.assertEqual(permission["external_directory"][str(base / "Specula")], "allow")
 
     def test_prompt_file_and_large_prompt_use_stdin(self) -> None:
         for prompt in ("prompt from file\n", "x" * 200_000):
