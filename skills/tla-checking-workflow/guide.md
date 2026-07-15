@@ -60,9 +60,9 @@ These parameters apply to **all** model checking runs — convergence and bug hu
 | Parameter | Rule | Notes |
 |-----------|------|-------|
 | **Timeout** | **30 minutes** per run (`-t 30`) | The single hard constraint. If TLC hasn't found a violation in 30 min, the run ends. |
-| **Workers** | Match the machine (`-w auto` or explicit core count) | Detect available CPUs and use all of them. |
-| **Heap memory** | Match the machine (e.g., `-m 50G`) | Use most of available RAM. Leave headroom for OS and off-heap. |
-| **Off-heap memory** | Match the machine (e.g., `-M 200G`) | For `OffHeapDiskFPSet`. Set to available physical memory minus heap. |
+| **Workers** | Prefer `-w auto` for one TLC; use an explicit count when running several TLCs concurrently | `auto` uses every CPU visible to that JVM. It does not coordinate with other TLC processes. |
+| **Heap memory** | Choose together with off-heap (e.g., `-m 50G`) | The wrapper accounts for the declared heap and off-heap as one request. |
+| **Off-heap memory** | Give `OffHeapDiskFPSet` the larger share when useful (e.g., `-M 200G`) | The sum of `-m + -M` must fit the remaining Specula-run budget. |
 | **Simulation depth** | 50–100 (`-p 50` to `-p 100`) | Shorter (50) for simple protocols (few actions, shallow state graphs). Longer (100) for complex protocols (many interleaving actions, deep state graphs). |
 | **Simulation traces** | As many as possible (`-n 999999999`) | Let the timeout be the stopping condition, not trace count. |
 | **State space size** | **Do not constrain.** | Let TLC explore as much as possible within the 30-min window. |
