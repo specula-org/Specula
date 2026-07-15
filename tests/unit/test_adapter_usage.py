@@ -71,7 +71,7 @@ class TestPiSubagentUsage(unittest.TestCase):
         self.assertEqual(_total(combined, "combined"), 462)
 
     def test_nested_results_count_and_missing_usage_is_partial(self) -> None:
-        nested = _event(_result(children=[_result(50)]))
+        nested = _event(_result(messages=[{"role": "toolResult", "details": {"results": [_result(50)]}}]))
         missing = _event({"agent": "unaccounted", "exitCode": 0})
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

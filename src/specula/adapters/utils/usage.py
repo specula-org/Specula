@@ -205,6 +205,15 @@ def _pi_results_from_details(details: object) -> list[PiSubagentResult]:
         if isinstance(nested_details, dict) and isinstance(nested_details.get("results"), list):
             for child in nested_details["results"]:
                 visit(child)
+        messages = result.get("messages")
+        if isinstance(messages, list):
+            for message in messages:
+                if not isinstance(message, dict):
+                    continue
+                message_details = message.get("details")
+                if isinstance(message_details, dict) and isinstance(message_details.get("results"), list):
+                    for child in message_details["results"]:
+                        visit(child)
 
     for result in details["results"]:
         visit(result)
