@@ -12,17 +12,19 @@ When using WSL2, install the prerequisites and agent CLI inside WSL2, then clone
 
 ### Requirements
 
-| Dependency | Used for | Installed by `specula setup`? |
-|---|---|---|
-| [uv](https://docs.astral.sh/uv/) | Installing the `specula` command | No |
-| Python 3.10+ with `pip` and `venv` | CLI, launchers, MCP tool environments | No |
-| JDK 21+ and Maven | TLC, SANY, and building the CFA tool | No |
-| Git and Bash | Source/history analysis, worktrees, and launch scripts | No |
-| Standard POSIX utilities (`tee`, `tail`, `du`, and others) | Logging and process coordination | No |
-| `curl` or `wget` | Downloading TLA+ JARs during setup | No |
-| GitHub CLI (`gh`) | Issue and repository research | No |
-| Claude Code, Codex, or GitHub Copilot CLI | Agent execution | No |
-| Target language toolchain and test dependencies | Harness generation and bug reproduction | No |
+The dependencies below are not installed by `specula setup`; install them separately as needed.
+
+| Dependency | Used for |
+|---|---|
+| [uv](https://docs.astral.sh/uv/) | Installing the `specula` command |
+| Python 3.10+ with `pip` and `venv` | CLI, launchers, MCP tool environments |
+| JDK 21+ and Maven | TLC, SANY, and building the CFA tool |
+| Git and Bash | Source/history analysis, worktrees, and launch scripts |
+| Standard POSIX utilities (`tee`, `tail`, `du`, and others) | Logging and process coordination |
+| `curl` or `wget` | Downloading TLA+ JARs during setup |
+| GitHub CLI (`gh`) | Issue and repository research |
+| Claude Code, Codex, or GitHub Copilot CLI | Agent execution |
+| Target language toolchain and test dependencies | Harness generation and bug reproduction |
 
 The first setup needs network access to GitHub, PyPI, and Maven Central. Agent runs also need access to the selected model provider and any remote repositories the analysis uses. Claude subscription quota monitoring specifically uses `curl`; if it is unavailable, the quota check warns and fails open rather than stopping the pipeline.
 
