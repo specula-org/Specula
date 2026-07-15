@@ -107,6 +107,7 @@ class AdapterRun(TypedDict):
     modelenv: str
     effortenv: str
     vcsenv: str
+    opencode_config: str
     stdin: str | None
     base: Path
 
@@ -162,9 +163,15 @@ class AdapterCase(unittest.TestCase):
             lines.append(f'printf "%s\\n" "${{{effort_var}-<unset>}}" > "${{ADAPTER_EFFORT_ENV_FILE:-/dev/null}}"')
         if name == "opencode":
             lines.append('printf "%s\\n" "${OPENCODE_FAKE_VCS-<unset>}" > "${ADAPTER_VCS_ENV_FILE:-/dev/null}"')
+            lines.append('printf "%s\\n" "${OPENCODE_CONFIG-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"')
+            lines.append(
+                'if [[ -n "${OPENCODE_CONFIG:-}" && -f "$OPENCODE_CONFIG" ]]; then '
+                'cat "$OPENCODE_CONFIG" > "${ADAPTER_OPENCODE_CONFIG_FILE:-/dev/null}"; fi'
+            )
         if record_extra:
+            if name != "opencode":
+                lines.append('printf "%s\\n" "${CLAUDE_CONFIG_DIR:-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"')
             lines += [
-                'printf "%s\\n" "${CLAUDE_CONFIG_DIR:-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"',
                 'printf "%s\\n" "${CLAUDECODE:-<unset>}" > "${ADAPTER_SESSIONENV_FILE:-/dev/null}"',
                 'cat > "${ADAPTER_STDIN_FILE:-/dev/null}"',
             ]
@@ -213,6 +220,7 @@ class AdapterCase(unittest.TestCase):
             "ADAPTER_MODEL_ENV_FILE": base / "modelenv.txt",
             "ADAPTER_EFFORT_ENV_FILE": base / "effortenv.txt",
             "ADAPTER_VCS_ENV_FILE": base / "vcsenv.txt",
+            "ADAPTER_OPENCODE_CONFIG_FILE": base / "opencode_config.json",
             "ADAPTER_STDIN_FILE": base / "stdin.txt",
         }
         env = {k: v for k, v in os.environ.items() if k not in _VOLATILE}
@@ -239,6 +247,7 @@ class AdapterCase(unittest.TestCase):
             "modelenv": (read(record["ADAPTER_MODEL_ENV_FILE"]) or "").strip(),
             "effortenv": (read(record["ADAPTER_EFFORT_ENV_FILE"]) or "").strip(),
             "vcsenv": (read(record["ADAPTER_VCS_ENV_FILE"]) or "").strip(),
+            "opencode_config": read(record["ADAPTER_OPENCODE_CONFIG_FILE"]) or "",
             "stdin": read(record["ADAPTER_STDIN_FILE"]),
             "base": base,
         }
@@ -920,6 +929,32 @@ class OpenCodeAdapter(AdapterCase):
         self.assertEqual(result["modelenv"], "<unset>")
         self.assertEqual(result["effortenv"], "<unset>")
         self.assertEqual(result["vcsenv"], "git")
+
+    def test_external_specula_and_artifact_paths_are_allowed(self) -> None:
+        base = self.sandbox()
+        specula_root = base / "Specula"
+        target_repo = base / "target"
+        work_dir = base / "run" / "kilo" / ".specula-output"
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_ROOT": str(specula_root),
+                "SPECULA_TARGET_REPO_DIR": str(target_repo),
+                "SPECULA_WORK_DIR": str(work_dir),
+            },
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        config_path = Path(result["configdir"])
+        self.assertFalse(config_path.exists())
+        config = json.loads(result["opencode_config"])
+        external = config["permission"]["external_directory"]
+        self.assertEqual(external[str(specula_root)], "allow")
+        self.assertEqual(external[f"{specula_root}/**"], "allow")
+        self.assertEqual(external[str(target_repo)], "allow")
+        self.assertEqual(external[f"{target_repo}/**"], "allow")
+        self.assertEqual(external[str(work_dir)], "allow")
+        self.assertEqual(external[f"{work_dir}/**"], "allow")
 
     def test_prompt_file_and_large_prompt_use_stdin(self) -> None:
         for prompt in ("prompt from file\n", "x" * 200_000):

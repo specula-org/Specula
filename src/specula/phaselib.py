@@ -847,6 +847,10 @@ class Phase:
         env = os.environ.copy()
         env["SPECULA_PHASE"] = self.key
         env["SPECULA_WORK_DIR"] = str(ws.work_dir(name))
+        env["SPECULA_ROOT"] = str(SPECULA_ROOT)
+        repo_dir = ws.find_repo_dir(name)
+        if repo_dir:
+            env["SPECULA_TARGET_REPO_DIR"] = repo_dir
         work_dir = ws.work_dir(name)
         activity_sidecar = files["log"].with_suffix(".activity.jsonl")
         with contextlib.suppress(OSError):

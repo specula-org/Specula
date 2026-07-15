@@ -384,6 +384,19 @@ class TestDryRunCommand(PhaseCase):
                 self.assertNotIn(rejected, body)
                 self.assertNotIn("<!-- specula-skill:", body)
 
+    def test_local_skill_adapter_prompt_includes_skill_file_path(self) -> None:
+        spec = BY_KEY["code_analysis"]
+        for adapter in ("opencode", "pi"):
+            with self.subTest(adapter=adapter):
+                rc, out = self.dry_run(spec, extra=[f"--agent={adapter}"])
+                self.assertEqual(rc, 0, out)
+                body = (self.work_dir() / spec["prompt"]).read_text()
+
+                self.assertIn("**code-analysis**", body)
+                self.assertIn("/skills/code_analysis/SKILL.md", body)
+                self.assertIn("read the local Specula skill file", body)
+                self.assertNotIn("<!-- specula-skill:", body)
+
     def test_bug_confirmation_defaults_to_parallel(self) -> None:
         # No --legacy-confirm: Phase 4a runs parallel per-finding confirmation
         # (confirmlib), NOT the single-agent adapter launch.
