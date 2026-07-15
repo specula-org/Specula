@@ -40,6 +40,14 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from specula import quota as _quota
 from specula.phaselib import _logical_cwd, _normalize_artifact_dir, _wc_l
+from specula.tlc_resources import (
+    MEMORY_LIMIT_ENV,
+    RUN_POLICY_FILENAME,
+    SCOPE_ENV,
+    WORKER_LIMIT_ENV,
+    parse_memory_limit,
+    parse_worker_limit,
+)
 
 RATE_LIMIT_FALLBACK_SECONDS = _quota.RATE_LIMIT_FALLBACK_SECONDS
 RATE_LIMIT_RC = _quota.RATE_LIMIT_RC
@@ -100,6 +108,10 @@ Options:
   --model=NAME           Model forwarded to every agent adapter
   --effort=LEVEL         Reasoning effort forwarded to every agent adapter
   --artifact=PATH        Path to system artifact/source code
+  --tlc-memory-limit=SIZE
+                         Aggregate -m + -M budget for TLCs in this run (default: auto,
+                         80% of effective available memory at the first TLC start)
+  --tlc-worker-limit=N   Optional aggregate TLC worker bound (default: unset; report only)
   --isolate              Isolated workspace (the default): all outputs go to
                          runs/<run-id>/ — parallel-safe, keeps case-studies/
                          pristine. Sources are read from case-studies/<name>/artifact
@@ -280,6 +292,8 @@ class Pipeline:
         self.effort: str | None = None
         self.artifact = ""
         self._artifact_given = False
+        self.tlc_memory_limit: str | None = None
+        self.tlc_worker_limit: str | None = None
         self.targets: list[str] = []
         self.quota_5h = os.environ.get("QUOTA_5H") or "85"
         self.quota_7d = os.environ.get("QUOTA_7D") or "95"
@@ -292,6 +306,7 @@ class Pipeline:
         self.run_id = ""
         self._run_id_given = False  # `--run-id=` (empty) must error, not mint a fresh id
         self.run_dir: Path | None = None
+        self.tlc_scope = ""
         self.argv: list[str] = []
 
     # ── argument parsing (runs before the tee starts, like the bash top level) ──
@@ -351,6 +366,10 @@ class Pipeline:
             elif arg.startswith("--artifact="):
                 self.artifact = arg.split("=", 1)[1]
                 self._artifact_given = True
+            elif arg.startswith("--tlc-memory-limit="):
+                self.tlc_memory_limit = arg.split("=", 1)[1]
+            elif arg.startswith("--tlc-worker-limit="):
+                self.tlc_worker_limit = arg.split("=", 1)[1]
             elif arg in ("--help", "-h"):
                 sys.stdout.write(USAGE)
                 return 0
@@ -377,6 +396,21 @@ class Pipeline:
             # The legacy single-target flow may chdir before launching phases.
             # Stabilize a relative CLI path while it still refers to the caller's cwd.
             self.artifact = normalized_artifact
+
+        memory_limit = self.tlc_memory_limit
+        if memory_limit is None:
+            memory_limit = os.environ.get(MEMORY_LIMIT_ENV) or None
+        worker_limit = self.tlc_worker_limit
+        if worker_limit is None:
+            worker_limit = os.environ.get(WORKER_LIMIT_ENV) or None
+        try:
+            if memory_limit is not None:
+                parse_memory_limit(memory_limit)
+            if worker_limit is not None:
+                parse_worker_limit(worker_limit)
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
 
         # Validate the repair budget before any phase starts.  int() in
         # run_repair_loop used to make malformed values fail only after the
@@ -426,6 +460,12 @@ class Pipeline:
             # explicit --no-isolate: guaranteed-legacy for the whole tree —
             # the phase children must not re-isolate off an ambient run dir
             os.environ.pop("SPECULA_RUN_DIR", None)
+            # Legacy targets have different SPECULA_WORK_DIR values. Give the
+            # whole top-level invocation one absolute, unique resource scope so
+            # concurrent TLCs across those targets still share one budget.
+            scope_name = f".specula-tlc-scope-{os.getpid()}-{secrets.token_hex(8)}"
+            self.tlc_scope = str((_logical_cwd() / scope_name).resolve())
+            os.environ[SCOPE_ENV] = self.tlc_scope
             return None
         env_dir = os.environ.get("SPECULA_RUN_DIR", "")
         attached_ambient = bool(env_dir) and not self._isolate_explicit
@@ -441,6 +481,11 @@ class Pipeline:
             self.run_dir = SPECULA_ROOT / "runs" / self.run_id
         self.run_dir.mkdir(parents=True, exist_ok=True)
         os.environ["SPECULA_RUN_DIR"] = str(self.run_dir)  # phase subprocesses inherit
+        self.tlc_scope = str(self.run_dir.resolve())
+        os.environ[SCOPE_ENV] = self.tlc_scope
+        resource_rc = self._restore_run_resource_config()
+        if resource_rc is not None:
+            return resource_rc
         self._write_run_meta()
         if not attached_ambient:
             # runs/latest -> <run-id>; symlink+rename so readers never see a gap
@@ -448,6 +493,102 @@ class Pipeline:
                 tmp = self.run_dir.parent / f".latest.{self.run_id}.tmp"
                 tmp.symlink_to(self.run_id)
                 tmp.replace(self.run_dir.parent / "latest")
+        return None
+
+    def _restore_run_resource_config(self) -> int | None:
+        """Create or restore the immutable, durable TLC policy for a run."""
+        assert self.run_dir is not None
+        policy_file = self.run_dir / RUN_POLICY_FILENAME
+        meta_file = self.run_dir / "run.json"
+        current_memory = self.tlc_memory_limit
+        if current_memory is None:
+            current_memory = os.environ.get(MEMORY_LIMIT_ENV) or None
+        current_workers = self.tlc_worker_limit
+        if current_workers is None:
+            current_workers = os.environ.get(WORKER_LIMIT_ENV) or None
+
+        source = policy_file
+        policy: object
+        publish_policy = not policy_file.exists()
+        if not publish_policy:
+            try:
+                policy = json.loads(policy_file.read_text())
+            except (OSError, json.JSONDecodeError) as exc:
+                print(f"ERROR: cannot restore TLC resource config from {policy_file}: {exc}", file=sys.stderr)
+                return 1
+        else:
+            stored_memory: object = current_memory or "auto"
+            stored_workers: object = current_workers
+            if meta_file.exists():
+                try:
+                    loaded_meta = json.loads(meta_file.read_text())
+                    if not isinstance(loaded_meta, dict):
+                        raise ValueError("expected an object")
+                    candidate_memory = loaded_meta.get("tlc_memory_limit", stored_memory)
+                    candidate_workers = loaded_meta.get("tlc_worker_limit", stored_workers)
+                    if not isinstance(candidate_memory, str) or (
+                        candidate_workers is not None and not isinstance(candidate_workers, str)
+                    ):
+                        raise ValueError("invalid TLC resource fields")
+                    parse_memory_limit(candidate_memory)
+                    if candidate_workers is not None:
+                        parse_worker_limit(candidate_workers)
+                    stored_memory = candidate_memory
+                    stored_workers = candidate_workers
+                except (OSError, json.JSONDecodeError, ValueError) as exc:
+                    print(
+                        f"WARNING: ignoring TLC resource fields in audit metadata {meta_file}: {exc}",
+                        file=sys.stderr,
+                    )
+            policy = {
+                "version": 1,
+                "memory_limit": stored_memory,
+                "worker_limit": stored_workers,
+            }
+
+        if not isinstance(policy, dict) or policy.get("version") != 1:
+            print(f"ERROR: invalid TLC resource config in {source}", file=sys.stderr)
+            return 1
+        stored_memory = policy.get("memory_limit")
+        stored_workers = policy.get("worker_limit")
+        if not isinstance(stored_memory, str) or (stored_workers is not None and not isinstance(stored_workers, str)):
+            print(f"ERROR: invalid TLC resource config in {source}", file=sys.stderr)
+            return 1
+        try:
+            stored_memory_value = parse_memory_limit(stored_memory)
+            stored_worker_value = parse_worker_limit(stored_workers) if stored_workers is not None else None
+        except ValueError as exc:
+            print(f"ERROR: invalid TLC resource config in {source}: {exc}", file=sys.stderr)
+            return 1
+
+        if current_memory is None:
+            self.tlc_memory_limit = stored_memory
+        elif parse_memory_limit(current_memory) != stored_memory_value:
+            print(
+                f"ERROR: this Specula run already uses TLC memory limit {stored_memory}; "
+                "the limit cannot change when resuming",
+                file=sys.stderr,
+            )
+            return 1
+        if current_workers is None:
+            self.tlc_worker_limit = stored_workers
+        elif stored_worker_value is None or parse_worker_limit(current_workers) != stored_worker_value:
+            label = "unbounded" if stored_workers is None else stored_workers
+            print(
+                f"ERROR: this Specula run already uses TLC worker limit {label}; the limit cannot change when resuming",
+                file=sys.stderr,
+            )
+            return 1
+        if publish_policy:
+            try:
+                self._atomic_publish_text_no_replace(policy_file, json.dumps(policy, indent=2) + "\n")
+            except FileExistsError:
+                # A simultaneous attach won creation. Reload its policy and
+                # compare instead of overwriting the run-wide bound.
+                return self._restore_run_resource_config()
+            except OSError as exc:
+                print(f"ERROR: cannot persist TLC resource config to {policy_file}: {exc}", file=sys.stderr)
+                return 1
         return None
 
     def _write_run_meta(self) -> None:
@@ -479,6 +620,8 @@ class Pipeline:
             "claude_alias": self.claude_alias,
             "artifact": self.artifact,
             "artifact_git_sha": artifact_sha,
+            "tlc_memory_limit": self.tlc_memory_limit or os.environ.get(MEMORY_LIMIT_ENV) or "auto",
+            "tlc_worker_limit": self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or None,
         }
         with contextlib.suppress(OSError):
             meta_file.write_text(json.dumps(meta, indent=2) + "\n")
@@ -897,8 +1040,8 @@ class Pipeline:
                 tmp.unlink(missing_ok=True)
 
     @staticmethod
-    def _publish_deferred_no_replace(path: Path, text: str) -> None:
-        """Atomically publish a complete deferred request without overwriting."""
+    def _atomic_publish_text_no_replace(path: Path, text: str) -> None:
+        """Atomically publish complete text, failing if the path exists."""
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
         try:
@@ -912,6 +1055,11 @@ class Pipeline:
         finally:
             with contextlib.suppress(OSError):
                 tmp.unlink(missing_ok=True)
+
+    @staticmethod
+    def _publish_deferred_no_replace(path: Path, text: str) -> None:
+        """Atomically publish a complete deferred request without overwriting."""
+        Pipeline._atomic_publish_text_no_replace(path, text)
 
     def repair_defer_intent_path(self) -> Path:
         root = self.run_dir if self.run_dir else Path(_logical_cwd()) / ".specula-output"
@@ -1238,6 +1386,12 @@ class Pipeline:
                 "SPECULA_CLAUDE_ALIAS": self.claude_alias,
             }
         )
+        if self.tlc_memory_limit is not None:
+            env[MEMORY_LIMIT_ENV] = self.tlc_memory_limit
+        if self.tlc_worker_limit is not None:
+            env[WORKER_LIMIT_ENV] = self.tlc_worker_limit
+        if self.tlc_scope:
+            env[SCOPE_ENV] = self.tlc_scope
 
         proc: subprocess.Popen[bytes] | None = None
         received: list[tuple[int, float]] = []
@@ -1745,6 +1899,10 @@ class Pipeline:
         print(f"Max parallel: {self._max_parallel_summary()}")
         print(f"Max turns:    {self.max_turns}")
         print(f"Agent:        {self.agent}  (claude-alias={self.claude_alias})")
+        memory_limit = self.tlc_memory_limit or os.environ.get(MEMORY_LIMIT_ENV) or "auto (80% available)"
+        worker_limit = self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or "unbounded (report only)"
+        print(f"TLC memory:   {memory_limit}")
+        print(f"TLC workers:  {worker_limit}")
         if self.run_dir:
             print(f"Run:          {self.run_id}  ({self.run_dir})")
         print()

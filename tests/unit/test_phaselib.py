@@ -179,6 +179,9 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_ACTIVITY_LOG",
             "SPECULA_RATE_LIMIT_REACTIVE",
             "SPECULA_RATE_LIMIT_RETRIES",
+            "SPECULA_TLC_SCOPE",
+            "SPECULA_TLC_MEMORY_LIMIT",
+            "SPECULA_TLC_WORKER_LIMIT",
             "SPECULA_QUOTA_5H",
             "SPECULA_QUOTA_7D",
             "SPECULA_QUOTA_MAX_WAITS",
@@ -1227,6 +1230,41 @@ class TestProgressReporting(PhaseCase):
         self.assertEqual(rc, 0, out)
         self.assertIn(f"{NAME}: created modeling-brief.md", out)
         self.assertIn(f"{NAME}: completed (exit 0)", out)
+
+    def test_direct_multi_target_command_shares_one_tlc_scope(self) -> None:
+        launch_dir = self.tmp()
+        capture_dir = self.tmp()
+        self.set_env("SPECULA_RUN_DIR", None)
+        self.set_env("SPECULA_TLC_SCOPE", None)
+        self.write_adapter(
+            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            f'printf "%s\\n" "$SPECULA_TLC_SCOPE" > "{capture_dir}/$name"\n'
+        )
+        previous = Path.cwd()
+        os.chdir(launch_dir)
+        self.addCleanup(os.chdir, previous)
+
+        rc, out = self.run_phase(
+            "code_analysis",
+            [f"--agent={self.adapter.stem}", self.artifact_flag(), "a|g|Go|r", "b|g|Go|r"],
+        )
+
+        self.assertEqual(rc, 0, out)
+        scopes = {(capture_dir / name).read_text().strip() for name in ("a", "b")}
+        self.assertEqual(len(scopes), 1)
+        self.assertTrue(Path(scopes.pop()).is_absolute())
+
+    def test_direct_phase_restores_isolated_run_tlc_policy(self) -> None:
+        capture = self.tmp() / "resources"
+        (self.run_dir / "tlc-resources.json").write_text(
+            '{"version": 1, "memory_limit": "64G", "worker_limit": "12"}\n'
+        )
+        self.write_adapter(f'printf "%s\\n" "$SPECULA_TLC_MEMORY_LIMIT" "$SPECULA_TLC_WORKER_LIMIT" > "{capture}"\n')
+
+        rc, out = self.run_fake()
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(capture.read_text().splitlines(), ["64G", "12"])
 
     def test_changes_during_cooldown_are_flushed_on_completion(self) -> None:
         self.patch_attr(phaselib.Phase, "progress_config", replace(self.config, change_report_seconds=10.0))

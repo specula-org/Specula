@@ -149,6 +149,7 @@ Runs are isolated by default under:
 ```text
 runs/<run-id>/
 ├── run.json
+├── tlc-resources.json
 ├── pipeline.log
 ├── pipeline-summary.md
 └── <name>/.specula-output/
@@ -159,6 +160,18 @@ The `.specula-output/` directory contains the modeling brief, specifications, ha
 The source supplied through `--artifact` is not copied into the isolated workspace. Harness and reproduction work may build or modify that checkout. `--no-isolate` selects the legacy layout: a single target writes step outputs under `$PWD/.specula-output/`, or under `case-studies/<name>/.specula-output/` when that canonical case study exists; multiple targets use `$PWD/<name>/.specula-output/`. For a canonical single target, `pipeline.log` remains under the launch directory's `.specula-output/` while the step outputs and summary use the case-study directory.
 
 TLC can use substantial memory and temporary disk space during model checking. The bundled `scripts/tlc/run_model_check.sh` stores states under `TMPDIR` (or `/tmp`) by default; set `TLC_STATE_DIR` to a larger or faster filesystem when necessary.
+
+TLC memory is admitted against one aggregate budget per Specula run. By default, the first TLC snapshots effective available memory and fixes the budget at 80% for that run. Each live TLC reserves its declared heap plus direct-memory limits (`-m + -M`); a concurrent launch that would exceed the remaining budget is rejected before Java starts and reports the run total, this agent's existing reservation, and the remainder.
+
+Set an explicit bound when you want to divide a machine among several independent runs:
+
+```bash
+specula run --tlc-memory-limit=64G ...
+```
+
+An explicit bound is authoritative and intentionally does not subtract unrelated system use, so leave any desired OS/JVM-native headroom yourself. The bound covers TLC heap and direct memory, not thread stacks, metaspace, JIT, GC, or other native overhead. For an individual phase or interactive agent session, use `SPECULA_TLC_MEMORY_LIMIT=64G`. Direct multi-target phase commands automatically share one command-scoped budget. When invoking the TLC wrapper outside a Specula launcher, calls from the same working directory share the fallback scope; set an absolute, session-specific `SPECULA_TLC_SCOPE` when unrelated sessions use that directory, and reuse it for every concurrent TLC in the same session.
+
+TLC workers remain unbounded by default: `-w auto` uses every CPU visible to each JVM and the wrapper only reports the resulting aggregate. Set `--tlc-worker-limit=N` (or `SPECULA_TLC_WORKER_LIMIT=N`) only when you want an explicit aggregate worker bound; the wrapper rejects rather than silently shrinking an over-budget request.
 
 ## Resuming a Run
 
@@ -183,7 +196,7 @@ specula run \
   "name|owner/repository|language|reference"
 ```
 
-Specula reuses `runs/<run-id>/<name>/.specula-output/`. Pass the target, artifact, agent, model, and effort again when resuming; `run.json` is an audit record, not a source of arguments for the new invocation.
+Specula reuses `runs/<run-id>/<name>/.specula-output/`. Pass the target, artifact, agent, model, and effort again when resuming. The run's TLC memory and worker limits are restored from `tlc-resources.json`; `run.json` remains an audit record, not arguments for the new invocation.
 
 ## Individual Steps
 
@@ -238,6 +251,8 @@ specula run [options] "name|owner/repository|language|reference"
 | `--model=NAME` | Override the configured model |
 | `--effort=LEVEL` | Override reasoning effort |
 | `--artifact=PATH` | Set the target source checkout |
+| `--tlc-memory-limit=SIZE` | Set the run-wide aggregate TLC heap + direct-memory budget; default is 80% of effective available memory at the first TLC start |
+| `--tlc-worker-limit=N` | Optionally bound aggregate TLC exploration workers; omitted means report-only |
 | `--max-parallel=N` | Set a hard concurrency limit. If omitted, ordinary steps run 1 target agent at a time and per-finding confirmation runs up to 4 Reproducer agents at a time |
 | `--max-turns=N` | Set Copilot's autopilot continuation limit; accepted but ignored by Claude Code and Codex |
 | `--enable-reviews` | Enable reviews between steps |

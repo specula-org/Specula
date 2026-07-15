@@ -19,6 +19,7 @@ import contextlib
 import locale
 import os
 import re
+import secrets
 import signal
 import subprocess
 import sys
@@ -33,6 +34,16 @@ import specula.progress as progress
 from specula import quota
 from specula.prompts import render
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
+from specula.tlc_resources import (
+    MEMORY_LIMIT_ENV,
+    RUN_POLICY_FILENAME,
+    SCOPE_ENV,
+    WORKER_LIMIT_ENV,
+    ResourceError,
+    load_run_policy,
+    parse_memory_limit,
+    parse_worker_limit,
+)
 
 SCRIPT_DIR = Path(__file__).resolve().parent  # src/specula
 SPECULA_ROOT = SCRIPT_DIR.parent.parent
@@ -495,6 +506,44 @@ class Phase:
         # `--effort=` can still reset the underlying CLI to its own default.
         self._model = model if model is not None else (os.environ.get("SPECULA_MODEL") or None)
         self._effort = effort if effort is not None else (os.environ.get("SPECULA_EFFORT") or None)
+
+        # A direct multi-target phase command has no Pipeline.run_dir, but its
+        # agents must still share one TLC budget. Preserve the scope supplied by
+        # a legacy Pipeline invocation; otherwise mint one command-scoped,
+        # absolute identity before target-specific work directories diverge.
+        if not os.environ.get(SCOPE_ENV):
+            run_dir = os.environ.get("SPECULA_RUN_DIR")
+            if run_dir:
+                os.environ[SCOPE_ENV] = str(Path(run_dir).expanduser().resolve())
+            else:
+                scope_name = f".specula-tlc-phase-{os.getpid()}-{secrets.token_hex(8)}"
+                os.environ[SCOPE_ENV] = str((_logical_cwd() / scope_name).resolve())
+
+        run_dir = os.environ.get("SPECULA_RUN_DIR")
+        if run_dir and (Path(run_dir).expanduser() / RUN_POLICY_FILENAME).is_file():
+            try:
+                stored_memory, stored_workers = load_run_policy(Path(run_dir).expanduser())
+                current_memory = os.environ.get(MEMORY_LIMIT_ENV) or None
+                current_workers = os.environ.get(WORKER_LIMIT_ENV) or None
+                if current_memory is None:
+                    os.environ[MEMORY_LIMIT_ENV] = stored_memory
+                elif parse_memory_limit(current_memory) != parse_memory_limit(stored_memory):
+                    raise ResourceError(
+                        f"this Specula run uses TLC memory limit {stored_memory}; "
+                        "the limit cannot change in a direct phase"
+                    )
+                if current_workers is None and stored_workers is not None:
+                    os.environ[WORKER_LIMIT_ENV] = stored_workers
+                elif current_workers is not None and (
+                    stored_workers is None or parse_worker_limit(current_workers) != parse_worker_limit(stored_workers)
+                ):
+                    label = "unbounded" if stored_workers is None else stored_workers
+                    raise ResourceError(
+                        f"this Specula run uses TLC worker limit {label}; the limit cannot change in a direct phase"
+                    )
+            except (ResourceError, ValueError) as exc:
+                print(f"ERROR: {exc}")
+                return 1
 
         adapter = LAUNCH_DIR / "adapters" / f"{agent}.sh"
         if not adapter.is_file():

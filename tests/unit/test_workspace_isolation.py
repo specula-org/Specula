@@ -38,19 +38,27 @@ RUN_ID_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
 
 
 class EnvIsolatedCase(unittest.TestCase):
-    """Base: never leak SPECULA_RUN_DIR mutations (module code exports it)."""
+    """Base: never leak run-directory or TLC-scope environment mutations."""
 
     def setUp(self) -> None:
-        old = os.environ.get("SPECULA_RUN_DIR")
+        names = (
+            "SPECULA_RUN_DIR",
+            "SPECULA_TLC_SCOPE",
+            "SPECULA_TLC_MEMORY_LIMIT",
+            "SPECULA_TLC_WORKER_LIMIT",
+        )
+        original = {name: os.environ.get(name) for name in names}
 
         def restore() -> None:
-            if old is None:
-                os.environ.pop("SPECULA_RUN_DIR", None)
-            else:
-                os.environ["SPECULA_RUN_DIR"] = old
+            for name, value in original.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
 
         self.addCleanup(restore)
-        os.environ.pop("SPECULA_RUN_DIR", None)
+        for name in names:
+            os.environ.pop(name, None)
 
     def set_run_dir(self, path: Path) -> None:
         os.environ["SPECULA_RUN_DIR"] = str(path)
@@ -282,6 +290,7 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         self.assertIn("created", meta)
         # env exported for the phase subprocesses
         self.assertEqual(os.environ["SPECULA_RUN_DIR"], str(p.run_dir))
+        self.assertEqual(os.environ["SPECULA_TLC_SCOPE"], str(p.run_dir.resolve()))
 
     def test_meta_records_cli_tuning_over_environment(self) -> None:
         root = self.tmp()
@@ -401,6 +410,77 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         # attach never rewrites the original record
         self.assertTrue(json.loads((run / "run.json").read_text())["original"])
 
+    def test_attach_restores_run_scoped_tlc_limits(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(
+            ["--run-id=myrun", "--tlc-memory-limit=64G", "--tlc-worker-limit=12", "foo|o/r|Go|ref"],
+            root,
+        )
+        self.assertEqual(first.tlc_memory_limit, "64G")
+        os.environ.pop("SPECULA_RUN_DIR", None)
+        os.environ.pop("SPECULA_TLC_SCOPE", None)
+
+        resumed = self._pipeline(["--run-id=myrun", "foo|o/r|Go|ref"], root)
+        self.assertEqual(resumed.tlc_memory_limit, "64G")
+        self.assertEqual(resumed.tlc_worker_limit, "12")
+
+    def test_legacy_run_meta_migrates_tlc_limits_once(self) -> None:
+        root = self.tmp()
+        run = root / "runs" / "legacy"
+        run.mkdir(parents=True)
+        (run / "run.json").write_text('{"run_id": "legacy", "original": true}\n')
+
+        configured = self._pipeline(
+            ["--run-id=legacy", "--tlc-memory-limit=48G", "--tlc-worker-limit=10", "foo|o/r|Go|ref"],
+            root,
+        )
+        self.assertEqual(configured.tlc_memory_limit, "48G")
+        policy = json.loads((run / "tlc-resources.json").read_text())
+        self.assertEqual(policy["memory_limit"], "48G")
+        self.assertEqual(policy["worker_limit"], "10")
+        os.environ.pop("SPECULA_RUN_DIR", None)
+        os.environ.pop("SPECULA_TLC_SCOPE", None)
+
+        resumed = self._pipeline(["--run-id=legacy", "foo|o/r|Go|ref"], root)
+        self.assertEqual(resumed.tlc_memory_limit, "48G")
+        self.assertEqual(resumed.tlc_worker_limit, "10")
+        self.assertTrue(json.loads((run / "run.json").read_text())["original"])
+
+    def test_invalid_legacy_audit_metadata_falls_back_without_blocking_attach(self) -> None:
+        root = self.tmp()
+        run = root / "runs" / "legacy"
+        run.mkdir(parents=True)
+        (run / "run.json").write_text('{"tlc_memory_limit": 64, "tlc_worker_limit": null}\n')
+        self.patch_root(pl, root)
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--run-id=legacy", "foo|o/r|Go|ref"]))
+
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertIsNone(p.resolve_run_dir())
+
+        self.assertIn("WARNING: ignoring TLC resource fields in audit metadata", err.getvalue())
+        policy = json.loads((run / "tlc-resources.json").read_text())
+        self.assertEqual(policy["memory_limit"], "auto")
+        self.assertIsNone(policy["worker_limit"])
+
+    def test_attach_rejects_changed_tlc_limits(self) -> None:
+        root = self.tmp()
+        self._pipeline(
+            ["--run-id=myrun", "--tlc-memory-limit=64G", "--tlc-worker-limit=12", "foo|o/r|Go|ref"],
+            root,
+        )
+        os.environ.pop("SPECULA_RUN_DIR", None)
+        os.environ.pop("SPECULA_TLC_SCOPE", None)
+        resumed = pl.Pipeline()
+        self.assertIsNone(
+            resumed.parse_args(["--run-id=myrun", "--tlc-memory-limit=32G", "--tlc-worker-limit=8", "foo|o/r|Go|ref"])
+        )
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(resumed.resolve_run_dir(), 1)
+        self.assertIn("limit cannot change when resuming", err.getvalue())
+
     def test_ambient_env_attach(self) -> None:
         """SPECULA_RUN_DIR already set (scheduler / outer script): honored
         as-is, nothing created under SPECULA_ROOT/runs."""
@@ -428,6 +508,15 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         self.assertIsNone(p.run_dir)
         self.assertFalse((root / "runs").exists())
         self.assertNotIn("SPECULA_RUN_DIR", os.environ)
+        self.assertTrue(Path(os.environ["SPECULA_TLC_SCOPE"]).is_absolute())
+
+    def test_no_isolate_uses_one_unique_tlc_scope_per_invocation(self) -> None:
+        root = self.tmp()
+        self._pipeline(["--no-isolate", "foo|o/r|Go|ref", "bar|o/r|Go|ref"], root)
+        first_scope = os.environ["SPECULA_TLC_SCOPE"]
+        self._pipeline(["--no-isolate", "foo|o/r|Go|ref", "bar|o/r|Go|ref"], root)
+        second_scope = os.environ["SPECULA_TLC_SCOPE"]
+        self.assertNotEqual(first_scope, second_scope)
 
     def test_no_isolate_overrides_ambient_env(self) -> None:
         # explicit beats ambient: children must not re-isolate off the env

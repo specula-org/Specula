@@ -529,6 +529,8 @@ class TestParsing(TmpCwd):
                 "--max-parallel=4",
                 "--model=gpt-5.5",
                 "--effort=high",
+                "--tlc-memory-limit=96G",
+                "--tlc-worker-limit=24",
                 "t|g|l|r",
             ]
         )
@@ -539,7 +541,32 @@ class TestParsing(TmpCwd):
         self.assertEqual(p.max_parallel, "4")
         self.assertEqual(p.model, "gpt-5.5")
         self.assertEqual(p.effort, "high")
+        self.assertEqual(p.tlc_memory_limit, "96G")
+        self.assertEqual(p.tlc_worker_limit, "24")
         self.assertEqual(p.targets, ["t|g|l|r"])
+
+    def test_invalid_tlc_resource_limits_are_rejected_at_parse(self) -> None:
+        for flag in (
+            "--tlc-memory-limit=lots",
+            "--tlc-memory-limit=0G",
+            "--tlc-worker-limit=auto",
+            "--tlc-worker-limit=0",
+        ):
+            with self.subTest(flag=flag):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    rc = pl.Pipeline().parse_args([flag, "t|g|l|r"])
+                self.assertEqual(rc, 1)
+                self.assertIn("ERROR:", err.getvalue())
+
+    def test_tlc_resource_limit_environment_is_validated(self) -> None:
+        os.environ["SPECULA_TLC_MEMORY_LIMIT"] = "bad"
+        self.addCleanup(os.environ.pop, "SPECULA_TLC_MEMORY_LIMIT", None)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = pl.Pipeline().parse_args(["t|g|l|r"])
+        self.assertEqual(rc, 1)
+        self.assertIn("invalid memory size", err.getvalue())
 
     def test_legacy_confirmation_rejects_debate_in_either_order(self) -> None:
         for args in (
@@ -1827,6 +1854,18 @@ class TestRunLauncherExitCodes(TmpCwd):
         p.claude_alias = "work"
         p._run_launcher("fake.sh", [])
         self.assertEqual(captured.read_text().splitlines(), ["1", "2", "81", "91", "4", "work"])
+
+    def test_phase_receives_explicit_tlc_resource_limits(self) -> None:
+        captured = self.tmp / "resources"
+        p = self._pipeline(
+            f'printf \'%s\\n\' "$SPECULA_TLC_MEMORY_LIMIT" "$SPECULA_TLC_WORKER_LIMIT" '
+            f'"$SPECULA_TLC_SCOPE" > "{captured}"\n'
+        )
+        p.tlc_memory_limit = "80G"
+        p.tlc_worker_limit = "12"
+        p.tlc_scope = "/tmp/specula-run-scope"
+        p._run_launcher("fake.sh", [])
+        self.assertEqual(captured.read_text().splitlines(), ["80G", "12", "/tmp/specula-run-scope"])
 
     def test_sigterm_is_forwarded_to_active_phase(self) -> None:
         forwarded = self.tmp / "forwarded"
