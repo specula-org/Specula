@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import BinaryIO, TextIO, cast
 
 from .text import SUMMARY_LIMIT, readable, readable_fragment, summary, tool_summary
-from .usage import UsageTotals, accumulate_usage, pi_session_files
+from .usage import PiSubagentResult, UsageTotals, accumulate_usage, pi_subagent_results
 
 
 @dataclass(frozen=True)
@@ -30,7 +30,7 @@ class StreamStatus:
     rate_limit_error: str | None
     terminal_error: str | None
     plain_diagnostics: tuple[str, ...]
-    session_files: tuple[str, ...]
+    subagent_results: tuple[PiSubagentResult, ...]
     usage: dict[str, object]
 
 
@@ -450,7 +450,7 @@ def stream_events(
     structured_error: str | None = None
     rate_limit_error: str | None = None
     plain_diagnostics: list[str] = []
-    session_files: list[str] = []
+    subagent_results: list[PiSubagentResult] = []
     raw_failures: list[str] = []
     readable_failures: list[str] = []
     raw_log: BinaryIO | None = None
@@ -527,7 +527,8 @@ def stream_events(
                 detected_rate_limit = _structured_rate_limit_error(adapter_name, record)
                 if detected_rate_limit is not None:
                     rate_limit_error = detected_rate_limit
-            session_files.extend(pi_session_files(record))
+            child_results = pi_subagent_results(record)
+            subagent_results.extend(child_results)
         if keep and not raw_already_written:
             write_raw(_compact_activity_line(adapter_name, record, raw_line))
         for event in events:
@@ -613,7 +614,7 @@ def stream_events(
         rate_limit_error=rate_limit_error,
         terminal_error=_terminal_error(adapter_name, terminal_record),
         plain_diagnostics=tuple(plain_diagnostics),
-        session_files=tuple(dict.fromkeys(session_files)),
+        subagent_results=tuple(subagent_results),
         usage=usage_totals.as_payload(adapter_name),
     )
 
@@ -621,7 +622,7 @@ def stream_events(
 def main(argv: list[str]) -> int:
     if len(argv) != 3 or argv[0] not in _ADAPTER_NAMES:
         print(
-            "usage: specula-adapter event-stream {claude|codex|copilot|opencode|pi} ACTIVITY_JSONL LOG_FILE",
+            "usage: specula _adapter event-stream {claude|codex|copilot|opencode|pi} ACTIVITY_JSONL LOG_FILE",
             file=sys.stderr,
         )
         return 2

@@ -1,4 +1,4 @@
-"""Installed command dispatcher for Specula's agent adapters."""
+"""Private command dispatcher for Specula's agent adapters."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ import sys
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Dispatch an internal adapter command from the packaged installation."""
+    """Dispatch an adapter through the existing public Specula command."""
     args = sys.argv[1:] if argv is None else argv
     if not args or args[0] in {"-h", "--help"}:
-        print("usage: specula-adapter {claude-code|opencode|pi|event-stream} [OPTIONS ...]")
+        print("usage: specula _adapter {claude-code|opencode|pi|event-stream} [OPTIONS ...]")
         return 0 if args else 2
 
     adapter_name, adapter_args = args[0], args[1:]
@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     elif adapter_name == "event-stream":
         from .utils.event_stream import main as adapter_main
     else:
-        print(f"specula-adapter: unknown adapter command: {adapter_name}", file=sys.stderr)
+        print(f"specula _adapter: unknown adapter command: {adapter_name}", file=sys.stderr)
         return 2
     return adapter_main(adapter_args)
 

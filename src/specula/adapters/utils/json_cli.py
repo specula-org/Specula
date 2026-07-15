@@ -281,7 +281,7 @@ def run_json_cli(
             usage = status.usage if status is not None else _empty_usage(adapter_name)
             if status is not None:
                 if adapter_name == "pi":
-                    usage = augment_pi_usage(usage, status.session_files, pi_session_root)
+                    usage = augment_pi_usage(usage, status.subagent_results, pi_session_root)
                 elif adapter_name == "opencode":
                     usage = augment_opencode_usage(usage, _opencode_database_path(inherited_env))
             usage_ok = _write_usage(options.log_path.with_suffix(".usage.json"), usage)

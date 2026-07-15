@@ -16,4 +16,9 @@ while [ -h "$SOURCE" ]; do
 done
 SPECULA_ROOT="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
-exec python3 "$SPECULA_ROOT/src/specula/cli.py" "$@"
+# Import the checkout as a real package without exporting PYTHONPATH. Isolated
+# mode also keeps the analyzed repository out of sys.path, so a target json.py
+# cannot shadow Python's standard library inside the dispatcher.
+exec python3 -I -c \
+  'import sys; sys.path.insert(0, sys.argv.pop(1)); from specula.cli import main; raise SystemExit(main())' \
+  "$SPECULA_ROOT/src" "$@"

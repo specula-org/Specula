@@ -9,7 +9,7 @@ breaks every agent call.
 Each case runs the real adapter as a subprocess with a fake `claude`/`codex`/
 `copilot`/`opencode`/`pi` on PATH that records the argv (and, for Python adapters, stdin + the exported
 CLAUDE_CONFIG_DIR + a session-env marker) it observed, then asserts on the
-recording. Python adapters are reached through the packaged internal dispatcher;
+recording. Python adapters are reached through the checkout-local dispatcher;
 `codex` and `copilot-cli` are still bash (scripts/launch/adapters/*.sh).
 
 stdlib unittest, collected natively by pytest:
@@ -177,12 +177,6 @@ class AdapterCase(unittest.TestCase):
         stub.write_text("\n".join(lines) + "\n")
         stub.chmod(stub.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
-    def _write_adapter_dispatcher(self, bindir: Path) -> None:
-        """Expose the packaged helper inside the deliberately isolated test PATH."""
-        helper = bindir / "specula-adapter"
-        helper.write_text(f'#!/usr/bin/env bash\nexec {json.dumps(sys.executable)} -m specula.adapters.cli "$@"\n')
-        helper.chmod(helper.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
     def run_adapter(
         self,
         cmd: list[str],
@@ -215,7 +209,6 @@ class AdapterCase(unittest.TestCase):
         env["HOME"] = str(base)
         if with_fake:
             self._write_fake(bindir, fake_name, fixture, record_extra)
-            self._write_adapter_dispatcher(bindir)
             env["PATH"] = f"{bindir}:/usr/bin:/bin"
         else:
             env["PATH"] = "/usr/bin:/bin"

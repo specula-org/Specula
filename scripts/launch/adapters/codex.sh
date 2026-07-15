@@ -249,7 +249,7 @@ run_codex() {
   if [[ -n "$activity_log" ]]; then
     local -a pipeline_status
     local stream_rc
-    printf '%s' "$PROMPT" | "${cmd[@]}" --json - 2>&1 | specula-adapter event-stream codex "$activity_log" "$log_file"
+    printf '%s' "$PROMPT" | "${cmd[@]}" --json - 2>&1 | "$adapter_dir/../../../specula" _adapter event-stream codex "$activity_log" "$log_file"
     pipeline_status=("${PIPESTATUS[@]}")
     codex_rc="${pipeline_status[1]}"
     stream_rc="${pipeline_status[2]}"

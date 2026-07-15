@@ -29,7 +29,7 @@ We maintain [a list of bugs found by Specula](https://docs.google.com/spreadshee
 
 ```bash
 git clone https://github.com/specula-org/Specula.git && cd Specula
-uv tool install -e .   # installs `specula` and its internal adapter command
+uv tool install -e .   # installs the `specula` command
 specula setup          # installs the agent skills and MCP tools, builds the bundled tools
 ```
 

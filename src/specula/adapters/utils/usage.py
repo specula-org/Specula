@@ -147,26 +147,72 @@ def accumulate_usage(adapter_name: str, record: object, totals: UsageTotals) -> 
         totals.add_cost(cost.get("total"))
 
 
-def _find_session_paths(value: object) -> list[str]:
-    found: list[str] = []
+@dataclass(frozen=True)
+class PiSubagentResult:
+    """One Pi subagent result and either of its available usage sources."""
 
-    def visit(node: object) -> None:
-        if isinstance(node, dict):
-            for key, nested in node.items():
-                if key in {"sessionFile", "sessionPath"} and isinstance(nested, str) and nested:
-                    found.append(nested)
-                else:
-                    visit(nested)
-        elif isinstance(node, list):
-            for nested in node:
-                visit(nested)
+    totals: UsageTotals | None
+    session_file: str | None
+    session_id: str | None
+    agent: str | None
+    model: str | None
 
-    visit(value)
+
+def _pi_usage_totals(value: object) -> UsageTotals | None:
+    """Normalize the compact usage object emitted by pi-subagents."""
+    if not isinstance(value, dict) or not any(
+        key in value for key in ("input", "inputTokens", "output", "outputTokens", "cacheRead", "cacheWrite", "cost")
+    ):
+        return None
+    totals = UsageTotals(
+        input_tokens=token_count(value.get("input", value.get("inputTokens"))),
+        output_tokens=token_count(value.get("output", value.get("outputTokens"))),
+        cached_input_tokens=token_count(value.get("cacheRead")),
+        cache_write_input_tokens=token_count(value.get("cacheWrite")),
+    )
+    cost = value.get("cost")
+    totals.add_cost(cost.get("total") if isinstance(cost, dict) else cost)
+    return totals
+
+
+def _optional_string(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _pi_results_from_details(details: object) -> list[PiSubagentResult]:
+    if not isinstance(details, dict) or not isinstance(details.get("results"), list):
+        return []
+    found: list[PiSubagentResult] = []
+
+    def visit(result: object) -> None:
+        if not isinstance(result, dict):
+            return
+        found.append(
+            PiSubagentResult(
+                totals=_pi_usage_totals(result.get("usage")),
+                session_file=_optional_string(result.get("sessionFile")) or _optional_string(result.get("sessionPath")),
+                session_id=_optional_string(result.get("sessionId")),
+                agent=_optional_string(result.get("agent")),
+                model=_optional_string(result.get("model")),
+            )
+        )
+        for key in ("results", "children"):
+            nested = result.get(key)
+            if isinstance(nested, list):
+                for child in nested:
+                    visit(child)
+        nested_details = result.get("details")
+        if isinstance(nested_details, dict) and isinstance(nested_details.get("results"), list):
+            for child in nested_details["results"]:
+                visit(child)
+
+    for result in details["results"]:
+        visit(result)
     return found
 
 
-def pi_session_files(record: object) -> list[str]:
-    """Extract only Pi subagent-owned session paths from a tool result."""
+def pi_subagent_results(record: object) -> list[PiSubagentResult]:
+    """Extract inline usage and session fallbacks from a Pi subagent result."""
     if (
         not isinstance(record, dict)
         or record.get("type") != "tool_execution_end"
@@ -175,10 +221,10 @@ def pi_session_files(record: object) -> list[str]:
         return []
     result = record.get("result")
     details = result.get("details") if isinstance(result, dict) else None
-    return _find_session_paths(details)
+    return _pi_results_from_details(details)
 
 
-def _read_pi_session_usage(path: Path) -> tuple[UsageTotals, list[str]] | None:
+def _read_pi_session_usage(path: Path) -> tuple[UsageTotals, list[PiSubagentResult]] | None:
     try:
         metadata = path.lstat()
         if not stat.S_ISREG(metadata.st_mode) or path.is_symlink():
@@ -189,7 +235,7 @@ def _read_pi_session_usage(path: Path) -> tuple[UsageTotals, list[str]] | None:
         return None
 
     totals = UsageTotals()
-    nested_paths: list[str] = []
+    nested_results: list[PiSubagentResult] = []
     header_seen = False
     try:
         with stream:
@@ -214,11 +260,11 @@ def _read_pi_session_usage(path: Path) -> tuple[UsageTotals, list[str]] | None:
                 if message.get("role") == "assistant":
                     accumulate_usage("pi", {"type": "message_end", "message": message}, totals)
                 elif message.get("role") == "toolResult" and message.get("toolName") == "subagent":
-                    nested_paths.extend(_find_session_paths(message.get("details")))
+                    nested_results.extend(_pi_results_from_details(message.get("details")))
     except OSError as exc:
         print(f"adapter usage warning: {summary(str(exc), None)}", file=sys.stderr)
         return None
-    return (totals, nested_paths) if header_seen else None
+    return (totals, nested_results) if header_seen else None
 
 
 def _combined_usage_payload(
@@ -269,13 +315,28 @@ def _combined_usage_payload(
 
 def augment_pi_usage(
     parent_payload: dict[str, object],
-    session_files: Iterable[str | Path],
+    subagent_results: Iterable[PiSubagentResult],
     session_root: Path | None = None,
 ) -> dict[str, object]:
-    """Add per-child Pi usage and say whether discovery was complete."""
-    pending = [Path(path) for path in session_files]
+    """Combine inline Pi child usage with session-file fallbacks."""
     complete = session_root is not None
     warnings: list[str] = []
+    pending: list[Path] = []
+    result_queue = list(subagent_results)
+    inline_by_path: dict[Path, PiSubagentResult] = {}
+    inline_without_path: list[PiSubagentResult] = []
+    sessions_by_path: dict[Path, UsageTotals] = {}
+    seen: set[Path] = set()
+
+    def resolve(candidate: str | Path) -> Path | None:
+        nonlocal complete
+        try:
+            return Path(candidate).expanduser().resolve()
+        except OSError as exc:
+            complete = False
+            warnings.append(summary(str(exc), None))
+            return None
+
     if session_root is None:
         warnings.append("isolated Pi session directory unavailable")
     else:
@@ -285,27 +346,57 @@ def augment_pi_usage(
             complete = False
             warnings.append(summary(str(exc), None))
 
-    seen: set[Path] = set()
-    sessions: list[dict[str, object]] = []
-    subagent_totals = UsageTotals()
-    while pending:
+    while result_queue or pending:
+        while result_queue:
+            child = result_queue.pop()
+            resolved = resolve(child.session_file) if child.session_file is not None else None
+            if resolved is not None:
+                pending.append(resolved)
+            if child.totals is not None:
+                if resolved is None:
+                    inline_without_path.append(child)
+                else:
+                    inline_by_path.setdefault(resolved, child)
+            elif resolved is None:
+                complete = False
+                label = f" for {child.agent}" if child.agent is not None else ""
+                warnings.append(f"Pi subagent result usage unavailable{label}")
+
+        if not pending:
+            break
         candidate = pending.pop()
-        try:
-            resolved = candidate.expanduser().resolve()
-        except OSError as exc:
-            complete = False
-            warnings.append(summary(str(exc), None))
-            continue
-        if resolved in seen:
+        resolved = resolve(candidate)
+        if resolved is None or resolved in seen:
             continue
         seen.add(resolved)
-        result = _read_pi_session_usage(resolved)
-        if result is None:
+        session_result = _read_pi_session_usage(resolved)
+        if session_result is None:
             complete = False
             warnings.append(f"could not read Pi session {resolved.name}")
             continue
-        totals, nested_paths = result
-        pending.extend(Path(path) for path in nested_paths)
+        totals, nested_results = session_result
+        sessions_by_path[resolved] = totals
+        result_queue.extend(nested_results)
+
+    sessions: list[dict[str, object]] = []
+    subagent_totals = UsageTotals()
+    for child in [*inline_by_path.values(), *inline_without_path]:
+        assert child.totals is not None
+        subagent_totals.add(child.totals)
+        session_payload = child.totals.as_payload("pi")
+        session_payload.pop("agent", None)
+        session_payload.pop("session_file", None)
+        session_payload["session_id"] = child.session_id
+        session_payload["source"] = "inline"
+        if child.agent is not None:
+            session_payload["agent"] = child.agent
+        if child.model is not None:
+            session_payload["model"] = child.model
+        sessions.append(session_payload)
+
+    for path, totals in sessions_by_path.items():
+        if path in inline_by_path:
+            continue
         subagent_totals.add(totals)
         session_payload = totals.as_payload("pi")
         session_payload.pop("agent", None)

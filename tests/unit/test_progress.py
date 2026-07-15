@@ -202,7 +202,7 @@ class TestProgressParsing(unittest.TestCase):
             )
 
         self.assertEqual(
-            status.session_files,
+            tuple(result.session_file for result in status.subagent_results),
             ("/tmp/pi-one/session.jsonl", "/tmp/pi-two/session.jsonl"),
         )
 

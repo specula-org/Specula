@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -151,3 +153,19 @@ class TestShim(unittest.TestCase):
             text=True,
         )
         self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "specula 0.2.0\n", ""))
+
+    def test_checkout_adapter_launcher_needs_no_installed_helper(self) -> None:
+        with tempfile.TemporaryDirectory() as cwd:
+            Path(cwd, "json.py").write_text("raise RuntimeError('must not be imported')\n")
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+            env["PATH"] = "/usr/bin:/bin"
+            result = subprocess.run(
+                [str(REPO_ROOT / "scripts" / "launch" / "adapters" / "opencode.sh"), "--help"],
+                cwd=cwd,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Adapter: opencode", result.stdout)
