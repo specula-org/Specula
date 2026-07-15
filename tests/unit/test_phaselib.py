@@ -2023,6 +2023,14 @@ class TestReviewPhase(PhaseCase):
         self.assertEqual(seen.read_text().strip(), "<unset>")
         self.assertFalse((self.work_dir() / "review-analysis.activity.jsonl").exists())
 
+    def test_review_exports_external_workspace_to_adapter(self) -> None:
+        seen = self.tmp() / "work-dir"
+        self.install_adapter("fake", f'printf "%s\\n" "$SPECULA_WORK_DIR" > "{seen}"\n')
+        self.set_env("SPECULA_PROGRESS", "off")
+        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen.read_text().strip(), str(self.work_dir()))
+
     def test_review_claude_default_max_blocks_ambient_downgrade(self) -> None:
         seen = self.tmp() / "argv"
         self.install_adapter("claude-code", f'printf "%s\\n" "$@" > "{seen}"\n')

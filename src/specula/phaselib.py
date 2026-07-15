@@ -2171,6 +2171,7 @@ Output:
         with contextlib.suppress(OSError):
             activity_log.unlink()
         env = os.environ.copy()
+        env["SPECULA_WORK_DIR"] = str(wd)
         env.pop("SPECULA_ACTIVITY_LOG", None)
         show_progress = progress.enabled()
         if show_progress:
