@@ -20,16 +20,30 @@ class TestSkillRefs(unittest.TestCase):
         self.assertNotIn("$code-analysis", prompt)
         self.assertNotIn("$specula-codex:code-analysis", prompt)
 
-    def test_non_codex_adapter_keeps_only_registered_name(self) -> None:
+    def test_installed_skill_adapters_keep_only_registered_name(self) -> None:
         prompt = f"Use {skill_refs.prompt_skill_ids('code-analysis')} now."
 
         with mock.patch(
             "specula.skill_refs._codex_plugin_enabled",
             side_effect=AssertionError("non-Codex adapters must not probe Codex"),
         ):
-            resolved = skill_refs.materialize_skill_refs(prompt, "/adapter/claude-code.sh")
+            for adapter in ("/adapter/claude-code.sh", "/adapter/copilot-cli.sh"):
+                with self.subTest(adapter=adapter):
+                    resolved = skill_refs.materialize_skill_refs(prompt, adapter)
 
-        self.assertEqual(resolved, "Use **code-analysis** now.")
+                    self.assertEqual(resolved, "Use **code-analysis** now.")
+
+    def test_local_skill_adapters_receive_skill_file_path(self) -> None:
+        prompt = f"Use {skill_refs.prompt_skill_ids('code-analysis')} now."
+
+        for adapter in ("/adapter/opencode.sh", "/adapter/pi.sh"):
+            with self.subTest(adapter=adapter):
+                resolved = skill_refs.materialize_skill_refs(prompt, adapter)
+
+                self.assertIn("Use **code-analysis**", resolved)
+                self.assertIn("/skills/code_analysis/SKILL.md", resolved)
+                self.assertIn("read the local Specula skill file", resolved)
+                self.assertNotIn("<!-- specula-skill:", resolved)
 
     def test_codex_materializes_exactly_one_id(self) -> None:
         prompt = f"Use {skill_refs.prompt_skill_ids('code-analysis')} now."

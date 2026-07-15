@@ -384,6 +384,19 @@ class TestDryRunCommand(PhaseCase):
                 self.assertNotIn(rejected, body)
                 self.assertNotIn("<!-- specula-skill:", body)
 
+    def test_local_skill_adapter_prompt_includes_skill_file_path(self) -> None:
+        spec = BY_KEY["code_analysis"]
+        for adapter in ("opencode", "pi"):
+            with self.subTest(adapter=adapter):
+                rc, out = self.dry_run(spec, extra=[f"--agent={adapter}"])
+                self.assertEqual(rc, 0, out)
+                body = (self.work_dir() / spec["prompt"]).read_text()
+
+                self.assertIn("**code-analysis**", body)
+                self.assertIn("/skills/code_analysis/SKILL.md", body)
+                self.assertIn("read the local Specula skill file", body)
+                self.assertNotIn("<!-- specula-skill:", body)
+
     def test_bug_confirmation_defaults_to_parallel(self) -> None:
         # No --legacy-confirm: Phase 4a runs parallel per-finding confirmation
         # (confirmlib), NOT the single-agent adapter launch.
@@ -1076,6 +1089,40 @@ class TestRunAgentBlocking(PhaseCase):
         self.assertEqual(recorded[:3], [str(base / "agent"), str(base / "target"), str(base / "gate")])
         self.assertIn(f"--prompt-file={base / 'finding' / 'prompt.md'}", recorded)
         self.assertIn(f"--log={base / 'finding' / 'turn.log'}", recorded)
+
+    def test_opencode_trusted_cwd_synchronizes_real_cwd_and_pwd(self) -> None:
+        base = self.tmp()
+        adapter = base / "opencode"
+        capture = base / "capture.json"
+        adapter.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['CAPTURE_FILE']).write_text("
+            "json.dumps({'cwd': os.getcwd(), 'pwd': os.environ.get('PWD')}))\n"
+        )
+        adapter.chmod(0o755)
+        trusted_cwd = base / ".agent-cwd"
+        trusted_cwd.mkdir()
+        stale_cwd = base / "untrusted-repository"
+        stale_cwd.mkdir()
+        self.set_env("CAPTURE_FILE", str(capture))
+        self.set_env("PWD", str(stale_cwd))
+
+        rc, _ = phaselib.run_agent_blocking(
+            adapter,
+            "prompt body",
+            base / "finding" / "prompt.md",
+            base / "finding" / "turn.log",
+            phase_key="bug_confirmation",
+            work_dir=self.work_dir(),
+            cwd=trusted_cwd,
+            claude_alias="profile",
+        )
+
+        self.assertEqual(rc, 0)
+        recorded = json.loads(capture.read_text())
+        self.assertEqual(recorded, {"cwd": str(trusted_cwd), "pwd": str(trusted_cwd)})
 
     def test_codex_returns_final_message_and_keeps_transcript(self) -> None:
         adapter = self.tmp() / "codex.sh"
@@ -2009,6 +2056,14 @@ class TestReviewPhase(PhaseCase):
         self.assertEqual(rc, 0, out)
         self.assertEqual(seen.read_text().strip(), "<unset>")
         self.assertFalse((self.work_dir() / "review-analysis.activity.jsonl").exists())
+
+    def test_review_exports_external_workspace_to_adapter(self) -> None:
+        seen = self.tmp() / "work-dir"
+        self.install_adapter("fake", f'printf "%s\\n" "$SPECULA_WORK_DIR" > "{seen}"\n')
+        self.set_env("SPECULA_PROGRESS", "off")
+        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen.read_text().strip(), str(self.work_dir()))
 
     def test_review_claude_default_max_blocks_ambient_downgrade(self) -> None:
         seen = self.tmp() / "argv"

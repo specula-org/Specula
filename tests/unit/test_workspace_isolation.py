@@ -248,6 +248,10 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         "CODEX_MODEL",
         "CODEX_EFFORT",
         "COPILOT_MODEL",
+        "OPENCODE_MODEL",
+        "OPENCODE_EFFORT",
+        "PI_MODEL",
+        "PI_EFFORT",
     )
 
     def setUp(self) -> None:
@@ -334,6 +338,8 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
                 "high",
             ),
             ("copilot-cli", {"COPILOT_MODEL": "copilot-env"}, "copilot-env", None),
+            ("opencode", {"OPENCODE_MODEL": "zai/glm-5.2", "OPENCODE_EFFORT": "high"}, "zai/glm-5.2", "high"),
+            ("pi", {"PI_MODEL": "openai/gpt-5.5", "PI_EFFORT": "xhigh"}, "openai/gpt-5.5", "xhigh"),
         )
         for agent, environment, expected_model, expected_effort in cases:
             with self.subTest(agent=agent):

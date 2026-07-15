@@ -12,7 +12,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+from specula.skill_install import discover_skills
+
 CODEX_PLUGIN_NAME = "specula-codex"
+SPECULA_ROOT = Path(__file__).resolve().parents[2]
+SKILLS_ROOT = SPECULA_ROOT / "skills"
+LOCAL_SKILL_ADAPTERS = {"opencode", "pi"}
 _SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _SKILL_REF_PREFIX = f"<!-- specula-skill:{secrets.token_hex(16)}:"
 _SKILL_REF = re.compile(rf"{re.escape(_SKILL_REF_PREFIX)}([a-z0-9]+(?:-[a-z0-9]+)*) -->")
@@ -94,6 +99,19 @@ def _codex_plugin_enabled() -> bool:
     )
 
 
+@functools.lru_cache(maxsize=1)
+def _local_skill_files() -> dict[str, Path]:
+    return {skill.name: skill.path / "SKILL.md" for skill in discover_skills(SKILLS_ROOT)}
+
+
+def _local_skill_reference(name: str) -> str:
+    try:
+        path = _local_skill_files()[name]
+    except (OSError, ValueError, KeyError) as exc:
+        raise ValueError(f"unknown Specula skill reference: {name}") from exc
+    return f" (read the local Specula skill file at `{path}`)"
+
+
 def materialize_skill_refs(
     prompt: str,
     adapter: str | Path,
@@ -108,6 +126,8 @@ def materialize_skill_refs(
         plugin_enabled = _codex_plugin_enabled() if codex_plugin_enabled is None else codex_plugin_enabled
         prefix = f"{CODEX_PLUGIN_NAME}:" if plugin_enabled else ""
         resolved = _SKILL_REF.sub(lambda match: f" (${prefix}{match.group(1)})", prompt)
+    elif Path(adapter).stem in LOCAL_SKILL_ADAPTERS:
+        resolved = _SKILL_REF.sub(lambda match: _local_skill_reference(match.group(1)), prompt)
     else:
         resolved = _SKILL_REF.sub("", prompt)
 

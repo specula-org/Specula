@@ -1,4 +1,4 @@
-"""Behavior tests for the agent adapters (claude-code, codex, copilot-cli).
+"""Behavior tests for the agent adapters (claude-code, codex, copilot-cli, opencode, pi).
 
 These pin the *command-construction contract*: given the launcher-facing flags,
 what does each adapter invoke the underlying CLI with, which flags map/skip, and
@@ -7,10 +7,9 @@ now that the characterization goldens are gone — a wrong flag here silently
 breaks every agent call.
 
 Each case runs the real adapter as a subprocess with a fake `claude`/`codex`/
-`copilot` on PATH that records the argv (and, for claude, stdin + the exported
+`copilot`/`opencode`/`pi` on PATH that records the argv (and, for Python adapters, stdin + the exported
 CLAUDE_CONFIG_DIR + a session-env marker) it observed, then asserts on the
-recording. `claude-code` is the Python port (adapters/claude_code.py); `codex`
-and `copilot-cli` are still bash (scripts/launch/adapters/*.sh).
+recording. All adapters are exercised through their shipped launch scripts.
 
 stdlib unittest, collected natively by pytest:
 
@@ -19,22 +18,38 @@ stdlib unittest, collected natively by pytest:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import signal
+import sqlite3
 import stat
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any, TypedDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLAUDE_PY = REPO_ROOT / "src" / "specula" / "adapters" / "claude_code.py"
+OPENCODE_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "opencode.sh"
+PI_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "pi.sh"
 CODEX_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "codex.sh"
 COPILOT_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "copilot-cli.sh"
-EVENT_STREAM_PY = REPO_ROOT / "src" / "specula" / "adapters" / "event_stream.py"
+EVENT_STREAM_COMMAND = [
+    sys.executable,
+    "-I",
+    "-c",
+    (
+        "import sys; sys.path.insert(0, sys.argv.pop(1)); "
+        "from specula.adapters.utils.event_stream import main; "
+        "raise SystemExit(main(sys.argv[1:]))"
+    ),
+    str(REPO_ROOT / "src"),
+]
 
 # A minimal well-formed claude result: the claude adapter parses this for
 # .log/.usage.json. codex/copilot don't parse it, so any text is fine for them.
@@ -59,6 +74,13 @@ _VOLATILE = (
     "COPILOT_MODEL",
     "CODEX_MODEL",
     "CODEX_EFFORT",
+    "OPENCODE_MODEL",
+    "OPENCODE_EFFORT",
+    "OPENCODE_CONFIG",
+    "OPENCODE_CONFIG_CONTENT",
+    "OPENCODE_PERMISSION",
+    "PI_MODEL",
+    "PI_EFFORT",
     "CLAUDECODE",
     "CLAUDE_CODE_SSE_PORT",
     "CLAUDE_CODE_ENTRYPOINT",
@@ -73,6 +95,9 @@ _VOLATILE = (
     "CODEX_HOME",
     "ADAPTER_EXIT_CODE",
     "COPILOT_HELP_TEXT",
+    "ADAPTER_PI_SESSION_FIXTURE",
+    "ADAPTER_READY_FILE",
+    "ADAPTER_WAIT_SECONDS",
 )
 
 
@@ -85,6 +110,9 @@ class AdapterRun(TypedDict):
     sessionenv: str
     modelenv: str
     effortenv: str
+    vcsenv: str
+    opencode_config: str
+    opencode_permission: str
     stdin: str | None
     base: Path
 
@@ -121,18 +149,53 @@ class AdapterCase(unittest.TestCase):
                 "fi",
             ]
         lines.append('printf "%s\\n" "$@" > "${ADAPTER_ARGV_FILE:-/dev/null}"')
-        model_var = {"claude": "CLAUDE_MODEL", "codex": "CODEX_MODEL", "copilot": "COPILOT_MODEL"}.get(name)
-        effort_var = {"claude": "CLAUDE_EFFORT", "codex": "CODEX_EFFORT"}.get(name)
+        model_var = {
+            "claude": "CLAUDE_MODEL",
+            "codex": "CODEX_MODEL",
+            "copilot": "COPILOT_MODEL",
+            "opencode": "OPENCODE_MODEL",
+            "pi": "PI_MODEL",
+        }.get(name)
+        effort_var = {
+            "claude": "CLAUDE_EFFORT",
+            "codex": "CODEX_EFFORT",
+            "opencode": "OPENCODE_EFFORT",
+            "pi": "PI_EFFORT",
+        }.get(name)
         if model_var:
             lines.append(f'printf "%s\\n" "${{{model_var}-<unset>}}" > "${{ADAPTER_MODEL_ENV_FILE:-/dev/null}}"')
         if effort_var:
             lines.append(f'printf "%s\\n" "${{{effort_var}-<unset>}}" > "${{ADAPTER_EFFORT_ENV_FILE:-/dev/null}}"')
+        if name == "opencode":
+            lines.append('printf "%s\\n" "${OPENCODE_FAKE_VCS-<unset>}" > "${ADAPTER_VCS_ENV_FILE:-/dev/null}"')
+            lines.append('printf "%s\\n" "${OPENCODE_CONFIG-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"')
+            lines.append(
+                'printf "%s\\n" "${OPENCODE_PERMISSION-<unset>}" > "${ADAPTER_OPENCODE_PERMISSION_FILE:-/dev/null}"'
+            )
+            lines.append(
+                'if [[ -n "${OPENCODE_CONFIG:-}" && -f "$OPENCODE_CONFIG" ]]; then '
+                'cat "$OPENCODE_CONFIG" > "${ADAPTER_OPENCODE_CONFIG_FILE:-/dev/null}"; fi'
+            )
         if record_extra:
+            if name != "opencode":
+                lines.append('printf "%s\\n" "${CLAUDE_CONFIG_DIR:-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"')
             lines += [
-                'printf "%s\\n" "${CLAUDE_CONFIG_DIR:-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"',
                 'printf "%s\\n" "${CLAUDECODE:-<unset>}" > "${ADAPTER_SESSIONENV_FILE:-/dev/null}"',
                 'cat > "${ADAPTER_STDIN_FILE:-/dev/null}"',
             ]
+        if name == "pi":
+            lines += [
+                'if [[ -n "${ADAPTER_PI_SESSION_FIXTURE:-}" ]]; then',
+                '  mkdir -p "$TMPDIR/pi-subagent-session-test/run-0"',
+                '  cp "$ADAPTER_PI_SESSION_FIXTURE" "$TMPDIR/pi-subagent-session-test/run-0/session.jsonl"',
+                "fi",
+            ]
+        lines += [
+            'if [[ -n "${ADAPTER_READY_FILE:-}" ]]; then',
+            '  printf "ready\\n" > "$ADAPTER_READY_FILE"',
+            '  sleep "${ADAPTER_WAIT_SECONDS:-30}"',
+            "fi",
+        ]
         lines.append(f"cat {json.dumps(str(fixture))}")
         lines.append('exit "${ADAPTER_EXIT_CODE:-0}"')
         stub = bindir / name
@@ -164,6 +227,9 @@ class AdapterCase(unittest.TestCase):
             "ADAPTER_SESSIONENV_FILE": base / "sessionenv.txt",
             "ADAPTER_MODEL_ENV_FILE": base / "modelenv.txt",
             "ADAPTER_EFFORT_ENV_FILE": base / "effortenv.txt",
+            "ADAPTER_VCS_ENV_FILE": base / "vcsenv.txt",
+            "ADAPTER_OPENCODE_CONFIG_FILE": base / "opencode_config.json",
+            "ADAPTER_OPENCODE_PERMISSION_FILE": base / "opencode_permission.json",
             "ADAPTER_STDIN_FILE": base / "stdin.txt",
         }
         env = {k: v for k, v in os.environ.items() if k not in _VOLATILE}
@@ -189,6 +255,9 @@ class AdapterCase(unittest.TestCase):
             "sessionenv": (read(record["ADAPTER_SESSIONENV_FILE"]) or "").strip(),
             "modelenv": (read(record["ADAPTER_MODEL_ENV_FILE"]) or "").strip(),
             "effortenv": (read(record["ADAPTER_EFFORT_ENV_FILE"]) or "").strip(),
+            "vcsenv": (read(record["ADAPTER_VCS_ENV_FILE"]) or "").strip(),
+            "opencode_config": read(record["ADAPTER_OPENCODE_CONFIG_FILE"]) or "",
+            "opencode_permission": (read(record["ADAPTER_OPENCODE_PERMISSION_FILE"]) or "").strip(),
             "stdin": read(record["ADAPTER_STDIN_FILE"]),
             "base": base,
         }
@@ -792,7 +861,1313 @@ class ClaudeCodeAdapter(AdapterCase):
         return usage
 
 
-# ── codex (bash) ─────────────────────────────────────────────────────────────
+# ── opencode (Python) ───────────────────────────────────────────
+class OpenCodeAdapter(AdapterCase):
+    CMD = [str(OPENCODE_SH)]
+    RECORDS = [
+        {
+            "type": "text",
+            "sessionID": "ses_first",
+            "part": {"type": "text", "text": "finished"},
+        },
+        {
+            "type": "step_finish",
+            "sessionID": "ses_first",
+            "part": {
+                "tokens": {
+                    "input": 10,
+                    "output": 20,
+                    "reasoning": 30,
+                    "cache": {"read": 40, "write": 50},
+                },
+                "cost": 0.25,
+                "reason": "tool-calls",
+            },
+        },
+        {
+            "type": "step_finish",
+            "sessionID": "ses_later",
+            "part": {
+                "tokens": {
+                    "input": 1,
+                    "output": 2,
+                    "reasoning": 3,
+                    "cache": {"read": 4, "write": 5},
+                },
+                "cost": 0.75,
+                "reason": "stop",
+            },
+        },
+    ]
+    FIXTURE = "\n".join(json.dumps(record) for record in RECORDS) + "\n"
+
+    def invoke(
+        self,
+        flags: list[str],
+        *,
+        env_extra: dict[str, str] | None = None,
+        with_fake: bool = True,
+    ) -> AdapterRun:
+        return self.run_adapter(
+            self.CMD,
+            flags,
+            fake_name="opencode",
+            fixture_text=self.FIXTURE,
+            record_extra=True,
+            env_extra=env_extra,
+            with_fake=with_fake,
+        )
+
+    def base_flags(self, base: Path) -> list[str]:
+        return [self.with_prompt_file(base), f"--log={base}/out.log"]
+
+    def test_command_construction_from_environment(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "OPENCODE_MODEL": "zai-coding-plan/glm-5.2",
+                "OPENCODE_EFFORT": "high",
+            },
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(
+            result["argv"],
+            [
+                "run",
+                "--format=json",
+                "--thinking",
+                "--dangerously-skip-permissions",
+                "--model",
+                "zai-coding-plan/glm-5.2",
+                "--variant",
+                "high",
+            ],
+        )
+        self.assertEqual(result["stdin"], "the prompt\n")
+        self.assertEqual(result["modelenv"], "<unset>")
+        self.assertEqual(result["effortenv"], "<unset>")
+        self.assertEqual(result["vcsenv"], "git")
+
+    def test_external_specula_and_artifact_paths_are_allowed(self) -> None:
+        base = self.sandbox()
+        specula_root = base / "Specula"
+        target_repo = base / "target"
+        work_dir = base / "run" / "kilo" / ".specula-output"
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_ROOT": str(specula_root),
+                "SPECULA_TARGET_REPO_DIR": str(target_repo),
+                "SPECULA_WORK_DIR": str(work_dir),
+            },
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["configdir"], "<unset>")
+        external = json.loads(result["opencode_permission"])["external_directory"]
+        self.assertEqual(external[str(specula_root)], "allow")
+        self.assertEqual(external[f"{specula_root}/**"], "allow")
+        self.assertEqual(external[str(target_repo)], "allow")
+        self.assertEqual(external[f"{target_repo}/**"], "allow")
+        self.assertEqual(external[str(work_dir)], "allow")
+        self.assertEqual(external[f"{work_dir}/**"], "allow")
+
+    def test_native_config_is_not_copied_or_rebased(self) -> None:
+        base = self.sandbox()
+        config_path = base / "config" / "custom.jsonc"
+        config_path.parent.mkdir()
+        config_text = """{
+  // OpenCode accepts JSONC and resolves these relative to this file.
+  \"plugin\": [\"./plugin.js\"],
+  \"instructions\": [\"{file:./instructions.md}\"],
+}
+"""
+        config_path.write_text(config_text)
+
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"OPENCODE_CONFIG": str(config_path)},
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["configdir"], str(config_path))
+        self.assertEqual(result["opencode_config"], config_text)
+        self.assertIn("external_directory", json.loads(result["opencode_permission"]))
+
+    def test_native_permission_override_is_preserved(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_ROOT": str(base / "Specula"),
+                "OPENCODE_PERMISSION": json.dumps(
+                    {
+                        "bash": "deny",
+                        "external_directory": {"*": "deny", "/keep-denied": "deny"},
+                    }
+                ),
+            },
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        permission = json.loads(result["opencode_permission"])
+        self.assertEqual(permission["bash"], "deny")
+        self.assertEqual(permission["external_directory"]["*"], "deny")
+        self.assertEqual(permission["external_directory"]["/keep-denied"], "deny")
+        self.assertEqual(permission["external_directory"][str(base / "Specula")], "allow")
+
+    def test_native_specific_rules_win_by_opencode_last_match_order(self) -> None:
+        base = self.sandbox()
+        specula_root = base / "Specula"
+        private = specula_root / "private"
+        exception = private / "allowed"
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_ROOT": str(specula_root),
+                "OPENCODE_PERMISSION": json.dumps(
+                    {
+                        "external_directory": {
+                            "*": "deny",
+                            f"{private}/**": "deny",
+                            f"{exception}/**": "allow",
+                        }
+                    }
+                ),
+            },
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        rules = json.loads(result["opencode_permission"])["external_directory"]
+
+        def last_match(path: Path) -> str | None:
+            actions = [action for pattern, action in rules.items() if fnmatchcase(str(path), pattern)]
+            return actions[-1] if actions else None
+
+        self.assertEqual(last_match(specula_root / "public" / "file.txt"), "allow")
+        self.assertEqual(last_match(private / "secret.txt"), "deny")
+        self.assertEqual(last_match(exception / "kept.txt"), "allow")
+
+    def test_native_rule_order_and_same_pattern_are_preserved(self) -> None:
+        base = self.sandbox()
+        specula_root = base / "Specula"
+        unrelated = base / "unrelated"
+        target_pattern = f"{specula_root}/**"
+        native_rules = {
+            f"{unrelated}/**": "allow",
+            "*": "deny",
+            target_pattern: "deny",
+        }
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_ROOT": str(specula_root),
+                "OPENCODE_PERMISSION": json.dumps({"external_directory": native_rules}),
+            },
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        rules = json.loads(result["opencode_permission"])["external_directory"]
+        self.assertEqual([pattern for pattern in rules if pattern in native_rules], list(native_rules))
+        self.assertEqual(rules[target_pattern], "deny")
+
+        def last_match(path: Path) -> str | None:
+            actions = [action for pattern, action in rules.items() if fnmatchcase(str(path), pattern)]
+            return actions[-1] if actions else None
+
+        # The catch-all originally followed this allow, so it must still win.
+        self.assertEqual(last_match(unrelated / "file.txt"), "deny")
+        # A native rule identical to a generated pattern keeps its deny value.
+        self.assertEqual(last_match(specula_root / "private.txt"), "deny")
+
+    def test_scalar_native_permission_becomes_catch_all(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_ROOT": str(base / "Specula"),
+                "OPENCODE_PERMISSION": json.dumps("deny"),
+            },
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        permission = json.loads(result["opencode_permission"])
+        self.assertEqual(permission["*"], "deny")
+        self.assertEqual(permission["external_directory"][str(base / "Specula")], "allow")
+
+    def test_prompt_file_and_large_prompt_use_stdin(self) -> None:
+        for prompt in ("prompt from file\n", "x" * 200_000):
+            with self.subTest(size=len(prompt)):
+                base = self.sandbox()
+                result = self.invoke([self.with_prompt_file(base, prompt), f"--log={base}/out.log"])
+                self.assertEqual(result["returncode"], 0, result["stderr"])
+                self.assertEqual(result["stdin"], prompt)
+                self.assertEqual(
+                    result["argv"],
+                    ["run", "--format=json", "--thinking", "--dangerously-skip-permissions"],
+                )
+
+    def test_direct_prompt_uses_stdin(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(["--prompt=the prompt\n", f"--log={base}/out.log"])
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["stdin"], "the prompt\n")
+        self.assertEqual(
+            result["argv"],
+            ["run", "--format=json", "--thinking", "--dangerously-skip-permissions"],
+        )
+
+    def test_compatibility_flags_are_accepted_but_not_forwarded(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(self.base_flags(base) + ["--max-turns=8", "--background", "--claude-alias=profile"])
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(
+            result["argv"],
+            ["run", "--format=json", "--thinking", "--dangerously-skip-permissions"],
+        )
+
+    def test_flag_values_override_environment_defaults(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base) + ["--model=flag-model", "--effort=max"],
+            env_extra={"OPENCODE_MODEL": "env-model", "OPENCODE_EFFORT": "low"},
+        )
+        self.assertEqual(
+            result["argv"],
+            [
+                "run",
+                "--format=json",
+                "--thinking",
+                "--dangerously-skip-permissions",
+                "--model",
+                "flag-model",
+                "--variant",
+                "max",
+            ],
+        )
+        self.assertEqual(result["modelenv"], "<unset>")
+        self.assertEqual(result["effortenv"], "<unset>")
+
+    def test_explicit_empty_model_and_effort_clear_environment_defaults(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base) + ["--model=", "--effort="],
+            env_extra={"OPENCODE_MODEL": "env-model", "OPENCODE_EFFORT": "low"},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(
+            result["argv"],
+            ["run", "--format=json", "--thinking", "--dangerously-skip-permissions"],
+        )
+        self.assertEqual(result["modelenv"], "<unset>")
+        self.assertEqual(result["effortenv"], "<unset>")
+
+    def test_stream_and_normalized_usage_reach_sidecars(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(activity.read_text(), self.FIXTURE)
+        self.assertEqual((base / "out.log").read_text(), "finished\n")
+        parent_usage = {
+            "input_tokens": 11,
+            "cached_input_tokens": 44,
+            "cache_write_input_tokens": 55,
+            "output_tokens": 22,
+            "reasoning_output_tokens": 33,
+            "total_tokens": 132,
+        }
+        self.assertEqual(
+            json.loads((base / "out.usage.json").read_text()),
+            {
+                "agent": "opencode",
+                "session_id": "ses_first",
+                "session_file": None,
+                "total_cost_usd": 1.0,
+                "usage": parent_usage,
+                "usage_scope": "partial",
+                "usage_complete": False,
+                "usage_warning": "OpenCode session database unavailable",
+                "parent": {
+                    "session_id": "ses_first",
+                    "total_cost_usd": 1.0,
+                    "usage": parent_usage,
+                },
+                "subagents": {
+                    "complete": False,
+                    "session_count": 0,
+                    "total_cost_usd": None,
+                    "usage": {
+                        "input_tokens": 0,
+                        "cached_input_tokens": 0,
+                        "cache_write_input_tokens": 0,
+                        "output_tokens": 0,
+                        "reasoning_output_tokens": 0,
+                        "total_tokens": 0,
+                    },
+                    "sessions": [],
+                },
+                "combined": {"complete": False, "total_cost_usd": 1.0, "usage": parent_usage},
+            },
+        )
+
+    def test_subagent_sessions_are_included_in_combined_usage(self) -> None:
+        base = self.sandbox()
+        data_home = base / "xdg-data"
+        database_path = data_home / "opencode" / "opencode.db"
+        database_path.parent.mkdir(parents=True)
+        with sqlite3.connect(database_path) as database:
+            database.executescript(
+                """
+                CREATE TABLE session (id TEXT PRIMARY KEY, parent_id TEXT);
+                CREATE TABLE part (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT,
+                    time_created INTEGER,
+                    data TEXT
+                );
+                """
+            )
+            database.executemany(
+                "INSERT INTO session (id, parent_id) VALUES (?, ?)",
+                (
+                    ("ses_first", None),
+                    ("child_a", "ses_first"),
+                    ("child_b", "child_a"),
+                    ("unrelated", None),
+                    ("unrelated_child", "unrelated"),
+                ),
+            )
+            database.executemany(
+                "INSERT INTO part (id, session_id, time_created, data) VALUES (?, ?, ?, ?)",
+                (
+                    (
+                        "part_a",
+                        "child_a",
+                        1,
+                        json.dumps(
+                            {
+                                "type": "step-finish",
+                                "cost": 0.5,
+                                "tokens": {
+                                    "input": 5,
+                                    "output": 6,
+                                    "reasoning": 2,
+                                    "cache": {"read": 7, "write": 8},
+                                },
+                            }
+                        ),
+                    ),
+                    (
+                        "part_b",
+                        "child_b",
+                        2,
+                        json.dumps(
+                            {
+                                "type": "step-finish",
+                                "cost": 0.25,
+                                "tokens": {
+                                    "input": 1,
+                                    "output": 2,
+                                    "reasoning": 1,
+                                    "cache": {"read": 3, "write": 4},
+                                },
+                            }
+                        ),
+                    ),
+                    (
+                        "part_unrelated",
+                        "unrelated_child",
+                        3,
+                        json.dumps(
+                            {
+                                "type": "step-finish",
+                                "tokens": {"input": 1000, "output": 1000},
+                            }
+                        ),
+                    ),
+                ),
+            )
+
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"XDG_DATA_HOME": str(data_home)},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["parent"]["usage"]["total_tokens"], 132)
+        self.assertEqual(usage["usage_scope"], "combined")
+        self.assertTrue(usage["usage_complete"])
+        self.assertTrue(usage["subagents"]["complete"])
+        self.assertEqual(usage["subagents"]["session_count"], 2)
+        self.assertEqual(usage["subagents"]["usage"]["total_tokens"], 36)
+        self.assertEqual(
+            [session["session_id"] for session in usage["subagents"]["sessions"]],
+            ["child_a", "child_b"],
+        )
+        self.assertEqual(usage["combined"]["usage"]["total_tokens"], 168)
+        self.assertEqual(usage["usage"]["total_tokens"], 168)
+        self.assertEqual(usage["total_cost_usd"], 1.75)
+
+    def test_unrelated_session_database_is_reported_as_partial_usage(self) -> None:
+        base = self.sandbox()
+        data_home = base / "xdg-data"
+        database_path = data_home / "opencode" / "opencode.db"
+        database_path.parent.mkdir(parents=True)
+        with sqlite3.connect(database_path) as database:
+            database.executescript(
+                """
+                CREATE TABLE session (id TEXT PRIMARY KEY, parent_id TEXT);
+                CREATE TABLE part (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT,
+                    time_created INTEGER,
+                    data TEXT
+                );
+                INSERT INTO session (id, parent_id) VALUES ('another_session', NULL);
+                """
+            )
+
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"XDG_DATA_HOME": str(data_home)},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["usage_scope"], "partial")
+        self.assertFalse(usage["usage_complete"])
+        self.assertEqual(
+            usage["usage_warning"],
+            "OpenCode parent session not found in session database",
+        )
+
+    def test_structured_rate_limit_maps_native_failure_to_retry_status(self) -> None:
+        base = self.sandbox()
+        records = [
+            {
+                "type": "error",
+                "sessionID": "ses_limited",
+                "error": {
+                    "name": "APIError",
+                    "data": {
+                        "message": "quota exhausted",
+                        "statusCode": 429,
+                        "isRetryable": True,
+                    },
+                },
+            },
+            {
+                "type": "step_finish",
+                "sessionID": "ses_limited",
+                "part": {"type": "step-finish", "reason": "stop", "tokens": {}},
+            },
+        ]
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="opencode",
+            fixture_text="\n".join(json.dumps(record) for record in records) + "\n",
+            env_extra={"ADAPTER_EXIT_CODE": "1"},
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 75, result["stderr"])
+        self.assertIn("rate limit hit", result["stderr"])
+
+    def test_rate_limit_phrase_in_agent_text_is_not_a_retry_signal(self) -> None:
+        base = self.sandbox()
+        records = [
+            {
+                "type": "text",
+                "sessionID": "ses_success",
+                "part": {"type": "text", "text": "The old log said HTTP 429 quota exhausted."},
+            },
+            {
+                "type": "step_finish",
+                "sessionID": "ses_success",
+                "part": {"type": "step-finish", "reason": "stop", "tokens": {}},
+            },
+        ]
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="opencode",
+            fixture_text="\n".join(json.dumps(record) for record in records) + "\n",
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+
+    def test_native_failures_are_preserved(self) -> None:
+        for native_status in (9, 75):
+            with self.subTest(native_status=native_status):
+                base = self.sandbox()
+                result = self.invoke(
+                    self.base_flags(base),
+                    env_extra={"ADAPTER_EXIT_CODE": str(native_status)},
+                )
+                self.assertEqual(result["returncode"], native_status, result["stderr"])
+
+    def test_incomplete_terminal_event_overrides_zero_native_exit(self) -> None:
+        for name, fixture, diagnostic in (
+            (
+                "tool-calls",
+                json.dumps(
+                    {
+                        "type": "step_finish",
+                        "sessionID": "ses_incomplete",
+                        "part": {"type": "step-finish", "reason": "tool-calls", "tokens": {}},
+                    }
+                ),
+                "tool-calls",
+            ),
+            ("missing", json.dumps({"type": "text", "part": {"type": "text", "text": "partial"}}), "without"),
+        ):
+            with self.subTest(name=name):
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="opencode",
+                    fixture_text=fixture,
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], 1, result["stderr"])
+                self.assertIn(diagnostic, result["stderr"])
+
+    def test_tool_error_is_preserved_in_readable_log(self) -> None:
+        base = self.sandbox()
+        records = [
+            {
+                "type": "tool_use",
+                "sessionID": "ses_recovered",
+                "part": {
+                    "type": "tool",
+                    "tool": "write",
+                    "state": {
+                        "status": "error",
+                        "input": {"path": "/blocked/file"},
+                        "error": "Permission denied: write access rejected",
+                    },
+                },
+            },
+            {
+                "type": "step_finish",
+                "sessionID": "ses_recovered",
+                "part": {"type": "step-finish", "reason": "stop", "tokens": {}},
+            },
+        ]
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="opencode",
+            fixture_text="\n".join(json.dumps(record) for record in records) + "\n",
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(
+            (base / "out.log").read_text(),
+            "editing /blocked/file\nadapter tool error: write: Permission denied: write access rejected\n",
+        )
+
+    def test_raw_activity_failure_does_not_fail_adapter(self) -> None:
+        base = self.sandbox()
+        activity = base / "bad-activity"
+        activity.mkdir()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertIn("activity log", result["stderr"])
+        self.assertEqual((base / "out.log").read_text(), "finished\n")
+
+    def test_missing_executable_returns_127_and_writes_diagnostic(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(self.base_flags(base), with_fake=False)
+        self.assertEqual(result["returncode"], 127, result["stderr"])
+        self.assertIn("opencode adapter: failed to launch opencode", (base / "out.log").read_text())
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["agent"], "opencode")
+        self.assertIsNone(usage["session_id"])
+        self.assertEqual(usage["usage"]["total_tokens"], 0)
+
+    def test_invalid_options_fail_before_launch(self) -> None:
+        for name, flags, diagnostic in (
+            (
+                "both-prompts",
+                ["--prompt=inline", self.with_prompt_file(self.sandbox()), f"--log={self.sandbox()}/out.log"],
+                "mutually exclusive",
+            ),
+            ("neither-prompt", [f"--log={self.sandbox()}/out.log"], "one of --prompt or --prompt-file is required"),
+            ("missing-log", [self.with_prompt_file(self.sandbox())], "--log is required"),
+            (
+                "missing-prompt-file",
+                [f"--prompt-file={self.sandbox()}/missing.md", f"--log={self.sandbox()}/out.log"],
+                "prompt file not found",
+            ),
+            ("unknown-option", [*self.base_flags(self.sandbox()), "--bogus"], "unknown option"),
+        ):
+            with self.subTest(name=name):
+                result = self.invoke(flags)
+                self.assertEqual(result["returncode"], 1)
+                self.assertIn(diagnostic, result["stderr"])
+                self.assertEqual(result["argv"], [])
+
+
+# ── pi (Python) ──────────────────────────────────────────────────────────────
+class PiAdapter(AdapterCase):
+    CMD = [str(PI_SH)]
+    RECORDS: list[dict[str, Any]] = [
+        {
+            "type": "session",
+            "version": 3,
+            "id": "pi_session",
+            "timestamp": "2026-07-14T00:00:00.000Z",
+            "cwd": "/workspace",
+        },
+        {
+            "type": "message_update",
+            "assistantMessageEvent": {"type": "text_delta", "delta": "working"},
+        },
+        {
+            "type": "tool_execution_start",
+            "toolName": "read",
+            "args": {"path": "src/main.py"},
+        },
+        {
+            "type": "message_end",
+            "message": {
+                "role": "user",
+                "usage": {
+                    "input": 100,
+                    "output": 100,
+                    "cacheRead": 100,
+                    "cacheWrite": 100,
+                    "cost": {"total": 100.0},
+                },
+            },
+        },
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "stopReason": "toolUse",
+                "usage": {
+                    "input": 10,
+                    "output": 20,
+                    "cacheRead": 30,
+                    "cacheWrite": 40,
+                    "cost": {"total": 0.25},
+                },
+            },
+        },
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "stopReason": "stop",
+                "usage": {
+                    "input": 1,
+                    "output": 2,
+                    "cacheRead": 3,
+                    "cacheWrite": 4,
+                    "cost": {"total": 0.75},
+                },
+            },
+        },
+    ]
+    FIXTURE = "\n".join(json.dumps(record) for record in RECORDS) + "\n"
+
+    @staticmethod
+    def expected_activity(records: list[dict[str, Any]]) -> str:
+        lines: list[str] = []
+        for record in records:
+            if record.get("type") != "message_update":
+                lines.append(json.dumps(record))
+                continue
+            update = record.get("assistantMessageEvent")
+            compact: dict[str, object] = {"type": "message_update"}
+            if isinstance(update, dict):
+                compact_update = {
+                    key: value
+                    for key in ("type", "contentIndex", "delta")
+                    if (value := update.get(key)) is not None and isinstance(value, (str, int, float, bool))
+                }
+                if compact_update:
+                    compact["assistantMessageEvent"] = compact_update
+            lines.append(json.dumps(compact, separators=(",", ":")))
+        return "\n".join(lines) + "\n"
+
+    def invoke(
+        self,
+        flags: list[str],
+        *,
+        env_extra: dict[str, str] | None = None,
+        with_fake: bool = True,
+    ) -> AdapterRun:
+        return self.run_adapter(
+            self.CMD,
+            flags,
+            fake_name="pi",
+            fixture_text=self.FIXTURE,
+            record_extra=True,
+            env_extra=env_extra,
+            with_fake=with_fake,
+        )
+
+    def base_flags(self, base: Path) -> list[str]:
+        return [self.with_prompt_file(base), f"--log={base}/out.log"]
+
+    def test_baseline_command_uses_environment_defaults_and_stdin(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"PI_MODEL": "openai/gpt-5.5", "PI_EFFORT": "high"},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(
+            result["argv"],
+            [
+                "--print",
+                "--mode",
+                "json",
+                "--no-session",
+                "--approve",
+                "--model",
+                "openai/gpt-5.5",
+                "--thinking",
+                "high",
+            ],
+        )
+        self.assertEqual(result["stdin"], "the prompt\n")
+        self.assertEqual(result["modelenv"], "<unset>")
+        self.assertEqual(result["effortenv"], "<unset>")
+
+    def test_max_effort_forwards_unchanged(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(self.base_flags(base) + ["--effort=max"])
+        self.assertEqual(
+            result["argv"],
+            ["--print", "--mode", "json", "--no-session", "--approve", "--thinking", "max"],
+        )
+
+    def test_all_other_efforts_forward_unchanged(self) -> None:
+        for effort in ("low", "medium", "high", "xhigh"):
+            with self.subTest(effort=effort):
+                base = self.sandbox()
+                result = self.invoke(self.base_flags(base) + [f"--effort={effort}"])
+                self.assertEqual(result["argv"][-2:], ["--thinking", effort])
+
+    def test_flag_values_override_environment_defaults(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base) + ["--model=flag-model", "--effort=medium"],
+            env_extra={"PI_MODEL": "env-model", "PI_EFFORT": "low"},
+        )
+        self.assertEqual(
+            result["argv"],
+            [
+                "--print",
+                "--mode",
+                "json",
+                "--no-session",
+                "--approve",
+                "--model",
+                "flag-model",
+                "--thinking",
+                "medium",
+            ],
+        )
+        self.assertEqual(result["modelenv"], "<unset>")
+        self.assertEqual(result["effortenv"], "<unset>")
+
+    def test_explicit_empty_model_and_effort_clear_environment_defaults(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base) + ["--model=", "--effort="],
+            env_extra={"PI_MODEL": "env-model", "PI_EFFORT": "low"},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["argv"], ["--print", "--mode", "json", "--no-session", "--approve"])
+        self.assertEqual(result["modelenv"], "<unset>")
+        self.assertEqual(result["effortenv"], "<unset>")
+
+    def test_compatibility_flags_are_accepted_but_not_forwarded(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(self.base_flags(base) + ["--max-turns=8", "--background", "--claude-alias=profile"])
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["argv"], ["--print", "--mode", "json", "--no-session", "--approve"])
+
+    def test_large_prompt_file_uses_stdin(self) -> None:
+        base = self.sandbox()
+        prompt = "x" * 200_000
+        result = self.invoke([self.with_prompt_file(base, prompt), f"--log={base}/out.log"])
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["stdin"], prompt)
+        self.assertEqual(result["argv"], ["--print", "--mode", "json", "--no-session", "--approve"])
+
+    def test_readable_deltas_and_tool_summaries_reach_log(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        records = [
+            {
+                "type": "message_update",
+                "assistantMessageEvent": {
+                    "type": "text_delta",
+                    "contentIndex": 0,
+                    "delta": "work",
+                    "partial": {"type": "text", "text": "a large cumulative snapshot"},
+                },
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "work"}]},
+            },
+            {
+                "type": "message_update",
+                "assistantMessageEvent": {"type": "text_delta", "delta": "ing"},
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "working"}],
+                    "stopReason": "toolUse",
+                },
+            },
+            {
+                "type": "tool_execution_start",
+                "toolName": "read",
+                "args": {"path": "src/main.py"},
+            },
+            {
+                "type": "message_update",
+                "assistantMessageEvent": {"type": "text_delta", "delta": "done"},
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "done"}],
+                    "stopReason": "stop",
+                },
+            },
+        ]
+        fixture = "\n".join(json.dumps(record) for record in records) + "\n"
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="pi",
+            fixture_text=fixture,
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(activity.read_text(), self.expected_activity(records))
+        self.assertNotIn("cumulative snapshot", activity.read_text())
+        self.assertEqual((base / "out.log").read_text(), "working\nreading src/main.py\ndone\n")
+
+    def test_message_end_without_deltas_writes_final_answer(self) -> None:
+        base = self.sandbox()
+        fixture = json.dumps(
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "final answer only"}],
+                    "stopReason": "stop",
+                    "usage": {},
+                },
+            }
+        )
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="pi",
+            fixture_text=fixture,
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual((base / "out.log").read_text(), "final answer only\n")
+
+    def test_session_header_and_assistant_usage_reach_usage_sidecar(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(self.base_flags(base))
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        parent_usage = {
+            "input_tokens": 11,
+            "cached_input_tokens": 33,
+            "cache_write_input_tokens": 44,
+            "output_tokens": 22,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 110,
+        }
+        self.assertEqual(usage["usage_scope"], "combined")
+        self.assertTrue(usage["usage_complete"])
+        self.assertEqual(usage["usage"], parent_usage)
+        self.assertEqual(usage["parent"], {"session_id": "pi_session", "total_cost_usd": 1.0, "usage": parent_usage})
+        self.assertTrue(usage["subagents"]["complete"])
+        self.assertEqual(usage["subagents"]["session_count"], 0)
+        self.assertEqual(usage["subagents"]["usage"]["total_tokens"], 0)
+        self.assertEqual(usage["combined"], {"complete": True, "total_cost_usd": 1.0, "usage": parent_usage})
+
+    def test_structured_provider_failure_overrides_zero_native_exit(self) -> None:
+        for reason in ("error", "aborted"):
+            with self.subTest(reason=reason):
+                base = self.sandbox()
+                message = f"provider stopped with {reason}"
+                fixture = json.dumps(
+                    {
+                        "type": "message_end",
+                        "message": {
+                            "role": "assistant",
+                            "content": [],
+                            "stopReason": reason,
+                            "errorMessage": message,
+                            "usage": {},
+                        },
+                    }
+                )
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="pi",
+                    fixture_text=fixture,
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], 1, result["stderr"])
+                self.assertIn(message, result["stderr"])
+                self.assertEqual((base / "out.log").read_text(), f"adapter error: {message}\n")
+
+    def test_structured_rate_limit_maps_to_retry_status(self) -> None:
+        for native_status in (0, 1):
+            with self.subTest(native_status=native_status):
+                base = self.sandbox()
+                fixture = json.dumps(
+                    {
+                        "type": "message_end",
+                        "message": {
+                            "role": "assistant",
+                            "content": [],
+                            "stopReason": "error",
+                            "errorMessage": "HTTP 429: quota exhausted",
+                            "usage": {},
+                        },
+                    }
+                )
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="pi",
+                    fixture_text=fixture,
+                    env_extra={"ADAPTER_EXIT_CODE": str(native_status)},
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], 75, result["stderr"])
+                self.assertIn("rate limit hit", result["stderr"])
+
+    def test_top_level_rate_limit_maps_to_retry_status(self) -> None:
+        fixture = json.dumps(
+            {
+                "type": "error",
+                "message": "HTTP 429: quota exhausted",
+                "statusCode": 429,
+            }
+        )
+        for native_status in (0, 1):
+            with self.subTest(native_status=native_status):
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="pi",
+                    fixture_text=fixture,
+                    env_extra={"ADAPTER_EXIT_CODE": str(native_status)},
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], 75, result["stderr"])
+                self.assertIn("rate limit hit", result["stderr"])
+                self.assertIn("HTTP 429: quota exhausted", result["stderr"])
+
+    def test_incomplete_terminal_event_overrides_zero_native_exit(self) -> None:
+        for name, fixture, diagnostic in (
+            (
+                "tool-use",
+                json.dumps(
+                    {
+                        "type": "message_end",
+                        "message": {"role": "assistant", "content": [], "stopReason": "toolUse", "usage": {}},
+                    }
+                ),
+                "toolUse",
+            ),
+            ("missing", json.dumps({"type": "session", "id": "pi_incomplete"}), "without"),
+        ):
+            with self.subTest(name=name):
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="pi",
+                    fixture_text=fixture,
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], 1, result["stderr"])
+                self.assertIn(diagnostic, result["stderr"])
+
+    def test_terminating_tool_result_completes_without_follow_up_message(self) -> None:
+        records = [
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "toolCall", "id": "call_final", "name": "finalize"}],
+                    "stopReason": "toolUse",
+                    "usage": {},
+                },
+            },
+            {
+                "type": "tool_execution_end",
+                "toolCallId": "call_final",
+                "toolName": "finalize",
+                "result": {
+                    "content": [{"type": "text", "text": "structured result"}],
+                    "details": {},
+                    "terminate": True,
+                },
+                "isError": False,
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "toolResult",
+                    "toolCallId": "call_final",
+                    "toolName": "finalize",
+                    "content": [{"type": "text", "text": "structured result"}],
+                    "isError": False,
+                },
+            },
+            {"type": "agent_end", "messages": []},
+        ]
+        base = self.sandbox()
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="pi",
+            fixture_text="\n".join(json.dumps(record) for record in records) + "\n",
+            record_extra=True,
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual((base / "out.log").read_text(), "structured result\n")
+
+    def test_terminating_tool_requires_successful_result_and_agent_end(self) -> None:
+        assistant = {
+            "type": "message_end",
+            "message": {"role": "assistant", "content": [], "stopReason": "toolUse", "usage": {}},
+        }
+        for name, result_record, include_agent_end in (
+            (
+                "missing-terminate",
+                {
+                    "type": "tool_execution_end",
+                    "result": {"content": [], "details": {}},
+                    "isError": False,
+                },
+                True,
+            ),
+            (
+                "tool-error",
+                {
+                    "type": "tool_execution_end",
+                    "result": {"content": [], "details": {}, "terminate": True},
+                    "isError": True,
+                },
+                True,
+            ),
+            (
+                "missing-error-status",
+                {
+                    "type": "tool_execution_end",
+                    "result": {"content": [], "details": {}, "terminate": True},
+                },
+                True,
+            ),
+            (
+                "missing-agent-end",
+                {
+                    "type": "tool_execution_end",
+                    "result": {"content": [], "details": {}, "terminate": True},
+                    "isError": False,
+                },
+                False,
+            ),
+        ):
+            with self.subTest(name=name):
+                records: list[dict[str, Any]] = [assistant, result_record]
+                if include_agent_end:
+                    records.append({"type": "agent_end", "messages": []})
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="pi",
+                    fixture_text="\n".join(json.dumps(record) for record in records) + "\n",
+                    record_extra=True,
+                )
+
+                self.assertEqual(result["returncode"], 1, result["stderr"])
+                self.assertIn("toolUse", result["stderr"])
+
+    @unittest.skipUnless(hasattr(os, "killpg") and hasattr(signal, "SIGHUP"), "requires POSIX signals")
+    def test_termination_signals_cleanup_temporary_files(self) -> None:
+        for signum in (signal.SIGTERM, signal.SIGHUP):
+            with self.subTest(signal=signal.Signals(signum).name):
+                base = self.sandbox()
+                bindir = base / "bin"
+                fixture = base / "fixture.jsonl"
+                fixture.write_text("")
+                self._write_fake(bindir, "pi", fixture, record_extra=True)
+                tmpdir = base / "tmp"
+                tmpdir.mkdir()
+                ready = base / "ready"
+                child_session = base / "child-session.jsonl"
+                child_session.write_text(json.dumps({"type": "session", "id": "child"}) + "\n")
+                env = {key: value for key, value in os.environ.items() if key not in _VOLATILE}
+                env.update(
+                    {
+                        "HOME": str(base),
+                        "PATH": f"{bindir}:/usr/bin:/bin",
+                        "TMPDIR": str(tmpdir),
+                        "ADAPTER_READY_FILE": str(ready),
+                        "ADAPTER_WAIT_SECONDS": "30",
+                        "ADAPTER_PI_SESSION_FIXTURE": str(child_session),
+                    }
+                )
+                proc = subprocess.Popen(
+                    [*self.CMD, "--prompt=temporary prompt", f"--log={base}/out.log"],
+                    cwd=base,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    start_new_session=True,
+                )
+
+                def cleanup(process: subprocess.Popen[str] = proc) -> None:
+                    if process.poll() is None:
+                        with contextlib.suppress(ProcessLookupError):
+                            os.killpg(process.pid, signal.SIGKILL)
+                        process.wait()
+
+                self.addCleanup(cleanup)
+                deadline = time.monotonic() + 5
+                while not ready.is_file() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(ready.is_file(), "fake Pi did not become ready")
+                self.assertTrue(list(tmpdir.glob("specula-pi-sessions-*")))
+                self.assertTrue(list(tmpdir.glob("specula-pi-activity-*.jsonl")))
+                self.assertTrue(list(tmpdir.glob("specula-pi-prompt-*.txt")))
+
+                os.killpg(proc.pid, signum)
+                _stdout, stderr = proc.communicate(timeout=5)
+                self.assertEqual(proc.returncode, 128 + signum, stderr)
+                self.assertFalse(list(tmpdir.glob("specula-pi-sessions-*")))
+                self.assertFalse(list(tmpdir.glob("specula-pi-activity-*.jsonl")))
+                self.assertFalse(list(tmpdir.glob("specula-pi-prompt-*.txt")))
+
+    def test_subagent_sessions_are_included_in_combined_usage(self) -> None:
+        base = self.sandbox()
+        child_session = base / "child-session.jsonl"
+        child_records = [
+            {"type": "session", "version": 3, "id": "child_session", "cwd": "/workspace"},
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "usage": {
+                        "input": 5,
+                        "output": 6,
+                        "cacheRead": 7,
+                        "cacheWrite": 8,
+                        "cost": {"total": 0.5},
+                    },
+                },
+            },
+            {
+                "type": "message",
+                "message": {
+                    "role": "user",
+                    "usage": {"input": 100, "output": 100, "cacheRead": 100, "cacheWrite": 100},
+                },
+            },
+        ]
+        child_session.write_text("\n".join(json.dumps(record) for record in child_records) + "\n")
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"ADAPTER_PI_SESSION_FIXTURE": str(child_session)},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["parent"]["usage"]["total_tokens"], 110)
+        self.assertEqual(usage["subagents"]["session_count"], 1)
+        self.assertEqual(usage["subagents"]["usage"]["total_tokens"], 26)
+        self.assertEqual(usage["subagents"]["sessions"][0]["session_id"], "child_session")
+        self.assertEqual(usage["combined"]["usage"]["total_tokens"], 136)
+        self.assertEqual(usage["usage"]["total_tokens"], 136)
+        self.assertEqual(usage["total_cost_usd"], 1.5)
+
+    @unittest.skipUnless(Path("/proc").is_dir(), "requires procfs")
+    def test_postprocessing_failure_defers_to_native_status(self) -> None:
+        for native_status, expected in ((0, 1), (9, 9), (75, 75)):
+            with self.subTest(native_status=native_status):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                result = self.invoke(
+                    [self.with_prompt_file(base), "--log=/proc/specula-pi-adapter.log"],
+                    env_extra={
+                        "SPECULA_ACTIVITY_LOG": str(activity),
+                        "ADAPTER_EXIT_CODE": str(native_status),
+                    },
+                )
+                self.assertEqual(result["returncode"], expected, result["stderr"])
+                self.assertEqual(activity.read_text(), self.expected_activity(self.RECORDS))
+
+    def test_missing_executable_returns_127_and_writes_diagnostic(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(self.base_flags(base), with_fake=False)
+        self.assertEqual(result["returncode"], 127, result["stderr"])
+        self.assertIn("pi adapter: failed to launch pi", (base / "out.log").read_text())
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["agent"], "pi")
+        self.assertIsNone(usage["session_id"])
+        self.assertEqual(usage["usage"]["total_tokens"], 0)
+
+    def test_invalid_options_fail_before_launch(self) -> None:
+        for name, flags, diagnostic in (
+            (
+                "both-prompts",
+                ["--prompt=inline", self.with_prompt_file(self.sandbox()), f"--log={self.sandbox()}/out.log"],
+                "mutually exclusive",
+            ),
+            ("neither-prompt", [f"--log={self.sandbox()}/out.log"], "one of --prompt or --prompt-file is required"),
+            ("missing-log", [self.with_prompt_file(self.sandbox())], "--log is required"),
+            (
+                "missing-prompt-file",
+                [f"--prompt-file={self.sandbox()}/missing.md", f"--log={self.sandbox()}/out.log"],
+                "prompt file not found",
+            ),
+            ("unknown-option", [*self.base_flags(self.sandbox()), "--bogus"], "unknown option"),
+        ):
+            with self.subTest(name=name):
+                result = self.invoke(flags)
+                self.assertEqual(result["returncode"], 1)
+                self.assertIn(diagnostic, result["stderr"])
+                self.assertEqual(result["argv"], [])
+
+
+# ── codex (bash) ────────────────────────────────────────────
 class CodexAdapter(AdapterCase):
     CMD = ["bash", str(CODEX_SH)]
 
@@ -1323,7 +2698,7 @@ class CopilotAdapter(AdapterCase):
         activity = base / "out.activity.jsonl"
         log = base / "out.log"
         proc = subprocess.Popen(
-            [sys.executable, str(EVENT_STREAM_PY), "copilot", str(activity), str(log)],
+            [*EVENT_STREAM_COMMAND, "copilot", str(activity), str(log)],
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )

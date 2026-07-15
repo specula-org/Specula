@@ -1,0 +1,55 @@
+"""Adapter: pi.
+
+Options:
+  --prompt=...          Task prompt (mutually exclusive with --prompt-file)
+  --prompt-file=FILE    Read prompt from file (mutually exclusive with --prompt)
+  --max-turns=N         Accepted for launcher compatibility; ignored
+  --claude-alias=NAME   Accepted for launcher compatibility; ignored
+  --effort=LEVEL        Pi thinking level (default: PI_EFFORT)
+  --model=NAME          Provider/model (default: PI_MODEL)
+  --log=FILE            Log file path (required)
+  --background          Accepted; caller handles backgrounding
+  --help                Show this help
+"""
+
+from __future__ import annotations
+
+import sys
+
+if __package__:
+    from .utils.json_cli import AdapterArgumentError, parse_options, run_json_cli
+else:
+    from utils.json_cli import (  # type: ignore[import-not-found, no-redef]
+        AdapterArgumentError,
+        parse_options,
+        run_json_cli,
+    )
+
+HELP = __doc__
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) == 1 and argv[0] in {"--help", "-h"}:
+        print(HELP)
+        return 0
+    try:
+        options = parse_options(
+            argv,
+            adapter_name="pi",
+            model_env="PI_MODEL",
+            effort_env="PI_EFFORT",
+        )
+    except AdapterArgumentError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+    command = ["pi", "--print", "--mode", "json", "--no-session", "--approve"]
+    if options.model:
+        command += ["--model", options.model]
+    if options.effort:
+        command += ["--thinking", options.effort]
+    return run_json_cli("pi", command, options)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

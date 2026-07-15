@@ -13,10 +13,199 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from specula import progress
-from specula.adapters.event_stream import parse_events, readable, stream_events, summary, tool_summary
+from specula.adapters.utils.event_stream import parse_events, stream_events
+from specula.adapters.utils.text import readable, summary, tool_summary
 
 
 class TestProgressParsing(unittest.TestCase):
+    def test_opencode_text_tool_and_error_events(self) -> None:
+        records = [
+            {
+                "type": "text",
+                "sessionID": "ses_1",
+                "part": {"type": "text", "text": "finished"},
+            },
+            {
+                "type": "tool_use",
+                "sessionID": "ses_1",
+                "part": {
+                    "type": "tool",
+                    "tool": "bash",
+                    "state": {"input": {"command": "pytest -q"}},
+                },
+            },
+            {"type": "error", "error": {"message": "provider unavailable"}},
+        ]
+        self.assertEqual(
+            parse_events("opencode", [json.dumps(record) for record in records]),
+            ["finished", "running pytest -q", "adapter error: provider unavailable"],
+        )
+
+    def test_opencode_native_error_envelope_uses_message_fallbacks(self) -> None:
+        records = [
+            {
+                "type": "error",
+                "error": {
+                    "name": "ProviderAuthError",
+                    "data": {"providerID": "openai", "message": "API key is missing"},
+                },
+            },
+            {"type": "error", "error": {"name": "APIError", "message": "provider unavailable"}},
+            {"type": "error", "error": {"name": "MessageOutputLengthError", "data": {}}},
+        ]
+        self.assertEqual(
+            parse_events("opencode", [json.dumps(record) for record in records]),
+            [
+                "adapter error: API key is missing",
+                "adapter error: provider unavailable",
+                "adapter error: MessageOutputLengthError",
+            ],
+        )
+
+    def test_pi_message_end_tool_and_error_events(self) -> None:
+        records = [
+            {
+                "type": "message_update",
+                "assistantMessageEvent": {"type": "text_delta", "delta": "work"},
+            },
+            {
+                "type": "message_update",
+                "assistantMessageEvent": {"type": "text_delta", "delta": "ing"},
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "working"}],
+                },
+            },
+            {
+                "type": "tool_execution_start",
+                "toolName": "read",
+                "args": {"path": "src/main.py"},
+            },
+            {"type": "error", "message": "request failed"},
+        ]
+        self.assertEqual(
+            parse_events("pi", [json.dumps(record) for record in records]),
+            ["working", "reading src/main.py", "adapter error: request failed"],
+        )
+
+    def test_pi_stream_reconstructs_fragments_and_delimits_messages(self) -> None:
+        deltas = [
+            "\x1b]0;spoofed\x07Split",
+            " ",
+            "wor",
+            "d",
+            " ",
+            " ",
+            "\n",
+            "# He",
+            "ading",
+            "\n\n",
+            "- **bo",
+            "ld**  ",
+            "\n",
+        ]
+        records = [
+            *(
+                {
+                    "type": "message_update",
+                    "assistantMessageEvent": {"type": "text_delta", "delta": delta},
+                }
+                for delta in deltas
+            ),
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Split word  \n# Heading\n\n- **bold**  \n"}],
+                },
+            },
+            {
+                "type": "tool_execution_start",
+                "toolName": "read",
+                "args": {"path": "src/main.py"},
+            },
+            {
+                "type": "message_update",
+                "assistantMessageEvent": {"type": "text_delta", "delta": "repeat"},
+            },
+            {
+                "type": "message_update",
+                "assistantMessageEvent": {"type": "text_delta", "delta": "repeat"},
+            },
+            {
+                "type": "message_update",
+                "assistantMessageEvent": {"type": "text_delta", "delta": "\n"},
+            },
+            {
+                "type": "message_update",
+                "assistantMessageEvent": {"type": "text_delta", "delta": "tail"},
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "repeatrepeat\ntail"}],
+                },
+            },
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = root / "agent.log"
+            stream_events(
+                "pi",
+                root / "agent.activity.jsonl",
+                log,
+                (json.dumps(record).encode() + b"\n" for record in records),
+            )
+
+            self.assertEqual(
+                log.read_text(),
+                "Split word  \n# Heading\n\n- **bold**  \nreading src/main.py\nrepeatrepeat\ntail\n",
+            )
+
+    def test_opencode_step_cost_does_not_require_token_usage(self) -> None:
+        record = {"type": "step_finish", "sessionID": "ses_cost", "part": {"cost": 0.5}}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status = stream_events(
+                "opencode",
+                root / "agent.activity.jsonl",
+                root / "agent.log",
+                [json.dumps(record).encode()],
+            )
+
+        self.assertEqual(status.usage["total_cost_usd"], 0.5)
+
+    def test_pi_subagent_result_records_exact_session_files(self) -> None:
+        record = {
+            "type": "tool_execution_end",
+            "toolName": "subagent",
+            "result": {
+                "details": {
+                    "results": [
+                        {"sessionFile": "/tmp/pi-one/session.jsonl"},
+                        {"sessionPath": "/tmp/pi-two/session.jsonl"},
+                    ]
+                }
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status = stream_events(
+                "pi",
+                root / "agent.activity.jsonl",
+                root / "agent.log",
+                [json.dumps(record).encode()],
+            )
+
+        self.assertEqual(
+            tuple(result.session_file for result in status.subagent_results),
+            ("/tmp/pi-one/session.jsonl", "/tmp/pi-two/session.jsonl"),
+        )
+
     def test_summary_removes_terminal_control_sequences(self) -> None:
         text = "\x1b]0;spoofed title\x07hello \x1b[31mred\x1b[0m\rworld"
         self.assertEqual(summary(text), "hello red world")
@@ -108,6 +297,32 @@ class TestProgressParsing(unittest.TestCase):
 
             self.assertEqual(raw.read_bytes(), event)
             self.assertEqual(log.read_text(), "reading kilo.c\n")
+
+    def test_pi_fragment_log_is_flushed_before_stream_interruption(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = root / "agent.activity.jsonl"
+            log = root / "agent.log"
+            event = json.dumps(
+                {
+                    "type": "message_update",
+                    "assistantMessageEvent": {"type": "text_delta", "delta": "live "},
+                }
+            ).encode()
+
+            def interrupted_stream() -> Iterator[bytes]:
+                yield event
+                self.assertEqual(log.read_text(), "live ")
+                raise KeyboardInterrupt
+
+            with self.assertRaises(KeyboardInterrupt):
+                stream_events("pi", raw, log, interrupted_stream())
+
+            self.assertEqual(
+                raw.read_bytes(),
+                b'{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"live "}}',
+            )
+            self.assertEqual(log.read_text(), "live ")
 
     @unittest.skipUnless(Path("/dev/full").exists(), "requires /dev/full")
     def test_raw_sink_failure_drains_source_and_preserves_readable_log(self) -> None:
