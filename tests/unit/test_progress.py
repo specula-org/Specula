@@ -13,7 +13,8 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from specula import progress
-from specula.adapters.event_stream import parse_events, readable, stream_events, summary, tool_summary
+from specula.adapters.utils.event_stream import parse_events, stream_events
+from specula.adapters.utils.text import readable, summary, tool_summary
 
 
 class TestProgressParsing(unittest.TestCase):
@@ -216,7 +217,7 @@ class TestProgressParsing(unittest.TestCase):
                     "cache_write_input_tokens": 55,
                     "output_tokens": 22,
                     "reasoning_output_tokens": 33,
-                    "total_tokens": 165,
+                    "total_tokens": 132,
                 },
             },
         )

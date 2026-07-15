@@ -68,7 +68,7 @@ uv tool install -e .
 specula setup
 ```
 
-Install with `-e` (editable): the `specula` command dispatches to scripts inside the checkout, so it must stay linked to it.
+Install with `-e` (editable): the public `specula` command and its internal `specula-adapter` helper dispatch to code and scripts inside the checkout, so they must stay linked to it. Rerun the install command after pulling a revision that adds or changes packaged commands.
 
 Setup downloads the TLA+ JARs, builds the CFA tool, prepares the MCP tool environments, and offers integration for Claude Code, Codex, and GitHub Copilot CLI when found on `PATH`. It reports and skips any missing setup-integrated CLI instead of prompting for it. OpenCode and Pi require separate configuration through their native CLIs and selected providers. Setup prompts for global or project-local skill installation when that choice applies.
 

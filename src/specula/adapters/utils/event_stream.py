@@ -10,19 +10,15 @@ from __future__ import annotations
 
 import contextlib
 import json
-import math
 import re
-import stat
 import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, TextIO, cast
 
-_ESCAPE_RE = re.compile(r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])")
-_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
-_CONTROL_KEEP_NL_RE = re.compile(r"[\x00-\x09\x0b-\x1f\x7f-\x9f]")  # every control char but \n
-_SUMMARY_LIMIT = 180
+from .text import SUMMARY_LIMIT, readable, readable_fragment, summary, tool_summary
+from .usage import UsageTotals, accumulate_usage, pi_session_files
 
 
 @dataclass(frozen=True)
@@ -31,6 +27,7 @@ class StreamStatus:
     log_ok: bool
     terminal_record: object | None
     structured_error: str | None
+    rate_limit_error: str | None
     terminal_error: str | None
     plain_diagnostics: tuple[str, ...]
     session_files: tuple[str, ...]
@@ -44,142 +41,7 @@ class _LogEvent:
     message_end: bool = False
 
 
-@dataclass
-class UsageTotals:
-    session_id: str | None = None
-    total_cost_usd: float | None = None
-    input_tokens: int = 0
-    cached_input_tokens: int = 0
-    cache_write_input_tokens: int = 0
-    output_tokens: int = 0
-    reasoning_output_tokens: int = 0
-
-    def add(self, other: UsageTotals) -> None:
-        self.input_tokens += other.input_tokens
-        self.cached_input_tokens += other.cached_input_tokens
-        self.cache_write_input_tokens += other.cache_write_input_tokens
-        self.output_tokens += other.output_tokens
-        self.reasoning_output_tokens += other.reasoning_output_tokens
-        if other.total_cost_usd is not None:
-            self.total_cost_usd = (self.total_cost_usd or 0.0) + other.total_cost_usd
-
-    def add_cost(self, value: object) -> None:
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            try:
-                cost = float(value)
-            except OverflowError:
-                return
-            if cost >= 0 and math.isfinite(cost):
-                self.total_cost_usd = (self.total_cost_usd or 0.0) + cost
-
-    def as_payload(self, agent: str) -> dict[str, object]:
-        return {
-            "agent": agent,
-            "session_id": self.session_id,
-            "session_file": None,
-            "total_cost_usd": self.total_cost_usd,
-            "usage": self.as_usage(),
-        }
-
-    def as_usage(self) -> dict[str, int]:
-        total = (
-            self.input_tokens
-            + self.cached_input_tokens
-            + self.cache_write_input_tokens
-            + self.output_tokens
-            + self.reasoning_output_tokens
-        )
-        return {
-            "input_tokens": self.input_tokens,
-            "cached_input_tokens": self.cached_input_tokens,
-            "cache_write_input_tokens": self.cache_write_input_tokens,
-            "output_tokens": self.output_tokens,
-            "reasoning_output_tokens": self.reasoning_output_tokens,
-            "total_tokens": total,
-        }
-
-    @classmethod
-    def from_payload(cls, payload: dict[str, object]) -> UsageTotals:
-        totals = cls(session_id=payload.get("session_id") if isinstance(payload.get("session_id"), str) else None)
-        totals.add_cost(payload.get("total_cost_usd"))
-        usage = payload.get("usage")
-        if isinstance(usage, dict):
-            totals.input_tokens = _token_count(usage.get("input_tokens"))
-            totals.cached_input_tokens = _token_count(usage.get("cached_input_tokens"))
-            totals.cache_write_input_tokens = _token_count(usage.get("cache_write_input_tokens"))
-            totals.output_tokens = _token_count(usage.get("output_tokens"))
-            totals.reasoning_output_tokens = _token_count(usage.get("reasoning_output_tokens"))
-        return totals
-
-
 _INVALID_RECORD = object()
-
-
-def _strip_escapes(text: str) -> str:
-    return _ESCAPE_RE.sub("", text)
-
-
-def summary(text: str, limit: int | None = _SUMMARY_LIMIT) -> str:
-    """Flatten agent-controlled text to one terminal-safe line."""
-    text = _CONTROL_RE.sub(" ", _strip_escapes(text))
-    result = " ".join(text.split())
-    if limit is not None and len(result) > limit:
-        return result[: limit - 3].rstrip() + "..."
-    return result
-
-
-def readable(text: str) -> str:
-    """Terminal-safe like `summary`, but line structure survives.
-
-    The agent's final answer is markdown; `summary` would collapse a whole
-    report into one line, which is fine for a CLI ticker and useless in
-    agent.log. Escapes and every other control character still go."""
-    text = _CONTROL_KEEP_NL_RE.sub(" ", _strip_escapes(text))
-    return "\n".join(line.rstrip() for line in text.split("\n")).strip("\n")
-
-
-def _readable_fragment(text: str) -> str:
-    """Sanitize streamed text without changing its spacing or line breaks."""
-    return _CONTROL_KEEP_NL_RE.sub(" ", _strip_escapes(text))
-
-
-def _string_arg(arguments: object, *keys: str) -> str:
-    if not isinstance(arguments, dict):
-        return ""
-    for key in keys:
-        value = arguments.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
-    return ""
-
-
-def tool_summary(name: str, arguments: object) -> str:
-    # `name` is as agent-controlled as the arguments are — an MCP server picks its
-    # own tool names, and this string goes straight to the user's terminal.
-    name = summary(name, 60) or "tool"
-    lowered = name.casefold()
-    command = _string_arg(arguments, "command", "cmd")
-    path = _string_arg(arguments, "file_path", "path")
-    pattern = _string_arg(arguments, "pattern", "query")
-    description = _string_arg(arguments, "description", "intent", "prompt")
-    if lowered in {"bash", "shell", "powershell", "command_execution"} and command:
-        command = command.removeprefix("/bin/bash -lc ").removeprefix("/bin/sh -lc ")
-        if len(command) >= 2 and command[0] == command[-1] and command[0] in {'"', "'"}:
-            command = command[1:-1]
-        return f"running {summary(command, 160)}"
-    if lowered in {"read", "view", "read_file"} and path:
-        return f"reading {summary(path)}"
-    if lowered in {"edit", "write", "write_file", "notebookedit"} and path:
-        return f"editing {summary(path)}"
-    if lowered in {"grep", "glob", "search", "websearch", "web_search"} and pattern:
-        return f"searching for {summary(pattern)}"
-    if lowered in {"task", "spawnagent", "spawn_agent"}:
-        detail = f": {summary(description)}" if description else ""
-        return f"spawning subagent{detail}"
-    if lowered in {"taskoutput", "wait"}:
-        return "waiting for subagents"
-    detail = f": {summary(description)}" if description else ""
-    return f"using {name}{detail}"
 
 
 def _line_event(text: str) -> _LogEvent:
@@ -356,6 +218,58 @@ def _pi_terminal_error(record: object) -> str | None:
     return summary(detail, None)
 
 
+_RATE_LIMIT_RE = re.compile(
+    r"(?:\b429\b|rate[\s_-]*limit|too many requests|quota|resource[\s_-]*exhausted|"
+    r"insufficient[\s_-]*quota)",
+    re.IGNORECASE,
+)
+
+
+def _looks_rate_limited(value: object, depth: int = 0) -> bool:
+    """Inspect only fields inside a structured provider error."""
+    if depth > 3:
+        return False
+    if isinstance(value, str):
+        return bool(_RATE_LIMIT_RE.search(value))
+    if not isinstance(value, dict):
+        return False
+    for key in ("statusCode", "status_code", "status"):
+        status_code = value.get(key)
+        if status_code == 429 or status_code == "429":
+            return True
+    for key in ("name", "type", "code", "message", "errorMessage", "responseBody"):
+        if _looks_rate_limited(value.get(key), depth + 1):
+            return True
+    return any(_looks_rate_limited(value.get(key), depth + 1) for key in ("data", "error"))
+
+
+def _structured_rate_limit_error(adapter_name: str, record: object) -> str | None:
+    """Return a diagnostic only for an explicit provider-error record."""
+    if not isinstance(record, dict):
+        return None
+    if adapter_name == "opencode" and record.get("type") == "error":
+        error = record.get("error")
+        if not _looks_rate_limited(error):
+            return None
+        message = _diagnostic_message(error)
+        if isinstance(error, dict):
+            message = _diagnostic_message(error.get("data")) or message
+            name = error.get("name")
+            if not message and isinstance(name, str):
+                message = name
+        return summary(message or "provider rate limit", None)
+    if adapter_name != "pi":
+        return None
+    terminal_error = _pi_terminal_error(record)
+    if terminal_error is not None and _looks_rate_limited(terminal_error):
+        return terminal_error
+    if record.get("type") == "error":
+        error = record.get("error")
+        if _looks_rate_limited(error):
+            return summary(_diagnostic_message(error) or "provider rate limit", None)
+    return None
+
+
 def _terminal_error(adapter_name: str, record: object | None) -> str | None:
     """Reject streams that end between agent turns instead of completing."""
     if adapter_name == "opencode":
@@ -391,7 +305,7 @@ def _pi_events(record: object, concise: bool) -> list[_LogEvent]:
             delta = update.get("delta")
             if not isinstance(delta, str) or concise:
                 return []
-            return [_LogEvent(text=_readable_fragment(delta), fragment=True)]
+            return [_LogEvent(text=readable_fragment(delta), fragment=True)]
         return []
     if record_type == "message_end":
         message = record.get("message")
@@ -420,173 +334,6 @@ _PARSERS: dict[str, Callable[[object, bool], list[_LogEvent]]] = {
     "opencode": _opencode_events,
     "pi": _pi_events,
 }
-
-
-def _token_count(value: object) -> int:
-    if isinstance(value, bool):
-        return 0
-    if isinstance(value, int):
-        return value if value >= 0 else 0
-    if not isinstance(value, float):
-        return 0
-    if value < 0 or not math.isfinite(value) or not value.is_integer():
-        return 0
-    return int(value)
-
-
-def _accumulate_usage(adapter_name: str, record: object, totals: UsageTotals) -> None:
-    if not isinstance(record, dict):
-        return
-    if adapter_name == "opencode":
-        session_id = record.get("sessionID")
-        if totals.session_id is None and isinstance(session_id, str):
-            totals.session_id = session_id
-        if record.get("type") != "step_finish":
-            return
-        part = record.get("part")
-        if not isinstance(part, dict):
-            return
-        totals.add_cost(part.get("cost"))
-        tokens = part.get("tokens")
-        if not isinstance(tokens, dict):
-            return
-        cache = tokens.get("cache")
-        totals.input_tokens += _token_count(tokens.get("input"))
-        totals.output_tokens += _token_count(tokens.get("output"))
-        totals.reasoning_output_tokens += _token_count(tokens.get("reasoning"))
-        if isinstance(cache, dict):
-            totals.cached_input_tokens += _token_count(cache.get("read"))
-            totals.cache_write_input_tokens += _token_count(cache.get("write"))
-        return
-    if adapter_name != "pi":
-        return
-    if record.get("type") == "session":
-        session_id = record.get("id")
-        if totals.session_id is None and isinstance(session_id, str):
-            totals.session_id = session_id
-        return
-    if record.get("type") != "message_end":
-        return
-    message = record.get("message")
-    if not isinstance(message, dict) or message.get("role") != "assistant":
-        return
-    usage = message.get("usage")
-    if not isinstance(usage, dict):
-        return
-    totals.input_tokens += _token_count(usage.get("input"))
-    totals.output_tokens += _token_count(usage.get("output"))
-    totals.cached_input_tokens += _token_count(usage.get("cacheRead"))
-    totals.cache_write_input_tokens += _token_count(usage.get("cacheWrite"))
-    cost = usage.get("cost")
-    if isinstance(cost, dict):
-        totals.add_cost(cost.get("total"))
-
-
-def _read_pi_session_usage(path: Path) -> tuple[UsageTotals, list[str]] | None:
-    """Read one persisted Pi child session without retaining its messages."""
-    try:
-        metadata = path.lstat()
-        if not stat.S_ISREG(metadata.st_mode) or path.is_symlink():
-            return None
-        stream = path.open(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        print(f"adapter usage warning: {summary(str(exc), None)}", file=sys.stderr)
-        return None
-
-    totals = UsageTotals()
-    nested_paths: list[str] = []
-    header_seen = False
-    try:
-        with stream:
-            for line in stream:
-                try:
-                    record = json.loads(line)
-                except (TypeError, ValueError):
-                    continue
-                if not header_seen:
-                    if not isinstance(record, dict) or record.get("type") != "session":
-                        return None
-                    header_seen = True
-                    session_id = record.get("id")
-                    if isinstance(session_id, str):
-                        totals.session_id = session_id
-                    continue
-                if not isinstance(record, dict) or record.get("type") != "message":
-                    continue
-                message = record.get("message")
-                if not isinstance(message, dict):
-                    continue
-                if message.get("role") == "assistant":
-                    _accumulate_usage("pi", {"type": "message_end", "message": message}, totals)
-                elif message.get("role") == "toolResult" and message.get("toolName") == "subagent":
-                    nested_paths.extend(_find_session_paths(message.get("details")))
-    except OSError as exc:
-        print(f"adapter usage warning: {summary(str(exc), None)}", file=sys.stderr)
-        return None
-    return (totals, nested_paths) if header_seen else None
-
-
-def augment_pi_usage(
-    parent_payload: dict[str, object],
-    session_files: Iterable[str | Path],
-    session_root: Path | None = None,
-) -> dict[str, object]:
-    """Add per-child and combined Pi usage while preserving top-level readers."""
-    pending = [Path(path) for path in session_files]
-    if session_root is not None:
-        with contextlib.suppress(OSError):
-            pending.extend(session_root.rglob("session.jsonl"))
-
-    seen: set[Path] = set()
-    sessions: list[dict[str, object]] = []
-    subagent_totals = UsageTotals()
-    while pending:
-        candidate = pending.pop()
-        try:
-            resolved = candidate.expanduser().resolve()
-        except OSError:
-            continue
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        result = _read_pi_session_usage(resolved)
-        if result is None:
-            continue
-        totals, nested_paths = result
-        pending.extend(Path(path) for path in nested_paths)
-        subagent_totals.add(totals)
-        session_payload = totals.as_payload("pi")
-        session_payload.pop("agent", None)
-        session_payload.pop("session_file", None)
-        sessions.append(session_payload)
-
-    sessions.sort(key=lambda item: str(item.get("session_id") or ""))
-    parent_totals = UsageTotals.from_payload(parent_payload)
-    combined_totals = UsageTotals(session_id=parent_totals.session_id)
-    combined_totals.add(parent_totals)
-    combined_totals.add(subagent_totals)
-    combined_payload = combined_totals.as_payload("pi")
-    combined_payload.update(
-        {
-            "usage_scope": "combined",
-            "parent": {
-                "session_id": parent_totals.session_id,
-                "total_cost_usd": parent_totals.total_cost_usd,
-                "usage": parent_totals.as_usage(),
-            },
-            "subagents": {
-                "session_count": len(sessions),
-                "total_cost_usd": subagent_totals.total_cost_usd,
-                "usage": subagent_totals.as_usage(),
-                "sessions": sessions,
-            },
-            "combined": {
-                "total_cost_usd": combined_totals.total_cost_usd,
-                "usage": combined_totals.as_usage(),
-            },
-        }
-    )
-    return combined_payload
 
 
 def _is_tool_echo(adapter_name: str, record: object) -> bool:
@@ -629,37 +376,6 @@ def _compact_activity_line(adapter_name: str, record: object, raw_line: bytes) -
     return json.dumps(compact, ensure_ascii=False, separators=(",", ":")).encode() + newline
 
 
-def _find_session_paths(value: object) -> list[str]:
-    found: list[str] = []
-
-    def visit(node: object) -> None:
-        if isinstance(node, dict):
-            for key, nested in node.items():
-                if key in {"sessionFile", "sessionPath"} and isinstance(nested, str) and nested:
-                    found.append(nested)
-                else:
-                    visit(nested)
-        elif isinstance(node, list):
-            for nested in node:
-                visit(nested)
-
-    visit(value)
-    return found
-
-
-def _session_files_from_subagent_result(record: object) -> list[str]:
-    """Extract only Pi subagent-owned session paths from a tool result."""
-    if (
-        not isinstance(record, dict)
-        or record.get("type") != "tool_execution_end"
-        or record.get("toolName") != "subagent"
-    ):
-        return []
-    result = record.get("result")
-    details = result.get("details") if isinstance(result, dict) else None
-    return _find_session_paths(details)
-
-
 def _read_line(adapter_name: str, line: str, concise: bool) -> tuple[bool, list[_LogEvent], object]:
     """One line -> (persist raw?, readable events, parsed record or sentinel).
 
@@ -668,7 +384,7 @@ def _read_line(adapter_name: str, line: str, concise: bool) -> tuple[bool, list[
     try:
         record = json.loads(line)
     except (TypeError, ValueError):
-        text = summary(line, _SUMMARY_LIMIT if concise else None)
+        text = summary(line, SUMMARY_LIMIT if concise else None)
         if adapter_name == "copilot-cli":
             # Pre-JSON Copilot output is the agent's response, not a diagnostic
             # channel. Preserve wording such as "tests failed before the fix"
@@ -726,6 +442,7 @@ def stream_events(
     line_open = False
     terminal_record: object | None = None
     structured_error: str | None = None
+    rate_limit_error: str | None = None
     plain_diagnostics: list[str] = []
     session_files: list[str] = []
     raw_failures: list[str] = []
@@ -771,10 +488,10 @@ def stream_events(
             log = None
 
     def handle_line(raw_line: bytes, *, raw_already_written: bool) -> None:
-        nonlocal fragment_active, last_event, line_open, structured_error, terminal_record
+        nonlocal fragment_active, last_event, line_open, rate_limit_error, structured_error, terminal_record
         decoded = raw_line.decode(errors="replace")
         keep, events, record = _read_line(adapter_name, decoded, concise=False)
-        _accumulate_usage(adapter_name, record, usage_totals)
+        accumulate_usage(adapter_name, record, usage_totals)
         if adapter_name == "claude-code":
             if isinstance(record, dict) and record.get("type") == "result":
                 terminal_record = record
@@ -784,6 +501,9 @@ def stream_events(
                 # an activity-sidecar failure without buffering the full stream.
                 plain_diagnostics.append(decoded)
         elif adapter_name == "opencode":
+            detected_rate_limit = _structured_rate_limit_error(adapter_name, record)
+            if detected_rate_limit is not None:
+                rate_limit_error = detected_rate_limit
             if isinstance(record, dict) and record.get("type") == "step_finish":
                 terminal_record = record
         elif adapter_name == "pi":
@@ -795,7 +515,12 @@ def stream_events(
             ):
                 terminal_record = record
                 structured_error = _pi_terminal_error(record)
-            session_files.extend(_session_files_from_subagent_result(record))
+                rate_limit_error = _structured_rate_limit_error(adapter_name, record)
+            elif isinstance(record, dict) and record.get("type") == "error":
+                detected_rate_limit = _structured_rate_limit_error(adapter_name, record)
+                if detected_rate_limit is not None:
+                    rate_limit_error = detected_rate_limit
+            session_files.extend(pi_session_files(record))
         if keep and not raw_already_written:
             write_raw(_compact_activity_line(adapter_name, record, raw_line))
         for event in events:
@@ -871,6 +596,7 @@ def stream_events(
         log_ok=not readable_failures,
         terminal_record=terminal_record,
         structured_error=structured_error,
+        rate_limit_error=rate_limit_error,
         terminal_error=_terminal_error(adapter_name, terminal_record),
         plain_diagnostics=tuple(plain_diagnostics),
         session_files=tuple(dict.fromkeys(session_files)),
@@ -881,7 +607,7 @@ def stream_events(
 def main(argv: list[str]) -> int:
     if len(argv) != 3 or argv[0] not in _ADAPTER_NAMES:
         print(
-            "usage: event_stream.py {claude|codex|copilot|opencode|pi} ACTIVITY_JSONL LOG_FILE",
+            "usage: specula-adapter event-stream {claude|codex|copilot|opencode|pi} ACTIVITY_JSONL LOG_FILE",
             file=sys.stderr,
         )
         return 2

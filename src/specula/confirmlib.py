@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from specula import quota
+from specula.agent_registry import agent_spec
 from specula.phaselib import SPECULA_ROOT, Workspace, run_agent_blocking
 from specula.prompts import render
 from specula.skill_refs import prompt_skill_ids
@@ -770,32 +771,24 @@ def _tuning_identity(cfg: ConfirmConfig) -> dict[str, dict[str, str | None]]:
     if cfg.model is not None:
         model = {"source": "specula", "value": cfg.model}
     else:
-        model_env = {
-            "claude-code": "CLAUDE_MODEL",
-            "codex": "CODEX_MODEL",
-            "copilot-cli": "COPILOT_MODEL",
-            "opencode": "OPENCODE_MODEL",
-            "pi": "PI_MODEL",
-        }.get(adapter)
+        spec = agent_spec(adapter)
+        model_env = spec.model_env if spec is not None else None
         model_value = (os.environ.get(model_env) or None) if model_env is not None else None
         model = {"source": model_env if model_value is not None else "adapter-default", "value": model_value}
 
     if cfg.effort is not None:
         effort = {"source": "specula", "value": cfg.effort}
-    elif adapter == "claude-code":
-        # run_agent_blocking explicitly injects max, overriding CLAUDE_EFFORT.
-        effort = {"source": "specula-default", "value": "max"}
     else:
-        effort_env = {
-            "codex": "CODEX_EFFORT",
-            "opencode": "OPENCODE_EFFORT",
-            "pi": "PI_EFFORT",
-        }.get(adapter)
-        effort_value = (os.environ.get(effort_env) or None) if effort_env is not None else None
-        effort = {
-            "source": effort_env if effort_value is not None else "adapter-default",
-            "value": effort_value,
-        }
+        spec = agent_spec(adapter)
+        if spec is not None and spec.default_effort is not None:
+            effort = {"source": "specula-default", "value": spec.default_effort}
+        else:
+            effort_env = spec.effort_env if spec is not None else None
+            effort_value = (os.environ.get(effort_env) or None) if effort_env is not None else None
+            effort = {
+                "source": effort_env if effort_value is not None else "adapter-default",
+                "value": effort_value,
+            }
     return {"model": model, "effort": effort}
 
 

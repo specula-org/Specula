@@ -247,11 +247,9 @@ run_codex() {
   rm -f "$last_message_file"
   set +e
   if [[ -n "$activity_log" ]]; then
-    local event_helper
     local -a pipeline_status
     local stream_rc
-    event_helper="$adapter_dir/../../../src/specula/adapters/event_stream.py"
-    printf '%s' "$PROMPT" | "${cmd[@]}" --json - 2>&1 | python3 "$event_helper" codex "$activity_log" "$log_file"
+    printf '%s' "$PROMPT" | "${cmd[@]}" --json - 2>&1 | specula-adapter event-stream codex "$activity_log" "$log_file"
     pipeline_status=("${PIPESTATUS[@]}")
     codex_rc="${pipeline_status[1]}"
     stream_rc="${pipeline_status[2]}"

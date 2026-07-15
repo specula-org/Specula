@@ -9,8 +9,8 @@ breaks every agent call.
 Each case runs the real adapter as a subprocess with a fake `claude`/`codex`/
 `copilot`/`opencode`/`pi` on PATH that records the argv (and, for Python adapters, stdin + the exported
 CLAUDE_CONFIG_DIR + a session-env marker) it observed, then asserts on the
-recording. `claude-code` is the Python port (adapters/claude_code.py); `codex`
-and `copilot-cli` are still bash (scripts/launch/adapters/*.sh).
+recording. Python adapters are reached through the packaged internal dispatcher;
+`codex` and `copilot-cli` are still bash (scripts/launch/adapters/*.sh).
 
 stdlib unittest, collected natively by pytest:
 
@@ -23,6 +23,7 @@ import contextlib
 import json
 import os
 import signal
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -33,14 +34,11 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CLAUDE_PY = REPO_ROOT / "src" / "specula" / "adapters" / "claude_code.py"
-OPENCODE_PY = REPO_ROOT / "src" / "specula" / "adapters" / "opencode.py"
 OPENCODE_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "opencode.sh"
-PI_PY = REPO_ROOT / "src" / "specula" / "adapters" / "pi.py"
 PI_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "pi.sh"
 CODEX_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "codex.sh"
 COPILOT_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "copilot-cli.sh"
-EVENT_STREAM_PY = REPO_ROOT / "src" / "specula" / "adapters" / "event_stream.py"
+ADAPTER_COMMAND = [sys.executable, "-m", "specula.adapters.cli"]
 
 # A minimal well-formed claude result: the claude adapter parses this for
 # .log/.usage.json. codex/copilot don't parse it, so any text is fine for them.
@@ -179,6 +177,12 @@ class AdapterCase(unittest.TestCase):
         stub.write_text("\n".join(lines) + "\n")
         stub.chmod(stub.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
+    def _write_adapter_dispatcher(self, bindir: Path) -> None:
+        """Expose the packaged helper inside the deliberately isolated test PATH."""
+        helper = bindir / "specula-adapter"
+        helper.write_text(f'#!/usr/bin/env bash\nexec {json.dumps(sys.executable)} -m specula.adapters.cli "$@"\n')
+        helper.chmod(helper.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
     def run_adapter(
         self,
         cmd: list[str],
@@ -211,6 +215,7 @@ class AdapterCase(unittest.TestCase):
         env["HOME"] = str(base)
         if with_fake:
             self._write_fake(bindir, fake_name, fixture, record_extra)
+            self._write_adapter_dispatcher(bindir)
             env["PATH"] = f"{bindir}:/usr/bin:/bin"
         else:
             env["PATH"] = "/usr/bin:/bin"
@@ -252,7 +257,7 @@ class AdapterDocumentation(unittest.TestCase):
 
 # ── claude-code (Python port) ────────────────────────────────────────────────
 class ClaudeCodeAdapter(AdapterCase):
-    CMD = [sys.executable, str(CLAUDE_PY)]
+    CMD = [*ADAPTER_COMMAND, "claude-code"]
     FIXTURE = json.dumps(CLAUDE_JSON)
 
     def invoke(self, flags: list[str], *, env_extra: dict[str, str] | None = None) -> AdapterRun:
@@ -845,7 +850,7 @@ class ClaudeCodeAdapter(AdapterCase):
 
 # ── opencode (Python) ───────────────────────────────────────────
 class OpenCodeAdapter(AdapterCase):
-    CMD = [sys.executable, str(OPENCODE_PY)]
+    CMD = [*ADAPTER_COMMAND, "opencode"]
     RECORDS = [
         {
             "type": "text",
@@ -978,6 +983,14 @@ class OpenCodeAdapter(AdapterCase):
         self.assertEqual(result["returncode"], 0, result["stderr"])
         self.assertEqual(activity.read_text(), self.FIXTURE)
         self.assertEqual((base / "out.log").read_text(), "finished\n")
+        parent_usage = {
+            "input_tokens": 11,
+            "cached_input_tokens": 44,
+            "cache_write_input_tokens": 55,
+            "output_tokens": 22,
+            "reasoning_output_tokens": 33,
+            "total_tokens": 132,
+        }
         self.assertEqual(
             json.loads((base / "out.usage.json").read_text()),
             {
@@ -985,16 +998,217 @@ class OpenCodeAdapter(AdapterCase):
                 "session_id": "ses_first",
                 "session_file": None,
                 "total_cost_usd": 1.0,
-                "usage": {
-                    "input_tokens": 11,
-                    "cached_input_tokens": 44,
-                    "cache_write_input_tokens": 55,
-                    "output_tokens": 22,
-                    "reasoning_output_tokens": 33,
-                    "total_tokens": 165,
+                "usage": parent_usage,
+                "usage_scope": "partial",
+                "usage_complete": False,
+                "usage_warning": "OpenCode session database unavailable",
+                "parent": {
+                    "session_id": "ses_first",
+                    "total_cost_usd": 1.0,
+                    "usage": parent_usage,
                 },
+                "subagents": {
+                    "complete": False,
+                    "session_count": 0,
+                    "total_cost_usd": None,
+                    "usage": {
+                        "input_tokens": 0,
+                        "cached_input_tokens": 0,
+                        "cache_write_input_tokens": 0,
+                        "output_tokens": 0,
+                        "reasoning_output_tokens": 0,
+                        "total_tokens": 0,
+                    },
+                    "sessions": [],
+                },
+                "combined": {"complete": False, "total_cost_usd": 1.0, "usage": parent_usage},
             },
         )
+
+    def test_subagent_sessions_are_included_in_combined_usage(self) -> None:
+        base = self.sandbox()
+        data_home = base / "xdg-data"
+        database_path = data_home / "opencode" / "opencode.db"
+        database_path.parent.mkdir(parents=True)
+        with sqlite3.connect(database_path) as database:
+            database.executescript(
+                """
+                CREATE TABLE session (id TEXT PRIMARY KEY, parent_id TEXT);
+                CREATE TABLE part (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT,
+                    time_created INTEGER,
+                    data TEXT
+                );
+                """
+            )
+            database.executemany(
+                "INSERT INTO session (id, parent_id) VALUES (?, ?)",
+                (
+                    ("ses_first", None),
+                    ("child_a", "ses_first"),
+                    ("child_b", "child_a"),
+                    ("unrelated", None),
+                    ("unrelated_child", "unrelated"),
+                ),
+            )
+            database.executemany(
+                "INSERT INTO part (id, session_id, time_created, data) VALUES (?, ?, ?, ?)",
+                (
+                    (
+                        "part_a",
+                        "child_a",
+                        1,
+                        json.dumps(
+                            {
+                                "type": "step-finish",
+                                "cost": 0.5,
+                                "tokens": {
+                                    "input": 5,
+                                    "output": 6,
+                                    "reasoning": 2,
+                                    "cache": {"read": 7, "write": 8},
+                                },
+                            }
+                        ),
+                    ),
+                    (
+                        "part_b",
+                        "child_b",
+                        2,
+                        json.dumps(
+                            {
+                                "type": "step-finish",
+                                "cost": 0.25,
+                                "tokens": {
+                                    "input": 1,
+                                    "output": 2,
+                                    "reasoning": 1,
+                                    "cache": {"read": 3, "write": 4},
+                                },
+                            }
+                        ),
+                    ),
+                    (
+                        "part_unrelated",
+                        "unrelated_child",
+                        3,
+                        json.dumps(
+                            {
+                                "type": "step-finish",
+                                "tokens": {"input": 1000, "output": 1000},
+                            }
+                        ),
+                    ),
+                ),
+            )
+
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"XDG_DATA_HOME": str(data_home)},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["parent"]["usage"]["total_tokens"], 132)
+        self.assertEqual(usage["usage_scope"], "combined")
+        self.assertTrue(usage["usage_complete"])
+        self.assertTrue(usage["subagents"]["complete"])
+        self.assertEqual(usage["subagents"]["session_count"], 2)
+        self.assertEqual(usage["subagents"]["usage"]["total_tokens"], 36)
+        self.assertEqual(
+            [session["session_id"] for session in usage["subagents"]["sessions"]],
+            ["child_a", "child_b"],
+        )
+        self.assertEqual(usage["combined"]["usage"]["total_tokens"], 168)
+        self.assertEqual(usage["usage"]["total_tokens"], 168)
+        self.assertEqual(usage["total_cost_usd"], 1.75)
+
+    def test_unrelated_session_database_is_reported_as_partial_usage(self) -> None:
+        base = self.sandbox()
+        data_home = base / "xdg-data"
+        database_path = data_home / "opencode" / "opencode.db"
+        database_path.parent.mkdir(parents=True)
+        with sqlite3.connect(database_path) as database:
+            database.executescript(
+                """
+                CREATE TABLE session (id TEXT PRIMARY KEY, parent_id TEXT);
+                CREATE TABLE part (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT,
+                    time_created INTEGER,
+                    data TEXT
+                );
+                INSERT INTO session (id, parent_id) VALUES ('another_session', NULL);
+                """
+            )
+
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"XDG_DATA_HOME": str(data_home)},
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["usage_scope"], "partial")
+        self.assertFalse(usage["usage_complete"])
+        self.assertEqual(
+            usage["usage_warning"],
+            "OpenCode parent session not found in session database",
+        )
+
+    def test_structured_rate_limit_maps_native_failure_to_retry_status(self) -> None:
+        base = self.sandbox()
+        records = [
+            {
+                "type": "error",
+                "sessionID": "ses_limited",
+                "error": {
+                    "name": "APIError",
+                    "data": {
+                        "message": "quota exhausted",
+                        "statusCode": 429,
+                        "isRetryable": True,
+                    },
+                },
+            },
+            {
+                "type": "step_finish",
+                "sessionID": "ses_limited",
+                "part": {"type": "step-finish", "reason": "stop", "tokens": {}},
+            },
+        ]
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="opencode",
+            fixture_text="\n".join(json.dumps(record) for record in records) + "\n",
+            env_extra={"ADAPTER_EXIT_CODE": "1"},
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 75, result["stderr"])
+        self.assertIn("rate limit hit", result["stderr"])
+
+    def test_rate_limit_phrase_in_agent_text_is_not_a_retry_signal(self) -> None:
+        base = self.sandbox()
+        records = [
+            {
+                "type": "text",
+                "sessionID": "ses_success",
+                "part": {"type": "text", "text": "The old log said HTTP 429 quota exhausted."},
+            },
+            {
+                "type": "step_finish",
+                "sessionID": "ses_success",
+                "part": {"type": "step-finish", "reason": "stop", "tokens": {}},
+            },
+        ]
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="opencode",
+            fixture_text="\n".join(json.dumps(record) for record in records) + "\n",
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
 
     def test_native_failures_are_preserved(self) -> None:
         for native_status in (9, 75):
@@ -1127,8 +1341,8 @@ class OpenCodeAdapter(AdapterCase):
 
 # ── pi (Python) ──────────────────────────────────────────────────────────────
 class PiAdapter(AdapterCase):
-    CMD = [sys.executable, str(PI_PY)]
-    RECORDS = [
+    CMD = [*ADAPTER_COMMAND, "pi"]
+    RECORDS: list[dict[str, Any]] = [
         {
             "type": "session",
             "version": 3,
@@ -1389,11 +1603,13 @@ class PiAdapter(AdapterCase):
             "total_tokens": 110,
         }
         self.assertEqual(usage["usage_scope"], "combined")
+        self.assertTrue(usage["usage_complete"])
         self.assertEqual(usage["usage"], parent_usage)
         self.assertEqual(usage["parent"], {"session_id": "pi_session", "total_cost_usd": 1.0, "usage": parent_usage})
+        self.assertTrue(usage["subagents"]["complete"])
         self.assertEqual(usage["subagents"]["session_count"], 0)
         self.assertEqual(usage["subagents"]["usage"]["total_tokens"], 0)
-        self.assertEqual(usage["combined"], {"total_cost_usd": 1.0, "usage": parent_usage})
+        self.assertEqual(usage["combined"], {"complete": True, "total_cost_usd": 1.0, "usage": parent_usage})
 
     def test_structured_provider_failure_overrides_zero_native_exit(self) -> None:
         for reason in ("error", "aborted"):
@@ -1422,6 +1638,33 @@ class PiAdapter(AdapterCase):
                 self.assertEqual(result["returncode"], 1, result["stderr"])
                 self.assertIn(message, result["stderr"])
                 self.assertEqual((base / "out.log").read_text(), f"adapter error: {message}\n")
+
+    def test_structured_rate_limit_maps_to_retry_status(self) -> None:
+        for native_status in (0, 1):
+            with self.subTest(native_status=native_status):
+                base = self.sandbox()
+                fixture = json.dumps(
+                    {
+                        "type": "message_end",
+                        "message": {
+                            "role": "assistant",
+                            "content": [],
+                            "stopReason": "error",
+                            "errorMessage": "HTTP 429: quota exhausted",
+                            "usage": {},
+                        },
+                    }
+                )
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="pi",
+                    fixture_text=fixture,
+                    env_extra={"ADAPTER_EXIT_CODE": str(native_status)},
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], 75, result["stderr"])
+                self.assertIn("rate limit hit", result["stderr"])
 
     def test_incomplete_terminal_event_overrides_zero_native_exit(self) -> None:
         for name, fixture, diagnostic in (
@@ -2139,7 +2382,7 @@ class CopilotAdapter(AdapterCase):
         activity = base / "out.activity.jsonl"
         log = base / "out.log"
         proc = subprocess.Popen(
-            [sys.executable, str(EVENT_STREAM_PY), "copilot", str(activity), str(log)],
+            [*ADAPTER_COMMAND, "event-stream", "copilot", str(activity), str(log)],
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )

@@ -16,14 +16,8 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from specula.adapters.json_cli import AdapterArgumentError, parse_options, run_json_cli
-elif __package__:
-    from .json_cli import AdapterArgumentError, parse_options, run_json_cli
-else:
-    from json_cli import AdapterArgumentError, parse_options, run_json_cli
+from .utils.json_cli import AdapterArgumentError, parse_options, run_json_cli
 
 HELP = __doc__
 

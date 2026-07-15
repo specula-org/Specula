@@ -20,7 +20,7 @@ We maintain [a list of bugs found by Specula](https://docs.google.com/spreadshee
 - [uv](https://docs.astral.sh/uv/)
 - Java 21+ with Maven
 - GitHub CLI `gh`
-- Supported agents (Claude Code, Codex, or Copilot CLI). Please contribute [adapters](./scripts/launch/adapters) for new agents.
+- A supported agent CLI: Claude Code, Codex, Copilot CLI, OpenCode, or Pi. Please contribute [adapters](./scripts/launch/adapters) for additional agents.
 - **LLM with strong reasoning capability at high reasoning effort.** Specula relies on the LLM to read code, infer invariants, and reason about counterexamples.
 
 > **Windows:** run Specula inside [WSL2](https://learn.microsoft.com/windows/wsl/install). Native Windows (outside WSL2) is not supported yet.
@@ -29,7 +29,7 @@ We maintain [a list of bugs found by Specula](https://docs.google.com/spreadshee
 
 ```bash
 git clone https://github.com/specula-org/Specula.git && cd Specula
-uv tool install -e .   # installs the `specula` command
+uv tool install -e .   # installs `specula` and its internal adapter command
 specula setup          # installs the agent skills and MCP tools, builds the bundled tools
 ```
 

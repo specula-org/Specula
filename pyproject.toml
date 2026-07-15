@@ -22,6 +22,7 @@ dev = [
 # The repo-root `specula` launcher is a shim to the same dispatcher.
 [project.scripts]
 specula = "specula.cli:main"
+specula-adapter = "specula.adapters.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

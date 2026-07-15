@@ -10,17 +10,17 @@ import signal
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from types import FrameType
+from typing import Any
 
-if TYPE_CHECKING:
-    from specula.adapters.event_stream import StreamStatus, augment_pi_usage, stream_events, summary
-elif __package__:
-    from .event_stream import StreamStatus, augment_pi_usage, stream_events, summary
-else:
-    from event_stream import StreamStatus, augment_pi_usage, stream_events, summary
+from .event_stream import StreamStatus, stream_events
+from .text import summary
+from .usage import augment_opencode_usage, augment_pi_usage
+
+RATE_LIMIT_RC = 75  # EX_TEMPFAIL; this is the scheduler contract in specula.quota.
 
 
 class AdapterArgumentError(ValueError):
@@ -162,20 +162,30 @@ def _write_spawn_failure(adapter_name: str, command: list[str], options: Adapter
     print(diagnostic, file=sys.stderr)
 
 
+def _opencode_database_path(env: Mapping[str, str]) -> Path | None:
+    data_home = env.get("XDG_DATA_HOME")
+    if data_home:
+        return Path(data_home) / "opencode" / "opencode.db"
+    home = env.get("HOME")
+    if home:
+        return Path(home) / ".local" / "share" / "opencode" / "opencode.db"
+    return None
+
+
 @contextlib.contextmanager
 def _cleanup_on_signal(
     process_ref: Callable[[], subprocess.Popen[bytes] | None],
 ) -> Iterator[None]:
     """Turn termination signals into an unwinding exit and stop the native CLI."""
 
-    def _cancel(signum: int, _frame: object) -> None:
+    def _cancel(signum: int, _frame: FrameType | None) -> None:
         process = process_ref()
         if process is not None and process.poll() is None:
             with contextlib.suppress(OSError, ProcessLookupError):
                 process.send_signal(signum)
         raise SystemExit(128 + signum)
 
-    installed: list[tuple[int, object]] = []
+    installed: list[tuple[int, Callable[[int, FrameType | None], Any] | int | None]] = []
     for name in ("SIGTERM", "SIGHUP"):
         signum = getattr(signal, name, None)
         if signum is None:  # pragma: no cover - non-POSIX
@@ -187,7 +197,8 @@ def _cleanup_on_signal(
     finally:
         for signum, previous in installed:
             with contextlib.suppress(ValueError, OSError):
-                signal.signal(signum, previous)
+                handler = signal.Handlers(previous) if isinstance(previous, int) else previous
+                signal.signal(signum, handler)
 
 
 def run_json_cli(
@@ -268,9 +279,17 @@ def run_json_cli(
                 native_status = process.wait()
 
             usage = status.usage if status is not None else _empty_usage(adapter_name)
-            if adapter_name == "pi" and status is not None:
-                usage = augment_pi_usage(usage, status.session_files, pi_session_root)
+            if status is not None:
+                if adapter_name == "pi":
+                    usage = augment_pi_usage(usage, status.session_files, pi_session_root)
+                elif adapter_name == "opencode":
+                    usage = augment_opencode_usage(usage, _opencode_database_path(inherited_env))
             usage_ok = _write_usage(options.log_path.with_suffix(".usage.json"), usage)
+            if status is not None and status.rate_limit_error is not None:
+                print(
+                    f"{adapter_name} adapter: rate limit hit: {summary(status.rate_limit_error, None)}", file=sys.stderr
+                )
+                return RATE_LIMIT_RC
             if native_status != 0:
                 return native_status
             if stream_failed or status is None or not status.log_ok or not usage_ok:
