@@ -5,7 +5,7 @@ Options:
   --prompt-file=FILE    Read prompt from file (mutually exclusive with --prompt)
   --max-turns=N         Accepted for launcher compatibility; ignored
   --claude-alias=NAME   Accepted for launcher compatibility; ignored
-  --effort=LEVEL        Pi thinking level (default: PI_EFFORT; max maps to xhigh)
+  --effort=LEVEL        Pi thinking level (default: PI_EFFORT)
   --model=NAME          Provider/model (default: PI_MODEL)
   --log=FILE            Log file path (required)
   --background          Accepted; caller handles backgrounding
@@ -43,12 +43,11 @@ def main(argv: list[str]) -> int:
         print(exc, file=sys.stderr)
         return 1
 
-    effort = "xhigh" if options.effort == "max" else options.effort
     command = ["pi", "--print", "--mode", "json", "--no-session", "--approve"]
     if options.model:
         command += ["--model", options.model]
-    if effort:
-        command += ["--thinking", effort]
+    if options.effort:
+        command += ["--thinking", options.effort]
     return run_json_cli("pi", command, options)
 
 

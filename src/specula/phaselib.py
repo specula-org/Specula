@@ -1017,6 +1017,11 @@ def run_agent_blocking(
     env["SPECULA_PHASE"] = phase_key if stop_gate else f"{phase_key}_turn"
     env["SPECULA_WORK_DIR"] = str(work_dir)
     env["SPECULA_STOP_GATE_WORK_DIR"] = str(gate_dir)
+    # subprocess cwd changes the process's real working directory but does not
+    # rewrite an explicitly inherited PWD.  OpenCode prefers PWD over getcwd()
+    # when selecting its project root, so keep both views on the trusted cwd.
+    if run_cwd is not None:
+        env["PWD"] = str(run_cwd)
     if env.get("SPECULA_SANDBOX", "").lower() == "on" and run_cwd is not None:
         configured = env.get("SPECULA_SANDBOX_CONFIG")
         if configured:

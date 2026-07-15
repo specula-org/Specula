@@ -75,17 +75,33 @@ def _allow_external_directories(env: dict[str, str]) -> None:
     external = permission.get("external_directory")
     if external == "allow":
         return
-    rules = (
+    native_rules = (
         dict(external)
         if isinstance(external, dict)
         else {"*": external}
         if isinstance(external, str) and external in {"ask", "deny"}
         else {}
     )
+    generated_rules: dict[str, str] = {}
     for directory in directories:
         raw = str(directory)
-        rules.setdefault(raw, "allow")
-        rules.setdefault(f"{raw}/**", "allow")
+        if raw not in native_rules:
+            generated_rules[raw] = "allow"
+        if f"{raw}/**" not in native_rules:
+            generated_rules[f"{raw}/**"] = "allow"
+
+    # OpenCode applies the last matching pattern.  Keep every native rule in
+    # its original relative position, inserting Specula's paths after the
+    # native catch-all (or before all native rules when there is no catch-all).
+    # That lets the generated paths override only a default, while later native
+    # path-specific denies/asks still win.
+    rules: dict[str, object] = {}
+    if "*" not in native_rules:
+        rules.update(generated_rules)
+    for pattern, action in native_rules.items():
+        rules[pattern] = action
+        if pattern == "*":
+            rules.update(generated_rules)
     permission["external_directory"] = rules
     env["OPENCODE_PERMISSION"] = json.dumps(permission, separators=(",", ":"))
 
@@ -105,7 +121,9 @@ def main(argv: list[str]) -> int:
         print(exc, file=sys.stderr)
         return 1
 
-    command = ["opencode", "run", "--format=json", "--thinking"]
+    # OpenCode auto-rejects permission prompts in non-interactive runs unless
+    # this auto-approval flag is present.
+    command = ["opencode", "run", "--format=json", "--thinking", "--dangerously-skip-permissions"]
     if options.model:
         command += ["--model", options.model]
     if options.effort:

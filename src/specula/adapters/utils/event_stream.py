@@ -218,6 +218,31 @@ def _pi_terminal_error(record: object) -> str | None:
     return summary(detail, None)
 
 
+def _pi_successful_terminating_tool(record: object) -> bool:
+    """Whether Pi completed a tool that explicitly ends the agent loop."""
+    if not isinstance(record, dict) or record.get("type") != "tool_execution_end":
+        return False
+    if record.get("isError") is not False:
+        return False
+    result = record.get("result")
+    return isinstance(result, dict) and result.get("terminate") is True
+
+
+def _pi_tool_result_text(result: object) -> str:
+    if not isinstance(result, dict):
+        return ""
+    content = result.get("content")
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    return "".join(
+        text
+        for block in content
+        if isinstance(block, dict) and block.get("type") == "text" and isinstance((text := block.get("text")), str)
+    )
+
+
 _RATE_LIMIT_RE = re.compile(
     r"(?:\b429\b|rate[\s_-]*limit|too many requests|quota|resource[\s_-]*exhausted|"
     r"insufficient[\s_-]*quota)",
@@ -271,7 +296,13 @@ def _structured_rate_limit_error(adapter_name: str, record: object) -> str | Non
     return None
 
 
-def _terminal_error(adapter_name: str, record: object | None) -> str | None:
+def _terminal_error(
+    adapter_name: str,
+    record: object | None,
+    *,
+    pi_agent_ended: bool = False,
+    pi_terminating_tool_completed: bool = False,
+) -> str | None:
     """Reject streams that end between agent turns instead of completing."""
     if adapter_name == "opencode":
         if not isinstance(record, dict):
@@ -286,7 +317,17 @@ def _terminal_error(adapter_name: str, record: object | None) -> str | None:
             return "stream ended without a Pi assistant message_end event"
         message = record.get("message")
         reason = message.get("stopReason") if isinstance(message, dict) else None
-        if not isinstance(reason, str) or reason.casefold() != "stop":
+        normalized_reason = reason.casefold() if isinstance(reason, str) else None
+        if normalized_reason == "tooluse":
+            if pi_agent_ended and pi_terminating_tool_completed:
+                return None
+            missing: list[str] = []
+            if not pi_terminating_tool_completed:
+                missing.append("a completed terminating tool")
+            if not pi_agent_ended:
+                missing.append("an agent_end event")
+            return f"final Pi assistant stopReason was toolUse without {' and '.join(missing)}"
+        if normalized_reason != "stop":
             detail = summary(str(reason), 60) if reason is not None else "missing"
             return f"final Pi assistant stopReason was {detail}; expected stop"
     return None
@@ -329,6 +370,9 @@ def _pi_events(record: object, concise: bool) -> list[_LogEvent]:
     if record_type == "tool_execution_start":
         name = record.get("toolName")
         return [_line_event(tool_summary(name, record.get("args")))] if isinstance(name, str) else []
+    if _pi_successful_terminating_tool(record):
+        text = _pi_tool_result_text(record.get("result"))
+        return [_text_event(text, concise)] if text else []
     return []
 
 
@@ -447,6 +491,8 @@ def stream_events(
     pi_message_had_fragments = False
     line_open = False
     terminal_record: object | None = None
+    pi_agent_ended = False
+    pi_terminating_tool_completed = False
     structured_error: str | None = None
     rate_limit_error: str | None = None
     plain_diagnostics: list[str] = []
@@ -495,6 +541,7 @@ def stream_events(
 
     def handle_line(raw_line: bytes, *, raw_already_written: bool) -> None:
         nonlocal fragment_active, last_event, line_open, pi_message_had_fragments
+        nonlocal pi_agent_ended, pi_terminating_tool_completed
         nonlocal rate_limit_error, structured_error, terminal_record
         decoded = raw_line.decode(errors="replace")
         keep, events, record = _read_line(adapter_name, decoded, concise=False)
@@ -521,8 +568,14 @@ def stream_events(
                 and record["message"].get("role") == "assistant"
             ):
                 terminal_record = record
+                pi_agent_ended = False
+                pi_terminating_tool_completed = False
                 structured_error = _pi_terminal_error(record)
                 rate_limit_error = _structured_rate_limit_error(adapter_name, record)
+            elif _pi_successful_terminating_tool(record):
+                pi_terminating_tool_completed = True
+            elif isinstance(record, dict) and record.get("type") == "agent_end":
+                pi_agent_ended = True
             elif isinstance(record, dict) and record.get("type") == "error":
                 detected_rate_limit = _structured_rate_limit_error(adapter_name, record)
                 if detected_rate_limit is not None:
@@ -612,7 +665,12 @@ def stream_events(
         terminal_record=terminal_record,
         structured_error=structured_error,
         rate_limit_error=rate_limit_error,
-        terminal_error=_terminal_error(adapter_name, terminal_record),
+        terminal_error=_terminal_error(
+            adapter_name,
+            terminal_record,
+            pi_agent_ended=pi_agent_ended,
+            pi_terminating_tool_completed=pi_terminating_tool_completed,
+        ),
         plain_diagnostics=tuple(plain_diagnostics),
         subagent_results=tuple(subagent_results),
         usage=usage_totals.as_payload(adapter_name),

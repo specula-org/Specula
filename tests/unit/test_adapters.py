@@ -29,6 +29,7 @@ import sys
 import tempfile
 import time
 import unittest
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -932,7 +933,16 @@ class OpenCodeAdapter(AdapterCase):
         self.assertEqual(result["returncode"], 0, result["stderr"])
         self.assertEqual(
             result["argv"],
-            ["run", "--format=json", "--thinking", "--model", "zai-coding-plan/glm-5.2", "--variant", "high"],
+            [
+                "run",
+                "--format=json",
+                "--thinking",
+                "--dangerously-skip-permissions",
+                "--model",
+                "zai-coding-plan/glm-5.2",
+                "--variant",
+                "high",
+            ],
         )
         self.assertEqual(result["stdin"], "the prompt\n")
         self.assertEqual(result["modelenv"], "<unset>")
@@ -1007,6 +1017,70 @@ class OpenCodeAdapter(AdapterCase):
         self.assertEqual(permission["external_directory"]["/keep-denied"], "deny")
         self.assertEqual(permission["external_directory"][str(base / "Specula")], "allow")
 
+    def test_native_specific_rules_win_by_opencode_last_match_order(self) -> None:
+        base = self.sandbox()
+        specula_root = base / "Specula"
+        private = specula_root / "private"
+        exception = private / "allowed"
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_ROOT": str(specula_root),
+                "OPENCODE_PERMISSION": json.dumps(
+                    {
+                        "external_directory": {
+                            "*": "deny",
+                            f"{private}/**": "deny",
+                            f"{exception}/**": "allow",
+                        }
+                    }
+                ),
+            },
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        rules = json.loads(result["opencode_permission"])["external_directory"]
+
+        def last_match(path: Path) -> str | None:
+            actions = [action for pattern, action in rules.items() if fnmatchcase(str(path), pattern)]
+            return actions[-1] if actions else None
+
+        self.assertEqual(last_match(specula_root / "public" / "file.txt"), "allow")
+        self.assertEqual(last_match(private / "secret.txt"), "deny")
+        self.assertEqual(last_match(exception / "kept.txt"), "allow")
+
+    def test_native_rule_order_and_same_pattern_are_preserved(self) -> None:
+        base = self.sandbox()
+        specula_root = base / "Specula"
+        unrelated = base / "unrelated"
+        target_pattern = f"{specula_root}/**"
+        native_rules = {
+            f"{unrelated}/**": "allow",
+            "*": "deny",
+            target_pattern: "deny",
+        }
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_ROOT": str(specula_root),
+                "OPENCODE_PERMISSION": json.dumps({"external_directory": native_rules}),
+            },
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        rules = json.loads(result["opencode_permission"])["external_directory"]
+        self.assertEqual([pattern for pattern in rules if pattern in native_rules], list(native_rules))
+        self.assertEqual(rules[target_pattern], "deny")
+
+        def last_match(path: Path) -> str | None:
+            actions = [action for pattern, action in rules.items() if fnmatchcase(str(path), pattern)]
+            return actions[-1] if actions else None
+
+        # The catch-all originally followed this allow, so it must still win.
+        self.assertEqual(last_match(unrelated / "file.txt"), "deny")
+        # A native rule identical to a generated pattern keeps its deny value.
+        self.assertEqual(last_match(specula_root / "private.txt"), "deny")
+
     def test_scalar_native_permission_becomes_catch_all(self) -> None:
         base = self.sandbox()
         result = self.invoke(
@@ -1029,20 +1103,29 @@ class OpenCodeAdapter(AdapterCase):
                 result = self.invoke([self.with_prompt_file(base, prompt), f"--log={base}/out.log"])
                 self.assertEqual(result["returncode"], 0, result["stderr"])
                 self.assertEqual(result["stdin"], prompt)
-                self.assertEqual(result["argv"], ["run", "--format=json", "--thinking"])
+                self.assertEqual(
+                    result["argv"],
+                    ["run", "--format=json", "--thinking", "--dangerously-skip-permissions"],
+                )
 
     def test_direct_prompt_uses_stdin(self) -> None:
         base = self.sandbox()
         result = self.invoke(["--prompt=the prompt\n", f"--log={base}/out.log"])
         self.assertEqual(result["returncode"], 0, result["stderr"])
         self.assertEqual(result["stdin"], "the prompt\n")
-        self.assertEqual(result["argv"], ["run", "--format=json", "--thinking"])
+        self.assertEqual(
+            result["argv"],
+            ["run", "--format=json", "--thinking", "--dangerously-skip-permissions"],
+        )
 
     def test_compatibility_flags_are_accepted_but_not_forwarded(self) -> None:
         base = self.sandbox()
         result = self.invoke(self.base_flags(base) + ["--max-turns=8", "--background", "--claude-alias=profile"])
         self.assertEqual(result["returncode"], 0, result["stderr"])
-        self.assertEqual(result["argv"], ["run", "--format=json", "--thinking"])
+        self.assertEqual(
+            result["argv"],
+            ["run", "--format=json", "--thinking", "--dangerously-skip-permissions"],
+        )
 
     def test_flag_values_override_environment_defaults(self) -> None:
         base = self.sandbox()
@@ -1052,7 +1135,16 @@ class OpenCodeAdapter(AdapterCase):
         )
         self.assertEqual(
             result["argv"],
-            ["run", "--format=json", "--thinking", "--model", "flag-model", "--variant", "max"],
+            [
+                "run",
+                "--format=json",
+                "--thinking",
+                "--dangerously-skip-permissions",
+                "--model",
+                "flag-model",
+                "--variant",
+                "max",
+            ],
         )
         self.assertEqual(result["modelenv"], "<unset>")
         self.assertEqual(result["effortenv"], "<unset>")
@@ -1064,7 +1156,10 @@ class OpenCodeAdapter(AdapterCase):
             env_extra={"OPENCODE_MODEL": "env-model", "OPENCODE_EFFORT": "low"},
         )
         self.assertEqual(result["returncode"], 0, result["stderr"])
-        self.assertEqual(result["argv"], ["run", "--format=json", "--thinking"])
+        self.assertEqual(
+            result["argv"],
+            ["run", "--format=json", "--thinking", "--dangerously-skip-permissions"],
+        )
         self.assertEqual(result["modelenv"], "<unset>")
         self.assertEqual(result["effortenv"], "<unset>")
 
@@ -1551,12 +1646,12 @@ class PiAdapter(AdapterCase):
         self.assertEqual(result["modelenv"], "<unset>")
         self.assertEqual(result["effortenv"], "<unset>")
 
-    def test_max_effort_maps_to_xhigh(self) -> None:
+    def test_max_effort_forwards_unchanged(self) -> None:
         base = self.sandbox()
         result = self.invoke(self.base_flags(base) + ["--effort=max"])
         self.assertEqual(
             result["argv"],
-            ["--print", "--mode", "json", "--no-session", "--approve", "--thinking", "xhigh"],
+            ["--print", "--mode", "json", "--no-session", "--approve", "--thinking", "max"],
         )
 
     def test_all_other_efforts_forward_unchanged(self) -> None:
@@ -1820,6 +1915,110 @@ class PiAdapter(AdapterCase):
                 )
                 self.assertEqual(result["returncode"], 1, result["stderr"])
                 self.assertIn(diagnostic, result["stderr"])
+
+    def test_terminating_tool_result_completes_without_follow_up_message(self) -> None:
+        records = [
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "toolCall", "id": "call_final", "name": "finalize"}],
+                    "stopReason": "toolUse",
+                    "usage": {},
+                },
+            },
+            {
+                "type": "tool_execution_end",
+                "toolCallId": "call_final",
+                "toolName": "finalize",
+                "result": {
+                    "content": [{"type": "text", "text": "structured result"}],
+                    "details": {},
+                    "terminate": True,
+                },
+                "isError": False,
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "toolResult",
+                    "toolCallId": "call_final",
+                    "toolName": "finalize",
+                    "content": [{"type": "text", "text": "structured result"}],
+                    "isError": False,
+                },
+            },
+            {"type": "agent_end", "messages": []},
+        ]
+        base = self.sandbox()
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="pi",
+            fixture_text="\n".join(json.dumps(record) for record in records) + "\n",
+            record_extra=True,
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual((base / "out.log").read_text(), "structured result\n")
+
+    def test_terminating_tool_requires_successful_result_and_agent_end(self) -> None:
+        assistant = {
+            "type": "message_end",
+            "message": {"role": "assistant", "content": [], "stopReason": "toolUse", "usage": {}},
+        }
+        for name, result_record, include_agent_end in (
+            (
+                "missing-terminate",
+                {
+                    "type": "tool_execution_end",
+                    "result": {"content": [], "details": {}},
+                    "isError": False,
+                },
+                True,
+            ),
+            (
+                "tool-error",
+                {
+                    "type": "tool_execution_end",
+                    "result": {"content": [], "details": {}, "terminate": True},
+                    "isError": True,
+                },
+                True,
+            ),
+            (
+                "missing-error-status",
+                {
+                    "type": "tool_execution_end",
+                    "result": {"content": [], "details": {}, "terminate": True},
+                },
+                True,
+            ),
+            (
+                "missing-agent-end",
+                {
+                    "type": "tool_execution_end",
+                    "result": {"content": [], "details": {}, "terminate": True},
+                    "isError": False,
+                },
+                False,
+            ),
+        ):
+            with self.subTest(name=name):
+                records: list[dict[str, Any]] = [assistant, result_record]
+                if include_agent_end:
+                    records.append({"type": "agent_end", "messages": []})
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="pi",
+                    fixture_text="\n".join(json.dumps(record) for record in records) + "\n",
+                    record_extra=True,
+                )
+
+                self.assertEqual(result["returncode"], 1, result["stderr"])
+                self.assertIn("toolUse", result["stderr"])
 
     @unittest.skipUnless(hasattr(os, "killpg") and hasattr(signal, "SIGHUP"), "requires POSIX signals")
     def test_termination_signals_cleanup_temporary_files(self) -> None:

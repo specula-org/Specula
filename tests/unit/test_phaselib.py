@@ -1090,6 +1090,40 @@ class TestRunAgentBlocking(PhaseCase):
         self.assertIn(f"--prompt-file={base / 'finding' / 'prompt.md'}", recorded)
         self.assertIn(f"--log={base / 'finding' / 'turn.log'}", recorded)
 
+    def test_opencode_trusted_cwd_synchronizes_real_cwd_and_pwd(self) -> None:
+        base = self.tmp()
+        adapter = base / "opencode"
+        capture = base / "capture.json"
+        adapter.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['CAPTURE_FILE']).write_text("
+            "json.dumps({'cwd': os.getcwd(), 'pwd': os.environ.get('PWD')}))\n"
+        )
+        adapter.chmod(0o755)
+        trusted_cwd = base / ".agent-cwd"
+        trusted_cwd.mkdir()
+        stale_cwd = base / "untrusted-repository"
+        stale_cwd.mkdir()
+        self.set_env("CAPTURE_FILE", str(capture))
+        self.set_env("PWD", str(stale_cwd))
+
+        rc, _ = phaselib.run_agent_blocking(
+            adapter,
+            "prompt body",
+            base / "finding" / "prompt.md",
+            base / "finding" / "turn.log",
+            phase_key="bug_confirmation",
+            work_dir=self.work_dir(),
+            cwd=trusted_cwd,
+            claude_alias="profile",
+        )
+
+        self.assertEqual(rc, 0)
+        recorded = json.loads(capture.read_text())
+        self.assertEqual(recorded, {"cwd": str(trusted_cwd), "pwd": str(trusted_cwd)})
+
     def test_codex_returns_final_message_and_keeps_transcript(self) -> None:
         adapter = self.tmp() / "codex.sh"
         adapter.write_text("#!/bin/sh\nexit 0\n")
