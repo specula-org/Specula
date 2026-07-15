@@ -19,8 +19,10 @@ stdlib unittest, collected natively by pytest:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import signal
 import stat
 import subprocess
 import sys
@@ -82,6 +84,8 @@ _VOLATILE = (
     "ADAPTER_EXIT_CODE",
     "COPILOT_HELP_TEXT",
     "ADAPTER_PI_SESSION_FIXTURE",
+    "ADAPTER_READY_FILE",
+    "ADAPTER_WAIT_SECONDS",
 )
 
 
@@ -163,6 +167,12 @@ class AdapterCase(unittest.TestCase):
                 '  cp "$ADAPTER_PI_SESSION_FIXTURE" "$TMPDIR/pi-subagent-session-test/run-0/session.jsonl"',
                 "fi",
             ]
+        lines += [
+            'if [[ -n "${ADAPTER_READY_FILE:-}" ]]; then',
+            '  printf "ready\\n" > "$ADAPTER_READY_FILE"',
+            '  sleep "${ADAPTER_WAIT_SECONDS:-30}"',
+            "fi",
+        ]
         lines.append(f"cat {json.dumps(str(fixture))}")
         lines.append('exit "${ADAPTER_EXIT_CODE:-0}"')
         stub = bindir / name
@@ -853,6 +863,7 @@ class OpenCodeAdapter(AdapterCase):
                     "cache": {"read": 40, "write": 50},
                 },
                 "cost": 0.25,
+                "reason": "tool-calls",
             },
         },
         {
@@ -866,6 +877,7 @@ class OpenCodeAdapter(AdapterCase):
                     "cache": {"read": 4, "write": 5},
                 },
                 "cost": 0.75,
+                "reason": "stop",
             },
         },
     ]
@@ -994,6 +1006,68 @@ class OpenCodeAdapter(AdapterCase):
                 )
                 self.assertEqual(result["returncode"], native_status, result["stderr"])
 
+    def test_incomplete_terminal_event_overrides_zero_native_exit(self) -> None:
+        for name, fixture, diagnostic in (
+            (
+                "tool-calls",
+                json.dumps(
+                    {
+                        "type": "step_finish",
+                        "sessionID": "ses_incomplete",
+                        "part": {"type": "step-finish", "reason": "tool-calls", "tokens": {}},
+                    }
+                ),
+                "tool-calls",
+            ),
+            ("missing", json.dumps({"type": "text", "part": {"type": "text", "text": "partial"}}), "without"),
+        ):
+            with self.subTest(name=name):
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="opencode",
+                    fixture_text=fixture,
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], 1, result["stderr"])
+                self.assertIn(diagnostic, result["stderr"])
+
+    def test_tool_error_is_preserved_in_readable_log(self) -> None:
+        base = self.sandbox()
+        records = [
+            {
+                "type": "tool_use",
+                "sessionID": "ses_recovered",
+                "part": {
+                    "type": "tool",
+                    "tool": "write",
+                    "state": {
+                        "status": "error",
+                        "input": {"path": "/blocked/file"},
+                        "error": "Permission denied: write access rejected",
+                    },
+                },
+            },
+            {
+                "type": "step_finish",
+                "sessionID": "ses_recovered",
+                "part": {"type": "step-finish", "reason": "stop", "tokens": {}},
+            },
+        ]
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="opencode",
+            fixture_text="\n".join(json.dumps(record) for record in records) + "\n",
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(
+            (base / "out.log").read_text(),
+            "editing /blocked/file\nadapter tool error: write: Permission denied: write access rejected\n",
+        )
+
     def test_raw_activity_failure_does_not_fail_adapter(self) -> None:
         base = self.sandbox()
         activity = base / "bad-activity"
@@ -1088,6 +1162,7 @@ class PiAdapter(AdapterCase):
             "type": "message_end",
             "message": {
                 "role": "assistant",
+                "stopReason": "toolUse",
                 "usage": {
                     "input": 10,
                     "output": 20,
@@ -1101,6 +1176,7 @@ class PiAdapter(AdapterCase):
             "type": "message_end",
             "message": {
                 "role": "assistant",
+                "stopReason": "stop",
                 "usage": {
                     "input": 1,
                     "output": 2,
@@ -1264,6 +1340,7 @@ class PiAdapter(AdapterCase):
                 "message": {
                     "role": "assistant",
                     "content": [{"type": "text", "text": "working"}],
+                    "stopReason": "toolUse",
                 },
             },
             {
@@ -1280,6 +1357,7 @@ class PiAdapter(AdapterCase):
                 "message": {
                     "role": "assistant",
                     "content": [{"type": "text", "text": "done"}],
+                    "stopReason": "stop",
                 },
             },
         ]
@@ -1344,6 +1422,89 @@ class PiAdapter(AdapterCase):
                 self.assertEqual(result["returncode"], 1, result["stderr"])
                 self.assertIn(message, result["stderr"])
                 self.assertEqual((base / "out.log").read_text(), f"adapter error: {message}\n")
+
+    def test_incomplete_terminal_event_overrides_zero_native_exit(self) -> None:
+        for name, fixture, diagnostic in (
+            (
+                "tool-use",
+                json.dumps(
+                    {
+                        "type": "message_end",
+                        "message": {"role": "assistant", "content": [], "stopReason": "toolUse", "usage": {}},
+                    }
+                ),
+                "toolUse",
+            ),
+            ("missing", json.dumps({"type": "session", "id": "pi_incomplete"}), "without"),
+        ):
+            with self.subTest(name=name):
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="pi",
+                    fixture_text=fixture,
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], 1, result["stderr"])
+                self.assertIn(diagnostic, result["stderr"])
+
+    @unittest.skipUnless(hasattr(os, "killpg") and hasattr(signal, "SIGHUP"), "requires POSIX signals")
+    def test_termination_signals_cleanup_temporary_files(self) -> None:
+        for signum in (signal.SIGTERM, signal.SIGHUP):
+            with self.subTest(signal=signal.Signals(signum).name):
+                base = self.sandbox()
+                bindir = base / "bin"
+                fixture = base / "fixture.jsonl"
+                fixture.write_text("")
+                self._write_fake(bindir, "pi", fixture, record_extra=True)
+                tmpdir = base / "tmp"
+                tmpdir.mkdir()
+                ready = base / "ready"
+                child_session = base / "child-session.jsonl"
+                child_session.write_text(json.dumps({"type": "session", "id": "child"}) + "\n")
+                env = {key: value for key, value in os.environ.items() if key not in _VOLATILE}
+                env.update(
+                    {
+                        "HOME": str(base),
+                        "PATH": f"{bindir}:/usr/bin:/bin",
+                        "TMPDIR": str(tmpdir),
+                        "ADAPTER_READY_FILE": str(ready),
+                        "ADAPTER_WAIT_SECONDS": "30",
+                        "ADAPTER_PI_SESSION_FIXTURE": str(child_session),
+                    }
+                )
+                proc = subprocess.Popen(
+                    [*self.CMD, "--prompt=temporary prompt", f"--log={base}/out.log"],
+                    cwd=base,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    start_new_session=True,
+                )
+
+                def cleanup(process: subprocess.Popen[str] = proc) -> None:
+                    if process.poll() is None:
+                        with contextlib.suppress(ProcessLookupError):
+                            os.killpg(process.pid, signal.SIGKILL)
+                        process.wait()
+
+                self.addCleanup(cleanup)
+                deadline = time.monotonic() + 5
+                while not ready.is_file() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(ready.is_file(), "fake Pi did not become ready")
+                self.assertTrue(list(tmpdir.glob("specula-pi-sessions-*")))
+                self.assertTrue(list(tmpdir.glob("specula-pi-activity-*.jsonl")))
+                self.assertTrue(list(tmpdir.glob("specula-pi-prompt-*.txt")))
+
+                os.killpg(proc.pid, signum)
+                _stdout, stderr = proc.communicate(timeout=5)
+                self.assertEqual(proc.returncode, 128 + signum, stderr)
+                self.assertFalse(list(tmpdir.glob("specula-pi-sessions-*")))
+                self.assertFalse(list(tmpdir.glob("specula-pi-activity-*.jsonl")))
+                self.assertFalse(list(tmpdir.glob("specula-pi-prompt-*.txt")))
 
     def test_subagent_sessions_are_included_in_combined_usage(self) -> None:
         base = self.sandbox()

@@ -6,9 +6,11 @@ import contextlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -160,6 +162,34 @@ def _write_spawn_failure(adapter_name: str, command: list[str], options: Adapter
     print(diagnostic, file=sys.stderr)
 
 
+@contextlib.contextmanager
+def _cleanup_on_signal(
+    process_ref: Callable[[], subprocess.Popen[bytes] | None],
+) -> Iterator[None]:
+    """Turn termination signals into an unwinding exit and stop the native CLI."""
+
+    def _cancel(signum: int, _frame: object) -> None:
+        process = process_ref()
+        if process is not None and process.poll() is None:
+            with contextlib.suppress(OSError, ProcessLookupError):
+                process.send_signal(signum)
+        raise SystemExit(128 + signum)
+
+    installed: list[tuple[int, object]] = []
+    for name in ("SIGTERM", "SIGHUP"):
+        signum = getattr(signal, name, None)
+        if signum is None:  # pragma: no cover - non-POSIX
+            continue
+        with contextlib.suppress(ValueError, OSError):
+            installed.append((signum, signal.signal(signum, _cancel)))
+    try:
+        yield
+    finally:
+        for signum, previous in installed:
+            with contextlib.suppress(ValueError, OSError):
+                signal.signal(signum, previous)
+
+
 def run_json_cli(
     adapter_name: str,
     command: list[str],
@@ -169,82 +199,92 @@ def run_json_cli(
     """Run a JSONL CLI and persist its raw, readable, and usage sidecars."""
     effective_env = child_env
     pi_session_root: Path | None = None
-    inherited_env = child_env if child_env is not None else os.environ
-    if adapter_name == "pi":
-        try:
-            raw_root = tempfile.mkdtemp(
-                prefix="specula-pi-sessions-",
-                dir=inherited_env.get("TMPDIR") or None,
-            )
-            pi_session_root = Path(raw_root)
-            effective_env = dict(inherited_env)
-            effective_env["TMPDIR"] = raw_root
-        except OSError as exc:
-            print(f"adapter usage warning: isolated Pi session directory: {summary(str(exc), None)}", file=sys.stderr)
-
-    activity_value = inherited_env.get("SPECULA_ACTIVITY_LOG", "")
+    activity_path: Path | None = None
     temporary_activity = False
-    if activity_value:
-        activity_path = Path(activity_value)
-    else:
+    process: subprocess.Popen[bytes] | None = None
+    inherited_env = child_env if child_env is not None else os.environ
+    with _cleanup_on_signal(lambda: process):
         try:
-            fd, raw_path = tempfile.mkstemp(prefix=f"specula-{adapter_name}-activity-", suffix=".jsonl")
-            os.close(fd)
-            activity_path = Path(raw_path)
-            temporary_activity = True
-        except OSError as exc:
-            print(f"adapter event stream warning: temporary activity log: {summary(str(exc), None)}", file=sys.stderr)
-            activity_path = Path(os.devnull)
+            if adapter_name == "pi":
+                try:
+                    raw_root = tempfile.mkdtemp(
+                        prefix="specula-pi-sessions-",
+                        dir=inherited_env.get("TMPDIR") or None,
+                    )
+                    pi_session_root = Path(raw_root)
+                    effective_env = dict(inherited_env)
+                    effective_env["TMPDIR"] = raw_root
+                except OSError as exc:
+                    print(
+                        f"adapter usage warning: isolated Pi session directory: {summary(str(exc), None)}",
+                        file=sys.stderr,
+                    )
 
-    try:
-        try:
-            prompt_stream = options.prompt_path.open("rb")
+            activity_value = inherited_env.get("SPECULA_ACTIVITY_LOG", "")
+            if activity_value:
+                activity_path = Path(activity_value)
+            else:
+                try:
+                    fd, raw_path = tempfile.mkstemp(prefix=f"specula-{adapter_name}-activity-", suffix=".jsonl")
+                    os.close(fd)
+                    activity_path = Path(raw_path)
+                    temporary_activity = True
+                except OSError as exc:
+                    print(
+                        f"adapter event stream warning: temporary activity log: {summary(str(exc), None)}",
+                        file=sys.stderr,
+                    )
+                    activity_path = Path(os.devnull)
+
             try:
-                process = subprocess.Popen(
-                    command,
-                    stdin=prompt_stream,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    env=effective_env,
-                )
+                prompt_stream = options.prompt_path.open("rb")
+                try:
+                    process = subprocess.Popen(
+                        command,
+                        stdin=prompt_stream,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        env=effective_env,
+                    )
+                finally:
+                    prompt_stream.close()
+            except OSError as exc:
+                _write_spawn_failure(adapter_name, command, options, exc)
+                return 127
+
+            status: StreamStatus | None = None
+            stream_failed = False
+            try:
+                if process.stdout is None:
+                    raise OSError("child stdout pipe unavailable")
+                status = stream_events(adapter_name, activity_path, options.log_path, process.stdout)
+            except OSError as exc:
+                stream_failed = True
+                print(f"{adapter_name} adapter: event stream failed: {summary(str(exc), None)}", file=sys.stderr)
             finally:
-                prompt_stream.close()
-        except OSError as exc:
-            _write_spawn_failure(adapter_name, command, options, exc)
-            return 127
+                if process.stdout is not None:
+                    with contextlib.suppress(OSError):
+                        process.stdout.close()
+                native_status = process.wait()
 
-        status: StreamStatus | None = None
-        stream_failed = False
-        try:
-            if process.stdout is None:
-                raise OSError("child stdout pipe unavailable")
-            status = stream_events(adapter_name, activity_path, options.log_path, process.stdout)
-        except OSError as exc:
-            stream_failed = True
-            print(f"{adapter_name} adapter: event stream failed: {summary(str(exc), None)}", file=sys.stderr)
+            usage = status.usage if status is not None else _empty_usage(adapter_name)
+            if adapter_name == "pi" and status is not None:
+                usage = augment_pi_usage(usage, status.session_files, pi_session_root)
+            usage_ok = _write_usage(options.log_path.with_suffix(".usage.json"), usage)
+            if native_status != 0:
+                return native_status
+            if stream_failed or status is None or not status.log_ok or not usage_ok:
+                return 1
+            failure = status.structured_error or status.terminal_error
+            if failure:
+                print(f"{adapter_name} adapter: {summary(failure, None)}", file=sys.stderr)
+                return 1
+            return 0
         finally:
-            if process.stdout is not None:
+            if temporary_activity and activity_path is not None:
                 with contextlib.suppress(OSError):
-                    process.stdout.close()
-            native_status = process.wait()
-
-        usage = status.usage if status is not None else _empty_usage(adapter_name)
-        if adapter_name == "pi" and status is not None:
-            usage = augment_pi_usage(usage, status.session_files, pi_session_root)
-        usage_ok = _write_usage(options.log_path.with_suffix(".usage.json"), usage)
-        if native_status != 0:
-            return native_status
-        if stream_failed or status is None or not status.log_ok or not usage_ok:
-            return 1
-        if status.structured_error:
-            print(f"{adapter_name} adapter: {summary(status.structured_error, None)}", file=sys.stderr)
-            return 1
-        return 0
-    finally:
-        if temporary_activity:
-            with contextlib.suppress(OSError):
-                activity_path.unlink()
-        if pi_session_root is not None:
-            with contextlib.suppress(OSError):
-                shutil.rmtree(pi_session_root)
-        options.cleanup()
+                    activity_path.unlink()
+            if pi_session_root is not None:
+                with contextlib.suppress(OSError):
+                    shutil.rmtree(pi_session_root)
+            options.cleanup()

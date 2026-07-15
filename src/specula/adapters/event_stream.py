@@ -31,6 +31,7 @@ class StreamStatus:
     log_ok: bool
     terminal_record: object | None
     structured_error: str | None
+    terminal_error: str | None
     plain_diagnostics: tuple[str, ...]
     session_files: tuple[str, ...]
     usage: dict[str, object]
@@ -316,7 +317,13 @@ def _opencode_events(record: object, concise: bool) -> list[_LogEvent]:
     name = part.get("tool")
     state = part.get("state")
     arguments = state.get("input") if isinstance(state, dict) else None
-    return [_line_event(tool_summary(name, arguments))] if isinstance(name, str) else []
+    events = [_line_event(tool_summary(name, arguments))] if isinstance(name, str) else []
+    if isinstance(state, dict) and state.get("status") == "error":
+        error = _diagnostic_message(state.get("error"))
+        if error:
+            tool_name = summary(name, 60) if isinstance(name, str) else "tool"
+            events.extend(_diagnostic_event("tool error", f"{tool_name}: {error}", concise))
+    return events
 
 
 def _pi_message_text(message: object) -> str:
@@ -347,6 +354,27 @@ def _pi_terminal_error(record: object) -> str | None:
     if not isinstance(detail, str) or not detail.strip():
         detail = f"assistant stopped with stopReason {reason}"
     return summary(detail, None)
+
+
+def _terminal_error(adapter_name: str, record: object | None) -> str | None:
+    """Reject streams that end between agent turns instead of completing."""
+    if adapter_name == "opencode":
+        if not isinstance(record, dict):
+            return "stream ended without an OpenCode step_finish event"
+        part = record.get("part")
+        reason = part.get("reason") if isinstance(part, dict) else None
+        if not isinstance(reason, str) or reason.casefold() != "stop":
+            detail = summary(str(reason), 60) if reason is not None else "missing"
+            return f"final OpenCode step_finish reason was {detail}; expected stop"
+    elif adapter_name == "pi":
+        if not isinstance(record, dict):
+            return "stream ended without a Pi assistant message_end event"
+        message = record.get("message")
+        reason = message.get("stopReason") if isinstance(message, dict) else None
+        if not isinstance(reason, str) or reason.casefold() != "stop":
+            detail = summary(str(reason), 60) if reason is not None else "missing"
+            return f"final Pi assistant stopReason was {detail}; expected stop"
+    return None
 
 
 def _pi_events(record: object, concise: bool) -> list[_LogEvent]:
@@ -755,6 +783,9 @@ def stream_events(
                 # diagnostics. Retain those few lines so quota banners survive
                 # an activity-sidecar failure without buffering the full stream.
                 plain_diagnostics.append(decoded)
+        elif adapter_name == "opencode":
+            if isinstance(record, dict) and record.get("type") == "step_finish":
+                terminal_record = record
         elif adapter_name == "pi":
             if (
                 isinstance(record, dict)
@@ -840,6 +871,7 @@ def stream_events(
         log_ok=not readable_failures,
         terminal_record=terminal_record,
         structured_error=structured_error,
+        terminal_error=_terminal_error(adapter_name, terminal_record),
         plain_diagnostics=tuple(plain_diagnostics),
         session_files=tuple(dict.fromkeys(session_files)),
         usage=usage_totals.as_payload(adapter_name),
