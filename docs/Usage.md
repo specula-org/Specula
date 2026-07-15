@@ -12,17 +12,19 @@ When using WSL2, install the prerequisites and agent CLI inside WSL2, then clone
 
 ### Requirements
 
-| Dependency | Used for | Installed by `specula setup`? |
-|---|---|---|
-| [uv](https://docs.astral.sh/uv/) | Installing the `specula` command | No |
-| Python 3.10+ with `pip` and `venv` | CLI, launchers, MCP tool environments | No |
-| JDK 21+ and Maven | TLC, SANY, and building the CFA tool | No |
-| Git and Bash | Source/history analysis, worktrees, and launch scripts | No |
-| Standard POSIX utilities (`tee`, `tail`, `du`, and others) | Logging and process coordination | No |
-| `curl` or `wget` | Downloading TLA+ JARs during setup | No |
-| GitHub CLI (`gh`) | Issue and repository research | No |
-| Claude Code, Codex, or GitHub Copilot CLI | Agent execution | No |
-| Target language toolchain and test dependencies | Harness generation and bug reproduction | No |
+The dependencies below are not installed by `specula setup`; install them separately as needed.
+
+| Dependency | Used for |
+|---|---|
+| [uv](https://docs.astral.sh/uv/) | Installing the `specula` command |
+| Python 3.10+ with `pip` and `venv` | CLI, launchers, MCP tool environments |
+| JDK 21+ and Maven | TLC, SANY, and building the CFA tool |
+| Git and Bash | Source/history analysis, worktrees, and launch scripts |
+| Standard POSIX utilities (`tee`, `tail`, `du`, and others) | Logging and process coordination |
+| `curl` or `wget` | Downloading TLA+ JARs during setup |
+| GitHub CLI (`gh`) | Issue and repository research |
+| Claude Code, Codex, or GitHub Copilot CLI | Agent execution |
+| Target language toolchain and test dependencies | Harness generation and bug reproduction |
 
 The first setup needs network access to GitHub, PyPI, and Maven Central. Agent runs also need access to the selected model provider and any remote repositories the analysis uses. Claude subscription quota monitoring specifically uses `curl`; if it is unavailable, the quota check warns and fails open rather than stopping the pipeline.
 
@@ -68,7 +70,9 @@ specula setup
 
 Install with `-e` (editable): the `specula` command dispatches to scripts inside the checkout, so it must stay linked to it.
 
-Setup downloads the TLA+ JARs, builds the CFA tool, prepares the MCP tool environments, and offers integration for each supported agent. It prompts for global or project-local skill installation. Codex users can choose the skills/MCP setup or the generated Specula plugin.
+Setup downloads the TLA+ JARs, builds the CFA tool, prepares the MCP tool environments, and offers integration for each supported agent CLI found on `PATH`. It reports and skips any missing agent CLI instead of prompting for it. Setup prompts for global or project-local skill installation when that choice applies.
+
+For Codex, choose `y` to install skills and register MCP servers separately. Choose `plugin` to bundle the skills and MCP tools as `specula-codex@specula`, with cleaner namespacing and easier removal. Rerun `specula setup` and choose `plugin` again to update it.
 
 More precisely, setup manages:
 
@@ -78,7 +82,7 @@ More precisely, setup manages:
 | CFA transformer | Builds it with Maven |
 | MCP Python packages | Creates tool-specific virtual environments and installs `mcp` and `jsonschema` where required |
 | Claude Code | Installs skills and registers all three MCP servers |
-| Codex | Installs skills and MCP servers, or generates/updates the Specula plugin |
+| Codex | `y` installs skills and MCP servers separately; `plugin` generates or updates `specula-codex@specula` |
 | GitHub Copilot CLI | Installs skills and, with Copilot CLI 1.0.21+, registers all three MCP servers |
 
 Copilot MCP registration is user-level and follows `COPILOT_HOME`; the global/local setup choice controls only where skills are installed. Setup leaves an existing same-named MCP server unchanged and reports the conflict instead of overwriting it. Older Copilot CLI versions still install the skills, but MCP registration is skipped with an upgrade warning.

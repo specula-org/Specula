@@ -585,6 +585,31 @@ class TestParsing(TmpCwd):
         self.assertEqual(p.argv, ["--artifact=repo", "t|g|l|r"])
         self.assertIn(f"--artifact={repo}", p._phase_args(["t"]))
 
+    def test_home_relative_artifact_is_expanded_and_forwarded(self) -> None:
+        home = self.tmp / "home"
+        repo = home / "cass-operator"
+        repo.mkdir(parents=True)
+        p = pl.Pipeline()
+
+        with mock.patch.dict(os.environ, {"HOME": str(home)}):
+            self.assertIsNone(p.parse_args(["--artifact=~/cass-operator", "t|g|l|r"]))
+
+        self.assertEqual(p.artifact, str(repo))
+        self.assertEqual(p.argv, ["--artifact=~/cass-operator", "t|g|l|r"])
+        self.assertIn(f"--artifact={repo}", p._phase_args(["t"]))
+
+    def test_artifact_expansion_failure_uses_existing_error_contract(self) -> None:
+        p = pl.Pipeline()
+        err = io.StringIO()
+        with (
+            mock.patch.object(Path, "expanduser", side_effect=RuntimeError("home unavailable")),
+            contextlib.redirect_stderr(err),
+        ):
+            rc = p.parse_args(["--artifact=~/repo", "t|g|l|r"])
+
+        self.assertEqual(rc, 1)
+        self.assertEqual(err.getvalue(), "ERROR: --artifact must be an existing directory: ~/repo\n")
+
     def test_invalid_artifact_path_is_rejected(self) -> None:
         file_path = self.tmp / "artifact.txt"
         file_path.write_text("not a directory\n")

@@ -39,7 +39,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from specula import quota as _quota
-from specula.phaselib import _logical_cwd, _wc_l
+from specula.phaselib import _logical_cwd, _normalize_artifact_dir, _wc_l
 
 RATE_LIMIT_FALLBACK_SECONDS = _quota.RATE_LIMIT_FALLBACK_SECONDS
 RATE_LIMIT_RC = _quota.RATE_LIMIT_RC
@@ -370,12 +370,13 @@ class Pipeline:
             print("ERROR: --no-isolate conflicts with --run-id", file=sys.stderr)
             return 1
         if self._artifact_given:
-            if not self.artifact or not Path(self.artifact).is_dir():
+            normalized_artifact = _normalize_artifact_dir(self.artifact)
+            if normalized_artifact is None:
                 print(f"ERROR: --artifact must be an existing directory: {self.artifact}", file=sys.stderr)
                 return 1
             # The legacy single-target flow may chdir before launching phases.
             # Stabilize a relative CLI path while it still refers to the caller's cwd.
-            self.artifact = str(Path(self.artifact).resolve())
+            self.artifact = normalized_artifact
 
         # Validate the repair budget before any phase starts.  int() in
         # run_repair_loop used to make malformed values fail only after the

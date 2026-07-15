@@ -127,6 +127,190 @@ class TestSetupHelp(unittest.TestCase):
                         self.assert_no_setup_side_effects(root, env, sentinel)
 
 
+class TestSetupAgentDetection(unittest.TestCase):
+    AGENT_PROMPTS = {
+        "claude": "Install Specula for Claude Code?",
+        "codex": "Install Specula for Codex?",
+        "copilot": "Install Specula for GitHub Copilot CLI?",
+    }
+    AGENT_MISSING_MESSAGES = {
+        "claude": "Claude Code CLI not found on PATH; skipping.",
+        "codex": "Codex CLI not found on PATH; skipping.",
+        "copilot": "GitHub Copilot CLI not found on PATH; skipping.",
+    }
+    AGENT_USER_SKIP_MESSAGES = {
+        "claude": "Skipped Claude Code.",
+        "codex": "Skipped Codex.",
+        "copilot": "Skipped Copilot CLI.",
+    }
+
+    def make_checkout(self, root: Path, agents: set[str]) -> tuple[Path, dict[str, str], Path]:
+        for relative in (
+            Path("scripts/infra/setup.sh"),
+            Path("scripts/infra/copilot_mcp.sh"),
+        ):
+            destination = root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(REPO_ROOT / relative, destination)
+
+        for relative in (
+            Path("tools/trace_debugger"),
+            Path("tools/cfa"),
+            Path("tools/spec_analyzer"),
+            Path("tools/inv_checking_tool"),
+            Path("skills"),
+            Path("lib"),
+        ):
+            (root / relative).mkdir(parents=True)
+        (root / "lib/tla2tools.jar").touch()
+        (root / "lib/CommunityModules-deps.jar").touch()
+
+        home = root / "home"
+        home.mkdir()
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        command_log = root / "commands.log"
+
+        for command in ("dirname", "grep", "head", "mkdir"):
+            executable = shutil.which(command)
+            if executable is None:
+                self.fail(f"required test utility is missing: {command}")
+            (bin_dir / command).symlink_to(executable)
+
+        fake_python = bin_dir / "python3"
+        fake_python.write_text(
+            """#!/bin/bash
+printf 'python3' >> "$FAKE_COMMAND_LOG"
+printf '\\t%s' "$@" >> "$FAKE_COMMAND_LOG"
+printf '\\n' >> "$FAKE_COMMAND_LOG"
+if [[ "${1:-}" == "--version" ]]; then
+  echo "Python 3.13.0"
+elif [[ "${1:-}" == "-I" && "${2:-}" == "-m" && "${3:-}" == "venv" ]]; then
+  /bin/mkdir -p "$4/bin"
+  /bin/ln -s "$0" "$4/bin/python"
+fi
+"""
+        )
+        fake_python.chmod(0o755)
+
+        fake_java = bin_dir / "java"
+        fake_java.write_text(
+            """#!/bin/bash
+if [[ "${1:-}" == "-version" ]]; then
+  echo 'openjdk version "21"' >&2
+else
+  echo "TLA+ fake help"
+fi
+"""
+        )
+        fake_java.chmod(0o755)
+
+        for command in ("pip3", "mvn"):
+            stub = bin_dir / command
+            stub.write_text(
+                """#!/bin/bash
+printf '%s' "${0##*/}" >> "$FAKE_COMMAND_LOG"
+printf '\\t%s' "$@" >> "$FAKE_COMMAND_LOG"
+printf '\\n' >> "$FAKE_COMMAND_LOG"
+"""
+            )
+            stub.chmod(0o755)
+
+        for agent in agents:
+            stub = bin_dir / agent
+            stub.write_text(
+                """#!/bin/bash
+printf '%s' "${0##*/}" >> "$FAKE_COMMAND_LOG"
+printf '\\t%s' "$@" >> "$FAKE_COMMAND_LOG"
+printf '\\n' >> "$FAKE_COMMAND_LOG"
+"""
+            )
+            stub.chmod(0o755)
+
+        env = os.environ.copy()
+        env.update(
+            {
+                "FAKE_COMMAND_LOG": str(command_log),
+                "HOME": str(home),
+                "PATH": str(bin_dir),
+            }
+        )
+        return root / "scripts/infra/setup.sh", env, command_log
+
+    def run_setup(
+        self,
+        root: Path,
+        agents: set[str],
+        user_input: str,
+    ) -> tuple[subprocess.CompletedProcess[str], str]:
+        setup, env, command_log = self.make_checkout(root, agents)
+        result = subprocess.run(
+            ["/bin/bash", str(setup)],
+            cwd=root,
+            env=env,
+            input=user_input,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        commands = command_log.read_text() if command_log.exists() else ""
+        return result, commands
+
+    def test_missing_agents_are_reported_without_prompting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result, commands = self.run_setup(Path(tmp), set(), "")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for agent in self.AGENT_PROMPTS:
+            self.assertNotIn(self.AGENT_PROMPTS[agent], result.stdout + result.stderr)
+            self.assertIn(self.AGENT_MISSING_MESSAGES[agent], result.stdout)
+            self.assertNotIn(self.AGENT_USER_SKIP_MESSAGES[agent], result.stdout)
+        self.assertNotIn("src/specula/skill_install.py", commands)
+        self.assertNotIn("setup_codex_plugin.py", commands)
+        self.assertNotIn("claude\tmcp", commands)
+        self.assertNotIn("codex\tmcp", commands)
+        self.assertNotIn("copilot\tmcp", commands)
+
+    def test_only_agents_on_path_are_prompted(self) -> None:
+        for installed_agent in self.AGENT_PROMPTS:
+            with self.subTest(installed_agent=installed_agent), tempfile.TemporaryDirectory() as tmp:
+                result, _commands = self.run_setup(Path(tmp), {installed_agent}, "n\n")
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                for agent in self.AGENT_PROMPTS:
+                    if agent == installed_agent:
+                        self.assertNotIn(self.AGENT_MISSING_MESSAGES[agent], result.stdout)
+                        self.assertIn(self.AGENT_USER_SKIP_MESSAGES[agent], result.stdout)
+                    else:
+                        self.assertIn(self.AGENT_MISSING_MESSAGES[agent], result.stdout)
+                        self.assertNotIn(self.AGENT_USER_SKIP_MESSAGES[agent], result.stdout)
+
+    def test_codex_y_keeps_explanation_out_of_branch_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result, commands = self.run_setup(Path(tmp), {"codex"}, "y\nglobal\n")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("y: install skills and register MCP servers separately.", result.stderr)
+        self.assertIn("plugin: bundle skills and MCP tools as specula-codex@specula", result.stderr)
+        self.assertIn("Rerun specula setup and choose plugin again to update it.", result.stderr)
+        self.assertNotIn("legacy", result.stderr.lower())
+        self.assertIn("src/specula/skill_install.py", commands)
+        self.assertNotIn("setup_codex_plugin.py", commands)
+        self.assertEqual(commands.count("codex\tmcp\tadd"), 3)
+
+    def test_codex_plugin_keeps_explanation_out_of_branch_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result, commands = self.run_setup(Path(tmp), {"codex"}, "plugin\n")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("setup_codex_plugin.py", commands)
+        self.assertNotIn("src/specula/skill_install.py", commands)
+        self.assertNotIn("codex\tmcp\tadd", commands)
+        self.assertIn("Codex plugin configured: specula-codex@specula", result.stdout)
+        self.assertIn("Rerun specula setup and choose 'plugin' again", result.stdout)
+
+
 class TestSetupPythonIsolation(unittest.TestCase):
     def test_setup_invokes_trusted_installers_in_isolated_mode(self) -> None:
         setup = SETUP_SCRIPT.read_text()

@@ -91,10 +91,13 @@ ask_scope() {
 
 ask_codex_install() {
   local answer
+  echo "  y: install skills and register MCP servers separately." >&2
+  echo "  plugin: bundle skills and MCP tools as specula-codex@specula for cleaner namespacing and easier removal." >&2
+  echo "          Rerun specula setup and choose plugin again to update it." >&2
   while true; do
     read -rp "$(echo -e "${BLUE}[?]${NC} Install Specula for Codex? (y/n/plugin): ")" answer
     case "$answer" in
-      [Yy]|[Yy][Ee][Ss]) echo "legacy"; return 0 ;;
+      [Yy]|[Yy][Ee][Ss]) echo "separate"; return 0 ;;
       [Nn]|[Nn][Oo]) echo "skip"; return 0 ;;
       [Pp]|[Pp][Ll][Uu][Gg][Ii][Nn]) echo "plugin"; return 0 ;;
       *) echo "  Please answer y, n, or plugin." >&2 ;;
@@ -185,7 +188,7 @@ setup_codex_plugin() {
     --project-root "$project_root" \
     --plugin-root "$plugin_root"
   print_success "Codex plugin configured: specula-codex@specula"
-  print_status "Rerun this setup script and choose 'plugin' to update the Codex plugin."
+  print_status "Rerun specula setup and choose 'plugin' again to update the Codex plugin."
 }
 
 setup_python_tool_env() {
@@ -374,7 +377,9 @@ MCP_SERVERS=(
 
 # --- Claude Code ---
 echo -e "${BLUE}[1/3] Claude Code${NC}"
-if ask_yn "Install Specula for Claude Code?"; then
+if ! command_exists claude; then
+  print_status "Claude Code CLI not found on PATH; skipping."
+elif ask_yn "Install Specula for Claude Code?"; then
   scope="$(ask_scope "Claude Code")"
   if [[ "$scope" == "global" ]]; then
     setup_skills "$CLAUDE_USER_CONFIG_DIR/skills" "$SKILLS_SOURCE"
@@ -400,9 +405,13 @@ echo ""
 
 # --- Codex ---
 echo -e "${BLUE}[2/3] Codex${NC}"
-codex_install="$(ask_codex_install)"
+if command_exists codex; then
+  codex_install="$(ask_codex_install)"
+else
+  codex_install="missing"
+fi
 case "$codex_install" in
-  legacy)
+  separate)
     scope="$(ask_scope "Codex")"
     if [[ "$scope" == "global" ]]; then
       setup_skills "$HOME/.agents/skills" "$SKILLS_SOURCE" --legacy-root "$HOME/.codex/skills"
@@ -421,12 +430,17 @@ case "$codex_install" in
   skip)
     print_status "Skipped Codex."
     ;;
+  missing)
+    print_status "Codex CLI not found on PATH; skipping."
+    ;;
 esac
 echo ""
 
 # --- Copilot CLI ---
 echo -e "${BLUE}[3/3] GitHub Copilot CLI${NC}"
-if ask_yn "Install Specula for GitHub Copilot CLI?"; then
+if ! command_exists copilot; then
+  print_status "GitHub Copilot CLI not found on PATH; skipping."
+elif ask_yn "Install Specula for GitHub Copilot CLI?"; then
   scope="$(ask_scope "Copilot CLI")"
   if [[ "$scope" == "global" ]]; then
     setup_skills \
