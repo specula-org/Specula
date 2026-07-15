@@ -622,7 +622,7 @@ def stream_events(
 def main(argv: list[str]) -> int:
     if len(argv) != 3 or argv[0] not in _ADAPTER_NAMES:
         print(
-            "usage: specula _adapter event-stream {claude|codex|copilot|opencode|pi} ACTIVITY_JSONL LOG_FILE",
+            "usage: python -m specula.adapters.utils.event_stream {claude|codex|copilot|opencode|pi} ACTIVITY_JSONL LOG_FILE",
             file=sys.stderr,
         )
         return 2

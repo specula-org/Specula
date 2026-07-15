@@ -38,7 +38,17 @@ OPENCODE_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "opencode.sh"
 PI_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "pi.sh"
 CODEX_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "codex.sh"
 COPILOT_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "copilot-cli.sh"
-EVENT_STREAM_PY = REPO_ROOT / "src" / "specula" / "adapters" / "event_stream.py"
+EVENT_STREAM_COMMAND = [
+    sys.executable,
+    "-I",
+    "-c",
+    (
+        "import sys; sys.path.insert(0, sys.argv.pop(1)); "
+        "from specula.adapters.utils.event_stream import main; "
+        "raise SystemExit(main(sys.argv[1:]))"
+    ),
+    str(REPO_ROOT / "src"),
+]
 
 # A minimal well-formed claude result: the claude adapter parses this for
 # .log/.usage.json. codex/copilot don't parse it, so any text is fine for them.
@@ -2388,7 +2398,7 @@ class CopilotAdapter(AdapterCase):
         activity = base / "out.activity.jsonl"
         log = base / "out.log"
         proc = subprocess.Popen(
-            [sys.executable, str(EVENT_STREAM_PY), "copilot", str(activity), str(log)],
+            [*EVENT_STREAM_COMMAND, "copilot", str(activity), str(log)],
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )

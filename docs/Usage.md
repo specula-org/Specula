@@ -142,7 +142,9 @@ Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencod
 
 Specula launches the installed agent CLI directly and uses its existing credentials. Authenticate the CLI before starting a pipeline. Claude Code runs default to maximum reasoning effort; Codex and Copilot use their configured defaults unless `--effort` is supplied.
 
-Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. OpenCode forwards it as a variant, while Pi maps `max` to `xhigh`. `--max-turns` maps to Copilot's autopilot continuation limit; the other adapters accept but ignore it.
+Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. OpenCode forwards it as a variant, while Pi maps `max` to `xhigh`.
+
+`--max-turns` maps to Copilot's autopilot continuation limit. Claude Code, Codex, OpenCode, and Pi accept the option for adapter compatibility but do not enforce it. The reviews between steps pass a fixed value of 30 instead of the pipeline option; all four adapters still ignore it. OpenCode and Pi do not support Specula's agent-side stop gate.
 
 ## Output Structure
 

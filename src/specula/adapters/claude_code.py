@@ -27,14 +27,12 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any
+from typing import IO, Any
 
-if TYPE_CHECKING:
-    from specula.adapters.event_stream import stream_events
-elif __package__:
-    from .event_stream import stream_events
+if __package__:
+    from .utils.event_stream import stream_events
 else:
-    from event_stream import stream_events
+    from utils.event_stream import stream_events  # type: ignore[import-not-found, no-redef]
 
 HELP = __doc__
 
