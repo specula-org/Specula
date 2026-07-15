@@ -313,6 +313,33 @@ class TestProgressParsing(unittest.TestCase):
             },
         )
 
+    def test_pi_subagent_result_records_exact_session_files(self) -> None:
+        record = {
+            "type": "tool_execution_end",
+            "toolName": "subagent",
+            "result": {
+                "details": {
+                    "results": [
+                        {"sessionFile": "/tmp/pi-one/session.jsonl"},
+                        {"sessionPath": "/tmp/pi-two/session.jsonl"},
+                    ]
+                }
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status = stream_events(
+                "pi",
+                root / "agent.activity.jsonl",
+                root / "agent.log",
+                [json.dumps(record).encode()],
+            )
+
+        self.assertEqual(
+            status.session_files,
+            ("/tmp/pi-one/session.jsonl", "/tmp/pi-two/session.jsonl"),
+        )
+
     def test_summary_removes_terminal_control_sequences(self) -> None:
         text = "\x1b]0;spoofed title\x07hello \x1b[31mred\x1b[0m\rworld"
         self.assertEqual(summary(text), "hello red world")
@@ -425,7 +452,10 @@ class TestProgressParsing(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 stream_events("pi", raw, log, interrupted_stream())
 
-            self.assertEqual(raw.read_bytes(), event)
+            self.assertEqual(
+                raw.read_bytes(),
+                b'{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"live "}}',
+            )
             self.assertEqual(log.read_text(), "live ")
 
     @unittest.skipUnless(Path("/dev/full").exists(), "requires /dev/full")

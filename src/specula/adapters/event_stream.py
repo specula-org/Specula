@@ -1,9 +1,9 @@
-"""Tee adapter JSONL into raw and incrementally readable activity logs.
+"""Tee adapter JSONL into activity, readable, and usage logs.
 
-The `.activity.jsonl` sidecar holds the adapter's event stream as emitted, minus
-the tool-result echo records (see `_is_tool_echo`), plus any non-JSON diagnostic
-the CLI wrote to stderr — both adapters merge stderr into the stream so an
-"unknown flag" line still reaches the reader.
+The `.activity.jsonl` sidecar holds the useful adapter event stream, minus
+tool-result echo records (see `_is_tool_echo`). Pi's cumulative
+`message_update` snapshots are reduced to their incremental event before they
+are persisted. Non-JSON diagnostics still reach the sidecar and readable log.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import contextlib
 import json
 import math
 import re
+import stat
 import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -29,7 +30,9 @@ class StreamStatus:
     activity_ok: bool
     log_ok: bool
     terminal_record: object | None
+    structured_error: str | None
     plain_diagnostics: tuple[str, ...]
+    session_files: tuple[str, ...]
     usage: dict[str, object]
 
 
@@ -50,6 +53,15 @@ class UsageTotals:
     output_tokens: int = 0
     reasoning_output_tokens: int = 0
 
+    def add(self, other: UsageTotals) -> None:
+        self.input_tokens += other.input_tokens
+        self.cached_input_tokens += other.cached_input_tokens
+        self.cache_write_input_tokens += other.cache_write_input_tokens
+        self.output_tokens += other.output_tokens
+        self.reasoning_output_tokens += other.reasoning_output_tokens
+        if other.total_cost_usd is not None:
+            self.total_cost_usd = (self.total_cost_usd or 0.0) + other.total_cost_usd
+
     def add_cost(self, value: object) -> None:
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             try:
@@ -60,6 +72,15 @@ class UsageTotals:
                 self.total_cost_usd = (self.total_cost_usd or 0.0) + cost
 
     def as_payload(self, agent: str) -> dict[str, object]:
+        return {
+            "agent": agent,
+            "session_id": self.session_id,
+            "session_file": None,
+            "total_cost_usd": self.total_cost_usd,
+            "usage": self.as_usage(),
+        }
+
+    def as_usage(self) -> dict[str, int]:
         total = (
             self.input_tokens
             + self.cached_input_tokens
@@ -68,19 +89,26 @@ class UsageTotals:
             + self.reasoning_output_tokens
         )
         return {
-            "agent": agent,
-            "session_id": self.session_id,
-            "session_file": None,
-            "total_cost_usd": self.total_cost_usd,
-            "usage": {
-                "input_tokens": self.input_tokens,
-                "cached_input_tokens": self.cached_input_tokens,
-                "cache_write_input_tokens": self.cache_write_input_tokens,
-                "output_tokens": self.output_tokens,
-                "reasoning_output_tokens": self.reasoning_output_tokens,
-                "total_tokens": total,
-            },
+            "input_tokens": self.input_tokens,
+            "cached_input_tokens": self.cached_input_tokens,
+            "cache_write_input_tokens": self.cache_write_input_tokens,
+            "output_tokens": self.output_tokens,
+            "reasoning_output_tokens": self.reasoning_output_tokens,
+            "total_tokens": total,
         }
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, object]) -> UsageTotals:
+        totals = cls(session_id=payload.get("session_id") if isinstance(payload.get("session_id"), str) else None)
+        totals.add_cost(payload.get("total_cost_usd"))
+        usage = payload.get("usage")
+        if isinstance(usage, dict):
+            totals.input_tokens = _token_count(usage.get("input_tokens"))
+            totals.cached_input_tokens = _token_count(usage.get("cached_input_tokens"))
+            totals.cache_write_input_tokens = _token_count(usage.get("cache_write_input_tokens"))
+            totals.output_tokens = _token_count(usage.get("output_tokens"))
+            totals.reasoning_output_tokens = _token_count(usage.get("reasoning_output_tokens"))
+        return totals
 
 
 _INVALID_RECORD = object()
@@ -306,6 +334,21 @@ def _pi_message_text(message: object) -> str:
     )
 
 
+def _pi_terminal_error(record: object) -> str | None:
+    if not isinstance(record, dict) or record.get("type") != "message_end":
+        return None
+    message = record.get("message")
+    if not isinstance(message, dict) or message.get("role") != "assistant":
+        return None
+    reason = message.get("stopReason")
+    if not isinstance(reason, str) or reason.casefold() not in {"error", "aborted"}:
+        return None
+    detail = message.get("errorMessage")
+    if not isinstance(detail, str) or not detail.strip():
+        detail = f"assistant stopped with stopReason {reason}"
+    return summary(detail, None)
+
+
 def _pi_events(record: object, concise: bool) -> list[_LogEvent]:
     if not isinstance(record, dict):
         return []
@@ -326,6 +369,12 @@ def _pi_events(record: object, concise: bool) -> list[_LogEvent]:
         message = record.get("message")
         if not isinstance(message, dict) or message.get("role") != "assistant":
             return []
+        terminal_error = _pi_terminal_error(record)
+        if terminal_error:
+            events = _diagnostic_event("error", terminal_error, concise)
+            if not concise:
+                events.append(_LogEvent(message_end=True))
+            return events
         if not concise:
             return [_LogEvent(message_end=True)]
         text = _pi_message_text(message)
@@ -405,6 +454,113 @@ def _accumulate_usage(adapter_name: str, record: object, totals: UsageTotals) ->
         totals.add_cost(cost.get("total"))
 
 
+def _read_pi_session_usage(path: Path) -> tuple[UsageTotals, list[str]] | None:
+    """Read one persisted Pi child session without retaining its messages."""
+    try:
+        metadata = path.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or path.is_symlink():
+            return None
+        stream = path.open(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        print(f"adapter usage warning: {summary(str(exc), None)}", file=sys.stderr)
+        return None
+
+    totals = UsageTotals()
+    nested_paths: list[str] = []
+    header_seen = False
+    try:
+        with stream:
+            for line in stream:
+                try:
+                    record = json.loads(line)
+                except (TypeError, ValueError):
+                    continue
+                if not header_seen:
+                    if not isinstance(record, dict) or record.get("type") != "session":
+                        return None
+                    header_seen = True
+                    session_id = record.get("id")
+                    if isinstance(session_id, str):
+                        totals.session_id = session_id
+                    continue
+                if not isinstance(record, dict) or record.get("type") != "message":
+                    continue
+                message = record.get("message")
+                if not isinstance(message, dict):
+                    continue
+                if message.get("role") == "assistant":
+                    _accumulate_usage("pi", {"type": "message_end", "message": message}, totals)
+                elif message.get("role") == "toolResult" and message.get("toolName") == "subagent":
+                    nested_paths.extend(_find_session_paths(message.get("details")))
+    except OSError as exc:
+        print(f"adapter usage warning: {summary(str(exc), None)}", file=sys.stderr)
+        return None
+    return (totals, nested_paths) if header_seen else None
+
+
+def augment_pi_usage(
+    parent_payload: dict[str, object],
+    session_files: Iterable[str | Path],
+    session_root: Path | None = None,
+) -> dict[str, object]:
+    """Add per-child and combined Pi usage while preserving top-level readers."""
+    pending = [Path(path) for path in session_files]
+    if session_root is not None:
+        with contextlib.suppress(OSError):
+            pending.extend(session_root.rglob("session.jsonl"))
+
+    seen: set[Path] = set()
+    sessions: list[dict[str, object]] = []
+    subagent_totals = UsageTotals()
+    while pending:
+        candidate = pending.pop()
+        try:
+            resolved = candidate.expanduser().resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        result = _read_pi_session_usage(resolved)
+        if result is None:
+            continue
+        totals, nested_paths = result
+        pending.extend(Path(path) for path in nested_paths)
+        subagent_totals.add(totals)
+        session_payload = totals.as_payload("pi")
+        session_payload.pop("agent", None)
+        session_payload.pop("session_file", None)
+        sessions.append(session_payload)
+
+    sessions.sort(key=lambda item: str(item.get("session_id") or ""))
+    parent_totals = UsageTotals.from_payload(parent_payload)
+    combined_totals = UsageTotals(session_id=parent_totals.session_id)
+    combined_totals.add(parent_totals)
+    combined_totals.add(subagent_totals)
+    combined_payload = combined_totals.as_payload("pi")
+    combined_payload.update(
+        {
+            "usage_scope": "combined",
+            "parent": {
+                "session_id": parent_totals.session_id,
+                "total_cost_usd": parent_totals.total_cost_usd,
+                "usage": parent_totals.as_usage(),
+            },
+            "subagents": {
+                "session_count": len(sessions),
+                "total_cost_usd": subagent_totals.total_cost_usd,
+                "usage": subagent_totals.as_usage(),
+                "sessions": sessions,
+            },
+            "combined": {
+                "total_cost_usd": combined_totals.total_cost_usd,
+                "usage": combined_totals.as_usage(),
+            },
+        }
+    )
+    return combined_payload
+
+
 def _is_tool_echo(adapter_name: str, record: object) -> bool:
     """True for records that only replay a tool's output back to the model.
 
@@ -425,6 +581,55 @@ def _is_tool_echo(adapter_name: str, record: object) -> bool:
             and item.get("type") == "command_execution"
         )
     return False  # copilot-cli: no pinned event for command output, keep it whole
+
+
+def _compact_activity_line(adapter_name: str, record: object, raw_line: bytes) -> bytes:
+    """Drop Pi's repeated cumulative message while retaining live deltas."""
+    if not isinstance(record, dict) or adapter_name != "pi" or record.get("type") != "message_update":
+        return raw_line
+    compact: dict[str, object] = {"type": "message_update"}
+    update = record.get("assistantMessageEvent")
+    if isinstance(update, dict):
+        compact_update = {
+            key: value
+            for key in ("type", "contentIndex", "delta")
+            if (value := update.get(key)) is not None and isinstance(value, (str, int, float, bool))
+        }
+        if compact_update:
+            compact["assistantMessageEvent"] = compact_update
+    newline = b"\n" if raw_line.endswith(b"\n") else b""
+    return json.dumps(compact, ensure_ascii=False, separators=(",", ":")).encode() + newline
+
+
+def _find_session_paths(value: object) -> list[str]:
+    found: list[str] = []
+
+    def visit(node: object) -> None:
+        if isinstance(node, dict):
+            for key, nested in node.items():
+                if key in {"sessionFile", "sessionPath"} and isinstance(nested, str) and nested:
+                    found.append(nested)
+                else:
+                    visit(nested)
+        elif isinstance(node, list):
+            for nested in node:
+                visit(nested)
+
+    visit(value)
+    return found
+
+
+def _session_files_from_subagent_result(record: object) -> list[str]:
+    """Extract only Pi subagent-owned session paths from a tool result."""
+    if (
+        not isinstance(record, dict)
+        or record.get("type") != "tool_execution_end"
+        or record.get("toolName") != "subagent"
+    ):
+        return []
+    result = record.get("result")
+    details = result.get("details") if isinstance(result, dict) else None
+    return _find_session_paths(details)
 
 
 def _read_line(adapter_name: str, line: str, concise: bool) -> tuple[bool, list[_LogEvent], object]:
@@ -492,7 +697,9 @@ def stream_events(
     fragment_active = False
     line_open = False
     terminal_record: object | None = None
+    structured_error: str | None = None
     plain_diagnostics: list[str] = []
+    session_files: list[str] = []
     raw_failures: list[str] = []
     readable_failures: list[str] = []
     raw_log: BinaryIO | None = None
@@ -536,7 +743,7 @@ def stream_events(
             log = None
 
     def handle_line(raw_line: bytes, *, raw_already_written: bool) -> None:
-        nonlocal fragment_active, last_event, line_open, terminal_record
+        nonlocal fragment_active, last_event, line_open, structured_error, terminal_record
         decoded = raw_line.decode(errors="replace")
         keep, events, record = _read_line(adapter_name, decoded, concise=False)
         _accumulate_usage(adapter_name, record, usage_totals)
@@ -548,8 +755,18 @@ def stream_events(
                 # diagnostics. Retain those few lines so quota banners survive
                 # an activity-sidecar failure without buffering the full stream.
                 plain_diagnostics.append(decoded)
+        elif adapter_name == "pi":
+            if (
+                isinstance(record, dict)
+                and record.get("type") == "message_end"
+                and isinstance(record.get("message"), dict)
+                and record["message"].get("role") == "assistant"
+            ):
+                terminal_record = record
+                structured_error = _pi_terminal_error(record)
+            session_files.extend(_session_files_from_subagent_result(record))
         if keep and not raw_already_written:
-            write_raw(raw_line)
+            write_raw(_compact_activity_line(adapter_name, record, raw_line))
         for event in events:
             if event.message_end:
                 if fragment_active and line_open:
@@ -622,7 +839,9 @@ def stream_events(
         activity_ok=not raw_failures,
         log_ok=not readable_failures,
         terminal_record=terminal_record,
+        structured_error=structured_error,
         plain_diagnostics=tuple(plain_diagnostics),
+        session_files=tuple(dict.fromkeys(session_files)),
         usage=usage_totals.as_payload(adapter_name),
     )
 

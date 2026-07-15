@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,11 +14,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from specula.adapters.event_stream import StreamStatus, stream_events, summary
+    from specula.adapters.event_stream import StreamStatus, augment_pi_usage, stream_events, summary
 elif __package__:
-    from .event_stream import StreamStatus, stream_events, summary
+    from .event_stream import StreamStatus, augment_pi_usage, stream_events, summary
 else:
-    from event_stream import StreamStatus, stream_events, summary
+    from event_stream import StreamStatus, augment_pi_usage, stream_events, summary
 
 
 class AdapterArgumentError(ValueError):
@@ -166,7 +167,22 @@ def run_json_cli(
     child_env: dict[str, str] | None = None,
 ) -> int:
     """Run a JSONL CLI and persist its raw, readable, and usage sidecars."""
-    activity_value = (child_env if child_env is not None else os.environ).get("SPECULA_ACTIVITY_LOG", "")
+    effective_env = child_env
+    pi_session_root: Path | None = None
+    inherited_env = child_env if child_env is not None else os.environ
+    if adapter_name == "pi":
+        try:
+            raw_root = tempfile.mkdtemp(
+                prefix="specula-pi-sessions-",
+                dir=inherited_env.get("TMPDIR") or None,
+            )
+            pi_session_root = Path(raw_root)
+            effective_env = dict(inherited_env)
+            effective_env["TMPDIR"] = raw_root
+        except OSError as exc:
+            print(f"adapter usage warning: isolated Pi session directory: {summary(str(exc), None)}", file=sys.stderr)
+
+    activity_value = inherited_env.get("SPECULA_ACTIVITY_LOG", "")
     temporary_activity = False
     if activity_value:
         activity_path = Path(activity_value)
@@ -189,7 +205,7 @@ def run_json_cli(
                     stdin=prompt_stream,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
-                    env=child_env,
+                    env=effective_env,
                 )
             finally:
                 prompt_stream.close()
@@ -213,14 +229,22 @@ def run_json_cli(
             native_status = process.wait()
 
         usage = status.usage if status is not None else _empty_usage(adapter_name)
+        if adapter_name == "pi" and status is not None:
+            usage = augment_pi_usage(usage, status.session_files, pi_session_root)
         usage_ok = _write_usage(options.log_path.with_suffix(".usage.json"), usage)
         if native_status != 0:
             return native_status
         if stream_failed or status is None or not status.log_ok or not usage_ok:
+            return 1
+        if status.structured_error:
+            print(f"{adapter_name} adapter: {summary(status.structured_error, None)}", file=sys.stderr)
             return 1
         return 0
     finally:
         if temporary_activity:
             with contextlib.suppress(OSError):
                 activity_path.unlink()
+        if pi_session_root is not None:
+            with contextlib.suppress(OSError):
+                shutil.rmtree(pi_session_root)
         options.cleanup()

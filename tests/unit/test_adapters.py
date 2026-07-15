@@ -81,6 +81,7 @@ _VOLATILE = (
     "CODEX_HOME",
     "ADAPTER_EXIT_CODE",
     "COPILOT_HELP_TEXT",
+    "ADAPTER_PI_SESSION_FIXTURE",
 )
 
 
@@ -154,6 +155,13 @@ class AdapterCase(unittest.TestCase):
                 'printf "%s\\n" "${CLAUDE_CONFIG_DIR:-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"',
                 'printf "%s\\n" "${CLAUDECODE:-<unset>}" > "${ADAPTER_SESSIONENV_FILE:-/dev/null}"',
                 'cat > "${ADAPTER_STDIN_FILE:-/dev/null}"',
+            ]
+        if name == "pi":
+            lines += [
+                'if [[ -n "${ADAPTER_PI_SESSION_FIXTURE:-}" ]]; then',
+                '  mkdir -p "$TMPDIR/pi-subagent-session-test/run-0"',
+                '  cp "$ADAPTER_PI_SESSION_FIXTURE" "$TMPDIR/pi-subagent-session-test/run-0/session.jsonl"',
+                "fi",
             ]
         lines.append(f"cat {json.dumps(str(fixture))}")
         lines.append('exit "${ADAPTER_EXIT_CODE:-0}"')
@@ -1105,6 +1113,26 @@ class PiAdapter(AdapterCase):
     ]
     FIXTURE = "\n".join(json.dumps(record) for record in RECORDS) + "\n"
 
+    @staticmethod
+    def expected_activity(records: list[dict[str, Any]]) -> str:
+        lines: list[str] = []
+        for record in records:
+            if record.get("type") != "message_update":
+                lines.append(json.dumps(record))
+                continue
+            update = record.get("assistantMessageEvent")
+            compact: dict[str, object] = {"type": "message_update"}
+            if isinstance(update, dict):
+                compact_update = {
+                    key: value
+                    for key in ("type", "contentIndex", "delta")
+                    if (value := update.get(key)) is not None and isinstance(value, (str, int, float, bool))
+                }
+                if compact_update:
+                    compact["assistantMessageEvent"] = compact_update
+            lines.append(json.dumps(compact, separators=(",", ":")))
+        return "\n".join(lines) + "\n"
+
     def invoke(
         self,
         flags: list[str],
@@ -1219,7 +1247,13 @@ class PiAdapter(AdapterCase):
         records = [
             {
                 "type": "message_update",
-                "assistantMessageEvent": {"type": "text_delta", "delta": "work"},
+                "assistantMessageEvent": {
+                    "type": "text_delta",
+                    "contentIndex": 0,
+                    "delta": "work",
+                    "partial": {"type": "text", "text": "a large cumulative snapshot"},
+                },
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "work"}]},
             },
             {
                 "type": "message_update",
@@ -1259,30 +1293,98 @@ class PiAdapter(AdapterCase):
             env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
         )
         self.assertEqual(result["returncode"], 0, result["stderr"])
-        self.assertEqual(activity.read_text(), fixture)
+        self.assertEqual(activity.read_text(), self.expected_activity(records))
+        self.assertNotIn("cumulative snapshot", activity.read_text())
         self.assertEqual((base / "out.log").read_text(), "working\nreading src/main.py\ndone\n")
 
     def test_session_header_and_assistant_usage_reach_usage_sidecar(self) -> None:
         base = self.sandbox()
         result = self.invoke(self.base_flags(base))
         self.assertEqual(result["returncode"], 0, result["stderr"])
-        self.assertEqual(
-            json.loads((base / "out.usage.json").read_text()),
+        usage = json.loads((base / "out.usage.json").read_text())
+        parent_usage = {
+            "input_tokens": 11,
+            "cached_input_tokens": 33,
+            "cache_write_input_tokens": 44,
+            "output_tokens": 22,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 110,
+        }
+        self.assertEqual(usage["usage_scope"], "combined")
+        self.assertEqual(usage["usage"], parent_usage)
+        self.assertEqual(usage["parent"], {"session_id": "pi_session", "total_cost_usd": 1.0, "usage": parent_usage})
+        self.assertEqual(usage["subagents"]["session_count"], 0)
+        self.assertEqual(usage["subagents"]["usage"]["total_tokens"], 0)
+        self.assertEqual(usage["combined"], {"total_cost_usd": 1.0, "usage": parent_usage})
+
+    def test_structured_provider_failure_overrides_zero_native_exit(self) -> None:
+        for reason in ("error", "aborted"):
+            with self.subTest(reason=reason):
+                base = self.sandbox()
+                message = f"provider stopped with {reason}"
+                fixture = json.dumps(
+                    {
+                        "type": "message_end",
+                        "message": {
+                            "role": "assistant",
+                            "content": [],
+                            "stopReason": reason,
+                            "errorMessage": message,
+                            "usage": {},
+                        },
+                    }
+                )
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="pi",
+                    fixture_text=fixture,
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], 1, result["stderr"])
+                self.assertIn(message, result["stderr"])
+                self.assertEqual((base / "out.log").read_text(), f"adapter error: {message}\n")
+
+    def test_subagent_sessions_are_included_in_combined_usage(self) -> None:
+        base = self.sandbox()
+        child_session = base / "child-session.jsonl"
+        child_records = [
+            {"type": "session", "version": 3, "id": "child_session", "cwd": "/workspace"},
             {
-                "agent": "pi",
-                "session_id": "pi_session",
-                "session_file": None,
-                "total_cost_usd": 1.0,
-                "usage": {
-                    "input_tokens": 11,
-                    "cached_input_tokens": 33,
-                    "cache_write_input_tokens": 44,
-                    "output_tokens": 22,
-                    "reasoning_output_tokens": 0,
-                    "total_tokens": 110,
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "usage": {
+                        "input": 5,
+                        "output": 6,
+                        "cacheRead": 7,
+                        "cacheWrite": 8,
+                        "cost": {"total": 0.5},
+                    },
                 },
             },
+            {
+                "type": "message",
+                "message": {
+                    "role": "user",
+                    "usage": {"input": 100, "output": 100, "cacheRead": 100, "cacheWrite": 100},
+                },
+            },
+        ]
+        child_session.write_text("\n".join(json.dumps(record) for record in child_records) + "\n")
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"ADAPTER_PI_SESSION_FIXTURE": str(child_session)},
         )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["parent"]["usage"]["total_tokens"], 110)
+        self.assertEqual(usage["subagents"]["session_count"], 1)
+        self.assertEqual(usage["subagents"]["usage"]["total_tokens"], 26)
+        self.assertEqual(usage["subagents"]["sessions"][0]["session_id"], "child_session")
+        self.assertEqual(usage["combined"]["usage"]["total_tokens"], 136)
+        self.assertEqual(usage["usage"]["total_tokens"], 136)
+        self.assertEqual(usage["total_cost_usd"], 1.5)
 
     @unittest.skipUnless(Path("/proc").is_dir(), "requires procfs")
     def test_postprocessing_failure_defers_to_native_status(self) -> None:
@@ -1298,7 +1400,7 @@ class PiAdapter(AdapterCase):
                     },
                 )
                 self.assertEqual(result["returncode"], expected, result["stderr"])
-                self.assertEqual(activity.read_text(), self.FIXTURE)
+                self.assertEqual(activity.read_text(), self.expected_activity(self.RECORDS))
 
     def test_missing_executable_returns_127_and_writes_diagnostic(self) -> None:
         base = self.sandbox()
