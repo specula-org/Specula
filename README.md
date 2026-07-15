@@ -90,7 +90,7 @@ Open your coding agent in the Specula directory. The workflow is a sequence of s
 
 `code-analysis` → `spec-generation` → `harness-generation` → `validation-workflow` → `bug-confirmation`
 
-(Codex will use `$code-analysis`, `$spec-generation`, etc.)
+(Codex uses `$code-analysis`, `$spec-generation`, etc. after choosing `y` in `specula setup`, or `$specula-codex:code-analysis`, `$specula-codex:spec-generation`, etc. in plugin mode.)
 
 To start, tell the agent your target and invoke the first skill:
 

@@ -110,6 +110,26 @@ def _logical_cwd() -> Path:
     return Path.cwd()
 
 
+def _normalize_artifact_dir(raw: str) -> str | None:
+    """Expand and stabilize an explicit ``--artifact`` directory.
+
+    ``~`` after ``--artifact=`` is passed through literally by the shell, so
+    expand it here before validation.  ``Path.expanduser()`` raises
+    ``RuntimeError`` when a home directory cannot be resolved; path inspection
+    can also fail with ``OSError``.  Both mean the CLI should report its usual
+    invalid-directory error instead of exposing a traceback.
+    """
+    if not raw:
+        return None
+    try:
+        path = Path(raw).expanduser()
+        if not path.is_dir():
+            return None
+        return str(path.resolve())
+    except (OSError, RuntimeError):
+        return None
+
+
 def _grep_num(text: str, prefix: str) -> str:
     """First integer on the first line starting with `prefix`, else '?' — mirrors
     bash `grep -E "^prefix" | grep -oE '[0-9]+' | head -1`."""
@@ -450,9 +470,12 @@ class Phase:
             else:
                 targets.append(arg)
 
-        if artifact_provided and (not artifact or not Path(artifact).is_dir()):
-            print(f"ERROR: --artifact must be an existing directory: {artifact}")
-            return 1
+        if artifact_provided:
+            normalized_artifact = _normalize_artifact_dir(artifact)
+            if normalized_artifact is None:
+                print(f"ERROR: --artifact must be an existing directory: {artifact}")
+                return 1
+            artifact = normalized_artifact
 
         option_error = self.validate_options(extra)
         if option_error is not None:

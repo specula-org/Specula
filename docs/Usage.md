@@ -68,7 +68,9 @@ specula setup
 
 Install with `-e` (editable): the `specula` command dispatches to scripts inside the checkout, so it must stay linked to it.
 
-Setup downloads the TLA+ JARs, builds the CFA tool, prepares the MCP tool environments, and offers integration for each supported agent. It prompts for global or project-local skill installation. Codex users can choose the skills/MCP setup or the generated Specula plugin.
+Setup downloads the TLA+ JARs, builds the CFA tool, prepares the MCP tool environments, and offers integration for each supported agent CLI found on `PATH`. It reports and skips any missing agent CLI instead of prompting for it. Setup prompts for global or project-local skill installation when that choice applies.
+
+For Codex, choose `y` to install skills and register MCP servers separately. Choose `plugin` to bundle the skills and MCP tools as `specula-codex@specula`, with cleaner namespacing and easier removal. Rerun `specula setup` and choose `plugin` again to update it.
 
 More precisely, setup manages:
 
@@ -78,7 +80,7 @@ More precisely, setup manages:
 | CFA transformer | Builds it with Maven |
 | MCP Python packages | Creates tool-specific virtual environments and installs `mcp` and `jsonschema` where required |
 | Claude Code | Installs skills and registers all three MCP servers |
-| Codex | Installs skills and MCP servers, or generates/updates the Specula plugin |
+| Codex | `y` installs skills and MCP servers separately; `plugin` generates or updates `specula-codex@specula` |
 | GitHub Copilot CLI | Installs skills and, with Copilot CLI 1.0.21+, registers all three MCP servers |
 
 Copilot MCP registration is user-level and follows `COPILOT_HOME`; the global/local setup choice controls only where skills are installed. Setup leaves an existing same-named MCP server unchanged and reports the conflict instead of overwriting it. Older Copilot CLI versions still install the skills, but MCP registration is skipped with an upgrade warning.

@@ -294,6 +294,21 @@ class TestCheckOnly(PhaseCase):
                 self.assertIn(spec["ok"], out)
                 self.assertNotIn("[DRY RUN]", out)
 
+    def test_each_artifact_phase_expands_home_directory(self) -> None:
+        home = self.tmp()
+        repo = home / "cass-operator"
+        repo.mkdir()
+        self.set_env("HOME", str(home))
+
+        for spec in PHASES:
+            if not spec["artifact"]:
+                continue
+            with self.subTest(phase=spec["key"]):
+                self.seed(spec["inputs"])
+                rc, out = self.run_phase(spec["key"], ["--check", "--artifact=~/cass-operator", NAME])
+                self.assertEqual(rc, 0, out)
+                self.assertIn(spec["ok"], out)
+
     def test_validation_check_remains_a_shallow_preflight(self) -> None:
         spec_dir = self.work_dir() / "spec"
         spec_dir.mkdir(parents=True)
@@ -547,6 +562,13 @@ class TestArgErrors(PhaseCase):
         rc, out = self.run_phase("code_analysis", ["--check", "--artifact=", NAME])
         self.assertEqual(rc, 1)
         self.assertIn("--artifact must be an existing directory", out)
+
+    def test_artifact_expansion_failure_uses_existing_error_contract(self) -> None:
+        with mock.patch.object(Path, "expanduser", side_effect=RuntimeError("home unavailable")):
+            rc, out = self.run_phase("code_analysis", ["--check", "--artifact=~/repo", NAME])
+
+        self.assertEqual(rc, 1)
+        self.assertEqual(out, "ERROR: --artifact must be an existing directory: ~/repo\n")
 
     def test_bug_confirmation_rejects_invalid_rounds(self) -> None:
         for value in ("abc", "0", "-1", "6"):
