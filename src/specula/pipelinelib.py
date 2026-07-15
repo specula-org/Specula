@@ -39,7 +39,6 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from specula import quota as _quota
-from specula.agent_registry import agent_spec
 from specula.phaselib import _logical_cwd, _normalize_artifact_dir, _wc_l
 from specula.tlc_resources import (
     MEMORY_LIMIT_ENV,
@@ -640,21 +639,33 @@ class Pipeline:
         else:
             model = os.environ.get("SPECULA_MODEL") or None
             if model is None:
-                spec = agent_spec(self.agent)
-                model_env = spec.model_env if spec is not None else None
-                if model_env is not None:
-                    model = os.environ.get(model_env) or None
+                adapter_model_env = {
+                    "claude-code": "CLAUDE_MODEL",
+                    "codex": "CODEX_MODEL",
+                    "copilot-cli": "COPILOT_MODEL",
+                    "opencode": "OPENCODE_MODEL",
+                    "pi": "PI_MODEL",
+                }.get(self.agent)
+                if adapter_model_env is not None:
+                    model = os.environ.get(adapter_model_env) or None
 
         if self.effort is not None:
             effort = self.effort or None
         else:
             effort = os.environ.get("SPECULA_EFFORT") or None
             if effort is None:
-                spec = agent_spec(self.agent)
-                if spec is not None:
-                    effort = spec.default_effort
-                    if effort is None and spec.effort_env is not None:
-                        effort = os.environ.get(spec.effort_env) or None
+                if self.agent == "claude-code":
+                    # Phase launchers explicitly pass max, overriding any
+                    # ambient CLAUDE_EFFORT value.
+                    effort = "max"
+                else:
+                    effort_env = {
+                        "codex": "CODEX_EFFORT",
+                        "opencode": "OPENCODE_EFFORT",
+                        "pi": "PI_EFFORT",
+                    }.get(self.agent)
+                    if effort_env is not None:
+                        effort = os.environ.get(effort_env) or None
 
         # The Claude adapter omits --effort for this explicit reset sentinel.
         if self.agent == "claude-code" and effort == "default":

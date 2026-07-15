@@ -68,9 +68,9 @@ uv tool install -e .
 specula setup
 ```
 
-Install with `-e` (editable): the `specula` command dispatches to code and scripts inside the checkout, so it must stay linked to it. The repository-root `./specula` shim provides the same dispatcher directly from a checkout.
+Install with `-e` (editable): the `specula` command dispatches to scripts inside the checkout, so it must stay linked to it.
 
-Setup downloads the TLA+ JARs, builds the CFA tool, prepares the MCP tool environments, and offers integration for Claude Code, Codex, and GitHub Copilot CLI when found on `PATH`. It reports and skips any missing setup-integrated CLI instead of prompting for it. OpenCode and Pi require separate configuration through their native CLIs and selected providers. Setup prompts for global or project-local skill installation when that choice applies.
+Setup downloads the TLA+ JARs, builds the CFA tool, prepares the MCP tool environments, and offers integration for each supported agent CLI found on `PATH`. It reports and skips any missing agent CLI instead of prompting for it. Setup prompts for global or project-local skill installation when that choice applies.
 
 For Codex, choose `y` to install skills and register MCP servers separately. Choose `plugin` to bundle the skills and MCP tools as `specula-codex@specula`, with cleaner namespacing and easier removal. Rerun `specula setup` and choose `plugin` again to update it.
 
@@ -88,18 +88,6 @@ More precisely, setup manages:
 Copilot MCP registration is user-level and follows `COPILOT_HOME`; the global/local setup choice controls only where skills are installed. Setup leaves an existing same-named MCP server unchanged and reports the conflict instead of overwriting it. Older Copilot CLI versions still install the skills, but MCP registration is skipped with an upgrade warning.
 
 Setup does **not** install `uv`, Python, a JDK, Maven, Git, `gh`, an agent CLI, target-language dependencies, GNU coreutils, or the optional sandbox dependencies. It does not install the `specula` command either; that is the `uv tool install -e .` step above.
-
-Install and authenticate the selected agent CLI separately. The OpenCode installation used by SREGym is:
-
-```bash
-npm install -g opencode-ai
-```
-
-The Pi installation used by tlaps-bench is:
-
-```bash
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent
-```
 
 The setup is safe to rerun when updating the checkout. Confirm the CLI afterward:
 
@@ -152,13 +140,9 @@ Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencod
 | OpenCode | `opencode` | Existing provider authentication configured in the native OpenCode CLI |
 | Pi | `pi` | Existing provider authentication configured in the native Pi CLI |
 
-Specula launches the installed agent CLI directly and uses its existing credentials. Authentication is managed by each native CLI and model provider; authenticate the CLI before starting a pipeline. Specula does not install agent CLIs or credentials.
+Specula launches the installed agent CLI directly and uses its existing credentials. Authenticate the CLI before starting a pipeline. Claude Code runs default to maximum reasoning effort; Codex and Copilot use their configured defaults unless `--effort` is supplied.
 
-Claude Code runs default to maximum reasoning effort; Codex and Copilot use their configured defaults unless `--effort` is supplied. Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. OpenCode passes effort through its native `--variant` option. Pi maps Specula's `max` effort to its native `xhigh` value.
-
-`--max-turns` maps to Copilot's autopilot continuation limit. Claude Code, Codex, OpenCode, and Pi accept the option for adapter compatibility but do not enforce it. OpenCode and Pi also do not support Specula's agent-side stop gate. The reviews between steps pass a fixed value of 30 instead of the pipeline option; these four adapters still ignore it.
-
-When configured in their native CLIs, OpenCode and Pi can use providers that expose local or OpenAI-compatible models.
+Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. OpenCode forwards it as a variant, while Pi maps `max` to `xhigh`. `--max-turns` maps to Copilot's autopilot continuation limit; the other adapters accept but ignore it.
 
 ## Output Structure
 

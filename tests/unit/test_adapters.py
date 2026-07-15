@@ -9,8 +9,7 @@ breaks every agent call.
 Each case runs the real adapter as a subprocess with a fake `claude`/`codex`/
 `copilot`/`opencode`/`pi` on PATH that records the argv (and, for Python adapters, stdin + the exported
 CLAUDE_CONFIG_DIR + a session-env marker) it observed, then asserts on the
-recording. Python adapters are reached through the checkout-local dispatcher;
-`codex` and `copilot-cli` are still bash (scripts/launch/adapters/*.sh).
+recording. All adapters are exercised through their shipped launch scripts.
 
 stdlib unittest, collected natively by pytest:
 
@@ -34,11 +33,12 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+CLAUDE_PY = REPO_ROOT / "src" / "specula" / "adapters" / "claude_code.py"
 OPENCODE_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "opencode.sh"
 PI_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "pi.sh"
 CODEX_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "codex.sh"
 COPILOT_SH = REPO_ROOT / "scripts" / "launch" / "adapters" / "copilot-cli.sh"
-ADAPTER_COMMAND = [sys.executable, "-m", "specula.adapters.cli"]
+EVENT_STREAM_PY = REPO_ROOT / "src" / "specula" / "adapters" / "event_stream.py"
 
 # A minimal well-formed claude result: the claude adapter parses this for
 # .log/.usage.json. codex/copilot don't parse it, so any text is fine for them.
@@ -239,18 +239,9 @@ class AdapterCase(unittest.TestCase):
         return f"--prompt-file={p}"
 
 
-class AdapterDocumentation(unittest.TestCase):
-    def test_usage_docs_list_all_shipped_adapters(self) -> None:
-        usage = (REPO_ROOT / "docs" / "Usage.md").read_text()
-        for name in ("claude-code", "codex", "copilot-cli", "opencode", "pi"):
-            self.assertIn(name, usage)
-        self.assertIn("npm install -g opencode-ai", usage)
-        self.assertIn("@earendil-works/pi-coding-agent", usage)
-
-
 # ── claude-code (Python port) ────────────────────────────────────────────────
 class ClaudeCodeAdapter(AdapterCase):
-    CMD = [*ADAPTER_COMMAND, "claude-code"]
+    CMD = [sys.executable, str(CLAUDE_PY)]
     FIXTURE = json.dumps(CLAUDE_JSON)
 
     def invoke(self, flags: list[str], *, env_extra: dict[str, str] | None = None) -> AdapterRun:
@@ -843,7 +834,7 @@ class ClaudeCodeAdapter(AdapterCase):
 
 # ── opencode (Python) ───────────────────────────────────────────
 class OpenCodeAdapter(AdapterCase):
-    CMD = [*ADAPTER_COMMAND, "opencode"]
+    CMD = [str(OPENCODE_SH)]
     RECORDS = [
         {
             "type": "text",
@@ -1289,7 +1280,7 @@ class OpenCodeAdapter(AdapterCase):
 
     def test_missing_executable_returns_127_and_writes_diagnostic(self) -> None:
         base = self.sandbox()
-        result = self.invoke(self.base_flags(base), env_extra={"PATH": ""}, with_fake=False)
+        result = self.invoke(self.base_flags(base), with_fake=False)
         self.assertEqual(result["returncode"], 127, result["stderr"])
         self.assertIn("opencode adapter: failed to launch opencode", (base / "out.log").read_text())
         usage = json.loads((base / "out.usage.json").read_text())
@@ -1319,22 +1310,10 @@ class OpenCodeAdapter(AdapterCase):
                 self.assertIn(diagnostic, result["stderr"])
                 self.assertEqual(result["argv"], [])
 
-    def test_executable_shim_reaches_python_help(self) -> None:
-        self.assertTrue(OPENCODE_SH.stat().st_mode & stat.S_IXUSR)
-        result = self.run_adapter(
-            [str(OPENCODE_SH)],
-            ["--help"],
-            fake_name="opencode",
-            fixture_text=self.FIXTURE,
-        )
-        self.assertEqual(result["returncode"], 0, result["stderr"])
-        self.assertIn("Adapter: opencode", result["stdout"])
-        self.assertIn("--prompt-file", result["stdout"])
-
 
 # ── pi (Python) ──────────────────────────────────────────────────────────────
 class PiAdapter(AdapterCase):
-    CMD = [*ADAPTER_COMMAND, "pi"]
+    CMD = [str(PI_SH)]
     RECORDS: list[dict[str, Any]] = [
         {
             "type": "session",
@@ -1847,7 +1826,7 @@ class PiAdapter(AdapterCase):
 
     def test_missing_executable_returns_127_and_writes_diagnostic(self) -> None:
         base = self.sandbox()
-        result = self.invoke(self.base_flags(base), env_extra={"PATH": ""}, with_fake=False)
+        result = self.invoke(self.base_flags(base), with_fake=False)
         self.assertEqual(result["returncode"], 127, result["stderr"])
         self.assertIn("pi adapter: failed to launch pi", (base / "out.log").read_text())
         usage = json.loads((base / "out.usage.json").read_text())
@@ -1876,18 +1855,6 @@ class PiAdapter(AdapterCase):
                 self.assertEqual(result["returncode"], 1)
                 self.assertIn(diagnostic, result["stderr"])
                 self.assertEqual(result["argv"], [])
-
-    def test_executable_shim_reaches_python_help(self) -> None:
-        self.assertTrue(PI_SH.stat().st_mode & stat.S_IXUSR)
-        result = self.run_adapter(
-            [str(PI_SH)],
-            ["--help"],
-            fake_name="pi",
-            fixture_text=self.FIXTURE,
-        )
-        self.assertEqual(result["returncode"], 0, result["stderr"])
-        self.assertIn("Adapter: pi", result["stdout"])
-        self.assertIn("--prompt-file", result["stdout"])
 
 
 # ── codex (bash) ────────────────────────────────────────────
@@ -2421,7 +2388,7 @@ class CopilotAdapter(AdapterCase):
         activity = base / "out.activity.jsonl"
         log = base / "out.log"
         proc = subprocess.Popen(
-            [*ADAPTER_COMMAND, "event-stream", "copilot", str(activity), str(log)],
+            [sys.executable, str(EVENT_STREAM_PY), "copilot", str(activity), str(log)],
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )

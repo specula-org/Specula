@@ -10,8 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from specula.adapters.utils import event_stream
-from specula.adapters.utils.text import summary
+from specula.adapters import event_stream
 
 
 @dataclass(frozen=True)
@@ -113,7 +112,7 @@ def _changes(before: dict[Path, tuple[int, int]], after: dict[Path, tuple[int, i
 def _safe_path(path: Path) -> str:
     """The agent picks these names, and they end up on the user's terminal —
     sanitize them exactly like every other agent-controlled string."""
-    return summary(path.as_posix(), 120)
+    return event_stream.summary(path.as_posix(), 120)
 
 
 def _describe_changes(changes: list[tuple[str, Path]]) -> str:

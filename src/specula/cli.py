@@ -74,10 +74,6 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(help_text())
         return 0
     sub, rest = args[0], args[1:]
-    if sub == "_adapter":
-        from specula.adapters.cli import main as adapter_main
-
-        return adapter_main(rest)
     for cmd, script, _ in COMMANDS:
         if sub == cmd:
             return _exec(["bash", str(SCRIPTS_DIR / script), *rest])

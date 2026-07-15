@@ -16,7 +16,14 @@ from __future__ import annotations
 
 import sys
 
-from .utils.json_cli import AdapterArgumentError, parse_options, run_json_cli
+if __package__:
+    from .utils.json_cli import AdapterArgumentError, parse_options, run_json_cli
+else:
+    from utils.json_cli import (  # type: ignore[import-not-found, no-redef]
+        AdapterArgumentError,
+        parse_options,
+        run_json_cli,
+    )
 
 HELP = __doc__
 

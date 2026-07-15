@@ -154,6 +154,7 @@ if [[ -z "$ACTIVITY_LOG" ]]; then
 fi
 
 ADAPTER_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EVENT_HELPER="$ADAPTER_DIR/../../../src/specula/adapters/event_stream.py"
 
 # JSON streaming arrived after the first Copilot CLI releases. Old clients
 # still stream plain output through the helper without unsupported flags.
@@ -166,7 +167,7 @@ if grep -q -- '--stream' <<< "$COPILOT_HELP"; then
 fi
 
 set +e
-"${CMD[@]}" 2>&1 | "$ADAPTER_DIR/../../../specula" _adapter event-stream copilot "$ACTIVITY_LOG" "$LOG_FILE"
+"${CMD[@]}" 2>&1 | python3 "$EVENT_HELPER" copilot "$ACTIVITY_LOG" "$LOG_FILE"
 PIPELINE_STATUS=("${PIPESTATUS[@]}")
 set -e
 
