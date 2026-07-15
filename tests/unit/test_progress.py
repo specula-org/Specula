@@ -261,7 +261,7 @@ class TestProgressParsing(unittest.TestCase):
                 "type": "message_end",
                 "message": {
                     "role": "assistant",
-                    "content": [{"type": "text", "text": "duplicated full text"}],
+                    "content": [{"type": "text", "text": "message-end-only text"}],
                     "usage": {
                         "input": 10,
                         "output": 20,
@@ -294,7 +294,7 @@ class TestProgressParsing(unittest.TestCase):
                 log,
                 (json.dumps(record).encode() + b"\n" for record in records),
             )
-            self.assertEqual(log.read_text(), "")
+            self.assertEqual(log.read_text(), "message-end-only text\n")
 
         self.assertEqual(
             status.usage,

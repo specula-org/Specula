@@ -1589,6 +1589,29 @@ class PiAdapter(AdapterCase):
         self.assertNotIn("cumulative snapshot", activity.read_text())
         self.assertEqual((base / "out.log").read_text(), "working\nreading src/main.py\ndone\n")
 
+    def test_message_end_without_deltas_writes_final_answer(self) -> None:
+        base = self.sandbox()
+        fixture = json.dumps(
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "final answer only"}],
+                    "stopReason": "stop",
+                    "usage": {},
+                },
+            }
+        )
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="pi",
+            fixture_text=fixture,
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual((base / "out.log").read_text(), "final answer only\n")
+
     def test_session_header_and_assistant_usage_reach_usage_sidecar(self) -> None:
         base = self.sandbox()
         result = self.invoke(self.base_flags(base))
@@ -1665,6 +1688,29 @@ class PiAdapter(AdapterCase):
                 )
                 self.assertEqual(result["returncode"], 75, result["stderr"])
                 self.assertIn("rate limit hit", result["stderr"])
+
+    def test_top_level_rate_limit_maps_to_retry_status(self) -> None:
+        fixture = json.dumps(
+            {
+                "type": "error",
+                "message": "HTTP 429: quota exhausted",
+                "statusCode": 429,
+            }
+        )
+        for native_status in (0, 1):
+            with self.subTest(native_status=native_status):
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="pi",
+                    fixture_text=fixture,
+                    env_extra={"ADAPTER_EXIT_CODE": str(native_status)},
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], 75, result["stderr"])
+                self.assertIn("rate limit hit", result["stderr"])
+                self.assertIn("HTTP 429: quota exhausted", result["stderr"])
 
     def test_incomplete_terminal_event_overrides_zero_native_exit(self) -> None:
         for name, fixture, diagnostic in (

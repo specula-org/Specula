@@ -265,8 +265,9 @@ def _structured_rate_limit_error(adapter_name: str, record: object) -> str | Non
         return terminal_error
     if record.get("type") == "error":
         error = record.get("error")
-        if _looks_rate_limited(error):
-            return summary(_diagnostic_message(error) or "provider rate limit", None)
+        if _looks_rate_limited(record):
+            diagnostic = _diagnostic_message(error) or _diagnostic_message(record)
+            return summary(diagnostic or "provider rate limit", None)
     return None
 
 
@@ -318,7 +319,11 @@ def _pi_events(record: object, concise: bool) -> list[_LogEvent]:
                 events.append(_LogEvent(message_end=True))
             return events
         if not concise:
-            return [_LogEvent(message_end=True)]
+            # Pi usually streams text_delta records first, but some providers
+            # populate only the terminal message. The stream handler uses this
+            # full text strictly as a fallback when it saw no deltas.
+            text = _pi_message_text(message)
+            return [_LogEvent(text=readable(text) if text else "", message_end=True)]
         text = _pi_message_text(message)
         return [_text_event(text, concise=True)] if text else []
     if record_type == "tool_execution_start":
@@ -439,6 +444,7 @@ def stream_events(
     usage_totals = UsageTotals()
     last_event = ""
     fragment_active = False
+    pi_message_had_fragments = False
     line_open = False
     terminal_record: object | None = None
     structured_error: str | None = None
@@ -488,7 +494,8 @@ def stream_events(
             log = None
 
     def handle_line(raw_line: bytes, *, raw_already_written: bool) -> None:
-        nonlocal fragment_active, last_event, line_open, rate_limit_error, structured_error, terminal_record
+        nonlocal fragment_active, last_event, line_open, pi_message_had_fragments
+        nonlocal rate_limit_error, structured_error, terminal_record
         decoded = raw_line.decode(errors="replace")
         keep, events, record = _read_line(adapter_name, decoded, concise=False)
         accumulate_usage(adapter_name, record, usage_totals)
@@ -525,9 +532,14 @@ def stream_events(
             write_raw(_compact_activity_line(adapter_name, record, raw_line))
         for event in events:
             if event.message_end:
-                if fragment_active and line_open:
-                    write_readable("\n")
+                if fragment_active:
+                    if line_open:
+                        write_readable("\n")
+                if not pi_message_had_fragments and event.text:
+                    last_event = event.text
+                    write_readable(event.text.rstrip("\n") + "\n")
                 fragment_active = False
+                pi_message_had_fragments = False
                 line_open = False
                 continue
             if event.fragment:
@@ -535,6 +547,8 @@ def stream_events(
                     continue
                 last_event = ""
                 fragment_active = True
+                if adapter_name == "pi":
+                    pi_message_had_fragments = True
                 write_readable(event.text)
                 line_open = not event.text.endswith("\n")
                 continue
