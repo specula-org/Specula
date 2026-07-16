@@ -468,6 +468,82 @@ class ClaudeCodeAdapter(AdapterCase):
         )
         self.assertEqual(r["returncode"], 75)
 
+    def test_terminal_policy_block_exits_shared_status(self) -> None:
+        base = self.sandbox()
+        record = {
+            "type": "result",
+            **CLAUDE_JSON,
+            "is_error": True,
+            "terminal_reason": "api_error",
+            "api_error_status": 400,
+            "result": "This content was flagged for possible cybersecurity risk.",
+        }
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+            env_extra={"ADAPTER_EXIT_CODE": "1"},
+        )
+        self.assertEqual(r["returncode"], 76, r["stderr"])
+
+    def test_streaming_plain_policy_diagnostic_uses_failed_cli_status(self) -> None:
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "working"}]}}),
+                "HTTP 400: This content was flagged for possible cybersecurity risk.",
+            ]
+        )
+        for native_rc, expected in (("9", 76), ("75", 75), ("0", 0)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="claude",
+                    fixture_text=fixture,
+                    record_extra=True,
+                    env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": native_rc},
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
+
+    def test_successful_stream_terminal_suppresses_later_plain_policy_diagnostic(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "result", **CLAUDE_JSON}),
+                "HTTP 400: This content was flagged for possible cybersecurity risk.",
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=fixture,
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": "9"},
+        )
+        self.assertEqual(r["returncode"], 9, r["stderr"])
+
+    def test_successful_result_quoting_policy_message_is_not_blocked(self) -> None:
+        base = self.sandbox()
+        record = {
+            "type": "result",
+            **CLAUDE_JSON,
+            "result": "The old run said output blocked by content filtering policy; the task is now complete.",
+        }
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+
     def test_rate_limit_in_stream_result_exits_75(self) -> None:
         base = self.sandbox()
         activity = base / "out.activity.jsonl"
@@ -1345,6 +1421,104 @@ class OpenCodeAdapter(AdapterCase):
             "OpenCode parent session not found in session database",
         )
 
+    def test_structured_policy_block_maps_to_shared_status(self) -> None:
+        base = self.sandbox()
+        records = [
+            {
+                "type": "error",
+                "sessionID": "ses_blocked",
+                "error": {
+                    "name": "APIError",
+                    "data": {
+                        "code": "content_policy_violation",
+                        "message": "Output blocked by content filtering policy",
+                        "statusCode": 400,
+                    },
+                },
+            },
+            {
+                "type": "step_finish",
+                "sessionID": "ses_blocked",
+                "part": {"type": "step-finish", "reason": "stop", "tokens": {}},
+            },
+        ]
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="opencode",
+            fixture_text="\n".join(json.dumps(record) for record in records) + "\n",
+            env_extra={"ADAPTER_EXIT_CODE": "1"},
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 76, result["stderr"])
+
+    def test_plain_policy_diagnostic_uses_failed_cli_status(self) -> None:
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "step_start", "sessionID": "ses_blocked", "part": {}}),
+                "HTTP 400: This content was flagged for possible cybersecurity risk.",
+            ]
+        )
+        for native_rc, expected in (("9", 76), ("75", 75)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="opencode",
+                    fixture_text=fixture,
+                    env_extra={"ADAPTER_EXIT_CODE": native_rc},
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], expected, result["stderr"])
+
+    def test_policy_error_followed_by_new_output_and_stop_is_recovered(self) -> None:
+        base = self.sandbox()
+        records = [
+            {
+                "type": "error",
+                "sessionID": "ses_recovered",
+                "error": {"data": {"code": "cyber_policy", "message": "content policy blocked response"}},
+            },
+            {
+                "type": "text",
+                "sessionID": "ses_recovered",
+                "part": {"type": "text", "text": "continued successfully"},
+            },
+            {
+                "type": "step_finish",
+                "sessionID": "ses_recovered",
+                "part": {"type": "step-finish", "reason": "stop", "tokens": {}},
+            },
+        ]
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="opencode",
+            fixture_text="\n".join(json.dumps(record) for record in records) + "\n",
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+
+    def test_native_rate_limit_wins_over_structured_policy_block(self) -> None:
+        base = self.sandbox()
+        fixture = json.dumps(
+            {
+                "type": "error",
+                "sessionID": "ses_blocked",
+                "error": {"data": {"code": "cyber_policy", "message": "content policy blocked response"}},
+            }
+        )
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="opencode",
+            fixture_text=fixture,
+            env_extra={"ADAPTER_EXIT_CODE": "75"},
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 75, result["stderr"])
+
     def test_structured_rate_limit_maps_native_failure_to_retry_status(self) -> None:
         base = self.sandbox()
         records = [
@@ -1840,6 +2014,73 @@ class PiAdapter(AdapterCase):
                 self.assertIn(message, result["stderr"])
                 self.assertEqual((base / "out.log").read_text(), f"adapter error: {message}\n")
 
+    def test_structured_policy_block_maps_to_shared_status(self) -> None:
+        base = self.sandbox()
+        fixture = json.dumps(
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [],
+                    "stopReason": "error",
+                    "errorMessage": "This content was flagged for possible cybersecurity risk.",
+                    "usage": {},
+                },
+            }
+        )
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="pi",
+            fixture_text=fixture,
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 76, result["stderr"])
+
+    def test_plain_policy_diagnostic_uses_failed_cli_status(self) -> None:
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "session", "id": "pi_blocked"}),
+                "HTTP 400: This content was flagged for possible cybersecurity risk.",
+            ]
+        )
+        for native_rc, expected in (("9", 76), ("75", 75)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="pi",
+                    fixture_text=fixture,
+                    env_extra={"ADAPTER_EXIT_CODE": native_rc},
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], expected, result["stderr"])
+
+    def test_native_rate_limit_wins_over_structured_policy_block(self) -> None:
+        base = self.sandbox()
+        fixture = json.dumps(
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [],
+                    "stopReason": "error",
+                    "errorMessage": "This content was flagged for possible cybersecurity risk.",
+                    "usage": {},
+                },
+            }
+        )
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="pi",
+            fixture_text=fixture,
+            env_extra={"ADAPTER_EXIT_CODE": "75"},
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 75, result["stderr"])
+
     def test_structured_rate_limit_maps_to_retry_status(self) -> None:
         for native_status in (0, 1):
             with self.subTest(native_status=native_status):
@@ -2312,6 +2553,135 @@ class CodexAdapter(AdapterCase):
                 r = self.invoke(self.base_flags(base), env_extra={"ADAPTER_EXIT_CODE": cli_rc})
                 self.assertEqual(r["returncode"], int(cli_rc), r["stderr"])
 
+    def test_policy_block_overrides_native_failure_with_activity_stream(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = json.dumps(
+            {
+                "type": "turn.failed",
+                "error": {
+                    "code": "cyber_policy",
+                    "message": "This content was flagged for possible cybersecurity risk.",
+                },
+            }
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": "9"},
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 76, r["stderr"])
+
+    def test_streaming_plain_policy_diagnostic_uses_failed_cli_status(self) -> None:
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": "thread-1"}),
+                "HTTP 400: This content was flagged for possible cybersecurity risk.",
+            ]
+        )
+        for native_rc, expected in (("9", 76), ("75", 75), ("0", 0)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="codex",
+                    fixture_text=fixture,
+                    env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": native_rc},
+                    record_extra=True,
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
+
+    def test_successful_stream_terminal_suppresses_later_plain_policy_diagnostic(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "turn.completed", "usage": {}}),
+                "HTTP 400: This content was flagged for possible cybersecurity risk.",
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": "9"},
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 9, r["stderr"])
+
+    def test_later_structured_record_supersedes_plain_policy_diagnostic(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = "\n".join(
+            [
+                "HTTP 400: This content was flagged for possible cybersecurity risk.",
+                json.dumps({"type": "turn.failed", "error": {"message": "unrelated transport failure"}}),
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": "9"},
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 9, r["stderr"])
+
+    def test_policy_error_followed_by_completed_turn_is_recovered(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "turn.failed",
+                        "error": {"code": "cyber_policy", "message": "content policy blocked response"},
+                    }
+                ),
+                json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "recovered"}}),
+                json.dumps({"type": "turn.completed", "usage": {}}),
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+
+    def test_progress_off_failed_policy_diagnostic_exits_shared_status(self) -> None:
+        base = self.sandbox()
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text="HTTP 400: output blocked by content filtering policy\n",
+            env_extra={"ADAPTER_EXIT_CODE": "9"},
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 76, r["stderr"])
+
+    def test_progress_off_successful_policy_quote_remains_success(self) -> None:
+        base = self.sandbox()
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text="The old log said output blocked by content filtering policy.\n",
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+
     def test_structured_turn_failure_is_logged_but_cli_owns_status(self) -> None:
         base = self.sandbox()
         activity = base / "out.activity.jsonl"
@@ -2343,6 +2713,11 @@ class CodexAdapter(AdapterCase):
                 "item",
                 {"type": "item.completed", "item": {"id": "item_1", "type": "error", "message": "lagged"}},
                 "adapter warning: lagged\n",
+            ),
+            (
+                "non-terminal-policy-diagnostic",
+                {"type": "error", "message": "content policy blocked one transient response"},
+                "adapter error: content policy blocked one transient response\n",
             ),
         ]
         for name, record, expected_log in cases:
@@ -2548,8 +2923,9 @@ class CopilotAdapter(AdapterCase):
         base = self.sandbox()
         r = self.invoke(self.base_flags(base))
         self.assertEqual(r["returncode"], 0)
-        # copilot -p "<prompt>" --allow-all --autopilot
-        self.assertEqual(r["argv"], ["-p", "the prompt", "--allow-all", "--autopilot"])
+        # --silent suppresses Copilot's stats footer without hiding provider
+        # diagnostics written to stderr.
+        self.assertEqual(r["argv"], ["-p", "the prompt", "--allow-all", "--autopilot", "--silent"])
 
     def test_autopilot_requires_supported_cli(self) -> None:
         base = self.sandbox()
@@ -2561,7 +2937,10 @@ class CopilotAdapter(AdapterCase):
     def test_model_flag_appended(self) -> None:
         base = self.sandbox()
         r = self.invoke(self.base_flags(base) + ["--model=gpt-5"])
-        self.assertEqual(r["argv"], ["-p", "the prompt", "--allow-all", "--autopilot", "--model", "gpt-5"])
+        self.assertEqual(
+            r["argv"],
+            ["-p", "the prompt", "--allow-all", "--autopilot", "--silent", "--model", "gpt-5"],
+        )
 
     def test_model_from_env(self) -> None:
         base = self.sandbox()
@@ -2594,7 +2973,7 @@ class CopilotAdapter(AdapterCase):
         self.assertEqual(r["returncode"], 0)
         self.assertEqual(
             r["argv"],
-            ["-p", "the prompt", "--allow-all", "--autopilot", "--reasoning-effort", "high"],
+            ["-p", "the prompt", "--allow-all", "--autopilot", "--silent", "--reasoning-effort", "high"],
         )
 
     def test_effort_alias_fallback(self) -> None:
@@ -2617,7 +2996,7 @@ class CopilotAdapter(AdapterCase):
         base = self.sandbox()
         r = self.invoke(self.base_flags(base) + ["--effort="])
         self.assertEqual(r["returncode"], 0, r["stderr"])
-        self.assertEqual(r["argv"], ["-p", "the prompt", "--allow-all", "--autopilot"])
+        self.assertEqual(r["argv"], ["-p", "the prompt", "--allow-all", "--autopilot", "--silent"])
 
     def test_output_redirected_to_log(self) -> None:
         base = self.sandbox()
@@ -2695,6 +3074,52 @@ class CopilotAdapter(AdapterCase):
         self.assertEqual(r["returncode"], 0, r["stderr"])
         self.assertEqual((base / "out.log").read_text(), fixture)
         self.assertEqual(activity.read_text(), fixture)
+
+    def test_old_cli_json_shaped_policy_text_is_not_an_error_event(self) -> None:
+        fixture = json.dumps(
+            {
+                "type": "session.error",
+                "data": {
+                    "errorType": "cyber_policy",
+                    "message": "The old run quoted a content policy blocked response.",
+                },
+            }
+        )
+        for native_rc in ("0", "9"):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="copilot",
+                    fixture_text=fixture,
+                    env_extra={
+                        "SPECULA_ACTIVITY_LOG": str(activity),
+                        "COPILOT_HELP_TEXT": "--autopilot\n--stream",
+                        "ADAPTER_EXIT_CODE": native_rc,
+                    },
+                )
+                self.assertEqual(r["returncode"], int(native_rc), r["stderr"])
+                self.assertEqual((base / "out.log").read_text(), fixture + "\n")
+                self.assertEqual(activity.read_text(), fixture)
+
+    def test_old_cli_plain_policy_failure_maps_to_shared_status(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = "HTTP 400: This content was flagged for possible cybersecurity risk.\n"
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra={
+                "SPECULA_ACTIVITY_LOG": str(activity),
+                "COPILOT_HELP_TEXT": "--autopilot\n--stream",
+                "ADAPTER_EXIT_CODE": "9",
+            },
+        )
+        self.assertEqual(r["returncode"], 76, r["stderr"])
 
     def test_cli_without_stream_support_falls_back_without_new_flags(self) -> None:
         base = self.sandbox()
@@ -2795,6 +3220,128 @@ class CopilotAdapter(AdapterCase):
             },
         )
         self.assertEqual(r["returncode"], 9, r["stderr"])
+
+    def test_policy_session_error_overrides_native_failure(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = json.dumps(
+            {
+                "type": "session.error",
+                "data": {
+                    "errorType": "cyber_policy",
+                    "message": "This content was flagged for possible cybersecurity risk.",
+                    "statusCode": 400,
+                },
+            }
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra={
+                "SPECULA_ACTIVITY_LOG": str(activity),
+                "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream",
+                "ADAPTER_EXIT_CODE": "9",
+            },
+        )
+        self.assertEqual(r["returncode"], 76, r["stderr"])
+
+    def test_json_stream_plain_policy_diagnostic_uses_failed_cli_status(self) -> None:
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "session.start", "data": {"sessionId": "session-1"}}),
+                "HTTP 400: This content was flagged for possible cybersecurity risk.",
+            ]
+        )
+        for native_rc, expected in (("9", 76), ("75", 75), ("0", 0)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="copilot",
+                    fixture_text=fixture,
+                    env_extra={
+                        "SPECULA_ACTIVITY_LOG": str(activity),
+                        "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream",
+                        "ADAPTER_EXIT_CODE": native_rc,
+                    },
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
+
+    def test_successful_stream_terminal_suppresses_later_plain_policy_diagnostic(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "result", "exitCode": 0}),
+                "HTTP 400: This content was flagged for possible cybersecurity risk.",
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra={
+                "SPECULA_ACTIVITY_LOG": str(activity),
+                "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream",
+                "ADAPTER_EXIT_CODE": "9",
+            },
+        )
+        self.assertEqual(r["returncode"], 9, r["stderr"])
+
+    def test_policy_session_error_followed_by_success_result_is_recovered(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "session.error",
+                        "data": {"errorType": "cyber_policy", "message": "content policy blocked response"},
+                    }
+                ),
+                json.dumps({"type": "assistant.message", "data": {"content": "recovered"}}),
+                json.dumps({"type": "result", "exitCode": 0}),
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra={
+                "SPECULA_ACTIVITY_LOG": str(activity),
+                "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream",
+            },
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+
+    def test_progress_off_failed_policy_diagnostic_exits_shared_status(self) -> None:
+        base = self.sandbox()
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text="HTTP 400: output blocked by content filtering policy\n",
+            env_extra={"COPILOT_HELP_TEXT": "--autopilot", "ADAPTER_EXIT_CODE": "9"},
+        )
+        self.assertEqual(r["returncode"], 76, r["stderr"])
+        self.assertIn("--silent", r["argv"])
+
+    def test_progress_off_successful_policy_quote_remains_success(self) -> None:
+        base = self.sandbox()
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text="The old log said output blocked by content filtering policy.\n",
+            env_extra={"COPILOT_HELP_TEXT": "--autopilot"},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
 
     @unittest.skipUnless(Path("/dev/full").exists(), "requires /dev/full")
     def test_readable_log_failure_keeps_raw_stream_and_fails_adapter(self) -> None:

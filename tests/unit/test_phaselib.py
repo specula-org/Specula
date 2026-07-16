@@ -49,6 +49,7 @@ if str(SRC) not in sys.path:  # test the tree this file lives in, installed or n
 import specula.progress as progress_module  # noqa: E402
 import specula.quota as quota  # noqa: E402
 from specula import phaselib  # noqa: E402
+from specula.adapters.utils.policy import POLICY_BLOCKED_RC  # noqa: E402
 from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
 from specula.skill_refs import CODEX_PLUGIN_NAME, prompt_skill_ids  # noqa: E402
 
@@ -767,6 +768,158 @@ class TestHandoffGate(PhaseCase):
         self.assertIn("FAILED  missing: next-phase prerequisites not met", out)
         self.assertNotIn("FAILED  passed: next-phase prerequisites not met", out)
 
+    def test_policy_block_with_complete_handoff_still_requires_continuation(self) -> None:
+        count = self.tmp() / "count"
+        handoff_calls: list[list[str]] = []
+
+        def check(_self: phaselib.SpecGenerationPhase, ws: phaselib.Workspace, names: list[str]) -> bool:
+            handoff_calls.append(names)
+            return all((ws.work_dir(name) / "modeling-brief.md").is_file() for name in names)
+
+        self.patch_attr(phaselib.SpecGenerationPhase, "check", check)
+        self.set_env("COUNT_FILE", str(count))
+        self.write_adapter(
+            'printf x >> "$COUNT_FILE"\n'
+            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            '[ "$(wc -c < "$COUNT_FILE")" -ne 1 ] || exit 76\n'
+        )
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(count.read_text(), "xx")
+        self.assertEqual(handoff_calls, [[NAME]])
+        self.assertIn("continuing once with a revised request", out)
+
+    def test_repeated_policy_block_is_not_whitened_by_preexisting_handoff(self) -> None:
+        count = self.tmp() / "count"
+        brief = self.work_dir() / "modeling-brief.md"
+        brief.parent.mkdir(parents=True, exist_ok=True)
+        brief.write_text("stale brief\n")
+        self.set_env("COUNT_FILE", str(count))
+        self.write_adapter('printf x >> "$COUNT_FILE"\nexit 76\n')
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, POLICY_BLOCKED_RC, out)
+        self.assertEqual(count.read_text(), "xx")
+
+    def test_policy_block_continues_once_with_changed_prompt_in_same_workspace(self) -> None:
+        count = self.tmp() / "count"
+        captures = self.tmp()
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("CAPTURE_DIR", str(captures))
+        self.write_adapter(
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in --prompt-file=*) prompt=${arg#*=} ;; esac; done\n'
+            'cp "$prompt" "$CAPTURE_DIR/prompt-$attempt.md"\n'
+            'printf "%s\\n" "$SPECULA_WORK_DIR" >> "$CAPTURE_DIR/workspaces"\n'
+            '[ "$attempt" -ne 1 ] || exit 76\n'
+            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+        )
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(count.read_text(), "xx")
+        first = (captures / "prompt-1.md").read_text()
+        second = (captures / "prompt-2.md").read_text()
+        self.assertNotIn("Continue After Provider Policy Interruption", first)
+        self.assertIn("Continue After Provider Policy Interruption", second)
+        self.assertTrue(second.startswith(first.rstrip()))
+        self.assertEqual((captures / "workspaces").read_text().splitlines(), [str(self.work_dir())] * 2)
+        self.assertIn("continuing once with a revised request", out)
+
+    def test_repeated_policy_block_stops_after_one_continuation(self) -> None:
+        count = self.tmp() / "count"
+        self.set_env("COUNT_FILE", str(count))
+        self.write_adapter('printf x >> "$COUNT_FILE"\nexit 76\n')
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, POLICY_BLOCKED_RC, out)
+        self.assertEqual(count.read_text(), "xx")
+        self.assertIn(f"adapter exited {POLICY_BLOCKED_RC}", out)
+
+    def test_policy_and_rate_limit_retry_budgets_are_independent(self) -> None:
+        count = self.tmp() / "count"
+        self.set_env("COUNT_FILE", str(count))
+        self.write_adapter(
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            '[ "$attempt" -ne 1 ] || exit 76\n'
+            '[ "$attempt" -ne 2 ] || exit 75\n'
+            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+        )
+        waits: list[int] = []
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(count.read_text(), "xxx")
+        self.assertEqual(waits, [1])
+
+    def test_policy_recovery_does_not_reset_spent_rate_limit_retries(self) -> None:
+        count = self.tmp() / "count"
+        self.set_env("COUNT_FILE", str(count))
+        self.write_adapter(
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            '[ "$attempt" -ne 1 ] || exit 75\n'
+            '[ "$attempt" -ne 2 ] || exit 76\n'
+            '[ "$attempt" -ne 3 ] || exit 75\n'
+            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+        )
+        waits: list[int] = []
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
+        self.assertEqual(count.read_text(), "xxx")
+        self.assertEqual(waits, [1])
+
+    def test_policy_recovery_is_independent_per_parallel_target(self) -> None:
+        counts = self.tmp()
+        self.set_env("COUNT_DIR", str(counts))
+        self.write_adapter(
+            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            'printf x >> "$COUNT_DIR/$name"\n'
+            'if [ "$name" = a ] && [ "$(wc -c < "$COUNT_DIR/$name")" -eq 1 ]; then exit 76; fi\n'
+            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+        )
+
+        rc, out = self.run_phase(
+            "code_analysis",
+            [
+                "--max-parallel=2",
+                f"--agent={self.adapter.stem}",
+                self.artifact_flag(),
+                "a|g|Go|r",
+                "b|g|Go|r",
+            ],
+        )
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((counts / "a").read_text(), "xx")
+        self.assertEqual((counts / "b").read_text(), "x")
+
+    def test_ordinary_adapter_failure_is_not_retried(self) -> None:
+        count = self.tmp() / "count"
+        self.set_env("COUNT_FILE", str(count))
+        self.write_adapter('printf x >> "$COUNT_FILE"\nexit 9\n')
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, 9, out)
+        self.assertEqual(count.read_text(), "x")
+
 
 class TestLegacyRepairIdentityFinalization(PhaseCase):
     def setUp(self) -> None:
@@ -1112,6 +1265,64 @@ class TestLegacyRepairIdentityFinalization(PhaseCase):
 
 
 class TestRunAgentBlocking(PhaseCase):
+    def test_policy_block_continues_once_with_revised_prompt(self) -> None:
+        adapter = self.tmp() / "adapter.sh"
+        count = self.tmp() / "count"
+        captures = self.tmp()
+        adapter.write_text(
+            "#!/bin/sh\n"
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in --prompt-file=*) prompt=${arg#*=} ;; --log=*) log=${arg#*=} ;; esac; done\n'
+            'cp "$prompt" "$CAPTURE_DIR/prompt-$attempt.md"\n'
+            '[ "$attempt" -ne 1 ] || exit 76\n'
+            'printf "continued\\n" > "$log"\n'
+        )
+        adapter.chmod(0o755)
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("CAPTURE_DIR", str(captures))
+
+        rc, text = phaselib.run_agent_blocking(
+            adapter,
+            "original prompt",
+            captures / "prompt.md",
+            captures / "turn.log",
+            phase_key="bug_confirmation",
+            work_dir=self.work_dir(),
+            claude_alias="profile",
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(text, "continued\n")
+        self.assertEqual(count.read_text(), "xx")
+        self.assertEqual((captures / "prompt-1.md").read_text(), "original prompt")
+        second_prompt = (captures / "prompt-2.md").read_text()
+        self.assertTrue(second_prompt.startswith("original prompt"))
+        self.assertIn(
+            "Continue After Provider Policy Interruption",
+            second_prompt,
+        )
+
+    def test_policy_block_in_blocking_turn_is_bounded(self) -> None:
+        adapter = self.tmp() / "adapter.sh"
+        count = self.tmp() / "count"
+        adapter.write_text('#!/bin/sh\nprintf x >> "$COUNT_FILE"\nexit 76\n')
+        adapter.chmod(0o755)
+        self.set_env("COUNT_FILE", str(count))
+
+        rc, _ = phaselib.run_agent_blocking(
+            adapter,
+            "original prompt",
+            self.tmp() / "prompt.md",
+            self.tmp() / "turn.log",
+            phase_key="bug_confirmation",
+            work_dir=self.work_dir(),
+            claude_alias="profile",
+        )
+
+        self.assertEqual(rc, POLICY_BLOCKED_RC)
+        self.assertEqual(count.read_text(), "xx")
+
     def test_turn_phase_scopes_stop_gate_sets_cwd_and_removes_stale_log(self) -> None:
         adapter = self.tmp() / "adapter.sh"
         capture = self.tmp() / "capture.txt"
@@ -2213,6 +2424,71 @@ class TestReviewPhase(PhaseCase):
         rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
         self.assertEqual(rc, 0, out)
         self.assertEqual(count.read_text(), "xx")
+        self.assertEqual(waits, [1])
+
+    def test_review_policy_block_continues_once_with_revised_prompt(self) -> None:
+        count = self.tmp() / "count"
+        prompts = self.tmp()
+        self.install_adapter(
+            "fake",
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in --prompt=*) prompt=${arg#*=} ;; esac; done\n'
+            'printf "%s" "$prompt" > "$PROMPT_DIR/prompt-$attempt.md"\n'
+            '[ "$attempt" -ne 1 ] || exit 76\n',
+        )
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("PROMPT_DIR", str(prompts))
+        self.set_env("SPECULA_PROGRESS", "off")
+
+        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(count.read_text(), "xx")
+        self.assertNotIn(
+            "Continue After Provider Policy Interruption",
+            (prompts / "prompt-1.md").read_text(),
+        )
+        first_prompt = (prompts / "prompt-1.md").read_text()
+        second_prompt = (prompts / "prompt-2.md").read_text()
+        self.assertTrue(second_prompt.startswith(first_prompt.rstrip()))
+        self.assertIn(
+            "Continue After Provider Policy Interruption",
+            second_prompt,
+        )
+
+    def test_review_policy_block_is_bounded(self) -> None:
+        count = self.tmp() / "count"
+        self.install_adapter("fake", 'printf x >> "$COUNT_FILE"\nexit 76\n')
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("SPECULA_PROGRESS", "off")
+
+        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+
+        self.assertEqual(rc, POLICY_BLOCKED_RC, out)
+        self.assertEqual(count.read_text(), "xx")
+
+    def test_review_policy_recovery_does_not_reset_rate_limit_retries(self) -> None:
+        count = self.tmp() / "count"
+        self.install_adapter(
+            "fake",
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            '[ "$attempt" -ne 1 ] || exit 75\n'
+            '[ "$attempt" -ne 2 ] || exit 76\n'
+            '[ "$attempt" -ne 3 ] || exit 75\n',
+        )
+        waits: list[int] = []
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+
+        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+
+        self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
+        self.assertEqual(count.read_text(), "xxx")
         self.assertEqual(waits, [1])
 
     def test_review_normalizes_signal_exit_status(self) -> None:

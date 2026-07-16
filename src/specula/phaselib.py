@@ -25,6 +25,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -32,6 +33,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import specula.progress as progress
 from specula import quota
+from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.prompts import render
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 from specula.tlc_resources import (
@@ -51,6 +53,29 @@ SPECULA_ROOT = SCRIPT_DIR.parent.parent
 LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
 AGENT_TERMINATION_GRACE_SECONDS = 2.0
 MAX_DEBATE_ROUNDS = 5
+
+
+@dataclass(frozen=True)
+class _LaunchRequest:
+    """One scheduler request with independent quota and policy state."""
+
+    target: str
+    rate_limit_attempt: int = 1
+    policy_recovery: bool = False
+
+
+_POLICY_RECOVERY_NOTE = """
+
+## Continue After Provider Policy Interruption
+
+The previous invocation was interrupted because the provider blocked a response under its content policy. Continue the same legitimate formal-verification task from the existing workspace. Inspect and preserve completed work, rephrase the blocked portion in neutral formal-verification terms, and complete every required deliverable for this phase. Do not repeat work that is already complete.
+"""
+
+
+def _policy_recovery_prompt(prompt: str) -> str:
+    """Change a blocked request while retaining its phase contract."""
+    return prompt.rstrip() + _POLICY_RECOVERY_NOTE
+
 
 # bash pathname expansion (`for d in .../*/`) orders by the locale collating
 # sequence; adopt the ambient locale so find_repo_dir picks the same repo the
@@ -599,8 +624,8 @@ class Phase:
         failures: list[tuple[str, int]] = []
         successful_names: set[str] = set()
         completed_names: set[str] = set()
-        pending: list[tuple[str, int]] = [(target, 1) for target in targets]
-        rate_limited: list[tuple[str, int]] = []
+        pending = [_LaunchRequest(target) for target in targets]
+        rate_limited: list[_LaunchRequest] = []
         pause_for_rate_limit = False
         stop_launching = False
         waiting_announced = False
@@ -609,9 +634,11 @@ class Phase:
             try:
                 while pending or running:
                     while pending and len(running) < max_parallel and not pause_for_rate_limit and not stop_launching:
-                        target, attempt = pending.pop(0)
-                        name = self.target_name(target)
-                        prompt = self.build_prompt(ws, target)
+                        request = pending.pop(0)
+                        name = self.target_name(request.target)
+                        prompt = self.build_prompt(ws, request.target)
+                        if request.policy_recovery:
+                            prompt = _policy_recovery_prompt(prompt)
                         self._launch(
                             ws,
                             name,
@@ -621,8 +648,9 @@ class Phase:
                             claude_alias,
                             adapter,
                             owner=running,
-                            target=target,
-                            attempt=attempt,
+                            target=request.target,
+                            attempt=request.rate_limit_attempt,
+                            policy_recovery=request.policy_recovery,
                         )
                         print()
 
@@ -645,9 +673,32 @@ class Phase:
                         if rc == 0:
                             successful_names.add(completed_agent.name)
                             continue
+                        if rc == POLICY_BLOCKED_RC:
+                            if not completed_agent.policy_recovery:
+                                print(
+                                    f"[{_ts()}] {completed_agent.name}: provider policy interrupted the run; "
+                                    "continuing once with a revised request"
+                                )
+                                pending.insert(
+                                    0,
+                                    _LaunchRequest(
+                                        completed_agent.target,
+                                        rate_limit_attempt=completed_agent.attempt,
+                                        policy_recovery=True,
+                                    ),
+                                )
+                            else:
+                                failures.append((completed_agent.name, rc))
+                            continue
                         if rc == quota.RATE_LIMIT_RC:
                             if self._reactive_rate_limit_enabled() and completed_agent.attempt <= retry_limit:
-                                rate_limited.append((completed_agent.target, completed_agent.attempt + 1))
+                                rate_limited.append(
+                                    _LaunchRequest(
+                                        completed_agent.target,
+                                        rate_limit_attempt=completed_agent.attempt + 1,
+                                        policy_recovery=completed_agent.policy_recovery,
+                                    )
+                                )
                                 pause_for_rate_limit = True
                             else:
                                 failures.append((completed_agent.name, rc))
@@ -658,14 +709,16 @@ class Phase:
                     if pause_for_rate_limit and any(rc != quota.RATE_LIMIT_RC for _, rc in failures):
                         # A permanent failure wins over 75, but permanent failures
                         # alone do not suppress independent batch targets.
-                        failures.extend((self.target_name(target), quota.RATE_LIMIT_RC) for target, _ in rate_limited)
+                        failures.extend(
+                            (self.target_name(request.target), quota.RATE_LIMIT_RC) for request in rate_limited
+                        )
                         stop_launching = True
 
                     if stop_launching:
                         # A 75 that cannot be retried stops new quota-consuming
                         # work. Let agents already in the current wave finish.
                         if pending:
-                            skipped = [self.target_name(target) for target, _ in pending]
+                            skipped = [self.target_name(request.target) for request in pending]
                             print(
                                 f"[{_ts()}] Rate limit stopped new launches; "
                                 f"skipping {len(skipped)} unstarted target(s): {', '.join(skipped)}"
@@ -674,7 +727,7 @@ class Phase:
                         rate_limited.clear()
                         pause_for_rate_limit = False
                     elif pause_for_rate_limit and not running:
-                        names_to_retry = ", ".join(self.target_name(target) for target, _ in rate_limited)
+                        names_to_retry = ", ".join(self.target_name(request.target) for request in rate_limited)
                         print(f"[{_ts()}] Rate limited: waiting before retrying {names_to_retry}")
                         self._wait_for_rate_limit()
                         # Retry only targets that returned 75. Successful targets
@@ -855,6 +908,7 @@ class Phase:
         owner: list[progress.RunningAgent] | None = None,
         target: str = "",
         attempt: int = 1,
+        policy_recovery: bool = False,
     ) -> progress.RunningAgent | None:
         files = self.agent_files(ws, name)
         for d in files["mkdirs"]:
@@ -947,6 +1001,7 @@ class Phase:
                 adapter_name=adapter.stem,
                 target=target,
                 attempt=attempt,
+                policy_recovery=policy_recovery,
             )
             if owner is not None:
                 owner.append(launched)
@@ -1006,7 +1061,7 @@ def run_agent_blocking(
     model: str | None = None,
     effort: str | None = None,
 ) -> tuple[int, str]:
-    """Run ONE agent invocation, blocking, and return (returncode, log text).
+    """Run an agent turn, blocking, and return (returncode, log text).
 
     The blocking sibling of `Phase._launch`: it shares the same adapter path, the
     same flag set (`--prompt-file` / `--max-turns` / `--claude-alias` /
@@ -1023,7 +1078,8 @@ def run_agent_blocking(
     phase deliverable (`confirmed-bugs.md`) exists only after all findings
     aggregate, never after one turn. ``stop_gate=True`` opts back into the
     original phase key and therefore its deliverable contract. Rate-limit (exit
-    75) is the caller's concern — this runs exactly one invocation.
+    75) is the caller's concern. A provider policy block (exit 76) gets one new
+    invocation in the same workspace with a revised continuation prompt.
     """
     caller_cwd = Path.cwd()
     adapter = adapter if adapter.is_absolute() else (caller_cwd / adapter).resolve()
@@ -1038,13 +1094,7 @@ def run_agent_blocking(
 
     prompt = materialize_skill_refs(prompt, adapter)
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
-    prompt_file.write_text(prompt)
-    with contextlib.suppress(OSError):
-        log_file.unlink()
     last_message_file = _last_message_path(log_file)
-    if adapter.stem == "codex":
-        with contextlib.suppress(OSError):
-            last_message_file.unlink()
     env = os.environ.copy()
     env["SPECULA_PHASE"] = phase_key if stop_gate else f"{phase_key}_turn"
     env["SPECULA_WORK_DIR"] = str(work_dir)
@@ -1076,16 +1126,29 @@ def run_agent_blocking(
         *_model_effort_argv(adapter, model, effort),
         f"--log={log_file}",
     ]
-    rc = subprocess.run(cmd, env=env, cwd=run_cwd).returncode
-    # Codex stdout is a complete CLI transcript, not the assistant's final
-    # response.  The adapter keeps that transcript in `log_file` for diagnosis
-    # and asks `codex exec --output-last-message` for the response separately.
-    # A missing Codex sidecar is an incomplete turn; never reinterpret the CLI
-    # transcript as an assistant answer. Other adapters' log contract remains
-    # result-only.
-    result_file = last_message_file if adapter.stem == "codex" else log_file
-    text = result_file.read_text(errors="replace") if result_file.is_file() else ""
-    return rc, text
+    for policy_attempt in range(2):
+        current_prompt = prompt if policy_attempt == 0 else _policy_recovery_prompt(prompt)
+        prompt_file.write_text(current_prompt)
+        with contextlib.suppress(OSError):
+            log_file.unlink()
+        if adapter.stem == "codex":
+            with contextlib.suppress(OSError):
+                last_message_file.unlink()
+
+        rc = subprocess.run(cmd, env=env, cwd=run_cwd).returncode
+        # Codex stdout is a complete CLI transcript, not the assistant's final
+        # response. The adapter keeps that transcript in `log_file` for
+        # diagnosis and asks `codex exec --output-last-message` for the response
+        # separately. A missing Codex sidecar is an incomplete turn; never
+        # reinterpret the CLI transcript as an assistant answer. Other
+        # adapters' log contract remains result-only.
+        result_file = last_message_file if adapter.stem == "codex" else log_file
+        text = result_file.read_text(errors="replace") if result_file.is_file() else ""
+        if rc != POLICY_BLOCKED_RC or policy_attempt == 1:
+            return rc, text
+        print(f"[{_ts()}] Provider policy interrupted the agent turn; continuing once with a revised request")
+
+    raise AssertionError("unreachable")
 
 
 class CodeAnalysisPhase(Phase):
@@ -2166,8 +2229,16 @@ Output:
         with _cleanup_on_signal():
             for name in names:
                 attempt = 1
+                policy_recovery = False
                 while True:
-                    rc = self._launch_review(ws, name, phase, adapter, claude_alias)
+                    rc = self._launch_review(
+                        ws,
+                        name,
+                        phase,
+                        adapter,
+                        claude_alias,
+                        policy_recovery=policy_recovery,
+                    )
                     if (
                         rc == quota.RATE_LIMIT_RC
                         and self._reactive_rate_limit_enabled()
@@ -2176,6 +2247,13 @@ Output:
                         print(f"[{_ts()}] Rate limited: waiting before retrying {name}")
                         self._wait_for_rate_limit()
                         attempt += 1
+                        continue
+                    if rc == POLICY_BLOCKED_RC and not policy_recovery:
+                        print(
+                            f"[{_ts()}] {name}: provider policy interrupted the review; "
+                            "continuing once with a revised request"
+                        )
+                        policy_recovery = True
                         continue
                     if rc != 0:
                         return self._failure_code([(name, rc)])
@@ -2204,7 +2282,16 @@ Output:
                 print(f"  {name}: (no review file generated — check log)")
         return 0
 
-    def _launch_review(self, ws: Workspace, name: str, phase: str, adapter: Path, claude_alias: str) -> int:
+    def _launch_review(
+        self,
+        ws: Workspace,
+        name: str,
+        phase: str,
+        adapter: Path,
+        claude_alias: str,
+        *,
+        policy_recovery: bool = False,
+    ) -> int:
         wd = ws.work_dir(name)
         # specgen/validation logs go under spec/ to match pipeline summary expectations
         log_dir = wd / "spec" if phase in ("specgen", "validation") else wd
@@ -2218,6 +2305,8 @@ Output:
         else:
             print(f"Unknown phase: {phase}")
             raise SystemExit(1)
+        if policy_recovery:
+            prompt = _policy_recovery_prompt(prompt)
         print(f"[{_ts()}] Reviewing {name} ({phase})...")
         log_dir.mkdir(parents=True, exist_ok=True)
         pid_file = log_dir / f"review-{phase}.pid"
@@ -2278,6 +2367,7 @@ Output:
                 activity_stamp=prelaunch_activity_stamp,
                 adapter_name=adapter.stem,
                 target=name,
+                policy_recovery=policy_recovery,
             )
             pid_file.write_text(f"{proc.pid}\n")
             print(f"  PID={proc.pid}  Log: {log_file}")
