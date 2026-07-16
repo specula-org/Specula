@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Adapter: copilot-cli
-# Capabilities: model-select, effort-select, auto-approve, background
+# Capabilities: model-select, effort-select, auto-approve, autopilot, background
 # stop-gate: NOT supported — Copilot CLI has no stop-hook mechanism. The
 # generic gate env vars (SPECULA_PHASE/SPECULA_WORK_DIR; see
 # src/specula/stop_gate.py) are simply never read here, so the execution
@@ -122,7 +122,13 @@ load_copilot_help() {
 # The adapter always runs the command in the foreground and redirects to log.
 # Copilot CLI reads skills from project .github/skills/ or global ~/.agents/skills/.
 
-CMD=(copilot -p "$PROMPT" --allow-all)
+load_copilot_help
+if ! grep -q -- '--autopilot' <<< "$COPILOT_HELP"; then
+  echo "copilot-cli adapter: autonomous execution requires --autopilot, but the installed Copilot CLI does not advertise it; upgrade Copilot CLI" >&2
+  exit 1
+fi
+
+CMD=(copilot -p "$PROMPT" --allow-all --autopilot)
 
 if [[ -n "$MODEL" ]]; then
   CMD+=(--model "$MODEL")

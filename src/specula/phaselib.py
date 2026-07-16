@@ -247,6 +247,7 @@ class Phase:
     accepts_artifact = True  # bug_classification takes no --artifact (rejects it)
     artifact_rejection_message: str | None = None
     dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
+    next_phase_key: str | None = None  # consumer whose existing check() validates this handoff
     progress_config = progress.ProgressConfig()
     # Tri-state tuning values set in run(): None = unspecified, "" = explicit
     # reset to the adapter/CLI default, non-empty = explicit override.
@@ -706,6 +707,12 @@ class Phase:
         )
         failed_names = {name for name, _ in failures}
         finalized = [(name, rc) for name, rc in finalized if name not in failed_names]
+        invalid_names = {name for name, _ in integrity_failures + finalized}
+        handoff_failures = self.check_handoff(
+            ws,
+            [name for name in names if name in successful_names and name not in invalid_names],
+            dry_run=dry_run,
+        )
 
         self.summarize(ws, names)
         if not dry_run:
@@ -720,12 +727,17 @@ class Phase:
             print("Output validation failures:")
             for name, rc in finalized:
                 print(f"  FAILED  {name}: invalid phase output (exit {rc})")
+        if handoff_failures:
+            print()
+            print("Handoff validation failures:")
+            for name, rc in handoff_failures:
+                print(f"  FAILED  {name}: next-phase prerequisites not met (exit {rc})")
         if integrity_failures:
             print()
             print("Output integrity failures:")
             for name, rc in integrity_failures:
                 print(f"  FAILED  {name}: protected output was restored (exit {rc})")
-        return self._failure_code(failures + integrity_failures + finalized)
+        return self._failure_code(failures + integrity_failures + finalized + handoff_failures)
 
     def run_alternate(
         self,
@@ -760,6 +772,26 @@ class Phase:
         invalid artifact after a nominally successful adapter exit.
         """
         return []
+
+    def check_handoff(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        """Reuse the consumer's prerequisite check before publishing success.
+
+        The consumer runs this same ``check()`` again when it starts. Checking
+        both sides of a potentially long wait catches incomplete producer runs
+        immediately without creating a second output-contract implementation.
+        """
+        if dry_run or not names or self.next_phase_key is None:
+            return []
+        next_phase = PHASES[self.next_phase_key]
+        print()
+        print(f"Checking handoff to {self.next_phase_key}...")
+        return [(name, 1) for name in names if not next_phase.check(ws, [name])]
 
     def capture_output_integrity(
         self,
@@ -1058,6 +1090,7 @@ def run_agent_blocking(
 
 class CodeAnalysisPhase(Phase):
     key = "code_analysis"
+    next_phase_key = "spec_generation"
     title = "Specula — Code Analysis Batch Runner"
     usage = r"""
 Batch launcher: spawn one agent per target system for code analysis.
@@ -1181,6 +1214,7 @@ Write your outputs to:
 
 class SpecGenerationPhase(Phase):
     key = "spec_generation"
+    next_phase_key = "harness_generation"
     title = "Specula — Spec Generation Batch Runner"
     usage = r"""
 Batch launcher: spawn one agent per target system for TLA+ spec generation.
@@ -1312,6 +1346,7 @@ Expected files:
 
 class HarnessGenerationPhase(Phase):
     key = "harness_generation"
+    next_phase_key = "spec_validation"
     title = "Specula — Harness Generation (Phase 2.5)"
     usage = r"""
 Batch launcher: spawn one agent per target system for harness generation (Phase 2.5).
@@ -1555,6 +1590,7 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
 
 class SpecValidationPhase(Phase):
     key = "spec_validation"
+    next_phase_key = "bug_confirmation"
     title = "Specula — Spec Validation Batch Runner"
     usage = r"""
 Batch launcher: spawn one agent per target system for spec validation.
@@ -1706,6 +1742,7 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
 
 class BugConfirmationPhase(Phase):
     key = "bug_confirmation"
+    next_phase_key = "bug_classification"
     title = "Specula — Bug Confirmation Batch Runner"
     usage = r"""
 Bug confirmation for each target system. By DEFAULT this runs parallel
@@ -1809,6 +1846,7 @@ Prerequisites:
         debate = bool(ws.opts.get("debate"))
         rounds = int(str(ws.opts.get("rounds", "5")))
         failures: list[tuple[str, int]] = []
+        successful_names: list[str] = []
         retry_limit = self._rate_limit_retries()
         for name in names:
             if not dry_run:
@@ -1846,10 +1884,18 @@ Prerequisites:
                 failures.append((name, code))
                 if code == quota.RATE_LIMIT_RC:
                     break
+            else:
+                successful_names.append(name)
+        handoff_failures = self.check_handoff(ws, successful_names, dry_run=dry_run)
         self.summarize(ws, names)
         if not dry_run:
             self._acceptance(ws, names)
-        return self._failure_code(failures)
+        if handoff_failures:
+            print()
+            print("Handoff validation failures:")
+            for name, rc in handoff_failures:
+                print(f"  FAILED  {name}: next-phase prerequisites not met (exit {rc})")
+        return self._failure_code(failures + handoff_failures)
 
     def finalize_outputs(
         self,

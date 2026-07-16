@@ -142,7 +142,7 @@ Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencod
 
 Specula launches the installed agent CLI directly and uses its existing credentials. Authenticate the CLI before starting a pipeline. Claude Code runs default to maximum reasoning effort; Codex and Copilot use their configured defaults unless `--effort` is supplied.
 
-Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. OpenCode forwards it as a variant, while Pi forwards it as a thinking level.
+Specula runs Copilot CLI with `--autopilot` and fails before launching a task when the installed CLI does not advertise that capability. Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. OpenCode forwards it as a variant, while Pi forwards it as a thinking level.
 
 `--max-turns` maps to Copilot's autopilot continuation limit. Claude Code, Codex, OpenCode, and Pi accept the option for adapter compatibility but do not enforce it. The reviews between steps pass a fixed value of 30 instead of the pipeline option; all four adapters still ignore it. OpenCode and Pi do not support Specula's agent-side stop gate.
 
@@ -230,7 +230,7 @@ This writes `.specula-output/modeling-brief.md` and `.specula-output/analysis-re
 specula specgen --agent=codex --artifact=/path/to/source name
 ```
 
-A single-target individual command uses `.specula-output/` in the current directory; a multi-target command uses `<name>/.specula-output/` for each target. When `SPECULA_RUN_DIR` is set, every target uses `$SPECULA_RUN_DIR/<name>/.specula-output/`. A downstream command stops if its required files from the preceding step are missing.
+A single-target individual command uses `.specula-output/` in the current directory; a multi-target command uses `<name>/.specula-output/` for each target. When `SPECULA_RUN_DIR` is set, every target uses `$SPECULA_RUN_DIR/<name>/.specula-output/`. After an adapter exits successfully, each nonterminal step reuses the next step's existing prerequisite check before returning; the downstream command repeats that same check when it starts, so a wait between steps cannot turn an earlier success into an unchecked handoff.
 
 Use `--check` to run a lightweight path-level preflight without starting an agent. It checks the paths currently gated by that step, but does not validate file contents; warnings such as zero trace files remain non-fatal:
 

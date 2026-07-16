@@ -2525,9 +2525,12 @@ class CodexAdapter(AdapterCase):
 # ── copilot-cli (bash) ───────────────────────────────────────────────────────
 class CopilotAdapter(AdapterCase):
     CMD = ["bash", str(COPILOT_SH)]
+    DEFAULT_HELP = "--autopilot"
 
     def invoke(self, flags: list[str], *, env_extra: dict[str, str] | None = None) -> AdapterRun:
-        return self.run_adapter(self.CMD, flags, fake_name="copilot", fixture_text="copilot ran\n", env_extra=env_extra)
+        env = {"COPILOT_HELP_TEXT": self.DEFAULT_HELP}
+        env.update(env_extra or {})
+        return self.run_adapter(self.CMD, flags, fake_name="copilot", fixture_text="copilot ran\n", env_extra=env)
 
     def base_flags(self, base: Path) -> list[str]:
         return [self.with_prompt_file(base), f"--log={base}/out.log"]
@@ -2536,13 +2539,20 @@ class CopilotAdapter(AdapterCase):
         base = self.sandbox()
         r = self.invoke(self.base_flags(base))
         self.assertEqual(r["returncode"], 0)
-        # copilot -p "<prompt>" --allow-all
-        self.assertEqual(r["argv"], ["-p", "the prompt", "--allow-all"])
+        # copilot -p "<prompt>" --allow-all --autopilot
+        self.assertEqual(r["argv"], ["-p", "the prompt", "--allow-all", "--autopilot"])
+
+    def test_autopilot_requires_supported_cli(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(self.base_flags(base), env_extra={"COPILOT_HELP_TEXT": "--allow-all"})
+        self.assertEqual(r["returncode"], 1)
+        self.assertIn("does not advertise it; upgrade Copilot CLI", r["stderr"])
+        self.assertEqual(r["argv"], [])  # help probe only; task was never launched
 
     def test_model_flag_appended(self) -> None:
         base = self.sandbox()
         r = self.invoke(self.base_flags(base) + ["--model=gpt-5"])
-        self.assertEqual(r["argv"], ["-p", "the prompt", "--allow-all", "--model", "gpt-5"])
+        self.assertEqual(r["argv"], ["-p", "the prompt", "--allow-all", "--autopilot", "--model", "gpt-5"])
 
     def test_model_from_env(self) -> None:
         base = self.sandbox()
@@ -2570,19 +2580,19 @@ class CopilotAdapter(AdapterCase):
         base = self.sandbox()
         r = self.invoke(
             self.base_flags(base) + ["--claude-alias=claude", "--effort=high"],
-            env_extra={"COPILOT_HELP_TEXT": "  --reasoning-effort <level>"},
+            env_extra={"COPILOT_HELP_TEXT": "  --autopilot\n  --reasoning-effort <level>"},
         )
         self.assertEqual(r["returncode"], 0)
         self.assertEqual(
             r["argv"],
-            ["-p", "the prompt", "--allow-all", "--reasoning-effort", "high"],
+            ["-p", "the prompt", "--allow-all", "--autopilot", "--reasoning-effort", "high"],
         )
 
     def test_effort_alias_fallback(self) -> None:
         base = self.sandbox()
         r = self.invoke(
             self.base_flags(base) + ["--effort=max"],
-            env_extra={"COPILOT_HELP_TEXT": "  --effort <level>"},
+            env_extra={"COPILOT_HELP_TEXT": "  --autopilot\n  --effort <level>"},
         )
         self.assertEqual(r["returncode"], 0)
         self.assertEqual(r["argv"][-2:], ["--effort", "max"])
@@ -2598,7 +2608,7 @@ class CopilotAdapter(AdapterCase):
         base = self.sandbox()
         r = self.invoke(self.base_flags(base) + ["--effort="])
         self.assertEqual(r["returncode"], 0, r["stderr"])
-        self.assertEqual(r["argv"], ["-p", "the prompt", "--allow-all"])
+        self.assertEqual(r["argv"], ["-p", "the prompt", "--allow-all", "--autopilot"])
 
     def test_output_redirected_to_log(self) -> None:
         base = self.sandbox()
@@ -2633,7 +2643,7 @@ class CopilotAdapter(AdapterCase):
             fixture_text=fixture,
             env_extra={
                 "SPECULA_ACTIVITY_LOG": str(activity),
-                "COPILOT_HELP_TEXT": "--reasoning-effort\n--output-format\n--stream",
+                "COPILOT_HELP_TEXT": "--autopilot\n--reasoning-effort\n--output-format\n--stream",
             },
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
@@ -2654,7 +2664,7 @@ class CopilotAdapter(AdapterCase):
             self.base_flags(base),
             fake_name="copilot",
             fixture_text="old copilot completed\n",
-            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "COPILOT_HELP_TEXT": "--stream"},
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "COPILOT_HELP_TEXT": "--autopilot\n--stream"},
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
         self.assertNotIn("--output-format", r["argv"])
@@ -2671,7 +2681,7 @@ class CopilotAdapter(AdapterCase):
             self.base_flags(base),
             fake_name="copilot",
             fixture_text=fixture,
-            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "COPILOT_HELP_TEXT": "--stream"},
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "COPILOT_HELP_TEXT": "--autopilot\n--stream"},
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
         self.assertEqual((base / "out.log").read_text(), fixture)
@@ -2685,7 +2695,7 @@ class CopilotAdapter(AdapterCase):
             self.base_flags(base),
             fake_name="copilot",
             fixture_text="legacy copilot completed\n",
-            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "COPILOT_HELP_TEXT": "--autopilot"},
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
         self.assertNotIn("--output-format", r["argv"])
@@ -2749,7 +2759,10 @@ class CopilotAdapter(AdapterCase):
             self.base_flags(base),
             fake_name="copilot",
             fixture_text=fixture,
-            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "COPILOT_HELP_TEXT": "--output-format\n--stream"},
+            env_extra={
+                "SPECULA_ACTIVITY_LOG": str(activity),
+                "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream",
+            },
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
         self.assertEqual(
@@ -2768,7 +2781,7 @@ class CopilotAdapter(AdapterCase):
             fixture_text=fixture,
             env_extra={
                 "SPECULA_ACTIVITY_LOG": str(activity),
-                "COPILOT_HELP_TEXT": "--output-format\n--stream",
+                "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream",
                 "ADAPTER_EXIT_CODE": "9",
             },
         )
@@ -2792,7 +2805,7 @@ class CopilotAdapter(AdapterCase):
                     fixture_text=fixture,
                     env_extra={
                         "SPECULA_ACTIVITY_LOG": str(activity),
-                        "COPILOT_HELP_TEXT": "--output-format\n--stream",
+                        "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream",
                         "ADAPTER_EXIT_CODE": cli_rc,
                     },
                 )
@@ -2811,7 +2824,10 @@ class CopilotAdapter(AdapterCase):
             [self.with_prompt_file(base), f"--log={log}"],
             fake_name="copilot",
             fixture_text=final,
-            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "COPILOT_HELP_TEXT": "--output-format\n--stream"},
+            env_extra={
+                "SPECULA_ACTIVITY_LOG": str(activity),
+                "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream",
+            },
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
         self.assertIn("activity log", r["stderr"])
