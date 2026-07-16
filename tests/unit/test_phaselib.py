@@ -536,6 +536,8 @@ class TestRepairMode(PhaseCase):
         self.assertIn(f"--log={wd / 'spec-repair.log'}", out)
         body = (wd / ".spec-repair-prompt.md").read_text()
         self.assertIn("REPAIR MODE", body)
+        self.assertIn("request's cited evidence", body)
+        self.assertIn("do not optimize merely for making the artifact disappear", body)
         for skill in ("bug-confirmation", "validation-workflow", "tla-trace-workflow", "tla-checking-workflow"):
             self.assertIn(f"**{skill}**", body)
             self.assertNotIn(f"${skill}", body)

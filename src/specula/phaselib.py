@@ -1678,9 +1678,12 @@ Prerequisites:
 
 You are running spec validation in **REPAIR MODE**. The bug-confirmation phase handed
 back counterexamples it judged to be spec / fault-model / invariant **artifacts** (not
-real bugs), each recorded as a repair request. Repair the spec so the artifact no longer
-arises, re-validate, re-run model checking, and mark each request CONSUMED. The pipeline
-then re-confirms the fresh output — you do not re-check anything here.
+real bugs), each recorded as a repair request. Use each request's cited evidence and
+cross-check the relevant implementation, tests, documentation, and declared failure model
+to revise the spec, fault model, or invariant so it faithfully expresses what the system
+permits and guarantees; do not optimize merely for making the artifact disappear.
+Re-validate, re-run model checking, and mark each request CONSUMED. The pipeline then
+re-confirms the fresh output — you do not re-check anything here.
 
 ## Inputs
 - **Repair requests**: {spec_dir}/repair-requests/   (process ONLY status OPEN)

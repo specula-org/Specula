@@ -129,13 +129,17 @@ Phase 3 in repair mode (`--repair`) processes each request with status `OPEN`:
 3. Apply the repair for its `target`:
    - **SPEC_REPAIR** — tighten the cited action / add the missing guard in `base.tla` so the model matches the implementation at the cited `file:line`.
    - **FAULT_MODEL** — correct the fault model as a whole: the fault action's semantics in `base.tla`, its counter/wrapper in `MC.tla`, the cfg constants, or removing a fault that is not in the system's failure model. Not just `MC.cfg` bounds.
-   - **INVARIANT** — weaken / correct the cited invariant per the evidence.
+   - **INVARIANT** — revise the cited invariant so it expresses the safety property supported by the request's evidence, cross-checked against the relevant implementation and developer intent. Weakening is sometimes the right consequence, because a false violation often reveals an over-strong requirement, but weakening is never the goal by itself.
+     - Explain why the old violation is an artifact and identify the exact requirement the old invariant imposed that the evidence does not support.
+     - Preserve every part of the invariant that the evidence still supports. Make the smallest evidence-backed revision for this request, then follow Step 4 in order: full trace validation first, scoped model checking second. Do not weaken the invariant again in response to a counterexample from that re-run; record the result and leave the fresh classification to the next Phase 4 pass.
+     - Show that the revised invariant remains a falsifiable oracle in the affected hunt cfgs: identify modeled behavior that could make its predicate false when the prohibited behavior occurs. Do not replace it with `TRUE`, a type predicate already implied by `TypeOK`, an antecedent that is unreachable or always false in every affected cfg, an oracle flag that no modeled transition ever assigns its violating value, or a feature/config guard that disables it in every affected cfg. If another enabled invariant fully subsumes it, record that fact and do not count it as independent coverage.
+     - If the evidence supports no safety property in this area, remove the invariant from the affected cfg wiring instead of replacing it with a vacuous predicate. Keep the definition only if another cfg still uses it, and mark the property not applicable in `brief-coverage.md` and the affected cfg's `bug-report.md` entry so it is not counted as coverage.
 4. Re-validate (follow the validation-workflow skill):
    - Run **full trace validation on all traces** — the soundness gate. If the repair excludes a real trace, it is wrong; undo it and reconsider.
    - Re-run model checking on the request's `scope.hunt_cfgs`, and update `bug-report.md` for the affected cfg.
 5. Set `status: CONSUMED` and append a `History` entry (tag `phase3-repair`) describing what changed and the re-run result (original CE gone / new CE / unchanged).
 
-Process **only** active `OPEN` requests here; never touch `CONSUMED` or `DEFERRED`. The implementation is ground truth — do not overfit the spec to make a trace pass (model checking catches overfit repairs; see the validation-workflow skill). Do not edit `confirmed-bugs.md` in repair mode — the next Phase 4 confirmation pass owns it.
+Process **only** active `OPEN` requests here; never touch `CONSUMED` or `DEFERRED`. The request's cited evidence, cross-checked against the relevant source, tests, documentation, and declared failure model, is the ground truth: do not revise the model or invariant merely to make a trace pass, remove the original counterexample, or obtain a green TLC run. Model checking can show that the revised invariant holds in the explored state space; it cannot by itself show that the invariant still has useful detection power. Do not edit `confirmed-bugs.md` in repair mode — the next Phase 4 confirmation pass owns it.
 
 ## When NOT to create a request
 

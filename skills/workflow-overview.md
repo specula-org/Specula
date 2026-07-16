@@ -111,7 +111,7 @@ Verify spec reproduces every state transition in real traces. Catches spec-imple
 
 ### 3B: Model Checking — Convergence
 
-Run `MC.cfg` (0 faults) to verify structural invariants hold. Fix spec issues (Case A: invariant too strong, Case B: spec modeling issue).
+Run `MC.cfg` (0 faults) to verify structural invariants hold. Fix fidelity issues (Case A: invariant mismatch, Case B: spec modeling issue).
 
 ### 3C: Bug Hunting
 
