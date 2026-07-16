@@ -1,6 +1,6 @@
 # TLA+ Model Checking Workflow
 
-Run TLC model checking, monitor execution, analyze counterexamples, and determine whether violations stem from overly-strong invariants, spec modeling issues, or real system bugs.
+Run TLC model checking, monitor execution, analyze counterexamples, and determine whether violations stem from invariant mismatches, spec modeling issues, or real system bugs.
 
 ## Input / Output
 
@@ -29,7 +29,7 @@ Every counterexample falls into exactly one category:
 
 | Case | Meaning | Who is Wrong | Action |
 |------|---------|-------------|--------|
-| **Case A** | Invariant Too Strong | Invariant | Weaken the invariant |
+| **Case A** | Invariant Mismatch | Invariant | Revise the invariant to match the implementation-backed safety property |
 | **Case B** | Spec Modeling Issue | Spec | Fix the spec to match implementation |
 | **Case C** | Real Bug | Implementation | STOP — report to user immediately |
 
@@ -174,18 +174,19 @@ If the counterexample's preconditions look implausible in the real system (e.g.,
 
 ### Step 4: Classify the Counterexample
 
-#### Case A: Invariant Too Strong
+#### Case A: Invariant Mismatch
 
 **Signs**:
 - The behavior in the counterexample is reasonable and expected in the real system
 - The implementation intentionally allows this state
-- The invariant is too restrictive — it excludes legitimate system states
+- The invariant encodes a requirement the implementation does not promise — often it is too restrictive, incomplete, or stated at the wrong level
 
 **Action**:
 1. Explain to the user why the behavior is reasonable (cite implementation code)
-2. Propose a weakened invariant that permits this legitimate behavior
-3. Apply the modification
-4. Restart model checking
+2. Identify the exact false requirement in the old invariant and separate it from the constraints the implementation still guarantees
+3. Revise the invariant to express the implementation-backed safety property, preserving every still-valid constraint; weakening may be a consequence, but it is not the objective
+4. Make the smallest evidence-backed revision and restart model checking. Treat every further counterexample as fresh evidence: return to Step 1 and classify it independently before making another change
+5. Confirm that the revised invariant remains a falsifiable oracle in the affected cfgs: identify modeled behavior that could make its predicate false when the prohibited behavior occurs. Do not accept `TRUE`, a type predicate already implied by `TypeOK`, an antecedent that is unreachable or always false in every affected cfg, an oracle flag that no modeled transition ever assigns its violating value, or a feature/config guard that disables the check in every affected cfg. If another enabled invariant fully subsumes it, record that fact and do not count it as independent coverage. If the implementation genuinely promises no safety property in this area, remove the invariant from the affected cfg wiring instead of counting it as coverage; when the current workflow uses `brief-coverage.md` and per-cfg `bug-report.md` entries, mark the property not applicable there
 
 #### Case B: Spec Modeling Issue
 
