@@ -2195,6 +2195,8 @@ class CodexAdapter(AdapterCase):
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--output-last-message",
                 str(base / "out.last-message.txt"),
+                "-c",
+                "tool_output_token_limit=10000",
                 "-",
             ],
         )
@@ -2276,6 +2278,8 @@ class CodexAdapter(AdapterCase):
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--output-last-message",
                 str(base / "out.last-message.txt"),
+                "-c",
+                "tool_output_token_limit=10000",
                 "--json",
                 "-",
             ],
@@ -2440,6 +2444,8 @@ class CodexAdapter(AdapterCase):
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--output-last-message",
                 str(base / "out.last-message.txt"),
+                "-c",
+                "tool_output_token_limit=10000",
                 "-m",
                 "gpt-5.5",
                 "-c",
@@ -2458,7 +2464,8 @@ class CodexAdapter(AdapterCase):
         self.assertEqual(r["returncode"], 0)
         argv = r["argv"]
         self.assertEqual(argv[argv.index("-m") + 1], "gpt-5.6-sol")
-        self.assertEqual(argv[argv.index("-c") + 1], "model_reasoning_effort=ultra")
+        configs = [argv[i + 1] for i, arg in enumerate(argv[:-1]) if arg == "-c"]
+        self.assertEqual(configs, ["tool_output_token_limit=10000", "model_reasoning_effort=ultra"])
         self.assertEqual(r["modelenv"], "<unset>")
         self.assertEqual(r["effortenv"], "<unset>")
 
@@ -2485,6 +2492,8 @@ class CodexAdapter(AdapterCase):
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--output-last-message",
                 str(base / "out.last-message.txt"),
+                "-c",
+                "tool_output_token_limit=10000",
                 "-",
             ],
         )
