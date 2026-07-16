@@ -293,7 +293,7 @@ class TestProgressParsing(unittest.TestCase):
                 raise KeyboardInterrupt
 
             with self.assertRaises(KeyboardInterrupt):
-                stream_events("copilot", raw, log, interrupted_stream())
+                stream_events("copilot-json", raw, log, interrupted_stream())
 
             self.assertEqual(raw.read_bytes(), event)
             self.assertEqual(log.read_text(), "reading kilo.c\n")
@@ -342,7 +342,7 @@ class TestProgressParsing(unittest.TestCase):
 
             stderr = io.StringIO()
             with contextlib.redirect_stderr(stderr):
-                status = stream_events("copilot", Path("/dev/full"), log, source())
+                status = stream_events("copilot-json", Path("/dev/full"), log, source())
 
             self.assertTrue(drained)
             self.assertFalse(status.activity_ok)

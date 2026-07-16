@@ -17,6 +17,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, TextIO, cast
 
+from .policy import (
+    PLAIN_POLICY_DIAGNOSTIC_RC,
+    POLICY_BLOCKED_RC,
+    final_diagnostic_has_policy_block,
+    looks_policy_blocked,
+)
 from .text import SUMMARY_LIMIT, readable, readable_fragment, summary, tool_summary
 from .usage import PiSubagentResult, UsageTotals, accumulate_usage, pi_subagent_results
 
@@ -28,6 +34,9 @@ class StreamStatus:
     terminal_record: object | None
     structured_error: str | None
     rate_limit_error: str | None
+    policy_block_error: str | None
+    plain_policy_block_error: str | None
+    successful_terminal: bool
     terminal_error: str | None
     plain_diagnostics: tuple[str, ...]
     subagent_results: tuple[PiSubagentResult, ...]
@@ -268,6 +277,81 @@ def _looks_rate_limited(value: object, depth: int = 0) -> bool:
     return any(_looks_rate_limited(value.get(key), depth + 1) for key in ("data", "error"))
 
 
+def _policy_diagnostic(value: object, depth: int = 0) -> str:
+    """Extract a readable diagnostic from an already classified error payload."""
+    if depth > 4:
+        return ""
+    if isinstance(value, str):
+        return summary(value, None)
+    if not isinstance(value, dict):
+        return ""
+    for key in ("message", "errorMessage", "error_message", "result", "responseBody", "response_body"):
+        message = value.get(key)
+        if isinstance(message, str) and message.strip():
+            return summary(message, None)
+    for key in ("data", "error", "cause", "body", "response"):
+        diagnostic = _policy_diagnostic(value.get(key), depth + 1)
+        if diagnostic:
+            return diagnostic
+    for key in ("code", "errorCode", "error_code", "errorType", "error_type", "name", "type"):
+        code = value.get(key)
+        if isinstance(code, str) and looks_policy_blocked(code):
+            return summary(code, None)
+    return ""
+
+
+def _claude_result_failed(record: dict[str, object]) -> bool:
+    if record.get("type") != "result":
+        return False
+    subtype = record.get("subtype")
+    api_status = record.get("api_error_status")
+    return (
+        record.get("is_error") is True
+        or (isinstance(subtype, str) and subtype.casefold().startswith("error"))
+        or record.get("terminal_reason") == "api_error"
+        or api_status not in (None, "", 0, "0")
+    )
+
+
+def _structured_policy_block_error(adapter_name: str, record: object) -> str | None:
+    """Classify policy blocks only inside explicit provider-error envelopes."""
+    if not isinstance(record, dict):
+        return None
+
+    payload: object | None = None
+    if adapter_name == "claude-code":
+        if not _claude_result_failed(record):
+            return None
+        # Claude commonly stores the provider diagnostic in the terminal
+        # result string, which is deliberately not a generic recursive field in
+        # looks_policy_blocked: successful reports may quote an old error.
+        result = record.get("result")
+        if looks_policy_blocked(record):
+            payload = record
+        elif looks_policy_blocked(result):
+            payload = result
+    elif adapter_name == "codex":
+        if record.get("type") == "turn.failed":
+            payload = record.get("error")
+    elif adapter_name == "copilot-cli":
+        if record.get("type") == "session.error":
+            payload = record.get("data") if record.get("data") is not None else record
+        elif record.get("type") == "result" and record.get("exitCode") not in (None, 0, "0"):
+            result = record.get("result")
+            payload = result if looks_policy_blocked(result) else record
+    elif adapter_name == "opencode" and record.get("type") == "error":
+        payload = record.get("error") if record.get("error") is not None else record
+    elif adapter_name == "pi":
+        if _pi_terminal_error(record) is not None:
+            payload = record.get("message")
+        elif record.get("type") == "error":
+            payload = record
+
+    if payload is None or not looks_policy_blocked(payload):
+        return None
+    return _policy_diagnostic(payload) or "provider content policy blocked the request"
+
+
 def _structured_rate_limit_error(adapter_name: str, record: object) -> str | None:
     """Return a diagnostic only for an explicit provider-error record."""
     if not isinstance(record, dict):
@@ -425,11 +509,19 @@ def _compact_activity_line(adapter_name: str, record: object, raw_line: bytes) -
     return json.dumps(compact, ensure_ascii=False, separators=(",", ":")).encode() + newline
 
 
-def _read_line(adapter_name: str, line: str, concise: bool) -> tuple[bool, list[_LogEvent], object]:
+def _read_line(
+    adapter_name: str, line: str, concise: bool, *, structured: bool = True
+) -> tuple[bool, list[_LogEvent], object]:
     """One line -> (persist raw?, readable events, parsed record or sentinel).
 
     Never raises on malformed input: a line that is not JSON is the CLI's own
     diagnostic, and losing it is worse than showing it."""
+    if adapter_name == "copilot-cli" and not structured:
+        # Pre-JSON Copilot output is arbitrary agent text. Even a line that
+        # happens to be valid JSON must remain text rather than masquerading as
+        # a provider event envelope.
+        text = summary(line, SUMMARY_LIMIT if concise else None)
+        return True, [_line_event(text)] if text else [], _INVALID_RECORD
     try:
         record = json.loads(line)
     except (TypeError, ValueError):
@@ -464,9 +556,15 @@ _ADAPTER_NAMES = {
     "codex": "codex",
     "copilot": "copilot-cli",
     "copilot-cli": "copilot-cli",
+    # Copilot versions before JSON output emit arbitrary agent text on stdout.
+    # The wrapper uses this internal alias only after capability probing proves
+    # that non-JSON lines are out-of-band CLI diagnostics.
+    "copilot-json": "copilot-cli",
     "opencode": "opencode",
     "pi": "pi",
 }
+
+_STRUCTURED_STREAM_ADAPTERS = frozenset({"claude", "claude-code", "codex", "copilot-json", "opencode", "pi"})
 
 
 def stream_events(
@@ -485,6 +583,7 @@ def stream_events(
     """
     source = source if source is not None else sys.stdin.buffer
     adapter_name = _ADAPTER_NAMES[adapter]
+    structured_stream = adapter in _STRUCTURED_STREAM_ADAPTERS
     usage_totals = UsageTotals()
     last_event = ""
     fragment_active = False
@@ -493,8 +592,12 @@ def stream_events(
     terminal_record: object | None = None
     pi_agent_ended = False
     pi_terminating_tool_completed = False
+    opencode_policy_recovery_activity = False
     structured_error: str | None = None
     rate_limit_error: str | None = None
+    policy_block_error: str | None = None
+    successful_terminal = False
+    final_plain_diagnostic = ""
     plain_diagnostics: list[str] = []
     subagent_results: list[PiSubagentResult] = []
     raw_failures: list[str] = []
@@ -542,24 +645,62 @@ def stream_events(
     def handle_line(raw_line: bytes, *, raw_already_written: bool) -> None:
         nonlocal fragment_active, last_event, line_open, pi_message_had_fragments
         nonlocal pi_agent_ended, pi_terminating_tool_completed
-        nonlocal rate_limit_error, structured_error, terminal_record
+        nonlocal opencode_policy_recovery_activity
+        nonlocal final_plain_diagnostic, policy_block_error, rate_limit_error
+        nonlocal structured_error, successful_terminal, terminal_record
         decoded = raw_line.decode(errors="replace")
-        keep, events, record = _read_line(adapter_name, decoded, concise=False)
+        keep, events, record = _read_line(adapter_name, decoded, concise=False, structured=structured_stream)
+        if structured_stream and decoded.strip():
+            if record is _INVALID_RECORD:
+                # In a promised JSON stream, non-JSON output belongs to the CLI
+                # rather than the agent. Retain it separately from rendered
+                # agent.log content so quoted policy text cannot be mistaken
+                # for a provider diagnostic.
+                plain_diagnostics.append(decoded)
+                final_plain_diagnostic = decoded
+            else:
+                # Only the final non-empty physical stream line may serve as
+                # the out-of-band fallback. A later JSON event supersedes it.
+                final_plain_diagnostic = ""
         accumulate_usage(adapter_name, record, usage_totals)
+        detected_policy_block = _structured_policy_block_error(adapter_name, record)
+        if detected_policy_block is not None:
+            policy_block_error = detected_policy_block
+            if adapter_name == "opencode":
+                opencode_policy_recovery_activity = False
         if adapter_name == "claude-code":
             if isinstance(record, dict) and record.get("type") == "result":
                 terminal_record = record
-            elif record is _INVALID_RECORD and decoded.strip():
-                # Claude's stream-json mode uses non-JSON only for CLI
-                # diagnostics. Retain those few lines so quota banners survive
-                # an activity-sidecar failure without buffering the full stream.
-                plain_diagnostics.append(decoded)
+                successful_terminal = not _claude_result_failed(record)
+                if successful_terminal:
+                    policy_block_error = None
+        elif adapter_name == "codex":
+            if isinstance(record, dict) and record.get("type") in {"turn.completed", "turn.failed"}:
+                terminal_record = record
+                successful_terminal = record.get("type") == "turn.completed"
+                if successful_terminal:
+                    policy_block_error = None
+        elif adapter_name == "copilot-cli":
+            if isinstance(record, dict) and record.get("type") == "result":
+                terminal_record = record
+                successful_terminal = record.get("exitCode") in (0, "0")
+                if successful_terminal:
+                    policy_block_error = None
         elif adapter_name == "opencode":
             detected_rate_limit = _structured_rate_limit_error(adapter_name, record)
             if detected_rate_limit is not None:
                 rate_limit_error = detected_rate_limit
+            if policy_block_error is not None and isinstance(record, dict):
+                part = record.get("part")
+                if isinstance(part, dict) and part.get("type") in {"text", "tool"}:
+                    opencode_policy_recovery_activity = True
             if isinstance(record, dict) and record.get("type") == "step_finish":
                 terminal_record = record
+                part = record.get("part")
+                reason = part.get("reason") if isinstance(part, dict) else None
+                successful_terminal = isinstance(reason, str) and reason.casefold() == "stop"
+                if opencode_policy_recovery_activity and isinstance(reason, str) and reason.casefold() == "stop":
+                    policy_block_error = None
         elif adapter_name == "pi":
             if (
                 isinstance(record, dict)
@@ -572,10 +713,17 @@ def stream_events(
                 pi_terminating_tool_completed = False
                 structured_error = _pi_terminal_error(record)
                 rate_limit_error = _structured_rate_limit_error(adapter_name, record)
+                reason = record["message"].get("stopReason")
+                successful_terminal = isinstance(reason, str) and reason.casefold() == "stop"
+                if successful_terminal:
+                    policy_block_error = None
             elif _pi_successful_terminating_tool(record):
                 pi_terminating_tool_completed = True
             elif isinstance(record, dict) and record.get("type") == "agent_end":
                 pi_agent_ended = True
+                if pi_terminating_tool_completed:
+                    successful_terminal = True
+                    policy_block_error = None
             elif isinstance(record, dict) and record.get("type") == "error":
                 detected_rate_limit = _structured_rate_limit_error(adapter_name, record)
                 if detected_rate_limit is not None:
@@ -659,12 +807,18 @@ def stream_events(
         print(f"adapter event stream warning: {failure}", file=sys.stderr)
     for failure in readable_failures:
         print(f"adapter event stream failed: {failure}", file=sys.stderr)
+    plain_policy_block_error = None
+    if structured_stream and not successful_terminal and final_diagnostic_has_policy_block(final_plain_diagnostic):
+        plain_policy_block_error = summary(final_plain_diagnostic, None)
     return StreamStatus(
         activity_ok=not raw_failures,
         log_ok=not readable_failures,
         terminal_record=terminal_record,
         structured_error=structured_error,
         rate_limit_error=rate_limit_error,
+        policy_block_error=policy_block_error,
+        plain_policy_block_error=plain_policy_block_error,
+        successful_terminal=successful_terminal,
         terminal_error=_terminal_error(
             adapter_name,
             terminal_record,
@@ -689,7 +843,21 @@ def main(argv: list[str]) -> int:
     except OSError as exc:
         print(f"adapter event stream failed: {exc}", file=sys.stderr)
         return 1
-    return 0 if status.log_ok else 1
+    if status.policy_block_error is not None:
+        print(
+            f"adapter event stream policy blocked: {summary(status.policy_block_error, None)}",
+            file=sys.stderr,
+        )
+        return POLICY_BLOCKED_RC
+    if not status.log_ok:
+        return 1
+    if status.plain_policy_block_error is not None:
+        print(
+            f"adapter event stream plain policy diagnostic: {summary(status.plain_policy_block_error, None)}",
+            file=sys.stderr,
+        )
+        return PLAIN_POLICY_DIAGNOSTIC_RC
+    return 0
 
 
 if __name__ == "__main__":

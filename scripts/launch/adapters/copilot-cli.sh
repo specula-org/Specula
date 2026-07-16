@@ -33,6 +33,8 @@ MODEL="${COPILOT_MODEL:-}"
 EFFORT=""
 LOG_FILE=""
 BACKGROUND=false
+POLICY_BLOCKED_RC=76  # Keep in sync with src/specula/adapters/utils/policy.py.
+PLAIN_POLICY_DIAGNOSTIC_RC=77  # Internal event-stream candidate; never returned to the runner.
 
 for arg in "$@"; do
   case "$arg" in
@@ -128,7 +130,9 @@ if ! grep -q -- '--autopilot' <<< "$COPILOT_HELP"; then
   exit 1
 fi
 
-CMD=(copilot -p "$PROMPT" --allow-all --autopilot)
+# Keep the scripting channel free of version-specific stats footers. Provider
+# diagnostics still go to stderr, which is captured below for policy recovery.
+CMD=(copilot -p "$PROMPT" --allow-all --autopilot --silent)
 
 if [[ -n "$MODEL" ]]; then
   CMD+=(--model "$MODEL")
@@ -154,19 +158,38 @@ if [[ -n "$MAX_TURNS" && "$MAX_TURNS" != "0" ]]; then
 fi
 
 ACTIVITY_LOG="${SPECULA_ACTIVITY_LOG:-}"
-if [[ -z "$ACTIVITY_LOG" ]]; then
-  "${CMD[@]}" > "$LOG_FILE" 2>&1
-  exit $?
-fi
-
 ADAPTER_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPECULA_SRC="$ADAPTER_DIR/../../../src"
+
+failed_log_is_policy_blocked() {
+  python3 -I -c \
+    'import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; from specula.adapters.utils.policy import failed_log_has_policy_block; raise SystemExit(0 if failed_log_has_policy_block(Path(sys.argv[2])) else 1)' \
+    "$SPECULA_SRC" "$LOG_FILE"
+}
+
+if [[ -z "$ACTIVITY_LOG" ]]; then
+  set +e
+  "${CMD[@]}" > "$LOG_FILE" 2>&1
+  COPILOT_RC=$?
+  set -e
+  if (( COPILOT_RC == 75 )); then
+    exit 75
+  fi
+  if (( COPILOT_RC != 0 )) && failed_log_is_policy_blocked; then
+    exit "$POLICY_BLOCKED_RC"
+  fi
+  exit "$COPILOT_RC"
+fi
 
 # JSON streaming arrived after the first Copilot CLI releases. Old clients
 # still stream plain output through the helper without unsupported flags.
 load_copilot_help
+COPILOT_JSON_STREAM=false
+STREAM_ADAPTER=copilot
 if grep -q -- '--output-format' <<< "$COPILOT_HELP"; then
   CMD+=(--output-format json)
+  COPILOT_JSON_STREAM=true
+  STREAM_ADAPTER=copilot-json
 fi
 if grep -q -- '--stream' <<< "$COPILOT_HELP"; then
   CMD+=(--stream on)
@@ -175,13 +198,28 @@ fi
 set +e
 "${CMD[@]}" 2>&1 | python3 -I -c \
   'import sys; sys.path.insert(0, sys.argv.pop(1)); from specula.adapters.utils.event_stream import main; raise SystemExit(main(sys.argv[1:]))' \
-  "$SPECULA_SRC" copilot "$ACTIVITY_LOG" "$LOG_FILE"
+  "$SPECULA_SRC" "$STREAM_ADAPTER" "$ACTIVITY_LOG" "$LOG_FILE"
 PIPELINE_STATUS=("${PIPESTATUS[@]}")
 set -e
 
 COPILOT_RC="${PIPELINE_STATUS[0]}"
 STREAM_RC="${PIPELINE_STATUS[1]}"
+if (( COPILOT_RC == 75 )); then
+  exit 75
+fi
+if (( STREAM_RC == POLICY_BLOCKED_RC )); then
+  exit "$POLICY_BLOCKED_RC"
+fi
+if (( COPILOT_RC != 0 && STREAM_RC == PLAIN_POLICY_DIAGNOSTIC_RC )); then
+  exit "$POLICY_BLOCKED_RC"
+fi
+if (( COPILOT_RC != 0 )) && [[ "$COPILOT_JSON_STREAM" != true ]] && failed_log_is_policy_blocked; then
+  exit "$POLICY_BLOCKED_RC"
+fi
 if (( COPILOT_RC != 0 )); then
   exit "$COPILOT_RC"
+fi
+if (( STREAM_RC == PLAIN_POLICY_DIAGNOSTIC_RC )); then
+  exit 0
 fi
 exit "$STREAM_RC"

@@ -33,6 +33,8 @@ CLAUDE_ALIAS=""
 # empty flag can still win and clear them.
 EFFORT="${CODEX_EFFORT:-}"
 MODEL="${CODEX_MODEL:-}"
+POLICY_BLOCKED_RC=76  # Keep in sync with src/specula/adapters/utils/policy.py.
+PLAIN_POLICY_DIAGNOSTIC_RC=77  # Internal event-stream candidate; never returned to the runner.
 
 for arg in "$@"; do
   case "$arg" in
@@ -217,7 +219,9 @@ run_codex() {
   local marker_file
   local activity_log="${SPECULA_ACTIVITY_LOG:-}"
   local adapter_dir
+  local specula_src
   adapter_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  specula_src="$adapter_dir/../../../src"
   marker_file="$(mktemp)"
 
   # ── Optional outer srt sandbox (M1.3) ──
@@ -249,18 +253,27 @@ run_codex() {
   rm -f "$last_message_file"
   set +e
   if [[ -n "$activity_log" ]]; then
-    local specula_src
     local -a pipeline_status
     local stream_rc
-    specula_src="$adapter_dir/../../../src"
     printf '%s' "$PROMPT" | "${cmd[@]}" --json - 2>&1 | python3 -I -c \
       'import sys; sys.path.insert(0, sys.argv.pop(1)); from specula.adapters.utils.event_stream import main; raise SystemExit(main(sys.argv[1:]))' \
       "$specula_src" codex "$activity_log" "$log_file"
     pipeline_status=("${PIPESTATUS[@]}")
     codex_rc="${pipeline_status[1]}"
     stream_rc="${pipeline_status[2]}"
-    if (( codex_rc == 0 )); then
-      codex_rc="$stream_rc"
+    if (( codex_rc == 75 )); then
+      : # Rate limiting remains the highest-priority retry outcome.
+    elif (( stream_rc == POLICY_BLOCKED_RC )); then
+      codex_rc="$POLICY_BLOCKED_RC"
+    elif (( codex_rc != 0 && stream_rc == PLAIN_POLICY_DIAGNOSTIC_RC )); then
+      codex_rc="$POLICY_BLOCKED_RC"
+    elif (( codex_rc == 0 )); then
+      # A plain diagnostic is only actionable when the CLI itself failed.
+      # Structured policy failures use POLICY_BLOCKED_RC above and remain
+      # authoritative even if a provider CLI accidentally exits zero.
+      if (( stream_rc != PLAIN_POLICY_DIAGNOSTIC_RC )); then
+        codex_rc="$stream_rc"
+      fi
     fi
   else
     local -a pipeline_status
@@ -269,6 +282,17 @@ run_codex() {
     codex_rc="${pipeline_status[1]}"
   fi
   set -e
+
+  if [[ -z "$activity_log" ]] && (( codex_rc != 0 && codex_rc != 75 )); then
+    # Without progress streaming there is no structured event status. Only
+    # classify an already-failed CLI's diagnostic log; successful agent output
+    # may quote an old policy message and must remain successful.
+    if python3 -I -c \
+      'import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; from specula.adapters.utils.policy import failed_log_has_policy_block; raise SystemExit(0 if failed_log_has_policy_block(Path(sys.argv[2])) else 1)' \
+      "$specula_src" "$log_file"; then
+      codex_rc="$POLICY_BLOCKED_RC"
+    fi
+  fi
 
   local usage_rc=0
   write_usage_file "$log_file" "$marker_file" || usage_rc=$?

@@ -31,8 +31,14 @@ from typing import IO, Any
 
 if __package__:
     from .utils.event_stream import stream_events
+    from .utils.policy import POLICY_BLOCKED_RC, final_diagnostic_has_policy_block, looks_policy_blocked
 else:
     from utils.event_stream import stream_events  # type: ignore[import-not-found, no-redef]
+    from utils.policy import (  # type: ignore[import-not-found, no-redef]
+        POLICY_BLOCKED_RC,
+        final_diagnostic_has_policy_block,
+        looks_policy_blocked,
+    )
 
 HELP = __doc__
 
@@ -158,6 +164,30 @@ def _rate_limited(raw_text: str, streaming: bool) -> bool:
         if isinstance(record, dict) and record.get("type") == "result" and error_result(record):
             return True
     return False
+
+
+def _result_policy_blocked(record: object) -> bool:
+    """Whether Claude's terminal result is an unresolved provider policy block.
+
+    Inspect the result text only after the terminal envelope declares an error.
+    Successful agents may legitimately quote a policy-block diagnostic while
+    explaining or repairing an earlier run.
+    """
+    if not isinstance(record, dict):
+        return False
+    verdict = record.get("is_error")
+    subtype = record.get("subtype")
+    terminal_reason = record.get("terminal_reason")
+    api_status = record.get("api_error_status")
+    subtype_is_error = isinstance(subtype, str) and subtype.startswith("error")
+    if (
+        verdict is not True
+        and not subtype_is_error
+        and terminal_reason != "api_error"
+        and api_status in (None, "", 0, "0")
+    ):
+        return False
+    return looks_policy_blocked(record) or looks_policy_blocked(record.get("result"))
 
 
 def _drain(stream: IO[bytes]) -> None:
@@ -385,6 +415,8 @@ def main(argv: list[str]) -> int:
         activity_failed = False
         stream_failed = False
         stream_terminal_record: object | None = None
+        stream_policy_block_error: str | None = None
+        stream_plain_policy_block_error: str | None = None
         stream_plain_diagnostics: tuple[str, ...] = ()
         # This `try` covers the spawn ONLY. An OSError here means no agent work
         # has happened (claude missing / not executable / unreadable prompt), so
@@ -409,6 +441,8 @@ def main(argv: list[str]) -> int:
                     activity_failed = not stream_status.activity_ok
                     stream_failed = not stream_status.log_ok
                     stream_terminal_record = stream_status.terminal_record
+                    stream_policy_block_error = stream_status.policy_block_error
+                    stream_plain_policy_block_error = stream_status.plain_policy_block_error
                     stream_plain_diagnostics = stream_status.plain_diagnostics
                 except OSError as e:
                     # Sink failures are returned after a full drain. An exception
@@ -434,11 +468,19 @@ def main(argv: list[str]) -> int:
             raw_text = _read_capture(capture_path)
 
         # ── Detect rate limit → exit 75 (EX_TEMPFAIL) so callers can wait/retry ──
-        rate_limited = _rate_limited(raw_text, bool(activity_log))
+        rate_limited = cli_rc == 75 or _rate_limited(raw_text, bool(activity_log))
         if rate_limited:
             print("claude-code adapter: rate limit hit", file=sys.stderr)
 
         result = _parse_result(raw_text)
+        policy_blocked = stream_policy_block_error is not None or _result_policy_blocked(result)
+        if activity_log and cli_rc != 0 and stream_plain_policy_block_error is not None:
+            policy_blocked = True
+        if not activity_log and cli_rc != 0 and result is None:
+            # A failed pre-stream CLI may emit only a plain provider diagnostic.
+            # Never apply this scan to a successful run or to arbitrary streamed
+            # assistant history, where quoting an old block is normal task text.
+            policy_blocked = final_diagnostic_has_policy_block(raw_text)
         postprocess_failed = False
         if activity_log:
             try:
@@ -465,6 +507,9 @@ def main(argv: list[str]) -> int:
 
         if rate_limited:
             return 75
+        if policy_blocked:
+            print("claude-code adapter: provider policy block", file=sys.stderr)
+            return POLICY_BLOCKED_RC
         if cli_rc != 0:
             return cli_rc
         return 1 if stream_failed or postprocess_failed else 0

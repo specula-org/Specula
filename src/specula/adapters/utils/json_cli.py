@@ -17,6 +17,7 @@ from types import FrameType
 from typing import Any
 
 from .event_stream import StreamStatus, stream_events
+from .policy import POLICY_BLOCKED_RC
 from .text import summary
 from .usage import augment_opencode_usage, augment_pi_usage
 
@@ -285,11 +286,26 @@ def run_json_cli(
                 elif adapter_name == "opencode":
                     usage = augment_opencode_usage(usage, _opencode_database_path(inherited_env))
             usage_ok = _write_usage(options.log_path.with_suffix(".usage.json"), usage)
+            if native_status == RATE_LIMIT_RC:
+                return RATE_LIMIT_RC
             if status is not None and status.rate_limit_error is not None:
                 print(
                     f"{adapter_name} adapter: rate limit hit: {summary(status.rate_limit_error, None)}", file=sys.stderr
                 )
                 return RATE_LIMIT_RC
+            if status is not None and status.policy_block_error is not None:
+                print(
+                    f"{adapter_name} adapter: policy block: {summary(status.policy_block_error, None)}",
+                    file=sys.stderr,
+                )
+                return POLICY_BLOCKED_RC
+            if native_status != 0 and status is not None and status.plain_policy_block_error is not None:
+                print(
+                    f"{adapter_name} adapter: plain policy diagnostic: "
+                    f"{summary(status.plain_policy_block_error, None)}",
+                    file=sys.stderr,
+                )
+                return POLICY_BLOCKED_RC
             if native_status != 0:
                 return native_status
             if stream_failed or status is None or not status.log_ok or not usage_ok:
