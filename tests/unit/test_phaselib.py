@@ -658,6 +658,113 @@ class TestBugConfirmationAlternate(PhaseCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(waits, [1])
 
+    def test_successful_live_confirmation_requires_classification_prerequisites(self) -> None:
+        from specula import confirmlib
+
+        self.seed(BY_KEY["bug_confirmation"]["inputs"])
+        self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
+
+        def fake_confirmation(cfg: confirmlib.ConfirmConfig) -> int:
+            return 0
+
+        self.patch_attr(confirmlib, "run_parallel_confirmation", fake_confirmation)
+        rc, out = self.run_phase("bug_confirmation", [self.artifact_flag(), NAME])
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("confirmed-bugs MISSING", out)
+        self.assertIn("Handoff validation failures:", out)
+
+    def test_successful_live_confirmation_hands_nonempty_report_to_classification(self) -> None:
+        from specula import confirmlib
+
+        self.seed(BY_KEY["bug_confirmation"]["inputs"])
+        self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
+
+        def fake_confirmation(cfg: confirmlib.ConfirmConfig) -> int:
+            report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
+            report.parent.mkdir(parents=True, exist_ok=True)
+            report.write_text("# Confirmed Bugs\n")
+            return 0
+
+        self.patch_attr(confirmlib, "run_parallel_confirmation", fake_confirmation)
+        rc, out = self.run_phase("bug_confirmation", [self.artifact_flag(), NAME])
+
+        self.assertEqual(rc, 0, out)
+        self.assertIn("confirmed-bugs OK", out)
+
+
+class TestHandoffGate(PhaseCase):
+    def setUp(self) -> None:
+        super().setUp()
+        adapters = self.tmp() / "adapters"
+        adapters.mkdir()
+        self.patch_attr(phaselib, "LAUNCH_DIR", adapters.parent)
+        self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
+        self.set_env("SPECULA_PROGRESS", "off")
+        self.adapter = adapters / "fake.sh"
+
+    def write_adapter(self, body: str) -> None:
+        self.adapter.write_text("#!/usr/bin/env sh\nset -eu\n" + body)
+        self.adapter.chmod(0o755)
+
+    def run_analysis(self, targets: list[str] | None = None) -> tuple[int, str]:
+        return self.run_phase(
+            "code_analysis",
+            [f"--agent={self.adapter.stem}", self.artifact_flag(), *(targets or [NAME])],
+        )
+
+    def test_zero_adapter_exit_without_brief_fails_the_analysis_handoff(self) -> None:
+        self.write_adapter(":\n")
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("Checking handoff to spec_generation...", out)
+        self.assertIn("MISSING modeling-brief.md", out)
+        self.assertIn("Handoff validation failures:", out)
+
+    def test_analysis_handoff_reuses_spec_generation_check(self) -> None:
+        calls: list[list[str]] = []
+
+        def check(_self: phaselib.SpecGenerationPhase, _ws: phaselib.Workspace, names: list[str]) -> bool:
+            calls.append(names)
+            return True
+
+        self.patch_attr(phaselib.SpecGenerationPhase, "check", check)
+        self.write_adapter(":\n")
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(calls, [[NAME]])
+
+    def test_handoff_checks_only_successful_targets(self) -> None:
+        calls: list[list[str]] = []
+
+        def check(_self: phaselib.SpecGenerationPhase, _ws: phaselib.Workspace, names: list[str]) -> bool:
+            calls.append(names)
+            return True
+
+        self.patch_attr(phaselib.SpecGenerationPhase, "check", check)
+        self.write_adapter('name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n[ "$name" != failed ] || exit 9\n')
+
+        rc, out = self.run_analysis(["failed|g|Go|r", "passed|g|Go|r"])
+
+        self.assertEqual(rc, 9, out)
+        self.assertEqual(calls, [["passed"]])
+
+    def test_handoff_failures_are_attributed_per_target(self) -> None:
+        self.write_adapter(
+            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            '[ "$name" != passed ] || printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+        )
+
+        rc, out = self.run_analysis(["missing|g|Go|r", "passed|g|Go|r"])
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAILED  missing: next-phase prerequisites not met", out)
+        self.assertNotIn("FAILED  passed: next-phase prerequisites not met", out)
+
 
 class TestLegacyRepairIdentityFinalization(PhaseCase):
     def setUp(self) -> None:
@@ -1247,9 +1354,10 @@ class TestProgressReporting(PhaseCase):
         adapters.mkdir()
         self.patch_attr(phaselib, "LAUNCH_DIR", adapters.parent)
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
-        # These tests exercise process/progress handling, not the analysis gate.
-        # Keep its optional `git rev-list` probe out of subprocess accounting.
+        # These tests exercise process/progress handling, not the analysis or
+        # handoff gates. Keep their optional probes out of subprocess accounting.
         self.patch_attr(phaselib.CodeAnalysisPhase, "check", lambda _self, _ws, _names: True)
+        self.patch_attr(phaselib.SpecGenerationPhase, "check", lambda _self, _ws, _names: True)
         self.config = ProgressConfig(
             poll_seconds=0.005,
             change_report_seconds=0.0,
@@ -1931,6 +2039,7 @@ class TestModelEffortLiveLaunch(PhaseCase):
         self.adapters.mkdir()
         self.patch_attr(phaselib, "LAUNCH_DIR", self.adapters.parent)
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
+        self.patch_attr(phaselib.SpecGenerationPhase, "check", lambda _self, _ws, _names: True)
         self.set_env("SPECULA_PROGRESS", "off")
 
     def launch(self, adapter_name: str, extra: list[str] | None = None) -> list[str]:
