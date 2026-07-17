@@ -60,6 +60,38 @@ def _boom(*_args: object, **_kwargs: object) -> tuple[int, str]:
     raise AssertionError("run_agent_blocking must not be called (cached finding)")
 
 
+def _scripted_policy_adapter(root: Path, returncodes: list[int]) -> tuple[Path, Path]:
+    """Create a real adapter that captures prompts and follows one rc script."""
+    adapter = root / "scripted-adapter.sh"
+    count = root / "adapter-count"
+    cases = "\n".join(f"  {attempt}) rc={rc} ;;" for attempt, rc in enumerate(returncodes, 1))
+    adapter.write_text(
+        "#!/bin/sh\n"
+        "prompt=\n"
+        "log=\n"
+        'for arg do case "$arg" in\n'
+        "  --prompt-file=*) prompt=${arg#*=} ;;\n"
+        "  --log=*) log=${arg#*=} ;;\n"
+        "esac; done\n"
+        'printf x >> "$COUNT_FILE"\n'
+        'attempt=$(wc -c < "$COUNT_FILE")\n'
+        'cp "$prompt" "$CAPTURE_DIR/prompt-$attempt.md"\n'
+        'case "$attempt" in\n'
+        f"{cases}\n"
+        "  *) rc=99 ;;\n"
+        "esac\n"
+        'if [ "$rc" -eq 0 ]; then\n'
+        '  printf "%s\\n" "$ADAPTER_SUCCESS_TEXT" > "$log"\n'
+        '  if [ -n "${ADAPTER_OUTPUT_FILE:-}" ]; then\n'
+        '    printf "%s\\n" "$ADAPTER_OUTPUT_TEXT" > "$ADAPTER_OUTPUT_FILE"\n'
+        "  fi\n"
+        "fi\n"
+        'exit "$rc"\n'
+    )
+    adapter.chmod(0o755)
+    return adapter, count
+
+
 class ConfirmCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.mkdtemp()
@@ -82,7 +114,8 @@ class ConfirmCase(unittest.TestCase):
         return ws
 
     def cfg(self, ws: Workspace, name: str, **kw: Any) -> C.ConfirmConfig:
-        return C.ConfirmConfig(name=name, ws=ws, adapter=Path("/x"), worktree=False, repo_dir="", **kw)
+        adapter = kw.pop("adapter", Path("/x"))
+        return C.ConfirmConfig(name=name, ws=ws, adapter=adapter, worktree=False, repo_dir="", **kw)
 
     def finding(self, ws: Workspace, name: str, fid: str = "MC-1") -> C.Finding:
         fdir = ws.work_dir(name) / "confirmation" / fid
@@ -312,6 +345,27 @@ class TestDriver(ConfirmCase):
         self.assertEqual(rc, 0)
         self.assertEqual(worker_counts, [1])
 
+    def test_parallel_findings_have_independent_policy_state(self) -> None:
+        findings = [{"id": fid, "source": "model-checking", "title": fid, "summary": "s"} for fid in ("MC-1", "MC-2")]
+        ws = self.seed("T", findings)
+        states: dict[str, object] = {}
+        lock = threading.Lock()
+
+        def agent(*args: object, **kwargs: object) -> tuple[int, str]:
+            fid = Path(str(args[2])).parent.name
+            with lock:
+                states[fid] = kwargs["policy_state"]
+            return (0, _response("FALSE POSITIVE"))
+
+        cfg = self.cfg(ws, "T", max_parallel=2)
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            rc = C.run_parallel_confirmation(cfg)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(set(states), {"MC-1", "MC-2"})
+        self.assertIsNot(states["MC-1"], states["MC-2"])
+        self.assertEqual(cfg._policy_states, {})
+
     def test_serial_rate_limit_stops_launching_and_preserves_later_cache(self) -> None:
         findings = [
             {"id": fid, "source": "model-checking", "title": fid, "summary": "s"} for fid in ("MC-1", "MC-2", "MC-3")
@@ -432,6 +486,77 @@ class TestDriver(ConfirmCase):
         self.assertNotIn("STALE REPORT", text)  # overwritten, not left stale
         self.assertIn("INCOMPLETE", text)
 
+    def test_rate_limit_retry_preserves_finding_policy_budget(self) -> None:
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        root = Path(self.tmp)
+        adapter, count = _scripted_policy_adapter(root, [76, 75, 76, 0])
+        cfg = self.cfg(ws, "T", adapter=adapter, max_parallel=1, policy_retries=1)
+        env = {
+            "COUNT_FILE": str(count),
+            "CAPTURE_DIR": str(root),
+            "ADAPTER_SUCCESS_TEXT": _response("FALSE POSITIVE"),
+        }
+
+        with mock.patch.dict(os.environ, env, clear=False):
+            first_rc = C.run_parallel_confirmation(cfg)
+            second_rc = C.run_parallel_confirmation(cfg)
+
+        self.assertEqual((first_rc, second_rc), (75, 1))
+        self.assertEqual(count.read_text(), "xxx")
+        prompts = [(root / f"prompt-{attempt}.md").read_text() for attempt in range(1, 4)]
+        marker = "Continue After Provider Policy Interruption"
+        self.assertNotIn(marker, prompts[0])
+        self.assertIn(marker, prompts[1])
+        self.assertEqual(prompts[2], prompts[1])
+        self.assertFalse((root / "prompt-4.md").exists())
+
+    def test_initial_rate_limit_does_not_consume_finding_policy_budget(self) -> None:
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        root = Path(self.tmp)
+        adapter, count = _scripted_policy_adapter(root, [75, 76, 0])
+        cfg = self.cfg(ws, "T", adapter=adapter, max_parallel=1, policy_retries=1)
+        env = {
+            "COUNT_FILE": str(count),
+            "CAPTURE_DIR": str(root),
+            "ADAPTER_SUCCESS_TEXT": _response("FALSE POSITIVE"),
+        }
+
+        with mock.patch.dict(os.environ, env, clear=False):
+            first_rc = C.run_parallel_confirmation(cfg)
+            second_rc = C.run_parallel_confirmation(cfg)
+
+        self.assertEqual((first_rc, second_rc), (75, 0))
+        self.assertEqual(count.read_text(), "xxx")
+        prompts = [(root / f"prompt-{attempt}.md").read_text() for attempt in range(1, 4)]
+        marker = "Continue After Provider Policy Interruption"
+        self.assertNotIn(marker, prompts[0])
+        self.assertEqual(prompts[1], prompts[0])
+        self.assertIn(marker, prompts[2])
+
+    def test_later_turn_rate_limit_preserves_earlier_turn_policy_budget(self) -> None:
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        root = Path(self.tmp)
+        adapter, count = _scripted_policy_adapter(root, [76, 0, 75, 0, 0])
+        cfg = self.cfg(ws, "T", adapter=adapter, max_parallel=1, policy_retries=1, debate=True, rounds=1)
+        env = {
+            "COUNT_FILE": str(count),
+            "CAPTURE_DIR": str(root),
+            "ADAPTER_SUCCESS_TEXT": _response("ENV_LIMITED"),
+        }
+
+        with mock.patch.dict(os.environ, env, clear=False):
+            first_rc = C.run_parallel_confirmation(cfg)
+            second_rc = C.run_parallel_confirmation(cfg)
+
+        self.assertEqual((first_rc, second_rc), (75, 0))
+        self.assertEqual(count.read_text(), "xxxxx")
+        marker = "Continue After Provider Policy Interruption"
+        self.assertNotIn(marker, (root / "prompt-1.md").read_text())
+        self.assertIn(marker, (root / "prompt-2.md").read_text())
+        self.assertNotIn(marker, (root / "prompt-3.md").read_text())
+        self.assertIn(marker, (root / "prompt-4.md").read_text())
+        self.assertNotIn(marker, (root / "prompt-5.md").read_text())
+
     def test_consolidate_prompt_invokes_installed_skill_without_path(self) -> None:
         ws = Workspace(["T"])
         spec = ws.work_dir("T") / "spec"
@@ -458,6 +583,34 @@ class TestDriver(ConfirmCase):
         self.assertNotIn("$validation-workflow", prompts[0])
         self.assertNotIn("/skills/", prompts[0])
         self.assertNotIn(".claude/skills", prompts[0])
+
+    def test_rate_limit_retry_preserves_consolidate_policy_budget(self) -> None:
+        ws = Workspace(["T"])
+        spec = ws.work_dir("T") / "spec"
+        spec.mkdir(parents=True)
+        root = Path(self.tmp)
+        adapter, count = _scripted_policy_adapter(root, [76, 75, 76, 0])
+        cfg = self.cfg(ws, "T", adapter=adapter, policy_retries=1)
+        env = {
+            "COUNT_FILE": str(count),
+            "CAPTURE_DIR": str(root),
+            "ADAPTER_SUCCESS_TEXT": "",
+            "ADAPTER_OUTPUT_FILE": str(spec / "candidates.json"),
+            "ADAPTER_OUTPUT_TEXT": '{"generated_by":"consolidate","findings":[]}',
+        }
+
+        with mock.patch.dict(os.environ, env, clear=False):
+            first_rc = C.run_parallel_confirmation(cfg)
+            second_rc = C.run_parallel_confirmation(cfg)
+
+        self.assertEqual((first_rc, second_rc), (75, 1))
+        self.assertEqual(count.read_text(), "xxx")
+        prompts = [(root / f"prompt-{attempt}.md").read_text() for attempt in range(1, 4)]
+        marker = "Continue After Provider Policy Interruption"
+        self.assertNotIn(marker, prompts[0])
+        self.assertIn(marker, prompts[1])
+        self.assertEqual(prompts[2], prompts[1])
+        self.assertFalse((root / "prompt-4.md").exists())
 
     def test_consolidate_failure_withholds_not_raises(self) -> None:
         # No candidates.json → consolidate runs the agent. A non-75 failure that

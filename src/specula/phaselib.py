@@ -23,9 +23,10 @@ import secrets
 import signal
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -54,6 +55,14 @@ LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
 AGENT_TERMINATION_GRACE_SECONDS = 2.0
 MAX_DEBATE_ROUNDS = 5
 DEFAULT_POLICY_RETRIES = 20
+
+
+@dataclass
+class PolicyRetryState:
+    """Cursor for one logical agent turn across caller-managed rate-limit retries."""
+
+    policy_attempt: int = 0
+    _lock: Any = field(default_factory=threading.Lock, init=False, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -1082,6 +1091,7 @@ def run_agent_blocking(
     model: str | None = None,
     effort: str | None = None,
     policy_retries: int = DEFAULT_POLICY_RETRIES,
+    policy_state: PolicyRetryState | None = None,
 ) -> tuple[int, str]:
     """Run an agent turn, blocking, and return (returncode, log text).
 
@@ -1100,9 +1110,11 @@ def run_agent_blocking(
     phase deliverable (`confirmed-bugs.md`) exists only after all findings
     aggregate, never after one turn. ``stop_gate=True`` opts back into the
     original phase key and therefore its deliverable contract. Rate-limit (exit
-    75) is the caller's concern. A provider policy block (exit 76) gets up to
-    ``policy_retries`` new invocations in the same workspace with a revised
-    continuation prompt.
+    75) is the caller's concern. A provider policy block (exit 76) advances up
+    to ``policy_retries`` continuation levels in the same workspace. Callers
+    that automatically replay exit 75 may pass ``policy_state`` so that replay
+    resumes the same level instead of resetting the logical turn's budget. The
+    caller must discard that state after any non-75 terminal result.
     """
     if policy_retries < 0:
         raise ValueError("policy_retries must be a non-negative integer")
@@ -1151,33 +1163,36 @@ def run_agent_blocking(
         *_model_effort_argv(adapter, model, effort),
         f"--log={log_file}",
     ]
-    for policy_attempt in range(policy_retries + 1):
-        current_prompt = prompt if policy_attempt == 0 else _policy_recovery_prompt(prompt)
-        prompt_file.write_text(current_prompt)
-        with contextlib.suppress(OSError):
-            log_file.unlink()
-        if adapter.stem == "codex":
+    state = policy_state if policy_state is not None else PolicyRetryState()
+    with state._lock:
+        if not 0 <= state.policy_attempt <= policy_retries:
+            raise ValueError("policy_state attempt must be within policy_retries")
+        while True:
+            policy_attempt = state.policy_attempt
+            current_prompt = prompt if policy_attempt == 0 else _policy_recovery_prompt(prompt)
+            prompt_file.write_text(current_prompt)
             with contextlib.suppress(OSError):
-                last_message_file.unlink()
+                log_file.unlink()
+            if adapter.stem == "codex":
+                with contextlib.suppress(OSError):
+                    last_message_file.unlink()
 
-        rc = subprocess.run(cmd, env=env, cwd=run_cwd).returncode
-        # Codex stdout is a complete CLI transcript, not the assistant's final
-        # response. The adapter keeps that transcript in `log_file` for
-        # diagnosis and asks `codex exec --output-last-message` for the response
-        # separately. A missing Codex sidecar is an incomplete turn; never
-        # reinterpret the CLI transcript as an assistant answer. Other
-        # adapters' log contract remains result-only.
-        result_file = last_message_file if adapter.stem == "codex" else log_file
-        text = result_file.read_text(errors="replace") if result_file.is_file() else ""
-        if rc != POLICY_BLOCKED_RC or policy_attempt >= policy_retries:
-            return rc, text
-        next_policy_attempt = policy_attempt + 1
-        print(
-            f"[{_ts()}] Provider policy interrupted the agent turn; retrying with a revised request "
-            f"({next_policy_attempt}/{policy_retries})"
-        )
-
-    raise AssertionError("unreachable")
+            rc = subprocess.run(cmd, env=env, cwd=run_cwd).returncode
+            # Codex stdout is a complete CLI transcript, not the assistant's final
+            # response. The adapter keeps that transcript in `log_file` for
+            # diagnosis and asks `codex exec --output-last-message` for the response
+            # separately. A missing Codex sidecar is an incomplete turn; never
+            # reinterpret the CLI transcript as an assistant answer. Other
+            # adapters' log contract remains result-only.
+            result_file = last_message_file if adapter.stem == "codex" else log_file
+            text = result_file.read_text(errors="replace") if result_file.is_file() else ""
+            if rc != POLICY_BLOCKED_RC or policy_attempt >= policy_retries:
+                return rc, text
+            state.policy_attempt = policy_attempt + 1
+            print(
+                f"[{_ts()}] Provider policy interrupted the agent turn; retrying with a revised request "
+                f"({state.policy_attempt}/{policy_retries})"
+            )
 
 
 class CodeAnalysisPhase(Phase):

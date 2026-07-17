@@ -146,7 +146,7 @@ Specula runs Copilot CLI with `--autopilot` and fails before launching a task wh
 
 `--max-turns` maps to Copilot's autopilot continuation limit. Claude Code, Codex, OpenCode, and Pi accept the option for adapter compatibility but do not enforce it. The reviews between steps pass a fixed value of 30 instead of the pipeline option; all four adapters still ignore it. OpenCode and Pi do not support Specula's agent-side stop gate.
 
-`--policy-retries=N` sets the continuation budget for each phase agent or confirmation turn after a provider policy interruption. The default is `20`, so each recovery loop permits the initial adapter invocation plus at most 20 continuation invocations; `0` disables policy recovery.
+`--policy-retries=N` sets the provider-policy continuation budget for each logical phase agent or confirmation turn. The default is `20`, so one logical turn may advance through at most 20 revised continuation levels after its initial request; `0` disables policy recovery. Automatic rate-limit retries preserve the current level and may replay it without resetting or consuming another policy continuation.
 
 ## Output Structure
 
