@@ -36,12 +36,12 @@ import threading
 import traceback
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from specula import quota
-from specula.phaselib import SPECULA_ROOT, Workspace, run_agent_blocking
+from specula.phaselib import DEFAULT_POLICY_RETRIES, SPECULA_ROOT, PolicyRetryState, Workspace, run_agent_blocking
 from specula.prompts import render
 from specula.skill_refs import prompt_skill_ids
 
@@ -161,6 +161,36 @@ class ConfirmConfig:
     debate: bool = False
     rounds: int = 5
     max_turns: str = "0"
+    policy_retries: int = DEFAULT_POLICY_RETRIES
+    # Runtime-only cursors survive this config's automatic rc75 retries. They
+    # are deliberately absent from candidate/verdict fingerprints and disk.
+    _policy_states: dict[tuple[str, ...], tuple[str, PolicyRetryState]] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+    _policy_states_lock: Any = field(default_factory=threading.Lock, init=False, repr=False, compare=False)
+
+    def policy_state(self, key: tuple[str, ...], prompt: str) -> PolicyRetryState:
+        """Return the cursor for one stable logical turn in this target run."""
+        prompt_digest = hashlib.sha256(prompt.encode()).hexdigest()
+        with self._policy_states_lock:
+            entry = self._policy_states.get(key)
+            if entry is None or entry[0] != prompt_digest:
+                state = PolicyRetryState()
+                self._policy_states[key] = (prompt_digest, state)
+                return state
+            return entry[1]
+
+    def clear_policy_states(self, prefix: tuple[str, ...] = ()) -> None:
+        """Discard terminal cursors, optionally below one logical-key prefix."""
+        with self._policy_states_lock:
+            if not prefix:
+                self._policy_states.clear()
+                return
+            for key in [key for key in self._policy_states if key[: len(prefix)] == prefix]:
+                del self._policy_states[key]
 
 
 @dataclass
@@ -278,6 +308,7 @@ def run_turn(
     if cfg.dry_run:
         _log(f"    [{f.id}] [DRY] turn {turn_no} {role} → {log.name}")
         return ("REPRODUCED" if role == "A" and turn_no == 1 else None), ""
+    policy_state = cfg.policy_state(("finding", f.id, str(turn_no), role), prompt)
     rc, text = run_agent_blocking(
         cfg.adapter,
         prompt,
@@ -291,6 +322,8 @@ def run_turn(
         max_turns=cfg.max_turns,
         model=cfg.model,
         effort=cfg.effort,
+        policy_retries=cfg.policy_retries,
+        policy_state=policy_state,
     )
     if rc == 75:
         raise RateLimited(f"{f.id} turn {turn_no} {role}")
@@ -1075,13 +1108,17 @@ def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
     to discard the whole target's report: the rest of the batch still delivers."""
     cached = _load_verdict(f, cfg)
     if cached is not None:
+        cfg.clear_policy_states(("finding", f.id))
         _log(f"  [{f.id}] cached {cached.status} — skip (idempotent)")
         return cached
     try:
         o = run_finding(cfg, f)
         _save_verdict(o, cfg)
+        cfg.clear_policy_states(("finding", f.id))
         return o
     except Exception as exc:  # RateLimited / ConfirmationFailed / anything unexpected
+        if not isinstance(exc, RateLimited):
+            cfg.clear_policy_states(("finding", f.id))
         try:
             f.fdir.mkdir(parents=True, exist_ok=True)
             (f.fdir / "error.txt").write_text(traceback.format_exc())
@@ -2142,6 +2179,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
     if source_errs:
         raise ConsolidateFailed(f"invalid model-checking input for {cfg.name}: {source_errs[0]}")
     if out.is_file() and _candidate_cache_valid(cfg, out, expected_mc_ids, expected_families):
+        cfg.clear_policy_states(("consolidate",))
         _log(f"  {cfg.name}: candidates.json present and valid — skipping consolidate")
         return
     bug_report = spec_dir / "bug-report.md"
@@ -2167,20 +2205,28 @@ def consolidate(cfg: ConfirmConfig) -> None:
     # Do not let a failed agent make a stale output look fresh.
     out.unlink(missing_ok=True)
     (spec_dir / _CANDIDATE_CACHE).unlink(missing_ok=True)
-    rc, _ = run_agent_blocking(
-        cfg.adapter,
-        prompt,
-        spec_dir / ".consolidate.prompt.md",
-        spec_dir / ".consolidate.log",
-        phase_key=PHASE_KEY,
-        work_dir=wd,
-        claude_alias=cfg.claude_alias,
-        max_turns=cfg.max_turns,
-        model=cfg.model,
-        effort=cfg.effort,
-    )
+    policy_state = cfg.policy_state(("consolidate",), prompt)
+    try:
+        rc, _ = run_agent_blocking(
+            cfg.adapter,
+            prompt,
+            spec_dir / ".consolidate.prompt.md",
+            spec_dir / ".consolidate.log",
+            phase_key=PHASE_KEY,
+            work_dir=wd,
+            claude_alias=cfg.claude_alias,
+            max_turns=cfg.max_turns,
+            model=cfg.model,
+            effort=cfg.effort,
+            policy_retries=cfg.policy_retries,
+            policy_state=policy_state,
+        )
+    except BaseException:
+        cfg.clear_policy_states(("consolidate",))
+        raise
     if rc == 75:
         raise RateLimited(f"{cfg.name} consolidate")
+    cfg.clear_policy_states(("consolidate",))
     if rc != 0:
         out.unlink(missing_ok=True)
         raise ConsolidateFailed(f"consolidate adapter exited {rc}")
@@ -2358,6 +2404,7 @@ def run_parallel_confirmation(cfg: ConfirmConfig) -> int:
     target. Returns 75 for exclusively rate-limited incomplete findings and 1 for
     permanent/format/infrastructure incomplete findings while retaining their
     partial report. Pre-fan-out or aggregation failures withhold the deliverable."""
+    result = 1
     try:
         try:
             if not cfg.dry_run:
@@ -2365,16 +2412,17 @@ def run_parallel_confirmation(cfg: ConfirmConfig) -> int:
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 log_path.write_text("")  # summary link + `tail -f` follow THIS run
                 _set_log_file(log_path)
-            return _drive_confirmation(cfg)
+            result = _drive_confirmation(cfg)
         except Exception as exc:
             try:
                 _log(f"confirmation driver crashed ({exc})")
             except OSError:
                 print(f"confirmation driver crashed ({exc})", flush=True)
-            if cfg.dry_run:
-                return 1
-            return _withhold(cfg, "confirmation driver failure — deliverable withheld")
+            result = 1 if cfg.dry_run else _withhold(cfg, "confirmation driver failure — deliverable withheld")
+        return result
     finally:
+        if result != quota.RATE_LIMIT_RC:
+            cfg.clear_policy_states()
         _set_log_file(None)
 
 

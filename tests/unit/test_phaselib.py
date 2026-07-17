@@ -606,6 +606,14 @@ class TestArgErrors(PhaseCase):
         self.assertEqual(rc, 1)
         self.assertIn("--legacy-confirm and --debate cannot be used together", out)
 
+    def test_policy_retries_rejects_non_decimal_values(self) -> None:
+        for value in ("", "-1", "1.5", "bad", "+1"):
+            with self.subTest(value=value):
+                rc, out = self.run_phase("code_analysis", [f"--policy-retries={value}", NAME])
+                self.assertEqual(rc, 1)
+                self.assertIn("Invalid --policy-retries", out)
+                self.assertIn("non-negative integer", out)
+
     def test_help_prints_usage(self) -> None:
         for spec in PHASES:
             with self.subTest(phase=spec["key"]):
@@ -617,6 +625,8 @@ class TestArgErrors(PhaseCase):
                 self.assertNotIn("launch_", out)
                 self.assertIn("--model=NAME", out)
                 self.assertIn("--effort=LEVEL", out)
+                self.assertIn("--policy-retries=N", out)
+                self.assertIn("default: 20", out)
 
 
 class TestBugConfirmationAlternate(PhaseCase):
@@ -661,6 +671,21 @@ class TestBugConfirmationAlternate(PhaseCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(waits, [1])
 
+    def test_policy_retry_budget_reaches_parallel_confirmation(self) -> None:
+        from specula import confirmlib
+
+        seen: list[int] = []
+
+        def fake_confirmation(cfg: confirmlib.ConfirmConfig) -> int:
+            seen.append(cfg.policy_retries)
+            return 0
+
+        self.patch_attr(confirmlib, "run_parallel_confirmation", fake_confirmation)
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"], extra=["--policy-retries=100"])
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen, [100])
+
     def test_successful_live_confirmation_requires_classification_prerequisites(self) -> None:
         from specula import confirmlib
 
@@ -703,6 +728,7 @@ class TestHandoffGate(PhaseCase):
         adapters.mkdir()
         self.patch_attr(phaselib, "LAUNCH_DIR", adapters.parent)
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
+        self.patch_attr(phaselib.Phase, "progress_config", ProgressConfig(poll_seconds=0.005))
         self.set_env("SPECULA_PROGRESS", "off")
         self.adapter = adapters / "fake.sh"
 
@@ -710,10 +736,14 @@ class TestHandoffGate(PhaseCase):
         self.adapter.write_text("#!/usr/bin/env sh\nset -eu\n" + body)
         self.adapter.chmod(0o755)
 
-    def run_analysis(self, targets: list[str] | None = None) -> tuple[int, str]:
+    def run_analysis(
+        self,
+        targets: list[str] | None = None,
+        options: list[str] | None = None,
+    ) -> tuple[int, str]:
         return self.run_phase(
             "code_analysis",
-            [f"--agent={self.adapter.stem}", self.artifact_flag(), *(targets or [NAME])],
+            [*(options or []), f"--agent={self.adapter.stem}", self.artifact_flag(), *(targets or [NAME])],
         )
 
     def test_zero_adapter_exit_without_brief_fails_the_analysis_handoff(self) -> None:
@@ -789,7 +819,7 @@ class TestHandoffGate(PhaseCase):
         self.assertEqual(rc, 0, out)
         self.assertEqual(count.read_text(), "xx")
         self.assertEqual(handoff_calls, [[NAME]])
-        self.assertIn("continuing once with a revised request", out)
+        self.assertIn("retrying with a revised request (1/20)", out)
 
     def test_repeated_policy_block_is_not_whitened_by_preexisting_handoff(self) -> None:
         count = self.tmp() / "count"
@@ -799,12 +829,12 @@ class TestHandoffGate(PhaseCase):
         self.set_env("COUNT_FILE", str(count))
         self.write_adapter('printf x >> "$COUNT_FILE"\nexit 76\n')
 
-        rc, out = self.run_analysis()
+        rc, out = self.run_analysis(options=["--policy-retries=1"])
 
         self.assertEqual(rc, POLICY_BLOCKED_RC, out)
         self.assertEqual(count.read_text(), "xx")
 
-    def test_policy_block_continues_once_with_changed_prompt_in_same_workspace(self) -> None:
+    def test_policy_block_continues_with_changed_prompt_in_same_workspace(self) -> None:
         count = self.tmp() / "count"
         captures = self.tmp()
         self.set_env("COUNT_FILE", str(count))
@@ -829,9 +859,9 @@ class TestHandoffGate(PhaseCase):
         self.assertIn("Continue After Provider Policy Interruption", second)
         self.assertTrue(second.startswith(first.rstrip()))
         self.assertEqual((captures / "workspaces").read_text().splitlines(), [str(self.work_dir())] * 2)
-        self.assertIn("continuing once with a revised request", out)
+        self.assertIn("retrying with a revised request (1/20)", out)
 
-    def test_repeated_policy_block_stops_after_one_continuation(self) -> None:
+    def test_default_policy_retry_budget_stops_after_twenty_continuations(self) -> None:
         count = self.tmp() / "count"
         self.set_env("COUNT_FILE", str(count))
         self.write_adapter('printf x >> "$COUNT_FILE"\nexit 76\n')
@@ -839,8 +869,21 @@ class TestHandoffGate(PhaseCase):
         rc, out = self.run_analysis()
 
         self.assertEqual(rc, POLICY_BLOCKED_RC, out)
-        self.assertEqual(count.read_text(), "xx")
+        self.assertEqual(count.read_text(), "x" * 21)
+        self.assertIn("retrying with a revised request (20/20)", out)
+        self.assertNotIn("(21/20)", out)
         self.assertIn(f"adapter exited {POLICY_BLOCKED_RC}", out)
+
+    def test_zero_policy_retries_disables_continuation(self) -> None:
+        count = self.tmp() / "count"
+        self.set_env("COUNT_FILE", str(count))
+        self.write_adapter('printf x >> "$COUNT_FILE"\nexit 76\n')
+
+        rc, out = self.run_analysis(options=["--policy-retries=0"])
+
+        self.assertEqual(rc, POLICY_BLOCKED_RC, out)
+        self.assertEqual(count.read_text(), "x")
+        self.assertNotIn("retrying with a revised request", out)
 
     def test_policy_and_rate_limit_retry_budgets_are_independent(self) -> None:
         count = self.tmp() / "count"
@@ -850,6 +893,7 @@ class TestHandoffGate(PhaseCase):
             'attempt=$(wc -c < "$COUNT_FILE")\n'
             '[ "$attempt" -ne 1 ] || exit 76\n'
             '[ "$attempt" -ne 2 ] || exit 75\n'
+            '[ "$attempt" -ne 3 ] || exit 76\n'
             'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
         )
         waits: list[int] = []
@@ -857,10 +901,10 @@ class TestHandoffGate(PhaseCase):
         self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
         self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
 
-        rc, out = self.run_analysis()
+        rc, out = self.run_analysis(options=["--policy-retries=2"])
 
         self.assertEqual(rc, 0, out)
-        self.assertEqual(count.read_text(), "xxx")
+        self.assertEqual(count.read_text(), "xxxx")
         self.assertEqual(waits, [1])
 
     def test_policy_recovery_does_not_reset_spent_rate_limit_retries(self) -> None:
@@ -891,7 +935,9 @@ class TestHandoffGate(PhaseCase):
         self.write_adapter(
             'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
             'printf x >> "$COUNT_DIR/$name"\n'
-            'if [ "$name" = a ] && [ "$(wc -c < "$COUNT_DIR/$name")" -eq 1 ]; then exit 76; fi\n'
+            'attempt=$(wc -c < "$COUNT_DIR/$name")\n'
+            'if [ "$name" = a ] && [ "$attempt" -le 2 ]; then exit 76; fi\n'
+            'if [ "$name" = b ] && [ "$attempt" -le 1 ]; then exit 76; fi\n'
             'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
         )
 
@@ -899,6 +945,7 @@ class TestHandoffGate(PhaseCase):
             "code_analysis",
             [
                 "--max-parallel=2",
+                "--policy-retries=2",
                 f"--agent={self.adapter.stem}",
                 self.artifact_flag(),
                 "a|g|Go|r",
@@ -907,8 +954,8 @@ class TestHandoffGate(PhaseCase):
         )
 
         self.assertEqual(rc, 0, out)
-        self.assertEqual((counts / "a").read_text(), "xx")
-        self.assertEqual((counts / "b").read_text(), "x")
+        self.assertEqual((counts / "a").read_text(), "xxx")
+        self.assertEqual((counts / "b").read_text(), "xx")
 
     def test_ordinary_adapter_failure_is_not_retried(self) -> None:
         count = self.tmp() / "count"
@@ -1265,7 +1312,7 @@ class TestLegacyRepairIdentityFinalization(PhaseCase):
 
 
 class TestRunAgentBlocking(PhaseCase):
-    def test_policy_block_continues_once_with_revised_prompt(self) -> None:
+    def test_policy_block_retries_with_one_non_accumulating_recovery_note(self) -> None:
         adapter = self.tmp() / "adapter.sh"
         count = self.tmp() / "count"
         captures = self.tmp()
@@ -1275,7 +1322,7 @@ class TestRunAgentBlocking(PhaseCase):
             'attempt=$(wc -c < "$COUNT_FILE")\n'
             'for arg do case "$arg" in --prompt-file=*) prompt=${arg#*=} ;; --log=*) log=${arg#*=} ;; esac; done\n'
             'cp "$prompt" "$CAPTURE_DIR/prompt-$attempt.md"\n'
-            '[ "$attempt" -ne 1 ] || exit 76\n'
+            '[ "$attempt" -gt 2 ] || exit 76\n'
             'printf "continued\\n" > "$log"\n'
         )
         adapter.chmod(0o755)
@@ -1290,20 +1337,24 @@ class TestRunAgentBlocking(PhaseCase):
             phase_key="bug_confirmation",
             work_dir=self.work_dir(),
             claude_alias="profile",
+            policy_retries=2,
         )
 
         self.assertEqual(rc, 0)
         self.assertEqual(text, "continued\n")
-        self.assertEqual(count.read_text(), "xx")
+        self.assertEqual(count.read_text(), "xxx")
         self.assertEqual((captures / "prompt-1.md").read_text(), "original prompt")
         second_prompt = (captures / "prompt-2.md").read_text()
+        third_prompt = (captures / "prompt-3.md").read_text()
         self.assertTrue(second_prompt.startswith("original prompt"))
         self.assertIn(
             "Continue After Provider Policy Interruption",
             second_prompt,
         )
+        self.assertEqual(third_prompt, second_prompt)
+        self.assertEqual(second_prompt.count("Continue After Provider Policy Interruption"), 1)
 
-    def test_policy_block_in_blocking_turn_is_bounded(self) -> None:
+    def test_default_policy_retry_budget_bounds_blocking_turn(self) -> None:
         adapter = self.tmp() / "adapter.sh"
         count = self.tmp() / "count"
         adapter.write_text('#!/bin/sh\nprintf x >> "$COUNT_FILE"\nexit 76\n')
@@ -1321,7 +1372,28 @@ class TestRunAgentBlocking(PhaseCase):
         )
 
         self.assertEqual(rc, POLICY_BLOCKED_RC)
-        self.assertEqual(count.read_text(), "xx")
+        self.assertEqual(count.read_text(), "x" * 21)
+
+    def test_zero_policy_retries_disables_blocking_continuation(self) -> None:
+        adapter = self.tmp() / "adapter.sh"
+        count = self.tmp() / "count"
+        adapter.write_text('#!/bin/sh\nprintf x >> "$COUNT_FILE"\nexit 76\n')
+        adapter.chmod(0o755)
+        self.set_env("COUNT_FILE", str(count))
+
+        rc, _ = phaselib.run_agent_blocking(
+            adapter,
+            "original prompt",
+            self.tmp() / "prompt.md",
+            self.tmp() / "turn.log",
+            phase_key="bug_confirmation",
+            work_dir=self.work_dir(),
+            claude_alias="profile",
+            policy_retries=0,
+        )
+
+        self.assertEqual(rc, POLICY_BLOCKED_RC)
+        self.assertEqual(count.read_text(), "x")
 
     def test_turn_phase_scopes_stop_gate_sets_cwd_and_removes_stale_log(self) -> None:
         adapter = self.tmp() / "adapter.sh"
@@ -2298,6 +2370,10 @@ class TestReviewPhase(PhaseCase):
     assembles (no --dry-run, so drive the pure builders directly to stay off the
     network) plus its arg validation."""
 
+    def setUp(self) -> None:
+        super().setUp()
+        self.patch_attr(phaselib.Phase, "progress_config", ProgressConfig(poll_seconds=0.005))
+
     def review(self) -> phaselib.ReviewPhase:
         return phaselib.ReviewPhase()
 
@@ -2351,9 +2427,19 @@ class TestReviewPhase(PhaseCase):
                 self.assertIn("specula review <phase>", out)
                 self.assertIn("--model=NAME", out)
                 self.assertIn("--effort=LEVEL", out)
+                self.assertIn("--policy-retries=N", out)
+                self.assertIn("default: 20", out)
                 self.assertIn(".specula-output/review-analysis.md", out)
                 self.assertIn(".specula-output/spec/review-specgen.md", out)
                 self.assertIn(".specula-output/spec/review-validation.md", out)
+
+    def test_review_rejects_invalid_policy_retry_values(self) -> None:
+        for value in ("", "-1", "1.5", "bad", "+1"):
+            with self.subTest(value=value):
+                rc, out = self.run_phase("review", ["analysis", f"--policy-retries={value}", NAME])
+                self.assertEqual(rc, 1)
+                self.assertIn("Invalid --policy-retries", out)
+                self.assertIn("non-negative integer", out)
 
     def test_review_streams_activity_through_shared_monitor(self) -> None:
         event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "reviewing"}})
@@ -2426,7 +2512,7 @@ class TestReviewPhase(PhaseCase):
         self.assertEqual(count.read_text(), "xx")
         self.assertEqual(waits, [1])
 
-    def test_review_policy_block_continues_once_with_revised_prompt(self) -> None:
+    def test_review_policy_block_retries_with_non_accumulating_revised_prompt(self) -> None:
         count = self.tmp() / "count"
         prompts = self.tmp()
         self.install_adapter(
@@ -2435,27 +2521,33 @@ class TestReviewPhase(PhaseCase):
             'attempt=$(wc -c < "$COUNT_FILE")\n'
             'for arg do case "$arg" in --prompt=*) prompt=${arg#*=} ;; esac; done\n'
             'printf "%s" "$prompt" > "$PROMPT_DIR/prompt-$attempt.md"\n'
-            '[ "$attempt" -ne 1 ] || exit 76\n',
+            '[ "$attempt" -gt 2 ] || exit 76\n',
         )
         self.set_env("COUNT_FILE", str(count))
         self.set_env("PROMPT_DIR", str(prompts))
         self.set_env("SPECULA_PROGRESS", "off")
 
-        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+        rc, out = self.run_phase(
+            "review",
+            ["analysis", "--agent=fake", "--policy-retries=2", NAME],
+        )
 
         self.assertEqual(rc, 0, out)
-        self.assertEqual(count.read_text(), "xx")
+        self.assertEqual(count.read_text(), "xxx")
         self.assertNotIn(
             "Continue After Provider Policy Interruption",
             (prompts / "prompt-1.md").read_text(),
         )
         first_prompt = (prompts / "prompt-1.md").read_text()
         second_prompt = (prompts / "prompt-2.md").read_text()
+        third_prompt = (prompts / "prompt-3.md").read_text()
         self.assertTrue(second_prompt.startswith(first_prompt.rstrip()))
         self.assertIn(
             "Continue After Provider Policy Interruption",
             second_prompt,
         )
+        self.assertEqual(third_prompt, second_prompt)
+        self.assertEqual(second_prompt.count("Continue After Provider Policy Interruption"), 1)
 
     def test_review_policy_block_is_bounded(self) -> None:
         count = self.tmp() / "count"
@@ -2463,10 +2555,28 @@ class TestReviewPhase(PhaseCase):
         self.set_env("COUNT_FILE", str(count))
         self.set_env("SPECULA_PROGRESS", "off")
 
-        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+        rc, out = self.run_phase(
+            "review",
+            ["analysis", "--agent=fake", "--policy-retries=1", NAME],
+        )
 
         self.assertEqual(rc, POLICY_BLOCKED_RC, out)
         self.assertEqual(count.read_text(), "xx")
+
+    def test_review_zero_policy_retries_disables_continuation(self) -> None:
+        count = self.tmp() / "count"
+        self.install_adapter("fake", 'printf x >> "$COUNT_FILE"\nexit 76\n')
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("SPECULA_PROGRESS", "off")
+
+        rc, out = self.run_phase(
+            "review",
+            ["analysis", "--agent=fake", "--policy-retries=0", NAME],
+        )
+
+        self.assertEqual(rc, POLICY_BLOCKED_RC, out)
+        self.assertEqual(count.read_text(), "x")
+        self.assertNotIn("retrying with a revised request", out)
 
     def test_review_policy_recovery_does_not_reset_rate_limit_retries(self) -> None:
         count = self.tmp() / "count"

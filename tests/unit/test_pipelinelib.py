@@ -662,6 +662,32 @@ class TestParsing(TmpCwd):
         self.assertIn("--max-parallel=1", p._phase_args(["t"]))
         self.assertEqual(p._max_parallel_summary(), "1")
 
+    def test_policy_retry_default_and_explicit_value_are_forwarded(self) -> None:
+        default = pl.Pipeline()
+        self.assertIsNone(default.parse_args(["t|g|l|r"]))
+        self.assertEqual(default.policy_retries, 20)
+        self.assertIn("--policy-retries=20", default._phase_args(["t"]))
+
+        explicit = pl.Pipeline()
+        self.assertIsNone(explicit.parse_args(["--policy-retries=100", "t|g|l|r"]))
+        self.assertEqual(explicit.policy_retries, 100)
+        self.assertIn("--policy-retries=100", explicit._phase_args(["t"]))
+
+        disabled = pl.Pipeline()
+        self.assertIsNone(disabled.parse_args(["--policy-retries=0", "t|g|l|r"]))
+        self.assertEqual(disabled.policy_retries, 0)
+        self.assertIn("--policy-retries=0", disabled._phase_args(["t"]))
+
+    def test_invalid_policy_retry_budget_is_rejected_at_parse(self) -> None:
+        for value in ("", "-1", "1.5", "bad", "+1"):
+            with self.subTest(value=value):
+                p = pl.Pipeline()
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    rc = p.parse_args([f"--policy-retries={value}", "t|g|l|r"])
+                self.assertEqual(rc, 1)
+                self.assertIn("--policy-retries must be a non-negative integer", err.getvalue())
+
     def test_max_parallel_summary_reports_per_finding_default(self) -> None:
         p = pl.Pipeline()
         self.assertIsNone(p.parse_args(["t|g|l|r"]))
@@ -732,6 +758,8 @@ class TestParsing(TmpCwd):
         self.assertIn("Full Specula pipeline", out)
         self.assertIn("--model=NAME", out)
         self.assertIn("--effort=LEVEL", out)
+        self.assertIn("--policy-retries=N", out)
+        self.assertIn("default: 20", out)
 
     def test_default_target_is_cwd_basename(self) -> None:
         p = pl.Pipeline()
@@ -794,12 +822,20 @@ class TestRunReview(TmpCwd):
     as "--agent=..." and abort with "Unknown phase"; --dry-run only logs the
     command, so the sequencing golden never caught it. Pin the arg order here."""
 
-    def _capture(self, phase: str, *, model: str | None = None, effort: str | None = None) -> list[str]:
+    def _capture(
+        self,
+        phase: str,
+        *,
+        model: str | None = None,
+        effort: str | None = None,
+        policy_retries: int = 20,
+    ) -> list[str]:
         p = make_pipeline(
             ["footest|foo/bar|Go|ref"],
             skip_reviews=False,
             model=model,
             effort=effort,
+            policy_retries=policy_retries,
         )
         seen: list[list[str]] = []
         p._phase = lambda banner, script, args: seen.append(args)  # type: ignore[method-assign]
@@ -817,7 +853,12 @@ class TestRunReview(TmpCwd):
         args = self._capture("specgen")
         self.assertIn("--agent=claude-code", args)
         self.assertIn("--claude-alias=claude", args)
+        self.assertIn("--policy-retries=20", args)
         self.assertEqual(args[-1], "footest")
+
+    def test_explicit_policy_retry_budget_reaches_review(self) -> None:
+        args = self._capture("analysis", policy_retries=100)
+        self.assertIn("--policy-retries=100", args)
 
     def test_model_effort_values_and_empty_are_forwarded(self) -> None:
         args = self._capture("analysis", model="gpt-5.5", effort="high")

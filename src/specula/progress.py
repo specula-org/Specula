@@ -50,7 +50,7 @@ class RunningAgent:
     last_event: str = ""
     target: str = ""
     attempt: int = 1
-    policy_recovery: bool = False
+    policy_attempt: int = 0
 
 
 def enabled() -> bool:
