@@ -143,7 +143,7 @@ class CliE2E(unittest.TestCase):
         self.assertIn("[DRY RUN] bash scripts/launch/launch_code_analysis.sh", out)
         self.assertIn("Pipeline completed", out)
 
-    def test_run_model_effort_reach_phase_and_review_commands(self) -> None:
+    def test_run_tuning_and_policy_retries_reach_phase_and_review_commands(self) -> None:
         for model, effort in (("gpt-5.5", "high"), ("", "")):
             with self.subTest(model=model, effort=effort):
                 root = self.specroot()
@@ -157,6 +157,7 @@ class CliE2E(unittest.TestCase):
                         "--agent=codex",
                         f"--model={model}",
                         f"--effort={effort}",
+                        "--policy-retries=100",
                         "footest",
                     ],
                     cwd=work,
@@ -167,10 +168,12 @@ class CliE2E(unittest.TestCase):
                 for line in (phase_line, review_line):
                     self.assertIn(f"--model={model}", line)
                     self.assertIn(f"--effort={effort}", line)
+                    self.assertIn("--policy-retries=100", line)
                 self.assertIn("launch_review.sh analysis --agent=codex", review_line)
                 meta = json.loads((self.sole_run_dir(root) / "run.json").read_text())
                 self.assertEqual(meta["model"], model or None)
                 self.assertEqual(meta["effort"], effort or None)
+                self.assertEqual(meta["policy_retries"], 100)
 
     def test_run_json_records_argv(self) -> None:
         root = self.specroot()

@@ -146,6 +146,8 @@ Specula runs Copilot CLI with `--autopilot` and fails before launching a task wh
 
 `--max-turns` maps to Copilot's autopilot continuation limit. Claude Code, Codex, OpenCode, and Pi accept the option for adapter compatibility but do not enforce it. The reviews between steps pass a fixed value of 30 instead of the pipeline option; all four adapters still ignore it. OpenCode and Pi do not support Specula's agent-side stop gate.
 
+`--policy-retries=N` sets the continuation budget for each phase agent or confirmation turn after a provider policy interruption. The default is `20`, so each recovery loop permits the initial adapter invocation plus at most 20 continuation invocations; `0` disables policy recovery.
+
 ## Output Structure
 
 Runs are isolated by default under:
@@ -259,6 +261,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--tlc-worker-limit=N` | Optionally bound aggregate TLC exploration workers; omitted means report-only |
 | `--max-parallel=N` | Set a hard concurrency limit. If omitted, ordinary steps run 1 target agent at a time and per-finding confirmation runs up to 4 Reproducer agents at a time |
 | `--max-turns=N` | Set Copilot's autopilot continuation limit; accepted but ignored by Claude Code, Codex, OpenCode, and Pi |
+| `--policy-retries=N` | Set provider-policy continuation retries for each phase agent or confirmation turn after its initial adapter invocation (default `20`; `0` disables recovery) |
 | `--enable-reviews` | Enable reviews between steps |
 | `--legacy-confirm` | Use one confirmation agent instead of per-finding agents |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse earlier outputs |

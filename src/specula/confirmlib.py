@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from specula import quota
-from specula.phaselib import SPECULA_ROOT, Workspace, run_agent_blocking
+from specula.phaselib import DEFAULT_POLICY_RETRIES, SPECULA_ROOT, Workspace, run_agent_blocking
 from specula.prompts import render
 from specula.skill_refs import prompt_skill_ids
 
@@ -161,6 +161,7 @@ class ConfirmConfig:
     debate: bool = False
     rounds: int = 5
     max_turns: str = "0"
+    policy_retries: int = DEFAULT_POLICY_RETRIES
 
 
 @dataclass
@@ -291,6 +292,7 @@ def run_turn(
         max_turns=cfg.max_turns,
         model=cfg.model,
         effort=cfg.effort,
+        policy_retries=cfg.policy_retries,
     )
     if rc == 75:
         raise RateLimited(f"{f.id} turn {turn_no} {role}")
@@ -2178,6 +2180,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
         max_turns=cfg.max_turns,
         model=cfg.model,
         effort=cfg.effort,
+        policy_retries=cfg.policy_retries,
     )
     if rc == 75:
         raise RateLimited(f"{cfg.name} consolidate")

@@ -165,7 +165,7 @@ After all applicable phases have run, assign a Report Tier (A/B/C) based on the 
 bash scripts/launch/launch_pipeline.sh "system-name|github/repo|Lang|Reference description"
 ```
 
-Options: `--skip-analysis`, `--skip-specgen`, `--skip-harness`, `--skip-validation`, `--max-parallel=N`
+Options: `--skip-analysis`, `--skip-specgen`, `--skip-harness`, `--skip-validation`, `--max-parallel=N`, `--policy-retries=N`
 
 ### Scheduler (with quota monitoring)
 

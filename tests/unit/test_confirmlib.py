@@ -108,16 +108,26 @@ class TestConfirmConfigCompatibility(ConfirmCase):
         self.assertEqual(cfg.prompt_extra, "EXTRA")
         self.assertIsNone(cfg.model)
         self.assertIsNone(cfg.effort)
+        self.assertEqual(cfg.policy_retries, 20)
 
     def test_turn_threads_explicit_empty_tuning(self) -> None:
         ws = Workspace(["T"])
-        cfg = C.ConfirmConfig("T", ws, Path("/adapter"), worktree=False, model="", effort="")
+        cfg = C.ConfirmConfig(
+            "T",
+            ws,
+            Path("/adapter"),
+            worktree=False,
+            model="",
+            effort="",
+            policy_retries=100,
+        )
         finding = C.Finding({"id": "MC-1"}, ws.work_dir("T") / "confirmation" / "MC-1")
         with mock.patch.object(C, "run_agent_blocking", return_value=(0, "VERDICT: FALSE POSITIVE")) as run:
             verdict, _ = C.run_turn(cfg, finding, "A", 1, "prompt", cwd="/repo-worktree")
         self.assertEqual(verdict, "FALSE POSITIVE")
         self.assertEqual(run.call_args.kwargs["model"], "")
         self.assertEqual(run.call_args.kwargs["effort"], "")
+        self.assertEqual(run.call_args.kwargs["policy_retries"], 100)
         self.assertEqual(run.call_args.kwargs["gate_work_dir"], finding.fdir)
         self.assertEqual(run.call_args.kwargs["cwd"], "/repo-worktree")
 
@@ -427,16 +437,21 @@ class TestDriver(ConfirmCase):
         spec = ws.work_dir("T") / "spec"
         spec.mkdir(parents=True)
         prompts: list[str] = []
+        retry_budgets: list[int] = []
 
-        def run(_adapter: Path, prompt: str, *_args: object, **_kwargs: object) -> tuple[int, str]:
+        def run(_adapter: Path, prompt: str, *_args: object, **kwargs: object) -> tuple[int, str]:
             prompts.append(prompt)
+            retry_budget = kwargs["policy_retries"]
+            assert isinstance(retry_budget, int)
+            retry_budgets.append(retry_budget)
             (spec / "candidates.json").write_text('{"generated_by":"consolidate","findings":[]}')
             return (0, "")
 
         with mock.patch.object(C, "run_agent_blocking", run):
-            C.consolidate(self.cfg(ws, "T"))
+            C.consolidate(self.cfg(ws, "T", policy_retries=100))
 
         self.assertEqual(len(prompts), 1)
+        self.assertEqual(retry_budgets, [100])
         self.assertIn("installed Specula skill **validation-workflow**", prompts[0])
         self.assertIn("<!-- specula-skill:", prompts[0])
         self.assertIn(":validation-workflow -->", prompts[0])

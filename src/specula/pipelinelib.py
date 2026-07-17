@@ -39,7 +39,13 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from specula import quota as _quota
-from specula.phaselib import _logical_cwd, _normalize_artifact_dir, _wc_l
+from specula.phaselib import (
+    DEFAULT_POLICY_RETRIES,
+    _logical_cwd,
+    _normalize_artifact_dir,
+    _parse_policy_retries,
+    _wc_l,
+)
 from specula.tlc_resources import (
     MEMORY_LIMIT_ENV,
     RUN_POLICY_FILENAME,
@@ -103,6 +109,7 @@ Options:
   --max-parallel=N       Hard limit for concurrent agents. When omitted, ordinary phases run 1 target
                          agent at a time and per-finding bug confirmation runs up to 4 at a time
   --max-turns=N          Max agent turns (default: 0 = unlimited)
+  --policy-retries=N     Policy-block continuation retries after the initial attempt (default: 20; 0 disables)
   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli, opencode, pi)
   --claude-alias=NAME    Claude CLI profile (default: claude)
   --model=NAME           Model forwarded to every agent adapter
@@ -270,6 +277,7 @@ class Pipeline:
         # including "", is an explicit value forwarded for launcher validation.
         self.max_parallel: str | None = None
         self.max_turns = "0"  # deprecated verbatim passthrough
+        self.policy_retries = DEFAULT_POLICY_RETRIES
         self.dry_run = False
         self.skip_analysis = False
         self.skip_specgen = False
@@ -355,6 +363,16 @@ class Pipeline:
                 self.max_parallel = arg.split("=", 1)[1]
             elif arg.startswith("--max-turns="):
                 self.max_turns = arg.split("=", 1)[1]
+            elif arg.startswith("--policy-retries="):
+                raw = arg.split("=", 1)[1]
+                try:
+                    self.policy_retries = _parse_policy_retries(raw)
+                except ValueError:
+                    print(
+                        f"ERROR: --policy-retries must be a non-negative integer, got '{raw}'",
+                        file=sys.stderr,
+                    )
+                    return 1
             elif arg.startswith("--agent="):
                 self.agent = arg.split("=", 1)[1]
             elif arg.startswith("--claude-alias="):
@@ -617,6 +635,7 @@ class Pipeline:
             "agent": self.agent,
             "model": model,
             "effort": effort,
+            "policy_retries": self.policy_retries,
             "claude_alias": self.claude_alias,
             "artifact": self.artifact,
             "artifact_git_sha": artifact_sha,
@@ -1373,6 +1392,7 @@ class Pipeline:
             args.append(f"--max-parallel={self.max_parallel}")
         args += [
             f"--max-turns={self.max_turns}",
+            f"--policy-retries={self.policy_retries}",
             f"--agent={self.agent}",
             f"--claude-alias={self.claude_alias}",
             *self._model_effort_args(),
@@ -1491,6 +1511,7 @@ class Pipeline:
             phase,
             f"--agent={self.agent}",
             f"--claude-alias={self.claude_alias}",
+            f"--policy-retries={self.policy_retries}",
             *self._model_effort_args(),
             *names,
         ]
@@ -1906,6 +1927,7 @@ class Pipeline:
         print(f"Targets:      {len(self.targets)}")
         print(f"Max parallel: {self._max_parallel_summary()}")
         print(f"Max turns:    {self.max_turns}")
+        print(f"Policy retries: {self.policy_retries}")
         print(f"Agent:        {self.agent}  (claude-alias={self.claude_alias})")
         memory_limit = self.tlc_memory_limit or os.environ.get(MEMORY_LIMIT_ENV) or "auto (80% available)"
         worker_limit = self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or "unbounded (report only)"

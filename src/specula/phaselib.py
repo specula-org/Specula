@@ -53,6 +53,7 @@ SPECULA_ROOT = SCRIPT_DIR.parent.parent
 LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
 AGENT_TERMINATION_GRACE_SECONDS = 2.0
 MAX_DEBATE_ROUNDS = 5
+DEFAULT_POLICY_RETRIES = 20
 
 
 @dataclass(frozen=True)
@@ -61,7 +62,7 @@ class _LaunchRequest:
 
     target: str
     rate_limit_attempt: int = 1
-    policy_recovery: bool = False
+    policy_attempt: int = 0
 
 
 _POLICY_RECOVERY_NOTE = """
@@ -75,6 +76,13 @@ The previous invocation was interrupted because the provider blocked a response 
 def _policy_recovery_prompt(prompt: str) -> str:
     """Change a blocked request while retaining its phase contract."""
     return prompt.rstrip() + _POLICY_RECOVERY_NOTE
+
+
+def _parse_policy_retries(raw: str) -> int:
+    """Parse a continuation count shared by pipeline, phases, and reviews."""
+    if not re.fullmatch(r"[0-9]+", raw):
+        raise ValueError("expected a non-negative integer")
+    return int(raw)
 
 
 # bash pathname expansion (`for d in .../*/`) orders by the locale collating
@@ -278,6 +286,7 @@ class Phase:
     # reset to the adapter/CLI default, non-empty = explicit override.
     _model: str | None = None
     _effort: str | None = None
+    _policy_retries = DEFAULT_POLICY_RETRIES
 
     # ── per-phase hooks ──
     def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
@@ -448,6 +457,7 @@ class Phase:
     def run(self, argv: list[str]) -> int:
         max_parallel: int | None = None
         max_turns = "0"
+        policy_retries = DEFAULT_POLICY_RETRIES
         dry_run = False
         check_only = False
         agent = "claude-code"
@@ -482,6 +492,13 @@ class Phase:
                 # Adapter-specific passthrough. Keep it a string: an adapter may
                 # deliberately accept values beyond the launcher's vocabulary.
                 max_turns = arg[len("--max-turns=") :]
+            elif arg.startswith("--policy-retries="):
+                raw = arg[len("--policy-retries=") :]
+                try:
+                    policy_retries = _parse_policy_retries(raw)
+                except ValueError:
+                    print(f"Invalid --policy-retries: '{raw}' (expected a non-negative integer)")
+                    return 1
             elif arg.startswith("--agent="):
                 agent = arg[len("--agent=") :]
             elif arg.startswith("--claude-alias="):
@@ -532,6 +549,7 @@ class Phase:
         # `--effort=` can still reset the underlying CLI to its own default.
         self._model = model if model is not None else (os.environ.get("SPECULA_MODEL") or None)
         self._effort = effort if effort is not None else (os.environ.get("SPECULA_EFFORT") or None)
+        self._policy_retries = policy_retries
 
         # A direct multi-target phase command has no Pipeline.run_dir, but its
         # agents must still share one TLC budget. Preserve the scope supplied by
@@ -585,6 +603,7 @@ class Phase:
         print(f"Targets:      {len(targets)}")
         print(f"Max parallel: {max_parallel}")
         print(f"Max turns:    {max_turns}")
+        print(f"Policy retries: {policy_retries}")
         print()
 
         print(self.check_header)
@@ -637,7 +656,7 @@ class Phase:
                         request = pending.pop(0)
                         name = self.target_name(request.target)
                         prompt = self.build_prompt(ws, request.target)
-                        if request.policy_recovery:
+                        if request.policy_attempt > 0:
                             prompt = _policy_recovery_prompt(prompt)
                         self._launch(
                             ws,
@@ -650,7 +669,7 @@ class Phase:
                             owner=running,
                             target=request.target,
                             attempt=request.rate_limit_attempt,
-                            policy_recovery=request.policy_recovery,
+                            policy_attempt=request.policy_attempt,
                         )
                         print()
 
@@ -674,17 +693,19 @@ class Phase:
                             successful_names.add(completed_agent.name)
                             continue
                         if rc == POLICY_BLOCKED_RC:
-                            if not completed_agent.policy_recovery:
+                            if completed_agent.policy_attempt < self._policy_retries:
+                                next_policy_attempt = completed_agent.policy_attempt + 1
                                 print(
                                     f"[{_ts()}] {completed_agent.name}: provider policy interrupted the run; "
-                                    "continuing once with a revised request"
+                                    f"retrying with a revised request "
+                                    f"({next_policy_attempt}/{self._policy_retries})"
                                 )
                                 pending.insert(
                                     0,
                                     _LaunchRequest(
                                         completed_agent.target,
                                         rate_limit_attempt=completed_agent.attempt,
-                                        policy_recovery=True,
+                                        policy_attempt=next_policy_attempt,
                                     ),
                                 )
                             else:
@@ -696,7 +717,7 @@ class Phase:
                                     _LaunchRequest(
                                         completed_agent.target,
                                         rate_limit_attempt=completed_agent.attempt + 1,
-                                        policy_recovery=completed_agent.policy_recovery,
+                                        policy_attempt=completed_agent.policy_attempt,
                                     )
                                 )
                                 pause_for_rate_limit = True
@@ -908,7 +929,7 @@ class Phase:
         owner: list[progress.RunningAgent] | None = None,
         target: str = "",
         attempt: int = 1,
-        policy_recovery: bool = False,
+        policy_attempt: int = 0,
     ) -> progress.RunningAgent | None:
         files = self.agent_files(ws, name)
         for d in files["mkdirs"]:
@@ -1001,7 +1022,7 @@ class Phase:
                 adapter_name=adapter.stem,
                 target=target,
                 attempt=attempt,
-                policy_recovery=policy_recovery,
+                policy_attempt=policy_attempt,
             )
             if owner is not None:
                 owner.append(launched)
@@ -1060,6 +1081,7 @@ def run_agent_blocking(
     stop_gate: bool = False,
     model: str | None = None,
     effort: str | None = None,
+    policy_retries: int = DEFAULT_POLICY_RETRIES,
 ) -> tuple[int, str]:
     """Run an agent turn, blocking, and return (returncode, log text).
 
@@ -1078,9 +1100,12 @@ def run_agent_blocking(
     phase deliverable (`confirmed-bugs.md`) exists only after all findings
     aggregate, never after one turn. ``stop_gate=True`` opts back into the
     original phase key and therefore its deliverable contract. Rate-limit (exit
-    75) is the caller's concern. A provider policy block (exit 76) gets one new
-    invocation in the same workspace with a revised continuation prompt.
+    75) is the caller's concern. A provider policy block (exit 76) gets up to
+    ``policy_retries`` new invocations in the same workspace with a revised
+    continuation prompt.
     """
+    if policy_retries < 0:
+        raise ValueError("policy_retries must be a non-negative integer")
     caller_cwd = Path.cwd()
     adapter = adapter if adapter.is_absolute() else (caller_cwd / adapter).resolve()
     prompt_file = prompt_file if prompt_file.is_absolute() else (caller_cwd / prompt_file).resolve()
@@ -1126,7 +1151,7 @@ def run_agent_blocking(
         *_model_effort_argv(adapter, model, effort),
         f"--log={log_file}",
     ]
-    for policy_attempt in range(2):
+    for policy_attempt in range(policy_retries + 1):
         current_prompt = prompt if policy_attempt == 0 else _policy_recovery_prompt(prompt)
         prompt_file.write_text(current_prompt)
         with contextlib.suppress(OSError):
@@ -1144,9 +1169,13 @@ def run_agent_blocking(
         # adapters' log contract remains result-only.
         result_file = last_message_file if adapter.stem == "codex" else log_file
         text = result_file.read_text(errors="replace") if result_file.is_file() else ""
-        if rc != POLICY_BLOCKED_RC or policy_attempt == 1:
+        if rc != POLICY_BLOCKED_RC or policy_attempt >= policy_retries:
             return rc, text
-        print(f"[{_ts()}] Provider policy interrupted the agent turn; continuing once with a revised request")
+        next_policy_attempt = policy_attempt + 1
+        print(
+            f"[{_ts()}] Provider policy interrupted the agent turn; retrying with a revised request "
+            f"({next_policy_attempt}/{policy_retries})"
+        )
 
     raise AssertionError("unreachable")
 
@@ -1177,6 +1206,7 @@ Options:
   --check             Only verify repos exist
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
@@ -1295,6 +1325,7 @@ Options:
   --check             Only verify prerequisites exist
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
@@ -1428,6 +1459,7 @@ Options:
   --check             Only verify prerequisites exist
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
@@ -1557,6 +1589,7 @@ Options:
   --check             Only verify prerequisites exist
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
@@ -1674,6 +1707,7 @@ Options:
   --repair            Repair mode: process OPEN repair requests (confirmation back-edge)
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
@@ -1831,6 +1865,7 @@ Options:
   --max-parallel=N    Hard limit for concurrent findings in parallel mode, or concurrent target agents in
                       --legacy-confirm (defaults: 4 in parallel mode, 1 otherwise)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
@@ -1929,6 +1964,7 @@ Prerequisites:
                 claude_alias=claude_alias,
                 model=self._model,
                 effort=self._effort,
+                policy_retries=self._policy_retries,
                 dry_run=dry_run,
                 prompt_extra=self._read_prompt_extra(ws, name),
             )
@@ -2169,6 +2205,7 @@ Options (after <phase>):
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
   --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
 
 Phases:
   analysis    — Review code analysis output (modeling-brief.md, analysis-report.md)
@@ -2191,6 +2228,7 @@ Output:
         claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
         model: str | None = None
         effort: str | None = None
+        policy_retries = DEFAULT_POLICY_RETRIES
         targets: list[str] = []
         for arg in argv[1:]:
             if arg.startswith("--agent="):
@@ -2201,6 +2239,13 @@ Output:
                 model = arg[len("--model=") :]
             elif arg.startswith("--effort="):
                 effort = arg[len("--effort=") :]
+            elif arg.startswith("--policy-retries="):
+                raw = arg[len("--policy-retries=") :]
+                try:
+                    policy_retries = _parse_policy_retries(raw)
+                except ValueError:
+                    print(f"Invalid --policy-retries: '{raw}' (expected a non-negative integer)")
+                    return 1
             elif arg in ("--help", "-h"):
                 sys.stdout.write(self.usage)
                 return 0
@@ -2209,6 +2254,7 @@ Output:
 
         self._model = model if model is not None else (os.environ.get("SPECULA_MODEL") or None)
         self._effort = effort if effort is not None else (os.environ.get("SPECULA_EFFORT") or None)
+        self._policy_retries = policy_retries
 
         if not phase or not targets:
             print(f"Usage: {SCRIPT_DIR}/phaselib.py review <analysis|specgen|validation> name [name ...]")
@@ -2225,11 +2271,13 @@ Output:
         print("========================================")
         print(f" Specula — Review Agent ({phase})")
         print("========================================")
+        print(f"Policy retries: {policy_retries}")
+        print()
 
         with _cleanup_on_signal():
             for name in names:
                 attempt = 1
-                policy_recovery = False
+                policy_attempt = 0
                 while True:
                     rc = self._launch_review(
                         ws,
@@ -2237,7 +2285,7 @@ Output:
                         phase,
                         adapter,
                         claude_alias,
-                        policy_recovery=policy_recovery,
+                        policy_attempt=policy_attempt,
                     )
                     if (
                         rc == quota.RATE_LIMIT_RC
@@ -2248,12 +2296,12 @@ Output:
                         self._wait_for_rate_limit()
                         attempt += 1
                         continue
-                    if rc == POLICY_BLOCKED_RC and not policy_recovery:
+                    if rc == POLICY_BLOCKED_RC and policy_attempt < self._policy_retries:
+                        policy_attempt += 1
                         print(
                             f"[{_ts()}] {name}: provider policy interrupted the review; "
-                            "continuing once with a revised request"
+                            f"retrying with a revised request ({policy_attempt}/{self._policy_retries})"
                         )
-                        policy_recovery = True
                         continue
                     if rc != 0:
                         return self._failure_code([(name, rc)])
@@ -2290,7 +2338,7 @@ Output:
         adapter: Path,
         claude_alias: str,
         *,
-        policy_recovery: bool = False,
+        policy_attempt: int = 0,
     ) -> int:
         wd = ws.work_dir(name)
         # specgen/validation logs go under spec/ to match pipeline summary expectations
@@ -2305,7 +2353,7 @@ Output:
         else:
             print(f"Unknown phase: {phase}")
             raise SystemExit(1)
-        if policy_recovery:
+        if policy_attempt > 0:
             prompt = _policy_recovery_prompt(prompt)
         print(f"[{_ts()}] Reviewing {name} ({phase})...")
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -2367,7 +2415,7 @@ Output:
                 activity_stamp=prelaunch_activity_stamp,
                 adapter_name=adapter.stem,
                 target=name,
-                policy_recovery=policy_recovery,
+                policy_attempt=policy_attempt,
             )
             pid_file.write_text(f"{proc.pid}\n")
             print(f"  PID={proc.pid}  Log: {log_file}")
