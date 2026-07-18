@@ -8,6 +8,7 @@ Options:
   --effort=LEVEL        OpenCode variant (default: OPENCODE_EFFORT)
   --model=NAME          Provider/model (default: OPENCODE_MODEL)
   --log=FILE            Log file path (required)
+  --resume-state=PATH   Persist/resume the exact native OpenCode session
   --background          Accepted; caller handles backgrounding
   --help                Show this help
 """
@@ -21,12 +22,14 @@ from pathlib import Path
 
 if __package__:
     from .utils.json_cli import AdapterArgumentError, parse_options, run_json_cli
+    from .utils.resume import ResumeStateError, read_session_id
 else:
     from utils.json_cli import (  # type: ignore[import-not-found, no-redef]
         AdapterArgumentError,
         parse_options,
         run_json_cli,
     )
+    from utils.resume import ResumeStateError, read_session_id  # type: ignore[import-not-found, no-redef]
 
 HELP = __doc__
 SPECULA_ROOT = Path(__file__).resolve().parents[3]
@@ -121,9 +124,26 @@ def main(argv: list[str]) -> int:
         print(exc, file=sys.stderr)
         return 1
 
+    try:
+        session_id = read_session_id(
+            options.resume_state,
+            adapter="opencode",
+            cwd=os.getcwd(),
+            model=options.model,
+            effort=options.effort,
+        )
+    except ResumeStateError as exc:
+        options.cleanup()
+        print(f"opencode adapter: {exc}", file=sys.stderr)
+        return 1
+
     # OpenCode auto-rejects permission prompts in non-interactive runs unless
     # this auto-approval flag is present.
     command = ["opencode", "run", "--format=json", "--thinking", "--dangerously-skip-permissions"]
+    if session_id is not None:
+        # A full stream-emitted ID is exact. Never use OpenCode's --continue,
+        # whose "last session" resolution is unsafe under parallel runs.
+        command += ["--session", session_id]
     if options.model:
         command += ["--model", options.model]
     if options.effort:

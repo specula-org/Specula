@@ -51,6 +51,9 @@ class RunningAgent:
     target: str = ""
     attempt: int = 1
     policy_attempt: int = 0
+    transient_attempt: int = 0
+    invocation_attempt: int = 1
+    resume_state: Path | None = None
 
 
 def enabled() -> bool:

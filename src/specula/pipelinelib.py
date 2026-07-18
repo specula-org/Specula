@@ -41,9 +41,11 @@ if __package__ in (None, ""):
 from specula import quota as _quota
 from specula.phaselib import (
     DEFAULT_POLICY_RETRIES,
+    DEFAULT_TRANSIENT_RESUMES,
     _logical_cwd,
     _normalize_artifact_dir,
     _parse_policy_retries,
+    _parse_transient_resumes,
     _wc_l,
 )
 from specula.tlc_resources import (
@@ -110,6 +112,7 @@ Options:
                          agent at a time and per-finding bug confirmation runs up to 4 at a time
   --max-turns=N          Max agent turns (default: 0 = unlimited)
   --policy-retries=N     Policy-block continuation retries after the initial attempt (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes after the initial attempt (default: 20; 0 disables)
   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli, opencode, pi)
   --claude-alias=NAME    Claude CLI profile (default: claude)
   --model=NAME           Model forwarded to every agent adapter
@@ -278,6 +281,7 @@ class Pipeline:
         self.max_parallel: str | None = None
         self.max_turns = "0"  # deprecated verbatim passthrough
         self.policy_retries = DEFAULT_POLICY_RETRIES
+        self.transient_resumes = DEFAULT_TRANSIENT_RESUMES
         self.dry_run = False
         self.skip_analysis = False
         self.skip_specgen = False
@@ -370,6 +374,16 @@ class Pipeline:
                 except ValueError:
                     print(
                         f"ERROR: --policy-retries must be a non-negative integer, got '{raw}'",
+                        file=sys.stderr,
+                    )
+                    return 1
+            elif arg.startswith("--transient-resumes="):
+                raw = arg.split("=", 1)[1]
+                try:
+                    self.transient_resumes = _parse_transient_resumes(raw)
+                except ValueError:
+                    print(
+                        f"ERROR: --transient-resumes must be a non-negative integer, got '{raw}'",
                         file=sys.stderr,
                     )
                     return 1
@@ -636,6 +650,7 @@ class Pipeline:
             "model": model,
             "effort": effort,
             "policy_retries": self.policy_retries,
+            "transient_resumes": self.transient_resumes,
             "claude_alias": self.claude_alias,
             "artifact": self.artifact,
             "artifact_git_sha": artifact_sha,
@@ -1393,6 +1408,7 @@ class Pipeline:
         args += [
             f"--max-turns={self.max_turns}",
             f"--policy-retries={self.policy_retries}",
+            f"--transient-resumes={self.transient_resumes}",
             f"--agent={self.agent}",
             f"--claude-alias={self.claude_alias}",
             *self._model_effort_args(),
@@ -1512,6 +1528,7 @@ class Pipeline:
             f"--agent={self.agent}",
             f"--claude-alias={self.claude_alias}",
             f"--policy-retries={self.policy_retries}",
+            f"--transient-resumes={self.transient_resumes}",
             *self._model_effort_args(),
             *names,
         ]
@@ -1928,6 +1945,7 @@ class Pipeline:
         print(f"Max parallel: {self._max_parallel_summary()}")
         print(f"Max turns:    {self.max_turns}")
         print(f"Policy retries: {self.policy_retries}")
+        print(f"Transient resumes: {self.transient_resumes}")
         print(f"Agent:        {self.agent}  (claude-alias={self.claude_alias})")
         memory_limit = self.tlc_memory_limit or os.environ.get(MEMORY_LIMIT_ENV) or "auto (80% available)"
         worker_limit = self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or "unbounded (report only)"

@@ -35,6 +35,7 @@ if __package__ in (None, ""):
 import specula.progress as progress
 from specula import quota
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
+from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC
 from specula.prompts import render
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 from specula.tlc_resources import (
@@ -55,23 +56,33 @@ LAUNCH_DIR = SPECULA_ROOT / "scripts" / "launch"
 AGENT_TERMINATION_GRACE_SECONDS = 2.0
 MAX_DEBATE_ROUNDS = 5
 DEFAULT_POLICY_RETRIES = 20
+DEFAULT_TRANSIENT_RESUMES = 20
+TRANSIENT_RESUME_BACKOFF_MAX_SECONDS = 60.0
 
 
 @dataclass
 class PolicyRetryState:
-    """Cursor for one logical agent turn across caller-managed rate-limit retries."""
+    """Retry cursor and exact native session for one logical agent turn."""
 
     policy_attempt: int = 0
+    transient_attempt: int = 0
+    invocation_attempt: int = 0
+    resume_state: Path | None = None
+    retry_reason: str = "fresh"
     _lock: Any = field(default_factory=threading.Lock, init=False, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
 class _LaunchRequest:
-    """One scheduler request with independent quota and policy state."""
+    """One scheduler request with a single logical-turn retry ledger."""
 
     target: str
     rate_limit_attempt: int = 1
     policy_attempt: int = 0
+    transient_attempt: int = 0
+    invocation_attempt: int = 1
+    retry_reason: str = "fresh"
+    ready_at: float = 0.0
 
 
 _POLICY_RECOVERY_NOTE = """
@@ -80,6 +91,10 @@ _POLICY_RECOVERY_NOTE = """
 
 The previous invocation was interrupted because the provider blocked a response under its content policy. Continue the same legitimate formal-verification task from the existing workspace. Inspect and preserve completed work, rephrase the blocked portion in neutral formal-verification terms, and complete every required deliverable for this phase. Do not repeat work that is already complete.
 """
+
+_SESSION_RESUME_PROMPT = """Continue the current Specula task from this exact session. The previous invocation was interrupted by a temporary provider, capacity, or transport failure. Preserve completed work, inspect the current workspace, and finish every remaining deliverable. Do not restart completed analysis."""
+
+_POLICY_SESSION_RESUME_PROMPT = """Continue the same legitimate formal-verification task from this exact session. The previous response was interrupted by the provider's content policy. Preserve completed work, rephrase the interrupted portion in neutral formal-verification terms, and finish every remaining deliverable without restarting the phase."""
 
 
 def _policy_recovery_prompt(prompt: str) -> str:
@@ -92,6 +107,69 @@ def _parse_policy_retries(raw: str) -> int:
     if not re.fullmatch(r"[0-9]+", raw):
         raise ValueError("expected a non-negative integer")
     return int(raw)
+
+
+def _parse_transient_resumes(raw: str) -> int:
+    """Parse a transient native-session continuation count."""
+    if not re.fullmatch(r"[0-9]+", raw):
+        raise ValueError("expected a non-negative integer")
+    return int(raw)
+
+
+def _resume_state_path(log_file: Path) -> Path:
+    return log_file.with_suffix(".resume.json")
+
+
+def _attempt_path(path: Path, attempt: int) -> Path:
+    return path.with_name(f"{path.stem}.attempt-{attempt}{path.suffix}")
+
+
+def _archive_attempt(paths: tuple[Path, ...], attempt: int) -> None:
+    """Keep failed invocation evidence before an adapter truncates its logs."""
+    for path in paths:
+        if path.is_file():
+            with contextlib.suppress(OSError):
+                os.replace(path, _attempt_path(path, attempt))
+
+
+def _clear_attempt_archives(paths: tuple[Path, ...]) -> None:
+    """Drop stale retry evidence when a new logical turn reuses its log path."""
+    for path in paths:
+        for archived in path.parent.glob(f"{path.stem}.attempt-*{path.suffix}"):
+            with contextlib.suppress(OSError):
+                archived.unlink()
+
+
+def _clear_resume_state(path: Path) -> None:
+    """Remove an earlier logical turn's exact-session binding or fail closed."""
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise RuntimeError(f"cannot clear stale resume state {path}: {exc}") from exc
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise RuntimeError(f"cannot verify cleared resume state {path}: {exc}") from exc
+    raise RuntimeError(f"stale resume state still exists after removal: {path}")
+
+
+def _transient_resume_delay(attempt: int) -> float:
+    """Short bounded backoff; attempt is the 1-based resume number."""
+    return min(TRANSIENT_RESUME_BACKOFF_MAX_SECONDS, float(2 ** min(attempt + 1, 6)))
+
+
+def _retry_prompt(original: str, reason: str, *, resumable: bool) -> str:
+    if not resumable:
+        return _policy_recovery_prompt(original) if reason == "policy" else original
+    if reason == "policy":
+        return _POLICY_SESSION_RESUME_PROMPT
+    if reason in {"rate_limit", "transient"}:
+        return _SESSION_RESUME_PROMPT
+    return original
 
 
 # bash pathname expansion (`for d in .../*/`) orders by the locale collating
@@ -296,6 +374,7 @@ class Phase:
     _model: str | None = None
     _effort: str | None = None
     _policy_retries = DEFAULT_POLICY_RETRIES
+    _transient_resumes = DEFAULT_TRANSIENT_RESUMES
 
     # ── per-phase hooks ──
     def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
@@ -467,6 +546,7 @@ class Phase:
         max_parallel: int | None = None
         max_turns = "0"
         policy_retries = DEFAULT_POLICY_RETRIES
+        transient_resumes = DEFAULT_TRANSIENT_RESUMES
         dry_run = False
         check_only = False
         agent = "claude-code"
@@ -507,6 +587,13 @@ class Phase:
                     policy_retries = _parse_policy_retries(raw)
                 except ValueError:
                     print(f"Invalid --policy-retries: '{raw}' (expected a non-negative integer)")
+                    return 1
+            elif arg.startswith("--transient-resumes="):
+                raw = arg[len("--transient-resumes=") :]
+                try:
+                    transient_resumes = _parse_transient_resumes(raw)
+                except ValueError:
+                    print(f"Invalid --transient-resumes: '{raw}' (expected a non-negative integer)")
                     return 1
             elif arg.startswith("--agent="):
                 agent = arg[len("--agent=") :]
@@ -559,6 +646,7 @@ class Phase:
         self._model = model if model is not None else (os.environ.get("SPECULA_MODEL") or None)
         self._effort = effort if effort is not None else (os.environ.get("SPECULA_EFFORT") or None)
         self._policy_retries = policy_retries
+        self._transient_resumes = transient_resumes
 
         # A direct multi-target phase command has no Pipeline.run_dir, but its
         # agents must still share one TLC budget. Preserve the scope supplied by
@@ -613,6 +701,7 @@ class Phase:
         print(f"Max parallel: {max_parallel}")
         print(f"Max turns:    {max_turns}")
         print(f"Policy retries: {policy_retries}")
+        print(f"Transient resumes: {transient_resumes}")
         print()
 
         print(self.check_header)
@@ -662,11 +751,16 @@ class Phase:
             try:
                 while pending or running:
                     while pending and len(running) < max_parallel and not pause_for_rate_limit and not stop_launching:
-                        request = pending.pop(0)
+                        now = time.monotonic()
+                        ready_index = next(
+                            (index for index, candidate in enumerate(pending) if candidate.ready_at <= now),
+                            None,
+                        )
+                        if ready_index is None:
+                            break
+                        request = pending.pop(ready_index)
                         name = self.target_name(request.target)
                         prompt = self.build_prompt(ws, request.target)
-                        if request.policy_attempt > 0:
-                            prompt = _policy_recovery_prompt(prompt)
                         self._launch(
                             ws,
                             name,
@@ -679,6 +773,9 @@ class Phase:
                             target=request.target,
                             attempt=request.rate_limit_attempt,
                             policy_attempt=request.policy_attempt,
+                            transient_attempt=request.transient_attempt,
+                            invocation_attempt=request.invocation_attempt,
+                            retry_reason=request.retry_reason,
                         )
                         print()
 
@@ -715,6 +812,38 @@ class Phase:
                                         completed_agent.target,
                                         rate_limit_attempt=completed_agent.attempt,
                                         policy_attempt=next_policy_attempt,
+                                        transient_attempt=completed_agent.transient_attempt,
+                                        invocation_attempt=completed_agent.invocation_attempt + 1,
+                                        retry_reason="policy",
+                                    ),
+                                )
+                            else:
+                                failures.append((completed_agent.name, rc))
+                            continue
+                        if rc == TRANSIENT_FAILURE_RC:
+                            if completed_agent.transient_attempt < self._transient_resumes:
+                                next_transient_attempt = completed_agent.transient_attempt + 1
+                                delay = _transient_resume_delay(next_transient_attempt)
+                                mode = (
+                                    "resuming the exact session"
+                                    if completed_agent.resume_state is not None
+                                    and completed_agent.resume_state.is_file()
+                                    else "retrying before a session was captured"
+                                )
+                                print(
+                                    f"[{_ts()}] {completed_agent.name}: temporary provider failure; {mode} "
+                                    f"({next_transient_attempt}/{self._transient_resumes}) after {delay:g}s"
+                                )
+                                pending.insert(
+                                    0,
+                                    _LaunchRequest(
+                                        completed_agent.target,
+                                        rate_limit_attempt=completed_agent.attempt,
+                                        policy_attempt=completed_agent.policy_attempt,
+                                        transient_attempt=next_transient_attempt,
+                                        invocation_attempt=completed_agent.invocation_attempt + 1,
+                                        retry_reason="transient",
+                                        ready_at=time.monotonic() + delay,
                                     ),
                                 )
                             else:
@@ -727,6 +856,9 @@ class Phase:
                                         completed_agent.target,
                                         rate_limit_attempt=completed_agent.attempt + 1,
                                         policy_attempt=completed_agent.policy_attempt,
+                                        transient_attempt=completed_agent.transient_attempt,
+                                        invocation_attempt=completed_agent.invocation_attempt + 1,
+                                        retry_reason="rate_limit",
                                     )
                                 )
                                 pause_for_rate_limit = True
@@ -768,6 +900,11 @@ class Phase:
 
                     if running:
                         time.sleep(self.progress_config.poll_seconds)
+                    elif pending and not pause_for_rate_limit and not stop_launching:
+                        next_ready = min(request.ready_at for request in pending)
+                        delay = max(0.0, next_ready - time.monotonic())
+                        if delay:
+                            time.sleep(min(self.progress_config.poll_seconds, delay))
 
                 if not dry_run:
                     print(f"[{_ts()}] All agents completed.")
@@ -939,10 +1076,32 @@ class Phase:
         target: str = "",
         attempt: int = 1,
         policy_attempt: int = 0,
+        transient_attempt: int = 0,
+        invocation_attempt: int = 1,
+        retry_reason: str = "fresh",
     ) -> progress.RunningAgent | None:
         files = self.agent_files(ws, name)
         for d in files["mkdirs"]:
             d.mkdir(parents=True, exist_ok=True)
+        resume_state = _resume_state_path(files["log"])
+        activity_sidecar = files["log"].with_suffix(".activity.jsonl")
+        attempt_files = (
+            files["prompt"],
+            files["log"],
+            _last_message_path(files["log"]),
+            activity_sidecar,
+            files["log"].with_suffix(".raw.json"),
+            files["log"].with_suffix(".usage.json"),
+        )
+        if not dry_run:
+            if invocation_attempt == 1:
+                _clear_attempt_archives(attempt_files)
+                _clear_resume_state(resume_state)
+            else:
+                _archive_attempt(attempt_files, invocation_attempt - 1)
+        resumable = resume_state.is_file()
+        prompt_reason = "policy" if policy_attempt > 0 and not resumable else retry_reason
+        prompt = _retry_prompt(prompt, prompt_reason, resumable=resumable)
         prompt = materialize_skill_refs(prompt, adapter)
         files["prompt"].write_text(prompt)
         print(f"[{_ts()}] Launching agent: {name}")
@@ -952,7 +1111,7 @@ class Phase:
             print(
                 f"  [DRY RUN] {adapter} {self.dry_prompt_flag}=<prompt> "
                 f"--max-turns={max_turns} --claude-alias={claude_alias}{tuning_text} "
-                f"--log={files['log']} --background"
+                f"--log={files['log']} --resume-state={resume_state} --background"
             )
             print(f"  Prompt saved: {files['prompt']}")
             return None
@@ -968,14 +1127,12 @@ class Phase:
         if repo_dir:
             env["SPECULA_TARGET_REPO_DIR"] = repo_dir
         work_dir = ws.work_dir(name)
-        activity_sidecar = files["log"].with_suffix(".activity.jsonl")
         with contextlib.suppress(OSError):
             activity_sidecar.unlink()
-        # SPECULA_PROGRESS=off is a full opt-out, not a mute: without the sidecar
-        # the adapters fall back to their legacy argv (`--output-format json`, no
-        # `codex --json`, no copilot `--stream on`) and the legacy result-only
-        # agent.log. A CLI that predates the streaming flags would otherwise have
-        # no escape hatch — and an adapter failure now aborts the whole run.
+        # SPECULA_PROGRESS=off disables the retained activity sidecar and live
+        # reporting. Resume-capable adapters may still consume a private
+        # structured stream so they can durably capture the exact native session
+        # ID; that temporary capture is not progress telemetry.
         env.pop("SPECULA_ACTIVITY_LOG", None)
         if progress.enabled():
             env["SPECULA_ACTIVITY_LOG"] = str(activity_sidecar)
@@ -990,6 +1147,7 @@ class Phase:
             activity_sidecar,
             files["log"].with_suffix(".raw.json"),
             files["log"].with_suffix(".usage.json"),
+            resume_state,
         )
         ignored: set[Path] = set()
         for path in runtime_files:
@@ -1011,6 +1169,7 @@ class Phase:
                     f"--claude-alias={claude_alias}",
                     *_model_effort_argv(adapter, self._model, self._effort),
                     f"--log={files['log']}",
+                    f"--resume-state={resume_state}",
                     "--background",
                 ],
                 env=env,
@@ -1032,6 +1191,9 @@ class Phase:
                 target=target,
                 attempt=attempt,
                 policy_attempt=policy_attempt,
+                transient_attempt=transient_attempt,
+                invocation_attempt=invocation_attempt,
+                resume_state=resume_state,
             )
             if owner is not None:
                 owner.append(launched)
@@ -1091,6 +1253,7 @@ def run_agent_blocking(
     model: str | None = None,
     effort: str | None = None,
     policy_retries: int = DEFAULT_POLICY_RETRIES,
+    transient_resumes: int = DEFAULT_TRANSIENT_RESUMES,
     policy_state: PolicyRetryState | None = None,
 ) -> tuple[int, str]:
     """Run an agent turn, blocking, and return (returncode, log text).
@@ -1111,13 +1274,18 @@ def run_agent_blocking(
     aggregate, never after one turn. ``stop_gate=True`` opts back into the
     original phase key and therefore its deliverable contract. Rate-limit (exit
     75) is the caller's concern. A provider policy block (exit 76) advances up
-    to ``policy_retries`` continuation levels in the same workspace. Callers
-    that automatically replay exit 75 may pass ``policy_state`` so that replay
-    resumes the same level instead of resetting the logical turn's budget. The
-    caller must discard that state after any non-75 terminal result.
+    to ``policy_retries`` continuation levels. A retryable provider/transport
+    failure (exit 74) resumes up to ``transient_resumes`` times with bounded
+    backoff. Every retry reuses the exact native session captured in a state
+    file; if the CLI failed before emitting an ID, Specula safely replays the
+    original prompt. Callers that automatically replay exit 75 may pass
+    ``policy_state`` so the native session and both budgets survive that wait.
+    The caller must discard that state after any non-75 terminal result.
     """
     if policy_retries < 0:
         raise ValueError("policy_retries must be a non-negative integer")
+    if transient_resumes < 0:
+        raise ValueError("transient_resumes must be a non-negative integer")
     caller_cwd = Path.cwd()
     adapter = adapter if adapter.is_absolute() else (caller_cwd / adapter).resolve()
     prompt_file = prompt_file if prompt_file.is_absolute() else (caller_cwd / prompt_file).resolve()
@@ -1132,6 +1300,16 @@ def run_agent_blocking(
     prompt = materialize_skill_refs(prompt, adapter)
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     last_message_file = _last_message_path(log_file)
+    resume_state = _resume_state_path(log_file)
+    activity_file = log_file.with_suffix(".activity.jsonl")
+    attempt_files = (
+        prompt_file,
+        log_file,
+        last_message_file,
+        activity_file,
+        log_file.with_suffix(".raw.json"),
+        log_file.with_suffix(".usage.json"),
+    )
     env = os.environ.copy()
     env["SPECULA_PHASE"] = phase_key if stop_gate else f"{phase_key}_turn"
     env["SPECULA_WORK_DIR"] = str(work_dir)
@@ -1162,14 +1340,32 @@ def run_agent_blocking(
         f"--claude-alias={claude_alias}",
         *_model_effort_argv(adapter, model, effort),
         f"--log={log_file}",
+        f"--resume-state={resume_state}",
     ]
     state = policy_state if policy_state is not None else PolicyRetryState()
     with state._lock:
         if not 0 <= state.policy_attempt <= policy_retries:
             raise ValueError("policy_state attempt must be within policy_retries")
+        if not 0 <= state.transient_attempt <= transient_resumes:
+            raise ValueError("policy_state transient attempt must be within transient_resumes")
+        if state.resume_state is None:
+            _clear_attempt_archives(attempt_files)
+            _clear_resume_state(resume_state)
+            state.resume_state = resume_state
+        elif state.resume_state != resume_state:
+            raise ValueError("policy_state belongs to a different logical turn")
         while True:
             policy_attempt = state.policy_attempt
-            current_prompt = prompt if policy_attempt == 0 else _policy_recovery_prompt(prompt)
+            state.invocation_attempt += 1
+            if state.invocation_attempt > 1:
+                _archive_attempt(attempt_files, state.invocation_attempt - 1)
+            resumable = resume_state.is_file()
+            prompt_reason = "policy" if policy_attempt > 0 and not resumable else state.retry_reason
+            current_prompt = _retry_prompt(
+                prompt,
+                prompt_reason,
+                resumable=resumable,
+            )
             prompt_file.write_text(current_prompt)
             with contextlib.suppress(OSError):
                 log_file.unlink()
@@ -1186,13 +1382,28 @@ def run_agent_blocking(
             # adapters' log contract remains result-only.
             result_file = last_message_file if adapter.stem == "codex" else log_file
             text = result_file.read_text(errors="replace") if result_file.is_file() else ""
-            if rc != POLICY_BLOCKED_RC or policy_attempt >= policy_retries:
-                return rc, text
-            state.policy_attempt = policy_attempt + 1
-            print(
-                f"[{_ts()}] Provider policy interrupted the agent turn; retrying with a revised request "
-                f"({state.policy_attempt}/{policy_retries})"
-            )
+            if rc == TRANSIENT_FAILURE_RC and state.transient_attempt < transient_resumes:
+                state.transient_attempt += 1
+                state.retry_reason = "transient"
+                delay = _transient_resume_delay(state.transient_attempt)
+                mode = "resuming the exact session" if resume_state.is_file() else "retrying the original request"
+                print(
+                    f"[{_ts()}] Temporary provider failure; {mode} "
+                    f"({state.transient_attempt}/{transient_resumes}) after {delay:g}s"
+                )
+                time.sleep(delay)
+                continue
+            if rc == POLICY_BLOCKED_RC and policy_attempt < policy_retries:
+                state.policy_attempt = policy_attempt + 1
+                state.retry_reason = "policy"
+                print(
+                    f"[{_ts()}] Provider policy interrupted the agent turn; retrying with a revised request "
+                    f"({state.policy_attempt}/{policy_retries})"
+                )
+                continue
+            if rc == quota.RATE_LIMIT_RC:
+                state.retry_reason = "rate_limit"
+            return rc, text
 
 
 class CodeAnalysisPhase(Phase):
@@ -1222,6 +1433,7 @@ Options:
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
@@ -1341,6 +1553,7 @@ Options:
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
@@ -1475,6 +1688,7 @@ Options:
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
@@ -1605,6 +1819,7 @@ Options:
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
@@ -1723,6 +1938,7 @@ Options:
   --max-parallel=N    Max concurrent agents (default: 1)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
@@ -1881,6 +2097,7 @@ Options:
                       --legacy-confirm (defaults: 4 in parallel mode, 1 otherwise)
   --max-turns=N       Max agent turns (default: 0 = unlimited)
   --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
   --agent=NAME        Agent adapter to use (default: claude-code)
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
@@ -1980,23 +2197,32 @@ Prerequisites:
                 model=self._model,
                 effort=self._effort,
                 policy_retries=self._policy_retries,
+                transient_resumes=self._transient_resumes,
                 dry_run=dry_run,
                 prompt_extra=self._read_prompt_extra(ws, name),
             )
             attempt = 1
-            while True:
-                code = run_parallel_confirmation(cfg)
-                if (
-                    code == quota.RATE_LIMIT_RC
-                    and not failures
-                    and self._reactive_rate_limit_enabled()
-                    and attempt <= retry_limit
-                ):
-                    print(f"[{_ts()}] Rate limited: waiting before retrying {name}")
-                    self._wait_for_rate_limit()
-                    attempt += 1
-                    continue
-                break
+            try:
+                while True:
+                    will_retry_rate_limit = (
+                        not failures and self._reactive_rate_limit_enabled() and attempt <= retry_limit
+                    )
+                    code = run_parallel_confirmation(
+                        cfg,
+                        retain_rate_limited_state=will_retry_rate_limit,
+                    )
+                    if code == quota.RATE_LIMIT_RC and will_retry_rate_limit:
+                        print(f"[{_ts()}] Rate limited: waiting before retrying {name}")
+                        self._wait_for_rate_limit()
+                        attempt += 1
+                        continue
+                    break
+            finally:
+                # A quota wait can abort (or the process can be interrupted)
+                # after the confirmation driver deliberately retained its exact
+                # session/worktree. Never leak that runtime lease when no next
+                # replay will execute in this process.
+                cfg.clear_retry_runtime()
             if code != 0:
                 failures.append((name, code))
                 if code == quota.RATE_LIMIT_RC:
@@ -2221,6 +2447,7 @@ Options (after <phase>):
   --model=NAME        Model forwarded to the selected adapter
   --effort=LEVEL      Reasoning effort forwarded to the selected adapter
   --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
 
 Phases:
   analysis    — Review code analysis output (modeling-brief.md, analysis-report.md)
@@ -2244,6 +2471,7 @@ Output:
         model: str | None = None
         effort: str | None = None
         policy_retries = DEFAULT_POLICY_RETRIES
+        transient_resumes = DEFAULT_TRANSIENT_RESUMES
         targets: list[str] = []
         for arg in argv[1:]:
             if arg.startswith("--agent="):
@@ -2261,6 +2489,13 @@ Output:
                 except ValueError:
                     print(f"Invalid --policy-retries: '{raw}' (expected a non-negative integer)")
                     return 1
+            elif arg.startswith("--transient-resumes="):
+                raw = arg[len("--transient-resumes=") :]
+                try:
+                    transient_resumes = _parse_transient_resumes(raw)
+                except ValueError:
+                    print(f"Invalid --transient-resumes: '{raw}' (expected a non-negative integer)")
+                    return 1
             elif arg in ("--help", "-h"):
                 sys.stdout.write(self.usage)
                 return 0
@@ -2270,6 +2505,7 @@ Output:
         self._model = model if model is not None else (os.environ.get("SPECULA_MODEL") or None)
         self._effort = effort if effort is not None else (os.environ.get("SPECULA_EFFORT") or None)
         self._policy_retries = policy_retries
+        self._transient_resumes = transient_resumes
 
         if not phase or not targets:
             print(f"Usage: {SCRIPT_DIR}/phaselib.py review <analysis|specgen|validation> name [name ...]")
@@ -2287,12 +2523,12 @@ Output:
         print(f" Specula — Review Agent ({phase})")
         print("========================================")
         print(f"Policy retries: {policy_retries}")
+        print(f"Transient resumes: {transient_resumes}")
         print()
 
         with _cleanup_on_signal():
             for name in names:
-                attempt = 1
-                policy_attempt = 0
+                request = _LaunchRequest(name)
                 while True:
                     rc = self._launch_review(
                         ws,
@@ -2300,22 +2536,57 @@ Output:
                         phase,
                         adapter,
                         claude_alias,
-                        policy_attempt=policy_attempt,
+                        policy_attempt=request.policy_attempt,
+                        transient_attempt=request.transient_attempt,
+                        invocation_attempt=request.invocation_attempt,
+                        retry_reason=request.retry_reason,
                     )
                     if (
                         rc == quota.RATE_LIMIT_RC
                         and self._reactive_rate_limit_enabled()
-                        and attempt <= self._rate_limit_retries()
+                        and request.rate_limit_attempt <= self._rate_limit_retries()
                     ):
                         print(f"[{_ts()}] Rate limited: waiting before retrying {name}")
                         self._wait_for_rate_limit()
-                        attempt += 1
+                        request = _LaunchRequest(
+                            name,
+                            rate_limit_attempt=request.rate_limit_attempt + 1,
+                            policy_attempt=request.policy_attempt,
+                            transient_attempt=request.transient_attempt,
+                            invocation_attempt=request.invocation_attempt + 1,
+                            retry_reason="rate_limit",
+                        )
                         continue
-                    if rc == POLICY_BLOCKED_RC and policy_attempt < self._policy_retries:
-                        policy_attempt += 1
+                    if rc == POLICY_BLOCKED_RC and request.policy_attempt < self._policy_retries:
+                        next_policy_attempt = request.policy_attempt + 1
                         print(
                             f"[{_ts()}] {name}: provider policy interrupted the review; "
-                            f"retrying with a revised request ({policy_attempt}/{self._policy_retries})"
+                            f"retrying with a revised request ({next_policy_attempt}/{self._policy_retries})"
+                        )
+                        request = _LaunchRequest(
+                            name,
+                            rate_limit_attempt=request.rate_limit_attempt,
+                            policy_attempt=next_policy_attempt,
+                            transient_attempt=request.transient_attempt,
+                            invocation_attempt=request.invocation_attempt + 1,
+                            retry_reason="policy",
+                        )
+                        continue
+                    if rc == TRANSIENT_FAILURE_RC and request.transient_attempt < self._transient_resumes:
+                        next_transient_attempt = request.transient_attempt + 1
+                        delay = _transient_resume_delay(next_transient_attempt)
+                        print(
+                            f"[{_ts()}] {name}: temporary provider failure; resuming review "
+                            f"({next_transient_attempt}/{self._transient_resumes}) after {delay:g}s"
+                        )
+                        time.sleep(delay)
+                        request = _LaunchRequest(
+                            name,
+                            rate_limit_attempt=request.rate_limit_attempt,
+                            policy_attempt=request.policy_attempt,
+                            transient_attempt=next_transient_attempt,
+                            invocation_attempt=request.invocation_attempt + 1,
+                            retry_reason="transient",
                         )
                         continue
                     if rc != 0:
@@ -2354,6 +2625,9 @@ Output:
         claude_alias: str,
         *,
         policy_attempt: int = 0,
+        transient_attempt: int = 0,
+        invocation_attempt: int = 1,
+        retry_reason: str = "fresh",
     ) -> int:
         wd = ws.work_dir(name)
         # specgen/validation logs go under spec/ to match pipeline summary expectations
@@ -2368,12 +2642,26 @@ Output:
         else:
             print(f"Unknown phase: {phase}")
             raise SystemExit(1)
-        if policy_attempt > 0:
-            prompt = _policy_recovery_prompt(prompt)
         print(f"[{_ts()}] Reviewing {name} ({phase})...")
         log_dir.mkdir(parents=True, exist_ok=True)
         pid_file = log_dir / f"review-{phase}.pid"
         activity_log = log_file.with_suffix(".activity.jsonl")
+        resume_state = _resume_state_path(log_file)
+        attempt_files = (
+            log_file,
+            _last_message_path(log_file),
+            activity_log,
+            log_file.with_suffix(".raw.json"),
+            log_file.with_suffix(".usage.json"),
+        )
+        if invocation_attempt == 1:
+            _clear_attempt_archives(attempt_files)
+            _clear_resume_state(resume_state)
+        else:
+            _archive_attempt(attempt_files, invocation_attempt - 1)
+        resumable = resume_state.is_file()
+        prompt_reason = "policy" if policy_attempt > 0 and not resumable else retry_reason
+        prompt = _retry_prompt(prompt, prompt_reason, resumable=resumable)
         with contextlib.suppress(OSError):
             activity_log.unlink()
         env = os.environ.copy()
@@ -2391,6 +2679,7 @@ Output:
             activity_log,
             log_file.with_suffix(".raw.json"),
             log_file.with_suffix(".usage.json"),
+            resume_state,
         ):
             with contextlib.suppress(ValueError):
                 ignored.add(path.relative_to(wd))
@@ -2411,6 +2700,7 @@ Output:
                     f"--claude-alias={claude_alias}",
                     *_model_effort_argv(adapter, self._model, self._effort),
                     f"--log={log_file}",
+                    f"--resume-state={resume_state}",
                     "--background",
                 ],
                 env=env,
@@ -2431,6 +2721,9 @@ Output:
                 adapter_name=adapter.stem,
                 target=name,
                 policy_attempt=policy_attempt,
+                transient_attempt=transient_attempt,
+                invocation_attempt=invocation_attempt,
+                resume_state=resume_state,
             )
             pid_file.write_text(f"{proc.pid}\n")
             print(f"  PID={proc.pid}  Log: {log_file}")

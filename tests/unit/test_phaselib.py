@@ -50,6 +50,7 @@ import specula.progress as progress_module  # noqa: E402
 import specula.quota as quota  # noqa: E402
 from specula import phaselib  # noqa: E402
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC  # noqa: E402
+from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC  # noqa: E402
 from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
 from specula.skill_refs import CODEX_PLUGIN_NAME, prompt_skill_ids  # noqa: E402
 
@@ -476,7 +477,7 @@ class TestDryRunCommand(PhaseCase):
 
         seen: list[tuple[int, str]] = []
 
-        def fake_confirmation(cfg: confirmlib.ConfirmConfig) -> int:
+        def fake_confirmation(cfg: confirmlib.ConfirmConfig, **_kwargs: object) -> int:
             seen.append((cfg.max_parallel, cfg.max_turns))
             return 0
 
@@ -614,6 +615,14 @@ class TestArgErrors(PhaseCase):
                 self.assertIn("Invalid --policy-retries", out)
                 self.assertIn("non-negative integer", out)
 
+    def test_transient_resumes_rejects_non_decimal_values(self) -> None:
+        for value in ("", "-1", "1.5", "bad", "+1"):
+            with self.subTest(value=value):
+                rc, out = self.run_phase("code_analysis", [f"--transient-resumes={value}", NAME])
+                self.assertEqual(rc, 1)
+                self.assertIn("Invalid --transient-resumes", out)
+                self.assertIn("non-negative integer", out)
+
     def test_help_prints_usage(self) -> None:
         for spec in PHASES:
             with self.subTest(phase=spec["key"]):
@@ -626,6 +635,7 @@ class TestArgErrors(PhaseCase):
                 self.assertIn("--model=NAME", out)
                 self.assertIn("--effort=LEVEL", out)
                 self.assertIn("--policy-retries=N", out)
+                self.assertIn("--transient-resumes=N", out)
                 self.assertIn("default: 20", out)
 
 
@@ -635,7 +645,7 @@ class TestBugConfirmationAlternate(PhaseCase):
 
         calls: list[tuple[int, str]] = []
 
-        def fake_confirmation(cfg: confirmlib.ConfirmConfig) -> int:
+        def fake_confirmation(cfg: confirmlib.ConfirmConfig, **_kwargs: object) -> int:
             calls.append((cfg.max_parallel, cfg.max_turns))
             return codes[min(len(calls) - 1, len(codes) - 1)]
 
@@ -671,12 +681,82 @@ class TestBugConfirmationAlternate(PhaseCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(waits, [1])
 
+    def test_confirmation_arms_runtime_lease_only_for_an_actual_outer_retry(self) -> None:
+        from specula import confirmlib
+
+        retained: list[bool] = []
+
+        def fake_confirmation(
+            _cfg: confirmlib.ConfirmConfig,
+            *,
+            retain_rate_limited_state: bool = False,
+        ) -> int:
+            retained.append(retain_rate_limited_state)
+            return quota.RATE_LIMIT_RC
+
+        self.patch_attr(confirmlib, "run_parallel_confirmation", fake_confirmation)
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: None)
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"])
+
+        self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
+        self.assertEqual(retained, [True, False])
+
+    def test_confirmation_does_not_arm_runtime_lease_without_reactive_retry(self) -> None:
+        from specula import confirmlib
+
+        retained: list[bool] = []
+
+        def fake_confirmation(
+            _cfg: confirmlib.ConfirmConfig,
+            *,
+            retain_rate_limited_state: bool = False,
+        ) -> int:
+            retained.append(retain_rate_limited_state)
+            return quota.RATE_LIMIT_RC
+
+        self.patch_attr(confirmlib, "run_parallel_confirmation", fake_confirmation)
+
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"])
+
+        self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
+        self.assertEqual(retained, [False])
+
+    def test_confirmation_clears_retained_runtime_when_quota_wait_aborts(self) -> None:
+        from specula import confirmlib
+
+        def fake_confirmation(
+            _cfg: confirmlib.ConfirmConfig,
+            *,
+            retain_rate_limited_state: bool = False,
+        ) -> int:
+            self.assertTrue(retain_rate_limited_state)
+            return quota.RATE_LIMIT_RC
+
+        def abort_wait(_self: phaselib.Phase) -> None:
+            raise RuntimeError("quota wait aborted")
+
+        self.patch_attr(confirmlib, "run_parallel_confirmation", fake_confirmation)
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", abort_wait)
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+
+        with (
+            mock.patch.object(confirmlib.ConfirmConfig, "clear_retry_runtime", autospec=True) as clear,
+            self.assertRaisesRegex(RuntimeError, "quota wait aborted"),
+        ):
+            self.dry_run(BY_KEY["bug_confirmation"])
+
+        clear.assert_called_once()
+
     def test_policy_retry_budget_reaches_parallel_confirmation(self) -> None:
         from specula import confirmlib
 
         seen: list[int] = []
 
-        def fake_confirmation(cfg: confirmlib.ConfirmConfig) -> int:
+        def fake_confirmation(cfg: confirmlib.ConfirmConfig, **_kwargs: object) -> int:
             seen.append(cfg.policy_retries)
             return 0
 
@@ -692,7 +772,7 @@ class TestBugConfirmationAlternate(PhaseCase):
         self.seed(BY_KEY["bug_confirmation"]["inputs"])
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
 
-        def fake_confirmation(cfg: confirmlib.ConfirmConfig) -> int:
+        def fake_confirmation(cfg: confirmlib.ConfirmConfig, **_kwargs: object) -> int:
             return 0
 
         self.patch_attr(confirmlib, "run_parallel_confirmation", fake_confirmation)
@@ -708,7 +788,7 @@ class TestBugConfirmationAlternate(PhaseCase):
         self.seed(BY_KEY["bug_confirmation"]["inputs"])
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
 
-        def fake_confirmation(cfg: confirmlib.ConfirmConfig) -> int:
+        def fake_confirmation(cfg: confirmlib.ConfirmConfig, **_kwargs: object) -> int:
             report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
             report.parent.mkdir(parents=True, exist_ok=True)
             report.write_text("# Confirmed Bugs\n")
@@ -884,6 +964,95 @@ class TestHandoffGate(PhaseCase):
         self.assertEqual(rc, POLICY_BLOCKED_RC, out)
         self.assertEqual(count.read_text(), "x")
         self.assertNotIn("retrying with a revised request", out)
+
+    def test_transient_failure_resumes_exact_session_with_lightweight_prompt(self) -> None:
+        count = self.tmp() / "count"
+        captures = self.tmp()
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("CAPTURE_DIR", str(captures))
+        self.patch_attr(phaselib, "_transient_resume_delay", lambda _attempt: 0.0)
+        self.write_adapter(
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in '
+            "--prompt-file=*) prompt=${arg#*=} ;; "
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'cp "$prompt" "$CAPTURE_DIR/prompt-$attempt.md"\n'
+            'printf "%s\\n" "$resume" >> "$CAPTURE_DIR/resume-paths"\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            '  printf "session-exact-123\\n" > "$resume"\n'
+            '  printf "temporary failure\\n" > "$log"\n'
+            "  exit 74\n"
+            "fi\n"
+            '[ "$(cat "$resume")" = "session-exact-123" ]\n'
+            'printf "continued in session-exact-123\\n" > "$log"\n'
+            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+        )
+
+        rc, out = self.run_analysis(options=["--transient-resumes=1"])
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(count.read_text(), "xx")
+        first_prompt = (captures / "prompt-1.md").read_text()
+        resumed_prompt = (captures / "prompt-2.md").read_text()
+        self.assertIn("modeling-brief.md", first_prompt)
+        self.assertEqual(resumed_prompt, phaselib._SESSION_RESUME_PROMPT)
+        self.assertLess(len(resumed_prompt), len(first_prompt))
+        resume_paths = (captures / "resume-paths").read_text().splitlines()
+        self.assertEqual(resume_paths, [str(self.work_dir() / "agent.resume.json")] * 2)
+        self.assertEqual((self.work_dir() / "agent.attempt-1.log").read_text(), "temporary failure\n")
+        self.assertEqual((self.work_dir() / "agent.log").read_text(), "continued in session-exact-123\n")
+        self.assertIn("resuming the exact session (1/1)", out)
+
+    def test_default_transient_resume_budget_stops_after_twenty_continuations(self) -> None:
+        count = self.tmp() / "count"
+        self.set_env("COUNT_FILE", str(count))
+        self.patch_attr(phaselib, "_transient_resume_delay", lambda _attempt: 0.0)
+        self.write_adapter('printf x >> "$COUNT_FILE"\nexit 74\n')
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, TRANSIENT_FAILURE_RC, out)
+        self.assertEqual(count.read_text(), "x" * 21)
+        self.assertIn("temporary provider failure", out)
+        self.assertIn("(20/20)", out)
+        self.assertNotIn("(21/20)", out)
+        self.assertIn(f"adapter exited {TRANSIENT_FAILURE_RC}", out)
+
+    def test_zero_transient_resumes_disables_continuation(self) -> None:
+        count = self.tmp() / "count"
+        self.set_env("COUNT_FILE", str(count))
+        self.patch_attr(phaselib, "_transient_resume_delay", lambda _attempt: 0.0)
+        self.write_adapter('printf x >> "$COUNT_FILE"\nexit 74\n')
+
+        rc, out = self.run_analysis(options=["--transient-resumes=0"])
+
+        self.assertEqual(rc, TRANSIENT_FAILURE_RC, out)
+        self.assertEqual(count.read_text(), "x")
+        self.assertNotIn("temporary provider failure", out)
+
+    def test_transient_resume_budget_exhaustion_preserves_each_attempt_log(self) -> None:
+        count = self.tmp() / "count"
+        self.set_env("COUNT_FILE", str(count))
+        self.patch_attr(phaselib, "_transient_resume_delay", lambda _attempt: 0.0)
+        self.write_adapter(
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            'printf "failure-%s\\n" "$attempt" > "$log"\n'
+            "exit 74\n"
+        )
+
+        rc, out = self.run_analysis(options=["--transient-resumes=2"])
+
+        self.assertEqual(rc, TRANSIENT_FAILURE_RC, out)
+        self.assertEqual(count.read_text(), "xxx")
+        self.assertEqual((self.work_dir() / "agent.attempt-1.log").read_text(), "failure-1\n")
+        self.assertEqual((self.work_dir() / "agent.attempt-2.log").read_text(), "failure-2\n")
+        self.assertEqual((self.work_dir() / "agent.log").read_text(), "failure-3\n")
+        self.assertIn("(2/2)", out)
 
     def test_policy_and_rate_limit_retry_budgets_are_independent(self) -> None:
         count = self.tmp() / "count"
@@ -1394,6 +1563,158 @@ class TestRunAgentBlocking(PhaseCase):
 
         self.assertEqual(rc, POLICY_BLOCKED_RC)
         self.assertEqual(count.read_text(), "x")
+
+    def test_fresh_blocking_turn_fails_if_stale_resume_state_cannot_be_cleared(self) -> None:
+        marker = self.tmp() / "launched"
+        adapter = self.tmp() / "adapter.sh"
+        adapter.write_text(f'#!/bin/sh\ntouch "{marker}"\n')
+        adapter.chmod(0o755)
+        log_file = self.tmp() / "turn.log"
+        log_file.with_suffix(".resume.json").mkdir()
+        state = phaselib.PolicyRetryState()
+
+        for _ in range(2):
+            with self.assertRaisesRegex(RuntimeError, "cannot clear stale resume state"):
+                phaselib.run_agent_blocking(
+                    adapter,
+                    "fresh prompt",
+                    self.tmp() / "prompt.md",
+                    log_file,
+                    phase_key="bug_confirmation",
+                    work_dir=self.work_dir(),
+                    claude_alias="profile",
+                    policy_state=state,
+                )
+            self.assertIsNone(state.resume_state)
+
+        self.assertFalse(marker.exists())
+
+    def test_transient_failure_resumes_blocking_turn_in_exact_session(self) -> None:
+        adapter = self.tmp() / "adapter.sh"
+        count = self.tmp() / "count"
+        captures = self.tmp()
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in '
+            "--prompt-file=*) prompt=${arg#*=} ;; "
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'cp "$prompt" "$CAPTURE_DIR/prompt-$attempt.md"\n'
+            'printf "%s\\n" "$resume" >> "$CAPTURE_DIR/resume-paths"\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            '  printf "blocking-session-456\\n" > "$resume"\n'
+            '  printf "capacity failure\\n" > "$log"\n'
+            "  exit 74\n"
+            "fi\n"
+            '[ "$(cat "$resume")" = "blocking-session-456" ]\n'
+            'printf "continued answer\\n" > "$log"\n'
+        )
+        adapter.chmod(0o755)
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("CAPTURE_DIR", str(captures))
+        prompt_file = captures / "prompt.md"
+        log_file = captures / "turn.log"
+
+        with mock.patch("specula.phaselib.time.sleep") as sleep:
+            rc, text = phaselib.run_agent_blocking(
+                adapter,
+                "original blocking prompt with detailed evidence",
+                prompt_file,
+                log_file,
+                phase_key="bug_confirmation",
+                work_dir=self.work_dir(),
+                claude_alias="profile",
+                transient_resumes=1,
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(text, "continued answer\n")
+        self.assertEqual(count.read_text(), "xx")
+        sleep.assert_called_once_with(phaselib._transient_resume_delay(1))
+        self.assertEqual((captures / "prompt-1.md").read_text(), "original blocking prompt with detailed evidence")
+        self.assertEqual((captures / "prompt-2.md").read_text(), phaselib._SESSION_RESUME_PROMPT)
+        self.assertEqual((captures / "resume-paths").read_text().splitlines(), [str(captures / "turn.resume.json")] * 2)
+        self.assertEqual((captures / "turn.attempt-1.log").read_text(), "capacity failure\n")
+        self.assertEqual(log_file.read_text(), "continued answer\n")
+
+    def test_rate_limit_replay_preserves_exact_session_and_spent_retry_budgets(self) -> None:
+        adapter = self.tmp() / "adapter.sh"
+        count = self.tmp() / "count"
+        captures = self.tmp()
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in '
+            "--prompt-file=*) prompt=${arg#*=} ;; "
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'if [ ! -f "$resume" ]; then printf "shared-session-789\\n" > "$resume"; fi\n'
+            '[ "$(cat "$resume")" = "shared-session-789" ]\n'
+            'cp "$prompt" "$CAPTURE_DIR/prompt-$attempt.md"\n'
+            'cat "$resume" >> "$CAPTURE_DIR/sessions"\n'
+            'printf "attempt-%s\\n" "$attempt" > "$log"\n'
+            'case "$attempt" in\n'
+            "  1) exit 74 ;;\n"
+            "  2) exit 76 ;;\n"
+            "  3) exit 75 ;;\n"
+            "  4) exit 76 ;;\n"
+            "  *) exit 99 ;;\n"
+            "esac\n"
+        )
+        adapter.chmod(0o755)
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("CAPTURE_DIR", str(captures))
+        state = phaselib.PolicyRetryState()
+        prompt_file = captures / "prompt.md"
+        log_file = captures / "turn.log"
+        with mock.patch("specula.phaselib.time.sleep") as sleep:
+            first_rc, first_text = phaselib.run_agent_blocking(
+                adapter,
+                "original prompt",
+                prompt_file,
+                log_file,
+                phase_key="bug_confirmation",
+                work_dir=self.work_dir(),
+                claude_alias="profile",
+                policy_retries=1,
+                transient_resumes=1,
+                policy_state=state,
+            )
+            second_rc, second_text = phaselib.run_agent_blocking(
+                adapter,
+                "original prompt",
+                prompt_file,
+                log_file,
+                phase_key="bug_confirmation",
+                work_dir=self.work_dir(),
+                claude_alias="profile",
+                policy_retries=1,
+                transient_resumes=1,
+                policy_state=state,
+            )
+
+        self.assertEqual((first_rc, first_text), (quota.RATE_LIMIT_RC, "attempt-3\n"))
+        self.assertEqual((second_rc, second_text), (POLICY_BLOCKED_RC, "attempt-4\n"))
+        self.assertEqual(count.read_text(), "xxxx")
+        sleep.assert_called_once_with(phaselib._transient_resume_delay(1))
+        self.assertEqual(state.policy_attempt, 1)
+        self.assertEqual(state.transient_attempt, 1)
+        self.assertEqual(state.invocation_attempt, 4)
+        self.assertEqual(state.resume_state, captures / "turn.resume.json")
+        self.assertEqual((captures / "sessions").read_text().splitlines(), ["shared-session-789"] * 4)
+        self.assertEqual((captures / "prompt-1.md").read_text(), "original prompt")
+        self.assertEqual((captures / "prompt-2.md").read_text(), phaselib._SESSION_RESUME_PROMPT)
+        self.assertEqual((captures / "prompt-3.md").read_text(), phaselib._POLICY_SESSION_RESUME_PROMPT)
+        self.assertEqual((captures / "prompt-4.md").read_text(), phaselib._SESSION_RESUME_PROMPT)
+        self.assertEqual((captures / "turn.attempt-3.log").read_text(), "attempt-3\n")
+        self.assertEqual(log_file.read_text(), "attempt-4\n")
 
     def test_turn_phase_scopes_stop_gate_sets_cwd_and_removes_stale_log(self) -> None:
         adapter = self.tmp() / "adapter.sh"
@@ -2364,6 +2685,22 @@ class TestModelEffortLiveLaunch(PhaseCase):
         self.assertNotIn("--model=env-model", argv)
         self.assertNotIn("--effort=high", argv)
 
+    def test_fresh_phase_fails_if_stale_resume_state_cannot_be_cleared(self) -> None:
+        marker = self.tmp() / "launched"
+        adapter = self.adapters / "codex.sh"
+        adapter.write_text(f'#!/usr/bin/env sh\ntouch "{marker}"\n')
+        adapter.chmod(0o755)
+        state = self.work_dir() / "agent.resume.json"
+        state.mkdir(parents=True)
+
+        with self.assertRaisesRegex(RuntimeError, "cannot clear stale resume state"):
+            self.run_phase(
+                "code_analysis",
+                ["--agent=codex", self.artifact_flag(), NAME],
+            )
+
+        self.assertFalse(marker.exists())
+
 
 class TestReviewPhase(PhaseCase):
     """The review agent overrides run() wholesale; its contract is the prompt it
@@ -2440,6 +2777,23 @@ class TestReviewPhase(PhaseCase):
                 self.assertEqual(rc, 1)
                 self.assertIn("Invalid --policy-retries", out)
                 self.assertIn("non-negative integer", out)
+
+    def test_fresh_review_fails_if_stale_resume_state_cannot_be_cleared(self) -> None:
+        marker = self.tmp() / "launched"
+        adapter = self.install_adapter("codex", f'touch "{marker}"\n')
+        state = self.work_dir() / "review-analysis.resume.json"
+        state.mkdir(parents=True)
+
+        with self.assertRaisesRegex(RuntimeError, "cannot clear stale resume state"):
+            self.review()._launch_review(
+                phaselib.Workspace([NAME]),
+                NAME,
+                "analysis",
+                adapter,
+                "profile",
+            )
+
+        self.assertFalse(marker.exists())
 
     def test_review_streams_activity_through_shared_monitor(self) -> None:
         event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "reviewing"}})

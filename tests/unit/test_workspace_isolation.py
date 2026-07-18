@@ -291,6 +291,7 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         self.assertIsNone(meta["model"])
         self.assertEqual(meta["effort"], "max")
         self.assertEqual(meta["policy_retries"], 20)
+        self.assertEqual(meta["transient_resumes"], 20)
         self.assertIsNone(meta["artifact_git_sha"])  # no artifact given
         self.assertIn("created", meta)
         # env exported for the phase subprocesses
