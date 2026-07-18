@@ -25,6 +25,7 @@ nothing to deliver.)
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -41,7 +42,14 @@ from pathlib import Path
 from typing import Any
 
 from specula import quota
-from specula.phaselib import DEFAULT_POLICY_RETRIES, SPECULA_ROOT, PolicyRetryState, Workspace, run_agent_blocking
+from specula.phaselib import (
+    DEFAULT_POLICY_RETRIES,
+    DEFAULT_TRANSIENT_RESUMES,
+    SPECULA_ROOT,
+    PolicyRetryState,
+    Workspace,
+    run_agent_blocking,
+)
 from specula.prompts import render
 from specula.skill_refs import prompt_skill_ids
 
@@ -143,6 +151,39 @@ class Finding:
         return str(self.data["id"])
 
 
+@dataclass(frozen=True)
+class _CompletedTurn:
+    prompt_digest: str
+    cwd: str | None
+    verdict: str | None
+    text: str
+
+
+@dataclass
+class _RepairTurn:
+    turn_no: int
+    prompt: str
+    original: str | None = None
+    verdict: str | None = None
+    disabled: bool = False
+
+
+@dataclass
+class _FindingLease:
+    """In-process state retained only across an armed reactive rc75 replay."""
+
+    finding_dir: Path
+    repo_for_agent: str
+    cleanup: Callable[[], None]
+    initialized: bool = False
+    repair_retry_used: bool = False
+    completed_turns: dict[tuple[int, str], _CompletedTurn] = field(default_factory=dict)
+    turn_cwds: dict[tuple[int, str], Path] = field(default_factory=dict)
+    repair_turns: dict[tuple[int, str], _RepairTurn] = field(default_factory=dict)
+    _run_lock: Any = field(default_factory=threading.RLock, repr=False, compare=False)
+    _closed: bool = False
+
+
 @dataclass
 class ConfirmConfig:
     name: str
@@ -162,6 +203,7 @@ class ConfirmConfig:
     rounds: int = 5
     max_turns: str = "0"
     policy_retries: int = DEFAULT_POLICY_RETRIES
+    transient_resumes: int = DEFAULT_TRANSIENT_RESUMES
     # Runtime-only cursors survive this config's automatic rc75 retries. They
     # are deliberately absent from candidate/verdict fingerprints and disk.
     _policy_states: dict[tuple[str, ...], tuple[str, PolicyRetryState]] = field(
@@ -171,6 +213,11 @@ class ConfirmConfig:
         compare=False,
     )
     _policy_states_lock: Any = field(default_factory=threading.Lock, init=False, repr=False, compare=False)
+    _finding_leases: dict[str, _FindingLease] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _finding_lease_pending: dict[str, threading.Event] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
+    _finding_leases_lock: Any = field(default_factory=threading.Lock, init=False, repr=False, compare=False)
 
     def policy_state(self, key: tuple[str, ...], prompt: str) -> PolicyRetryState:
         """Return the cursor for one stable logical turn in this target run."""
@@ -191,6 +238,69 @@ class ConfirmConfig:
                 return
             for key in [key for key in self._policy_states if key[: len(prefix)] == prefix]:
                 del self._policy_states[key]
+
+    def acquire_finding_lease(self, f: Finding) -> _FindingLease:
+        """Reuse one finding's worktree and completed turns during rc75 replay."""
+        finding_dir = f.fdir.absolute()
+        creator = False
+        try:
+            while True:
+                with self._finding_leases_lock:
+                    existing = self._finding_leases.get(f.id)
+                    if existing is not None:
+                        if existing.finding_dir != finding_dir:
+                            raise ConfirmationFailed(f"{f.id}: retry lease belongs to a different finding directory")
+                        return existing
+                    pending = self._finding_lease_pending.get(f.id)
+                    if pending is None:
+                        pending = threading.Event()
+                        self._finding_lease_pending[f.id] = pending
+                        creator = True
+                if creator:
+                    break
+                pending.wait()
+
+            repo_for_agent, cleanup = setup_repo(self, f)
+            candidate = _FindingLease(finding_dir, repo_for_agent, cleanup)
+            with self._finding_leases_lock:
+                self._finding_leases[f.id] = candidate
+            return candidate
+        finally:
+            if creator:
+                with self._finding_leases_lock:
+                    pending = self._finding_lease_pending.pop(f.id, None)
+                if pending is not None:
+                    pending.set()
+
+    def release_finding_lease(self, finding_id: str) -> None:
+        """Idempotently release one terminal finding's runtime-only lease."""
+        with self._finding_leases_lock:
+            lease = self._finding_leases.pop(finding_id, None)
+        if lease is None:
+            return
+        with lease._run_lock:
+            if lease._closed:
+                return
+            lease._closed = True
+            lease.completed_turns.clear()
+            lease.turn_cwds.clear()
+            lease.repair_turns.clear()
+            try:
+                lease.cleanup()
+            except BaseException as exc:
+                message = f"  WARNING: {finding_id}: retry-lease cleanup failed ({exc})"
+                try:
+                    _log(message)
+                except OSError:
+                    print(message, flush=True)
+
+    def clear_retry_runtime(self) -> None:
+        """Release every lease/cursor when no immediate reactive replay follows."""
+        with self._finding_leases_lock:
+            finding_ids = list(self._finding_leases)
+        for finding_id in finding_ids:
+            self.release_finding_lease(finding_id)
+        self.clear_policy_states()
 
 
 @dataclass
@@ -297,6 +407,7 @@ def run_turn(
     prompt: str,
     *,
     cwd: str | Path | None = None,
+    lease: _FindingLease | None = None,
 ) -> tuple[str | None, str]:
     """Run one agent turn synchronously; return (verdict, response text).
 
@@ -308,7 +419,19 @@ def run_turn(
     if cfg.dry_run:
         _log(f"    [{f.id}] [DRY] turn {turn_no} {role} → {log.name}")
         return ("REPRODUCED" if role == "A" and turn_no == 1 else None), ""
-    policy_state = cfg.policy_state(("finding", f.id, str(turn_no), role), prompt)
+    turn_key = (turn_no, role)
+    prompt_digest = hashlib.sha256(prompt.encode()).hexdigest()
+    turn_cwd = str(Path(cwd).absolute()) if cwd is not None else None
+    if lease is not None:
+        completed = lease.completed_turns.get(turn_key)
+        if completed is not None:
+            if completed.prompt_digest != prompt_digest or completed.cwd != turn_cwd:
+                raise ConfirmationFailed(f"{f.id} turn {turn_no} {role}: retry lease no longer matches the turn")
+            _log(f"    [{f.id}] turn {turn_no} {role}: completed before rate limit — reuse")
+            return completed.verdict, completed.text
+
+    state_key = ("finding", f.id, str(turn_no), role)
+    policy_state = cfg.policy_state(state_key, prompt)
     rc, text = run_agent_blocking(
         cfg.adapter,
         prompt,
@@ -323,6 +446,7 @@ def run_turn(
         model=cfg.model,
         effort=cfg.effort,
         policy_retries=cfg.policy_retries,
+        transient_resumes=cfg.transient_resumes,
         policy_state=policy_state,
     )
     if rc == 75:
@@ -331,10 +455,16 @@ def run_turn(
         raise ConfirmationFailed(f"{f.id} turn {turn_no} {role}: adapter exited {rc}")
     if not text.strip():
         raise InvalidAgentOutput(f"{f.id} turn {turn_no} {role}: empty agent output")
-    return parse_verdict(text), text
+    verdict = parse_verdict(text)
+    if lease is not None:
+        lease.completed_turns[turn_key] = _CompletedTurn(prompt_digest, turn_cwd, verdict, text)
+    # A completed turn is now represented by the lease cache; its native retry
+    # cursor is no longer needed. Only the unfinished rc75 turn keeps one.
+    cfg.clear_policy_states(state_key)
+    return verdict, text
 
 
-def _fresh_turn_cwd(f: Finding, role: str, turn_no: int) -> Path:
+def _fresh_turn_cwd(f: Finding, role: str, turn_no: int, lease: _FindingLease | None = None) -> Path:
     """Create a trusted per-turn cwd outside the untrusted source checkout.
 
     Agent prompts carry the absolute source-repo path. Keeping adapter startup
@@ -346,6 +476,12 @@ def _fresh_turn_cwd(f: Finding, role: str, turn_no: int) -> Path:
         root.unlink()
     root.mkdir(parents=True, exist_ok=True)
     cwd = root / f"turn{turn_no:02d}_{role}"
+    turn_key = (turn_no, role)
+    if lease is not None and turn_key in lease.turn_cwds:
+        expected = lease.turn_cwds[turn_key]
+        if expected != cwd or cwd.is_symlink() or not cwd.is_dir():
+            raise ConfirmationFailed(f"{f.id}: retained cwd for turn {turn_no} {role} is no longer safe")
+        return cwd
     if cwd.is_symlink():
         cwd.unlink()
     elif cwd.exists():
@@ -360,6 +496,8 @@ def _fresh_turn_cwd(f: Finding, role: str, turn_no: int) -> Path:
         )
     except (OSError, subprocess.CalledProcessError) as exc:
         raise ConfirmationFailed(f"{f.id}: could not create trusted per-turn cwd: {exc}") from exc
+    if lease is not None:
+        lease.turn_cwds[turn_key] = cwd
     return cwd
 
 
@@ -586,71 +724,123 @@ def _debate_entry(f: Finding, role: str, turn_no: int, label: str, verdict: str 
     return f"\n## {label} — VERDICT: {verdict or '(none)'}\nFull turn log (read it for the full argument): {log}\n"
 
 
-def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
+def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None = None) -> Outcome:
     if not f.id or set(f.id) - ID_CHARS or f.id in {".", ".."}:
         raise InvalidAgentOutput(f"unsafe finding id: {f.id!r}")
     f.fdir.mkdir(parents=True, exist_ok=True)
     repro_dir = cfg.ws.work_dir(cfg.name).absolute() / "repro"
     repro_dir.mkdir(parents=True, exist_ok=True)
-    # Fresh generations must create fresh artifacts. Completed findings in a
-    # rate-limit retry are skipped by the fingerprinted verdict cache.
-    for stale in _repro_files(cfg, f):
-        stale.unlink()
-    rr_body = f.fdir / "repair-request.body.md"
-    if rr_body.is_file():
-        rr_body.unlink()
+    owned_lease = _lease is None
+    if _lease is None:
+        repo_for_agent, cleanup = setup_repo(cfg, f)
+        lease = _FindingLease(f.fdir.absolute(), repo_for_agent, cleanup)
+    else:
+        lease = _lease
+    if lease.finding_dir != f.fdir.absolute() or lease._closed:
+        raise ConfirmationFailed(f"{f.id}: invalid retry lease")
     debate = f.fdir / "debate.md"
-    repo_for_agent, cleanup = setup_repo(cfg, f)
+    lease._run_lock.acquire()
     try:
-        turn = 1
-        repair_retry_used = False
+        with lease._run_lock:
+            if not lease.initialized:
+                # Fresh generations must create fresh artifacts. A reactive rc75
+                # continuation keeps them, its exact worktree, and its cwd.
+                for stale in _repro_files(cfg, f):
+                    stale.unlink()
+                rr_body = f.fdir / "repair-request.body.md"
+                if rr_body.is_file():
+                    rr_body.unlink()
+                lease.initialized = True
+            repo_for_agent = lease.repo_for_agent
+            turn = 1
 
-        def prepare_pending(previous_turn: int, previous_role: str = "A") -> int:
-            """Warn about a draft problem and make at most one correction turn.
+            def prepare_pending(previous_turn: int, previous_role: str = "A") -> int:
+                """Warn about a draft problem and make at most one correction turn.
 
-            A readable, non-empty draft is always usable.  If the optional
-            correction fails, retain that original draft rather than turning a
-            parser complaint into an INCOMPLETE finding.
-            """
-            nonlocal repair_retry_used
-            original: str | None = None
-            problem: Exception | str | None = None
-            try:
-                draft = _read_repair_draft(cfg, f)
-                original = draft.raw
-                problem = _repair_draft_warning(cfg, f, draft)
-            except InvalidRepairRequest as exc:
-                problem = exc
+                The lease records a correction's logical turn before invoking it.
+                Therefore a later B rate-limit replay cannot renumber B merely
+                because the already-completed correction left a valid draft.
+                """
+                repair_key = (previous_turn, previous_role)
+                repair = lease.repair_turns.get(repair_key)
+                original = repair.original if repair is not None else None
+                if repair is None:
+                    problem: Exception | str | None = None
+                    try:
+                        draft = _read_repair_draft(cfg, f)
+                        original = draft.raw
+                        problem = _repair_draft_warning(cfg, f, draft)
+                    except InvalidRepairRequest as exc:
+                        problem = exc
 
-            if problem is None:
-                return previous_turn
+                    if problem is None:
+                        return previous_turn
 
-            warning = str(problem)
-            _log(f"  WARNING: {warning}")
-            if repair_retry_used:
-                if original is None:
-                    assert isinstance(problem, Exception)
-                    raise problem
-                return previous_turn
+                    warning = str(problem)
+                    _log(f"  WARNING: {warning}")
+                    if lease.repair_retry_used:
+                        if original is None:
+                            assert isinstance(problem, Exception)
+                            raise problem
+                        return previous_turn
 
-            repair_retry_used = True
-            correction_turn = previous_turn + 1
-            draft_path = f.fdir / "repair-request.body.md"
-            try:
-                correction_verdict, _ = run_turn(
-                    cfg,
-                    f,
-                    "A-repair",
-                    correction_turn,
-                    prompt_repair_draft_retry(
-                        cfg,
-                        f,
-                        repo_for_agent,
-                        warning,
-                        f.fdir / f"turn{previous_turn:02d}_{previous_role}.log",
-                    ),
-                    cwd=_fresh_turn_cwd(f, "A-repair", correction_turn),
-                )
+                    lease.repair_retry_used = True
+                    correction_turn = previous_turn + 1
+                    repair = _RepairTurn(
+                        correction_turn,
+                        prompt_repair_draft_retry(
+                            cfg,
+                            f,
+                            repo_for_agent,
+                            warning,
+                            f.fdir / f"turn{previous_turn:02d}_{previous_role}.log",
+                        ),
+                        original,
+                    )
+                    lease.repair_turns[repair_key] = repair
+
+                correction_turn = repair.turn_no
+                if repair.disabled:
+                    return correction_turn
+                if repair.verdict is None:
+                    draft_path = f.fdir / "repair-request.body.md"
+                    if original is None:
+                        with contextlib.suppress(InvalidRepairRequest):
+                            original = _read_repair_draft(cfg, f).raw
+                    try:
+                        correction_verdict, _ = run_turn(
+                            cfg,
+                            f,
+                            "A-repair",
+                            correction_turn,
+                            repair.prompt,
+                            cwd=_fresh_turn_cwd(f, "A-repair", correction_turn, lease),
+                            lease=lease,
+                        )
+                        repair.verdict = correction_verdict
+                    except RateLimited:
+                        raise
+                    except Exception as exc:
+                        repair.disabled = True
+                        if original is None:
+                            raise
+                        _log(f"  WARNING: {f.id}: repair-draft correction failed ({exc}); keeping the original draft")
+                        _restore_repair_draft(draft_path, original)
+                        return correction_turn
+
+                    try:
+                        corrected = _read_repair_draft(cfg, f)
+                    except InvalidRepairRequest:
+                        if original is None:
+                            raise
+                        _log(f"  WARNING: {f.id}: correction removed the usable draft; keeping the original draft")
+                        _restore_repair_draft(draft_path, original)
+                        corrected = _read_repair_draft(cfg, f)
+
+                    corrected_warning = _repair_draft_warning(cfg, f, corrected)
+                    if corrected_warning is not None:
+                        _log(f"  WARNING: {corrected_warning} (continuing with the non-empty draft)")
+
                 debate.write_text(
                     debate.read_text()
                     + _debate_entry(
@@ -658,31 +848,10 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
                         "A-repair",
                         correction_turn,
                         "A (repair-draft correction)",
-                        correction_verdict,
+                        repair.verdict,
                     )
                 )
-            except RateLimited:
-                raise
-            except Exception as exc:
-                if original is None:
-                    raise
-                _log(f"  WARNING: {f.id}: repair-draft correction failed ({exc}); keeping the original draft")
-                _restore_repair_draft(draft_path, original)
                 return correction_turn
-
-            try:
-                corrected = _read_repair_draft(cfg, f)
-            except InvalidRepairRequest:
-                if original is None:
-                    raise
-                _log(f"  WARNING: {f.id}: correction removed the usable draft; keeping the original draft")
-                _restore_repair_draft(draft_path, original)
-                return correction_turn
-
-            corrected_warning = _repair_draft_warning(cfg, f, corrected)
-            if corrected_warning is not None:
-                _log(f"  WARNING: {corrected_warning} (continuing with the non-empty draft)")
-            return correction_turn
 
         # Turn 1 — Reproducer (neutral): investigate + reproduce.
         a_verdict, a_text = run_turn(
@@ -691,7 +860,8 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
             "A",
             1,
             prompt_reproduce(cfg, f, repo_for_agent),
-            cwd=_fresh_turn_cwd(f, "A", 1),
+            cwd=_fresh_turn_cwd(f, "A", 1, lease),
+            lease=lease,
         )
         debate.write_text(
             f"# Debate: {f.id}\n\nThis is an INDEX of the debate. Each entry links the turn's "
@@ -720,7 +890,8 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
                 "B",
                 turn,
                 prompt_challenge(cfg, f, repo_for_agent, str(debate)),
-                cwd=_fresh_turn_cwd(f, "B", turn),
+                cwd=_fresh_turn_cwd(f, "B", turn, lease),
+                lease=lease,
             )
             debate.write_text(debate.read_text() + _debate_entry(f, "B", turn, f"B (round {rnd})", b_verdict))
             _validate_turn_output(f, b_verdict, b_text)
@@ -747,7 +918,8 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
                 "A",
                 turn,
                 prompt_defend(cfg, f, repo_for_agent, str(debate)),
-                cwd=_fresh_turn_cwd(f, "A", turn),
+                cwd=_fresh_turn_cwd(f, "A", turn, lease),
+                lease=lease,
             )
             debate.write_text(debate.read_text() + _debate_entry(f, "A", turn, f"A (round {rnd})", a_verdict))
             _validate_turn_output(f, a_verdict, a_text)
@@ -761,7 +933,10 @@ def run_finding(cfg: ConfirmConfig, f: Finding) -> Outcome:
         _log(f"  [{f.id}] no consensus after {cfg.rounds} rounds → NEEDS MORE INFO")
         return _final_outcome(cfg, f, "NEEDS MORE INFO", False, cfg.rounds, _compose_evidence(initial_text, defenses))
     finally:
-        cleanup()
+        lease._run_lock.release()
+        if owned_lease:
+            lease._closed = True
+            lease.cleanup()
 
 
 # ── idempotent per-finding verdict cache (survives a rate-limit phase retry) ──
@@ -1108,16 +1283,20 @@ def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
     to discard the whole target's report: the rest of the batch still delivers."""
     cached = _load_verdict(f, cfg)
     if cached is not None:
+        cfg.release_finding_lease(f.id)
         cfg.clear_policy_states(("finding", f.id))
         _log(f"  [{f.id}] cached {cached.status} — skip (idempotent)")
         return cached
     try:
-        o = run_finding(cfg, f)
+        lease = cfg.acquire_finding_lease(f)
+        o = run_finding(cfg, f, _lease=lease)
         _save_verdict(o, cfg)
+        cfg.release_finding_lease(f.id)
         cfg.clear_policy_states(("finding", f.id))
         return o
     except Exception as exc:  # RateLimited / ConfirmationFailed / anything unexpected
         if not isinstance(exc, RateLimited):
+            cfg.release_finding_lease(f.id)
             cfg.clear_policy_states(("finding", f.id))
         try:
             f.fdir.mkdir(parents=True, exist_ok=True)
@@ -2202,10 +2381,13 @@ def consolidate(cfg: ConfirmConfig) -> None:
         _log(f"  {cfg.name}: [DRY] consolidate → {out}")
         return
     spec_dir.mkdir(parents=True, exist_ok=True)
-    # Do not let a failed agent make a stale output look fresh.
-    out.unlink(missing_ok=True)
-    (spec_dir / _CANDIDATE_CACHE).unlink(missing_ok=True)
     policy_state = cfg.policy_state(("consolidate",), prompt)
+    if policy_state.invocation_attempt == 0:
+        # Do not let a fresh failed agent make stale output look fresh. An exact
+        # rc75 continuation, however, may need candidates already written by its
+        # still-live native session, so the replay must not delete them.
+        out.unlink(missing_ok=True)
+        (spec_dir / _CANDIDATE_CACHE).unlink(missing_ok=True)
     try:
         rc, _ = run_agent_blocking(
             cfg.adapter,
@@ -2219,6 +2401,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
             model=cfg.model,
             effort=cfg.effort,
             policy_retries=cfg.policy_retries,
+            transient_resumes=cfg.transient_resumes,
             policy_state=policy_state,
         )
     except BaseException:
@@ -2399,7 +2582,7 @@ def load_findings(cfg: ConfirmConfig) -> list[Finding]:
     return findings
 
 
-def run_parallel_confirmation(cfg: ConfirmConfig) -> int:
+def run_parallel_confirmation(cfg: ConfirmConfig, *, retain_rate_limited_state: bool = False) -> int:
     """Drive step 0 (consolidate) → per-finding fan-out → aggregate for ONE
     target. Returns 75 for exclusively rate-limited incomplete findings and 1 for
     permanent/format/infrastructure incomplete findings while retaining their
@@ -2421,8 +2604,8 @@ def run_parallel_confirmation(cfg: ConfirmConfig) -> int:
             result = 1 if cfg.dry_run else _withhold(cfg, "confirmation driver failure — deliverable withheld")
         return result
     finally:
-        if result != quota.RATE_LIMIT_RC:
-            cfg.clear_policy_states()
+        if result != quota.RATE_LIMIT_RC or not retain_rate_limited_state:
+            cfg.clear_retry_runtime()
         _set_log_file(None)
 
 

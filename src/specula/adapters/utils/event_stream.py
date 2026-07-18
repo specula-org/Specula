@@ -23,7 +23,14 @@ from .policy import (
     final_diagnostic_has_policy_block,
     looks_policy_blocked,
 )
+from .resume import RESUME_STATE_FAILURE_RC, ResumeStateError, capture_session_id
 from .text import SUMMARY_LIMIT, readable, readable_fragment, summary, tool_summary
+from .transient import (
+    PLAIN_TRANSIENT_DIAGNOSTIC_RC,
+    TRANSIENT_FAILURE_RC,
+    final_diagnostic_has_transient_failure,
+    looks_transient,
+)
 from .usage import PiSubagentResult, UsageTotals, accumulate_usage, pi_subagent_results
 
 
@@ -31,11 +38,15 @@ from .usage import PiSubagentResult, UsageTotals, accumulate_usage, pi_subagent_
 class StreamStatus:
     activity_ok: bool
     log_ok: bool
+    resume_ok: bool
     terminal_record: object | None
     structured_error: str | None
     rate_limit_error: str | None
     policy_block_error: str | None
     plain_policy_block_error: str | None
+    transient_error: str | None
+    plain_transient_error: str | None
+    session_id: str | None
     successful_terminal: bool
     terminal_error: str | None
     plain_diagnostics: tuple[str, ...]
@@ -356,28 +367,83 @@ def _structured_rate_limit_error(adapter_name: str, record: object) -> str | Non
     """Return a diagnostic only for an explicit provider-error record."""
     if not isinstance(record, dict):
         return None
-    if adapter_name == "opencode" and record.get("type") == "error":
-        error = record.get("error")
-        if not _looks_rate_limited(error):
-            return None
-        message = _diagnostic_message(error)
-        if isinstance(error, dict):
-            message = _diagnostic_message(error.get("data")) or message
-            name = error.get("name")
-            if not message and isinstance(name, str):
-                message = name
-        return summary(message or "provider rate limit", None)
-    if adapter_name != "pi":
+
+    payload: object | None = None
+    if adapter_name == "claude-code" and _claude_result_failed(record):
+        payload = record
+    elif adapter_name == "codex" and record.get("type") == "turn.failed":
+        payload = record.get("error")
+    elif adapter_name == "copilot-cli":
+        if record.get("type") == "session.error":
+            payload = record.get("data") if record.get("data") is not None else record
+        elif record.get("type") == "result" and record.get("exitCode") not in (None, 0, "0"):
+            payload = record.get("result") if record.get("result") is not None else record
+    elif adapter_name == "opencode" and record.get("type") == "error":
+        payload = record.get("error") if record.get("error") is not None else record
+    elif adapter_name == "pi":
+        terminal_error = _pi_terminal_error(record)
+        if terminal_error is not None:
+            payload = record.get("message")
+        elif record.get("type") == "error":
+            payload = record
+
+    if payload is None or not _looks_rate_limited(payload):
         return None
-    terminal_error = _pi_terminal_error(record)
-    if terminal_error is not None and _looks_rate_limited(terminal_error):
-        return terminal_error
-    if record.get("type") == "error":
-        error = record.get("error")
-        if _looks_rate_limited(record):
-            diagnostic = _diagnostic_message(error) or _diagnostic_message(record)
-            return summary(diagnostic or "provider rate limit", None)
-    return None
+    return _policy_diagnostic(payload) or "provider rate limit"
+
+
+def _structured_transient_error(adapter_name: str, record: object) -> str | None:
+    """Return a diagnostic only for an explicit failed provider envelope."""
+    if not isinstance(record, dict):
+        return None
+
+    payload: object | None = None
+    if adapter_name == "claude-code" and _claude_result_failed(record):
+        payload = record
+    elif adapter_name == "codex" and record.get("type") == "turn.failed":
+        payload = record.get("error")
+    elif adapter_name == "copilot-cli":
+        if record.get("type") == "session.error":
+            payload = record.get("data") if record.get("data") is not None else record
+        elif record.get("type") == "result" and record.get("exitCode") not in (None, 0, "0"):
+            payload = record.get("result") if record.get("result") is not None else record
+    elif adapter_name == "opencode" and record.get("type") == "error":
+        payload = record.get("error") if record.get("error") is not None else record
+    elif adapter_name == "pi":
+        if _pi_terminal_error(record) is not None:
+            payload = record.get("message")
+        elif record.get("type") == "error":
+            payload = record
+
+    if payload is None or not looks_transient(payload):
+        return None
+    return _policy_diagnostic(payload) or "provider reported a transient failure"
+
+
+def _session_id(adapter_name: str, record: object) -> str | None:
+    """Extract only documented, unambiguous native session identifiers."""
+    if not isinstance(record, dict):
+        return None
+    value: object | None = None
+    if adapter_name == "claude-code":
+        value = record.get("session_id")
+    elif adapter_name == "codex" and record.get("type") == "thread.started":
+        value = record.get("thread_id")
+    elif adapter_name == "copilot-cli":
+        if record.get("type") == "session.start":
+            data = record.get("data")
+            if isinstance(data, dict):
+                value = data.get("sessionId")
+        elif record.get("type") == "result":
+            # Copilot prompt mode may attach its JSON listener after creating
+            # the session, so session.start is not guaranteed to be observed.
+            # The terminal result always carries the same ID at top level.
+            value = record.get("sessionId")
+    elif adapter_name == "opencode":
+        value = record.get("sessionID")
+    elif adapter_name == "pi" and record.get("type") == "session":
+        value = record.get("id")
+    return value if isinstance(value, str) and value else None
 
 
 def _terminal_error(
@@ -572,6 +638,8 @@ def stream_events(
     activity_path: Path,
     log_path: Path,
     source: Iterable[bytes] | None = None,
+    *,
+    session_capture: Callable[[str], None] | None = None,
 ) -> StreamStatus:
     """Persist both views independently and report sink health.
 
@@ -592,16 +660,20 @@ def stream_events(
     terminal_record: object | None = None
     pi_agent_ended = False
     pi_terminating_tool_completed = False
-    opencode_policy_recovery_activity = False
+    opencode_recovery_activity = False
     structured_error: str | None = None
     rate_limit_error: str | None = None
     policy_block_error: str | None = None
+    transient_error: str | None = None
     successful_terminal = False
+    captured_session_id: str | None = None
+    seen_session_ids: set[str] = set()
     final_plain_diagnostic = ""
     plain_diagnostics: list[str] = []
     subagent_results: list[PiSubagentResult] = []
     raw_failures: list[str] = []
     readable_failures: list[str] = []
+    resume_failures: list[str] = []
     raw_log: BinaryIO | None = None
     log: TextIO | None = None
 
@@ -645,8 +717,9 @@ def stream_events(
     def handle_line(raw_line: bytes, *, raw_already_written: bool) -> None:
         nonlocal fragment_active, last_event, line_open, pi_message_had_fragments
         nonlocal pi_agent_ended, pi_terminating_tool_completed
-        nonlocal opencode_policy_recovery_activity
-        nonlocal final_plain_diagnostic, policy_block_error, rate_limit_error
+        nonlocal opencode_recovery_activity
+        nonlocal captured_session_id, final_plain_diagnostic, policy_block_error, rate_limit_error
+        nonlocal transient_error
         nonlocal structured_error, successful_terminal, terminal_record
         decoded = raw_line.decode(errors="replace")
         keep, events, record = _read_line(adapter_name, decoded, concise=False, structured=structured_stream)
@@ -662,45 +735,84 @@ def stream_events(
                 # Only the final non-empty physical stream line may serve as
                 # the out-of-band fallback. A later JSON event supersedes it.
                 final_plain_diagnostic = ""
+        detected_session_id = _session_id(adapter_name, record)
+        if detected_session_id is not None and detected_session_id not in seen_session_ids:
+            seen_session_ids.add(detected_session_id)
+            if captured_session_id is None:
+                captured_session_id = detected_session_id
+            if session_capture is not None:
+                try:
+                    session_capture(detected_session_id)
+                except ResumeStateError as exc:
+                    # Keep draining the native process. Raising here would
+                    # close the pipe early and can turn a useful diagnostic
+                    # into SIGPIPE.
+                    resume_failures.append(str(exc))
+
         accumulate_usage(adapter_name, record, usage_totals)
+        detected_rate_limit = _structured_rate_limit_error(adapter_name, record)
         detected_policy_block = _structured_policy_block_error(adapter_name, record)
-        if detected_policy_block is not None:
-            policy_block_error = detected_policy_block
+        detected_transient = _structured_transient_error(adapter_name, record)
+        if detected_rate_limit is not None:
+            rate_limit_error = detected_rate_limit
+            transient_error = None
             if adapter_name == "opencode":
-                opencode_policy_recovery_activity = False
+                opencode_recovery_activity = False
+        elif detected_policy_block is not None:
+            policy_block_error = detected_policy_block
+            transient_error = None
+            if adapter_name == "opencode":
+                opencode_recovery_activity = False
+        elif detected_transient is not None:
+            transient_error = detected_transient
+            if adapter_name == "opencode":
+                opencode_recovery_activity = False
         if adapter_name == "claude-code":
             if isinstance(record, dict) and record.get("type") == "result":
                 terminal_record = record
                 successful_terminal = not _claude_result_failed(record)
                 if successful_terminal:
+                    rate_limit_error = None
                     policy_block_error = None
+                    transient_error = None
         elif adapter_name == "codex":
             if isinstance(record, dict) and record.get("type") in {"turn.completed", "turn.failed"}:
                 terminal_record = record
                 successful_terminal = record.get("type") == "turn.completed"
                 if successful_terminal:
+                    rate_limit_error = None
                     policy_block_error = None
+                    transient_error = None
         elif adapter_name == "copilot-cli":
             if isinstance(record, dict) and record.get("type") == "result":
                 terminal_record = record
                 successful_terminal = record.get("exitCode") in (0, "0")
                 if successful_terminal:
+                    rate_limit_error = None
                     policy_block_error = None
+                    transient_error = None
         elif adapter_name == "opencode":
-            detected_rate_limit = _structured_rate_limit_error(adapter_name, record)
-            if detected_rate_limit is not None:
-                rate_limit_error = detected_rate_limit
-            if policy_block_error is not None and isinstance(record, dict):
+            if any(
+                error is not None for error in (rate_limit_error, policy_block_error, transient_error)
+            ) and isinstance(record, dict):
                 part = record.get("part")
-                if isinstance(part, dict) and part.get("type") in {"text", "tool"}:
-                    opencode_policy_recovery_activity = True
+                # OpenCode may retry a failed provider request internally. A
+                # new step is sufficient recovery evidence even when the
+                # successful response is empty; text/tool activity is the
+                # equivalent evidence for older stream formats.
+                if record.get("type") == "step_start" or (
+                    isinstance(part, dict) and part.get("type") in {"text", "tool"}
+                ):
+                    opencode_recovery_activity = True
             if isinstance(record, dict) and record.get("type") == "step_finish":
                 terminal_record = record
                 part = record.get("part")
                 reason = part.get("reason") if isinstance(part, dict) else None
                 successful_terminal = isinstance(reason, str) and reason.casefold() == "stop"
-                if opencode_policy_recovery_activity and isinstance(reason, str) and reason.casefold() == "stop":
+                if opencode_recovery_activity and isinstance(reason, str) and reason.casefold() == "stop":
+                    rate_limit_error = None
                     policy_block_error = None
+                    transient_error = None
         elif adapter_name == "pi":
             if (
                 isinstance(record, dict)
@@ -712,22 +824,21 @@ def stream_events(
                 pi_agent_ended = False
                 pi_terminating_tool_completed = False
                 structured_error = _pi_terminal_error(record)
-                rate_limit_error = _structured_rate_limit_error(adapter_name, record)
                 reason = record["message"].get("stopReason")
                 successful_terminal = isinstance(reason, str) and reason.casefold() == "stop"
                 if successful_terminal:
+                    rate_limit_error = None
                     policy_block_error = None
+                    transient_error = None
             elif _pi_successful_terminating_tool(record):
                 pi_terminating_tool_completed = True
             elif isinstance(record, dict) and record.get("type") == "agent_end":
                 pi_agent_ended = True
                 if pi_terminating_tool_completed:
                     successful_terminal = True
+                    rate_limit_error = None
                     policy_block_error = None
-            elif isinstance(record, dict) and record.get("type") == "error":
-                detected_rate_limit = _structured_rate_limit_error(adapter_name, record)
-                if detected_rate_limit is not None:
-                    rate_limit_error = detected_rate_limit
+                    transient_error = None
             child_results = pi_subagent_results(record)
             subagent_results.extend(child_results)
         if keep and not raw_already_written:
@@ -807,17 +918,26 @@ def stream_events(
         print(f"adapter event stream warning: {failure}", file=sys.stderr)
     for failure in readable_failures:
         print(f"adapter event stream failed: {failure}", file=sys.stderr)
+    for failure in resume_failures:
+        print(f"adapter resume state failed: {failure}", file=sys.stderr)
     plain_policy_block_error = None
     if structured_stream and not successful_terminal and final_diagnostic_has_policy_block(final_plain_diagnostic):
         plain_policy_block_error = summary(final_plain_diagnostic, None)
+    plain_transient_error = None
+    if structured_stream and not successful_terminal and final_diagnostic_has_transient_failure(final_plain_diagnostic):
+        plain_transient_error = summary(final_plain_diagnostic, None)
     return StreamStatus(
         activity_ok=not raw_failures,
-        log_ok=not readable_failures,
+        log_ok=not readable_failures and not resume_failures,
+        resume_ok=not resume_failures,
         terminal_record=terminal_record,
         structured_error=structured_error,
         rate_limit_error=rate_limit_error,
         policy_block_error=policy_block_error,
         plain_policy_block_error=plain_policy_block_error,
+        transient_error=transient_error,
+        plain_transient_error=plain_transient_error,
+        session_id=captured_session_id,
         successful_terminal=successful_terminal,
         terminal_error=_terminal_error(
             adapter_name,
@@ -832,23 +952,59 @@ def stream_events(
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3 or argv[0] not in _ADAPTER_NAMES:
+    if len(argv) not in {3, 7} or argv[0] not in _ADAPTER_NAMES:
         print(
-            "usage: python -m specula.adapters.utils.event_stream {claude|codex|copilot|opencode|pi} ACTIVITY_JSONL LOG_FILE",
+            "usage: python -m specula.adapters.utils.event_stream "
+            "{claude|codex|copilot|opencode|pi} ACTIVITY_JSONL LOG_FILE "
+            "[RESUME_STATE CWD MODEL EFFORT]",
             file=sys.stderr,
         )
         return 2
+    session_capture: Callable[[str], None] | None = None
+    if len(argv) == 7:
+        adapter_name = _ADAPTER_NAMES[argv[0]]
+
+        def explicit_capture(session_id: str) -> None:
+            capture_session_id(
+                argv[3],
+                adapter=adapter_name,
+                session_id=session_id,
+                cwd=argv[4],
+                model=argv[5],
+                effort=argv[6],
+            )
+
+        session_capture = explicit_capture
     try:
-        status = stream_events(argv[0], Path(argv[1]), Path(argv[2]))
+        status = stream_events(
+            argv[0],
+            Path(argv[1]),
+            Path(argv[2]),
+            session_capture=session_capture,
+        )
     except OSError as exc:
         print(f"adapter event stream failed: {exc}", file=sys.stderr)
         return 1
+    if not status.resume_ok:
+        return RESUME_STATE_FAILURE_RC
+    if status.rate_limit_error is not None:
+        print(
+            f"adapter event stream rate limited: {summary(status.rate_limit_error, None)}",
+            file=sys.stderr,
+        )
+        return 75
     if status.policy_block_error is not None:
         print(
             f"adapter event stream policy blocked: {summary(status.policy_block_error, None)}",
             file=sys.stderr,
         )
         return POLICY_BLOCKED_RC
+    if status.transient_error is not None:
+        print(
+            f"adapter event stream transient failure: {summary(status.transient_error, None)}",
+            file=sys.stderr,
+        )
+        return TRANSIENT_FAILURE_RC
     if not status.log_ok:
         return 1
     if status.plain_policy_block_error is not None:
@@ -857,6 +1013,12 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return PLAIN_POLICY_DIAGNOSTIC_RC
+    if status.plain_transient_error is not None:
+        print(
+            f"adapter event stream plain transient diagnostic: {summary(status.plain_transient_error, None)}",
+            file=sys.stderr,
+        )
+        return PLAIN_TRANSIENT_DIAGNOSTIC_RC
     return 0
 
 

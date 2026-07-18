@@ -26,6 +26,7 @@ from typing import Any
 from unittest import mock
 
 from specula import confirmlib as C
+from specula import phaselib as PhaseLib
 from specula import pipelinelib as PL
 from specula import prompts as P
 from specula.phaselib import Workspace
@@ -90,6 +91,29 @@ def _scripted_policy_adapter(root: Path, returncodes: list[int]) -> tuple[Path, 
     )
     adapter.chmod(0o755)
     return adapter, count
+
+
+def _git_repo(path: Path) -> Path:
+    path.mkdir()
+    subprocess.run(["git", "init", "-q", str(path)], check=True)
+    (path / "tracked.txt").write_text("base\n")
+    subprocess.run(["git", "-C", str(path), "add", "tracked.txt"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-qm",
+            "initial",
+        ],
+        check=True,
+    )
+    return path
 
 
 class ConfirmCase(unittest.TestCase):
@@ -498,7 +522,7 @@ class TestDriver(ConfirmCase):
         }
 
         with mock.patch.dict(os.environ, env, clear=False):
-            first_rc = C.run_parallel_confirmation(cfg)
+            first_rc = C.run_parallel_confirmation(cfg, retain_rate_limited_state=True)
             second_rc = C.run_parallel_confirmation(cfg)
 
         self.assertEqual((first_rc, second_rc), (75, 1))
@@ -522,7 +546,7 @@ class TestDriver(ConfirmCase):
         }
 
         with mock.patch.dict(os.environ, env, clear=False):
-            first_rc = C.run_parallel_confirmation(cfg)
+            first_rc = C.run_parallel_confirmation(cfg, retain_rate_limited_state=True)
             second_rc = C.run_parallel_confirmation(cfg)
 
         self.assertEqual((first_rc, second_rc), (75, 0))
@@ -545,17 +569,195 @@ class TestDriver(ConfirmCase):
         }
 
         with mock.patch.dict(os.environ, env, clear=False):
-            first_rc = C.run_parallel_confirmation(cfg)
+            first_rc = C.run_parallel_confirmation(cfg, retain_rate_limited_state=True)
             second_rc = C.run_parallel_confirmation(cfg)
 
         self.assertEqual((first_rc, second_rc), (75, 0))
-        self.assertEqual(count.read_text(), "xxxxx")
+        # Completed A is cached across the outer replay; only unfinished B is
+        # invoked again, with its own rate-limit cursor.
+        self.assertEqual(count.read_text(), "xxxx")
         marker = "Continue After Provider Policy Interruption"
         self.assertNotIn(marker, (root / "prompt-1.md").read_text())
         self.assertIn(marker, (root / "prompt-2.md").read_text())
         self.assertNotIn(marker, (root / "prompt-3.md").read_text())
-        self.assertIn(marker, (root / "prompt-4.md").read_text())
-        self.assertNotIn(marker, (root / "prompt-5.md").read_text())
+        self.assertEqual((root / "prompt-4.md").read_text(), (root / "prompt-3.md").read_text())
+        self.assertFalse((root / "prompt-5.md").exists())
+
+    def test_outer_rate_replay_reuses_completed_a_and_resumes_b_in_same_lease(self) -> None:
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        root = Path(self.tmp)
+        repo = _git_repo(root / "repo")
+        adapter = root / "resume-debate.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "prompt= log= resume=\n"
+            'for arg do case "$arg" in\n'
+            "  --prompt-file=*) prompt=${arg#*=} ;;\n"
+            "  --log=*) log=${arg#*=} ;;\n"
+            "  --resume-state=*) resume=${arg#*=} ;;\n"
+            "esac; done\n"
+            'case "$(basename "$prompt")" in\n'
+            "  turn01_A.prompt.md)\n"
+            '    printf x >> "$CAPTURE/a-count"\n'
+            "    repo=$(sed -n 's/^- Source repo (build\\/run here): //p' \"$prompt\" | head -n 1)\n"
+            '    printf \'%s\\n\' "$repo" > "$CAPTURE/repo-path"\n'
+            '    printf retained > "$repo/lease-marker"\n'
+            '    printf \'%s\\n\' "$ADAPTER_SUCCESS_TEXT" > "$log"\n'
+            "    ;;\n"
+            "  turn02_B.prompt.md)\n"
+            '    printf x >> "$CAPTURE/b-count"\n'
+            '    attempt=$(wc -c < "$CAPTURE/b-count")\n'
+            '    pwd >> "$CAPTURE/b-cwds"\n'
+            '    repo=$(cat "$CAPTURE/repo-path")\n'
+            '    test -f "$repo/lease-marker"\n'
+            '    if [ "$attempt" -eq 1 ]; then\n'
+            "      printf retained > cwd-marker\n"
+            '      printf exact-b-session > "$resume"\n'
+            "      printf 'rate limited\\n' > \"$log\"\n"
+            "      exit 75\n"
+            "    fi\n"
+            '    test "$(cat "$resume")" = exact-b-session\n'
+            "    test -f cwd-marker\n"
+            '    cp "$prompt" "$CAPTURE/b-resume-prompt"\n'
+            '    printf passed > "$CAPTURE/resume-check"\n'
+            '    printf \'%s\\n\' "$ADAPTER_SUCCESS_TEXT" > "$log"\n'
+            "    ;;\n"
+            "  *) exit 97 ;;\n"
+            "esac\n"
+        )
+        adapter.chmod(0o755)
+        cfg = C.ConfirmConfig(
+            name="T",
+            ws=ws,
+            adapter=adapter,
+            repo_dir=str(repo),
+            worktree=True,
+            max_parallel=1,
+            debate=True,
+            rounds=1,
+        )
+        with mock.patch.dict(
+            os.environ,
+            {"CAPTURE": str(root), "ADAPTER_SUCCESS_TEXT": _response("ENV_LIMITED")},
+            clear=False,
+        ):
+            self.assertEqual(C.run_parallel_confirmation(cfg, retain_rate_limited_state=True), 75)
+            leased_repo = Path((root / "repo-path").read_text().strip())
+            self.assertTrue((leased_repo / "lease-marker").is_file())
+            self.assertEqual(set(cfg._finding_leases), {"MC-1"})
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+
+        self.assertEqual((root / "a-count").read_text(), "x")
+        self.assertEqual((root / "b-count").read_text(), "xx")
+        self.assertEqual(len(set((root / "b-cwds").read_text().splitlines())), 1)
+        self.assertEqual((root / "b-resume-prompt").read_text(), PhaseLib._SESSION_RESUME_PROMPT)
+        self.assertEqual((root / "resume-check").read_text(), "passed")
+        self.assertEqual(cfg._finding_leases, {})
+        self.assertEqual(cfg._policy_states, {})
+        self.assertFalse(leased_repo.exists())
+
+    def test_repair_correction_keeps_later_turn_number_across_rate_replay(self) -> None:
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        cfg = self.cfg(ws, "T", max_parallel=1, debate=True, rounds=2)
+        calls: list[str] = []
+        b_states: list[object] = []
+        b_cwds: list[Path] = []
+
+        def agent(*args: object, **kwargs: object) -> tuple[int, str]:
+            prompt_file = Path(str(args[2]))
+            turn = prompt_file.stem
+            calls.append(turn)
+            fdir = prompt_file.parent
+            if turn == "turn01_A.prompt":
+                return 0, _response("REPRODUCED")
+            if turn == "turn02_B.prompt":
+                return 0, _response("FALSE POSITIVE")
+            if turn == "turn03_A.prompt":
+                (fdir / "repair-request.body.md").write_text("bad draft")
+                return 0, _response("PENDING REPAIR")
+            if turn == "turn04_A-repair.prompt":
+                (fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+                return 0, _response("PENDING REPAIR")
+            if turn == "turn05_B.prompt":
+                state = kwargs["policy_state"]
+                assert isinstance(state, PhaseLib.PolicyRetryState)
+                cwd = Path(str(kwargs["cwd"]))
+                b_states.append(state)
+                b_cwds.append(cwd)
+                if len(b_states) == 1:
+                    state.resume_state = fdir / "turn05_B.resume.json"
+                    state.resume_state.write_text("b-session")
+                    (cwd / "retained-marker").write_text("yes")
+                    return 75, ""
+                self.assertIs(b_states[0], state)
+                self.assertTrue((cwd / "retained-marker").is_file())
+                return 0, _response("PENDING REPAIR")
+            raise AssertionError(f"unexpected logical turn {turn}")
+
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            self.assertEqual(C.run_parallel_confirmation(cfg, retain_rate_limited_state=True), 75)
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+
+        self.assertEqual(
+            calls,
+            [
+                "turn01_A.prompt",
+                "turn02_B.prompt",
+                "turn03_A.prompt",
+                "turn04_A-repair.prompt",
+                "turn05_B.prompt",
+                "turn05_B.prompt",
+            ],
+        )
+        self.assertEqual(len(set(b_cwds)), 1)
+        self.assertEqual(cfg._finding_leases, {})
+        self.assertEqual(cfg._policy_states, {})
+
+    def test_repair_correction_rate_replay_restores_original_draft_after_failure(self) -> None:
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        cfg = self.cfg(ws, "T", max_parallel=1)
+        fdir = ws.work_dir("T") / "confirmation" / "MC-1"
+        draft = fdir / "repair-request.body.md"
+        calls: list[str] = []
+
+        def agent(*args: object, **_kwargs: object) -> tuple[int, str]:
+            turn = Path(str(args[2])).stem
+            calls.append(turn)
+            if turn == "turn01_A.prompt":
+                draft.write_text("original nonempty draft")
+                return 0, _response("PENDING REPAIR")
+            if turn == "turn02_A-repair.prompt" and calls.count(turn) == 1:
+                draft.write_text("damaged during interrupted correction")
+                return 75, ""
+            if turn == "turn02_A-repair.prompt":
+                draft.unlink()
+                return 1, ""
+            raise AssertionError(f"unexpected logical turn {turn}")
+
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            self.assertEqual(C.run_parallel_confirmation(cfg, retain_rate_limited_state=True), 75)
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+
+        self.assertEqual(calls, ["turn01_A.prompt", "turn02_A-repair.prompt", "turn02_A-repair.prompt"])
+        self.assertEqual(draft.read_text(), "original nonempty draft")
+        rr = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
+        self.assertIn("original nonempty draft", rr.read_text())
+
+    def test_unarmed_rate_limit_clears_finding_lease_and_native_cursor(self) -> None:
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        cfg = self.cfg(ws, "T", max_parallel=1)
+
+        def rate_limited(*_args: object, **kwargs: object) -> tuple[int, str]:
+            state = kwargs["policy_state"]
+            assert isinstance(state, PhaseLib.PolicyRetryState)
+            state.resume_state = Path(self.tmp) / "retained-state"
+            return 75, ""
+
+        with mock.patch.object(C, "run_agent_blocking", rate_limited):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 75)
+        self.assertEqual(cfg._finding_leases, {})
+        self.assertEqual(cfg._policy_states, {})
 
     def test_consolidate_prompt_invokes_installed_skill_without_path(self) -> None:
         ws = Workspace(["T"])
@@ -600,7 +802,7 @@ class TestDriver(ConfirmCase):
         }
 
         with mock.patch.dict(os.environ, env, clear=False):
-            first_rc = C.run_parallel_confirmation(cfg)
+            first_rc = C.run_parallel_confirmation(cfg, retain_rate_limited_state=True)
             second_rc = C.run_parallel_confirmation(cfg)
 
         self.assertEqual((first_rc, second_rc), (75, 1))
@@ -611,6 +813,70 @@ class TestDriver(ConfirmCase):
         self.assertIn(marker, prompts[1])
         self.assertEqual(prompts[2], prompts[1])
         self.assertFalse((root / "prompt-4.md").exists())
+
+    def test_consolidate_rate_resume_keeps_partial_candidates_and_exact_session(self) -> None:
+        ws = Workspace(["T"])
+        root = Path(self.tmp)
+        wd = ws.work_dir("T")
+        spec = wd / "spec"
+        counterexample = spec / "output" / "MC-1.out"
+        counterexample.parent.mkdir(parents=True)
+        counterexample.write_text("State 1\n")
+        findings = {
+            "findings": [
+                {
+                    "id": "MC-1",
+                    "source": "model-checking",
+                    "title": "candidate",
+                    "summary": "summary",
+                    "invariant": "Inv",
+                    "config": "MC.cfg",
+                    "counterexample": "spec/output/MC-1.out",
+                }
+            ]
+        }
+        (spec / "findings.json").write_text(json.dumps(findings))
+        adapter = root / "resume-consolidate.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "prompt= log= resume=\n"
+            'for arg do case "$arg" in\n'
+            "  --prompt-file=*) prompt=${arg#*=} ;;\n"
+            "  --log=*) log=${arg#*=} ;;\n"
+            "  --resume-state=*) resume=${arg#*=} ;;\n"
+            "esac; done\n"
+            'printf x >> "$CAPTURE/consolidate-count"\n'
+            'attempt=$(wc -c < "$CAPTURE/consolidate-count")\n'
+            'cp "$prompt" "$CAPTURE/consolidate-prompt-$attempt"\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            '  printf PARTIAL-CANDIDATES > "$CANDIDATES"\n'
+            '  printf consolidate-session > "$resume"\n'
+            "  printf 'rate limited\\n' > \"$log\"\n"
+            "  exit 75\n"
+            "fi\n"
+            'test "$(cat "$CANDIDATES")" = PARTIAL-CANDIDATES\n'
+            'test "$(cat "$resume")" = consolidate-session\n'
+            'printf \'{"generated_by":"consolidate","findings":[]}\\n\' > "$CANDIDATES"\n'
+            "printf 'continued\\n' > \"$log\"\n"
+        )
+        adapter.chmod(0o755)
+        cfg = self.cfg(ws, "T", adapter=adapter)
+        with mock.patch.dict(
+            os.environ,
+            {"CAPTURE": str(root), "CANDIDATES": str(spec / "candidates.json")},
+            clear=False,
+        ):
+            self.assertEqual(C.run_parallel_confirmation(cfg, retain_rate_limited_state=True), 75)
+            self.assertEqual((spec / "candidates.json").read_text(), "PARTIAL-CANDIDATES")
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+
+        self.assertEqual((root / "consolidate-count").read_text(), "xx")
+        self.assertEqual(
+            (root / "consolidate-prompt-2").read_text(),
+            PhaseLib._SESSION_RESUME_PROMPT,
+        )
+        self.assertEqual(cfg._policy_states, {})
 
     def test_consolidate_failure_withholds_not_raises(self) -> None:
         # No candidates.json → consolidate runs the agent. A non-75 failure that

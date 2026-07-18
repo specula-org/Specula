@@ -21,6 +21,7 @@
 #   --effort LEVEL         Reasoning effort; mapped to Copilot CLI's
 #                          --reasoning-effort (requires Copilot CLI 1.0.4+)
 #   --log output.log       Log file path (required)
+#   --resume-state PATH    Persist/resume the exact native Copilot session
 #   --background           Run in background, print PID to stdout (default: foreground)
 #   --help                 Show this help
 
@@ -32,9 +33,14 @@ MAX_TURNS=""
 MODEL="${COPILOT_MODEL:-}"
 EFFORT=""
 LOG_FILE=""
+RESUME_STATE=""
+RESUME_STATE_SET=false
 BACKGROUND=false
 POLICY_BLOCKED_RC=76  # Keep in sync with src/specula/adapters/utils/policy.py.
 PLAIN_POLICY_DIAGNOSTIC_RC=77  # Internal event-stream candidate; never returned to the runner.
+TRANSIENT_FAILURE_RC=74  # Keep in sync with src/specula/adapters/utils/transient.py.
+PLAIN_TRANSIENT_DIAGNOSTIC_RC=78  # Internal event-stream candidate; never returned to the runner.
+RESUME_STATE_FAILURE_RC=79  # Internal event-stream integrity failure; never returned to the runner.
 
 for arg in "$@"; do
   case "$arg" in
@@ -45,6 +51,7 @@ for arg in "$@"; do
     --claude-alias=*) : ;;
     --effort=*)      EFFORT="${arg#*=}" ;;
     --log=*)         LOG_FILE="${arg#*=}" ;;
+    --resume-state=*) RESUME_STATE="${arg#*=}"; RESUME_STATE_SET=true ;;
     --background)    BACKGROUND=true ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
@@ -58,6 +65,7 @@ done
 # the environment variable before spawning Copilot so `--model=` can genuinely
 # clear an inherited COPILOT_MODEL and return to settings.json / CLI defaults.
 unset COPILOT_MODEL
+unset SPECULA_RESUME_STATE SPECULA_RESUME_MODEL SPECULA_RESUME_EFFORT
 
 # ── Validate arguments ──
 
@@ -73,6 +81,11 @@ fi
 
 if [[ -z "$LOG_FILE" ]]; then
   echo "copilot-cli adapter: --log is required" >&2
+  exit 1
+fi
+
+if [[ "$RESUME_STATE_SET" == true && -z "$RESUME_STATE" ]]; then
+  echo "copilot-cli adapter: --resume-state requires a path" >&2
   exit 1
 fi
 
@@ -118,6 +131,9 @@ load_copilot_help() {
   fi
 }
 
+ADAPTER_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SPECULA_SRC="$ADAPTER_DIR/../../../src"
+
 # ── Build command ──
 #
 # Note: --background is handled by the caller (launch scripts use & directly).
@@ -130,9 +146,36 @@ if ! grep -q -- '--autopilot' <<< "$COPILOT_HELP"; then
   exit 1
 fi
 
+RESUME_SESSION_ID=""
+if [[ -n "$RESUME_STATE" ]]; then
+  if ! grep -q -- '--output-format' <<< "$COPILOT_HELP"; then
+    echo "copilot-cli adapter: --resume-state requires Copilot CLI JSON output so the exact session ID can be captured; upgrade Copilot CLI" >&2
+    exit 1
+  fi
+  if ! grep -q -- '--resume' <<< "$COPILOT_HELP" || ! grep -q -- '--session-id' <<< "$COPILOT_HELP"; then
+    echo "copilot-cli adapter: --resume-state requires Copilot CLI 1.0.51+ exact-session resume semantics; upgrade Copilot CLI" >&2
+    exit 1
+  fi
+  if ! RESUME_SESSION_ID="$(python3 -I "$SPECULA_SRC/specula/adapters/utils/resume.py" read \
+    "$RESUME_STATE" copilot-cli "$(pwd -P)" "$MODEL" "$EFFORT")"; then
+    exit 1
+  fi
+fi
+
 # Keep the scripting channel free of version-specific stats footers. Provider
 # diagnostics still go to stderr, which is captured below for policy recovery.
 CMD=(copilot -p "$PROMPT" --allow-all --autopilot --silent)
+
+if [[ -n "$RESUME_SESSION_ID" ]]; then
+  if [[ ! "$RESUME_SESSION_ID" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
+    echo "copilot-cli adapter: saved session ID is not a full UUID; refusing ambiguous resume" >&2
+    exit 1
+  fi
+  # --session-id creates a blank session when a UUID no longer exists. A full
+  # UUID passed to --resume instead fails when no stored session matches, so a
+  # stale state can never receive a context-free continuation prompt.
+  CMD+=(--resume "$RESUME_SESSION_ID")
+fi
 
 if [[ -n "$MODEL" ]]; then
   CMD+=(--model "$MODEL")
@@ -158,12 +201,25 @@ if [[ -n "$MAX_TURNS" && "$MAX_TURNS" != "0" ]]; then
 fi
 
 ACTIVITY_LOG="${SPECULA_ACTIVITY_LOG:-}"
-ADAPTER_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SPECULA_SRC="$ADAPTER_DIR/../../../src"
+TEMP_ACTIVITY_LOG=""
+if [[ -n "$RESUME_STATE" && -z "$ACTIVITY_LOG" ]]; then
+  if ! TEMP_ACTIVITY_LOG="$(mktemp "${TMPDIR:-/tmp}/specula-copilot-activity-XXXXXX.jsonl")"; then
+    echo "copilot-cli adapter: unable to create temporary activity log for session capture" >&2
+    exit 1
+  fi
+  ACTIVITY_LOG="$TEMP_ACTIVITY_LOG"
+  trap 'rm -f -- "$TEMP_ACTIVITY_LOG"' EXIT
+fi
 
 failed_log_is_policy_blocked() {
   python3 -I -c \
     'import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; from specula.adapters.utils.policy import failed_log_has_policy_block; raise SystemExit(0 if failed_log_has_policy_block(Path(sys.argv[2])) else 1)' \
+    "$SPECULA_SRC" "$LOG_FILE"
+}
+
+failed_log_is_transient_failure() {
+  python3 -I -c \
+    'import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; from specula.adapters.utils.transient import failed_log_has_transient_failure; raise SystemExit(0 if failed_log_has_transient_failure(Path(sys.argv[2])) else 1)' \
     "$SPECULA_SRC" "$LOG_FILE"
 }
 
@@ -175,8 +231,17 @@ if [[ -z "$ACTIVITY_LOG" ]]; then
   if (( COPILOT_RC == 75 )); then
     exit 75
   fi
+  if (( COPILOT_RC == POLICY_BLOCKED_RC )); then
+    exit "$POLICY_BLOCKED_RC"
+  fi
   if (( COPILOT_RC != 0 )) && failed_log_is_policy_blocked; then
     exit "$POLICY_BLOCKED_RC"
+  fi
+  if (( COPILOT_RC != 0 )) && failed_log_is_transient_failure; then
+    exit "$TRANSIENT_FAILURE_RC"
+  fi
+  if (( COPILOT_RC == TRANSIENT_FAILURE_RC )); then
+    exit 1
   fi
   exit "$COPILOT_RC"
 fi
@@ -196,16 +261,30 @@ if grep -q -- '--stream' <<< "$COPILOT_HELP"; then
 fi
 
 set +e
+STREAM_ARGS=("$STREAM_ADAPTER" "$ACTIVITY_LOG" "$LOG_FILE")
+if [[ -n "$RESUME_STATE" ]]; then
+  STREAM_ARGS+=("$RESUME_STATE" "$(pwd -P)" "$MODEL" "$EFFORT")
+fi
 "${CMD[@]}" 2>&1 | python3 -I -c \
   'import sys; sys.path.insert(0, sys.argv.pop(1)); from specula.adapters.utils.event_stream import main; raise SystemExit(main(sys.argv[1:]))' \
-  "$SPECULA_SRC" "$STREAM_ADAPTER" "$ACTIVITY_LOG" "$LOG_FILE"
+  "$SPECULA_SRC" "${STREAM_ARGS[@]}"
 PIPELINE_STATUS=("${PIPESTATUS[@]}")
 set -e
 
 COPILOT_RC="${PIPELINE_STATUS[0]}"
 STREAM_RC="${PIPELINE_STATUS[1]}"
+if (( STREAM_RC == RESUME_STATE_FAILURE_RC )); then
+  # Never let a retryable native exit mask a changed/malformed exact session.
+  exit 1
+fi
 if (( COPILOT_RC == 75 )); then
   exit 75
+fi
+if (( STREAM_RC == 75 )); then
+  exit 75
+fi
+if (( COPILOT_RC == POLICY_BLOCKED_RC )); then
+  exit "$POLICY_BLOCKED_RC"
 fi
 if (( STREAM_RC == POLICY_BLOCKED_RC )); then
   exit "$POLICY_BLOCKED_RC"
@@ -213,13 +292,28 @@ fi
 if (( COPILOT_RC != 0 && STREAM_RC == PLAIN_POLICY_DIAGNOSTIC_RC )); then
   exit "$POLICY_BLOCKED_RC"
 fi
+if (( STREAM_RC == TRANSIENT_FAILURE_RC )); then
+  exit "$TRANSIENT_FAILURE_RC"
+fi
+if (( COPILOT_RC != 0 && STREAM_RC == PLAIN_TRANSIENT_DIAGNOSTIC_RC )); then
+  exit "$TRANSIENT_FAILURE_RC"
+fi
 if (( COPILOT_RC != 0 )) && [[ "$COPILOT_JSON_STREAM" != true ]] && failed_log_is_policy_blocked; then
   exit "$POLICY_BLOCKED_RC"
 fi
+if (( COPILOT_RC != 0 )) && [[ "$COPILOT_JSON_STREAM" != true ]] && failed_log_is_transient_failure; then
+  exit "$TRANSIENT_FAILURE_RC"
+fi
 if (( COPILOT_RC != 0 )); then
+  if (( COPILOT_RC == TRANSIENT_FAILURE_RC )); then
+    exit 1
+  fi
   exit "$COPILOT_RC"
 fi
 if (( STREAM_RC == PLAIN_POLICY_DIAGNOSTIC_RC )); then
+  exit 0
+fi
+if (( STREAM_RC == PLAIN_TRANSIENT_DIAGNOSTIC_RC )); then
   exit 0
 fi
 exit "$STREAM_RC"

@@ -92,6 +92,9 @@ _VOLATILE = (
     "SPECULA_SANDBOX_BACKEND",
     "SPECULA_SANDBOX_CONFIG",
     "SPECULA_ACTIVITY_LOG",
+    "SPECULA_RESUME_STATE",
+    "SPECULA_RESUME_MODEL",
+    "SPECULA_RESUME_EFFORT",
     "CODEX_HOME",
     "ADAPTER_EXIT_CODE",
     "COPILOT_HELP_TEXT",
@@ -113,6 +116,7 @@ class AdapterRun(TypedDict):
     vcsenv: str
     opencode_config: str
     opencode_permission: str
+    resumeenv: str
     stdin: str | None
     base: Path
 
@@ -166,6 +170,11 @@ class AdapterCase(unittest.TestCase):
             lines.append(f'printf "%s\\n" "${{{model_var}-<unset>}}" > "${{ADAPTER_MODEL_ENV_FILE:-/dev/null}}"')
         if effort_var:
             lines.append(f'printf "%s\\n" "${{{effort_var}-<unset>}}" > "${{ADAPTER_EFFORT_ENV_FILE:-/dev/null}}"')
+        lines.append(
+            'printf "%s|%s|%s\\n" "${SPECULA_RESUME_STATE-<unset>}" '
+            '"${SPECULA_RESUME_MODEL-<unset>}" "${SPECULA_RESUME_EFFORT-<unset>}" '
+            '> "${ADAPTER_RESUME_ENV_FILE:-/dev/null}"'
+        )
         if name == "opencode":
             lines.append('printf "%s\\n" "${OPENCODE_FAKE_VCS-<unset>}" > "${ADAPTER_VCS_ENV_FILE:-/dev/null}"')
             lines.append('printf "%s\\n" "${OPENCODE_CONFIG-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"')
@@ -213,8 +222,9 @@ class AdapterCase(unittest.TestCase):
         with_fake: bool = True,
         record_extra: bool = False,
         timeout: float | None = None,
+        run_dir: Path | None = None,
     ) -> AdapterRun:
-        base = self.sandbox()
+        base = run_dir or self.sandbox()
         bindir = base / "bin"
         fixture = base / "fixture.txt"
         if isinstance(fixture_text, bytes):
@@ -230,6 +240,7 @@ class AdapterCase(unittest.TestCase):
             "ADAPTER_VCS_ENV_FILE": base / "vcsenv.txt",
             "ADAPTER_OPENCODE_CONFIG_FILE": base / "opencode_config.json",
             "ADAPTER_OPENCODE_PERMISSION_FILE": base / "opencode_permission.json",
+            "ADAPTER_RESUME_ENV_FILE": base / "resumeenv.txt",
             "ADAPTER_STDIN_FILE": base / "stdin.txt",
         }
         env = {k: v for k, v in os.environ.items() if k not in _VOLATILE}
@@ -258,6 +269,7 @@ class AdapterCase(unittest.TestCase):
             "vcsenv": (read(record["ADAPTER_VCS_ENV_FILE"]) or "").strip(),
             "opencode_config": read(record["ADAPTER_OPENCODE_CONFIG_FILE"]) or "",
             "opencode_permission": (read(record["ADAPTER_OPENCODE_PERMISSION_FILE"]) or "").strip(),
+            "resumeenv": (read(record["ADAPTER_RESUME_ENV_FILE"]) or "").strip(),
             "stdin": read(record["ADAPTER_STDIN_FILE"]),
             "base": base,
         }
@@ -280,6 +292,114 @@ class ClaudeCodeAdapter(AdapterCase):
 
     def base_flags(self, base: Path) -> list[str]:
         return [self.with_prompt_file(base), f"--log={base}/out.log"]
+
+    def test_resume_state_captures_then_resumes_exact_claude_session(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        session_id = "claude-session-exact"
+        fixture = json.dumps({"type": "result", **CLAUDE_JSON, "session_id": session_id})
+        flags = [*self.base_flags(base), f"--resume-state={state}"]
+
+        fresh = self.run_adapter(
+            self.CMD,
+            flags,
+            fake_name="claude",
+            fixture_text=fixture,
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(fresh["returncode"], 0, fresh["stderr"])
+        self.assertNotIn("--resume", fresh["argv"])
+        self.assertEqual(
+            json.loads(state.read_text()),
+            {
+                "version": 1,
+                "adapter": "claude-code",
+                "session_id": session_id,
+                "cwd": str(base),
+                "model": "",
+                "effort": "max",
+            },
+        )
+
+        resumed = self.run_adapter(
+            self.CMD,
+            flags,
+            fake_name="claude",
+            fixture_text=fixture,
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(resumed["returncode"], 0, resumed["stderr"])
+        index = resumed["argv"].index("--resume")
+        self.assertEqual(resumed["argv"][index + 1], session_id)
+
+    def test_resume_state_without_progress_uses_hidden_stream_and_captures_init_id(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        session_id = "claude-init-session"
+        fixture = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "system",
+                        "subtype": "init",
+                        "session_id": session_id,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "result",
+                        **CLAUDE_JSON,
+                        "is_error": True,
+                        "terminal_reason": "api_error",
+                        "api_error_status": 503,
+                        "result": "Request failed.",
+                    }
+                ),
+            ]
+        )
+        result = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="claude",
+            fixture_text=fixture,
+            record_extra=True,
+            env_extra={"ADAPTER_EXIT_CODE": "9", "TMPDIR": str(base)},
+            run_dir=base,
+        )
+        self.assertEqual(result["returncode"], 74, result["stderr"])
+        self.assertEqual(result["argv"][result["argv"].index("--output-format") + 1], "stream-json")
+        self.assertIn("--verbose", result["argv"])
+        self.assertEqual(json.loads(state.read_text())["session_id"], session_id)
+        self.assertEqual(list(base.glob("specula-claude-activity-*.jsonl")), [])
+
+    def test_resume_state_binding_mismatch_fails_before_claude_launch(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "claude-code",
+                    "session_id": "claude-session-exact",
+                    "cwd": str(base),
+                    "model": "old-model",
+                    "effort": "max",
+                }
+            )
+        )
+        result = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), "--model=new-model", f"--resume-state={state}"],
+            fake_name="claude",
+            fixture_text=self.FIXTURE,
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(result["returncode"], 1)
+        self.assertIn("invalid resume state", result["stderr"])
+        self.assertEqual(result["argv"], [])
 
     def test_base_command_and_default_effort(self) -> None:
         base = self.sandbox()
@@ -379,6 +499,18 @@ class ClaudeCodeAdapter(AdapterCase):
         base = self.sandbox()
         r = self.invoke(self.base_flags(base), env_extra={"CLAUDECODE": "1"})
         self.assertEqual(r["sessionenv"], "<unset>")
+
+    def test_resume_plumbing_environment_is_stripped_before_spawn(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_RESUME_STATE": "/ambient/state",
+                "SPECULA_RESUME_MODEL": "ambient-model",
+                "SPECULA_RESUME_EFFORT": "ambient-effort",
+            },
+        )
+        self.assertEqual(result["resumeenv"], "<unset>|<unset>|<unset>")
 
     def test_log_and_usage_written(self) -> None:
         base = self.sandbox()
@@ -488,6 +620,66 @@ class ClaudeCodeAdapter(AdapterCase):
         )
         self.assertEqual(r["returncode"], 76, r["stderr"])
 
+    def test_terminal_transient_failure_exits_shared_status(self) -> None:
+        base = self.sandbox()
+        record = {
+            "type": "result",
+            **CLAUDE_JSON,
+            "is_error": True,
+            "terminal_reason": "api_error",
+            "api_error_status": 503,
+            "result": "Request failed.",
+        }
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+            env_extra={"ADAPTER_EXIT_CODE": "9"},
+        )
+        self.assertEqual(r["returncode"], 74, r["stderr"])
+
+    def test_policy_block_wins_over_transient_failure(self) -> None:
+        base = self.sandbox()
+        record = {
+            "type": "result",
+            **CLAUDE_JSON,
+            "is_error": True,
+            "terminal_reason": "api_error",
+            "api_error_status": 503,
+            "result": "Selected model is at capacity. This content was flagged for possible cybersecurity risk.",
+        }
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+            env_extra={"ADAPTER_EXIT_CODE": "9"},
+        )
+        self.assertEqual(r["returncode"], 76, r["stderr"])
+
+    def test_native_policy_status_wins_over_structured_transient_failure(self) -> None:
+        base = self.sandbox()
+        record = {
+            "type": "result",
+            **CLAUDE_JSON,
+            "is_error": True,
+            "terminal_reason": "api_error",
+            "api_error_status": 503,
+            "result": "Request failed.",
+        }
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+            env_extra={"ADAPTER_EXIT_CODE": "76"},
+        )
+        self.assertEqual(r["returncode"], 76, r["stderr"])
+
     def test_streaming_plain_policy_diagnostic_uses_failed_cli_status(self) -> None:
         fixture = "\n".join(
             [
@@ -528,12 +720,122 @@ class ClaudeCodeAdapter(AdapterCase):
         )
         self.assertEqual(r["returncode"], 9, r["stderr"])
 
+    def test_streaming_plain_transient_diagnostic_uses_failed_cli_status(self) -> None:
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "working"}]}}),
+                "Selected model is at capacity. Please try again.",
+            ]
+        )
+        for native_rc, expected in (("9", 74), ("75", 75), ("76", 76), ("0", 0)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="claude",
+                    fixture_text=fixture,
+                    record_extra=True,
+                    env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": native_rc},
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
+
+    def test_progress_off_plain_transient_diagnostic_uses_failed_cli_status(self) -> None:
+        for native_rc, expected in (("9", 74), ("75", 75), ("76", 76), ("0", 0)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="claude",
+                    fixture_text="Selected model is at capacity. Please try again.\n",
+                    record_extra=True,
+                    env_extra={"ADAPTER_EXIT_CODE": native_rc},
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
+
+    def test_progress_off_plain_transient_before_success_result_is_not_retryable(self) -> None:
+        base = self.sandbox()
+        fixture = "\n".join(
+            [
+                "Selected model is at capacity. Please try again.",
+                json.dumps({"type": "result", **CLAUDE_JSON}),
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=fixture,
+            record_extra=True,
+            env_extra={"ADAPTER_EXIT_CODE": "9"},
+        )
+        self.assertEqual(r["returncode"], 9, r["stderr"])
+
+    def test_successful_stream_terminal_suppresses_later_plain_transient_diagnostic(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "result", **CLAUDE_JSON}),
+                "Selected model is at capacity. Please try again.",
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=fixture,
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": "9"},
+        )
+        self.assertEqual(r["returncode"], 9, r["stderr"])
+
+    def test_structured_transient_followed_by_success_is_recovered(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        failed = {
+            "type": "result",
+            **CLAUDE_JSON,
+            "is_error": True,
+            "terminal_reason": "api_error",
+            "api_error_status": 503,
+            "result": "Selected model is at capacity. Please try again.",
+        }
+        fixture = "\n".join([json.dumps(failed), json.dumps({"type": "result", **CLAUDE_JSON})])
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=fixture,
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+
     def test_successful_result_quoting_policy_message_is_not_blocked(self) -> None:
         base = self.sandbox()
         record = {
             "type": "result",
             **CLAUDE_JSON,
             "result": "The old run said output blocked by content filtering policy; the task is now complete.",
+        }
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+
+    def test_successful_result_quoting_transient_message_is_not_retryable(self) -> None:
+        base = self.sandbox()
+        record = {
+            "type": "result",
+            **CLAUDE_JSON,
+            "result": "The old run said the selected model was at capacity; the task is now complete.",
         }
         r = self.run_adapter(
             self.CMD,
@@ -996,6 +1298,123 @@ class OpenCodeAdapter(AdapterCase):
 
     def base_flags(self, base: Path) -> list[str]:
         return [self.with_prompt_file(base), f"--log={base}/out.log"]
+
+    def test_resume_state_captures_then_resumes_exact_opencode_session(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        session_id = "ses_exact"
+        fixture = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "text",
+                        "sessionID": session_id,
+                        "part": {"type": "text", "text": "finished"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "step_finish",
+                        "sessionID": session_id,
+                        "part": {"tokens": {}, "cost": 0, "reason": "stop"},
+                    }
+                ),
+            ]
+        )
+        flags = [*self.base_flags(base), f"--resume-state={state}"]
+
+        fresh = self.run_adapter(
+            self.CMD,
+            flags,
+            fake_name="opencode",
+            fixture_text=fixture,
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(fresh["returncode"], 0, fresh["stderr"])
+        self.assertNotIn("--session", fresh["argv"])
+        self.assertEqual(json.loads(state.read_text())["session_id"], session_id)
+
+        resumed = self.run_adapter(
+            self.CMD,
+            flags,
+            fake_name="opencode",
+            fixture_text=fixture,
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(resumed["returncode"], 0, resumed["stderr"])
+        index = resumed["argv"].index("--session")
+        self.assertEqual(resumed["argv"][index + 1], session_id)
+        self.assertNotIn("--continue", resumed["argv"])
+
+    def test_resume_state_binding_mismatch_fails_before_opencode_launch(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "opencode",
+                    "session_id": "ses_exact",
+                    "cwd": str(base),
+                    "model": "old-model",
+                    "effort": "",
+                }
+            )
+        )
+        result = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), "--model=new-model", f"--resume-state={state}"],
+            fake_name="opencode",
+            fixture_text=self.FIXTURE,
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(result["returncode"], 1)
+        self.assertIn("resume state", result["stderr"])
+        self.assertEqual(result["argv"], [])
+
+    def test_resume_state_symlink_fails_before_opencode_launch(self) -> None:
+        base = self.sandbox()
+        target = base / "target.json"
+        target.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "opencode",
+                    "session_id": "ses_first",
+                    "cwd": str(base),
+                    "model": "",
+                    "effort": "",
+                }
+            )
+        )
+        state = base / "resume.json"
+        state.symlink_to(target)
+        result = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="opencode",
+            fixture_text=self.FIXTURE,
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(result["returncode"], 1)
+        self.assertIn("not a regular file", result["stderr"])
+        self.assertEqual(result["argv"], [])
+
+    def test_resume_plumbing_environment_is_stripped_before_spawn(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_RESUME_STATE": "/ambient/state",
+                "SPECULA_RESUME_MODEL": "ambient-model",
+                "SPECULA_RESUME_EFFORT": "ambient-effort",
+            },
+        )
+        self.assertEqual(result["resumeenv"], "<unset>|<unset>|<unset>")
 
     def test_command_construction_from_environment(self) -> None:
         base = self.sandbox()
@@ -1472,6 +1891,73 @@ class OpenCodeAdapter(AdapterCase):
                 )
                 self.assertEqual(result["returncode"], expected, result["stderr"])
 
+    def test_structured_transient_failure_maps_to_resume_status(self) -> None:
+        fixture = json.dumps(
+            {
+                "type": "error",
+                "sessionID": "ses_capacity",
+                "error": {
+                    "name": "APIError",
+                    "data": {
+                        "code": "model_at_capacity",
+                        "message": "Selected model is at capacity. Please try again.",
+                        "statusCode": 503,
+                    },
+                },
+            }
+        )
+        for native_rc, expected in (("0", 74), ("9", 74), ("75", 75), ("76", 76)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="opencode",
+                    fixture_text=fixture,
+                    env_extra={"ADAPTER_EXIT_CODE": native_rc},
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], expected, result["stderr"])
+
+    def test_camel_case_transport_error_maps_to_resume_status(self) -> None:
+        base = self.sandbox()
+        fixture = json.dumps(
+            {
+                "type": "error",
+                "sessionID": "ses_transport",
+                "error": {"name": "APIConnectionError"},
+            }
+        )
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="opencode",
+            fixture_text=fixture,
+            env_extra={"ADAPTER_EXIT_CODE": "9"},
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 74, result["stderr"])
+
+    def test_plain_transient_diagnostic_requires_failed_cli_status(self) -> None:
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "step_start", "sessionID": "ses_capacity", "part": {}}),
+                "Selected model is at capacity. Please try again.",
+            ]
+        )
+        for native_rc, expected in (("9", 74), ("75", 75), ("76", 76), ("0", 1)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="opencode",
+                    fixture_text=fixture,
+                    env_extra={"ADAPTER_EXIT_CODE": native_rc},
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], expected, result["stderr"])
+
     def test_policy_error_followed_by_new_output_and_stop_is_recovered(self) -> None:
         base = self.sandbox()
         records = [
@@ -1484,6 +1970,34 @@ class OpenCodeAdapter(AdapterCase):
                 "type": "text",
                 "sessionID": "ses_recovered",
                 "part": {"type": "text", "text": "continued successfully"},
+            },
+            {
+                "type": "step_finish",
+                "sessionID": "ses_recovered",
+                "part": {"type": "step-finish", "reason": "stop", "tokens": {}},
+            },
+        ]
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="opencode",
+            fixture_text="\n".join(json.dumps(record) for record in records) + "\n",
+            record_extra=True,
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+
+    def test_transient_error_followed_by_new_empty_step_and_stop_is_recovered(self) -> None:
+        base = self.sandbox()
+        records = [
+            {
+                "type": "error",
+                "sessionID": "ses_recovered",
+                "error": {"name": "OverloadedError"},
+            },
+            {
+                "type": "step_start",
+                "sessionID": "ses_recovered",
+                "part": {"type": "step-start"},
             },
             {
                 "type": "step_finish",
@@ -1795,6 +2309,50 @@ class PiAdapter(AdapterCase):
     def base_flags(self, base: Path) -> list[str]:
         return [self.with_prompt_file(base), f"--log={base}/out.log"]
 
+    def test_resume_state_enables_persistent_then_exact_pi_session(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        session_id = "pi_session"
+        flags = [*self.base_flags(base), f"--resume-state={state}"]
+
+        fresh = self.run_adapter(
+            self.CMD,
+            flags,
+            fake_name="pi",
+            fixture_text=self.FIXTURE,
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(fresh["returncode"], 0, fresh["stderr"])
+        self.assertNotIn("--no-session", fresh["argv"])
+        self.assertNotIn("--session", fresh["argv"])
+        self.assertEqual(json.loads(state.read_text())["session_id"], session_id)
+
+        resumed = self.run_adapter(
+            self.CMD,
+            flags,
+            fake_name="pi",
+            fixture_text=self.FIXTURE,
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(resumed["returncode"], 0, resumed["stderr"])
+        self.assertNotIn("--no-session", resumed["argv"])
+        index = resumed["argv"].index("--session")
+        self.assertEqual(resumed["argv"][index + 1], session_id)
+
+    def test_resume_plumbing_environment_is_stripped_before_spawn(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_RESUME_STATE": "/ambient/state",
+                "SPECULA_RESUME_MODEL": "ambient-model",
+                "SPECULA_RESUME_EFFORT": "ambient-effort",
+            },
+        )
+        self.assertEqual(result["resumeenv"], "<unset>|<unset>|<unset>")
+
     def test_baseline_command_uses_environment_defaults_and_stdin(self) -> None:
         base = self.sandbox()
         result = self.invoke(
@@ -2045,6 +2603,52 @@ class PiAdapter(AdapterCase):
             ]
         )
         for native_rc, expected in (("9", 76), ("75", 75)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="pi",
+                    fixture_text=fixture,
+                    env_extra={"ADAPTER_EXIT_CODE": native_rc},
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], expected, result["stderr"])
+
+    def test_structured_transient_failure_maps_to_resume_status(self) -> None:
+        fixture = json.dumps(
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [],
+                    "stopReason": "error",
+                    "errorMessage": "Selected model is at capacity. Please try again.",
+                    "usage": {},
+                },
+            }
+        )
+        for native_rc, expected in (("0", 74), ("9", 74), ("75", 75), ("76", 76)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="pi",
+                    fixture_text=fixture,
+                    env_extra={"ADAPTER_EXIT_CODE": native_rc},
+                    record_extra=True,
+                )
+                self.assertEqual(result["returncode"], expected, result["stderr"])
+
+    def test_plain_transient_diagnostic_requires_failed_cli_status(self) -> None:
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "session", "id": "pi_capacity"}),
+                "Selected model is at capacity. Please try again.",
+            ]
+        )
+        for native_rc, expected in (("9", 74), ("75", 75), ("76", 76), ("0", 1)):
             with self.subTest(native_rc=native_rc):
                 base = self.sandbox()
                 result = self.run_adapter(
@@ -2529,6 +3133,280 @@ class CodexAdapter(AdapterCase):
         self.assertEqual(activity.read_text(), fixture)
         self.assertEqual((base / "out.log").read_text(), "running pwd\ndone\n")
 
+    def test_resume_state_forces_hidden_json_stream_and_captures_exact_id(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        session_id = "019f0000-0000-7000-8000-000000000001"
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": session_id}),
+                json.dumps({"type": "turn.completed", "usage": {}}),
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"TMPDIR": str(base)},
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertEqual(r["argv"][-2:], ["--json", "-"])
+        self.assertNotIn("resume", r["argv"])
+        self.assertEqual(
+            json.loads(state.read_text()),
+            {
+                "version": 1,
+                "adapter": "codex",
+                "session_id": session_id,
+                "cwd": str(base),
+                "model": "",
+                "effort": "",
+            },
+        )
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["session_id"], session_id)
+        self.assertEqual(list(base.glob("specula-codex-activity-*.jsonl")), [])
+
+    def test_resume_plumbing_environment_is_stripped_before_spawn(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_RESUME_STATE": "/ambient/state",
+                "SPECULA_RESUME_MODEL": "ambient-model",
+                "SPECULA_RESUME_EFFORT": "ambient-effort",
+            },
+        )
+        self.assertEqual(result["resumeenv"], "<unset>|<unset>|<unset>")
+
+    def test_resume_uses_exact_id_and_only_continuation_prompt(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        session_id = "019f0000-0000-7000-8000-000000000002"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "codex",
+                    "session_id": session_id,
+                    "cwd": str(base),
+                    "model": "gpt-5.5",
+                    "effort": "high",
+                }
+            )
+        )
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": session_id}),
+                json.dumps({"type": "turn.completed", "usage": {}}),
+            ]
+        )
+        flags = [
+            self.with_prompt_file(base, "continue only\n"),
+            f"--log={base}/out.log",
+            "--max-turns=0",
+            "--model=gpt-5.5",
+            "--effort=high",
+            f"--resume-state={state}",
+        ]
+        r = self.run_adapter(
+            self.CMD,
+            flags,
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"TMPDIR": str(base)},
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertEqual(
+            r["argv"],
+            [
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--output-last-message",
+                str(base / "out.last-message.txt"),
+                "-c",
+                "tool_output_token_limit=10000",
+                "-m",
+                "gpt-5.5",
+                "-c",
+                "model_reasoning_effort=high",
+                "resume",
+                session_id,
+                "--json",
+                "-",
+            ],
+        )
+        self.assertNotIn("--last", r["argv"])
+        self.assertEqual(r["stdin"], "continue only")
+        self.assertEqual(json.loads((base / "out.usage.json").read_text())["session_id"], session_id)
+        self.assertEqual(list(base.glob("specula-codex-activity-*.jsonl")), [])
+
+    def test_resume_state_mismatch_fails_before_launch(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "codex",
+                    "session_id": "019f0000-0000-7000-8000-000000000003",
+                    "cwd": str(base),
+                    "model": "old-model",
+                    "effort": "",
+                }
+            )
+        )
+        r = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), "--model=new-model", f"--resume-state={state}"],
+            fake_name="codex",
+            fixture_text="unused",
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(r["returncode"], 1)
+        self.assertIn("invalid or incompatible resume state", r["stderr"])
+        self.assertEqual(r["argv"], [])
+
+    def test_stream_session_change_is_fail_closed_before_native_rate_limit(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        original_id = "019f0000-0000-7000-8000-000000000010"
+        changed_id = "019f0000-0000-7000-8000-000000000011"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "codex",
+                    "session_id": original_id,
+                    "cwd": str(base),
+                    "model": "",
+                    "effort": "",
+                }
+            )
+        )
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": changed_id}),
+                json.dumps(
+                    {
+                        "type": "turn.failed",
+                        "error": {"code": "rate_limit_exceeded", "message": "Too many requests"},
+                    }
+                ),
+            ]
+        )
+        result = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"ADAPTER_EXIT_CODE": "75", "TMPDIR": str(base)},
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(result["returncode"], 1, result["stderr"])
+        self.assertIn("changed session ID", result["stderr"])
+        self.assertEqual(json.loads(state.read_text())["session_id"], original_id)
+
+    def test_empty_resume_state_is_rejected(self) -> None:
+        base = self.sandbox()
+        r = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), "--resume-state="],
+            fake_name="codex",
+            fixture_text="unused",
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(r["returncode"], 1)
+        self.assertIn("--resume-state requires a path", r["stderr"])
+        self.assertEqual(r["argv"], [])
+
+    def test_resume_usage_ignores_concurrent_rollout(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        session_id = "019f0000-0000-7000-8000-000000000004"
+        other_id = "019f0000-0000-7000-8000-000000000005"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "codex",
+                    "session_id": session_id,
+                    "cwd": str(base),
+                    "model": "",
+                    "effort": "",
+                }
+            )
+        )
+        sessions = base / ".codex" / "sessions" / "2026" / "07" / "18"
+        sessions.mkdir(parents=True)
+        exact_file = sessions / f"rollout-2026-07-18T00-00-00-{session_id}.jsonl"
+        other_file = sessions / f"rollout-2026-07-18T00-00-01-{other_id}.jsonl"
+        exact_file.write_text(json.dumps({"type": "session_meta", "payload": {"id": session_id}}) + "\n")
+        other_file.write_text(json.dumps({"type": "session_meta", "payload": {"id": other_id}}) + "\n")
+
+        bindir = base / "bin"
+        bindir.mkdir()
+        npx = bindir / "npx"
+        npx.write_text(
+            "#!/usr/bin/env bash\n"
+            + "printf '%s\\n' "
+            + json.dumps(
+                json.dumps(
+                    {
+                        "sessions": [
+                            {
+                                "sessionFile": exact_file.stem,
+                                "sessionId": session_id,
+                                "costUSD": 1.25,
+                                "inputTokens": 10,
+                                "cachedInputTokens": 4,
+                                "outputTokens": 3,
+                                "reasoningOutputTokens": 2,
+                                "totalTokens": 13,
+                            },
+                            {
+                                "sessionFile": other_file.stem,
+                                "sessionId": other_id,
+                                "costUSD": 99,
+                                "totalTokens": 999,
+                            },
+                        ]
+                    }
+                )
+            )
+            + "\n"
+        )
+        npx.chmod(npx.stat().st_mode | stat.S_IEXEC)
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": session_id}),
+                json.dumps({"type": "turn.completed", "usage": {}}),
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"TMPDIR": str(base)},
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["session_id"], session_id)
+        self.assertEqual(usage["session_file"], exact_file.stem)
+        self.assertEqual(usage["total_cost_usd"], 1.25)
+        self.assertEqual(usage["usage"]["total_tokens"], 13)
+
     def test_large_prompt_uses_stdin_with_activity_stream(self) -> None:
         base = self.sandbox()
         activity = base / "out.activity.jsonl"
@@ -2575,6 +3453,49 @@ class CodexAdapter(AdapterCase):
         )
         self.assertEqual(r["returncode"], 76, r["stderr"])
 
+    def test_structured_transient_failure_overrides_ordinary_native_status(self) -> None:
+        fixture = json.dumps(
+            {
+                "type": "turn.failed",
+                "error": {
+                    "code": "model_at_capacity",
+                    "message": "Selected model is at capacity. Please try a different model.",
+                },
+            }
+        )
+        for native_rc, expected in (("9", 74), ("0", 74), ("75", 75), ("76", 76)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="codex",
+                    fixture_text=fixture,
+                    env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": native_rc},
+                    record_extra=True,
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
+
+    def test_structured_rate_limit_keeps_highest_priority(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        fixture = json.dumps(
+            {
+                "type": "turn.failed",
+                "error": {"code": "rate_limit_exceeded", "message": "Too many requests"},
+            }
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": "9"},
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 75, r["stderr"])
+
     def test_streaming_plain_policy_diagnostic_uses_failed_cli_status(self) -> None:
         fixture = "\n".join(
             [
@@ -2583,6 +3504,27 @@ class CodexAdapter(AdapterCase):
             ]
         )
         for native_rc, expected in (("9", 76), ("75", 75), ("0", 0)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="codex",
+                    fixture_text=fixture,
+                    env_extra={"SPECULA_ACTIVITY_LOG": str(activity), "ADAPTER_EXIT_CODE": native_rc},
+                    record_extra=True,
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
+
+    def test_streaming_plain_transient_diagnostic_uses_failed_cli_status(self) -> None:
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": "thread-1"}),
+                "Selected model is at capacity. Please try a different model.",
+            ]
+        )
+        for native_rc, expected in (("9", 74), ("75", 75), ("76", 76), ("0", 0)):
             with self.subTest(native_rc=native_rc):
                 base = self.sandbox()
                 activity = base / "out.activity.jsonl"
@@ -2681,6 +3623,33 @@ class CodexAdapter(AdapterCase):
             record_extra=True,
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
+
+    def test_progress_off_failed_transient_diagnostic_exits_shared_status(self) -> None:
+        base = self.sandbox()
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text="Selected model is at capacity. Please try a different model.\n",
+            env_extra={"ADAPTER_EXIT_CODE": "9"},
+            record_extra=True,
+        )
+        self.assertEqual(r["returncode"], 74, r["stderr"])
+
+    def test_progress_off_transient_quote_does_not_override_policy_or_success(self) -> None:
+        fixture = "Selected model is at capacity. Please try a different model.\n"
+        for native_rc, expected in (("76", 76), ("0", 0)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="codex",
+                    fixture_text=fixture,
+                    env_extra={"ADAPTER_EXIT_CODE": native_rc},
+                    record_extra=True,
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
 
     def test_structured_turn_failure_is_logged_but_cli_owns_status(self) -> None:
         base = self.sandbox()
@@ -2918,6 +3887,243 @@ class CopilotAdapter(AdapterCase):
 
     def base_flags(self, base: Path) -> list[str]:
         return [self.with_prompt_file(base), f"--log={base}/out.log"]
+
+    def test_resume_state_captures_result_id_then_uses_fail_closed_resume(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        session_id = "11111111-1111-4111-8111-111111111111"
+        fixture = json.dumps({"type": "result", "sessionId": session_id, "exitCode": 0, "usage": {}})
+        flags = [*self.base_flags(base), f"--resume-state={state}"]
+        env = {
+            "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream\n--session-id\n--resume",
+            "TMPDIR": str(base),
+        }
+
+        fresh = self.run_adapter(
+            self.CMD,
+            flags,
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra=env,
+            run_dir=base,
+        )
+        self.assertEqual(fresh["returncode"], 0, fresh["stderr"])
+        self.assertNotIn("--session-id", fresh["argv"])
+        self.assertNotIn("--resume", fresh["argv"])
+        self.assertNotIn("--continue", fresh["argv"])
+        self.assertEqual(json.loads(state.read_text())["session_id"], session_id)
+
+        resumed = self.run_adapter(
+            self.CMD,
+            flags,
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra=env,
+            run_dir=base,
+        )
+        self.assertEqual(resumed["returncode"], 0, resumed["stderr"])
+        index = resumed["argv"].index("--resume")
+        self.assertEqual(resumed["argv"][index + 1], session_id)
+        self.assertNotIn("--session-id", resumed["argv"])
+        self.assertNotIn("--continue", resumed["argv"])
+
+    def test_result_only_transient_failure_captures_session_before_resume_status(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        session_id = "22222222-2222-4222-8222-222222222222"
+        fixture = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "session.error",
+                        "data": {
+                            "errorType": "model_at_capacity",
+                            "message": "Selected model is at capacity. Please try again.",
+                            "statusCode": 503,
+                        },
+                    }
+                ),
+                json.dumps({"type": "result", "sessionId": session_id, "exitCode": 1, "usage": {}}),
+            ]
+        )
+        result = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra={
+                "ADAPTER_EXIT_CODE": "9",
+                "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream\n--session-id\n--resume",
+                "TMPDIR": str(base),
+            },
+            run_dir=base,
+        )
+        self.assertEqual(result["returncode"], 74, result["stderr"])
+        self.assertEqual(json.loads(state.read_text())["session_id"], session_id)
+
+    def test_resume_plumbing_environment_is_stripped_before_spawn(self) -> None:
+        base = self.sandbox()
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={
+                "SPECULA_RESUME_STATE": "/ambient/state",
+                "SPECULA_RESUME_MODEL": "ambient-model",
+                "SPECULA_RESUME_EFFORT": "ambient-effort",
+            },
+        )
+        self.assertEqual(result["resumeenv"], "<unset>|<unset>|<unset>")
+
+    def test_resume_only_uses_full_id_never_session_id_or_continue(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        session_id = "33333333-3333-4333-8333-333333333333"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "copilot-cli",
+                    "session_id": session_id,
+                    "cwd": str(base),
+                    "model": "",
+                    "effort": "",
+                }
+            )
+        )
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "session.start", "data": {"sessionId": session_id}}),
+                json.dumps({"type": "result", "sessionId": session_id, "exitCode": 0}),
+            ]
+        )
+        result = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra={
+                "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream\n--session-id\n--resume",
+                "TMPDIR": str(base),
+            },
+            run_dir=base,
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        index = result["argv"].index("--resume")
+        self.assertEqual(result["argv"][index + 1], session_id)
+        self.assertNotIn("--session-id", result["argv"])
+        self.assertNotIn("--continue", result["argv"])
+
+    def test_resume_state_rejects_non_uuid_before_copilot_launch(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "copilot-cli",
+                    "session_id": "session-name-or-prefix",
+                    "cwd": str(base),
+                    "model": "",
+                    "effort": "",
+                }
+            )
+        )
+        result = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="copilot",
+            fixture_text="unused",
+            env_extra={
+                "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--session-id\n--resume",
+            },
+            run_dir=base,
+        )
+        self.assertEqual(result["returncode"], 1)
+        self.assertIn("not a full UUID", result["stderr"])
+        self.assertEqual(result["argv"], [])
+
+    def test_resume_capability_and_binding_fail_closed_before_copilot_launch(self) -> None:
+        cases = [
+            ("missing-json", "--autopilot\n--resume", "", "JSON output"),
+            ("missing-exact-resume", "--autopilot\n--output-format", "", "exact-session resume"),
+            ("legacy-resume-only", "--autopilot\n--output-format\n--resume", "", "1.0.51+"),
+            ("session-id-only", "--autopilot\n--output-format\n--session-id", "", "1.0.51+"),
+            (
+                "binding-mismatch",
+                "--autopilot\n--output-format\n--session-id\n--resume",
+                "--model=new-model",
+                "resume state failed",
+            ),
+        ]
+        for name, help_text, extra_flag, diagnostic in cases:
+            with self.subTest(name=name):
+                base = self.sandbox()
+                state = base / "resume.json"
+                state.write_text(
+                    json.dumps(
+                        {
+                            "version": 1,
+                            "adapter": "copilot-cli",
+                            "session_id": "44444444-4444-4444-8444-444444444444",
+                            "cwd": str(base),
+                            "model": "old-model" if extra_flag else "",
+                            "effort": "",
+                        }
+                    )
+                )
+                flags = [*self.base_flags(base)]
+                if extra_flag:
+                    flags.append(extra_flag)
+                flags.append(f"--resume-state={state}")
+                result = self.run_adapter(
+                    self.CMD,
+                    flags,
+                    fake_name="copilot",
+                    fixture_text="unused",
+                    env_extra={"COPILOT_HELP_TEXT": help_text},
+                    run_dir=base,
+                )
+                self.assertEqual(result["returncode"], 1)
+                self.assertIn(diagnostic, result["stderr"])
+                self.assertEqual(result["argv"], [])
+
+    def test_stream_session_change_is_fail_closed_before_native_rate_limit(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        original_id = "55555555-5555-4555-8555-555555555555"
+        changed_id = "66666666-6666-4666-8666-666666666666"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "copilot-cli",
+                    "session_id": original_id,
+                    "cwd": str(base),
+                    "model": "",
+                    "effort": "",
+                }
+            )
+        )
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "session.start", "data": {"sessionId": changed_id}}),
+                json.dumps({"type": "session.error", "data": {"statusCode": 429}}),
+            ]
+        )
+        result = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra={
+                "ADAPTER_EXIT_CODE": "75",
+                "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream\n--session-id\n--resume",
+                "TMPDIR": str(base),
+            },
+            run_dir=base,
+        )
+        self.assertEqual(result["returncode"], 1, result["stderr"])
+        self.assertIn("changed session ID", result["stderr"])
+        self.assertEqual(json.loads(state.read_text())["session_id"], original_id)
 
     def test_command_construction(self) -> None:
         base = self.sandbox()
@@ -3247,6 +4453,34 @@ class CopilotAdapter(AdapterCase):
         )
         self.assertEqual(r["returncode"], 76, r["stderr"])
 
+    def test_transient_session_error_maps_to_resume_status(self) -> None:
+        fixture = json.dumps(
+            {
+                "type": "session.error",
+                "data": {
+                    "errorType": "model_at_capacity",
+                    "message": "Selected model is at capacity. Please try again.",
+                    "statusCode": 503,
+                },
+            }
+        )
+        for native_rc, expected in (("0", 74), ("9", 74), ("75", 75), ("76", 76)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="copilot",
+                    fixture_text=fixture,
+                    env_extra={
+                        "SPECULA_ACTIVITY_LOG": str(activity),
+                        "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream",
+                        "ADAPTER_EXIT_CODE": native_rc,
+                    },
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
+
     def test_json_stream_plain_policy_diagnostic_uses_failed_cli_status(self) -> None:
         fixture = "\n".join(
             [
@@ -3270,6 +4504,60 @@ class CopilotAdapter(AdapterCase):
                     },
                 )
                 self.assertEqual(r["returncode"], expected, r["stderr"])
+
+    def test_json_stream_plain_transient_diagnostic_uses_failed_cli_status(self) -> None:
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "session.start", "data": {"sessionId": "session-1"}}),
+                "Selected model is at capacity. Please try again.",
+            ]
+        )
+        for native_rc, expected in (("9", 74), ("75", 75), ("76", 76), ("0", 0)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                activity = base / "out.activity.jsonl"
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="copilot",
+                    fixture_text=fixture,
+                    env_extra={
+                        "SPECULA_ACTIVITY_LOG": str(activity),
+                        "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream",
+                        "ADAPTER_EXIT_CODE": native_rc,
+                    },
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
+
+    def test_nonstream_transient_failure_uses_failed_log_fallback(self) -> None:
+        base = self.sandbox()
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text="Selected model is at capacity. Please try again.\n",
+            env_extra={
+                "COPILOT_HELP_TEXT": "--autopilot",
+                "ADAPTER_EXIT_CODE": "9",
+            },
+        )
+        self.assertEqual(r["returncode"], 74, r["stderr"])
+
+    def test_old_stream_transient_failure_uses_failed_log_fallback(self) -> None:
+        base = self.sandbox()
+        activity = base / "out.activity.jsonl"
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text="Selected model is at capacity. Please try again.\n",
+            env_extra={
+                "SPECULA_ACTIVITY_LOG": str(activity),
+                "COPILOT_HELP_TEXT": "--autopilot\n--stream",
+                "ADAPTER_EXIT_CODE": "9",
+            },
+        )
+        self.assertEqual(r["returncode"], 74, r["stderr"])
 
     def test_successful_stream_terminal_suppresses_later_plain_policy_diagnostic(self) -> None:
         base = self.sandbox()

@@ -688,6 +688,32 @@ class TestParsing(TmpCwd):
                 self.assertEqual(rc, 1)
                 self.assertIn("--policy-retries must be a non-negative integer", err.getvalue())
 
+    def test_transient_resume_default_and_explicit_value_are_forwarded(self) -> None:
+        default = pl.Pipeline()
+        self.assertIsNone(default.parse_args(["t|g|l|r"]))
+        self.assertEqual(default.transient_resumes, 20)
+        self.assertIn("--transient-resumes=20", default._phase_args(["t"]))
+
+        explicit = pl.Pipeline()
+        self.assertIsNone(explicit.parse_args(["--transient-resumes=100", "t|g|l|r"]))
+        self.assertEqual(explicit.transient_resumes, 100)
+        self.assertIn("--transient-resumes=100", explicit._phase_args(["t"]))
+
+        disabled = pl.Pipeline()
+        self.assertIsNone(disabled.parse_args(["--transient-resumes=0", "t|g|l|r"]))
+        self.assertEqual(disabled.transient_resumes, 0)
+        self.assertIn("--transient-resumes=0", disabled._phase_args(["t"]))
+
+    def test_invalid_transient_resume_budget_is_rejected_at_parse(self) -> None:
+        for value in ("", "-1", "1.5", "bad", "+1"):
+            with self.subTest(value=value):
+                p = pl.Pipeline()
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    rc = p.parse_args([f"--transient-resumes={value}", "t|g|l|r"])
+                self.assertEqual(rc, 1)
+                self.assertIn("--transient-resumes must be a non-negative integer", err.getvalue())
+
     def test_max_parallel_summary_reports_per_finding_default(self) -> None:
         p = pl.Pipeline()
         self.assertIsNone(p.parse_args(["t|g|l|r"]))
@@ -759,6 +785,7 @@ class TestParsing(TmpCwd):
         self.assertIn("--model=NAME", out)
         self.assertIn("--effort=LEVEL", out)
         self.assertIn("--policy-retries=N", out)
+        self.assertIn("--transient-resumes=N", out)
         self.assertIn("default: 20", out)
 
     def test_default_target_is_cwd_basename(self) -> None:
@@ -829,6 +856,7 @@ class TestRunReview(TmpCwd):
         model: str | None = None,
         effort: str | None = None,
         policy_retries: int = 20,
+        transient_resumes: int = 20,
     ) -> list[str]:
         p = make_pipeline(
             ["footest|foo/bar|Go|ref"],
@@ -836,6 +864,7 @@ class TestRunReview(TmpCwd):
             model=model,
             effort=effort,
             policy_retries=policy_retries,
+            transient_resumes=transient_resumes,
         )
         seen: list[list[str]] = []
         p._phase = lambda banner, script, args: seen.append(args)  # type: ignore[method-assign]
@@ -854,11 +883,16 @@ class TestRunReview(TmpCwd):
         self.assertIn("--agent=claude-code", args)
         self.assertIn("--claude-alias=claude", args)
         self.assertIn("--policy-retries=20", args)
+        self.assertIn("--transient-resumes=20", args)
         self.assertEqual(args[-1], "footest")
 
     def test_explicit_policy_retry_budget_reaches_review(self) -> None:
         args = self._capture("analysis", policy_retries=100)
         self.assertIn("--policy-retries=100", args)
+
+    def test_explicit_transient_resume_budget_reaches_review(self) -> None:
+        args = self._capture("analysis", transient_resumes=100)
+        self.assertIn("--transient-resumes=100", args)
 
     def test_model_effort_values_and_empty_are_forwarded(self) -> None:
         args = self._capture("analysis", model="gpt-5.5", effort="high")
