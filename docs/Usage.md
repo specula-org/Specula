@@ -144,11 +144,15 @@ Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencod
 
 Specula launches the installed agent CLI directly and uses its existing credentials. Authenticate the CLI before starting a pipeline. Claude Code runs default to maximum reasoning effort; Codex and Copilot use their configured defaults unless `--effort` is supplied.
 
-Specula runs Copilot CLI with `--autopilot` and fails before launching a task when the installed CLI does not advertise that capability. Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. OpenCode forwards it as a variant, while Pi forwards it as a thinking level.
+Specula runs Copilot CLI with `--autopilot` and fails before launching a task when the installed CLI does not advertise that capability. Resume-aware pipeline launches require Copilot CLI 1.0.51 or newer plus JSON output; Specula captures the full session UUID and uses `--resume`, refusing ambiguous or missing-session recovery instead of using `--session-id`, which can create an empty session for a stale UUID. Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. OpenCode forwards it as a variant, while Pi forwards it as a thinking level.
 
 `--max-turns` maps to Copilot's autopilot continuation limit. Claude Code, Codex, OpenCode, and Pi accept the option for adapter compatibility but do not enforce it. The reviews between steps pass a fixed value of 30 instead of the pipeline option; all four adapters still ignore it. OpenCode and Pi do not support Specula's agent-side stop gate.
 
-`--policy-retries=N` sets the provider-policy continuation budget for each logical phase agent or confirmation turn. The default is `20`, so one logical turn may advance through at most 20 revised continuation levels after its initial request; `0` disables policy recovery. Automatic rate-limit retries preserve the current level and may replay it without resetting or consuming another policy continuation.
+`--policy-retries=N` sets the provider-policy continuation budget for each logical phase agent or confirmation turn. The default is `20`, so one logical turn may advance through at most 20 revised continuation levels after its initial request; `0` disables policy recovery. Automatic rate-limit retries preserve the current level and exact session when available, without resetting or consuming another policy continuation.
+
+`--transient-resumes=N` sets the continuation budget for narrowly classified capacity, provider 5xx, and transport failures. The default is `20`; `0` disables transient recovery. When an adapter has captured the native session identifier, Specula resumes that exact session with a short continuation instead of replaying the original task; if the CLI failed before emitting an ID, it safely retries the original prompt. Corrupt or mismatched state fails closed, and failed invocation logs are retained with `.attempt-N` names before the current log is replaced.
+
+An exact resume preserves the provider-persisted conversation and the files already written in the retained workspace. It cannot restore the terminated CLI process's in-memory state or an in-flight child process, and a provider may omit a partial response that was never committed to the native session.
 
 ## Output Structure
 
@@ -264,6 +268,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--max-parallel=N` | Set a hard concurrency limit. If omitted, ordinary steps run 1 target agent at a time and per-finding confirmation runs up to 4 Reproducer agents at a time |
 | `--max-turns=N` | Set Copilot's autopilot continuation limit; accepted but ignored by Claude Code, Codex, OpenCode, and Pi |
 | `--policy-retries=N` | Set provider-policy continuation retries for each phase agent or confirmation turn after its initial adapter invocation (default `20`; `0` disables recovery) |
+| `--transient-resumes=N` | Set native-session continuation retries for retryable provider or transport failures (default `20`; `0` disables recovery) |
 | `--enable-reviews` | Enable reviews between steps |
 | `--legacy-confirm` | Use one confirmation agent instead of per-finding agents |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse earlier outputs |

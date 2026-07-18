@@ -18,7 +18,9 @@ from typing import Any
 
 from .event_stream import StreamStatus, stream_events
 from .policy import POLICY_BLOCKED_RC
+from .resume import capture_session_id
 from .text import summary
+from .transient import TRANSIENT_FAILURE_RC
 from .usage import augment_opencode_usage, augment_pi_usage
 
 RATE_LIMIT_RC = 75  # EX_TEMPFAIL; this is the scheduler contract in specula.quota.
@@ -38,6 +40,7 @@ class AdapterOptions:
     log_path: Path
     model: str
     effort: str
+    resume_state: Path | None
 
     def cleanup(self) -> None:
         if self.temporary_prompt:
@@ -58,6 +61,7 @@ def parse_options(
     log_file: str | None = None
     model: str | None = None
     effort: str | None = None
+    resume_state: str | None = None
 
     for arg in argv:
         if arg.startswith("--prompt="):
@@ -70,6 +74,8 @@ def parse_options(
             model = arg.removeprefix("--model=")
         elif arg.startswith("--effort="):
             effort = arg.removeprefix("--effort=")
+        elif arg.startswith("--resume-state="):
+            resume_state = arg.removeprefix("--resume-state=")
         elif arg.startswith("--max-turns=") or arg.startswith("--claude-alias=") or arg == "--background":
             pass
         else:
@@ -86,6 +92,8 @@ def parse_options(
         raise AdapterArgumentError(adapter_name, "one of --prompt or --prompt-file is required")
     if not log_file:
         raise AdapterArgumentError(adapter_name, "--log is required")
+    if resume_state == "":
+        raise AdapterArgumentError(adapter_name, "--resume-state requires a path")
 
     if prompt_file:
         prompt_path = Path(prompt_file).resolve()
@@ -112,6 +120,9 @@ def parse_options(
         log_path=Path(log_file),
         model=resolved_model,
         effort=resolved_effort,
+        # Do not resolve this path: resume.py deliberately uses lstat so a
+        # symlink state file is rejected rather than silently following it.
+        resume_state=Path(resume_state) if resume_state is not None else None,
     )
 
 
@@ -209,12 +220,14 @@ def run_json_cli(
     child_env: dict[str, str] | None = None,
 ) -> int:
     """Run a JSONL CLI and persist its raw, readable, and usage sidecars."""
-    effective_env = child_env
+    inherited_env = dict(child_env if child_env is not None else os.environ)
+    for key in ("SPECULA_RESUME_STATE", "SPECULA_RESUME_MODEL", "SPECULA_RESUME_EFFORT"):
+        inherited_env.pop(key, None)
+    effective_env = inherited_env
     pi_session_root: Path | None = None
     activity_path: Path | None = None
     temporary_activity = False
     process: subprocess.Popen[bytes] | None = None
-    inherited_env = child_env if child_env is not None else os.environ
     with _cleanup_on_signal(lambda: process):
         try:
             if adapter_name == "pi":
@@ -269,7 +282,27 @@ def run_json_cli(
             try:
                 if process.stdout is None:
                     raise OSError("child stdout pipe unavailable")
-                status = stream_events(adapter_name, activity_path, options.log_path, process.stdout)
+                session_capture: Callable[[str], None] | None = None
+                if options.resume_state is not None:
+
+                    def explicit_capture(session_id: str) -> None:
+                        capture_session_id(
+                            options.resume_state,
+                            adapter=adapter_name,
+                            session_id=session_id,
+                            cwd=os.getcwd(),
+                            model=options.model,
+                            effort=options.effort,
+                        )
+
+                    session_capture = explicit_capture
+                status = stream_events(
+                    adapter_name,
+                    activity_path,
+                    options.log_path,
+                    process.stdout,
+                    session_capture=session_capture,
+                )
             except OSError as exc:
                 stream_failed = True
                 print(f"{adapter_name} adapter: event stream failed: {summary(str(exc), None)}", file=sys.stderr)
@@ -286,6 +319,8 @@ def run_json_cli(
                 elif adapter_name == "opencode":
                     usage = augment_opencode_usage(usage, _opencode_database_path(inherited_env))
             usage_ok = _write_usage(options.log_path.with_suffix(".usage.json"), usage)
+            if status is not None and not status.resume_ok:
+                return 1
             if native_status == RATE_LIMIT_RC:
                 return RATE_LIMIT_RC
             if status is not None and status.rate_limit_error is not None:
@@ -293,6 +328,8 @@ def run_json_cli(
                     f"{adapter_name} adapter: rate limit hit: {summary(status.rate_limit_error, None)}", file=sys.stderr
                 )
                 return RATE_LIMIT_RC
+            if native_status == POLICY_BLOCKED_RC:
+                return POLICY_BLOCKED_RC
             if status is not None and status.policy_block_error is not None:
                 print(
                     f"{adapter_name} adapter: policy block: {summary(status.policy_block_error, None)}",
@@ -306,8 +343,24 @@ def run_json_cli(
                     file=sys.stderr,
                 )
                 return POLICY_BLOCKED_RC
+            if status is not None and status.transient_error is not None:
+                print(
+                    f"{adapter_name} adapter: transient failure: {summary(status.transient_error, None)}",
+                    file=sys.stderr,
+                )
+                return TRANSIENT_FAILURE_RC
+            if native_status != 0 and status is not None and status.plain_transient_error is not None:
+                print(
+                    f"{adapter_name} adapter: plain transient diagnostic: "
+                    f"{summary(status.plain_transient_error, None)}",
+                    file=sys.stderr,
+                )
+                return TRANSIENT_FAILURE_RC
             if native_status != 0:
-                return native_status
+                # 74 is Specula's normalized transient contract, not a native
+                # CLI passthrough. An unrelated EX_IOERR must not trigger twenty
+                # session resumes without a classified provider diagnostic.
+                return 1 if native_status == TRANSIENT_FAILURE_RC else native_status
             if stream_failed or status is None or not status.log_ok or not usage_ok:
                 return 1
             failure = status.structured_error or status.terminal_error

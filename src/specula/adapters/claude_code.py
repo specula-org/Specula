@@ -14,6 +14,7 @@ Options:
                         CLAUDE_CONFIG_DIR=$HOME/.<NAME>. Also via CLAUDE_ALIAS env.
   --effort=LEVEL        low|medium|high|xhigh|max (default: max; via CLAUDE_EFFORT)
   --model=NAME          Model alias/name (default: profile default; via CLAUDE_MODEL)
+  --resume-state=FILE   Persist or resume the exact Claude session for this logical turn
   --log=FILE            Log file path (required)
   --background          Run in background (accepted; caller handles backgrounding)
   --help                Show this help
@@ -26,18 +27,31 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import IO, Any
 
 if __package__:
     from .utils.event_stream import stream_events
     from .utils.policy import POLICY_BLOCKED_RC, final_diagnostic_has_policy_block, looks_policy_blocked
+    from .utils.resume import ResumeStateError, capture_session_id, read_session_id
+    from .utils.transient import TRANSIENT_FAILURE_RC, final_diagnostic_has_transient_failure, looks_transient
 else:
     from utils.event_stream import stream_events  # type: ignore[import-not-found, no-redef]
     from utils.policy import (  # type: ignore[import-not-found, no-redef]
         POLICY_BLOCKED_RC,
         final_diagnostic_has_policy_block,
         looks_policy_blocked,
+    )
+    from utils.resume import (  # type: ignore[import-not-found, no-redef]
+        ResumeStateError,
+        capture_session_id,
+        read_session_id,
+    )
+    from utils.transient import (  # type: ignore[import-not-found, no-redef]
+        TRANSIENT_FAILURE_RC,
+        final_diagnostic_has_transient_failure,
+        looks_transient,
     )
 
 HELP = __doc__
@@ -190,6 +204,31 @@ def _result_policy_blocked(record: object) -> bool:
     return looks_policy_blocked(record) or looks_policy_blocked(record.get("result"))
 
 
+def _result_transient_failure(record: object) -> bool:
+    """Whether Claude's terminal result is a retryable provider failure.
+
+    The failed-envelope gate is essential: a successful report may quote the
+    same capacity or transport diagnostic while describing earlier work.
+    """
+    if not isinstance(record, dict):
+        return False
+    verdict = record.get("is_error")
+    subtype = record.get("subtype")
+    terminal_reason = record.get("terminal_reason")
+    api_status = record.get("api_error_status")
+    subtype_is_error = isinstance(subtype, str) and subtype.startswith("error")
+    if (
+        verdict is not True
+        and not subtype_is_error
+        and terminal_reason != "api_error"
+        and api_status in (None, "", 0, "0")
+    ):
+        return False
+    if api_status in (500, 502, 503, 504, 529, "500", "502", "503", "504", "529"):
+        return True
+    return looks_transient(record) or looks_transient(record.get("result"))
+
+
 def _drain(stream: IO[bytes]) -> None:
     """Read a pipe to EOF and discard it, so the child never blocks writing."""
     with contextlib.suppress(OSError):
@@ -219,14 +258,20 @@ def _extract_log(d: dict[str, Any] | None, raw_text: str, log_file: str) -> None
             print(raw_text, file=fh)
 
 
-def _extract_usage(d: dict[str, Any] | None, usage_path: str) -> None:
+def _extract_usage(d: dict[str, Any] | None, usage_path: str, fallback_session_id: str = "") -> None:
     """Usage stats -> .usage.json, fixing num_turns from the session JSONL when a
-    session_id is present. Any failure -> {"error": "parse_failed"} (mirrors the
-    bash `|| parse_failed` fallback)."""
+    session_id is present. Any failure reports ``parse_failed`` and retains a
+    known session ID so a resumable failed turn stays attributable."""
+    session_id = fallback_session_id
+    if isinstance(d, dict):
+        result_session_id = d.get("session_id")
+        if isinstance(result_session_id, str) and result_session_id:
+            session_id = result_session_id
     try:
         if d is None:
             raise ValueError("result JSON unparseable")
         usage = {
+            "session_id": session_id,
             "total_cost_usd": d.get("total_cost_usd", 0),
             "num_turns": d.get("num_turns", 0),
             "duration_ms": d.get("duration_ms", 0),
@@ -234,7 +279,6 @@ def _extract_usage(d: dict[str, Any] | None, usage_path: str) -> None:
             "usage": d.get("usage", {}),
             "model_usage": d.get("modelUsage", {}),
         }
-        session_id = d.get("session_id", "")
         if session_id:
             cwd = os.getcwd()
             proj_key = cwd.replace("/", "-").lstrip("-")
@@ -270,7 +314,10 @@ def _extract_usage(d: dict[str, Any] | None, usage_path: str) -> None:
             uf.write("\n")
     except Exception:
         with open(usage_path, "w") as uf:
-            json.dump({"error": "parse_failed"}, uf)
+            failure: dict[str, Any] = {"error": "parse_failed"}
+            if session_id:
+                failure["session_id"] = session_id
+            json.dump(failure, uf)
             uf.write("\n")
 
 
@@ -283,6 +330,8 @@ def main(argv: list[str]) -> int:
     prompt = ""
     prompt_file = ""
     max_budget = ""
+    resume_state = ""
+    resume_state_set = False
     log_file = ""
     _background = False  # accepted; caller does the backgrounding, as in bash
     # `or`: bash ${VAR:-default} treats an exported-but-empty var as unset — an
@@ -306,6 +355,9 @@ def main(argv: list[str]) -> int:
             effort = arg[len("--effort=") :]
         elif arg.startswith("--model="):
             model = arg[len("--model=") :]
+        elif arg.startswith("--resume-state="):
+            resume_state = arg[len("--resume-state=") :]
+            resume_state_set = True
         elif arg.startswith("--log="):
             log_file = arg[len("--log=") :]
         elif arg == "--background":
@@ -321,6 +373,8 @@ def main(argv: list[str]) -> int:
     # removing them here makes an explicit empty flag a real reset.
     os.environ.pop("CLAUDE_MODEL", None)
     os.environ.pop("CLAUDE_EFFORT", None)
+    for name in ("SPECULA_RESUME_STATE", "SPECULA_RESUME_MODEL", "SPECULA_RESUME_EFFORT"):
+        os.environ.pop(name, None)
 
     # ── Validate arguments ──
     if prompt and prompt_file:
@@ -329,11 +383,34 @@ def main(argv: list[str]) -> int:
         return _die("claude-code adapter: one of --prompt or --prompt-file is required")
     if not log_file:
         return _die("claude-code adapter: --log is required")
+    if resume_state_set and not resume_state:
+        return _die("claude-code adapter: --resume-state requires a path")
+
+    # A resume state belongs to one exact logical turn.  Refuse mismatched or
+    # malformed state rather than silently starting a fresh session and
+    # repeating work that Claude may already have completed.
+    resume_session_id = ""
+    if resume_state:
+        resume_state = os.path.abspath(resume_state)
+        try:
+            resume_session_id = (
+                read_session_id(
+                    resume_state,
+                    adapter="claude-code",
+                    cwd=os.getcwd(),
+                    model=model,
+                    effort=effort,
+                )
+                or ""
+            )
+        except (OSError, ResumeStateError) as e:
+            return _die(f"claude-code adapter: invalid resume state: {e}")
 
     # ── Resolve prompt ──
     # Feed prompt via stdin (not -p) to keep the process cmdline clean, so
     # `pkill -f` can't collateral-kill on strings like "tlc2.TLC".
     tmp_prompt = None
+    hidden_activity_log: str | None = None
     if prompt_file:
         if not os.path.isfile(prompt_file):
             return _die(f"claude-code adapter: prompt file not found: {prompt_file}")
@@ -351,7 +428,6 @@ def main(argv: list[str]) -> int:
         # Alias determines the config dir authoritatively (do NOT inherit an
         # ambient CLAUDE_CONFIG_DIR, which would redirect quota-sensitive runs).
         os.environ["CLAUDE_CONFIG_DIR"] = os.environ.get("HOME", "") + "/." + (claude_alias or "claude")
-
         # ── Stop gate (execution layer) ──
         # Generic gate interface: the phase launcher exports SPECULA_PHASE +
         # SPECULA_WORK_DIR (see src/specula/stop_gate.py). Parallel workers may
@@ -394,9 +470,23 @@ def main(argv: list[str]) -> int:
 
         # ── Build command ──
         activity_log = os.environ.get("SPECULA_ACTIVITY_LOG", "")
-        output_format = "stream-json" if activity_log else "json"
+        stream_activity_log = activity_log
+        if resume_state and not stream_activity_log:
+            # Exact resume state requires Claude's early system/init event even
+            # when progress display is disabled. Keep the structured stream in
+            # a private sidecar and remove it after post-processing.
+            try:
+                fd, hidden_activity_log = tempfile.mkstemp(prefix="specula-claude-activity-", suffix=".jsonl")
+            except OSError as exc:
+                return _die(f"claude-code adapter: unable to create session-capture stream: {exc}")
+            os.close(fd)
+            stream_activity_log = hidden_activity_log
+        streaming = bool(stream_activity_log)
+        output_format = "stream-json" if streaming else "json"
         cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", output_format]
-        if activity_log:
+        if resume_session_id:
+            cmd += ["--resume", resume_session_id]
+        if streaming:
             cmd += ["--verbose"]
         if effort and effort != "default":
             cmd += ["--effort", effort]
@@ -409,20 +499,23 @@ def main(argv: list[str]) -> int:
 
         # ── Run ──
         raw_json = _derived_path(log_file, ".raw.json")
-        capture_path = activity_log or raw_json
+        capture_path = stream_activity_log or raw_json
         cli_rc = 127
         proc: subprocess.Popen[bytes] | None = None
         activity_failed = False
         stream_failed = False
+        stream_resume_failed = False
         stream_terminal_record: object | None = None
         stream_policy_block_error: str | None = None
         stream_plain_policy_block_error: str | None = None
+        stream_transient_error: str | None = None
+        stream_plain_transient_error: str | None = None
         stream_plain_diagnostics: tuple[str, ...] = ()
         # This `try` covers the spawn ONLY. An OSError here means no agent work
         # has happened (claude missing / not executable / unreadable prompt), so
         # a conventional command-not-found status is the honest answer.
         try:
-            if activity_log:
+            if streaming:
                 with open(prompt_input) as pin:
                     proc = subprocess.Popen(cmd, stdin=pin, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             else:
@@ -430,19 +523,42 @@ def main(argv: list[str]) -> int:
                     cli_rc = subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT).returncode
         except OSError as e:
             error = f"claude-code adapter: failed to run claude: {e}\n"
-            for path in (capture_path, log_file) if activity_log else (capture_path,):
+            for path in (capture_path, log_file) if streaming else (capture_path,):
                 with contextlib.suppress(OSError), open(path, "w") as out:
                     out.write(error)
 
         if proc is not None:
             if proc.stdout is not None:  # always, given stdout=PIPE
                 try:
-                    stream_status = stream_events("claude-code", Path(activity_log), Path(log_file), proc.stdout)
+                    session_capture: Callable[[str], None] | None = None
+                    if resume_state:
+
+                        def explicit_capture(session_id: str) -> None:
+                            capture_session_id(
+                                resume_state,
+                                adapter="claude-code",
+                                session_id=session_id,
+                                cwd=os.getcwd(),
+                                model=model,
+                                effort=effort,
+                            )
+
+                        session_capture = explicit_capture
+                    stream_status = stream_events(
+                        "claude-code",
+                        Path(stream_activity_log),
+                        Path(log_file),
+                        proc.stdout,
+                        session_capture=session_capture,
+                    )
                     activity_failed = not stream_status.activity_ok
                     stream_failed = not stream_status.log_ok
+                    stream_resume_failed = not stream_status.resume_ok
                     stream_terminal_record = stream_status.terminal_record
                     stream_policy_block_error = stream_status.policy_block_error
                     stream_plain_policy_block_error = stream_status.plain_policy_block_error
+                    stream_transient_error = stream_status.transient_error
+                    stream_plain_transient_error = stream_status.plain_transient_error
                     stream_plain_diagnostics = stream_status.plain_diagnostics
                 except OSError as e:
                     # Sink failures are returned after a full drain. An exception
@@ -468,21 +584,68 @@ def main(argv: list[str]) -> int:
             raw_text = _read_capture(capture_path)
 
         # ── Detect rate limit → exit 75 (EX_TEMPFAIL) so callers can wait/retry ──
-        rate_limited = cli_rc == 75 or _rate_limited(raw_text, bool(activity_log))
+        rate_limited = cli_rc == 75 or _rate_limited(raw_text, streaming)
         if rate_limited:
             print("claude-code adapter: rate limit hit", file=sys.stderr)
 
+        postprocess_failed = False
+        resume_postprocess_failed = False
         result = _parse_result(raw_text)
+        usage_session_id = resume_session_id
+        if resume_state and result is not None:
+            result_session_id = result.get("session_id")
+            if isinstance(result_session_id, str) and result_session_id:
+                usage_session_id = result_session_id
+                try:
+                    capture_session_id(
+                        resume_state,
+                        adapter="claude-code",
+                        session_id=result_session_id,
+                        cwd=os.getcwd(),
+                        model=model,
+                        effort=effort,
+                    )
+                except (OSError, ResumeStateError) as e:
+                    postprocess_failed = True
+                    resume_postprocess_failed = True
+                    print(f"claude-code adapter: resume state write failed: {e}", file=sys.stderr)
+        if resume_state and not usage_session_id:
+            # In stream-json mode Claude exposes the session in `system/init`
+            # before the terminal result. event_stream persists it immediately;
+            # read it back so usage remains tied to the same exact session even
+            # when a CLI version omits session_id from its result envelope.
+            try:
+                usage_session_id = (
+                    read_session_id(
+                        resume_state,
+                        adapter="claude-code",
+                        cwd=os.getcwd(),
+                        model=model,
+                        effort=effort,
+                    )
+                    or ""
+                )
+            except (OSError, ResumeStateError) as e:
+                postprocess_failed = True
+                resume_postprocess_failed = True
+                print(f"claude-code adapter: resume state read failed: {e}", file=sys.stderr)
         policy_blocked = stream_policy_block_error is not None or _result_policy_blocked(result)
-        if activity_log and cli_rc != 0 and stream_plain_policy_block_error is not None:
+        if streaming and cli_rc != 0 and stream_plain_policy_block_error is not None:
             policy_blocked = True
-        if not activity_log and cli_rc != 0 and result is None:
+        if not streaming and cli_rc != 0 and result is None:
             # A failed pre-stream CLI may emit only a plain provider diagnostic.
             # Never apply this scan to a successful run or to arbitrary streamed
             # assistant history, where quoting an old block is normal task text.
             policy_blocked = final_diagnostic_has_policy_block(raw_text)
-        postprocess_failed = False
-        if activity_log:
+        transient_failure = stream_transient_error is not None or _result_transient_failure(result)
+        if streaming and cli_rc != 0 and stream_plain_transient_error is not None:
+            transient_failure = True
+        if not streaming and cli_rc != 0 and result is None:
+            # As with policy diagnostics, the plain fallback is restricted to a
+            # failed CLI with no structured terminal result. Agent-authored text
+            # and successful reports are never retry signals.
+            transient_failure = final_diagnostic_has_transient_failure(raw_text)
+        if streaming:
             try:
                 with open(raw_json, "w") as out:
                     if result is not None:
@@ -493,27 +656,35 @@ def main(argv: list[str]) -> int:
             except OSError as e:
                 postprocess_failed = True
                 print(f"claude-code adapter: raw result write failed: {e}", file=sys.stderr)
-        if not activity_log:
+        if not streaming:
             try:
                 _extract_log(result, raw_text, log_file)
             except OSError as e:
                 postprocess_failed = True
                 print(f"claude-code adapter: readable log write failed: {e}", file=sys.stderr)
         try:
-            _extract_usage(result, _derived_path(log_file, ".usage.json"))
+            _extract_usage(result, _derived_path(log_file, ".usage.json"), usage_session_id)
         except OSError as e:
             postprocess_failed = True
             print(f"claude-code adapter: usage write failed: {e}", file=sys.stderr)
 
+        if stream_resume_failed or resume_postprocess_failed:
+            return 1
         if rate_limited:
             return 75
-        if policy_blocked:
+        if policy_blocked or cli_rc == POLICY_BLOCKED_RC:
             print("claude-code adapter: provider policy block", file=sys.stderr)
             return POLICY_BLOCKED_RC
+        if transient_failure:
+            print("claude-code adapter: transient provider failure", file=sys.stderr)
+            return TRANSIENT_FAILURE_RC
         if cli_rc != 0:
-            return cli_rc
+            return 1 if cli_rc == TRANSIENT_FAILURE_RC else cli_rc
         return 1 if stream_failed or postprocess_failed else 0
     finally:
+        if hidden_activity_log is not None:
+            with contextlib.suppress(OSError):
+                os.remove(hidden_activity_log)
         if tmp_prompt is not None:
             with contextlib.suppress(OSError):
                 os.remove(tmp_prompt)
