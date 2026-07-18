@@ -683,15 +683,16 @@ def _repair_draft_warning(cfg: ConfirmConfig, f: Finding, draft: RepairDraft) ->
     return None
 
 
-def _restore_repair_draft(path: Path, body: str) -> None:
-    """Restore a usable pre-correction draft if the advisory turn damages it."""
+def _restore_repair_draft(path: Path, body: str | None) -> None:
+    """Restore the pre-correction draft state if the advisory turn damages it."""
     if path.is_symlink() or path.is_file():
         path.unlink()
     elif path.is_dir():
         shutil.rmtree(path)
     elif path.exists():
         path.unlink()
-    path.write_text(body)
+    if body is not None:
+        path.write_text(body)
 
 
 def _final_outcome(
@@ -772,6 +773,10 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                         problem = _repair_draft_warning(cfg, f, draft)
                     except InvalidRepairRequest as exc:
                         problem = exc
+                        draft_path = f.fdir / "repair-request.body.md"
+                        if not draft_path.is_symlink() and draft_path.is_file():
+                            with contextlib.suppress(OSError, UnicodeError):
+                                original = draft_path.read_text()
 
                     if problem is None:
                         return previous_turn
@@ -804,9 +809,6 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                     return correction_turn
                 if repair.verdict is None:
                     draft_path = f.fdir / "repair-request.body.md"
-                    if original is None:
-                        with contextlib.suppress(InvalidRepairRequest):
-                            original = _read_repair_draft(cfg, f).raw
                     try:
                         correction_verdict, _ = run_turn(
                             cfg,
@@ -822,19 +824,19 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                         raise
                     except Exception as exc:
                         repair.disabled = True
-                        if original is None:
+                        _restore_repair_draft(draft_path, original)
+                        if original is None or not original.strip():
                             raise
                         _log(f"  WARNING: {f.id}: repair-draft correction failed ({exc}); keeping the original draft")
-                        _restore_repair_draft(draft_path, original)
                         return correction_turn
 
                     try:
                         corrected = _read_repair_draft(cfg, f)
                     except InvalidRepairRequest:
-                        if original is None:
+                        _restore_repair_draft(draft_path, original)
+                        if original is None or not original.strip():
                             raise
                         _log(f"  WARNING: {f.id}: correction removed the usable draft; keeping the original draft")
-                        _restore_repair_draft(draft_path, original)
                         corrected = _read_repair_draft(cfg, f)
 
                     corrected_warning = _repair_draft_warning(cfg, f, corrected)

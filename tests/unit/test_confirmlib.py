@@ -744,6 +744,52 @@ class TestDriver(ConfirmCase):
         rr = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
         self.assertIn("original nonempty draft", rr.read_text())
 
+    def test_repair_correction_rate_replay_preserves_missing_or_empty_original(self) -> None:
+        for label, original in (("missing", None), ("empty", ""), ("whitespace", " \n")):
+            with self.subTest(original=label):
+                name = f"T-{label}"
+                ws = self.seed(
+                    name,
+                    [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}],
+                )
+                cfg = self.cfg(ws, name, max_parallel=1, debate=True, rounds=2)
+                fdir = ws.work_dir(name) / "confirmation" / "MC-1"
+                draft = fdir / "repair-request.body.md"
+                calls: list[str] = []
+
+                def agent(
+                    *args: object,
+                    _calls: list[str] = calls,
+                    _draft: Path = draft,
+                    _original: str | None = original,
+                    **_kwargs: object,
+                ) -> tuple[int, str]:
+                    turn = Path(str(args[2])).stem
+                    _calls.append(turn)
+                    if turn == "turn01_A.prompt":
+                        if _original is not None:
+                            _draft.write_text(_original)
+                        return 0, _response("PENDING REPAIR")
+                    if turn == "turn02_A-repair.prompt" and _calls.count(turn) == 1:
+                        _draft.write_text("partial bytes from interrupted correction")
+                        return 75, ""
+                    if turn == "turn02_A-repair.prompt":
+                        return 1, ""
+                    raise AssertionError(f"unexpected logical turn {turn}")
+
+                with mock.patch.object(C, "run_agent_blocking", agent):
+                    first_rc = C.run_parallel_confirmation(cfg, retain_rate_limited_state=True)
+                    second_rc = C.run_parallel_confirmation(cfg)
+
+                self.assertEqual((first_rc, second_rc), (75, 1))
+                self.assertEqual(calls, ["turn01_A.prompt", "turn02_A-repair.prompt", "turn02_A-repair.prompt"])
+                if original is None:
+                    self.assertFalse(draft.exists())
+                else:
+                    self.assertEqual(draft.read_text(), original)
+                rr_dir = ws.work_dir(name) / "spec" / "repair-requests"
+                self.assertFalse(any(rr_dir.glob("RR-*.md")))
+
     def test_unarmed_rate_limit_clears_finding_lease_and_native_cursor(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
         cfg = self.cfg(ws, "T", max_parallel=1)

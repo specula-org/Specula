@@ -4543,6 +4543,20 @@ class CopilotAdapter(AdapterCase):
         )
         self.assertEqual(r["returncode"], 74, r["stderr"])
 
+    def test_nonstream_typeerror_fetch_failure_uses_failed_log_fallback(self) -> None:
+        base = self.sandbox()
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text="TypeError: fetch failed\n",
+            env_extra={
+                "COPILOT_HELP_TEXT": "--autopilot",
+                "ADAPTER_EXIT_CODE": "9",
+            },
+        )
+        self.assertEqual(r["returncode"], 74, r["stderr"])
+
     def test_old_stream_transient_failure_uses_failed_log_fallback(self) -> None:
         base = self.sandbox()
         activity = base / "out.activity.jsonl"

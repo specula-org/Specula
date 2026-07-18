@@ -78,7 +78,8 @@ _PLAIN_TRANSIENT_DIAGNOSTIC_RE = re.compile(
     r"upstream (?:request )?(?:timed out|timeout|connect error)\b|"
     r"request (?:timed out|timeout)\b|gateway (?:timed out|timeout)\b|"
     r"connection (?:reset|closed|refused|terminated)\b|"
-    r"transport (?:error|closed)\b|network error\b|socket hang up\b|fetch failed\b|"
+    r"transport (?:error|closed)\b|network error\b|socket hang up\b|"
+    r"typeerror\s*:\s*fetch failed\s*\Z|fetch failed\b|"
     r"(?:(?:read|write|connect|getaddrinfo)\s+)?(?:eai_again|econnaborted|econnrefused|econnreset|ehostunreach|"
     r"enetdown|enetreset|enetunreach|epipe|etimedout|und_err_connect_timeout|und_err_socket)\b"
     r")",

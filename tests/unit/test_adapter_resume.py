@@ -489,6 +489,7 @@ class TestTransientFailureClassification(unittest.TestCase):
             "Error: connect ETIMEDOUT 10.0.0.1:443\n",
             "Error: connect ECONNREFUSED 127.0.0.1:443\n",
             "Error: write EPIPE\n",
+            "TypeError: fetch failed\n",
             "fetch failed\n",
         )
         for diagnostic in diagnostics:
@@ -500,6 +501,9 @@ class TestTransientFailureClassification(unittest.TestCase):
             "The implementation deliberately returns HTTP 503 in this test.\n",
             "The test fixture contains Error: write EPIPE\n",
             "The implementation handles connect ETIMEDOUT correctly.\n",
+            "The test fixture contains TypeError: fetch failed\n",
+            "TypeError: fetch failed is expected by this test.\n",
+            "TypeError: invalid URL\n",
         )
         for text in prose:
             with self.subTest(text=text):
