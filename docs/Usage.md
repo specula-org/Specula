@@ -30,6 +30,8 @@ The first setup needs network access to GitHub, PyPI, and Maven Central. Agent r
 
 Specula relies on the selected agent to analyze code and reason about counterexamples, so use a strong reasoning model at high effort. Harness generation builds and instruments the target project; verify that the target builds normally before starting a full pipeline.
 
+Model checking can be long-running and memory-intensive. On machines with limited memory, you can run more TLC simulations or configure TLC to offload state data to disk. Limited memory may constrain model checking, but it does not prevent you from using Specula, and we plan to improve resource handling and provide more support for resource-constrained machines in future releases.
+
 ### Optional sandbox dependencies
 
 The agent sandbox is **disabled by default** and its dependencies are **not installed** by `specula setup`. Normal runs do not need SRT or Bubblewrap.
