@@ -43,6 +43,8 @@ _VOLATILE = (
     "SPECULA_RUN_DIR",
     "SPECULA_PHASE",
     "SPECULA_WORK_DIR",
+    "SPECULA_SOURCE_SNAPSHOT",
+    "SPECULA_SANDBOX_EXTRA_WRITE",
     "SPECULA_STOP_GATE",
     "SPECULA_MODEL",
     "SPECULA_EFFORT",
@@ -186,6 +188,54 @@ class CliE2E(unittest.TestCase):
         meta = json.loads((run / "run.json").read_text())
         self.assertEqual(meta["targets"], ["footest"])
         self.assertEqual(meta["run_id"], run.name)
+
+    def test_keep_original_dry_run_records_mode_without_copying(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        source = work / "source"
+        source.mkdir()
+        (source / "file.txt").write_text("unchanged\n")
+
+        proc = self.run_cli(
+            root,
+            ["run", "--dry-run", "--keep-original", f"--artifact={source}", "footest"],
+            cwd=work,
+        )
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        run = self.sole_run_dir(root)
+        self.assertEqual(json.loads((run / "run.json").read_text())["source_mode"], "snapshot")
+        self.assertFalse((run / "source-map.json").exists())
+        self.assertFalse((run / "footest" / "source").exists())
+        self.assertEqual((source / "file.txt").read_text(), "unchanged\n")
+
+    def test_keep_original_noop_pipeline_creates_private_source_and_empty_diff(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        source = work / "source"
+        source.mkdir()
+        (source / "file.txt").write_text("unchanged\n")
+        skips = [
+            "--skip-analysis",
+            "--skip-specgen",
+            "--skip-harness",
+            "--skip-validation",
+            "--skip-confirmation",
+            "--skip-classification",
+            "--skip-repair-loop",
+        ]
+
+        proc = self.run_cli(
+            root,
+            ["run", "--keep-original", f"--artifact={source}", *skips, "footest"],
+            cwd=work,
+        )
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        run = self.sole_run_dir(root)
+        self.assertEqual((run / "footest" / "source" / "file.txt").read_text(), "unchanged\n")
+        self.assertEqual((run / "footest" / "changes.patch").read_bytes(), b"")
+        self.assertEqual((source / "file.txt").read_text(), "unchanged\n")
 
     # ── legacy escape hatch ──────────────────────────────────────────────────
     def test_no_isolate_uses_legacy_layout_and_mints_nothing(self) -> None:

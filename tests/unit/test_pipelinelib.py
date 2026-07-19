@@ -31,7 +31,7 @@ from unittest import mock
 SRC = Path(__file__).resolve().parents[2] / "src"
 
 from specula import pipelinelib as pl
-from specula.phaselib import _logical_cwd
+from specula.phaselib import Workspace, _logical_cwd
 
 RR_TEMPLATE = """\
 ---
@@ -467,6 +467,22 @@ def make_pipeline(targets: list[str], **attrs: Any) -> pl.Pipeline:
 
 
 class TestParsing(TmpCwd):
+    def test_keep_original_is_opt_in_and_requires_isolation(self) -> None:
+        default = pl.Pipeline()
+        self.assertIsNone(default.parse_args(["t|g|l|r"]))
+        self.assertFalse(default.keep_original)
+
+        private = pl.Pipeline()
+        self.assertIsNone(private.parse_args(["--keep-original", "t|g|l|r"]))
+        self.assertTrue(private.keep_original)
+
+        for argv in (
+            ["--keep-original", "--no-isolate", "t|g|l|r"],
+            ["--no-isolate", "--keep-original", "t|g|l|r"],
+        ):
+            with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(pl.Pipeline().parse_args(argv), 1)
+
     def test_extract_names_trims_and_splits_pipe(self) -> None:
         p = make_pipeline(["  braft |brpc/braft|C++|Raft", "cometbft"])
         self.assertEqual(p.extract_names(), ["braft", "cometbft"])
@@ -839,6 +855,40 @@ class TestPhaseParallelArgs(TmpCwd):
         self.assertIsNone(p.parse_args(["--max-parallel=7", "a|g|l|r", "b|g|l|r"]))
         calls = self.capture_main(p)
         self.assertIn("--max-parallel=7", calls["launch_bug_confirmation.sh"])
+
+
+class TestSourceSnapshots(TmpCwd):
+    def setUp(self) -> None:
+        super().setUp()
+        for name in ("SPECULA_RUN_DIR", "SPECULA_SOURCE_SNAPSHOT", "SPECULA_SANDBOX_EXTRA_WRITE"):
+            previous = os.environ.pop(name, None)
+
+            def restore(key: str = name, value: str | None = previous) -> None:
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+            self.addCleanup(restore)
+
+    def test_prepare_routes_phases_and_extends_sandbox_write_paths(self) -> None:
+        original = self.tmp / "original"
+        original.mkdir()
+        (original / "source.txt").write_text("original\n")
+        run = self.tmp / "run"
+        run.mkdir()
+        p = make_pipeline(["demo|g|l|r"], keep_original=True)
+        p.run_dir = run
+        p._snapshot_sources = {"demo": original}
+        os.environ["SPECULA_RUN_DIR"] = str(run)
+        os.environ["SPECULA_SANDBOX_EXTRA_WRITE"] = "/cache"
+
+        p.prepare_source_snapshots(["demo"])
+
+        source = run / "demo" / "source"
+        self.assertEqual(Workspace(p.targets, artifact=str(original)).find_repo_dir("demo"), str(source))
+        self.assertEqual(os.environ["SPECULA_SANDBOX_EXTRA_WRITE"].split(os.pathsep), ["/cache", str(source)])
+        self.assertFalse(any(arg.startswith("--artifact=") for arg in p._phase_args(p.targets)))
 
 
 class TestRunReview(TmpCwd):
@@ -2083,6 +2133,16 @@ class TestMainTeeTeardown(TmpCwd):
         log_text = (self.tmp / ".specula-output" / "pipeline.log").read_text()
         self.assertIn("pre-crash progress", log_text)
         self.assertIn("ValueError: boom", log_text)
+
+    def test_final_source_capture_runs_after_pipeline_failure(self) -> None:
+        marker = self.tmp / "captured"
+        r = self._run_entry(
+            "def boom(self):\n    raise SystemExit(7)\n"
+            f"def capture(self):\n    open({str(marker)!r}, 'w').write('done')\n"
+            "pl.Pipeline.main = boom\npl.Pipeline.finalize_source_snapshots = capture"
+        )
+        self.assertEqual(r.returncode, 7)
+        self.assertEqual(marker.read_text(), "done")
 
     def test_failing_tee_fails_the_pipeline(self) -> None:
         # bash pipefail: `main 2>&1 | tee log` exited non-zero when tee could

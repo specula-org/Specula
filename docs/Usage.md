@@ -164,12 +164,21 @@ runs/<run-id>/
 ├── tlc-resources.json
 ├── pipeline.log
 ├── pipeline-summary.md
-└── <name>/.specula-output/
+└── <name>/
+    ├── .specula-output/
+    ├── source/          # --keep-original only
+    └── changes.patch   # --keep-original only
 ```
 
 The `.specula-output/` directory contains the modeling brief, specifications, harness, traces, reproduction tests, reports, and per-step logs. `runs/latest` points to the newest run.
 
-The source supplied through `--artifact` is not copied into the isolated workspace. Harness and reproduction work may build or modify that checkout. `--no-isolate` selects the legacy layout: a single target writes step outputs under `$PWD/.specula-output/`, or under `case-studies/<name>/.specula-output/` when that canonical case study exists; multiple targets use `$PWD/<name>/.specula-output/`. For a canonical single target, `pipeline.log` remains under the launch directory's `.specula-output/` while the step outputs and summary use the case-study directory.
+By default, the source supplied through `--artifact` is not copied, and harness or reproduction work may modify it. Add `--keep-original` to copy the complete checkout before the first phase. Every phase and agent then uses that private copy without changing its workflow, and Specula writes a binary Git-format filesystem diff at the end without applying it to the original checkout.
+
+This mode deliberately compares every non-`.git` file. Ignored, untracked, and generated files therefore appear in `changes.patch`; there is no Git-index or ignore-rule reconstruction. The copy includes the source's real `.git` directory, while the diff excludes Git metadata. Disk use is roughly one full working copy plus a compressed content baseline.
+
+For a small and predictable first version, `--keep-original` rejects external or absolute symlinks, special files, linked worktrees, submodules, and nested repositories. The diff records file and symlink contents and executable-bit changes, but not empty directories, ownership, timestamps, ACLs, extended attributes, or hardlink topology. It compares raw filesystem bytes, so repositories with clean/smudge filters or working-tree encoding may need manual handling when applying the patch. Without the optional sandbox this is workflow isolation, not a security boundary against a command that deliberately writes to the original absolute path.
+
+`--keep-original` requires the isolated layout and conflicts with `--no-isolate`. Without it, `--no-isolate` selects the legacy layout: a single target writes step outputs under `$PWD/.specula-output/`, or under `case-studies/<name>/.specula-output/` when that canonical case study exists; multiple targets use `$PWD/<name>/.specula-output/`. For a canonical single target, `pipeline.log` remains under the launch directory's `.specula-output/` while the step outputs and summary use the case-study directory.
 
 TLC can use substantial memory and temporary disk space during model checking. The bundled `scripts/tlc/run_model_check.sh` stores states under `TMPDIR` (or `/tmp`) by default; set `TLC_STATE_DIR` to a larger or faster filesystem when necessary.
 
@@ -208,7 +217,7 @@ specula run \
   "name|owner/repository|language|reference"
 ```
 
-Specula reuses `runs/<run-id>/<name>/.specula-output/`. Pass the target, artifact, agent, model, and effort again when resuming. The run's TLC memory and worker limits are restored from `tlc-resources.json`; `run.json` remains an audit record, not arguments for the new invocation.
+Specula reuses `runs/<run-id>/<name>/.specula-output/`. Pass the target, artifact, agent, model, and effort again when resuming. A `--keep-original` run automatically resumes against its existing private source even when that flag and the original artifact are omitted. The run's TLC memory and worker limits are restored from `tlc-resources.json`; `run.json` remains an audit record, not arguments for the new invocation.
 
 ## Individual Steps
 
@@ -263,6 +272,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--model=NAME` | Override the configured model |
 | `--effort=LEVEL` | Override reasoning effort |
 | `--artifact=PATH` | Set the target source checkout |
+| `--keep-original` | Run against a full private source copy and write `changes.patch` |
 | `--tlc-memory-limit=SIZE` | Set the run-wide aggregate TLC heap + direct-memory budget; default is 80% of effective available memory at the first TLC start |
 | `--tlc-worker-limit=N` | Optionally bound aggregate TLC exploration workers; omitted means report-only |
 | `--max-parallel=N` | Set a hard concurrency limit. If omitted, ordinary steps run 1 target agent at a time and per-finding confirmation runs up to 4 Reproducer agents at a time |

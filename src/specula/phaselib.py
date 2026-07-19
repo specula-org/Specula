@@ -38,6 +38,7 @@ from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC
 from specula.prompts import render
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
+from specula.snapshotlib import SNAPSHOT_MODE_ENV, SOURCE_MAP
 from specula.tlc_resources import (
     MEMORY_LIMIT_ENV,
     RUN_POLICY_FILENAME,
@@ -337,7 +338,7 @@ class Workspace:
                     return str(d) + "/"
         return ""
 
-    def find_repo_dir(self, name: str) -> str:
+    def find_original_repo_dir(self, name: str) -> str:
         # Explicit --artifact wins.
         if self.artifact:
             return self.artifact
@@ -353,6 +354,14 @@ class Workspace:
         if self.single:
             return str(self.cwd)
         return ""
+
+    def find_repo_dir(self, name: str) -> str:
+        if self.run_dir:
+            source_map = self.run_dir / SOURCE_MAP
+            if source_map.exists() or source_map.is_symlink() or os.environ.get(SNAPSHOT_MODE_ENV):
+                snapshot = self.run_dir / name / "source"
+                return str(snapshot) if snapshot.is_dir() and not snapshot.is_symlink() else ""
+        return self.find_original_repo_dir(name)
 
 
 class Phase:

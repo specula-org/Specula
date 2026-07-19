@@ -42,11 +42,20 @@ from specula import quota as _quota
 from specula.phaselib import (
     DEFAULT_POLICY_RETRIES,
     DEFAULT_TRANSIENT_RESUMES,
+    Workspace,
     _logical_cwd,
     _normalize_artifact_dir,
     _parse_policy_retries,
     _parse_transient_resumes,
     _wc_l,
+)
+from specula.snapshotlib import (
+    SNAPSHOT_MODE_ENV,
+    SOURCE_MAP,
+    SnapshotError,
+    capture_changes,
+    load_sources,
+    prepare_sources,
 )
 from specula.tlc_resources import (
     MEMORY_LIMIT_ENV,
@@ -118,6 +127,7 @@ Options:
   --model=NAME           Model forwarded to every agent adapter
   --effort=LEVEL         Reasoning effort forwarded to every agent adapter
   --artifact=PATH        Path to system artifact/source code
+  --keep-original        Work in a full private copy and write changes.patch
   --tlc-memory-limit=SIZE
                          Aggregate -m + -M budget for TLCs in this run (default: auto,
                          80% of effective available memory at the first TLC start)
@@ -125,7 +135,7 @@ Options:
   --isolate              Isolated workspace (the default): all outputs go to
                          runs/<run-id>/ — parallel-safe, keeps case-studies/
                          pristine. Sources are read from case-studies/<name>/artifact
-                         or --artifact; the run root holds no code.
+                         or --artifact unless --keep-original copies them.
   --no-isolate           Legacy layout: outputs under $PWD/.specula-output
                          (a single target cd's into case-studies/<name>/ when
                          it exists)
@@ -304,6 +314,10 @@ class Pipeline:
         self.effort: str | None = None
         self.artifact = ""
         self._artifact_given = False
+        self.keep_original = False
+        self._keep_original_given = False
+        self._snapshot_sources: dict[str, Path] = {}
+        self._snapshot_paths: list[Path] = []
         self.tlc_memory_limit: str | None = None
         self.tlc_worker_limit: str | None = None
         self.targets: list[str] = []
@@ -398,6 +412,9 @@ class Pipeline:
             elif arg.startswith("--artifact="):
                 self.artifact = arg.split("=", 1)[1]
                 self._artifact_given = True
+            elif arg == "--keep-original":
+                self.keep_original = True
+                self._keep_original_given = True
             elif arg.startswith("--tlc-memory-limit="):
                 self.tlc_memory_limit = arg.split("=", 1)[1]
             elif arg.startswith("--tlc-worker-limit="):
@@ -419,6 +436,9 @@ class Pipeline:
         # (e.g. scheduler-injected --run-id + a --no-isolate from queue flags)
         if self._run_id_given and self._no_isolate_given:
             print("ERROR: --no-isolate conflicts with --run-id", file=sys.stderr)
+            return 1
+        if self.keep_original and not self.isolate:
+            print("ERROR: --keep-original conflicts with --no-isolate", file=sys.stderr)
             return 1
         if self._artifact_given:
             normalized_artifact = _normalize_artifact_dir(self.artifact)
@@ -478,6 +498,29 @@ class Pipeline:
 
     # ── workspace isolation (step 4; runs before the tee so pipeline.log can
     #    land in the run root) ──
+    def _resolve_snapshot_sources(self, fallback_artifact: str = "") -> dict[str, Path]:
+        names = self.extract_names()
+        if len(names) != len(self.targets) or len(set(names)) != len(names):
+            raise SnapshotError("--keep-original requires one unique, non-empty target name per target")
+        workspace = Workspace(self.targets, artifact=self.artifact or fallback_artifact)
+        sources: dict[str, Path] = {}
+        for name in names:
+            repo = workspace.find_original_repo_dir(name)
+            if not repo:
+                raise SnapshotError(f"cannot find source for {name!r}; pass --artifact=/path/to/source")
+            source = Path(repo).resolve()
+            if not source.is_dir():
+                raise SnapshotError(f"source is not a directory: {source}")
+            sources[name] = source
+        return sources
+
+    def _check_snapshot_overlap(self) -> None:
+        assert self.run_dir is not None
+        run_root = self.run_dir.resolve()
+        for source in self._snapshot_sources.values():
+            if run_root == source or run_root.is_relative_to(source) or source.is_relative_to(run_root):
+                raise SnapshotError(f"run storage must be outside the source tree: {source}")
+
     def resolve_run_dir(self) -> int | None:
         """Establish the per-run root. Returns an exit code for an invalid
         --run-id (pre-tee, like the option errors), None to proceed.
@@ -492,6 +535,7 @@ class Pipeline:
             # explicit --no-isolate: guaranteed-legacy for the whole tree —
             # the phase children must not re-isolate off an ambient run dir
             os.environ.pop("SPECULA_RUN_DIR", None)
+            os.environ.pop(SNAPSHOT_MODE_ENV, None)
             # Legacy targets have different SPECULA_WORK_DIR values. Give the
             # whole top-level invocation one absolute, unique resource scope so
             # concurrent TLCs across those targets still share one budget.
@@ -511,8 +555,60 @@ class Pipeline:
             if not self._run_id_given:
                 self.run_id = generate_run_id()
             self.run_dir = SPECULA_ROOT / "runs" / self.run_id
+
+        fallback_artifact = ""
+        meta_file = self.run_dir / "run.json"
+        if meta_file.is_file():
+            with contextlib.suppress(OSError, UnicodeError, json.JSONDecodeError):
+                meta = json.loads(meta_file.read_text())
+                if isinstance(meta, dict):
+                    mode = meta.get("source_mode", "in-place")
+                    if mode == "snapshot":
+                        self.keep_original = True
+                    elif mode == "in-place" and self._keep_original_given:
+                        print(
+                            "ERROR: --keep-original cannot be enabled when resuming an in-place run",
+                            file=sys.stderr,
+                        )
+                        return 1
+                    stored_artifact = meta.get("artifact")
+                    if isinstance(stored_artifact, str):
+                        fallback_artifact = stored_artifact
+
+        source_map = self.run_dir / SOURCE_MAP
+        if source_map.exists() or source_map.is_symlink():
+            try:
+                snapshots = load_sources(self.run_dir)
+            except SnapshotError as exc:
+                print(f"ERROR: cannot restore private source: {exc}", file=sys.stderr)
+                return 1
+            self.keep_original = True
+            self._snapshot_sources = {name: item.original for name, item in snapshots.items()}
+            self._snapshot_paths = [item.source for item in snapshots.values()]
+            if self._artifact_given and any(
+                source != Path(self.artifact).resolve() for source in self._snapshot_sources.values()
+            ):
+                print("ERROR: --artifact differs from this run's private source", file=sys.stderr)
+                return 1
+        elif self.keep_original:
+            try:
+                self._snapshot_sources = self._resolve_snapshot_sources(fallback_artifact)
+            except SnapshotError as exc:
+                print(f"ERROR: cannot prepare private source: {exc}", file=sys.stderr)
+                return 1
+        if self.keep_original:
+            try:
+                self._check_snapshot_overlap()
+            except SnapshotError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 1
+
         self.run_dir.mkdir(parents=True, exist_ok=True)
         os.environ["SPECULA_RUN_DIR"] = str(self.run_dir)  # phase subprocesses inherit
+        if self.keep_original:
+            os.environ[SNAPSHOT_MODE_ENV] = "1"
+        else:
+            os.environ.pop(SNAPSHOT_MODE_ENV, None)
         self.tlc_scope = str(self.run_dir.resolve())
         os.environ[SCOPE_ENV] = self.tlc_scope
         resource_rc = self._restore_run_resource_config()
@@ -657,6 +753,8 @@ class Pipeline:
             "tlc_memory_limit": self.tlc_memory_limit or os.environ.get(MEMORY_LIMIT_ENV) or "auto",
             "tlc_worker_limit": self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or None,
         }
+        if self.keep_original:
+            meta["source_mode"] = "snapshot"
         with contextlib.suppress(OSError):
             meta_file.write_text(json.dumps(meta, indent=2) + "\n")
 
@@ -741,6 +839,34 @@ class Pipeline:
         if len(self.targets) == 1:
             return f"{_logical_cwd()}/.specula-output"
         return f"{_logical_cwd()}/{name}/.specula-output"
+
+    def prepare_source_snapshots(self, names: list[str]) -> None:
+        if not self.keep_original:
+            return
+        if self.run_dir is None:
+            raise SnapshotError("--keep-original requires an isolated run")
+        if self.dry_run:
+            log("[DRY RUN] would create a full private source copy")
+            return
+        snapshots = prepare_sources(self.run_dir, self._snapshot_sources)
+        if set(snapshots) != set(names):
+            raise SnapshotError("private source targets do not match this invocation")
+        self._snapshot_paths = [snapshots[name].source for name in names]
+        existing = [path for path in os.environ.get("SPECULA_SANDBOX_EXTRA_WRITE", "").split(os.pathsep) if path]
+        os.environ["SPECULA_SANDBOX_EXTRA_WRITE"] = os.pathsep.join(
+            dict.fromkeys([*existing, *(str(path) for path in self._snapshot_paths)])
+        )
+        for name in names:
+            log(f"Private source for {name}: {snapshots[name].source}")
+
+    def finalize_source_snapshots(self) -> None:
+        if not self.keep_original or self.dry_run or not self._snapshot_paths:
+            return
+        assert self.run_dir is not None
+        for name, changed in capture_changes(self.run_dir).items():
+            patch = self.run_dir / name / "changes.patch"
+            label = "changes captured" if changed else "no changes"
+            log(f"Source diff for {name}: {patch} ({label})")
 
     def wait_for_quota(self, *, reactive: bool = False) -> None:
         wait_for_quota(
@@ -1413,7 +1539,7 @@ class Pipeline:
             f"--claude-alias={self.claude_alias}",
             *self._model_effort_args(),
         ]
-        if with_artifact and self._artifact_given:
+        if with_artifact and self._artifact_given and not self.keep_original:
             args.append(f"--artifact={self.artifact}")
         args += positional
         return args
@@ -1987,6 +2113,8 @@ class Pipeline:
                     os.environ["PWD"] = str(case_dir)  # bash cd exports the new $PWD
                     log(f"Single target: cd to {case_dir}")
 
+        self.prepare_source_snapshots(names)
+
         start_time = int(time.time())
 
         # Recover before Phase 1/2/2.5 can mutate the artifacts that the
@@ -2119,6 +2247,12 @@ def main(argv: list[str]) -> int:
         traceback.print_exc()
         code = 130 if isinstance(e, KeyboardInterrupt) else 1  # 128+SIGINT, like bash
     finally:
+        try:
+            p.finalize_source_snapshots()
+        except BaseException as e:
+            traceback.print_exc()
+            if code == 0:
+                code = 130 if isinstance(e, KeyboardInterrupt) else 1
         sys.stdout.flush()
         sys.stderr.flush()
         # release every write end of the pipe before waiting, or tee never EOFs
