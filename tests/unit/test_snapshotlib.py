@@ -163,7 +163,53 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(_git(source, "status", "--porcelain=v1"), _git(original, "status", "--porcelain=v1"))
         self.assertEqual(_git(source, "diff", "--cached", "--binary"), _git(original, "diff", "--cached", "--binary"))
 
-    def test_sparse_checkout_index_state_is_preserved(self) -> None:
+    def test_private_copy_adds_owner_write_without_changing_original_modes(self) -> None:
+        original = self._plain_source()
+        locked = original / "locked"
+        locked.mkdir()
+        readonly = locked / "readonly.txt"
+        readonly.write_text("before\n")
+        executable = original / "script.sh"
+        executable.write_text("#!/bin/sh\n")
+        readonly.chmod(0o444)
+        locked.chmod(0o555)
+        executable.chmod(0o555)
+        self.addCleanup(locked.chmod, 0o755)
+        self.addCleanup(readonly.chmod, 0o644)
+        self.addCleanup(executable.chmod, 0o755)
+        run = self.root / "run"
+        run.mkdir()
+
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+
+        self.assertEqual(readonly.stat().st_mode & 0o777, 0o444)
+        self.assertEqual(locked.stat().st_mode & 0o777, 0o555)
+        self.assertEqual(executable.stat().st_mode & 0o777, 0o555)
+        self.assertEqual((source / "locked" / "readonly.txt").stat().st_mode & 0o777, 0o644)
+        self.assertEqual((source / "locked").stat().st_mode & 0o777, 0o755)
+        self.assertEqual((source / "script.sh").stat().st_mode & 0o777, 0o755)
+        (source / "locked" / "readonly.txt").write_text("after\n")
+        (source / "locked" / "new.txt").write_text("new\n")
+
+    def test_private_git_preserves_all_local_branches(self) -> None:
+        original = self._repo()
+        initial_branch = _git(original, "branch", "--show-current").strip()
+        _git(original, "switch", "-c", "feature")
+        (original / "feature.txt").write_text("feature\n")
+        _git(original, "add", "feature.txt")
+        _git(original, "commit", "--quiet", "-m", "feature")
+        feature_head = _git(original, "rev-parse", "feature").strip()
+        _git(original, "switch", initial_branch)
+        run = self.root / "run"
+        run.mkdir()
+
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+
+        self.assertIn("feature", _git(source, "branch", "--format=%(refname:short)").splitlines())
+        _git(source, "switch", "feature")
+        self.assertEqual(_git(source, "rev-parse", "HEAD").strip(), feature_head)
+
+    def test_sparse_checkout_behavior_is_preserved(self) -> None:
         original = self._repo()
         (original / "visible").mkdir()
         (original / "visible" / "file.txt").write_text("visible\n")
@@ -171,6 +217,12 @@ class SnapshotTests(unittest.TestCase):
         (original / "hidden" / "file.txt").write_text("hidden\n")
         _git(original, "add", "visible", "hidden")
         _git(original, "commit", "--quiet", "-m", "directories")
+        initial_branch = _git(original, "branch", "--show-current").strip()
+        _git(original, "switch", "-c", "feature")
+        (original / "hidden" / "file.txt").write_text("feature hidden\n")
+        _git(original, "add", "hidden/file.txt")
+        _git(original, "commit", "--quiet", "-m", "feature hidden")
+        _git(original, "switch", initial_branch)
         _git(original, "sparse-checkout", "init", "--cone")
         _git(original, "sparse-checkout", "set", "visible")
         run = self.root / "run"
@@ -181,6 +233,15 @@ class SnapshotTests(unittest.TestCase):
         self.assertFalse((source / "hidden").exists())
         self.assertEqual(_git(source, "status", "--porcelain=v1"), _git(original, "status", "--porcelain=v1"))
         self.assertEqual(_git(source, "ls-files", "-t"), _git(original, "ls-files", "-t"))
+        self.assertEqual(_git(source, "config", "--bool", "core.sparseCheckout").strip(), "true")
+        self.assertEqual(
+            (source / ".git" / "info" / "sparse-checkout").read_bytes(),
+            (original / ".git" / "info" / "sparse-checkout").read_bytes(),
+        )
+        _git(source, "switch", "feature")
+        self.assertFalse((source / "hidden").exists())
+        _git(source, "sparse-checkout", "reapply")
+        self.assertEqual(_git(source, "sparse-checkout", "list").strip(), "visible")
 
     def test_private_git_is_self_contained_and_has_no_active_origin(self) -> None:
         original = self._repo()

@@ -192,6 +192,48 @@ def _copy_working_tree(original: Path, destination: Path, *, is_git: bool) -> No
         dirs_exist_ok=destination.exists(),
     )
 
+    # The private copy is an agent workspace, even when the input was mounted
+    # read-only.  Add only owner-write; preserve executable and sharing bits.
+    pending = [destination]
+    while pending:
+        path = pending.pop()
+        mode = path.stat(follow_symlinks=False).st_mode
+        os.chmod(path, stat.S_IMODE(mode) | stat.S_IWUSR, follow_symlinks=False)
+        if stat.S_ISDIR(mode):
+            with os.scandir(path) as entries:
+                pending.extend(
+                    Path(entry.path)
+                    for entry in entries
+                    if not entry.is_symlink() and not (path == destination and entry.name == ".git")
+                )
+
+
+def _git_bool(repo: Path, key: str) -> bool:
+    value = _git(["-C", str(repo), "config", "--type=bool", "--default=false", "--get", key])
+    return value == "true"
+
+
+def _restore_local_branches(original: Path, destination: Path) -> None:
+    refs = _git(["-C", str(original), "for-each-ref", "--format=%(objectname) %(refname)", "refs/heads/"])
+    for line in refs.splitlines():
+        object_name, ref_name = line.split(" ", 1)
+        _git(["-C", str(destination), "update-ref", ref_name, object_name])
+
+
+def _restore_sparse_checkout(original: Path, destination: Path) -> None:
+    if not _git_bool(original, "core.sparseCheckout"):
+        return
+    patterns = original / ".git" / "info" / "sparse-checkout"
+    if patterns.is_symlink() or not patterns.is_file():
+        raise SnapshotError(f"Git sparse-checkout patterns are unsafe: {original}")
+    private_patterns = destination / ".git" / "info" / "sparse-checkout"
+    private_patterns.parent.mkdir(exist_ok=True)
+    shutil.copyfile(patterns, private_patterns)
+    _git(["-C", str(destination), "config", "--local", "extensions.worktreeConfig", "true"])
+    for key in ("core.sparseCheckout", "core.sparseCheckoutCone", "index.sparse"):
+        value = "true" if _git_bool(original, key) else "false"
+        _git(["-C", str(destination), "config", "--worktree", key, value])
+
 
 def _create_private_git(original: Path, destination: Path) -> None:
     """Clone history without copying executable or externally linked metadata."""
@@ -208,6 +250,7 @@ def _create_private_git(original: Path, destination: Path) -> None:
             str(destination),
         ]
     )
+    _restore_local_branches(original, destination)
     # A local clone records the source path as origin.  The private checkout
     # must not retain an active path back to the original repository.
     _git(["-C", str(destination), "config", "--local", "--remove-section", "remote.origin"])
@@ -215,15 +258,16 @@ def _create_private_git(original: Path, destination: Path) -> None:
     if original_index.exists() or original_index.is_symlink():
         if original_index.is_symlink() or not original_index.is_file():
             raise SnapshotError(f"Git index is unsafe: {original}")
-        shutil.copy2(original_index, destination / ".git" / "index")
+        shutil.copyfile(original_index, destination / ".git" / "index")
         for shared_index in (original / ".git").glob("sharedindex.*"):
             if shared_index.is_symlink() or not shared_index.is_file():
                 raise SnapshotError(f"Git shared index is unsafe: {original}")
-            shutil.copy2(shared_index, destination / ".git" / shared_index.name)
+            shutil.copyfile(shared_index, destination / ".git" / shared_index.name)
     else:
         # --no-checkout has no index.  Resetting avoids staged deletions and
         # also succeeds for an unborn repository.
         _git(["-C", str(destination), "reset", "--mixed", "--quiet"])
+    _restore_sparse_checkout(original, destination)
 
 
 def _create_baseline(control: Path, source: Path, index: Path) -> str:

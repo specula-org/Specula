@@ -16,6 +16,7 @@ Usage:  python3 phaselib.py <phase> [options] "<target>" [...]
 from __future__ import annotations
 
 import contextlib
+import json
 import locale
 import os
 import re
@@ -25,7 +26,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypedDict
@@ -38,7 +39,13 @@ from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC
 from specula.prompts import render
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
-from specula.snapshotlib import SNAPSHOT_MODE_ENV, SOURCE_MAP, sanitize_snapshot_git_environment
+from specula.snapshotlib import (
+    SNAPSHOT_MODE_ENV,
+    SOURCE_MAP,
+    SnapshotError,
+    load_sources,
+    sanitize_snapshot_git_environment,
+)
 from specula.tlc_resources import (
     MEMORY_LIMIT_ENV,
     RUN_POLICY_FILENAME,
@@ -370,7 +377,24 @@ class Workspace:
         if self.run_dir is None:
             return False
         source_map = self.run_dir / SOURCE_MAP
-        return source_map.exists() or source_map.is_symlink() or bool(os.environ.get(SNAPSHOT_MODE_ENV))
+        if source_map.exists() or source_map.is_symlink() or os.environ.get(SNAPSHOT_MODE_ENV):
+            return True
+        try:
+            metadata = json.loads((self.run_dir / "run.json").read_text())
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return False
+        return isinstance(metadata, dict) and metadata.get("source_mode") == "snapshot"
+
+    def validate_private_sources(self, names: list[str]) -> list[Path]:
+        """Fail closed when a run declares private sources but cannot restore them."""
+        if not self.uses_private_source():
+            return []
+        assert self.run_dir is not None
+        snapshots = load_sources(self.run_dir)
+        missing = [name for name in names if name not in snapshots]
+        if missing:
+            raise SnapshotError(f"private source map is missing target(s): {', '.join(missing)}")
+        return [snapshots[name].source for name in names]
 
     def private_git_ceiling(self, names: list[str]) -> str | None:
         if not self.uses_private_source():
@@ -379,6 +403,41 @@ class Workspace:
         if any(os.pathsep in root for root in roots):
             raise RuntimeError("private source path cannot be represented in GIT_CEILING_DIRECTORIES")
         return os.pathsep.join(dict.fromkeys(roots)) or None
+
+
+def _pin_sandbox_config(env: MutableMapping[str, str], launch_cwd: Path) -> None:
+    """Resolve sandbox configuration before an agent changes directory."""
+    if env.get("SPECULA_SANDBOX", "").lower() != "on":
+        return
+    launch_cwd = launch_cwd.expanduser().resolve()
+    configured = env.get("SPECULA_SANDBOX_CONFIG")
+    if configured:
+        config = Path(configured).expanduser()
+        if not config.is_absolute():
+            config = launch_cwd / config
+        config = config.resolve()
+    else:
+        candidates = [
+            launch_cwd / ".specula" / "sandbox.json",
+            Path.home() / ".specula" / "sandbox.json",
+        ]
+        default_config = (LAUNCH_DIR / "sandbox" / "sandbox.default.json").resolve()
+        config = next((path.resolve() for path in candidates if path.is_file()), default_config)
+    env["SPECULA_SANDBOX_CONFIG"] = str(config)
+
+
+def _activate_private_sources(ws: Workspace, names: list[str]) -> None:
+    """Validate and expose one snapshot run consistently to every phase path."""
+    sources = ws.validate_private_sources(names)
+    if not sources:
+        return
+    existing = [path for path in os.environ.get("SPECULA_SANDBOX_EXTRA_WRITE", "").split(os.pathsep) if path]
+    os.environ["SPECULA_SANDBOX_EXTRA_WRITE"] = os.pathsep.join(
+        dict.fromkeys([*existing, *(str(source) for source in sources)])
+    )
+    _pin_sandbox_config(os.environ, ws.cwd)
+    os.environ[SNAPSHOT_MODE_ENV] = "1"
+    sanitize_snapshot_git_environment(os.environ, ceiling=ws.private_git_ceiling(names))
 
 
 class Phase:
@@ -719,10 +778,11 @@ class Phase:
 
         ws = Workspace(targets, artifact=artifact, opts=extra)
         names = [self.target_name(t) for t in targets]
-        git_ceiling = ws.private_git_ceiling(names)
-        if ws.uses_private_source():
-            os.environ[SNAPSHOT_MODE_ENV] = "1"
-            sanitize_snapshot_git_environment(os.environ, ceiling=git_ceiling)
+        try:
+            _activate_private_sources(ws, names)
+        except SnapshotError as exc:
+            print(f"ERROR: cannot restore private source: {exc}")
+            return 1
 
         print("========================================")
         print(f" {self.title}")
@@ -1365,20 +1425,8 @@ def run_agent_blocking(
         if os.pathsep in git_ceiling:
             raise RuntimeError("private target path cannot be represented in GIT_CEILING_DIRECTORIES")
         sanitize_snapshot_git_environment(env, ceiling=git_ceiling)
-    if env.get("SPECULA_SANDBOX", "").lower() == "on" and run_cwd is not None:
-        configured = env.get("SPECULA_SANDBOX_CONFIG")
-        if configured:
-            config = Path(configured).expanduser()
-            if not config.is_absolute():
-                config = (caller_cwd / config).resolve()
-        else:
-            candidates = [
-                caller_cwd / ".specula" / "sandbox.json",
-                Path.home() / ".specula" / "sandbox.json",
-            ]
-            default_config = (LAUNCH_DIR / "sandbox" / "sandbox.default.json").resolve()
-            config = next((path.resolve() for path in candidates if path.is_file()), default_config)
-        env["SPECULA_SANDBOX_CONFIG"] = str(config)
+    if run_cwd is not None:
+        _pin_sandbox_config(env, caller_cwd)
     cmd = [
         str(adapter),
         f"--prompt-file={prompt_file}",
@@ -2564,10 +2612,11 @@ Output:
 
         ws = Workspace(targets)
         names = [_trim(t) for t in targets]
-        git_ceiling = ws.private_git_ceiling(names)
-        if ws.uses_private_source():
-            os.environ[SNAPSHOT_MODE_ENV] = "1"
-            sanitize_snapshot_git_environment(os.environ, ceiling=git_ceiling)
+        try:
+            _activate_private_sources(ws, names)
+        except SnapshotError as exc:
+            print(f"ERROR: cannot restore private source: {exc}")
+            return 1
 
         print("========================================")
         print(f" Specula — Review Agent ({phase})")
