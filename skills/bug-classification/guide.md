@@ -4,8 +4,8 @@ Assign a Severity tier to each impact-bearing entry in `confirmed-bugs.md` (prod
 
 ## Scope
 
-- **Input**: `<work_dir>/spec/confirmed-bugs.md` — every entry already has a Phase 4 Status and supporting evidence.
-- **Output**: `<work_dir>/spec/bug-severity.md` — a single table with one row per input entry.
+- **Input**: `<work_dir>/confirmed-bugs.md` — every entry already has a Phase 4 Status and supporting evidence.
+- **Output**: `<work_dir>/bug-severity.md` — a single table with one row per input entry.
 - **You do not**: write new bug analysis, change reproduction status, reject bugs, re-do investigation, or modify `confirmed-bugs.md`.
 
 Classify each status exactly as follows:
@@ -52,7 +52,7 @@ Do not re-do Phase 4a's investigation. If you find that Phase 4a's Status is wro
 
 ## Output schema
 
-Write to `<work_dir>/spec/bug-severity.md` with exactly this structure:
+Write to `<work_dir>/bug-severity.md` with exactly this structure:
 
 ```markdown
 # Severity Classification — <case>
@@ -61,7 +61,7 @@ Write to `<work_dir>/spec/bug-severity.md` with exactly this structure:
 
 - Total entries: N
 - Reproduced bugs: N
-- Findings: N
+- Severity-bearing findings: N
 - Critical: N
 - High: N
 - Medium: N
@@ -70,21 +70,21 @@ Write to `<work_dir>/spec/bug-severity.md` with exactly this structure:
 
 ## Per-entry classification
 
-| Bug | Title | Status | Severity | Reasoning |
-|-----|-------|--------|----------|-----------|
-| 1   | <title from confirmed-bugs.md ## Bug 1: header> | REPRODUCED | High | <worst consequence + reachability> |
-| 2   | <title from ## Bug 2> | ENV_LIMITED | Critical | <production consequence + named environment limit> |
-| 3   | <title from ## Bug 3> | MASKED | Medium | <consequence + named mask> |
-| 4   | <title from ## Bug 4> | FALSE POSITIVE | — | <non-severity disposition> |
+| Entry | Finding | Status | Severity | Reasoning |
+|-------|---------|--------|----------|-----------|
+| 1     | MC-1 | REPRODUCED | High | <worst consequence + reachability> |
+| 2     | MC-2 | ENV_LIMITED | Critical | <production consequence + named environment limit> |
+| 3     | MC-3 | MASKED | Medium | <consequence + named mask> |
+| 4     | MC-4 | FALSE POSITIVE | — | <non-severity disposition> |
 ```
 
-- **Bug** column: integer matching `## Bug N:` headers in `confirmed-bugs.md`. One row per entry, no merging, no skipping.
-- **Title** column: copy the title from the `## Bug N:` header verbatim. Truncate to ~60 chars if needed; preserve enough to identify the bug.
+- **Entry** column: integer matching `## Entry N:` headers in `confirmed-bugs.md`. One row per entry, no merging, no skipping.
+- **Finding** column: copy the stable finding id from the matching `Finding` table row or `- **Finding ID**:` field.
 - **Status** column: copy the entry's `Status` field verbatim, including an RR suffix or defer reason when present. Categorize it by its leading canonical status token.
 - **Severity** column: one of `Critical` / `High` / `Medium` / `Low` for `REPRODUCED`, `ENV_LIMITED`, and `MASKED`; exactly `—` for every disposition status.
 - **Reasoning** column: for a bug/finding, name the consequence and trigger surface; for a disposition, briefly state why it has no severity. Avoid restating the entry verbatim.
 
-The Summary section at the top is mandatory. `Total entries = Reproduced bugs + Findings + No-severity dispositions`, and `Critical + High + Medium + Low = Reproduced bugs + Findings`.
+The Summary section at the top is mandatory. `Total entries = Reproduced bugs + Severity-bearing findings + No-severity dispositions`, and `Critical + High + Medium + Low = Reproduced bugs + Severity-bearing findings`.
 
 ## What NOT to do
 
@@ -101,16 +101,16 @@ The Summary section at the top is mandatory. `Total entries = Reproduced bugs + 
 - **Byzantine-only bugs**: in BFT systems, a bug exploitable only by a Byzantine node within the threat model is still High / Critical depending on impact. Honest-only failure modes typically rank lower.
 - **Liveness vs safety**: a liveness violation (deadlock, livelock, starvation) under realistic load is at least High. A safety violation is at least High (often Critical).
 - **Documented design vs bug**: if Phase 4a set `FALSE POSITIVE`, use `—`; if Phase 4a kept it `REPRODUCED`, classify on its actual impact and let Reasoning note the disagreement.
-- **Entry count mismatch**: if `confirmed-bugs.md` has 8 `## Bug N:` headers, the output table must have 8 rows. Preserve the input identifiers; do not silently repair the Phase 4 report.
+- **Entry count mismatch**: if `confirmed-bugs.md` has 8 `## Entry N:` headers, the output table must have 8 rows. Preserve the input identifiers; do not silently repair the Phase 4 report.
 
 ## Output validation checklist
 
 Before finishing, verify:
 
-- One row per `## Bug N:` header in `confirmed-bugs.md` (no missing, no extra).
+- One row per `## Entry N:` header in `confirmed-bugs.md` (no missing, no extra).
 - Every Severity is one of `Critical` / `High` / `Medium` / `Low` / `—`.
 - Every `REPRODUCED`, `ENV_LIMITED`, or `MASKED` row has a four-tier Severity.
 - Every `FALSE POSITIVE`, `NEEDS MORE INFO`, `DROPPED`, `PENDING REPAIR`, `DEFERRED`, or `INCOMPLETE` row has Severity `—`.
 - Every non-`—` Reasoning names at least one consequence (what goes wrong) and one surface (where it's triggerable from).
-- Summary entry classes add up to Total entries, and severity counts add up to reproduced bugs plus findings.
+- Summary entry classes add up to Total entries, and severity counts add up to reproduced bugs plus severity-bearing findings.
 - `confirmed-bugs.md` is unchanged (mtime not bumped, content not edited).

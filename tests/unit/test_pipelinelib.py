@@ -1578,7 +1578,7 @@ class TestRepairLoop(RRDirCase):
 
     def test_only_progress_followed_by_cap_defers(self) -> None:
         first = make_rr(self.rr_dir, "RR-1", "OPEN")
-        report = self.rr_dir.parent / "confirmed-bugs.md"
+        report = self.rr_dir.parent.parent / "confirmed-bugs.md"
         report.write_text("Status: PENDING REPAIR (RR-2)\n")
         self.p.max_repair_rounds = "1"
 
@@ -1690,11 +1690,11 @@ class TestDeferredMoves(RRDirCase):
         report = (
             "Dispositions: 3 total = 0 reproduced + 0 env-limited + 0 masked + 0 false-positive "
             "+ 0 needs-more-info + 0 dropped + 2 pending-repair + 1 incomplete + 0 deferred\n\n"
-            "| Bug | Finding | Status |\n"
-            "|---|---|---|\n"
-            "| 1 | MC-1 | DEFERRED (repair loop exhausted; RR-1 in deferred/) |\n"
-            "| 2 | MC-2 | PENDING REPAIR (RR-2) |\n"
-            "| 3 | MC-3 | INCOMPLETE |\n"
+            "| Entry | Finding | Status | Counts as final bug? |\n"
+            "|---|---|---|---|\n"
+            "| 1 | MC-1 | DEFERRED (repair loop exhausted; RR-1 in deferred/) | no |\n"
+            "| 2 | MC-2 | PENDING REPAIR (RR-2) | no |\n"
+            "| 3 | MC-3 | INCOMPLETE | no |\n"
         )
 
         reconciled = self.p._reconcile_disposition_counts(report)
@@ -1824,7 +1824,7 @@ class TestDeferredMoves(RRDirCase):
         deferred_dir = self.rr_dir / "deferred"
         deferred_dir.mkdir()
         request = make_rr(deferred_dir, "RR-1", "OPEN")
-        report = self.rr_dir.parent / "confirmed-bugs.md"
+        report = self.rr_dir.parent.parent / "confirmed-bugs.md"
         report.write_text(
             "# Confirmed Bugs\n\n"
             "Dispositions: 2 total = 0 reproduced + 0 env-limited + 0 masked + 0 false-positive "
@@ -1851,7 +1851,7 @@ class TestDeferredMoves(RRDirCase):
     def test_report_write_failure_is_recovered_on_next_startup(self) -> None:
         source = make_rr(self.rr_dir, "RR-1", "OPEN")
         destination = self.rr_dir / "deferred" / source.name
-        report = self.rr_dir.parent / "confirmed-bugs.md"
+        report = self.rr_dir.parent.parent / "confirmed-bugs.md"
         report.write_text(
             "Dispositions: 1 total = 0 reproduced + 0 env-limited + 0 masked + 0 false-positive "
             "+ 0 needs-more-info + 0 dropped + 1 pending-repair\n\n"

@@ -66,7 +66,7 @@ STATE_DIRNAME = ".stop-gate"
 # background-job check above applies to every phase regardless.
 CONTRACTS: dict[str, str] = {
     "spec_validation": "spec/bug-report.md",
-    "bug_confirmation": "spec/confirmed-bugs.md",
+    "bug_confirmation": "confirmed-bugs.md",
 }
 
 # Where an agent may declare it cannot finish (checked in order).

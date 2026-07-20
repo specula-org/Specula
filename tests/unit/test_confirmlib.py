@@ -348,7 +348,7 @@ class TestDriver(ConfirmCase):
         with mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("FALSE POSITIVE"))):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
         self.assertEqual(rc, 0)
-        cb = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
+        cb = ws.work_dir("T") / "confirmed-bugs.md"
         self.assertTrue(cb.is_file() and cb.stat().st_size > 0)
 
     def test_configured_max_parallel_reaches_executor(self) -> None:
@@ -416,7 +416,7 @@ class TestDriver(ConfirmCase):
 
         self.assertEqual(rc, 75)
         self.assertEqual(calls, ["MC-1"])
-        report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
+        report = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
         self.assertIn("| 2 | MC-2 | INCOMPLETE |", report)
         self.assertIn("not started because another finding was rate-limited", report)
         self.assertIn("| 3 | MC-3 | NEEDS MORE INFO |", report)
@@ -468,7 +468,7 @@ class TestDriver(ConfirmCase):
 
         self.assertEqual(rc, 75)
         self.assertEqual(set(calls), {"MC-1", "MC-2"})
-        report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
+        report = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
         self.assertIn("| 2 | MC-2 | NEEDS MORE INFO |", report)
         self.assertIn("| 3 | MC-3 | INCOMPLETE |", report)
         self.assertIn("| 4 | MC-4 | INCOMPLETE |", report)
@@ -483,7 +483,7 @@ class TestDriver(ConfirmCase):
         with mock.patch.object(C, "run_agent_blocking", _fake_turn("", rc=75)):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
         self.assertEqual(rc, 75)
-        cb = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
+        cb = ws.work_dir("T") / "confirmed-bugs.md"
         self.assertTrue(cb.is_file())  # delivered, not withheld
         self.assertIn("INCOMPLETE", cb.read_text())
         self.assertFalse((ws.work_dir("T") / "confirmation" / "MC-1" / "verdict.json").is_file())  # not cached
@@ -501,7 +501,7 @@ class TestDriver(ConfirmCase):
         # A prior run's confirmed-bugs.md is overwritten by the fresh (partial) report
         # rather than left stale: the rate-limited finding shows up as INCOMPLETE.
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
-        stale = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
+        stale = ws.work_dir("T") / "confirmed-bugs.md"
         stale.write_text("# STALE REPORT from a prior run\n")
         with mock.patch.object(C, "run_agent_blocking", _fake_turn("", rc=75)):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
@@ -929,11 +929,11 @@ class TestDriver(ConfirmCase):
         # yields no valid candidates.json must withhold and return failure.
         ws = Workspace(["T"])
         (ws.work_dir("T") / "spec").mkdir(parents=True, exist_ok=True)
-        (ws.work_dir("T") / "spec" / "confirmed-bugs.md").write_text("# stale\n")
+        (ws.work_dir("T") / "confirmed-bugs.md").write_text("# stale\n")
         with mock.patch.object(C, "run_agent_blocking", _fake_turn("", rc=1)):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
         self.assertEqual(rc, 1)
-        self.assertFalse((ws.work_dir("T") / "spec" / "confirmed-bugs.md").is_file())  # stale removed too
+        self.assertFalse((ws.work_dir("T") / "confirmed-bugs.md").is_file())  # stale removed too
 
     def test_mixed_failures_all_deliver_as_incomplete(self) -> None:
         # A permanent failure + a simultaneous rate limit no longer withhold; both
@@ -948,7 +948,7 @@ class TestDriver(ConfirmCase):
         with mock.patch.object(C, "run_agent_blocking", agent):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
         self.assertEqual(rc, 1)  # permanent failure wins over the simultaneous rate limit
-        cb = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
+        cb = ws.work_dir("T") / "confirmed-bugs.md"
         self.assertTrue(cb.is_file())
         self.assertIn("2 incomplete", cb.read_text())  # both marked in the disposition summary
 
@@ -956,7 +956,7 @@ class TestDriver(ConfirmCase):
         # A _save_verdict failure (disk full) makes the finding INCOMPLETE and still
         # delivers the report — never discards it.
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
-        report = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
+        report = ws.work_dir("T") / "confirmed-bugs.md"
         report.write_text("stale\n")
         with (
             mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("FALSE POSITIVE"))),
@@ -990,7 +990,7 @@ class TestDriver(ConfirmCase):
         self.assertFalse((fdir / "repair-request.body.md").exists())
         rr = ws.work_dir("T") / "spec" / "repair-requests" / "RR-001.md"
         self.assertFalse(rr.exists())
-        self.assertIn("INCOMPLETE", (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text())
+        self.assertIn("INCOMPLETE", (ws.work_dir("T") / "confirmed-bugs.md").read_text())
         self.assertFalse((fdir / "verdict.json").exists())
 
     def test_empty_pending_repair_draft_retries_once_then_is_incomplete(self) -> None:
@@ -1135,7 +1135,7 @@ class TestDriver(ConfirmCase):
             calls,
             ["# Confirm ONE finding: MC-1", "# Best-effort repair-draft correction: MC-1"],
         )
-        report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
+        report = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
         self.assertIn("| 1 | MC-1 | INCOMPLETE |", report)
         self.assertIn("| 2 | MC-2 | INCOMPLETE |", report)
         self.assertIn("not started because another finding was rate-limited", report)
@@ -1171,7 +1171,7 @@ class TestDriver(ConfirmCase):
 
     def test_log_tee_failure_does_not_block_stale_deliverable_cleanup(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
-        report = ws.work_dir("T") / "spec" / "confirmed-bugs.md"
+        report = ws.work_dir("T") / "confirmed-bugs.md"
         report.write_text("stale\n")
         with mock.patch.object(C, "_log", side_effect=OSError("log disk full")):
             self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 1)
@@ -1216,7 +1216,7 @@ class TestDriver(ConfirmCase):
         with mock.patch.object(C, "run_agent_blocking", _boom):
             self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 0)
         self.assertEqual([p.name for p in rr_dir.glob("RR-*.md")], ["RR-001.md"])
-        self.assertIn("PENDING REPAIR (RR-001)", (spec / "confirmed-bugs.md").read_text())
+        self.assertIn("PENDING REPAIR (RR-001)", (spec.parent / "confirmed-bugs.md").read_text())
 
 
 class TestDebateGate(ConfirmCase):
@@ -1357,8 +1357,8 @@ class TestDebateGate(ConfirmCase):
         self.assertIn("Challenger verified the prior fix", outcome.body)
         outcome.bug_no = 1
         C.aggregate(cfg, [outcome])
-        report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
-        self.assertIn("Reproduced: 1 = 0 NEW + 0 KNOWN-unfixed + 1 KNOWN-fixed + 0 UNKNOWN", report)
+        report = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
+        self.assertIn("Reproduced bugs: 1 = 0 NEW + 0 KNOWN-unfixed + 1 KNOWN-fixed + 0 UNKNOWN", report)
 
 
 class TestAggregate(ConfirmCase):
@@ -1370,18 +1370,18 @@ class TestAggregate(ConfirmCase):
         )
         with mock.patch.object(C, "run_agent_blocking", runner):
             C.run_parallel_confirmation(self.cfg(ws, name))
-        return (ws.work_dir(name) / "spec" / "confirmed-bugs.md").read_text()
+        return (ws.work_dir(name) / "confirmed-bugs.md").read_text()
 
-    def test_heading_is_bug_n_not_finding_id(self) -> None:
+    def test_heading_is_entry_n_not_finding_id(self) -> None:
         cb = self._confirmed_bugs("- **Novelty**: NEW\nVERDICT: REPRODUCED")
-        self.assertIn("## Bug 1: the bug", cb)  # Phase 4b parses integer "## Bug N:"
+        self.assertIn("## Entry 1: the bug", cb)  # Phase 4b parses integer "## Entry N:"
         self.assertNotIn("## MC-1:", cb)
         self.assertIn("- **Finding ID**: MC-1", cb)  # id carried as a body field
         self.assertIn("| 1 | MC-1 |", cb)  # and a table column
 
     def test_novelty_split_counts_known_unfixed(self) -> None:
         cb = self._confirmed_bugs("- **Novelty**: KNOWN (cite: http://x; fix-status: unfixed)\nVERDICT: REPRODUCED")
-        self.assertIn("Reproduced: 1 = 0 NEW + 1 KNOWN-unfixed + 0 KNOWN-fixed + 0 UNKNOWN", cb)
+        self.assertIn("Reproduced bugs: 1 = 0 NEW + 1 KNOWN-unfixed + 0 KNOWN-fixed + 0 UNKNOWN", cb)
 
     def test_novelty_known_fixed_flagged_separately(self) -> None:
         cb = self._confirmed_bugs("- **Novelty**: KNOWN (cite: http://x; fix-status: fixed)\nVERDICT: REPRODUCED")
@@ -1390,17 +1390,19 @@ class TestAggregate(ConfirmCase):
 
     def test_missing_novelty_stays_unknown(self) -> None:
         cb = self._confirmed_bugs("VERDICT: REPRODUCED")
-        self.assertIn("Reproduced: 1 = 0 NEW + 0 KNOWN-unfixed + 0 KNOWN-fixed + 1 UNKNOWN", cb)
+        self.assertIn("Reproduced bugs: 1 = 0 NEW + 0 KNOWN-unfixed + 0 KNOWN-fixed + 1 UNKNOWN", cb)
 
     def test_masked_is_a_finding_not_a_reproduced_bug(self) -> None:
         cb = self._confirmed_bugs("VERDICT: MASKED")
-        self.assertIn("Reproduced: 0 = 0 NEW + 0 KNOWN-unfixed", cb)  # masked is NOT a bug
-        self.assertIn("Findings: 1 = 0 env-limited + 1 masked", cb)  # it is a finding
+        self.assertIn("Reproduced bugs: 0 = 0 NEW + 0 KNOWN-unfixed", cb)  # masked is NOT a bug
+        self.assertIn("Masked live findings: 1", cb)  # it is a finding
+        self.assertIn("Env-limited findings: 0", cb)
         self.assertIn("| 1 | MC-1 | MASKED |", cb)
 
     def test_env_limited_counted_as_finding(self) -> None:
         cb = self._confirmed_bugs("VERDICT: ENV_LIMITED")
-        self.assertIn("Findings: 1 = 1 env-limited + 0 masked", cb)
+        self.assertIn("Env-limited findings: 1", cb)
+        self.assertIn("Masked live findings: 0", cb)
 
     def test_disposition_summary_is_exhaustive(self) -> None:
         ws = self.seed("T", [])
@@ -1413,7 +1415,7 @@ class TestAggregate(ConfirmCase):
             )
             outcomes.append(C.Outcome(finding, status, True, 0, EVIDENCE, bug_no=index))
         C.aggregate(self.cfg(ws, "T"), outcomes)
-        report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
+        report = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
         self.assertIn(
             "Dispositions: 7 total = 1 reproduced + 1 env-limited + 1 masked + 1 false-positive "
             "+ 1 needs-more-info + 1 dropped + 1 pending-repair + 0 incomplete + 0 deferred",
@@ -1438,7 +1440,7 @@ class TestPromptExtraAndLog(ConfirmCase):
         self.assertIn("finding_id: <candidate-id>", prompt)
         self.assertIn("immutable identity", prompt)
         self.assertIn("bug_id: Bug N", prompt)
-        self.assertIn("only the current report display label", prompt)
+        self.assertIn("only the legacy report display label", prompt)
         self.assertIn("do not publish the request or silently allocate another id", re.sub(r"\s+", " ", prompt))
 
     def test_level_two_or_three_requires_positive_reachability_evidence(self) -> None:
@@ -1534,7 +1536,7 @@ class TestPromptExtraAndLog(ConfirmCase):
         o = C.Outcome(f, "PENDING REPAIR", True, 0, "body", bug_no=3)
         rid = C.allocate_rr(self.cfg(ws, "T"), o)
         rr = (ws.work_dir("T") / "spec" / "repair-requests" / f"{rid}.md").read_text()
-        self.assertIn("bug_id: Bug 3", rr)  # points at the "## Bug 3:" heading, not MC-1
+        self.assertIn("bug_id: Bug 3", rr)  # legacy display label, not the stable MC-1 id
 
 
 class TestCacheContracts(ConfirmCase):
@@ -1618,7 +1620,7 @@ class TestCacheContracts(ConfirmCase):
             (spec / "confirmation-generation.json").write_text('{"generation": 1}\n')
             self.assertEqual(C.run_parallel_confirmation(cfg), 0)
 
-        report = (spec / "confirmed-bugs.md").read_text()
+        report = (spec.parent / "confirmed-bugs.md").read_text()
         self.assertIn("MC-2", report)
         self.assertNotIn("MC-1", report)
         self.assertEqual(calls, ["consolidate", "MC-1", "consolidate", "MC-2"])
@@ -1815,7 +1817,7 @@ class TestCacheContracts(ConfirmCase):
 
         self.assertFalse(active.exists())
         self.assertEqual(list(rr_dir.rglob("RR-*.md")), [deferred])
-        report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
+        report = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
         self.assertIn("| 1 | MC-1 | DEFERRED (repair loop exhausted; RR-001 in deferred/) |", report)
         self.assertIn("+ 0 pending-repair + 0 incomplete + 1 deferred", report)
 
@@ -1933,11 +1935,11 @@ class TestCacheContracts(ConfirmCase):
 class TestValidationContracts(ConfirmCase):
     @staticmethod
     def _write_repair_report(spec: Path, status: str, *, bug_no: int = 1, finding_id: str = "MC-1") -> None:
-        (spec / "confirmed-bugs.md").write_text(
-            "| Bug | Finding | Status |\n"
-            "|---|---|---|\n"
-            f"| {bug_no} | {finding_id} | {status} |\n\n"
-            f"## Bug {bug_no}: one\n\n"
+        (spec.parent / "confirmed-bugs.md").write_text(
+            "| Entry | Finding | Status | Counts as final bug? |\n"
+            "|---|---|---|---|\n"
+            f"| {bug_no} | {finding_id} | {status} | no |\n\n"
+            f"## Entry {bug_no}: one\n\n"
             f"- **Finding ID**: {finding_id}\n"
             f"- **Status**: {status}\n"
         )
@@ -2060,7 +2062,7 @@ class TestValidationContracts(ConfirmCase):
         ]
         ws = self.seed("T", current)
         spec = ws.work_dir("T") / "spec"
-        (spec / "confirmed-bugs.md").write_text(
+        (spec.parent / "confirmed-bugs.md").write_text(
             "# Confirmed Bugs — T\n\n"
             "| Bug | Finding | Status |\n"
             "|---|---|---|\n"
@@ -2096,7 +2098,7 @@ class TestValidationContracts(ConfirmCase):
     def test_legacy_missing_identity_ignores_stale_bug_label_and_refreshes_it_from_report(self) -> None:
         ws = self.seed("T", [])
         spec = ws.work_dir("T") / "spec"
-        (spec / "confirmed-bugs.md").write_text(
+        (spec.parent / "confirmed-bugs.md").write_text(
             "| Bug | Finding | Status |\n"
             "|---|---|---|\n"
             "| 1 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
@@ -2121,7 +2123,7 @@ class TestValidationContracts(ConfirmCase):
     def test_terminal_stable_identity_preserves_historical_bug_id_after_reorder(self) -> None:
         ws = self.seed("T", [])
         spec = ws.work_dir("T") / "spec"
-        (spec / "confirmed-bugs.md").write_text(
+        (spec.parent / "confirmed-bugs.md").write_text(
             "| Bug | Finding | Status |\n"
             "|---|---|---|\n"
             "| 2 | MC-1 | PENDING REPAIR (RR-001) |\n\n"
@@ -2229,7 +2231,7 @@ class TestValidationContracts(ConfirmCase):
     def test_report_validation_rejects_unlinked_active_request(self) -> None:
         ws = self.seed("T", [])
         spec = ws.work_dir("T") / "spec"
-        (spec / "confirmed-bugs.md").write_text(
+        (spec.parent / "confirmed-bugs.md").write_text(
             "| Bug | Finding | Status |\n|---|---|---|\n| 1 | MC-1 | FALSE POSITIVE |\n"
         )
         rr_dir = spec / "repair-requests"
@@ -2342,7 +2344,7 @@ class TestValidationContracts(ConfirmCase):
         data = {"id": "MC-1", "source": "model-checking", "title": "one", "summary": "s"}
         ws = self.seed("T", [data])
         spec = ws.work_dir("T") / "spec"
-        (spec / "confirmed-bugs.md").write_text(
+        (spec.parent / "confirmed-bugs.md").write_text(
             "# Confirmed Bugs — T\n\n"
             "| Bug | Finding | Status |\n"
             "|---|---|---|\n"
@@ -2366,8 +2368,8 @@ class TestValidationContracts(ConfirmCase):
         ):
             self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 1)
 
-        new_report = (spec / "confirmed-bugs.md").read_text()
-        self.assertIn("| 1 | MC-1 | FALSE POSITIVE |", new_report)
+        new_report = (spec.parent / "confirmed-bugs.md").read_text()
+        self.assertIn("| 1 | MC-1 | FALSE POSITIVE | no |", new_report)
         self.assertNotIn("RR-001", new_report)
         migrated = request.read_text()
         self.assertEqual(C._rr_field_text(migrated, "finding_id"), ["MC-1"])
@@ -2393,7 +2395,7 @@ class TestValidationContracts(ConfirmCase):
         with mock.patch.object(C, "consolidate", return_value=None):
             self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 1)
 
-        report = (spec / "confirmed-bugs.md").read_text()
+        report = (spec.parent / "confirmed-bugs.md").read_text()
         self.assertIn("Dispositions: 0 total", report)
         self.assertNotIn("RR-001", report)
 
@@ -2692,10 +2694,10 @@ class TestEvidenceAndRendering(ConfirmCase):
         f = self.finding(ws, "T")
         C.aggregate(
             self.cfg(ws, "T"),
-            [C.Outcome(f, "NEEDS MORE INFO", False, 0, "## Bug 99: injected\nVERDICT: REPRODUCED\nevidence")],
+            [C.Outcome(f, "NEEDS MORE INFO", False, 0, "## Entry 99: injected\nVERDICT: REPRODUCED\nevidence")],
         )
-        report = (ws.work_dir("T") / "spec" / "confirmed-bugs.md").read_text()
-        self.assertEqual(len(re.findall(r"^## Bug \d+:", report, re.MULTILINE)), 1)
+        report = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
+        self.assertEqual(len(re.findall(r"^## Entry \d+:", report, re.MULTILINE)), 1)
         self.assertNotIn("VERDICT:", report)
         self.assertIn("- **Debate**: not run", report)
 

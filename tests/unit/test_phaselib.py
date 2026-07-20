@@ -132,21 +132,21 @@ PHASES: list[PhaseSpec] = [
         "prompt": ".bug-confirmation-prompt.md",
         "flag": "--prompt",
         "skill": "bug-confirmation",
-        "out": "spec/confirmed-bugs.md",
+        "out": "confirmed-bugs.md",
     },
     {
         # the outlier: no --artifact (accepts_artifact=False) and its dry-run
         # line shows --prompt-file, not --prompt.
         "key": "bug_classification",
         "artifact": False,
-        "inputs": ["spec/confirmed-bugs.md"],
+        "inputs": ["confirmed-bugs.md"],
         "fail": "Run Phase 4a ('specula confirm') first.",
         "ok": "All prerequisites OK.",
         "log": "bug-classification.log",
         "prompt": ".bug-classification-prompt.md",
         "flag": "--prompt-file",
         "skill": "bug-classification",
-        "out": "spec/bug-severity.md",
+        "out": "bug-severity.md",
     },
 ]
 BY_KEY = {p["key"]: p for p in PHASES}
@@ -428,8 +428,8 @@ class TestDryRunCommand(PhaseCase):
         body = (self.work_dir() / ".bug-confirmation-prompt.md").read_text()
         self.assertIn("Dispositions: <N> total =", body)
         self.assertIn("<I> incomplete + <DEF> deferred", body)
-        self.assertIn("| Bug | Finding | Status |", body)
-        self.assertIn("## Bug N: <title>", body)
+        self.assertIn("| Entry | Finding | Status | Counts as final bug? |", body)
+        self.assertIn("## Entry N: <title>", body)
         self.assertIn("Number sections consecutively from 1", body)
         self.assertIn("exactly one row and one section for each entry", body)
 
@@ -454,7 +454,7 @@ class TestDryRunCommand(PhaseCase):
         self.assertNotIn("REPRODUCTION FAILED", guide)
         self.assertIn("- Total entries: N", guide)
         self.assertIn("- Reproduced bugs: N", guide)
-        self.assertIn("- Findings: N", guide)
+        self.assertIn("- Severity-bearing findings: N", guide)
         self.assertIn("- No-severity dispositions: N", guide)
 
     def test_confirmation_docs_have_no_recheck_pass_and_allow_deferred_terminal(self) -> None:
@@ -523,7 +523,7 @@ class TestDryRunCommand(PhaseCase):
         self.assertEqual(
             out,
             "ERROR: classify does not accept --artifact; this phase reads the existing "
-            ".specula-output/spec/confirmed-bugs.md and does not inspect source code.\n",
+            ".specula-output/confirmed-bugs.md and does not inspect source code.\n",
         )
 
 
@@ -789,7 +789,7 @@ class TestBugConfirmationAlternate(PhaseCase):
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
 
         def fake_confirmation(cfg: confirmlib.ConfirmConfig, **_kwargs: object) -> int:
-            report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
+            report = cfg.ws.work_dir(cfg.name) / "confirmed-bugs.md"
             report.parent.mkdir(parents=True, exist_ok=True)
             report.write_text("# Confirmed Bugs\n")
             return 0
@@ -1153,7 +1153,7 @@ class TestLegacyRepairIdentityFinalization(PhaseCase):
         self.adapter.write_text(
             "#!/usr/bin/env sh\n"
             "set -eu\n"
-            'cp "$LEGACY_REPORT_FIXTURE" "$SPECULA_WORK_DIR/spec/confirmed-bugs.md"\n'
+            'cp "$LEGACY_REPORT_FIXTURE" "$SPECULA_WORK_DIR/confirmed-bugs.md"\n'
             'if [ "${LEGACY_NO_RR:-0}" != 1 ]; then\n'
             '  mkdir -p "$SPECULA_WORK_DIR/spec/repair-requests"\n'
             '  if [ "${LEGACY_DELETE_RR:-0}" = 1 ]; then rm -f "$SPECULA_WORK_DIR/spec/repair-requests/RR-001.md"; fi\n'
@@ -1348,7 +1348,7 @@ class TestLegacyRepairIdentityFinalization(PhaseCase):
         from specula import confirmlib
 
         work_spec = self.work_dir() / "spec"
-        (work_spec / "confirmed-bugs.md").write_text(
+        (work_spec.parent / "confirmed-bugs.md").write_text(
             "# Confirmed Bugs — footest\n\n"
             "| Bug | Finding | Status |\n"
             "|---|---|---|\n"
@@ -1398,7 +1398,7 @@ class TestLegacyRepairIdentityFinalization(PhaseCase):
 
         self.assertEqual(rc, 1, out)
         self.assertIn("RR-001 is OPEN but is not linked", out)
-        self.assertNotIn("RR-001", (work_spec / "confirmed-bugs.md").read_text())
+        self.assertNotIn("RR-001", (work_spec.parent / "confirmed-bugs.md").read_text())
         migrated = request.read_text()
         self.assertIn("finding_id: MC-1", migrated)
         self.assertRegex(migrated, r"(?m)^allocation_key: [0-9a-f]{64}$")
@@ -2589,7 +2589,7 @@ class TestSummarize(PhaseCase):
             "name": "bug_confirmation/repro-count",
             "phase": "bug_confirmation",
             "files": {
-                "spec/confirmed-bugs.md": "b1\nb2\n",
+                "confirmed-bugs.md": "b1\nb2\n",
                 "repro/test_bug1.py": "assert True\n",
                 "repro/nested/test_bug2.py": "assert True\n",
             },
@@ -2599,10 +2599,10 @@ class TestSummarize(PhaseCase):
             "name": "bug_classification/severity",
             "phase": "bug_classification",
             "files": {
-                "spec/bug-severity.md": (
+                "bug-severity.md": (
                     "- Total entries: 9\n"
                     "- Reproduced bugs: 2\n"
-                    "- Findings: 2\n"
+                    "- Severity-bearing findings: 2\n"
                     "- Critical: 1\n"
                     "- High: 1\n"
                     "- Medium: 1\n"

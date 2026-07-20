@@ -311,7 +311,7 @@ class Outcome:
     rounds: int
     body: str  # initial A evidence plus any later A defenses
     rr: str | None = None  # assigned RR-NNN when status is PENDING REPAIR
-    bug_no: int = 0  # 1-based index in confirmed-bugs.md (the "## Bug N:" number)
+    bug_no: int = 0  # 1-based index in confirmed-bugs.md (the "## Entry N:" number)
     # Normalized phase return code for an INCOMPLETE outcome: 75 means the
     # scheduler may retry after rate limiting; 1 means a permanent/format/infra
     # failure. Canonical outcomes leave this at zero.
@@ -1699,8 +1699,10 @@ def _atomic_create_rr(path: Path, text: str) -> None:
         tmp.unlink(missing_ok=True)
 
 
-_REPORT_RR_ROW_RE = re.compile(r"(?m)^\|\s*(\d+)\s*\|\s*([^|\s]+)\s*\|\s*([^|]+?)\s*\|\s*$")
-_REPORT_DETAIL_RE = re.compile(r"(?m)^##\s+Bug\s+(\d+)\s*:")
+_REPORT_RR_ROW_RE = re.compile(
+    r"(?m)^\|\s*(\d+)\s*\|\s*([^|\s]+)\s*\|\s*([^|]+?)\s*\|(?:\s*[^|]*\s*\|)?\s*$"
+)
+_REPORT_DETAIL_RE = re.compile(r"(?m)^##\s+(?:Bug|Entry)\s+(\d+)\s*:")
 
 
 def _legacy_rr_report_identity(
@@ -1717,7 +1719,7 @@ def _legacy_rr_report_identity(
     independently name the same stable Finding ID. Anything less fails closed
     so switching confirmation modes cannot silently create a duplicate OPEN.
     """
-    report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
+    report = cfg.ws.work_dir(cfg.name) / "confirmed-bugs.md"
     if report.is_symlink():
         raise InvalidRepairRequest(f"cannot migrate legacy repair {rid}: confirmed-bugs.md is missing or unsafe")
     if not report.is_file():
@@ -1864,7 +1866,7 @@ def _ensure_rr_stable_identities(
 
 def validate_report_repair_references(cfg: ConfirmConfig) -> None:
     """Validate canonical report links against RR location and lifecycle state."""
-    report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
+    report = cfg.ws.work_dir(cfg.name) / "confirmed-bugs.md"
     if report.is_symlink() or not report.is_file():
         raise InvalidRepairRequest("confirmed-bugs.md is missing or unsafe")
     text = report.read_text()
@@ -1880,7 +1882,7 @@ def validate_report_repair_references(cfg: ConfirmConfig) -> None:
         if pending is None and deferred is None:
             if refs or rendered_status.startswith(("PENDING REPAIR", "DEFERRED")):
                 raise InvalidRepairRequest(
-                    f"report Bug {bug_no} has an RR reference with invalid status {rendered_status!r}"
+                    f"report Entry {bug_no} has an RR reference with invalid status {rendered_status!r}"
                 )
             continue
         match = pending or deferred
@@ -1897,7 +1899,7 @@ def validate_report_repair_references(cfg: ConfirmConfig) -> None:
             end = details[index + 1].start() if index + 1 < len(details) else len(text)
             detail_statuses.extend(re.findall(r"(?m)^- \*\*Status\*\*:\s*(.+?)\s*$", text[detail.end() : end]))
         if detail_statuses != [rendered_status]:
-            raise InvalidRepairRequest(f"report Bug {bug_no} table/detail repair status is inconsistent")
+            raise InvalidRepairRequest(f"report Entry {bug_no} table/detail repair status is inconsistent")
 
         matches = list(rr_dir.rglob(f"{rid}.md")) if rr_dir.is_dir() and not rr_dir.is_symlink() else []
         if len(matches) != 1:
@@ -2130,8 +2132,8 @@ def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
         nums = [int(m.group(1)) for p in rr_dir.rglob("RR-*.md") if (m := re.fullmatch(r"RR-(\d+)\.md", p.name))]
         next_num = max(nums, default=0) + 1
         cx = str(o.finding.data.get("counterexample") or "")
-        # bug_id points at the confirmed-bugs.md heading (## Bug N:) used by the
-        # report and ledger; finding_id separately preserves the stable raw id.
+        # bug_id is the legacy report display label used by the RR ledger;
+        # finding_id separately preserves the stable raw id.
         rid = f"RR-{next_num:03d}"
         merged = _merge_rr(
             rid,
@@ -2460,7 +2462,7 @@ def _report_body(body: str) -> str:
     for line in body.splitlines():
         if re.match(r"^\s*VERDICT\s*:", line, re.I):
             continue
-        if re.match(r"^##\s+Bug\s+\d+\s*:", line, re.I):
+        if re.match(r"^##\s+(?:Bug|Entry)\s+\d+\s*:", line, re.I):
             line = "\\" + line
         lines.append(line)
     return "\n".join(lines).strip()
@@ -2470,10 +2472,10 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     """Write the phase's confirmed-bugs.md from the per-finding outcomes. This is
     the canonical Phase-4 deliverable the classification phase (Phase 4b) and the
     repair loop read; A/B isolation is handled by the run dir, not by a separate
-    filename. Headers are ``## Bug N:`` (integer N, table order) so Phase 4b's
-    "one row per ``## Bug N:`` header" parsing aligns; the finding id (MC-1 / CR-2)
-    is carried as a body field and a table column."""
-    report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
+    filename. Headers are ``## Entry N:`` (integer N, table order) so Phase 4b's
+    "one row per entry header" parsing aligns; the finding id (MC-1 / CR-2) is
+    carried as a body field and a table column."""
+    report = cfg.ws.work_dir(cfg.name) / "confirmed-bugs.md"
 
     def effective_status(outcome: Outcome) -> str:
         if outcome.status != "PENDING REPAIR" or outcome.rr is None:
@@ -2503,9 +2505,9 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     env_limited = [o for o, status in effective if status == "ENV_LIMITED"]
     masked = [o for o, status in effective if status == "MASKED"]
 
-    lines = [f"# Confirmed Bugs — {cfg.name}", ""]
+    lines = [f"# Confirmation Report — {cfg.name}", "", "## Final Result", ""]
     split = (
-        f"Reproduced: {len(reproduced)} = {n_new} NEW + {n_known_unfixed} KNOWN-unfixed"
+        f"Reproduced bugs: {len(reproduced)} = {n_new} NEW + {n_known_unfixed} KNOWN-unfixed"
         f" + {n_known_fixed} KNOWN-fixed + {n_unknown} UNKNOWN"
     )
     lines.append(split)
@@ -2513,7 +2515,15 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     # only triggerable in production (env-limited), or a real anomaly whose
     # consequence a safeguard currently masks. Reported separately so they are
     # neither miscounted as bugs nor lost as false positives.
-    lines.append(f"Findings: {len(env_limited) + len(masked)} = {len(env_limited)} env-limited + {len(masked)} masked")
+    lines.append(f"Masked live findings: {len(masked)}")
+    lines.append(f"Env-limited findings: {len(env_limited)}")
+    lines.append(f"False positives: {status_counts['FALSE POSITIVE']}")
+    lines.append(f"Dropped: {status_counts['DROPPED']}")
+    lines.append(f"Needs more info: {status_counts['NEEDS MORE INFO']}")
+    lines.append(f"Pending repair: {status_counts['PENDING REPAIR']}")
+    lines.append(f"Incomplete: {len(incomplete)}")
+    lines.append(f"Deferred: {deferred_count}")
+    lines.append(f"Total disposition entries: {len(outcomes)}")
     lines.append(
         f"Dispositions: {len(outcomes)} total = {status_counts['REPRODUCED']} reproduced"
         f" + {status_counts['ENV_LIMITED']} env-limited + {status_counts['MASKED']} masked"
@@ -2522,15 +2532,16 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
         f" + {len(incomplete)} incomplete + {deferred_count} deferred"
     )
     lines.append("")
-    lines.append("| Bug | Finding | Status |")
-    lines.append("|---|---|---|")
+    lines.append("| Entry | Finding | Status | Counts as final bug? |")
+    lines.append("|---|---|---|---|")
     for o, status in effective:
         if status == "DEFERRED":
             rendered_status = f"DEFERRED (repair loop exhausted; {o.rr} in deferred/)"
         else:
             rr = f" ({o.rr})" if o.rr else ""
             rendered_status = f"{status}{rr}"
-        lines.append(f"| {o.bug_no} | {o.finding.id} | {rendered_status} |")
+        counts = "yes" if status == "REPRODUCED" else "no"
+        lines.append(f"| {o.bug_no} | {o.finding.id} | {rendered_status} | {counts} |")
     lines.append("")
     for o, status in effective:
         if status == "DEFERRED":
@@ -2539,7 +2550,7 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
             rr = f" ({o.rr})" if o.rr else ""
             rendered_status = f"{status}{rr}"
         title = re.sub(r"[\r\n]+", " ", str(o.finding.data.get("title", ""))).strip()
-        lines.append(f"## Bug {o.bug_no}: {title}")
+        lines.append(f"## Entry {o.bug_no}: {title}")
         lines.append("")
         lines.append(f"- **Finding ID**: {o.finding.id}")
         lines.append(f"- **Status**: {rendered_status}")
@@ -2613,12 +2624,17 @@ def run_parallel_confirmation(cfg: ConfirmConfig, *, retain_rate_limited_state: 
 
 def _withhold(cfg: ConfirmConfig, reason: str, code: int = 1) -> int:
     """Remove a stale deliverable and return an actionable failure code."""
-    report = cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md"
-    if not cfg.dry_run and report.is_file():
-        try:
-            report.unlink()
-        except OSError as exc:
-            print(f"failed to remove stale {report}: {exc}", flush=True)
+    reports = [
+        cfg.ws.work_dir(cfg.name) / "confirmed-bugs.md",
+        cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md",
+    ]
+    if not cfg.dry_run:
+        for report in reports:
+            if report.is_file():
+                try:
+                    report.unlink()
+                except OSError as exc:
+                    print(f"failed to remove stale {report}: {exc}", flush=True)
     try:
         _log(reason)
     except OSError:
@@ -2779,7 +2795,7 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
     order = {f.id: i for i, f in enumerate(findings)}
     outcomes.sort(key=lambda o: order[o.finding.id])
     for i, o in enumerate(outcomes, 1):
-        o.bug_no = i  # the "## Bug N:" number, in table order (drives aggregate + the RR bug_id)
+        o.bug_no = i  # the "## Entry N:" number, in table order (drives aggregate + the RR bug_id)
     try:
         for o in outcomes:
             if o.status.startswith("PENDING REPAIR") and o.rr is None and not cfg.dry_run:
