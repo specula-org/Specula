@@ -74,7 +74,7 @@ Install with `-e` (editable): the `specula` command dispatches to scripts inside
 
 Setup downloads the TLA+ JARs, builds the CFA tool, prepares the MCP tool environments, and offers integration for each supported agent CLI found on `PATH`. It reports and skips any missing agent CLI instead of prompting for it. Setup prompts for global or project-local skill installation when that choice applies.
 
-For Codex, choose `y` to install skills and register MCP servers separately. Choose `plugin` to bundle the skills and MCP tools as `specula-codex@specula`, with cleaner namespacing and easier removal. Rerun `specula setup` and choose `plugin` again to update it.
+For Codex, choose `y` to install skills and register MCP servers separately. Choose `plugin` to bundle the skills and MCP tools as `specula-codex@specula`, with cleaner namespacing and easier removal. Codex currently installs plugins into the active Codex profile, making them available across all projects that use that profile; setup asks for confirmation before making this profile-wide change. Codex does not currently support project-scoped plugin installation. Rerun `specula setup` and choose `plugin` again to update it.
 
 More precisely, setup manages:
 
@@ -84,10 +84,10 @@ More precisely, setup manages:
 | CFA transformer | Builds it with Maven |
 | MCP Python packages | Creates tool-specific virtual environments and installs `mcp` and `jsonschema` where required |
 | Claude Code | Installs skills and registers all three MCP servers |
-| Codex | `y` installs skills and MCP servers separately; `plugin` generates or updates `specula-codex@specula` |
+| Codex | `y` installs skills and MCP servers separately; `plugin` generates or updates `specula-codex@specula` for the active Codex profile |
 | GitHub Copilot CLI | Installs skills and, with Copilot CLI 1.0.21+, registers all three MCP servers |
 
-Copilot MCP registration is user-level and follows `COPILOT_HOME`; the global/local setup choice controls only where skills are installed. Setup leaves an existing same-named MCP server unchanged and reports the conflict instead of overwriting it. Older Copilot CLI versions still install the skills, but MCP registration is skipped with an upgrade warning.
+For Codex, the global/local choice applies only to skills installed separately with `y`; separate MCP registration and plugin installation use the active Codex profile. Copilot MCP registration is user-level and follows `COPILOT_HOME`; its global/local setup choice also controls only where skills are installed. Setup leaves an existing same-named MCP server unchanged and reports the conflict instead of overwriting it. Older Copilot CLI versions still install the skills, but MCP registration is skipped with an upgrade warning.
 
 Setup does **not** install `uv`, Python, a JDK, Maven, Git, `gh`, an agent CLI, target-language dependencies, GNU coreutils, or the optional sandbox dependencies. It does not install the `specula` command either; that is the `uv tool install -e .` step above.
 

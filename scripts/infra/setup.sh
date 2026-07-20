@@ -93,6 +93,7 @@ ask_codex_install() {
   local answer
   echo "  y: install skills and register MCP servers separately." >&2
   echo "  plugin: bundle skills and MCP tools as specula-codex@specula for cleaner namespacing and easier removal." >&2
+  echo "          Codex installs plugins for the current profile, making them available across projects." >&2
   echo "          Rerun specula setup and choose plugin again to update it." >&2
   while true; do
     read -rp "$(echo -e "${BLUE}[?]${NC} Install Specula for Codex? (y/n/plugin): ")" answer
@@ -425,7 +426,13 @@ case "$codex_install" in
     done
     ;;
   plugin)
-    setup_codex_plugin "$PROJECT_ROOT" "$CODEX_PLUGIN_ROOT"
+    print_warning "Codex does not currently support project-scoped plugin installation."
+    if ask_yn "Continue with profile-wide Codex plugin installation?"; then
+      setup_codex_plugin "$PROJECT_ROOT" "$CODEX_PLUGIN_ROOT"
+    else
+      print_status "Skipped Codex plugin installation."
+      print_status "For project-local skills, rerun specula setup, choose 'y', then choose 'local'."
+    fi
     ;;
   skip)
     print_status "Skipped Codex."
