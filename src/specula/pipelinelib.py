@@ -54,8 +54,11 @@ from specula.snapshotlib import (
     SOURCE_MAP,
     SnapshotError,
     capture_changes,
+    clean_git_environment,
     load_sources,
     prepare_sources,
+    sanitize_snapshot_git_environment,
+    validate_snapshot_destinations,
 )
 from specula.tlc_resources import (
     MEMORY_LIMIT_ENV,
@@ -733,13 +736,16 @@ class Pipeline:
             return
         artifact_sha: str | None = None
         if self.artifact:
+            artifact = Path(self.artifact).resolve()
             with contextlib.suppress(Exception):
                 r = subprocess.run(
-                    ["git", "-C", self.artifact, "rev-parse", "HEAD"],
+                    ["git", "-C", str(artifact), "rev-parse", "--show-toplevel", "HEAD"],
+                    env=clean_git_environment(),
                     capture_output=True,
                 )
-                if r.returncode == 0:
-                    artifact_sha = r.stdout.decode(errors="replace").strip()
+                lines = r.stdout.decode(errors="replace").splitlines()
+                if r.returncode == 0 and len(lines) == 2 and Path(lines[0]).resolve() == artifact:
+                    artifact_sha = lines[1]
         model, effort = self._resolved_run_tuning()
         meta = {
             "run_id": self.run_id,
@@ -849,12 +855,13 @@ class Pipeline:
             return
         if self.run_dir is None:
             raise SnapshotError("--keep-original requires an isolated run")
+        if set(self._snapshot_sources) != set(names):
+            raise SnapshotError("private source targets do not match this invocation")
+        validate_snapshot_destinations(self.run_dir, tuple(self._snapshot_sources))
         if self.dry_run:
             log("[DRY RUN] would create a full private source copy")
             return
         snapshots = prepare_sources(self.run_dir, self._snapshot_sources)
-        if set(snapshots) != set(names):
-            raise SnapshotError("private source targets do not match this invocation")
         self._snapshot_paths = [snapshots[name].source for name in names]
         existing = [path for path in os.environ.get("SPECULA_SANDBOX_EXTRA_WRITE", "").split(os.pathsep) if path]
         os.environ["SPECULA_SANDBOX_EXTRA_WRITE"] = os.pathsep.join(
@@ -1550,6 +1557,11 @@ class Pipeline:
 
     def _run_launcher(self, script: str, args: list[str]) -> None:
         env = os.environ.copy()
+        if self.keep_original:
+            # Phase launchers calculate their exact private-source ceiling after
+            # parsing targets.  Remove ambient repository selectors before even
+            # their prerequisite checks run.
+            sanitize_snapshot_git_environment(env)
         env.update(
             {
                 "SPECULA_RATE_LIMIT_REACTIVE": "1",

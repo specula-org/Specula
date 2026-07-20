@@ -192,6 +192,7 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_EFFORT",
             "CLAUDE_ALIAS",
             "CLAUDE_EFFORT",
+            "SPECULA_SOURCE_SNAPSHOT",
             "GIT_CEILING_DIRECTORIES",
         ):
             self.set_env(var, str(self.run_dir) if var == "SPECULA_RUN_DIR" else None)
@@ -1482,6 +1483,48 @@ class TestLegacyRepairIdentityFinalization(PhaseCase):
 
 
 class TestRunAgentBlocking(PhaseCase):
+    def test_snapshot_turn_clears_repository_git_environment(self) -> None:
+        outer = self.tmp()
+        subprocess.run(["git", "init", "--quiet", str(outer)], check=True)
+        config = outer / ".git" / "config"
+        before = config.read_bytes()
+        adapter = self.tmp() / "adapter.sh"
+        capture = self.tmp() / "capture"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            "git config --local specula.private-probe touched >/dev/null 2>&1\n"
+            "probe_rc=$?\n"
+            f'printf "%s\\n%s\\n%s\\n%s\\n" "$probe_rc" "${{GIT_DIR-unset}}" '
+            f'"$GIT_SSH_COMMAND" "$GIT_CEILING_DIRECTORIES" > "{capture}"\n'
+            'printf "done\\n" > "$log"\n'
+        )
+        adapter.chmod(0o755)
+        trusted_cwd = self.tmp()
+        self.set_env("SPECULA_SOURCE_SNAPSHOT", "1")
+        self.set_env("GIT_DIR", str(outer / ".git"))
+        self.set_env("GIT_WORK_TREE", str(outer))
+        self.set_env("GIT_SSH_COMMAND", "ssh -i private-key")
+
+        rc, text = phaselib.run_agent_blocking(
+            adapter,
+            "prompt body",
+            self.tmp() / "prompt.md",
+            self.tmp() / "turn.log",
+            phase_key="bug_confirmation",
+            work_dir=self.work_dir(),
+            cwd=trusted_cwd,
+            claude_alias="profile",
+        )
+
+        self.assertEqual((rc, text), (0, "done\n"))
+        probe_rc, git_dir, ssh_command, ceiling = capture.read_text().splitlines()
+        self.assertNotEqual(probe_rc, "0")
+        self.assertEqual(git_dir, "unset")
+        self.assertEqual(ssh_command, "ssh -i private-key")
+        self.assertEqual(ceiling, str(trusted_cwd.parent))
+        self.assertEqual(config.read_bytes(), before)
+
     def test_policy_block_retries_with_one_non_accumulating_recovery_note(self) -> None:
         adapter = self.tmp() / "adapter.sh"
         count = self.tmp() / "count"
@@ -2753,17 +2796,30 @@ class TestModelEffortLiveLaunch(PhaseCase):
             "#!/usr/bin/env sh\n"
             "git config --local specula.private-probe touched >/dev/null 2>&1\n"
             "probe_rc=$?\n"
-            f'printf "%s\\n%s\\n" "$GIT_CEILING_DIRECTORIES" "$probe_rc" > "{record}"\n'
+            f'printf "%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n" "$GIT_CEILING_DIRECTORIES" "$probe_rc" '
+            f'"${{GIT_DIR-unset}}" "${{GIT_EXTERNAL_DIFF-unset}}" "$GIT_SSH_COMMAND" "$GIT_ASKPASS" '
+            f'"$SPECULA_SOURCE_SNAPSHOT" > "{record}"\n'
         )
         adapter.chmod(0o755)
         self.set_env("SPECULA_RUN_DIR", str(run_dir))
+        self.set_env("GIT_DIR", str(outer / ".git"))
+        self.set_env("GIT_WORK_TREE", str(outer))
+        self.set_env("GIT_CEILING_DIRECTORIES", "/untrusted")
+        self.set_env("GIT_EXTERNAL_DIFF", str(original / "external-diff.sh"))
+        self.set_env("GIT_SSH_COMMAND", "ssh -i private-key")
+        self.set_env("GIT_ASKPASS", "/usr/bin/askpass")
 
         rc, out = self.run_phase("code_analysis", ["--agent=fake", NAME])
 
         self.assertEqual(rc, 0, out)
-        ceiling, probe_rc = record.read_text().splitlines()
+        ceiling, probe_rc, git_dir, external_diff, ssh_command, askpass, snapshot_mode = record.read_text().splitlines()
         self.assertEqual(ceiling, str(private.parent))
         self.assertNotEqual(probe_rc, "0")
+        self.assertEqual(git_dir, "unset")
+        self.assertEqual(external_diff, "unset")
+        self.assertEqual(ssh_command, "ssh -i private-key")
+        self.assertEqual(askpass, "/usr/bin/askpass")
+        self.assertEqual(snapshot_mode, "1")
         self.assertEqual(outer_config.read_bytes(), config_before)
 
     def test_in_place_agent_keeps_launch_cwd(self) -> None:
@@ -2917,7 +2973,8 @@ class TestReviewPhase(PhaseCase):
         seen = self.tmp() / "cwd"
         self.install_adapter(
             "fake",
-            f'printf "%s\\n%s\\n%s\\n" "$(pwd -P)" "$PWD" "$SPECULA_TARGET_REPO_DIR" > "{seen}"\n'
+            f'printf "%s\\n%s\\n%s\\n%s\\n%s\\n" "$(pwd -P)" "$PWD" "$SPECULA_TARGET_REPO_DIR" '
+            f'"${{GIT_DIR-unset}}" "$GIT_SSH_COMMAND" > "{seen}"\n'
             'printf "review change\\n" > review-relative.txt\n',
         )
         self.set_env("SPECULA_PROGRESS", "off")
@@ -2926,11 +2983,16 @@ class TestReviewPhase(PhaseCase):
         os.chdir(launch_cwd)
         self.addCleanup(os.chdir, old_cwd)
         self.set_env("PWD", str(launch_cwd))
+        self.set_env("GIT_DIR", str(original / ".git"))
+        self.set_env("GIT_SSH_COMMAND", "ssh -i private-key")
 
         rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
 
         self.assertEqual(rc, 0, out)
-        self.assertEqual(seen.read_text().splitlines(), [str(private), str(private), str(private)])
+        self.assertEqual(
+            seen.read_text().splitlines(),
+            [str(private), str(private), str(private), "unset", "ssh -i private-key"],
+        )
         self.assertTrue((private / "review-relative.txt").is_file())
         self.assertFalse((original / "review-relative.txt").exists())
         self.assertFalse((launch_cwd / "review-relative.txt").exists())

@@ -32,6 +32,7 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 
 from specula import pipelinelib as pl
 from specula.phaselib import Workspace, _logical_cwd
+from specula.snapshotlib import SOURCE_MAP, SnapshotError
 
 RR_TEMPLATE = """\
 ---
@@ -889,6 +890,108 @@ class TestSourceSnapshots(TmpCwd):
         self.assertEqual(Workspace(p.targets, artifact=str(original)).find_repo_dir("demo"), str(source))
         self.assertEqual(os.environ["SPECULA_SANDBOX_EXTRA_WRITE"].split(os.pathsep), ["/cache", str(source)])
         self.assertFalse(any(arg.startswith("--artifact=") for arg in p._phase_args(p.targets)))
+
+    def test_prepare_rejects_path_list_separator_before_copy(self) -> None:
+        original = self.tmp / "original"
+        original.mkdir()
+        run = self.tmp / "run"
+        run.mkdir()
+        name = f"left{os.pathsep}right"
+        p = make_pipeline([f"{name}|g|l|r"], keep_original=True)
+        p.run_dir = run
+        p._snapshot_sources = {name: original}
+
+        with self.assertRaisesRegex(SnapshotError, "path-list separator"):
+            p.prepare_source_snapshots([name])
+
+        self.assertFalse((run / SOURCE_MAP).exists())
+        self.assertFalse((run / name / "source").exists())
+
+    def test_dry_run_rejects_path_list_separator(self) -> None:
+        run = self.tmp / "run"
+        run.mkdir()
+        name = f"left{os.pathsep}right"
+        p = make_pipeline([f"{name}|g|l|r"], keep_original=True, dry_run=True)
+        p.run_dir = run
+        p._snapshot_sources = {name: self.tmp / "original"}
+
+        with self.assertRaisesRegex(SnapshotError, "path-list separator"):
+            p.prepare_source_snapshots([name])
+
+        self.assertFalse((run / SOURCE_MAP).exists())
+
+    def test_run_metadata_git_revision_ignores_ambient_repository(self) -> None:
+        def repo(path: Path, content: str) -> str:
+            path.mkdir()
+            subprocess.run(["git", "init", "--quiet", str(path)], check=True)
+            (path / "tracked.txt").write_text(content)
+            subprocess.run(["git", "-C", str(path), "add", "tracked.txt"], check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(path),
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.com",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    "initial",
+                ],
+                check=True,
+            )
+            return subprocess.run(
+                ["git", "-C", str(path), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+
+        artifact = self.tmp / "artifact"
+        external = self.tmp / "external"
+        artifact_sha = repo(artifact, "artifact\n")
+        self.assertNotEqual(artifact_sha, repo(external, "external\n"))
+        run = self.tmp / "run"
+        run.mkdir()
+        p = pl.Pipeline()
+        p.run_dir = run
+        p.run_id = "run"
+        p.artifact = str(artifact)
+        ambient = {"GIT_DIR": str(external / ".git"), "GIT_WORK_TREE": str(external)}
+
+        with mock.patch.dict(os.environ, ambient, clear=False):
+            p._write_run_meta()
+
+        self.assertEqual(json.loads((run / "run.json").read_text())["artifact_git_sha"], artifact_sha)
+
+        nested = external / "plain-artifact"
+        nested.mkdir()
+        nested_run = self.tmp / "nested-run"
+        nested_run.mkdir()
+        nested_pipeline = pl.Pipeline()
+        nested_pipeline.run_dir = nested_run
+        nested_pipeline.run_id = "nested-run"
+        nested_pipeline.artifact = str(nested)
+        nested_pipeline._write_run_meta()
+
+        self.assertIsNone(json.loads((nested_run / "run.json").read_text())["artifact_git_sha"])
+
+        linked = self.tmp / "linked-worktree"
+        subprocess.run(
+            ["git", "-C", str(artifact), "worktree", "add", "--quiet", "--detach", str(linked)],
+            check=True,
+        )
+        linked_run = self.tmp / "linked-run"
+        linked_run.mkdir()
+        linked_pipeline = pl.Pipeline()
+        linked_pipeline.run_dir = linked_run
+        linked_pipeline.run_id = "linked-run"
+        linked_pipeline.artifact = str(linked)
+        linked_pipeline._write_run_meta()
+
+        self.assertEqual(json.loads((linked_run / "run.json").read_text())["artifact_git_sha"], artifact_sha)
 
 
 class TestRunReview(TmpCwd):
@@ -1991,6 +2094,33 @@ class TestRunLauncherExitCodes(TmpCwd):
         p.tlc_scope = "/tmp/specula-run-scope"
         p._run_launcher("fake.sh", [])
         self.assertEqual(captured.read_text().splitlines(), ["80G", "12", "/tmp/specula-run-scope"])
+
+    def test_snapshot_phase_child_drops_repository_selectors_only(self) -> None:
+        captured = self.tmp / "snapshot-env"
+        p = self._pipeline(
+            f'printf \'%s\\n\' "${{GIT_DIR-unset}}" "${{GIT_WORK_TREE-unset}}" '
+            f'"${{GIT_CONFIG_COUNT-unset}}" "${{GIT_EXTERNAL_DIFF-unset}}" "$GIT_SSH_COMMAND" '
+            f'"$GIT_ASKPASS" > "{captured}"\n'
+        )
+        p.keep_original = True
+        ambient = {
+            "GIT_DIR": "/outside/.git",
+            "GIT_WORK_TREE": "/outside",
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "core.worktree",
+            "GIT_CONFIG_VALUE_0": "/outside",
+            "GIT_EXTERNAL_DIFF": "/outside/diff.sh",
+            "GIT_SSH_COMMAND": "ssh -i private-key",
+            "GIT_ASKPASS": "/usr/bin/askpass",
+        }
+
+        with mock.patch.dict(os.environ, ambient, clear=False):
+            p._run_launcher("fake.sh", [])
+
+        self.assertEqual(
+            captured.read_text().splitlines(),
+            ["unset", "unset", "unset", "unset", "ssh -i private-key", "/usr/bin/askpass"],
+        )
 
     def test_sigterm_is_forwarded_to_active_phase(self) -> None:
         forwarded = self.tmp / "forwarded"

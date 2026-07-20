@@ -54,6 +54,46 @@ class SnapshotTests(unittest.TestCase):
         (source / "file.txt").write_text("plain source\n")
         return source
 
+    def test_snapshot_git_environment_removes_only_repository_selectors(self) -> None:
+        env = {
+            "GIT_DIR": "/outside/.git",
+            "GIT_WORK_TREE": "/outside",
+            "GIT_INDEX_FILE": "/outside/index",
+            "GIT_OBJECT_DIRECTORY": "/outside/objects",
+            "GIT_CONFIG": "/outside/config",
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "core.worktree",
+            "GIT_CONFIG_VALUE_0": "/outside",
+            "GIT_CEILING_DIRECTORIES": "/untrusted",
+            "GIT_EXTERNAL_DIFF": "/outside/diff.sh",
+            "GIT_SSH_COMMAND": "ssh -i key",
+            "GIT_ASKPASS": "/usr/bin/askpass",
+            "GIT_AUTHOR_NAME": "Developer",
+            "SSH_AUTH_SOCK": "/tmp/agent.sock",
+            "GITHUB_TOKEN": "token",
+        }
+
+        sl.sanitize_snapshot_git_environment(env, ceiling="/private")
+
+        for key in (
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_INDEX_FILE",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_CONFIG",
+            "GIT_CONFIG_COUNT",
+            "GIT_CONFIG_KEY_0",
+            "GIT_CONFIG_VALUE_0",
+            "GIT_EXTERNAL_DIFF",
+        ):
+            self.assertNotIn(key, env)
+        self.assertEqual(env["GIT_CEILING_DIRECTORIES"], "/private")
+        self.assertEqual(env["GIT_SSH_COMMAND"], "ssh -i key")
+        self.assertEqual(env["GIT_ASKPASS"], "/usr/bin/askpass")
+        self.assertEqual(env["GIT_AUTHOR_NAME"], "Developer")
+        self.assertEqual(env["SSH_AUTH_SOCK"], "/tmp/agent.sock")
+        self.assertEqual(env["GITHUB_TOKEN"], "token")
+
     def test_full_tree_diff_round_trip_leaves_original_unchanged(self) -> None:
         original = self._repo()
         original_index = (original / ".git" / "index").read_bytes()
@@ -256,6 +296,29 @@ class SnapshotTests(unittest.TestCase):
         with self.assertRaisesRegex(sl.SnapshotError, "fsmonitor"):
             sl.prepare_sources(run, {"demo": original})
 
+    def test_automatic_command_git_configs_are_rejected(self) -> None:
+        keys = (
+            "filter.escape.clean",
+            "filter.escape.smudge",
+            "filter.escape.process",
+            "diff.external",
+            "diff.escape.command",
+            "diff.escape.textconv",
+            "merge.escape.driver",
+        )
+        for index, key in enumerate(keys):
+            with self.subTest(key=key):
+                original = self._repo(f"command-{index}")
+                _git(original, "config", key, str(original / "original-command.sh"))
+                run = self.root / f"run-command-{index}"
+                run.mkdir()
+
+                with self.assertRaisesRegex(sl.SnapshotError, "automatic command config"):
+                    sl.prepare_sources(run, {"demo": original})
+
+                self.assertFalse((run / sl.SOURCE_MAP).exists())
+                self.assertFalse((run / "demo" / "source").exists())
+
     def test_boolean_fsmonitor_values_are_supported(self) -> None:
         for value in ("true", "false"):
             with self.subTest(value=value):
@@ -345,6 +408,58 @@ class SnapshotTests(unittest.TestCase):
         snapshots = sl.prepare_sources(run, {"first": first, "second": second})
         self.assertEqual(set(snapshots), {"first", "second"})
         self.assertEqual(preserved.read_text(), "keep\n")
+
+    def test_path_list_separator_is_rejected_before_copy_and_on_resume(self) -> None:
+        original = self._repo()
+        run = self.root / "run"
+        run.mkdir()
+        invalid_name = f"left{os.pathsep}right"
+
+        with (
+            mock.patch.object(shutil, "copytree", wraps=shutil.copytree) as copytree,
+            self.assertRaisesRegex(sl.SnapshotError, "path-list separator"),
+        ):
+            sl.prepare_sources(run, {invalid_name: original})
+        copytree.assert_not_called()
+        self.assertFalse((run / sl.SOURCE_MAP).exists())
+
+        safe_run = self.root / "safe-run"
+        safe_run.mkdir()
+        sl.prepare_sources(safe_run, {"demo": original})
+        unsafe_run = self.root / f"renamed{os.pathsep}run"
+        safe_run.rename(unsafe_run)
+
+        with self.assertRaisesRegex(sl.SnapshotError, "path-list separator"):
+            sl.load_sources(unsafe_run)
+
+    def test_multi_target_separator_is_rejected_before_any_copy(self) -> None:
+        first = self._repo("first")
+        second = self._repo("second")
+        run = self.root / "run"
+        run.mkdir()
+        invalid_name = f"second{os.pathsep}invalid"
+
+        with (
+            mock.patch.object(shutil, "copytree", wraps=shutil.copytree) as copytree,
+            self.assertRaisesRegex(sl.SnapshotError, "path-list separator"),
+        ):
+            sl.prepare_sources(run, {"first": first, invalid_name: second})
+
+        copytree.assert_not_called()
+        self.assertFalse((run / sl.SOURCE_MAP).exists())
+
+    def test_run_path_separator_is_rejected_before_copy(self) -> None:
+        original = self._repo()
+        run = self.root / f"run{os.pathsep}unsafe"
+        run.mkdir()
+
+        with (
+            mock.patch.object(shutil, "copytree", wraps=shutil.copytree) as copytree,
+            self.assertRaisesRegex(sl.SnapshotError, "path-list separator"),
+        ):
+            sl.prepare_sources(run, {"demo": original})
+        copytree.assert_not_called()
+        self.assertFalse((run / sl.SOURCE_MAP).exists())
 
     def test_map_write_failure_rolls_back_all_prepared_targets(self) -> None:
         first = self._repo("first")

@@ -15,7 +15,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +30,32 @@ _PATHSPEC = (
     ":(exclude,glob)**/.git/**",
 )
 _RAW_ATTRIBUTES = "* !diff -filter -ident -text !eol !working-tree-encoding\n"
+
+# Repository-local variables reported by ``git rev-parse --local-env-vars``,
+# plus the discovery/config selectors that can make a child Git process ignore
+# its private cwd.  Keep authentication, identity, editor, and tracing variables
+# intact for agents; those do not select another repository.
+_GIT_REPOSITORY_ENV = frozenset(
+    {
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_CEILING_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_DIR",
+        "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+        "GIT_EXTERNAL_DIFF",
+        "GIT_GRAFT_FILE",
+        "GIT_IMPLICIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_NAMESPACE",
+        "GIT_NO_REPLACE_OBJECTS",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_PREFIX",
+        "GIT_QUARANTINE_PATH",
+        "GIT_REPLACE_REF_BASE",
+        "GIT_SHALLOW_FILE",
+        "GIT_WORK_TREE",
+    }
+)
 
 
 class SnapshotError(RuntimeError):
@@ -46,7 +72,17 @@ class SourceSnapshot:
     is_git: bool
 
 
-def _git_env(extra: Mapping[str, str] | None = None) -> dict[str, str]:
+def sanitize_snapshot_git_environment(env: MutableMapping[str, str], *, ceiling: str | None = None) -> None:
+    """Remove ambient selectors that can rebind Git outside a private source."""
+    for key in tuple(env):
+        if key in _GIT_REPOSITORY_ENV or key == "GIT_CONFIG" or key.startswith("GIT_CONFIG_"):
+            env.pop(key, None)
+    if ceiling is not None:
+        env["GIT_CEILING_DIRECTORIES"] = ceiling
+
+
+def clean_git_environment(extra: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Return a deterministic environment for Specula-owned local Git calls."""
     env = os.environ.copy()
     for key in list(env):
         if key.startswith("GIT_"):
@@ -66,6 +102,10 @@ def _git_env(extra: Mapping[str, str] | None = None) -> dict[str, str]:
     if extra:
         env.update(extra)
     return env
+
+
+def _git_env(extra: Mapping[str, str] | None = None) -> dict[str, str]:
+    return clean_git_environment(extra)
 
 
 def _git(args: Sequence[str], *, cwd: Path | None = None, env: Mapping[str, str] | None = None) -> str:
@@ -164,6 +204,21 @@ def _validate_private_path(root: Path, raw: str, label: str, source: Path) -> No
         raise SnapshotError(f"copied Git {label} points outside the private source: {source}")
 
 
+def _is_automatic_command_config(key: str) -> bool:
+    """Whether a local Git operation can automatically launch this command."""
+    if key == "diff.external":
+        return True
+    fields = key.split(".")
+    if len(fields) < 3:
+        return False
+    section, variable = fields[0], fields[-1]
+    return (
+        (section == "filter" and variable in {"clean", "smudge", "process"})
+        or (section == "diff" and variable in {"command", "textconv"})
+        or (section == "merge" and variable == "driver")
+    )
+
+
 def _validate_private_git(source: Path, expected_git: bool) -> None:
     has_git = (source / ".git").is_dir()
     if has_git != expected_git:
@@ -214,6 +269,9 @@ def _validate_private_git(source: Path, expected_git: bool) -> None:
         entries = _git_config_entries(config)
         if any(key == "include.path" or (key.startswith("includeif.") and key.endswith(".path")) for key, _ in entries):
             raise SnapshotError(f"copied Git config includes are not supported: {source}")
+        command_keys = [key for key, _ in entries if _is_automatic_command_config(key)]
+        if command_keys:
+            raise SnapshotError(f"copied Git automatic command config is not supported ({command_keys[0]}): {source}")
         hook_values = [value for key, value in entries if key == "core.hookspath"]
         if any("\n" in value for value in hook_values):
             raise SnapshotError(f"copied Git hooks path is invalid: {source}")
@@ -249,7 +307,18 @@ def _target_paths(run_dir: Path, name: str) -> tuple[Path, Path, Path]:
     if not name or Path(name).name != name or name in {".", ".."}:
         raise SnapshotError(f"invalid snapshot target name: {name!r}")
     target = run_dir / name
+    if os.pathsep in os.fspath(target):
+        raise SnapshotError(
+            f"private source path contains the environment path-list separator {os.pathsep!r}: {target}"
+        )
     return target / "source", target / "baseline.git", target / "changes.patch"
+
+
+def validate_snapshot_destinations(run_dir: Path, names: Sequence[str]) -> None:
+    """Validate private snapshot destinations without creating any files."""
+    run_root = run_dir.resolve()
+    for name in names:
+        _target_paths(run_root, name)
 
 
 def _snapshot_document(snapshots: Mapping[str, SourceSnapshot]) -> dict[str, object]:
@@ -347,6 +416,11 @@ def prepare_sources(run_dir: Path, sources: Mapping[str, Path]) -> dict[str, Sou
             raise SnapshotError("snapshot sources do not match this run")
         return snapshots
 
+    # Validate every destination before copying the first source.  In addition
+    # to making failure transactional, this protects both the sandbox write
+    # allowlist and Git's ceiling list, neither of which has a path escaping
+    # mechanism for ``os.pathsep``.
+    target_paths = {name: _target_paths(run_root, name) for name in sources}
     prepared: dict[str, SourceSnapshot] = {}
     attempted: list[tuple[Path, Path, Path, Path]] = []
     created_targets: list[Path] = []
@@ -354,7 +428,7 @@ def prepare_sources(run_dir: Path, sources: Mapping[str, Path]) -> dict[str, Sou
     try:
         for name, raw_source in sources.items():
             original = raw_source.resolve()
-            source, control, patch = _target_paths(run_root, name)
+            source, control, patch = target_paths[name]
             target = source.parent
             if not original.is_dir():
                 raise SnapshotError(f"source is not a directory: {original}")

@@ -870,7 +870,9 @@ class TestDriver(ConfirmCase):
         trusted_cwd.mkdir()
         (trusted_cwd / "stale").write_text("old\n")
         original = root / "original"
-        original.mkdir()
+        subprocess.run(["git", "init", "--quiet", str(original)], check=True)
+        original_config = original / ".git" / "config"
+        config_before = original_config.read_bytes()
         adapter = root / "consolidate-cwd-adapter.sh"
         adapter.write_text(
             "#!/bin/sh\n"
@@ -900,6 +902,9 @@ class TestDriver(ConfirmCase):
             "CAPTURE": str(root),
             "COUNT": str(root / "consolidate-count"),
             "CANDIDATES": str(spec / "candidates.json"),
+            "SPECULA_SOURCE_SNAPSHOT": "1",
+            "GIT_DIR": str(original / ".git"),
+            "GIT_WORK_TREE": str(original),
         }
         try:
             os.chdir(original)
@@ -914,6 +919,7 @@ class TestDriver(ConfirmCase):
         self.assertFalse((trusted_cwd / "stale").exists())
         self.assertEqual((trusted_cwd / "relative-touch").read_text(), "1\n2\n3\n")
         self.assertFalse((original / "relative-touch").exists())
+        self.assertEqual(original_config.read_bytes(), config_before)
         git_root = subprocess.run(
             ["git", "-C", str(trusted_cwd), "rev-parse", "--show-toplevel"],
             check=True,
@@ -2814,6 +2820,43 @@ class TestRepoIsolation(ConfirmCase):
             self.assertTrue((Path(path) / "tracked.txt").is_file())
         finally:
             cleanup()
+
+    def test_snapshot_worktree_dispatch_ignores_ambient_repository(self) -> None:
+        repo = self._repo()
+        external = Path(self.tmp) / "external"
+        subprocess.run(["git", "init", "--quiet", str(external)], check=True)
+        external_config = external / ".git" / "config"
+        config_before = external_config.read_bytes()
+        worktrees_before = subprocess.run(
+            ["git", "-C", str(external), "worktree", "list", "--porcelain"],
+            check=True,
+            capture_output=True,
+        ).stdout
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding(
+            {"id": "MC-1", "source": "model-checking"},
+            ws.work_dir("T") / "confirmation" / "MC-1",
+        )
+        ambient = {
+            "SPECULA_SOURCE_SNAPSHOT": "1",
+            "GIT_DIR": str(external / ".git"),
+            "GIT_WORK_TREE": str(external),
+        }
+
+        with mock.patch.dict(os.environ, ambient, clear=False):
+            path, cleanup = C.setup_repo(cfg, f)
+            try:
+                self.assertTrue((Path(path) / "tracked.txt").is_file())
+            finally:
+                cleanup()
+
+        self.assertEqual(external_config.read_bytes(), config_before)
+        worktrees_after = subprocess.run(
+            ["git", "-C", str(external), "worktree", "list", "--porcelain"],
+            check=True,
+            capture_output=True,
+        ).stdout
+        self.assertEqual(worktrees_after, worktrees_before)
 
     def test_local_cache_ignores_own_output_but_hashes_untracked_contents(self) -> None:
         repo = self._repo()

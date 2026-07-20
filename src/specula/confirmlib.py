@@ -52,6 +52,7 @@ from specula.phaselib import (
 )
 from specula.prompts import render
 from specula.skill_refs import prompt_skill_ids
+from specula.snapshotlib import SNAPSHOT_MODE_ENV, clean_git_environment
 
 SKILLS = SPECULA_ROOT / "skills"
 PHASE_KEY = "bug_confirmation"
@@ -86,6 +87,19 @@ _VERDICT_RE = re.compile(r"^\s*VERDICT:\s*(.+?)\s*$", re.MULTILINE)
 _rr_lock = threading.RLock()
 _print_lock = threading.Lock()
 _log_file: Path | None = None  # when set, _log also tees here (the phase's bug-confirmation.log)
+
+
+def _dispatcher_git_env(path: str | Path | None = None) -> dict[str, str] | None:
+    """Use deterministic Git context for Specula-owned snapshot operations."""
+    if not os.environ.get(SNAPSHOT_MODE_ENV):
+        return None
+    extra: dict[str, str] = {}
+    if path is not None:
+        ceiling = str(Path(path).resolve().parent)
+        if os.pathsep in ceiling:
+            raise RuntimeError("private dispatcher path cannot be represented in GIT_CEILING_DIRECTORIES")
+        extra["GIT_CEILING_DIRECTORIES"] = ceiling
+    return clean_git_environment(extra)
 
 
 def _set_log_file(path: Path | None) -> None:
@@ -490,6 +504,7 @@ def _fresh_turn_cwd(f: Finding, role: str, turn_no: int, lease: _FindingLease | 
     try:
         subprocess.run(
             ["git", "init", "--quiet", str(cwd)],
+            env=_dispatcher_git_env(cwd),
             check=True,
             capture_output=True,
             text=True,
@@ -515,6 +530,7 @@ def _consolidate_cwd(work_dir: Path, *, fresh: bool) -> Path:
         try:
             subprocess.run(
                 ["git", "init", "--quiet", str(cwd)],
+                env=_dispatcher_git_env(cwd),
                 check=True,
                 capture_output=True,
                 text=True,
@@ -528,6 +544,7 @@ def _consolidate_cwd(work_dir: Path, *, fresh: bool) -> Path:
     try:
         probe = subprocess.run(
             ["git", "-C", str(cwd), "rev-parse", "--show-toplevel", "--absolute-git-dir"],
+            env=_dispatcher_git_env(cwd),
             check=True,
             capture_output=True,
             text=True,
@@ -562,10 +579,18 @@ def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]
 def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Callable[[], None]]:
     """Per-finding detached git worktree with the launch dir's local changes copied
     in. Raises on any failure; the finding then remains uncached and retryable."""
-    probe = subprocess.run(["git", "-C", repo, "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True)
+    git_env = _dispatcher_git_env(repo)
+    probe = subprocess.run(
+        ["git", "-C", repo, "rev-parse", "--is-inside-work-tree"],
+        env=git_env,
+        capture_output=True,
+        text=True,
+    )
     if probe.returncode != 0 or probe.stdout.strip() != "true":
         raise ConfirmationFailed(f"{f.id}: worktree isolation requested but {repo!r} is not a git checkout")
-    root_result = subprocess.run(["git", "-C", repo, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    root_result = subprocess.run(
+        ["git", "-C", repo, "rev-parse", "--show-toplevel"], env=git_env, capture_output=True, text=True
+    )
     if root_result.returncode != 0:
         raise ConfirmationFailed(f"{f.id}: could not resolve repository root: {root_result.stderr.strip()}")
     root = Path(root_result.stdout.strip()).resolve()
@@ -581,12 +606,15 @@ def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Cal
         rel = output_rel.as_posix()
         pathspec += [f":(exclude){rel}", f":(exclude){rel}/**"]
     status_cmd += pathspec
-    dirty = subprocess.run(status_cmd, capture_output=True, text=True)
+    dirty = subprocess.run(status_cmd, env=git_env, capture_output=True, text=True)
     if dirty.returncode != 0:
         raise ConfirmationFailed(f"{f.id}: could not inspect repository state: {dirty.stderr.strip()}")
-    patch = subprocess.run(["git", "-C", str(root), "diff", "--binary", "HEAD", *pathspec], capture_output=True)
+    patch = subprocess.run(
+        ["git", "-C", str(root), "diff", "--binary", "HEAD", *pathspec], env=git_env, capture_output=True
+    )
     untracked = subprocess.run(
         ["git", "-C", str(root), "ls-files", "--others", "--exclude-standard", "-z", *pathspec],
+        env=git_env,
         capture_output=True,
     )
     if patch.returncode != 0 or untracked.returncode != 0:
@@ -601,7 +629,11 @@ def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Cal
         raise ConfirmationFailed(f"{f.id}: refusing stale worktree symlink")
     # Target only this dispatcher-owned path. Avoid global `worktree prune`,
     # which can affect unrelated user worktrees.
-    subprocess.run(["git", "-C", str(root), "worktree", "remove", "--force", str(wt)], capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(root), "worktree", "remove", "--force", str(wt)],
+        env=git_env,
+        capture_output=True,
+    )
     if wt.exists():
         if wt.is_dir():
             shutil.rmtree(wt)
@@ -610,6 +642,7 @@ def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Cal
     try:
         subprocess.run(
             ["git", "-C", str(root), "worktree", "add", "--detach", "--force", str(wt)],
+            env=git_env,
             check=True,
             capture_output=True,
             text=True,
@@ -620,7 +653,10 @@ def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Cal
     try:
         if patch.stdout:
             applied = subprocess.run(
-                ["git", "-C", str(wt), "apply", "--binary", "-"], input=patch.stdout, capture_output=True
+                ["git", "-C", str(wt), "apply", "--binary", "-"],
+                env=git_env,
+                input=patch.stdout,
+                capture_output=True,
             )
             if applied.returncode != 0:
                 raise ConfirmationFailed(
@@ -637,7 +673,11 @@ def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Cal
             else:
                 shutil.copy2(source, destination)
     except Exception:
-        subprocess.run(["git", "-C", str(root), "worktree", "remove", "--force", str(wt)], capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(root), "worktree", "remove", "--force", str(wt)],
+            env=git_env,
+            capture_output=True,
+        )
         raise
 
     if dirty.stdout.strip():
@@ -651,11 +691,14 @@ def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Cal
         # where possible and warn; the leftover directory is harmless (each finding
         # uses its own path).
         result = subprocess.run(
-            ["git", "-C", str(root), "worktree", "remove", "--force", str(wt)], capture_output=True, text=True
+            ["git", "-C", str(root), "worktree", "remove", "--force", str(wt)],
+            env=git_env,
+            capture_output=True,
+            text=True,
         )
         if result.returncode == 0:
             return
-        subprocess.run(["git", "-C", str(root), "worktree", "prune"], capture_output=True)
+        subprocess.run(["git", "-C", str(root), "worktree", "prune"], env=git_env, capture_output=True)
         message = f"{f.id}: could not remove isolated worktree (left on disk): {result.stderr.strip()[:200]}"
         try:
             _log(f"  WARNING: {message}")
@@ -1061,12 +1104,13 @@ def _repo_cache_identity(cfg: ConfirmConfig) -> dict[str, str]:
     repo = cfg.repo_dir.rstrip("/")
     if not repo:
         return {"path": "", "head": "", "isolation": str(cfg.worktree)}
-    head = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"], capture_output=True)
+    git_env = _dispatcher_git_env(repo)
+    head = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"], env=git_env, capture_output=True)
     if head.returncode != 0:
         if cfg.worktree:
             raise ConfirmationFailed(f"worktree isolation requested but {repo!r} is not a git checkout")
         return {"path": str(Path(repo).resolve()), "head": "non-git", "isolation": "False"}
-    root_result = subprocess.run(["git", "-C", repo, "rev-parse", "--show-toplevel"], capture_output=True)
+    root_result = subprocess.run(["git", "-C", repo, "rev-parse", "--show-toplevel"], env=git_env, capture_output=True)
     if root_result.returncode != 0:
         raise ConfirmationFailed(f"could not resolve repository root for cache identity: {repo!r}")
     root = Path(root_result.stdout.decode(errors="replace").strip()).resolve()
@@ -1085,13 +1129,17 @@ def _repo_cache_identity(cfg: ConfirmConfig) -> dict[str, str]:
     if output_rel is not None and output_rel.parts:
         rel = output_rel.as_posix()
         pathspec += [f":(exclude){rel}", f":(exclude){rel}/**"]
-    diff = subprocess.run(["git", "-C", str(root), "diff", "--binary", "HEAD", *pathspec], capture_output=True)
+    diff = subprocess.run(
+        ["git", "-C", str(root), "diff", "--binary", "HEAD", *pathspec], env=git_env, capture_output=True
+    )
     status = subprocess.run(
         ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=all", *pathspec],
+        env=git_env,
         capture_output=True,
     )
     untracked = subprocess.run(
         ["git", "-C", str(root), "ls-files", "--others", "--exclude-standard", "-z", *pathspec],
+        env=git_env,
         capture_output=True,
     )
     if any(result.returncode != 0 for result in (diff, status, untracked)):

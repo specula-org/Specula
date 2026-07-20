@@ -38,7 +38,7 @@ from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC
 from specula.prompts import render
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
-from specula.snapshotlib import SNAPSHOT_MODE_ENV, SOURCE_MAP
+from specula.snapshotlib import SNAPSHOT_MODE_ENV, SOURCE_MAP, sanitize_snapshot_git_environment
 from specula.tlc_resources import (
     MEMORY_LIMIT_ENV,
     RUN_POLICY_FILENAME,
@@ -376,8 +376,9 @@ class Workspace:
         if not self.uses_private_source():
             return None
         roots = [str(Path(repo).resolve().parent) for name in names if (repo := self.find_repo_dir(name))]
-        existing = [path for path in os.environ.get("GIT_CEILING_DIRECTORIES", "").split(os.pathsep) if path]
-        return os.pathsep.join(dict.fromkeys([*roots, *existing]))
+        if any(os.pathsep in root for root in roots):
+            raise RuntimeError("private source path cannot be represented in GIT_CEILING_DIRECTORIES")
+        return os.pathsep.join(dict.fromkeys(roots)) or None
 
 
 class Phase:
@@ -719,8 +720,9 @@ class Phase:
         ws = Workspace(targets, artifact=artifact, opts=extra)
         names = [self.target_name(t) for t in targets]
         git_ceiling = ws.private_git_ceiling(names)
-        if git_ceiling:
-            os.environ["GIT_CEILING_DIRECTORIES"] = git_ceiling
+        if ws.uses_private_source():
+            os.environ[SNAPSHOT_MODE_ENV] = "1"
+            sanitize_snapshot_git_environment(os.environ, ceiling=git_ceiling)
 
         print("========================================")
         print(f" {self.title}")
@@ -1160,6 +1162,7 @@ class Phase:
                 raise RuntimeError(f"private source is missing for {name!r}")
             launch_cwd = Path(repo_dir)
             env["PWD"] = str(launch_cwd)
+            sanitize_snapshot_git_environment(env, ceiling=ws.private_git_ceiling([name]))
         work_dir = ws.work_dir(name)
         with contextlib.suppress(OSError):
             activity_sidecar.unlink()
@@ -1354,6 +1357,13 @@ def run_agent_blocking(
     # when selecting its project root, so keep both views on the trusted cwd.
     if run_cwd is not None:
         env["PWD"] = str(run_cwd)
+    if env.get(SNAPSHOT_MODE_ENV):
+        git_ceiling: str | None = None
+        if run_cwd is not None:
+            git_ceiling = str(run_cwd.resolve().parent)
+            if os.pathsep in git_ceiling:
+                raise RuntimeError("private agent cwd cannot be represented in GIT_CEILING_DIRECTORIES")
+        sanitize_snapshot_git_environment(env, ceiling=git_ceiling)
     if env.get("SPECULA_SANDBOX", "").lower() == "on" and run_cwd is not None:
         configured = env.get("SPECULA_SANDBOX_CONFIG")
         if configured:
@@ -2554,8 +2564,9 @@ Output:
         ws = Workspace(targets)
         names = [_trim(t) for t in targets]
         git_ceiling = ws.private_git_ceiling(names)
-        if git_ceiling:
-            os.environ["GIT_CEILING_DIRECTORIES"] = git_ceiling
+        if ws.uses_private_source():
+            os.environ[SNAPSHOT_MODE_ENV] = "1"
+            sanitize_snapshot_git_environment(os.environ, ceiling=git_ceiling)
 
         print("========================================")
         print(f" Specula — Review Agent ({phase})")
@@ -2712,6 +2723,7 @@ Output:
             launch_cwd = Path(repo_dir)
             env["SPECULA_TARGET_REPO_DIR"] = repo_dir
             env["PWD"] = str(launch_cwd)
+            sanitize_snapshot_git_environment(env, ceiling=ws.private_git_ceiling([name]))
         env.pop("SPECULA_ACTIVITY_LOG", None)
         show_progress = progress.enabled()
         if show_progress:
