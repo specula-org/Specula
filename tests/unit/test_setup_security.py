@@ -299,16 +299,42 @@ printf '\\n' >> "$FAKE_COMMAND_LOG"
         self.assertNotIn("setup_codex_plugin.py", commands)
         self.assertEqual(commands.count("codex\tmcp\tadd"), 3)
 
-    def test_codex_plugin_keeps_explanation_out_of_branch_value(self) -> None:
+    def test_codex_y_supports_project_local_skills(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            result, commands = self.run_setup(Path(tmp), {"codex"}, "plugin\n")
+            root = Path(tmp)
+            result, commands = self.run_setup(root, {"codex"}, "y\nlocal\n")
 
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"--target\t{root / '.agents/skills'}", commands)
+        self.assertNotIn("setup_codex_plugin.py", commands)
+        self.assertEqual(commands.count("codex\tmcp\tadd"), 3)
+        self.assertIn("Local skills are discoverable only when the agent starts in", result.stdout)
+
+    def test_codex_plugin_keeps_explanation_out_of_branch_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result, commands = self.run_setup(Path(tmp), {"codex"}, "plugin\ny\n")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Codex installs plugins for the current profile", result.stderr)
+        self.assertIn("Codex does not currently support project-scoped plugin installation.", result.stdout)
+        self.assertIn('ask_yn "Continue with profile-wide Codex plugin installation?"', SETUP_SCRIPT.read_text())
         self.assertIn("setup_codex_plugin.py", commands)
         self.assertNotIn("src/specula/skill_install.py", commands)
         self.assertNotIn("codex\tmcp\tadd", commands)
         self.assertIn("Codex plugin configured: specula-codex@specula", result.stdout)
         self.assertIn("Rerun specula setup and choose 'plugin' again", result.stdout)
+
+    def test_codex_plugin_can_be_declined_without_profile_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result, commands = self.run_setup(Path(tmp), {"codex"}, "plugin\nn\n")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Codex does not currently support project-scoped plugin installation.", result.stdout)
+        self.assertIn("Skipped Codex plugin installation.", result.stdout)
+        self.assertIn("choose 'y', then choose 'local'", result.stdout)
+        self.assertNotIn("setup_codex_plugin.py", commands)
+        self.assertNotIn("src/specula/skill_install.py", commands)
+        self.assertNotIn("codex\tmcp", commands)
 
 
 class TestSetupPythonIsolation(unittest.TestCase):
