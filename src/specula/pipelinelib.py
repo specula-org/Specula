@@ -1227,7 +1227,7 @@ class Pipeline:
         in_table = False
         for line in text.splitlines():
             cells = line.split("|")
-            if len(cells) >= 5 and cells[1].strip() == "Bug" and cells[3].strip() == "Status":
+            if len(cells) >= 5 and cells[1].strip() in {"Bug", "Entry"} and cells[3].strip() == "Status":
                 in_table = True
                 continue
             if not in_table:
@@ -1274,7 +1274,7 @@ class Pipeline:
                     self._atomic_replace_text(f, text)
                     log(f"  reconciled legacy deferred status: {f}")
 
-            report = Path(self.get_work_dir(n)) / "spec" / "confirmed-bugs.md"
+            report = Path(self.get_work_dir(n)) / "confirmed-bugs.md"
             if not report.is_file():
                 continue
             old_text = report.read_text()
@@ -1736,7 +1736,7 @@ class Pipeline:
         if self.dry_run:
             return
         for n in self.extract_names():
-            cb = Path(self.get_work_dir(n)) / "spec" / "confirmed-bugs.md"
+            cb = Path(self.get_work_dir(n)) / "confirmed-bugs.md"
             if cb.is_file():
                 (cb.parent / f"confirmed-bugs-round-{round_}.md").write_text(cb.read_text())
 
@@ -1852,7 +1852,7 @@ class Pipeline:
 
             out.append(self._review_line("Validation Review", spec_dir / "review-validation.md"))
 
-            confirmed = spec_dir / "confirmed-bugs.md"
+            confirmed = work_dir / "confirmed-bugs.md"
             if confirmed.is_file() and confirmed.stat().st_size > 0:
                 out.append(f"- **Phase 4a (Bug Confirmation)**: confirmed-bugs.md written ({_wc_l(confirmed)} lines)")
             elif confirmed.is_file():
@@ -1878,7 +1878,7 @@ class Pipeline:
                     line += f", {rr_invalid} invalid"
                 out.append(line)
 
-            severity = spec_dir / "bug-severity.md"
+            severity = work_dir / "bug-severity.md"
             if severity.is_file() and severity.stat().st_size > 0:
                 out.append(f"- **Phase 4b (Bug Classification)**: bug-severity.md written ({_wc_l(severity)} lines)")
             elif severity.is_file():

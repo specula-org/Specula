@@ -1826,7 +1826,7 @@ Options:
   --effort=LEVEL      Reasoning effort forwarded to the selected adapter
 
 Prerequisites:
-  - Confirmed bug report at <name>/spec/confirmed-bugs.md (from Phase 4a)
+  - Confirmed bug report at <name>/confirmed-bugs.md (from Phase 4a)
 
 """
     check_header = "Checking prerequisites..."
@@ -1834,14 +1834,14 @@ Prerequisites:
     accepts_artifact = False  # this launcher takes no --artifact
     artifact_rejection_message = (
         "ERROR: classify does not accept --artifact; this phase reads the existing "
-        ".specula-output/spec/confirmed-bugs.md and does not inspect source code."
+        ".specula-output/confirmed-bugs.md and does not inspect source code."
     )
     dry_prompt_flag = "--prompt-file"  # its dry-run line shows --prompt-file=<prompt>
 
     def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True
         for name in names:
-            cb = ws.work_dir(name) / "spec" / "confirmed-bugs.md"
+            cb = ws.work_dir(name) / "confirmed-bugs.md"
             line = f"  {name:<20}"
             if cb.is_file() and cb.stat().st_size > 0:
                 line += "confirmed-bugs OK"
@@ -1863,18 +1863,18 @@ Prerequisites:
     def build_prompt(self, ws: Workspace, target: str) -> str:
         # NOTE: bash bug_classification generate_prompt does NOT inject .prompt-extra.
         name = self.target_name(target)
-        spec_dir = ws.work_dir(name) / "spec"
+        wd = ws.work_dir(name)
         return f"""# Bug Classification Task: {name}
 
 You are classifying the Phase 4 entries for **{name}**.
 
 ## Input
 
-- **Confirmed bug report (from Phase 4a)**: {spec_dir}/confirmed-bugs.md
+- **Confirmed bug report (from Phase 4a)**: {wd}/confirmed-bugs.md
 
 ## Output
 
-- **Severity classification**: {spec_dir}/bug-severity.md (you create this file)
+- **Severity classification**: {wd}/bug-severity.md (you create this file)
 
 ## Methodology
 
@@ -1889,12 +1889,12 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
         print(" Results")
         print("========================================")
         for name in names:
-            report = ws.work_dir(name) / "spec" / "bug-severity.md"
+            report = ws.work_dir(name) / "bug-severity.md"
             if report.is_file() and report.stat().st_size > 0:
                 text = report.read_text(errors="replace")  # bash grep is byte-safe
                 total = _grep_num(text, "- Total entries:")
                 bugs = _grep_num(text, "- Reproduced bugs:")
-                findings = _grep_num(text, "- Findings:")
+                findings = _grep_num(text, "- Severity-bearing findings:")
                 critical = _grep_num(text, "- Critical:")
                 high = _grep_num(text, "- High:")
                 medium = _grep_num(text, "- Medium:")
@@ -2397,7 +2397,7 @@ Prerequisites:
             repo=repo_dir,
             spec_dir=str(spec_dir),
             repro_dir=str(wd / "repro"),
-            report=str(spec_dir / "confirmed-bugs.md"),
+            report=str(wd / "confirmed-bugs.md"),
             bug_confirmation_skill=prompt_skill_ids("bug-confirmation"),
         )
         return self._with_extra(ws, name, prompt)
@@ -2409,7 +2409,7 @@ Prerequisites:
         print("========================================")
         for name in names:
             wd = ws.work_dir(name)
-            report = wd / "spec" / "confirmed-bugs.md"
+            report = wd / "confirmed-bugs.md"
             repro_dir = wd / "repro"
             repro_count = len([p for p in repro_dir.rglob("test_bug*") if p.is_file()]) if repro_dir.is_dir() else 0
             if report.is_file() and report.stat().st_size > 0:

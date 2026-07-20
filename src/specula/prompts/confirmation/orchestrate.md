@@ -38,9 +38,9 @@ Never let an individual finding allocate while it is being investigated.
 
 Every published RR MUST contain `finding_id: <candidate-id>` copied exactly from
 that candidate's stable input `id`. This is the request's immutable identity.
-`bug_id: Bug N` is only the current report display label and MUST NOT be used to
+`bug_id: Bug N` is only the legacy report display label and MUST NOT be used to
 identify or reuse a request; it may change when candidates are reordered. Before
-publishing, cross-check that the table row, `## Bug N` detail, RR link, and
+publishing, cross-check that the table row, `## Entry N` detail, RR link, and
 `finding_id` all refer to the same candidate. If that cannot be proved, do not
 publish the request or silently allocate another id; mark the entry `INCOMPLETE`.
 
@@ -65,11 +65,20 @@ Write every finding's entry to {{report}} (one `repro/` test per non-dropped
 finding under {{repro_dir}}). The report is consumed by Phase 4b and the repair
 loop, so use this canonical structure exactly:
 
-- `Reproduced: <N> = <NEW> NEW + <KU> KNOWN-unfixed + <KF> KNOWN-fixed + <U> UNKNOWN`
-- `Findings: <N> = <E> env-limited + <M> masked`
+- Title `# Confirmation Report — <case>`, then `## Final Result`
+- `Reproduced bugs: <N> = <NEW> NEW + <KU> KNOWN-unfixed + <KF> KNOWN-fixed + <U> UNKNOWN`
+- `Masked live findings: <M>`
+- `Env-limited findings: <E>`
+- `False positives: <FP>`
+- `Dropped: <D>`
+- `Needs more info: <NMI>`
+- `Pending repair: <PR>`
+- `Incomplete: <I>`
+- `Deferred: <DEF>`
+- `Total disposition entries: <N>`
 - `Dispositions: <N> total = <R> reproduced + <E> env-limited + <M> masked + <FP> false-positive + <NMI> needs-more-info + <D> dropped + <PR> pending-repair + <I> incomplete + <DEF> deferred`
-- A table headed exactly `| Bug | Finding | Status |`, followed by one row per entry.
-- One detail section per table row, headed `## Bug N: <title>`. Number sections consecutively from 1, keep table and section order identical, and emit exactly one row and one section for each entry.
+- A table headed exactly `| Entry | Finding | Status | Counts as final bug? |`, followed by one row per entry.
+- One detail section per table row, headed `## Entry N: <title>`. Number sections consecutively from 1, keep table and section order identical, and emit exactly one row and one section for each entry.
 
 Use zero for absent disposition categories; never omit `incomplete` or `deferred`
 from the `Dispositions:` line.
