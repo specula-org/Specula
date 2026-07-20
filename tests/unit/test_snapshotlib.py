@@ -62,10 +62,17 @@ class SnapshotTests(unittest.TestCase):
             "GIT_OBJECT_DIRECTORY": "/outside/objects",
             "GIT_CONFIG": "/outside/config",
             "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_PARAMETERS": "'core.worktree'='/outside'",
             "GIT_CONFIG_KEY_0": "core.worktree",
             "GIT_CONFIG_VALUE_0": "/outside",
+            "GIT_CONFIG_GLOBAL": "/developer/global-config",
+            "GIT_CONFIG_SYSTEM": "/developer/system-config",
+            "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_CEILING_DIRECTORIES": "/untrusted",
             "GIT_EXTERNAL_DIFF": "/outside/diff.sh",
+            "GIT_NAMESPACE": "developer-namespace",
+            "GIT_NO_REPLACE_OBJECTS": "1",
+            "GIT_REPLACE_REF_BASE": "refs/developer/replace/",
             "GIT_SSH_COMMAND": "ssh -i key",
             "GIT_ASKPASS": "/usr/bin/askpass",
             "GIT_AUTHOR_NAME": "Developer",
@@ -82,12 +89,19 @@ class SnapshotTests(unittest.TestCase):
             "GIT_OBJECT_DIRECTORY",
             "GIT_CONFIG",
             "GIT_CONFIG_COUNT",
+            "GIT_CONFIG_PARAMETERS",
             "GIT_CONFIG_KEY_0",
             "GIT_CONFIG_VALUE_0",
             "GIT_EXTERNAL_DIFF",
         ):
             self.assertNotIn(key, env)
         self.assertEqual(env["GIT_CEILING_DIRECTORIES"], "/private")
+        self.assertEqual(env["GIT_CONFIG_GLOBAL"], "/developer/global-config")
+        self.assertEqual(env["GIT_CONFIG_SYSTEM"], "/developer/system-config")
+        self.assertEqual(env["GIT_CONFIG_NOSYSTEM"], "1")
+        self.assertEqual(env["GIT_NAMESPACE"], "developer-namespace")
+        self.assertEqual(env["GIT_NO_REPLACE_OBJECTS"], "1")
+        self.assertEqual(env["GIT_REPLACE_REF_BASE"], "refs/developer/replace/")
         self.assertEqual(env["GIT_SSH_COMMAND"], "ssh -i key")
         self.assertEqual(env["GIT_ASKPASS"], "/usr/bin/askpass")
         self.assertEqual(env["GIT_AUTHOR_NAME"], "Developer")
@@ -132,6 +146,90 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual((original / "ignored-cache").read_text(), "changed ignored bytes\n")
         self.assertEqual((original / "ignored-new").read_text(), "new ignored bytes\n")
         self.assertEqual((original / "binary.bin").read_bytes(), b"after\0data\n")
+
+    def test_private_git_preserves_index_state(self) -> None:
+        original = self._repo()
+        (original / "tracked.txt").write_text("staged\n")
+        _git(original, "add", "tracked.txt")
+        (original / "tracked.txt").write_text("staged and unstaged\n")
+        (original / "staged-new.txt").write_text("staged new\n")
+        _git(original, "add", "staged-new.txt")
+        (original / "untracked.txt").write_text("untracked\n")
+        run = self.root / "run"
+        run.mkdir()
+
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+
+        self.assertEqual(_git(source, "status", "--porcelain=v1"), _git(original, "status", "--porcelain=v1"))
+        self.assertEqual(_git(source, "diff", "--cached", "--binary"), _git(original, "diff", "--cached", "--binary"))
+
+    def test_sparse_checkout_index_state_is_preserved(self) -> None:
+        original = self._repo()
+        (original / "visible").mkdir()
+        (original / "visible" / "file.txt").write_text("visible\n")
+        (original / "hidden").mkdir()
+        (original / "hidden" / "file.txt").write_text("hidden\n")
+        _git(original, "add", "visible", "hidden")
+        _git(original, "commit", "--quiet", "-m", "directories")
+        _git(original, "sparse-checkout", "init", "--cone")
+        _git(original, "sparse-checkout", "set", "visible")
+        run = self.root / "run"
+        run.mkdir()
+
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+
+        self.assertFalse((source / "hidden").exists())
+        self.assertEqual(_git(source, "status", "--porcelain=v1"), _git(original, "status", "--porcelain=v1"))
+        self.assertEqual(_git(source, "ls-files", "-t"), _git(original, "ls-files", "-t"))
+
+    def test_private_git_is_self_contained_and_has_no_active_origin(self) -> None:
+        original = self._repo()
+        run = self.root / "run"
+        run.mkdir()
+
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+        private_config = (source / ".git" / "config").read_text()
+        loose_object = next(
+            path for path in (original / ".git" / "objects").glob("[0-9a-f][0-9a-f]/*") if path.is_file()
+        )
+        private_object = source / ".git" / "objects" / loose_object.relative_to(original / ".git" / "objects")
+
+        self.assertNotIn(str(original), private_config)
+        self.assertNotEqual(
+            (loose_object.stat().st_dev, loose_object.stat().st_ino),
+            (private_object.stat().st_dev, private_object.stat().st_ino),
+        )
+        original.rename(self.root / "original-moved")
+        _git(source, "fsck", "--full")
+        self.assertIn("initial", _git(source, "log", "-1", "--format=%s"))
+        self.assertEqual(sl.load_sources(run)["demo"].source, source)
+
+    def test_source_object_alternates_are_rejected_transactionally(self) -> None:
+        base = self._repo("base")
+        original = self.root / "original"
+        subprocess.run(["git", "clone", "--quiet", "--shared", str(base), str(original)], check=True)
+        run = self.root / "run"
+        run.mkdir()
+
+        with self.assertRaisesRegex(sl.SnapshotError, "object alternates"):
+            sl.prepare_sources(run, {"demo": original})
+
+        self.assertFalse((run / sl.SOURCE_MAP).exists())
+        self.assertFalse((run / "demo" / "source").exists())
+
+    def test_partial_clone_object_store_is_rejected(self) -> None:
+        original = self._repo()
+        _git(original, "repack", "-a", "-d")
+        pack = next((original / ".git" / "objects" / "pack").glob("*.pack"))
+        pack.with_suffix(".promisor").touch()
+        run = self.root / "run"
+        run.mkdir()
+
+        with self.assertRaisesRegex(sl.SnapshotError, "partial Git clones"):
+            sl.prepare_sources(run, {"demo": original})
+
+        self.assertFalse((run / sl.SOURCE_MAP).exists())
+        self.assertFalse((run / "demo" / "source").exists())
 
     def test_no_change_patch_is_empty_even_with_text_attributes(self) -> None:
         original = self._repo()
@@ -206,34 +304,52 @@ class SnapshotTests(unittest.TestCase):
         with self.assertRaisesRegex(sl.SnapshotError, "symlinks outside"):
             sl.load_sources(run)
 
-    def test_external_git_common_directory_is_rejected(self) -> None:
+    def test_external_git_common_directory_is_rebuilt_privately(self) -> None:
         original = self._repo()
         (original / ".git" / "commondir").write_text(f"{original / '.git'}\n")
         run = self.root / "run"
         run.mkdir()
 
-        with self.assertRaisesRegex(sl.SnapshotError, "common directory points outside"):
-            sl.prepare_sources(run, {"demo": original})
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
 
-    def test_external_git_hooks_path_is_rejected(self) -> None:
+        self.assertFalse((source / ".git" / "commondir").exists())
+        self.assertEqual(_git(source, "rev-parse", "--git-common-dir").strip(), ".git")
+
+    def test_repository_local_git_behavior_is_not_copied_or_executed(self) -> None:
         original = self._repo()
+        marker = self.root / "original-command-ran"
         hooks = original / "custom-hooks"
         hooks.mkdir()
+        pre_commit = hooks / "pre-commit"
+        pre_commit.write_text(f'#!/bin/sh\n: > "{marker}"\nexit 0\n')
+        pre_commit.chmod(0o755)
         _git(original, "config", "core.hooksPath", str(hooks))
+        _git(original, "config", "specula.snapshotSentinel", "original-only")
         run = self.root / "run"
         run.mkdir()
 
-        with self.assertRaisesRegex(sl.SnapshotError, "hooks path points outside"):
-            sl.prepare_sources(run, {"demo": original})
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+        private_config = (source / ".git" / "config").read_text()
+        private_settings = _git(source, "config", "--local", "--list").casefold()
 
-    def test_resume_revalidates_private_git_metadata(self) -> None:
+        self.assertFalse(marker.exists())
+        self.assertNotIn(str(original), private_config)
+        self.assertNotIn("specula.snapshotsentinel=", private_settings)
+        _git(source, "status", "--short")
+        (source / "tracked.txt").write_text("private change\n")
+        _git(source, "add", "tracked.txt")
+        _git(source, "commit", "--quiet", "-m", "private commit")
+        self.assertFalse(marker.exists())
+
+    def test_resume_rejects_external_object_alternates(self) -> None:
         original = self._repo()
         run = self.root / "run"
         run.mkdir()
         source = sl.prepare_sources(run, {"demo": original})["demo"].source
-        _git(source, "config", "core.hooksPath", str(original / "hooks"))
+        alternates = source / ".git" / "objects" / "info" / "alternates"
+        alternates.write_text(f"{original / '.git' / 'objects'}\n")
 
-        with self.assertRaisesRegex(sl.SnapshotError, "hooks path points outside"):
+        with self.assertRaisesRegex(sl.SnapshotError, "object alternates"):
             sl.load_sources(run)
 
     def test_source_map_records_and_revalidates_git_kind(self) -> None:
@@ -245,7 +361,7 @@ class SnapshotTests(unittest.TestCase):
         snapshots = sl.prepare_sources(run, {"git": git_source, "plain": plain_source})
         document = json.loads((run / sl.SOURCE_MAP).read_text())
 
-        self.assertEqual(document["version"], 2)
+        self.assertEqual(document["version"], 3)
         self.assertTrue(snapshots["git"].is_git)
         self.assertFalse(snapshots["plain"].is_git)
         self.assertTrue(document["targets"]["git"]["is_git"])
@@ -253,6 +369,19 @@ class SnapshotTests(unittest.TestCase):
 
         shutil.rmtree(snapshots["git"].source / ".git")
         with self.assertRaisesRegex(sl.SnapshotError, "Git type"):
+            sl.load_sources(run)
+
+    def test_old_source_map_version_is_rejected(self) -> None:
+        original = self._repo()
+        run = self.root / "run"
+        run.mkdir()
+        sl.prepare_sources(run, {"demo": original})
+        map_path = run / sl.SOURCE_MAP
+        document = json.loads(map_path.read_text())
+        document["version"] = 2
+        map_path.write_text(json.dumps(document))
+
+        with self.assertRaisesRegex(sl.SnapshotError, "invalid private source map"):
             sl.load_sources(run)
 
     def test_resume_rejects_git_created_inside_plain_private_source(self) -> None:
@@ -266,91 +395,19 @@ class SnapshotTests(unittest.TestCase):
         with self.assertRaisesRegex(sl.SnapshotError, "Git type"):
             sl.load_sources(run)
 
-    def test_dormant_conditional_git_includes_are_rejected(self) -> None:
-        conditions = (
-            "onbranch:never-active",
-            "hasconfig:remote.*.url:https://example.invalid/**",
-        )
-        for index, condition in enumerate(conditions):
-            with self.subTest(condition=condition):
-                original = self._repo(f"conditional-{index}")
-                included = self.root / f"conditional-{index}.inc"
-                included.write_text(f"[core]\n\thooksPath = {original / 'hooks'}\n")
-                with (original / ".git" / "config").open("a") as config:
-                    config.write(f'\n[includeIf "{condition}"]\n\tpath = {included}\n')
-                run = self.root / f"run-conditional-{index}"
-                run.mkdir()
-
-                with self.assertRaisesRegex(sl.SnapshotError, "include"):
-                    sl.prepare_sources(run, {"demo": original})
-
-    def test_path_valued_fsmonitor_is_rejected(self) -> None:
-        original = self._repo()
-        monitor = original / "fsmonitor.sh"
-        monitor.write_text("#!/bin/sh\nexit 0\n")
-        monitor.chmod(0o755)
-        _git(original, "config", "core.fsmonitor", str(monitor))
-        run = self.root / "run"
-        run.mkdir()
-
-        with self.assertRaisesRegex(sl.SnapshotError, "fsmonitor"):
-            sl.prepare_sources(run, {"demo": original})
-
-    def test_automatic_command_git_configs_are_rejected(self) -> None:
-        keys = (
-            "filter.escape.clean",
-            "filter.escape.smudge",
-            "filter.escape.process",
-            "diff.external",
-            "diff.escape.command",
-            "diff.escape.textconv",
-            "merge.escape.driver",
-        )
-        for index, key in enumerate(keys):
-            with self.subTest(key=key):
-                original = self._repo(f"command-{index}")
-                _git(original, "config", key, str(original / "original-command.sh"))
-                run = self.root / f"run-command-{index}"
-                run.mkdir()
-
-                with self.assertRaisesRegex(sl.SnapshotError, "automatic command config"):
-                    sl.prepare_sources(run, {"demo": original})
-
-                self.assertFalse((run / sl.SOURCE_MAP).exists())
-                self.assertFalse((run / "demo" / "source").exists())
-
-    def test_boolean_fsmonitor_values_are_supported(self) -> None:
-        for value in ("true", "false"):
-            with self.subTest(value=value):
-                original = self._repo(f"fsmonitor-{value}")
-                _git(original, "config", "core.fsmonitor", value)
-                run = self.root / f"run-fsmonitor-{value}"
-                run.mkdir()
-
-                snapshot = sl.prepare_sources(run, {"demo": original})["demo"]
-
-                self.assertTrue(snapshot.is_git)
-
-    def test_repo_local_git_hooks_path_is_supported(self) -> None:
-        original = self._repo()
-        (original / ".githooks").mkdir()
-        _git(original, "config", "core.hooksPath", ".githooks")
-        run = self.root / "run"
-        run.mkdir()
-
-        source = sl.prepare_sources(run, {"demo": original})["demo"].source
-
-        self.assertEqual(_git(source, "rev-parse", "--git-path", "hooks").strip(), ".githooks")
-
-    def test_registered_linked_worktree_is_rejected(self) -> None:
+    def test_original_linked_worktree_registration_is_not_copied(self) -> None:
         original = self._repo()
         linked = self.root / "linked"
         _git(original, "worktree", "add", "--quiet", "-b", "linked-test", str(linked))
         run = self.root / "run"
         run.mkdir()
 
-        with self.assertRaisesRegex(sl.SnapshotError, "registered linked worktrees"):
-            sl.prepare_sources(run, {"demo": original})
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+
+        self.assertIn(str(linked), _git(original, "worktree", "list", "--porcelain"))
+        private_worktrees = _git(source, "worktree", "list", "--porcelain")
+        self.assertIn(str(source), private_worktrees)
+        self.assertNotIn(str(linked), private_worktrees)
 
     def test_run_local_confirmation_worktree_registration_is_supported(self) -> None:
         original = self._repo()
@@ -368,23 +425,6 @@ class SnapshotTests(unittest.TestCase):
         shutil.rmtree(worktree)
         self.assertIn(str(worktree), _git(source, "worktree", "list", "--porcelain"))
         self.assertEqual(sl.load_sources(run)["demo"].source, source)
-
-    def test_non_confirmation_worktree_registration_is_rejected_on_resume(self) -> None:
-        for location in ("wrong-run-path", "external"):
-            with self.subTest(location=location):
-                original = self._repo(f"repo-{location}")
-                run = self.root / f"run-{location}"
-                run.mkdir()
-                source = sl.prepare_sources(run, {"demo": original})["demo"].source
-                if location == "wrong-run-path":
-                    worktree = run / "demo" / ".specula-output" / "confirmation" / "MC-1" / "other"
-                else:
-                    worktree = self.root / "external-worktree"
-                worktree.parent.mkdir(parents=True, exist_ok=True)
-                _git(source, "worktree", "add", "--quiet", "--detach", str(worktree))
-
-                with self.assertRaisesRegex(sl.SnapshotError, "registered linked worktrees"):
-                    sl.load_sources(run)
 
     def test_multi_target_prepare_failure_rolls_back_and_can_retry(self) -> None:
         first = self._repo("first")
@@ -431,6 +471,20 @@ class SnapshotTests(unittest.TestCase):
 
         with self.assertRaisesRegex(sl.SnapshotError, "path-list separator"):
             sl.load_sources(unsafe_run)
+
+    def test_source_map_target_name_is_rejected_before_copy(self) -> None:
+        original = self._repo()
+        run = self.root / "run"
+        run.mkdir()
+
+        with (
+            mock.patch.object(shutil, "copytree", wraps=shutil.copytree) as copytree,
+            self.assertRaisesRegex(sl.SnapshotError, "invalid snapshot target name"),
+        ):
+            sl.prepare_sources(run, {sl.SOURCE_MAP: original})
+
+        copytree.assert_not_called()
+        self.assertFalse((run / sl.SOURCE_MAP).exists())
 
     def test_multi_target_separator_is_rejected_before_any_copy(self) -> None:
         first = self._repo("first")
@@ -500,9 +554,11 @@ class SnapshotTests(unittest.TestCase):
                     (original / ".gitmodules").write_text('[submodule "demo"]\n')
                     expected = "submodules"
                 elif kind == "external-worktree":
+                    actual = self.root / "actual-worktree"
+                    actual.mkdir()
                     _git(original, "init", "--quiet")
-                    _git(original, "config", "core.worktree", str(original))
-                    expected = "points outside"
+                    _git(original, "config", "core.worktree", str(actual))
+                    expected = "does not match"
                 else:
                     os.mkfifo(original / "pipe")
                     expected = "special source files"

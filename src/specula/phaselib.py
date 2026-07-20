@@ -1358,11 +1358,12 @@ def run_agent_blocking(
     if run_cwd is not None:
         env["PWD"] = str(run_cwd)
     if env.get(SNAPSHOT_MODE_ENV):
-        git_ceiling: str | None = None
-        if run_cwd is not None:
-            git_ceiling = str(run_cwd.resolve().parent)
-            if os.pathsep in git_ceiling:
-                raise RuntimeError("private agent cwd cannot be represented in GIT_CEILING_DIRECTORIES")
+        # Confirmation agents start in a trusted output cwd, then work in the
+        # sibling private source.  The ceiling therefore belongs to the target
+        # root, not the launch cwd.
+        git_ceiling = str(work_dir.resolve().parent)
+        if os.pathsep in git_ceiling:
+            raise RuntimeError("private target path cannot be represented in GIT_CEILING_DIRECTORIES")
         sanitize_snapshot_git_environment(env, ceiling=git_ceiling)
     if env.get("SPECULA_SANDBOX", "").lower() == "on" and run_cwd is not None:
         configured = env.get("SPECULA_SANDBOX_CONFIG")

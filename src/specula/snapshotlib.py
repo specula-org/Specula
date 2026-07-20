@@ -1,9 +1,8 @@
 """Full-tree source snapshots for ``specula run --keep-original``.
 
-The implementation is deliberately small: copy the source once, record every
-non-``.git`` byte in a private Git object database, then diff that baseline
-against the final copied tree.  Git ignore and index state do not decide what
-is included.
+Copy the working tree once, rebuild private Git metadata without repository
+hooks or config, then record every non-``.git`` byte in a separate baseline.
+Git ignore and index state do not decide what is included in the final diff.
 """
 
 from __future__ import annotations
@@ -21,6 +20,7 @@ from pathlib import Path
 
 SOURCE_MAP = "source-map.json"
 SNAPSHOT_MODE_ENV = "SPECULA_SOURCE_SNAPSHOT"
+_SOURCE_MAP_VERSION = 3
 _BASELINE_REF = "refs/specula/baseline"
 _PATHSPEC = (
     ".",
@@ -46,16 +46,14 @@ _GIT_REPOSITORY_ENV = frozenset(
         "GIT_GRAFT_FILE",
         "GIT_IMPLICIT_WORK_TREE",
         "GIT_INDEX_FILE",
-        "GIT_NAMESPACE",
-        "GIT_NO_REPLACE_OBJECTS",
         "GIT_OBJECT_DIRECTORY",
         "GIT_PREFIX",
         "GIT_QUARANTINE_PATH",
-        "GIT_REPLACE_REF_BASE",
         "GIT_SHALLOW_FILE",
         "GIT_WORK_TREE",
     }
 )
+_GIT_CONFIG_INJECTION_ENV = frozenset({"GIT_CONFIG", "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS"})
 
 
 class SnapshotError(RuntimeError):
@@ -75,7 +73,12 @@ class SourceSnapshot:
 def sanitize_snapshot_git_environment(env: MutableMapping[str, str], *, ceiling: str | None = None) -> None:
     """Remove ambient selectors that can rebind Git outside a private source."""
     for key in tuple(env):
-        if key in _GIT_REPOSITORY_ENV or key == "GIT_CONFIG" or key.startswith("GIT_CONFIG_"):
+        if (
+            key in _GIT_REPOSITORY_ENV
+            or key in _GIT_CONFIG_INJECTION_ENV
+            or key.startswith("GIT_CONFIG_KEY_")
+            or key.startswith("GIT_CONFIG_VALUE_")
+        ):
             env.pop(key, None)
     if ceiling is not None:
         env["GIT_CEILING_DIRECTORIES"] = ceiling
@@ -150,10 +153,14 @@ def _validate_source_tree(source: Path) -> None:
                 mode = entry.stat(follow_symlinks=False).st_mode
             except OSError as exc:
                 raise SnapshotError(f"cannot inspect source path {path}: {exc}") from exc
-            if entry.name == ".git" and (path.parent != root or not stat.S_ISDIR(mode)):
-                raise SnapshotError(
-                    f"--keep-original does not support linked worktrees, submodules, or nested repositories: {path}"
-                )
+            if entry.name == ".git":
+                if path.parent != root or not stat.S_ISDIR(mode):
+                    raise SnapshotError(
+                        f"--keep-original does not support linked worktrees, submodules, or nested repositories: {path}"
+                    )
+                # Root Git metadata is rebuilt rather than copied.  Do not
+                # inspect repository-owned hooks, config, or object links.
+                continue
             if path.parent == root and entry.name == ".gitmodules":
                 raise SnapshotError(f"--keep-original does not support submodules: {path}")
             if stat.S_ISLNK(mode):
@@ -168,6 +175,55 @@ def _validate_source_tree(source: Path) -> None:
                 pending.append(path)
             elif not stat.S_ISREG(mode):
                 raise SnapshotError(f"--keep-original does not support special source files: {path}")
+
+
+def _copy_working_tree(original: Path, destination: Path, *, is_git: bool) -> None:
+    """Copy source bytes while leaving root Git metadata to the clean clone."""
+
+    def ignore(directory: str, _names: list[str]) -> set[str]:
+        return {".git"} if is_git and Path(directory) == original else set()
+
+    shutil.copytree(
+        original,
+        destination,
+        symlinks=True,
+        copy_function=shutil.copy2,
+        ignore=ignore,
+        dirs_exist_ok=destination.exists(),
+    )
+
+
+def _create_private_git(original: Path, destination: Path) -> None:
+    """Clone history without copying executable or externally linked metadata."""
+    _git(
+        [
+            "clone",
+            "--quiet",
+            "--local",
+            "--no-hardlinks",
+            "--no-checkout",
+            "--template=",
+            "--",
+            str(original),
+            str(destination),
+        ]
+    )
+    # A local clone records the source path as origin.  The private checkout
+    # must not retain an active path back to the original repository.
+    _git(["-C", str(destination), "config", "--local", "--remove-section", "remote.origin"])
+    original_index = original / ".git" / "index"
+    if original_index.exists() or original_index.is_symlink():
+        if original_index.is_symlink() or not original_index.is_file():
+            raise SnapshotError(f"Git index is unsafe: {original}")
+        shutil.copy2(original_index, destination / ".git" / "index")
+        for shared_index in (original / ".git").glob("sharedindex.*"):
+            if shared_index.is_symlink() or not shared_index.is_file():
+                raise SnapshotError(f"Git shared index is unsafe: {original}")
+            shutil.copy2(shared_index, destination / ".git" / shared_index.name)
+    else:
+        # --no-checkout has no index.  Resetting avoids staged deletions and
+        # also succeeds for an unborn repository.
+        _git(["-C", str(destination), "reset", "--mixed", "--quiet"])
 
 
 def _create_baseline(control: Path, source: Path, index: Path) -> str:
@@ -187,38 +243,6 @@ def _create_baseline(control: Path, source: Path, index: Path) -> str:
         index.with_name(index.name + ".lock").unlink(missing_ok=True)
 
 
-def _git_config_entries(config: Path) -> list[tuple[str, str]]:
-    output = _git(["config", "--file", str(config), "--no-includes", "--null", "--list"])
-    entries: list[tuple[str, str]] = []
-    for record in output.split("\0"):
-        if record:
-            key, _, value = record.partition("\n")
-            entries.append((key.casefold(), value))
-    return entries
-
-
-def _validate_private_path(root: Path, raw: str, label: str, source: Path) -> None:
-    path = Path(raw)
-    resolved = path.resolve() if path.is_absolute() else (root / path).resolve()
-    if not resolved.is_relative_to(root):
-        raise SnapshotError(f"copied Git {label} points outside the private source: {source}")
-
-
-def _is_automatic_command_config(key: str) -> bool:
-    """Whether a local Git operation can automatically launch this command."""
-    if key == "diff.external":
-        return True
-    fields = key.split(".")
-    if len(fields) < 3:
-        return False
-    section, variable = fields[0], fields[-1]
-    return (
-        (section == "filter" and variable in {"clean", "smudge", "process"})
-        or (section == "diff" and variable in {"command", "textconv"})
-        or (section == "merge" and variable == "driver")
-    )
-
-
 def _validate_private_git(source: Path, expected_git: bool) -> None:
     has_git = (source / ".git").is_dir()
     if has_git != expected_git:
@@ -230,81 +254,27 @@ def _validate_private_git(source: Path, expected_git: bool) -> None:
     repo_env = {"GIT_CEILING_DIRECTORIES": str(root.parent)}
     git_dir = Path(_git(["-C", str(root), "rev-parse", "--absolute-git-dir"], env=repo_env)).resolve()
     if git_dir != expected_git_dir:
-        raise SnapshotError(f"copied Git directory points outside the private source: {source}")
+        raise SnapshotError(f"private Git directory points outside the source: {source}")
 
     common_raw = Path(_git(["-C", str(root), "rev-parse", "--git-common-dir"], env=repo_env))
     common_dir = (root / common_raw).resolve() if not common_raw.is_absolute() else common_raw.resolve()
     if common_dir != expected_git_dir:
-        raise SnapshotError(f"copied Git common directory points outside the private source: {source}")
+        raise SnapshotError(f"private Git common directory points outside the source: {source}")
 
     top = Path(_git(["-C", str(root), "rev-parse", "--show-toplevel"], env=repo_env)).resolve()
     if top != root:
-        raise SnapshotError(f"copied Git work tree points outside the private source: {source}")
+        raise SnapshotError(f"private Git work tree points outside the source: {source}")
 
-    worktree_output = _git(["-C", str(root), "worktree", "list", "--porcelain", "-z"], env=repo_env)
-    worktrees = [
-        Path(field.removeprefix("worktree ")).resolve()
-        for field in worktree_output.split("\0")
-        if field.startswith("worktree ")
-    ]
-    confirmation_root = root.parent / ".specula-output" / "confirmation"
-
-    def run_local_confirmation_worktree(path: Path) -> bool:
-        try:
-            relative = path.relative_to(confirmation_root)
-        except ValueError:
-            return False
-        return len(relative.parts) == 2 and relative.parts[1] == "worktree"
-
-    if (
-        worktrees.count(root) != 1
-        or len(worktrees) != len(set(worktrees))
-        or any(path != root and not run_local_confirmation_worktree(path) for path in worktrees)
-    ):
-        raise SnapshotError(f"--keep-original does not support registered linked worktrees: {source}")
-
-    for config in (git_dir / "config", git_dir / "config.worktree"):
-        if not config.is_file():
-            continue
-        entries = _git_config_entries(config)
-        if any(key == "include.path" or (key.startswith("includeif.") and key.endswith(".path")) for key, _ in entries):
-            raise SnapshotError(f"copied Git config includes are not supported: {source}")
-        command_keys = [key for key, _ in entries if _is_automatic_command_config(key)]
-        if command_keys:
-            raise SnapshotError(f"copied Git automatic command config is not supported ({command_keys[0]}): {source}")
-        hook_values = [value for key, value in entries if key == "core.hookspath"]
-        if any("\n" in value for value in hook_values):
-            raise SnapshotError(f"copied Git hooks path is invalid: {source}")
-        if hook_values:
-            hooks_output = _git(
-                ["config", "--file", str(config), "--no-includes", "--path", "--get-all", "core.hooksPath"]
-            )
-            for hooks_value in hooks_output.splitlines():
-                _validate_private_path(root, hooks_value, "hooks path", source)
-        if any(key == "core.fsmonitor" for key, _ in entries):
-            try:
-                _git(
-                    [
-                        "config",
-                        "--file",
-                        str(config),
-                        "--no-includes",
-                        "--type=bool",
-                        "--get-all",
-                        "core.fsmonitor",
-                    ]
-                )
-            except SnapshotError as exc:
-                raise SnapshotError(f"copied Git fsmonitor must be boolean: {source}") from exc
-
-    hooks_raw = Path(_git(["-C", str(root), "rev-parse", "--git-path", "hooks"], env=repo_env))
-    hooks = (root / hooks_raw).resolve() if not hooks_raw.is_absolute() else hooks_raw.resolve()
-    if not hooks.is_relative_to(root):
-        raise SnapshotError(f"copied Git hooks path points outside the private source: {source}")
+    for alternates_name in ("alternates", "http-alternates"):
+        alternates = git_dir / "objects" / "info" / alternates_name
+        if alternates.exists() or alternates.is_symlink():
+            raise SnapshotError(f"--keep-original does not support Git object alternates: {source}")
+    if any((git_dir / "objects" / "pack").glob("*.promisor")):
+        raise SnapshotError(f"--keep-original does not support partial Git clones: {source}")
 
 
 def _target_paths(run_dir: Path, name: str) -> tuple[Path, Path, Path]:
-    if not name or Path(name).name != name or name in {".", ".."}:
+    if not name or Path(name).name != name or name in {".", "..", SOURCE_MAP}:
         raise SnapshotError(f"invalid snapshot target name: {name!r}")
     target = run_dir / name
     if os.pathsep in os.fspath(target):
@@ -323,7 +293,7 @@ def validate_snapshot_destinations(run_dir: Path, names: Sequence[str]) -> None:
 
 def _snapshot_document(snapshots: Mapping[str, SourceSnapshot]) -> dict[str, object]:
     return {
-        "version": 2,
+        "version": _SOURCE_MAP_VERSION,
         "targets": {
             name: {"original": str(item.original), "baseline": item.baseline, "is_git": item.is_git}
             for name, item in snapshots.items()
@@ -354,7 +324,11 @@ def load_sources(run_dir: Path) -> dict[str, SourceSnapshot]:
         document = json.loads(map_path.read_text())
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise SnapshotError(f"cannot read private source map {map_path}: {exc}") from exc
-    targets = document.get("targets") if isinstance(document, dict) and document.get("version") == 2 else None
+    targets = (
+        document.get("targets")
+        if isinstance(document, dict) and document.get("version") == _SOURCE_MAP_VERSION
+        else None
+    )
     if not isinstance(targets, dict):
         raise SnapshotError(f"invalid private source map: {map_path}")
     snapshots: dict[str, SourceSnapshot] = {}
@@ -436,6 +410,10 @@ def prepare_sources(run_dir: Path, sources: Mapping[str, Path]) -> dict[str, Sou
                 raise SnapshotError(f"run directory and source must not overlap: {original}")
             _validate_source_tree(original)
             is_git = (original / ".git").is_dir()
+            if is_git:
+                top = Path(_git(["-C", str(original), "rev-parse", "--show-toplevel"])).resolve()
+                if top != original:
+                    raise SnapshotError(f"Git work tree does not match snapshot source: {original}")
             target_existed = target.exists() or target.is_symlink()
             target.mkdir(parents=True, exist_ok=True)
             if not target_existed:
@@ -451,7 +429,9 @@ def prepare_sources(run_dir: Path, sources: Mapping[str, Path]) -> dict[str, Sou
             _remove_snapshot_path(control_stage)
             attempted.append((source, control, source_stage, control_stage))
             try:
-                shutil.copytree(original, source_stage, symlinks=True, copy_function=shutil.copy2)
+                if is_git:
+                    _create_private_git(original, source_stage)
+                _copy_working_tree(original, source_stage, is_git=is_git)
                 source_stage.replace(source)
                 _validate_source_tree(source)
                 _validate_private_git(source, is_git)

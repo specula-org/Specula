@@ -1488,11 +1488,18 @@ class TestRunAgentBlocking(PhaseCase):
         subprocess.run(["git", "init", "--quiet", str(outer)], check=True)
         config = outer / ".git" / "config"
         before = config.read_bytes()
+        target = outer / "runs" / "run-1" / "demo"
+        source = target / "source"
+        work_dir = target / ".specula-output"
+        trusted_cwd = work_dir / "confirmation" / "MC-1" / ".agent-cwd"
+        source.mkdir(parents=True)
+        trusted_cwd.mkdir(parents=True)
         adapter = self.tmp() / "adapter.sh"
         capture = self.tmp() / "capture"
         adapter.write_text(
             "#!/bin/sh\n"
             'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            'cd "$PRIVATE_SOURCE"\n'
             "git config --local specula.private-probe touched >/dev/null 2>&1\n"
             "probe_rc=$?\n"
             f'printf "%s\\n%s\\n%s\\n%s\\n" "$probe_rc" "${{GIT_DIR-unset}}" '
@@ -1500,11 +1507,11 @@ class TestRunAgentBlocking(PhaseCase):
             'printf "done\\n" > "$log"\n'
         )
         adapter.chmod(0o755)
-        trusted_cwd = self.tmp()
         self.set_env("SPECULA_SOURCE_SNAPSHOT", "1")
         self.set_env("GIT_DIR", str(outer / ".git"))
         self.set_env("GIT_WORK_TREE", str(outer))
         self.set_env("GIT_SSH_COMMAND", "ssh -i private-key")
+        self.set_env("PRIVATE_SOURCE", str(source))
 
         rc, text = phaselib.run_agent_blocking(
             adapter,
@@ -1512,7 +1519,7 @@ class TestRunAgentBlocking(PhaseCase):
             self.tmp() / "prompt.md",
             self.tmp() / "turn.log",
             phase_key="bug_confirmation",
-            work_dir=self.work_dir(),
+            work_dir=work_dir,
             cwd=trusted_cwd,
             claude_alias="profile",
         )
@@ -1522,7 +1529,7 @@ class TestRunAgentBlocking(PhaseCase):
         self.assertNotEqual(probe_rc, "0")
         self.assertEqual(git_dir, "unset")
         self.assertEqual(ssh_command, "ssh -i private-key")
-        self.assertEqual(ceiling, str(trusted_cwd.parent))
+        self.assertEqual(ceiling, str(target))
         self.assertEqual(config.read_bytes(), before)
 
     def test_policy_block_retries_with_one_non_accumulating_recovery_note(self) -> None:
