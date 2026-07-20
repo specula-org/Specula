@@ -93,8 +93,6 @@ Open your coding agent in the Specula directory. The workflow is a sequence of s
 
 (Codex uses `$code-analysis`, `$spec-generation`, etc. after choosing `y` in `specula setup`, or `$specula-codex:code-analysis`, `$specula-codex:spec-generation`, etc. in plugin mode.)
 
-Codex plugin installation applies to the active Codex profile and makes the plugin available across projects. Codex does not currently support project-scoped plugin installation, so setup asks for confirmation before installing it.
-
 To start, tell the agent your target and invoke the first skill:
 
 ```
