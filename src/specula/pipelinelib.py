@@ -502,7 +502,11 @@ class Pipeline:
         names = self.extract_names()
         if len(names) != len(self.targets) or len(set(names)) != len(names):
             raise SnapshotError("--keep-original requires one unique, non-empty target name per target")
-        workspace = Workspace(self.targets, artifact=self.artifact or fallback_artifact)
+        workspace = Workspace(
+            self.targets,
+            artifact=self.artifact or fallback_artifact,
+            run_dir=self.run_dir,
+        )
         sources: dict[str, Path] = {}
         for name in names:
             repo = workspace.find_original_repo_dir(name)

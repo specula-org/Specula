@@ -119,6 +119,28 @@ class TestRunId(EnvIsolatedCase):
 
         self.assertFalse((original / "runs").exists())
 
+    def test_keep_original_without_artifact_uses_canonical_source(self) -> None:
+        root = self.tmp()
+        launch_cwd = self.tmp()
+        canonical = root / "case-studies" / "foo" / "artifact" / "repo"
+        (canonical / ".git").mkdir(parents=True)
+        self.patch_root(pl, root)
+        self.patch_root(phaselib, root)
+        old_cwd = Path.cwd()
+        os.chdir(launch_cwd)
+        self.addCleanup(os.chdir, old_cwd)
+        old_pwd = os.environ.get("PWD")
+        os.environ["PWD"] = str(launch_cwd)
+        self.addCleanup(
+            lambda: os.environ.pop("PWD", None) if old_pwd is None else os.environ.__setitem__("PWD", old_pwd)
+        )
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--keep-original", "foo|o/r|Go|ref"]))
+
+        self.assertIsNone(p.resolve_run_dir())
+
+        self.assertEqual(p._snapshot_sources, {"foo": canonical.resolve()})
+
 
 class TestWorkspacePaths(EnvIsolatedCase):
     def test_legacy_single_target(self) -> None:

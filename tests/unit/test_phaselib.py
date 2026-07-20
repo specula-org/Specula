@@ -48,7 +48,7 @@ if str(SRC) not in sys.path:  # test the tree this file lives in, installed or n
 
 import specula.progress as progress_module  # noqa: E402
 import specula.quota as quota  # noqa: E402
-from specula import phaselib  # noqa: E402
+from specula import phaselib, snapshotlib  # noqa: E402
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC  # noqa: E402
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC  # noqa: E402
 from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
@@ -2701,6 +2701,59 @@ class TestModelEffortLiveLaunch(PhaseCase):
 
         self.assertFalse(marker.exists())
 
+    def test_snapshot_agent_runs_from_private_source(self) -> None:
+        launch_cwd = self.tmp()
+        run_dir = launch_cwd / "relative-run"
+        run_dir.mkdir()
+        original = self.tmp() / "original"
+        original.mkdir()
+        (original / "tracked.txt").write_text("original\n")
+        private = snapshotlib.prepare_sources(run_dir, {NAME: original})[NAME].source
+        record = self.tmp() / "cwd"
+        adapter = self.adapters / "fake.sh"
+        adapter.write_text(
+            "#!/usr/bin/env sh\n"
+            "for arg do\n"
+            '  case "$arg" in --prompt-file=*) [ -f "${arg#*=}" ] || exit 42 ;; esac\n'
+            "done\n"
+            f'printf "%s\\n%s\\n%s\\n" "$(pwd -P)" "$PWD" "$SPECULA_TARGET_REPO_DIR" > "{record}"\n'
+            'printf "agent change\\n" > agent-relative.txt\n'
+        )
+        adapter.chmod(0o755)
+        old_cwd = Path.cwd()
+        os.chdir(launch_cwd)
+        self.addCleanup(os.chdir, old_cwd)
+        self.set_env("PWD", str(launch_cwd))
+        self.set_env("SPECULA_RUN_DIR", "relative-run")
+
+        rc, out = self.run_phase("code_analysis", ["--agent=fake", NAME])
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(record.read_text().splitlines(), [str(private), str(private), str(private)])
+        self.assertTrue((private / "agent-relative.txt").is_file())
+        self.assertFalse((original / "agent-relative.txt").exists())
+        self.assertFalse((launch_cwd / "agent-relative.txt").exists())
+        snapshotlib.capture_changes(run_dir)
+        self.assertIn(b"agent-relative.txt", (run_dir / NAME / "changes.patch").read_bytes())
+
+    def test_in_place_agent_keeps_launch_cwd(self) -> None:
+        launch_cwd = self.tmp()
+        artifact = self.tmp() / "artifact"
+        artifact.mkdir()
+        record = self.tmp() / "cwd"
+        adapter = self.adapters / "fake.sh"
+        adapter.write_text(f'#!/usr/bin/env sh\nprintf "%s\\n%s\\n" "$(pwd -P)" "$PWD" > "{record}"\n')
+        adapter.chmod(0o755)
+        old_cwd = Path.cwd()
+        os.chdir(launch_cwd)
+        self.addCleanup(os.chdir, old_cwd)
+        self.set_env("PWD", str(launch_cwd))
+
+        rc, out = self.run_phase("code_analysis", ["--agent=fake", f"--artifact={artifact}", NAME])
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(record.read_text().splitlines(), [str(launch_cwd), str(launch_cwd)])
+
 
 class TestReviewPhase(PhaseCase):
     """The review agent overrides run() wholesale; its contract is the prompt it
@@ -2826,6 +2879,31 @@ class TestReviewPhase(PhaseCase):
         rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
         self.assertEqual(rc, 0, out)
         self.assertEqual(seen.read_text().strip(), str(self.work_dir()))
+
+    def test_snapshot_review_runs_from_private_source(self) -> None:
+        original = self.tmp() / "original"
+        original.mkdir()
+        private = snapshotlib.prepare_sources(self.run_dir, {NAME: original})[NAME].source
+        seen = self.tmp() / "cwd"
+        self.install_adapter(
+            "fake",
+            f'printf "%s\\n%s\\n%s\\n" "$(pwd -P)" "$PWD" "$SPECULA_TARGET_REPO_DIR" > "{seen}"\n'
+            'printf "review change\\n" > review-relative.txt\n',
+        )
+        self.set_env("SPECULA_PROGRESS", "off")
+        launch_cwd = self.tmp()
+        old_cwd = Path.cwd()
+        os.chdir(launch_cwd)
+        self.addCleanup(os.chdir, old_cwd)
+        self.set_env("PWD", str(launch_cwd))
+
+        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen.read_text().splitlines(), [str(private), str(private), str(private)])
+        self.assertTrue((private / "review-relative.txt").is_file())
+        self.assertFalse((original / "review-relative.txt").exists())
+        self.assertFalse((launch_cwd / "review-relative.txt").exists())
 
     def test_review_claude_default_max_blocks_ambient_downgrade(self) -> None:
         seen = self.tmp() / "argv"

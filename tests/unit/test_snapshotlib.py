@@ -130,6 +130,84 @@ class SnapshotTests(unittest.TestCase):
         self.assertFalse((run / sl.SOURCE_MAP).exists())
         self.assertFalse((run / "demo" / "source").exists())
 
+    def test_relocated_relative_symlink_cannot_escape_to_original(self) -> None:
+        original = self.root / "a" / "b" / "original"
+        original.mkdir(parents=True)
+        victim = original / "victim.txt"
+        victim.write_text("original\n")
+        (original / "escape").symlink_to("../../../a/b/original/victim.txt")
+        run = self.root / "run"
+        run.mkdir()
+
+        with self.assertRaisesRegex(sl.SnapshotError, "symlinks outside"):
+            sl.prepare_sources(run, {"demo": original})
+
+        self.assertEqual(victim.read_text(), "original\n")
+        self.assertFalse((run / sl.SOURCE_MAP).exists())
+        self.assertFalse((run / "demo" / "source").exists())
+
+    def test_resume_revalidates_private_symlinks(self) -> None:
+        original = self._repo()
+        run = self.root / "run"
+        run.mkdir()
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+        target = original / "tracked.txt"
+        (source / "escape").symlink_to(os.path.relpath(target, source))
+
+        with self.assertRaisesRegex(sl.SnapshotError, "symlinks outside"):
+            sl.load_sources(run)
+
+    def test_external_git_common_directory_is_rejected(self) -> None:
+        original = self._repo()
+        (original / ".git" / "commondir").write_text(f"{original / '.git'}\n")
+        run = self.root / "run"
+        run.mkdir()
+
+        with self.assertRaisesRegex(sl.SnapshotError, "common directory points outside"):
+            sl.prepare_sources(run, {"demo": original})
+
+    def test_external_git_hooks_path_is_rejected(self) -> None:
+        original = self._repo()
+        hooks = original / "custom-hooks"
+        hooks.mkdir()
+        _git(original, "config", "core.hooksPath", str(hooks))
+        run = self.root / "run"
+        run.mkdir()
+
+        with self.assertRaisesRegex(sl.SnapshotError, "hooks path points outside"):
+            sl.prepare_sources(run, {"demo": original})
+
+    def test_resume_revalidates_private_git_metadata(self) -> None:
+        original = self._repo()
+        run = self.root / "run"
+        run.mkdir()
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+        _git(source, "config", "core.hooksPath", str(original / "hooks"))
+
+        with self.assertRaisesRegex(sl.SnapshotError, "hooks path points outside"):
+            sl.load_sources(run)
+
+    def test_repo_local_git_hooks_path_is_supported(self) -> None:
+        original = self._repo()
+        (original / ".githooks").mkdir()
+        _git(original, "config", "core.hooksPath", ".githooks")
+        run = self.root / "run"
+        run.mkdir()
+
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+
+        self.assertEqual(_git(source, "rev-parse", "--git-path", "hooks").strip(), ".githooks")
+
+    def test_registered_linked_worktree_is_rejected(self) -> None:
+        original = self._repo()
+        linked = self.root / "linked"
+        _git(original, "worktree", "add", "--quiet", "-b", "linked-test", str(linked))
+        run = self.root / "run"
+        run.mkdir()
+
+        with self.assertRaisesRegex(sl.SnapshotError, "registered linked worktrees"):
+            sl.prepare_sources(run, {"demo": original})
+
     def test_unsupported_git_layouts_and_special_files_fail_fast(self) -> None:
         for kind in ("nested", "linked", "submodule", "external-worktree", "fifo"):
             with self.subTest(kind=kind):

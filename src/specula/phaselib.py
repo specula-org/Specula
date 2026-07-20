@@ -301,6 +301,7 @@ class Workspace:
         artifact: str = "",
         cwd: Path | None = None,
         opts: dict[str, str | bool] | None = None,
+        run_dir: Path | None = None,
     ) -> None:
         self.targets = targets
         self.artifact = artifact
@@ -308,8 +309,11 @@ class Workspace:
         self.single = len(targets) == 1
         # phase-specific run options (e.g. validation/confirmation --repair)
         self.opts = opts or {}
-        run_dir = os.environ.get("SPECULA_RUN_DIR", "")
-        self.run_dir: Path | None = Path(run_dir) if run_dir else None
+        env_run_dir = os.environ.get("SPECULA_RUN_DIR", "")
+        configured_run_dir = Path(run_dir) if run_dir is not None else (Path(env_run_dir) if env_run_dir else None)
+        if configured_run_dir is not None and not configured_run_dir.is_absolute():
+            configured_run_dir = self.cwd / configured_run_dir
+        self.run_dir = Path(os.path.abspath(configured_run_dir)) if configured_run_dir is not None else None
 
     def work_dir(self, name: str) -> Path:
         if self.run_dir:
@@ -356,12 +360,17 @@ class Workspace:
         return ""
 
     def find_repo_dir(self, name: str) -> str:
-        if self.run_dir:
-            source_map = self.run_dir / SOURCE_MAP
-            if source_map.exists() or source_map.is_symlink() or os.environ.get(SNAPSHOT_MODE_ENV):
-                snapshot = self.run_dir / name / "source"
-                return str(snapshot) if snapshot.is_dir() and not snapshot.is_symlink() else ""
+        if self.uses_private_source():
+            assert self.run_dir is not None
+            snapshot = self.run_dir / name / "source"
+            return str(snapshot) if snapshot.is_dir() and not snapshot.is_symlink() else ""
         return self.find_original_repo_dir(name)
+
+    def uses_private_source(self) -> bool:
+        if self.run_dir is None:
+            return False
+        source_map = self.run_dir / SOURCE_MAP
+        return source_map.exists() or source_map.is_symlink() or bool(os.environ.get(SNAPSHOT_MODE_ENV))
 
 
 class Phase:
@@ -1135,6 +1144,12 @@ class Phase:
         repo_dir = ws.find_repo_dir(name)
         if repo_dir:
             env["SPECULA_TARGET_REPO_DIR"] = repo_dir
+        launch_cwd: Path | None = None
+        if ws.uses_private_source():
+            if not repo_dir:
+                raise RuntimeError(f"private source is missing for {name!r}")
+            launch_cwd = Path(repo_dir)
+            env["PWD"] = str(launch_cwd)
         work_dir = ws.work_dir(name)
         with contextlib.suppress(OSError):
             activity_sidecar.unlink()
@@ -1182,6 +1197,7 @@ class Phase:
                     "--background",
                 ],
                 env=env,
+                cwd=launch_cwd,
                 start_new_session=True,
             )
             launched = progress.RunningAgent(
@@ -2675,6 +2691,14 @@ Output:
             activity_log.unlink()
         env = os.environ.copy()
         env["SPECULA_WORK_DIR"] = str(wd)
+        repo_dir = ws.find_repo_dir(name)
+        launch_cwd: Path | None = None
+        if ws.uses_private_source():
+            if not repo_dir:
+                raise RuntimeError(f"private source is missing for {name!r}")
+            launch_cwd = Path(repo_dir)
+            env["SPECULA_TARGET_REPO_DIR"] = repo_dir
+            env["PWD"] = str(launch_cwd)
         env.pop("SPECULA_ACTIVITY_LOG", None)
         show_progress = progress.enabled()
         if show_progress:
@@ -2713,6 +2737,7 @@ Output:
                     "--background",
                 ],
                 env=env,
+                cwd=launch_cwd,
                 start_new_session=True,
             )
             running = progress.RunningAgent(
