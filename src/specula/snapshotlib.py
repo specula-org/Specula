@@ -191,20 +191,30 @@ def _copy_working_tree(original: Path, destination: Path, *, is_git: bool) -> No
         ignore=ignore,
         dirs_exist_ok=destination.exists(),
     )
+    _make_tree_owner_accessible(destination, skip_root_git=is_git)
 
-    # The private copy is an agent workspace, even when the input was mounted
-    # read-only.  Add only owner-write; preserve executable and sharing bits.
-    pending = [destination]
+
+def _make_tree_owner_accessible(root: Path, *, skip_root_git: bool = False) -> None:
+    """Make a copied tree usable by its new owner without following symlinks."""
+    pending = [root]
     while pending:
         path = pending.pop()
         mode = path.stat(follow_symlinks=False).st_mode
-        os.chmod(path, stat.S_IMODE(mode) | stat.S_IWUSR, follow_symlinks=False)
+        if stat.S_ISDIR(mode):
+            required = stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR
+        elif stat.S_ISREG(mode):
+            required = stat.S_IRUSR | stat.S_IWUSR
+            if stat.S_IMODE(mode) & 0o111:
+                required |= stat.S_IXUSR
+        else:
+            continue
+        os.chmod(path, stat.S_IMODE(mode) | required, follow_symlinks=False)
         if stat.S_ISDIR(mode):
             with os.scandir(path) as entries:
                 pending.extend(
                     Path(entry.path)
                     for entry in entries
-                    if not entry.is_symlink() and not (path == destination and entry.name == ".git")
+                    if not entry.is_symlink() and not (skip_root_git and path == root and entry.name == ".git")
                 )
 
 
@@ -213,11 +223,28 @@ def _git_bool(repo: Path, key: str) -> bool:
     return value == "true"
 
 
-def _restore_local_branches(original: Path, destination: Path) -> None:
-    refs = _git(["-C", str(original), "for-each-ref", "--format=%(objectname) %(refname)", "refs/heads/"])
-    for line in refs.splitlines():
-        object_name, ref_name = line.split(" ", 1)
-        _git(["-C", str(destination), "update-ref", ref_name, object_name])
+def _git_refs(repo: Path, namespace: str) -> list[tuple[str, str, str | None]]:
+    output = _git(["-C", str(repo), "for-each-ref", "--format=%(objectname) %(refname) %(symref)", namespace])
+    refs: list[tuple[str, str, str | None]] = []
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) not in (2, 3):
+            raise SnapshotError(f"cannot parse Git ref in {repo}: {line!r}")
+        refs.append((fields[1], fields[0], fields[2] if len(fields) == 3 else None))
+    return refs
+
+
+def _restore_refs(original: Path, destination: Path, namespace: str, *, clear: bool = False) -> None:
+    if clear:
+        for ref_name, _object_name, _symbolic_target in _git_refs(destination, namespace):
+            _git(["-C", str(destination), "update-ref", "--no-deref", "-d", ref_name])
+    refs = _git_refs(original, namespace)
+    for ref_name, object_name, symbolic_target in refs:
+        if symbolic_target is None:
+            _git(["-C", str(destination), "update-ref", "--no-deref", ref_name, object_name])
+    for ref_name, _object_name, symbolic_target in refs:
+        if symbolic_target is not None:
+            _git(["-C", str(destination), "symbolic-ref", ref_name, symbolic_target])
 
 
 def _restore_sparse_checkout(original: Path, destination: Path) -> None:
@@ -250,7 +277,8 @@ def _create_private_git(original: Path, destination: Path) -> None:
             str(destination),
         ]
     )
-    _restore_local_branches(original, destination)
+    _restore_refs(original, destination, "refs/heads/")
+    _restore_refs(original, destination, "refs/remotes/", clear=True)
     # A local clone records the source path as origin.  The private checkout
     # must not retain an active path back to the original repository.
     _git(["-C", str(destination), "config", "--local", "--remove-section", "remote.origin"])
@@ -419,6 +447,7 @@ def _remove_snapshot_path(path: Path) -> None:
     if path.is_symlink() or (path.exists() and not path.is_dir()):
         path.unlink(missing_ok=True)
     elif path.is_dir():
+        _make_tree_owner_accessible(path, skip_root_git=True)
         shutil.rmtree(path)
 
 

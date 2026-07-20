@@ -191,6 +191,39 @@ class SnapshotTests(unittest.TestCase):
         (source / "locked" / "readonly.txt").write_text("after\n")
         (source / "locked" / "new.txt").write_text("new\n")
 
+    def test_private_copy_handles_group_only_source_permissions_after_owner_change(self) -> None:
+        source = self._plain_source()
+        locked = source / "locked"
+        locked.mkdir()
+        (locked / "shared.txt").write_text("shared\n")
+        (locked / "script.sh").write_text("#!/bin/sh\n")
+        (locked / "shared.txt").chmod(0o040)
+        (locked / "script.sh").chmod(0o050)
+        locked.chmod(0o050)
+        source.chmod(0o050)
+
+        sl._make_tree_owner_accessible(source)
+
+        self.assertEqual(source.stat().st_mode & 0o777, 0o750)
+        self.assertEqual((source / "locked").stat().st_mode & 0o777, 0o750)
+        self.assertEqual((source / "locked" / "shared.txt").stat().st_mode & 0o777, 0o640)
+        self.assertEqual((source / "locked" / "script.sh").stat().st_mode & 0o777, 0o750)
+        (source / "locked" / "shared.txt").write_text("changed\n")
+        (source / "locked" / "new.txt").write_text("new\n")
+
+    def test_group_only_partial_copy_is_removable_during_rollback(self) -> None:
+        stage = self.root / "run" / "demo" / ".source.incomplete"
+        locked = stage / "locked"
+        locked.mkdir(parents=True)
+        (locked / "shared.txt").write_text("shared\n")
+        (locked / "shared.txt").chmod(0o040)
+        locked.chmod(0o050)
+        stage.chmod(0o050)
+
+        sl._remove_snapshot_path(stage)
+
+        self.assertFalse(stage.exists())
+
     def test_private_git_preserves_all_local_branches(self) -> None:
         original = self._repo()
         initial_branch = _git(original, "branch", "--show-current").strip()
@@ -208,6 +241,38 @@ class SnapshotTests(unittest.TestCase):
         self.assertIn("feature", _git(source, "branch", "--format=%(refname:short)").splitlines())
         _git(source, "switch", "feature")
         self.assertEqual(_git(source, "rev-parse", "HEAD").strip(), feature_head)
+
+    def test_remote_tracking_refs_are_preserved_without_remote_config(self) -> None:
+        original = self._repo()
+        initial_branch = _git(original, "branch", "--show-current").strip()
+        remote_main = _git(original, "rev-parse", "HEAD").strip()
+        _git(original, "switch", "-c", "remote-only")
+        (original / "remote-only.txt").write_text("remote only\n")
+        _git(original, "add", "remote-only.txt")
+        _git(original, "commit", "--quiet", "-m", "remote only")
+        remote_feature = _git(original, "rev-parse", "HEAD").strip()
+        _git(original, "switch", initial_branch)
+        _git(original, "branch", "-D", "remote-only")
+        _git(original, "update-ref", "refs/remotes/origin/main", remote_main)
+        _git(original, "update-ref", "refs/remotes/origin/feature", remote_feature)
+        _git(original, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+        (original / "tracked.txt").write_text("local ahead\n")
+        _git(original, "add", "tracked.txt")
+        _git(original, "commit", "--quiet", "-m", "local ahead")
+        local_head = _git(original, "rev-parse", "HEAD").strip()
+        run = self.root / "run"
+        run.mkdir()
+
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+
+        ref_format = "%(refname) %(objectname) %(symref)"
+        self.assertEqual(
+            _git(source, "for-each-ref", f"--format={ref_format}", "refs/remotes/"),
+            _git(original, "for-each-ref", f"--format={ref_format}", "refs/remotes/"),
+        )
+        self.assertEqual(_git(source, "rev-parse", initial_branch).strip(), local_head)
+        self.assertEqual(_git(source, "cat-file", "-t", remote_feature).strip(), "commit")
+        self.assertNotIn('[remote "origin"]', (source / ".git" / "config").read_text())
 
     def test_sparse_checkout_behavior_is_preserved(self) -> None:
         original = self._repo()
