@@ -1700,7 +1700,8 @@ def _atomic_create_rr(path: Path, text: str) -> None:
 
 
 _REPORT_RR_ROW_RE = re.compile(
-    r"(?m)^\|\s*(\d+)\s*\|\s*([^|\s]+)\s*\|\s*([^|]+?)\s*\|(?:\s*[^|]*\s*\|)?\s*$"
+    r"(?m)^\|\s*(\d+)\s*\|\s*([^|\s]+)\s*\|\s*([^|]+?)\s*\|"
+    r"(?:\s*[^|]*\s*\|)?\s*$"
 )
 _REPORT_DETAIL_RE = re.compile(r"(?m)^##\s+(?:Bug|Entry)\s+(\d+)\s*:")
 
