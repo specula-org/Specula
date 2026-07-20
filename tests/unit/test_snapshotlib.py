@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from specula import snapshotlib as sl
 
@@ -32,8 +35,8 @@ class SnapshotTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
 
-    def _repo(self) -> Path:
-        repo = self.root / "original"
+    def _repo(self, name: str = "original") -> Path:
+        repo = self.root / name
         repo.mkdir()
         _git(repo, "init", "--quiet")
         (repo / ".gitignore").write_text("ignored-*\n")
@@ -44,6 +47,12 @@ class SnapshotTests(unittest.TestCase):
         _git(repo, "commit", "--quiet", "-m", "initial")
         (repo / "ignored-cache").write_text("initial ignored bytes\n")
         return repo
+
+    def _plain_source(self, name: str = "plain") -> Path:
+        source = self.root / name
+        source.mkdir()
+        (source / "file.txt").write_text("plain source\n")
+        return source
 
     def test_full_tree_diff_round_trip_leaves_original_unchanged(self) -> None:
         original = self._repo()
@@ -187,6 +196,78 @@ class SnapshotTests(unittest.TestCase):
         with self.assertRaisesRegex(sl.SnapshotError, "hooks path points outside"):
             sl.load_sources(run)
 
+    def test_source_map_records_and_revalidates_git_kind(self) -> None:
+        git_source = self._repo("git-source")
+        plain_source = self._plain_source()
+        run = self.root / "run"
+        run.mkdir()
+
+        snapshots = sl.prepare_sources(run, {"git": git_source, "plain": plain_source})
+        document = json.loads((run / sl.SOURCE_MAP).read_text())
+
+        self.assertEqual(document["version"], 2)
+        self.assertTrue(snapshots["git"].is_git)
+        self.assertFalse(snapshots["plain"].is_git)
+        self.assertTrue(document["targets"]["git"]["is_git"])
+        self.assertFalse(document["targets"]["plain"]["is_git"])
+
+        shutil.rmtree(snapshots["git"].source / ".git")
+        with self.assertRaisesRegex(sl.SnapshotError, "Git type"):
+            sl.load_sources(run)
+
+    def test_resume_rejects_git_created_inside_plain_private_source(self) -> None:
+        plain_source = self._plain_source()
+        run = self.root / "run"
+        run.mkdir()
+        snapshot = sl.prepare_sources(run, {"plain": plain_source})["plain"]
+
+        _git(snapshot.source, "init", "--quiet")
+
+        with self.assertRaisesRegex(sl.SnapshotError, "Git type"):
+            sl.load_sources(run)
+
+    def test_dormant_conditional_git_includes_are_rejected(self) -> None:
+        conditions = (
+            "onbranch:never-active",
+            "hasconfig:remote.*.url:https://example.invalid/**",
+        )
+        for index, condition in enumerate(conditions):
+            with self.subTest(condition=condition):
+                original = self._repo(f"conditional-{index}")
+                included = self.root / f"conditional-{index}.inc"
+                included.write_text(f"[core]\n\thooksPath = {original / 'hooks'}\n")
+                with (original / ".git" / "config").open("a") as config:
+                    config.write(f'\n[includeIf "{condition}"]\n\tpath = {included}\n')
+                run = self.root / f"run-conditional-{index}"
+                run.mkdir()
+
+                with self.assertRaisesRegex(sl.SnapshotError, "include"):
+                    sl.prepare_sources(run, {"demo": original})
+
+    def test_path_valued_fsmonitor_is_rejected(self) -> None:
+        original = self._repo()
+        monitor = original / "fsmonitor.sh"
+        monitor.write_text("#!/bin/sh\nexit 0\n")
+        monitor.chmod(0o755)
+        _git(original, "config", "core.fsmonitor", str(monitor))
+        run = self.root / "run"
+        run.mkdir()
+
+        with self.assertRaisesRegex(sl.SnapshotError, "fsmonitor"):
+            sl.prepare_sources(run, {"demo": original})
+
+    def test_boolean_fsmonitor_values_are_supported(self) -> None:
+        for value in ("true", "false"):
+            with self.subTest(value=value):
+                original = self._repo(f"fsmonitor-{value}")
+                _git(original, "config", "core.fsmonitor", value)
+                run = self.root / f"run-fsmonitor-{value}"
+                run.mkdir()
+
+                snapshot = sl.prepare_sources(run, {"demo": original})["demo"]
+
+                self.assertTrue(snapshot.is_git)
+
     def test_repo_local_git_hooks_path_is_supported(self) -> None:
         original = self._repo()
         (original / ".githooks").mkdir()
@@ -207,6 +288,87 @@ class SnapshotTests(unittest.TestCase):
 
         with self.assertRaisesRegex(sl.SnapshotError, "registered linked worktrees"):
             sl.prepare_sources(run, {"demo": original})
+
+    def test_run_local_confirmation_worktree_registration_is_supported(self) -> None:
+        original = self._repo()
+        run = self.root / "run"
+        run.mkdir()
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+        worktree = run / "demo" / ".specula-output" / "confirmation" / "MC-1" / "worktree"
+        worktree.parent.mkdir(parents=True)
+        _git(source, "worktree", "add", "--quiet", "--detach", str(worktree))
+
+        self.assertEqual(sl.load_sources(run)["demo"].source, source)
+
+        # An interrupted process can leave only the registration. It is still
+        # confined to this run and must not prevent the next invocation.
+        shutil.rmtree(worktree)
+        self.assertIn(str(worktree), _git(source, "worktree", "list", "--porcelain"))
+        self.assertEqual(sl.load_sources(run)["demo"].source, source)
+
+    def test_non_confirmation_worktree_registration_is_rejected_on_resume(self) -> None:
+        for location in ("wrong-run-path", "external"):
+            with self.subTest(location=location):
+                original = self._repo(f"repo-{location}")
+                run = self.root / f"run-{location}"
+                run.mkdir()
+                source = sl.prepare_sources(run, {"demo": original})["demo"].source
+                if location == "wrong-run-path":
+                    worktree = run / "demo" / ".specula-output" / "confirmation" / "MC-1" / "other"
+                else:
+                    worktree = self.root / "external-worktree"
+                worktree.parent.mkdir(parents=True, exist_ok=True)
+                _git(source, "worktree", "add", "--quiet", "--detach", str(worktree))
+
+                with self.assertRaisesRegex(sl.SnapshotError, "registered linked worktrees"):
+                    sl.load_sources(run)
+
+    def test_multi_target_prepare_failure_rolls_back_and_can_retry(self) -> None:
+        first = self._repo("first")
+        second = self._repo("second")
+        (second / "external").symlink_to("/dev/null")
+        run = self.root / "run"
+        preserved = run / "first" / "existing.log"
+        preserved.parent.mkdir(parents=True)
+        preserved.write_text("keep\n")
+
+        with self.assertRaisesRegex(sl.SnapshotError, "symlinks outside"):
+            sl.prepare_sources(run, {"first": first, "second": second})
+
+        self.assertEqual(preserved.read_text(), "keep\n")
+        self.assertFalse((run / sl.SOURCE_MAP).exists())
+        for name in ("first", "second"):
+            for artifact in ("source", "baseline.git", ".source.incomplete", ".baseline.git.incomplete"):
+                self.assertFalse((run / name / artifact).exists(), f"left behind: {name}/{artifact}")
+
+        (second / "external").unlink()
+        snapshots = sl.prepare_sources(run, {"first": first, "second": second})
+        self.assertEqual(set(snapshots), {"first", "second"})
+        self.assertEqual(preserved.read_text(), "keep\n")
+
+    def test_map_write_failure_rolls_back_all_prepared_targets(self) -> None:
+        first = self._repo("first")
+        second = self._repo("second")
+        run = self.root / "run"
+        run.mkdir()
+        write_map = sl._write_map
+
+        def fail_after_write(path: Path, document: dict[str, object]) -> None:
+            write_map(path, document)
+            raise OSError("simulated map failure")
+
+        with (
+            mock.patch.object(sl, "_write_map", side_effect=fail_after_write),
+            self.assertRaisesRegex(OSError, "simulated map failure"),
+        ):
+            sl.prepare_sources(run, {"first": first, "second": second})
+
+        self.assertFalse((run / sl.SOURCE_MAP).exists())
+        for name in ("first", "second"):
+            self.assertFalse((run / name / "source").exists())
+            self.assertFalse((run / name / "baseline.git").exists())
+
+        self.assertEqual(set(sl.prepare_sources(run, {"first": first, "second": second})), {"first", "second"})
 
     def test_unsupported_git_layouts_and_special_files_fail_fast(self) -> None:
         for kind in ("nested", "linked", "submodule", "external-worktree", "fifo"):

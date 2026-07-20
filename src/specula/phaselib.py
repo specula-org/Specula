@@ -372,6 +372,13 @@ class Workspace:
         source_map = self.run_dir / SOURCE_MAP
         return source_map.exists() or source_map.is_symlink() or bool(os.environ.get(SNAPSHOT_MODE_ENV))
 
+    def private_git_ceiling(self, names: list[str]) -> str | None:
+        if not self.uses_private_source():
+            return None
+        roots = [str(Path(repo).resolve().parent) for name in names if (repo := self.find_repo_dir(name))]
+        existing = [path for path in os.environ.get("GIT_CEILING_DIRECTORIES", "").split(os.pathsep) if path]
+        return os.pathsep.join(dict.fromkeys([*roots, *existing]))
+
 
 class Phase:
     """Base launcher. Subclasses set the per-phase specifics; `run` is shared."""
@@ -711,6 +718,9 @@ class Phase:
 
         ws = Workspace(targets, artifact=artifact, opts=extra)
         names = [self.target_name(t) for t in targets]
+        git_ceiling = ws.private_git_ceiling(names)
+        if git_ceiling:
+            os.environ["GIT_CEILING_DIRECTORIES"] = git_ceiling
 
         print("========================================")
         print(f" {self.title}")
@@ -2543,6 +2553,9 @@ Output:
 
         ws = Workspace(targets)
         names = [_trim(t) for t in targets]
+        git_ceiling = ws.private_git_ceiling(names)
+        if git_ceiling:
+            os.environ["GIT_CEILING_DIRECTORIES"] = git_ceiling
 
         print("========================================")
         print(f" Specula — Review Agent ({phase})")

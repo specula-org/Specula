@@ -8,6 +8,7 @@ is included.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -42,6 +43,7 @@ class SourceSnapshot:
     baseline_git: Path
     baseline: str
     patch: Path
+    is_git: bool
 
 
 def _git_env(extra: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -145,34 +147,99 @@ def _create_baseline(control: Path, source: Path, index: Path) -> str:
         index.with_name(index.name + ".lock").unlink(missing_ok=True)
 
 
-def _validate_private_git(source: Path) -> None:
-    if not (source / ".git").is_dir():
+def _git_config_entries(config: Path) -> list[tuple[str, str]]:
+    output = _git(["config", "--file", str(config), "--no-includes", "--null", "--list"])
+    entries: list[tuple[str, str]] = []
+    for record in output.split("\0"):
+        if record:
+            key, _, value = record.partition("\n")
+            entries.append((key.casefold(), value))
+    return entries
+
+
+def _validate_private_path(root: Path, raw: str, label: str, source: Path) -> None:
+    path = Path(raw)
+    resolved = path.resolve() if path.is_absolute() else (root / path).resolve()
+    if not resolved.is_relative_to(root):
+        raise SnapshotError(f"copied Git {label} points outside the private source: {source}")
+
+
+def _validate_private_git(source: Path, expected_git: bool) -> None:
+    has_git = (source / ".git").is_dir()
+    if has_git != expected_git:
+        raise SnapshotError(f"private source Git type changed: {source}")
+    if not has_git:
         return
     root = source.resolve()
-    expected_git = (root / ".git").resolve()
-    git_dir = Path(_git(["-C", str(root), "rev-parse", "--absolute-git-dir"])).resolve()
-    if git_dir != expected_git:
+    expected_git_dir = (root / ".git").resolve()
+    repo_env = {"GIT_CEILING_DIRECTORIES": str(root.parent)}
+    git_dir = Path(_git(["-C", str(root), "rev-parse", "--absolute-git-dir"], env=repo_env)).resolve()
+    if git_dir != expected_git_dir:
         raise SnapshotError(f"copied Git directory points outside the private source: {source}")
 
-    common_raw = Path(_git(["-C", str(root), "rev-parse", "--git-common-dir"]))
+    common_raw = Path(_git(["-C", str(root), "rev-parse", "--git-common-dir"], env=repo_env))
     common_dir = (root / common_raw).resolve() if not common_raw.is_absolute() else common_raw.resolve()
-    if common_dir != expected_git:
+    if common_dir != expected_git_dir:
         raise SnapshotError(f"copied Git common directory points outside the private source: {source}")
 
-    top = Path(_git(["-C", str(root), "rev-parse", "--show-toplevel"])).resolve()
+    top = Path(_git(["-C", str(root), "rev-parse", "--show-toplevel"], env=repo_env)).resolve()
     if top != root:
         raise SnapshotError(f"copied Git work tree points outside the private source: {source}")
 
-    worktree_output = _git(["-C", str(root), "worktree", "list", "--porcelain", "-z"])
+    worktree_output = _git(["-C", str(root), "worktree", "list", "--porcelain", "-z"], env=repo_env)
     worktrees = [
         Path(field.removeprefix("worktree ")).resolve()
         for field in worktree_output.split("\0")
         if field.startswith("worktree ")
     ]
-    if worktrees != [root]:
+    confirmation_root = root.parent / ".specula-output" / "confirmation"
+
+    def run_local_confirmation_worktree(path: Path) -> bool:
+        try:
+            relative = path.relative_to(confirmation_root)
+        except ValueError:
+            return False
+        return len(relative.parts) == 2 and relative.parts[1] == "worktree"
+
+    if (
+        worktrees.count(root) != 1
+        or len(worktrees) != len(set(worktrees))
+        or any(path != root and not run_local_confirmation_worktree(path) for path in worktrees)
+    ):
         raise SnapshotError(f"--keep-original does not support registered linked worktrees: {source}")
 
-    hooks_raw = Path(_git(["-C", str(root), "rev-parse", "--git-path", "hooks"]))
+    for config in (git_dir / "config", git_dir / "config.worktree"):
+        if not config.is_file():
+            continue
+        entries = _git_config_entries(config)
+        if any(key == "include.path" or (key.startswith("includeif.") and key.endswith(".path")) for key, _ in entries):
+            raise SnapshotError(f"copied Git config includes are not supported: {source}")
+        hook_values = [value for key, value in entries if key == "core.hookspath"]
+        if any("\n" in value for value in hook_values):
+            raise SnapshotError(f"copied Git hooks path is invalid: {source}")
+        if hook_values:
+            hooks_output = _git(
+                ["config", "--file", str(config), "--no-includes", "--path", "--get-all", "core.hooksPath"]
+            )
+            for hooks_value in hooks_output.splitlines():
+                _validate_private_path(root, hooks_value, "hooks path", source)
+        if any(key == "core.fsmonitor" for key, _ in entries):
+            try:
+                _git(
+                    [
+                        "config",
+                        "--file",
+                        str(config),
+                        "--no-includes",
+                        "--type=bool",
+                        "--get-all",
+                        "core.fsmonitor",
+                    ]
+                )
+            except SnapshotError as exc:
+                raise SnapshotError(f"copied Git fsmonitor must be boolean: {source}") from exc
+
+    hooks_raw = Path(_git(["-C", str(root), "rev-parse", "--git-path", "hooks"], env=repo_env))
     hooks = (root / hooks_raw).resolve() if not hooks_raw.is_absolute() else hooks_raw.resolve()
     if not hooks.is_relative_to(root):
         raise SnapshotError(f"copied Git hooks path points outside the private source: {source}")
@@ -187,9 +254,10 @@ def _target_paths(run_dir: Path, name: str) -> tuple[Path, Path, Path]:
 
 def _snapshot_document(snapshots: Mapping[str, SourceSnapshot]) -> dict[str, object]:
     return {
-        "version": 1,
+        "version": 2,
         "targets": {
-            name: {"original": str(item.original), "baseline": item.baseline} for name, item in snapshots.items()
+            name: {"original": str(item.original), "baseline": item.baseline, "is_git": item.is_git}
+            for name, item in snapshots.items()
         },
     }
 
@@ -217,7 +285,7 @@ def load_sources(run_dir: Path) -> dict[str, SourceSnapshot]:
         document = json.loads(map_path.read_text())
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise SnapshotError(f"cannot read private source map {map_path}: {exc}") from exc
-    targets = document.get("targets") if isinstance(document, dict) and document.get("version") == 1 else None
+    targets = document.get("targets") if isinstance(document, dict) and document.get("version") == 2 else None
     if not isinstance(targets, dict):
         raise SnapshotError(f"invalid private source map: {map_path}")
     snapshots: dict[str, SourceSnapshot] = {}
@@ -226,7 +294,13 @@ def load_sources(run_dir: Path) -> dict[str, SourceSnapshot]:
             raise SnapshotError(f"invalid private source map: {map_path}")
         original_raw = raw.get("original")
         baseline = raw.get("baseline")
-        if not isinstance(original_raw, str) or not Path(original_raw).is_absolute() or not isinstance(baseline, str):
+        is_git = raw.get("is_git")
+        if (
+            not isinstance(original_raw, str)
+            or not Path(original_raw).is_absolute()
+            or not isinstance(baseline, str)
+            or not isinstance(is_git, bool)
+        ):
             raise SnapshotError(f"invalid private source map entry: {name!r}")
         source, control, patch = _target_paths(run_root, name)
         if (
@@ -242,15 +316,23 @@ def load_sources(run_dir: Path) -> dict[str, SourceSnapshot]:
         if resolved_baseline != baseline:
             raise SnapshotError(f"private source baseline for {name!r} does not match its map")
         _validate_source_tree(source)
-        _validate_private_git(source)
+        _validate_private_git(source, is_git)
         snapshots[name] = SourceSnapshot(
             original=Path(original_raw).resolve(),
             source=source,
             baseline_git=control,
             baseline=baseline,
             patch=patch,
+            is_git=is_git,
         )
     return snapshots
+
+
+def _remove_snapshot_path(path: Path) -> None:
+    if path.is_symlink() or (path.exists() and not path.is_dir()):
+        path.unlink(missing_ok=True)
+    elif path.is_dir():
+        shutil.rmtree(path)
 
 
 def prepare_sources(run_dir: Path, sources: Mapping[str, Path]) -> dict[str, SourceSnapshot]:
@@ -266,48 +348,60 @@ def prepare_sources(run_dir: Path, sources: Mapping[str, Path]) -> dict[str, Sou
         return snapshots
 
     prepared: dict[str, SourceSnapshot] = {}
-    for name, raw_source in sources.items():
-        original = raw_source.resolve()
-        source, control, patch = _target_paths(run_root, name)
-        target = source.parent
-        if not original.is_dir():
-            raise SnapshotError(f"source is not a directory: {original}")
-        if run_root == original or run_root.is_relative_to(original) or original.is_relative_to(run_root):
-            raise SnapshotError(f"run directory and source must not overlap: {original}")
-        _validate_source_tree(original)
-        target.mkdir(parents=True, exist_ok=True)
-        if target.is_symlink() or target.resolve() != target:
-            raise SnapshotError(f"unsafe snapshot target directory: {target}")
+    attempted: list[tuple[Path, Path, Path, Path]] = []
+    created_targets: list[Path] = []
+    map_attempted = False
+    try:
+        for name, raw_source in sources.items():
+            original = raw_source.resolve()
+            source, control, patch = _target_paths(run_root, name)
+            target = source.parent
+            if not original.is_dir():
+                raise SnapshotError(f"source is not a directory: {original}")
+            if run_root == original or run_root.is_relative_to(original) or original.is_relative_to(run_root):
+                raise SnapshotError(f"run directory and source must not overlap: {original}")
+            _validate_source_tree(original)
+            is_git = (original / ".git").is_dir()
+            target_existed = target.exists() or target.is_symlink()
+            target.mkdir(parents=True, exist_ok=True)
+            if not target_existed:
+                created_targets.append(target)
+            if target.is_symlink() or target.resolve() != target:
+                raise SnapshotError(f"unsafe snapshot target directory: {target}")
 
-        if source.exists() or source.is_symlink() or control.exists() or control.is_symlink():
-            raise SnapshotError(f"private source exists without {SOURCE_MAP}; refusing to reuse it")
-        source_stage = target / ".source.incomplete"
-        control_stage = target / ".baseline.git.incomplete"
-        if source_stage.exists():
-            shutil.rmtree(source_stage)
-        if control_stage.exists():
-            shutil.rmtree(control_stage)
-        try:
-            shutil.copytree(original, source_stage, symlinks=True, copy_function=shutil.copy2)
-            source_stage.replace(source)
-            _validate_source_tree(source)
-            _validate_private_git(source)
-            index = target / ".baseline-index"
-            baseline = _create_baseline(control_stage, source, index)
-            control_stage.replace(control)
-        except BaseException:
-            if source.exists():
-                shutil.rmtree(source)
-            raise
-        finally:
-            if source_stage.exists():
-                shutil.rmtree(source_stage)
-            if control_stage.exists():
-                shutil.rmtree(control_stage)
-        prepared[name] = SourceSnapshot(original, source, control, baseline, patch)
+            if source.exists() or source.is_symlink() or control.exists() or control.is_symlink():
+                raise SnapshotError(f"private source exists without {SOURCE_MAP}; refusing to reuse it")
+            source_stage = target / ".source.incomplete"
+            control_stage = target / ".baseline.git.incomplete"
+            _remove_snapshot_path(source_stage)
+            _remove_snapshot_path(control_stage)
+            attempted.append((source, control, source_stage, control_stage))
+            try:
+                shutil.copytree(original, source_stage, symlinks=True, copy_function=shutil.copy2)
+                source_stage.replace(source)
+                _validate_source_tree(source)
+                _validate_private_git(source, is_git)
+                index = target / ".baseline-index"
+                baseline = _create_baseline(control_stage, source, index)
+                control_stage.replace(control)
+            finally:
+                _remove_snapshot_path(source_stage)
+                _remove_snapshot_path(control_stage)
+            prepared[name] = SourceSnapshot(original, source, control, baseline, patch, is_git)
 
-    _write_map(map_path, _snapshot_document(prepared))
-    return load_sources(run_root)
+        map_attempted = True
+        _write_map(map_path, _snapshot_document(prepared))
+        return load_sources(run_root)
+    except BaseException:
+        if map_attempted:
+            map_path.unlink(missing_ok=True)
+        for paths in reversed(attempted):
+            for path in paths:
+                _remove_snapshot_path(path)
+        for target in reversed(created_targets):
+            with contextlib.suppress(OSError):
+                target.rmdir()
+        raise
 
 
 def capture_changes(run_dir: Path) -> dict[str, bool]:

@@ -860,6 +860,68 @@ class TestDriver(ConfirmCase):
         self.assertEqual(prompts[2], prompts[1])
         self.assertFalse((root / "prompt-4.md").exists())
 
+    def test_consolidate_uses_stable_trusted_cwd_across_policy_and_rate_resume(self) -> None:
+        ws = Workspace(["T"])
+        root = Path(self.tmp)
+        wd = ws.work_dir("T")
+        spec = wd / "spec"
+        spec.mkdir(parents=True)
+        trusted_cwd = wd / ".consolidate-cwd"
+        trusted_cwd.mkdir()
+        (trusted_cwd / "stale").write_text("old\n")
+        original = root / "original"
+        original.mkdir()
+        adapter = root / "consolidate-cwd-adapter.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "log= resume=\n"
+            'for arg do case "$arg" in\n'
+            "  --log=*) log=${arg#*=} ;;\n"
+            "  --resume-state=*) resume=${arg#*=} ;;\n"
+            "esac; done\n"
+            'printf x >> "$COUNT"\n'
+            'attempt=$(wc -c < "$COUNT")\n'
+            '{ pwd -P; printf "%s\\n" "$PWD"; } > "$CAPTURE/cwd-$attempt"\n'
+            'printf "%s\\n" "$attempt" >> relative-touch\n'
+            'case "$attempt" in\n'
+            "  1) exit 76 ;;\n"
+            '  2) printf consolidate-session > "$resume"; exit 75 ;;\n'
+            '  3) test "$(cat "$resume")" = consolidate-session ;;\n'
+            "  *) exit 99 ;;\n"
+            "esac\n"
+            'printf \'{"generated_by":"consolidate","findings":[]}\\n\' > "$CANDIDATES"\n'
+            'printf "continued\\n" > "$log"\n'
+        )
+        adapter.chmod(0o755)
+        cfg = self.cfg(ws, "T", adapter=adapter, policy_retries=1)
+        previous_cwd = Path.cwd()
+        env = {
+            "CAPTURE": str(root),
+            "COUNT": str(root / "consolidate-count"),
+            "CANDIDATES": str(spec / "candidates.json"),
+        }
+        try:
+            os.chdir(original)
+            with mock.patch.dict(os.environ, env, clear=False):
+                self.assertEqual(C.run_parallel_confirmation(cfg, retain_rate_limited_state=True), 75)
+                self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+        finally:
+            os.chdir(previous_cwd)
+
+        cwd_records = [(root / f"cwd-{attempt}").read_text().splitlines() for attempt in range(1, 4)]
+        self.assertEqual(cwd_records, [[str(trusted_cwd), str(trusted_cwd)]] * 3)
+        self.assertFalse((trusted_cwd / "stale").exists())
+        self.assertEqual((trusted_cwd / "relative-touch").read_text(), "1\n2\n3\n")
+        self.assertFalse((original / "relative-touch").exists())
+        git_root = subprocess.run(
+            ["git", "-C", str(trusted_cwd), "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        self.assertEqual(Path(git_root), trusted_cwd)
+
     def test_consolidate_rate_resume_keeps_partial_candidates_and_exact_session(self) -> None:
         ws = Workspace(["T"])
         root = Path(self.tmp)

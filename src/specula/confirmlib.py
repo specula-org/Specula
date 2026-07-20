@@ -501,6 +501,45 @@ def _fresh_turn_cwd(f: Finding, role: str, turn_no: int, lease: _FindingLease | 
     return cwd
 
 
+def _consolidate_cwd(work_dir: Path, *, fresh: bool) -> Path:
+    """Return the stable, dispatcher-owned cwd for the consolidate agent."""
+    cwd = work_dir.absolute() / ".consolidate-cwd"
+    if fresh:
+        if cwd.is_symlink():
+            cwd.unlink()
+        elif cwd.is_dir():
+            shutil.rmtree(cwd)
+        elif cwd.exists():
+            cwd.unlink()
+        cwd.mkdir(parents=True)
+        try:
+            subprocess.run(
+                ["git", "init", "--quiet", str(cwd)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise ConsolidateFailed(f"could not create trusted consolidate cwd: {exc}") from exc
+
+    git_dir = cwd / ".git"
+    if cwd.is_symlink() or not cwd.is_dir() or git_dir.is_symlink() or not git_dir.is_dir():
+        raise ConsolidateFailed("consolidate cwd is not safe")
+    try:
+        probe = subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel", "--absolute-git-dir"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise ConsolidateFailed(f"could not validate retained consolidate cwd: {exc}") from exc
+    paths = probe.stdout.splitlines()
+    if len(paths) != 2 or Path(paths[0]).resolve() != cwd.resolve() or Path(paths[1]).resolve() != git_dir.resolve():
+        raise ConsolidateFailed("consolidate cwd is not safe")
+    return cwd
+
+
 # ── per-finding git worktree (build isolation) ───────────────────────────────
 
 
@@ -2387,12 +2426,14 @@ def consolidate(cfg: ConfirmConfig) -> None:
         return
     spec_dir.mkdir(parents=True, exist_ok=True)
     policy_state = cfg.policy_state(("consolidate",), prompt)
-    if policy_state.invocation_attempt == 0:
+    fresh = policy_state.invocation_attempt == 0
+    if fresh:
         # Do not let a fresh failed agent make stale output look fresh. An exact
         # rc75 continuation, however, may need candidates already written by its
         # still-live native session, so the replay must not delete them.
         out.unlink(missing_ok=True)
         (spec_dir / _CANDIDATE_CACHE).unlink(missing_ok=True)
+    run_cwd = _consolidate_cwd(wd, fresh=fresh)
     try:
         rc, _ = run_agent_blocking(
             cfg.adapter,
@@ -2401,6 +2442,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
             spec_dir / ".consolidate.log",
             phase_key=PHASE_KEY,
             work_dir=wd,
+            cwd=run_cwd,
             claude_alias=cfg.claude_alias,
             max_turns=cfg.max_turns,
             model=cfg.model,

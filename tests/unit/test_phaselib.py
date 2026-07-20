@@ -192,6 +192,7 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_EFFORT",
             "CLAUDE_ALIAS",
             "CLAUDE_EFFORT",
+            "GIT_CEILING_DIRECTORIES",
         ):
             self.set_env(var, str(self.run_dir) if var == "SPECULA_RUN_DIR" else None)
 
@@ -2735,6 +2736,35 @@ class TestModelEffortLiveLaunch(PhaseCase):
         self.assertFalse((launch_cwd / "agent-relative.txt").exists())
         snapshotlib.capture_changes(run_dir)
         self.assertIn(b"agent-relative.txt", (run_dir / NAME / "changes.patch").read_bytes())
+
+    def test_non_git_snapshot_cannot_discover_outer_repository(self) -> None:
+        outer = self.tmp()
+        subprocess.run(["git", "init", "--quiet", str(outer)], check=True)
+        outer_config = outer / ".git" / "config"
+        config_before = outer_config.read_bytes()
+        run_dir = outer / "runs" / "test"
+        run_dir.mkdir(parents=True)
+        original = self.tmp()
+        (original / "plain.txt").write_text("plain source\n")
+        private = snapshotlib.prepare_sources(run_dir, {NAME: original})[NAME].source
+        record = self.tmp() / "git-discovery"
+        adapter = self.adapters / "fake.sh"
+        adapter.write_text(
+            "#!/usr/bin/env sh\n"
+            "git config --local specula.private-probe touched >/dev/null 2>&1\n"
+            "probe_rc=$?\n"
+            f'printf "%s\\n%s\\n" "$GIT_CEILING_DIRECTORIES" "$probe_rc" > "{record}"\n'
+        )
+        adapter.chmod(0o755)
+        self.set_env("SPECULA_RUN_DIR", str(run_dir))
+
+        rc, out = self.run_phase("code_analysis", ["--agent=fake", NAME])
+
+        self.assertEqual(rc, 0, out)
+        ceiling, probe_rc = record.read_text().splitlines()
+        self.assertEqual(ceiling, str(private.parent))
+        self.assertNotEqual(probe_rc, "0")
+        self.assertEqual(outer_config.read_bytes(), config_before)
 
     def test_in_place_agent_keeps_launch_cwd(self) -> None:
         launch_cwd = self.tmp()
