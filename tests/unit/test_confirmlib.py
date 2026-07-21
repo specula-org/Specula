@@ -860,6 +860,74 @@ class TestDriver(ConfirmCase):
         self.assertEqual(prompts[2], prompts[1])
         self.assertFalse((root / "prompt-4.md").exists())
 
+    def test_consolidate_uses_stable_trusted_cwd_across_policy_and_rate_resume(self) -> None:
+        ws = Workspace(["T"])
+        root = Path(self.tmp)
+        wd = ws.work_dir("T")
+        spec = wd / "spec"
+        spec.mkdir(parents=True)
+        trusted_cwd = wd / ".consolidate-cwd"
+        trusted_cwd.mkdir()
+        (trusted_cwd / "stale").write_text("old\n")
+        original = root / "original"
+        subprocess.run(["git", "init", "--quiet", str(original)], check=True)
+        original_config = original / ".git" / "config"
+        config_before = original_config.read_bytes()
+        adapter = root / "consolidate-cwd-adapter.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "log= resume=\n"
+            'for arg do case "$arg" in\n'
+            "  --log=*) log=${arg#*=} ;;\n"
+            "  --resume-state=*) resume=${arg#*=} ;;\n"
+            "esac; done\n"
+            'printf x >> "$COUNT"\n'
+            'attempt=$(wc -c < "$COUNT")\n'
+            '{ pwd -P; printf "%s\\n" "$PWD"; } > "$CAPTURE/cwd-$attempt"\n'
+            'printf "%s\\n" "$attempt" >> relative-touch\n'
+            'case "$attempt" in\n'
+            "  1) exit 76 ;;\n"
+            '  2) printf consolidate-session > "$resume"; exit 75 ;;\n'
+            '  3) test "$(cat "$resume")" = consolidate-session ;;\n'
+            "  *) exit 99 ;;\n"
+            "esac\n"
+            'printf \'{"generated_by":"consolidate","findings":[]}\\n\' > "$CANDIDATES"\n'
+            'printf "continued\\n" > "$log"\n'
+        )
+        adapter.chmod(0o755)
+        cfg = self.cfg(ws, "T", adapter=adapter, policy_retries=1)
+        previous_cwd = Path.cwd()
+        env = {
+            "CAPTURE": str(root),
+            "COUNT": str(root / "consolidate-count"),
+            "CANDIDATES": str(spec / "candidates.json"),
+            "SPECULA_SOURCE_SNAPSHOT": "1",
+            "GIT_DIR": str(original / ".git"),
+            "GIT_WORK_TREE": str(original),
+        }
+        try:
+            os.chdir(original)
+            with mock.patch.dict(os.environ, env, clear=False):
+                self.assertEqual(C.run_parallel_confirmation(cfg, retain_rate_limited_state=True), 75)
+                self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+        finally:
+            os.chdir(previous_cwd)
+
+        cwd_records = [(root / f"cwd-{attempt}").read_text().splitlines() for attempt in range(1, 4)]
+        self.assertEqual(cwd_records, [[str(trusted_cwd), str(trusted_cwd)]] * 3)
+        self.assertFalse((trusted_cwd / "stale").exists())
+        self.assertEqual((trusted_cwd / "relative-touch").read_text(), "1\n2\n3\n")
+        self.assertFalse((original / "relative-touch").exists())
+        self.assertEqual(original_config.read_bytes(), config_before)
+        git_root = subprocess.run(
+            ["git", "-C", str(trusted_cwd), "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        self.assertEqual(Path(git_root), trusted_cwd)
+
     def test_consolidate_rate_resume_keeps_partial_candidates_and_exact_session(self) -> None:
         ws = Workspace(["T"])
         root = Path(self.tmp)
@@ -2752,6 +2820,43 @@ class TestRepoIsolation(ConfirmCase):
             self.assertTrue((Path(path) / "tracked.txt").is_file())
         finally:
             cleanup()
+
+    def test_snapshot_worktree_dispatch_ignores_ambient_repository(self) -> None:
+        repo = self._repo()
+        external = Path(self.tmp) / "external"
+        subprocess.run(["git", "init", "--quiet", str(external)], check=True)
+        external_config = external / ".git" / "config"
+        config_before = external_config.read_bytes()
+        worktrees_before = subprocess.run(
+            ["git", "-C", str(external), "worktree", "list", "--porcelain"],
+            check=True,
+            capture_output=True,
+        ).stdout
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding(
+            {"id": "MC-1", "source": "model-checking"},
+            ws.work_dir("T") / "confirmation" / "MC-1",
+        )
+        ambient = {
+            "SPECULA_SOURCE_SNAPSHOT": "1",
+            "GIT_DIR": str(external / ".git"),
+            "GIT_WORK_TREE": str(external),
+        }
+
+        with mock.patch.dict(os.environ, ambient, clear=False):
+            path, cleanup = C.setup_repo(cfg, f)
+            try:
+                self.assertTrue((Path(path) / "tracked.txt").is_file())
+            finally:
+                cleanup()
+
+        self.assertEqual(external_config.read_bytes(), config_before)
+        worktrees_after = subprocess.run(
+            ["git", "-C", str(external), "worktree", "list", "--porcelain"],
+            check=True,
+            capture_output=True,
+        ).stdout
+        self.assertEqual(worktrees_after, worktrees_before)
 
     def test_local_cache_ignores_own_output_but_hashes_untracked_contents(self) -> None:
         repo = self._repo()

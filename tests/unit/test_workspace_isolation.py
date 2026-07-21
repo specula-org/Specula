@@ -46,6 +46,8 @@ class EnvIsolatedCase(unittest.TestCase):
             "SPECULA_TLC_SCOPE",
             "SPECULA_TLC_MEMORY_LIMIT",
             "SPECULA_TLC_WORKER_LIMIT",
+            "SPECULA_SOURCE_SNAPSHOT",
+            "SPECULA_SANDBOX_EXTRA_WRITE",
         )
         original = {name: os.environ.get(name) for name in names}
 
@@ -105,6 +107,39 @@ class TestRunId(EnvIsolatedCase):
         self.assertIsNone(p.resolve_run_dir())
         self.assertEqual(p.run_dir, root / "runs" / "exp-1.retry_2")
         self.assertTrue((root / "runs" / "exp-1.retry_2").is_dir())
+
+    def test_keep_original_rejects_run_storage_inside_source_before_writing(self) -> None:
+        original = self.tmp()
+        self.patch_root(pl, original)
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--keep-original", f"--artifact={original}", "t|o/r|Go|ref"]))
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(p.resolve_run_dir(), 1)
+
+        self.assertFalse((original / "runs").exists())
+
+    def test_keep_original_without_artifact_uses_canonical_source(self) -> None:
+        root = self.tmp()
+        launch_cwd = self.tmp()
+        canonical = root / "case-studies" / "foo" / "artifact" / "repo"
+        (canonical / ".git").mkdir(parents=True)
+        self.patch_root(pl, root)
+        self.patch_root(phaselib, root)
+        old_cwd = Path.cwd()
+        os.chdir(launch_cwd)
+        self.addCleanup(os.chdir, old_cwd)
+        old_pwd = os.environ.get("PWD")
+        os.environ["PWD"] = str(launch_cwd)
+        self.addCleanup(
+            lambda: os.environ.pop("PWD", None) if old_pwd is None else os.environ.__setitem__("PWD", old_pwd)
+        )
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--keep-original", "foo|o/r|Go|ref"]))
+
+        self.assertIsNone(p.resolve_run_dir())
+
+        self.assertEqual(p._snapshot_sources, {"foo": canonical.resolve()})
 
 
 class TestWorkspacePaths(EnvIsolatedCase):
@@ -166,6 +201,26 @@ class TestFindRepoDir(EnvIsolatedCase):
         self.set_run_dir(self.tmp())
         ws = phaselib.Workspace(["foo"], artifact="/my/repo")
         self.assertEqual(ws.find_repo_dir("foo"), "/my/repo")
+
+    def test_private_source_wins_over_explicit_artifact(self) -> None:
+        run = self.tmp()
+        source = run / "foo" / "source"
+        source.mkdir(parents=True)
+        (run / "source-map.json").write_text("{}\n")
+        self.set_run_dir(run)
+
+        ws = phaselib.Workspace(["foo"], artifact="/original/repo")
+
+        self.assertEqual(ws.find_repo_dir("foo"), str(source))
+
+    def test_snapshot_mode_never_falls_back_to_original(self) -> None:
+        run = self.tmp()
+        self.set_run_dir(run)
+        os.environ["SPECULA_SOURCE_SNAPSHOT"] = "1"
+
+        ws = phaselib.Workspace(["foo"], artifact="/original/repo")
+
+        self.assertEqual(ws.find_repo_dir("foo"), "")
 
     def test_isolated_canonical_fallback(self) -> None:
         root = self.tmp()
@@ -297,6 +352,29 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         # env exported for the phase subprocesses
         self.assertEqual(os.environ["SPECULA_RUN_DIR"], str(p.run_dir))
         self.assertEqual(os.environ["SPECULA_TLC_SCOPE"], str(p.run_dir.resolve()))
+
+    def test_snapshot_mode_and_private_source_survive_resume_without_flag(self) -> None:
+        root = self.tmp()
+        original = self.tmp()
+        (original / "source.txt").write_text("original\n")
+        first = self._pipeline(
+            ["--run-id=private", "--keep-original", f"--artifact={original}", "foo|o/r|Go|ref"],
+            root,
+        )
+        first.prepare_source_snapshots(["foo"])
+        assert first.run_dir is not None
+        private = first.run_dir / "foo" / "source"
+        (private / "agent.txt").write_text("keep\n")
+        os.environ.pop("SPECULA_RUN_DIR", None)
+        os.environ.pop("SPECULA_TLC_SCOPE", None)
+        os.environ.pop("SPECULA_SOURCE_SNAPSHOT", None)
+
+        resumed = self._pipeline(["--run-id=private", "foo|o/r|Go|ref"], root)
+        resumed.prepare_source_snapshots(["foo"])
+
+        self.assertTrue(resumed.keep_original)
+        self.assertEqual((private / "agent.txt").read_text(), "keep\n")
+        self.assertEqual(phaselib.Workspace(["foo"]).find_repo_dir("foo"), str(private))
 
     def test_meta_records_cli_tuning_over_environment(self) -> None:
         root = self.tmp()

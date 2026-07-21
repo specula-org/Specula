@@ -164,12 +164,19 @@ runs/<run-id>/
 ├── tlc-resources.json
 ├── pipeline.log
 ├── pipeline-summary.md
-└── <name>/.specula-output/
+└── <name>/
+    ├── .specula-output/
+    ├── source/          # --keep-original only
+    └── changes.patch   # --keep-original only
 ```
 
 The `.specula-output/` directory contains the modeling brief, specifications, harness, traces, reproduction tests, reports, and per-step logs. `runs/latest` points to the newest run.
 
-The source supplied through `--artifact` is not copied into the isolated workspace. Harness and reproduction work may build or modify that checkout. `--no-isolate` selects the legacy layout: a single target writes step outputs under `$PWD/.specula-output/`, or under `case-studies/<name>/.specula-output/` when that canonical case study exists; multiple targets use `$PWD/<name>/.specula-output/`. For a canonical single target, `pipeline.log` remains under the launch directory's `.specula-output/` while the step outputs and summary use the case-study directory.
+By default, Specula works directly in the source passed through `--artifact`, so harness or reproduction work may modify it. Use `--keep-original` to run every phase on a private copy instead. The original checkout stays unchanged, and the final filesystem changes are written to `changes.patch`.
+
+The patch includes every non-`.git` change, including ignored, untracked, and generated files and executable-bit changes. Expect roughly one extra copy of the checkout and Git history. Unsafe layouts such as external symlinks, linked worktrees, submodules, nested repositories, or externally shared Git objects are rejected. Without the optional sandbox, this does not prevent a command from deliberately writing to the original absolute path.
+
+`--keep-original` requires the isolated layout and conflicts with `--no-isolate`. Without it, `--no-isolate` selects the legacy layout: a single target writes step outputs under `$PWD/.specula-output/`, or under `case-studies/<name>/.specula-output/` when that canonical case study exists; multiple targets use `$PWD/<name>/.specula-output/`. For a canonical single target, `pipeline.log` remains under the launch directory's `.specula-output/` while the step outputs and summary use the case-study directory.
 
 TLC can use substantial memory and temporary disk space during model checking. The bundled `scripts/tlc/run_model_check.sh` stores states under `TMPDIR` (or `/tmp`) by default; set `TLC_STATE_DIR` to a larger or faster filesystem when necessary.
 
@@ -208,7 +215,7 @@ specula run \
   "name|owner/repository|language|reference"
 ```
 
-Specula reuses `runs/<run-id>/<name>/.specula-output/`. Pass the target, artifact, agent, model, and effort again when resuming. The run's TLC memory and worker limits are restored from `tlc-resources.json`; `run.json` remains an audit record, not arguments for the new invocation.
+Specula reuses `runs/<run-id>/<name>/.specula-output/`. Pass the target, artifact, agent, model, and effort again when resuming. A `--keep-original` run automatically resumes against its existing private source even when that flag and the original artifact are omitted. The run's TLC memory and worker limits are restored from `tlc-resources.json`; `run.json` remains an audit record, not arguments for the new invocation.
 
 ## Individual Steps
 
@@ -263,6 +270,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--model=NAME` | Override the configured model |
 | `--effort=LEVEL` | Override reasoning effort |
 | `--artifact=PATH` | Set the target source checkout |
+| `--keep-original` | Run against a full private source copy and write `changes.patch` |
 | `--tlc-memory-limit=SIZE` | Set the run-wide aggregate TLC heap + direct-memory budget; default is 80% of effective available memory at the first TLC start |
 | `--tlc-worker-limit=N` | Optionally bound aggregate TLC exploration workers; omitted means report-only |
 | `--max-parallel=N` | Set a hard concurrency limit. If omitted, ordinary steps run 1 target agent at a time and per-finding confirmation runs up to 4 Reproducer agents at a time |
