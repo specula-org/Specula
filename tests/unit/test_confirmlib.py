@@ -3027,6 +3027,32 @@ class TestRepoIsolation(ConfirmCase):
         finally:
             subprocess.run(["git", "-C", str(repo), "worktree", "remove", "--force", str(f.fdir / "worktree")])
 
+    def test_stale_worktree_cleanup_failure_uses_alternate_isolated_worktree(self) -> None:
+        repo = self._repo()
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+        stale = f.fdir / "worktree"
+        stale.mkdir(parents=True)
+        (stale / "blocked").write_text("leftover\n")
+        real_rmtree = shutil.rmtree
+
+        def fail_stale(path: str | os.PathLike[str], *args: Any, **kwargs: Any) -> None:
+            if Path(path) == stale:
+                raise PermissionError("denied")
+            real_rmtree(path, *args, **kwargs)
+
+        with mock.patch("specula.confirmlib.shutil.rmtree", side_effect=fail_stale):
+            path, cleanup = C.setup_repo(cfg, f)
+        try:
+            wt = Path(path)
+            self.assertEqual(wt, f.fdir / "worktree-1")
+            self.assertNotEqual(wt, repo)
+            self.assertTrue((wt / "tracked.txt").is_file())
+            self.assertEqual((repo / "tracked.txt").read_text(), "base\n")
+            self.assertEqual((stale / "blocked").read_text(), "leftover\n")
+        finally:
+            cleanup()
+
     def test_stale_registered_worktree_is_recovered(self) -> None:
         repo = self._repo()
         cfg, ws = self._repo_cfg(repo, worktree=True)
