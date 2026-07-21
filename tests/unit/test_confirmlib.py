@@ -1844,7 +1844,14 @@ class TestCacheContracts(ConfirmCase):
         output.write_text("trace\n")
         f.fdir.mkdir(parents=True, exist_ok=True)
         (f.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
-        pending = C.Outcome(f, "PENDING REPAIR", True, 0, EVIDENCE, bug_no=1)
+        pending = C.Outcome(
+            f,
+            "PENDING REPAIR",
+            True,
+            0,
+            f"{EVIDENCE}\n- **Status**: PENDING REPAIR",
+            bug_no=1,
+        )
         pending.rr = C.allocate_rr(cfg, pending)
         C._save_verdict(pending, cfg)
         self.assertIsNotNone(C._load_verdict(f, cfg))
@@ -1887,6 +1894,7 @@ class TestCacheContracts(ConfirmCase):
         self.assertEqual(list(rr_dir.rglob("RR-*.md")), [deferred])
         report = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
         self.assertIn("| 1 | MC-1 | DEFERRED (repair loop exhausted; RR-001 in deferred/) |", report)
+        self.assertNotIn("- **Status**: PENDING REPAIR", report)
         self.assertIn("+ 0 pending-repair + 0 incomplete + 1 deferred", report)
 
         terminal_bytes = deferred.read_bytes()
@@ -2002,14 +2010,24 @@ class TestCacheContracts(ConfirmCase):
 
 class TestValidationContracts(ConfirmCase):
     @staticmethod
-    def _write_repair_report(spec: Path, status: str, *, bug_no: int = 1, finding_id: str = "MC-1") -> None:
+    def _write_repair_report(
+        spec: Path,
+        status: str,
+        *,
+        bug_no: int = 1,
+        finding_id: str = "MC-1",
+        extra_detail_statuses: tuple[str, ...] = (),
+    ) -> None:
+        detail_statuses = "\n".join(f"- **Status**: {extra}" for extra in extra_detail_statuses)
+        if detail_statuses:
+            detail_statuses = f"\n{detail_statuses}"
         (spec.parent / "confirmed-bugs.md").write_text(
             "| Entry | Finding | Status | Counts as final bug? |\n"
             "|---|---|---|---|\n"
             f"| {bug_no} | {finding_id} | {status} | no |\n\n"
             f"## Entry {bug_no}: one\n\n"
             f"- **Finding ID**: {finding_id}\n"
-            f"- **Status**: {status}\n"
+            f"- **Status**: {status}{detail_statuses}\n"
         )
 
     def test_structural_hygiene_still_enforced(self) -> None:
@@ -2349,6 +2367,45 @@ class TestValidationContracts(ConfirmCase):
                 )
             )
         with self.assertRaisesRegex(C.InvalidRepairRequest, "RR-001 resolves to 2 files"):
+            C.validate_report_repair_references(self.cfg(ws, "T"))
+
+    def test_report_pending_reference_allows_duplicate_bare_detail_status(self) -> None:
+        ws = self.seed("T", [])
+        spec = ws.work_dir("T") / "spec"
+        self._write_repair_report(spec, "PENDING REPAIR (RR-001)", extra_detail_statuses=("PENDING REPAIR",))
+        rr_dir = spec / "repair-requests"
+        rr_dir.mkdir()
+        (rr_dir / "RR-001.md").write_text(
+            C._merge_rr(
+                "RR-001",
+                "Bug 1",
+                "fallback.out",
+                TestMergeRR.AGENT_BODY,
+                finding_id="MC-1",
+                allocation_key="key",
+            )
+        )
+
+        C.validate_report_repair_references(self.cfg(ws, "T"))
+
+    def test_report_pending_reference_rejects_conflicting_detail_status(self) -> None:
+        ws = self.seed("T", [])
+        spec = ws.work_dir("T") / "spec"
+        self._write_repair_report(spec, "PENDING REPAIR (RR-001)", extra_detail_statuses=("FALSE POSITIVE",))
+        rr_dir = spec / "repair-requests"
+        rr_dir.mkdir()
+        (rr_dir / "RR-001.md").write_text(
+            C._merge_rr(
+                "RR-001",
+                "Bug 1",
+                "fallback.out",
+                TestMergeRR.AGENT_BODY,
+                finding_id="MC-1",
+                allocation_key="key",
+            )
+        )
+
+        with self.assertRaisesRegex(C.InvalidRepairRequest, "table/detail repair status is inconsistent"):
             C.validate_report_repair_references(self.cfg(ws, "T"))
 
     def test_report_deferred_reference_requires_deferred_file_and_status(self) -> None:

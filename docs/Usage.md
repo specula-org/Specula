@@ -280,12 +280,12 @@ specula run [options] "name|owner/repository|language|reference"
 | `--enable-reviews` | Enable reviews between steps |
 | `--legacy-confirm` | Use one confirmation agent instead of per-finding agents |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse earlier outputs |
-| `--skip-validation`, `--skip-confirmation`, `--skip-classification` | Reuse later outputs |
+| `--skip-validate`, `--skip-confirmation`, `--skip-classification` | Reuse later outputs |
 | `--confirm-debate` | Add the adversarial confirmation debate in parallel Phase 4 mode |
 | `--skip-repair-loop` | Disable the confirmation back-edge repair loop |
 | `--max-repair-rounds=N` | Set the global repair-loop round cap (default `10`; `0` means unlimited) |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse early-phase outputs |
-| `--skip-validation`, `--skip-confirmation`, `--skip-classification` | Reuse later-phase outputs |
+| `--skip-validate`, `--skip-confirmation`, `--skip-classification` | Reuse later-phase outputs |
 | `--run-id=ID` | Create or attach to an isolated run |
 | `--no-isolate` | Use the legacy output layout described above |
 
