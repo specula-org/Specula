@@ -48,7 +48,7 @@ if str(SRC) not in sys.path:  # test the tree this file lives in, installed or n
 
 import specula.progress as progress_module  # noqa: E402
 import specula.quota as quota  # noqa: E402
-from specula import phaselib  # noqa: E402
+from specula import phaselib, snapshotlib  # noqa: E402
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC  # noqa: E402
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC  # noqa: E402
 from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
@@ -177,6 +177,7 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_STOP_GATE_WORK_DIR",
             "SPECULA_SANDBOX",
             "SPECULA_SANDBOX_CONFIG",
+            "SPECULA_SANDBOX_EXTRA_WRITE",
             "SPECULA_PROGRESS",
             "SPECULA_ACTIVITY_LOG",
             "SPECULA_RATE_LIMIT_REACTIVE",
@@ -192,6 +193,8 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_EFFORT",
             "CLAUDE_ALIAS",
             "CLAUDE_EFFORT",
+            "SPECULA_SOURCE_SNAPSHOT",
+            "GIT_CEILING_DIRECTORIES",
         ):
             self.set_env(var, str(self.run_dir) if var == "SPECULA_RUN_DIR" else None)
 
@@ -1481,6 +1484,55 @@ class TestLegacyRepairIdentityFinalization(PhaseCase):
 
 
 class TestRunAgentBlocking(PhaseCase):
+    def test_snapshot_turn_clears_repository_git_environment(self) -> None:
+        outer = self.tmp()
+        subprocess.run(["git", "init", "--quiet", str(outer)], check=True)
+        config = outer / ".git" / "config"
+        before = config.read_bytes()
+        target = outer / "runs" / "run-1" / "demo"
+        source = target / "source"
+        work_dir = target / ".specula-output"
+        trusted_cwd = work_dir / "confirmation" / "MC-1" / ".agent-cwd"
+        source.mkdir(parents=True)
+        trusted_cwd.mkdir(parents=True)
+        adapter = self.tmp() / "adapter.sh"
+        capture = self.tmp() / "capture"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            'cd "$PRIVATE_SOURCE"\n'
+            "git config --local specula.private-probe touched >/dev/null 2>&1\n"
+            "probe_rc=$?\n"
+            f'printf "%s\\n%s\\n%s\\n%s\\n" "$probe_rc" "${{GIT_DIR-unset}}" '
+            f'"$GIT_SSH_COMMAND" "$GIT_CEILING_DIRECTORIES" > "{capture}"\n'
+            'printf "done\\n" > "$log"\n'
+        )
+        adapter.chmod(0o755)
+        self.set_env("SPECULA_SOURCE_SNAPSHOT", "1")
+        self.set_env("GIT_DIR", str(outer / ".git"))
+        self.set_env("GIT_WORK_TREE", str(outer))
+        self.set_env("GIT_SSH_COMMAND", "ssh -i private-key")
+        self.set_env("PRIVATE_SOURCE", str(source))
+
+        rc, text = phaselib.run_agent_blocking(
+            adapter,
+            "prompt body",
+            self.tmp() / "prompt.md",
+            self.tmp() / "turn.log",
+            phase_key="bug_confirmation",
+            work_dir=work_dir,
+            cwd=trusted_cwd,
+            claude_alias="profile",
+        )
+
+        self.assertEqual((rc, text), (0, "done\n"))
+        probe_rc, git_dir, ssh_command, ceiling = capture.read_text().splitlines()
+        self.assertNotEqual(probe_rc, "0")
+        self.assertEqual(git_dir, "unset")
+        self.assertEqual(ssh_command, "ssh -i private-key")
+        self.assertEqual(ceiling, str(target))
+        self.assertEqual(config.read_bytes(), before)
+
     def test_policy_block_retries_with_one_non_accumulating_recovery_note(self) -> None:
         adapter = self.tmp() / "adapter.sh"
         count = self.tmp() / "count"
@@ -2701,6 +2753,138 @@ class TestModelEffortLiveLaunch(PhaseCase):
 
         self.assertFalse(marker.exists())
 
+    def test_snapshot_agent_runs_from_private_source(self) -> None:
+        launch_cwd = self.tmp()
+        launch_config = launch_cwd / ".specula" / "sandbox.json"
+        launch_config.parent.mkdir()
+        launch_config.write_text('{"enabled": true}\n')
+        run_dir = launch_cwd / "relative-run"
+        run_dir.mkdir()
+        original = self.tmp() / "original"
+        original.mkdir()
+        (original / "tracked.txt").write_text("original\n")
+        private = snapshotlib.prepare_sources(run_dir, {NAME: original})[NAME].source
+        private_config = private / ".specula" / "sandbox.json"
+        private_config.parent.mkdir()
+        private_config.write_text('{"enabled": false}\n')
+        record = self.tmp() / "cwd"
+        adapter = self.adapters / "fake.sh"
+        adapter.write_text(
+            "#!/usr/bin/env sh\n"
+            "for arg do\n"
+            '  case "$arg" in --prompt-file=*) [ -f "${arg#*=}" ] || exit 42 ;; esac\n'
+            "done\n"
+            f'printf "%s\\n%s\\n%s\\n%s\\n%s\\n" "$(pwd -P)" "$PWD" "$SPECULA_TARGET_REPO_DIR" '
+            f'"$SPECULA_SANDBOX_CONFIG" "$SPECULA_SANDBOX_EXTRA_WRITE" > "{record}"\n'
+            'printf "agent change\\n" > agent-relative.txt\n'
+        )
+        adapter.chmod(0o755)
+        old_cwd = Path.cwd()
+        os.chdir(launch_cwd)
+        self.addCleanup(os.chdir, old_cwd)
+        self.set_env("PWD", str(launch_cwd))
+        self.set_env("SPECULA_RUN_DIR", "relative-run")
+        self.set_env("SPECULA_SANDBOX", "on")
+        self.set_env("SPECULA_SANDBOX_EXTRA_WRITE", "/cache")
+
+        rc, out = self.run_phase("code_analysis", ["--agent=fake", NAME])
+
+        self.assertEqual(rc, 0, out)
+        recorded = record.read_text().splitlines()
+        self.assertEqual(recorded[:4], [str(private), str(private), str(private), str(launch_config)])
+        self.assertEqual(recorded[4].split(os.pathsep), ["/cache", str(private)])
+        self.assertTrue((private / "agent-relative.txt").is_file())
+        self.assertFalse((original / "agent-relative.txt").exists())
+        self.assertFalse((launch_cwd / "agent-relative.txt").exists())
+        snapshotlib.capture_changes(run_dir)
+        self.assertIn(b"agent-relative.txt", (run_dir / NAME / "changes.patch").read_bytes())
+
+    def test_snapshot_metadata_without_map_stops_before_agent_launch(self) -> None:
+        original = self.tmp() / "original"
+        original.mkdir()
+        private = self.run_dir / NAME / "source"
+        private.mkdir(parents=True)
+        (self.run_dir / "run.json").write_text('{"source_mode": "snapshot"}\n')
+        marker = self.tmp() / "launched"
+        adapter = self.adapters / "fake.sh"
+        adapter.write_text(f'#!/usr/bin/env sh\ntouch "{marker}"\nprintf x > agent-relative.txt\n')
+        adapter.chmod(0o755)
+        old_cwd = Path.cwd()
+        os.chdir(original)
+        self.addCleanup(os.chdir, old_cwd)
+        self.set_env("PWD", str(original))
+
+        rc, out = self.run_phase(
+            "code_analysis",
+            ["--agent=fake", f"--artifact={original}", NAME],
+        )
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("private source map is missing or unsafe", out)
+        self.assertFalse(marker.exists())
+        self.assertFalse((original / "agent-relative.txt").exists())
+        self.assertFalse((private / "agent-relative.txt").exists())
+
+    def test_non_git_snapshot_cannot_discover_outer_repository(self) -> None:
+        outer = self.tmp()
+        subprocess.run(["git", "init", "--quiet", str(outer)], check=True)
+        outer_config = outer / ".git" / "config"
+        config_before = outer_config.read_bytes()
+        run_dir = outer / "runs" / "test"
+        run_dir.mkdir(parents=True)
+        original = self.tmp()
+        (original / "plain.txt").write_text("plain source\n")
+        private = snapshotlib.prepare_sources(run_dir, {NAME: original})[NAME].source
+        record = self.tmp() / "git-discovery"
+        adapter = self.adapters / "fake.sh"
+        adapter.write_text(
+            "#!/usr/bin/env sh\n"
+            "git config --local specula.private-probe touched >/dev/null 2>&1\n"
+            "probe_rc=$?\n"
+            f'printf "%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n" "$GIT_CEILING_DIRECTORIES" "$probe_rc" '
+            f'"${{GIT_DIR-unset}}" "${{GIT_EXTERNAL_DIFF-unset}}" "$GIT_SSH_COMMAND" "$GIT_ASKPASS" '
+            f'"$SPECULA_SOURCE_SNAPSHOT" > "{record}"\n'
+        )
+        adapter.chmod(0o755)
+        self.set_env("SPECULA_RUN_DIR", str(run_dir))
+        self.set_env("GIT_DIR", str(outer / ".git"))
+        self.set_env("GIT_WORK_TREE", str(outer))
+        self.set_env("GIT_CEILING_DIRECTORIES", "/untrusted")
+        self.set_env("GIT_EXTERNAL_DIFF", str(original / "external-diff.sh"))
+        self.set_env("GIT_SSH_COMMAND", "ssh -i private-key")
+        self.set_env("GIT_ASKPASS", "/usr/bin/askpass")
+
+        rc, out = self.run_phase("code_analysis", ["--agent=fake", NAME])
+
+        self.assertEqual(rc, 0, out)
+        ceiling, probe_rc, git_dir, external_diff, ssh_command, askpass, snapshot_mode = record.read_text().splitlines()
+        self.assertEqual(ceiling, str(private.parent))
+        self.assertNotEqual(probe_rc, "0")
+        self.assertEqual(git_dir, "unset")
+        self.assertEqual(external_diff, "unset")
+        self.assertEqual(ssh_command, "ssh -i private-key")
+        self.assertEqual(askpass, "/usr/bin/askpass")
+        self.assertEqual(snapshot_mode, "1")
+        self.assertEqual(outer_config.read_bytes(), config_before)
+
+    def test_in_place_agent_keeps_launch_cwd(self) -> None:
+        launch_cwd = self.tmp()
+        artifact = self.tmp() / "artifact"
+        artifact.mkdir()
+        record = self.tmp() / "cwd"
+        adapter = self.adapters / "fake.sh"
+        adapter.write_text(f'#!/usr/bin/env sh\nprintf "%s\\n%s\\n" "$(pwd -P)" "$PWD" > "{record}"\n')
+        adapter.chmod(0o755)
+        old_cwd = Path.cwd()
+        os.chdir(launch_cwd)
+        self.addCleanup(os.chdir, old_cwd)
+        self.set_env("PWD", str(launch_cwd))
+
+        rc, out = self.run_phase("code_analysis", ["--agent=fake", f"--artifact={artifact}", NAME])
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(record.read_text().splitlines(), [str(launch_cwd), str(launch_cwd)])
+
 
 class TestReviewPhase(PhaseCase):
     """The review agent overrides run() wholesale; its contract is the prompt it
@@ -2826,6 +3010,67 @@ class TestReviewPhase(PhaseCase):
         rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
         self.assertEqual(rc, 0, out)
         self.assertEqual(seen.read_text().strip(), str(self.work_dir()))
+
+    def test_snapshot_review_runs_from_private_source(self) -> None:
+        original = self.tmp() / "original"
+        original.mkdir()
+        private = snapshotlib.prepare_sources(self.run_dir, {NAME: original})[NAME].source
+        seen = self.tmp() / "cwd"
+        self.install_adapter(
+            "fake",
+            f'printf "%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n" "$(pwd -P)" "$PWD" '
+            f'"$SPECULA_TARGET_REPO_DIR" "${{GIT_DIR-unset}}" "$GIT_SSH_COMMAND" '
+            f'"$SPECULA_SANDBOX_CONFIG" "$SPECULA_SANDBOX_EXTRA_WRITE" > "{seen}"\n'
+            'printf "review change\\n" > review-relative.txt\n',
+        )
+        self.set_env("SPECULA_PROGRESS", "off")
+        launch_cwd = self.tmp()
+        old_cwd = Path.cwd()
+        os.chdir(launch_cwd)
+        self.addCleanup(os.chdir, old_cwd)
+        self.set_env("PWD", str(launch_cwd))
+        relative_config = launch_cwd / "review-sandbox.json"
+        relative_config.write_text('{"enabled": true}\n')
+        self.set_env("SPECULA_SANDBOX", "on")
+        self.set_env("SPECULA_SANDBOX_CONFIG", relative_config.name)
+        self.set_env("SPECULA_SANDBOX_EXTRA_WRITE", "/cache")
+        self.set_env("GIT_DIR", str(original / ".git"))
+        self.set_env("GIT_SSH_COMMAND", "ssh -i private-key")
+
+        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+
+        self.assertEqual(rc, 0, out)
+        recorded = seen.read_text().splitlines()
+        self.assertEqual(
+            recorded[:6],
+            [str(private), str(private), str(private), "unset", "ssh -i private-key", str(relative_config)],
+        )
+        self.assertEqual(recorded[6].split(os.pathsep), ["/cache", str(private)])
+        self.assertTrue((private / "review-relative.txt").is_file())
+        self.assertFalse((original / "review-relative.txt").exists())
+        self.assertFalse((launch_cwd / "review-relative.txt").exists())
+
+    def test_snapshot_review_metadata_without_map_stops_before_launch(self) -> None:
+        original = self.tmp() / "original"
+        original.mkdir()
+        private = self.run_dir / NAME / "source"
+        private.mkdir(parents=True)
+        (self.run_dir / "run.json").write_text('{"source_mode": "snapshot"}\n')
+        marker = self.tmp() / "launched"
+        self.install_adapter("fake", f'touch "{marker}"\nprintf x > review-relative.txt\n')
+        self.set_env("SPECULA_PROGRESS", "off")
+        old_cwd = Path.cwd()
+        os.chdir(original)
+        self.addCleanup(os.chdir, old_cwd)
+        self.set_env("PWD", str(original))
+
+        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("private source map is missing or unsafe", out)
+        self.assertFalse(marker.exists())
+        self.assertFalse((original / "review-relative.txt").exists())
+        self.assertFalse((private / "review-relative.txt").exists())
 
     def test_review_claude_default_max_blocks_ambient_downgrade(self) -> None:
         seen = self.tmp() / "argv"
