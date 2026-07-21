@@ -1791,6 +1791,16 @@ _REPORT_RR_ROW_RE = re.compile(
     r"(?:\s*[^|]*\s*\|)?\s*$"
 )
 _REPORT_DETAIL_RE = re.compile(r"(?m)^##\s+(?:Bug|Entry)\s+(\d+)\s*:")
+_REPORT_STATUS_FIELD_RE = re.compile(r"^\s*-\s*\*\*Status\*\*:", re.I)
+
+
+def _report_repair_status_key(status: str, rid: str) -> str | None:
+    status = status.strip()
+    if status in {"PENDING REPAIR", f"PENDING REPAIR ({rid})"}:
+        return "PENDING REPAIR"
+    if status in {"DEFERRED", f"DEFERRED (repair loop exhausted; {rid} in deferred/)"}:
+        return "DEFERRED"
+    return None
 
 
 def _legacy_rr_report_identity(
@@ -1986,7 +1996,10 @@ def validate_report_repair_references(cfg: ConfirmConfig) -> None:
                 continue
             end = details[index + 1].start() if index + 1 < len(details) else len(text)
             detail_statuses.extend(re.findall(r"(?m)^- \*\*Status\*\*:\s*(.+?)\s*$", text[detail.end() : end]))
-        if detail_statuses != [rendered_status]:
+        rendered_key = _report_repair_status_key(rendered_status, rid)
+        if not detail_statuses or any(
+            _report_repair_status_key(status, rid) != rendered_key for status in detail_statuses
+        ):
             raise InvalidRepairRequest(f"report Entry {bug_no} table/detail repair status is inconsistent")
 
         matches = list(rr_dir.rglob(f"{rid}.md")) if rr_dir.is_dir() and not rr_dir.is_symlink() else []
@@ -2552,6 +2565,8 @@ def _report_body(body: str) -> str:
     lines: list[str] = []
     for line in body.splitlines():
         if re.match(r"^\s*VERDICT\s*:", line, re.I):
+            continue
+        if _REPORT_STATUS_FIELD_RE.match(line):
             continue
         if re.match(r"^##\s+(?:Bug|Entry)\s+\d+\s*:", line, re.I):
             line = "\\" + line

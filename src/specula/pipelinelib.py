@@ -112,7 +112,7 @@ Options:
   --skip-analysis        Skip code analysis (use existing outputs)
   --skip-specgen         Skip spec generation (use existing outputs)
   --skip-harness         Skip harness generation (use existing harness/traces)
-  --skip-validation      Skip validation
+  --skip-validate        Skip validation
   --skip-confirmation    Skip Phase 4a bug confirmation
   --skip-classification  Skip Phase 4b severity classification
   --skip-repair-loop     Skip the confirmation back-edge repair loop (default: enabled)
@@ -352,7 +352,7 @@ class Pipeline:
                 self.skip_specgen = True
             elif arg == "--skip-harness":
                 self.skip_harness = True
-            elif arg == "--skip-validation":
+            elif arg == "--skip-validate":
                 self.skip_validation = True
             elif arg == "--skip-confirmation":
                 self.skip_confirmation = True
@@ -2186,7 +2186,7 @@ class Pipeline:
             source = "resumed repair loop" if resumed_repair else "recovered committed repairs"
             log(f"Ordinary Phase 3 covered for every target by the {source}")
         else:
-            log("Skipping Phase 3 (--skip-validation)")
+            log("Skipping Phase 3 (--skip-validate)")
 
         phase4_covered = resumed_repair and not normal_phase3_ran
         fresh_phase4_ran = False

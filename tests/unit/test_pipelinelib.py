@@ -541,6 +541,7 @@ class TestParsing(TmpCwd):
         rc = p.parse_args(
             [
                 "--skip-analysis",
+                "--skip-validate",
                 "--skip-repair-loop",
                 "--max-repair-rounds=2",
                 "--max-parallel=4",
@@ -553,6 +554,7 @@ class TestParsing(TmpCwd):
         )
         self.assertIsNone(rc)
         self.assertTrue(p.skip_analysis)
+        self.assertTrue(p.skip_validation)
         self.assertTrue(p.skip_repair_loop)
         self.assertEqual(p.max_repair_rounds, "2")
         self.assertEqual(p.max_parallel, "4")
@@ -794,6 +796,12 @@ class TestParsing(TmpCwd):
         self.assertEqual(rc, 1)
         self.assertIn("Unknown option: --bogus", out)
 
+    def test_parse_args_rejects_old_skip_validation_name(self) -> None:
+        p = pl.Pipeline()
+        rc, out = quiet(p.parse_args, ["--skip-validation"])
+        self.assertEqual(rc, 1)
+        self.assertIn("Unknown option: --skip-validation", out)
+
     def test_parse_args_help(self) -> None:
         p = pl.Pipeline()
         rc, out = quiet(p.parse_args, ["--help"])
@@ -803,6 +811,8 @@ class TestParsing(TmpCwd):
         self.assertIn("--effort=LEVEL", out)
         self.assertIn("--policy-retries=N", out)
         self.assertIn("--transient-resumes=N", out)
+        self.assertIn("--skip-validate", out)
+        self.assertNotIn("--skip-validation", out)
         self.assertIn("default: 20", out)
 
     def test_default_target_is_cwd_basename(self) -> None:

@@ -679,7 +679,7 @@ class TestParallelIsolation(EnvIsolatedCase):
         "--skip-analysis",
         "--skip-specgen",
         "--skip-harness",
-        "--skip-validation",
+        "--skip-validate",
         "--skip-confirmation",
         "--skip-classification",
         "--skip-repair-loop",
