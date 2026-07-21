@@ -187,6 +187,10 @@ class TestConfirmConfigCompatibility(ConfirmCase):
         self.assertEqual(run.call_args.kwargs["policy_retries"], 100)
         self.assertEqual(run.call_args.kwargs["gate_work_dir"], finding.fdir)
         self.assertEqual(run.call_args.kwargs["cwd"], "/repo-worktree")
+        fresh_prompt = run.call_args.kwargs["policy_fresh_prompt"]
+        self.assertIn(str(finding.fdir / "finding.json"), fresh_prompt)
+        self.assertIn("/repo-worktree", fresh_prompt)
+        self.assertIn("Continue as the Reproducer", fresh_prompt)
 
     def test_finding_turn_starts_in_clean_dispatcher_cwd_not_untrusted_repo(self) -> None:
         ws = Workspace(["T"])
@@ -528,7 +532,7 @@ class TestDriver(ConfirmCase):
         self.assertEqual((first_rc, second_rc), (75, 1))
         self.assertEqual(count.read_text(), "xxx")
         prompts = [(root / f"prompt-{attempt}.md").read_text() for attempt in range(1, 4)]
-        marker = "Continue After Provider Policy Interruption"
+        marker = "# Continue interrupted confirmation turn"
         self.assertNotIn(marker, prompts[0])
         self.assertIn(marker, prompts[1])
         self.assertEqual(prompts[2], prompts[1])
@@ -552,7 +556,7 @@ class TestDriver(ConfirmCase):
         self.assertEqual((first_rc, second_rc), (75, 0))
         self.assertEqual(count.read_text(), "xxx")
         prompts = [(root / f"prompt-{attempt}.md").read_text() for attempt in range(1, 4)]
-        marker = "Continue After Provider Policy Interruption"
+        marker = "# Continue interrupted confirmation turn"
         self.assertNotIn(marker, prompts[0])
         self.assertEqual(prompts[1], prompts[0])
         self.assertIn(marker, prompts[2])
@@ -576,7 +580,7 @@ class TestDriver(ConfirmCase):
         # Completed A is cached across the outer replay; only unfinished B is
         # invoked again, with its own rate-limit cursor.
         self.assertEqual(count.read_text(), "xxxx")
-        marker = "Continue After Provider Policy Interruption"
+        marker = "# Continue interrupted confirmation turn"
         self.assertNotIn(marker, (root / "prompt-1.md").read_text())
         self.assertIn(marker, (root / "prompt-2.md").read_text())
         self.assertNotIn(marker, (root / "prompt-3.md").read_text())
@@ -1543,6 +1547,36 @@ class TestPromptExtraAndLog(ConfirmCase):
         cfg = self.cfg(ws, "T", prompt_extra="\n## Target-Specific Instructions\n\nCHECK THE FOO RACE")
         f = C.Finding({"id": "MC-1", "title": "t", "summary": "s"}, ws.work_dir("T") / "confirmation" / "MC-1")
         self.assertIn("CHECK THE FOO RACE", C.prompt_reproduce(cfg, f, "/repo"))
+
+    def test_policy_recovery_prompt_uses_current_finding_capsule(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T", prompt_extra="\n## Target-Specific Instructions\n\nCHECK THE FOO RACE")
+        data = {
+            "id": "MC-1",
+            "source": "model-checking",
+            "title": "Sensitive finding title",
+            "summary": "Sensitive finding details",
+        }
+        f = C.Finding(data, ws.work_dir("T") / "confirmation" / "MC-1")
+        f.fdir.mkdir(parents=True)
+
+        capsule = C._write_finding_context(cfg, f)
+        prompt = C.prompt_policy_recovery(cfg, f, "B", 2, "/repo-worktree")
+
+        self.assertEqual(
+            json.loads(capsule.read_text()),
+            {
+                "finding": data,
+                "target_specific_instructions": "## Target-Specific Instructions\n\nCHECK THE FOO RACE",
+            },
+        )
+        self.assertIn(str(capsule), prompt)
+        self.assertIn("/repo-worktree", prompt)
+        self.assertIn(str(f.fdir / "debate.md"), prompt)
+        self.assertIn("Continue as the Challenger", prompt)
+        self.assertIn("installed Specula skill **bug-confirmation**", prompt)
+        self.assertNotIn("Sensitive finding title", prompt)
+        self.assertNotIn("Sensitive finding details", prompt)
 
     def test_parallel_prompts_assign_rr_queue_only_to_dispatcher(self) -> None:
         ws = self.seed("T", [])

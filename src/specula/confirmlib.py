@@ -335,6 +335,24 @@ class Outcome:
 # ── prompt builders ──────────────────────────────────────────────────────────
 
 
+def _write_finding_context(cfg: ConfirmConfig, f: Finding) -> Path:
+    """Publish the current finding as the compact retry's canonical input."""
+    path = f.fdir / "finding.json"
+    payload: dict[str, object] = {"finding": f.data}
+    if cfg.prompt_extra.strip():
+        payload["target_specific_instructions"] = cfg.prompt_extra.strip()
+    temporary = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+    try:
+        temporary.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+        os.replace(temporary, path)
+    except OSError as exc:
+        raise ConfirmationFailed(f"{f.id}: cannot publish finding context: {exc}") from exc
+    finally:
+        with contextlib.suppress(OSError):
+            temporary.unlink()
+    return path
+
+
 def _context(cfg: ConfirmConfig, f: Finding, repo_for_agent: str) -> str:
     wd = cfg.ws.work_dir(cfg.name).absolute()
     return render(
@@ -410,6 +428,49 @@ def prompt_repair_draft_retry(
     )
 
 
+def _policy_role_task(role: str, turn_no: int) -> str:
+    if role == "A-repair":
+        return (
+            "Keep `PENDING REPAIR`. Inspect the existing repair draft and the prior Agent A log, "
+            "then make one focused correction so the draft follows the skill's semantic format."
+        )
+    if role == "B":
+        return (
+            "Continue as the Challenger. Read `debate.md` and the most recent Agent A log, test the finding's "
+            "reachability and consequence, and return an evidence-based verdict."
+        )
+    if role == "A" and turn_no == 1:
+        return (
+            "Continue as the Reproducer. Investigate the current finding, preserve any useful existing work, "
+            "execute the reproduction, and return the supported verdict."
+        )
+    if role == "A":
+        return (
+            "Continue as the Prover. Read `debate.md` and the Challenger's most recent log, strengthen and rerun "
+            "the reproduction where warranted, or move to the honest verdict."
+        )
+    raise ValueError(f"unsupported confirmation role: {role}")
+
+
+def prompt_policy_recovery(cfg: ConfirmConfig, f: Finding, role: str, turn_no: int, repo: str) -> str:
+    wd = cfg.ws.work_dir(cfg.name).absolute()
+    return render(
+        "confirmation/policy-recovery",
+        finding_id=f.id,
+        turn_no=str(turn_no),
+        role=role,
+        finding_context=str((f.fdir / "finding.json").absolute()),
+        repo=repo,
+        fdir=str(f.fdir.absolute()),
+        repro_dir=str(wd / "repro"),
+        debate=str((f.fdir / "debate.md").absolute()),
+        repair_draft=str((f.fdir / "repair-request.body.md").absolute()),
+        bug_confirmation_skill=prompt_skill_ids("bug-confirmation"),
+        role_task=_policy_role_task(role, turn_no),
+        canon=" / ".join(CANON),
+    )
+
+
 # ── one debate turn (blocking, via the shared phaselib primitive) ────────────
 
 
@@ -446,6 +507,7 @@ def run_turn(
 
     state_key = ("finding", f.id, str(turn_no), role)
     policy_state = cfg.policy_state(state_key, prompt)
+    repo_for_agent = lease.repo_for_agent if lease is not None else (cfg.repo_dir or str(cwd or ""))
     rc, text = run_agent_blocking(
         cfg.adapter,
         prompt,
@@ -462,6 +524,7 @@ def run_turn(
         policy_retries=cfg.policy_retries,
         transient_resumes=cfg.transient_resumes,
         policy_state=policy_state,
+        policy_fresh_prompt=prompt_policy_recovery(cfg, f, role, turn_no, repo_for_agent),
     )
     if rc == 75:
         raise RateLimited(f"{f.id} turn {turn_no} {role}")
@@ -857,6 +920,7 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
     if not f.id or set(f.id) - ID_CHARS or f.id in {".", ".."}:
         raise InvalidAgentOutput(f"unsafe finding id: {f.id!r}")
     f.fdir.mkdir(parents=True, exist_ok=True)
+    _write_finding_context(cfg, f)
     repro_dir = cfg.ws.work_dir(cfg.name).absolute() / "repro"
     repro_dir.mkdir(parents=True, exist_ok=True)
     owned_lease = _lease is None
@@ -1204,7 +1268,14 @@ def _repo_cache_identity(cfg: ConfirmConfig) -> dict[str, str]:
 def _prompt_sources() -> dict[str, str]:
     root = Path(__file__).resolve().parent / "prompts" / "confirmation"
     result: dict[str, str] = {}
-    for name in ("context.md", "reproduce.md", "challenge.md", "defend.md", "repair-draft-retry.md"):
+    for name in (
+        "context.md",
+        "reproduce.md",
+        "challenge.md",
+        "defend.md",
+        "repair-draft-retry.md",
+        "policy-recovery.md",
+    ):
         path = root / name
         result[name] = path.read_text() if path.is_file() else ""
     return result

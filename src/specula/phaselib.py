@@ -170,9 +170,19 @@ def _transient_resume_delay(attempt: int) -> float:
     return min(TRANSIENT_RESUME_BACKOFF_MAX_SECONDS, float(2 ** min(attempt + 1, 6)))
 
 
-def _retry_prompt(original: str, reason: str, *, resumable: bool) -> str:
+def _retry_prompt(
+    original: str,
+    reason: str,
+    *,
+    resumable: bool,
+    policy_fresh_prompt: str | None = None,
+) -> str:
     if not resumable:
-        return _policy_recovery_prompt(original) if reason == "policy" else original
+        if reason != "policy":
+            return original
+        if policy_fresh_prompt is not None:
+            return policy_fresh_prompt
+        return _policy_recovery_prompt(original)
     if reason == "policy":
         return _POLICY_SESSION_RESUME_PROMPT
     if reason in {"rate_limit", "transient"}:
@@ -1353,6 +1363,7 @@ def run_agent_blocking(
     policy_retries: int = DEFAULT_POLICY_RETRIES,
     transient_resumes: int = DEFAULT_TRANSIENT_RESUMES,
     policy_state: PolicyRetryState | None = None,
+    policy_fresh_prompt: str | None = None,
 ) -> tuple[int, str]:
     """Run an agent turn, blocking, and return (returncode, log text).
 
@@ -1374,9 +1385,10 @@ def run_agent_blocking(
     75) is the caller's concern. A provider policy block (exit 76) advances up
     to ``policy_retries`` continuation levels. A retryable provider/transport
     failure (exit 74) resumes up to ``transient_resumes`` times with bounded
-    backoff. Every retry reuses the exact native session captured in a state
-    file; if the CLI failed before emitting an ID, Specula safely replays the
-    original prompt. Callers that automatically replay exit 75 may pass
+    backoff. When ``policy_fresh_prompt`` is supplied, the first policy retry
+    resumes the exact native session when one was captured; if that session is
+    blocked again, or no session was captured, Specula starts fresh with that
+    compact handoff. Callers that automatically replay exit 75 may pass
     ``policy_state`` so the native session and both budgets survive that wait.
     The caller must discard that state after any non-75 terminal result.
     """
@@ -1396,6 +1408,8 @@ def run_agent_blocking(
         run_cwd = (caller_cwd / run_cwd).resolve()
 
     prompt = materialize_skill_refs(prompt, adapter)
+    if policy_fresh_prompt is not None:
+        policy_fresh_prompt = materialize_skill_refs(policy_fresh_prompt, adapter)
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     last_message_file = _last_message_path(log_file)
     resume_state = _resume_state_path(log_file)
@@ -1459,6 +1473,7 @@ def run_agent_blocking(
                 prompt,
                 prompt_reason,
                 resumable=resumable,
+                policy_fresh_prompt=policy_fresh_prompt,
             )
             prompt_file.write_text(current_prompt)
             with contextlib.suppress(OSError):
@@ -1490,8 +1505,15 @@ def run_agent_blocking(
             if rc == POLICY_BLOCKED_RC and policy_attempt < policy_retries:
                 state.policy_attempt = policy_attempt + 1
                 state.retry_reason = "policy"
+                if policy_fresh_prompt is None:
+                    mode = "retrying with a revised request"
+                else:
+                    resume_exact_session = policy_attempt == 0 and resume_state.is_file()
+                    if not resume_exact_session:
+                        _clear_resume_state(resume_state)
+                    mode = "resuming the exact session" if resume_exact_session else "starting a fresh compact handoff"
                 print(
-                    f"[{_ts()}] Provider policy interrupted the agent turn; retrying with a revised request "
+                    f"[{_ts()}] Provider policy interrupted the agent turn; {mode} "
                     f"({state.policy_attempt}/{policy_retries})"
                 )
                 continue

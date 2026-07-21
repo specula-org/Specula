@@ -1575,6 +1575,85 @@ class TestRunAgentBlocking(PhaseCase):
         self.assertEqual(third_prompt, second_prompt)
         self.assertEqual(second_prompt.count("Continue After Provider Policy Interruption"), 1)
 
+    def test_policy_block_without_session_uses_fresh_compact_prompt(self) -> None:
+        adapter = self.tmp() / "adapter.sh"
+        count = self.tmp() / "count"
+        captures = self.tmp()
+        adapter.write_text(
+            "#!/bin/sh\n"
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in --prompt-file=*) prompt=${arg#*=} ;; --log=*) log=${arg#*=} ;; esac; done\n'
+            'cp "$prompt" "$CAPTURE_DIR/prompt-$attempt.md"\n'
+            '[ "$attempt" -gt 2 ] || exit 76\n'
+            'printf "continued\\n" > "$log"\n'
+        )
+        adapter.chmod(0o755)
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("CAPTURE_DIR", str(captures))
+
+        rc, text = phaselib.run_agent_blocking(
+            adapter,
+            "original detailed prompt",
+            captures / "prompt.md",
+            captures / "turn.log",
+            phase_key="bug_confirmation",
+            work_dir=self.work_dir(),
+            claude_alias="profile",
+            policy_retries=2,
+            policy_fresh_prompt="compact handoff",
+        )
+
+        self.assertEqual((rc, text), (0, "continued\n"))
+        self.assertEqual((captures / "prompt-1.md").read_text(), "original detailed prompt")
+        self.assertEqual((captures / "prompt-2.md").read_text(), "compact handoff")
+        self.assertEqual((captures / "prompt-3.md").read_text(), "compact handoff")
+
+    def test_repeated_policy_block_switches_from_exact_resume_to_fresh_compact_prompt(self) -> None:
+        adapter = self.tmp() / "adapter.sh"
+        count = self.tmp() / "count"
+        captures = self.tmp()
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in '
+            "--prompt-file=*) prompt=${arg#*=} ;; "
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'cp "$prompt" "$CAPTURE_DIR/prompt-$attempt.md"\n'
+            'case "$attempt" in\n'
+            '  1) printf "blocked-session\\n" > "$resume"; exit 76 ;;\n'
+            '  2) test "$(cat "$resume")" = "blocked-session"; exit 76 ;;\n'
+            '  3) test ! -e "$resume"; printf "continued\\n" > "$log" ;;\n'
+            "  *) exit 99 ;;\n"
+            "esac\n"
+        )
+        adapter.chmod(0o755)
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("CAPTURE_DIR", str(captures))
+        log_file = captures / "turn.log"
+
+        rc, text = phaselib.run_agent_blocking(
+            adapter,
+            "original detailed prompt",
+            captures / "prompt.md",
+            log_file,
+            phase_key="bug_confirmation",
+            work_dir=self.work_dir(),
+            claude_alias="profile",
+            policy_retries=2,
+            policy_fresh_prompt="compact handoff",
+        )
+
+        self.assertEqual((rc, text), (0, "continued\n"))
+        self.assertEqual((captures / "prompt-1.md").read_text(), "original detailed prompt")
+        self.assertEqual((captures / "prompt-2.md").read_text(), phaselib._POLICY_SESSION_RESUME_PROMPT)
+        self.assertEqual((captures / "prompt-3.md").read_text(), "compact handoff")
+        self.assertFalse(log_file.with_suffix(".resume.json").exists())
+
     def test_default_policy_retry_budget_bounds_blocking_turn(self) -> None:
         adapter = self.tmp() / "adapter.sh"
         count = self.tmp() / "count"
