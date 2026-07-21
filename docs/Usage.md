@@ -197,7 +197,7 @@ TLC workers remain unbounded by default: `-w auto` uses every CPU visible to eac
 Use a stable ID when a run may need to be resumed:
 
 ```bash
-specula run \
+specula run <name> \
   --run-id=my-run \
   --artifact=/path/to/source \
   "name|owner/repository|language|reference"
@@ -206,7 +206,7 @@ specula run \
 Attach to the same run and skip completed steps. This resumes at validation:
 
 ```bash
-specula run \
+specula run <name> \
   --run-id=my-run \
   --skip-analysis \
   --skip-specgen \
