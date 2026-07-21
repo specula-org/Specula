@@ -619,26 +619,13 @@ def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Cal
     )
     if patch.returncode != 0 or untracked.returncode != 0:
         raise ConfirmationFailed(f"{f.id}: could not snapshot local repository changes")
-    wt = f.fdir.absolute() / "worktree"
+    base_wt = f.fdir.absolute() / "worktree"
     try:
-        wt.parent.resolve().relative_to(cfg.ws.work_dir(cfg.name).resolve())
+        base_wt.parent.resolve().relative_to(cfg.ws.work_dir(cfg.name).resolve())
     except ValueError as exc:
         raise ConfirmationFailed(f"{f.id}: worktree destination escapes the confirmation output") from exc
-    wt.parent.mkdir(parents=True, exist_ok=True)
-    if wt.is_symlink():
-        raise ConfirmationFailed(f"{f.id}: refusing stale worktree symlink")
-    # Target only this dispatcher-owned path. Avoid global `worktree prune`,
-    # which can affect unrelated user worktrees.
-    subprocess.run(
-        ["git", "-C", str(root), "worktree", "remove", "--force", str(wt)],
-        env=git_env,
-        capture_output=True,
-    )
-    if wt.exists():
-        if wt.is_dir():
-            shutil.rmtree(wt)
-        else:
-            wt.unlink()
+    wt = _prepare_worktree_destination(root, git_env, base_wt, f)
+
     try:
         subprocess.run(
             ["git", "-C", str(root), "worktree", "add", "--detach", "--force", str(wt)],
@@ -706,6 +693,65 @@ def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Cal
             print(f"  WARNING: {message}", flush=True)
 
     return str(wt), cleanup
+
+
+def _worktree_candidates(base: Path) -> list[Path]:
+    deterministic = [base, *(base.with_name(f"{base.name}-{index}") for index in range(1, 5))]
+    randomised = [
+        base.with_name(f"{base.name}-{os.getpid()}-{threading.get_ident()}-{secrets.token_hex(4)}") for _ in range(8)
+    ]
+    return deterministic + randomised
+
+
+def _remove_stale_worktree(root: Path, git_env: dict[str, str] | None, wt: Path, f: Finding) -> OSError | None:
+    if wt.is_symlink():
+        raise ConfirmationFailed(f"{f.id}: refusing stale worktree symlink")
+    # Target only this dispatcher-owned path. Avoid global `worktree prune`,
+    # which can affect unrelated user worktrees.
+    subprocess.run(
+        ["git", "-C", str(root), "worktree", "remove", "--force", str(wt)],
+        env=git_env,
+        capture_output=True,
+    )
+    if not wt.exists():
+        return None
+    try:
+        if wt.is_dir():
+            shutil.rmtree(wt)
+        else:
+            wt.unlink()
+    except OSError as exc:
+        return exc
+    return None
+
+
+def _prepare_worktree_destination(root: Path, git_env: dict[str, str] | None, base_wt: Path, f: Finding) -> Path:
+    base_wt.parent.mkdir(parents=True, exist_ok=True)
+    candidates = _worktree_candidates(base_wt)
+    failures: list[str] = []
+    for index, wt in enumerate(candidates):
+        failure = _remove_stale_worktree(root, git_env, wt, f)
+        if failure is None:
+            if index > 0:
+                try:
+                    _log(f"  WARNING: {f.id}: using alternate isolated worktree {wt} after stale cleanup failure")
+                except OSError:
+                    print(
+                        f"  WARNING: {f.id}: using alternate isolated worktree {wt} after stale cleanup failure",
+                        flush=True,
+                    )
+            return wt
+        failures.append(f"{wt}: {failure}")
+        next_wt = candidates[index + 1] if index + 1 < len(candidates) else None
+        if next_wt is not None:
+            message = f"{f.id}: could not remove stale isolated worktree {wt}: {failure}; trying {next_wt}"
+            try:
+                _log(f"  WARNING: {message}")
+            except OSError:
+                print(f"  WARNING: {message}", flush=True)
+    raise ConfirmationFailed(
+        f"{f.id}: could not prepare an isolated worktree after stale cleanup failures: {failures[0]}"
+    )
 
 
 # ── one finding: reproduce, then optional debate ─────────────────────────────
