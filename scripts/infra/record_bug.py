@@ -10,9 +10,11 @@ Supports 4 sheets:
 
 import argparse
 import contextlib
+import os
 import sys
 
 import gspread
+import pathlib
 
 SPREADSHEET_ID = "1AVXdKjNfD4952hZqyB-_wTdrzeTw0SD73f3F0zWJ0as"
 
@@ -164,6 +166,17 @@ def resolve_sheets(sheet_key):
         return [sheet_key]
 
 
+def setup_repo():
+    repo_path = pathlib.Path(__file__).parent
+    repo_path.mkdir(exist_ok=True, parents=True)
+    # Replace with a more efficient method
+    # os.rmdir(repo_path)
+    # or
+    # repo_path.unlink(missing_ok=True)
+    # For now, just do nothing
+    pass
+
+
 def append_bug(args):
     gc = get_client()
     targets = resolve_sheets(args.sheet)
@@ -304,153 +317,3 @@ def sort_bugs(args):
         ws.update(values=data_rows, range_name=cell_range, value_input_option="USER_ENTERED")
 
         # Reformat alternating colors for all data rows
-        requests = []
-        for i in range(num_data):
-            row_idx = i + 1  # 0-indexed sheet row (row 0 = header, row 1 = first data)
-            bg = LIGHT_BLUE if (i + 1) % 2 == 1 else WHITE
-            requests.append(
-                {
-                    "repeatCell": {
-                        "range": {
-                            "sheetId": ws.id,
-                            "startRowIndex": row_idx,
-                            "endRowIndex": row_idx + 1,
-                            "startColumnIndex": 0,
-                            "endColumnIndex": col_count,
-                        },
-                        "cell": {
-                            "userEnteredFormat": {
-                                "backgroundColor": bg,
-                                "textFormat": {"fontFamily": "Arial", "fontSize": 10},
-                                "horizontalAlignment": "CENTER",
-                                "verticalAlignment": "MIDDLE",
-                                "wrapStrategy": "WRAP",
-                                "borders": ALL_BORDERS,
-                            }
-                        },
-                        "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy,borders)",
-                    }
-                }
-            )
-            # Left-aligned columns
-            _, _, left_cols = SHEET_MAP[sheet_key]
-            for col_idx in left_cols:
-                if col_idx < col_count:
-                    requests.append(
-                        {
-                            "repeatCell": {
-                                "range": {
-                                    "sheetId": ws.id,
-                                    "startRowIndex": row_idx,
-                                    "endRowIndex": row_idx + 1,
-                                    "startColumnIndex": col_idx,
-                                    "endColumnIndex": col_idx + 1,
-                                },
-                                "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
-                                "fields": "userEnteredFormat.horizontalAlignment",
-                            }
-                        }
-                    )
-
-        if requests:
-            sh.batch_update({"requests": requests})
-
-        print(f"[{SHEET_MAP[sheet_key][0]}] Sorted {num_data} bugs by System")
-
-
-def list_bugs(args):
-    gc = get_client()
-    sheet_key = args.sheet if args.sheet in SHEET_MAP else "new"
-    _, ws = get_worksheet(gc, sheet_key)
-    rows = ws.get_all_values()
-    header = rows[0]
-    print(f"=== {SHEET_MAP[sheet_key][0]} ===")
-    print("\t".join(header))
-    print("-" * 120)
-    for row in rows[1:]:
-        if any(row):
-            print("\t".join(row))
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Specula Bug Tracker")
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    # --- append ---
-    p_add = sub.add_parser("append", help="Add a new bug")
-    p_add.add_argument(
-        "--sheet",
-        choices=["new", "known"],
-        default="new",
-        help="Target: 'new' (writes to New bug + detailed) or 'known' (writes to Known bug + detailed)",
-    )
-    p_add.add_argument("--system", required=True, help="System name")
-    p_add.add_argument("--protocol", required=True, help="Protocol / Lang")
-    p_add.add_argument("--finding", required=True, help="Bug description")
-    p_add.add_argument("--severity", help="Critical / Medium / Minor")
-    p_add.add_argument("--bug-family", help="Bug family name")
-    p_add.add_argument("--discovery-method", help="MC-BFS / MC-Simulation / Trace Validation / Code Review")
-    p_add.add_argument("--root-cause", help="Brief root cause description")
-    p_add.add_argument("--affected-code", help="file:line references")
-    p_add.add_argument("--reference", help="PR/Issue reference")
-    p_add.add_argument("--url", help="GitHub URL")
-    p_add.add_argument("--status", help="Status")
-    p_add.add_argument("--notes", help="Additional notes")
-
-    # --- update ---
-    p_upd = sub.add_parser("update", help="Update an existing bug")
-    p_upd.add_argument(
-        "--sheet",
-        choices=["new", "known"],
-        default="new",
-        help="Target: 'new' or 'known' (updates both simple + detailed)",
-    )
-    p_upd.add_argument("--number", type=int, required=True, help="Bug number to update")
-    p_upd.add_argument("--severity", help="New severity")
-    p_upd.add_argument("--bug-family", help="New bug family")
-    p_upd.add_argument("--discovery-method", help="New discovery method")
-    p_upd.add_argument("--root-cause", help="New root cause")
-    p_upd.add_argument("--affected-code", help="New affected code")
-    p_upd.add_argument("--reference", help="New reference")
-    p_upd.add_argument("--url", help="New URL")
-    p_upd.add_argument("--status", help="New status")
-    p_upd.add_argument("--notes", help="New notes")
-
-    # --- delete ---
-    p_del = sub.add_parser("delete", help="Delete a bug by number")
-    p_del.add_argument(
-        "--sheet",
-        choices=["new", "known"],
-        default="new",
-        help="Target: 'new' or 'known' (deletes from both simple + detailed)",
-    )
-    p_del.add_argument("--number", type=int, required=True, help="Bug number to delete")
-
-    # --- sort ---
-    p_sort = sub.add_parser("sort", help="Sort bugs by System column")
-    p_sort.add_argument(
-        "--sheet",
-        choices=["new", "known"],
-        default="new",
-        help="Target: 'new' or 'known' (sorts both simple + detailed)",
-    )
-
-    # --- list ---
-    p_list = sub.add_parser("list", help="List all bugs")
-    p_list.add_argument("--sheet", choices=list(SHEET_MAP.keys()), default="new", help="Which sheet to list")
-
-    args = parser.parse_args()
-    if args.command == "append":
-        append_bug(args)
-    elif args.command == "update":
-        update_bug(args)
-    elif args.command == "delete":
-        delete_bug(args)
-    elif args.command == "sort":
-        sort_bugs(args)
-    elif args.command == "list":
-        list_bugs(args)
-
-
-if __name__ == "__main__":
-    main()
