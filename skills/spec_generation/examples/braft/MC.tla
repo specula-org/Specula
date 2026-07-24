@@ -5,10 +5,10 @@
 \* exhaustive state-space exploration via TLC.
 \*
 \* Scenarios covered:
-\*   - PreVote + real election with two-sided lease (Bug Family 1)
-\*   - Snapshot response without term check (Bug Family 2)
-\*   - Crash / recovery with RPCs-before-persist (Bug Family 3)
-\*   - Joint consensus configuration changes (Bug Family 4)
+\*   - PreVote + real election with two-sided lease (Scenario 1)
+\*   - Snapshot response without term check (Scenario 2)
+\*   - Crash / recovery with RPCs-before-persist (Scenario 3)
+\*   - Joint consensus configuration changes (Scenario 4)
 \*   - Unreliable network (message loss)
 
 EXTENDS base
@@ -65,7 +65,7 @@ faultVars == <<constraintCounters>>
 \* MODEL CHECKING CONSTRAINED ACTIONS
 \* ============================================================================
 
-\* --- PreVote Constraints (Bug Family 1) ---
+\* --- PreVote Constraints (Scenario 1) ---
 MCPreVote(i) ==
     /\ constraintCounters.preVote < MaxPreVoteLimit
     /\ B!PreVote(i)
@@ -102,19 +102,19 @@ MCSendHeartbeat(i, j) ==
     /\ B!SendHeartbeat(i, j)
     /\ constraintCounters' = [constraintCounters EXCEPT !.heartbeat = @ + 1]
 
-\* --- Snapshot Constraints (Bug Family 2) ---
+\* --- Snapshot Constraints (Scenario 2) ---
 MCSendInstallSnapshot(i, j) ==
     /\ constraintCounters.snapshot < SnapshotLimit
     /\ B!SendInstallSnapshot(i, j)
     /\ constraintCounters' = [constraintCounters EXCEPT !.snapshot = @ + 1]
 
-\* --- Config Change Constraints (Bug Family 4) ---
+\* --- Config Change Constraints (Scenario 4) ---
 MCProposeConfigChange(i, s) ==
     /\ constraintCounters.configChange < ConfigChangeLimit
     /\ B!ProposeConfigChange(i, s)
     /\ constraintCounters' = [constraintCounters EXCEPT !.configChange = @ + 1]
 
-\* --- Follower Lease Expire Constraints (Bug Family 1) ---
+\* --- Follower Lease Expire Constraints (Scenario 1) ---
 MCFollowerLeaseExpire(i) ==
     /\ constraintCounters.leaseExpire < LeaseExpireLimit
     /\ B!FollowerLeaseExpire(i)
@@ -142,7 +142,7 @@ MCInit ==
 \* ============================================================================
 
 MCNextAsync(i) ==
-    \* --- PreVote (Bug Family 1) ---
+    \* --- PreVote (Scenario 1) ---
     \/ MCPreVote(i)
     \* --- Elections ---
     \/ MCElectSelf(i)
@@ -164,7 +164,7 @@ MCNextAsync(i) ==
        /\ UNCHANGED faultVars
     \* --- Heartbeats ---
     \/ \E j \in Server : MCSendHeartbeat(i, j)
-    \* --- Snapshots (Bug Family 2) ---
+    \* --- Snapshots (Scenario 2) ---
     \/ \E j \in Server : MCSendInstallSnapshot(i, j)
 
 MCNextMsg ==
@@ -298,7 +298,7 @@ LeaderLogCompleteness ==
                 /\ log[s1][idx] = log[s2][idx]
 
 \* ============================================================================
-\* BUG FAMILY 3: PERSIST WINDOW DETECTION
+\* SCENARIO 3: PERSIST WINDOW DETECTION
 \* ============================================================================
 
 \* Detect orphaned election RPCs: a RequestVoteRequest is in flight from
@@ -311,7 +311,7 @@ NoOrphanedElectionRPCs ==
 
 \* Stronger: detect when a crashed-and-recovered node has voted for
 \* a DIFFERENT candidate at the same term as its orphaned RPCs.
-\* This is the "double vote" that Bug Family 3 enables.
+\* This is the "double vote" that Scenario 3 enables.
 NoDualVoteFromCrash ==
     \A m \in DOMAIN messages :
         /\ m.mtype = RequestVoteRequest

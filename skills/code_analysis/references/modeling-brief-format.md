@@ -18,14 +18,16 @@ Brief description (5-10 lines max):
 - Key architectural choices that deviate from the reference algorithm
 - Concurrency model (single-threaded event loop, goroutines, async, etc.)
 
-### 2. Bug Families
+### 2. Scenarios
 
-The core of the document. Group findings by **mechanism/pattern**, not by file or component.
+The core of the document. Group related findings into evidence-backed Scenarios by
+**mechanism/pattern**, not by file or component. A Scenario may encompass multiple
+findings and yield multiple concrete bugs.
 
-Each Bug Family entry:
+Each Scenario entry:
 
 ```markdown
-### Family N: <Name>
+### Scenario N: <Name>
 
 **Mechanism**: One-sentence description of the shared root cause pattern.
 
@@ -44,7 +46,7 @@ Each Bug Family entry:
 **Rationale**: Why this priority (bug density, severity, TLA+ suitability)
 ```
 
-Grouping criteria for Bug Families:
+Grouping criteria for Scenarios:
 - Bugs that share the same **mechanism** (e.g., "multiple code paths that should behave identically but don't")
 - Bugs that affect the same **interaction pattern** (e.g., "config change + election interleaving")
 - Bugs that stem from the same **architectural decision** (e.g., "independent heartbeat goroutine")
@@ -57,7 +59,7 @@ Two sub-sections:
 
 For each item, state:
 - **What**: the behavior or mechanism to model
-- **Why**: reference specific Bug Family evidence
+- **Why**: reference specific Scenario evidence
 - **How**: brief note on modeling approach (extension variable, split action, etc.)
 
 #### 3.2 Do Not Model (with rationale)
@@ -71,19 +73,19 @@ For each excluded item, state:
 Concrete list of spec extensions beyond the reference algorithm:
 
 ```markdown
-| Extension | Variables | Purpose | Bug Family |
+| Extension | Variables | Purpose | Scenario |
 |-----------|-----------|---------|------------|
-| <name>    | var1, var2 | <what it captures> | Family N |
+| <name>    | var1, var2 | <what it captures> | Scenario N |
 ```
 
 ### 5. Proposed Invariants
 
-Properties to check, derived from Bug Families:
+Properties to check, derived from Scenarios:
 
 ```markdown
 | Invariant | Type | Description | Targets |
 |-----------|------|-------------|---------|
-| <name>    | Safety / Liveness | <what it checks> | Family N, finding X |
+| <name>    | Safety / Liveness | <what it checks> | Scenario N, finding X |
 ```
 
 Include both:
@@ -99,7 +101,7 @@ Findings from Code Analysis that need further work, split by verification method
 Findings that TLA+ model checking should be able to confirm or refute. These directly feed into the spec's invariants and error injection strategy.
 
 ```markdown
-| ID | Description | Expected invariant violation | Bug Family |
+| ID | Description | Expected invariant violation | Scenario |
 |----|-------------|----------------------------|------------|
 ```
 
@@ -108,7 +110,7 @@ Findings that TLA+ model checking should be able to confirm or refute. These dir
 - ✅ *"If FastConfirmLoad's SC label is downgraded, can a stale snapshot reach the writer?"* — mechanism question, lets MC explore something whose answer isn't already known.
 - ❌ *"MC1: recreate pre-`d5dd00c` state of #198"* — the answer is in the closed PR; the fix already passed review.
 
-We don't value findings whose punchline reduces to "we reproduced a bug that's already fixed upstream." Re-deriving via TLA+ + Miri produces no information beyond `git revert <commit> && cargo test`. If a candidate finding's only honest description is "recreate #N" or "regression of PR #M", **demote it to § 7 Reference Pointers** — keep the issue as context for the bug family in § 2, but don't list it as a modeling target. See `bug-archaeology.md` § 1.4.
+We don't value findings whose punchline reduces to "we reproduced a bug that's already fixed upstream." Re-deriving via TLA+ + Miri produces no information beyond `git revert <commit> && cargo test`. If a candidate finding's only honest description is "recreate #N" or "regression of PR #M", **demote it to § 7 Reference Pointers** — keep the issue as context for the scenario in § 2, but don't list it as a modeling target. See `bug-archaeology.md` § 1.4.
 
 **Output-value litmus** (apply before adding any candidate to § 6.1): write the one-sentence Phase 4 writeup conclusion you predict for the finding. If the only honest conclusion is one of "hardening / defense-in-depth / no externally observable consequence / deliberate developer intent / documented design choice", **drop the finding from § 6.1 entirely** — the Phase 2-onward MC effort it would consume (~$30-80 per hunt-cfg pass in observed BFT runs) yields zero information beyond the existing fix. The Phase 2 hunt-cfg author is the same agent writing § 6.1, so the predicted Phase 4 verdict is fully accessible at brief-writing time; if you can foresee the verdict, the work is not worth generating. Rewrite the finding as a genuinely open mechanism question, or demote to § 7 Reference Pointers.
 
@@ -150,9 +152,9 @@ Links to detailed evidence for the spec author to consult:
 
 3. **Evidence-based**. Every claim references a commit, issue, or file:line.
 
-4. **Bug Families are the organizing principle**. Don't list findings flat. Group by mechanism so the spec author can design targeted extensions.
+4. **Scenarios are the organizing principle**. Don't list findings flat. Group by mechanism so the spec author can design targeted extensions.
 
 5. **Explicit exclusions**. Stating what NOT to model is as valuable as stating what to model. It prevents the spec author from wasting effort.
 6. **Category must carry forward.** Later phases should be able to read the brief and immediately know whether to use distributed-style or concurrent-style modeling and trace validation.
-7. **Put category-specific detail in the right place.** The brief should record the category and chosen bug families, but the reusable playbooks live in `distributed-analysis.md` and `concurrent-analysis.md`, with `bft-analysis.md` as a BFT overlay on top of distributed.
+7. **Put category-specific detail in the right place.** The brief should record the category and chosen scenarios, but the reusable playbooks live in `distributed-analysis.md` and `concurrent-analysis.md`, with `bft-analysis.md` as a BFT overlay on top of distributed.
 8. **Closed bugs are reference, not target.** Historical bugs that the upstream has already fixed belong in § 2 Evidence (as evidence for the mechanism's bug-proneness) and § 7 Reference Pointers (as context for the spec author). They do **not** belong in § 6.1 as model-checkable findings. Reproducing a closed bug via formal methods produces no information beyond what the original PR already has. We don't value such results. See `bug-archaeology.md` § 1.4 and § 6.1 above.

@@ -1595,7 +1595,7 @@ You are analyzing the following system:
 
 ## Instructions
 
-Use the installed Specula skill {prompt_skill_ids("code-analysis")}. Read it in full and follow it exactly — it is the single source of methodology (its 4 phases, references, rules, bug-family modeling-brief format, and Category A/B handling).
+Use the installed Specula skill {prompt_skill_ids("code-analysis")}. Read it in full and follow it exactly — it is the single source of methodology (its 4 phases, references, rules, Scenario modeling-brief format, and Category A/B handling).
 
 Do everything the skill specifies. Do not add, relax, or override any step here.
 
@@ -2863,7 +2863,7 @@ Review the code analysis outputs for quality and completeness.
 Score each item 1-5 (1=missing, 3=adequate, 5=excellent):
 
 1. **Coverage Statistics**: Are they reported? How many issues were deeply read (target: 30+)?
-2. **Bug Families**: Are they well-defined with mechanisms, not just lists? (target: 4-7 families)
+2. **Scenarios**: Are they well-defined with mechanisms, not just lists? (target: 4-7 scenarios)
 3. **Evidence Quality**: Does each bug cite file:line, issue numbers, and commit references?
 4. **Model-Checkable Findings**: Are findings classified? How many are model-checkable?
 5. **Modeling Brief Completeness**: Variables, actions, invariants, extensions all specified?
@@ -2882,7 +2882,7 @@ Format:
 | Criterion | Score | Notes |
 |-----------|-------|-------|
 | Coverage Statistics | X/5 | ... |
-| Bug Families | X/5 | ... |
+| Scenarios | X/5 | ... |
 | Evidence Quality | X/5 | ... |
 | Model-Checkable Findings | X/5 | ... |
 | Modeling Brief Completeness | X/5 | ... |
@@ -2919,10 +2919,10 @@ Review the generated TLA+ specs for correctness and completeness.
 
 Score each item 1-5:
 
-1. **Bug Family Coverage**: Does each Bug Family in the brief have corresponding spec extensions?
+1. **Scenario Coverage**: Does each Scenario in the brief have corresponding spec extensions?
 2. **Action Design**: Are actions named after impl functions? Are code paths split where they diverge?
 3. **Source Annotations**: Does every logic block cite file:line?
-4. **Invariant Coverage**: Are standard + extension invariants present for each Bug Family?
+4. **Invariant Coverage**: Are standard + extension invariants present for each Scenario?
 5. **MC Spec Structure**: Are only fault-injection actions bounded? Symmetry/view/constraints present?
 6. **Trace Spec Design**: Are silent actions tightly constrained? Post-state validation present?
 7. **Instrumentation Mapping**: Is there a 1:1 mapping between spec actions and code locations?
@@ -2939,7 +2939,7 @@ Format:
 ## Scores
 | Criterion | Score | Notes |
 |-----------|-------|-------|
-| Bug Family Coverage | X/5 | ... |
+| Scenario Coverage | X/5 | ... |
 | Action Design | X/5 | ... |
 | Source Annotations | X/5 | ... |
 | Invariant Coverage | X/5 | ... |

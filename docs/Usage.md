@@ -225,9 +225,9 @@ Most users should run `specula run`, which executes every step in order. The com
 
 | Command | What it does | Required input | Main output |
 |---|---|---|---|
-| `analyze` | Launches an agent to inspect the source, mine Git history and issues, identify bug families, and decide what should be modeled | Target source and the four-field target descriptor | `modeling-brief.md`, `analysis-report.md` |
+| `analyze` | Launches an agent to inspect the source, mine Git history and issues, identify evidence-backed modeling Scenarios, and decide what should be modeled | Target source and the four-field target descriptor | `modeling-brief.md`, `analysis-report.md` |
 | `specgen` | Converts the modeling brief into code-faithful TLA+ specifications | Source and `modeling-brief.md` | `spec/base.tla`, `spec/MC.tla`, `spec/Trace.tla`, configs, and `instrumentation-spec.md` |
-| `harness` | Instruments the implementation and runs scenarios to collect execution traces | Source and generated specifications | `harness/` and `traces/*.ndjson` |
+| `harness` | Instruments the implementation and runs test scenarios to collect execution traces | Source and generated specifications | `harness/` and `traces/*.ndjson` |
 | `validate` | Checks real traces against the specification, runs TLC, and investigates counterexamples | Source, specifications, harness, and traces | `spec/bug-report.md`, `spec/findings.json`, TLC output, and `spec/changelog.md` |
 | `confirm` | Audits and reproduces each candidate bug against the real implementation | Source, modeling brief, and bug report | `confirmed-bugs.md`, reproduction tests, and any repair requests |
 | `classify` | Assigns severity to reproduced bugs and finding-tier entries; records other dispositions without severity | `confirmed-bugs.md` | `bug-severity.md` |

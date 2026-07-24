@@ -12,9 +12,9 @@
   - **Three validator set pipeline**: `LastValidators` / `Validators` / `NextValidators` with +2 height delay for validator changes
   - **Vote extensions**: Application-defined data attached to non-nil precommits, verified via ABCI `VerifyVoteExtension`
 
-## 2. Bug Families
+## 2. Scenarios
 
-### Family 1: Vote Extension Lifecycle Defects (HIGH)
+### Scenario 1: Vote Extension Lifecycle Defects (HIGH)
 
 **Mechanism**: Asymmetric handling of vote extensions across code paths — proposer vs non-proposer, nil vs non-nil precommit, normal operation vs replay, creation context vs verification context.
 
@@ -43,7 +43,7 @@
 
 ---
 
-### Family 2: Consensus State Machine Liveness / Round Progression (HIGH)
+### Scenario 2: Consensus State Machine Liveness / Round Progression (HIGH)
 
 **Mechanism**: Protocol state machine deviates from the Tendermint BFT specification in ways that prevent or delay round/height progression, particularly under message reordering, validator failures, or network conditions.
 
@@ -73,7 +73,7 @@
 
 ---
 
-### Family 3: Crash Recovery / WAL Consistency (HIGH)
+### Scenario 3: Crash Recovery / WAL Consistency (HIGH)
 
 **Mechanism**: Non-atomic operations between WAL writes, private validator signing state, and block persistence create crash windows where recovery leads to inconsistent state or equivocation.
 
@@ -106,7 +106,7 @@
 
 ---
 
-### Family 4: Evidence Handling Defects (MEDIUM)
+### Scenario 4: Evidence Handling Defects (MEDIUM)
 
 **Mechanism**: Evidence lifecycle gaps between detection, pending pool, block proposal, and commitment allow double-commitment or evidence loss.
 
@@ -136,7 +136,7 @@
 
 ---
 
-### Family 5: Locking / Unlocking Protocol Correctness (MEDIUM)
+### Scenario 5: Locking / Unlocking Protocol Correctness (MEDIUM)
 
 **Mechanism**: The Tendermint locking mechanism (`LockedRound`/`LockedBlock`, `ValidRound`/`ValidBlock`) has complex multi-path logic in `enterPrecommit` and `addVote` that must maintain safety invariants across all paths.
 
@@ -166,7 +166,7 @@
 
 ---
 
-### Family 6: Block Execution Crash Atomicity (LOW)
+### Scenario 6: Block Execution Crash Atomicity (LOW)
 
 **Mechanism**: The `applyBlock` function in `state/execution.go` performs a multi-step sequence (FinalizeBlock → SaveResponse → Commit → evpool.Update → SaveState) with crash windows between each step. Some crash points lead to inconsistent state.
 
@@ -188,7 +188,7 @@
 - Key invariant: After recovery, `appState` and `cometState` are consistent
 
 **Priority**: Low (for primary spec)
-**Rationale**: The ABCI Handshake recovery logic is well-documented and has crash injection testing. Lower priority than protocol-level families unless crash atomicity is a specific verification target.
+**Rationale**: The ABCI Handshake recovery logic is well-documented and has crash injection testing. Lower priority than protocol-level scenarios unless crash atomicity is a specific verification target.
 
 ## 3. Modeling Recommendations
 
@@ -196,19 +196,19 @@
 
 | What | Why | How |
 |------|-----|-----|
-| Vote extension asymmetry | Family 1: unfixed deadlock #5204, 4 historical bugs | Add VE creation/verification as separate actions; model proposer self-skip |
-| Message ordering nondeterminism | Family 2: #1745 critical liveness fix, #1431 open | Allow prevotes/precommits to arrive before proposal |
-| Round-skip on +2/3 any | Family 2: #1496 slow sync, #3340 catch-up failure | Model round advancement on +2/3 any votes |
-| Crash and WAL recovery | Family 3: #8739 chain halt, #3089 manual recovery | `Crash` action + `Recover` from WAL; split finalization into steps |
-| Evidence lifecycle | Family 4: #4114 critical double-commit | Track evidence through pending → committed states |
-| Locking protocol (all 5 paths) | Family 5: core safety mechanism, #1551 | Model all `enterPrecommit` paths; verify lock/unlock invariants |
-| Validator set rotation | Family 5/6: +2 height delay, 3-set pipeline | Track `LastValidators`/`Validators`/`NextValidators` |
+| Vote extension asymmetry | Scenario 1: unfixed deadlock #5204, 4 historical bugs | Add VE creation/verification as separate actions; model proposer self-skip |
+| Message ordering nondeterminism | Scenario 2: #1745 critical liveness fix, #1431 open | Allow prevotes/precommits to arrive before proposal |
+| Round-skip on +2/3 any | Scenario 2: #1496 slow sync, #3340 catch-up failure | Model round advancement on +2/3 any votes |
+| Crash and WAL recovery | Scenario 3: #8739 chain halt, #3089 manual recovery | `Crash` action + `Recover` from WAL; split finalization into steps |
+| Evidence lifecycle | Scenario 4: #4114 critical double-commit | Track evidence through pending → committed states |
+| Locking protocol (all 5 paths) | Scenario 5: core safety mechanism, #1551 | Model all `enterPrecommit` paths; verify lock/unlock invariants |
+| Validator set rotation | Scenario 5/6: +2 height delay, 3-set pipeline | Track `LastValidators`/`Validators`/`NextValidators` |
 
 ### 3.2 Do Not Model
 
 | What | Why |
 |------|-----|
-| Gossip protocol details (TOCTOU races) | Family 5 gossip issues are implementation-level Go concurrency bugs, not protocol logic. Model message delivery as nondeterministic instead. |
+| Gossip protocol details (TOCTOU races) | Scenario 5 gossip issues are implementation-level Go concurrency bugs, not protocol logic. Model message delivery as nondeterministic instead. |
 | Signature verification | Cryptographic details abstracted as `isValid(sig, pubkey)` |
 | WAL file format / checksums | Below TLA+ abstraction level; model WAL as a sequence that can lose tail entries on crash |
 | Mempool / transaction ordering | Not related to consensus safety |
@@ -219,49 +219,49 @@
 
 ## 4. Proposed Extensions
 
-| Extension | Variables | Purpose | Bug Family |
+| Extension | Variables | Purpose | Scenario |
 |-----------|-----------|---------|------------|
-| Vote extensions | `voteExtension`, `veVerified` | Model VE creation/verification asymmetry | Family 1 |
-| Message ordering | (encoded in action enabling) | Allow prevotes before proposal | Family 2 |
-| Timeout modeling | `timeoutScheduled`, `timeoutFired` | Model timeout-based round progression | Family 2 |
-| Crash recovery | `walEntries`, `persistedState`, `privvalLastSigned` | Model crash windows and recovery | Family 3 |
-| Evidence lifecycle | `pendingEvidence`, `committedEvidence` | Track evidence through states | Family 4 |
-| Lock/unlock paths | `lockedRound`, `lockedValue`, `validRound`, `validValue` | All 5 enterPrecommit paths | Family 5 |
-| Validator rotation | `lastVals`, `curVals`, `nextVals`, `heightValsChanged` | 3-set pipeline with +2 delay | Family 5/6 |
+| Vote extensions | `voteExtension`, `veVerified` | Model VE creation/verification asymmetry | Scenario 1 |
+| Message ordering | (encoded in action enabling) | Allow prevotes before proposal | Scenario 2 |
+| Timeout modeling | `timeoutScheduled`, `timeoutFired` | Model timeout-based round progression | Scenario 2 |
+| Crash recovery | `walEntries`, `persistedState`, `privvalLastSigned` | Model crash windows and recovery | Scenario 3 |
+| Evidence lifecycle | `pendingEvidence`, `committedEvidence` | Track evidence through states | Scenario 4 |
+| Lock/unlock paths | `lockedRound`, `lockedValue`, `validRound`, `validValue` | All 5 enterPrecommit paths | Scenario 5 |
+| Validator rotation | `lastVals`, `curVals`, `nextVals`, `heightValsChanged` | 3-set pipeline with +2 delay | Scenario 5/6 |
 
 ## 5. Proposed Invariants
 
 | Invariant | Type | Description | Targets |
 |-----------|------|-------------|---------|
-| ElectionSafety | Safety | At most one value committed per height | Standard, Family 5 |
-| Agreement | Safety | No two correct nodes commit different values at the same height | Standard, Family 5 |
+| ElectionSafety | Safety | At most one value committed per height | Standard, Scenario 5 |
+| Agreement | Safety | No two correct nodes commit different values at the same height | Standard, Scenario 5 |
 | Validity | Safety | Only proposed values can be committed | Standard |
-| VELiveness | Liveness | Consensus eventually commits even if some VEs fail verification, provided <1/3 are invalid | Family 1, #5204 |
-| NoPhantomVE | Safety | Extensions in `PrepareProposal` that were not verified should be identifiable | Family 1, #2361 |
-| RoundProgress | Liveness | If +2/3 correct and eventually synchronous, consensus commits within bounded rounds | Family 2, #1431 |
-| NilPrecommitAdvance | Liveness | After +2/3 nil precommits, next round eventually starts | Family 2, #1431 |
-| CrashRecoveryConsistency | Safety | After crash and recovery, node does not equivocate | Family 3, #8739 |
-| CommittedBlockDurability | Safety | A committed block is never lost | Family 3 |
-| EvidenceUniqueness | Safety | Same evidence never committed in two different blocks | Family 4, #4114 |
-| LockSafety | Safety | A locked node only precommits its locked value unless it sees a polka at higher round | Family 5 |
-| POLRoundValidity | Safety | POLRound < Round for all proposals with POLRound >= 0 | Family 5, proposal.go:59 |
+| VELiveness | Liveness | Consensus eventually commits even if some VEs fail verification, provided <1/3 are invalid | Scenario 1, #5204 |
+| NoPhantomVE | Safety | Extensions in `PrepareProposal` that were not verified should be identifiable | Scenario 1, #2361 |
+| RoundProgress | Liveness | If +2/3 correct and eventually synchronous, consensus commits within bounded rounds | Scenario 2, #1431 |
+| NilPrecommitAdvance | Liveness | After +2/3 nil precommits, next round eventually starts | Scenario 2, #1431 |
+| CrashRecoveryConsistency | Safety | After crash and recovery, node does not equivocate | Scenario 3, #8739 |
+| CommittedBlockDurability | Safety | A committed block is never lost | Scenario 3 |
+| EvidenceUniqueness | Safety | Same evidence never committed in two different blocks | Scenario 4, #4114 |
+| LockSafety | Safety | A locked node only precommits its locked value unless it sees a polka at higher round | Scenario 5 |
+| POLRoundValidity | Safety | POLRound < Round for all proposals with POLRound >= 0 | Scenario 5, proposal.go:59 |
 
 ## 6. Findings Pending Verification
 
 ### 6.1 Model-Checkable
 
-| ID | Description | Expected invariant violation | Bug Family |
+| ID | Description | Expected invariant violation | Scenario |
 |----|-------------|----------------------------|------------|
-| MC-1 | Proposer VE self-verification skip causes deadlock with >1/3 invalid VEs | VELiveness violation | Family 1 |
-| MC-2 | Late precommits during timeout_commit have unverified VEs | NoPhantomVE violation | Family 1 |
-| MC-3 | +2/3 nil precommits: immediate advance vs timeout — safety equivalence | Verify NilPrecommitAdvance holds under both | Family 2 |
-| MC-4 | Prevotes arriving before proposal under Byzantine strategy | RoundProgress violation without fix | Family 2 |
-| MC-5 | Crash between privval signing and WAL WriteSync | CrashRecoveryConsistency violation | Family 3 |
-| MC-6 | Crash after Commit but before evpool.Update | EvidenceUniqueness violation | Family 4 |
-| MC-7 | POLRound >= Round in proposal | LockSafety or ElectionSafety violation | Family 5 |
-| MC-8 | All 5 enterPrecommit paths preserve locking invariant | LockSafety | Family 5 |
-| MC-9 | Crash after block save but before EndHeightMessage | CommittedBlockDurability | Family 3 |
-| MC-10 | Round skip on +2/3 any precommits with concurrent height advance | ElectionSafety | Family 2/5 |
+| MC-1 | Proposer VE self-verification skip causes deadlock with >1/3 invalid VEs | VELiveness violation | Scenario 1 |
+| MC-2 | Late precommits during timeout_commit have unverified VEs | NoPhantomVE violation | Scenario 1 |
+| MC-3 | +2/3 nil precommits: immediate advance vs timeout — safety equivalence | Verify NilPrecommitAdvance holds under both | Scenario 2 |
+| MC-4 | Prevotes arriving before proposal under Byzantine strategy | RoundProgress violation without fix | Scenario 2 |
+| MC-5 | Crash between privval signing and WAL WriteSync | CrashRecoveryConsistency violation | Scenario 3 |
+| MC-6 | Crash after Commit but before evpool.Update | EvidenceUniqueness violation | Scenario 4 |
+| MC-7 | POLRound >= Round in proposal | LockSafety or ElectionSafety violation | Scenario 5 |
+| MC-8 | All 5 enterPrecommit paths preserve locking invariant | LockSafety | Scenario 5 |
+| MC-9 | Crash after block save but before EndHeightMessage | CommittedBlockDurability | Scenario 3 |
+| MC-10 | Round skip on +2/3 any precommits with concurrent height advance | ElectionSafety | Scenario 2/5 |
 
 ### 6.2 Test-Verifiable
 

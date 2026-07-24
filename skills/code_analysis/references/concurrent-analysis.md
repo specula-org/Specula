@@ -48,7 +48,7 @@ Look for API-level operations that appear atomic but are internally split into s
 - retire -> unlink -> reclaim
 - enqueue wakeup -> decrement counter -> complete
 
-Each stage boundary is a candidate bug family.
+Each stage boundary is a candidate scenario.
 
 ### 2.2 Missing Re-Check After Stale Snapshot
 
@@ -131,9 +131,9 @@ These often produce strong invariants even when the implementation is otherwise 
 
 ---
 
-## 3. What Strong Concurrent Bug Families Look Like
+## 3. What Strong Concurrent Scenarios Look Like
 
-Strong bug families usually group around mechanisms like:
+Strong scenarios usually group around mechanisms like:
 
 - stale snapshot + missing re-check
 - memory ordering across variables
@@ -142,7 +142,7 @@ Strong bug families usually group around mechanisms like:
 - fast-path / fallback divergence
 - partial completion / cancellation ordering
 
-Weak bug families are usually:
+Weak scenarios are usually:
 
 - “this file uses atomics a lot”
 - Rust / C++ type-system-only issues with no protocol-level state machine
@@ -194,4 +194,4 @@ There is one anti-pattern we've watched repeatedly produce zero-value findings: 
 
 ### Composition
 
-Some families compose: cancellation + allocator failure exercises whether the cancel path leaks under OOM; ABA + memory ordering exercises detection under weakened visibility. Compose only when the open question requires it — composition explodes state space and clouds attribution.
+Some failure modes compose: cancellation + allocator failure exercises whether the cancel path leaks under OOM; ABA + memory ordering exercises detection under weakened visibility. Compose only when the open question requires it — composition explodes state space and clouds attribution.

@@ -11,13 +11,13 @@ See `../examples/cometbft-bug-report.md` for a complete real-world example.
 
 ## Summary
 
-- Bug families tested: N
+- Scenarios tested: N
 - Bugs found: N
-- Configs run: MC_hunt_xxx.cfg, MC_family_xxx.cfg, ...
+- Configs run: MC_hunt_<scenario>.cfg, ...
 
 ## Bug N: <Title>
 
-- **Bug Family**: <family name/number>
+- **Scenario**: <scenario name/number>
 - **Severity**: Critical / High / Medium
 - **Invariant violated**: <name>
 - **Config**: <cfg file>
@@ -43,7 +43,7 @@ See `../examples/cometbft-bug-report.md` for a complete real-world example.
 
 ## Not Reproduced
 
-| Bug Family | Config | States Explored | Result |
+| Scenario | Config | States Explored | Result |
 |------------|--------|-----------------|--------|
 | ... | ... | ... | No violation / Not testable (reason) |
 ```

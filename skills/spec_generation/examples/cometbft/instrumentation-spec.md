@@ -127,7 +127,7 @@ Maps TLA+ spec actions to source code locations for trace generation.
   - Path 3 (relock, line 1525): lockedRound=current round, lockedValue=same block, precommit block
   - Path 4 (new lock, line 1538): lockedRound=current round, lockedValue=NEW block, precommit block
   - Path 5 (unknown, line 1559): lockedRound=-1, lockedValue=nil, precommit nil
-  - Vote extensions attached only for non-nil precommits (state.go:2413-2423, Family 1)
+  - Vote extensions attached only for non-nil precommits (state.go:2413-2423, Scenario 1)
 
 ### 8. ReceivePrecommit
 
@@ -172,7 +172,7 @@ Maps TLA+ spec actions to source code locations for trace generation.
 - **Trigger point**: After timeout handler fires, after entering new round
 - **Trace event name**: `"HandleTimeoutPrecommit"`
 - **Fields**: State snapshot (new round/step after advancement)
-- **Notes**: Triggers `enterNewRound(height, round+1)`. Family 2: Bug #1431 — +2/3 nil precommits should advance immediately but implementation waits for this timeout.
+- **Notes**: Triggers `enterNewRound(height, round+1)`. Scenario 2: Bug #1431 — +2/3 nil precommits should advance immediately but implementation waits for this timeout.
 
 ### 13. EnterCommit
 
@@ -191,9 +191,9 @@ Maps TLA+ spec actions to source code locations for trace generation.
 - **Trace event name**: `"FinalizeCommit"`
 - **Fields**: State snapshot (new height, round=0, step=NewHeight)
 - **Notes**:
-  - 4 crash points: lines 1744, 1761, 1784, 1812 (Family 3)
-  - Evidence in block marked as committed during `blockExec.ApplyVerifiedBlock` (Family 4)
-  - EndHeightMessage written to WAL at line 1776 (Family 3)
+  - 4 crash points: lines 1744, 1761, 1784, 1812 (Scenario 3)
+  - Evidence in block marked as committed during `blockExec.ApplyVerifiedBlock` (Scenario 4)
+  - EndHeightMessage written to WAL at line 1776 (Scenario 3)
 
 ### 15. RoundSkip
 
@@ -204,7 +204,7 @@ Maps TLA+ spec actions to source code locations for trace generation.
 - **Trigger point**: After `enterNewRound` called from addVote
 - **Trace event name**: `"RoundSkip"`
 - **Fields**: State snapshot (new round)
-- **Notes**: Family 2: round synchronization mechanism. May be triggered by either prevote or precommit +2/3 any detection.
+- **Notes**: Scenario 2: round synchronization mechanism. May be triggered by either prevote or precommit +2/3 any detection.
 
 ### 16. Crash
 
@@ -213,7 +213,7 @@ Maps TLA+ spec actions to source code locations for trace generation.
 - **Trigger point**: Detected by peer via connection loss, or injected via `fail.Fail()` points
 - **Trace event name**: `"Crash"`
 - **Fields**: Node ID only
-- **Notes**: Family 3. WAL may lose last async entry. 6 crash injection points in `finalizeCommit` (state.go:862, 1744, 1761, 1784, 1804, 1812) and 4 in `applyBlock` (execution.go:264, 271, 306, 314).
+- **Notes**: Scenario 3. WAL may lose last async entry. 6 crash injection points in `finalizeCommit` (state.go:862, 1744, 1761, 1784, 1804, 1812) and 4 in `applyBlock` (execution.go:264, 271, 306, 314).
 
 ### 17. Recover
 
@@ -222,11 +222,11 @@ Maps TLA+ spec actions to source code locations for trace generation.
 - **Trigger point**: After WAL replay completes and consensus restarts
 - **Trace event name**: `"Recover"`
 - **Fields**: State snapshot (recovered height, round=0)
-- **Notes**: Family 3. Recovery uses EndHeightMessage as boundary. ABCI Handshake determines recovery strategy (replay.go:416-470).
+- **Notes**: Scenario 3. Recovery uses EndHeightMessage as boundary. ABCI Handshake determines recovery strategy (replay.go:416-470).
 
 ## Section 3: Special Considerations
 
-### 3.1 Vote Extensions (Family 1)
+### 3.1 Vote Extensions (Scenario 1)
 
 - **ExtendVote** is called inside `signVote` (state.go:2413-2423) only for precommit + non-nil block
 - **VerifyVoteExtension** is called inside `addVote` (state.go:2196-2244) for remote precommits on non-nil blocks
@@ -241,14 +241,14 @@ Maps TLA+ spec actions to source code locations for trace generation.
 - Trace events should be emitted from within `receiveRoutine` to maintain causal ordering
 - Gossip goroutines (`gossipDataRoutine`, `gossipVotesRoutine`) read snapshots with TOCTOU races — do NOT instrument these for trace events
 
-### 3.3 WAL Interaction (Family 3)
+### 3.3 WAL Interaction (Scenario 3)
 
 - `WriteSync` (fsync) used for own votes: state.go:849
 - `Write` (async) used for peer messages and timeouts: state.go:838, 869
 - On crash, async writes may be lost but sync writes survive
 - Instrumentation should NOT emit trace events for WAL writes themselves — WAL state is modeled implicitly
 
-### 3.4 Evidence Pool (Family 4)
+### 3.4 Evidence Pool (Scenario 4)
 
 - `ReportConflictingVotes` buffers evidence until next `Update` call (pool.go:181-188)
 - `processConsensusBuffer` runs during `Update` (pool.go:461-538), not during consensus

@@ -37,7 +37,7 @@
 ### Bug #1: Vote Extension Deadlock (B1 / Issue #5204)
 
 - **Hypothesis**: MC-1
-- **Bug Family**: Family 1 (Vote Extensions)
+- **Scenario**: Scenario 1 (Vote Extensions)
 - **Severity**: Critical
 - **Status**: Known (issue #5204, OPEN, unfixed)
 - **Invariant violated**: `VELivenessInv`
@@ -100,7 +100,7 @@ Remove the proposer self-verification skip. All precommit votes, including the p
 ### Bug #2: Nil Precommit Advance Requires Timeout (B6 / Issue #1431)
 
 - **Hypothesis**: MC-3
-- **Bug Family**: Family 2 (Liveness / Round Progression)
+- **Scenario**: Scenario 2 (Liveness / Round Progression)
 - **Severity**: High
 - **Status**: Known (issue #1431, OPEN)
 - **Property violated**: `NilPrecommitAdvance` (temporal, leads-to)
