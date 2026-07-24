@@ -134,6 +134,14 @@ specula run \
 
 Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencode`, and `pi`. Model names and effort values are interpreted by the selected agent. OpenCode and Pi model names use `provider/model` syntax.
 
+### Models tested by the Specula team
+
+We have tested the following agent and model combinations. These observations summarize our own runs and are not guarantees for every target or configuration.
+
+- **Reliable in our testing:** Claude Code with Claude Opus 4.8 or Fable, and Codex with GPT-5.5 or GPT-5.6-Sol. These combinations reliably completed the full Specula workflow, followed instructions consistently throughout, and produced almost no false positives in our runs.
+- **Completed the workflow, but requires additional review:** Claude Code with GLM-5.2 completed the full workflow and followed instructions, but produced more hallucinations and occasionally a small number of false positives.
+- **Use with debate and careful review:** Claude Code with Kimi 2.7 or DeepSeek V4 produced substantially more hallucinations. Kimi 2.7 sometimes failed to complete tasks—for example, its repair process did not converge. DeepSeek V4 sometimes reported successful reproductions that were not supported by the generated tests or evidence. When using either model, enable `--confirm-debate` and review the confirmation evidence carefully.
+
 ## Agents and Authentication
 
 | Agent | `--agent` value | Authentication |
