@@ -11,11 +11,11 @@
 (*   rte_ring_hts_elem_pvt.h  — HTS serialized mode                       *)
 (*   rte_ring_peek_elem_pvt.h — Peek START / FINISH                       *)
 (*                                                                         *)
-(* Bug Families:                                                           *)
-(*   F1 — Two-phase commit stall / liveness                                *)
-(*   F2 — Memory ordering / stale-read vulnerabilities                     *)
-(*   F3 — Peek mode atomicity gaps                                         *)
-(*   F4 — RTS counter overflow / ABA                                       *)
+(* Scenarios:                                                              *)
+(*   Scenario 1 — Two-phase commit stall / liveness                        *)
+(*   Scenario 2 — Memory ordering / stale-read vulnerabilities             *)
+(*   Scenario 3 — Peek mode atomicity gaps                                 *)
+(*   Scenario 4 — RTS counter overflow / ABA                               *)
 (***************************************************************************)
 
 EXTENDS Integers, Sequences, FiniteSets, TLC
@@ -30,7 +30,7 @@ CONSTANTS
     Mode,           \* Ring sync mode: "MPMC", "HTS", or "RTS"
     MaxBatch,       \* Maximum elements per enqueue/dequeue batch
     HTDMax,         \* RTS: max head-tail distance (rte_ring_rts_elem_pvt.h:73)
-    CntMax          \* RTS: counter wraps at this value (Family 4 — small for ABA)
+    CntMax          \* RTS: counter wraps at this value (Scenario 4 — small for ABA)
 
 ASSUME Capacity \in Nat \ {0}
 ASSUME Mode \in {"MPMC", "HTS", "RTS"}
@@ -50,7 +50,7 @@ VARIABLES
     consTail,       \* Consumer tail position (uint32_t, rte_ring_core.h:67)
     ring            \* Ring buffer: slot index -> value (abstract)
 
-\* --- Per-thread state (Family 1: two-phase commit window) ---
+\* --- Per-thread state (Scenario 1: two-phase commit window) ---
 VARIABLES
     phase,          \* Thread phase: "Idle", "Reserved", "Writing", "Done"
                     \* Models the window between CAS-reserve and tail-publish
@@ -59,27 +59,27 @@ VARIABLES
     side,           \* Which side thread is operating on: "prod" or "cons"
     reservedVals    \* Values thread will write (producers only)
 
-\* --- RTS counters (Family 1, 4: rte_ring_rts_elem_pvt.h:76-83) ---
+\* --- RTS counters (Scenario 1, 4: rte_ring_rts_elem_pvt.h:76-83) ---
 VARIABLES
     prodCnt,        \* Producer head counter (rte_ring_core.h:81)
     consCnt,        \* Consumer head counter (same)
     prodTailCnt,    \* Producer tail counter (rte_ring_core.h:86, tail.val.cnt)
     consTailCnt     \* Consumer tail counter
 
-\* --- Stale read model (Family 2: memory ordering bugs) ---
+\* --- Stale read model (Scenario 2: memory ordering bugs) ---
 VARIABLES
     visibleConsTail,    \* visibleConsTail[t] = producer t's view of consTail
     visibleProdTail     \* visibleProdTail[t] = consumer t's view of prodTail
 
-\* --- Thread stall (Family 1: stall/crash between phases) ---
+\* --- Thread stall (Scenario 1: stall/crash between phases) ---
 VARIABLES
     stalled         \* stalled[t] = TRUE if thread t is stalled/crashed
 
-\* --- Peek mode (Family 3: START/FINISH split) ---
+\* --- Peek mode (Scenario 3: START/FINISH split) ---
 VARIABLES
     peekActive      \* peekActive[t] = TRUE if thread t is in peek START..FINISH
 
-\* --- RTS stale head model (Family 4: stale RELAXED head read in update_tail) ---
+\* --- RTS stale head model (Scenario 4: stale RELAXED head read in update_tail) ---
 VARIABLES
     rtsStaleHead    \* rtsStaleHead[t] = [valid |-> BOOLEAN, cnt |-> Nat, pos |-> Nat]
                     \* Thread t's possibly-stale view of head (cnt, pos) during publish
@@ -122,7 +122,7 @@ ItemCount == WrapPos(prodTail - consTail + 2 * Capacity)
 \* Free space: capacity - items
 FreeSpace == Capacity - ItemCount
 
-\* RTS counter increment with wraparound (Family 4)
+\* RTS counter increment with wraparound (Scenario 4)
 IncCnt(c) == IF c + 1 >= CntMax THEN 0 ELSE c + 1
 
 \* Value domain for ring elements (abstract integers starting from 1)
@@ -152,14 +152,14 @@ Init ==
     /\ consCnt = 0
     /\ prodTailCnt = 0
     /\ consTailCnt = 0
-    \* Stale reads — initially accurate (Family 2)
+    \* Stale reads — initially accurate (Scenario 2)
     /\ visibleConsTail = [t \in Thread |-> 0]
     /\ visibleProdTail = [t \in Thread |-> 0]
-    \* Stall (Family 1)
+    \* Stall (Scenario 1)
     /\ stalled = [t \in Thread |-> FALSE]
-    \* Peek (Family 3)
+    \* Peek (Scenario 3)
     /\ peekActive = [t \in Thread |-> FALSE]
-    \* RTS stale head — not captured (Family 4)
+    \* RTS stale head — not captured (Scenario 4)
     /\ rtsStaleHead = [t \in Thread |-> [valid |-> FALSE, cnt |-> 0, pos |-> 0]]
     \* History
     /\ enqueued = <<>>
@@ -533,7 +533,7 @@ RTSPublishTail(t) ==
     /\ UNCHANGED freshVars
 
 \* ========================================================================
-\* RTS Stale Head Capture (Family 4: rte_ring_rts_elem_pvt.h:49)
+\* RTS Stale Head Capture (Scenario 4: rte_ring_rts_elem_pvt.h:49)
 \* ========================================================================
 
 \* Models a RELAXED load of head (cnt, pos) during update_tail.
@@ -579,7 +579,7 @@ RTSCaptureHead(t) ==
     /\ UNCHANGED freshVars
 
 \* ========================================================================
-\* Stale Read Action (Family 2: rte_ring_c11_pvt.h:104-105)
+\* Stale Read Action (Scenario 2: rte_ring_c11_pvt.h:104-105)
 \* ========================================================================
 
 \* A thread's view of the opposing tail may lag behind the actual value.
@@ -609,7 +609,7 @@ StaleRead(t) ==
     /\ UNCHANGED freshVars
 
 \* ========================================================================
-\* Thread Stall / Crash (Family 1: rte_ring_c11_pvt.h:35-37 window)
+\* Thread Stall / Crash (Scenario 1: rte_ring_c11_pvt.h:35-37 window)
 \* ========================================================================
 
 \* A thread stalls between Reserve and PublishTail, blocking tail progress
@@ -627,7 +627,7 @@ Stall(t) ==
     /\ UNCHANGED freshVars
 
 \* ========================================================================
-\* Peek Mode Actions (Family 3: rte_ring_peek_elem_pvt.h)
+\* Peek Mode Actions (Scenario 3: rte_ring_peek_elem_pvt.h)
 \* ========================================================================
 
 \* --- Peek Start: reserve slots but don't write data yet ---
@@ -799,7 +799,7 @@ RingSafety ==
     /\ Len(dequeued) <= Len(enqueued)
     /\ \A i \in 1..Len(dequeued) : dequeued[i] = enqueued[i]
 
-\* CapacityBound: in-flight elements never exceed capacity (Family 2)
+\* CapacityBound: in-flight elements never exceed capacity (Scenario 2)
 \* In-flight = prodTail - consTail (elements visible to consumers but not yet consumed)
 \* Plus reserved-but-not-published elements
 CapacityBound ==
@@ -813,9 +813,9 @@ NoOverwrite == CapacityBound
 \* This is structural — enforced by the actions, checked as a sanity invariant
 \* (Checked via temporal property instead — see below)
 
-\* --- Extension Invariants (Bug Families) ---
+\* --- Extension Invariants (Scenarios) ---
 
-\* CounterConsistency (Family 1, 4): the actual in-flight thread count per
+\* CounterConsistency (Scenario 1, 4): the actual in-flight thread count per
 \* side must be < CntMax. If violated, the counter domain is too small and
 \* ABA wraparound can occur.
 CounterConsistency ==
@@ -826,7 +826,7 @@ CounterConsistency ==
     /\ prodInFlight < CntMax
     /\ consInFlight < CntMax
 
-\* NoABA (Family 4): the modular counter difference must equal the actual
+\* NoABA (Scenario 4): the modular counter difference must equal the actual
 \* in-flight thread count. If they diverge, a counter has wrapped (ABA)
 \* and the last-thread check in update_tail may misfire.
 NoABA ==
@@ -864,14 +864,14 @@ HTSSingleInFlight ==
 \* Liveness / Temporal Properties
 \* ========================================================================
 
-\* TailProgress (Family 1): if no thread is stalled and ring is non-empty,
+\* TailProgress (Scenario 1): if no thread is stalled and ring is non-empty,
 \* tail eventually advances
 NoStalls == \A t \in Thread : stalled[t] = FALSE
 TailProgress ==
     \A t \in Thread :
         (phase[t] = "Writing" /\ NoStalls) ~> (phase[t] = "Idle")
 
-\* MPMCStallBlocks (Family 1, negative): one stalled producer blocks all
+\* MPMCStallBlocks (Scenario 1, negative): one stalled producer blocks all
 \* producer tail progress. This should FAIL for MPMC mode.
 \* Simplified: if any thread is stalled, some Writing thread stays Writing forever.
 MPMCStallBlocks ==
@@ -879,7 +879,7 @@ MPMCStallBlocks ==
         ((stalled[t] = TRUE /\ phase[t] # "Idle" /\ side[t] = "prod") =>
          [](\E t2 \in Thread : phase[t2] = "Writing" /\ side[t2] = "prod"))
 
-\* RTSBoundedStall (Family 1): in RTS mode, if one thread stalls,
+\* RTSBoundedStall (Scenario 1): in RTS mode, if one thread stalls,
 \* other threads can still make progress (up to htd_max slots).
 \* Non-stalled Writing threads eventually become Idle.
 RTSBoundedStall ==

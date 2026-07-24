@@ -132,5 +132,5 @@ Each subagent should:
 After parallel analysis, cross-reference findings:
 
 - do findings from different files relate to the same mechanism?
-- do they form a Bug Family?
+- do they form a Scenario?
 - do they confirm or contradict each other?

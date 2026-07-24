@@ -4,17 +4,17 @@ How to write a TLA+ base spec from a Modeling Brief.
 
 > **On examples**: any examples below (Raft, hashicorp/raft, cometbft, etc.) are historical instances illustrating mechanics. They are not models to imitate. Adapt to your target system; for Category B targets the right shape is usually thread-local state + shared memory windows rather than messages and roles.
 
-> **Category vocabulary** — fault-family vocabulary lives in `code_analysis/references/distributed-analysis.md`, `concurrent-analysis.md`, and (for BFT) `bft-analysis.md`. Use it as shorthand when it helps; do not treat any family list as a checklist that every target must cover.
+> **Category vocabulary** — fault-category vocabulary lives in `code_analysis/references/distributed-analysis.md`, `concurrent-analysis.md`, and (for BFT) `bft-analysis.md`. Use it as shorthand when it helps; do not treat any category list as a checklist that every target must cover.
 
-## Principle: Bug-Family Driven, Code-Faithful
+## Principle: Scenario-Driven, Code-Faithful
 
-The spec's **scope** is driven by Bug Families — what variables to add, how to split actions, what invariants to check. But the **logic** within each action must faithfully follow the implementation's actual control flow. For the code paths we model, the spec must match the implementation's conditions, branches, and state updates precisely.
+The spec's **scope** is driven by Scenarios — what variables to add, how to split actions, what invariants to check. But the **logic** within each action must faithfully follow the implementation's actual control flow. For the code paths we model, the spec must match the implementation's conditions, branches, and state updates precisely.
 
 **Every logic block within an action must be annotated with source code line references.**
 
 ## Variable Design
 
-Start from standard protocol variables, then add **extension variables** from Bug Families. Every extension variable must cite which Bug Family motivates it and what code it models.
+Start from standard protocol variables, then add **extension variables** from Scenarios. Every extension variable must cite which Scenario motivates it and what code it models.
 
 Group variables for UNCHANGED clauses (e.g., `serverVars`, `logVars`, `leaderVars`).
 
@@ -42,7 +42,7 @@ Split a single implementation function into multiple spec actions when:
 4. **A lock-free operation has separate visibility stages** — e.g., read snapshot -> confirm -> dereference, reserve -> write -> publish, retire -> reclaim
 5. **Ownership transfers across threads** — e.g., enqueue wakeup -> decrement counter -> complete, detach -> fulfill -> bottom-half finish
 
-### Granularity for Concurrent Specs — *the headline fault family*
+### Granularity for Concurrent Specs — *the headline fault category*
 
 For concurrent / lock-free targets, action granularity is the most important faithfulness decision in the entire spec. Production concurrent bugs are overwhelmingly pure interleaving bugs — two correct-looking operations run in an order the author did not consider — and TLC is uniquely good at exposing them by exhaustively exploring all interleavings. A spec that collapses a multi-step protocol into one atomic action makes those bugs invisible, no matter how careful the rest of the spec is.
 
@@ -93,7 +93,7 @@ Each action boundary is an interleaving point. TLC explores every order across t
 | Is it a single CAS, single atomic load, or single atomic store? | No (already correct) |
 | Does the implementation hold a single lock across the whole action with no release? | No (atomic by construction) |
 
-State-space cost is real, but control it through **counter bounds, scenario configs, and symmetry reduction in the MC layer** — not by collapsing actions in the base spec. Collapsing for state-space reasons is a faithfulness regression that silently kills bug-finding power and is much harder to detect than an explicit bound.
+State-space cost is real, but control it through **counter bounds, hunting configs, and symmetry reduction in the MC layer** — not by collapsing actions in the base spec. Collapsing for state-space reasons is a faithfulness regression that silently kills bug-finding power and is much harder to detect than an explicit bound.
 
 See `code_analysis/references/concurrent-analysis.md` § 5.1 for the bug-class reasoning that motivates this.
 
@@ -112,7 +112,7 @@ Use descriptive constants. Include a `msubtype` field when the same RPC type has
 
 Three categories:
 1. **Standard protocol invariants** — fundamental safety properties
-2. **Extension invariants** — target specific Bug Families (primary bug-detection tools)
+2. **Extension invariants** — target specific Scenarios (primary bug-detection tools)
 3. **Structural invariants** — sanity checks that hold in all correct states
 
 ## Helpers
@@ -123,9 +123,9 @@ Common patterns: log entry records with type fields, message bags (Send/Discard/
 
 This section defines the fault **actions** — state transitions the adversary can take. The MC spec wraps these with counter bounds (see `mc-spec-pattern.md`). The base spec describes what the adversary can do; the MC spec bounds how often.
 
-**Design fault-injection actions based on what your Bug Families actually identify, not on common fault categories or other case studies' lists.** System-specific fault actions take priority — disk IO blocking, non-atomic persist windows, mid-election config change, NIC packet reorder, signal-during-RMW, JIT barrier reordering, etc. — whatever the target's code and the open question demand. The fault-family vocabularies in `distributed-analysis.md`, `concurrent-analysis.md`, and `bft-analysis.md` are starting points for naming, not a constraint on design.
+**Design fault-injection actions based on what your Scenarios actually identify, not on common fault categories or other case studies' lists.** System-specific fault actions take priority — disk IO blocking, non-atomic persist windows, mid-election config change, NIC packet reorder, signal-during-RMW, JIT barrier reordering, etc. — whatever the target's code and the open question demand. The fault-category vocabularies in `distributed-analysis.md`, `concurrent-analysis.md`, and `bft-analysis.md` are starting points for naming, not a constraint on design.
 
-A reminder applicable to all categories: if you can characterise a fault action's effect as "equivalent to `git revert <commit>`" for some past commit — drop it. The MC run produces no information the closed PR didn't already record. See `mc-spec-pattern.md` § "Fault Family Wrappers — Guidance, Not Templates".
+A reminder applicable to all categories: if you can characterise a fault action's effect as "equivalent to `git revert <commit>`" for some past commit — drop it. The MC run produces no information the closed PR didn't already record. See `mc-spec-pattern.md` § "Fault Category Wrappers — Guidance, Not Templates".
 
 ## Crash and Recovery
 

@@ -3,7 +3,7 @@
 
 Supports 4 sheets:
   - "New bug"              (simple)
-  - "New bug (detailed)"   (with Severity, Bug Family, Discovery Method, Root Cause, Affected Code)
+  - "New bug (detailed)"   (with Severity, Scenario, Discovery Method, Root Cause, Affected Code)
   - "Known bug"            (simple)
   - "Known bug (detailed)"
 """
@@ -30,7 +30,7 @@ DETAILED_COLUMNS = [
     "Protocol / Lang",
     "Finding",
     "Severity",
-    "Bug Family",
+    "Scenario",
     "Discovery Method",
     "Root Cause",
     "Affected Code",
@@ -144,7 +144,7 @@ def build_detailed_row(num, args):
         args.protocol,
         args.finding,
         args.severity or "",
-        args.bug_family or "",
+        args.scenario or "",
         args.discovery_method or "",
         args.root_cause or "",
         args.affected_code or "",
@@ -211,7 +211,7 @@ def update_bug(args):
             "status": "Status",
             "notes": "Notes",
             "severity": "Severity",
-            "bug_family": "Bug Family",
+            "scenario": "Scenario",
             "discovery_method": "Discovery Method",
             "root_cause": "Root Cause",
             "affected_code": "Affected Code",
@@ -388,7 +388,7 @@ def main():
     p_add.add_argument("--protocol", required=True, help="Protocol / Lang")
     p_add.add_argument("--finding", required=True, help="Bug description")
     p_add.add_argument("--severity", help="Critical / Medium / Minor")
-    p_add.add_argument("--bug-family", help="Bug family name")
+    p_add.add_argument("--scenario", help="Scenario name")
     p_add.add_argument("--discovery-method", help="MC-BFS / MC-Simulation / Trace Validation / Code Review")
     p_add.add_argument("--root-cause", help="Brief root cause description")
     p_add.add_argument("--affected-code", help="file:line references")
@@ -407,7 +407,7 @@ def main():
     )
     p_upd.add_argument("--number", type=int, required=True, help="Bug number to update")
     p_upd.add_argument("--severity", help="New severity")
-    p_upd.add_argument("--bug-family", help="New bug family")
+    p_upd.add_argument("--scenario", help="New scenario")
     p_upd.add_argument("--discovery-method", help="New discovery method")
     p_upd.add_argument("--root-cause", help="New root cause")
     p_upd.add_argument("--affected-code", help="New affected code")

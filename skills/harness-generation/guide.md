@@ -180,12 +180,12 @@ Instrument **as many spec actions as possible**. The more actions are traced, th
 
 Write test code that exercises the protocol code paths to generate trace events.
 
-**Reuse existing tests first.** Most systems already have integration or end-to-end tests that exercise the protocol paths you need. Prefer adding trace emit calls to existing test infrastructure rather than writing new tests from scratch. Only write new scenarios when existing tests do not cover the target code paths (e.g., specific fault injection, bug-family edge cases).
+**Reuse existing tests first.** Most systems already have integration or end-to-end tests that exercise the protocol paths you need. Prefer adding trace emit calls to existing test infrastructure rather than writing new tests from scratch. Only write new test scenarios when existing tests do not cover the target code paths (e.g., specific fault injection, edge cases identified by a modeling Scenario).
 
 **Requirements**:
 - Tests must use the system's real test framework (Go `testing`, Rust `#[test]`, Java JUnit, etc.)
 - Tests must run the actual protocol code (not mocked or simulated)
-- Aim for 2-4 scenarios covering: normal operation, fault injection (crash, network partition), edge cases from bug families
+- Aim for 2-4 test scenarios covering: normal operation, fault injection (crash, network partition), edge cases from the Modeling Brief's Scenarios
 - Each scenario writes to a separate trace file: `traces/<scenario>.ndjson`
 
 ---

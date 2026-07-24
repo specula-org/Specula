@@ -17,7 +17,7 @@ Every phase agent reads the same file, so phase-specific instructions need to be
 
 Write a `.prompt-extra.md` only if at least one of these is true:
 
-- The user has hypotheses about specific bug families they want investigated.
+- The user has hypotheses about specific scenarios they want investigated.
 - There are known production incidents or upstream issues that phase agents should be aware of.
 - Default phase behavior would over-scope (e.g., target is 500K LOC and only one subsystem matters).
 - The user wants to gate scope explicitly (e.g., "skip transport, model only session lifecycle").
@@ -41,7 +41,7 @@ If none of these apply, tell the user `.prompt-extra.md` is unnecessary for thei
 | Keep | Remove |
 |------|--------|
 | Subsystem scope ("focus on chunking layer, not transport") | TLA+ variable names, types, operators (`Seq(Nat)`, etc.) |
-| Bug-family hypotheses, phrased as questions | Pre-defined invariants with formal conditions |
+| Scenario hypotheses, phrased as questions | Pre-defined invariants with formal conditions |
 | Key files / entry points (cite paths) | Action structure ("split `Receive` into `ReceiveStart` / `ReceiveEnd`") |
 | Known historical bugs / incidents (issue links + brief mechanism) | State-space bounds (`Server = {s1, s2, s3}`, `MaxTerm = 5`) |
 | Out-of-scope list (what to skip and why) | Symmetry / fairness annotations |
@@ -53,7 +53,7 @@ Self-test before writing: would your draft still make sense if Specula switched 
 
 Pick the closest in style to the user's target and read it in full:
 
-- `case-studies/sonic-fdb/.prompt-extra.md` — full distributed-system scope brief: architecture sketch + production incident + key files + 5 hypothesized bug families.
+- `case-studies/sonic-fdb/.prompt-extra.md` — full distributed-system scope brief: architecture sketch + production incident + key files + 5 hypothesized scenarios.
 - `case-studies/eliben-raft/.prompt-extra.md` — minimal: protocol focus + 8 bug patterns to hunt for. No abstractions specified.
 - `case-studies/libspdm-chunking/.prompt-extra.md` — pure-WHAT writing: every hypothesis is phrased as a question.
 - `case-studies/mongodb-chunkmigration/.prompt-extra.md` — Phase 4-specific re-run instructions for already-found bugs.
@@ -68,7 +68,7 @@ There is no required template. Most working `.prompt-extra.md` files contain som
 2. **Architecture sketch** — the 2–5 components that interact, in plain English.
 3. **Key files** — paths phase agents should read first.
 4. **Known production incidents / bug references** — issue numbers + brief mechanism, with links.
-5. **Bug-family hypotheses** — open questions phrased as questions.
+5. **Scenario hypotheses** — open questions phrased as questions.
 6. **Out of scope** — what to skip and why.
 7. **Phase-specific sections** (optional) — `### Phase 4 only` etc.
 

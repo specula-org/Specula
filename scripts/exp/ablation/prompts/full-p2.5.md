@@ -29,7 +29,7 @@ Follow the **harness-generation** skill methodology. Read the skill guide at:
    code locations specified in instrumentation-spec.md. Patch the real source
    code, do NOT write a standalone simulation.
 2. **Write test scenarios** — Create tests that exercise the protocol code paths
-   relevant to each bug family.
+   relevant to each Scenario.
 3. **Collect traces** — Run the instrumented tests and save NDJSON traces to:
    ${WORKSPACE_DIR}/traces/
 

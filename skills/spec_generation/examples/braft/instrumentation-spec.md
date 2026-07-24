@@ -205,7 +205,7 @@ Action-to-code mapping for trace harness generation. Each spec action maps to on
 | **Trigger point** | After success/failure handling, before _send_entries() |
 | **Trace event name** | `HandleInstallSnapshotResponse` |
 | **Fields** | `msg.from` = peer, `msg.to` = leader, `msg.term` = response.term(), `msg.success` = response.success() |
-| **Notes** | **BUG FAMILY 2**: This handler does NOT check response.term(). The trace captures the term but the spec action does not use it for step-down. |
+| **Notes** | **SCENARIO 2**: This handler does NOT check response.term(). The trace captures the term but the spec action does not use it for step-down. |
 
 ### 2.16 AdvanceCommitIndex
 
