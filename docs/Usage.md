@@ -134,7 +134,7 @@ specula run \
 
 Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencode`, and `pi`. Model names and effort values are interpreted by the selected agent. OpenCode and Pi model names use `provider/model` syntax.
 
-### Hybrid Agent Configuration
+### Hybrid agent configuration
 
 Use an agent configuration file to select different agents or models for different pipeline phases:
 
@@ -164,13 +164,11 @@ specula run --agent-config=/abs/path/hybrid-agents.json ...
 }
 ```
 
-Each profile requires `agent`; `model` and `effort` are optional. Unmapped phases use `default_profile`. `repair` inherits the `validate` profile unless it is mapped explicitly. Reviews inherit the profile of the phase they review; map `review` explicitly to use one profile for every review.
+Unmapped phases use `default_profile`. `repair` inherits `validate`, and reviews inherit the phase they review unless either is mapped explicitly.
 
 Valid phase keys are `analyze`, `specgen`, `harness`, `validate`, `confirm`, `repair`, `classify`, and `review`.
 
-`--agent-config` cannot be combined with `--agent`, `--model`, or `--effort`. Specula does not discover configuration files automatically or switch agents after a failure. The file should not contain credentials; each configured agent uses its existing CLI authentication.
-
-GitHub Copilot CLI can be selected with `"agent": "copilot-cli"`. Copilot CLI has a per-prompt size limit, so large confirmation or debate prompts may require another agent.
+`--agent-config` cannot be combined with `--agent`, `--model`, or `--effort`; configured agents use their existing CLI authentication.
 
 ### Models tested by the Specula team
 
