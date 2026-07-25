@@ -21,20 +21,20 @@ We maintain [a list of bugs found by Specula](https://docs.google.com/spreadshee
 - Java 21+ with Maven
 - GitHub CLI `gh`
 - Supported agents (Claude Code, Codex, or Copilot CLI). Please contribute [adapters](./scripts/launch/adapters) for new agents.
-- Doding agent. (Specula use coding agents to read code, infer invariants, and reason about counterexamples.)
-- **Machine:** We recommend at least 32 GB of RAM and 100 GB of free disk space; more RAM is preferable. See [Usage Guide](./docs/Usage.md).
+- Coding agent. (Specula uses coding agents to read code, infer invariants, and reason about counterexamples.)
+- **Machine:** We recommend at least 32 GB of RAM and 100 GB of free disk space; more RAM is preferable. See the [Usage Guide](./docs/Usage.md).
 
 > **Windows:** run Specula inside [WSL2](https://learn.microsoft.com/windows/wsl/install). Native Windows (outside WSL2) is not supported yet.
 
 ## Recommended Coding Agents
 
-We recommend to use the following coding agents which are actively tested by us:
+We recommend using the following coding agents, which we actively test:
 * Claude Code with Claude Opus 4.8 or Fable
 * Codex with GPT-5.5 or GPT-5.6-Sol
 
 Other strong coding agents may work, but we do not test them regularly during our development. We recently tested Claude Code with GLM-5.2, Kimi 2.7, and DeepSeek V4 (see [Usage Guide](./docs/Usage.md)).
 
-**For Fable and GPT-5.6-Sol**, please apply for Trusted Access at [chatgpt.com/cyber](https://chatgpt.com/cyber) and [portal.anthropic.com/programs/cvp](https://portal.anthropic.com/programs/cvp). Otherwise, Specula is known to be blocked when reproducing bugs in source code. If you cannot have Trusted Access, you can use [hybrid configuration]().
+**For Fable and GPT-5.6-Sol**, please apply for Trusted Access at [chatgpt.com/cyber](https://chatgpt.com/cyber) and [portal.anthropic.com/programs/cvp](https://portal.anthropic.com/programs/cvp). Otherwise, Specula is known to be blocked when reproducing bugs in source code. If you cannot obtain Trusted Access, you can use [hybrid configuration]().
 
 ## Setup
 
