@@ -460,6 +460,7 @@ class Phase:
     _effort: str | None = None
     _policy_retries = DEFAULT_POLICY_RETRIES
     _transient_resumes = DEFAULT_TRANSIENT_RESUMES
+    _rate_limit_agent = "claude-code"
 
     # ── per-phase hooks ──
     def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
@@ -597,6 +598,14 @@ class Phase:
         return os.environ.get("SPECULA_RATE_LIMIT_REACTIVE", "").lower() in {"1", "true", "yes", "on"}
 
     def _wait_for_rate_limit(self) -> None:
+        if self._rate_limit_agent != "claude-code":
+            seconds = quota.RATE_LIMIT_FALLBACK_SECONDS
+            print(
+                f"[{_ts()}] No quota reset endpoint for {self._rate_limit_agent}; "
+                f"sleeping {seconds:g}s after rate limit"
+            )
+            time.sleep(seconds)
+            return
         quota.wait_for_quota(
             usage_script=SPECULA_ROOT / "scripts" / "exp" / "usage.sh",
             q5=os.environ.get("SPECULA_QUOTA_5H") or "85",
@@ -775,6 +784,7 @@ class Phase:
         if not adapter.is_file():
             print(f"ERROR: Unknown agent '{agent}' — adapter not found at {adapter}")
             return 1
+        self._rate_limit_agent = agent
 
         ws = Workspace(targets, artifact=artifact, opts=extra)
         names = [self.target_name(t) for t in targets]
@@ -2609,6 +2619,7 @@ Output:
         if not adapter.is_file():
             print(f"ERROR: Unknown agent '{agent}' — adapter not found at {adapter}")
             return 1
+        self._rate_limit_agent = agent
 
         ws = Workspace(targets)
         names = [_trim(t) for t in targets]

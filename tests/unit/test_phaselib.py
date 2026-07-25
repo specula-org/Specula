@@ -642,6 +642,38 @@ class TestArgErrors(PhaseCase):
                 self.assertIn("default: 20", out)
 
 
+class TestReactiveRateLimitWait(unittest.TestCase):
+    def test_non_claude_agent_uses_fixed_fallback_sleep(self) -> None:
+        phase = phaselib.Phase()
+        phase._rate_limit_agent = "codex"
+        out = io.StringIO()
+
+        with (
+            contextlib.redirect_stdout(out),
+            mock.patch.object(quota, "wait_for_quota") as wait_for_quota,
+            mock.patch("specula.phaselib.time.sleep") as sleep,
+        ):
+            phase._wait_for_rate_limit()
+
+        wait_for_quota.assert_not_called()
+        sleep.assert_called_once_with(quota.RATE_LIMIT_FALLBACK_SECONDS)
+        self.assertIn("No quota reset endpoint for codex", out.getvalue())
+
+    def test_claude_agent_uses_quota_wait(self) -> None:
+        phase = phaselib.Phase()
+        phase._rate_limit_agent = "claude-code"
+
+        with (
+            mock.patch.object(quota, "wait_for_quota") as wait_for_quota,
+            mock.patch("specula.phaselib.time.sleep") as sleep,
+        ):
+            phase._wait_for_rate_limit()
+
+        wait_for_quota.assert_called_once()
+        self.assertTrue(wait_for_quota.call_args.kwargs["reactive"])
+        sleep.assert_not_called()
+
+
 class TestBugConfirmationAlternate(PhaseCase):
     def _patch_confirmation(self, codes: list[int]) -> list[tuple[int, str]]:
         from specula import confirmlib

@@ -180,6 +180,62 @@ class CliE2E(unittest.TestCase):
                 self.assertEqual(meta["policy_retries"], 100)
                 self.assertEqual(meta["transient_resumes"], 80)
 
+    def test_agent_config_routes_phase_and_review_commands(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        config = work / "agents.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "default_profile": "reasoning",
+                    "profiles": {
+                        "reasoning": {
+                            "agent": "codex",
+                            "model": "gpt-5.6-sol",
+                            "effort": "ultra",
+                        },
+                        "confirmation": {
+                            "agent": "copilot-cli",
+                            "model": "claude-sonnet-4.5",
+                        },
+                        "reviewer": {
+                            "agent": "opencode",
+                            "model": "openai/gpt-5.4",
+                        },
+                    },
+                    "phases": {
+                        "confirm": "confirmation",
+                        "review": "reviewer",
+                    },
+                }
+            )
+        )
+
+        proc = self.run_cli(
+            root,
+            ["run", "--dry-run", "--enable-reviews", f"--agent-config={config.name}", "footest"],
+            cwd=work,
+        )
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        lines = proc.stdout.splitlines()
+        analysis = next(line for line in lines if "launch_code_analysis.sh" in line)
+        confirmation = next(line for line in lines if "launch_bug_confirmation.sh" in line)
+        review = next(line for line in lines if "launch_review.sh analysis" in line)
+        self.assertIn("--agent=codex", analysis)
+        self.assertIn("--model=gpt-5.6-sol", analysis)
+        self.assertIn("--effort=ultra", analysis)
+        self.assertIn("--agent=copilot-cli", confirmation)
+        self.assertIn("--model=claude-sonnet-4.5", confirmation)
+        self.assertIn("--agent=opencode", review)
+        self.assertIn("--model=openai/gpt-5.4", review)
+
+        meta = json.loads((self.sole_run_dir(root) / "run.json").read_text())
+        self.assertEqual(meta["agent_config"], str(config))
+        self.assertEqual(meta["agent_routes"]["confirm"]["agent"], "copilot-cli")
+        self.assertEqual(meta["agent_routes"]["review:analysis"]["agent"], "opencode")
+
     def test_run_json_records_argv(self) -> None:
         root = self.specroot()
         work = self.workdir()
@@ -188,6 +244,7 @@ class CliE2E(unittest.TestCase):
         meta = json.loads((run / "run.json").read_text())
         self.assertEqual(meta["targets"], ["footest"])
         self.assertEqual(meta["run_id"], run.name)
+        self.assertNotIn("agent_config", meta)
 
     def test_keep_original_dry_run_records_mode_without_copying(self) -> None:
         root = self.specroot()
