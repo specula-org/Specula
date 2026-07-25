@@ -21,10 +21,20 @@ We maintain [a list of bugs found by Specula](https://docs.google.com/spreadshee
 - Java 21+ with Maven
 - GitHub CLI `gh`
 - Supported agents (Claude Code, Codex, or Copilot CLI). Please contribute [adapters](./scripts/launch/adapters) for new agents.
-- **LLM with strong reasoning capability at high reasoning effort.** Specula relies on the LLM to read code, infer invariants, and reason about counterexamples.
-- **Machine:** We recommend at least 32 GB of RAM and 100 GB of free disk space; more RAM is preferable. See the [Usage Guide](./docs/Usage.md) for details.
+- Coding agent. (Specula uses coding agents to read code, infer invariants, and reason about counterexamples.)
+- **Machine:** We recommend at least 32 GB of RAM and 100 GB of free disk space; more RAM is preferable. See the [Usage Guide](./docs/Usage.md).
 
 > **Windows:** run Specula inside [WSL2](https://learn.microsoft.com/windows/wsl/install). Native Windows (outside WSL2) is not supported yet.
+
+## Recommended Coding Agents
+
+We recommend using the following coding agents, which we actively test:
+* Claude Code with Claude Opus 4.8 or Fable
+* Codex with GPT-5.5 or GPT-5.6-Sol
+
+Other strong coding agents may work, but we do not test them regularly during our development. We recently tested Claude Code with GLM-5.2, Kimi 2.7, and DeepSeek V4 (see [Usage Guide](./docs/Usage.md)).
+
+**For GPT-5.6-Sol and Fable**, apply for Trusted Access through [OpenAI](https://chatgpt.com/cyber) and [Anthropic](https://portal.anthropic.com/programs/cvp), respectively. Without the required access, providers may block bug-reproduction requests during confirmation. If you cannot obtain access, use [hybrid configuration](./docs/Usage.md#hybrid-agent-configuration) to select another agent or model for that phase.
 
 ## Setup
 
