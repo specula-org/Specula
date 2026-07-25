@@ -3,9 +3,9 @@
  * TLA+ specification for CometBFT (Tendermint BFT consensus).
  *
  * Derived from: cometbft/cometbft consensus/state.go
- * Bug Families: 1 (Vote Extensions), 2 (Liveness/Round Progression),
- *               3 (Crash Recovery/WAL), 4 (Evidence Handling),
- *               5 (Locking Protocol)
+ * Scenarios: 1 (Vote Extensions), 2 (Liveness/Round Progression),
+ *            3 (Crash Recovery/WAL), 4 (Evidence Handling),
+ *            5 (Locking Protocol)
  *
  * This spec models the implementation's actual control flow, not the
  * paper algorithm. Deviations from the reference are where bugs live.
@@ -42,7 +42,7 @@ CONSTANTS
     StepPrecommitWait,   \* RoundStepPrecommitWait (not used as a separate step in spec)
     StepCommit           \* RoundStepCommit
 
-\* Vote extension constants (Family 1)
+\* Vote extension constants (Scenario 1)
 CONSTANTS
     ValidVE,             \* Valid vote extension value
     InvalidVE,           \* Invalid vote extension value
@@ -51,7 +51,7 @@ CONSTANTS
 \* Nil vote constant — distinguishes "voted nil" from "not voted yet" (= Nil)
 CONSTANT NilVote
 
-\* Evidence types (Family 4)
+\* Evidence types (Scenario 4)
 CONSTANTS
     DuplicateVoteEv      \* DuplicateVoteEvidence type
 
@@ -68,7 +68,7 @@ VARIABLE step            \* [Server -> Step] current step in round
 VARIABLE proposal        \* [Server -> record or Nil] current proposal
 VARIABLE proposalBlock   \* [Server -> value or Nil] proposed block value
 
-\* --- Locking state (Family 5: state.go:1459-1578) ---
+\* --- Locking state (Scenario 5: state.go:1459-1578) ---
 VARIABLE lockedRound     \* [Server -> Int] round at which node locked (-1 = none)
 VARIABLE lockedValue     \* [Server -> value or Nil] locked block value
 VARIABLE validRound      \* [Server -> Int] round of last valid block (-1 = none)
@@ -84,23 +84,23 @@ VARIABLE decision        \* [Server -> [Height -> value or Nil]] committed value
 \* --- Network ---
 VARIABLE messages        \* Bag of messages
 
-\* --- Extension 1: Vote Extensions (Family 1: state.go:2384-2492) ---
+\* --- Extension 1: Vote Extensions (Scenario 1: state.go:2384-2492) ---
 VARIABLE voteExtension   \* [Server -> VE value] the VE a server attaches
 VARIABLE veVerified      \* [Server -> [Server -> BOOLEAN]] whether VE from j verified by i
 
-\* --- Extension 2: Timeout tracking (Family 2: state.go:979-1027) ---
+\* --- Extension 2: Timeout tracking (Scenario 2: state.go:979-1027) ---
 VARIABLE timeoutScheduled \* [Server -> set of timeout types]
 
-\* --- Extension 3: Crash Recovery / WAL (Family 3: state.go:1704-1827) ---
+\* --- Extension 3: Crash Recovery / WAL (Scenario 3: state.go:1704-1827) ---
 VARIABLE walEntries       \* [Server -> Seq(entry)] WAL entries
 VARIABLE crashed          \* [Server -> BOOLEAN] whether server is crashed
 VARIABLE privvalLastSigned \* [Server -> record] last signed vote info
 
-\* --- Extension 4: Evidence Lifecycle (Family 4: pool.go:107-358) ---
+\* --- Extension 4: Evidence Lifecycle (Scenario 4: pool.go:107-358) ---
 VARIABLE pendingEvidence   \* Set of pending evidence items
 VARIABLE committedEvidence \* Set of committed evidence items
 
-\* --- Extension 5: Validator Rotation (Family 5/6) ---
+\* --- Extension 5: Validator Rotation (Scenario 5/6) ---
 \* Simplified: proposer selection via round-robin
 VARIABLE proposerHistory   \* [Height -> Server] proposer for each height
 
@@ -318,7 +318,7 @@ EnterPrevote(i) ==
        IN
        \* Sign and send prevote (via signAddVote state.go:2457-2492)
        /\ prevotes' = [prevotes EXCEPT ![i][round[i]][i] = voteValue]
-       \* WAL: write vote before sending (state.go:2392-2393, Family 3)
+       \* WAL: write vote before sending (state.go:2392-2393, Scenario 3)
        /\ walEntries' = [walEntries EXCEPT ![i] = Append(@,
               [type |-> "vote", voteType |-> "prevote",
                height |-> height[i], round |-> round[i], value |-> voteValue])]
@@ -337,9 +337,9 @@ EnterPrevote(i) ==
 \* Reference: state.go:2269-2346 (addVote prevote handler)
 \*
 \* After adding the vote, checks for:
-\* - +2/3 polka → update ValidBlock/ValidRound, possibly unlock (Family 5)
-\* - +2/3 any → round-skip (Family 2)
-\* - POL completion → enter prevote (Family 2)
+\* - +2/3 polka → update ValidBlock/ValidRound, possibly unlock (Scenario 5)
+\* - +2/3 any → round-skip (Scenario 2)
+\* - POL completion → enter prevote (Scenario 2)
 \* --------------------------------------------------------------------------
 ReceivePrevote(i, m) ==
     /\ m.mtype = PrevoteMsg
@@ -350,7 +350,7 @@ ReceivePrevote(i, m) ==
     /\ prevotes[i][m.round][m.source] = Nil  \* no duplicate votes
     /\ prevotes' = [prevotes EXCEPT ![i][m.round][m.source] = m.value]
     /\ Discard(m)
-    \* Lock/unlock via proof-of-lock (state.go:2274-2325, Family 5)
+    \* Lock/unlock via proof-of-lock (state.go:2274-2325, Scenario 5)
     /\ LET hasPolka == \E v \in Values : HasPrevoteQuorum(i, m.round, v)
            polkaValue == IF hasPolka
                          THEN CHOOSE v \in Values : HasPrevoteQuorum(i, m.round, v)
@@ -391,7 +391,7 @@ ReceivePrevote(i, m) ==
 \* Reference: state.go:1423-1440 (enterPrevoteWait)
 \*
 \* Precondition: HasTwoThirdsAny prevotes (state.go:1434).
-\* Schedules timeout that will trigger enterPrecommit (Family 2).
+\* Schedules timeout that will trigger enterPrecommit (Scenario 2).
 \* --------------------------------------------------------------------------
 EnterPrevoteWait(i) ==
     /\ ~crashed[i]
@@ -407,7 +407,7 @@ EnterPrevoteWait(i) ==
 \* EnterPrecommit: Server i enters precommit step.
 \* Reference: state.go:1459-1578 (enterPrecommit)
 \*
-\* FIVE PATHS for locking logic (Family 5):
+\* FIVE PATHS for locking logic (Scenario 5):
 \*   Path 1: No polka → precommit nil (state.go:1479-1490)
 \*   Path 2: +2/3 nil → unlock + precommit nil (state.go:1505-1520)
 \*   Path 3: +2/3 for locked block → relock + precommit (state.go:1525-1535)
@@ -469,7 +469,7 @@ EnterPrecommitRelockPolka(i) ==
     /\ UNCHANGED <<lockedValue, validRound, validValue>>
     \* Precommit locked value
     /\ precommits' = [precommits EXCEPT ![i][round[i]][i] = lockedValue[i]]
-    \* Vote extension for non-nil precommit (Family 1: state.go:2413-2423)
+    \* Vote extension for non-nil precommit (Scenario 1: state.go:2413-2423)
     /\ LET ve == voteExtension[i] IN
        /\ walEntries' = [walEntries EXCEPT ![i] = Append(@,
               [type |-> "vote", voteType |-> "precommit",
@@ -496,7 +496,7 @@ EnterPrecommitNewLockPolka(i) ==
     /\ lockedRound' = [lockedRound EXCEPT ![i] = round[i]]
     /\ lockedValue' = [lockedValue EXCEPT ![i] = proposalBlock[i]]
     /\ UNCHANGED <<validRound, validValue>>
-    \* Precommit proposal value with vote extension (Family 1)
+    \* Precommit proposal value with vote extension (Scenario 1)
     /\ precommits' = [precommits EXCEPT ![i][round[i]][i] = proposalBlock[i]]
     /\ LET ve == voteExtension[i] IN
        /\ walEntries' = [walEntries EXCEPT ![i] = Append(@,
@@ -540,9 +540,9 @@ EnterPrecommitUnknownPolka(i) ==
 \* ReceivePrecommit: Server i receives a precommit from server j.
 \* Reference: state.go:2348-2374 (addVote precommit handler)
 \*
-\* Includes vote extension verification (Family 1: state.go:2196-2244).
+\* Includes vote extension verification (Scenario 1: state.go:2196-2244).
 \* After adding, checks for +2/3 majority to commit or +2/3 any for
-\* round-skip (Family 2).
+\* round-skip (Scenario 2).
 \* --------------------------------------------------------------------------
 ReceivePrecommit(i, m) ==
     /\ m.mtype = PrecommitMsg
@@ -551,7 +551,7 @@ ReceivePrecommit(i, m) ==
     /\ m.height = height[i]
     \* No duplicate votes
     /\ precommits[i][m.round][m.source] = Nil
-    \* Vote extension verification (Family 1: state.go:2196-2244)
+    \* Vote extension verification (Scenario 1: state.go:2196-2244)
     \* Proposer skips self-verification (BUG #5204)
     /\ IF m.value \in Values /\ m.source /= i
        THEN \* VerifyVoteExtension (execution.go:364-384)
@@ -578,7 +578,7 @@ ReceivePrecommit(i, m) ==
 \*
 \* Precondition: +2/3 precommits for any value (state.go:1593-1598).
 \* Sets TriggeredTimeoutPrecommit flag (state.go:1604).
-\* Family 2: timeout will trigger enterNewRound(height, round+1).
+\* Scenario 2: timeout will trigger enterNewRound(height, round+1).
 \* --------------------------------------------------------------------------
 EnterPrecommitWait(i) ==
     /\ ~crashed[i]
@@ -600,7 +600,7 @@ EnterPrecommitWait(i) ==
 \*   RoundStepPrevoteWait → enterPrecommit (state.go:1011-1016)
 \*   RoundStepPrecommitWait → enterNewRound(h, r+1) (state.go:1018-1022)
 \*
-\* Family 2: This is the core timeout-based round progression mechanism.
+\* Scenario 2: This is the core timeout-based round progression mechanism.
 \* --------------------------------------------------------------------------
 
 \* Propose timeout → enter prevote with nil vote
@@ -637,7 +637,7 @@ HandleTimeoutPrevote(i) ==
 
 \* Precommit wait timeout → advance to next round
 \* Reference: state.go:1018-1022
-\* Family 2: This is how round progression happens on precommit timeout.
+\* Scenario 2: This is how round progression happens on precommit timeout.
 \* Bug #1431: +2/3 nil precommits should advance immediately but
 \* implementation waits for this timeout.
 HandleTimeoutPrecommit(i) ==
@@ -660,7 +660,7 @@ HandleTimeoutPrecommit(i) ==
 \* Reference: state.go:2329-2331 (prevote) and state.go:2371-2373 (precommit)
 \*
 \* Triggered when +2/3 any votes seen for a higher round.
-\* Family 2: Round synchronization mechanism.
+\* Scenario 2: Round synchronization mechanism.
 \* --------------------------------------------------------------------------
 RoundSkipPrevote(i) ==
     /\ ~crashed[i]
@@ -702,7 +702,7 @@ EnterCommit(i) ==
             /\ UNCHANGED <<proposalVars, voteVars>>
             \* Record decision (state.go:1629-1630)
             /\ decision' = [decision EXCEPT ![i][height[i]] = v]
-            \* Write EndHeightMessage to WAL (state.go:1776-1782, Family 3)
+            \* Write EndHeightMessage to WAL (state.go:1776-1782, Scenario 3)
             /\ walEntries' = [walEntries EXCEPT ![i] = Append(@,
                    [type |-> "endHeight", height |-> height[i]])]
             /\ UNCHANGED <<lockVars, messages, veVars, timeoutVars,
@@ -713,7 +713,7 @@ EnterCommit(i) ==
 \* FinalizeCommit: Server i finalizes a committed block and advances height.
 \* Reference: state.go:1704-1827 (finalizeCommit)
 \*
-\* Multi-step with crash points (Family 3):
+\* Multi-step with crash points (Scenario 3):
 \*   1. Validate block (state.go:1730)
 \*   2. fail.Fail() (state.go:1744)
 \*   3. Save block to store (state.go:1752-1760)
@@ -723,7 +723,7 @@ EnterCommit(i) ==
 \*   7. Apply block via ABCI (state.go:1787-1810)
 \*   8. fail.Fail() (state.go:1812)
 \*
-\* Evidence handling (Family 4): evidence in committed block is marked.
+\* Evidence handling (Scenario 4): evidence in committed block is marked.
 \* --------------------------------------------------------------------------
 FinalizeCommit(i) ==
     /\ ~crashed[i]
@@ -741,12 +741,12 @@ FinalizeCommit(i) ==
     /\ lockedValue' = [lockedValue EXCEPT ![i] = Nil]
     /\ validRound' = [validRound EXCEPT ![i] = -1]
     /\ validValue' = [validValue EXCEPT ![i] = Nil]
-    \* Update privval last signed (Family 3)
+    \* Update privval last signed (Scenario 3)
     /\ privvalLastSigned' = [privvalLastSigned EXCEPT ![i] =
            [height |-> height[i], round |-> round[i]]]
     \* Clear timeouts
     /\ timeoutScheduled' = [timeoutScheduled EXCEPT ![i] = {}]
-    \* Evidence: mark evidence in committed block as committed (Family 4)
+    \* Evidence: mark evidence in committed block as committed (Scenario 4)
     \* Simplified: no explicit evidence in blocks for now
     \* Clear vote maps for new height (implementation resets vote sets per height)
     /\ prevotes' = [prevotes EXCEPT ![i] = [r \in 0..MaxRound |-> EmptyVoteMap]]
@@ -756,7 +756,7 @@ FinalizeCommit(i) ==
 
 \* --------------------------------------------------------------------------
 \* Crash: Server i crashes, losing volatile state.
-\* Reference: Family 3 (state.go:2637-2671, replay.go:93-170)
+\* Reference: Scenario 3 (state.go:2637-2671, replay.go:93-170)
 \*
 \* WAL may lose tail entries (async writes) on crash.
 \* Persisted state (privval) survives.
@@ -769,7 +769,7 @@ Crash(i) ==
     /\ proposal' = [proposal EXCEPT ![i] = Nil]
     /\ proposalBlock' = [proposalBlock EXCEPT ![i] = Nil]
     /\ timeoutScheduled' = [timeoutScheduled EXCEPT ![i] = {}]
-    \* WAL may lose last entry (async writes, state.go:838, Family 3)
+    \* WAL may lose last entry (async writes, state.go:838, Scenario 3)
     /\ \/ walEntries' = [walEntries EXCEPT ![i] =
               IF Len(@) > 0 THEN SubSeq(@, 1, Len(@) - 1) ELSE @]
        \/ UNCHANGED walEntries
@@ -781,7 +781,7 @@ Crash(i) ==
 \* Recover: Server i recovers from crash via WAL replay.
 \* Reference: replay.go:93-170 (catchupReplay), replay.go:240-470 (ReplayBlocks)
 \*
-\* Replays WAL entries from last EndHeightMessage boundary (Family 3).
+\* Replays WAL entries from last EndHeightMessage boundary (Scenario 3).
 \* Must not equivocate after recovery (CrashRecoveryConsistency invariant).
 \* --------------------------------------------------------------------------
 Recover(i) ==
@@ -811,7 +811,7 @@ Recover(i) ==
 \* DetectEquivocation: Detect double-voting and add evidence.
 \* Reference: evidence/pool.go:181-188 (ReportConflictingVotes)
 \*
-\* Family 4: Evidence lifecycle — detection → pending pool.
+\* Scenario 4: Evidence lifecycle — detection → pending pool.
 \* Consensus buffer votes not verified before pending pool (pool.go:461-538).
 \* --------------------------------------------------------------------------
 DetectEquivocation(i, j) ==
@@ -891,18 +891,18 @@ Next ==
         \/ EnterPrecommitWait(i)
         \/ EnterCommit(i)
         \/ FinalizeCommit(i)
-        \* Timeouts (Family 2)
+        \* Timeouts (Scenario 2)
         \/ HandleTimeoutPropose(i)
         \/ HandleTimeoutPrevote(i)
         \/ HandleTimeoutPrecommit(i)
-        \* Round-skip (Family 2)
+        \* Round-skip (Scenario 2)
         \/ RoundSkipPrevote(i)
         \/ RoundSkipPrecommit(i)
-        \* Crash recovery (Family 3)
+        \* Crash recovery (Scenario 3)
         \/ Crash(i)
         \/ Recover(i)
     \/ \E i, j \in Server :
-        \* Evidence detection (Family 4)
+        \* Evidence detection (Scenario 4)
         \/ DetectEquivocation(i, j)
     \/ \E m \in DOMAIN messages :
         \* Message handling
@@ -920,7 +920,7 @@ Spec == Init /\ [][Next]_vars
 \* --- Standard safety invariants ---
 
 \* ElectionSafety: At most one value committed per height.
-\* Reference: Standard Tendermint safety (Family 5)
+\* Reference: Standard Tendermint safety (Scenario 5)
 ElectionSafety ==
     \A h \in 1..MaxHeight :
         \A s1, s2 \in Server :
@@ -936,9 +936,9 @@ Validity ==
         \A h \in 1..MaxHeight :
             decision[s][h] /= Nil => decision[s][h] \in Values
 
-\* --- Extension invariants (Bug Family targeted) ---
+\* --- Extension invariants (Scenario-targeted) ---
 
-\* Family 1: VELiveness — If >1/3 of VEs fail verification, consensus should
+\* Scenario 1: VELiveness — If >1/3 of VEs fail verification, consensus should
 \* not deadlock. This checks that if we have a valid supermajority, we can commit.
 \* Bug #5204: Proposer skips self-verification, other validators reject.
 VEConsistency ==
@@ -951,12 +951,12 @@ VEConsistency ==
                         (j /= s /\ precommits[s][r][j] = v) =>
                             veVerified[s][j] = TRUE
 
-\* Family 4: EvidenceUniqueness — Same evidence never committed in two blocks.
+\* Scenario 4: EvidenceUniqueness — Same evidence never committed in two blocks.
 \* Bug #4114: DuplicateVoteEvidence committed in two consecutive blocks.
 EvidenceUniqueness ==
     \A ev \in committedEvidence : ev \notin pendingEvidence
 
-\* Family 5: LockSafety — A locked node only precommits its locked value
+\* Scenario 5: LockSafety — A locked node only precommits its locked value
 \* unless it sees a polka at a higher round.
 LockSafety ==
     \A s \in Server :
@@ -969,14 +969,14 @@ LockSafety ==
                        /\ v /= lockedValue[s]
                        /\ HasPrevoteQuorum(s, r, v)
 
-\* Family 5: POLRoundValidity — POLRound < Round for all proposals
+\* Scenario 5: POLRoundValidity — POLRound < Round for all proposals
 POLRoundValidity ==
     \A s \in Server :
         proposal[s] /= Nil =>
             \/ proposal[s].polRound = -1
             \/ proposal[s].polRound < proposal[s].round
 
-\* Family 3: CrashRecoveryConsistency — After crash and recovery,
+\* Scenario 3: CrashRecoveryConsistency — After crash and recovery,
 \* node does not equivocate (sign conflicting vote at same height/round).
 \* Checks: (1) all cast votes are valid values, (2) privval signing state
 \* is consistent with votes actually cast.
@@ -991,7 +991,7 @@ CrashRecoveryConsistency ==
                 /\ (precommits[s][r][s] /= Nil =>
                        precommits[s][r][s] \in Values \cup {NilVote})
 
-\* Family 3: CommittedBlockDurability — A committed block is never lost.
+\* Scenario 3: CommittedBlockDurability — A committed block is never lost.
 CommittedBlockDurability ==
     \A s \in Server :
         \A h \in 1..MaxHeight :
@@ -1027,7 +1027,7 @@ ValidConsistency ==
 \* TEMPORAL PROPERTIES
 \* ============================================================================
 
-\* Family 2: NilPrecommitAdvance — After +2/3 nil precommits, next round
+\* Scenario 2: NilPrecommitAdvance — After +2/3 nil precommits, next round
 \* eventually starts. Bug #1431: implementation waits for timeout_precommit.
 NilPrecommitAdvance ==
     \A s \in Server :
@@ -1035,7 +1035,7 @@ NilPrecommitAdvance ==
             (HasPrecommitQuorum(s, r, NilVote) /\ ~crashed[s]) ~>
                 (round[s] > r \/ decision[s][height[s]] /= Nil)
 
-\* Family 2: RoundProgress — Consensus eventually commits under synchrony.
+\* Scenario 2: RoundProgress — Consensus eventually commits under synchrony.
 \* (Weak version: just check that decisions happen)
 EventualDecision ==
     \A s \in Server :

@@ -12,9 +12,9 @@
   - 32-bit head/tail counters with modular arithmetic, capacity bounded by 2^31
 - **Concurrency model**: Lock-free, pinned-core polling (no preemption assumed). Designed for DPDK's run-to-completion threading model.
 
-## 2. Bug Families
+## 2. Scenarios
 
-### Family 1: Two-Phase Commit Stall / Liveness (HIGH)
+### Scenario 1: Two-Phase Commit Stall / Liveness (HIGH)
 
 **Mechanism**: The two-phase protocol (CAS head → write data → update tail with in-order spin-wait) creates a window where a stalled/crashed thread blocks all subsequent tail updates, preventing consumers from seeing any new data.
 
@@ -45,7 +45,7 @@
 
 ---
 
-### Family 2: Memory Ordering / Stale Read Vulnerabilities (HIGH)
+### Scenario 2: Memory Ordering / Stale Read Vulnerabilities (HIGH)
 
 **Mechanism**: Incorrect or insufficient memory ordering in the head-move CAS / tail-update pattern allows threads to observe stale values of the opposing side's tail, causing underflow in free-space computation → data corruption.
 
@@ -66,11 +66,11 @@
 - Check: `RingSafety` — no thread reserves beyond actual capacity (free-space computation must not underflow)
 
 **Priority**: High
-**Rationale**: 4+ critical bugs over 7 years, all sharing the same mechanism. The Nov 2025 fixes demonstrate this family is still active. Memory ordering bugs are notoriously hard to find by testing (hidden on x86, manifests only on specific ARM variants). A stale-read model can catch the *consequence* (capacity underflow) even though TLA+ doesn't model memory ordering directly.
+**Rationale**: 4+ critical bugs over 7 years, all sharing the same mechanism. The Nov 2025 fixes demonstrate this mechanism remains active. Memory ordering bugs are notoriously hard to find by testing (hidden on x86, manifests only on specific ARM variants). A stale-read model can catch the *consequence* (capacity underflow) even though TLA+ doesn't model memory ordering directly.
 
 ---
 
-### Family 3: Peek Mode Atomicity Gaps (MEDIUM)
+### Scenario 3: Peek Mode Atomicity Gaps (MEDIUM)
 
 **Mechanism**: The START/FINISH split-operation API extends the two-phase window to user-controlled duration. Missing abort handling and double-START create deadlock or corruption.
 
@@ -94,7 +94,7 @@
 
 ---
 
-### Family 4: RTS Counter Overflow / ABA (LOW)
+### Scenario 4: RTS Counter Overflow / ABA (LOW)
 
 **Mechanism**: The RTS 64-bit CAS packs (cnt, pos) into a single word. The 32-bit counter wraps at 2^32 operations, creating a theoretical ABA window.
 
@@ -108,7 +108,7 @@
 **Suggested modeling approach**:
 - Model counter as a small finite domain (e.g., 0..3) to force wraparound
 - Check if ABA causes duplicate slot reservation or double tail advance
-- This is secondary to Family 1/2 but worth checking if counter domain is small enough
+- This is secondary to Scenario 1/2 but worth checking if counter domain is small enough
 
 **Priority**: Low
 **Rationale**: Theoretical vulnerability. DPDK's operational model (pinned cores) makes it practically safe, but the algorithm provides no formal guarantee. Model checking with small counter domains can verify robustness.
@@ -119,20 +119,20 @@
 
 | What | Why | How |
 |------|-----|-----|
-| Two-phase commit protocol | Family 1: core mechanism, 3 production-impact reports | Reserve (CAS head) and PublishTail as separate actions with thread scheduling between them |
-| All 3 MT modes (MP/MC, HTS, RTS) | Family 1: comparative analysis of stall behavior | Mode parameter on ring; same invariants, different tail-update logic |
-| RTS counter mechanism | Family 1: most complex protocol, primary correctness target | Model (cnt, pos) pair, counter-based tail advancement |
-| Thread stall/crash | Family 1: the trigger for convoy/deadlock | Nondeterministic Stall(t) action that freezes a thread in Reserved phase |
-| Stale reads of opposing tail | Family 2: root cause of 4+ critical bugs | Nondeterministic StaleRead — thread may see any older tail value |
-| Peek START/FINISH | Family 3: extends two-phase window | Additional PeekStarted phase with crash between start/finish |
-| Bounded counter (RTS) | Family 4: ABA verification | Small finite counter domain forces wraparound during model checking |
+| Two-phase commit protocol | Scenario 1: core mechanism, 3 production-impact reports | Reserve (CAS head) and PublishTail as separate actions with thread scheduling between them |
+| All 3 MT modes (MP/MC, HTS, RTS) | Scenario 1: comparative analysis of stall behavior | Mode parameter on ring; same invariants, different tail-update logic |
+| RTS counter mechanism | Scenario 1: most complex protocol, primary correctness target | Model (cnt, pos) pair, counter-based tail advancement |
+| Thread stall/crash | Scenario 1: the trigger for convoy/deadlock | Nondeterministic Stall(t) action that freezes a thread in Reserved phase |
+| Stale reads of opposing tail | Scenario 2: root cause of 4+ critical bugs | Nondeterministic StaleRead — thread may see any older tail value |
+| Peek START/FINISH | Scenario 3: extends two-phase window | Additional PeekStarted phase with crash between start/finish |
+| Bounded counter (RTS) | Scenario 4: ABA verification | Small finite counter domain forces wraparound during model checking |
 
 ### 3.2 Do Not Model (with rationale)
 
 | What | Why |
 |------|-----|
-| Element copy mechanics | Pure memory copying — no protocol logic. Integer overflow in scaling (Family 5) is a C-level arithmetic issue, not model-checkable |
-| Ring creation / lifecycle | API safety issues (Family 4) are type-system/runtime-guard problems, not protocol logic |
+| Element copy mechanics | Pure memory copying — no protocol logic. Integer overflow in scaling (Scenario 5) is a C-level arithmetic issue, not model-checkable |
+| Ring creation / lifecycle | API safety issues (Scenario 4) are type-system/runtime-guard problems, not protocol logic |
 | SP/SC mode | Single-threaded — no concurrency to model check |
 | Zero-copy peek internals | Same protocol as regular peek, just returns pointers instead of copying. No additional concurrency concern |
 | Generic vs C11 implementation | They implement the same algorithm with different barrier strategies. The stale-read model captures the consequence of ordering bugs without modeling barriers directly |
@@ -141,38 +141,38 @@
 
 ## 4. Proposed Extensions
 
-| Extension | Variables | Purpose | Bug Family |
+| Extension | Variables | Purpose | Scenario |
 |-----------|-----------|---------|------------|
-| Thread phases | `phase[Thread]` ∈ {Idle, Reserved, Writing, Done} | Model the two-phase commit window | Family 1 |
-| Per-mode tail update | `mode` ∈ {MPMC, HTS, RTS} | Comparative analysis of three algorithms | Family 1 |
-| RTS counters | `headCnt`, `tailCnt` | Model counter-based tail deferral | Family 1, 4 |
-| HTD throttle | `htdMax` | Bound head-tail divergence in RTS | Family 1 |
-| Thread stall | `stalled[Thread]` ∈ BOOLEAN | Model preemption / crash between phases | Family 1 |
-| Stale tail view | `visibleTail[Thread]` | Model weak memory ordering effects | Family 2 |
-| Peek phases | Extended phase ∈ {PeekStarted, PeekFinished} | Model START/FINISH split operations | Family 3 |
+| Thread phases | `phase[Thread]` ∈ {Idle, Reserved, Writing, Done} | Model the two-phase commit window | Scenario 1 |
+| Per-mode tail update | `mode` ∈ {MPMC, HTS, RTS} | Comparative analysis of three algorithms | Scenario 1 |
+| RTS counters | `headCnt`, `tailCnt` | Model counter-based tail deferral | Scenario 1, 4 |
+| HTD throttle | `htdMax` | Bound head-tail divergence in RTS | Scenario 1 |
+| Thread stall | `stalled[Thread]` ∈ BOOLEAN | Model preemption / crash between phases | Scenario 1 |
+| Stale tail view | `visibleTail[Thread]` | Model weak memory ordering effects | Scenario 2 |
+| Peek phases | Extended phase ∈ {PeekStarted, PeekFinished} | Model START/FINISH split operations | Scenario 3 |
 
 ## 5. Proposed Invariants
 
 | Invariant | Type | Description | Targets |
 |-----------|------|-------------|---------|
-| RingSafety | Safety | No data loss, no duplicate reads: every enqueued element is dequeued exactly once | Standard, all families |
-| NoOverwrite | Safety | A producer never writes to a slot that a consumer hasn't finished reading | Family 1, 2 |
-| NoStaleRead | Safety | A consumer never reads a slot that a producer hasn't finished writing | Family 1, 2 |
-| CapacityBound | Safety | Number of in-flight elements never exceeds ring capacity | Family 2 (stale read → underflow) |
-| TailMonotonicity | Safety | tail.pos is monotonically non-decreasing (modulo 2^32) | Family 1 |
-| CounterConsistency | Safety | RTS: tail.cnt <= head.cnt always | Family 1, 4 |
-| NoABA | Safety | No thread's CAS succeeds on a value that has wrapped around to a previous state | Family 4 |
-| TailProgress | Liveness | If no thread is stalled and the ring is non-empty, tail eventually advances | Family 1 |
-| RTSBoundedStall | Liveness | In RTS mode, if one thread stalls, other threads can still make progress (up to htd_max) | Family 1 |
-| MPMCStall | Liveness (negative) | In MP/MC mode, one stalled thread blocks ALL tail progress — verify this is the case | Family 1 |
-| HTSStall | Liveness (negative) | In HTS mode, one in-flight thread blocks ALL other threads — verify this is the case | Family 1 |
-| PeekRecovery | Liveness | After a peek-START thread crashes, ring can be recovered via reset | Family 3 |
+| RingSafety | Safety | No data loss, no duplicate reads: every enqueued element is dequeued exactly once | Standard, all scenarios |
+| NoOverwrite | Safety | A producer never writes to a slot that a consumer hasn't finished reading | Scenario 1, 2 |
+| NoStaleRead | Safety | A consumer never reads a slot that a producer hasn't finished writing | Scenario 1, 2 |
+| CapacityBound | Safety | Number of in-flight elements never exceeds ring capacity | Scenario 2 (stale read → underflow) |
+| TailMonotonicity | Safety | tail.pos is monotonically non-decreasing (modulo 2^32) | Scenario 1 |
+| CounterConsistency | Safety | RTS: tail.cnt <= head.cnt always | Scenario 1, 4 |
+| NoABA | Safety | No thread's CAS succeeds on a value that has wrapped around to a previous state | Scenario 4 |
+| TailProgress | Liveness | If no thread is stalled and the ring is non-empty, tail eventually advances | Scenario 1 |
+| RTSBoundedStall | Liveness | In RTS mode, if one thread stalls, other threads can still make progress (up to htd_max) | Scenario 1 |
+| MPMCStall | Liveness (negative) | In MP/MC mode, one stalled thread blocks ALL tail progress — verify this is the case | Scenario 1 |
+| HTSStall | Liveness (negative) | In HTS mode, one in-flight thread blocks ALL other threads — verify this is the case | Scenario 1 |
+| PeekRecovery | Liveness | After a peek-START thread crashes, ring can be recovered via reset | Scenario 3 |
 
 ## 6. Findings Pending Verification
 
 ### 6.1 Model-Checkable
 
-| ID | Description | Expected invariant violation | Bug Family |
+| ID | Description | Expected invariant violation | Scenario |
 |----|-------------|----------------------------|------------|
 | MC-1 | RTS counter mechanism correctness under out-of-order thread completion | CounterConsistency, RingSafety | 1 |
 | MC-2 | RTS with stalled thread: other threads can still enqueue/dequeue up to htd_max | RTSBoundedStall (should pass) vs MPMCStall (should fail for MP/MC) | 1 |

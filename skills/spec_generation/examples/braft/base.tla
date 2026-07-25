@@ -2,11 +2,11 @@
 \* TLA+ specification of brpc/braft Raft consensus protocol.
 \*
 \* Extends standard Raft with braft-specific behaviors:
-\*   1. Two-sided leader lease: LeaderLease + FollowerLease asymmetry (Bug Family 1)
-\*   2. PreVote as separate phase with different lease/term handling (Bug Family 1)
-\*   3. Snapshot response missing term check (Bug Family 2)
-\*   4. Non-atomic persistence in elect_self: RPCs before persist (Bug Family 3)
-\*   5. Joint consensus configuration changes with force-commit (Bug Family 4)
+\*   1. Two-sided leader lease: LeaderLease + FollowerLease asymmetry (Scenario 1)
+\*   2. PreVote as separate phase with different lease/term handling (Scenario 1)
+\*   3. Snapshot response missing term check (Scenario 2)
+\*   4. Non-atomic persistence in elect_self: RPCs before persist (Scenario 3)
+\*   5. Joint consensus configuration changes with force-commit (Scenario 4)
 \*
 EXTENDS Naturals, FiniteSets, Sequences, Bags, TLC
 
@@ -58,7 +58,7 @@ VARIABLE preVotesGranted     \* [Server -> SUBSET Server]
 \* Network
 VARIABLE messages            \* Bag of message records
 
-\* Extension 1: Two-sided leader lease (Bug Family 1)
+\* Extension 1: Two-sided leader lease (Scenario 1)
 \* LeaderLease: leader tracks which followers it has contacted.
 \* FollowerLease: follower blocks votes while leader recently seen.
 \* Key asymmetry: become_leader resets followerLease (node.cpp:1949),
@@ -68,14 +68,14 @@ VARIABLE messages            \* Bag of message records
 VARIABLE leaderContact       \* [Server -> SUBSET Server] -- leader's view of contacted followers
 VARIABLE followerLease       \* [Server -> BOOLEAN] -- TRUE = follower believes leader is alive
 
-\* Extension 2: Disrupted leader tracking (Bug Family 1)
+\* Extension 2: Disrupted leader tracking (Scenario 1)
 \* When a leader steps down due to higher term in vote response,
 \* it sets disrupted_leader info so the new candidate can bypass
 \* follower leases.
 \* Reference: node.cpp:2199-2208 (disrupted_leader bypass)
 VARIABLE disruptedLeader     \* [Server -> Server \cup {Nil}] -- who disrupted the old leader
 
-\* Extension 3: Non-atomic persistence (Bug Family 3)
+\* Extension 3: Non-atomic persistence (Scenario 3)
 \* In elect_self(), RPCs are sent BEFORE term/votedFor is persisted.
 \* Reference: node.cpp:1705-1707 (memory update), 1735 (RPCs), 1738 (persist)
 \* In step_down(), persist failure is logged but not handled.
@@ -84,7 +84,7 @@ VARIABLE persistedTerm       \* [Server -> Nat]
 VARIABLE persistedVotedFor   \* [Server -> Server \cup {Nil}]
 VARIABLE pendingPersist      \* [Server -> BOOLEAN] -- TRUE = elect_self sent RPCs but not yet persisted
 
-\* Extension 4: Joint consensus configuration (Bug Family 4)
+\* Extension 4: Joint consensus configuration (Scenario 4)
 \* braft uses joint consensus for multi-peer changes,
 \* single-peer changes skip joint stage (node.cpp:3296-3301).
 \* Reference: ballot_box.cpp:79-88 (force-commit, "not well proved")
@@ -182,7 +182,7 @@ Init ==
     /\ newConfig         = [s \in Server |-> Nil]
 
 ----
-\* PreVote Actions (Bug Family 1)
+\* PreVote Actions (Scenario 1)
 \*
 \* braft uses PreVote to avoid disrupting stable leaders.
 \* PreVote does NOT change term or votedFor.
@@ -210,7 +210,7 @@ PreVote(i) ==
 \* Server i handles PreVoteRequest m.
 \* Reference: node.cpp:2109-2174 (handle_pre_vote_request)
 \*
-\* Key (Bug Family 1): checks _follower_lease.votable_time_from_now()
+\* Key (Scenario 1): checks _follower_lease.votable_time_from_now()
 \* but does NOT check _leader_lease. Since become_leader() resets
 \* _follower_lease (node.cpp:1949), a leader always has votable_time=0
 \* and thus ALWAYS grants PreVote requests.
@@ -239,7 +239,7 @@ HandlePreVoteRequest(i, m) ==
           /\ logOk
           /\ \/ mterm > currentTerm[i]
              \/ mterm = currentTerm[i] + 1
-          \* Bug Family 1: follower lease check
+          \* Scenario 1: follower lease check
           \* Leader: followerLease is always FALSE (reset at become_leader),
           \*   so leader always grants PreVote
           \* Follower: followerLease may be TRUE, blocking the vote
@@ -326,7 +326,7 @@ ElectSelf(i) ==
        /\ votedFor' = [votedFor EXCEPT ![i] = i]
        /\ votesGranted' = [votesGranted EXCEPT ![i] = {i}]
        /\ preVotesGranted' = [preVotesGranted EXCEPT ![i] = {}]
-       \* Bug Family 3: RPCs sent BEFORE persist (node.cpp:1735 vs 1738)
+       \* Scenario 3: RPCs sent BEFORE persist (node.cpp:1735 vs 1738)
        \* Mark pending persist; actual persist happens in CompletePersistElectSelf
        /\ pendingPersist' = [pendingPersist EXCEPT ![i] = TRUE]
        /\ UNCHANGED <<persistedTerm, persistedVotedFor>>
@@ -341,7 +341,7 @@ ElectSelf(i) ==
     /\ UNCHANGED <<logVars, leaderVars, leaderContact, followerLease,
                    disruptedLeader, configVars>>
 
-\* Complete the persist after elect_self (Bug Family 3).
+\* Complete the persist after elect_self (Scenario 3).
 \* Reference: node.cpp:1738-1747 (set_term_and_votedfor)
 CompletePersistElectSelf(i) ==
     /\ pendingPersist[i] = TRUE
@@ -471,7 +471,7 @@ BecomeLeader(i) ==
     /\ nextIndex'  = [nextIndex  EXCEPT ![i] = [j \in Server |-> LastLogIndex(i) + 1]]
     /\ matchIndex' = [matchIndex EXCEPT ![i] = [j \in Server |-> 0]]
     /\ leaderContact' = [leaderContact EXCEPT ![i] = {}]
-    \* Bug Family 1: become_leader resets follower lease (node.cpp:1949)
+    \* Scenario 1: become_leader resets follower lease (node.cpp:1949)
     \* This means the leader's followerLease is always FALSE,
     \* so it always grants PreVote requests!
     /\ followerLease' = [followerLease EXCEPT ![i] = FALSE]
@@ -682,7 +682,7 @@ HandleReplicateResponse(i, m) ==
           /\ UNCHANGED <<logVars, leaderVars, candidateVars,
                          disruptedLeader, persistedVotedFor, pendingPersist, configVars>>
 
-       \/ \* Bug Family 2 (partial): success with mismatched term
+       \/ \* Scenario 2 (partial): success with mismatched term
           \* replicator.cpp:472-479 -- logs error, resets, but does NOT step down
           /\ ~m.msuccess
           /\ m.mterm /= currentTerm[i]
@@ -732,7 +732,7 @@ HandleHeartbeatResponse(i, m) ==
 \* Leader i handles InstallSnapshot response.
 \* Reference: replicator.cpp:870-933 (_on_install_snapshot_returned)
 \*
-\* *** BUG FAMILY 2: NO TERM CHECK ***
+\* *** SCENARIO 2: NO TERM CHECK ***
 \* Comment at line 912: "Let heartbeat do step down"
 \* Unlike all other response handlers, this does NOT check response.term().
 \* A snapshot response with higher term will NOT trigger step-down.
@@ -740,7 +740,7 @@ HandleInstallSnapshotResponse(i, m) ==
     /\ m.mtype = InstallSnapshotResponse
     /\ m.mdest = i
     /\ state[i] = Leader
-    \* *** BUG (Family 2): No term check! ***
+    \* *** BUG (Scenario 2): No term check! ***
     \* replicator.cpp:895-919 -- no comparison of response.term() vs r._options.term
     \* Leader unconditionally processes the response.
     /\ IF m.msuccess
@@ -762,7 +762,7 @@ AdvanceCommitIndex(i) ==
        /\ agreeIdxs /= {}
        /\ LET newCommitIdx == SetMax(agreeIdxs)
           IN
-          \* Bug Family 4: force-commit of preceding entries
+          \* Scenario 4: force-commit of preceding entries
           \* ballot_box.cpp:79-88: "not well proved right now"
           \* When a config change entry commits, all preceding entries
           \* are force-committed even if they didn't individually have quorum.
@@ -777,7 +777,7 @@ AdvanceCommitIndex(i) ==
                    leaseVars, persistVars>>
 
 ----
-\* Leader Lease Check (Bug Family 1)
+\* Leader Lease Check (Scenario 1)
 ----
 
 \* Leader i checks if its lease is still valid.
@@ -806,7 +806,7 @@ FollowerLeaseExpire(i) ==
                    leaderContact, disruptedLeader, persistVars, configVars>>
 
 ----
-\* Configuration Change Actions (Bug Family 4)
+\* Configuration Change Actions (Scenario 4)
 ----
 
 \* Leader i proposes a configuration change.
@@ -831,12 +831,12 @@ ProposeConfigChange(i, s) ==
                    leaseVars, persistVars, config>>
 
 ----
-\* Crash and Recovery (Bug Family 3)
+\* Crash and Recovery (Scenario 3)
 ----
 
 \* Server i crashes. All volatile state is lost.
 \* Recovers from persisted state.
-\* Bug Family 3: if pendingPersist was TRUE (RPCs sent but not persisted),
+\* Scenario 3: if pendingPersist was TRUE (RPCs sent but not persisted),
 \* the node recovers with OLD term/votedFor from disk.
 Crash(i) ==
     /\ state' = [state EXCEPT ![i] = Follower]
@@ -849,7 +849,7 @@ Crash(i) ==
     /\ leaderContact'    = [leaderContact    EXCEPT ![i] = {}]
     /\ followerLease'    = [followerLease    EXCEPT ![i] = FALSE]
     /\ disruptedLeader'  = [disruptedLeader  EXCEPT ![i] = Nil]
-    \* Recover from persisted state (Bug Family 3)
+    \* Recover from persisted state (Scenario 3)
     \* If pendingPersist was TRUE, persistedTerm/persistedVotedFor
     \* are STALE -- this is the crash window in elect_self
     /\ currentTerm' = [currentTerm EXCEPT ![i] = persistedTerm[i]]
@@ -943,7 +943,7 @@ LeaderCompleteness ==
                 /\ idx <= LastLogIndex(s1)
                 /\ log[s1][idx].term = log[s2][idx].term
 
-\* Bug Family 1: Lease implies leadership safety.
+\* Scenario 1: Lease implies leadership safety.
 \* If a leader's lease check passes, a real quorum of voters
 \* actually has term <= leader's term.
 LeaseImpliesLeadership ==
@@ -954,7 +954,7 @@ LeaseImpliesLeadership ==
                LET loyal == {f \in contacted : currentTerm[f] <= currentTerm[s]}
                IN QuorumCheck(loyal, s)
 
-\* Bug Family 1: PreVote should not disrupt stable leader.
+\* Scenario 1: PreVote should not disrupt stable leader.
 \* If there exists a leader with a valid lease, no other server
 \* should be able to become Candidate in a higher term.
 NoLeaseBypassWithoutDisruption ==
@@ -966,7 +966,7 @@ NoLeaseBypassWithoutDisruption ==
                     \/ currentTerm[s] < currentTerm[c]
                     \/ s = c
 
-\* Bug Family 2: Term discovery completeness.
+\* Scenario 2: Term discovery completeness.
 \* A leader that has received a snapshot response from a follower
 \* with higher term should eventually step down.
 \* (This cannot be checked as a state invariant directly -- it would
@@ -978,7 +978,7 @@ NoPhantomSnapshotContact ==
             \A f \in leaderContact[s] :
                 currentTerm[f] <= currentTerm[s]
 
-\* Bug Family 3: Vote safety across crashes.
+\* Scenario 3: Vote safety across crashes.
 \* A node never votes for two different candidates in the same term,
 \* even across crashes.
 VoteSafetyAcrossCrash ==
@@ -987,7 +987,7 @@ VoteSafetyAcrossCrash ==
             votedFor[s] \in {Nil, persistedVotedFor[s]}
             \/ currentTerm[s] > persistedTerm[s]
 
-\* Bug Family 4: Configuration change safety.
+\* Scenario 4: Configuration change safety.
 \* At most one uncommitted config change at a time.
 ConfigChangeSafety ==
     \A s \in Server :

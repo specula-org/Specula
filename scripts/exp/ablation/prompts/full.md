@@ -33,7 +33,7 @@ Execute all 4 sub-phases:
 1. **Reconnaissance** — Map codebase structure, core modules, concurrency model
 2. **Bug Archaeology** — Mine git history and GitHub issues for historical bugs
 3. **Deep Analysis** — Systematic code reading for inconsistencies
-4. **Modeling Brief** — Synthesize findings into bug families
+4. **Modeling Brief** — Synthesize findings into Scenarios
 
 Output: `${WORKSPACE_DIR}/modeling-brief.md`
 
@@ -49,7 +49,7 @@ Read the spec-generation guide and references:
 
 Generate:
 
-1. `${SPEC_DIR}/base.tla` + `base.cfg` — Core spec with bug-family driven extensions
+1. `${SPEC_DIR}/base.tla` + `base.cfg` — Core spec with Scenario-driven extensions
 2. `${SPEC_DIR}/MC.tla` + `MC.cfg` — Model checking wrapper with counter-bounded fault injection
 3. `${SPEC_DIR}/Trace.tla` + `Trace.cfg` — Trace validation wrapper
 4. `${SPEC_DIR}/instrumentation-spec.md` — Action-to-code mapping

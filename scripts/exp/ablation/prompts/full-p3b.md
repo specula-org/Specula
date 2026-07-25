@@ -20,7 +20,7 @@ Follow the **tla-checking-workflow** skill methodology. Read the skill guide at:
 ## Tasks
 
 1. **Run base model checking** — Run TLC with MC.cfg first. Check all invariants.
-2. **Run hunting configs** — Run each MC_hunt_*.cfg to search for bug-family-specific
+2. **Run hunting configs** — Run each MC_hunt_*.cfg to search for scenario-specific
    violations with targeted fault injection.
 3. **Analyze violations** — For each invariant violation found:
    - Use `get_tlc_summary` and `get_tlc_state` to understand the counterexample

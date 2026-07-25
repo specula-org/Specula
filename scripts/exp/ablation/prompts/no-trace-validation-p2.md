@@ -28,10 +28,10 @@ Then read the reference files:
 
 Write all files to: ${SPEC_DIR}/
 
-1. `base.tla` + `base.cfg` — Core spec with bug-family driven extensions
+1. `base.tla` + `base.cfg` — Core spec with Scenario-driven extensions
 2. `MC.tla` + `MC.cfg` — Model checking wrapper with counter-bounded fault injection
 
-Also generate bug-family-specific hunting configs: `MC_hunt_*.cfg`
+Also generate scenario-specific hunting configs: `MC_hunt_*.cfg`
 
 Do NOT generate Trace.tla or instrumentation-spec.md (not needed without
 trace validation).

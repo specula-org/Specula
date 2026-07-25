@@ -22,7 +22,7 @@ declare -A RUN_MAP=(
   [full]=20260321_full
   [no-code-analysis]=20260322_134701
   [no-trace-validation]=20260322_134701
-  [no-bug-families]=20260322_134701
+  [no-scenarios]=20260322_134701
   [agent-tla-tools]=20260320_124147
   [agent-basic]=20260320_124147
 )
@@ -77,7 +77,7 @@ evaluate_spec() {
 }
 
 # Main
-CONFIGS=(full no-code-analysis no-trace-validation no-bug-families agent-tla-tools agent-basic)
+CONFIGS=(full no-code-analysis no-trace-validation no-scenarios agent-tla-tools agent-basic)
 TARGETS=(etcd-raft autobahn libgomp)
 
 if [[ $# -ge 2 ]]; then

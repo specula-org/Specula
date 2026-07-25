@@ -12,7 +12,7 @@
 | **Specula** | Production | Actual pipeline results (multi-session, human-in-the-loop) | All | 9 Specula |
 | no-code-analysis | Ablation | Skip Phase 1, generic system description | P2→P2.5→P3A→P3B | Specula (no code_analysis) |
 | no-trace-validation | Ablation | Skip harness + trace validation | P1→P2→P3B | Specula (no harness/trace) |
-| no-bug-families | Ablation | Phase 1 without bug family framework | P1*→P2→P2.5→P3A→P3B | All Specula |
+| no-scenarios | Ablation | Phase 1 without Scenario framework | P1*→P2→P2.5→P3A→P3B | All Specula |
 | agent-tla-tools | Baseline | Agent + official TLA+ tools/skills | Single call | 6 TLA+ community |
 | agent-basic | Baseline | Agent + file/bash tools only | Single call | None |
 
@@ -41,7 +41,7 @@
 | etcd-raft | 26,495 | 156 min | $37.55 | 351K |
 | libgomp | 161,911 | 141 min | $53.02 | 467K |
 
-**Observation**: libgomp has 6x the code but similar runtime and tokens. Specula's cost depends on **protocol complexity** (state space, bug family count), not codebase size. libgomp's extra cost is in P2.5 ($26, GCC build system complexity), not P1 (code analysis).
+**Observation**: libgomp has 6x the code but similar runtime and tokens. Specula's cost depends on **protocol complexity** (state space, Scenario count), not codebase size. libgomp's extra cost is in P2.5 ($26, GCC build system complexity), not P1 (code analysis).
 
 ### 2.2 Per-Phase Runtime Breakdown
 
@@ -75,14 +75,14 @@
 |--------|:---:|:---:|:---:|:---:|:---:|
 | **Specula** | **2** | **8** | **2** | **12/12** | 0 |
 | no-trace-validation | 0 | 6 (DA-1,2,3,4,5,6) | 1 (#29) | **7/12** | 0 |
-| no-bug-families | 0 | 4 (DA-1,2,3,5) | 1 (#28) | **5/12** | 0 |
+| no-scenarios | 0 | 4 (DA-1,2,3,5) | 1 (#28) | **5/12** | 0 |
 | agent-basic | 0 | 3 (DA-5,6,14) | 0 | **3/12** | 2 |
 | no-code-analysis | 0 | 1 (DA-5) | 0 | **1/12** | 1 |
 | agent-tla-tools | 0 | 0 | 0 | **0/12** | 0 |
 
 #### Per-Bug Detection Matrix (autobahn)
 
-| Bug | Specula | no-trace-val | no-bug-fam | agent-basic | no-code-anal | agent-tla |
+| Bug | Specula | no-trace-val | no-scenarios | agent-basic | no-code-anal | agent-tla |
 |-----|:---:|:---:|:---:|:---:|:---:|:---:|
 | DA-1 (QC not binding) | Y | Y | Y | - | - | - |
 | DA-2 (empty Timeout digest) | Y | Y | Y | - | - | - |
@@ -95,7 +95,7 @@
 
 #### Per-Bug Detection Matrix (libgomp)
 
-| Bug | Specula | no-trace-val | no-bug-fam | agent-basic | no-code-anal | agent-tla |
+| Bug | Specula | no-trace-val | no-scenarios | agent-basic | no-code-anal | agent-tla |
 |-----|:---:|:---:|:---:|:---:|:---:|:---:|
 | #28 (cancel+task race) | Y | - | Y | - | - | - |
 | #29 (fulfill deadlock) | Y | Y | - | - | - | - |
@@ -108,7 +108,7 @@
 |-------------------|:---:|--------|------------|
 | (none — Specula) | 12/12 | baseline | — |
 | Code Analysis (-P1) | 1/12 | **-92%** | Without deep code analysis, spec only models textbook protocol; misses all implementation-specific mechanisms |
-| Bug Families (-BF) | 5/12 | **-58%** | Findings exist but aren't organized into targetable mechanisms; spec modeling is shallower |
+| Scenarios (-S) | 5/12 | **-58%** | Findings exist but aren't organized into targetable mechanisms; spec modeling is shallower |
 | Trace Validation (-P2.5/P3A) | 7/12 | **-42%** | Spec not validated against implementation; may contain inaccuracies but still covers right mechanisms |
 
 #### Why Each Component Matters
@@ -119,8 +119,8 @@
 - Specula spec for libgomp: 626 LoC, 15 variables (barrier + task + cancel + lock)
 - Result: 0 vs 2 bugs found
 
-**Bug Families** — organizes findings into actionable targets:
-- Without bug families, P1 still finds ReadIndex/cancel/Byzantine issues (flat list)
+**Scenarios** — organizes findings into actionable targets:
+- Without Scenarios, P1 still finds ReadIndex/cancel/Byzantine issues (flat list)
 - But P2 doesn't build deep enough models — e.g., `committedInTerm` boolean vs full ReadIndex queue
 - Result: 5 vs 12 bugs found
 
@@ -155,7 +155,7 @@ All prompts include explicit modeling requirements specifying which actions must
 
 | Config | etcd-raft | autobahn | libgomp |
 |--------|:---------:|:--------:|:-------:|
-| full / no-code-analysis / no-bug-families | 100% act, 100% evt | 100% act, 100% evt | 100% act, 100% evt |
+| full / no-code-analysis / no-scenarios | 100% act, 100% evt | 100% act, 100% evt | 100% act, 100% evt |
 | no-trace-validation | 83% act, 88% evt | 100% act, 100% evt | 25% act, 4% evt |
 | agent-tla-tools | 25% act, 7% evt | 17% act, 6% evt | 25% act, 4% evt |
 | agent-basic | 16% act, 5% evt | 17% act, 6% evt | 38% act, 6% evt |
@@ -195,7 +195,7 @@ well-documented protocol. This inflates etcd-raft conformance scores across all 
 
 ### 3.5 Spec Quality Comparison
 
-| Metric | Specula (full sim) | no-code-analysis | no-trace-val | no-bug-fam | agent-tla-tools | agent-basic |
+| Metric | Specula (full sim) | no-code-analysis | no-trace-val | no-scenarios | agent-tla-tools | agent-basic |
 |--------|-----:|-----:|-----:|-----:|-----:|-----:|
 | Avg Spec LoC | 800 | 457 | 1024 | 756 | 346 | 323 |
 | Avg State Variables | 22 | ~9 | ~18 | ~18 | 9 | 9 |
@@ -210,7 +210,7 @@ well-documented protocol. This inflates etcd-raft conformance scores across all 
 | Config | Avg Cost | Avg Time | Avg OutTok |
 |--------|--------:|--------:|--------:|
 | Specula (full sim) | $41.53 | 152m | 420K |
-| no-bug-families | $29.59 | 121m | 306K |
+| no-scenarios | $29.59 | 121m | 306K |
 | no-code-analysis | $15.83 | 88m | 207K |
 | no-trace-validation | $13.39 | 55m | 176K |
 | agent-tla-tools | $5.33 | 95m | 69K |
@@ -222,9 +222,9 @@ well-documented protocol. This inflates etcd-raft conformance scores across all 
 
 Without Phase 1 code analysis, the agent models only the textbook protocol and misses implementation-specific mechanisms where bugs live. This is the single largest contributor to Specula's effectiveness.
 
-### Finding 2: Bug family framework doubles bug detection (+58% vs flat analysis)
+### Finding 2: Scenario framework doubles bug detection (+58% vs flat analysis)
 
-Bug families organize scattered findings into actionable modeling targets. Without them, the agent finds the same issues but builds shallower models — e.g., a boolean flag instead of a full ReadIndex queue.
+Scenarios organize scattered findings into actionable modeling targets. Without them, the agent finds the same issues but builds shallower models — e.g., a boolean flag instead of a full ReadIndex queue.
 
 ### Finding 3: Trace validation ensures spec-implementation fidelity
 
@@ -232,7 +232,7 @@ Trace validation (P3A) achieves 100% conformance by iteratively fixing spec-impl
 
 ### Finding 4: Official TLA+ tools alone are insufficient (0 bugs)
 
-agent-tla-tools with community skills and MCP tools found 0 ground truth bugs. Having tools without Specula's methodology (bug families, code analysis, trace validation) is not enough.
+agent-tla-tools with community skills and MCP tools found 0 ground truth bugs. Having tools without Specula's methodology (scenarios, code analysis, trace validation) is not enough.
 
 ### Finding 5: Cost scales with methodology depth, ROI is overwhelming
 
@@ -261,5 +261,5 @@ scripts/exp/ablation/
 └── results/                # Experiment outputs
     ├── 20260320_124147/    # Baseline runs (agent-basic, agent-tla-tools)
     ├── 20260321_full/      # Specula full simulation (5-phase)
-    └── 20260322_134701/    # Ablation runs (no-code-analysis, no-trace-val, no-bug-families)
+    └── 20260322_134701/    # Ablation runs (no-code-analysis, no-trace-val, no-scenarios)
 ```

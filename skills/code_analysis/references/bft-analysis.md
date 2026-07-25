@@ -51,7 +51,7 @@ Useful questions to ask of any candidate Byzantine action, regardless of which l
 
 - Does the target's code actually expose a check whose failure would admit this behavior? If not, modeling the action explores nothing the protocol layer can see.
 - Is the receiver-side validation predicate the bug surface, or the sender-side decision? Most BFT bugs in real implementations live in receiver-side verification (cert validation, freshness checks, value-binding), not in inventing more sender-side mischief.
-- Does the action compose with a real-world environmental fault the brief already models (timeout, partition, crash, config change)? Byzantine bugs are frequently cross-family — pure Byzantine actions in isolation often reproduce textbook results rather than uncovering new ones.
+- Does the action compose with a real-world environmental fault the brief already models (timeout, partition, crash, config change)? Byzantine bugs frequently cross categories — pure Byzantine actions in isolation often reproduce textbook results rather than uncovering new ones.
 - Can you state the Phase 4 verdict you predict? If the only honest verdict is "reproduces a known bug that's already fixed", that's the answer-key anti-pattern — drop it. See `modeling-brief-format.md` § 6.1 and `bug-archaeology.md` § 1.4.
 
 ---
@@ -88,9 +88,9 @@ The most common failure mode we've seen in BFT specs is adversaries whose only e
 
 ## 5. Composition with `distributed-analysis.md`
 
-BFT adversary actions usually layer on top of the distributed fault vocabulary, not replace it. Byzantine bugs are frequently *cross-family* — pure Byzantine actions in isolation often reproduce textbook results, while the practically interesting bugs come from Byzantine behavior composed with timing / partition / crash / config-change.
+BFT adversary actions usually layer on top of the distributed fault vocabulary, not replace it. Byzantine bugs frequently *cross categories* — pure Byzantine actions in isolation often reproduce textbook results, while the practically interesting bugs come from Byzantine behavior composed with timing / partition / crash / config-change.
 
-That said, composition explodes state space and clouds blame attribution, so compose only when the open question requires it. If the hypothesis is inherently cross-family, model the composition directly and document in the brief which components are being combined.
+That said, composition explodes state space and clouds blame attribution, so compose only when the open question requires it. If the hypothesis inherently crosses categories, model the composition directly and document in the brief which components are being combined.
 
 ---
 

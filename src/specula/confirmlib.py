@@ -2307,30 +2307,30 @@ def allocate_rr(cfg: ConfirmConfig, o: Outcome) -> str:
 # ── step 0: consolidate + dedup the two finding sources into candidates.json ──
 
 
-def _family_refs(value: Any) -> set[str]:
+def _scenario_refs(value: Any) -> set[str]:
     if isinstance(value, int):
-        return {f"Family {value}"}
+        return {f"Scenario {value}"}
     if not isinstance(value, str):
         return set()
     if value.strip().isdigit():
-        return {f"Family {int(value.strip())}"}
-    return {f"Family {number}" for number in re.findall(r"\bFamily\s+(\d+)\b", value, re.I)}
+        return {f"Scenario {int(value.strip())}"}
+    return {f"Scenario {number}" for number in re.findall(r"\bScenario\s+(\d+)\b", value, re.I)}
 
 
 def _validate_candidates(
     path: Path,
     expected_mc_ids: set[str] | dict[str, dict[str, Any]] | None = None,
-    expected_families: set[str] | None = None,
+    expected_scenarios: set[str] | None = None,
 ) -> list[str]:
     """Structural-minimum validation of candidates.json: only what would break
     the per-finding fan-out (unusable id, id collision, unroutable source). The
-    stricter completeness / family-dedup / MC-immutability checks were removed on
+    stricter completeness / scenario-dedup / MC-immutability checks were removed on
     purpose — they only fail-closed (withhold) an otherwise-runnable batch without
-    improving any verdict, and rejected sound consolidations (a family partly
+    improving any verdict, and rejected sound consolidations (a scenario partly
     absorbed into an MC candidate while its distinct-site residual is emitted as a
     CR candidate is legitimate). Per-finding confirmation tolerates imperfect
     input; a weak candidate surfaces there, not as a whole-batch stop."""
-    del expected_mc_ids, expected_families  # intentionally no longer enforced
+    del expected_mc_ids, expected_scenarios  # intentionally no longer enforced
     errs: list[str] = []
     try:
         doc = json.loads(path.read_text())
@@ -2405,11 +2405,11 @@ def _expected_mc_ids(spec_dir: Path) -> tuple[dict[str, dict[str, Any]] | None, 
     return findings_by_id, errs
 
 
-def _expected_brief_families(brief: Path) -> set[str] | None:
+def _expected_brief_scenarios(brief: Path) -> set[str] | None:
     if not brief.is_file():
         return set()
     text = brief.read_text(errors="replace")
-    return {f"Family {number}" for number in re.findall(r"(?im)^#{2,4}\s+Family\s+(\d+)\s*:", text)}
+    return {f"Scenario {number}" for number in re.findall(r"(?im)^#{2,4}\s+Scenario\s+(\d+)\s*:", text)}
 
 
 def _candidate_fingerprint(cfg: ConfirmConfig) -> str:
@@ -2446,9 +2446,9 @@ def _candidate_cache_valid(
     cfg: ConfirmConfig,
     out: Path,
     expected: set[str] | dict[str, dict[str, Any]] | None,
-    expected_families: set[str] | None = None,
+    expected_scenarios: set[str] | None = None,
 ) -> bool:
-    if _validate_candidates(out, expected, expected_families):
+    if _validate_candidates(out, expected, expected_scenarios):
         return False
     sidecar = out.parent / _CANDIDATE_CACHE
     if not sidecar.is_file():
@@ -2490,7 +2490,7 @@ def _write_candidate_cache(cfg: ConfirmConfig, out: Path) -> None:
 
 def consolidate(cfg: ConfirmConfig) -> None:
     """Phase-4 step 0: one agent merges MC (bug-report/findings.json) with
-    code-review families (modeling-brief) and dedups them into candidates.json.
+    code-review Scenarios (modeling-brief) and dedups them into candidates.json.
     Idempotent: a present-and-valid candidates.json is reused. Raises
     RateLimited on exit 75; raises RuntimeError if the output is missing/invalid."""
     wd = cfg.ws.work_dir(cfg.name)
@@ -2505,10 +2505,10 @@ def consolidate(cfg: ConfirmConfig) -> None:
         and not brief.is_file()
         and not (spec_dir / "confirmation-generation.json").is_file()
     )
-    expected_families = None if external_candidates else _expected_brief_families(brief)
+    expected_scenarios = None if external_candidates else _expected_brief_scenarios(brief)
     if source_errs:
         raise ConsolidateFailed(f"invalid model-checking input for {cfg.name}: {source_errs[0]}")
-    if out.is_file() and _candidate_cache_valid(cfg, out, expected_mc_ids, expected_families):
+    if out.is_file() and _candidate_cache_valid(cfg, out, expected_mc_ids, expected_scenarios):
         cfg.clear_policy_states(("consolidate",))
         _log(f"  {cfg.name}: candidates.json present and valid — skipping consolidate")
         return
@@ -2568,7 +2568,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
         out.unlink(missing_ok=True)
         raise ConsolidateFailed(f"consolidate adapter exited {rc}")
     errs = (
-        _validate_candidates(out, expected_mc_ids, expected_families)
+        _validate_candidates(out, expected_mc_ids, expected_scenarios)
         if out.is_file()
         else ["no candidates.json produced"]
     )

@@ -1,13 +1,13 @@
-# Ablation: Phase 1 without bug family framework.
-# Code analysis runs, but findings are not organized into bug families.
+# Ablation: Phase 1 without Scenario framework.
+# Code analysis runs, but findings are not organized into Scenarios.
 
-ABLATION_ID="no-bug-families"
+ABLATION_ID="no-scenarios"
 ABLATION_GROUP="ablation"
-ABLATION_DESC="Phase 1 without bug family grouping; flat analysis only"
+ABLATION_DESC="Phase 1 without Scenario grouping; flat analysis only"
 
 MULTI_PHASE=true
 PHASE_PROMPTS=(
-  "no-bug-families-p1.md"  # Phase 1: Analysis without bug families
+  "no-scenarios-p1.md"  # Phase 1: Analysis without Scenarios
   "full-p2.md"             # Phase 2: Spec Gen (same as full)
   "full-p2.5.md"           # Phase 2.5: Harness (same as full)
   "full-p3a.md"            # Phase 3A: Trace Validation (same as full)

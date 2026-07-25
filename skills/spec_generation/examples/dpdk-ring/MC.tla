@@ -29,21 +29,21 @@ VARIABLES
 
 mcVars == <<stallCount, staleCount, staleHeadCount>>
 
-\* --- Bounded Stall (Family 1) ---
+\* --- Bounded Stall (Scenario 1) ---
 MCStall(t) ==
     /\ stallCount < StallLimit
     /\ Stall(t)
     /\ stallCount' = stallCount + 1
     /\ UNCHANGED <<staleCount, staleHeadCount>>
 
-\* --- Bounded StaleRead (Family 2) ---
+\* --- Bounded StaleRead (Scenario 2) ---
 MCStaleRead(t) ==
     /\ staleCount < StaleLimit
     /\ StaleRead(t)
     /\ staleCount' = staleCount + 1
     /\ UNCHANGED <<stallCount, staleHeadCount>>
 
-\* --- Bounded RTSCaptureHead (Family 4: stale RELAXED head in update_tail) ---
+\* --- Bounded RTSCaptureHead (Scenario 4: stale RELAXED head in update_tail) ---
 MCRTSCaptureHead(t) ==
     /\ staleHeadCount < StaleHeadLimit
     /\ RTSCaptureHead(t)
@@ -111,7 +111,7 @@ MCNoABA == NoABA
 MCNoGarbageEnqueued == NoGarbageEnqueued
 
 \* ========================================================================
-\* Extension Invariants (bug-family specific, commented out in MC.cfg)
+\* Extension Invariants (scenario-specific, commented out in MC.cfg)
 \* ========================================================================
 
 MCHTSSingleInFlight == HTSSingleInFlight

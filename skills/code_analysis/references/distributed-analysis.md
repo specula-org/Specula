@@ -4,7 +4,7 @@ Use this reference after classifying the target as **Category A (Distributed / M
 
 This file covers the analysis patterns that matter most for replicated state machines, consensus protocols, storage services, and other systems where the main risks are protocol logic, crash windows, and message-handling behavior.
 
-If the target uses BFT consensus (Byzantine threat model — PBFT, HotStuff, Tendermint / CometBFT, DiemBFT / AptosBFT, IBFT / QBFT, HoneyBadgerBFT, Algorand, Narwhal+Bullshark), **additionally** consult `bft-analysis.md` for the Byzantine adversary categories that compose on top of the 6 distributed fault families described here. For purely crash-fault-tolerant systems (Raft, Multi-Paxos, primary-backup), use this file alone — `bft-analysis.md` does not apply.
+If the target uses BFT consensus (Byzantine threat model — PBFT, HotStuff, Tendermint / CometBFT, DiemBFT / AptosBFT, IBFT / QBFT, HoneyBadgerBFT, Algorand, Narwhal+Bullshark), **additionally** consult `bft-analysis.md` for the Byzantine adversary categories that compose on top of the 6 distributed fault categories described here. For purely crash-fault-tolerant systems (Raft, Multi-Paxos, primary-backup), use this file alone — `bft-analysis.md` does not apply.
 
 ---
 
@@ -57,7 +57,7 @@ Typical examples:
 - one read path checks leadership lease, another skips it
 - one config-change path updates both old/new configs, another updates only one
 
-These often become excellent bug families because they map cleanly to split TLA+ actions.
+These often become excellent scenarios because they map cleanly to split TLA+ actions.
 
 ### 2.2 Non-Atomic Persistence
 
@@ -127,9 +127,9 @@ Questions:
 
 ---
 
-## 3. What Strong Distributed Bug Families Look Like
+## 3. What Strong Distributed Scenarios Look Like
 
-Strong bug families usually group around mechanisms like:
+Strong scenarios usually group around mechanisms like:
 
 - message acceptance guards
 - non-atomic persistence
@@ -138,7 +138,7 @@ Strong bug families usually group around mechanisms like:
 - independent heartbeat / replication / timeout control loops
 - snapshot lifecycle mismatches
 
-Weak bug families are usually:
+Weak scenarios are usually:
 
 - flat “file X has many suspicious lines”
 - broad “network bug” buckets with no shared mechanism

@@ -1,6 +1,6 @@
 # Bug Archaeology Methodology
 
-Detailed guide for Phase 2 of Code Analysis: mining historical bugs and grouping them into Bug Families.
+Detailed guide for Phase 2 of Code Analysis: mining historical bugs and grouping them into Scenarios.
 
 ---
 
@@ -82,9 +82,9 @@ Use multiple Task subagents to verify issues in parallel (5-10 issues per subage
 
 ---
 
-## 3. Bug Family Grouping
+## 3. Scenario Grouping
 
-This is the most analytically important step. Transform a flat list of bugs into grouped families.
+This is the most analytically important step. Transform a flat list of bugs into grouped scenarios.
 
 ### 3.1 Grouping Strategy
 
@@ -94,7 +94,7 @@ Start with the raw list of confirmed bugs (from git history + issues). For each 
 2. **Is there another bug with the same mechanism?**
 3. **Could this mechanism fail in a different place?**
 
-### 3.2 Common Family Patterns
+### 3.2 Common Scenario Patterns
 
 | Pattern | Description | Example |
 |---------|-------------|---------|
@@ -105,12 +105,12 @@ Start with the raw list of confirmed bugs (from git history + issues). For each 
 | **Missing invariant** | A property that should hold but isn't checked | Leader doesn't verify its own health before serving |
 | **Copy-paste divergence** | Code copied and modified, with some paths missing updates | PreVote copied from RequestVote, metrics label not updated |
 
-### 3.3 Family Template
+### 3.3 Scenario Template
 
-For each Bug Family:
+For each Scenario:
 
 ```markdown
-### Family N: <Descriptive Name>
+### Scenario N: <Descriptive Name>
 
 **Mechanism**: One sentence describing the shared root cause.
 
@@ -121,7 +121,7 @@ For each Bug Family:
 **Affected code paths**: <specific functions/handlers>
 
 **Assessment**:
-- How many bugs in this family? (historical + new potential)
+- How many bugs in this scenario? (historical + new potential)
 - How severe? (production impact?)
 - How suitable for TLA+ modeling?
 
@@ -130,7 +130,7 @@ For each Bug Family:
 
 ### 3.4 Priority Ranking
 
-Rank families by combined score:
+Rank scenarios by combined score:
 
 | Factor | Weight | Meaning |
 |--------|--------|---------|
@@ -154,7 +154,7 @@ When multiple implementations of the same algorithm exist:
 
 ### 4.2 How to Compare
 
-Focus on the Bug Families identified above. For each family:
+Focus on the Scenarios identified above. For each Scenario:
 - Does the other implementation have the same mechanism?
 - Did they solve the same problem differently?
 - Did they have similar bugs?

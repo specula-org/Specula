@@ -15,10 +15,10 @@
 | MC.cfg | BFS | 434K | All 5 invariants hold |
 | MC_hunt_cross_cancel_task.cfg | BFS | ~22K | **BarrierSafety violated** |
 | MC_stress.cfg | BFS | 434K | All hold |
-| MC_hunt_family1.cfg | BFS | ~15K | All hold |
-| MC_hunt_family2.cfg | BFS | ~18K | All hold |
-| MC_hunt_family3.cfg | BFS | ~12K | All hold |
-| MC_hunt_family4.cfg | BFS | ~20K | All hold |
+| MC_hunt_scenario1.cfg | BFS | ~15K | All hold |
+| MC_hunt_scenario2.cfg | BFS | ~18K | All hold |
+| MC_hunt_scenario3.cfg | BFS | ~12K | All hold |
+| MC_hunt_scenario4.cfg | BFS | ~20K | All hold |
 | MC_hunt_detach_deadlock.cfg | BFS | 492 | **DetachFulfillNoDeadlock violated** |
 
 ---

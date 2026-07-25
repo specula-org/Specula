@@ -45,13 +45,13 @@ See `harness-generation` skill's `guide.md` Step 0 for classification details.
 
 1. **Reconnaissance** — Map the codebase: core modules, concurrency model, atomicity boundaries.
    Also classify the target as Category A or B and identify the semantic boundaries that matter (crash windows vs linearization / reclamation windows).
-2. **Bug Archaeology** — Mine git history and issue tracker for historical bugs. Group into **Bug Families** by shared mechanism.
-3. **Deep Analysis** — Systematic code reading guided by Bug Families. Look for: code path inconsistencies, non-atomic persistence with crash windows, missing guards, deviations from the reference algorithm.
-4. **Modeling Brief** — Synthesize findings into a concise handoff document. For each Bug Family: mechanism, evidence, modeling approach, invariants.
+2. **Bug Archaeology** — Mine git history and issue tracker for historical bugs. Group into **Scenarios** by shared mechanism.
+3. **Deep Analysis** — Systematic code reading guided by Scenarios. Look for: code path inconsistencies, non-atomic persistence with crash windows, missing guards, deviations from the reference algorithm.
+4. **Modeling Brief** — Synthesize findings into a concise handoff document. For each Scenario: mechanism, evidence, modeling approach, invariants.
 
 ### Key Principle
 
-Bug Families are the organizing concept. Group by mechanism ("non-atomic persistence with crash window", "missing migrationId filter"), not by file or component. Each Bug Family directly maps to a spec extension.
+Scenarios are the organizing concept. Group by mechanism ("non-atomic persistence with crash window", "missing migrationId filter"), not by file or component. Each Scenario directly maps to a spec extension.
 
 ### Output
 
@@ -68,14 +68,14 @@ Bug Families are the organizing concept. Group by mechanism ("non-atomic persist
 
 ### What Happens
 
-1. **Base Spec** (`base.tla`) — Core TLA+ specification. Scope driven by Bug Families, logic faithful to implementation code. Every logic block annotated with `file:line`.
-2. **MC Spec** (`MC.tla` + `MC.cfg` + `MC_hunt_*.cfg`) — Counter-bounded fault injection for model checking. Hunting configs target specific bug families.
+1. **Base Spec** (`base.tla`) — Core TLA+ specification. Scope driven by Scenarios, logic faithful to implementation code. Every logic block annotated with `file:line`.
+2. **MC Spec** (`MC.tla` + `MC.cfg` + `MC_hunt_*.cfg`) — Counter-bounded fault injection for model checking. Hunting configs target specific scenarios.
 3. **Trace Spec** (`Trace.tla` + `Trace.cfg`) — Drives TLC through recorded traces to verify spec-implementation consistency.
 4. **Instrumentation Spec** (`instrumentation-spec.md`) — Maps spec actions to code locations for harness generation.
 
 ### Key Principles
 
-- **Bug-Family driven scope**: Every extension traces to a Bug Family
+- **Scenario-driven scope**: Every extension traces to a Scenario
 - **Code-faithful logic**: Model the implementation, not the paper
 - **Source line annotations**: Every condition cites `file:line`
 - **Split actions where code paths diverge**
@@ -190,7 +190,7 @@ Pauses when API usage exceeds threshold, waits for reset, resumes automatically.
 ├── spec/
 │   ├── base.tla + base.cfg     # Phase 2
 │   ├── MC.tla + MC.cfg         # Phase 2
-│   ├── MC_hunt_*.cfg           # Phase 2 (per bug family)
+│   ├── MC_hunt_*.cfg           # Phase 2 (per Scenario)
 │   ├── Trace.tla + Trace.cfg   # Phase 2
 │   ├── instrumentation-spec.md # Phase 2
 │   ├── bug-report.md           # Phase 3

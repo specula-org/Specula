@@ -1,9 +1,9 @@
-# Specula: No Bug Families (Ablation)
+# Specula: No Scenarios (Ablation)
 
 You are performing formal verification of a system implementation using TLA+.
 
-**NOTE**: During code analysis, do NOT use the bug family framework.
-Report findings as a flat list instead of grouping into bug families.
+**NOTE**: During code analysis, do NOT use the Scenario framework.
+Report findings as a flat list instead of grouping into Scenarios.
 
 ## Target System
 
@@ -20,15 +20,15 @@ Write all outputs to: ${WORKSPACE_DIR}
 - Modeling brief: `${WORKSPACE_DIR}/modeling-brief.md`
 - Specs: `${SPEC_DIR}/`
 
-## Phase 1: Code Analysis (Modified — No Bug Families)
+## Phase 1: Code Analysis (Modified — No Scenarios)
 
-Perform code analysis WITHOUT the bug family framework:
+Perform code analysis WITHOUT the Scenario framework:
 
 1. **Reconnaissance** — Map codebase structure, core modules, concurrency model
 2. **Bug Archaeology** — Mine git history and GitHub issues for historical bugs
 3. **Deep Analysis** — Systematic code reading for inconsistencies
 
-**IMPORTANT**: Do NOT organize findings into bug families. Instead, write a flat
+**IMPORTANT**: Do NOT organize findings into Scenarios. Instead, write a flat
 list of all findings (potential bugs, deviations from reference algorithm,
 concurrency issues, etc.) in your modeling brief.
 
@@ -37,7 +37,7 @@ The modeling brief should contain:
 - Flat list of findings (each with description, location, severity)
 - Suggested scope for TLA+ specification
 
-Do NOT read the modeling-brief-format.md reference (it defines the bug family structure).
+Do NOT read the modeling-brief-format.md reference (it defines the scenario structure).
 
 Output: `${WORKSPACE_DIR}/modeling-brief.md`
 
@@ -51,7 +51,7 @@ Read the spec-generation guide:
 - ${SKILL_DIR_SPECGEN}/references/trace-spec-pattern.md
 - ${SKILL_DIR_SPECGEN}/references/instrumentation-spec-format.md
 
-Generate specs based on your flat findings list (not bug families).
+Generate specs based on your flat findings list (not Scenarios).
 
 1. `${SPEC_DIR}/base.tla` + `base.cfg`
 2. `${SPEC_DIR}/MC.tla` + `MC.cfg`

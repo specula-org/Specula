@@ -22,7 +22,7 @@ about what it knows avoids a P3 agent inventing code-review entries it never saw
 
 ```json
 {
-  "schema_version": "1",
+  "schema_version": "2",
   "system": "<system name>",
   "generated_by": "validation-workflow",
   "findings": [
@@ -30,7 +30,7 @@ about what it knows avoids a P3 agent inventing code-review entries it never saw
       "id": "MC-1",
       "title": "<one-line title, matches the bug-report heading>",
       "source": "model-checking",
-      "family": "<bug family name/number>",
+      "scenario": "<scenario name/number>",
       "severity": "Critical | High | Medium",
       "invariant": "<invariant violated>",
       "config": "MC_hunt_xxx.cfg",

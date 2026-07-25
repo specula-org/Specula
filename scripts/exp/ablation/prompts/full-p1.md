@@ -29,12 +29,12 @@ Execute all 4 sub-phases in order:
 1. **Reconnaissance** — Map codebase structure, core modules, concurrency model
 2. **Bug Archaeology** — Mine git history and GitHub issues/PRs for historical bugs
 3. **Deep Analysis** — Systematic code reading for inconsistencies and deviations
-4. **Modeling Brief** — Synthesize findings into bug families
+4. **Modeling Brief** — Synthesize findings into Scenarios
 
 ## Output
 
 Write your modeling brief to: `${WORKSPACE_DIR}/modeling-brief.md`
 
 This file will be used by the next phase (spec generation) as the primary input.
-Focus on identifying **bug families** — groups of potential bugs that share
+Focus on identifying **Scenarios** — groups of potential bugs that share
 a common mechanism and can be targeted by the same TLA+ invariants.

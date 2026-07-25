@@ -1,6 +1,6 @@
 # TLA+ Spec Generation
 
-Bug-family driven modeling: each spec extension exists because a Bug Family in the Modeling Brief identified a concrete mechanism that needs verification. The spec logic within each action MUST faithfully follow the implementation's control flow, with every logic block annotated to its source code location.
+Scenario-driven modeling: each spec extension exists because a Scenario in the Modeling Brief identified a concrete mechanism that needs verification. The spec logic within each action MUST faithfully follow the implementation's control flow, with every logic block annotated to its source code location.
 
 ## Input / Output
 
@@ -11,7 +11,7 @@ Bug-family driven modeling: each spec extension exists because a Bug Family in t
 | Phase | Output | Description |
 |-------|--------|-------------|
 | 1 | `base.tla` + `base.cfg` | Base spec with all extensions |
-| 2 | `MC.tla` + `MC.cfg` + `MC_hunt_*.cfg` | Model checking spec + hunting configs per bug family |
+| 2 | `MC.tla` + `MC.cfg` + `MC_hunt_*.cfg` | Model checking spec + hunting configs per Scenario |
 | 2.5 | `brief-coverage.md` | **Mandatory** self-audit mapping brief §2/§5/§6.1 → spec/MC artifacts (see Phase 2.5 below) |
 | 3 | `Trace.tla` + `Trace.cfg` | Trace validation spec |
 | 4 | `instrumentation-spec.md` | Action-to-code mapping for harness generation |
@@ -44,13 +44,13 @@ For **Category B** systems, do **not** force a message-passing template onto the
 
 ## Phase 1: Base Spec
 
-**Goal**: Write the core TLA+ specification with bug-family driven extensions.
+**Goal**: Write the core TLA+ specification with Scenario-driven extensions.
 
-1. **Read the Modeling Brief** — note each Bug Family's mechanism, suggested variables/actions, priority
+1. **Read the Modeling Brief** — note each Scenario's mechanism, suggested variables/actions, priority
 2. **Read source code (targeted)** — only the functions referenced in the brief, not the entire codebase
-3. **Design variables** — standard protocol variables (Category A) or concurrency variables (Category B: thread-local snapshots, reclamation state, handoff flags, cached views) + extension variables motivated by Bug Families
+3. **Design variables** — standard protocol variables (Category A) or concurrency variables (Category B: thread-local snapshots, reclamation state, handoff flags, cached views) + extension variables motivated by Scenarios
 4. **Write actions** — name after implementation functions, follow code's control flow faithfully, annotate every logic block with `file:line`
-5. **Write invariants** — standard safety properties + extension invariants targeting Bug Families + structural invariants
+5. **Write invariants** — standard safety properties + extension invariants targeting Scenarios + structural invariants
 6. **Write Init and Next**
 
 **Read `references/base-spec-methodology.md`** for patterns, annotation style, and action design.
@@ -64,8 +64,8 @@ For **Category B** systems, do **not** force a message-passing template onto the
 Counter-bound fault-injection actions (timeout, crash, message loss, etc.). Do NOT bound deterministic/reactive actions. Add symmetry reduction, message buffer constraints, structural invariants, and temporal properties.
 
 **Generate two types of config**:
-- **`MC.cfg`** — standard safety + structural invariants. Used during spec validation (convergence). Extension invariants (bug-family-specific) should be listed but **commented out**.
-- **`MC_hunt_<family>.cfg`** — one per bug family from the modeling brief. Tight bounds (reduce irrelevant actions to 0-1), only the target invariant + core safety invariants. Used during bug hunting after spec converges.
+- **`MC.cfg`** — standard safety + structural invariants. Used during spec validation (convergence). Extension invariants (scenario-specific) should be listed but **commented out**.
+- **`MC_hunt_<scenario>.cfg`** — one per Scenario from the modeling brief. Tight bounds (reduce irrelevant actions to 0-1), only the target invariant + core safety invariants. Used during bug hunting after spec converges.
 
 **Read `references/mc-spec-pattern.md`** for the full template and hunting config pattern.
 
@@ -73,7 +73,7 @@ Counter-bound fault-injection actions (timeout, crash, message loss, etc.). Do N
 
 ## Phase 2.5: Brief Coverage Self-Audit
 
-**Goal**: Catch the easy-to-miss failure mode — invariants *defined* but never *enabled* in any hunt cfg, families with no targeting hunt cfg, or findings no hunt cfg can reach.
+**Goal**: Catch the easy-to-miss failure mode — invariants *defined* but never *enabled* in any hunt cfg, scenarios with no targeting hunt cfg, or findings no hunt cfg can reach.
 
 This is a self-check, not a grading rubric. Glance over brief §2 / §5 / §6.1 while finalizing Phase 2, identify any obvious gaps, and either close them or note honestly why something is out of scope. The audit is **brief-driven, not taxonomy-driven** — if the brief did not raise it, you do not have to cover it. Fill the audit by reading actual cfg files, not from memory of what you intended.
 
@@ -112,7 +112,7 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 
 ## Critical Rules
 
-1. **Every extension traces to a Bug Family.** No Bug Family reference → don't add the extension.
+1. **Every extension traces to a Scenario.** No Scenario reference → don't add the extension.
 2. **Model the implementation, not the paper.** Deviations from the reference algorithm are where bugs live.
 3. **Follow the code's control flow faithfully.** Do not simplify, reorder, or merge logic that the code keeps separate.
 4. **Annotate every logic block with source lines.** Every condition, branch, and state update must cite `file:line`. Not optional.
@@ -122,7 +122,7 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 8. **Silent actions must be tightly constrained.** Unconstrained silent actions cause state space explosion.
 9. **MC spec bounds fault-injection, not normal operations.**
 10. **For Category B, split operations at real semantic boundaries.** If code has separate read/confirm, reserve/publish, retire/reclaim, or signal/complete windows, do not collapse them into one action just because the public API looks atomic.
-11. **`brief-coverage.md` is a mandatory phase output.** Every Safety invariant in brief §5 must end up enabled in ≥1 hunt cfg, every brief §2 family must have a targeting hunt cfg (or an explicit, written-out merger), every §6.1 finding must have a hunt cfg whose fault setup makes it reachable. Use the checklist as a self-check before writing the final audit doc — see Phase 2.5 and `references/brief-coverage-checklist.md`.
+11. **`brief-coverage.md` is a mandatory phase output.** Every Safety invariant in brief §5 must end up enabled in ≥1 hunt cfg, every brief §2 scenario must have a targeting hunt cfg (or an explicit, written-out merger), every §6.1 finding must have a hunt cfg whose fault setup makes it reachable. Use the checklist as a self-check before writing the final audit doc — see Phase 2.5 and `references/brief-coverage-checklist.md`.
 
 ---
 

@@ -43,7 +43,7 @@ Read the spec-generation guide and references:
 
 Generate:
 
-1. `${SPEC_DIR}/base.tla` + `base.cfg` — Core spec with bug-family driven extensions
+1. `${SPEC_DIR}/base.tla` + `base.cfg` — Core spec with Scenario-driven extensions
 2. `${SPEC_DIR}/MC.tla` + `MC.cfg` — Model checking wrapper with counter-bounded fault injection
 
 Do NOT generate Trace.tla or instrumentation-spec.md (not needed without trace validation).

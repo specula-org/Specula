@@ -14,7 +14,7 @@ You are generating TLA+ specifications based on a completed code analysis.
 Read the modeling brief produced by the previous phase:
   ${WORKSPACE_DIR}/modeling-brief.md
 
-This brief contains bug families, system architecture, and modeling scope.
+This brief contains Scenarios, system architecture, and modeling scope.
 
 ## Instructions
 
@@ -31,9 +31,9 @@ Then read the reference files:
 
 Write all files to: ${SPEC_DIR}/
 
-1. `base.tla` + `base.cfg` — Core spec with bug-family driven extensions
+1. `base.tla` + `base.cfg` — Core spec with Scenario-driven extensions
 2. `MC.tla` + `MC.cfg` — Model checking wrapper with counter-bounded fault injection
 3. `Trace.tla` + `Trace.cfg` — Trace validation wrapper
 4. `instrumentation-spec.md` — Action-to-code mapping for harness generation
 
-Also generate bug-family-specific hunting configs: `MC_hunt_*.cfg`
+Also generate scenario-specific hunting configs: `MC_hunt_*.cfg`

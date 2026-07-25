@@ -4,9 +4,9 @@ A complete worked example showing how the Modeling Brief drove spec design decis
 
 ## Input: Modeling Brief Summary
 
-The Modeling Brief identified 5 Bug Families. The top 3 for TLA+ modeling:
+The Modeling Brief identified 5 Scenarios. The top 3 for TLA+ modeling:
 
-| Family                            | Mechanism                                             | Priority |
+| Scenario                            | Mechanism                                             | Priority |
 | --------------------------------- | ----------------------------------------------------- | -------- |
 | Leader Cannot Self-Detect Failure | Heartbeat runs independently, doesn't check resp.Term | HIGH     |
 | Configuration Change Safety       | Inconsistent committed vs latest config usage         | HIGH     |
@@ -14,7 +14,7 @@ The Modeling Brief identified 5 Bug Families. The top 3 for TLA+ modeling:
 
 ## Spec Design Decisions
 
-### Extension 1: Separate Heartbeat Path (Family 1)
+### Extension 1: Separate Heartbeat Path (Scenario 1)
 
 **What the brief said**: Three code paths handle AppendEntries responses — `replicateTo()` (line 239), `pipelineDecode()` (line 548), and `heartbeat()` (line 423). Only heartbeat skips `resp.Term` check.
 
@@ -26,7 +26,7 @@ The Modeling Brief identified 5 Bug Families. The top 3 for TLA+ modeling:
 - `HandleHeartbeatResponse` has no term check (models the bug)
 - Use `msubtype` field ("heartbeat" vs "replicate") to distinguish
 
-### Extension 2: Leader Lease (Family 1)
+### Extension 2: Leader Lease (Scenario 1)
 
 **What the brief said**: `checkLeaderLease()` uses `latestConfig` (not `committedConfig`) and counts `setLastContact()` calls toward quorum.
 
@@ -37,7 +37,7 @@ The Modeling Brief identified 5 Bug Families. The top 3 for TLA+ modeling:
 - `HandleHeartbeatResponse` adds to `leaseContact` unconditionally (models the bug)
 - `CheckLeaderLease` checks quorum using `latestConfig` (not `committedConfig`)
 
-### Extension 3: Disk Blocking (Family 1)
+### Extension 3: Disk Blocking (Scenario 1)
 
 **What the brief said**: Heartbeat's raison d'etre is to run when disk IO blocks replicate.
 
@@ -48,7 +48,7 @@ The Modeling Brief identified 5 Bug Families. The top 3 for TLA+ modeling:
 - `SendHeartbeat` has NO disk guard (this is the key difference)
 - `DiskBlock`/`DiskUnblock` toggle the flag
 
-### Extension 4: Dual Configuration (Family 2)
+### Extension 4: Dual Configuration (Scenario 2)
 
 **What the brief said**: Different code paths use different config versions:
 
@@ -64,7 +64,7 @@ The Modeling Brief identified 5 Bug Families. The top 3 for TLA+ modeling:
 - `BecomeLeader` quorum check uses `latestConfig` (matching code)
 - `Crash` recomputes: `latestConfig` from full log, `committedConfig` from empty (conservative)
 
-### Extension 5: Non-Atomic persistVote (Family 3)
+### Extension 5: Non-Atomic persistVote (Scenario 3)
 
 **What the brief said**: `persistVote` (raft.go:1135-1141) writes term then votedFor. Crash between leaves term bumped but votedFor stale.
 

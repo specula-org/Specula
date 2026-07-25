@@ -44,7 +44,7 @@ After classifying:
 
 1. **Git history mining** by keyword (fix, bug, race, panic, deadlock, correctness, crash, corrupt, leak, inconsistent, wrong). Analyze **all** significant bug-fix commits, not just a sample.
 2. **Issue/PR verification** — read full discussions, not just titles. Use `gh issue list` with multiple keyword searches and label filters to maximize coverage.
-3. **Bug Family grouping** — group by shared **mechanism**, not by file.
+3. **Scenario grouping** — group by shared **mechanism**, not by file.
 4. **Reference comparison** (if applicable) — find deviations from paper/other implementations.
 
 ### Depth Requirements
@@ -82,7 +82,7 @@ Every finding MUST be verified: re-read exact code lines, check for compensating
 
 ## Phase 4: Modeling Brief
 
-**Goal**: Synthesize findings into an actionable document for Spec Generation — select top Bug Families, propose spec extensions, state what NOT to model and why, classify remaining findings by verification method.
+**Goal**: Synthesize findings into an actionable document for Spec Generation — select top Scenarios, propose spec extensions, state what NOT to model and why, classify remaining findings by verification method.
 
 **Read `references/modeling-brief-format.md`** for the format specification.
 **See `examples/hashicorp-raft-modeling-brief.md`** for a complete example.
@@ -97,7 +97,7 @@ Every finding MUST be verified: re-read exact code lines, check for compensating
 4. **Exclude false positives explicitly.** Explain WHY each exclusion was made.
 5. **Use parallel subagents aggressively.** Launch multiple Task subagents for concurrent issue verification, concurrent file analysis, and concurrent commit review. This is essential for both depth AND coverage.
 6. **Evidence-based claims only.** Show code, git commits, issue discussions, or code path inconsistencies.
-7. **Bug Families over flat lists.** Group by mechanism. 5 actionable families > 17 flat findings.
+7. **Scenarios over flat lists.** Group by mechanism. 5 actionable scenarios > 17 flat findings.
 8. **Thoroughness is non-negotiable.** Do not skip issues, truncate commit analysis, or sample instead of scanning. The analysis report should document coverage statistics (total commits analyzed, issues deeply read, false positives excluded).
 9. **Classify Category A vs B explicitly.** Carry that decision into the Modeling Brief. Later phases should not have to rediscover it.
 

@@ -826,6 +826,8 @@ class TestDriver(ConfirmCase):
         self.assertEqual(len(prompts), 1)
         self.assertEqual(retry_budgets, [100])
         self.assertIn("installed Specula skill **validation-workflow**", prompts[0])
+        self.assertIn("Each `Scenario N` is a mechanism hypothesis", prompts[0])
+        self.assertIn("`scenario`", prompts[0])
         self.assertIn("<!-- specula-skill:", prompts[0])
         self.assertIn(":validation-workflow -->", prompts[0])
         self.assertNotIn("$validation-workflow", prompts[0])
@@ -2063,8 +2065,8 @@ class TestValidationContracts(ConfirmCase):
         )
         self.assertEqual(C._validate_candidates(p), [])  # multi-line title accepted
 
-    def test_family_partial_dedup_is_accepted(self) -> None:
-        # The exact pattern that failed the 3-model run: a family absorbed into an
+    def test_scenario_partial_dedup_is_accepted(self) -> None:
+        # The exact pattern that failed the 3-model run: a scenario absorbed into an
         # MC candidate (dedup_note) AND emitted as a distinct-site CR residual is a
         # legitimate consolidation and must NOT be rejected as a contradiction.
         p = Path(self.tmp) / "candidates.json"
@@ -2077,14 +2079,29 @@ class TestValidationContracts(ConfirmCase):
                             "source": "model-checking",
                             "title": "t",
                             "summary": "s",
-                            "dedup_note": "also covers Family 2",
+                            "dedup_note": "also covers Scenario 2",
                         },
-                        {"id": "CR-2", "source": "code-review", "family": "Family 2", "title": "t2", "summary": "s2"},
+                        {
+                            "id": "CR-2",
+                            "source": "code-review",
+                            "scenario": "Scenario 2",
+                            "title": "t2",
+                            "summary": "s2",
+                        },
                     ]
                 }
             )
         )
-        self.assertEqual(C._validate_candidates(p, {"MC-1"}, {"Family 1", "Family 2"}), [])
+        self.assertEqual(C._validate_candidates(p, {"MC-1"}, {"Scenario 1", "Scenario 2"}), [])
+
+    def test_scenario_refs_parse_scenario_labels(self) -> None:
+        self.assertEqual(C._scenario_refs(2), {"Scenario 2"})
+        self.assertEqual(C._scenario_refs("Scenario 2 and Scenario 4"), {"Scenario 2", "Scenario 4"})
+
+    def test_expected_brief_scenarios_reads_scenario_headings(self) -> None:
+        brief = Path(self.tmp) / "modeling-brief.md"
+        brief.write_text("## Scenario 1: Current\n### Scenario 3: Current\n")
+        self.assertEqual(C._expected_brief_scenarios(brief), {"Scenario 1", "Scenario 3"})
 
     def test_mc_immutability_no_longer_enforced(self) -> None:
         # Relaxed: a changed source field / a missing counterexample no longer fails.

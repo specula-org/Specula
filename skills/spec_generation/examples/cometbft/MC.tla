@@ -31,7 +31,7 @@ cometbft == INSTANCE base
 CONSTANT MaxTimeoutLimit       \* Max total timeout firings
 CONSTANT MaxCrashLimit         \* Max total crash events
 CONSTANT MaxLoseLimit          \* Max message loss events
-CONSTANT MaxInvalidVELimit     \* Max invalid VE injections (Family 1)
+CONSTANT MaxInvalidVELimit     \* Max invalid VE injections (Scenario 1)
 CONSTANT MaxMsgBufferLimit     \* Max messages in flight
 
 \* ============================================================================
@@ -46,7 +46,7 @@ faultVars == <<faultCounters>>
 \* COUNTER-BOUNDED FAULT-INJECTION ACTIONS
 \* ============================================================================
 
-\* --- Timeout actions (Family 2: bound non-deterministic timeout firing) ---
+\* --- Timeout actions (Scenario 2: bound non-deterministic timeout firing) ---
 
 MCHandleTimeoutPropose(i) ==
     /\ faultCounters.timeout < MaxTimeoutLimit
@@ -63,7 +63,7 @@ MCHandleTimeoutPrecommit(i) ==
     /\ cometbft!HandleTimeoutPrecommit(i)
     /\ faultCounters' = [faultCounters EXCEPT !.timeout = @ + 1]
 
-\* --- Crash action (Family 3: bound crash events) ---
+\* --- Crash action (Scenario 3: bound crash events) ---
 
 MCCrash(i) ==
     /\ faultCounters.crash < MaxCrashLimit
@@ -77,7 +77,7 @@ MCLoseMessage(m) ==
     /\ cometbft!LoseMessage(m)
     /\ faultCounters' = [faultCounters EXCEPT !.lose = @ + 1]
 
-\* --- Invalid VE injection (Family 1: model Byzantine VE behavior) ---
+\* --- Invalid VE injection (Scenario 1: model Byzantine VE behavior) ---
 \* Injects invalid vote extensions on specific servers.
 \* Bug #5204: proposer self-verification skip + invalid VEs = deadlock
 
@@ -248,7 +248,7 @@ MCNextAsync(i) ==
     \/ MCRoundSkipPrecommit(i)
     \* --- Recovery (unbounded) ---
     \/ MCRecover(i)
-    \* --- VE injection (bounded, Family 1) ---
+    \* --- VE injection (bounded, Scenario 1) ---
     \/ MCInjectInvalidVE(i)
 
 MCNextCrash == \E i \in Server : MCCrash(i)
@@ -376,7 +376,7 @@ CrashedNoTimeouts ==
     \A s \in Server :
         crashed[s] => timeoutScheduled[s] = {}
 
-\* Family 1: VE verification is recorded for non-self precommits
+\* Scenario 1: VE verification is recorded for non-self precommits
 VEVerificationTracked ==
     \A s \in Server :
         \A j \in Server :
@@ -384,12 +384,12 @@ VEVerificationTracked ==
              /\ precommits[s][round[s]][j] \in Values) =>
                 veVerified[s][j] \in {TRUE, FALSE}
 
-\* Family 3: Persisted term is consistent with current height
+\* Scenario 3: Persisted term is consistent with current height
 PrivvalConsistency ==
     \A s \in Server :
         privvalLastSigned[s].height <= height[s]
 
-\* Family 1: VE Liveness — If one server commits at a height, all non-crashed
+\* Scenario 1: VE Liveness — If one server commits at a height, all non-crashed
 \* servers at that height must be able to eventually commit too.
 \* Bug #5204: Proposer self-verification skip + invalid VEs = asymmetric commit.
 \* The proposer counts its own precommit (no VE check) while others drop it

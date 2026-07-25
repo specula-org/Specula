@@ -4,6 +4,8 @@
 
 **Every bug must attempt reproduction.** New, known, or historical — no exemption. Work through the escalation ladder; either you trigger the live harm (→ `REPRODUCED`) or you do not.
 
+**Reuse before declaring the environment unavailable.** A binary missing from `PATH`, or one failed build/bootstrap command, is not enough for `ENV_LIMITED`. First inspect the target checkout and current `.specula-output/` for compatible existing build artifacts (including symlinks), and inspect prior harness/build logs for a known-successful command and environment. Check each artifact's source SHA, build configuration, and provenance before reuse. Treat an instrumented or uncertain artifact as a smoke check and recipe source unless its modifications are explicitly compatible with the reached escalation level and documented. Before giving up on a build/runtime problem, make one bounded attempt within the caller's time and resource budget to replay or rebuild from an applicable known-good recipe, and record what you searched, reused, attempted, or rejected.
+
 **When you cannot reproduce the live harm of a REAL defect, it is exactly one of three — pick by WHY it did not manifest, never a vague "reproduction failed":**
 - **`ENV_LIMITED`** — the defect is real and *would* harm in production, but THIS environment cannot trigger it (needs a real cluster / hardware / timing). Requires a SOUND argument that production exhibits it, naming the exact env limitation. It is not a blanket "stands on code audit".
 - **`MASKED`** — the defect is real but a safeguard / downstream mechanism (sync / loopback / resend / guard) / a discarded output / a *separate* bug currently masks the harm, so it does not bite today. Name the mask (prove it fires — see below).
@@ -78,6 +80,7 @@ When reporting REPRODUCED, you MUST include:
 When reporting ENV_LIMITED:
 
 - The four levels attempted (0 through 3); for each: what was tried, what happened, why it didn't trigger
+- The artifact/bootstrap preflight: paths and logs searched, provenance checked, and compatible artifacts or known-good recipes tried or rejected
 - Your conclusion: is the bug real but hard to trigger (timing-sensitive, requires specific cluster topology, needs a fault not in the test framework), or do you now believe it's a false positive given the failed escalation?
 - Whether you can give a SOUND argument that the consequence still occurs in production despite the failed trigger (naming the environment limitation that blocks it here) — or whether, absent that argument and any reachable consequence, it is a FALSE POSITIVE (code-review) / a model-repair signal (MC)
 

@@ -12,9 +12,9 @@
   - `persistVote` writes term and votedFor in **two separate disk operations** (raft.go:1135-1141)
 - **Concurrency model**: Main state machine on single goroutine; replication and heartbeat on separate per-peer goroutines
 
-## 2. Bug Families
+## 2. Scenarios
 
-### Family 1: Leader Cannot Self-Detect Failure (HIGH)
+### Scenario 1: Leader Cannot Self-Detect Failure (HIGH)
 
 **Mechanism**: Leader fails to detect its own abnormality (storage hang, term superseded) and continues operating, causing cluster unavailability or split-brain.
 
@@ -40,7 +40,7 @@
 
 ---
 
-### Family 2: Configuration Change Safety (HIGH)
+### Scenario 2: Configuration Change Safety (HIGH)
 
 **Mechanism**: Inconsistent use of `committed` vs `latest` configuration across different code paths. Different functions use different versions of the configuration, which can lead to inconsistent decisions during config changes.
 
@@ -67,7 +67,7 @@
 
 ---
 
-### Family 3: Non-Atomic Persistence (MEDIUM)
+### Scenario 3: Non-Atomic Persistence (MEDIUM)
 
 **Mechanism**: Operations that persist multiple values in separate disk writes. A crash between writes leaves inconsistent state.
 
@@ -91,7 +91,7 @@
 
 ---
 
-### Family 4: Copy-Paste / Incomplete Implementation (LOW)
+### Scenario 4: Copy-Paste / Incomplete Implementation (LOW)
 
 **Mechanism**: PreVote implemented by copying RequestVote code, with some paths missing necessary modifications.
 
@@ -105,7 +105,7 @@
 
 ---
 
-### Family 5: Error Handling Gaps (LOW)
+### Scenario 5: Error Handling Gaps (LOW)
 
 **Mechanism**: Incomplete recovery paths after disk/network failures, leaving intermediate state inconsistent.
 
@@ -123,32 +123,32 @@
 
 | What | Why | How |
 |------|-----|-----|
-| Independent heartbeat path | Family 1: root cause of 3 production bugs, confirmed Issue #666 | Split AppendEntries send/response into heartbeat vs replicate variants |
-| Leader lease via lastContact | Family 1: lease is the mechanism that should detect stale leaders | `leaseContact` variable + `CheckLeaderLease` action |
-| Disk IO blocking | Family 1: heartbeat continues when disk blocked (#503) | `diskBlocked` variable as guard on `ReplicateEntries` and `ClientRequest` |
-| Committed vs latest config | Family 2: systematic code inconsistency, unfixed #472 | Two config variables, different actions use different ones |
-| Non-atomic persistVote | Family 3: concrete crash window | Split vote persist into two steps + `Crash` recovering from persisted state |
-| Crash and recovery | Family 3: validates persistence correctness | `Crash` action resets volatile state, recovers from persisted |
+| Independent heartbeat path | Scenario 1: root cause of 3 production bugs, confirmed Issue #666 | Split AppendEntries send/response into heartbeat vs replicate variants |
+| Leader lease via lastContact | Scenario 1: lease is the mechanism that should detect stale leaders | `leaseContact` variable + `CheckLeaderLease` action |
+| Disk IO blocking | Scenario 1: heartbeat continues when disk blocked (#503) | `diskBlocked` variable as guard on `ReplicateEntries` and `ClientRequest` |
+| Committed vs latest config | Scenario 2: systematic code inconsistency, unfixed #472 | Two config variables, different actions use different ones |
+| Non-atomic persistVote | Scenario 3: concrete crash window | Split vote persist into two steps + `Crash` recovering from persisted state |
+| Crash and recovery | Scenario 3: validates persistence correctness | `Crash` action resets volatile state, recovers from persisted |
 
 ### 3.2 Do Not Model
 
 | What | Why |
 |------|-----|
-| PreVote | Not related to any high-priority bug family. Adds state space without targeting known issues. Can be added later. |
-| Metrics/logging | Family 4: code-level issue, not protocol logic |
-| Snapshot | Important but not in the top bug families for this analysis round. Would significantly expand spec scope. |
+| PreVote | Not related to any high-priority scenario. Adds state space without targeting known issues. Can be added later. |
+| Metrics/logging | Scenario 4: code-level issue, not protocol logic |
+| Snapshot | Important but not in the top scenarios for this analysis round. Would significantly expand spec scope. |
 | Pipeline replication | Optimization path. #612 is a real bug but requires modeling Go channel semantics, not protocol logic. |
-| Leadership Transfer | timeoutNow guard (Family 5) is a robustness issue, not a protocol safety issue under normal operation |
+| Leadership Transfer | timeoutNow guard (Scenario 5) is a robustness issue, not a protocol safety issue under normal operation |
 
 ## 4. Proposed Extensions
 
-| Extension | Variables | Purpose | Bug Family |
+| Extension | Variables | Purpose | Scenario |
 |-----------|-----------|---------|------------|
-| Heartbeat path | (split in actions, no new vars) | Distinguish heartbeat from replicate to model term-check omission | Family 1 |
-| Leader lease | `leaseContact` | Track follower contacts for lease quorum check | Family 1 |
-| Disk blocking | `diskBlocked` | Model heartbeat continuing when disk IO blocks | Family 1 |
-| Dual configuration | `committedConfig`, `latestConfig` | Capture committed/latest config inconsistency | Family 2 |
-| Non-atomic persist | `persistedTerm`, `persistedVotedFor`, `pendingVote` | Model crash between two disk writes | Family 3 |
+| Heartbeat path | (split in actions, no new vars) | Distinguish heartbeat from replicate to model term-check omission | Scenario 1 |
+| Leader lease | `leaseContact` | Track follower contacts for lease quorum check | Scenario 1 |
+| Disk blocking | `diskBlocked` | Model heartbeat continuing when disk IO blocks | Scenario 1 |
+| Dual configuration | `committedConfig`, `latestConfig` | Capture committed/latest config inconsistency | Scenario 2 |
+| Non-atomic persist | `persistedTerm`, `persistedVotedFor`, `pendingVote` | Model crash between two disk writes | Scenario 3 |
 
 ## 5. Proposed Invariants
 
@@ -157,15 +157,15 @@
 | ElectionSafety | Safety | At most one leader per term | Standard |
 | LogMatching | Safety | Matching term at same index implies identical prefix | Standard |
 | LeaderCompleteness | Safety | Committed entries appear in future leaders' logs | Standard |
-| NoPhantomContact | Safety | Leader's lease contacts only count followers with term <= leader's term | Family 1, Issue #666 |
-| LeaseImpliesLoyalty | Safety | If leader's lease check passes, a real quorum has term <= leader's term | Family 1 |
-| ConfigSafety | Safety | At most one uncommitted config change at a time | Family 2 |
+| NoPhantomContact | Safety | Leader's lease contacts only count followers with term <= leader's term | Scenario 1, Issue #666 |
+| LeaseImpliesLoyalty | Safety | If leader's lease check passes, a real quorum has term <= leader's term | Scenario 1 |
+| ConfigSafety | Safety | At most one uncommitted config change at a time | Scenario 2 |
 
 ## 6. Findings Pending Verification
 
 ### 6.1 Model-Checkable
 
-| ID | Description | Expected violation | Family |
+| ID | Description | Expected violation | Scenario |
 |----|-------------|-------------------|--------|
 | P2-A | Heartbeat phantom contact allows stale leader | NoPhantomContact, LeaseImpliesLoyalty | 1 |
 | P2-C | checkLeaderLease uses latestConfig — miscalculated quorum during config change | LeaseImpliesLoyalty | 1, 2 |
@@ -197,6 +197,6 @@
   - `artifact/raft/raft.go` (core state machine, 2200 lines)
   - `artifact/raft/replication.go` (replication + heartbeat, 660 lines)
   - `artifact/raft/configuration.go` (config changes, 370 lines)
-- **GitHub issues**: #503, #522, #614 (Family 1); #472 (Family 2); #85, #86 (Family 3)
+- **GitHub issues**: #503, #522, #614 (Scenario 1); #472 (Scenario 2); #85, #86 (Scenario 3)
 - **Reference spec**: Raft paper (Ongaro & Ousterhout, 2014)
 - **Reference TLA+ spec**: `data/repositories/workloads/raft/tla/etcdraft.tla` (for syntax patterns only)
