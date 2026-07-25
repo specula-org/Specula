@@ -40,6 +40,13 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from specula import quota as _quota
 from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
+from specula.output_index import (
+    PIPELINE_LOG_ENV,
+    TargetOutput,
+    is_safe_target_name,
+    write_run_index,
+    write_target_index,
+)
 from specula.phaselib import (
     DEFAULT_POLICY_RETRIES,
     DEFAULT_TRANSIENT_RESUMES,
@@ -147,31 +154,15 @@ Options:
   --run-id=ID            Attach to runs/ID — reuse an existing run's workspace,
                          e.g. to resume with --skip-* flags (implies --isolate)
 
-Output structure (per system):
-  .specula-output/
-    ├── analysis-report.md          # Phase 1 output
-    ├── modeling-brief.md           # Phase 1 output
-    ├── agent.log                   # Phase 1 agent log
-    ├── review-analysis.md          # Phase 1 review
-    ├── review-analysis.log         # Phase 1 review agent log
-    ├── spec/
-    │   ├── base.tla                # Phase 2 output
-    │   ├── MC.tla                  # Phase 2 output
-    │   ├── Trace.tla               # Phase 2 output
-    │   ├── instrumentation-spec.md # Phase 2 output
-    │   ├── MC_hunt_*.cfg          # Phase 2 output (bug hunting configs)
-    │   ├── changelog.md           # Phase 3 output
-    │   ├── output/                # Phase 3 output (TLC results)
-    │   └── bug-report.md          # Phase 3 output (bug hunting results)
-    ├── harness/                     # Phase 2.5 output
-    │   ├── src/                   # Trace module + test scenarios
-    │   ├── apply.sh               # Apply instrumentation
-    │   ├── run.sh                 # Build + run + collect traces
-    │   └── INSTRUMENTATION.md     # Guide for adjusting instrumentation
-    ├── traces/                      # Phase 2.5 output (NDJSON traces)
-    ├── spec-gen.log                # Phase 2 agent log
-    ├── harness-gen.log             # Phase 2.5 agent log
-    └── pipeline.log                # This script's log
+Output navigation (default isolated layout):
+  runs/<run-id>/
+    ├── index.md                    # Choose a target
+    ├── pipeline-summary.md         # Final run summary, when available
+    ├── pipeline.log                # Full pipeline log
+    └── <name>/
+        └── .specula-output/
+            ├── index.md            # Human-readable results guide
+            └── ...                 # Existing phase artifacts
 
 """
 
@@ -340,6 +331,7 @@ class Pipeline:
         self.run_id = ""
         self._run_id_given = False  # `--run-id=` (empty) must error, not mint a fresh id
         self.run_dir: Path | None = None
+        self.pipeline_log_path: Path | None = None
         self.tlc_scope = ""
         self.argv: list[str] = []
 
@@ -921,6 +913,80 @@ class Pipeline:
         if len(self.targets) == 1:
             return f"{_logical_cwd()}/.specula-output"
         return f"{_logical_cwd()}/{name}/.specula-output"
+
+    @staticmethod
+    def _descriptor_name(target: str) -> str:
+        first_line = target.split("\n", 1)[0]
+        return first_line.split("|", 1)[0].strip()
+
+    def _index_names(self) -> list[str]:
+        """Original run targets first, so a partial resume cannot erase rows."""
+        descriptors: list[str] = []
+        if self.run_dir is not None:
+            metadata = self.run_dir / "run.json"
+            with contextlib.suppress(OSError, UnicodeError, json.JSONDecodeError):
+                document = json.loads(metadata.read_text())
+                stored = document.get("targets") if isinstance(document, dict) else None
+                if isinstance(stored, list):
+                    descriptors.extend(target for target in stored if isinstance(target, str))
+        descriptors.extend(self.targets)
+        names = [self._descriptor_name(target) for target in descriptors]
+        return list(dict.fromkeys(name for name in names if name))
+
+    def _index_targets(self) -> list[TargetOutput]:
+        targets: list[TargetOutput] = []
+        output_root = self.run_dir if self.run_dir is not None else _logical_cwd()
+        for name in self._index_names():
+            if not is_safe_target_name(name):
+                log(f"WARNING: cannot update output index for unsafe target name {name!r}")
+                continue
+            targets.append(TargetOutput(name, Path(self.get_work_dir(name)), output_root))
+        return targets
+
+    def refresh_target_indexes(self) -> list[TargetOutput]:
+        """Best-effort target navigation refresh; never changes pipeline status."""
+        if self.dry_run:
+            return []
+        try:
+            targets = self._index_targets()
+        except Exception as exc:
+            log(f"WARNING: cannot resolve output indexes: {exc}")
+            return []
+        for target in targets:
+            try:
+                write_target_index(
+                    target.name,
+                    target.work_dir,
+                    output_root=target.output_root,
+                    pipeline_log=self.pipeline_log_path,
+                )
+            except Exception as exc:
+                log(f"WARNING: cannot update output index for {target.name}: {exc}")
+        return targets
+
+    def refresh_output_indexes(self) -> None:
+        """Refresh target indexes, then the run-level target chooser when distinct."""
+        targets = self.refresh_target_indexes()
+        if not targets or self.pipeline_log_path is None:
+            return
+        if self.run_dir is not None:
+            run_root = self.run_dir
+        elif len(targets) > 1:
+            # Legacy multi-target has a distinct launch-level output directory.
+            # Legacy single-target collapses run and target index to one path, so
+            # only the detailed target index is generated.
+            run_root = self.pipeline_log_path.parent
+        else:
+            return
+        try:
+            write_run_index(
+                run_root,
+                targets,
+                summary=run_root / "pipeline-summary.md",
+                pipeline_log=self.pipeline_log_path,
+            )
+        except Exception as exc:
+            log(f"WARNING: cannot update run index: {exc}")
 
     def prepare_source_snapshots(self, names: list[str]) -> None:
         if not self.keep_original:
@@ -1665,6 +1731,8 @@ class Pipeline:
             env[WORKER_LIMIT_ENV] = self.tlc_worker_limit
         if self.tlc_scope:
             env[SCOPE_ENV] = self.tlc_scope
+        if self.pipeline_log_path is not None:
+            env[PIPELINE_LOG_ENV] = str(self.pipeline_log_path)
 
         proc: subprocess.Popen[bytes] | None = None
         received: list[tuple[int, float]] = []
@@ -1736,7 +1804,10 @@ class Pipeline:
         if self.dry_run:
             log(f"[DRY RUN] bash scripts/launch/{script} {' '.join(args)}")
             return
-        self._run_launcher(script, args)
+        try:
+            self._run_launcher(script, args)
+        finally:
+            self.refresh_target_indexes()
 
     def run_phase1_analysis(self) -> None:
         self._phase(
@@ -1865,6 +1936,7 @@ class Pipeline:
         divider()
 
         recovered_commits = self.prepare_repair_state() if prepared_commits is None else set(prepared_commits)
+        self.refresh_target_indexes()
         phase3_targets = set(recovered_commits)
         if not self.has_open_repair_requests():
             if recovered_commits:
@@ -2248,6 +2320,7 @@ class Pipeline:
         # snapshot token commits. Skip flags control later work, never whether
         # durable crash state is reconciled.
         recovered_phase3_commits = self.prepare_repair_state()
+        self.refresh_output_indexes()
         upstream_all_skipped = self.skip_analysis and self.skip_specgen and self.skip_harness
 
         if not self.skip_analysis:
@@ -2322,6 +2395,7 @@ class Pipeline:
             log("Skipping Phase 4b (--skip-classification)")
 
         self.generate_summary()
+        self.refresh_output_indexes()
 
         elapsed = int(time.time()) - start_time
         print()
@@ -2356,6 +2430,7 @@ def main(argv: list[str]) -> int:
         out_dir = _logical_cwd() / ".specula-output"
         out_dir.mkdir(parents=True, exist_ok=True)
         log_path = out_dir / "pipeline.log"
+    p.pipeline_log_path = log_path
     tee = subprocess.Popen(["tee", str(log_path)], stdin=subprocess.PIPE)
     assert tee.stdin is not None  # stdin=PIPE
     tee_in = tee.stdin
@@ -2380,6 +2455,12 @@ def main(argv: list[str]) -> int:
             traceback.print_exc()
             if code == 0:
                 code = 130 if isinstance(e, KeyboardInterrupt) else 1
+        try:
+            p.refresh_output_indexes()
+        except BaseException:
+            # Navigation is a disposable view and must never mask the pipeline's
+            # original exit status, including on an interrupted cleanup path.
+            traceback.print_exc()
         sys.stdout.flush()
         sys.stderr.flush()
         # release every write end of the pipe before waiting, or tee never EOFs
@@ -2392,6 +2473,10 @@ def main(argv: list[str]) -> int:
         # non-zero, so a failing tee (unwritable/full log) wins even when main
         # also failed — verified: `set -o pipefail; (exit 2)|(exit 1)` exits 1.
         tee_rc = tee.wait()
+        with contextlib.suppress(BaseException):
+            # tee creates the log asynchronously. Refresh once more after EOF so
+            # even an immediate pipeline failure gets a Troubleshooting link.
+            p.refresh_output_indexes()
         if tee_rc != 0:
             code = tee_rc
     return code

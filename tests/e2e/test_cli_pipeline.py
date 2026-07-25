@@ -43,6 +43,7 @@ _VOLATILE = (
     "SPECULA_RUN_DIR",
     "SPECULA_PHASE",
     "SPECULA_WORK_DIR",
+    "SPECULA_PIPELINE_LOG",
     "SPECULA_SOURCE_SNAPSHOT",
     "SPECULA_SANDBOX_EXTRA_WRITE",
     "SPECULA_STOP_GATE",
@@ -55,6 +56,16 @@ _VOLATILE = (
     "CODEX_MODEL",
     "CODEX_EFFORT",
     "COPILOT_MODEL",
+)
+
+ALL_PHASE_SKIPS = (
+    "--skip-analysis",
+    "--skip-specgen",
+    "--skip-harness",
+    "--skip-validate",
+    "--skip-confirmation",
+    "--skip-classification",
+    "--skip-repair-loop",
 )
 
 
@@ -144,6 +155,52 @@ class CliE2E(unittest.TestCase):
         self.assertIn("Specula", out)
         self.assertIn("[DRY RUN] bash scripts/launch/launch_code_analysis.sh", out)
         self.assertIn("Pipeline completed", out)
+
+    def test_noop_run_writes_two_level_human_indexes(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        proc = self.run_cli(root, ["run", *ALL_PHASE_SKIPS, "footest"], cwd=work)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+        run = self.sole_run_dir(root)
+        run_index = (run / "index.md").read_text()
+        target_dir = run / "footest" / ".specula-output"
+        target_index = (target_dir / "index.md").read_text()
+
+        self.assertIn("| footest | [Open results](footest/.specula-output/index.md) |", run_index)
+        self.assertIn("- Final summary: [pipeline-summary.md](pipeline-summary.md)", run_index)
+        self.assertNotIn("run.json", run_index)
+        self.assertNotIn("tlc-resources.json", run_index)
+
+        self.assertIn("# footest Results", target_index)
+        self.assertIn("## Recommended Reading", target_index)
+        self.assertIn("Modeling brief: Not available", target_index)
+        self.assertIn("[pipeline.log](../../pipeline.log)", target_index)
+        self.assertNotIn("## Reviews", target_index)
+        self.assertNotIn("findings.json", target_index)
+        self.assertFalse((run / "reports").exists())
+        self.assertFalse((target_dir / "classification").exists())
+
+    def test_noop_multi_target_run_keeps_target_indexes_separate(self) -> None:
+        root = self.specroot(case_dirs=("alpha", "beta"))
+        work = self.workdir()
+        proc = self.run_cli(
+            root,
+            ["run", *ALL_PHASE_SKIPS, "alpha|o/a|Go|ref", "beta|o/b|Rust|ref"],
+            cwd=work,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+        run = self.sole_run_dir(root)
+        run_index = (run / "index.md").read_text()
+        self.assertIn("| alpha | [Open results](alpha/.specula-output/index.md) |", run_index)
+        self.assertIn("| beta | [Open results](beta/.specula-output/index.md) |", run_index)
+        alpha = (run / "alpha" / ".specula-output" / "index.md").read_text()
+        beta = (run / "beta" / ".specula-output" / "index.md").read_text()
+        self.assertIn("# alpha Results", alpha)
+        self.assertNotIn("beta", alpha)
+        self.assertIn("# beta Results", beta)
+        self.assertNotIn("alpha", beta)
 
     def test_run_tuning_and_retry_budgets_reach_phase_and_review_commands(self) -> None:
         for model, effort in (("gpt-5.5", "high"), ("", "")):
@@ -302,6 +359,57 @@ class CliE2E(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertTrue((work / ".specula-output" / "pipeline.log").is_file(), "legacy layout not written")
         self.assertFalse((root / "runs").exists(), "--no-isolate must not mint a run dir")
+
+    def test_no_isolate_single_target_uses_one_detailed_index(self) -> None:
+        root = self.specroot(case_dirs=())
+        work = self.workdir()
+        proc = self.run_cli(root, ["run", "--no-isolate", *ALL_PHASE_SKIPS, "nocase"], cwd=work)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+        index = (work / ".specula-output" / "index.md").read_text()
+        self.assertIn("# nocase Results", index)
+        self.assertIn("## Recommended Reading", index)
+        self.assertNotIn("# Specula Run", index)
+        self.assertIn("[pipeline.log](pipeline.log)", index)
+        self.assertFalse((root / "runs").exists())
+
+    def test_no_isolate_canonical_single_target_links_launch_log(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        proc = self.run_cli(root, ["run", "--no-isolate", *ALL_PHASE_SKIPS, "footest"], cwd=work)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+        target_dir = root / "case-studies" / "footest" / ".specula-output"
+        target_index = (target_dir / "index.md").read_text()
+        pipeline_log = work / ".specula-output" / "pipeline.log"
+        relative_log = os.path.relpath(pipeline_log, start=target_dir).replace(os.sep, "/")
+        self.assertIn("# footest Results", target_index)
+        self.assertIn(f"[pipeline.log]({relative_log})", target_index)
+        self.assertTrue((target_dir / "pipeline-summary.md").is_file())
+        self.assertFalse((work / ".specula-output" / "index.md").exists())
+
+    def test_no_isolate_multi_target_keeps_a_distinct_run_chooser(self) -> None:
+        root = self.specroot(case_dirs=())
+        work = self.workdir()
+        proc = self.run_cli(
+            root,
+            [
+                "run",
+                "--no-isolate",
+                *ALL_PHASE_SKIPS,
+                "alpha|o/a|Go|ref",
+                "beta|o/b|Rust|ref",
+            ],
+            cwd=work,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+        run_index = (work / ".specula-output" / "index.md").read_text()
+        self.assertIn("# Specula Run", run_index)
+        self.assertIn("[Open results](../alpha/.specula-output/index.md)", run_index)
+        self.assertIn("[Open results](../beta/.specula-output/index.md)", run_index)
+        self.assertIn("# alpha Results", (work / "alpha" / ".specula-output" / "index.md").read_text())
+        self.assertIn("# beta Results", (work / "beta" / ".specula-output" / "index.md").read_text())
 
     # ── batch (scheduler) dry-run ────────────────────────────────────────────
     def test_batch_dry_run_over_queue(self) -> None:

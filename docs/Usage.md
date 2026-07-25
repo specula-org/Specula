@@ -206,23 +206,26 @@ Runs are isolated by default under:
 
 ```text
 runs/<run-id>/
+├── index.md
 ├── run.json
 ├── tlc-resources.json
 ├── pipeline.log
 ├── pipeline-summary.md
 └── <name>/
     ├── .specula-output/
+    │   ├── index.md
+    │   └── ...             # Existing phase outputs stay in place
     ├── source/          # --keep-original only
     └── changes.patch   # --keep-original only
 ```
 
-The `.specula-output/` directory contains the modeling brief, specifications, harness, traces, reproduction tests, reports, and per-step logs. `runs/latest` points to the newest run.
+The run-level `index.md` is a compact target chooser. Each target link opens its `.specula-output/index.md`, which presents human-readable results as Recommended Reading, Confirmation Details, Technical Details, and Troubleshooting. It intentionally omits review artifacts, machine-readable records, state sidecars, caches, and detailed phase logs; those files remain in their existing locations. No existing phase output is moved. `pipeline-summary.md` remains the final run status, and `runs/latest` points to the newest run.
 
 By default, Specula works directly in the source passed through `--artifact`, so harness or reproduction work may modify it. Use `--keep-original` to run every phase on a private copy instead. The original checkout stays unchanged, and the final filesystem changes are written to `changes.patch`.
 
 The patch includes every non-`.git` change, including ignored, untracked, and generated files and executable-bit changes. Expect roughly one extra copy of the checkout and Git history. Unsafe layouts such as external symlinks, linked worktrees, submodules, nested repositories, or externally shared Git objects are rejected. Without the optional sandbox, this does not prevent a command from deliberately writing to the original absolute path.
 
-`--keep-original` requires the isolated layout and conflicts with `--no-isolate`. Without it, `--no-isolate` selects the legacy layout: a single target writes step outputs under `$PWD/.specula-output/`, or under `case-studies/<name>/.specula-output/` when that canonical case study exists; multiple targets use `$PWD/<name>/.specula-output/`. For a canonical single target, `pipeline.log` remains under the launch directory's `.specula-output/` while the step outputs and summary use the case-study directory.
+`--keep-original` requires the isolated layout and conflicts with `--no-isolate`. Without it, `--no-isolate` selects the legacy layout: a single target writes step outputs under `$PWD/.specula-output/`, or under `case-studies/<name>/.specula-output/` when that canonical case study exists; multiple targets use `$PWD/<name>/.specula-output/`. A legacy single-target run has only the target-level `.specula-output/index.md`, without a separate run-level target chooser. For a canonical single target, `pipeline.log` remains under the launch directory's `.specula-output/` while the step outputs and summary use the case-study directory.
 
 TLC can use substantial memory and temporary disk space during model checking. The bundled `scripts/tlc/run_model_check.sh` stores states under `TMPDIR` (or `/tmp`) by default; set `TLC_STATE_DIR` to a larger or faster filesystem when necessary.
 
@@ -367,4 +370,4 @@ The scheduler owns `--run-id`, `--isolate`, and `--no-isolate` so that each task
 
 ## Progress and Logs
 
-Agent activity is printed during each step and written to its log. Set `SPECULA_PROGRESS=off` to disable live reporting. After a run, start with `pipeline-summary.md` for deliverable status and log locations.
+Agent activity is printed during each step and written to its log. Set `SPECULA_PROGRESS=off` to disable live reporting. During or after a default isolated run, start with the run-level `index.md` to choose a target and browse its results; for a legacy single-target run, start with `.specula-output/index.md`. Use `pipeline-summary.md` for final deliverable status and `pipeline.log` for troubleshooting.

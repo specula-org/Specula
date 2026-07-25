@@ -860,6 +860,8 @@ class TestParsing(TmpCwd):
         self.assertIn("--skip-validate", out)
         self.assertNotIn("--skip-validation", out)
         self.assertIn("default: 20", out)
+        self.assertIn("Output navigation", out)
+        self.assertIn("index.md", out)
 
     def test_default_target_is_cwd_basename(self) -> None:
         p = pl.Pipeline()
@@ -876,6 +878,85 @@ class TestParsing(TmpCwd):
         self.assertEqual(single.get_work_dir("a"), f"{self.tmp}/.specula-output")
         batch = make_pipeline(["a|x|y|z", "b|x|y|z"])
         self.assertEqual(batch.get_work_dir("a"), f"{self.tmp}/a/.specula-output")
+
+
+class TestOutputIndexNavigation(TmpCwd):
+    def test_partial_resume_keeps_original_run_targets(self) -> None:
+        run = self.tmp / "run"
+        run.mkdir()
+        (run / "run.json").write_text(
+            json.dumps(
+                {
+                    "targets": [
+                        "alpha|o/a|Go|ref",
+                        "beta|o/b|Rust|ref",
+                    ]
+                }
+            )
+        )
+        pipeline_log = run / "pipeline.log"
+        pipeline_log.write_text("pipeline\n")
+        p = make_pipeline(
+            ["beta|o/b|Rust|ref"],
+            run_dir=run,
+            pipeline_log_path=pipeline_log,
+        )
+
+        p.refresh_output_indexes()
+
+        index = (run / "index.md").read_text()
+        self.assertLess(index.index("| alpha |"), index.index("| beta |"))
+        self.assertTrue((run / "alpha" / ".specula-output" / "index.md").is_file())
+        self.assertTrue((run / "beta" / ".specula-output" / "index.md").is_file())
+
+    def test_unsafe_stored_target_cannot_escape_run_root(self) -> None:
+        run = self.tmp / "run"
+        run.mkdir()
+        (run / "run.json").write_text(
+            json.dumps(
+                {
+                    "targets": [
+                        "../escaped|o/e|Go|ref",
+                        "safe|o/s|Go|ref",
+                    ]
+                }
+            )
+        )
+        pipeline_log = run / "pipeline.log"
+        pipeline_log.write_text("pipeline\n")
+        p = make_pipeline(
+            ["safe|o/s|Go|ref"],
+            run_dir=run,
+            pipeline_log_path=pipeline_log,
+        )
+
+        _, out = quiet(p.refresh_output_indexes)
+
+        self.assertIn("unsafe target name", out)
+        self.assertFalse((self.tmp / "escaped").exists())
+        index = (run / "index.md").read_text()
+        self.assertNotIn("escaped", index)
+        self.assertIn("| safe |", index)
+
+    def test_index_write_errors_are_fail_soft(self) -> None:
+        run = self.tmp / "run"
+        run.mkdir()
+        pipeline_log = run / "pipeline.log"
+        pipeline_log.write_text("pipeline\n")
+        p = make_pipeline(
+            ["alpha|o/a|Go|ref"],
+            run_dir=run,
+            pipeline_log_path=pipeline_log,
+        )
+
+        with (
+            mock.patch.object(pl, "write_target_index", side_effect=OSError("target failure")),
+            mock.patch.object(pl, "write_run_index", side_effect=OSError("run failure")),
+        ):
+            _, out = quiet(p.refresh_output_indexes)
+
+        self.assertIn("cannot update output index for alpha", out)
+        self.assertIn("cannot update run index", out)
 
 
 class TestAgentRouting(TmpCwd):
@@ -2475,14 +2556,19 @@ class TestMainTeeTeardown(TmpCwd):
     """End-to-end pins for the `main 2>&1 | tee` teardown, driven as a
     subprocess because the entry dup2s the real fds 1/2."""
 
-    def _run_entry(self, patch: str) -> subprocess.CompletedProcess[str]:
+    def _run_entry(
+        self,
+        patch: str,
+        argv: list[str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        args = argv or ["--no-isolate", "t|g|l|r"]
         d = self.tmp / "driver.py"
         d.write_text(
             "import sys\n"
             f"sys.path.insert(0, {str(SRC)!r})\n"
             "from specula import pipelinelib as pl\n"
             f"{patch}\n"
-            "sys.exit(pl.main(['--no-isolate', 't|g|l|r']))\n"  # legacy: keep runs/ out of the real repo
+            f"sys.exit(pl.main({args!r}))\n"
         )
         return subprocess.run([sys.executable, str(d)], cwd=self.tmp, capture_output=True, text=True)
 
@@ -2507,6 +2593,42 @@ class TestMainTeeTeardown(TmpCwd):
         )
         self.assertEqual(r.returncode, 7)
         self.assertEqual(marker.read_text(), "done")
+
+    def test_failure_publishes_partial_index_without_completion_summary(self) -> None:
+        r = self._run_entry(
+            "def boom(self):\n"
+            "    open('.specula-output/modeling-brief.md', 'w').write('# Brief\\n')\n"
+            "    raise SystemExit(7)\n"
+            "pl.Pipeline.main = boom"
+        )
+
+        self.assertEqual(r.returncode, 7)
+        out = self.tmp / ".specula-output"
+        index = (out / "index.md").read_text()
+        self.assertIn("[Modeling brief](modeling-brief.md)", index)
+        self.assertIn("[pipeline.log](pipeline.log)", index)
+        self.assertFalse((out / "pipeline-summary.md").exists())
+
+    def test_isolated_failure_publishes_two_level_indexes_without_summary(self) -> None:
+        r = self._run_entry(
+            f"pl.SPECULA_ROOT = pl.Path({str(self.tmp)!r})\n"
+            "def boom(self):\n"
+            "    work = pl.Path(self.get_work_dir('t'))\n"
+            "    work.mkdir(parents=True, exist_ok=True)\n"
+            "    (work / 'modeling-brief.md').write_text('# Brief\\n')\n"
+            "    raise SystemExit(7)\n"
+            "pl.Pipeline.main = boom",
+            ["--run-id=failed-run", "t|g|l|r"],
+        )
+
+        self.assertEqual(r.returncode, 7)
+        run = self.tmp / "runs" / "failed-run"
+        run_index = (run / "index.md").read_text()
+        target_index = (run / "t" / ".specula-output" / "index.md").read_text()
+        self.assertIn("| t | [Open results](t/.specula-output/index.md) |", run_index)
+        self.assertIn("- Final summary: Not available", run_index)
+        self.assertIn("[Modeling brief](modeling-brief.md)", target_index)
+        self.assertFalse((run / "pipeline-summary.md").exists())
 
     def test_failing_tee_fails_the_pipeline(self) -> None:
         # bash pipefail: `main 2>&1 | tee log` exited non-zero when tee could

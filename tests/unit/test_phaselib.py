@@ -180,6 +180,7 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_SANDBOX_EXTRA_WRITE",
             "SPECULA_PROGRESS",
             "SPECULA_ACTIVITY_LOG",
+            "SPECULA_PIPELINE_LOG",
             "SPECULA_RATE_LIMIT_REACTIVE",
             "SPECULA_RATE_LIMIT_RETRIES",
             "SPECULA_TLC_SCOPE",
@@ -285,6 +286,18 @@ class TestPreconditionGate(PhaseCase):
                 self.assertIn(spec["fail"], out)  # the phase's own, distinct fail message
                 self.assertNotIn("[DRY RUN]", out)  # gate stops before the launch loop
 
+    def test_index_write_error_does_not_change_phase_result(self) -> None:
+        err = io.StringIO()
+        with (
+            mock.patch.object(phaselib, "write_target_index", side_effect=OSError("disk full")),
+            contextlib.redirect_stderr(err),
+        ):
+            rc, out = self.run_phase("code_analysis", [NAME])
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn(BY_KEY["code_analysis"]["fail"], out)
+        self.assertIn("cannot update output index", err.getvalue())
+
 
 class TestCheckOnly(PhaseCase):
     """--check with prerequisites satisfied -> the ok message + exit 0, no launch."""
@@ -301,6 +314,7 @@ class TestCheckOnly(PhaseCase):
                 self.assertEqual(rc, 0, out)
                 self.assertIn(spec["ok"], out)
                 self.assertNotIn("[DRY RUN]", out)
+                self.assertFalse((self.work_dir() / "index.md").exists())
 
     def test_each_artifact_phase_expands_home_directory(self) -> None:
         home = self.tmp()
@@ -834,6 +848,8 @@ class TestBugConfirmationAlternate(PhaseCase):
 
         self.assertEqual(rc, 0, out)
         self.assertIn("confirmed-bugs OK", out)
+        index = (self.work_dir() / "index.md").read_text()
+        self.assertIn("[Confirmation report](confirmed-bugs.md)", index)
 
 
 class TestHandoffGate(PhaseCase):
@@ -870,6 +886,31 @@ class TestHandoffGate(PhaseCase):
         self.assertIn("Checking handoff to spec_generation...", out)
         self.assertIn("MISSING modeling-brief.md", out)
         self.assertIn("Handoff validation failures:", out)
+
+    def test_live_analysis_refreshes_human_index_after_success(self) -> None:
+        (self.run_dir / "pipeline.log").write_text("pipeline\n")
+        self.write_adapter(
+            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "analysis\\n" > "$SPECULA_WORK_DIR/analysis-report.md"\n'
+        )
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, 0, out)
+        index = (self.work_dir() / "index.md").read_text()
+        self.assertIn("[Modeling brief](modeling-brief.md)", index)
+        self.assertIn("[Analysis report](analysis-report.md)", index)
+        self.assertIn("[pipeline.log](../../pipeline.log)", index)
+
+    def test_live_analysis_failure_keeps_partial_results_browsable(self) -> None:
+        self.write_adapter('printf "analysis\\n" > "$SPECULA_WORK_DIR/analysis-report.md"\nexit 9\n')
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, 9, out)
+        index = (self.work_dir() / "index.md").read_text()
+        self.assertIn("Modeling brief: Not available", index)
+        self.assertIn("[Analysis report](analysis-report.md)", index)
 
     def test_analysis_handoff_reuses_spec_generation_check(self) -> None:
         calls: list[list[str]] = []
@@ -3034,6 +3075,21 @@ class TestReviewPhase(PhaseCase):
         self.assertEqual(rc, 0, out)
         self.assertEqual(seen.read_text().strip(), "<unset>")
         self.assertFalse((self.work_dir() / "review-analysis.activity.jsonl").exists())
+
+    def test_standalone_review_refreshes_index_but_does_not_list_review_files(self) -> None:
+        modeling_brief = self.work_dir() / "modeling-brief.md"
+        modeling_brief.parent.mkdir(parents=True)
+        modeling_brief.write_text("brief\n")
+        self.install_adapter("fake", "exit 9\n")
+        self.set_env("SPECULA_PROGRESS", "off")
+
+        rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
+
+        self.assertEqual(rc, 9, out)
+        index = (self.work_dir() / "index.md").read_text()
+        self.assertIn("[Modeling brief](modeling-brief.md)", index)
+        self.assertNotIn("review-analysis", index)
+        self.assertNotIn("## Reviews", index)
 
     def test_review_exports_external_workspace_to_adapter(self) -> None:
         seen = self.tmp() / "work-dir"
