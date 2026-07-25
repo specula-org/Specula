@@ -13,6 +13,7 @@ stdlib unittest, collected natively by pytest; imports the installed package:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -467,6 +468,36 @@ def make_pipeline(targets: list[str], **attrs: Any) -> pl.Pipeline:
     return p
 
 
+def write_agent_config(path: Path, phases: dict[str, str] | None = None) -> Path:
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "default_profile": "claude",
+                "profiles": {
+                    "claude": {
+                        "agent": "claude-code",
+                        "model": "claude-sonnet",
+                        "effort": "max",
+                    },
+                    "codex": {
+                        "agent": "codex",
+                        "model": "gpt-5.5",
+                        "effort": "high",
+                    },
+                    "copilot": {
+                        "agent": "copilot-cli",
+                        "model": "gpt-5-mini",
+                        "effort": "low",
+                    },
+                },
+                "phases": phases or {},
+            }
+        )
+    )
+    return path.resolve()
+
+
 class TestParsing(TmpCwd):
     def test_keep_original_is_opt_in_and_requires_isolation(self) -> None:
         default = pl.Pipeline()
@@ -766,6 +797,20 @@ class TestParsing(TmpCwd):
         self.assertIn("--model=", empty_args)
         self.assertIn("--effort=", empty_args)
 
+    def test_agent_config_conflicts_are_order_independent_and_include_empty_tuning(self) -> None:
+        config = write_agent_config(self.tmp / "agents.json")
+        for flag in ("--agent=codex", "--model=", "--effort="):
+            for argv in (
+                [f"--agent-config={config}", flag, "t"],
+                [flag, f"--agent-config={config}", "t"],
+            ):
+                with self.subTest(argv=argv):
+                    err = io.StringIO()
+                    with contextlib.redirect_stderr(err):
+                        rc = pl.Pipeline().parse_args(argv)
+                    self.assertEqual(rc, 1)
+                    self.assertIn("--agent-config cannot be combined", err.getvalue())
+
     def test_invalid_repair_round_cap_rejected_at_parse(self) -> None:
         for value in ("", "bad", "1.5", "-1", "+1"):
             with self.subTest(value=value):
@@ -807,6 +852,7 @@ class TestParsing(TmpCwd):
         rc, out = quiet(p.parse_args, ["--help"])
         self.assertEqual(rc, 0)
         self.assertIn("Full Specula pipeline", out)
+        self.assertIn("--agent-config=PATH", out)
         self.assertIn("--model=NAME", out)
         self.assertIn("--effort=LEVEL", out)
         self.assertIn("--policy-retries=N", out)
@@ -830,6 +876,183 @@ class TestParsing(TmpCwd):
         self.assertEqual(single.get_work_dir("a"), f"{self.tmp}/.specula-output")
         batch = make_pipeline(["a|x|y|z", "b|x|y|z"])
         self.assertEqual(batch.get_work_dir("a"), f"{self.tmp}/a/.specula-output")
+
+
+class TestAgentRouting(TmpCwd):
+    @staticmethod
+    def _agent_arg(args: list[str]) -> str:
+        return next(arg for arg in args if arg.startswith("--agent="))
+
+    def test_relative_config_routes_default_explicit_and_repair_fallback(self) -> None:
+        config = write_agent_config(
+            self.tmp / "agents.json",
+            {
+                "analyze": "codex",
+                "validate": "copilot",
+            },
+        )
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--agent-config=agents.json", "t"]))
+
+        later_cwd = self.tmp / "case-studies" / "t"
+        later_cwd.mkdir(parents=True)
+        os.chdir(later_cwd)
+
+        self.assertEqual(p.agent_config_path, config)
+        default_args = p._phase_args(["t"], phase="specgen")
+        self.assertIn("--agent=claude-code", default_args)
+        self.assertIn("--model=claude-sonnet", default_args)
+        explicit_args = p._phase_args(["t"], phase="analyze")
+        self.assertIn("--agent=codex", explicit_args)
+        self.assertIn("--model=gpt-5.5", explicit_args)
+        repair_args = p._phase_args(["t"], phase="repair", fallback="validate")
+        self.assertIn("--agent=copilot-cli", repair_args)
+        self.assertIn("--model=gpt-5-mini", repair_args)
+
+    def test_config_routing_and_sha_use_the_same_file_read(self) -> None:
+        config = write_agent_config(self.tmp / "agents.json", {"analyze": "codex"})
+        source = config.read_bytes()
+        replacement = json.dumps(
+            {
+                "version": 1,
+                "default_profile": "replacement",
+                "profiles": {
+                    "replacement": {
+                        "agent": "copilot-cli",
+                    }
+                },
+            }
+        ).encode()
+        read_bytes = Path.read_bytes
+        reads = 0
+
+        def replace_after_read(path: Path) -> bytes:
+            nonlocal reads
+            data = read_bytes(path)
+            if path == config:
+                reads += 1
+                if reads == 1:
+                    config.write_bytes(replacement)
+            return data
+
+        p = pl.Pipeline()
+        with mock.patch.object(Path, "read_bytes", replace_after_read):
+            self.assertIsNone(p.parse_args([f"--agent-config={config}", "t"]))
+
+        self.assertEqual(reads, 1)
+        self.assertEqual(p._agent_selection("analyze").agent, "codex")
+        assert p.agent_routing is not None
+        self.assertEqual(p.agent_routing.source_sha256, hashlib.sha256(source).hexdigest())
+        self.assertEqual(config.read_bytes(), replacement)
+        p.run_id = "run"
+        p.run_dir = self.tmp / "run"
+        p.run_dir.mkdir()
+        p._write_run_meta()
+        meta = json.loads((p.run_dir / "run.json").read_text())
+        self.assertEqual(meta["agent_config_sha256"], hashlib.sha256(source).hexdigest())
+        self.assertEqual(meta["agent_routes"]["analyze"]["agent"], "codex")
+
+    def test_review_uses_reviewed_phase_fallback_or_explicit_review_route(self) -> None:
+        fallback_config = write_agent_config(
+            self.tmp / "fallback.json",
+            {
+                "analyze": "codex",
+                "validate": "copilot",
+            },
+        )
+        fallback = pl.Pipeline()
+        self.assertIsNone(fallback.parse_args([f"--agent-config={fallback_config}", "--enable-reviews", "t"]))
+        fallback_calls: list[list[str]] = []
+        fallback.wait_for_quota = mock.Mock()  # type: ignore[method-assign]
+        fallback._phase = lambda banner, script, args: fallback_calls.append(args)  # type: ignore[method-assign]
+
+        for phase in ("analysis", "specgen", "validation"):
+            fallback.run_review(phase, ["t"])
+
+        self.assertEqual([args[0] for args in fallback_calls], ["analysis", "specgen", "validation"])
+        self.assertEqual(
+            [self._agent_arg(args) for args in fallback_calls],
+            ["--agent=codex", "--agent=claude-code", "--agent=copilot-cli"],
+        )
+
+        explicit_config = write_agent_config(
+            self.tmp / "explicit.json",
+            {
+                "analyze": "codex",
+                "review": "copilot",
+            },
+        )
+        explicit = pl.Pipeline()
+        self.assertIsNone(explicit.parse_args([f"--agent-config={explicit_config}", "--enable-reviews", "t"]))
+        explicit_calls: list[list[str]] = []
+        explicit.wait_for_quota = mock.Mock()  # type: ignore[method-assign]
+        explicit._phase = lambda banner, script, args: explicit_calls.append(args)  # type: ignore[method-assign]
+
+        explicit.run_review("analysis", ["t"])
+
+        self.assertEqual(explicit_calls[0][0], "analysis")
+        self.assertEqual(self._agent_arg(explicit_calls[0]), "--agent=copilot-cli")
+
+    def test_proactive_quota_waits_only_for_claude_routes(self) -> None:
+        config = write_agent_config(
+            self.tmp / "agents.json",
+            {
+                "analyze": "codex",
+                "validate": "copilot",
+            },
+        )
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args([f"--agent-config={config}", "t"]))
+        wait = mock.Mock()
+        p.wait_for_quota = wait  # type: ignore[method-assign]
+
+        p.wait_for_phase_quota("analyze")
+        p.wait_for_phase_quota("repair", fallback="validate")
+        p.wait_for_phase_quota("specgen")
+
+        wait.assert_called_once_with()
+
+    def test_run_metadata_records_config_hash_and_resolved_review_routes(self) -> None:
+        config = write_agent_config(
+            self.tmp / "agents.json",
+            {
+                "analyze": "codex",
+                "validate": "copilot",
+            },
+        )
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args([f"--agent-config={config}", "t"]))
+        p.run_id = "run"
+        p.run_dir = self.tmp / "run"
+        p.run_dir.mkdir()
+
+        p._write_run_meta()
+
+        meta = json.loads((p.run_dir / "run.json").read_text())
+        self.assertEqual(meta["agent_config"], str(config))
+        self.assertEqual(meta["agent_config_sha256"], hashlib.sha256(config.read_bytes()).hexdigest())
+        routes = meta["agent_routes"]
+        expected_agents = {
+            "analyze": "codex",
+            "specgen": "claude-code",
+            "harness": "claude-code",
+            "validate": "copilot-cli",
+            "confirm": "claude-code",
+            "repair": "copilot-cli",
+            "classify": "claude-code",
+            "review:analysis": "codex",
+            "review:specgen": "claude-code",
+            "review:validation": "copilot-cli",
+        }
+        self.assertEqual({name: route["agent"] for name, route in routes.items()}, expected_agents)
+        self.assertEqual(
+            routes["review:analysis"],
+            {
+                "agent": "codex",
+                "model": "gpt-5.5",
+                "effort": "high",
+            },
+        )
 
 
 class TestPhaseParallelArgs(TmpCwd):
@@ -1030,6 +1253,7 @@ class TestRunReview(TmpCwd):
             transient_resumes=transient_resumes,
         )
         seen: list[list[str]] = []
+        p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
         p._phase = lambda banner, script, args: seen.append(args)  # type: ignore[method-assign]
         p.run_review(phase, ["footest"])
         self.assertEqual(len(seen), 1)

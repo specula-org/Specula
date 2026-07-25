@@ -134,6 +134,42 @@ specula run \
 
 Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencode`, and `pi`. Model names and effort values are interpreted by the selected agent. OpenCode and Pi model names use `provider/model` syntax.
 
+### Hybrid agent configuration
+
+Use an agent configuration file to select different agents or models for different pipeline phases:
+
+```bash
+specula run --agent-config=/abs/path/hybrid-agents.json ...
+```
+
+```json
+{
+  "version": 1,
+  "default_profile": "reasoning",
+  "profiles": {
+    "reasoning": {
+      "agent": "claude-code",
+      "model": "fable",
+      "effort": "max"
+    },
+    "reproduction": {
+      "agent": "codex",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra"
+    }
+  },
+  "phases": {
+    "confirm": "reproduction"
+  }
+}
+```
+
+Unmapped phases use `default_profile`. `repair` inherits `validate`, and reviews inherit the phase they review unless either is mapped explicitly.
+
+Valid phase keys are `analyze`, `specgen`, `harness`, `validate`, `confirm`, `repair`, `classify`, and `review`.
+
+`--agent-config` cannot be combined with `--agent`, `--model`, or `--effort`; configured agents use their existing CLI authentication.
+
 ### Models tested by the Specula team
 
 We have tested the following agent and model combinations. These observations summarize our own runs and are not guarantees for every target or configuration.
@@ -225,7 +261,7 @@ specula run <name> \
   "name|owner/repository|language|reference"
 ```
 
-Specula reuses `runs/<run-id>/<name>/.specula-output/`. Pass the target, artifact, agent, model, and effort again when resuming. A `--keep-original` run automatically resumes against its existing private source even when that flag and the original artifact are omitted. The run's TLC memory and worker limits are restored from `tlc-resources.json`; `run.json` remains an audit record, not arguments for the new invocation.
+Specula reuses `runs/<run-id>/<name>/.specula-output/`. Pass the target and artifact again when resuming, together with either `--agent-config` or the original agent, model, and effort options. A `--keep-original` run automatically resumes against its existing private source even when that flag and the original artifact are omitted. The run's TLC memory and worker limits are restored from `tlc-resources.json`; `run.json` remains an audit record, not arguments for the new invocation.
 
 ## Individual Steps
 
@@ -277,6 +313,7 @@ specula run [options] "name|owner/repository|language|reference"
 |---|---|
 | `--dry-run` | Print the step commands without starting agents |
 | `--agent=NAME` | Select `claude-code`, `codex`, `copilot-cli`, `opencode`, or `pi` |
+| `--agent-config=PATH` | Select agent/model profiles by pipeline phase from a JSON file |
 | `--model=NAME` | Override the configured model |
 | `--effort=LEVEL` | Override reasoning effort |
 | `--artifact=PATH` | Set the target source checkout |

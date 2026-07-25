@@ -39,6 +39,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from specula import quota as _quota
+from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
 from specula.phaselib import (
     DEFAULT_POLICY_RETRIES,
     DEFAULT_TRANSIENT_RESUMES,
@@ -126,6 +127,7 @@ Options:
   --policy-retries=N     Policy-block continuation retries after the initial attempt (default: 20; 0 disables)
   --transient-resumes=N  Transient provider/transport session resumes after the initial attempt (default: 20; 0 disables)
   --agent=NAME           Agent adapter to use (default: claude-code; e.g., claude-code, codex, copilot-cli, opencode, pi)
+  --agent-config=PATH    JSON file selecting an agent/model profile per phase
   --claude-alias=NAME    Claude CLI profile (default: claude)
   --model=NAME           Model forwarded to every agent adapter
   --effort=LEVEL         Reasoning effort forwarded to every agent adapter
@@ -309,6 +311,9 @@ class Pipeline:
         self.max_repair_rounds = os.environ.get("MAX_REPAIR_ROUNDS") or "10"
         self.skip_reviews = True
         self.agent = "claude-code"
+        self._agent_given = False
+        self.agent_config_path: Path | None = None
+        self.agent_routing: AgentRouting | None = None
         self.claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
         # None means no pipeline CLI override: phase launchers may consult
         # SPECULA_MODEL / SPECULA_EFFORT.  "" is an explicit empty flag and
@@ -406,6 +411,20 @@ class Pipeline:
                     return 1
             elif arg.startswith("--agent="):
                 self.agent = arg.split("=", 1)[1]
+                self._agent_given = True
+            elif arg.startswith("--agent-config="):
+                raw_path = arg.split("=", 1)[1]
+                if not raw_path:
+                    print("ERROR: --agent-config requires a path", file=sys.stderr)
+                    return 1
+                try:
+                    config_path = Path(raw_path).expanduser()
+                    if not config_path.is_absolute():
+                        config_path = _logical_cwd() / config_path
+                    self.agent_config_path = config_path.resolve()
+                except (OSError, RuntimeError) as exc:
+                    print(f"ERROR: invalid --agent-config path '{raw_path}': {exc}", file=sys.stderr)
+                    return 1
             elif arg.startswith("--claude-alias="):
                 self.claude_alias = arg.split("=", 1)[1]
             elif arg.startswith("--model="):
@@ -433,6 +452,20 @@ class Pipeline:
         if self.confirm_legacy and self.confirm_debate:
             print("ERROR: --legacy-confirm conflicts with --confirm-debate", file=sys.stderr)
             return 1
+        if self.agent_config_path is not None and (
+            self._agent_given or self.model is not None or self.effort is not None
+        ):
+            print(
+                "ERROR: --agent-config cannot be combined with --agent, --model, or --effort",
+                file=sys.stderr,
+            )
+            return 1
+        if self.agent_config_path is not None:
+            try:
+                self.agent_routing = load_agent_routing(self.agent_config_path)
+            except (AgentConfigError, OSError) as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 1
         if not self.targets:
             self.targets.append(_logical_cwd().name)  # bash `basename "$PWD"` (logical)
         # order-independent: the two are contradictory however they arrive
@@ -746,13 +779,14 @@ class Pipeline:
                 lines = r.stdout.decode(errors="replace").splitlines()
                 if r.returncode == 0 and len(lines) == 2 and Path(lines[0]).resolve() == artifact:
                     artifact_sha = lines[1]
-        model, effort = self._resolved_run_tuning()
-        meta = {
+        default_selection = self._agent_selection()
+        model, effort = self._resolved_run_tuning(default_selection)
+        meta: dict[str, object] = {
             "run_id": self.run_id,
             "created": _date_iseconds(),
             "argv": self.argv,
             "targets": self.targets,
-            "agent": self.agent,
+            "agent": default_selection.agent,
             "model": model,
             "effort": effort,
             "policy_retries": self.policy_retries,
@@ -763,12 +797,45 @@ class Pipeline:
             "tlc_memory_limit": self.tlc_memory_limit or os.environ.get(MEMORY_LIMIT_ENV) or "auto",
             "tlc_worker_limit": self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or None,
         }
+        if self.agent_routing is not None:
+            assert self.agent_config_path is not None
+            route_specs: dict[str, tuple[str, str | None]] = {
+                "analyze": ("analyze", None),
+                "specgen": ("specgen", None),
+                "harness": ("harness", None),
+                "validate": ("validate", None),
+                "confirm": ("confirm", None),
+                "repair": ("repair", "validate"),
+                "classify": ("classify", None),
+                "review:analysis": ("review", "analyze"),
+                "review:specgen": ("review", "specgen"),
+                "review:validation": ("review", "validate"),
+            }
+            routes: dict[str, dict[str, str | None]] = {}
+            for route_name, (phase, fallback) in route_specs.items():
+                selection = self._agent_selection(phase, fallback=fallback)
+                route_model, route_effort = self._resolved_run_tuning(selection)
+                routes[route_name] = {
+                    "agent": selection.agent,
+                    "model": route_model,
+                    "effort": route_effort,
+                }
+            meta["agent_config"] = str(self.agent_config_path)
+            meta["agent_config_sha256"] = self.agent_routing.source_sha256
+            meta["agent_routes"] = routes
         if self.keep_original:
             meta["source_mode"] = "snapshot"
         with contextlib.suppress(OSError):
             meta_file.write_text(json.dumps(meta, indent=2) + "\n")
 
-    def _resolved_run_tuning(self) -> tuple[str | None, str | None]:
+    def _agent_selection(self, phase: str | None = None, *, fallback: str | None = None) -> AgentSelection:
+        if self.agent_routing is None:
+            return AgentSelection(agent=self.agent, model=self.model, effort=self.effort)
+        if phase is None:
+            return self.agent_routing.default
+        return self.agent_routing.resolve(phase, fallback=fallback)
+
+    def _resolved_run_tuning(self, selection: AgentSelection | None = None) -> tuple[str | None, str | None]:
         """Return model/effort values that are knowable at run creation.
 
         Pipeline flags win even when explicitly empty. An empty flag resets the
@@ -776,8 +843,9 @@ class Pipeline:
         and therefore recorded as null. Otherwise mirror the phase and adapter
         environment fallbacks; never guess values selected by CLI config files.
         """
-        if self.model is not None:
-            model = self.model or None
+        selected = selection or self._agent_selection()
+        if selected.model is not None:
+            model = selected.model or None
         else:
             model = os.environ.get("SPECULA_MODEL") or None
             if model is None:
@@ -787,16 +855,16 @@ class Pipeline:
                     "copilot-cli": "COPILOT_MODEL",
                     "opencode": "OPENCODE_MODEL",
                     "pi": "PI_MODEL",
-                }.get(self.agent)
+                }.get(selected.agent)
                 if adapter_model_env is not None:
                     model = os.environ.get(adapter_model_env) or None
 
-        if self.effort is not None:
-            effort = self.effort or None
+        if selected.effort is not None:
+            effort = selected.effort or None
         else:
             effort = os.environ.get("SPECULA_EFFORT") or None
             if effort is None:
-                if self.agent == "claude-code":
+                if selected.agent == "claude-code":
                     # Phase launchers explicitly pass max, overriding any
                     # ambient CLAUDE_EFFORT value.
                     effort = "max"
@@ -805,12 +873,12 @@ class Pipeline:
                         "codex": "CODEX_EFFORT",
                         "opencode": "OPENCODE_EFFORT",
                         "pi": "PI_EFFORT",
-                    }.get(self.agent)
+                    }.get(selected.agent)
                     if effort_env is not None:
                         effort = os.environ.get(effort_env) or None
 
         # The Claude adapter omits --effort for this explicit reset sentinel.
-        if self.agent == "claude-code" and effort == "default":
+        if selected.agent == "claude-code" and effort == "default":
             effort = None
         return model, effort
 
@@ -832,13 +900,17 @@ class Pipeline:
         return names
 
     def validate_agent_adapter(self) -> None:
-        adapter = LAUNCH_DIR / "adapters" / f"{self.agent}.sh"
-        if not adapter.is_file():
-            print(
-                f"ERROR: Unknown agent '{self.agent}' — adapter not found at {adapter}",
-                file=sys.stderr,
-            )
-            raise SystemExit(1)
+        agents = {self.agent}
+        if self.agent_routing is not None:
+            agents = {selection.agent for selection in self.agent_routing.profiles.values()}
+        for agent in sorted(agents):
+            adapter = LAUNCH_DIR / "adapters" / f"{agent}.sh"
+            if not adapter.is_file():
+                print(
+                    f"ERROR: Unknown agent '{agent}' — adapter not found at {adapter}",
+                    file=sys.stderr,
+                )
+                raise SystemExit(1)
 
     def get_work_dir(self, name: str) -> str:
         """Legacy: $PWD is evaluated at call time — after the single-target cd.
@@ -888,6 +960,11 @@ class Pipeline:
             claude_alias=self.claude_alias,
             reactive=reactive,
         )
+
+    def wait_for_phase_quota(self, phase: str, *, fallback: str | None = None) -> None:
+        """The proactive usage endpoint is Claude-specific."""
+        if self._agent_selection(phase, fallback=fallback).agent == "claude-code":
+            self.wait_for_quota()
 
     # ── repair-loop helpers ──
     def repair_dir(self, name: str) -> str:
@@ -1516,7 +1593,8 @@ class Pipeline:
             self._atomic_replace_text(marker, json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
     # ── phase runners ──
-    def _model_effort_args(self) -> list[str]:
+    @staticmethod
+    def _model_effort_args(selection: AgentSelection) -> list[str]:
         """Explicit pipeline tuning flags, preserving an explicit empty value.
 
         An absent flag stays absent so phase launchers can apply their run-wide
@@ -1524,10 +1602,10 @@ class Pipeline:
         flag must be forwarded to override (and clear) those fallbacks.
         """
         args: list[str] = []
-        if self.model is not None:
-            args.append(f"--model={self.model}")
-        if self.effort is not None:
-            args.append(f"--effort={self.effort}")
+        if selection.model is not None:
+            args.append(f"--model={selection.model}")
+        if selection.effort is not None:
+            args.append(f"--effort={selection.effort}")
         return args
 
     def _max_parallel_summary(self) -> str:
@@ -1538,7 +1616,16 @@ class Pipeline:
         )
         return f"phase defaults (ordinary phases 1 at a time; {confirmation_default})"
 
-    def _phase_args(self, positional: list[str], pre: list[str] | None = None, with_artifact: bool = True) -> list[str]:
+    def _phase_args(
+        self,
+        positional: list[str],
+        pre: list[str] | None = None,
+        with_artifact: bool = True,
+        *,
+        phase: str | None = None,
+        fallback: str | None = None,
+    ) -> list[str]:
+        selection = self._agent_selection(phase, fallback=fallback)
         args = list(pre or [])
         if self.max_parallel is not None:
             args.append(f"--max-parallel={self.max_parallel}")
@@ -1546,9 +1633,9 @@ class Pipeline:
             f"--max-turns={self.max_turns}",
             f"--policy-retries={self.policy_retries}",
             f"--transient-resumes={self.transient_resumes}",
-            f"--agent={self.agent}",
+            f"--agent={selection.agent}",
             f"--claude-alias={self.claude_alias}",
-            *self._model_effort_args(),
+            *self._model_effort_args(selection),
         ]
         if with_artifact and self._artifact_given and not self.keep_original:
             args.append(f"--artifact={self.artifact}")
@@ -1652,7 +1739,11 @@ class Pipeline:
         self._run_launcher(script, args)
 
     def run_phase1_analysis(self) -> None:
-        self._phase("PHASE 1: CODE ANALYSIS", "launch_code_analysis.sh", self._phase_args(self.targets))
+        self._phase(
+            "PHASE 1: CODE ANALYSIS",
+            "launch_code_analysis.sh",
+            self._phase_args(self.targets, phase="analyze"),
+        )
 
     def run_review(self, phase: str, names: list[str]) -> None:
         if self.skip_reviews:
@@ -1665,32 +1756,44 @@ class Pipeline:
         # died with "Unknown phase" — invisible under --dry-run, which only logs
         # the command without executing it. Phase goes first: a deliberate
         # divergence from the buggy bash order (git history has the original).
+        fallback = {
+            "analysis": "analyze",
+            "specgen": "specgen",
+            "validation": "validate",
+        }[phase]
+        selection = self._agent_selection("review", fallback=fallback)
+        if self.agent_routing is not None:
+            self.wait_for_phase_quota("review", fallback=fallback)
         args = [
             phase,
-            f"--agent={self.agent}",
+            f"--agent={selection.agent}",
             f"--claude-alias={self.claude_alias}",
             f"--policy-retries={self.policy_retries}",
             f"--transient-resumes={self.transient_resumes}",
-            *self._model_effort_args(),
+            *self._model_effort_args(selection),
             *names,
         ]
         self._phase(f"REVIEW: {phase}", "launch_review.sh", args)
 
     def run_phase2_specgen(self) -> None:
-        self._phase("PHASE 2: SPEC GENERATION", "launch_spec_generation.sh", self._phase_args(self.extract_names()))
+        self._phase(
+            "PHASE 2: SPEC GENERATION",
+            "launch_spec_generation.sh",
+            self._phase_args(self.extract_names(), phase="specgen"),
+        )
 
     def run_phase2_5_harness(self) -> None:
         self._phase(
             "PHASE 2.5: HARNESS GENERATION (instrumentation + trace collection)",
             "launch_harness_generation.sh",
-            self._phase_args(self.extract_names()),
+            self._phase_args(self.extract_names(), phase="harness"),
         )
 
     def run_phase3_validation(self) -> None:
         self._phase(
             "PHASE 3: SPEC VALIDATION (trace validation + invariant checking + bug hunting)",
             "launch_spec_validation.sh",
-            self._phase_args(self.extract_names()),
+            self._phase_args(self.extract_names(), phase="validate"),
         )
         self.advance_confirmation_generation(0)
 
@@ -1709,7 +1812,7 @@ class Pipeline:
             # explicit --max-parallel=1: omitted fans findings out to four,
             # while explicit 1 deliberately runs them serially. Other phases
             # still receive Pipeline's implicit default of one.
-            self._phase_args(self.extract_names(), pre=pre or None),
+            self._phase_args(self.extract_names(), pre=pre or None, phase="confirm"),
         )
 
     def run_phase3_repair(self, round_: int, names: list[str] | None = None) -> None:
@@ -1722,7 +1825,7 @@ class Pipeline:
         self._phase(
             f"REPAIR ROUND {round_}: PHASE 3 (scoped spec/fault/invariant repair)",
             "launch_spec_validation.sh",
-            self._phase_args(selected, pre=["--repair"]),
+            self._phase_args(selected, pre=["--repair"], phase="repair", fallback="validate"),
         )
         self.advance_confirmation_generation(round_, selected)
 
@@ -1730,7 +1833,7 @@ class Pipeline:
         self._phase(
             "PHASE 4b: BUG CLASSIFICATION (severity tier assignment)",
             "launch_bug_classification.sh",
-            self._phase_args(self.extract_names(), with_artifact=False),
+            self._phase_args(self.extract_names(), with_artifact=False, phase="classify"),
         )
 
     def run_repair_loop(self, prepared_commits: set[str] | None = None) -> set[str]:
@@ -1765,7 +1868,7 @@ class Pipeline:
         phase3_targets = set(recovered_commits)
         if not self.has_open_repair_requests():
             if recovered_commits:
-                self.wait_for_quota()
+                self.wait_for_phase_quota("confirm")
                 self.run_phase4_confirmation()
                 self.regenerate_ledger()
                 names = ", ".join(sorted(recovered_commits))
@@ -1791,7 +1894,9 @@ class Pipeline:
             repaired_names: list[str] = []
             for name in self.names_with_open_repair_requests():
                 try:
-                    self.wait_for_quota()  # budget pressure -> WAIT, never auto-defer
+                    self.wait_for_phase_quota(
+                        "repair", fallback="validate"
+                    )  # budget pressure -> WAIT, never auto-defer
                 except BaseException as exc:
                     detail = f"exit {exc.code}" if isinstance(exc, SystemExit) else f"{type(exc).__name__}: {exc}"
                     log(
@@ -1843,7 +1948,7 @@ class Pipeline:
                 phase3_targets.add(name)
 
             try:
-                self.wait_for_quota()
+                self.wait_for_phase_quota("confirm")
                 self.run_phase4_confirmation()  # normal Phase 4 on the fresh bug-report
             except BaseException as exc:
                 self.regenerate_ledger()
@@ -2088,7 +2193,13 @@ class Pipeline:
         print(f"Max turns:    {self.max_turns}")
         print(f"Policy retries: {self.policy_retries}")
         print(f"Transient resumes: {self.transient_resumes}")
-        print(f"Agent:        {self.agent}  (claude-alias={self.claude_alias})")
+        if self.agent_routing is None:
+            print(f"Agent:        {self.agent}  (claude-alias={self.claude_alias})")
+        else:
+            print(
+                f"Agent config: {self.agent_config_path}"
+                f"  (default={self._agent_selection().agent}, claude-alias={self.claude_alias})"
+            )
         memory_limit = self.tlc_memory_limit or os.environ.get(MEMORY_LIMIT_ENV) or "auto (80% available)"
         worker_limit = self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or "unbounded (report only)"
         print(f"TLC memory:   {memory_limit}")
@@ -2140,21 +2251,21 @@ class Pipeline:
         upstream_all_skipped = self.skip_analysis and self.skip_specgen and self.skip_harness
 
         if not self.skip_analysis:
-            self.wait_for_quota()
+            self.wait_for_phase_quota("analyze")
             self.run_phase1_analysis()
             self.run_review("analysis", names)
         else:
             log("Skipping Phase 1 (--skip-analysis)")
 
         if not self.skip_specgen:
-            self.wait_for_quota()
+            self.wait_for_phase_quota("specgen")
             self.run_phase2_specgen()
             self.run_review("specgen", names)
         else:
             log("Skipping Phase 2 (--skip-specgen)")
 
         if not self.skip_harness:
-            self.wait_for_quota()
+            self.wait_for_phase_quota("harness")
             self.run_phase2_5_harness()
         else:
             log("Skipping Phase 2.5 (--skip-harness)")
@@ -2178,7 +2289,7 @@ class Pipeline:
         )
         normal_phase3_ran = False
         if not self.skip_validation and not phase3_covered:
-            self.wait_for_quota()
+            self.wait_for_phase_quota("validate")
             self.run_phase3_validation()
             self.run_review("validation", names)
             normal_phase3_ran = True
@@ -2191,7 +2302,7 @@ class Pipeline:
         phase4_covered = resumed_repair and not normal_phase3_ran
         fresh_phase4_ran = False
         if not self.skip_confirmation and not phase4_covered:
-            self.wait_for_quota()
+            self.wait_for_phase_quota("confirm")
             self.run_phase4_confirmation()
             fresh_phase4_ran = True
         elif self.skip_confirmation:
@@ -2205,7 +2316,7 @@ class Pipeline:
             log("Skipping repair loop (--skip-repair-loop)")
 
         if not self.skip_classification:
-            self.wait_for_quota()
+            self.wait_for_phase_quota("classify")
             self.run_phase4b_classification()
         else:
             log("Skipping Phase 4b (--skip-classification)")
