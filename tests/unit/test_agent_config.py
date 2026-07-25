@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -38,7 +39,8 @@ class AgentConfigTest(unittest.TestCase):
             self.load(payload)
 
     def test_resolves_explicit_fallback_and_default_profiles(self) -> None:
-        routing = load_agent_routing(self._write(_valid_config()))
+        path = self._write(_valid_config())
+        routing = load_agent_routing(path)
 
         self.assertEqual(routing.default, AgentSelection("claude-code"))
         self.assertEqual(routing.resolve("analyze"), AgentSelection("codex", "", ""))
@@ -46,6 +48,7 @@ class AgentConfigTest(unittest.TestCase):
             routing.resolve("repair", fallback="validate"), AgentSelection("copilot-cli", "gpt-5-mini", "low")
         )
         self.assertEqual(routing.resolve("confirm"), routing.default)
+        self.assertEqual(routing.source_sha256, hashlib.sha256(path.read_bytes()).hexdigest())
 
     def test_phases_are_optional(self) -> None:
         payload = _valid_config()

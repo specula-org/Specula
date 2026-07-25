@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -41,6 +42,7 @@ class AgentRouting:
     default: AgentSelection
     profiles: Mapping[str, AgentSelection]
     phases: Mapping[str, str]
+    source_sha256: str
 
     def resolve(self, phase: str, fallback: str | None = None) -> AgentSelection:
         """Resolve an explicit phase, then a fallback phase, then the default."""
@@ -80,8 +82,12 @@ def _optional_string(profile: Mapping[str, object], field: str, profile_name: st
 def load_agent_routing(path: Path) -> AgentRouting:
     """Read and strictly validate an agent routing JSON file."""
     try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
+        source = path.read_bytes()
+    except OSError as exc:
+        raise AgentConfigError(f"cannot read agent config {path}: {exc}") from exc
+    try:
+        text = source.decode("utf-8")
+    except UnicodeDecodeError as exc:
         raise AgentConfigError(f"cannot read agent config {path}: {exc}") from exc
     try:
         loaded: object = json.loads(text)
@@ -134,4 +140,5 @@ def load_agent_routing(path: Path) -> AgentRouting:
         default=profiles[default_profile],
         profiles=MappingProxyType(profiles),
         phases=MappingProxyType(phases),
+        source_sha256=hashlib.sha256(source).hexdigest(),
     )

@@ -909,6 +909,49 @@ class TestAgentRouting(TmpCwd):
         self.assertIn("--agent=copilot-cli", repair_args)
         self.assertIn("--model=gpt-5-mini", repair_args)
 
+    def test_config_routing_and_sha_use_the_same_file_read(self) -> None:
+        config = write_agent_config(self.tmp / "agents.json", {"analyze": "codex"})
+        source = config.read_bytes()
+        replacement = json.dumps(
+            {
+                "version": 1,
+                "default_profile": "replacement",
+                "profiles": {
+                    "replacement": {
+                        "agent": "copilot-cli",
+                    }
+                },
+            }
+        ).encode()
+        read_bytes = Path.read_bytes
+        reads = 0
+
+        def replace_after_read(path: Path) -> bytes:
+            nonlocal reads
+            data = read_bytes(path)
+            if path == config:
+                reads += 1
+                if reads == 1:
+                    config.write_bytes(replacement)
+            return data
+
+        p = pl.Pipeline()
+        with mock.patch.object(Path, "read_bytes", replace_after_read):
+            self.assertIsNone(p.parse_args([f"--agent-config={config}", "t"]))
+
+        self.assertEqual(reads, 1)
+        self.assertEqual(p._agent_selection("analyze").agent, "codex")
+        assert p.agent_routing is not None
+        self.assertEqual(p.agent_routing.source_sha256, hashlib.sha256(source).hexdigest())
+        self.assertEqual(config.read_bytes(), replacement)
+        p.run_id = "run"
+        p.run_dir = self.tmp / "run"
+        p.run_dir.mkdir()
+        p._write_run_meta()
+        meta = json.loads((p.run_dir / "run.json").read_text())
+        self.assertEqual(meta["agent_config_sha256"], hashlib.sha256(source).hexdigest())
+        self.assertEqual(meta["agent_routes"]["analyze"]["agent"], "codex")
+
     def test_review_uses_reviewed_phase_fallback_or_explicit_review_route(self) -> None:
         fallback_config = write_agent_config(
             self.tmp / "fallback.json",

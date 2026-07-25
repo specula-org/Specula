@@ -14,7 +14,6 @@ Usage:  python3 pipelinelib.py [options] "name|github|lang|reference" [...]
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import json
 import locale
 import math
@@ -314,7 +313,6 @@ class Pipeline:
         self.agent = "claude-code"
         self._agent_given = False
         self.agent_config_path: Path | None = None
-        self.agent_config_sha256: str | None = None
         self.agent_routing: AgentRouting | None = None
         self.claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
         # None means no pipeline CLI override: phase launchers may consult
@@ -465,7 +463,6 @@ class Pipeline:
         if self.agent_config_path is not None:
             try:
                 self.agent_routing = load_agent_routing(self.agent_config_path)
-                self.agent_config_sha256 = hashlib.sha256(self.agent_config_path.read_bytes()).hexdigest()
             except (AgentConfigError, OSError) as exc:
                 print(f"ERROR: {exc}", file=sys.stderr)
                 return 1
@@ -824,7 +821,7 @@ class Pipeline:
                     "effort": route_effort,
                 }
             meta["agent_config"] = str(self.agent_config_path)
-            meta["agent_config_sha256"] = self.agent_config_sha256
+            meta["agent_config_sha256"] = self.agent_routing.source_sha256
             meta["agent_routes"] = routes
         if self.keep_original:
             meta["source_mode"] = "snapshot"
