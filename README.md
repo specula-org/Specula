@@ -34,7 +34,7 @@ We recommend using the following coding agents, which we actively test:
 
 Other strong coding agents may work, but we do not test them regularly during our development. We recently tested Claude Code with GLM-5.2, Kimi 2.7, and DeepSeek V4 (see [Usage Guide](./docs/Usage.md)).
 
-**For Fable and GPT-5.6-Sol**, please apply for Trusted Access at [chatgpt.com/cyber](https://chatgpt.com/cyber) and [portal.anthropic.com/programs/cvp](https://portal.anthropic.com/programs/cvp). Otherwise, Specula is known to be blocked when reproducing bugs in source code. If you cannot obtain Trusted Access, you can use [hybrid configuration]().
+**For Fable and GPT-5.6-Sol**, please apply for Trusted Access at [chatgpt.com/cyber](https://chatgpt.com/cyber) and [portal.anthropic.com/programs/cvp](https://portal.anthropic.com/programs/cvp). Otherwise, Specula is known to be blocked when reproducing bugs in source code. If you cannot obtain Trusted Access, use [hybrid configuration](./docs/Usage.md#hybrid-agent-configuration) to select another agent or model for bug confirmation.
 
 ## Setup
 
