@@ -383,6 +383,12 @@ for _ in {1..600}; do
         break
     fi
     if ! process_running "$TLC_PID"; then
+        # The owner may publish its status and exit between the status probe
+        # above and this liveness check. Prefer the published handshake so its
+        # report follows the normal stdout path.
+        if [ -s "$OWNER_STATUS" ]; then
+            break
+        fi
         wait "$TLC_PID" 2>/dev/null
         ADMISSION_RC=$?
         TLC_PID=""

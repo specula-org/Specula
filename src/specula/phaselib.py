@@ -37,6 +37,7 @@ import specula.progress as progress
 from specula import quota
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC
+from specula.output_index import PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
 from specula.prompts import render
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 from specula.snapshotlib import (
@@ -403,6 +404,30 @@ class Workspace:
         if any(os.pathsep in root for root in roots):
             raise RuntimeError("private source path cannot be represented in GIT_CEILING_DIRECTORIES")
         return os.pathsep.join(dict.fromkeys(roots)) or None
+
+
+def _refresh_target_indexes(ws: Workspace, names: list[str]) -> None:
+    """Best-effort navigation refresh; indexes never affect phase results."""
+    configured_log = os.environ.get(PIPELINE_LOG_ENV)
+    pipeline_log = Path(configured_log) if configured_log else None
+    if pipeline_log is None:
+        pipeline_log = (
+            ws.run_dir / "pipeline.log" if ws.run_dir is not None else ws.cwd / ".specula-output/pipeline.log"
+        )
+    output_root = ws.run_dir if ws.run_dir is not None else ws.cwd
+    for name in dict.fromkeys(names):
+        if not is_safe_target_name(name):
+            print(f"WARNING: cannot update output index for unsafe target name {name!r}", file=sys.stderr)
+            continue
+        try:
+            write_target_index(
+                name,
+                ws.work_dir(name),
+                output_root=output_root,
+                pipeline_log=pipeline_log,
+            )
+        except Exception as exc:
+            print(f"WARNING: cannot update output index for {name}: {exc}", file=sys.stderr)
 
 
 def _pin_sandbox_config(env: MutableMapping[str, str], launch_cwd: Path) -> None:
@@ -804,6 +829,9 @@ class Phase:
         print(f"Transient resumes: {transient_resumes}")
         print()
 
+        if not dry_run and not check_only:
+            _refresh_target_indexes(ws, names)
+
         print(self.check_header)
         if not self.check(ws, names):
             print()
@@ -828,6 +856,8 @@ class Phase:
             dry_run=dry_run,
         )
         if alt is not None:
+            if not dry_run:
+                _refresh_target_indexes(ws, names)
             return alt
 
         integrity_snapshot = self.capture_output_integrity(
@@ -895,6 +925,7 @@ class Phase:
                     running, completed = self._reap_agents(running, show_progress)
                     for completed_agent, rc in completed:
                         completed_names.add(completed_agent.name)
+                        _refresh_target_indexes(ws, [completed_agent.name])
                         if rc == 0:
                             successful_names.add(completed_agent.name)
                             continue
@@ -1010,6 +1041,8 @@ class Phase:
                     print(f"[{_ts()}] All agents completed.")
             except BaseException:
                 self._terminate_agents(running)
+                if not dry_run:
+                    _refresh_target_indexes(ws, names)
                 raise
 
         integrity_failures = self.audit_output_integrity(
@@ -1036,6 +1069,7 @@ class Phase:
 
         self.summarize(ws, names)
         if not dry_run:
+            _refresh_target_indexes(ws, names)
             self._acceptance(ws, names)
         if failures:
             print()
@@ -2322,11 +2356,15 @@ Prerequisites:
                         continue
                     break
             finally:
-                # A quota wait can abort (or the process can be interrupted)
-                # after the confirmation driver deliberately retained its exact
-                # session/worktree. Never leak that runtime lease when no next
-                # replay will execute in this process.
-                cfg.clear_retry_runtime()
+                try:
+                    # A quota wait can abort (or the process can be interrupted)
+                    # after the confirmation driver deliberately retained its exact
+                    # session/worktree. Never leak that runtime lease when no next
+                    # replay will execute in this process.
+                    cfg.clear_retry_runtime()
+                finally:
+                    if not dry_run:
+                        _refresh_target_indexes(ws, [name])
             if code != 0:
                 failures.append((name, code))
                 if code == quota.RATE_LIMIT_RC:
@@ -2629,6 +2667,8 @@ Output:
             print(f"ERROR: cannot restore private source: {exc}")
             return 1
 
+        _refresh_target_indexes(ws, names)
+
         print("========================================")
         print(f" Specula — Review Agent ({phase})")
         print("========================================")
@@ -2640,17 +2680,20 @@ Output:
             for name in names:
                 request = _LaunchRequest(name)
                 while True:
-                    rc = self._launch_review(
-                        ws,
-                        name,
-                        phase,
-                        adapter,
-                        claude_alias,
-                        policy_attempt=request.policy_attempt,
-                        transient_attempt=request.transient_attempt,
-                        invocation_attempt=request.invocation_attempt,
-                        retry_reason=request.retry_reason,
-                    )
+                    try:
+                        rc = self._launch_review(
+                            ws,
+                            name,
+                            phase,
+                            adapter,
+                            claude_alias,
+                            policy_attempt=request.policy_attempt,
+                            transient_attempt=request.transient_attempt,
+                            invocation_attempt=request.invocation_attempt,
+                            retry_reason=request.retry_reason,
+                        )
+                    finally:
+                        _refresh_target_indexes(ws, [name])
                     if (
                         rc == quota.RATE_LIMIT_RC
                         and self._reactive_rate_limit_enabled()
