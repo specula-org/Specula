@@ -108,11 +108,6 @@ def _path_below_root_is_symlink_free(root: Path, path: Path) -> bool:
     return True
 
 
-def is_safe_output_file(output_root: Path, path: Path) -> bool:
-    """Whether path is a regular file below output_root without crossing symlinks."""
-    return _path_below_root_is_symlink_free(output_root, path) and _is_file(path)
-
-
 def _markdown_text(value: str) -> str:
     """One safe Markdown table/heading fragment."""
     one_line = " ".join(value.splitlines()).strip()
@@ -285,19 +280,20 @@ def render_run_index(
         target_index = target.work_dir / INDEX_FILENAME
         result = (
             _link("Open results", target_index, run_root)
-            if is_safe_output_file(target.output_root, target_index)
+            if _path_below_root_is_symlink_free(target.output_root, target_index) and _is_file(target_index)
             else _NOT_AVAILABLE
         )
         confirmation_report = target.work_dir / "confirmed-bugs.md"
         confirmation = (
             _link("Open report", confirmation_report, run_root)
-            if is_safe_output_file(target.output_root, confirmation_report)
+            if _path_below_root_is_symlink_free(target.output_root, confirmation_report)
+            and _is_file(confirmation_report)
             else _NOT_AVAILABLE
         )
         severity_report = target.work_dir / "bug-severity.md"
         severity = (
             _link("Open report", severity_report, run_root)
-            if is_safe_output_file(target.output_root, severity_report)
+            if _path_below_root_is_symlink_free(target.output_root, severity_report) and _is_file(severity_report)
             else _NOT_AVAILABLE
         )
         lines.append(f"| {_markdown_text(target.name)} | {result} | {confirmation} | {severity} |")
