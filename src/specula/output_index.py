@@ -181,12 +181,18 @@ def render_target_index(name: str, work_dir: Path, *, pipeline_log: Path | None 
     lines = [
         f"# {_markdown_text(name)} Results",
         "",
-        "Read the documents below from top to bottom.",
+        "## Final Reports",
+        "",
+        (
+            f"- {_document('Confirmation report', work_dir / 'confirmed-bugs.md', work_dir)} "
+            "— Confirmation results and supporting evidence"
+        ),
+        (f"- {_document('Severity report', work_dir / 'bug-severity.md', work_dir)} — Impact assessment"),
         "",
         "> Availability means that a document exists. It does not imply review approval",
         "> or confirmation of every finding.",
         "",
-        "## Recommended Reading",
+        "## Supporting Analysis",
         "",
         "| Step | Document | What it contains |",
         "|---:|---|---|",
@@ -210,14 +216,6 @@ def render_target_index(name: str, work_dir: Path, *, pipeline_log: Path | None 
         (
             f"| 5 | {_document('Model-checking report', spec_dir / 'bug-report.md', work_dir)} "
             "| Candidate findings from model checking |"
-        ),
-        (
-            f"| 6 | {_document('Confirmation report', work_dir / 'confirmed-bugs.md', work_dir)} "
-            "| Findings checked against the real system |"
-        ),
-        (
-            f"| 7 | {_document('Severity report', work_dir / 'bug-severity.md', work_dir)} "
-            "| Severity view of confirmed findings |"
         ),
     ]
 
@@ -271,12 +269,12 @@ def render_run_index(
     lines = [
         "# Specula Run",
         "",
-        "Select a target to browse its results.",
+        "Select a target to browse its results or open its final reports directly.",
         "",
         "## Targets",
         "",
-        "| Target | Results |",
-        "|---|---|",
+        "| Target | Results | Confirmation | Severity |",
+        "|---|---|---|---|",
     ]
     for target in targets:
         target_index = target.work_dir / INDEX_FILENAME
@@ -285,7 +283,20 @@ def render_run_index(
             if _path_below_root_is_symlink_free(target.output_root, target_index) and _is_file(target_index)
             else _NOT_AVAILABLE
         )
-        lines.append(f"| {_markdown_text(target.name)} | {result} |")
+        confirmation_report = target.work_dir / "confirmed-bugs.md"
+        confirmation = (
+            _link("Open report", confirmation_report, run_root)
+            if _path_below_root_is_symlink_free(target.output_root, confirmation_report)
+            and _is_file(confirmation_report)
+            else _NOT_AVAILABLE
+        )
+        severity_report = target.work_dir / "bug-severity.md"
+        severity = (
+            _link("Open report", severity_report, run_root)
+            if _path_below_root_is_symlink_free(target.output_root, severity_report) and _is_file(severity_report)
+            else _NOT_AVAILABLE
+        )
+        lines.append(f"| {_markdown_text(target.name)} | {result} | {confirmation} | {severity} |")
 
     summary_cell = (
         _link("pipeline-summary.md", summary, run_root) if _is_file_under(run_root, summary) else _NOT_AVAILABLE

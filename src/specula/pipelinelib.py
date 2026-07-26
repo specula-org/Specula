@@ -41,6 +41,7 @@ if __package__ in (None, ""):
 from specula import quota as _quota
 from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
 from specula.output_index import (
+    INDEX_FILENAME,
     PIPELINE_LOG_ENV,
     TargetOutput,
     is_safe_target_name,
@@ -987,6 +988,52 @@ class Pipeline:
             )
         except Exception as exc:
             log(f"WARNING: cannot update run index: {exc}")
+
+    def print_output_guide(self) -> None:
+        """Point a successful run at its human-facing result documents."""
+        if self.dry_run:
+            return
+        try:
+            targets = self._index_targets()
+        except Exception:
+            return
+        if not targets:
+            return
+
+        if self.run_dir is not None:
+            index = self.run_dir / INDEX_FILENAME
+        elif len(targets) > 1 and self.pipeline_log_path is not None:
+            index = self.pipeline_log_path.parent / INDEX_FILENAME
+        else:
+            index = targets[0].work_dir / INDEX_FILENAME
+
+        available = index.is_file() or any(
+            (target.work_dir / filename).is_file()
+            for target in targets
+            for filename in ("confirmed-bugs.md", "bug-severity.md")
+        )
+        if not available:
+            return
+
+        print()
+        print("View results:")
+        if index.is_file():
+            print(f"  All results: {index}")
+        multiple_targets = len(targets) > 1
+        for target in targets:
+            confirmation = target.work_dir / "confirmed-bugs.md"
+            severity = target.work_dir / "bug-severity.md"
+            if not confirmation.is_file() and not severity.is_file():
+                continue
+            if multiple_targets:
+                print(f"  {target.name}:")
+                indent = "    "
+            else:
+                indent = "  "
+            if confirmation.is_file():
+                print(f"{indent}Confirmation results and evidence: {confirmation}")
+            if severity.is_file():
+                print(f"{indent}Impact assessment: {severity}")
 
     def prepare_source_snapshots(self, names: list[str]) -> None:
         if not self.keep_original:
@@ -2400,6 +2447,7 @@ class Pipeline:
         elapsed = int(time.time()) - start_time
         print()
         log(f"Pipeline completed in {elapsed // 60}m {elapsed % 60}s")
+        self.print_output_guide()
         return 0
 
 

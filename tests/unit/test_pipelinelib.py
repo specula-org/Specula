@@ -958,6 +958,58 @@ class TestOutputIndexNavigation(TmpCwd):
         self.assertIn("cannot update output index for alpha", out)
         self.assertIn("cannot update run index", out)
 
+    def test_success_guide_points_to_index_and_available_final_reports(self) -> None:
+        run = self.tmp / "run"
+        work_dir = run / "alpha" / ".specula-output"
+        work_dir.mkdir(parents=True)
+        (work_dir / "confirmed-bugs.md").write_text("# Confirmation\n")
+        (work_dir / "bug-severity.md").write_text("# Severity\n")
+        pipeline_log = run / "pipeline.log"
+        pipeline_log.write_text("pipeline\n")
+        p = make_pipeline(
+            ["alpha|o/a|Go|ref"],
+            run_dir=run,
+            pipeline_log_path=pipeline_log,
+        )
+        p.refresh_output_indexes()
+
+        _, out = quiet(p.print_output_guide)
+
+        self.assertIn(f"All results: {run / 'index.md'}", out)
+        self.assertIn(f"Confirmation results and evidence: {work_dir / 'confirmed-bugs.md'}", out)
+        self.assertIn(f"Impact assessment: {work_dir / 'bug-severity.md'}", out)
+        self.assertNotIn("bug found", out)
+        self.assertNotIn("bugs found", out)
+
+    def test_success_guide_omits_missing_report_paths(self) -> None:
+        work_dir = self.tmp / ".specula-output"
+        work_dir.mkdir()
+        (work_dir / "confirmed-bugs.md").write_text("# Confirmation\n")
+        pipeline_log = work_dir / "pipeline.log"
+        pipeline_log.write_text("pipeline\n")
+        p = make_pipeline(
+            ["alpha|o/a|Go|ref"],
+            pipeline_log_path=pipeline_log,
+        )
+        p.refresh_output_indexes()
+
+        _, out = quiet(p.print_output_guide)
+
+        self.assertIn(f"All results: {work_dir / 'index.md'}", out)
+        self.assertIn(str(work_dir / "confirmed-bugs.md"), out)
+        self.assertNotIn(str(work_dir / "bug-severity.md"), out)
+
+    def test_dry_run_does_not_recommend_stale_results(self) -> None:
+        work_dir = self.tmp / ".specula-output"
+        work_dir.mkdir()
+        (work_dir / "index.md").write_text("# Old results\n")
+        (work_dir / "confirmed-bugs.md").write_text("# Old confirmation\n")
+        p = make_pipeline(["alpha|o/a|Go|ref"], dry_run=True)
+
+        _, out = quiet(p.print_output_guide)
+
+        self.assertEqual(out, "")
+
 
 class TestAgentRouting(TmpCwd):
     @staticmethod
@@ -2625,7 +2677,10 @@ class TestMainTeeTeardown(TmpCwd):
         run = self.tmp / "runs" / "failed-run"
         run_index = (run / "index.md").read_text()
         target_index = (run / "t" / ".specula-output" / "index.md").read_text()
-        self.assertIn("| t | [Open results](t/.specula-output/index.md) |", run_index)
+        self.assertIn(
+            "| t | [Open results](t/.specula-output/index.md) | Not available | Not available |",
+            run_index,
+        )
         self.assertIn("- Final summary: Not available", run_index)
         self.assertIn("[Modeling brief](modeling-brief.md)", target_index)
         self.assertFalse((run / "pipeline-summary.md").exists())
