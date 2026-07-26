@@ -902,8 +902,9 @@ class TestOutputIndexNavigation(TmpCwd):
             pipeline_log_path=pipeline_log,
         )
 
-        p.refresh_output_indexes()
+        result_index = p.refresh_output_indexes()
 
+        self.assertEqual(result_index, run / "index.md")
         index = (run / "index.md").read_text()
         self.assertLess(index.index("| alpha |"), index.index("| beta |"))
         self.assertTrue((run / "alpha" / ".specula-output" / "index.md").is_file())
@@ -2624,6 +2625,47 @@ class TestMainTeeTeardown(TmpCwd):
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn(f"View all results: {case / '.specula-output' / 'index.md'}", r.stdout)
         self.assertNotIn(f"View all results: {self.tmp / '.specula-output' / 'index.md'}", r.stdout)
+
+    def test_success_does_not_point_to_stale_index_when_refresh_fails(self) -> None:
+        stale = self.tmp / ".specula-output" / "index.md"
+        stale.parent.mkdir()
+        stale.write_text("# stale results\n")
+        r = self._run_entry(
+            "def fail_index(*args, **kwargs):\n"
+            "    raise OSError('injected index failure')\n"
+            "pl.write_target_index = fail_index\n"
+            "pl.Pipeline.main = lambda self: 0"
+        )
+
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("View all results:", r.stdout)
+        self.assertEqual(stale.read_text(), "# stale results\n")
+        log_text = (self.tmp / ".specula-output" / "pipeline.log").read_text()
+        self.assertIn("injected index failure", log_text)
+
+    @unittest.skipUnless(os.name == "posix", "surrogateescaped paths are a POSIX behavior")
+    def test_terminal_guide_preserves_undecodable_path_bytes(self) -> None:
+        raw_cwd = os.fsencode(self.tmp) + b"/bad-\xff"
+        os.mkdir(raw_cwd)
+        driver = self.tmp / "byte-driver.py"
+        driver.write_text(
+            "import sys\n"
+            f"sys.path.insert(0, {str(SRC)!r})\n"
+            "from specula import pipelinelib as pl\n"
+            "pl.Pipeline.main = lambda self: 0\n"
+            "raise SystemExit(pl.main(['--no-isolate', 't|g|l|r']))\n"
+        )
+        env = os.environb.copy()
+        env[b"PWD"] = raw_cwd
+
+        r = subprocess.run([sys.executable, os.fsencode(driver)], cwd=raw_cwd, env=env, capture_output=True)
+
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        expected = raw_cwd + b"/.specula-output/index.md"
+        self.assertIn(b"View all results: " + expected, r.stdout)
+        self.assertNotIn(
+            b"View all results:", (Path(os.fsdecode(raw_cwd)) / ".specula-output/pipeline.log").read_bytes()
+        )
 
     def test_final_source_capture_failure_suppresses_terminal_guide(self) -> None:
         r = self._run_entry(
