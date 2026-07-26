@@ -41,6 +41,7 @@ if __package__ in (None, ""):
 from specula import quota as _quota
 from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
 from specula.output_index import (
+    INDEX_FILENAME,
     PIPELINE_LOG_ENV,
     TargetOutput,
     is_safe_target_name,
@@ -943,15 +944,16 @@ class Pipeline:
             targets.append(TargetOutput(name, Path(self.get_work_dir(name)), output_root))
         return targets
 
-    def refresh_target_indexes(self) -> list[TargetOutput]:
-        """Best-effort target navigation refresh; never changes pipeline status."""
+    def _refresh_target_indexes(self) -> tuple[list[TargetOutput], set[Path]]:
+        """Refresh target navigation and report indexes published by this call."""
         if self.dry_run:
-            return []
+            return [], set()
         try:
             targets = self._index_targets()
         except Exception as exc:
             log(f"WARNING: cannot resolve output indexes: {exc}")
-            return []
+            return [], set()
+        published: set[Path] = set()
         for target in targets:
             try:
                 write_target_index(
@@ -960,15 +962,21 @@ class Pipeline:
                     output_root=target.output_root,
                     pipeline_log=self.pipeline_log_path,
                 )
+                published.add(target.work_dir / INDEX_FILENAME)
             except Exception as exc:
                 log(f"WARNING: cannot update output index for {target.name}: {exc}")
+        return targets, published
+
+    def refresh_target_indexes(self) -> list[TargetOutput]:
+        """Best-effort target navigation refresh; never changes pipeline status."""
+        targets, _ = self._refresh_target_indexes()
         return targets
 
-    def refresh_output_indexes(self) -> None:
-        """Refresh target indexes, then the run-level target chooser when distinct."""
-        targets = self.refresh_target_indexes()
+    def refresh_output_indexes(self) -> Path | None:
+        """Refresh output navigation and return the primary index published now."""
+        targets, published = self._refresh_target_indexes()
         if not targets or self.pipeline_log_path is None:
-            return
+            return None
         if self.run_dir is not None:
             run_root = self.run_dir
         elif len(targets) > 1:
@@ -977,7 +985,8 @@ class Pipeline:
             # only the detailed target index is generated.
             run_root = self.pipeline_log_path.parent
         else:
-            return
+            index = targets[0].work_dir / INDEX_FILENAME
+            return index if index in published else None
         try:
             write_run_index(
                 run_root,
@@ -987,6 +996,8 @@ class Pipeline:
             )
         except Exception as exc:
             log(f"WARNING: cannot update run index: {exc}")
+            return None
+        return run_root / INDEX_FILENAME
 
     def prepare_source_snapshots(self, names: list[str]) -> None:
         if not self.keep_original:
@@ -2434,6 +2445,7 @@ def main(argv: list[str]) -> int:
     tee = subprocess.Popen(["tee", str(log_path)], stdin=subprocess.PIPE)
     assert tee.stdin is not None  # stdin=PIPE
     tee_in = tee.stdin
+    terminal_stdout = os.fdopen(os.dup(1), "w", encoding="utf-8", errors="surrogateescape")
     sys.stdout.flush()
     sys.stderr.flush()
     os.dup2(tee_in.fileno(), 1)  # fd-level: phase subprocesses inherit the tee
@@ -2473,12 +2485,24 @@ def main(argv: list[str]) -> int:
         # non-zero, so a failing tee (unwritable/full log) wins even when main
         # also failed — verified: `set -o pipefail; (exit 2)|(exit 1)` exits 1.
         tee_rc = tee.wait()
+        result_index: Path | None = None
         with contextlib.suppress(BaseException):
             # tee creates the log asynchronously. Refresh once more after EOF so
             # even an immediate pipeline failure gets a Troubleshooting link.
-            p.refresh_output_indexes()
+            result_index = p.refresh_output_indexes()
         if tee_rc != 0:
             code = tee_rc
+        try:
+            if code == 0 and result_index is not None:
+                with contextlib.suppress(OSError, UnicodeError):
+                    print(
+                        f"\nView all results: {result_index} (final reports are listed at the top).",
+                        file=terminal_stdout,
+                        flush=True,
+                    )
+        finally:
+            with contextlib.suppress(OSError, UnicodeError):
+                terminal_stdout.close()
     return code
 
 

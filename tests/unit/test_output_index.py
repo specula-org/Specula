@@ -31,6 +31,9 @@ class TestRunIndex(OutputIndexCase):
         run_root = self.root / "run"
         beta = run_root / "beta" / ".specula-output"
         alpha = run_root / "alpha" / ".specula-output"
+        for work_dir in (beta, alpha):
+            self.write(work_dir, "confirmed-bugs.md")
+            self.write(work_dir, "bug-severity.md")
         self.assertTrue(oi.write_target_index("beta", beta, output_root=run_root))
         self.assertTrue(oi.write_target_index("alpha", alpha, output_root=run_root))
         pipeline_log = self.write(run_root, "pipeline.log")
@@ -46,14 +49,14 @@ class TestRunIndex(OutputIndexCase):
             """\
             # Specula Run
 
-            Select a target to browse its results.
+            Select a target to browse its results or open its final reports directly.
 
             ## Targets
 
-            | Target | Results |
-            |---|---|
-            | beta | [Open results](beta/.specula-output/index.md) |
-            | alpha | [Open results](alpha/.specula-output/index.md) |
+            | Target | Results | Confirmation | Severity |
+            |---|---|---|---|
+            | beta | [Open results](beta/.specula-output/index.md) | [Open report](beta/.specula-output/confirmed-bugs.md) | [Open report](beta/.specula-output/bug-severity.md) |
+            | alpha | [Open results](alpha/.specula-output/index.md) | [Open report](alpha/.specula-output/confirmed-bugs.md) | [Open report](alpha/.specula-output/bug-severity.md) |
 
             ## Run Status
 
@@ -83,7 +86,7 @@ class TestRunIndex(OutputIndexCase):
 
 
 class TestTargetIndex(OutputIndexCase):
-    def test_approved_seven_step_reading_order_has_no_reviews_or_machine_files(self) -> None:
+    def test_final_reports_lead_supporting_analysis_without_reviews_or_machine_files(self) -> None:
         work_dir = self.root / ".specula-output"
         for relative in (
             "modeling-brief.md",
@@ -112,12 +115,15 @@ class TestTargetIndex(OutputIndexCase):
             """\
             # demo Results
 
-            Read the documents below from top to bottom.
+            ## Final Reports
+
+            - [Confirmation report](confirmed-bugs.md) — Confirmation results and supporting evidence
+            - [Severity report](bug-severity.md) — Impact assessment
 
             > Availability means that a document exists. It does not imply review approval
             > or confirmation of every finding.
 
-            ## Recommended Reading
+            ## Supporting Analysis
 
             | Step | Document | What it contains |
             |---:|---|---|
@@ -126,8 +132,6 @@ class TestTargetIndex(OutputIndexCase):
             | 3 | [Spec coverage](spec/brief-coverage.md) · [Instrumentation map](spec/instrumentation-spec.md) | How the analysis was translated into the model |
             | 4 | [Validation changelog](spec/changelog.md) | Model corrections and validation history |
             | 5 | [Model-checking report](spec/bug-report.md) | Candidate findings from model checking |
-            | 6 | [Confirmation report](confirmed-bugs.md) | Findings checked against the real system |
-            | 7 | [Severity report](bug-severity.md) | Severity view of confirmed findings |
             """
         )
         rendered = oi.render_target_index("demo", work_dir)

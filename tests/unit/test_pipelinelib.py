@@ -902,8 +902,9 @@ class TestOutputIndexNavigation(TmpCwd):
             pipeline_log_path=pipeline_log,
         )
 
-        p.refresh_output_indexes()
+        result_index = p.refresh_output_indexes()
 
+        self.assertEqual(result_index, run / "index.md")
         index = (run / "index.md").read_text()
         self.assertLess(index.index("| alpha |"), index.index("| beta |"))
         self.assertTrue((run / "alpha" / ".specula-output" / "index.md").is_file())
@@ -2594,6 +2595,90 @@ class TestMainTeeTeardown(TmpCwd):
         self.assertEqual(r.returncode, 7)
         self.assertEqual(marker.read_text(), "done")
 
+    def test_success_points_terminal_to_run_index_without_logging_guide(self) -> None:
+        run = self.tmp / "runs" / "guide-run"
+        r = self._run_entry(
+            f"pl.SPECULA_ROOT = pl.Path({str(self.tmp)!r})\npl.Pipeline.main = lambda self: 0",
+            ["--run-id=guide-run", "t|g|l|r"],
+        )
+
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn(f"View all results: {run / 'index.md'}", r.stdout)
+        self.assertIn("(final reports are listed at the top).", r.stdout)
+        log_text = (run / "pipeline.log").read_text()
+        self.assertNotIn("View all results:", log_text)
+        self.assertNotIn("final reports", log_text)
+
+    def test_success_points_terminal_to_single_target_index_after_chdir(self) -> None:
+        case = self.tmp / "case-studies" / "t"
+        case.mkdir(parents=True)
+        r = self._run_entry(
+            f"pl.SPECULA_ROOT = pl.Path({str(self.tmp)!r})\n"
+            "def succeed(self):\n"
+            f"    case = pl.Path({str(case)!r})\n"
+            "    pl.os.chdir(case)\n"
+            "    pl.os.environ['PWD'] = str(case)\n"
+            "    return 0\n"
+            "pl.Pipeline.main = succeed"
+        )
+
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn(f"View all results: {case / '.specula-output' / 'index.md'}", r.stdout)
+        self.assertNotIn(f"View all results: {self.tmp / '.specula-output' / 'index.md'}", r.stdout)
+
+    def test_success_does_not_point_to_stale_index_when_refresh_fails(self) -> None:
+        stale = self.tmp / ".specula-output" / "index.md"
+        stale.parent.mkdir()
+        stale.write_text("# stale results\n")
+        r = self._run_entry(
+            "def fail_index(*args, **kwargs):\n"
+            "    raise OSError('injected index failure')\n"
+            "pl.write_target_index = fail_index\n"
+            "pl.Pipeline.main = lambda self: 0"
+        )
+
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("View all results:", r.stdout)
+        self.assertEqual(stale.read_text(), "# stale results\n")
+        log_text = (self.tmp / ".specula-output" / "pipeline.log").read_text()
+        self.assertIn("injected index failure", log_text)
+
+    @unittest.skipUnless(os.name == "posix", "surrogateescaped paths are a POSIX behavior")
+    def test_terminal_guide_preserves_undecodable_path_bytes(self) -> None:
+        raw_cwd = os.fsencode(self.tmp) + b"/bad-\xff"
+        os.mkdir(raw_cwd)
+        driver = self.tmp / "byte-driver.py"
+        driver.write_text(
+            "import sys\n"
+            f"sys.path.insert(0, {str(SRC)!r})\n"
+            "from specula import pipelinelib as pl\n"
+            "pl.Pipeline.main = lambda self: 0\n"
+            "raise SystemExit(pl.main(['--no-isolate', 't|g|l|r']))\n"
+        )
+        env = os.environb.copy()
+        env[b"PWD"] = raw_cwd
+
+        r = subprocess.run([sys.executable, os.fsencode(driver)], cwd=raw_cwd, env=env, capture_output=True)
+
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        expected = raw_cwd + b"/.specula-output/index.md"
+        self.assertIn(b"View all results: " + expected, r.stdout)
+        self.assertNotIn(
+            b"View all results:", (Path(os.fsdecode(raw_cwd)) / ".specula-output/pipeline.log").read_bytes()
+        )
+
+    def test_final_source_capture_failure_suppresses_terminal_guide(self) -> None:
+        r = self._run_entry(
+            "pl.Pipeline.main = lambda self: 0\n"
+            "def fail_capture(self):\n"
+            "    raise RuntimeError('capture failed')\n"
+            "pl.Pipeline.finalize_source_snapshots = fail_capture"
+        )
+
+        self.assertEqual(r.returncode, 1)
+        self.assertNotIn("View all results:", r.stdout)
+        self.assertNotIn("final reports", r.stdout)
+
     def test_failure_publishes_partial_index_without_completion_summary(self) -> None:
         r = self._run_entry(
             "def boom(self):\n"
@@ -2625,7 +2710,10 @@ class TestMainTeeTeardown(TmpCwd):
         run = self.tmp / "runs" / "failed-run"
         run_index = (run / "index.md").read_text()
         target_index = (run / "t" / ".specula-output" / "index.md").read_text()
-        self.assertIn("| t | [Open results](t/.specula-output/index.md) |", run_index)
+        self.assertIn(
+            "| t | [Open results](t/.specula-output/index.md) | Not available | Not available |",
+            run_index,
+        )
         self.assertIn("- Final summary: Not available", run_index)
         self.assertIn("[Modeling brief](modeling-brief.md)", target_index)
         self.assertFalse((run / "pipeline-summary.md").exists())
@@ -2641,6 +2729,8 @@ class TestMainTeeTeardown(TmpCwd):
         self.addCleanup(logf.chmod, 0o644)
         r = self._run_entry("pl.Pipeline.main = lambda self: 0")
         self.assertEqual(r.returncode, 1)
+        self.assertNotIn("View all results:", r.stdout)
+        self.assertNotIn("final reports", r.stdout)
 
     def test_failing_tee_wins_over_failing_main(self) -> None:
         # bash pipefail returns the rightmost non-zero status: when main fails

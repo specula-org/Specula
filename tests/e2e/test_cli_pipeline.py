@@ -173,7 +173,8 @@ class CliE2E(unittest.TestCase):
         self.assertNotIn("tlc-resources.json", run_index)
 
         self.assertIn("# footest Results", target_index)
-        self.assertIn("## Recommended Reading", target_index)
+        self.assertIn("## Final Reports", target_index)
+        self.assertIn("## Supporting Analysis", target_index)
         self.assertIn("Modeling brief: Not available", target_index)
         self.assertIn("[pipeline.log](../../pipeline.log)", target_index)
         self.assertNotIn("## Reviews", target_index)
@@ -368,7 +369,8 @@ class CliE2E(unittest.TestCase):
 
         index = (work / ".specula-output" / "index.md").read_text()
         self.assertIn("# nocase Results", index)
-        self.assertIn("## Recommended Reading", index)
+        self.assertIn("## Final Reports", index)
+        self.assertIn("## Supporting Analysis", index)
         self.assertNotIn("# Specula Run", index)
         self.assertIn("[pipeline.log](pipeline.log)", index)
         self.assertFalse((root / "runs").exists())
