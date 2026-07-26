@@ -219,7 +219,7 @@ runs/<run-id>/
     └── changes.patch   # --keep-original only
 ```
 
-The run-level `index.md` is a compact target chooser. Each target link opens its `.specula-output/index.md`, which presents human-readable results as Recommended Reading, Confirmation Details, Technical Details, and Troubleshooting. It intentionally omits review artifacts, machine-readable records, state sidecars, caches, and detailed phase logs; those files remain in their existing locations. No existing phase output is moved. `pipeline-summary.md` remains the final run status, and `runs/latest` points to the newest run.
+The run-level `index.md` is a compact target chooser with direct links to each target's confirmation and severity reports. Each target link opens its `.specula-output/index.md`, which presents human-readable results as Final Reports, Supporting Analysis, Confirmation Details, Technical Details, and Troubleshooting. It intentionally omits review artifacts, machine-readable records, state sidecars, caches, and detailed phase logs; those files remain in their existing locations. No existing phase output is moved. `pipeline-summary.md` remains the final run status, and `runs/latest` points to the newest run.
 
 By default, Specula works directly in the source passed through `--artifact`, so harness or reproduction work may modify it. Use `--keep-original` to run every phase on a private copy instead. The original checkout stays unchanged, and the final filesystem changes are written to `changes.patch`.
 

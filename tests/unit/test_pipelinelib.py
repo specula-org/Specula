@@ -999,6 +999,37 @@ class TestOutputIndexNavigation(TmpCwd):
         self.assertIn(str(work_dir / "confirmed-bugs.md"), out)
         self.assertNotIn(str(work_dir / "bug-severity.md"), out)
 
+    def test_success_guide_rejects_symlinked_reports(self) -> None:
+        run = self.tmp / "run"
+        work_dir = run / "alpha" / ".specula-output"
+        outside = self.tmp / "outside"
+        work_dir.mkdir(parents=True)
+        outside.mkdir()
+        for filename in ("confirmed-bugs.md", "bug-severity.md"):
+            external = outside / filename
+            external.write_text("external\n")
+            (work_dir / filename).symlink_to(external)
+        pipeline_log = run / "pipeline.log"
+        pipeline_log.write_text("pipeline\n")
+        p = make_pipeline(
+            ["alpha|o/a|Go|ref"],
+            run_dir=run,
+            pipeline_log_path=pipeline_log,
+        )
+        p.refresh_output_indexes()
+
+        _, out = quiet(p.print_output_guide)
+
+        self.assertIn(f"All results: {run / 'index.md'}", out)
+        self.assertNotIn(str(work_dir / "confirmed-bugs.md"), out)
+        self.assertNotIn(str(work_dir / "bug-severity.md"), out)
+        target_index = (work_dir / "index.md").read_text()
+        run_index = (run / "index.md").read_text()
+        self.assertIn("Confirmation report: Not available", target_index)
+        self.assertIn("Severity report: Not available", target_index)
+        self.assertIn("| alpha | [Open results]", run_index)
+        self.assertIn("| Not available | Not available |", run_index)
+
     def test_dry_run_does_not_recommend_stale_results(self) -> None:
         work_dir = self.tmp / ".specula-output"
         work_dir.mkdir()
@@ -2646,6 +2677,44 @@ class TestMainTeeTeardown(TmpCwd):
         self.assertEqual(r.returncode, 7)
         self.assertEqual(marker.read_text(), "done")
 
+    def test_success_output_prints_after_teardown(self) -> None:
+        r = self._run_entry(
+            "def complete(self):\n"
+            "    out = pl.Path(self.get_work_dir('t'))\n"
+            "    out.mkdir(parents=True, exist_ok=True)\n"
+            "    (out / 'confirmed-bugs.md').write_text('# Confirmation\\n')\n"
+            "    (out / 'bug-severity.md').write_text('# Severity\\n')\n"
+            "    self.elapsed_seconds = 1\n"
+            "    return 0\n"
+            "pl.Pipeline.main = complete"
+        )
+
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("Pipeline completed", r.stdout)
+        self.assertIn("View results:", r.stdout)
+        self.assertIn("confirmed-bugs.md", r.stdout)
+        self.assertIn("bug-severity.md", r.stdout)
+
+    def test_final_source_capture_failure_suppresses_success_output(self) -> None:
+        r = self._run_entry(
+            "def complete(self):\n"
+            "    out = pl.Path(self.get_work_dir('t'))\n"
+            "    out.mkdir(parents=True, exist_ok=True)\n"
+            "    (out / 'confirmed-bugs.md').write_text('# Confirmation\\n')\n"
+            "    self.elapsed_seconds = 1\n"
+            "    return 0\n"
+            "def fail_capture(self):\n"
+            "    raise RuntimeError('capture failed')\n"
+            "pl.Pipeline.main = complete\n"
+            "pl.Pipeline.finalize_source_snapshots = fail_capture"
+        )
+
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("RuntimeError: capture failed", r.stdout)
+        self.assertNotIn("Pipeline completed", r.stdout)
+        self.assertNotIn("View results:", r.stdout)
+        self.assertNotIn("All results:", r.stdout)
+
     def test_failure_publishes_partial_index_without_completion_summary(self) -> None:
         r = self._run_entry(
             "def boom(self):\n"
@@ -2694,8 +2763,13 @@ class TestMainTeeTeardown(TmpCwd):
         logf.write_text("")
         logf.chmod(0o444)
         self.addCleanup(logf.chmod, 0o644)
-        r = self._run_entry("pl.Pipeline.main = lambda self: 0")
+        (out / "confirmed-bugs.md").write_text("# Confirmation\n")
+        r = self._run_entry(
+            "def complete(self):\n    self.elapsed_seconds = 1\n    return 0\npl.Pipeline.main = complete"
+        )
         self.assertEqual(r.returncode, 1)
+        self.assertNotIn("Pipeline completed", r.stdout)
+        self.assertNotIn("View results:", r.stdout)
 
     def test_failing_tee_wins_over_failing_main(self) -> None:
         # bash pipefail returns the rightmost non-zero status: when main fails

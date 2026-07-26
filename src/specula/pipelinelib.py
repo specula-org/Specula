@@ -44,6 +44,7 @@ from specula.output_index import (
     INDEX_FILENAME,
     PIPELINE_LOG_ENV,
     TargetOutput,
+    is_safe_output_file,
     is_safe_target_name,
     write_run_index,
     write_target_index,
@@ -333,6 +334,7 @@ class Pipeline:
         self._run_id_given = False  # `--run-id=` (empty) must error, not mint a fresh id
         self.run_dir: Path | None = None
         self.pipeline_log_path: Path | None = None
+        self.elapsed_seconds: int | None = None
         self.tlc_scope = ""
         self.argv: list[str] = []
 
@@ -1007,32 +1009,37 @@ class Pipeline:
         else:
             index = targets[0].work_dir / INDEX_FILENAME
 
-        available = index.is_file() or any(
-            (target.work_dir / filename).is_file()
-            for target in targets
-            for filename in ("confirmed-bugs.md", "bug-severity.md")
-        )
-        if not available:
+        index_available = is_safe_output_file(targets[0].output_root, index)
+        reports: list[tuple[TargetOutput, Path | None, Path | None]] = []
+        for target in targets:
+            confirmation_path = target.work_dir / "confirmed-bugs.md"
+            severity_path = target.work_dir / "bug-severity.md"
+            reports.append(
+                (
+                    target,
+                    confirmation_path if is_safe_output_file(target.output_root, confirmation_path) else None,
+                    severity_path if is_safe_output_file(target.output_root, severity_path) else None,
+                )
+            )
+        if not index_available and not any(confirmation or severity for _, confirmation, severity in reports):
             return
 
         print()
         print("View results:")
-        if index.is_file():
+        if index_available:
             print(f"  All results: {index}")
         multiple_targets = len(targets) > 1
-        for target in targets:
-            confirmation = target.work_dir / "confirmed-bugs.md"
-            severity = target.work_dir / "bug-severity.md"
-            if not confirmation.is_file() and not severity.is_file():
+        for target, confirmation, severity in reports:
+            if confirmation is None and severity is None:
                 continue
             if multiple_targets:
                 print(f"  {target.name}:")
                 indent = "    "
             else:
                 indent = "  "
-            if confirmation.is_file():
+            if confirmation is not None:
                 print(f"{indent}Confirmation results and evidence: {confirmation}")
-            if severity.is_file():
+            if severity is not None:
                 print(f"{indent}Impact assessment: {severity}")
 
     def prepare_source_snapshots(self, names: list[str]) -> None:
@@ -2444,10 +2451,7 @@ class Pipeline:
         self.generate_summary()
         self.refresh_output_indexes()
 
-        elapsed = int(time.time()) - start_time
-        print()
-        log(f"Pipeline completed in {elapsed // 60}m {elapsed % 60}s")
-        self.print_output_guide()
+        self.elapsed_seconds = int(time.time()) - start_time
         return 0
 
 
@@ -2482,6 +2486,8 @@ def main(argv: list[str]) -> int:
     tee = subprocess.Popen(["tee", str(log_path)], stdin=subprocess.PIPE)
     assert tee.stdin is not None  # stdin=PIPE
     tee_in = tee.stdin
+    terminal_stdout = os.dup(1)
+    terminal_stderr = os.dup(2)
     sys.stdout.flush()
     sys.stderr.flush()
     os.dup2(tee_in.fileno(), 1)  # fd-level: phase subprocesses inherit the tee
@@ -2491,9 +2497,7 @@ def main(argv: list[str]) -> int:
     except SystemExit as e:
         code = e.code if isinstance(e.code, int) else 1
     except BaseException as e:
-        # Print while fd 2 still feeds the tee: after the finally below it is
-        # /dev/null, and an escaping exception would die with no diagnostics
-        # anywhere. bash `set -e` left the failing command's stderr in the log.
+        # Print while fd 2 still feeds the tee so the failure reaches pipeline.log.
         traceback.print_exc()
         code = 130 if isinstance(e, KeyboardInterrupt) else 1  # 128+SIGINT, like bash
     finally:
@@ -2527,6 +2531,16 @@ def main(argv: list[str]) -> int:
             p.refresh_output_indexes()
         if tee_rc != 0:
             code = tee_rc
+        os.dup2(terminal_stdout, 1)
+        os.dup2(terminal_stderr, 2)
+        os.close(terminal_stdout)
+        os.close(terminal_stderr)
+        if code == 0 and p.elapsed_seconds is not None:
+            elapsed = p.elapsed_seconds
+            print()
+            log(f"Pipeline completed in {elapsed // 60}m {elapsed % 60}s")
+            p.print_output_guide()
+            sys.stdout.flush()
     return code
 
 
