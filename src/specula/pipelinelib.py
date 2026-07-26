@@ -14,6 +14,7 @@ Usage:  python3 pipelinelib.py [options] "name|github|lang|reference" [...]
 from __future__ import annotations
 
 import contextlib
+import io
 import json
 import locale
 import math
@@ -2537,9 +2538,15 @@ def main(argv: list[str]) -> int:
         os.close(terminal_stderr)
         if code == 0 and p.elapsed_seconds is not None:
             elapsed = p.elapsed_seconds
-            print()
-            log(f"Pipeline completed in {elapsed // 60}m {elapsed % 60}s")
-            p.print_output_guide()
+            footer_buffer = io.StringIO()
+            with contextlib.redirect_stdout(footer_buffer):
+                print()
+                log(f"Pipeline completed in {elapsed // 60}m {elapsed % 60}s")
+                p.print_output_guide()
+            footer = footer_buffer.getvalue()
+            with log_path.open("a", encoding="utf-8") as pipeline_log:
+                pipeline_log.write(footer)
+            sys.stdout.write(footer)
             sys.stdout.flush()
     return code
 

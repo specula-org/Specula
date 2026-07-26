@@ -2694,6 +2694,11 @@ class TestMainTeeTeardown(TmpCwd):
         self.assertIn("View results:", r.stdout)
         self.assertIn("confirmed-bugs.md", r.stdout)
         self.assertIn("bug-severity.md", r.stdout)
+        log_text = (self.tmp / ".specula-output" / "pipeline.log").read_text()
+        self.assertIn("Pipeline completed", log_text)
+        self.assertIn("View results:", log_text)
+        marker = "Pipeline completed"
+        self.assertEqual(log_text[log_text.index(marker) :], r.stdout[r.stdout.index(marker) :])
 
     def test_final_source_capture_failure_suppresses_success_output(self) -> None:
         r = self._run_entry(
@@ -2714,6 +2719,9 @@ class TestMainTeeTeardown(TmpCwd):
         self.assertNotIn("Pipeline completed", r.stdout)
         self.assertNotIn("View results:", r.stdout)
         self.assertNotIn("All results:", r.stdout)
+        log_text = (self.tmp / ".specula-output" / "pipeline.log").read_text()
+        self.assertNotIn("Pipeline completed", log_text)
+        self.assertNotIn("View results:", log_text)
 
     def test_failure_publishes_partial_index_without_completion_summary(self) -> None:
         r = self._run_entry(
