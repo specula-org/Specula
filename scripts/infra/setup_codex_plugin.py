@@ -10,7 +10,7 @@ import shutil
 import subprocess
 
 PLUGIN_NAME = "specula-codex"
-PLUGIN_VERSION = "0.2.0"
+PLUGIN_VERSION = "0.3.0"
 MARKETPLACE_NAME = "specula"
 LEGACY_MCP_NAMES = ("tracedebugger", "spec_analyzer", "inv_checking_tool")
 

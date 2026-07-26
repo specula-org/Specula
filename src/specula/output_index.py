@@ -198,7 +198,7 @@ def render_target_index(name: str, work_dir: Path, *, pipeline_log: Path | None 
         "|---:|---|---|",
         (
             f"| 1 | {_document('Modeling brief', work_dir / 'modeling-brief.md', work_dir)} "
-            "| System model, bug families, and proposed invariants |"
+            "| System model, Scenarios, and proposed invariants |"
         ),
         (
             f"| 2 | {_document('Analysis report', work_dir / 'analysis-report.md', work_dir)} "

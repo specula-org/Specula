@@ -127,7 +127,7 @@ class TestTargetIndex(OutputIndexCase):
 
             | Step | Document | What it contains |
             |---:|---|---|
-            | 1 | [Modeling brief](modeling-brief.md) | System model, bug families, and proposed invariants |
+            | 1 | [Modeling brief](modeling-brief.md) | System model, Scenarios, and proposed invariants |
             | 2 | [Analysis report](analysis-report.md) | Detailed source-code investigation |
             | 3 | [Spec coverage](spec/brief-coverage.md) · [Instrumentation map](spec/instrumentation-spec.md) | How the analysis was translated into the model |
             | 4 | [Validation changelog](spec/changelog.md) | Model corrections and validation history |
