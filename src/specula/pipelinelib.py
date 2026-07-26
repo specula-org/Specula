@@ -41,6 +41,7 @@ if __package__ in (None, ""):
 from specula import quota as _quota
 from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
 from specula.output_index import (
+    INDEX_FILENAME,
     PIPELINE_LOG_ENV,
     TargetOutput,
     is_safe_target_name,
@@ -2403,6 +2404,28 @@ class Pipeline:
         return 0
 
 
+def _result_index_path(pipeline: Pipeline) -> Path | None:
+    """Return the generated human-facing index for one successful run."""
+    if pipeline.dry_run:
+        return None
+    try:
+        targets = pipeline._index_targets()
+    except Exception:
+        return None
+    if not targets:
+        return None
+    if pipeline.run_dir is not None:
+        index = pipeline.run_dir / INDEX_FILENAME
+    elif len(targets) > 1 and pipeline.pipeline_log_path is not None:
+        index = pipeline.pipeline_log_path.parent / INDEX_FILENAME
+    else:
+        index = targets[0].work_dir / INDEX_FILENAME
+    try:
+        return None if index.is_symlink() or not index.is_file() else index
+    except (OSError, UnicodeError):
+        return None
+
+
 def main(argv: list[str]) -> int:
     # bash echo flushed per line; python block-buffers when stdout is a pipe
     # (everything below runs through the tee), which would hold progress lines
@@ -2434,6 +2457,7 @@ def main(argv: list[str]) -> int:
     tee = subprocess.Popen(["tee", str(log_path)], stdin=subprocess.PIPE)
     assert tee.stdin is not None  # stdin=PIPE
     tee_in = tee.stdin
+    terminal_stdout = os.fdopen(os.dup(1), "w", encoding="utf-8")
     sys.stdout.flush()
     sys.stderr.flush()
     os.dup2(tee_in.fileno(), 1)  # fd-level: phase subprocesses inherit the tee
@@ -2479,6 +2503,19 @@ def main(argv: list[str]) -> int:
             p.refresh_output_indexes()
         if tee_rc != 0:
             code = tee_rc
+        try:
+            if code == 0:
+                index = _result_index_path(p)
+                if index is not None:
+                    with contextlib.suppress(OSError, UnicodeError):
+                        print(
+                            f"\nView all results: {index} (final reports are listed at the top).",
+                            file=terminal_stdout,
+                            flush=True,
+                        )
+        finally:
+            with contextlib.suppress(OSError, UnicodeError):
+                terminal_stdout.close()
     return code
 
 

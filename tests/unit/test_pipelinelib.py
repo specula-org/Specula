@@ -2594,6 +2594,49 @@ class TestMainTeeTeardown(TmpCwd):
         self.assertEqual(r.returncode, 7)
         self.assertEqual(marker.read_text(), "done")
 
+    def test_success_points_terminal_to_run_index_without_logging_guide(self) -> None:
+        run = self.tmp / "runs" / "guide-run"
+        r = self._run_entry(
+            f"pl.SPECULA_ROOT = pl.Path({str(self.tmp)!r})\npl.Pipeline.main = lambda self: 0",
+            ["--run-id=guide-run", "t|g|l|r"],
+        )
+
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn(f"View all results: {run / 'index.md'}", r.stdout)
+        self.assertIn("(final reports are listed at the top).", r.stdout)
+        log_text = (run / "pipeline.log").read_text()
+        self.assertNotIn("View all results:", log_text)
+        self.assertNotIn("final reports", log_text)
+
+    def test_success_points_terminal_to_single_target_index_after_chdir(self) -> None:
+        case = self.tmp / "case-studies" / "t"
+        case.mkdir(parents=True)
+        r = self._run_entry(
+            f"pl.SPECULA_ROOT = pl.Path({str(self.tmp)!r})\n"
+            "def succeed(self):\n"
+            f"    case = pl.Path({str(case)!r})\n"
+            "    pl.os.chdir(case)\n"
+            "    pl.os.environ['PWD'] = str(case)\n"
+            "    return 0\n"
+            "pl.Pipeline.main = succeed"
+        )
+
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn(f"View all results: {case / '.specula-output' / 'index.md'}", r.stdout)
+        self.assertNotIn(f"View all results: {self.tmp / '.specula-output' / 'index.md'}", r.stdout)
+
+    def test_final_source_capture_failure_suppresses_terminal_guide(self) -> None:
+        r = self._run_entry(
+            "pl.Pipeline.main = lambda self: 0\n"
+            "def fail_capture(self):\n"
+            "    raise RuntimeError('capture failed')\n"
+            "pl.Pipeline.finalize_source_snapshots = fail_capture"
+        )
+
+        self.assertEqual(r.returncode, 1)
+        self.assertNotIn("View all results:", r.stdout)
+        self.assertNotIn("final reports", r.stdout)
+
     def test_failure_publishes_partial_index_without_completion_summary(self) -> None:
         r = self._run_entry(
             "def boom(self):\n"
@@ -2644,6 +2687,8 @@ class TestMainTeeTeardown(TmpCwd):
         self.addCleanup(logf.chmod, 0o644)
         r = self._run_entry("pl.Pipeline.main = lambda self: 0")
         self.assertEqual(r.returncode, 1)
+        self.assertNotIn("View all results:", r.stdout)
+        self.assertNotIn("final reports", r.stdout)
 
     def test_failing_tee_wins_over_failing_main(self) -> None:
         # bash pipefail returns the rightmost non-zero status: when main fails
