@@ -2700,6 +2700,41 @@ class TestMainTeeTeardown(TmpCwd):
         marker = "Pipeline completed"
         self.assertEqual(log_text[log_text.index(marker) :], r.stdout[r.stdout.index(marker) :])
 
+    def test_success_footer_stays_on_tee_log_inode_after_path_swap(self) -> None:
+        original_log = self.tmp / "original-pipeline.log"
+        outside = self.tmp / "outside.log"
+        outside.write_text("outside\n")
+        r = self._run_entry(
+            f"original_log = pl.Path({str(original_log)!r})\n"
+            f"outside = pl.Path({str(outside)!r})\n"
+            "def complete(self):\n"
+            "    print('progress before swap', flush=True)\n"
+            "    log_path = self.pipeline_log_path\n"
+            "    assert log_path is not None\n"
+            "    deadline = pl.time.time() + 5\n"
+            "    while not log_path.exists() or 'progress before swap' not in log_path.read_text():\n"
+            "        if pl.time.time() >= deadline:\n"
+            "            raise RuntimeError('tee did not write pipeline.log')\n"
+            "        pl.time.sleep(0.01)\n"
+            "    pl.os.link(log_path, original_log)\n"
+            "    log_path.unlink()\n"
+            "    log_path.symlink_to(outside)\n"
+            "    self.elapsed_seconds = 1\n"
+            "    return 0\n"
+            "pl.Pipeline.main = complete"
+        )
+
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("Pipeline completed", r.stdout)
+        self.assertTrue((self.tmp / ".specula-output" / "pipeline.log").is_symlink())
+        self.assertEqual(outside.read_text(), "outside\n")
+        original_text = original_log.read_text()
+        self.assertIn("progress before swap", original_text)
+        self.assertIn("Pipeline completed", original_text)
+        self.assertIn("View results:", original_text)
+        marker = "Pipeline completed"
+        self.assertEqual(original_text[original_text.index(marker) :], r.stdout[r.stdout.index(marker) :])
+
     def test_final_source_capture_failure_suppresses_success_output(self) -> None:
         r = self._run_entry(
             "def complete(self):\n"

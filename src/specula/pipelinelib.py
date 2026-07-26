@@ -2484,7 +2484,26 @@ def main(argv: list[str]) -> int:
         out_dir.mkdir(parents=True, exist_ok=True)
         log_path = out_dir / "pipeline.log"
     p.pipeline_log_path = log_path
-    tee = subprocess.Popen(["tee", str(log_path)], stdin=subprocess.PIPE)
+    log_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_APPEND
+    if hasattr(os, "O_NOFOLLOW"):
+        log_flags |= os.O_NOFOLLOW
+    log_fd = os.open(log_path, log_flags, 0o666)
+    try:
+        pipeline_log = os.fdopen(log_fd, "a", encoding="utf-8")
+    except BaseException:
+        os.close(log_fd)
+        raise
+    try:
+        # Both tee and the success footer use this original fd, so replacing
+        # pipeline.log during a run cannot redirect either write.
+        tee = subprocess.Popen(
+            ["tee", "-a", f"/dev/fd/{log_fd}"],
+            stdin=subprocess.PIPE,
+            pass_fds=(log_fd,),
+        )
+    except BaseException:
+        pipeline_log.close()
+        raise
     assert tee.stdin is not None  # stdin=PIPE
     tee_in = tee.stdin
     terminal_stdout = os.dup(1)
@@ -2536,16 +2555,21 @@ def main(argv: list[str]) -> int:
         os.dup2(terminal_stderr, 2)
         os.close(terminal_stdout)
         os.close(terminal_stderr)
-        if code == 0 and p.elapsed_seconds is not None:
-            elapsed = p.elapsed_seconds
-            footer_buffer = io.StringIO()
-            with contextlib.redirect_stdout(footer_buffer):
-                print()
-                log(f"Pipeline completed in {elapsed // 60}m {elapsed % 60}s")
-                p.print_output_guide()
-            footer = footer_buffer.getvalue()
-            with log_path.open("a", encoding="utf-8") as pipeline_log:
+        footer: str | None = None
+        try:
+            if code == 0 and p.elapsed_seconds is not None:
+                elapsed = p.elapsed_seconds
+                footer_buffer = io.StringIO()
+                with contextlib.redirect_stdout(footer_buffer):
+                    print()
+                    log(f"Pipeline completed in {elapsed // 60}m {elapsed % 60}s")
+                    p.print_output_guide()
+                footer = footer_buffer.getvalue()
                 pipeline_log.write(footer)
+                pipeline_log.flush()
+        finally:
+            pipeline_log.close()
+        if footer is not None:
             sys.stdout.write(footer)
             sys.stdout.flush()
     return code
