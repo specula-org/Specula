@@ -231,7 +231,7 @@ TLC_CMD+=("$SPEC_FILE")
 TLC_CMD+=(-workers "$WORKERS")
 
 # Add deadlock check
-if [ "$DEADLOCK_CHECK" = true ]; then
+if [ "$DEADLOCK_CHECK" = false ]; then
     TLC_CMD+=(-deadlock)
 fi
 
