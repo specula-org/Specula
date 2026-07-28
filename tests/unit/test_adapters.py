@@ -3702,7 +3702,7 @@ class CodexAdapter(AdapterCase):
         )
         self.assertEqual(list(base.glob("specula-codex-session-*.id")), [])
 
-    def test_usage_fails_closed_when_ccusage_omits_descendant(self) -> None:
+    def test_usage_treats_ccusage_omitted_descendant_as_zero(self) -> None:
         base = self.sandbox()
         root_id = "019f0000-0000-7000-8000-000000000016"
         child_id = "019f0000-0000-7000-8000-000000000017"
@@ -3765,12 +3765,22 @@ class CodexAdapter(AdapterCase):
         )
 
         self.assertEqual(result["returncode"], 0, result["stderr"])
-        self.assertIn(f"usage unavailable for session {root_id}", result["stderr"])
+        self.assertNotIn("usage unavailable", result["stderr"])
         usage = json.loads((base / "out.usage.json").read_text())
         self.assertEqual(usage["session_id"], root_id)
         self.assertEqual(usage["session_file"], root_file.stem)
-        self.assertIsNone(usage["total_cost_usd"])
-        self.assertEqual(usage["usage"], {})
+        self.assertEqual(usage["total_cost_usd"], 1.25)
+        self.assertEqual(
+            usage["usage"],
+            {
+                "input_tokens": 10,
+                "cached_input_tokens": 4,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 3,
+                "reasoning_output_tokens": 2,
+                "total_tokens": 17,
+            },
+        )
 
     def test_usage_never_guesses_without_one_thread_started_id(self) -> None:
         fixtures = {

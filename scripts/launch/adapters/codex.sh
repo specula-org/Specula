@@ -300,9 +300,9 @@ for session in sessions:
 root = rows_by_file.get(root_session_file)
 if root is None:
     sys.exit(1)
-if not target_files.issubset(rows_by_file):
-    sys.exit(1)
-selected = [rows_by_file[name] for name in sorted(target_files)]
+# ccusage omits descendants with no incremental billable events, including
+# fully deduplicated fork history. Those sessions contribute zero usage.
+selected = [rows_by_file[name] for name in sorted(target_files) if name in rows_by_file]
 
 def token_total(key, legacy_key=None, default=None):
     total = 0
