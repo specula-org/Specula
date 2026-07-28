@@ -738,8 +738,10 @@ def stream_events(
         detected_session_id = _session_id(adapter_name, record)
         if detected_session_id is not None and detected_session_id not in seen_session_ids:
             seen_session_ids.add(detected_session_id)
-            if captured_session_id is None:
-                captured_session_id = detected_session_id
+            # A best-effort caller must never guess between distinct native
+            # sessions observed in one stream. Resume-state callbacks below
+            # additionally turn the mismatch into an integrity failure.
+            captured_session_id = detected_session_id if len(seen_session_ids) == 1 else None
             if session_capture is not None:
                 try:
                     session_capture(detected_session_id)
@@ -952,14 +954,15 @@ def stream_events(
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) not in {3, 7} or argv[0] not in _ADAPTER_NAMES:
+    if len(argv) not in {3, 4, 7} or argv[0] not in _ADAPTER_NAMES:
         print(
             "usage: python -m specula.adapters.utils.event_stream "
             "{claude|codex|copilot|opencode|pi} ACTIVITY_JSONL LOG_FILE "
-            "[RESUME_STATE CWD MODEL EFFORT]",
+            "[SESSION_ID_FILE | RESUME_STATE CWD MODEL EFFORT]",
             file=sys.stderr,
         )
         return 2
+    session_id_path = Path(argv[3]) if len(argv) == 4 else None
     session_capture: Callable[[str], None] | None = None
     if len(argv) == 7:
         adapter_name = _ADAPTER_NAMES[argv[0]]
@@ -985,6 +988,17 @@ def main(argv: list[str]) -> int:
     except OSError as exc:
         print(f"adapter event stream failed: {exc}", file=sys.stderr)
         return 1
+    if session_id_path is not None:
+        try:
+            session_id_path.write_text(
+                f"{status.session_id}\n" if status.session_id is not None else "",
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            # This sidecar only supports best-effort usage collection. Losing it
+            # must not turn an otherwise successful native agent run into a
+            # failure; resume-state persistence remains fail-closed above.
+            print(f"adapter event stream warning: session ID file {session_id_path}: {exc}", file=sys.stderr)
     if not status.resume_ok:
         return RESUME_STATE_FAILURE_RC
     if status.rate_limit_error is not None:
