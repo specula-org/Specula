@@ -169,7 +169,10 @@ PY
     return "$write_rc"
   fi
 
-  [[ -d "$sessions_dir" ]] || return 0
+  if [[ ! -d "$sessions_dir" ]]; then
+    echo "codex adapter: usage unavailable: sessions directory not found: $sessions_dir" >&2
+    return 0
+  fi
 
   local session_path=""
   if [[ -n "$RESUME_STATE" ]]; then
@@ -208,35 +211,87 @@ for path in sorted(sessions_dir.rglob("rollout-*.jsonl")):
 PY
     )"
   else
-    session_path="$(
-      find "$sessions_dir" -type f -name 'rollout-*.jsonl' -newer "$marker_file" 2>/dev/null \
-      | sort \
-      | tail -n1
+    local session_info=""
+    session_info="$(python3 - "$sessions_dir" "$marker_file" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+sessions_dir = Path(sys.argv[1])
+marker = Path(sys.argv[2])
+try:
+    marker_mtime = marker.stat().st_mtime_ns
+except OSError:
+    raise SystemExit(0)
+
+candidates = []
+for path in sorted(sessions_dir.rglob("rollout-*.jsonl")):
+    try:
+        if not path.is_file() or path.stat().st_mtime_ns <= marker_mtime:
+            continue
+        with path.open(encoding="utf-8") as stream:
+            first = json.loads(stream.readline())
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        continue
+    if first.get("type") != "session_meta":
+        continue
+    payload = first.get("payload")
+    if not isinstance(payload, dict):
+        continue
+    session_id = payload.get("id") or payload.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        continue
+    parent_id = payload.get("parent_thread_id")
+    source = payload.get("source")
+    if parent_id is None and isinstance(source, dict):
+        subagent = source.get("subagent")
+        if isinstance(subagent, dict):
+            thread_spawn = subagent.get("thread_spawn")
+            if isinstance(thread_spawn, dict):
+                parent_id = thread_spawn.get("parent_thread_id")
+    if parent_id is None:
+        candidates.append((path, session_id))
+
+if len(candidates) == 1:
+    print(f"{candidates[0][0]}\t{candidates[0][1]}")
+elif candidates:
+    print(
+        "codex adapter: usage unavailable: multiple Codex sessions started during this invocation",
+        file=sys.stderr,
+    )
+else:
+    print(
+        "codex adapter: usage unavailable: no Codex session found for this invocation",
+        file=sys.stderr,
+    )
+PY
     )"
+    if [[ -n "$session_info" ]]; then
+      session_path="${session_info%%$'\t'*}"
+      exact_session_id="${session_info#*$'\t'}"
+    fi
   fi
 
-  [[ -n "$session_path" ]] || return 0
+  if [[ -z "$session_path" ]]; then
+    if [[ -n "$exact_session_id" ]]; then
+      echo "codex adapter: usage unavailable: session $exact_session_id was not found" >&2
+    fi
+    return 0
+  fi
 
   local session_file
-  local session_id
   session_file="$(basename "$session_path" .jsonl)"
-  if [[ -n "$RESUME_STATE" ]]; then
-    session_id="$exact_session_id"
-  else
-    session_id="${session_path#${sessions_dir}/}"
-    session_id="${session_id%.jsonl}"
-  fi
 
   local ccusage_output=""
   if command -v npx >/dev/null 2>&1; then
-    ccusage_output="$(
-      npx @ccusage/codex@latest session --json 2>/dev/null \
+    if ! ccusage_output="$(
+      npx --yes ccusage@20.0.19 codex session --json 2>/dev/null \
       | python3 -c '
 import json
 import sys
 
 session_file = sys.argv[1]
-exact_session_id = sys.argv[2] or None
+exact_session_id = sys.argv[2]
 
 try:
     data = json.load(sys.stdin)
@@ -244,30 +299,39 @@ except Exception:
     sys.exit(1)
 
 for session in data.get("sessions", []):
-    if session.get("sessionFile") == session_file:
-        json.dump(
-            {
-                "agent": "codex",
-                "session_id": exact_session_id or session.get("sessionId"),
-                "session_file": session.get("sessionFile"),
-                "total_cost_usd": session.get("costUSD"),
-                "usage": {
-                    "input_tokens": session.get("inputTokens"),
-                    "cached_input_tokens": session.get("cachedInputTokens"),
-                    "output_tokens": session.get("outputTokens"),
-                    "reasoning_output_tokens": session.get("reasoningOutputTokens"),
-                    "total_tokens": session.get("totalTokens"),
-                },
+    if session.get("sessionFile") != session_file:
+        continue
+    cached_input = session.get("cacheReadTokens")
+    if cached_input is None:
+        cached_input = session.get("cachedInputTokens")
+    json.dump(
+        {
+            "agent": "codex",
+            "session_id": exact_session_id,
+            "session_file": session.get("sessionFile"),
+            "total_cost_usd": session.get("costUSD"),
+            "usage": {
+                "input_tokens": session.get("inputTokens"),
+                "cached_input_tokens": cached_input,
+                "output_tokens": session.get("outputTokens"),
+                "reasoning_output_tokens": session.get("reasoningOutputTokens"),
+                "total_tokens": session.get("totalTokens"),
             },
-            sys.stdout,
-            indent=2,
-        )
-        print()
-        sys.exit(0)
+        },
+        sys.stdout,
+        indent=2,
+    )
+    print()
+    sys.exit(0)
 
 sys.exit(1)
-' "$session_file" "$exact_session_id" 2>/dev/null
-    )" || true
+' "$session_file" "$exact_session_id"
+    )"; then
+      ccusage_output=""
+      echo "codex adapter: usage unavailable for session $exact_session_id" >&2
+    fi
+  else
+    echo "codex adapter: usage unavailable: npx was not found" >&2
   fi
 
   if [[ -n "$ccusage_output" ]]; then
@@ -276,7 +340,7 @@ sys.exit(1)
     return "$write_rc"
   fi
 
-  python3 - <<'PY' "$usage_file" "$session_id" "$session_file"
+  python3 - <<'PY' "$usage_file" "$exact_session_id" "$session_file"
 import json
 import sys
 

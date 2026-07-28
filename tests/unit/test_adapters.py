@@ -3367,7 +3367,7 @@ class CodexAdapter(AdapterCase):
                                 "sessionId": session_id,
                                 "costUSD": 1.25,
                                 "inputTokens": 10,
-                                "cachedInputTokens": 4,
+                                "cacheReadTokens": 4,
                                 "outputTokens": 3,
                                 "reasoningOutputTokens": 2,
                                 "totalTokens": 13,
@@ -3405,7 +3405,165 @@ class CodexAdapter(AdapterCase):
         self.assertEqual(usage["session_id"], session_id)
         self.assertEqual(usage["session_file"], exact_file.stem)
         self.assertEqual(usage["total_cost_usd"], 1.25)
-        self.assertEqual(usage["usage"]["total_tokens"], 13)
+        self.assertEqual(
+            usage["usage"],
+            {
+                "input_tokens": 10,
+                "cached_input_tokens": 4,
+                "output_tokens": 3,
+                "reasoning_output_tokens": 2,
+                "total_tokens": 13,
+            },
+        )
+
+    def test_usage_failure_warns_without_failing_codex(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        session_id = "019f0000-0000-7000-8000-000000000008"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "codex",
+                    "session_id": session_id,
+                    "cwd": str(base),
+                    "model": "",
+                    "effort": "",
+                }
+            )
+        )
+        sessions = base / ".codex" / "sessions" / "2026" / "07" / "18"
+        sessions.mkdir(parents=True)
+        session_file = sessions / f"rollout-2026-07-18T00-00-00-{session_id}.jsonl"
+        session_file.write_text(json.dumps({"type": "session_meta", "payload": {"id": session_id}}) + "\n")
+        bindir = base / "bin"
+        bindir.mkdir()
+        npx = bindir / "npx"
+        npx.write_text("#!/usr/bin/env bash\nexit 1\n")
+        npx.chmod(npx.stat().st_mode | stat.S_IEXEC)
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": session_id}),
+                json.dumps({"type": "turn.completed", "usage": {}}),
+            ]
+        )
+
+        result = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"TMPDIR": str(base)},
+            record_extra=True,
+            run_dir=base,
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertIn(f"usage unavailable for session {session_id}", result["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["session_id"], session_id)
+        self.assertEqual(usage["session_file"], session_file.stem)
+        self.assertIsNone(usage["total_cost_usd"])
+        self.assertEqual(usage["usage"], {})
+
+    def test_usage_selects_the_unique_top_level_session(self) -> None:
+        base = self.sandbox()
+        session_id = "019f0000-0000-7000-8000-000000000009"
+        child_id = "019f0000-0000-7000-8000-000000000010"
+        sessions = base / ".codex" / "sessions" / "2026" / "07" / "18"
+        sessions.mkdir(parents=True)
+        session_file = sessions / f"rollout-2026-07-18T00-00-00-{session_id}.jsonl"
+        child_file = sessions / f"rollout-2026-07-18T00-00-01-{child_id}.jsonl"
+        session_file.write_text(json.dumps({"type": "session_meta", "payload": {"id": session_id}}) + "\n")
+        child_file.write_text(
+            json.dumps(
+                {
+                    "type": "session_meta",
+                    "payload": {"id": child_id, "parent_thread_id": session_id},
+                }
+            )
+            + "\n"
+        )
+        future = time.time() + 60
+        for path in (session_file, child_file):
+            os.utime(path, (future, future))
+
+        bindir = base / "bin"
+        bindir.mkdir()
+        npx = bindir / "npx"
+        npx.write_text(
+            "#!/usr/bin/env bash\n"
+            + f"printf '%s\\n' \"$@\" > {json.dumps(str(base / 'npx-argv.txt'))}\n"
+            + "printf '%s\\n' "
+            + json.dumps(
+                json.dumps(
+                    {
+                        "sessions": [
+                            {
+                                "sessionFile": session_file.stem,
+                                "costUSD": 1.25,
+                                "inputTokens": 10,
+                                "cacheReadTokens": 4,
+                                "outputTokens": 3,
+                                "reasoningOutputTokens": 2,
+                                "totalTokens": 13,
+                            },
+                            {
+                                "sessionFile": child_file.stem,
+                                "costUSD": 50,
+                                "totalTokens": 700,
+                            },
+                        ]
+                    }
+                )
+            )
+            + "\n"
+        )
+        npx.chmod(npx.stat().st_mode | stat.S_IEXEC)
+
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text="codex ran\n",
+            record_extra=True,
+            run_dir=base,
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["session_id"], session_id)
+        self.assertEqual(usage["session_file"], session_file.stem)
+        self.assertEqual(usage["total_cost_usd"], 1.25)
+        self.assertEqual(usage["usage"]["cached_input_tokens"], 4)
+        self.assertEqual(
+            (base / "npx-argv.txt").read_text().splitlines(),
+            ["--yes", "ccusage@20.0.19", "codex", "session", "--json"],
+        )
+
+    def test_usage_does_not_guess_between_concurrent_top_level_sessions(self) -> None:
+        base = self.sandbox()
+        sessions = base / ".codex" / "sessions" / "2026" / "07" / "18"
+        sessions.mkdir(parents=True)
+        future = time.time() + 60
+        for index in range(2):
+            session_id = f"019f0000-0000-7000-8000-00000000001{index}"
+            path = sessions / f"rollout-2026-07-18T00-00-0{index}-{session_id}.jsonl"
+            path.write_text(json.dumps({"type": "session_meta", "payload": {"id": session_id}}) + "\n")
+            os.utime(path, (future, future))
+
+        result = self.invoke(
+            self.base_flags(base),
+            env_extra={"CODEX_HOME": str(base / ".codex")},
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertIn("multiple Codex sessions started during this invocation", result["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertIsNone(usage["session_id"])
+        self.assertIsNone(usage["session_file"])
+        self.assertIsNone(usage["total_cost_usd"])
+        self.assertEqual(usage["usage"], {})
 
     def test_large_prompt_uses_stdin_with_activity_stream(self) -> None:
         base = self.sandbox()
