@@ -3020,8 +3020,25 @@ class CodexAdapter(AdapterCase):
         # record_extra=True captures the fake codex's stdin: the adapter feeds the
         # prompt via stdin (not argv) to stay under MAX_ARG_STRLEN, so the prompt
         # must show up there, not in argv.
+        fixture = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "thread.started",
+                        "thread_id": "019f0000-0000-7000-8000-000000000000",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {"type": "agent_message", "text": "codex ran"},
+                    }
+                ),
+                json.dumps({"type": "turn.completed", "usage": {}}),
+            ]
+        )
         return self.run_adapter(
-            self.CMD, flags, fake_name="codex", fixture_text="codex ran\n", record_extra=True, env_extra=env_extra
+            self.CMD, flags, fake_name="codex", fixture_text=fixture, record_extra=True, env_extra=env_extra
         )
 
     def base_flags(self, base: Path) -> list[str]:
@@ -3042,6 +3059,7 @@ class CodexAdapter(AdapterCase):
                 str(base / "out.last-message.txt"),
                 "-c",
                 "tool_output_token_limit=10000",
+                "--json",
                 "-",
             ],
         )
@@ -3367,10 +3385,11 @@ class CodexAdapter(AdapterCase):
                                 "sessionId": session_id,
                                 "costUSD": 1.25,
                                 "inputTokens": 10,
-                                "cachedInputTokens": 4,
+                                "cacheCreationTokens": 0,
+                                "cacheReadTokens": 4,
                                 "outputTokens": 3,
                                 "reasoningOutputTokens": 2,
-                                "totalTokens": 13,
+                                "totalTokens": 17,
                             },
                             {
                                 "sessionFile": other_file.stem,
@@ -3405,7 +3424,412 @@ class CodexAdapter(AdapterCase):
         self.assertEqual(usage["session_id"], session_id)
         self.assertEqual(usage["session_file"], exact_file.stem)
         self.assertEqual(usage["total_cost_usd"], 1.25)
-        self.assertEqual(usage["usage"]["total_tokens"], 13)
+        self.assertEqual(
+            usage["usage"],
+            {
+                "input_tokens": 10,
+                "cached_input_tokens": 4,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 3,
+                "reasoning_output_tokens": 2,
+                "total_tokens": 17,
+            },
+        )
+
+    def test_resume_usage_failure_warns_without_failing_codex(self) -> None:
+        base = self.sandbox()
+        state = base / "resume.json"
+        session_id = "019f0000-0000-7000-8000-000000000008"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "codex",
+                    "session_id": session_id,
+                    "cwd": str(base),
+                    "model": "",
+                    "effort": "",
+                }
+            )
+        )
+        sessions = base / ".codex" / "sessions" / "2026" / "07" / "18"
+        sessions.mkdir(parents=True)
+        session_file = sessions / f"rollout-2026-07-18T00-00-00-{session_id}.jsonl"
+        session_file.write_text(json.dumps({"type": "session_meta", "payload": {"id": session_id}}) + "\n")
+        bindir = base / "bin"
+        bindir.mkdir()
+        npx = bindir / "npx"
+        npx.write_text("#!/usr/bin/env bash\nexit 1\n")
+        npx.chmod(npx.stat().st_mode | stat.S_IEXEC)
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": session_id}),
+                json.dumps({"type": "turn.completed", "usage": {}}),
+            ]
+        )
+
+        result = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="codex",
+            fixture_text=fixture,
+            env_extra={"TMPDIR": str(base)},
+            record_extra=True,
+            run_dir=base,
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertIn(f"usage unavailable for session {session_id}", result["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["session_id"], session_id)
+        self.assertEqual(usage["session_file"], session_file.stem)
+        self.assertIsNone(usage["total_cost_usd"])
+        self.assertEqual(usage["usage"], {})
+
+    def test_fresh_usage_failure_preserves_native_status(self) -> None:
+        session_id = "019f0000-0000-7000-8000-000000000015"
+        for native_rc, expected in (("0", 0), ("9", 9), ("75", 75)):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                sessions = base / ".codex" / "sessions" / "2026" / "07" / "18"
+                sessions.mkdir(parents=True)
+                session_file = sessions / f"rollout-2026-07-18T00-00-00-{session_id}.jsonl"
+                session_file.write_text(json.dumps({"type": "session_meta", "payload": {"id": session_id}}) + "\n")
+                bindir = base / "bin"
+                bindir.mkdir()
+                npx = bindir / "npx"
+                npx.write_text("#!/usr/bin/env bash\nexit 1\n")
+                npx.chmod(npx.stat().st_mode | stat.S_IEXEC)
+                fixture = "\n".join(
+                    [
+                        json.dumps({"type": "thread.started", "thread_id": session_id}),
+                        json.dumps({"type": "turn.completed", "usage": {}}),
+                    ]
+                )
+
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="codex",
+                    fixture_text=fixture,
+                    env_extra={
+                        "ADAPTER_EXIT_CODE": native_rc,
+                        "CODEX_HOME": str(base / ".codex"),
+                        "TMPDIR": str(base),
+                    },
+                    record_extra=True,
+                    run_dir=base,
+                )
+
+                self.assertEqual(result["returncode"], expected, result["stderr"])
+                self.assertIn(f"usage unavailable for session {session_id}", result["stderr"])
+                usage = json.loads((base / "out.usage.json").read_text())
+                self.assertEqual(usage["session_id"], session_id)
+                self.assertEqual(usage["session_file"], session_file.stem)
+                self.assertIsNone(usage["total_cost_usd"])
+                self.assertEqual(usage["usage"], {})
+                self.assertEqual(list(base.glob("specula-codex-session-*.id")), [])
+
+    def test_usage_uses_exact_thread_and_aggregates_descendants(self) -> None:
+        base = self.sandbox()
+        root_id = "019f0000-0000-7000-8000-000000000009"
+        child_id = "019f0000-0000-7000-8000-000000000010"
+        grandchild_id = "019f0000-0000-7000-8000-000000000011"
+        unrelated_id = "019f0000-0000-7000-8000-000000000012"
+        unrelated_child_id = "019f0000-0000-7000-8000-000000000013"
+        sessions = base / ".codex" / "sessions" / "2026" / "07" / "18"
+        sessions.mkdir(parents=True)
+        root_file = sessions / f"rollout-2026-07-18T00-00-00-{root_id}.jsonl"
+        child_file = sessions / f"rollout-2026-07-18T00-00-01-{child_id}.jsonl"
+        grandchild_file = sessions / f"rollout-2026-07-18T00-00-02-{grandchild_id}.jsonl"
+        unrelated_file = sessions / f"rollout-2026-07-18T00-00-03-{unrelated_id}.jsonl"
+        unrelated_child_file = sessions / f"rollout-2026-07-18T00-00-04-{unrelated_child_id}.jsonl"
+        root_file.write_text(json.dumps({"type": "session_meta", "payload": {"id": root_id}}) + "\n")
+        child_file.write_text(
+            json.dumps(
+                {
+                    "type": "session_meta",
+                    "payload": {"id": child_id, "parent_thread_id": root_id},
+                }
+            )
+            + "\n"
+        )
+        grandchild_file.write_text(
+            json.dumps(
+                {
+                    "type": "session_meta",
+                    "payload": {
+                        "id": grandchild_id,
+                        "source": {
+                            "subagent": {
+                                "thread_spawn": {
+                                    "parent_thread_id": child_id,
+                                }
+                            }
+                        },
+                    },
+                }
+            )
+            + "\n"
+        )
+        unrelated_file.write_text(json.dumps({"type": "session_meta", "payload": {"id": unrelated_id}}) + "\n")
+        unrelated_child_file.write_text(
+            json.dumps(
+                {
+                    "type": "session_meta",
+                    "payload": {
+                        "id": unrelated_child_id,
+                        "parent_thread_id": unrelated_id,
+                    },
+                }
+            )
+            + "\n"
+        )
+        future = time.time() + 60
+        for path in (root_file, child_file, grandchild_file, unrelated_file, unrelated_child_file):
+            os.utime(path, (future, future))
+
+        bindir = base / "bin"
+        bindir.mkdir()
+        npx = bindir / "npx"
+        npx.write_text(
+            "#!/usr/bin/env bash\n"
+            + f"printf '%s\\n' \"$@\" > {json.dumps(str(base / 'npx-argv.txt'))}\n"
+            + "printf '%s\\n' "
+            + json.dumps(
+                json.dumps(
+                    {
+                        "sessions": [
+                            {
+                                "sessionFile": unrelated_file.stem,
+                                "costUSD": 100,
+                                "inputTokens": 100,
+                                "cacheCreationTokens": 100,
+                                "cacheReadTokens": 100,
+                                "outputTokens": 100,
+                                "reasoningOutputTokens": 50,
+                                "totalTokens": 400,
+                            },
+                            {
+                                "sessionFile": grandchild_file.stem,
+                                "costUSD": 4.0,
+                                "inputTokens": 2,
+                                "cacheCreationTokens": 7,
+                                "cacheReadTokens": 1,
+                                "outputTokens": 3,
+                                "reasoningOutputTokens": 1,
+                                "totalTokens": 13,
+                            },
+                            {
+                                "sessionFile": root_file.stem,
+                                "costUSD": 1.25,
+                                "inputTokens": 10,
+                                "cacheCreationTokens": 3,
+                                "cacheReadTokens": 4,
+                                "cachedInputTokens": 999,
+                                "outputTokens": 3,
+                                "reasoningOutputTokens": 2,
+                                "totalTokens": 20,
+                            },
+                            {
+                                "sessionFile": unrelated_child_file.stem,
+                                "costUSD": 200,
+                                "inputTokens": 200,
+                                "cacheCreationTokens": 200,
+                                "cacheReadTokens": 200,
+                                "outputTokens": 200,
+                                "reasoningOutputTokens": 100,
+                                "totalTokens": 800,
+                            },
+                            {
+                                "sessionFile": child_file.stem,
+                                "costUSD": 2.5,
+                                "inputTokens": 20,
+                                "cacheCreationTokens": 5,
+                                "cacheReadTokens": 5,
+                                "outputTokens": 6,
+                                "reasoningOutputTokens": 4,
+                                "totalTokens": 36,
+                            },
+                        ]
+                    }
+                )
+            )
+            + "\n"
+        )
+        npx.chmod(npx.stat().st_mode | stat.S_IEXEC)
+
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text="\n".join(
+                [
+                    json.dumps({"type": "thread.started", "thread_id": root_id}),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {"type": "agent_message", "text": "done"},
+                        }
+                    ),
+                    json.dumps({"type": "turn.completed", "usage": {}}),
+                ]
+            ),
+            env_extra={"CODEX_HOME": str(base / ".codex"), "TMPDIR": str(base)},
+            record_extra=True,
+            run_dir=base,
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["session_id"], root_id)
+        self.assertEqual(usage["session_file"], root_file.stem)
+        self.assertEqual(usage["total_cost_usd"], 7.75)
+        self.assertEqual(
+            usage["usage"],
+            {
+                "input_tokens": 32,
+                "cached_input_tokens": 10,
+                "cache_write_input_tokens": 15,
+                "output_tokens": 12,
+                "reasoning_output_tokens": 7,
+                "total_tokens": 69,
+            },
+        )
+        self.assertEqual(
+            (base / "npx-argv.txt").read_text().splitlines(),
+            ["--yes", "ccusage@20.0.19", "codex", "session", "--json"],
+        )
+        self.assertEqual(list(base.glob("specula-codex-session-*.id")), [])
+
+    def test_usage_treats_ccusage_omitted_descendant_as_zero(self) -> None:
+        base = self.sandbox()
+        root_id = "019f0000-0000-7000-8000-000000000016"
+        child_id = "019f0000-0000-7000-8000-000000000017"
+        sessions = base / ".codex" / "sessions" / "2026" / "07" / "18"
+        sessions.mkdir(parents=True)
+        root_file = sessions / f"rollout-2026-07-18T00-00-00-{root_id}.jsonl"
+        child_file = sessions / f"rollout-2026-07-18T00-00-01-{child_id}.jsonl"
+        root_file.write_text(json.dumps({"type": "session_meta", "payload": {"id": root_id}}) + "\n")
+        child_file.write_text(
+            json.dumps(
+                {
+                    "type": "session_meta",
+                    "payload": {"id": child_id, "parent_thread_id": root_id},
+                }
+            )
+            + "\n"
+        )
+
+        bindir = base / "bin"
+        bindir.mkdir()
+        npx = bindir / "npx"
+        npx.write_text(
+            "#!/usr/bin/env bash\n"
+            + "printf '%s\\n' "
+            + json.dumps(
+                json.dumps(
+                    {
+                        "sessions": [
+                            {
+                                "sessionFile": root_file.stem,
+                                "costUSD": 1.25,
+                                "inputTokens": 10,
+                                "cacheCreationTokens": 0,
+                                "cacheReadTokens": 4,
+                                "outputTokens": 3,
+                                "reasoningOutputTokens": 2,
+                                "totalTokens": 17,
+                            }
+                        ]
+                    }
+                )
+            )
+            + "\n"
+        )
+        npx.chmod(npx.stat().st_mode | stat.S_IEXEC)
+
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text="\n".join(
+                [
+                    json.dumps({"type": "thread.started", "thread_id": root_id}),
+                    json.dumps({"type": "turn.completed", "usage": {}}),
+                ]
+            ),
+            env_extra={"CODEX_HOME": str(base / ".codex"), "TMPDIR": str(base)},
+            record_extra=True,
+            run_dir=base,
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertNotIn("usage unavailable", result["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["session_id"], root_id)
+        self.assertEqual(usage["session_file"], root_file.stem)
+        self.assertEqual(usage["total_cost_usd"], 1.25)
+        self.assertEqual(
+            usage["usage"],
+            {
+                "input_tokens": 10,
+                "cached_input_tokens": 4,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 3,
+                "reasoning_output_tokens": 2,
+                "total_tokens": 17,
+            },
+        )
+
+    def test_usage_never_guesses_without_one_thread_started_id(self) -> None:
+        fixtures = {
+            "missing": json.dumps({"type": "turn.completed", "usage": {}}),
+            "ambiguous": "\n".join(
+                [
+                    json.dumps({"type": "thread.started", "thread_id": "thread-one"}),
+                    json.dumps({"type": "thread.started", "thread_id": "thread-two"}),
+                    json.dumps({"type": "turn.completed", "usage": {}}),
+                ]
+            ),
+        }
+        for name, fixture in fixtures.items():
+            with self.subTest(name):
+                base = self.sandbox()
+                sessions = base / ".codex" / "sessions" / "2026" / "07" / "18"
+                sessions.mkdir(parents=True)
+                stale_id = "019f0000-0000-7000-8000-000000000014"
+                stale = sessions / f"rollout-2026-07-18T00-00-00-{stale_id}.jsonl"
+                stale.write_text(json.dumps({"type": "session_meta", "payload": {"id": stale_id}}) + "\n")
+                future = time.time() + 60
+                os.utime(stale, (future, future))
+
+                bindir = base / "bin"
+                bindir.mkdir()
+                sentinel = base / "npx-ran"
+                npx = bindir / "npx"
+                npx.write_text("#!/usr/bin/env bash\n" + f"printf x > {json.dumps(str(sentinel))}\n" + "exit 1\n")
+                npx.chmod(npx.stat().st_mode | stat.S_IEXEC)
+
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="codex",
+                    fixture_text=fixture,
+                    env_extra={"CODEX_HOME": str(base / ".codex"), "TMPDIR": str(base)},
+                    record_extra=True,
+                    run_dir=base,
+                )
+
+                self.assertEqual(result["returncode"], 0, result["stderr"])
+                self.assertIn("exact thread.started ID was not captured", result["stderr"])
+                usage = json.loads((base / "out.usage.json").read_text())
+                self.assertIsNone(usage["session_id"])
+                self.assertIsNone(usage["session_file"])
+                self.assertIsNone(usage["total_cost_usd"])
+                self.assertEqual(usage["usage"], {})
+                self.assertFalse(sentinel.exists())
+                self.assertEqual(list(base.glob("specula-codex-session-*.id")), [])
 
     def test_large_prompt_uses_stdin_with_activity_stream(self) -> None:
         base = self.sandbox()
@@ -3794,6 +4218,7 @@ class CodexAdapter(AdapterCase):
                 "gpt-5.5",
                 "-c",
                 "model_reasoning_effort=high",
+                "--json",
                 "-",
             ],
         )
@@ -3838,6 +4263,7 @@ class CodexAdapter(AdapterCase):
                 str(base / "out.last-message.txt"),
                 "-c",
                 "tool_output_token_limit=10000",
+                "--json",
                 "-",
             ],
         )

@@ -134,11 +134,10 @@ fi
 
 write_usage_file() {
   local log_file="$1"
+  local exact_session_id="$2"
   local sessions_dir="${CODEX_HOME:-$HOME/.codex}/sessions"
-  local marker_file="$2"
   local usage_file="${log_file%.log}.usage.json"
   local write_rc=0
-  local exact_session_id=""
 
   if [[ -n "$RESUME_STATE" ]]; then
     if ! exact_session_id="$(read_resume_session_id)"; then
@@ -169,15 +168,21 @@ PY
     return "$write_rc"
   fi
 
-  [[ -d "$sessions_dir" ]] || return 0
+  if [[ -z "$exact_session_id" ]]; then
+    echo "codex adapter: usage unavailable: exact thread.started ID was not captured" >&2
+    return 0
+  fi
+
+  if [[ ! -d "$sessions_dir" ]]; then
+    echo "codex adapter: usage unavailable: sessions directory not found: $sessions_dir" >&2
+    return 0
+  fi
 
   local session_path=""
-  if [[ -n "$RESUME_STATE" ]]; then
-    # A resume-aware run is keyed exclusively by the ID captured from this
-    # Codex stream. Never guess with a timestamp marker (or `--last`): another
-    # concurrent Codex process may have written the newest rollout.
-    [[ -n "$exact_session_id" ]] || return 0
-    session_path="$(python3 - "$sessions_dir" "$exact_session_id" <<'PY'
+  # Every run is keyed exclusively by the documented thread.started ID from
+  # this Codex stream. Never guess with timestamps (or `--last`): another
+  # concurrent Codex process may be creating or resuming a rollout.
+  session_path="$(python3 - "$sessions_dir" "$exact_session_id" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -206,68 +211,156 @@ for path in sorted(sessions_dir.rglob("rollout-*.jsonl")):
         print(path)
         raise SystemExit(0)
 PY
-    )"
-  else
-    session_path="$(
-      find "$sessions_dir" -type f -name 'rollout-*.jsonl' -newer "$marker_file" 2>/dev/null \
-      | sort \
-      | tail -n1
-    )"
-  fi
+  )"
 
-  [[ -n "$session_path" ]] || return 0
+  if [[ -z "$session_path" ]]; then
+    echo "codex adapter: usage unavailable: session $exact_session_id was not found" >&2
+    return 0
+  fi
 
   local session_file
-  local session_id
   session_file="$(basename "$session_path" .jsonl)"
-  if [[ -n "$RESUME_STATE" ]]; then
-    session_id="$exact_session_id"
-  else
-    session_id="${session_path#${sessions_dir}/}"
-    session_id="${session_id%.jsonl}"
-  fi
 
   local ccusage_output=""
   if command -v npx >/dev/null 2>&1; then
-    ccusage_output="$(
-      npx @ccusage/codex@latest session --json 2>/dev/null \
+    if ! ccusage_output="$(
+      npx --yes ccusage@20.0.19 codex session --json 2>/dev/null \
       | python3 -c '
 import json
+import math
+from pathlib import Path
 import sys
 
-session_file = sys.argv[1]
-exact_session_id = sys.argv[2] or None
+root_session_file = sys.argv[1]
+exact_session_id = sys.argv[2]
+sessions_dir = Path(sys.argv[3])
 
 try:
     data = json.load(sys.stdin)
 except Exception:
     sys.exit(1)
 
-for session in data.get("sessions", []):
-    if session.get("sessionFile") == session_file:
-        json.dump(
-            {
-                "agent": "codex",
-                "session_id": exact_session_id or session.get("sessionId"),
-                "session_file": session.get("sessionFile"),
-                "total_cost_usd": session.get("costUSD"),
-                "usage": {
-                    "input_tokens": session.get("inputTokens"),
-                    "cached_input_tokens": session.get("cachedInputTokens"),
-                    "output_tokens": session.get("outputTokens"),
-                    "reasoning_output_tokens": session.get("reasoningOutputTokens"),
-                    "total_tokens": session.get("totalTokens"),
-                },
-            },
-            sys.stdout,
-            indent=2,
-        )
-        print()
-        sys.exit(0)
+parents = {}
+files_by_id = {}
+for path in sorted(sessions_dir.rglob("rollout-*.jsonl")):
+    try:
+        if not path.is_file():
+            continue
+        with path.open(encoding="utf-8") as stream:
+            first = json.loads(stream.readline())
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        continue
+    if first.get("type") != "session_meta":
+        continue
+    payload = first.get("payload")
+    if not isinstance(payload, dict):
+        continue
+    session_id = payload.get("id") or payload.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        continue
+    files_by_id[session_id] = path.stem
+    parent_id = payload.get("parent_thread_id")
+    source = payload.get("source")
+    subagent = source.get("subagent") if isinstance(source, dict) else None
+    if parent_id is None and isinstance(subagent, dict):
+        thread_spawn = subagent.get("thread_spawn")
+        if isinstance(thread_spawn, dict):
+            parent_id = thread_spawn.get("parent_thread_id")
+        if parent_id is None:
+            parent_id = payload.get("forked_from_id")
+    if isinstance(parent_id, str) and parent_id:
+        parents[session_id] = parent_id
 
-sys.exit(1)
-' "$session_file" "$exact_session_id" 2>/dev/null
-    )" || true
+included_ids = {exact_session_id}
+changed = True
+while changed:
+    changed = False
+    for child_id, parent_id in parents.items():
+        if parent_id in included_ids and child_id not in included_ids:
+            included_ids.add(child_id)
+            changed = True
+
+target_files = {root_session_file}
+target_files.update(files_by_id[session_id] for session_id in included_ids if session_id in files_by_id)
+
+sessions = data.get("sessions")
+if not isinstance(sessions, list):
+    sys.exit(1)
+rows_by_file = {}
+for session in sessions:
+    if not isinstance(session, dict):
+        sys.exit(1)
+    session_file = session.get("sessionFile")
+    if not isinstance(session_file, str) or not session_file:
+        continue
+    if session_file in rows_by_file:
+        sys.exit(1)
+    rows_by_file[session_file] = session
+
+root = rows_by_file.get(root_session_file)
+if root is None:
+    sys.exit(1)
+# ccusage omits descendants with no incremental billable events, including
+# fully deduplicated fork history. Those sessions contribute zero usage.
+selected = [rows_by_file[name] for name in sorted(target_files) if name in rows_by_file]
+
+def token_total(key, legacy_key=None, default=None):
+    total = 0
+    for row in selected:
+        value = row.get(key)
+        if value is None and legacy_key is not None:
+            value = row.get(legacy_key)
+        if value is None and default is not None:
+            value = default
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value < 0
+            or (isinstance(value, float) and not value.is_integer())
+        ):
+            raise ValueError(key)
+        total += int(value)
+    return total
+
+costs = []
+for row in selected:
+    cost = row.get("costUSD")
+    if isinstance(cost, bool) or not isinstance(cost, (int, float)) or not math.isfinite(cost) or cost < 0:
+        sys.exit(1)
+    costs.append(float(cost))
+
+try:
+    usage = {
+        "input_tokens": token_total("inputTokens"),
+        "cached_input_tokens": token_total("cacheReadTokens", "cachedInputTokens"),
+        "cache_write_input_tokens": token_total("cacheCreationTokens", default=0),
+        "output_tokens": token_total("outputTokens"),
+        "reasoning_output_tokens": token_total("reasoningOutputTokens"),
+        "total_tokens": token_total("totalTokens"),
+    }
+except ValueError:
+    sys.exit(1)
+
+json.dump(
+    {
+        "agent": "codex",
+        "session_id": exact_session_id,
+        "session_file": root_session_file,
+        "total_cost_usd": math.fsum(costs),
+        "usage": usage,
+    },
+    sys.stdout,
+    indent=2,
+)
+print()
+' "$session_file" "$exact_session_id" "$sessions_dir"
+    )"; then
+      ccusage_output=""
+      echo "codex adapter: usage unavailable for session $exact_session_id" >&2
+    fi
+  else
+    echo "codex adapter: usage unavailable: npx was not found" >&2
   fi
 
   if [[ -n "$ccusage_output" ]]; then
@@ -276,7 +369,7 @@ sys.exit(1)
     return "$write_rc"
   fi
 
-  python3 - <<'PY' "$usage_file" "$session_id" "$session_file"
+  python3 - <<'PY' "$usage_file" "$exact_session_id" "$session_file"
 import json
 import sys
 
@@ -301,24 +394,17 @@ PY
 run_codex() {
   local log_file="$1"
   local last_message_file="${log_file%.log}.last-message.txt"
-  local marker_file
-  local activity_log="${SPECULA_ACTIVITY_LOG:-}"
-  local temporary_activity_log=""
+  local activity_log="${SPECULA_ACTIVITY_LOG:-/dev/null}"
+  local session_id_file=""
   local adapter_dir
   local specula_src
   adapter_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   specula_src="$adapter_dir/../../../src"
-  marker_file="$(mktemp)"
-  if [[ -n "$RESUME_STATE" && -z "$activity_log" ]]; then
-    if ! temporary_activity_log="$(mktemp "${TMPDIR:-/tmp}/specula-codex-activity-XXXXXX.jsonl")"; then
-      rm -f "$marker_file" || true
-      echo "codex adapter: unable to create temporary activity log for session capture" >&2
-      return 1
+  if [[ -z "$RESUME_STATE" ]]; then
+    if ! session_id_file="$(mktemp "${TMPDIR:-/tmp}/specula-codex-session-XXXXXX.id")"; then
+      session_id_file=""
+      echo "codex adapter: usage unavailable: unable to create session ID file" >&2
     fi
-    # Native resume requires the exact thread.started ID. Keep JSON streaming
-    # enabled even when the user disables progress display; the temporary raw
-    # sidecar is removed below and does not opt the UI back into progress.
-    activity_log="$temporary_activity_log"
   fi
 
   # ── Optional outer srt sandbox (M1.3) ──
@@ -353,71 +439,50 @@ run_codex() {
   # Never let a failed/retried turn reuse the preceding turn's answer.
   rm -f "$last_message_file"
   set +e
-  if [[ -n "$activity_log" ]]; then
-    local -a pipeline_status
-    local -a stream_args=(codex "$activity_log" "$log_file")
-    local stream_rc
-    if [[ -n "$RESUME_STATE" ]]; then
-      stream_args+=("$RESUME_STATE" "$RESUME_CWD" "$MODEL" "$EFFORT")
+  local -a pipeline_status
+  local -a stream_args=(codex "$activity_log" "$log_file")
+  local stream_rc
+  if [[ -n "$RESUME_STATE" ]]; then
+    stream_args+=("$RESUME_STATE" "$RESUME_CWD" "$MODEL" "$EFFORT")
+  elif [[ -n "$session_id_file" ]]; then
+    stream_args+=("$session_id_file")
+  fi
+  printf '%s' "$PROMPT" | "${cmd[@]}" --json - 2>&1 | python3 -I -c \
+    'import sys; sys.path.insert(0, sys.argv.pop(1)); from specula.adapters.utils.event_stream import main; raise SystemExit(main(sys.argv[1:]))' \
+    "$specula_src" "${stream_args[@]}"
+  pipeline_status=("${PIPESTATUS[@]}")
+  codex_rc="${pipeline_status[1]}"
+  stream_rc="${pipeline_status[2]}"
+  if (( stream_rc == RESUME_STATE_FAILURE_RC )); then
+    # Session-integrity failure is fail-closed even when the native CLI also
+    # reports a retryable status. Never resume a state whose exact ID changed.
+    codex_rc=1
+  elif (( codex_rc == 75 || stream_rc == 75 )); then
+    codex_rc=75  # Rate limiting remains the highest-priority retry outcome.
+  elif (( stream_rc == POLICY_BLOCKED_RC )); then
+    codex_rc="$POLICY_BLOCKED_RC"
+  elif (( codex_rc == POLICY_BLOCKED_RC )); then
+    : # Preserve an already-normalized policy outcome over transient status.
+  elif (( codex_rc != 0 && stream_rc == PLAIN_POLICY_DIAGNOSTIC_RC )); then
+    codex_rc="$POLICY_BLOCKED_RC"
+  elif (( stream_rc == TRANSIENT_FAILURE_RC )); then
+    # A structured provider envelope is authoritative over an ordinary CLI
+    # failure (and over an accidental zero exit), but not over 75/76 above.
+    codex_rc="$TRANSIENT_FAILURE_RC"
+    transient_classified=true
+  elif (( codex_rc != 0 && stream_rc == PLAIN_TRANSIENT_DIAGNOSTIC_RC )); then
+    codex_rc="$TRANSIENT_FAILURE_RC"
+    transient_classified=true
+  elif (( codex_rc == 0 )); then
+    # A plain diagnostic is only actionable when the CLI itself failed.
+    # Structured policy failures use POLICY_BLOCKED_RC above and remain
+    # authoritative even if a provider CLI accidentally exits zero.
+    if (( stream_rc != PLAIN_POLICY_DIAGNOSTIC_RC \
+          && stream_rc != PLAIN_TRANSIENT_DIAGNOSTIC_RC )); then
+      codex_rc="$stream_rc"
     fi
-    printf '%s' "$PROMPT" | "${cmd[@]}" --json - 2>&1 | python3 -I -c \
-      'import sys; sys.path.insert(0, sys.argv.pop(1)); from specula.adapters.utils.event_stream import main; raise SystemExit(main(sys.argv[1:]))' \
-      "$specula_src" "${stream_args[@]}"
-    pipeline_status=("${PIPESTATUS[@]}")
-    codex_rc="${pipeline_status[1]}"
-    stream_rc="${pipeline_status[2]}"
-    if (( stream_rc == RESUME_STATE_FAILURE_RC )); then
-      # Session-integrity failure is fail-closed even when the native CLI also
-      # reports a retryable status. Never resume a state whose exact ID changed.
-      codex_rc=1
-    elif (( codex_rc == 75 || stream_rc == 75 )); then
-      codex_rc=75  # Rate limiting remains the highest-priority retry outcome.
-    elif (( stream_rc == POLICY_BLOCKED_RC )); then
-      codex_rc="$POLICY_BLOCKED_RC"
-    elif (( codex_rc == POLICY_BLOCKED_RC )); then
-      : # Preserve an already-normalized policy outcome over transient status.
-    elif (( codex_rc != 0 && stream_rc == PLAIN_POLICY_DIAGNOSTIC_RC )); then
-      codex_rc="$POLICY_BLOCKED_RC"
-    elif (( stream_rc == TRANSIENT_FAILURE_RC )); then
-      # A structured provider envelope is authoritative over an ordinary CLI
-      # failure (and over an accidental zero exit), but not over 75/76 above.
-      codex_rc="$TRANSIENT_FAILURE_RC"
-      transient_classified=true
-    elif (( codex_rc != 0 && stream_rc == PLAIN_TRANSIENT_DIAGNOSTIC_RC )); then
-      codex_rc="$TRANSIENT_FAILURE_RC"
-      transient_classified=true
-    elif (( codex_rc == 0 )); then
-      # A plain diagnostic is only actionable when the CLI itself failed.
-      # Structured policy failures use POLICY_BLOCKED_RC above and remain
-      # authoritative even if a provider CLI accidentally exits zero.
-      if (( stream_rc != PLAIN_POLICY_DIAGNOSTIC_RC \
-            && stream_rc != PLAIN_TRANSIENT_DIAGNOSTIC_RC )); then
-        codex_rc="$stream_rc"
-      fi
-    fi
-  else
-    local -a pipeline_status
-    printf '%s' "$PROMPT" | "${cmd[@]}" - > "$log_file" 2>&1
-    pipeline_status=("${PIPESTATUS[@]}")
-    codex_rc="${pipeline_status[1]}"
   fi
   set -e
-
-  if [[ -z "$activity_log" ]] && (( codex_rc != 0 && codex_rc != 75 )); then
-    # Without progress streaming there is no structured event status. Only
-    # classify an already-failed CLI's diagnostic log; successful agent output
-    # may quote an old policy message and must remain successful.
-    if python3 -I -c \
-      'import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; from specula.adapters.utils.policy import failed_log_has_policy_block; raise SystemExit(0 if failed_log_has_policy_block(Path(sys.argv[2])) else 1)' \
-      "$specula_src" "$log_file"; then
-      codex_rc="$POLICY_BLOCKED_RC"
-    elif (( codex_rc != POLICY_BLOCKED_RC )) && python3 -I -c \
-      'import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; from specula.adapters.utils.transient import failed_log_has_transient_failure; raise SystemExit(0 if failed_log_has_transient_failure(Path(sys.argv[2])) else 1)' \
-      "$specula_src" "$log_file"; then
-      codex_rc="$TRANSIENT_FAILURE_RC"
-      transient_classified=true
-    fi
-  fi
 
   if (( codex_rc == TRANSIENT_FAILURE_RC )) && [[ "$transient_classified" != true ]]; then
     # Native 74 is EX_IOERR; only a classified provider diagnostic may expose
@@ -425,13 +490,14 @@ run_codex() {
     codex_rc=1
   fi
 
-  if [[ -n "$temporary_activity_log" ]]; then
-    rm -f "$temporary_activity_log" || true
+  local exact_session_id=""
+  if [[ -n "$session_id_file" ]]; then
+    IFS= read -r exact_session_id < "$session_id_file" || true
+    rm -f "$session_id_file" || true
   fi
 
   local usage_rc=0
-  write_usage_file "$log_file" "$marker_file" || usage_rc=$?
-  rm -f "$marker_file" || true
+  write_usage_file "$log_file" "$exact_session_id" || usage_rc=$?
   if (( codex_rc != 0 )); then
     return "$codex_rc"
   fi
