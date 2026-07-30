@@ -1125,13 +1125,17 @@ class Pipeline:
     def repair_phase3_snapshot_path(self, name: str) -> Path:
         return Path(self.get_work_dir(name)) / "spec" / ".repair-phase3-snapshot.json"
 
+    def repair_phase3_commit_path(self, name: str) -> Path:
+        return Path(self.get_work_dir(name)) / "spec" / ".repair-phase3-commit.json"
+
     def persist_open_repair_snapshot(self, name: str, snapshot: dict[Path, str], round_: int) -> None:
         """Durably publish the OPEN inputs before a repair subprocess starts.
 
-        The unique commit token is copied into confirmation-generation.json
-        only after the repair launcher returns success.  Recovery can therefore
+        The unique commit token is copied into a separate commit-proof marker
+        only after the repair launcher returns success. Recovery can therefore
         distinguish a completed Phase 3 whose snapshot cleanup was interrupted
-        from an attempt killed after merely writing CONSUMED into its requests.
+        from an attempt killed after merely writing CONSUMED into its requests,
+        without depending on Phase-4 cache invalidation.
         """
         if self.dry_run:
             return
@@ -1203,9 +1207,176 @@ class Pipeline:
             raise SystemExit(1) from exc
         return snapshot, round_, commit_token
 
-    def clear_open_repair_snapshot(self, name: str) -> None:
+    def clear_repair_phase3_snapshot(self, name: str) -> None:
         if not self.dry_run:
             self.repair_phase3_snapshot_path(name).unlink(missing_ok=True)
+
+    def clear_repair_phase3_commit(self, name: str) -> None:
+        if not self.dry_run:
+            self.repair_phase3_commit_path(name).unlink(missing_ok=True)
+
+    def clear_open_repair_snapshot(self, name: str) -> None:
+        """Discard an uncommitted repair attempt and all of its durable state."""
+        self.clear_repair_phase3_snapshot(name)
+        self.clear_repair_phase3_commit(name)
+
+    def publish_repair_phase3_commit(self, repair_round: int, names: list[str] | None = None) -> None:
+        """Durably prove that the exact repair attempt returned successfully.
+
+        This proof is deliberately separate from confirmation-generation.json:
+        recovery must remain correct even when Phase 4 stops invalidating all
+        cached findings after every scoped repair. The exact Phase-3 findings
+        document stays with the proof until its scoped confirmation/reconciliation
+        succeeds, so a crash cannot silently switch the current violation set.
+        """
+        if self.dry_run:
+            return
+        for name in names if names is not None else self.extract_names():
+            loaded = self.load_open_repair_snapshot(name)
+            if loaded is None:
+                raise RuntimeError(f"cannot commit repair Phase 3 for {name} without a durable snapshot")
+            _snapshot, snapshot_round, commit_token = loaded
+            if snapshot_round != repair_round or commit_token is None:
+                raise RuntimeError(f"cannot commit mismatched repair Phase 3 snapshot for {name}")
+            spec_dir = Path(self.get_work_dir(name)) / "spec"
+            findings_path = spec_dir / "findings.json"
+            if findings_path.is_symlink() or not findings_path.is_file():
+                raise RuntimeError(f"repair Phase 3 for {name} did not produce a safe spec/findings.json")
+            try:
+                findings_json = findings_path.read_text()
+                findings_doc = json.loads(findings_json)
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"repair Phase 3 for {name} produced invalid spec/findings.json: {exc}") from exc
+            findings = findings_doc.get("findings") if isinstance(findings_doc, dict) else None
+            if not isinstance(findings, list):
+                raise RuntimeError(f"repair Phase 3 for {name} produced findings.json without a findings list")
+            seen: set[str] = set()
+            violation_ids: list[str] = []
+            for index, finding in enumerate(findings):
+                finding_id = finding.get("id") if isinstance(finding, dict) else None
+                if (
+                    not isinstance(finding_id, str)
+                    or not finding_id.startswith("MC-")
+                    or set(finding_id) - set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+                    or finding_id in {".", ".."}
+                    or finding_id in seen
+                    or finding.get("source") != "model-checking"
+                ):
+                    raise RuntimeError(
+                        f"repair Phase 3 for {name} produced invalid model-checking finding at index {index}"
+                    )
+                seen.add(finding_id)
+                violation_ids.append(finding_id)
+            # Reuse the confirmation dispatcher's full MC-input validation so
+            # an unusable counterexample/config cannot cross the durable commit
+            # point and strand a CONSUMED request.
+            from specula.confirmlib import _expected_mc_ids
+
+            validated, validation_errors = _expected_mc_ids(spec_dir)
+            if validated is None or validation_errors or list(validated) != violation_ids:
+                detail = validation_errors[0] if validation_errors else "finding order/identity mismatch"
+                raise RuntimeError(f"repair Phase 3 for {name} produced invalid spec/findings.json: {detail}")
+            request_ids = sorted(path.stem for path in _snapshot)
+            marker = self.repair_phase3_commit_path(name)
+            payload = (
+                json.dumps(
+                    {
+                        "version": 2,
+                        "repair_round": repair_round,
+                        "commit_token": commit_token,
+                        "request_ids": request_ids,
+                        "violation_ids": violation_ids,
+                        "findings_json": findings_json,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+            if marker.is_file():
+                try:
+                    existing = json.loads(marker.read_text())
+                except (OSError, json.JSONDecodeError):
+                    existing = None
+                if (
+                    isinstance(existing, dict)
+                    and existing.get("version") == 1
+                    and existing.get("repair_round") == repair_round
+                    and existing.get("commit_token") == commit_token
+                ):
+                    self._atomic_replace_text(marker, payload)
+                    continue
+            try:
+                self._publish_deferred_no_replace(marker, payload)
+            except FileExistsError:
+                log(f"ERROR: durable Phase 3 commit proof already exists for {name}: {marker}")
+                raise SystemExit(1) from None
+
+    def load_repair_phase3_commit(self, name: str) -> dict[str, Any] | None:
+        """Load one pending scoped-confirmation checkpoint, failing closed."""
+        marker = self.repair_phase3_commit_path(name)
+        if not marker.is_file():
+            return None
+        try:
+            doc = json.loads(marker.read_text())
+            if not isinstance(doc, dict):
+                raise ValueError("top level is not an object")
+            version = doc.get("version")
+            repair_round = doc.get("repair_round")
+            commit_token = doc.get("commit_token")
+            if (
+                version not in {1, 2}
+                or not isinstance(repair_round, int)
+                or isinstance(repair_round, bool)
+                or repair_round < 1
+                or not isinstance(commit_token, str)
+                or re.fullmatch(r"[0-9a-f]{32}", commit_token) is None
+            ):
+                raise ValueError("invalid version, round, or commit token")
+            if version == 1:
+                # Version 1 proved Phase-3 completion but predates the durable
+                # scoped-input checkpoint. Bind it to the still-current file
+                # once, preserving recovery for interrupted upgraded runs.
+                findings_path = Path(self.get_work_dir(name)) / "spec" / "findings.json"
+                if findings_path.is_symlink() or not findings_path.is_file():
+                    raise ValueError("legacy proof has no safe findings.json")
+                findings_json = findings_path.read_text()
+                findings_doc = json.loads(findings_json)
+                findings = findings_doc.get("findings") if isinstance(findings_doc, dict) else None
+                if not isinstance(findings, list):
+                    raise ValueError("legacy findings.json has no findings list")
+                doc["request_ids"] = []
+                doc["violation_ids"] = [finding.get("id") for finding in findings if isinstance(finding, dict)]
+                doc["findings_json"] = findings_json
+            request_ids = doc.get("request_ids")
+            violation_ids = doc.get("violation_ids")
+            findings_json_value = doc.get("findings_json")
+            if (
+                not isinstance(request_ids, list)
+                or not all(isinstance(value, str) and re.fullmatch(r"RR-\d+", value) for value in request_ids)
+                or len(set(request_ids)) != len(request_ids)
+                or not isinstance(violation_ids, list)
+                or not all(isinstance(value, str) and value for value in violation_ids)
+                or len(set(violation_ids)) != len(violation_ids)
+                or not isinstance(findings_json_value, str)
+            ):
+                raise ValueError("invalid request or violation checkpoint")
+            findings_doc = json.loads(findings_json_value)
+            findings = findings_doc.get("findings") if isinstance(findings_doc, dict) else None
+            actual_ids = (
+                [finding.get("id") for finding in findings if isinstance(finding, dict)]
+                if isinstance(findings, list)
+                else None
+            )
+            if actual_ids != violation_ids:
+                raise ValueError("violation ids do not match findings snapshot")
+            live = Path(self.get_work_dir(name)) / "spec" / "findings.json"
+            if live.is_symlink() or not live.is_file() or live.read_text() != findings_json_value:
+                raise ValueError("live findings.json diverges from the committed Phase-3 snapshot")
+        except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+            log(f"ERROR: invalid pending repair Phase 3 commit for {name}: {marker} ({exc})")
+            raise SystemExit(1) from exc
+        return doc
 
     def recover_interrupted_phase3(self) -> set[str]:
         """Finalize a committed attempt or restore one killed before commit.
@@ -1219,10 +1390,23 @@ class Pipeline:
         for name in self.extract_names():
             loaded = self.load_open_repair_snapshot(name)
             if loaded is None:
+                # A surviving commit proof is intentionally pending until its
+                # exact scoped confirmation/reconciliation succeeds.
+                if self.load_repair_phase3_commit(name) is not None:
+                    recovered_commits.add(name)
                 continue
             snapshot, round_, commit_token = loaded
             if self._repair_phase3_snapshot_committed(name, snapshot, round_, commit_token):
-                self.clear_open_repair_snapshot(name)
+                marker = self.repair_phase3_commit_path(name)
+                try:
+                    marker_doc = json.loads(marker.read_text())
+                except (OSError, json.JSONDecodeError):
+                    marker_doc = None
+                if not isinstance(marker_doc, dict) or marker_doc.get("version") != 2:
+                    # Upgrade an interrupted pre-scoped run while the exact
+                    # OPEN-input snapshot still identifies its request set.
+                    self.publish_repair_phase3_commit(round_, [name])
+                self.clear_repair_phase3_snapshot(name)
                 recovered_commits.add(name)
                 log(f"  finalized committed repair Phase 3 for {name} after interrupted snapshot cleanup")
                 continue
@@ -1240,22 +1424,40 @@ class Pipeline:
     ) -> bool:
         """Whether the exact snapshotted attempt crossed its durable commit point.
 
-        CONSUMED alone is not proof: an agent can write it before failing.  The
-        generation marker is published by the orchestrator only after a zero
-        exit, and contains the snapshot's unique attempt token.
+        CONSUMED alone is not proof: an agent can write it before failing. The
+        orchestrator publishes a separate commit marker only after a zero exit;
+        it contains the snapshot's unique attempt token.
         Complete, executable CONSUMED requests are required as a second guard.
         """
         if commit_token is None:
             return False
-        marker = Path(self.get_work_dir(name)) / "spec" / "confirmation-generation.json"
+        marker = self.repair_phase3_commit_path(name)
         try:
             doc = json.loads(marker.read_text())
         except (OSError, json.JSONDecodeError):
-            return False
-        if not isinstance(doc, dict):
-            return False
-        if doc.get("repair_round") != round_ or doc.get("repair_phase3_commit") != commit_token:
-            return False
+            doc = None
+        committed = bool(
+            isinstance(doc, dict)
+            and doc.get("version") in {1, 2}
+            and doc.get("repair_round") == round_
+            and doc.get("commit_token") == commit_token
+        )
+        if committed and doc.get("version") == 2:
+            committed = doc.get("request_ids") == sorted(path.stem for path in snapshot)
+        if not committed:
+            # Compatibility for an interrupted pre-decoupling run. New
+            # generation markers never contain repair_phase3_commit.
+            legacy = Path(self.get_work_dir(name)) / "spec" / "confirmation-generation.json"
+            try:
+                legacy_doc = json.loads(legacy.read_text())
+            except (OSError, json.JSONDecodeError):
+                return False
+            if (
+                not isinstance(legacy_doc, dict)
+                or legacy_doc.get("repair_round") != round_
+                or legacy_doc.get("repair_phase3_commit") != commit_token
+            ):
+                return False
         for path in snapshot:
             try:
                 current = path.read_text()
@@ -1632,20 +1834,12 @@ class Pipeline:
         repair runs, and before the corresponding Phase 4. Confirmation cache
         fingerprints include its contents, so a resumed validation or repair
         can never reuse a verdict or candidate set from an earlier generation.
-        For repair Phase 3, it also commits the durable snapshot's unique token;
-        that token proves success if the process dies before snapshot cleanup.
+        Repair crash recovery uses a separate durable commit proof.
         """
         if self.dry_run:
             return
         for n in names if names is not None else self.extract_names():
             marker = Path(self.get_work_dir(n)) / "spec" / "confirmation-generation.json"
-            repair_commit: str | None = None
-            if repair_round > 0:
-                loaded = self.load_open_repair_snapshot(n)
-                if loaded is not None:
-                    _snapshot, snapshot_round, commit_token = loaded
-                    if snapshot_round == repair_round:
-                        repair_commit = commit_token
             previous = 0
             if marker.is_file():
                 try:
@@ -1665,8 +1859,6 @@ class Pipeline:
                 "repair_round": repair_round,
                 "updated_at": _date_iseconds(),
             }
-            if repair_commit is not None:
-                payload["repair_phase3_commit"] = repair_commit
             self._atomic_replace_text(marker, json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
     # ── phase runners ──
@@ -1897,19 +2089,106 @@ class Pipeline:
             self._phase_args(self.extract_names(), pre=pre or None, phase="confirm"),
         )
 
+    def _run_repair_result_dispatcher(
+        self,
+        name: str,
+        repair_round: int,
+        repair_token: str,
+        violation_ids: list[str],
+    ) -> None:
+        """Reconcile one committed repair result and confirm only its violations.
+
+        The zero-violation path is dispatcher-only report/evidence maintenance:
+        it starts no Phase-4 finding agent. A non-empty pass uses the ordinary
+        per-finding confirmation methodology, but its input is exactly the
+        committed Phase-3 findings snapshot (never code-review candidates).
+        """
+        pre = [
+            f"--repair-round={repair_round}",
+            f"--repair-token={repair_token}",
+        ]
+        if self.confirm_debate:
+            pre.append("--debate")
+        if violation_ids:
+            banner = (
+                f"REPAIR ROUND {repair_round}: PHASE 4 "
+                f"({len(violation_ids)} current violation(s): {', '.join(violation_ids)})"
+            )
+        else:
+            banner = f"REPAIR ROUND {repair_round}: RESULT RECONCILIATION (0 violations; no Phase 4 finding agents)"
+        self._phase(
+            banner,
+            "launch_bug_confirmation.sh",
+            self._phase_args([name], pre=pre, phase="confirm"),
+        )
+
+    def reconcile_repair_without_violations(
+        self,
+        name: str,
+        repair_round: int,
+        repair_token: str,
+    ) -> None:
+        """Update the existing evidence/report after a clean Phase-3 pass."""
+        self._run_repair_result_dispatcher(name, repair_round, repair_token, [])
+
+    def run_repair_confirmation(
+        self,
+        name: str,
+        repair_round: int,
+        repair_token: str,
+        violation_ids: list[str],
+    ) -> None:
+        if not violation_ids:
+            raise ValueError("repair Phase 4 requires at least one current violation")
+        self._run_repair_result_dispatcher(name, repair_round, repair_token, violation_ids)
+
+    def process_pending_repair_results(self, names: set[str] | None = None) -> set[str]:
+        """Finish every committed Phase-3 result exactly once.
+
+        A marker is removed only after the scoped dispatcher succeeds. Partial
+        confirmation failure therefore leaves the exact token/input recoverable,
+        while per-finding verdict caches retain completed current violations.
+        """
+        if self.dry_run:
+            return set()
+        selected = set(self.extract_names()) if names is None else set(names)
+        processed: set[str] = set()
+        for name in self.extract_names():
+            if name not in selected:
+                continue
+            commit = self.load_repair_phase3_commit(name)
+            if commit is None:
+                continue
+            violation_ids = list(commit["violation_ids"])
+            if violation_ids:
+                self.wait_for_phase_quota("confirm")
+                self.run_repair_confirmation(
+                    name,
+                    int(commit["repair_round"]),
+                    str(commit["commit_token"]),
+                    violation_ids,
+                )
+            else:
+                self.reconcile_repair_without_violations(
+                    name,
+                    int(commit["repair_round"]),
+                    str(commit["commit_token"]),
+                )
+            self.clear_repair_phase3_commit(name)
+            processed.add(name)
+        return processed
+
     def run_phase3_repair(self, round_: int, names: list[str] | None = None) -> None:
         """Phase 3 in repair mode: consume OPEN repair requests, repair the spec,
-        re-run MC, and mark each repaired request CONSUMED. Whether the repair
-        settled the finding is answered by the next Phase 4 pass — a repaired
-        artifact no longer appears in the fresh output; a surviving or new
-        violation is confirmed fresh. There is no separate re-check pass."""
+        perform full trace validation and model checking, write the current
+        findings set, and mark each repaired request CONSUMED."""
         selected = names if names is not None else self.extract_names()
         self._phase(
             f"REPAIR ROUND {round_}: PHASE 3 (scoped spec/fault/invariant repair)",
             "launch_spec_validation.sh",
             self._phase_args(selected, pre=["--repair"], phase="repair", fallback="validate"),
         )
-        self.advance_confirmation_generation(round_, selected)
+        self.publish_repair_phase3_commit(round_, selected)
 
     def run_phase4b_classification(self) -> None:
         self._phase(
@@ -1919,21 +2198,19 @@ class Pipeline:
         )
 
     def run_repair_loop(self, prepared_commits: set[str] | None = None) -> set[str]:
-        """Confirmation back-edge: repeat {Phase 3 repairs the spec per OPEN
-        repair requests and re-runs MC; Phase 4 confirms the fresh output
-        normally} until no open request remains or the global round cap is hit. A
-        repaired artifact simply no longer appears in the next Phase 4 output; a
-        surviving or new violation is confirmed fresh. There is no re-check pass
-        and no per-finding DEFERRED verdict — when the cap is reached the
-        orchestrator (not an agent) files any still-open request under
-        repair-requests/deferred/. Budget pressure -> wait_for_quota (WAIT), never
-        a mass-defer.
+        """Confirmation back-edge over current conformance violations only.
+
+        Phase 3 performs the existing full trace-validation/model-checking repair
+        pass. Zero current violations are reconciled without a Phase-4 finding
+        agent; otherwise Phase 4 receives exactly the current ``findings.json``
+        entries. Completed/code-review findings are preserved and never re-run.
+        Only a new PENDING REPAIR result creates the next back-edge. The global
+        round cap still files any remaining OPEN request under deferred/.
 
         A caller that already ran startup reconciliation passes its exact
-        committed-target set. A direct caller leaves it unset; this method then
-        reconciles and consumes any recovered commit with its pending fresh
-        Phase 4. The returned set is exactly the targets covered by a recovered
-        or newly successful repair Phase 3 during this invocation.
+        committed-target set. A direct caller leaves it unset. The returned set
+        is exactly the targets covered by a recovered or newly successful repair
+        Phase 3 during this invocation.
         """
         divider()
         # parse_args validates normal CLI/environment input.  Keep this guard
@@ -1949,20 +2226,28 @@ class Pipeline:
         recovered_commits = self.prepare_repair_state() if prepared_commits is None else set(prepared_commits)
         self.refresh_target_indexes()
         phase3_targets = set(recovered_commits)
-        if not self.has_open_repair_requests():
-            if recovered_commits:
-                self.wait_for_phase_quota("confirm")
-                self.run_phase4_confirmation()
+        if recovered_commits:
+            try:
+                self.process_pending_repair_results(recovered_commits)
+            except BaseException as exc:
                 self.regenerate_ledger()
+                detail = f"exit {exc.code}" if isinstance(exc, SystemExit) else type(exc).__name__
                 names = ", ".join(sorted(recovered_commits))
-                log(f"Recovered committed repair Phase 3 for {names}; completed its pending fresh Phase 4.")
-                if self.has_open_repair_requests():
-                    log("Fresh Phase 4 opened repair requests; continuing the repair loop.")
-                else:
-                    return phase3_targets
-            else:
+                log(
+                    f"ERROR: recovered repair result processing failed for {names} ({detail}); "
+                    "the exact committed violations were retained for retry."
+                )
+                raise
+            self.regenerate_ledger()
+            names = ", ".join(sorted(recovered_commits))
+            log(f"Recovered committed repair Phase 3 for {names}; completed its pending scoped result pass.")
+            if self.has_open_repair_requests():
+                log("Scoped result pass opened repair requests; continuing the repair loop.")
+
+        if not self.has_open_repair_requests():
+            if not recovered_commits:
                 log("No OPEN repair requests — repair loop is a no-op.")
-                return phase3_targets
+            return phase3_targets
 
         round_ = 0
         while self.has_open_repair_requests():
@@ -2015,12 +2300,12 @@ class Pipeline:
                     )
                     raise
                 try:
-                    self.clear_open_repair_snapshot(name)
+                    self.clear_repair_phase3_snapshot(name)
                 except OSError as cleanup_exc:
                     # Phase 3 already crossed its tokenized durable commit
                     # point. Never turn cleanup failure into repair failure:
                     # retain CONSUMED + snapshot so startup can finalize the
-                    # exact commit and continue with fresh Phase 4.
+                    # exact commit and continue with the scoped result pass.
                     self.regenerate_ledger()
                     log(
                         f"ERROR: committed repair Phase 3 for {name}, but could not clear its durable snapshot "
@@ -2031,16 +2316,15 @@ class Pipeline:
                 phase3_targets.add(name)
 
             try:
-                self.wait_for_phase_quota("confirm")
-                self.run_phase4_confirmation()  # normal Phase 4 on the fresh bug-report
+                self.process_pending_repair_results(set(repaired_names))
             except BaseException as exc:
                 self.regenerate_ledger()
                 detail = f"exit {exc.code}" if isinstance(exc, SystemExit) else type(exc).__name__
                 names = ", ".join(repaired_names) or "none"
                 log(
-                    f"ERROR: repair loop failed in round {round_} during Phase 4 ({detail}); "
-                    f"successful Phase 3 request states were retained for: {names}. "
-                    "Rerun the pipeline; startup recovery will retry Phase 4 safely."
+                    f"ERROR: repair loop failed in round {round_} while processing current violations ({detail}); "
+                    f"successful Phase 3 commits were retained for: {names}. "
+                    "Rerun the pipeline; startup recovery will retry only unfinished current violations."
                 )
                 raise
             self.snapshot_confirmed_bugs(round_)
@@ -2334,6 +2618,23 @@ class Pipeline:
         self.refresh_output_indexes()
         upstream_all_skipped = self.skip_analysis and self.skip_specgen and self.skip_harness
 
+        # A committed repair result is bound to the exact Phase-3 findings
+        # checkpoint. Finish that scoped result pass before any upstream phase
+        # can mutate its source/spec artifacts.
+        resumed_repair = False
+        phase3_targets = set(recovered_phase3_commits)
+        if recovered_phase3_commits and (self.skip_confirmation or self.skip_repair_loop):
+            disabled = "--skip-confirmation" if self.skip_confirmation else "--skip-repair-loop"
+            log(
+                f"ERROR: cannot use {disabled} while a committed repair result is pending; "
+                "resume once without that flag so its exact findings can be reconciled."
+            )
+            raise SystemExit(1)
+        if recovered_phase3_commits:
+            log("Resuming committed repair result before upstream phases")
+            phase3_targets = self.run_repair_loop(prepared_commits=recovered_phase3_commits)
+            resumed_repair = True
+
         if not self.skip_analysis:
             self.wait_for_phase_quota("analyze")
             self.run_phase1_analysis()
@@ -2354,14 +2655,17 @@ class Pipeline:
         else:
             log("Skipping Phase 2.5 (--skip-harness)")
 
-        # An uncommitted snapshot is OPEN again after reconciliation. Resume it
-        # when both halves of the repair loop are enabled. The resumed loop
-        # itself performs repair Phase 3 and fresh Phase 4.
-        resumed_repair = False
-        phase3_targets = set(recovered_phase3_commits)
-        if not self.skip_confirmation and not self.skip_repair_loop and self.has_open_repair_requests():
+        # An uncommitted interrupted repair is OPEN again after recovery. Keep
+        # the established ordering for that case: upstream phases run first,
+        # then the repair loop resumes before ordinary Phase 3.
+        if (
+            not resumed_repair
+            and not self.skip_confirmation
+            and not self.skip_repair_loop
+            and self.has_open_repair_requests()
+        ):
             log("Resuming pending repair requests before the ordinary Phase 3 pass")
-            phase3_targets = self.run_repair_loop(prepared_commits=recovered_phase3_commits)
+            phase3_targets = self.run_repair_loop(prepared_commits=set())
             resumed_repair = True
 
         current_targets = set(names)

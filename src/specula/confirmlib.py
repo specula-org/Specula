@@ -159,6 +159,9 @@ def parse_verdict(text: str) -> str | None:
 class Finding:
     data: dict[str, Any]
     fdir: Path  # per-finding work dir: <wd>/confirmation/<id>/
+    # Repair mode continues the same finding evidence instead of starting from
+    # an empty confirmation context. Runtime-only: never serialized or hashed.
+    repair_context: str = ""
 
     @property
     def id(self) -> str:
@@ -218,6 +221,11 @@ class ConfirmConfig:
     max_turns: str = "0"
     policy_retries: int = DEFAULT_POLICY_RETRIES
     transient_resumes: int = DEFAULT_TRANSIENT_RESUMES
+    # Internal repair-loop mode. The round scopes evidence/RR selection; the
+    # durable token identifies the exact Phase-3 result for idempotent retries.
+    # Initial Phase 4 leaves both unset and retains its existing behavior.
+    repair_round: int | None = None
+    repair_token: str | None = None
     # Runtime-only cursors survive this config's automatic rc75 retries. They
     # are deliberately absent from candidate/verdict fingerprints and disk.
     _policy_states: dict[tuple[str, ...], tuple[str, PolicyRetryState]] = field(
@@ -346,6 +354,7 @@ def _context(cfg: ConfirmConfig, f: Finding, repo_for_agent: str) -> str:
         fdir=str(f.fdir.absolute()),
         finding_id=f.id,
         bug_confirmation_skill=prompt_skill_ids("bug-confirmation"),
+        repair_context=f.repair_context,
     )
 
 
@@ -874,8 +883,13 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
             if not lease.initialized:
                 # Fresh generations must create fresh artifacts. A reactive rc75
                 # continuation keeps them, its exact worktree, and its cwd.
-                for stale in _repro_files(cfg, f):
-                    stale.unlink()
+                # A scoped repair pass continues this finding's evidence. Keep
+                # its prior reproduction artifacts available to the worker;
+                # they may be reused or selectively updated, but must not be
+                # erased merely because Phase 3 produced a new repair token.
+                if cfg.repair_round is None:
+                    for stale in _repro_files(cfg, f):
+                        stale.unlink()
                 rr_body = f.fdir / "repair-request.body.md"
                 if rr_body.is_file():
                     rr_body.unlink()
@@ -1258,10 +1272,19 @@ def _spec_identity(cfg: ConfirmConfig, f: Finding) -> dict[str, str]:
 
 
 def _verdict_fingerprint(cfg: ConfirmConfig, f: Finding) -> str:
+    confirmation_identity: Any
+    if cfg.repair_round is None:
+        confirmation_identity = _generation_content(cfg)
+    else:
+        # A repair pass is scoped by the committed Phase-3 result, not by the
+        # global confirmation generation that invalidates unrelated findings.
+        confirmation_identity = {
+            "repair_token": cfg.repair_token or f"repair-round:{cfg.repair_round}",
+        }
     return _digest(
         {
             "version": _CACHE_VERSION,
-            "generation": _generation_content(cfg),
+            "generation": confirmation_identity,
             "finding": f.data,
             "spec": _spec_identity(cfg, f),
             "repo": _repo_cache_identity(cfg),
@@ -1410,7 +1433,59 @@ def _load_verdict(f: Finding, cfg: ConfirmConfig) -> Outcome | None:
         return None
 
 
-def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
+def _load_stored_verdict(f: Finding) -> Outcome | None:
+    """Load prior terminal evidence without treating it as a reusable verdict.
+
+    Repair mode needs the old disposition and body to keep the cumulative
+    report intact even though the committed Phase-3 token deliberately changes
+    the current finding's fingerprint. Cache reuse remains exclusively the job
+    of :func:`_load_verdict`.
+    """
+    vf = f.fdir / "verdict.json"
+    if not vf.is_file():
+        return None
+    try:
+        data = json.loads(vf.read_text())
+        if data.get("cache_version") != _CACHE_VERSION:
+            return None
+        status = str(data["status"])
+        if status not in {*CANON, INCOMPLETE, "DEFERRED"}:
+            return None
+        _validate_status_source(f, status)
+        rr = data.get("rr")
+        if rr is not None and not isinstance(rr, str):
+            return None
+        return Outcome(
+            f,
+            status,
+            bool(data["consensus"]),
+            int(data["rounds"]),
+            str(data["body"]),
+            rr,
+        )
+    except (KeyError, TypeError, ValueError, OSError, ConfirmationFailed):
+        return None
+
+
+def _rewrite_stored_body(f: Finding, body: str) -> None:
+    """Atomically append evidence while leaving the old cache identity stale."""
+    vf = f.fdir / "verdict.json"
+    data = json.loads(vf.read_text())
+    if str(data.get("body", "")) == body:
+        return
+    data["body"] = body
+    tmp = vf.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False))
+    tmp.replace(vf)
+
+
+def run_finding_safe(
+    cfg: ConfirmConfig,
+    f: Finding,
+    *,
+    prior: Outcome | None = None,
+    repair_evidence: str = "",
+) -> Outcome:
     """One finding, isolated. A cached terminal verdict short-circuits (idempotent
     retry). A finding that cannot finish — rate limit, infrastructure error, or
     malformed output — is recorded as an INCOMPLETE outcome (error.txt kept for
@@ -1425,6 +1500,8 @@ def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
     try:
         lease = cfg.acquire_finding_lease(f)
         o = run_finding(cfg, f, _lease=lease)
+        if cfg.repair_round is not None:
+            o.body = _merge_repair_evidence(prior, repair_evidence, o.body, cfg.repair_round)
         _save_verdict(o, cfg)
         cfg.release_finding_lease(f.id)
         cfg.clear_policy_states(("finding", f.id))
@@ -1441,7 +1518,7 @@ def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
         failure_code = quota.RATE_LIMIT_RC if isinstance(exc, RateLimited) else 1
         reason = "rate-limited" if isinstance(exc, RateLimited) else str(exc) or type(exc).__name__
         _log(f"  [{f.id}] INCOMPLETE ({reason}) — see {f.fdir / 'error.txt'}; not cached, a retry re-attempts it")
-        return Outcome(
+        outcome = Outcome(
             f,
             INCOMPLETE,
             consensus=False,
@@ -1453,6 +1530,9 @@ def run_finding_safe(cfg: ConfirmConfig, f: Finding) -> Outcome:
             ),
             failure_code=failure_code,
         )
+        if cfg.repair_round is not None:
+            outcome.body = _merge_repair_evidence(prior, repair_evidence, outcome.body, cfg.repair_round)
+        return outcome
 
 
 # ── RR-NNN allocation (serial) — dispatcher owns the shared queue/lifecycle ──
@@ -1789,6 +1869,181 @@ def _rr_history(text: str, round_: int) -> list[str]:
         return [f"- r{round_} (phase4-confirm): imported legacy request without dispatcher History"]
     history = text[match.end() :].strip()
     return history.splitlines() if history else []
+
+
+def _concise_evidence(value: str, limit: int = 600) -> str:
+    compact = re.sub(r"\s+", " ", value).strip()
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 1].rstrip() + "…"
+
+
+def _load_repair_commit(cfg: ConfirmConfig) -> dict[str, Any]:
+    """Verify the exact durable Phase-3 result selected by the pipeline."""
+    assert cfg.repair_round is not None
+    marker = cfg.ws.work_dir(cfg.name) / "spec" / ".repair-phase3-commit.json"
+    if marker.is_symlink() or not marker.is_file():
+        raise ConfirmationFailed("repair confirmation requires a safe .repair-phase3-commit.json")
+    try:
+        doc = json.loads(marker.read_text())
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ConfirmationFailed(f"invalid repair Phase-3 commit marker: {exc}") from exc
+    if not isinstance(doc, dict) or doc.get("version") != 2:
+        raise ConfirmationFailed("repair Phase-3 commit marker must use version 2")
+    if doc.get("repair_round") != cfg.repair_round:
+        raise ConfirmationFailed("repair Phase-3 commit marker has the wrong repair round")
+    if (
+        not cfg.repair_token
+        or re.fullmatch(r"[0-9a-f]{32}", cfg.repair_token) is None
+        or doc.get("commit_token") != cfg.repair_token
+    ):
+        raise ConfirmationFailed("repair Phase-3 commit marker has the wrong commit token")
+
+    request_ids = doc.get("request_ids")
+    violation_ids = doc.get("violation_ids")
+    findings_json = doc.get("findings_json")
+    if (
+        not isinstance(request_ids, list)
+        or not all(isinstance(value, str) and re.fullmatch(r"RR-\d+", value) for value in request_ids)
+        or len(set(request_ids)) != len(request_ids)
+        or not isinstance(violation_ids, list)
+        or not all(
+            isinstance(value, str)
+            and value.startswith("MC-")
+            and not (set(value) - ID_CHARS)
+            and value not in {".", ".."}
+            for value in violation_ids
+        )
+        or len(set(violation_ids)) != len(violation_ids)
+        or not isinstance(findings_json, str)
+    ):
+        raise ConfirmationFailed("repair Phase-3 commit marker has invalid request or violation ids")
+    try:
+        snapshot = json.loads(findings_json)
+    except json.JSONDecodeError as exc:
+        raise ConfirmationFailed(f"repair Phase-3 findings snapshot is invalid: {exc}") from exc
+    snapshot_findings = snapshot.get("findings") if isinstance(snapshot, dict) else None
+    snapshot_ids = (
+        [finding.get("id") for finding in snapshot_findings if isinstance(finding, dict)]
+        if isinstance(snapshot_findings, list)
+        else None
+    )
+    if snapshot_ids != violation_ids:
+        raise ConfirmationFailed("repair Phase-3 violation ids do not match its findings snapshot")
+    live = cfg.ws.work_dir(cfg.name) / "spec" / "findings.json"
+    if live.is_symlink() or not live.is_file() or live.read_text() != findings_json:
+        raise ConfirmationFailed("live findings.json diverges from the committed Phase-3 snapshot")
+    return doc
+
+
+def _repair_round_requests(
+    cfg: ConfirmConfig,
+    request_ids: list[str],
+) -> dict[str, tuple[str, str]]:
+    """Return this round's consumed RR id and newest Phase-3 History entry."""
+    if cfg.repair_round is None:
+        return {}
+    rr_dir = cfg.ws.work_dir(cfg.name) / "spec" / "repair-requests"
+    if request_ids and (not rr_dir.is_dir() or rr_dir.is_symlink()):
+        raise InvalidRepairRequest("repair commit references requests but repair-requests is missing or unsafe")
+    result: dict[str, tuple[str, str]] = {}
+    for rid in request_ids:
+        path = rr_dir / f"{rid}.md"
+        if path.is_symlink() or not path.is_file():
+            raise InvalidRepairRequest(f"repair request {path.name} must be a safe regular file")
+        text = path.read_text(errors="replace")
+        statuses = _rr_field_text(text, "status")
+        finding_ids = _rr_field_text(text, "finding_id")
+        ids = _rr_field_text(text, "id")
+        if statuses != ["CONSUMED"] or ids != [rid] or len(finding_ids) != 1:
+            raise InvalidRepairRequest(f"repair request {path.name} has invalid repair-round identity")
+        finding_id = finding_ids[0]
+        if finding_id in result:
+            raise InvalidRepairRequest(
+                f"repair round {cfg.repair_round} has multiple consumed requests for {finding_id}"
+            )
+        history = [line for line in _rr_history(text, cfg.repair_round) if line.strip()]
+        newest = _concise_evidence(history[-1].lstrip("- ").strip()) if history else "repair completed"
+        result[finding_id] = (ids[0], newest)
+    return result
+
+
+def _repair_evidence(
+    cfg: ConfirmConfig,
+    f: Finding,
+    requests: dict[str, tuple[str, str]],
+    *,
+    current_violation: bool,
+) -> str:
+    assert cfg.repair_round is not None
+    lines = [f"## Repair round {cfg.repair_round} evidence"]
+    if cfg.repair_token:
+        # The visible round counter restarts with a new pipeline invocation.
+        # This durable identity keeps an exact retry idempotent without
+        # suppressing a later repair that happens to display the same round.
+        lines.append(f"<!-- specula-repair-token: {cfg.repair_token} -->")
+    request = requests.get(f.id)
+    if request is not None:
+        rid, history = request
+        request_path = cfg.ws.work_dir(cfg.name).absolute() / "spec" / "repair-requests" / f"{rid}.md"
+        lines.append(f"- **Repair request**: `{request_path}`")
+        if current_violation:
+            lines.append("  Read its updated `## Evidence` before confirming the current violation.")
+        lines.append(f"- **Phase 3 result**: {history}")
+    if current_violation:
+        summary = f.data.get("summary")
+        if isinstance(summary, str) and summary.strip():
+            lines.append(f"- **Current violation analysis**: {_concise_evidence(summary)}")
+        counterexample = f.data.get("counterexample")
+        if isinstance(counterexample, str) and counterexample.strip():
+            lines.append(f"- **Counterexample**: `{counterexample.strip()}`")
+    return "\n".join(lines)
+
+
+def _repair_prompt_context(
+    f: Finding,
+    prior: Outcome | None,
+    repair_evidence: str,
+) -> str:
+    """Tell a scoped worker to continue, rather than rediscover, its evidence."""
+    lines = [
+        "## Repair-loop evidence continuation",
+        "",
+        "This is not a fresh confirmation. Use the existing evidence and the current",
+        "Phase 3 conformance result below. Do not repeat already-established work.",
+        "Preserve correct evidence; if current source/trace evidence disproves a prior",
+        "statement, explicitly correct that statement in your updated analysis.",
+    ]
+    if prior is not None:
+        lines.extend(
+            [
+                "",
+                f"- Existing disposition: `{prior.status}`" + (f" (`{prior.rr}`)" if prior.rr is not None else ""),
+                f"- Existing evidence: `{f.fdir.absolute() / 'verdict.json'}`",
+                "  Read this finding's `body` before investigating further.",
+            ]
+        )
+    lines.extend(["", repair_evidence])
+    return "\n".join(lines)
+
+
+def _merge_repair_evidence(
+    prior: Outcome | None,
+    repair_evidence: str,
+    current_body: str | None,
+    repair_round: int,
+) -> str:
+    """Continue the existing evidence body with one concise repair update."""
+    token_marker = re.search(r"<!-- specula-repair-token: [0-9a-f]{32} -->", repair_evidence)
+    marker = token_marker.group(0) if token_marker is not None else f"## Repair round {repair_round} evidence"
+    parts: list[str] = []
+    if prior is not None and prior.body.strip():
+        parts.append(prior.body.strip())
+    if repair_evidence.strip() and not any(marker in part for part in parts):
+        parts.append(repair_evidence.strip())
+    if current_body is not None and current_body.strip():
+        parts.append(f"## Phase 4 confirmation after repair round {repair_round}\n\n{current_body.strip()}")
+    return "\n\n".join(parts)
 
 
 def _prior_attempt_history(finding_id: str, records: list[tuple[str, Path, str, str, str]]) -> list[str]:
@@ -2632,12 +2887,18 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     def effective_status(outcome: Outcome) -> str:
         if outcome.status != "PENDING REPAIR" or outcome.rr is None:
             return outcome.status
-        deferred = cfg.ws.work_dir(cfg.name) / "spec" / "repair-requests" / "deferred" / f"{outcome.rr}.md"
+        rr_dir = cfg.ws.work_dir(cfg.name) / "spec" / "repair-requests"
+        deferred = rr_dir / "deferred" / f"{outcome.rr}.md"
         if not deferred.is_file():
-            return outcome.status
-        text = deferred.read_text(errors="replace")
-        if _rr_field_text(text, "id") == [outcome.rr] and _rr_field_text(text, "status") == ["DEFERRED"]:
-            return "DEFERRED"
+            consumed = rr_dir / f"{outcome.rr}.md"
+            if cfg.repair_round is not None and consumed.is_file():
+                text = consumed.read_text(errors="replace")
+                if _rr_field_text(text, "id") == [outcome.rr] and _rr_field_text(text, "status") == ["CONSUMED"]:
+                    return "FALSE POSITIVE"
+        else:
+            text = deferred.read_text(errors="replace")
+            if _rr_field_text(text, "id") == [outcome.rr] and _rr_field_text(text, "status") == ["DEFERRED"]:
+                return "DEFERRED"
         return outcome.status
 
     effective = [(outcome, effective_status(outcome)) for outcome in outcomes]
@@ -2689,6 +2950,8 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     for o, status in effective:
         if status == "DEFERRED":
             rendered_status = f"DEFERRED (repair loop exhausted; {o.rr} in deferred/)"
+        elif status == "FALSE POSITIVE" and o.status == "PENDING REPAIR":
+            rendered_status = status
         else:
             rr = f" ({o.rr})" if o.rr else ""
             rendered_status = f"{status}{rr}"
@@ -2698,6 +2961,8 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     for o, status in effective:
         if status == "DEFERRED":
             rendered_status = f"DEFERRED (repair loop exhausted; {o.rr} in deferred/)"
+        elif status == "FALSE POSITIVE" and o.status == "PENDING REPAIR":
+            rendered_status = status
         else:
             rr = f" ({o.rr})" if o.rr else ""
             rendered_status = f"{status}{rr}"
@@ -2723,6 +2988,197 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
 # ── driver ───────────────────────────────────────────────────────────────────
 
 
+def _findings_from_data(cfg: ConfirmConfig, data: list[dict[str, Any]]) -> list[Finding]:
+    conf_root = cfg.ws.work_dir(cfg.name).absolute() / "confirmation"
+    findings: list[Finding] = []
+    for item in data:
+        fid = str(item.get("id", ""))
+        if not fid or set(fid) - ID_CHARS or fid in {".", ".."}:
+            raise ConfirmationFailed(f"unsafe finding id: {fid!r}")
+        findings.append(Finding(item, conf_root / fid))
+    return findings
+
+
+def _parse_report_status(value: str) -> tuple[str, str | None]:
+    value = value.strip()
+    if value in CANON or value == INCOMPLETE:
+        return value, None
+    pending = re.fullmatch(r"PENDING REPAIR \((RR-\d+)\)", value)
+    if pending is not None:
+        return "PENDING REPAIR", pending.group(1)
+    deferred = re.fullmatch(r"DEFERRED \(repair loop exhausted; (RR-\d+) in deferred/\)", value)
+    if deferred is not None:
+        return "DEFERRED", deferred.group(1)
+    raise ConfirmationFailed(f"cannot import prior report status {value!r}")
+
+
+def _prior_report_catalog(cfg: ConfirmConfig) -> tuple[list[dict[str, Any]], list[Outcome]]:
+    """Import a canonical Phase-4 report into the existing verdict model.
+
+    Legacy confirmation remains a supported initial mode but did not write
+    candidates.json or per-finding verdict.json. A scoped repair pass imports
+    missing evidence from the canonical report so it can preserve the same
+    findings while dispatching only the current MC violations.
+    """
+    report = cfg.ws.work_dir(cfg.name) / "confirmed-bugs.md"
+    if report.is_symlink() or not report.is_file():
+        return [], []
+    text = report.read_text()
+    rows = list(_REPORT_RR_ROW_RE.finditer(text))
+    details = list(_REPORT_DETAIL_RE.finditer(text))
+    if not rows and not details:
+        return [], []
+    if len(rows) != len(details):
+        raise ConfirmationFailed("legacy confirmation report table/detail counts do not match")
+
+    detail_by_number: dict[int, tuple[re.Match[str], int]] = {}
+    for index, detail in enumerate(details):
+        number = int(detail.group(1))
+        if number in detail_by_number:
+            raise ConfirmationFailed(f"legacy confirmation report repeats Entry {number}")
+        end = details[index + 1].start() if index + 1 < len(details) else len(text)
+        detail_by_number[number] = (detail, end)
+
+    catalog: list[dict[str, Any]] = []
+    outcomes: list[Outcome] = []
+    seen_ids: set[str] = set()
+    for row in rows:
+        bug_no = int(row.group(1))
+        finding_id = row.group(2).strip()
+        if not finding_id or set(finding_id) - ID_CHARS or finding_id in {".", ".."} or finding_id in seen_ids:
+            raise ConfirmationFailed(f"legacy confirmation report has invalid finding id {finding_id!r}")
+        seen_ids.add(finding_id)
+        detail_info = detail_by_number.get(bug_no)
+        if detail_info is None:
+            raise ConfirmationFailed(f"legacy confirmation report is missing Entry {bug_no}")
+        detail, end = detail_info
+        heading_end = text.find("\n", detail.end(), end)
+        if heading_end < 0:
+            heading_end = end
+        title = text[detail.end() : heading_end].strip()
+        block = text[heading_end:end].strip()
+        detail_ids = re.findall(r"(?m)^- \*\*Finding ID\*\*:\s*([^\s]+)\s*$", block)
+        if detail_ids != [finding_id]:
+            raise ConfirmationFailed(f"legacy confirmation Entry {bug_no} does not match {finding_id}")
+        status, rr = _parse_report_status(row.group(3))
+        source_claims = re.findall(r"(?im)^\s*-\s*\*\*Source\*\*:\s*([^\r\n]+)", block)
+        source_claim = source_claims[-1].strip().lower() if source_claims else ""
+        if source_claim.startswith("mc") or finding_id.startswith("MC-"):
+            source = "model-checking"
+        elif source_claim.startswith("code review") or finding_id.startswith("CR-"):
+            source = "code-review"
+        else:
+            raise ConfirmationFailed(f"legacy confirmation Entry {bug_no} has no usable Source")
+        if status == "PENDING REPAIR" and source != "model-checking":
+            raise ConfirmationFailed(f"legacy confirmation Entry {bug_no} has invalid repair source")
+
+        data = {
+            "id": finding_id,
+            "source": source,
+            "title": title,
+            "summary": title,
+        }
+        finding = Finding(data, cfg.ws.work_dir(cfg.name).absolute() / "confirmation" / finding_id)
+        body_lines = [
+            line
+            for line in block.splitlines()
+            if not re.match(
+                r"^\s*-\s*\*\*(?:Finding ID|Status|Debate|Transcript)\*\*:",
+                line,
+                re.I,
+            )
+        ]
+        while body_lines and (not body_lines[-1].strip() or body_lines[-1].strip() == "---"):
+            body_lines.pop()
+        body = "\n".join(body_lines).strip() or "Imported evidence from the canonical legacy confirmation report."
+        catalog.append(data)
+        outcomes.append(Outcome(finding, status, True, 0, body, rr, bug_no))
+    return catalog, outcomes
+
+
+def _save_imported_verdict(outcome: Outcome) -> None:
+    """Materialize legacy report evidence without making it a cache hit."""
+    outcome.finding.fdir.mkdir(parents=True, exist_ok=True)
+    verdict = outcome.finding.fdir / "verdict.json"
+    if verdict.exists():
+        return
+    tmp = verdict.with_suffix(".json.tmp")
+    tmp.write_text(
+        json.dumps(
+            {
+                "cache_version": _CACHE_VERSION,
+                "fingerprint": "legacy-report-import",
+                "status": outcome.status,
+                "consensus": outcome.consensus,
+                "rounds": outcome.rounds,
+                "rr": outcome.rr,
+                "body": outcome.body,
+                "artifacts": {},
+            },
+            ensure_ascii=False,
+        )
+    )
+    tmp.replace(verdict)
+
+
+def _prepare_repair_findings(cfg: ConfirmConfig) -> tuple[list[Finding], list[Finding]]:
+    """Load current Phase-3 violations and merge them into the old catalog.
+
+    The returned first list is the *only* dispatch set. The second is the
+    cumulative catalog used to retain prior code-review/model-checking outcomes
+    in the report and to keep stable entry ordering.
+    """
+    wd = cfg.ws.work_dir(cfg.name).absolute()
+    spec_dir = wd / "spec"
+    current_by_id, errs = _expected_mc_ids(spec_dir)
+    if current_by_id is None:
+        raise ConfirmationFailed("repair confirmation requires spec/findings.json")
+    if errs:
+        raise ConfirmationFailed(errs[0])
+
+    candidates = spec_dir / "candidates.json"
+    report_catalog, imported = _prior_report_catalog(cfg)
+    if candidates.is_file():
+        candidate_errs = _validate_candidates(candidates)
+        if candidate_errs:
+            raise ConfirmationFailed(f"invalid cumulative candidates: {candidate_errs[0]}")
+        doc = json.loads(candidates.read_text())
+        catalog_data = list(doc["findings"])
+    else:
+        catalog_data = list(report_catalog)
+        doc = {"findings": catalog_data}
+
+    positions = {str(item["id"]): index for index, item in enumerate(catalog_data)}
+    for item in report_catalog:
+        fid = str(item["id"])
+        if fid not in positions:
+            positions[fid] = len(catalog_data)
+            catalog_data.append(item)
+    for fid, item in current_by_id.items():
+        if fid in positions:
+            catalog_data[positions[fid]] = item
+        else:
+            positions[fid] = len(catalog_data)
+            catalog_data.append(item)
+    doc["findings"] = catalog_data
+
+    if not cfg.dry_run:
+        # Import every missing prior verdict before publishing candidates.
+        # If this loop is interrupted, candidates remains absent/unchanged and
+        # the canonical report drives the same idempotent import on retry.
+        for outcome in imported:
+            _save_imported_verdict(outcome)
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        tmp = candidates.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n")
+        tmp.replace(candidates)
+        (spec_dir / _CANDIDATE_CACHE).unlink(missing_ok=True)
+
+    current = _findings_from_data(cfg, list(current_by_id.values()))
+    catalog = _findings_from_data(cfg, catalog_data)
+    return current, catalog
+
+
 def load_findings(cfg: ConfirmConfig) -> list[Finding]:
     wd = cfg.ws.work_dir(cfg.name).absolute()
     spec_dir = wd / "spec"
@@ -2733,18 +3189,11 @@ def load_findings(cfg: ConfirmConfig) -> list[Finding]:
         # No candidate list (e.g. --dry-run, which does not run consolidate, or a
         # consolidate that produced nothing) — nothing to fan out.
         return []
-    conf_root = wd / "confirmation"
     doc = json.loads(path.read_text())
     errs = _validate_candidates(path) if path.name == "candidates.json" else []
     if errs:
         raise ConfirmationFailed(f"invalid candidate input: {errs[0]}")
-    findings: list[Finding] = []
-    for data in doc.get("findings", []):
-        fid = str(data.get("id", ""))
-        if not fid or set(fid) - ID_CHARS or fid in {".", ".."}:
-            raise ConfirmationFailed(f"unsafe finding id: {fid!r}")
-        findings.append(Finding(data, conf_root / fid))
-    return findings
+    return _findings_from_data(cfg, doc.get("findings", []))
 
 
 def run_parallel_confirmation(cfg: ConfirmConfig, *, retain_rate_limited_state: bool = False) -> int:
@@ -2780,7 +3229,9 @@ def _withhold(cfg: ConfirmConfig, reason: str, code: int = 1) -> int:
         cfg.ws.work_dir(cfg.name) / "confirmed-bugs.md",
         cfg.ws.work_dir(cfg.name) / "spec" / "confirmed-bugs.md",
     ]
-    if not cfg.dry_run:
+    # A repair pass updates a cumulative deliverable. If preparation itself
+    # fails, the already-confirmed report remains the valid last-known result.
+    if not cfg.dry_run and cfg.repair_round is None:
         for report in reports:
             if report.is_file():
                 try:
@@ -2815,6 +3266,8 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
         return _withhold(cfg, "invalid max_parallel; expected a positive integer")
     if cfg.debate and cfg.rounds < 1:
         return _withhold(cfg, "invalid debate rounds; expected a positive integer")
+    if cfg.repair_round is not None and cfg.repair_round < 1:
+        return _withhold(cfg, "invalid repair_round; expected a positive integer")
     if not cfg.dry_run:
         try:
             # This must precede consolidate/aggregation: the previous canonical
@@ -2829,23 +3282,93 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
         except (ConfirmationFailed, OSError, UnicodeError, ValueError) as exc:
             _log(f"repair identity preflight failed ({exc}) — existing report retained")
             return 1
-    try:
-        consolidate(cfg)
-    except RateLimited:
-        return _withhold(
-            cfg,
-            "consolidate rate-limited — deliverable withheld for scheduler retry",
-            quota.RATE_LIMIT_RC,
-        )
-    except ConsolidateFailed as e:
-        return _withhold(cfg, f"consolidate failed ({e}) — deliverable withheld; downstream gate + retry settle it")
 
+    prior_by_id: dict[str, Outcome] = {}
+    repair_evidence_by_id: dict[str, str] = {}
     try:
-        findings = load_findings(cfg)
+        if cfg.repair_round is None:
+            try:
+                consolidate(cfg)
+            except RateLimited:
+                return _withhold(
+                    cfg,
+                    "consolidate rate-limited — deliverable withheld for scheduler retry",
+                    quota.RATE_LIMIT_RC,
+                )
+            except ConsolidateFailed as exc:
+                return _withhold(
+                    cfg,
+                    f"consolidate failed ({exc}) — deliverable withheld; downstream gate + retry settle it",
+                )
+            findings = load_findings(cfg)
+            catalog = findings
+        else:
+            commit = _load_repair_commit(cfg)
+            findings, catalog = _prepare_repair_findings(cfg)
+            if [finding.id for finding in findings] != commit["violation_ids"]:
+                raise ConfirmationFailed("current repair findings do not match the committed violation ids")
+            requests = _repair_round_requests(cfg, commit["request_ids"])
+            current_findings = {finding.id: finding for finding in findings}
+            for finding in catalog:
+                prior = _load_stored_verdict(finding)
+                if prior is not None:
+                    prior_by_id[finding.id] = prior
+                repair_evidence_by_id[finding.id] = _repair_evidence(
+                    cfg,
+                    finding,
+                    requests,
+                    current_violation=finding.id in current_findings,
+                )
+            missing_prior = [
+                finding.id
+                for finding in catalog
+                if finding.id not in current_findings and finding.id not in prior_by_id
+            ]
+            if missing_prior:
+                raise ConfirmationFailed("cumulative findings have no prior evidence: " + ", ".join(missing_prior))
+            for finding_id, (request_id, _history) in requests.items():
+                prior = prior_by_id.get(finding_id)
+                prior_matches = prior is not None and prior.status == "PENDING REPAIR" and prior.rr == request_id
+                completed_current = (
+                    _load_verdict(current_findings[finding_id], cfg)
+                    if finding_id in current_findings and not prior_matches
+                    else None
+                )
+                if not prior_matches and completed_current is None:
+                    raise ConfirmationFailed(
+                        f"repair request {request_id} has no matching prior PENDING REPAIR evidence for {finding_id}"
+                    )
+            for finding in findings:
+                finding.repair_context = _repair_prompt_context(
+                    finding,
+                    prior_by_id.get(finding.id),
+                    repair_evidence_by_id[finding.id],
+                )
+
+            # A consumed request is a completed repair even when Phase 3 found
+            # no current violation with that ID. Append its concise Phase-3
+            # result to the same verdict evidence before rebuilding the report.
+            if not cfg.dry_run:
+                for finding in catalog:
+                    prior = prior_by_id.get(finding.id)
+                    request = requests.get(finding.id)
+                    if prior is None or prior.status != "PENDING REPAIR" or request is None:
+                        continue
+                    if prior.rr != request[0]:
+                        continue
+                    body = _merge_repair_evidence(
+                        prior,
+                        repair_evidence_by_id[finding.id],
+                        None,
+                        cfg.repair_round,
+                    )
+                    _rewrite_stored_body(finding, body)
+                    prior.body = body
     except (ConfirmationFailed, OSError, ValueError, TypeError) as exc:
         return _withhold(cfg, f"candidate loading failed ({exc}) — deliverable withheld")
     _log(
-        f"Parallel confirmation: {cfg.name} — {len(findings)} findings, "
+        f"Parallel confirmation: {cfg.name} — {len(findings)} "
+        f"{'current repair violations' if cfg.repair_round is not None else 'findings'}, "
         f"debate={'ON' if cfg.debate else 'OFF'}, max_parallel={cfg.max_parallel}"
     )
     if cfg.dry_run:
@@ -2853,7 +3376,13 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
             _log(f"    [{finding.id}] [DRY] would run confirmation")
         return 0
     if not findings:
-        aggregate(cfg, [])
+        if cfg.repair_round is None:
+            aggregate(cfg, [])
+        else:
+            preserved = [prior_by_id[finding.id] for finding in catalog if finding.id in prior_by_id]
+            for index, preserved_outcome in enumerate(preserved, 1):
+                preserved_outcome.bug_no = index
+            aggregate(cfg, preserved)
         return _post_validate_repair_state(cfg)
 
     outcomes: list[Outcome] = []
@@ -2867,7 +3396,15 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
         # so the scheduler retry can run it later.
         if rate_limit_seen.is_set():
             return None
-        outcome = run_finding_safe(cfg, finding)
+        if cfg.repair_round is None:
+            outcome = run_finding_safe(cfg, finding)
+        else:
+            outcome = run_finding_safe(
+                cfg,
+                finding,
+                prior=prior_by_id.get(finding.id),
+                repair_evidence=repair_evidence_by_id[finding.id],
+            )
         if outcome.status == INCOMPLETE and outcome.failure_code == quota.RATE_LIMIT_RC:
             # Set this in the worker before it releases its executor slot. That
             # closes the race where a queued future could otherwise begin between
@@ -2927,25 +3464,39 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
                 outcomes.append(cached)
                 continue
             _log(f"  [{finding.id}] INCOMPLETE (not started after batch rate limit) — not cached; retry later")
-            outcomes.append(
-                Outcome(
-                    finding,
-                    INCOMPLETE,
-                    consensus=False,
-                    rounds=0,
-                    body=(
-                        "## Confirmation result\n"
-                        "INCOMPLETE — this finding was not started because another finding was rate-limited. "
-                        "It was NOT judged and was NOT cached. Re-run to retry."
-                    ),
-                    failure_code=quota.RATE_LIMIT_RC,
-                )
+            incomplete = Outcome(
+                finding,
+                INCOMPLETE,
+                consensus=False,
+                rounds=0,
+                body=(
+                    "## Confirmation result\n"
+                    "INCOMPLETE — this finding was not started because another finding was rate-limited. "
+                    "It was NOT judged and was NOT cached. Re-run to retry."
+                ),
+                failure_code=quota.RATE_LIMIT_RC,
             )
+            if cfg.repair_round is not None:
+                incomplete.body = _merge_repair_evidence(
+                    prior_by_id.get(finding.id),
+                    repair_evidence_by_id[finding.id],
+                    incomplete.body,
+                    cfg.repair_round,
+                )
+            outcomes.append(incomplete)
     # Partial delivery beats total loss: a finding that could not finish is an
     # INCOMPLETE row, clearly marked; every completed finding is still reported. A
     # single infra error / rate limit no longer withholds the whole target.
-    order = {f.id: i for i, f in enumerate(findings)}
-    outcomes.sort(key=lambda o: order[o.finding.id])
+    if cfg.repair_round is None:
+        order = {f.id: i for i, f in enumerate(findings)}
+        outcomes.sort(key=lambda o: order[o.finding.id])
+    else:
+        current_outcomes = {outcome.finding.id: outcome for outcome in outcomes}
+        outcomes = [
+            current_outcomes.get(finding.id) or prior_by_id[finding.id]
+            for finding in catalog
+            if finding.id in current_outcomes or finding.id in prior_by_id
+        ]
     for i, o in enumerate(outcomes, 1):
         o.bug_no = i  # the "## Entry N:" number, in table order (drives aggregate + the RR bug_id)
     try:

@@ -188,6 +188,39 @@ class TestConfirmConfigCompatibility(ConfirmCase):
         self.assertEqual(run.call_args.kwargs["gate_work_dir"], finding.fdir)
         self.assertEqual(run.call_args.kwargs["cwd"], "/repo-worktree")
 
+    def test_repair_flags_require_parallel_mode_round_and_durable_token(self) -> None:
+        phase = PhaseLib.BugConfirmationPhase()
+        valid: dict[str, str | bool] = {
+            "repair_round": "2",
+            "repair_token": "0123456789abcdef0123456789abcdef",
+        }
+        self.assertIsNone(phase.validate_options(valid))
+        self.assertIn(
+            "--legacy-confirm and --repair-round",
+            str(phase.validate_options({**valid, "legacy": True})),
+        )
+        self.assertIn(
+            "--repair-token requires --repair-round",
+            str(phase.validate_options({"repair_token": valid["repair_token"]})),
+        )
+        self.assertIn(
+            "--repair-round requires --repair-token",
+            str(phase.validate_options({"repair_round": "2"})),
+        )
+
+    def test_phase_prompts_route_repair_results_without_reconfirming_everything(self) -> None:
+        repair_ws = Workspace(["T"], opts={"repair": True})
+        repair_prompt = PhaseLib.SpecValidationPhase().build_prompt(repair_ws, "T")
+        self.assertIn("write the current violations to", repair_prompt)
+        self.assertIn("Do not run confirmation here", repair_prompt)
+        self.assertIn(
+            "update the existing evidence and repair-request History",
+            re.sub(r"\s+", " ", repair_prompt),
+        )
+
+        classification_prompt = PhaseLib.BugClassificationPhase().build_prompt(Workspace(["T"]), "T")
+        self.assertNotIn("REPAIRED", classification_prompt)
+
     def test_finding_turn_starts_in_clean_dispatcher_cwd_not_untrusted_repo(self) -> None:
         ws = Workspace(["T"])
         repo = Path(self.tmp) / "repo"
@@ -1289,6 +1322,443 @@ class TestDriver(ConfirmCase):
         self.assertIn("PENDING REPAIR (RR-001)", (spec.parent / "confirmed-bugs.md").read_text())
 
 
+class TestRepairScopedConfirmation(ConfirmCase):
+    TOKEN = "0123456789abcdef0123456789abcdef"
+
+    def mc(self, ws: Workspace, name: str, fid: str, summary: str = "current violation analysis") -> dict[str, str]:
+        counterexample = ws.work_dir(name) / "spec" / "output" / f"{fid}.out"
+        counterexample.parent.mkdir(parents=True, exist_ok=True)
+        counterexample.write_text(f"counterexample for {fid}\n")
+        return {
+            "id": fid,
+            "source": "model-checking",
+            "title": fid,
+            "summary": summary,
+            "invariant": "Inv",
+            "config": "MC.cfg",
+            "counterexample": f"spec/output/{fid}.out",
+        }
+
+    def consume_pending(
+        self,
+        ws: Workspace,
+        name: str,
+        finding_data: dict[str, str],
+        *,
+        history: str = "r1 (phase3-repair): fixed the model; original CE is gone",
+    ) -> str:
+        cfg = self.cfg(ws, name)
+        finding = C.Finding(finding_data, ws.work_dir(name) / "confirmation" / finding_data["id"])
+        finding.fdir.mkdir(parents=True, exist_ok=True)
+        (finding.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        outcome = C.Outcome(finding, "PENDING REPAIR", True, 0, "ORIGINAL PENDING EVIDENCE", bug_no=1)
+        outcome.rr = C.allocate_rr(cfg, outcome)
+        C._save_verdict(outcome, cfg)
+        request = ws.work_dir(name) / "spec" / "repair-requests" / f"{outcome.rr}.md"
+        request.write_text(request.read_text().replace("status: OPEN", "status: CONSUMED", 1) + f"- {history}\n")
+        return str(outcome.rr)
+
+    def commit(
+        self,
+        ws: Workspace,
+        name: str,
+        findings: list[dict[str, str]],
+        request_ids: list[str],
+        *,
+        repair_round: int = 1,
+    ) -> C.ConfirmConfig:
+        spec = ws.work_dir(name) / "spec"
+        findings_json = json.dumps({"findings": findings}, ensure_ascii=False)
+        (spec / "findings.json").write_text(findings_json)
+        (spec / ".repair-phase3-commit.json").write_text(
+            json.dumps(
+                {
+                    "version": 2,
+                    "repair_round": repair_round,
+                    "commit_token": self.TOKEN,
+                    "request_ids": request_ids,
+                    "violation_ids": [finding["id"] for finding in findings],
+                    "findings_json": findings_json,
+                }
+            )
+        )
+        return self.cfg(
+            ws,
+            name,
+            repair_round=repair_round,
+            repair_token=self.TOKEN,
+            max_parallel=1,
+        )
+
+    def save_terminal(
+        self,
+        ws: Workspace,
+        name: str,
+        data: dict[str, str],
+        status: str,
+        body: str,
+    ) -> None:
+        finding = C.Finding(data, ws.work_dir(name) / "confirmation" / data["id"])
+        C._save_verdict(C.Outcome(finding, status, True, 0, body), self.cfg(ws, name))
+
+    def test_only_current_violations_run_and_old_results_and_evidence_are_preserved(self) -> None:
+        name = "T"
+        ws = Workspace([name])
+        old_mc = self.mc(ws, name, "MC-1", "old artifact")
+        unrelated_mc = self.mc(ws, name, "MC-9", "unrelated completed model-checking finding")
+        code_review = {
+            "id": "CR-1",
+            "source": "code-review",
+            "title": "review finding",
+            "summary": "old review analysis",
+        }
+        spec = ws.work_dir(name) / "spec"
+        spec.mkdir(parents=True, exist_ok=True)
+        (spec / "candidates.json").write_text(json.dumps({"findings": [old_mc, unrelated_mc, code_review]}))
+        rr = self.consume_pending(ws, name, old_mc)
+        self.save_terminal(ws, name, unrelated_mc, "NEEDS MORE INFO", "PRESERVED UNRELATED MC EVIDENCE")
+        self.save_terminal(ws, name, code_review, "FALSE POSITIVE", "PRESERVED CODE REVIEW EVIDENCE")
+        unrelated_verdict = ws.work_dir(name) / "confirmation" / "MC-9" / "verdict.json"
+        code_review_verdict = ws.work_dir(name) / "confirmation" / "CR-1" / "verdict.json"
+        preserved_bytes = {
+            unrelated_verdict: unrelated_verdict.read_bytes(),
+            code_review_verdict: code_review_verdict.read_bytes(),
+        }
+        current = self.mc(ws, name, "MC-2", "new model-checking violation")
+        cfg = self.commit(ws, name, [current], [rr])
+        calls: list[str] = []
+
+        def agent(*args: object, **_kwargs: object) -> tuple[int, str]:
+            calls.append(Path(str(args[2])).parent.name)
+            return (0, _response("NEEDS MORE INFO", "CURRENT CONFIRMATION EVIDENCE"))
+
+        with (
+            mock.patch.object(C, "consolidate", side_effect=AssertionError("repair mode must not consolidate")),
+            mock.patch.object(C, "run_agent_blocking", agent),
+        ):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+
+        self.assertEqual(calls, ["MC-2"])
+        report = (ws.work_dir(name) / "confirmed-bugs.md").read_text()
+        self.assertIn("| 1 | MC-1 | FALSE POSITIVE |", report)
+        self.assertIn("| 2 | MC-9 | NEEDS MORE INFO |", report)
+        self.assertIn("| 3 | CR-1 | FALSE POSITIVE |", report)
+        self.assertIn("| 4 | MC-2 | NEEDS MORE INFO |", report)
+        self.assertIn("ORIGINAL PENDING EVIDENCE", report)
+        self.assertIn("fixed the model; original CE is gone", report)
+        self.assertIn("PRESERVED UNRELATED MC EVIDENCE", report)
+        self.assertIn("PRESERVED CODE REVIEW EVIDENCE", report)
+        self.assertEqual(report.count("Current violation analysis"), 1)
+        catalog = json.loads((spec / "candidates.json").read_text())["findings"]
+        self.assertEqual([finding["id"] for finding in catalog], ["MC-1", "MC-9", "CR-1", "MC-2"])
+        self.assertEqual({path: path.read_bytes() for path in preserved_bytes}, preserved_bytes)
+
+    def test_empty_findings_runs_no_agent_or_consolidate_and_marks_false_positive(self) -> None:
+        name = "T"
+        old_mc = {
+            "id": "MC-1",
+            "source": "model-checking",
+            "title": "old artifact",
+            "summary": "old analysis",
+        }
+        ws = self.seed(name, [old_mc])
+        rr = self.consume_pending(ws, name, old_mc)
+        cfg = self.commit(ws, name, [], [rr])
+
+        with (
+            mock.patch.object(C, "consolidate", side_effect=AssertionError("repair mode must not consolidate")),
+            mock.patch.object(C, "run_agent_blocking", _boom),
+        ):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+
+        report = (ws.work_dir(name) / "confirmed-bugs.md").read_text()
+        self.assertIn("| 1 | MC-1 | FALSE POSITIVE |", report)
+        self.assertIn("False positives: 1", report)
+        self.assertNotIn("REPAIRED", report)
+        request = ws.work_dir(name) / "spec" / "repair-requests" / f"{rr}.md"
+        self.assertIn("status: CONSUMED", request.read_text())
+        verdict = json.loads((ws.work_dir(name) / "confirmation" / "MC-1" / "verdict.json").read_text())
+        self.assertEqual(verdict["status"], "PENDING REPAIR")
+        self.assertIn("fixed the model; original CE is gone", verdict["body"])
+        self.assertNotIn("Current violation analysis", verdict["body"])
+
+    def test_commit_marker_mismatch_fails_closed_and_retains_prior_report(self) -> None:
+        name = "T"
+        ws = self.seed(name, [])
+        cfg = self.commit(ws, name, [], [])
+        report = ws.work_dir(name) / "confirmed-bugs.md"
+        report.write_text("# PRIOR CONFIRMATION REPORT\n")
+        cfg.repair_token = "fedcba9876543210fedcba9876543210"
+
+        with mock.patch.object(C, "run_agent_blocking", _boom):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 1)
+        self.assertEqual(report.read_text(), "# PRIOR CONFIRMATION REPORT\n")
+
+    def test_rate_limit_retry_runs_only_unfinished_current_violation_and_keeps_old_evidence(self) -> None:
+        name = "T"
+        ws = Workspace([name])
+        old_mc = self.mc(ws, name, "MC-1", "old artifact")
+        code_review = {
+            "id": "CR-1",
+            "source": "code-review",
+            "title": "review finding",
+            "summary": "review analysis",
+        }
+        spec = ws.work_dir(name) / "spec"
+        spec.mkdir(parents=True, exist_ok=True)
+        (spec / "candidates.json").write_text(json.dumps({"findings": [old_mc, code_review]}))
+        rr = self.consume_pending(ws, name, old_mc)
+        self.save_terminal(ws, name, code_review, "FALSE POSITIVE", "OLD CODE REVIEW EVIDENCE")
+        current = [self.mc(ws, name, "MC-2"), self.mc(ws, name, "MC-3")]
+        cfg = self.commit(ws, name, current, [rr])
+        first_calls: list[str] = []
+
+        def first(*args: object, **_kwargs: object) -> tuple[int, str]:
+            fid = Path(str(args[2])).parent.name
+            first_calls.append(fid)
+            if fid == "MC-3":
+                return (75, "")
+            return (0, _response("FALSE POSITIVE", "COMPLETED CURRENT EVIDENCE"))
+
+        with mock.patch.object(C, "run_agent_blocking", first):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 75)
+        first_report = (ws.work_dir(name) / "confirmed-bugs.md").read_text()
+        self.assertEqual(first_calls, ["MC-2", "MC-3"])
+        self.assertIn("OLD CODE REVIEW EVIDENCE", first_report)
+        self.assertIn("| 4 | MC-3 | INCOMPLETE |", first_report)
+
+        retry_calls: list[str] = []
+
+        def retry(*args: object, **_kwargs: object) -> tuple[int, str]:
+            retry_calls.append(Path(str(args[2])).parent.name)
+            return (0, _response("FALSE POSITIVE", "RETRIED CURRENT EVIDENCE"))
+
+        with mock.patch.object(C, "run_agent_blocking", retry):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+        self.assertEqual(retry_calls, ["MC-3"])
+        report = (ws.work_dir(name) / "confirmed-bugs.md").read_text()
+        self.assertIn("OLD CODE REVIEW EVIDENCE", report)
+        self.assertIn("COMPLETED CURRENT EVIDENCE", report)
+        self.assertIn("RETRIED CURRENT EVIDENCE", report)
+        mc2_body = json.loads((ws.work_dir(name) / "confirmation" / "MC-2" / "verdict.json").read_text())["body"]
+        self.assertEqual(mc2_body.count("## Repair round 1 evidence"), 1)
+
+    def test_reused_id_still_runs_and_continues_evidence_without_global_generation(self) -> None:
+        name = "T"
+        ws = Workspace([name])
+        old_mc = self.mc(ws, name, "MC-1", "old artifact analysis")
+        spec = ws.work_dir(name) / "spec"
+        spec.mkdir(parents=True, exist_ok=True)
+        (spec / "candidates.json").write_text(json.dumps({"findings": [old_mc]}))
+        rr = self.consume_pending(ws, name, old_mc)
+        current = self.mc(ws, name, "MC-1", "surviving violation after repair")
+        cfg = self.commit(ws, name, [current], [rr])
+        calls: list[str] = []
+        prior_repro = ws.work_dir(name) / "repro" / "test_bugMC-1_original.py"
+        prior_repro.parent.mkdir(parents=True, exist_ok=True)
+        prior_repro.write_bytes(b"ORIGINAL REPRO EVIDENCE\n")
+
+        def agent(*args: object, **_kwargs: object) -> tuple[int, str]:
+            calls.append(Path(str(args[2])).parent.name)
+            prompt = str(args[1])
+            self.assertIn("This is not a fresh confirmation", prompt)
+            self.assertIn("surviving violation after repair", prompt)
+            self.assertIn(str((ws.work_dir(name) / "confirmation" / "MC-1" / "verdict.json").absolute()), prompt)
+            self.assertIn("Read this finding's `body` before investigating further.", prompt)
+            self.assertIn(str((spec / "repair-requests" / f"{rr}.md").absolute()), prompt)
+            self.assertIn("Read its updated `## Evidence`", prompt)
+            return (0, _response("FALSE POSITIVE", "NEW CONFIRMATION ANALYSIS"))
+
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+        self.assertEqual(calls, ["MC-1"])
+        self.assertEqual(prior_repro.read_bytes(), b"ORIGINAL REPRO EVIDENCE\n")
+        verdict_path = ws.work_dir(name) / "confirmation" / "MC-1" / "verdict.json"
+        body = json.loads(verdict_path.read_text())["body"]
+        self.assertIn("ORIGINAL PENDING EVIDENCE", body)
+        self.assertIn("surviving violation after repair", body)
+        self.assertIn("NEW CONFIRMATION ANALYSIS", body)
+
+        # The same committed repair retry is cached even if the old global
+        # generation changes; repair fingerprints are token-scoped.
+        (spec / "confirmation-generation.json").write_text('{"generation": 999}\n')
+        with mock.patch.object(C, "run_agent_blocking", _boom):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+        self.assertEqual(json.loads(verdict_path.read_text())["body"].count("## Repair round 1 evidence"), 1)
+
+    def test_pipeline_repair_canary_runs_the_real_scoped_phase_and_report_merge(self) -> None:
+        """Wire the real pipeline dispatcher through the real Phase-4 phase."""
+        name = "T"
+        ws = Workspace([name])
+        old_mc = self.mc(ws, name, "MC-1", "old violation analysis")
+        code_review = {
+            "id": "CR-1",
+            "source": "code-review",
+            "title": "unrelated review finding",
+            "summary": "unrelated review analysis",
+        }
+        spec = ws.work_dir(name) / "spec"
+        spec.mkdir(parents=True, exist_ok=True)
+        (spec / "candidates.json").write_text(json.dumps({"findings": [old_mc, code_review]}))
+
+        cfg = self.cfg(ws, name)
+        old_finding = C.Finding(old_mc, ws.work_dir(name) / "confirmation" / "MC-1")
+        old_finding.fdir.mkdir(parents=True, exist_ok=True)
+        (old_finding.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        pending = C.Outcome(old_finding, "PENDING REPAIR", True, 0, "ORIGINAL CANARY EVIDENCE", bug_no=1)
+        pending.rr = C.allocate_rr(cfg, pending)
+        C._save_verdict(pending, cfg)
+        review_finding = C.Finding(code_review, ws.work_dir(name) / "confirmation" / "CR-1")
+        review = C.Outcome(review_finding, "FALSE POSITIVE", True, 0, "UNRELATED CR EVIDENCE", bug_no=2)
+        C._save_verdict(review, cfg)
+        C.aggregate(cfg, [pending, review])
+
+        rr = spec / "repair-requests" / f"{pending.rr}.md"
+        review_verdict = review_finding.fdir / "verdict.json"
+        review_bytes = review_verdict.read_bytes()
+        repo = _git_repo(Path(self.tmp) / "artifact")
+        pipeline = PL.Pipeline()
+        pipeline.targets = [name]
+        pipeline.run_dir = Path(self.tmp)
+        pipeline.max_parallel = "1"
+        pipeline.artifact = str(repo)
+        pipeline._artifact_given = True
+        pipeline.wait_for_quota = lambda **_kwargs: None  # type: ignore[method-assign]
+
+        def phase3(round_: int, names: list[str] | None = None) -> None:
+            self.assertEqual((round_, names), (1, [name]))
+            PL.rr_set_status(rr, "CONSUMED", "r1 (phase3-repair): full conformance found MC-1")
+            current = self.mc(ws, name, "MC-1", "current violation after full conformance")
+            (spec / "findings.json").write_text(json.dumps({"findings": [current]}))
+            pipeline.publish_repair_phase3_commit(round_, [name])
+
+        pipeline.run_phase3_repair = phase3  # type: ignore[method-assign]
+        phase_args: list[str] = []
+
+        def in_process_launcher(script: str, args: list[str]) -> None:
+            self.assertEqual(script, "launch_bug_confirmation.sh")
+            phase_args[:] = args
+            code = PhaseLib.BugConfirmationPhase().run(args)
+            if code:
+                raise SystemExit(code)
+
+        pipeline._run_launcher = in_process_launcher  # type: ignore[method-assign]
+        calls: list[str] = []
+
+        def agent(*args: object, **_kwargs: object) -> tuple[int, str]:
+            calls.append(Path(str(args[2])).parent.name)
+            self.assertIn("This is not a fresh confirmation", str(args[1]))
+            return (0, _response("NEEDS MORE INFO", "CURRENT CANARY ANALYSIS"))
+
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            self.assertEqual(pipeline.run_repair_loop(), {name})
+
+        self.assertEqual(calls, ["MC-1"])
+        self.assertIn("--repair-round=1", phase_args)
+        token_arg = next(arg for arg in phase_args if arg.startswith("--repair-token="))
+        self.assertRegex(token_arg, r"^--repair-token=[0-9a-f]{32}$")
+        self.assertEqual(review_verdict.read_bytes(), review_bytes)
+        report = ws.work_dir(name) / "confirmed-bugs.md"
+        report_text = report.read_text()
+        self.assertIn("ORIGINAL CANARY EVIDENCE", report_text)
+        self.assertIn("full conformance found MC-1", report_text)
+        self.assertIn("current violation after full conformance", report_text)
+        self.assertIn("CURRENT CANARY ANALYSIS", report_text)
+        self.assertIn("UNRELATED CR EVIDENCE", report_text)
+        self.assertEqual(PL.rr_status(rr), "CONSUMED")
+        self.assertFalse((spec / ".repair-phase3-commit.json").exists())
+        self.assertFalse((spec / "confirmation-generation.json").exists())
+
+    def test_restart_round_number_reuse_does_not_hide_new_repair_evidence(self) -> None:
+        finding = C.Finding({"id": "MC-1"}, Path(self.tmp) / "confirmation" / "MC-1")
+        prior = C.Outcome(finding, "PENDING REPAIR", True, 0, "BASE EVIDENCE")
+        first = (
+            "## Repair round 1 evidence\n"
+            "<!-- specula-repair-token: 11111111111111111111111111111111 -->\n"
+            "- **Phase 3 result**: first process result"
+        )
+        prior.body = C._merge_repair_evidence(prior, first, None, 1)
+        second = (
+            "## Repair round 1 evidence\n"
+            "<!-- specula-repair-token: 22222222222222222222222222222222 -->\n"
+            "- **Phase 3 result**: restarted process result"
+        )
+
+        merged = C._merge_repair_evidence(prior, second, None, 1)
+
+        self.assertIn("first process result", merged)
+        self.assertIn("restarted process result", merged)
+        self.assertEqual(merged.count("## Repair round 1 evidence"), 2)
+
+    def test_legacy_initial_report_is_imported_without_losing_findings_or_evidence(self) -> None:
+        name = "T"
+        ws = Workspace([name])
+        old_mc = self.mc(ws, name, "MC-1", "legacy model-checking finding")
+        code_review = {
+            "id": "CR-1",
+            "source": "code-review",
+            "title": "legacy review finding",
+            "summary": "legacy review analysis",
+        }
+        spec = ws.work_dir(name) / "spec"
+        spec.mkdir(parents=True, exist_ok=True)
+        (spec / "candidates.json").write_text(json.dumps({"findings": [old_mc, code_review]}))
+        initial_cfg = self.cfg(ws, name)
+
+        mc_finding = C.Finding(old_mc, ws.work_dir(name) / "confirmation" / "MC-1")
+        mc_finding.fdir.mkdir(parents=True, exist_ok=True)
+        (mc_finding.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        pending = C.Outcome(mc_finding, "PENDING REPAIR", True, 0, "LEGACY PENDING EVIDENCE", bug_no=1)
+        pending.rr = C.allocate_rr(initial_cfg, pending)
+        C._save_verdict(pending, initial_cfg)
+        review_finding = C.Finding(code_review, ws.work_dir(name) / "confirmation" / "CR-1")
+        review = C.Outcome(review_finding, "FALSE POSITIVE", True, 0, "LEGACY CR EVIDENCE", bug_no=2)
+        C._save_verdict(review, initial_cfg)
+        C.aggregate(initial_cfg, [pending, review])
+
+        request = spec / "repair-requests" / f"{pending.rr}.md"
+        request.write_text(
+            request.read_text().replace("status: OPEN", "status: CONSUMED", 1)
+            + "- r1 (phase3-repair): full conformance found no violation\n"
+        )
+        # Legacy initial confirmation leaves only the canonical report + RR.
+        (spec / "candidates.json").unlink()
+        shutil.rmtree(ws.work_dir(name) / "confirmation")
+        cfg = self.commit(ws, name, [], [str(pending.rr)])
+
+        save_imported = C._save_imported_verdict
+        saves = 0
+
+        def interrupt_import(outcome: C.Outcome) -> None:
+            nonlocal saves
+            saves += 1
+            if saves == 2:
+                raise OSError("simulated import interruption")
+            save_imported(outcome)
+
+        with (
+            mock.patch.object(C, "_save_imported_verdict", interrupt_import),
+            mock.patch.object(C, "run_agent_blocking", _boom),
+        ):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 1)
+        self.assertFalse((spec / "candidates.json").exists())
+        interrupted_report = (ws.work_dir(name) / "confirmed-bugs.md").read_text()
+        self.assertIn("LEGACY PENDING EVIDENCE", interrupted_report)
+        self.assertIn("LEGACY CR EVIDENCE", interrupted_report)
+
+        with mock.patch.object(C, "run_agent_blocking", _boom):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+
+        report = (ws.work_dir(name) / "confirmed-bugs.md").read_text()
+        self.assertIn("| 1 | MC-1 | FALSE POSITIVE |", report)
+        self.assertIn("| 2 | CR-1 | FALSE POSITIVE |", report)
+        self.assertIn("LEGACY PENDING EVIDENCE", report)
+        self.assertIn("LEGACY CR EVIDENCE", report)
+        self.assertIn("full conformance found no violation", report)
+        self.assertTrue((spec / "candidates.json").is_file())
+        self.assertTrue((ws.work_dir(name) / "confirmation" / "MC-1" / "verdict.json").is_file())
+
+
 class TestDebateGate(ConfirmCase):
     def test_debate_off_is_a_solo(self) -> None:
         ws = self.seed("T", [])
@@ -1948,14 +2418,25 @@ class TestCacheContracts(ConfirmCase):
             self.assertEqual([path.name for path in rr_dir.glob("RR-*.md")], ["RR-002.md"])
             self.assertEqual(C._rr_field_text(new_active.read_text(), "finding_id"), ["MC-1"])
             PL.rr_set_status(new_active, "CONSUMED", "experiment repair completed")
+            (ws.work_dir("T") / "spec" / "findings.json").write_text('{"findings": []}\n')
+            pipeline.publish_repair_phase3_commit(round_, names)
 
-        phase4_calls: list[str] = []
+        reconciliation_calls: list[tuple[str, int, str]] = []
         pipeline.run_phase3_repair = consume_new_request  # type: ignore[method-assign]
-        pipeline.run_phase4_confirmation = lambda: phase4_calls.append("confirmed")  # type: ignore[method-assign]
+
+        def reconcile(name: str, repair_round: int, repair_token: str) -> None:
+            reconciliation_calls.append((name, repair_round, repair_token))
+
+        pipeline.reconcile_repair_without_violations = reconcile  # type: ignore[method-assign]
+        repair_confirmation = mock.Mock(side_effect=AssertionError("zero violations must not launch repair Phase 4"))
+        pipeline.run_repair_confirmation = repair_confirmation  # type: ignore[method-assign]
         pipeline.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
         pipeline.run_repair_loop()
         self.assertEqual(repair_calls, [(1, ["T"])])
-        self.assertEqual(phase4_calls, ["confirmed"])
+        self.assertEqual(len(reconciliation_calls), 1)
+        self.assertEqual(reconciliation_calls[0][:2], ("T", 1))
+        self.assertRegex(reconciliation_calls[0][2], r"^[0-9a-f]{32}$")
+        repair_confirmation.assert_not_called()
         self.assertEqual(PL.rr_status(new_active), "CONSUMED")
         self.assertEqual(deferred.read_bytes(), terminal_bytes)
 

@@ -1,6 +1,6 @@
 # Repair-Request Format
 
-A **repair request** carries a confirmation-loop back-edge. When reproduction concludes — *with a citation* — that a counterexample is a spec / fault-model / invariant **artifact** rather than a real triggerable bug, the finding is not dropped: it is handed back to Phase 3 (spec validation) for a scoped repair. Phase 3 fixes the spec and **re-runs model checking**; the fresh output is then re-confirmed by a normal pass of the confirmation skill — **there is no separate re-check pass**. This file defines the artifact and the small state machine that keeps the loop **bounded** and **idempotent**.
+A **repair request** carries a confirmation-loop back-edge. When reproduction concludes — *with a citation* — that a counterexample is a spec / fault-model / invariant **artifact** rather than a real triggerable bug, the finding is not dropped: it is handed back to Phase 3 (spec validation) for a scoped repair. Phase 3 and the orchestrator follow the workflow below. This file defines the artifact and the small state machine that keeps the loop **bounded** and **idempotent**.
 
 - **Drafted by**: Phase 2 reproduction — see `phases/02-reproduction.md`.
 - **Validated and published by**: the invoking dispatcher / legacy outer orchestrator, which is the sole allocator and shared-queue writer.
@@ -103,7 +103,11 @@ Small. Terminal states: `CONSUMED` (Phase 3 completed the scoped repair) and `DE
 | `IN_REPAIR` → `CONSUMED` | Phase 3 repair | after editing + **full trace re-validation** + re-running MC; appends History |
 | `OPEN` → `DEFERRED` | pipeline orchestrator | the global repair-loop round cap is reached; move the file under `repair-requests/deferred/` and update the linked report entry |
 
-Whether a `CONSUMED` repair actually **settled** the finding is answered by the next Phase 4 confirmation on the fresh bug-report: a repaired artifact simply no longer appears (resolved); a surviving or new violation is confirmed from scratch and may emit a fresh `OPEN` request, whose History is seeded with one `prior attempt` bullet per terminal record for the same finding. There is no re-check pass and no `RESOLVED` / `REOPENED` status. `DEFERRED` is legal only as the orchestrator-owned terminal state; an agent never emits it as a verdict or writes that transition.
+After a request becomes `CONSUMED`, the orchestrator reads the current
+`spec/findings.json`. An empty list makes the original finding `FALSE POSITIVE`
+without a Phase-4 finding agent; otherwise Phase 4 handles only those current
+violations, continuing their existing evidence and repro artifacts. Only a new
+`PENDING REPAIR` starts another round. The request itself remains `CONSUMED`.
 
 `IN_REPAIR` doubles as a crash marker: if the orchestrator finds a request still `IN_REPAIR` at the top of a loop iteration (its repair phase died mid-turn), it resets it to `OPEN`.
 
@@ -131,15 +135,15 @@ Phase 3 in repair mode (`--repair`) processes each request with status `OPEN`:
    - **FAULT_MODEL** — correct the fault model as a whole: the fault action's semantics in `base.tla`, its counter/wrapper in `MC.tla`, the cfg constants, or removing a fault that is not in the system's failure model. Not just `MC.cfg` bounds.
    - **INVARIANT** — revise the cited invariant so it expresses the safety property supported by the request's evidence, cross-checked against the relevant implementation and developer intent. Weakening is sometimes the right consequence, because a false violation often reveals an over-strong requirement, but weakening is never the goal by itself.
      - Explain why the old violation is an artifact and identify the exact requirement the old invariant imposed that the evidence does not support.
-     - Preserve every part of the invariant that the evidence still supports. Make the smallest evidence-backed revision for this request, then follow Step 4 in order: full trace validation first, scoped model checking second. Do not weaken the invariant again in response to a counterexample from that re-run; record the result and leave the fresh classification to the next Phase 4 pass.
+     - Preserve every part of the invariant that the evidence still supports. Make the smallest evidence-backed revision for this request, then follow Step 4 in order: full trace validation first, scoped model checking second. Do not weaken the invariant again in response to a counterexample from that re-run; record it as a current violation for the orchestrator to route.
      - Show that the revised invariant remains a falsifiable oracle in the affected hunt cfgs: identify modeled behavior that could make its predicate false when the prohibited behavior occurs. Do not replace it with `TRUE`, a type predicate already implied by `TypeOK`, an antecedent that is unreachable or always false in every affected cfg, an oracle flag that no modeled transition ever assigns its violating value, or a feature/config guard that disables it in every affected cfg. If another enabled invariant fully subsumes it, record that fact and do not count it as independent coverage.
      - If the evidence supports no safety property in this area, remove the invariant from the affected cfg wiring instead of replacing it with a vacuous predicate. Keep the definition only if another cfg still uses it, and mark the property not applicable in `brief-coverage.md` and the affected cfg's `bug-report.md` entry so it is not counted as coverage.
 4. Re-validate (follow the validation-workflow skill):
    - Run **full trace validation on all traces** — the soundness gate. If the repair excludes a real trace, it is wrong; undo it and reconsider.
-   - Re-run model checking on the request's `scope.hunt_cfgs`, and update `bug-report.md` for the affected cfg.
-5. Set `status: CONSUMED` and append a `History` entry (tag `phase3-repair`) describing what changed and the re-run result (original CE gone / new CE / unchanged).
+   - Re-run model checking on the request's `scope.hunt_cfgs`, and update `bug-report.md` plus `findings.json`.
+5. Update the same RR/evidence in place: preserve correct evidence, selectively correct evidence shown to be wrong, and add concise repair/validation/model-checking analysis. For each current violation, cite the saved counterexample or TLC-output path instead of pasting its raw trace. Then set `status: CONSUMED` and append a concise `History` entry describing what changed and the re-run result.
 
-Process **only** active `OPEN` requests here; never touch `CONSUMED` or `DEFERRED`. The request's cited evidence, cross-checked against the relevant source, tests, documentation, and declared failure model, is the ground truth: do not revise the model or invariant merely to make a trace pass, remove the original counterexample, or obtain a green TLC run. Model checking can show that the revised invariant holds in the explored state space; it cannot by itself show that the invariant still has useful detection power. Do not edit `confirmed-bugs.md` in repair mode — the next Phase 4 confirmation pass owns it.
+Process **only** active `OPEN` requests here; never touch `CONSUMED` or `DEFERRED`. The request's cited evidence, cross-checked against the relevant source, tests, documentation, and declared failure model, is the ground truth: do not revise the model or invariant merely to make a trace pass, remove the original counterexample, or obtain a green TLC run. Model checking can show that the revised invariant holds in the explored state space; it cannot by itself show that the invariant still has useful detection power. Do not edit `confirmed-bugs.md` in repair mode — the orchestrator owns it.
 
 ## When NOT to create a request
 

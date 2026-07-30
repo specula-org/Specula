@@ -2148,8 +2148,9 @@ real bugs), each recorded as a repair request. Use each request's cited evidence
 cross-check the relevant implementation, tests, documentation, and declared failure model
 to revise the spec, fault model, or invariant so it faithfully expresses what the system
 permits and guarantees; do not optimize merely for making the artifact disappear.
-Re-validate, re-run model checking, and mark each request CONSUMED. The pipeline then
-re-confirms the fresh output — you do not re-check anything here.
+Run the complete conformance pass (full trace validation and model checking), update
+the existing evidence and repair-request History, write the current violations to
+`findings.json`, and mark each request CONSUMED. Do not run confirmation here.
 
 ## Inputs
 - **Repair requests**: {spec_dir}/repair-requests/   (process ONLY status OPEN)
@@ -2229,6 +2230,8 @@ Options:
   --dry-run           Print commands without executing
   --check             Only verify prerequisites exist
   --legacy-confirm    Single-agent confirmation (one agent, all findings) instead of parallel
+  --repair-round=N    Internal: confirm only Phase-3 violations from repair round N
+  --repair-token=ID   Internal: durable identity of the committed Phase-3 repair result
   --debate            Add an adversarial Challenger after each confirmation (parallel mode; default off)
   --rounds=N          Max debate rounds with --debate (default: 5; range: 1-5)
   --max-parallel=N    Hard limit for concurrent findings in parallel mode, or concurrent target agents in
@@ -2258,6 +2261,12 @@ Prerequisites:
         if arg == "--debate":
             extra["debate"] = True
             return True
+        if arg.startswith("--repair-round="):
+            extra["repair_round"] = arg[len("--repair-round=") :]
+            return True
+        if arg.startswith("--repair-token="):
+            extra["repair_token"] = arg[len("--repair-token=") :]
+            return True
         if arg.startswith("--rounds="):
             extra["rounds"] = arg[len("--rounds=") :]
             return True
@@ -2269,6 +2278,24 @@ Prerequisites:
     def validate_options(self, extra: dict[str, str | bool]) -> str | None:
         if extra.get("legacy") and extra.get("debate"):
             return "Invalid options: --legacy-confirm and --debate cannot be used together"
+        if extra.get("legacy") and "repair_round" in extra:
+            return "Invalid options: --legacy-confirm and --repair-round cannot be used together"
+        if "repair_token" in extra and "repair_round" not in extra:
+            return "Invalid options: --repair-token requires --repair-round"
+        if "repair_round" in extra and "repair_token" not in extra:
+            return "Invalid options: --repair-round requires --repair-token"
+        if "repair_round" in extra:
+            raw_repair_round = str(extra["repair_round"])
+            try:
+                repair_round = int(raw_repair_round)
+            except ValueError:
+                return f"Invalid --repair-round: '{raw_repair_round}' (expected an integer >= 1)"
+            if repair_round < 1:
+                return f"Invalid --repair-round: '{raw_repair_round}' (expected an integer >= 1)"
+        if "repair_token" in extra:
+            repair_token = str(extra["repair_token"])
+            if re.fullmatch(r"[0-9a-f]{32}", repair_token) is None:
+                return "Invalid --repair-token (expected 32 lowercase hexadecimal characters)"
         raw_rounds = str(extra.get("rounds", "5"))
         try:
             rounds = int(raw_rounds)
@@ -2316,6 +2343,8 @@ Prerequisites:
 
         debate = bool(ws.opts.get("debate"))
         rounds = int(str(ws.opts.get("rounds", "5")))
+        repair_round = int(str(ws.opts["repair_round"])) if "repair_round" in ws.opts else None
+        repair_token = str(ws.opts["repair_token"]) if "repair_token" in ws.opts else None
         failures: list[tuple[str, int]] = []
         successful_names: list[str] = []
         retry_limit = self._rate_limit_retries()
@@ -2336,6 +2365,8 @@ Prerequisites:
                 effort=self._effort,
                 policy_retries=self._policy_retries,
                 transient_resumes=self._transient_resumes,
+                repair_round=repair_round,
+                repair_token=repair_token,
                 dry_run=dry_run,
                 prompt_extra=self._read_prompt_extra(ws, name),
             )
@@ -2491,22 +2522,38 @@ Prerequisites:
 
     def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True
+        repair_mode = "repair_round" in ws.opts
         for name in names:
             wd = ws.work_dir(name)
             repo_dir = ws.find_repo_dir(name)
+            repair_has_findings = True
             line = f"  {name:<20}"
-            if (wd / "spec" / "bug-report.md").is_file():
+            if repair_mode and (wd / "spec" / "findings.json").is_file():
+                line += "findings OK"
+                try:
+                    findings_doc = json.loads((wd / "spec" / "findings.json").read_text())
+                    repair_has_findings = bool(findings_doc.get("findings"))
+                except (OSError, UnicodeError, json.JSONDecodeError, AttributeError):
+                    # The dispatcher reports the precise schema error.
+                    repair_has_findings = True
+            elif repair_mode:
+                line += "findings MISSING"
+                ok = False
+            elif (wd / "spec" / "bug-report.md").is_file():
                 line += "bug-report OK"
             else:
                 line += "bug-report MISSING"
                 ok = False
-            if (wd / "modeling-brief.md").is_file():
+            if repair_mode:
+                line += "  repair-scoped"
+            elif (wd / "modeling-brief.md").is_file():
                 line += "  brief OK"
             else:
                 line += "  brief MISSING"
                 ok = False
-            line += "  repo OK" if repo_dir else "  repo MISSING"
-            if not repo_dir:
+            repo_required = not repair_mode or repair_has_findings
+            line += "  repo OK" if repo_dir else ("  repo NOT NEEDED" if not repo_required else "  repo MISSING")
+            if repo_required and not repo_dir:
                 ok = False
             print(line)
         return ok
