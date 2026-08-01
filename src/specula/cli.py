@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 PROG = "specula"
-VERSION = "0.3.0"
+VERSION = "1.0.0"
 
 SPECULA_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = SPECULA_ROOT / "scripts"
