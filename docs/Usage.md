@@ -246,15 +246,13 @@ TLC workers remain unbounded by default: `-w auto` uses every CPU visible to eac
 Use a stable ID when a run may need to be resumed:
 
 ```bash
-specula run <name> \
+specula run \
   --run-id=my-run \
   --artifact=/path/to/source \
   "name|owner/repository|language|reference"
 ```
 
-If an agent call is interrupted, attach to the same run and use the existing
-skip flags to reach that phase. This example continues an interrupted
-validation call:
+If an agent call is interrupted, attach to the same run and use the skip flags to reach that phase. Specula restores omitted run settings and resumes the unfinished agent conversation. This example continues validation:
 
 ```bash
 specula run --run-id=my-run \
@@ -263,31 +261,13 @@ specula run --run-id=my-run \
   --skip-harness
 ```
 
-For Claude Code, Codex, Copilot CLI, OpenCode, and Pi, Specula resumes the exact
-unfinished native session by default. It restores the run's target, artifact,
-agent routing, model, effort, Claude profile, and retry settings when those
-options are omitted. An incompatible explicit override fails before launching
-an agent. The latest target `.prompt-extra.md`, if present, is appended once to
-the manual continuation so priorities can be clarified without replaying the
-original prompt.
+To add guidance for the resumed agent, update the target's `.prompt-extra.md` before running the command.
 
-Only unfinished calls are resumable; an accepted call is never reopened. If
-the run has no unfinished conversation, its checkpoint is missing or corrupt,
-or the native session cannot be restored safely, the attach fails closed. Use
-`--fresh-context` to keep the existing workspace while abandoning old agent
-contexts, including when attaching to a run created before manual checkpoints
-were supported. Recorded settings are still restored when omitted, while
-explicit settings establish the new context:
+Only unfinished conversations can be resumed. If resume state is unavailable, Specula stops instead of silently starting a new conversation. To keep the run's files but start with a fresh agent context, add `--fresh-context`:
 
 ```bash
 specula run --run-id=my-run --fresh-context --skip-analysis --skip-specgen --skip-harness
 ```
-
-Phase 4 restores interrupted finding conversations one at a time, then returns
-to its configured per-finding parallelism. Exact resume preserves the native
-conversation and retained files, but cannot restore an in-flight CLI process or
-child process. The run's TLC memory and worker limits remain fixed by
-`tlc-resources.json`; `run.json` remains the original audit record.
 
 ## Individual Steps
 
