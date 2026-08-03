@@ -14,6 +14,7 @@ Usage:  python3 pipelinelib.py [options] "name|github|lang|reference" [...]
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import json
 import locale
 import math
@@ -21,6 +22,7 @@ import os
 import re
 import secrets
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -39,6 +41,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from specula import quota as _quota
+from specula import resumelib
 from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
 from specula.output_index import (
     INDEX_FILENAME,
@@ -153,7 +156,10 @@ Options:
                          (a single target cd's into case-studies/<name>/ when
                          it exists)
   --run-id=ID            Attach to runs/ID — reuse an existing run's workspace,
-                         e.g. to resume with --skip-* flags (implies --isolate)
+                         resuming unfinished agent conversations by default
+                         (use the original --skip-* flags; implies --isolate)
+  --fresh-context        With --run-id, abandon unfinished conversations and
+                         start the selected phases with fresh agent context
 
 Output navigation (default isolated layout):
   runs/<run-id>/
@@ -287,8 +293,12 @@ class Pipeline:
         # including "", is an explicit value forwarded for launcher validation.
         self.max_parallel: str | None = None
         self.max_turns = "0"  # deprecated verbatim passthrough
+        self._max_parallel_given = False
+        self._max_turns_given = False
         self.policy_retries = DEFAULT_POLICY_RETRIES
         self.transient_resumes = DEFAULT_TRANSIENT_RESUMES
+        self._policy_retries_given = False
+        self._transient_resumes_given = False
         self.dry_run = False
         self.skip_analysis = False
         self.skip_specgen = False
@@ -299,19 +309,26 @@ class Pipeline:
         self.skip_repair_loop = False
         self.confirm_legacy = False  # --legacy-confirm: single-agent Phase 4a instead of the default parallel
         self.confirm_debate = False  # --confirm-debate: add the adversarial Challenger (parallel mode)
+        self._confirm_legacy_given = False
+        self._confirm_debate_given = False
         # `or`: bash ${VAR:-default} treats an exported-but-empty var as unset
         self.max_repair_rounds = os.environ.get("MAX_REPAIR_ROUNDS") or "10"
+        self._max_repair_rounds_given = False
         self.skip_reviews = True
+        self._enable_reviews_given = False
         self.agent = "claude-code"
         self._agent_given = False
         self.agent_config_path: Path | None = None
         self.agent_routing: AgentRouting | None = None
         self.claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
+        self._claude_alias_given = False
         # None means no pipeline CLI override: phase launchers may consult
         # SPECULA_MODEL / SPECULA_EFFORT.  "" is an explicit empty flag and
         # must survive into the child so it can clear those environment values.
         self.model: str | None = None
         self.effort: str | None = None
+        self._model_given = False
+        self._effort_given = False
         self.artifact = ""
         self._artifact_given = False
         self.keep_original = False
@@ -324,6 +341,7 @@ class Pipeline:
         self.quota_5h = os.environ.get("QUOTA_5H") or "85"
         self.quota_7d = os.environ.get("QUOTA_7D") or "95"
         self.quota_max_waits = os.environ.get("QUOTA_MAX_WAITS") or "6"
+        self._targets_given = False
         # workspace isolation (step 4; default since step 7d) — run_dir stays
         # None only in legacy mode (--no-isolate)
         self.isolate = True
@@ -331,6 +349,13 @@ class Pipeline:
         self._no_isolate_given = False
         self.run_id = ""
         self._run_id_given = False  # `--run-id=` (empty) must error, not mint a fresh id
+        self.fresh_context = False
+        self._attached_existing_run = False
+        self._restored_routes: dict[str, AgentSelection] | None = None
+        self._restored_default: AgentSelection | None = None
+        self._manual_resume_phase: str | None = None
+        self._manual_launch_cwd: Path | None = None
+        self._run_lock_fd: int | None = None
         self.run_dir: Path | None = None
         self.pipeline_log_path: Path | None = None
         self.tlc_scope = ""
@@ -360,12 +385,16 @@ class Pipeline:
                 self.skip_repair_loop = True
             elif arg == "--legacy-confirm":
                 self.confirm_legacy = True
+                self._confirm_legacy_given = True
             elif arg == "--confirm-debate":
                 self.confirm_debate = True
+                self._confirm_debate_given = True
             elif arg.startswith("--max-repair-rounds="):
                 self.max_repair_rounds = arg.split("=", 1)[1]
+                self._max_repair_rounds_given = True
             elif arg == "--enable-reviews":
                 self.skip_reviews = False
+                self._enable_reviews_given = True
             elif arg == "--isolate":
                 self.isolate = True
                 self._isolate_explicit = True
@@ -378,11 +407,16 @@ class Pipeline:
                 self._run_id_given = True
                 self.isolate = True  # attaching implies isolation
                 self._isolate_explicit = True
+            elif arg == "--fresh-context":
+                self.fresh_context = True
             elif arg.startswith("--max-parallel="):
                 self.max_parallel = arg.split("=", 1)[1]
+                self._max_parallel_given = True
             elif arg.startswith("--max-turns="):
                 self.max_turns = arg.split("=", 1)[1]
+                self._max_turns_given = True
             elif arg.startswith("--policy-retries="):
+                self._policy_retries_given = True
                 raw = arg.split("=", 1)[1]
                 try:
                     self.policy_retries = _parse_policy_retries(raw)
@@ -393,6 +427,7 @@ class Pipeline:
                     )
                     return 1
             elif arg.startswith("--transient-resumes="):
+                self._transient_resumes_given = True
                 raw = arg.split("=", 1)[1]
                 try:
                     self.transient_resumes = _parse_transient_resumes(raw)
@@ -420,10 +455,13 @@ class Pipeline:
                     return 1
             elif arg.startswith("--claude-alias="):
                 self.claude_alias = arg.split("=", 1)[1]
+                self._claude_alias_given = True
             elif arg.startswith("--model="):
                 self.model = arg.split("=", 1)[1]
+                self._model_given = True
             elif arg.startswith("--effort="):
                 self.effort = arg.split("=", 1)[1]
+                self._effort_given = True
             elif arg.startswith("--artifact="):
                 self.artifact = arg.split("=", 1)[1]
                 self._artifact_given = True
@@ -459,12 +497,17 @@ class Pipeline:
             except (AgentConfigError, OSError) as exc:
                 print(f"ERROR: {exc}", file=sys.stderr)
                 return 1
+        targets_given = bool(self.targets)
         if not self.targets:
             self.targets.append(_logical_cwd().name)  # bash `basename "$PWD"` (logical)
+        self._targets_given = targets_given
         # order-independent: the two are contradictory however they arrive
         # (e.g. scheduler-injected --run-id + a --no-isolate from queue flags)
         if self._run_id_given and self._no_isolate_given:
             print("ERROR: --no-isolate conflicts with --run-id", file=sys.stderr)
+            return 1
+        if self.fresh_context and not self._run_id_given:
+            print("ERROR: --fresh-context requires --run-id", file=sys.stderr)
             return 1
         if self.keep_original and not self.isolate:
             print("ERROR: --keep-original conflicts with --no-isolate", file=sys.stderr)
@@ -554,7 +597,297 @@ class Pipeline:
             if run_root == source or run_root.is_relative_to(source) or source.is_relative_to(run_root):
                 raise SnapshotError(f"run storage must be outside the source tree: {source}")
 
-    def resolve_run_dir(self) -> int | None:
+    @staticmethod
+    def _route_specs() -> dict[str, tuple[str, str | None]]:
+        return {
+            "analyze": ("analyze", None),
+            "specgen": ("specgen", None),
+            "harness": ("harness", None),
+            "validate": ("validate", None),
+            "confirm": ("confirm", None),
+            "repair": ("repair", "validate"),
+            "classify": ("classify", None),
+            "review:analysis": ("review", "analyze"),
+            "review:specgen": ("review", "specgen"),
+            "review:validation": ("review", "validate"),
+        }
+
+    def _resumable_selection(self, selection: AgentSelection) -> AgentSelection:
+        """Freeze values known at run creation while preserving explicit resets."""
+        resolved_model, resolved_effort = self._resolved_run_tuning(selection)
+        return AgentSelection(
+            agent=selection.agent,
+            model=selection.model if selection.model is not None else resolved_model,
+            effort=selection.effort if selection.effort is not None else resolved_effort,
+        )
+
+    @staticmethod
+    def _selection_document(selection: AgentSelection) -> dict[str, str | None]:
+        return {"agent": selection.agent, "model": selection.model, "effort": selection.effort}
+
+    @staticmethod
+    def _selection_from_document(value: object, label: str) -> AgentSelection:
+        if not isinstance(value, dict):
+            raise resumelib.ResumeError(f"invalid {label}: expected an object")
+        agent = value.get("agent")
+        model = value.get("model")
+        effort = value.get("effort")
+        if not isinstance(agent, str) or not agent:
+            raise resumelib.ResumeError(f"invalid {label} agent")
+        if model is not None and not isinstance(model, str):
+            raise resumelib.ResumeError(f"invalid {label} model")
+        if effort is not None and not isinstance(effort, str):
+            raise resumelib.ResumeError(f"invalid {label} effort")
+        return AgentSelection(agent=agent, model=model, effort=effort)
+
+    def _resumable_routes(self) -> dict[str, AgentSelection] | None:
+        if self.agent_routing is None and self._restored_routes is None:
+            return None
+        return {
+            route: self._resumable_selection(self._agent_selection(phase, fallback=fallback))
+            for route, (phase, fallback) in self._route_specs().items()
+        }
+
+    def _resume_configuration_document(self) -> dict[str, Any]:
+        default = self._resumable_selection(self._agent_selection())
+        routes = self._resumable_routes()
+        return {
+            "version": 1,
+            "default": self._selection_document(default),
+            "routes": (
+                {name: self._selection_document(selection) for name, selection in routes.items()}
+                if routes is not None
+                else None
+            ),
+            "agent_config": str(self.agent_config_path) if self.agent_config_path is not None else None,
+            "claude_alias": self.claude_alias,
+            "policy_retries": self.policy_retries,
+            "transient_resumes": self.transient_resumes,
+            "max_parallel": self.max_parallel,
+            "max_turns": self.max_turns,
+            "confirm_legacy": self.confirm_legacy,
+            "confirm_debate": self.confirm_debate,
+            "max_repair_rounds": self.max_repair_rounds,
+            "skip_reviews": self.skip_reviews,
+            "targets": list(self.targets),
+            "artifact": self.artifact,
+        }
+
+    def _restore_resume_configuration(self, raw: dict[str, Any], *, allow_overrides: bool = False) -> None:
+        if raw.get("version") != 1:
+            raise resumelib.ResumeError(
+                "this run was created without manual conversation checkpoints; pass --fresh-context to continue"
+            )
+        stored_default = self._selection_from_document(raw.get("default"), "resume default")
+        raw_routes = raw.get("routes")
+        stored_routes: dict[str, AgentSelection] | None = None
+        if raw_routes is not None:
+            if not isinstance(raw_routes, dict) or set(raw_routes) != set(self._route_specs()):
+                raise resumelib.ResumeError("invalid stored agent routes")
+            stored_routes = {
+                name: self._selection_from_document(value, f"stored route {name}") for name, value in raw_routes.items()
+            }
+
+        selection_overridden = (
+            self.agent_config_path is not None or self._agent_given or self._model_given or self._effort_given
+        )
+        if allow_overrides:
+            if stored_routes is not None and not selection_overridden:
+                self._restored_routes = stored_routes
+                self._restored_default = stored_default
+                stored_path = raw.get("agent_config")
+                if isinstance(stored_path, str):
+                    self.agent_config_path = Path(stored_path)
+            elif self.agent_config_path is None:
+                if not self._agent_given:
+                    self.agent = stored_default.agent
+                if not self._agent_given and not self._model_given:
+                    self.model = stored_default.model
+                if not self._agent_given and not self._effort_given:
+                    self.effort = stored_default.effort
+        elif stored_routes is None:
+            if self.agent_config_path is not None:
+                raise resumelib.ResumeError(
+                    "this run did not use --agent-config; pass --fresh-context to change agent routing"
+                )
+            if self._agent_given and self.agent != stored_default.agent:
+                raise resumelib.ResumeError(
+                    f"this run uses agent {stored_default.agent}; pass --fresh-context to use {self.agent}"
+                )
+            if self._model_given and self.model != stored_default.model:
+                raise resumelib.ResumeError(
+                    f"this run uses model {stored_default.model!r}; pass --fresh-context to change it"
+                )
+            if self._effort_given and self.effort != stored_default.effort:
+                raise resumelib.ResumeError(
+                    f"this run uses effort {stored_default.effort!r}; pass --fresh-context to change it"
+                )
+            self.agent = stored_default.agent
+            self.model = stored_default.model
+            self.effort = stored_default.effort
+        else:
+            if self._agent_given or self._model_given or self._effort_given:
+                raise resumelib.ResumeError("this run uses phase agent routing; pass --fresh-context to override it")
+            if self.agent_config_path is not None:
+                current_routes = self._resumable_routes()
+                if current_routes != stored_routes:
+                    raise resumelib.ResumeError(
+                        "--agent-config differs from this run; pass --fresh-context to change it"
+                    )
+            else:
+                self._restored_routes = stored_routes
+                self._restored_default = stored_default
+                stored_path = raw.get("agent_config")
+                if isinstance(stored_path, str):
+                    self.agent_config_path = Path(stored_path)
+
+        alias = raw.get("claude_alias")
+        if not isinstance(alias, str):
+            raise resumelib.ResumeError("invalid stored claude alias")
+        if self._claude_alias_given:
+            if not allow_overrides and self.claude_alias != alias:
+                raise resumelib.ResumeError(
+                    f"this run uses Claude profile {alias!r}; pass --fresh-context to change it"
+                )
+        else:
+            self.claude_alias = alias
+
+        confirmation_mode_overridden = self._confirm_legacy_given or self._confirm_debate_given
+        for field, given, attr in (
+            ("policy_retries", self._policy_retries_given, "policy_retries"),
+            ("transient_resumes", self._transient_resumes_given, "transient_resumes"),
+        ):
+            value = raw.get(field)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise resumelib.ResumeError(f"invalid stored {field}")
+            if given:
+                if not allow_overrides and getattr(self, attr) != value:
+                    raise resumelib.ResumeError(
+                        f"this run uses {field.replace('_', ' ')} {value}; pass --fresh-context to change it"
+                    )
+            else:
+                setattr(self, attr, value)
+
+        stored_repair_rounds = raw.get("max_repair_rounds")
+        if not isinstance(stored_repair_rounds, str) or re.fullmatch(r"[0-9]+", stored_repair_rounds) is None:
+            raise resumelib.ResumeError("invalid stored max_repair_rounds")
+        if self._max_repair_rounds_given:
+            if not allow_overrides and self.max_repair_rounds != stored_repair_rounds:
+                raise resumelib.ResumeError(
+                    f"this run uses max repair rounds {stored_repair_rounds}; pass --fresh-context to change it"
+                )
+        else:
+            self.max_repair_rounds = stored_repair_rounds
+
+        stored_skip_reviews = raw.get("skip_reviews")
+        if not isinstance(stored_skip_reviews, bool):
+            raise resumelib.ResumeError("invalid stored skip_reviews")
+        if self._enable_reviews_given:
+            if not allow_overrides and self.skip_reviews != stored_skip_reviews:
+                raise resumelib.ResumeError("this run uses a different review mode; pass --fresh-context to change it")
+        else:
+            self.skip_reviews = stored_skip_reviews
+
+        stored_max_parallel = raw.get("max_parallel")
+        if stored_max_parallel is not None and not isinstance(stored_max_parallel, str):
+            raise resumelib.ResumeError("invalid stored max_parallel")
+        if self._max_parallel_given:
+            if not allow_overrides and self.max_parallel != stored_max_parallel:
+                raise resumelib.ResumeError(
+                    f"this run uses max parallel {stored_max_parallel!r}; pass --fresh-context to change it"
+                )
+        else:
+            self.max_parallel = stored_max_parallel
+
+        stored_max_turns = raw.get("max_turns")
+        if not isinstance(stored_max_turns, str):
+            raise resumelib.ResumeError("invalid stored max_turns")
+        if self._max_turns_given:
+            if not allow_overrides and self.max_turns != stored_max_turns:
+                raise resumelib.ResumeError(
+                    f"this run uses max turns {stored_max_turns!r}; pass --fresh-context to change it"
+                )
+        else:
+            self.max_turns = stored_max_turns
+
+        for field, given, attr in (
+            ("confirm_legacy", self._confirm_legacy_given, "confirm_legacy"),
+            ("confirm_debate", self._confirm_debate_given, "confirm_debate"),
+        ):
+            value = raw.get(field)
+            if not isinstance(value, bool):
+                raise resumelib.ResumeError(f"invalid stored {field}")
+            if given:
+                if not allow_overrides and getattr(self, attr) != value:
+                    raise resumelib.ResumeError(
+                        f"this run uses {field.replace('_', ' ')}={value}; pass --fresh-context to change it"
+                    )
+            elif not (allow_overrides and confirmation_mode_overridden):
+                setattr(self, attr, value)
+        if self.confirm_legacy and self.confirm_debate:
+            raise resumelib.ResumeError("invalid stored confirmation mode")
+
+        stored_targets = raw.get("targets")
+        if (
+            not isinstance(stored_targets, list)
+            or not stored_targets
+            or not all(isinstance(target, str) for target in stored_targets)
+        ):
+            raise resumelib.ResumeError("invalid stored targets")
+        if self._targets_given:
+            if not allow_overrides and self.targets != stored_targets:
+                raise resumelib.ResumeError("targets differ from this run; pass --fresh-context to change them")
+        else:
+            self.targets = list(stored_targets)
+
+        stored_artifact = raw.get("artifact")
+        if not isinstance(stored_artifact, str):
+            raise resumelib.ResumeError("invalid stored artifact")
+        if self._artifact_given:
+            if not allow_overrides and (
+                not stored_artifact or Path(self.artifact).resolve() != Path(stored_artifact).resolve()
+            ):
+                raise resumelib.ResumeError(
+                    "--artifact differs from this run; pass --fresh-context to use another source"
+                )
+        elif stored_artifact and not self.keep_original:
+            artifact = _normalize_artifact_dir(stored_artifact)
+            if artifact is None:
+                raise resumelib.ResumeError(f"this run's artifact is unavailable: {stored_artifact}")
+            self.artifact = artifact
+            self._artifact_given = True
+
+    def _acquire_run_lock(self) -> None:
+        if self.run_dir is None or self._run_lock_fd is not None:
+            return
+        resumelib.ensure_storage(self.run_dir)
+        lock_path = resumelib.resume_dir(self.run_dir) / "run.lock"
+        flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            fd = os.open(lock_path, flags, 0o600)
+        except OSError as exc:
+            raise resumelib.ResumeError(f"cannot open safe run lock {lock_path}: {exc}") from exc
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            raise resumelib.ResumeError(f"run lock is not a regular file: {lock_path}")
+        os.set_inheritable(fd, False)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            os.close(fd)
+            raise resumelib.ResumeError(f"run {self.run_id} is already active") from exc
+        self._run_lock_fd = fd
+
+    def _release_run_lock(self) -> None:
+        if self._run_lock_fd is None:
+            return
+        with contextlib.suppress(OSError):
+            fcntl.flock(self._run_lock_fd, fcntl.LOCK_UN)
+        with contextlib.suppress(OSError):
+            os.close(self._run_lock_fd)
+        self._run_lock_fd = None
+
+    def resolve_run_dir(self, *, acquire_lock: bool = False) -> int | None:
         """Establish the per-run root. Returns an exit code for an invalid
         --run-id (pre-tee, like the option errors), None to proceed.
 
@@ -589,12 +922,44 @@ class Pipeline:
                 self.run_id = generate_run_id()
             self.run_dir = SPECULA_ROOT / "runs" / self.run_id
 
+        run_preexisting = self.run_dir.exists()
+        locked_here = False
+
+        def fail(code: int = 1) -> int:
+            if locked_here:
+                self._release_run_lock()
+            return code
+
+        if run_preexisting:
+            try:
+                run_info = self.run_dir.lstat()
+                if not stat.S_ISDIR(run_info.st_mode):
+                    raise resumelib.ResumeError(f"run directory is not a real directory: {self.run_dir}")
+            except (OSError, resumelib.ResumeError) as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 1
+        if acquire_lock:
+            try:
+                self.run_dir.mkdir(parents=True, exist_ok=True)
+                run_info = self.run_dir.lstat()
+                if not stat.S_ISDIR(run_info.st_mode):
+                    raise resumelib.ResumeError(f"run directory is not a real directory: {self.run_dir}")
+                self._acquire_run_lock()
+                locked_here = True
+            except (OSError, resumelib.ResumeError) as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 1
+        os.environ[resumelib.INVOCATION_ENV] = secrets.token_hex(16)
+        os.environ.pop(resumelib.MANUAL_ENV, None)
+        os.environ.pop(resumelib.FRESH_ENV, None)
         fallback_artifact = ""
         meta_file = self.run_dir / "run.json"
+        metadata: dict[str, Any] | None = None
         if meta_file.is_file():
             with contextlib.suppress(OSError, UnicodeError, json.JSONDecodeError):
                 meta = json.loads(meta_file.read_text())
                 if isinstance(meta, dict):
+                    metadata = meta
                     mode = meta.get("source_mode", "in-place")
                     if mode == "snapshot":
                         self.keep_original = True
@@ -603,10 +968,66 @@ class Pipeline:
                             "ERROR: --keep-original cannot be enabled when resuming an in-place run",
                             file=sys.stderr,
                         )
-                        return 1
+                        return fail()
                     stored_artifact = meta.get("artifact")
                     if isinstance(stored_artifact, str):
                         fallback_artifact = stored_artifact
+
+        if self._run_id_given and run_preexisting:
+            self._attached_existing_run = True
+            try:
+                if self.fresh_context:
+                    resumelib.initialize_run(self.run_dir, reset=True)
+                    try:
+                        stored_configuration = resumelib.load_configuration(self.run_dir)
+                    except resumelib.ResumeError:
+                        # Runs created before checkpoints have no configuration to
+                        # restore. The fresh invocation becomes their baseline.
+                        pass
+                    else:
+                        self._restore_resume_configuration(stored_configuration, allow_overrides=True)
+                    os.environ[resumelib.FRESH_ENV] = "1"
+                else:
+                    resumelib.require_supported_run(self.run_dir)
+                    if metadata is None:
+                        raise resumelib.ResumeError(f"cannot read run metadata from {meta_file}")
+                    self._restore_resume_configuration(resumelib.load_configuration(self.run_dir))
+                    active = resumelib.active_entries(self.run_dir)
+                    if not active:
+                        raise resumelib.ResumeError(
+                            "this run has no unfinished agent conversation; pass --fresh-context to start over"
+                        )
+                    phases = {str(entry.get("phase")) for entry in active}
+                    if len(phases) != 1:
+                        raise resumelib.ResumeError(
+                            "unfinished conversations span multiple phases; pass --fresh-context to start over"
+                        )
+                    self._manual_resume_phase = phases.pop()
+                    if not self.keep_original:
+                        launch_cwds = {entry.get("cwd") for entry in active if entry.get("kind") in {"phase", "review"}}
+                        if launch_cwds:
+                            raw_launch_cwd = next(iter(launch_cwds))
+                            if len(launch_cwds) != 1 or not isinstance(raw_launch_cwd, str):
+                                raise resumelib.ResumeError(
+                                    "unfinished conversations do not share one safe launch directory; "
+                                    "pass --fresh-context to start over"
+                                )
+                            launch_cwd = Path(raw_launch_cwd)
+                            try:
+                                launch_info = launch_cwd.lstat()
+                            except OSError as exc:
+                                raise resumelib.ResumeError(
+                                    f"recorded agent launch directory is unavailable: {launch_cwd}"
+                                ) from exc
+                            if not stat.S_ISDIR(launch_info.st_mode):
+                                raise resumelib.ResumeError(
+                                    f"recorded agent launch directory is not safe: {launch_cwd}"
+                                )
+                            self._manual_launch_cwd = launch_cwd
+                    os.environ[resumelib.MANUAL_ENV] = "1"
+            except resumelib.ResumeError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return fail()
 
         source_map = self.run_dir / SOURCE_MAP
         if source_map.exists() or source_map.is_symlink():
@@ -614,7 +1035,7 @@ class Pipeline:
                 snapshots = load_sources(self.run_dir)
             except SnapshotError as exc:
                 print(f"ERROR: cannot restore private source: {exc}", file=sys.stderr)
-                return 1
+                return fail()
             self.keep_original = True
             self._snapshot_sources = {name: item.original for name, item in snapshots.items()}
             self._snapshot_paths = [item.source for item in snapshots.values()]
@@ -622,21 +1043,30 @@ class Pipeline:
                 source != Path(self.artifact).resolve() for source in self._snapshot_sources.values()
             ):
                 print("ERROR: --artifact differs from this run's private source", file=sys.stderr)
-                return 1
+                return fail()
         elif self.keep_original:
             try:
                 self._snapshot_sources = self._resolve_snapshot_sources(fallback_artifact)
             except SnapshotError as exc:
                 print(f"ERROR: cannot prepare private source: {exc}", file=sys.stderr)
-                return 1
+                return fail()
         if self.keep_original:
             try:
                 self._check_snapshot_overlap()
             except SnapshotError as exc:
                 print(f"ERROR: {exc}", file=sys.stderr)
-                return 1
+                return fail()
 
         self.run_dir.mkdir(parents=True, exist_ok=True)
+        if not stat.S_ISDIR(self.run_dir.lstat().st_mode):
+            print(f"ERROR: run directory is not a real directory: {self.run_dir}", file=sys.stderr)
+            return fail()
+        if not self._attached_existing_run:
+            try:
+                resumelib.initialize_run(self.run_dir)
+            except resumelib.ResumeError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return fail()
         os.environ["SPECULA_RUN_DIR"] = str(self.run_dir)  # phase subprocesses inherit
         if self.keep_original:
             os.environ[SNAPSHOT_MODE_ENV] = "1"
@@ -646,8 +1076,14 @@ class Pipeline:
         os.environ[SCOPE_ENV] = self.tlc_scope
         resource_rc = self._restore_run_resource_config()
         if resource_rc is not None:
-            return resource_rc
+            return fail(resource_rc)
         self._write_run_meta()
+        if not self._attached_existing_run or self.fresh_context:
+            try:
+                resumelib.save_configuration(self.run_dir, self._resume_configuration_document())
+            except resumelib.ResumeError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return fail()
         if not attached_ambient:
             # runs/latest -> <run-id>; symlink+rename so readers never see a gap
             with contextlib.suppress(OSError):
@@ -774,6 +1210,7 @@ class Pipeline:
                     artifact_sha = lines[1]
         default_selection = self._agent_selection()
         model, effort = self._resolved_run_tuning(default_selection)
+        resume_configuration = self._resume_configuration_document()
         meta: dict[str, object] = {
             "run_id": self.run_id,
             "created": _date_iseconds(),
@@ -789,23 +1226,12 @@ class Pipeline:
             "artifact_git_sha": artifact_sha,
             "tlc_memory_limit": self.tlc_memory_limit or os.environ.get(MEMORY_LIMIT_ENV) or "auto",
             "tlc_worker_limit": self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or None,
+            "resume_configuration": resume_configuration,
         }
         if self.agent_routing is not None:
             assert self.agent_config_path is not None
-            route_specs: dict[str, tuple[str, str | None]] = {
-                "analyze": ("analyze", None),
-                "specgen": ("specgen", None),
-                "harness": ("harness", None),
-                "validate": ("validate", None),
-                "confirm": ("confirm", None),
-                "repair": ("repair", "validate"),
-                "classify": ("classify", None),
-                "review:analysis": ("review", "analyze"),
-                "review:specgen": ("review", "specgen"),
-                "review:validation": ("review", "validate"),
-            }
             routes: dict[str, dict[str, str | None]] = {}
-            for route_name, (phase, fallback) in route_specs.items():
+            for route_name, (phase, fallback) in self._route_specs().items():
                 selection = self._agent_selection(phase, fallback=fallback)
                 route_model, route_effort = self._resolved_run_tuning(selection)
                 routes[route_name] = {
@@ -822,6 +1248,12 @@ class Pipeline:
             meta_file.write_text(json.dumps(meta, indent=2) + "\n")
 
     def _agent_selection(self, phase: str | None = None, *, fallback: str | None = None) -> AgentSelection:
+        if self._restored_routes is not None:
+            if phase is None:
+                assert self._restored_default is not None
+                return self._restored_default
+            route = f"review:{fallback}" if phase == "review" and fallback is not None else phase
+            return self._restored_routes[route]
         if self.agent_routing is None:
             return AgentSelection(agent=self.agent, model=self.model, effort=self.effort)
         if phase is None:
@@ -894,7 +1326,9 @@ class Pipeline:
 
     def validate_agent_adapter(self) -> None:
         agents = {self.agent}
-        if self.agent_routing is not None:
+        if self._restored_routes is not None:
+            agents = {selection.agent for selection in self._restored_routes.values()}
+        elif self.agent_routing is not None:
             agents = {selection.agent for selection in self.agent_routing.profiles.values()}
         for agent in sorted(agents):
             adapter = LAUNCH_DIR / "adapters" / f"{agent}.sh"
@@ -1936,6 +2370,8 @@ class Pipeline:
             env[SCOPE_ENV] = self.tlc_scope
         if self.pipeline_log_path is not None:
             env[PIPELINE_LOG_ENV] = str(self.pipeline_log_path)
+        if self._manual_launch_cwd is not None:
+            env["PWD"] = str(self._manual_launch_cwd)
 
         proc: subprocess.Popen[bytes] | None = None
         received: list[tuple[int, float]] = []
@@ -1958,6 +2394,7 @@ class Pipeline:
             proc = subprocess.Popen(
                 ["bash", str(LAUNCH_DIR / script), *args],
                 env=env,
+                cwd=self._manual_launch_cwd,
                 start_new_session=True,
             )
             if received:
@@ -2019,8 +2456,8 @@ class Pipeline:
             self._phase_args(self.targets, phase="analyze"),
         )
 
-    def run_review(self, phase: str, names: list[str]) -> None:
-        if self.skip_reviews:
+    def run_review(self, phase: str, names: list[str], *, force: bool = False) -> None:
+        if self.skip_reviews and not force:
             log(f"Skipping {phase} review (--skip-reviews)")
             return
         # launch_review.sh's contract is `<phase> <name...>`: it reads the phase
@@ -2036,7 +2473,7 @@ class Pipeline:
             "validation": "validate",
         }[phase]
         selection = self._agent_selection("review", fallback=fallback)
-        if self.agent_routing is not None:
+        if self.agent_routing is not None or self._restored_routes is not None:
             self.wait_for_phase_quota("review", fallback=fallback)
         args = [
             phase,
@@ -2611,6 +3048,15 @@ class Pipeline:
 
         start_time = int(time.time())
 
+        if self._manual_resume_phase is not None and self._manual_resume_phase.startswith("review:"):
+            review_phase = self._manual_resume_phase.split(":", 1)[1]
+            if review_phase not in {"analysis", "specgen", "validation"}:
+                log(f"ERROR: invalid interrupted review phase {review_phase!r}")
+                raise SystemExit(1)
+            log(f"Restoring interrupted {review_phase} review before continuing the pipeline")
+            self.run_review(review_phase, names, force=True)
+            self._manual_resume_phase = None
+
         # Recover before Phase 1/2/2.5 can mutate the artifacts that the
         # snapshot token commits. Skip flags control later work, never whether
         # durable crash state is reconciled.
@@ -2731,7 +3177,7 @@ def main(argv: list[str]) -> int:
         # --help / unknown option exit before the tee starts, like the bash
         # top-level parse: no .specula-output/, no pipeline.log.
         return rc
-    rc = p.resolve_run_dir()
+    rc = p.resolve_run_dir(acquire_lock=True)
     if rc is not None:
         return rc  # invalid --run-id: pre-tee exit, like the option errors
 
@@ -2807,6 +3253,7 @@ def main(argv: list[str]) -> int:
         finally:
             with contextlib.suppress(OSError, UnicodeError):
                 terminal_stdout.close()
+            p._release_run_lock()
     return code
 
 

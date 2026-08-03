@@ -29,6 +29,7 @@ from specula import confirmlib as C
 from specula import phaselib as PhaseLib
 from specula import pipelinelib as PL
 from specula import prompts as P
+from specula import resumelib
 from specula.phaselib import Workspace
 
 EVIDENCE = "The investigation inspected the real call path and captured concrete observed behavior."
@@ -688,6 +689,105 @@ class TestDriver(ConfirmCase):
         self.assertEqual((root / "resume-check").read_text(), "passed")
         self.assertEqual(cfg._finding_leases, {})
         self.assertEqual(cfg._policy_states, {})
+        self.assertFalse(leased_repo.exists())
+
+    def test_manual_resume_reloads_accepted_a_and_exact_interrupted_b(self) -> None:
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        root = Path(self.tmp)
+        repo = _git_repo(root / "repo")
+        adapter = root / "resume-debate.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "prompt= log= resume=\n"
+            'for arg do case "$arg" in\n'
+            "  --prompt-file=*) prompt=${arg#*=} ;;\n"
+            "  --log=*) log=${arg#*=} ;;\n"
+            "  --resume-state=*) resume=${arg#*=} ;;\n"
+            "esac; done\n"
+            'case "$(basename "$prompt")" in\n'
+            "  turn01_A.prompt.md)\n"
+            '    printf x >> "$CAPTURE/a-count"\n'
+            "    repo=$(sed -n 's/^- Source repo (build\\/run here): //p' \"$prompt\" | head -n 1)\n"
+            '    printf \'%s\\n\' "$repo" > "$CAPTURE/repo-path"\n'
+            '    printf retained > "$repo/lease-marker"\n'
+            '    printf \'%s\\n\' "$ADAPTER_SUCCESS_TEXT" > "$log"\n'
+            "    ;;\n"
+            "  turn02_B.prompt.md)\n"
+            '    printf x >> "$CAPTURE/b-count"\n'
+            '    attempt=$(wc -c < "$CAPTURE/b-count")\n'
+            '    pwd >> "$CAPTURE/b-cwds"\n'
+            '    repo=$(cat "$CAPTURE/repo-path")\n'
+            '    test -f "$repo/lease-marker"\n'
+            '    if [ "$attempt" -eq 1 ]; then\n'
+            "      printf retained > cwd-marker\n"
+            '      printf exact-b-session > "$resume"\n'
+            "      printf 'rate limited\\n' > \"$log\"\n"
+            "      exit 75\n"
+            "    fi\n"
+            '    test "$(cat "$resume")" = exact-b-session\n'
+            "    test -f cwd-marker\n"
+            '    cp "$prompt" "$CAPTURE/b-resume-prompt"\n'
+            '    printf passed > "$CAPTURE/resume-check"\n'
+            '    printf \'%s\\n\' "$ADAPTER_SUCCESS_TEXT" > "$log"\n'
+            "    ;;\n"
+            "  *) exit 97 ;;\n"
+            "esac\n"
+        )
+        adapter.chmod(0o755)
+        resumelib.initialize_run(root)
+        resumelib.save_configuration(root, {"agent": adapter.stem})
+        cfg = C.ConfirmConfig(
+            name="T",
+            ws=ws,
+            adapter=adapter,
+            repo_dir=str(repo),
+            worktree=True,
+            max_parallel=1,
+            debate=True,
+            rounds=1,
+        )
+        with mock.patch.dict(
+            os.environ,
+            {
+                "CAPTURE": str(root),
+                "ADAPTER_SUCCESS_TEXT": _response("ENV_LIMITED"),
+                resumelib.INVOCATION_ENV: "invocation-1",
+            },
+            clear=False,
+        ):
+            os.environ.pop(resumelib.MANUAL_ENV, None)
+            os.environ.pop(resumelib.FRESH_ENV, None)
+            self.assertEqual(C.run_parallel_confirmation(cfg), 75)
+            leased_repo = Path((root / "repo-path").read_text().strip())
+            lease_checkpoint = ws.work_dir("T") / "confirmation" / "MC-1" / ".resume-lease.json"
+            self.assertTrue(lease_checkpoint.is_file())
+            self.assertTrue((leased_repo / "lease-marker").is_file())
+            self.assertEqual(cfg._finding_leases, {})
+
+            os.environ[resumelib.INVOCATION_ENV] = "invocation-2"
+            os.environ[resumelib.MANUAL_ENV] = "1"
+            resumed_cfg = C.ConfirmConfig(
+                name="T",
+                ws=ws,
+                adapter=adapter,
+                repo_dir=str(repo),
+                worktree=True,
+                max_parallel=1,
+                debate=True,
+                rounds=1,
+            )
+            self.assertEqual(C.run_parallel_confirmation(resumed_cfg), 0)
+
+        self.assertEqual((root / "a-count").read_text(), "x")
+        self.assertEqual((root / "b-count").read_text(), "xx")
+        self.assertEqual(len(set((root / "b-cwds").read_text().splitlines())), 1)
+        self.assertEqual((root / "b-resume-prompt").read_text(), PhaseLib._MANUAL_SESSION_RESUME_PROMPT)
+        self.assertEqual((root / "resume-check").read_text(), "passed")
+        self.assertEqual(resumelib.active_entries(root), [])
+        self.assertFalse(lease_checkpoint.exists())
+        self.assertEqual(resumed_cfg._finding_leases, {})
+        self.assertEqual(resumed_cfg._policy_states, {})
         self.assertFalse(leased_repo.exists())
 
     def test_repair_correction_keeps_later_turn_number_across_rate_replay(self) -> None:

@@ -31,7 +31,7 @@ from typing import Any
 
 PKG = Path(__file__).resolve().parents[2] / "src" / "specula"
 
-from specula import phaselib
+from specula import phaselib, resumelib
 from specula import pipelinelib as pl
 
 RUN_ID_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
@@ -43,6 +43,9 @@ class EnvIsolatedCase(unittest.TestCase):
     def setUp(self) -> None:
         names = (
             "SPECULA_RUN_DIR",
+            resumelib.INVOCATION_ENV,
+            resumelib.MANUAL_ENV,
+            resumelib.FRESH_ENV,
             "SPECULA_TLC_SCOPE",
             "SPECULA_TLC_MEMORY_LIMIT",
             "SPECULA_TLC_WORKER_LIMIT",
@@ -331,6 +334,30 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         self.assertIsNone(p.resolve_run_dir())
         return p
 
+    def _seed_active_turn(
+        self,
+        pipeline: pl.Pipeline,
+        *,
+        phase: str = "code_analysis",
+        target: str = "foo",
+    ) -> None:
+        assert pipeline.run_dir is not None
+        work = pipeline.run_dir / target / ".specula-output"
+        resumelib.prepare_turn(
+            ("phase", phase, target),
+            phase=phase,
+            target=target,
+            kind="phase",
+            adapter=Path("codex"),
+            model="gpt-5.5",
+            effort="high",
+            claude_alias="work",
+            cwd=Path.cwd().resolve(),
+            resume_state=work / "agent.resume.json",
+            prompt_file=work / "agent-prompt.md",
+            log_file=work / "agent.log",
+        )
+
     def test_isolate_creates_run_and_meta(self) -> None:
         root = self.tmp()
         argv = ["--isolate", "--agent=claude-code", "foo|o/r|Go|ref"]
@@ -353,6 +380,293 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         self.assertEqual(os.environ["SPECULA_RUN_DIR"], str(p.run_dir))
         self.assertEqual(os.environ["SPECULA_TLC_SCOPE"], str(p.run_dir.resolve()))
 
+    def test_new_run_writes_resume_configuration(self) -> None:
+        root = self.tmp()
+        p = self._pipeline(
+            [
+                "--run-id=resume-config",
+                "--agent=codex",
+                "--model=gpt-5.5",
+                "--effort=high",
+                "--claude-alias=work",
+                "foo|o/r|Go|ref",
+            ],
+            root,
+        )
+        assert p.run_dir is not None
+
+        stored = json.loads(resumelib.config_path(p.run_dir).read_text())
+        self.assertEqual(stored["version"], 1)
+        self.assertEqual(
+            stored["configuration"]["default"],
+            {"agent": "codex", "model": "gpt-5.5", "effort": "high"},
+        )
+        self.assertEqual(stored["configuration"]["claude_alias"], "work")
+        self.assertEqual(stored["configuration"]["targets"], ["foo|o/r|Go|ref"])
+
+    def test_attach_restores_omitted_agent_tuning_alias_and_targets(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(
+            [
+                "--run-id=restore",
+                "--agent=codex",
+                "--model=gpt-5.5",
+                "--effort=high",
+                "--claude-alias=work",
+                "foo|o/r|Go|ref",
+                "bar|o/r|Rust|ref",
+            ],
+            root,
+        )
+        self._seed_active_turn(first)
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=restore"]))
+        self.assertIsNone(resumed.resolve_run_dir())
+
+        self.assertEqual(resumed.agent, "codex")
+        self.assertEqual(resumed.model, "gpt-5.5")
+        self.assertEqual(resumed.effort, "high")
+        self.assertEqual(resumed.claude_alias, "work")
+        self.assertEqual(resumed.targets, ["foo|o/r|Go|ref", "bar|o/r|Rust|ref"])
+        self.assertEqual(resumed._manual_resume_phase, "code_analysis")
+
+    def test_attach_restores_original_in_place_launcher_cwd(self) -> None:
+        original_cwd = Path.cwd()
+        self.addCleanup(os.chdir, original_cwd)
+        launch_cwd = self.tmp()
+        other_cwd = self.tmp()
+        root = self.tmp()
+        os.chdir(launch_cwd)
+        first = self._pipeline(["--run-id=restore-cwd", "foo|o/r|Go|ref"], root)
+        self._seed_active_turn(first)
+
+        os.chdir(other_cwd)
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=restore-cwd"]))
+        self.assertIsNone(resumed.resolve_run_dir())
+
+        self.assertEqual(resumed._manual_launch_cwd, launch_cwd.resolve())
+
+    def test_fresh_context_restores_omitted_run_config_and_allows_override(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(
+            [
+                "--run-id=fresh-config",
+                "--agent=codex",
+                "--model=gpt-old",
+                "--effort=high",
+                "--claude-alias=work",
+                "foo|o/r|Go|ref",
+            ],
+            root,
+        )
+        self._seed_active_turn(first)
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=fresh-config", "--fresh-context", "--model=gpt-new"]))
+        self.assertIsNone(resumed.resolve_run_dir())
+
+        assert resumed.run_dir is not None
+        self.assertEqual(resumed.agent, "codex")
+        self.assertEqual(resumed.model, "gpt-new")
+        self.assertEqual(resumed.effort, "high")
+        self.assertEqual(resumed.claude_alias, "work")
+        self.assertEqual(resumed.targets, ["foo|o/r|Go|ref"])
+        self.assertEqual(resumelib.active_entries(resumed.run_dir), [])
+        self.assertEqual(os.environ[resumelib.FRESH_ENV], "1")
+        self.assertNotIn(resumelib.MANUAL_ENV, os.environ)
+
+    def test_fresh_agent_and_confirmation_mode_do_not_inherit_incompatible_tuning(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(
+            [
+                "--run-id=fresh-mode",
+                "--agent=claude-code",
+                "--model=claude-old",
+                "--effort=max",
+                "--confirm-debate",
+                "foo|o/r|Go|ref",
+            ],
+            root,
+        )
+        self._seed_active_turn(first)
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(
+            resumed.parse_args(["--run-id=fresh-mode", "--fresh-context", "--agent=codex", "--legacy-confirm"])
+        )
+        self.assertIsNone(resumed.resolve_run_dir())
+
+        self.assertEqual(resumed.agent, "codex")
+        self.assertIsNone(resumed.model)
+        self.assertIsNone(resumed.effort)
+        self.assertTrue(resumed.confirm_legacy)
+        self.assertFalse(resumed.confirm_debate)
+
+    def test_attach_restores_confirmation_mode_and_limits(self) -> None:
+        for mode_flag, attr in (
+            ("--legacy-confirm", "confirm_legacy"),
+            ("--confirm-debate", "confirm_debate"),
+        ):
+            with self.subTest(mode=mode_flag):
+                root = self.tmp()
+                first = self._pipeline(
+                    [
+                        "--run-id=mode",
+                        mode_flag,
+                        "--max-parallel=3",
+                        "--max-turns=9",
+                        "foo|o/r|Go|ref",
+                    ],
+                    root,
+                )
+                self._seed_active_turn(first, phase="bug_confirmation")
+
+                resumed = pl.Pipeline()
+                self.assertIsNone(resumed.parse_args(["--run-id=mode"]))
+                self.assertIsNone(resumed.resolve_run_dir())
+                self.assertTrue(getattr(resumed, attr))
+                self.assertEqual(resumed.max_parallel, "3")
+                self.assertEqual(resumed.max_turns, "9")
+
+    def test_attach_rejects_changed_targets_and_confirmation_mode(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(["--run-id=shape", "foo|o/r|Go|ref"], root)
+        self._seed_active_turn(first)
+
+        for args in (
+            ["--run-id=shape", "other|o/r|Go|ref"],
+            ["--run-id=shape", "--legacy-confirm"],
+            ["--run-id=shape", "--confirm-debate"],
+            ["--run-id=shape", "--max-parallel=2"],
+            ["--run-id=shape", "--max-turns=8"],
+        ):
+            with self.subTest(args=args):
+                resumed = pl.Pipeline()
+                self.assertIsNone(resumed.parse_args(args))
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    self.assertEqual(resumed.resolve_run_dir(), 1)
+                self.assertIn("--fresh-context", err.getvalue())
+
+    def test_attach_rejects_incompatible_agent_overrides(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(
+            [
+                "--run-id=override",
+                "--agent=codex",
+                "--model=gpt-5.5",
+                "--effort=high",
+                "--claude-alias=work",
+                "foo|o/r|Go|ref",
+            ],
+            root,
+        )
+        self._seed_active_turn(first)
+
+        overrides = (
+            "--agent=claude-code",
+            "--model=gpt-5.4",
+            "--effort=medium",
+            "--claude-alias=other",
+        )
+        for override in overrides:
+            with self.subTest(override=override):
+                resumed = pl.Pipeline()
+                self.assertIsNone(resumed.parse_args(["--run-id=override", override]))
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    self.assertEqual(resumed.resolve_run_dir(), 1)
+                self.assertIn("--fresh-context", err.getvalue())
+
+    def test_attach_without_unfinished_conversation_fails(self) -> None:
+        root = self.tmp()
+        self._pipeline(["--run-id=complete", "foo|o/r|Go|ref"], root)
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=complete"]))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(resumed.resolve_run_dir(), 1)
+        self.assertIn("no unfinished agent conversation", err.getvalue())
+
+    def test_legacy_run_requires_fresh_context(self) -> None:
+        root = self.tmp()
+        run = root / "runs" / "legacy-resume"
+        run.mkdir(parents=True)
+        (run / "run.json").write_text('{"run_id": "legacy-resume"}\n')
+        self.patch_root(pl, root)
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=legacy-resume", "foo|o/r|Go|ref"]))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(resumed.resolve_run_dir(), 1)
+        self.assertIn("resume config", err.getvalue())
+
+        fresh = pl.Pipeline()
+        self.assertIsNone(fresh.parse_args(["--run-id=legacy-resume", "--fresh-context", "foo|o/r|Go|ref"]))
+        self.assertIsNone(fresh.resolve_run_dir())
+        self.assertTrue(resumelib.config_path(run).is_file())
+
+    def test_fresh_context_requires_run_id(self) -> None:
+        p = pl.Pipeline()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(p.parse_args(["--fresh-context", "foo|o/r|Go|ref"]), 1)
+        self.assertIn("--fresh-context requires --run-id", err.getvalue())
+
+    def test_concurrent_fresh_attach_cannot_clear_active_checkpoint(self) -> None:
+        root = self.tmp()
+        running = self._pipeline(["--run-id=locked", "foo|o/r|Go|ref"], root)
+        self._seed_active_turn(running)
+        running._acquire_run_lock()
+        self.addCleanup(running._release_run_lock)
+        before = resumelib.active_entries(running.run_dir)
+
+        contender = pl.Pipeline()
+        self.assertIsNone(contender.parse_args(["--run-id=locked", "--fresh-context", "foo|o/r|Go|ref"]))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(contender.resolve_run_dir(acquire_lock=True), 1)
+
+        self.assertIn("already active", err.getvalue())
+        self.assertEqual(resumelib.active_entries(running.run_dir), before)
+
+    def test_run_lock_rejects_symlink(self) -> None:
+        root = self.tmp()
+        p = self._pipeline(["--run-id=unsafe-lock", "foo|o/r|Go|ref"], root)
+        assert p.run_dir is not None
+        outside = self.tmp() / "outside-lock"
+        outside.write_text("keep\n")
+        lock = resumelib.resume_dir(p.run_dir) / "run.lock"
+        lock.symlink_to(outside)
+
+        with self.assertRaisesRegex(resumelib.ResumeError, "safe run lock"):
+            p._acquire_run_lock()
+        self.assertEqual(outside.read_text(), "keep\n")
+
+    def test_attach_rejects_symlinked_run_directory_without_clearing_target(self) -> None:
+        root = self.tmp()
+        runs = root / "runs"
+        runs.mkdir()
+        outside = self.tmp()
+        resumelib.initialize_run(outside)
+        victim = resumelib.active_dir(outside) / "victim.json"
+        victim.write_text('{"keep": true}\n')
+        (runs / "unsafe-run").symlink_to(outside, target_is_directory=True)
+        self.patch_root(pl, root)
+
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--run-id=unsafe-run", "--fresh-context", "foo|o/r|Go|ref"]))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(p.resolve_run_dir(acquire_lock=True), 1)
+
+        self.assertIn("run directory is not a real directory", err.getvalue())
+        self.assertEqual(victim.read_text(), '{"keep": true}\n')
+
     def test_snapshot_mode_and_private_source_survive_resume_without_flag(self) -> None:
         root = self.tmp()
         original = self.tmp()
@@ -369,12 +683,38 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         os.environ.pop("SPECULA_TLC_SCOPE", None)
         os.environ.pop("SPECULA_SOURCE_SNAPSHOT", None)
 
-        resumed = self._pipeline(["--run-id=private", "foo|o/r|Go|ref"], root)
+        resumed = self._pipeline(["--run-id=private", "--fresh-context", "foo|o/r|Go|ref"], root)
         resumed.prepare_source_snapshots(["foo"])
 
         self.assertTrue(resumed.keep_original)
         self.assertEqual((private / "agent.txt").read_text(), "keep\n")
         self.assertEqual(phaselib.Workspace(["foo"]).find_repo_dir("foo"), str(private))
+
+    def test_snapshot_manual_resume_does_not_require_original_artifact(self) -> None:
+        root = self.tmp()
+        original = self.tmp()
+        (original / "source.txt").write_text("original\n")
+        first = self._pipeline(
+            ["--run-id=private-resume", "--keep-original", f"--artifact={original}", "foo|o/r|Go|ref"],
+            root,
+        )
+        first.prepare_source_snapshots(["foo"])
+        self._seed_active_turn(first)
+        (original / "source.txt").unlink()
+        original.rmdir()
+        os.environ.pop("SPECULA_RUN_DIR", None)
+        os.environ.pop("SPECULA_TLC_SCOPE", None)
+        os.environ.pop("SPECULA_SOURCE_SNAPSHOT", None)
+
+        self.patch_root(pl, root)
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=private-resume"]))
+        self.assertIsNone(resumed.resolve_run_dir())
+
+        assert resumed.run_dir is not None
+        self.assertTrue(resumed.keep_original)
+        self.assertEqual(resumed.targets, ["foo|o/r|Go|ref"])
+        self.assertTrue((resumed.run_dir / "foo" / "source" / "source.txt").is_file())
 
     def test_meta_records_cli_tuning_over_environment(self) -> None:
         root = self.tmp()
@@ -490,7 +830,7 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         (run / "foo" / ".specula-output").mkdir(parents=True)
         (run / "foo" / ".specula-output" / "keep.txt").write_text("keep")
         (run / "run.json").write_text('{"run_id": "myrun", "original": true}\n')
-        p = self._pipeline(["--run-id=myrun", "foo|o/r|Go|ref"], root)
+        p = self._pipeline(["--run-id=myrun", "--fresh-context", "foo|o/r|Go|ref"], root)
         self.assertEqual(p.run_dir, run)
         self.assertEqual((run / "foo" / ".specula-output" / "keep.txt").read_text(), "keep")
         # attach never rewrites the original record
@@ -506,7 +846,7 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         os.environ.pop("SPECULA_RUN_DIR", None)
         os.environ.pop("SPECULA_TLC_SCOPE", None)
 
-        resumed = self._pipeline(["--run-id=myrun", "foo|o/r|Go|ref"], root)
+        resumed = self._pipeline(["--run-id=myrun", "--fresh-context", "foo|o/r|Go|ref"], root)
         self.assertEqual(resumed.tlc_memory_limit, "64G")
         self.assertEqual(resumed.tlc_worker_limit, "12")
 
@@ -517,7 +857,13 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         (run / "run.json").write_text('{"run_id": "legacy", "original": true}\n')
 
         configured = self._pipeline(
-            ["--run-id=legacy", "--tlc-memory-limit=48G", "--tlc-worker-limit=10", "foo|o/r|Go|ref"],
+            [
+                "--run-id=legacy",
+                "--fresh-context",
+                "--tlc-memory-limit=48G",
+                "--tlc-worker-limit=10",
+                "foo|o/r|Go|ref",
+            ],
             root,
         )
         self.assertEqual(configured.tlc_memory_limit, "48G")
@@ -527,7 +873,7 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         os.environ.pop("SPECULA_RUN_DIR", None)
         os.environ.pop("SPECULA_TLC_SCOPE", None)
 
-        resumed = self._pipeline(["--run-id=legacy", "foo|o/r|Go|ref"], root)
+        resumed = self._pipeline(["--run-id=legacy", "--fresh-context", "foo|o/r|Go|ref"], root)
         self.assertEqual(resumed.tlc_memory_limit, "48G")
         self.assertEqual(resumed.tlc_worker_limit, "10")
         self.assertTrue(json.loads((run / "run.json").read_text())["original"])
@@ -539,7 +885,7 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         (run / "run.json").write_text('{"tlc_memory_limit": 64, "tlc_worker_limit": null}\n')
         self.patch_root(pl, root)
         p = pl.Pipeline()
-        self.assertIsNone(p.parse_args(["--run-id=legacy", "foo|o/r|Go|ref"]))
+        self.assertIsNone(p.parse_args(["--run-id=legacy", "--fresh-context", "foo|o/r|Go|ref"]))
 
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
@@ -560,7 +906,15 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         os.environ.pop("SPECULA_TLC_SCOPE", None)
         resumed = pl.Pipeline()
         self.assertIsNone(
-            resumed.parse_args(["--run-id=myrun", "--tlc-memory-limit=32G", "--tlc-worker-limit=8", "foo|o/r|Go|ref"])
+            resumed.parse_args(
+                [
+                    "--run-id=myrun",
+                    "--fresh-context",
+                    "--tlc-memory-limit=32G",
+                    "--tlc-worker-limit=8",
+                    "foo|o/r|Go|ref",
+                ]
+            )
         )
         err = io.StringIO()
         with contextlib.redirect_stderr(err):

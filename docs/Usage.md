@@ -252,19 +252,42 @@ specula run <name> \
   "name|owner/repository|language|reference"
 ```
 
-Attach to the same run and skip completed steps. This resumes at validation:
+If an agent call is interrupted, attach to the same run and use the existing
+skip flags to reach that phase. This example continues an interrupted
+validation call:
 
 ```bash
-specula run <name> \
-  --run-id=my-run \
+specula run --run-id=my-run \
   --skip-analysis \
   --skip-specgen \
-  --skip-harness \
-  --artifact=/path/to/source \
-  "name|owner/repository|language|reference"
+  --skip-harness
 ```
 
-Specula reuses `runs/<run-id>/<name>/.specula-output/`. Pass the target and artifact again when resuming, together with either `--agent-config` or the original agent, model, and effort options. A `--keep-original` run automatically resumes against its existing private source even when that flag and the original artifact are omitted. The run's TLC memory and worker limits are restored from `tlc-resources.json`; `run.json` remains an audit record, not arguments for the new invocation.
+For Claude Code, Codex, Copilot CLI, OpenCode, and Pi, Specula resumes the exact
+unfinished native session by default. It restores the run's target, artifact,
+agent routing, model, effort, Claude profile, and retry settings when those
+options are omitted. An incompatible explicit override fails before launching
+an agent. The latest target `.prompt-extra.md`, if present, is appended once to
+the manual continuation so priorities can be clarified without replaying the
+original prompt.
+
+Only unfinished calls are resumable; an accepted call is never reopened. If
+the run has no unfinished conversation, its checkpoint is missing or corrupt,
+or the native session cannot be restored safely, the attach fails closed. Use
+`--fresh-context` to keep the existing workspace while abandoning old agent
+contexts, including when attaching to a run created before manual checkpoints
+were supported. Recorded settings are still restored when omitted, while
+explicit settings establish the new context:
+
+```bash
+specula run --run-id=my-run --fresh-context --skip-analysis --skip-specgen --skip-harness
+```
+
+Phase 4 restores interrupted finding conversations one at a time, then returns
+to its configured per-finding parallelism. Exact resume preserves the native
+conversation and retained files, but cannot restore an in-flight CLI process or
+child process. The run's TLC memory and worker limits remain fixed by
+`tlc-resources.json`; `run.json` remains the original audit record.
 
 ## Individual Steps
 
@@ -336,7 +359,8 @@ specula run [options] "name|owner/repository|language|reference"
 | `--max-repair-rounds=N` | Set the global repair-loop round cap (default `10`; `0` means unlimited) |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse early-phase outputs |
 | `--skip-validate`, `--skip-confirmation`, `--skip-classification` | Reuse later-phase outputs |
-| `--run-id=ID` | Create or attach to an isolated run |
+| `--run-id=ID` | Create or attach to an isolated run; attach resumes unfinished agent conversations |
+| `--fresh-context` | With `--run-id`, abandon unfinished agent contexts and continue from retained files |
 | `--no-isolate` | Use the legacy output layout described above |
 
 `--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default. `--max-repair-rounds=N` caps rounds across the whole loop, not attempts per request; when the cap is reached, remaining open requests are deferred. For the individual `specula confirm` command, the corresponding debate flags are `--debate` and `--rounds=N` (range `1` through `5`).
