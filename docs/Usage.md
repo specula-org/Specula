@@ -214,12 +214,17 @@ runs/<run-id>/
 └── <name>/
     ├── .specula-output/
     │   ├── index.md
+    │   ├── summary.md       # Per-target resource usage
     │   └── ...             # Existing phase outputs stay in place
     ├── source/          # --keep-original only
     └── changes.patch   # --keep-original only
 ```
 
-The run-level `index.md` is a compact target chooser with direct links to each target's confirmation and severity reports. Each target link opens its `.specula-output/index.md`, which presents human-readable results as Final Reports, Supporting Analysis, Confirmation Details, Technical Details, and Troubleshooting. It intentionally omits review artifacts, machine-readable records, state sidecars, caches, and detailed phase logs; those files remain in their existing locations. No existing phase output is moved. `pipeline-summary.md` remains the final run status, and `runs/latest` points to the newest run.
+The run-level `index.md` is a compact target chooser with direct links to each target's confirmation and severity reports. Each target link opens its `.specula-output/index.md`, which presents `summary.md` first, followed by the confirmation and severity reports, Supporting Analysis, Confirmation Details, Technical Details, and Troubleshooting. It intentionally omits review artifacts, machine-readable records, state sidecars, caches, and detailed phase logs; those files remain in their existing locations. No existing phase output is moved. `pipeline-summary.md` remains the final run status, and `runs/latest` points to the newest run; no run-level `summary.md` is generated.
+
+Each target's `summary.md` contains a compact resource table grouped by Phase 1, Phase 2, Phase 2.5, Phase 3, Phase 4a, and Phase 4b. Runtime is wall-clock time for the grouped phase, tokens show total and cached tokens captured from adapter usage records, and estimated cost is the cost reported by the adapter. A missing value is shown as `-`. Available values are still shown when some usage is unavailable, and the total row is labeled `Total (incomplete)` when it does not cover the complete target run. Estimated cost is not an invoice and Specula does not reconstruct it from an external price list.
+
+The summary also reports the configured maximum parallelism and TLC memory and worker limits when available. These are configuration limits, not measured CPU utilization, actual TLC memory consumption, or process peak memory. Specula omits resource measurements that it cannot obtain reliably.
 
 By default, Specula works directly in the source passed through `--artifact`, so harness or reproduction work may modify it. Use `--keep-original` to run every phase on a private copy instead. The original checkout stays unchanged, and the final filesystem changes are written to `changes.patch`.
 

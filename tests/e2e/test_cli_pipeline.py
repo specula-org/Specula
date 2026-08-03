@@ -360,6 +360,7 @@ class CliE2E(unittest.TestCase):
         run_index = (run / "index.md").read_text()
         target_dir = run / "footest" / ".specula-output"
         target_index = (target_dir / "index.md").read_text()
+        resource_summary = (target_dir / "summary.md").read_text()
 
         self.assertIn("| footest | [Open results](footest/.specula-output/index.md) |", run_index)
         self.assertIn("- Final summary: [pipeline-summary.md](pipeline-summary.md)", run_index)
@@ -368,11 +369,13 @@ class CliE2E(unittest.TestCase):
 
         self.assertIn("# footest Results", target_index)
         self.assertIn("## Final Reports", target_index)
+        self.assertIn("[Resource summary](summary.md)", target_index)
         self.assertIn("## Supporting Analysis", target_index)
         self.assertIn("Modeling brief: Not available", target_index)
         self.assertIn("[pipeline.log](../../pipeline.log)", target_index)
         self.assertNotIn("## Reviews", target_index)
         self.assertNotIn("findings.json", target_index)
+        self.assertIn("| **Total (incomplete)** | - | - | - |", resource_summary)
         self.assertFalse((run / "reports").exists())
         self.assertFalse((target_dir / "classification").exists())
 
@@ -396,6 +399,8 @@ class CliE2E(unittest.TestCase):
         self.assertNotIn("beta", alpha)
         self.assertIn("# beta Results", beta)
         self.assertNotIn("alpha", beta)
+        self.assertTrue((run / "alpha" / ".specula-output" / "summary.md").is_file())
+        self.assertTrue((run / "beta" / ".specula-output" / "summary.md").is_file())
 
     def test_run_tuning_and_retry_budgets_reach_phase_and_review_commands(self) -> None:
         for model, effort in (("gpt-5.5", "high"), ("", "")):
@@ -567,6 +572,7 @@ class CliE2E(unittest.TestCase):
         self.assertIn("## Supporting Analysis", index)
         self.assertNotIn("# Specula Run", index)
         self.assertIn("[pipeline.log](pipeline.log)", index)
+        self.assertTrue((work / ".specula-output" / "summary.md").is_file())
         self.assertFalse((root / "runs").exists())
 
     def test_no_isolate_canonical_single_target_links_launch_log(self) -> None:
@@ -582,6 +588,7 @@ class CliE2E(unittest.TestCase):
         self.assertIn("# footest Results", target_index)
         self.assertIn(f"[pipeline.log]({relative_log})", target_index)
         self.assertTrue((target_dir / "pipeline-summary.md").is_file())
+        self.assertTrue((target_dir / "summary.md").is_file())
         self.assertFalse((work / ".specula-output" / "index.md").exists())
 
     def test_no_isolate_multi_target_keeps_a_distinct_run_chooser(self) -> None:

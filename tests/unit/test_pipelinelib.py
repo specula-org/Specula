@@ -469,6 +469,117 @@ def make_pipeline(targets: list[str], **attrs: Any) -> pl.Pipeline:
     return p
 
 
+class _FakeResourceSummary:
+    def __init__(self) -> None:
+        self.events: list[tuple[object, ...]] = []
+
+    def start_phase(self, phase: str, names: list[str]) -> None:
+        self.events.append(("start", phase, tuple(names)))
+
+    def capture_usage(self, phase: str, names: list[str], *, require_change: bool = False) -> None:
+        self.events.append(("capture", phase, tuple(names), require_change))
+
+    def finish_phase(self, phase: str, names: list[str], elapsed: float, succeeded: bool) -> None:
+        self.events.append(("finish", phase, tuple(names), elapsed, succeeded))
+
+    def skip_phase(self, phase: str, names: list[str]) -> None:
+        self.events.append(("skip", phase, tuple(names)))
+
+    def complete_run(self) -> None:
+        self.events.append(("complete",))
+
+    def refresh(self) -> None:
+        self.events.append(("refresh",))
+
+
+class TestResourceSummaryPipeline(TmpCwd):
+    def test_grouped_phase_records_known_runtime_when_body_fails(self) -> None:
+        pipeline = make_pipeline(["footest|g|l|r"])
+        tracker = _FakeResourceSummary()
+        pipeline.resource_summary = tracker  # type: ignore[assignment]
+
+        with (
+            mock.patch("specula.pipelinelib.time.monotonic", side_effect=[10.0, 16.25]),
+            self.assertRaisesRegex(RuntimeError, "phase failed"),
+            pipeline.resource_phase("phase1", ["footest"]),
+        ):
+            raise RuntimeError("phase failed")
+
+        self.assertEqual(tracker.events[0], ("start", "phase1", ("footest",)))
+        self.assertEqual(tracker.events[1], ("capture", "phase1", ("footest",), False))
+        self.assertEqual(tracker.events[2], ("finish", "phase1", ("footest",), 6.25, False))
+
+    def test_launcher_captures_usage_before_and_after_overwrite(self) -> None:
+        pipeline = make_pipeline(["footest|g|l|r"])
+        tracker = _FakeResourceSummary()
+        pipeline.resource_summary = tracker  # type: ignore[assignment]
+        pipeline._resource_phase_key = "phase4a"
+        pipeline._run_launcher = mock.Mock(side_effect=SystemExit(7))  # type: ignore[method-assign]
+        pipeline.refresh_target_indexes = mock.Mock(return_value=[])  # type: ignore[method-assign]
+
+        with self.assertRaises(SystemExit) as raised:
+            pipeline._phase("confirmation", "launch_bug_confirmation.sh", ["footest"])
+
+        self.assertEqual(raised.exception.code, 7)
+        self.assertEqual(
+            tracker.events,
+            [
+                ("capture", "phase4a", ("footest",), False),
+                ("capture", "phase4a", ("footest",), True),
+            ],
+        )
+
+    def test_main_wraps_each_user_visible_phase_group(self) -> None:
+        pipeline = make_pipeline(["footest|g|l|r"])
+        tracker = _FakeResourceSummary()
+        pipeline.resource_summary = tracker  # type: ignore[assignment]
+        phase_events: list[str] = []
+        pipeline.initialize_resource_summaries = lambda names: None  # type: ignore[method-assign]
+        pipeline.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+        pipeline.prepare_source_snapshots = lambda names: None  # type: ignore[method-assign]
+        pipeline.prepare_repair_state = lambda: set()  # type: ignore[method-assign]
+        pipeline.refresh_output_indexes = lambda: None  # type: ignore[method-assign]
+        pipeline.generate_summary = lambda: None  # type: ignore[method-assign]
+        pipeline.wait_for_phase_quota = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
+        pipeline.run_review = lambda phase, names: phase_events.append(f"review:{phase}")  # type: ignore[method-assign]
+        pipeline.run_phase1_analysis = lambda: phase_events.append("phase1")  # type: ignore[method-assign]
+        pipeline.run_phase2_specgen = lambda: phase_events.append("phase2")  # type: ignore[method-assign]
+        pipeline.run_phase2_5_harness = lambda: phase_events.append("phase2.5")  # type: ignore[method-assign]
+        pipeline.run_phase3_validation = lambda: phase_events.append("phase3")  # type: ignore[method-assign]
+        pipeline.run_phase4_confirmation = lambda: phase_events.append("phase4a")  # type: ignore[method-assign]
+
+        def run_repair_loop(*args: object, **kwargs: object) -> set[str]:
+            phase_events.append("repair")
+            return set()
+
+        pipeline.run_repair_loop = run_repair_loop  # type: ignore[method-assign]
+        pipeline.run_phase4b_classification = lambda: phase_events.append("phase4b")  # type: ignore[method-assign]
+
+        rc, _output = quiet(pipeline.main)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            [event[1] for event in tracker.events if event[0] == "start"],
+            ["phase1", "phase2", "phase2_5", "phase3", "phase4a", "phase4b"],
+        )
+        self.assertEqual(tracker.events[-1], ("complete",))
+        self.assertEqual(
+            phase_events,
+            [
+                "phase1",
+                "review:analysis",
+                "phase2",
+                "review:specgen",
+                "phase2.5",
+                "phase3",
+                "review:validation",
+                "phase4a",
+                "repair",
+                "phase4b",
+            ],
+        )
+
+
 def write_agent_config(path: Path, phases: dict[str, str] | None = None) -> Path:
     path.write_text(
         json.dumps(
