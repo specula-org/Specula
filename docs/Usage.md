@@ -252,18 +252,17 @@ specula run \
   "name|owner/repository|language|reference"
 ```
 
-If an agent call is interrupted, attach to the same run and use the skip flags to reach that phase. Specula restores omitted run settings and resumes the unfinished agent conversation. This example continues validation:
+If an agent call is interrupted, attach to the same run. Specula restores omitted run settings, returns to the interrupted phase, and resumes the unfinished agent conversation:
 
 ```bash
-specula run --run-id=my-run \
-  --skip-analysis \
-  --skip-specgen \
-  --skip-harness
+specula run --run-id=my-run
 ```
 
 To add guidance for the resumed agent, update the target's `.prompt-extra.md` before running the command.
 
-Only unfinished conversations can be resumed. If resume state is unavailable, Specula stops instead of silently starting a new conversation. To keep the run's files but start with a fresh agent context, add `--fresh-context`:
+After the resumed phase finishes, later phases follow the skip options on the current command.
+
+Only unfinished conversations can be resumed. If resume state is unavailable, Specula stops instead of silently starting a new conversation. To keep the run's files but start with a fresh agent context, add `--fresh-context` and use skip flags to choose where to restart:
 
 ```bash
 specula run --run-id=my-run --fresh-context --skip-analysis --skip-specgen --skip-harness

@@ -156,8 +156,8 @@ Options:
                          (a single target cd's into case-studies/<name>/ when
                          it exists)
   --run-id=ID            Attach to runs/ID — reuse an existing run's workspace,
-                         resuming unfinished agent conversations by default
-                         (use the original --skip-* flags; implies --isolate)
+                         resume unfinished agent conversations at their phase
+                         (implies --isolate)
   --fresh-context        With --run-id, abandon unfinished conversations and
                          start the selected phases with fresh agent context
 
@@ -857,6 +857,34 @@ class Pipeline:
             self.artifact = artifact
             self._artifact_given = True
 
+    def _position_at_manual_resume_phase(self) -> None:
+        phase = self._manual_resume_phase
+        if phase is None:
+            return
+        preceding = {
+            "code_analysis": (),
+            "review:analysis": ("skip_analysis",),
+            "spec_generation": ("skip_analysis",),
+            "review:specgen": ("skip_analysis", "skip_specgen"),
+            "harness_generation": ("skip_analysis", "skip_specgen"),
+            "spec_validation": ("skip_analysis", "skip_specgen", "skip_harness"),
+            "review:validation": ("skip_analysis", "skip_specgen", "skip_harness", "skip_validation"),
+            "bug_confirmation": ("skip_analysis", "skip_specgen", "skip_harness", "skip_validation"),
+            "bug_classification": (
+                "skip_analysis",
+                "skip_specgen",
+                "skip_harness",
+                "skip_validation",
+                "skip_confirmation",
+            ),
+        }.get(phase)
+        if preceding is None:
+            raise resumelib.ResumeError(
+                f"cannot position the pipeline at interrupted phase {phase!r}; pass --fresh-context to start over"
+            )
+        for field in preceding:
+            setattr(self, field, True)
+
     def _acquire_run_lock(self) -> None:
         if self.run_dir is None or self._run_lock_fd is not None:
             return
@@ -1003,6 +1031,7 @@ class Pipeline:
                             "unfinished conversations span multiple phases; pass --fresh-context to start over"
                         )
                     self._manual_resume_phase = phases.pop()
+                    self._position_at_manual_resume_phase()
                     if not self.keep_original:
                         launch_cwds = {entry.get("cwd") for entry in active if entry.get("kind") in {"phase", "review"}}
                         if launch_cwds:
@@ -3101,13 +3130,13 @@ class Pipeline:
         else:
             log("Skipping Phase 2.5 (--skip-harness)")
 
-        # An uncommitted interrupted repair is OPEN again after recovery. Keep
-        # the established ordering for that case: upstream phases run first,
-        # then the repair loop resumes before ordinary Phase 3.
+        # Resume OPEN repairs before ordinary Phase 3. An unfinished Phase 4
+        # conversation must settle first because it owns the active session.
         if (
             not resumed_repair
             and not self.skip_confirmation
             and not self.skip_repair_loop
+            and self._manual_resume_phase != "bug_confirmation"
             and self.has_open_repair_requests()
         ):
             log("Resuming pending repair requests before the ordinary Phase 3 pass")

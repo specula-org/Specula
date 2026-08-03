@@ -29,6 +29,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from specula import phaselib
+
 REAL_ROOT = Path(__file__).resolve().parents[2]
 REAL_PKG = REAL_ROOT / "src" / "specula"
 REAL_LAUNCH = REAL_ROOT / "scripts" / "launch"
@@ -56,6 +58,9 @@ _VOLATILE = (
     "CODEX_MODEL",
     "CODEX_EFFORT",
     "COPILOT_MODEL",
+    "SPECULA_INVOCATION_ID",
+    "SPECULA_MANUAL_RESUME",
+    "SPECULA_FRESH_CONTEXT",
 )
 
 ALL_PHASE_SKIPS = (
@@ -155,6 +160,105 @@ class CliE2E(unittest.TestCase):
         self.assertIn("Specula", out)
         self.assertIn("[DRY RUN] bash scripts/launch/launch_code_analysis.sh", out)
         self.assertIn("Pipeline completed", out)
+
+    def test_run_id_resumes_interrupted_validation_without_phase_skip_flags(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        artifact = work / "artifact"
+        artifact.mkdir()
+        adapter = root / "scripts" / "launch" / "adapters" / "fake.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "prompt= log= resume=\n"
+            'for arg do case "$arg" in\n'
+            "  --prompt-file=*) prompt=${arg#*=} ;;\n"
+            "  --log=*) log=${arg#*=} ;;\n"
+            "  --resume-state=*) resume=${arg#*=} ;;\n"
+            "esac; done\n"
+            'case "$SPECULA_PHASE" in\n'
+            "  spec_validation)\n"
+            '    printf x >> "$0.validation-count"\n'
+            '    attempt=$(wc -c < "$0.validation-count")\n'
+            '    if [ "$attempt" -eq 1 ]; then\n'
+            '      printf "validation-session\n" > "$resume"\n'
+            '      printf "interrupted\n" > "$log"\n'
+            "      exit 9\n"
+            "    fi\n"
+            '    test "$(cat "$resume")" = "validation-session"\n'
+            '    cp "$prompt" "$0.validation-prompt"\n'
+            '    printf "bug report\n" > "$SPECULA_WORK_DIR/spec/bug-report.md"\n'
+            "    ;;\n"
+            "  bug_confirmation_turn)\n"
+            '    printf \'{"generated_by":"consolidate","findings":[]}\\n\' '
+            '> "$SPECULA_WORK_DIR/spec/candidates.json"\n'
+            "    ;;\n"
+            "  bug_classification)\n"
+            '    printf "severity\n" > "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            "    ;;\n"
+            "  *) exit 97 ;;\n"
+            "esac\n"
+            'printf "continued\n" > "$log"\n'
+        )
+        adapter.chmod(0o755)
+        target = "footest|owner/repo|Go|reference"
+        run_id = "resume-validation"
+
+        setup = self.run_cli(
+            root,
+            [
+                "run",
+                f"--run-id={run_id}",
+                "--agent=fake",
+                f"--artifact={artifact}",
+                *ALL_PHASE_SKIPS,
+                target,
+            ],
+            cwd=work,
+        )
+        self.assertEqual(setup.returncode, 0, setup.stderr)
+        run = root / "runs" / run_id
+        wd = run / "footest" / ".specula-output"
+        for rel in (
+            "modeling-brief.md",
+            "spec/base.tla",
+            "spec/MC.tla",
+            "spec/Trace.tla",
+            "spec/instrumentation-spec.md",
+        ):
+            path = wd / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("seeded\n")
+
+        first = self.run_cli(
+            root,
+            [
+                "run",
+                f"--run-id={run_id}",
+                "--fresh-context",
+                "--skip-analysis",
+                "--skip-specgen",
+                "--skip-harness",
+                "--skip-confirmation",
+                "--skip-classification",
+                "--skip-repair-loop",
+            ],
+            cwd=work,
+        )
+        self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
+
+        resumed = self.run_cli(root, ["run", f"--run-id={run_id}"], cwd=work)
+
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertEqual(Path(f"{adapter}.validation-count").read_text(), "xx")
+        self.assertEqual(
+            Path(f"{adapter}.validation-prompt").read_text(),
+            phaselib._MANUAL_SESSION_RESUME_PROMPT,
+        )
+        self.assertTrue((wd / "confirmed-bugs.md").is_file())
+        self.assertTrue((wd / "bug-severity.md").is_file())
+        self.assertEqual(list((run / ".specula-resume" / "active").glob("*.json")), [])
+        self.assertEqual(list((run / ".specula-resume" / "completed").glob("*.json")), [])
 
     def test_noop_run_writes_two_level_human_indexes(self) -> None:
         root = self.specroot()

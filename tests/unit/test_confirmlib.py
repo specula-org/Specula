@@ -1127,6 +1127,62 @@ class TestDriver(ConfirmCase):
         )
         self.assertEqual(cfg._policy_states, {})
 
+    def test_manual_resume_restores_interrupted_consolidate_session(self) -> None:
+        ws = Workspace(["T"])
+        root = Path(self.tmp)
+        spec = ws.work_dir("T") / "spec"
+        spec.mkdir(parents=True)
+        adapter = root / "manual-consolidate.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "prompt= log= resume=\n"
+            'for arg do case "$arg" in\n'
+            "  --prompt-file=*) prompt=${arg#*=} ;;\n"
+            "  --log=*) log=${arg#*=} ;;\n"
+            "  --resume-state=*) resume=${arg#*=} ;;\n"
+            "esac; done\n"
+            'printf x >> "$CAPTURE/consolidate-count"\n'
+            'attempt=$(wc -c < "$CAPTURE/consolidate-count")\n'
+            'cp "$prompt" "$CAPTURE/consolidate-prompt-$attempt"\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            '  printf PARTIAL-CANDIDATES > "$CANDIDATES"\n'
+            '  printf consolidate-session > "$resume"\n'
+            '  printf "rate limited\n" > "$log"\n'
+            "  exit 75\n"
+            "fi\n"
+            'test "$(cat "$CANDIDATES")" = PARTIAL-CANDIDATES\n'
+            'test "$(cat "$resume")" = consolidate-session\n'
+            'printf \'{"generated_by":"consolidate","findings":[]}\\n\' > "$CANDIDATES"\n'
+            'printf "continued\n" > "$log"\n'
+        )
+        adapter.chmod(0o755)
+        resumelib.initialize_run(root)
+        resumelib.save_configuration(root, {"agent": adapter.stem})
+        env = {
+            "CAPTURE": str(root),
+            "CANDIDATES": str(spec / "candidates.json"),
+            resumelib.INVOCATION_ENV: "invocation-1",
+        }
+
+        with mock.patch.dict(os.environ, env, clear=False):
+            os.environ.pop(resumelib.MANUAL_ENV, None)
+            os.environ.pop(resumelib.FRESH_ENV, None)
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T", adapter=adapter)), 75)
+            self.assertEqual([entry["kind"] for entry in resumelib.active_entries(root)], ["consolidate"])
+
+            os.environ[resumelib.INVOCATION_ENV] = "invocation-2"
+            os.environ[resumelib.MANUAL_ENV] = "1"
+            resumed_cfg = self.cfg(ws, "T", adapter=adapter)
+            self.assertEqual(C.run_parallel_confirmation(resumed_cfg), 0)
+
+        self.assertEqual((root / "consolidate-count").read_text(), "xx")
+        self.assertEqual(
+            (root / "consolidate-prompt-2").read_text(),
+            PhaseLib._MANUAL_SESSION_RESUME_PROMPT,
+        )
+        self.assertEqual(resumelib.active_entries(root), [])
+
     def test_consolidate_failure_withholds_not_raises(self) -> None:
         # No candidates.json → consolidate runs the agent. A non-75 failure that
         # yields no valid candidates.json must withhold and return failure.

@@ -32,6 +32,7 @@ from unittest import mock
 SRC = Path(__file__).resolve().parents[2] / "src"
 
 from specula import pipelinelib as pl
+from specula import resumelib
 from specula.phaselib import Workspace, _logical_cwd
 from specula.snapshotlib import SOURCE_MAP, SnapshotError
 
@@ -499,6 +500,42 @@ def write_agent_config(path: Path, phases: dict[str, str] | None = None) -> Path
 
 
 class TestParsing(TmpCwd):
+    def test_manual_resume_positions_pipeline_at_each_unfinished_phase(self) -> None:
+        skip_fields = (
+            "skip_analysis",
+            "skip_specgen",
+            "skip_harness",
+            "skip_validation",
+            "skip_confirmation",
+        )
+        expected = {
+            "code_analysis": (),
+            "review:analysis": ("skip_analysis",),
+            "spec_generation": ("skip_analysis",),
+            "review:specgen": ("skip_analysis", "skip_specgen"),
+            "harness_generation": ("skip_analysis", "skip_specgen"),
+            "spec_validation": ("skip_analysis", "skip_specgen", "skip_harness"),
+            "review:validation": ("skip_analysis", "skip_specgen", "skip_harness", "skip_validation"),
+            "bug_confirmation": ("skip_analysis", "skip_specgen", "skip_harness", "skip_validation"),
+            "bug_classification": skip_fields,
+        }
+
+        for phase, skipped in expected.items():
+            with self.subTest(phase=phase):
+                pipeline = pl.Pipeline()
+                pipeline._manual_resume_phase = phase
+                pipeline._position_at_manual_resume_phase()
+                self.assertEqual(
+                    {field for field in skip_fields if getattr(pipeline, field)},
+                    set(skipped),
+                )
+
+    def test_manual_resume_rejects_unknown_phase(self) -> None:
+        pipeline = pl.Pipeline()
+        pipeline._manual_resume_phase = "unknown"
+        with self.assertRaisesRegex(resumelib.ResumeError, "cannot position the pipeline"):
+            pipeline._position_at_manual_resume_phase()
+
     def test_keep_original_is_opt_in_and_requires_isolation(self) -> None:
         default = pl.Pipeline()
         self.assertIsNone(default.parse_args(["t|g|l|r"]))
@@ -2143,6 +2180,33 @@ class TestRepairLoop(RRDirCase):
         self.assertIn("Resuming pending repair requests before the ordinary Phase 3 pass", out)
         self.assertIn("Ordinary Phase 3 covered for every target by the resumed repair loop", out)
         self.assertIn("Initial Phase 4 completed by the resumed repair loop", out)
+
+    def test_manual_phase4_resume_precedes_existing_open_repairs(self) -> None:
+        make_rr(self.rr_dir, "RR-1", "OPEN")
+        events: list[str] = []
+
+        self.p.skip_analysis = True
+        self.p.skip_specgen = True
+        self.p.skip_harness = True
+        self.p.skip_validation = True
+        self.p.skip_classification = True
+        self.p._manual_resume_phase = "bug_confirmation"
+        self.p.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+        self.p.generate_summary = lambda: None  # type: ignore[method-assign]
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        self.p.run_phase4_confirmation = lambda: events.append("resume-phase4")  # type: ignore[method-assign]
+
+        def repair_after_resume(*_args: Any, **_kwargs: Any) -> set[str]:
+            self.assertEqual(events, ["resume-phase4"])
+            events.append("repair")
+            return {"footest"}
+
+        self.p.run_repair_loop = repair_after_resume  # type: ignore[method-assign]
+
+        rc, _out = quiet(self.p.main)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(events, ["resume-phase4", "repair"])
 
     def test_committed_repair_cannot_be_skipped_and_mutated_by_ordinary_phase3(self) -> None:
         for skip_confirmation, skip_repair in ((True, False), (False, True)):

@@ -1141,6 +1141,86 @@ class TestHandoffGate(PhaseCase):
         self.assertEqual((self.work_dir() / "agent.log").read_text(), "continued\n")
         self.assertEqual(resumelib.active_entries(self.run_dir), [])
 
+    def test_manual_resume_reaches_exact_session_for_each_single_agent_phase(self) -> None:
+        captures = self.tmp()
+        self.set_env("CAPTURE_DIR", str(captures))
+        self.write_adapter(
+            'count="$CAPTURE_DIR/$RESUME_CASE.count"\n'
+            "prompt= log= resume=\n"
+            'for arg do case "$arg" in '
+            "--prompt-file=*) prompt=${arg#*=} ;; "
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'printf x >> "$count"\n'
+            'attempt=$(wc -c < "$count")\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            '  printf "%s-session\n" "$RESUME_CASE" > "$resume"\n'
+            '  printf "interrupted\n" > "$log"\n'
+            "  exit 9\n"
+            "fi\n"
+            'test "$(cat "$resume")" = "$RESUME_CASE-session"\n'
+            'case "$SPECULA_PHASE" in\n'
+            '  code_analysis) printf "brief\n" > "$SPECULA_WORK_DIR/modeling-brief.md" ;;\n'
+            "  spec_generation)\n"
+            '    mkdir -p "$SPECULA_WORK_DIR/spec"\n'
+            "    for file in base.tla MC.tla Trace.tla instrumentation-spec.md; do\n"
+            '      printf "output\n" > "$SPECULA_WORK_DIR/spec/$file"\n'
+            "    done\n"
+            "    ;;\n"
+            "  harness_generation)\n"
+            '    mkdir -p "$SPECULA_WORK_DIR/harness" "$SPECULA_WORK_DIR/traces"\n'
+            '    printf "#!/bin/sh\n" > "$SPECULA_WORK_DIR/harness/run.sh"\n'
+            '    printf "guide\n" > "$SPECULA_WORK_DIR/harness/INSTRUMENTATION.md"\n'
+            '    printf "{}\n" > "$SPECULA_WORK_DIR/traces/one.ndjson"\n'
+            "    ;;\n"
+            '  spec_validation) printf "bug report\n" > "$SPECULA_WORK_DIR/spec/bug-report.md" ;;\n'
+            '  bug_confirmation) printf "confirmed\n" > "$SPECULA_WORK_DIR/confirmed-bugs.md" ;;\n'
+            '  bug_classification) printf "severity\n" > "$SPECULA_WORK_DIR/bug-severity.md" ;;\n'
+            "esac\n"
+            'printf "continued\n" > "$log"\n'
+        )
+        cases: list[tuple[PhaseSpec, list[str], str, str]] = [
+            (spec, [], spec["prompt"], spec["key"]) for spec in PHASES
+        ]
+        cases.append((BY_KEY["spec_validation"], ["--repair"], ".spec-repair-prompt.md", "spec_validation_repair"))
+
+        for spec, extra_args, prompt_rel, case_name in cases:
+            with self.subTest(phase=case_name):
+                self.run_dir = self.tmp()
+                self.set_env("SPECULA_RUN_DIR", str(self.run_dir))
+                self.set_env("RESUME_CASE", case_name)
+                self.set_env(resumelib.INVOCATION_ENV, f"{case_name}-invocation-1")
+                self.set_env(resumelib.MANUAL_ENV, None)
+                self.seed(spec["inputs"])
+                if spec["key"] == "harness_generation":
+                    self.seed(["spec/MC.tla"])
+                elif spec["key"] == "spec_validation":
+                    self.seed(["modeling-brief.md"])
+                resumelib.initialize_run(self.run_dir)
+                resumelib.save_configuration(self.run_dir, {"agent": self.adapter.stem})
+                args = [f"--agent={self.adapter.stem}", *extra_args]
+                if spec["key"] == "bug_confirmation":
+                    args.append("--legacy-confirm")
+                if spec["artifact"]:
+                    args.append(self.artifact_flag())
+                args.append(NAME)
+
+                first_rc, first_out = self.run_phase(spec["key"], args)
+                self.assertEqual(first_rc, 9, first_out)
+                active = resumelib.active_entries(self.run_dir)
+                self.assertEqual([entry["phase"] for entry in active], [spec["key"]])
+
+                self.set_env(resumelib.INVOCATION_ENV, f"{case_name}-invocation-2")
+                self.set_env(resumelib.MANUAL_ENV, "1")
+                resumed_rc, resumed_out = self.run_phase(spec["key"], args)
+
+                self.assertEqual(resumed_rc, 0, resumed_out)
+                self.assertEqual((captures / f"{case_name}.count").read_text(), "xx")
+                self.assertEqual((self.work_dir() / prompt_rel).read_text(), phaselib._MANUAL_SESSION_RESUME_PROMPT)
+                self.assertEqual(resumelib.active_entries(self.run_dir), [])
+                self.assertEqual(resumelib.completed_entries(self.run_dir), [])
+
     def test_manual_resume_skips_accepted_targets_then_runs_pending_targets(self) -> None:
         artifact = self.tmp() / "repo"
         artifact.mkdir()
@@ -3247,6 +3327,67 @@ class TestReviewPhase(PhaseCase):
             )
 
         self.assertFalse(marker.exists())
+
+    def test_manual_resume_reaches_exact_session_for_each_review_phase(self) -> None:
+        captures = self.tmp()
+        self.set_env("CAPTURE_DIR", str(captures))
+        self.set_env("SPECULA_PROGRESS", "off")
+        self.install_adapter(
+            "fake",
+            "log= resume=\n"
+            'for arg do case "$arg" in '
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'stem=$(basename "$log" .log)\n'
+            'count="$CAPTURE_DIR/$stem.count"\n'
+            'printf x >> "$count"\n'
+            'attempt=$(wc -c < "$count")\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            '  printf "%s-session\n" "$stem" > "$resume"\n'
+            '  printf "interrupted\n" > "$log"\n'
+            "  exit 9\n"
+            "fi\n"
+            'test "$(cat "$resume")" = "$stem-session"\n'
+            'case "$stem" in\n'
+            '  review-analysis) output="$SPECULA_WORK_DIR/review-analysis.md" ;;\n'
+            '  review-specgen) output="$SPECULA_WORK_DIR/spec/review-specgen.md" ;;\n'
+            '  review-validation) output="$SPECULA_WORK_DIR/spec/review-validation.md" ;;\n'
+            "esac\n"
+            'mkdir -p "$(dirname "$output")"\n'
+            'printf "review\n" > "$output"\n'
+            'printf "continued\n" > "$log"\n',
+        )
+        cases = (
+            ("analysis", ".review-analysis-prompt.md"),
+            ("specgen", "spec/.review-specgen-prompt.md"),
+            ("validation", "spec/.review-validation-prompt.md"),
+        )
+
+        for phase, prompt_rel in cases:
+            with self.subTest(phase=phase):
+                self.run_dir = self.tmp()
+                self.set_env("SPECULA_RUN_DIR", str(self.run_dir))
+                self.set_env(resumelib.INVOCATION_ENV, f"review-{phase}-invocation-1")
+                self.set_env(resumelib.MANUAL_ENV, None)
+                resumelib.initialize_run(self.run_dir)
+                resumelib.save_configuration(self.run_dir, {"agent": "fake"})
+                args = [phase, "--agent=fake", "--transient-resumes=0", NAME]
+
+                first_rc, first_out = self.run_phase("review", args)
+                self.assertEqual(first_rc, 9, first_out)
+                active = resumelib.active_entries(self.run_dir)
+                self.assertEqual([entry["phase"] for entry in active], [f"review:{phase}"])
+
+                self.set_env(resumelib.INVOCATION_ENV, f"review-{phase}-invocation-2")
+                self.set_env(resumelib.MANUAL_ENV, "1")
+                resumed_rc, resumed_out = self.run_phase("review", args)
+
+                self.assertEqual(resumed_rc, 0, resumed_out)
+                self.assertEqual((captures / f"review-{phase}.count").read_text(), "xx")
+                self.assertEqual((self.work_dir() / prompt_rel).read_text(), phaselib._MANUAL_SESSION_RESUME_PROMPT)
+                self.assertEqual(resumelib.active_entries(self.run_dir), [])
+                self.assertEqual(resumelib.completed_entries(self.run_dir), [])
 
     def test_review_streams_activity_through_shared_monitor(self) -> None:
         event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "reviewing"}})
