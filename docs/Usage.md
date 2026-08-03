@@ -262,6 +262,8 @@ To add guidance for the resumed agent, update the target's `.prompt-extra.md` be
 
 After the resumed phase finishes, later phases follow the skip options on the current command.
 
+If the previous phase or agent is still running, Specula refuses the attach. Wait for it to finish or stop it before retrying.
+
 Only unfinished conversations can be resumed. If resume state is unavailable, Specula stops instead of silently starting a new conversation. To keep the run's files but start with a fresh agent context, add `--fresh-context` and use skip flags to choose where to restart:
 
 ```bash

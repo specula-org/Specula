@@ -536,6 +536,54 @@ class TestParsing(TmpCwd):
         with self.assertRaisesRegex(resumelib.ResumeError, "cannot position the pipeline"):
             pipeline._position_at_manual_resume_phase()
 
+    def test_pipeline_success_exit_rejects_leftover_active_conversation(self) -> None:
+        run = self.tmp / "run"
+        run.mkdir()
+        resumelib.initialize_run(run)
+        resumelib.save_configuration(run, {"agent": "fake"})
+        pipeline = make_pipeline(
+            ["foo|owner/repo|Go|ref"],
+            run_dir=run,
+            run_id="run",
+            skip_analysis=True,
+            skip_specgen=True,
+            skip_harness=True,
+            skip_validation=True,
+            skip_confirmation=True,
+            skip_classification=True,
+            skip_repair_loop=True,
+        )
+        pipeline.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+        pipeline.refresh_output_indexes = lambda: None  # type: ignore[method-assign]
+        pipeline.generate_summary = mock.Mock()  # type: ignore[method-assign]
+        work = run / "foo" / ".specula-output"
+        env = {
+            "SPECULA_RUN_DIR": str(run),
+            resumelib.INVOCATION_ENV: "invocation-1",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            resumelib.prepare_turn(
+                ("phase", "bug_classification", "foo"),
+                phase="bug_classification",
+                target="foo",
+                kind="phase",
+                adapter=Path("fake"),
+                model=None,
+                effort=None,
+                claude_alias="claude",
+                cwd=self.tmp,
+                resume_state=work / "bug-classification.resume.json",
+                prompt_file=work / ".bug-classification-prompt.md",
+                log_file=work / "bug-classification.log",
+            )
+            rc, out = quiet(pipeline.main)
+
+        self.assertEqual(rc, 1)
+        self.assertIn("cannot complete with unfinished conversation", out)
+        self.assertNotIn("Pipeline completed", out)
+        pipeline.generate_summary.assert_not_called()
+        self.assertEqual(len(resumelib.active_entries(run)), 1)
+
     def test_keep_original_is_opt_in_and_requires_isolation(self) -> None:
         default = pl.Pipeline()
         self.assertIsNone(default.parse_args(["t|g|l|r"]))

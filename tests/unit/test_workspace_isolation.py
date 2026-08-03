@@ -25,6 +25,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,7 @@ class EnvIsolatedCase(unittest.TestCase):
             resumelib.INVOCATION_ENV,
             resumelib.MANUAL_ENV,
             resumelib.FRESH_ENV,
+            resumelib.RUN_LOCK_FD_ENV,
             "SPECULA_TLC_SCOPE",
             "SPECULA_TLC_MEMORY_LIMIT",
             "SPECULA_TLC_WORKER_LIMIT",
@@ -591,6 +593,22 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
             self.assertEqual(resumed.resolve_run_dir(), 1)
         self.assertIn("no unfinished agent conversation", err.getvalue())
 
+    def test_attach_rejects_skip_for_interrupted_classification(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(["--run-id=classification", "foo|o/r|Go|ref"], root)
+        self._seed_active_turn(first, phase="bug_classification")
+        assert first.run_dir is not None
+        before = resumelib.active_entries(first.run_dir)
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=classification", "--skip-classification"]))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(resumed.resolve_run_dir(acquire_lock=True), 1)
+
+        self.assertIn("cannot use --skip-classification", err.getvalue())
+        self.assertEqual(resumelib.active_entries(first.run_dir), before)
+
     def test_legacy_run_requires_fresh_context(self) -> None:
         root = self.tmp()
         run = root / "runs" / "legacy-resume"
@@ -631,8 +649,52 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         with contextlib.redirect_stderr(err):
             self.assertEqual(contender.resolve_run_dir(acquire_lock=True), 1)
 
-        self.assertIn("already active", err.getvalue())
+        self.assertIn("wait for it to finish or terminate it manually", err.getvalue())
         self.assertEqual(resumelib.active_entries(running.run_dir), before)
+
+    def test_live_inherited_run_lock_blocks_attach_after_dispatcher_closes(self) -> None:
+        root = self.tmp()
+        running = self._pipeline(["--run-id=orphaned", "foo|o/r|Go|ref"], root)
+        self._seed_active_turn(running)
+        running._acquire_run_lock()
+        assert running._run_lock_fd is not None
+        marker = self.tmp() / "phase-started"
+        child = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text('ready'); time.sleep(60)",
+                str(marker),
+            ],
+            pass_fds=(running._run_lock_fd,),
+        )
+        self.addCleanup(child.kill)
+        deadline = time.monotonic() + 5
+        while not marker.is_file() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(marker.is_file())
+        assert running.run_dir is not None
+        before = resumelib.active_entries(running.run_dir)
+
+        # Model SIGKILL of the dispatcher: its fd closes without LOCK_UN while
+        # the inherited phase/agent lease remains live.
+        running._release_run_lock()
+        contender = pl.Pipeline()
+        self.assertIsNone(contender.parse_args(["--run-id=orphaned"]))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(contender.resolve_run_dir(acquire_lock=True), 1)
+
+        self.assertIn("live phase or agent", err.getvalue())
+        self.assertIn("terminate it manually", err.getvalue())
+        self.assertEqual(resumelib.active_entries(running.run_dir), before)
+
+        child.terminate()
+        child.wait(timeout=5)
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=orphaned"]))
+        self.assertIsNone(resumed.resolve_run_dir(acquire_lock=True))
+        self.addCleanup(resumed._release_run_lock)
 
     def test_run_lock_rejects_symlink(self) -> None:
         root = self.tmp()

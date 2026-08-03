@@ -19,13 +19,16 @@ stdlib unittest, collected natively by pytest:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -61,6 +64,7 @@ _VOLATILE = (
     "SPECULA_INVOCATION_ID",
     "SPECULA_MANUAL_RESUME",
     "SPECULA_FRESH_CONTEXT",
+    "SPECULA_RUN_LOCK_FD",
 )
 
 ALL_PHASE_SKIPS = (
@@ -259,6 +263,92 @@ class CliE2E(unittest.TestCase):
         self.assertTrue((wd / "bug-severity.md").is_file())
         self.assertEqual(list((run / ".specula-resume" / "active").glob("*.json")), [])
         self.assertEqual(list((run / ".specula-resume" / "completed").glob("*.json")), [])
+
+    def test_attach_refuses_live_orphan_after_dispatcher_sigkill(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        artifact = work / "artifact"
+        artifact.mkdir()
+        adapter = root / "scripts" / "launch" / "adapters" / "fake.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "resume=\n"
+            'for arg do case "$arg" in --resume-state=*) resume=${arg#*=} ;; esac; done\n'
+            'printf "orphan-session\\n" > "$resume"\n'
+            'printf "%s\\n" "$$" > "$0.pid"\n'
+            'printf "%s\\n" "$PPID" > "$0.phase-pid"\n'
+            'printf x >> "$0.started"\n'
+            "trap 'exit 143' TERM INT HUP\n"
+            "while :; do sleep 1; done\n"
+        )
+        adapter.chmod(0o755)
+        env = {key: value for key, value in os.environ.items() if key not in _VOLATILE}
+        env["HOME"] = str(work)
+        run_id = "orphaned-agent"
+        first = subprocess.Popen(
+            [
+                sys.executable,
+                str(root / "src" / "specula" / "cli.py"),
+                "run",
+                f"--run-id={run_id}",
+                "--agent=fake",
+                f"--artifact={artifact}",
+                "--skip-specgen",
+                "--skip-harness",
+                "--skip-validate",
+                "--skip-confirmation",
+                "--skip-classification",
+                "--skip-repair-loop",
+                "footest|owner/repo|Go|reference",
+            ],
+            cwd=work,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        agent_pid_file = Path(f"{adapter}.pid")
+
+        def cleanup() -> None:
+            with contextlib.suppress(OSError, ValueError):
+                os.kill(first.pid, signal.SIGKILL)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                first.wait(timeout=2)
+            if agent_pid_file.is_file():
+                with contextlib.suppress(OSError, ValueError):
+                    os.killpg(int(agent_pid_file.read_text()), signal.SIGKILL)
+            if first.stdout is not None:
+                first.stdout.close()
+
+        self.addCleanup(cleanup)
+        run = root / "runs" / run_id
+        active_dir = run / ".specula-resume" / "active"
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if Path(f"{adapter}.started").is_file() and list(active_dir.glob("*.json")):
+                break
+            if first.poll() is not None:
+                output = first.stdout.read() if first.stdout is not None else ""
+                self.fail(f"dispatcher exited before the agent started: {output}")
+            time.sleep(0.02)
+        self.assertTrue(Path(f"{adapter}.started").is_file())
+        active_paths = list(active_dir.glob("*.json"))
+        self.assertEqual(len(active_paths), 1)
+        before = active_paths[0].read_bytes()
+
+        os.kill(first.pid, signal.SIGKILL)
+        first.wait(timeout=5)
+        phase_pid = int(Path(f"{adapter}.phase-pid").read_text())
+        os.kill(phase_pid, signal.SIGKILL)
+        os.kill(int(agent_pid_file.read_text()), 0)
+        attached = self.run_cli(root, ["run", f"--run-id={run_id}"], cwd=work)
+
+        self.assertNotEqual(attached.returncode, 0, attached.stdout + attached.stderr)
+        self.assertIn("live phase or agent", attached.stderr)
+        self.assertIn("terminate it manually", attached.stderr)
+        self.assertEqual(Path(f"{adapter}.started").read_text(), "x")
+        self.assertEqual(active_paths[0].read_bytes(), before)
 
     def test_noop_run_writes_two_level_human_indexes(self) -> None:
         root = self.specroot()

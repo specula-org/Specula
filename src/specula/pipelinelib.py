@@ -857,10 +857,37 @@ class Pipeline:
             self.artifact = artifact
             self._artifact_given = True
 
-    def _position_at_manual_resume_phase(self) -> None:
+    def _position_at_manual_resume_phase(self, active: list[dict[str, Any]] | None = None) -> None:
         phase = self._manual_resume_phase
         if phase is None:
             return
+        controlling_skip: tuple[str, str] | None = {
+            "code_analysis": ("skip_analysis", "--skip-analysis"),
+            "spec_generation": ("skip_specgen", "--skip-specgen"),
+            "harness_generation": ("skip_harness", "--skip-harness"),
+            "bug_confirmation": ("skip_confirmation", "--skip-confirmation"),
+            "bug_classification": ("skip_classification", "--skip-classification"),
+        }.get(phase)
+        if phase == "spec_validation":
+            prompt_names = {
+                Path(str(entry.get("prompt_file"))).name
+                for entry in active or []
+                if isinstance(entry.get("prompt_file"), str)
+            }
+            if len(prompt_names) > 1:
+                raise resumelib.ResumeError(
+                    "unfinished validation conversations mix ordinary and repair inputs; "
+                    "pass --fresh-context to start over"
+                )
+            repair = prompt_names == {".spec-repair-prompt.md"}
+            conflicts = (
+                (("skip_confirmation", "--skip-confirmation"), ("skip_repair_loop", "--skip-repair-loop"))
+                if repair
+                else (("skip_validation", "--skip-validate"),)
+            )
+            controlling_skip = next((item for item in conflicts if getattr(self, item[0])), None)
+        if controlling_skip is not None and getattr(self, controlling_skip[0]):
+            raise resumelib.ResumeError(f"cannot use {controlling_skip[1]} while resuming unfinished phase {phase!r}")
         preceding = {
             "code_analysis": (),
             "review:analysis": ("skip_analysis",),
@@ -903,16 +930,24 @@ class Pipeline:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             os.close(fd)
-            raise resumelib.ResumeError(f"run {self.run_id} is already active") from exc
+            raise resumelib.ResumeError(
+                f"run {self.run_id} still has a live phase or agent; "
+                "wait for it to finish or terminate it manually before attaching"
+            ) from exc
         self._run_lock_fd = fd
+        os.environ[resumelib.RUN_LOCK_FD_ENV] = str(fd)
 
     def _release_run_lock(self) -> None:
         if self._run_lock_fd is None:
             return
+        fd = self._run_lock_fd
+        if os.environ.get(resumelib.RUN_LOCK_FD_ENV) == str(fd):
+            os.environ.pop(resumelib.RUN_LOCK_FD_ENV, None)
         with contextlib.suppress(OSError):
-            fcntl.flock(self._run_lock_fd, fcntl.LOCK_UN)
-        with contextlib.suppress(OSError):
-            os.close(self._run_lock_fd)
+            # Do not explicitly unlock: phase/agent children inherit this open
+            # file description, so the kernel releases the lease only after the
+            # last live owner exits.
+            os.close(fd)
         self._run_lock_fd = None
 
     def resolve_run_dir(self, *, acquire_lock: bool = False) -> int | None:
@@ -1031,7 +1066,7 @@ class Pipeline:
                             "unfinished conversations span multiple phases; pass --fresh-context to start over"
                         )
                     self._manual_resume_phase = phases.pop()
-                    self._position_at_manual_resume_phase()
+                    self._position_at_manual_resume_phase(active)
                     if not self.keep_original:
                         launch_cwds = {entry.get("cwd") for entry in active if entry.get("kind") in {"phase", "review"}}
                         if launch_cwds:
@@ -2401,6 +2436,12 @@ class Pipeline:
             env[PIPELINE_LOG_ENV] = str(self.pipeline_log_path)
         if self._manual_launch_cwd is not None:
             env["PWD"] = str(self._manual_launch_cwd)
+        pass_fds: tuple[int, ...] = ()
+        if self._run_lock_fd is not None:
+            env[resumelib.RUN_LOCK_FD_ENV] = str(self._run_lock_fd)
+            pass_fds = (self._run_lock_fd,)
+        else:
+            env.pop(resumelib.RUN_LOCK_FD_ENV, None)
 
         proc: subprocess.Popen[bytes] | None = None
         received: list[tuple[int, float]] = []
@@ -2425,6 +2466,7 @@ class Pipeline:
                 env=env,
                 cwd=self._manual_launch_cwd,
                 start_new_session=True,
+                pass_fds=pass_fds,
             )
             if received:
                 with contextlib.suppress(ProcessLookupError):
@@ -3183,6 +3225,17 @@ class Pipeline:
             self.run_phase4b_classification()
         else:
             log("Skipping Phase 4b (--skip-classification)")
+
+        if not self.dry_run and self.run_dir is not None:
+            try:
+                active = resumelib.active_entries(self.run_dir)
+            except resumelib.ResumeError as exc:
+                log(f"ERROR: cannot verify completed conversation state: {exc}")
+                return 1
+            if active:
+                phases = ", ".join(sorted({str(entry.get("phase")) for entry in active}))
+                log(f"ERROR: pipeline cannot complete with unfinished conversation(s) in {phases}")
+                return 1
 
         self.generate_summary()
         self.refresh_output_indexes()

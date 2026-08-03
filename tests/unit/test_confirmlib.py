@@ -10,6 +10,7 @@ partial-delivery return codes, and idempotent retry.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -789,6 +790,146 @@ class TestDriver(ConfirmCase):
         self.assertEqual(resumed_cfg._finding_leases, {})
         self.assertEqual(resumed_cfg._policy_states, {})
         self.assertFalse(leased_repo.exists())
+
+    def test_manual_resume_keeps_no_correction_decision_and_exact_interrupted_b(self) -> None:
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        root = Path(self.tmp)
+        valid_draft = root / "valid-repair-draft.md"
+        valid_draft.write_text(TestMergeRR.AGENT_BODY)
+        adapter = root / "resume-pending-debate.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "prompt= log= resume=\n"
+            'for arg do case "$arg" in\n'
+            "  --prompt-file=*) prompt=${arg#*=} ;;\n"
+            "  --log=*) log=${arg#*=} ;;\n"
+            "  --resume-state=*) resume=${arg#*=} ;;\n"
+            "esac; done\n"
+            'stem=$(basename "$prompt")\n'
+            'printf "%s\\n" "$stem" >> "$CAPTURE/calls"\n'
+            'fdir="$SPECULA_WORK_DIR/confirmation/MC-1"\n'
+            'case "$stem" in\n'
+            '  turn01_A.prompt.md) printf \'%s\\n\' "$REPRODUCED" > "$log" ;;\n'
+            '  turn02_B.prompt.md) printf \'%s\\n\' "$FALSE_POSITIVE" > "$log" ;;\n'
+            "  turn03_A.prompt.md)\n"
+            '    cp "$VALID_DRAFT" "$fdir/repair-request.body.md"\n'
+            '    printf \'%s\\n\' "$PENDING_REPAIR" > "$log"\n'
+            "    ;;\n"
+            "  turn04_B.prompt.md)\n"
+            '    printf x >> "$CAPTURE/b-count"\n'
+            '    attempt=$(wc -c < "$CAPTURE/b-count")\n'
+            '    pwd >> "$CAPTURE/b-cwds"\n'
+            '    if [ "$attempt" -eq 1 ]; then\n'
+            '      printf "damaged by interrupted B\\n" > "$fdir/repair-request.body.md"\n'
+            "      printf retained > cwd-marker\n"
+            '      printf exact-b4-session > "$resume"\n'
+            '      printf "rate limited\\n" > "$log"\n'
+            "      exit 75\n"
+            "    fi\n"
+            '    test "$(cat "$resume")" = exact-b4-session\n'
+            "    test -f cwd-marker\n"
+            '    cp "$prompt" "$CAPTURE/b-resume-prompt"\n'
+            '    cp "$VALID_DRAFT" "$fdir/repair-request.body.md"\n'
+            '    printf passed > "$CAPTURE/resume-check"\n'
+            '    printf \'%s\\n\' "$PENDING_REPAIR" > "$log"\n'
+            "    ;;\n"
+            "  *) exit 97 ;;\n"
+            "esac\n"
+        )
+        adapter.chmod(0o755)
+        resumelib.initialize_run(root)
+        resumelib.save_configuration(root, {"agent": adapter.stem})
+        cfg = C.ConfirmConfig(
+            name="T",
+            ws=ws,
+            adapter=adapter,
+            worktree=False,
+            max_parallel=1,
+            debate=True,
+            rounds=2,
+        )
+        with mock.patch.dict(
+            os.environ,
+            {
+                "CAPTURE": str(root),
+                "VALID_DRAFT": str(valid_draft),
+                "REPRODUCED": _response("REPRODUCED"),
+                "FALSE_POSITIVE": _response("FALSE POSITIVE"),
+                "PENDING_REPAIR": _response("PENDING REPAIR"),
+                resumelib.INVOCATION_ENV: "invocation-1",
+            },
+            clear=False,
+        ):
+            os.environ.pop(resumelib.MANUAL_ENV, None)
+            os.environ.pop(resumelib.FRESH_ENV, None)
+            self.assertEqual(C.run_parallel_confirmation(cfg), 75)
+
+            fdir = ws.work_dir("T") / "confirmation" / "MC-1"
+            lease_checkpoint = fdir / ".resume-lease.json"
+            lease_doc = json.loads(lease_checkpoint.read_text())
+            expected_digest = hashlib.sha256(TestMergeRR.AGENT_BODY.encode()).hexdigest()
+            self.assertEqual(
+                lease_doc["no_correction_drafts"],
+                [{"previous_turn": 3, "previous_role": "A", "draft_digest": expected_digest}],
+            )
+            self.assertEqual(lease_doc["repair_turns"], [])
+            completed = {(item["turn"], item["role"]) for item in lease_doc["completed_turns"]}
+            self.assertEqual(completed, {(1, "A"), (2, "B"), (3, "A")})
+            active = {
+                (int(entry["logical"][-2]), str(entry["logical"][-1])) for entry in resumelib.active_entries(root)
+            }
+            self.assertEqual(active - completed, {(4, "B")})
+
+            finding = C.load_findings(cfg)[0]
+            malformed = json.loads(lease_checkpoint.read_text())
+            malformed["no_correction_drafts"][0]["draft_digest"] = "bad"
+            lease_checkpoint.write_text(json.dumps(malformed))
+            with self.assertRaisesRegex(C.ConfirmationFailed, "invalid no-correction draft checkpoint"):
+                C._load_lease(cfg, finding)
+            malformed = json.loads(json.dumps(lease_doc))
+            malformed["no_correction_drafts"][0].update({"previous_turn": 2, "previous_role": "B"})
+            lease_checkpoint.write_text(json.dumps(malformed))
+            with self.assertRaisesRegex(C.ConfirmationFailed, "not bound to a completed PENDING REPAIR turn"):
+                C._load_lease(cfg, finding)
+            lease_checkpoint.write_text(json.dumps(lease_doc))
+
+            self.assertEqual(cfg._finding_leases, {})
+            os.environ[resumelib.INVOCATION_ENV] = "invocation-2"
+            os.environ[resumelib.MANUAL_ENV] = "1"
+            resumed_cfg = C.ConfirmConfig(
+                name="T",
+                ws=ws,
+                adapter=adapter,
+                worktree=False,
+                max_parallel=1,
+                debate=True,
+                rounds=2,
+            )
+            self.assertEqual(C.run_parallel_confirmation(resumed_cfg), 0)
+
+        self.assertEqual(
+            (root / "calls").read_text().splitlines(),
+            [
+                "turn01_A.prompt.md",
+                "turn02_B.prompt.md",
+                "turn03_A.prompt.md",
+                "turn04_B.prompt.md",
+                "turn04_B.prompt.md",
+            ],
+        )
+        self.assertEqual((root / "b-count").read_text(), "xx")
+        self.assertEqual(len(set((root / "b-cwds").read_text().splitlines())), 1)
+        self.assertEqual((root / "b-resume-prompt").read_text(), PhaseLib._MANUAL_SESSION_RESUME_PROMPT)
+        self.assertEqual((root / "resume-check").read_text(), "passed")
+        self.assertEqual(
+            (ws.work_dir("T") / "confirmation" / "MC-1" / "repair-request.body.md").read_text(),
+            TestMergeRR.AGENT_BODY,
+        )
+        self.assertEqual(resumelib.active_entries(root), [])
+        self.assertFalse(lease_checkpoint.exists())
+        self.assertEqual(resumed_cfg._finding_leases, {})
+        self.assertEqual(resumed_cfg._policy_states, {})
 
     def test_repair_correction_keeps_later_turn_number_across_rate_replay(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])

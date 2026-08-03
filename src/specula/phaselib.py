@@ -851,7 +851,7 @@ class Phase:
                 for logical in completed_calls:
                     # Reconcile the safe write-before-unlink crash window in
                     # mark_completed(). The accepted call must not run again.
-                    resumelib.complete_turn(logical)
+                    resumelib.reconcile_completed(logical)
             else:
                 resumelib.clear_completed(phase_prefix)
                 completed_calls = set()
@@ -1436,6 +1436,7 @@ class Phase:
                 env=env,
                 cwd=launch_cwd,
                 start_new_session=True,
+                pass_fds=resumelib.inherited_run_lock_fds(),
             )
             launched = progress.RunningAgent(
                 name=name,
@@ -1694,7 +1695,12 @@ def run_agent_blocking(
                 with contextlib.suppress(OSError):
                     last_message_file.unlink()
 
-            rc = subprocess.run(cmd, env=env, cwd=run_cwd).returncode
+            rc = subprocess.run(
+                cmd,
+                env=env,
+                cwd=run_cwd,
+                pass_fds=resumelib.inherited_run_lock_fds(),
+            ).returncode
             persist_cursor()
             # Codex stdout is a complete CLI transcript, not the assistant's final
             # response. The adapter keeps that transcript in `log_file` for
@@ -2907,7 +2913,7 @@ Output:
             if resumelib.manual_mode():
                 completed_calls = resumelib.completed_logicals(completed_prefix)
                 for logical in completed_calls:
-                    resumelib.complete_turn(logical)
+                    resumelib.reconcile_completed(logical)
             else:
                 resumelib.clear_completed(completed_prefix)
                 completed_calls = set()
@@ -3196,6 +3202,7 @@ Output:
                 env=env,
                 cwd=launch_cwd,
                 start_new_session=True,
+                pass_fds=resumelib.inherited_run_lock_fds(),
             )
             running = progress.RunningAgent(
                 name=name,

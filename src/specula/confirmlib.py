@@ -201,11 +201,12 @@ class _FindingLease:
     completed_turns: dict[tuple[int, str], _CompletedTurn] = field(default_factory=dict)
     turn_cwds: dict[tuple[int, str], Path] = field(default_factory=dict)
     repair_turns: dict[tuple[int, str], _RepairTurn] = field(default_factory=dict)
+    no_correction_drafts: dict[tuple[int, str], str] = field(default_factory=dict)
     _run_lock: Any = field(default_factory=threading.RLock, repr=False, compare=False)
     _closed: bool = False
 
 
-_LEASE_VERSION = 1
+_LEASE_VERSION = 2
 
 
 def _lease_file(f: Finding) -> Path:
@@ -286,6 +287,14 @@ def _persist_lease(cfg: ConfirmConfig, f: Finding, lease: _FindingLease) -> None
             for (turn, role), path in sorted(lease.turn_cwds.items())
         ],
         "repair_turns": repair_turns,
+        "no_correction_drafts": [
+            {
+                "previous_turn": previous_turn,
+                "previous_role": previous_role,
+                "draft_digest": draft_digest,
+            }
+            for (previous_turn, previous_role), draft_digest in sorted(lease.no_correction_drafts.items())
+        ],
     }
     _lease_atomic_write(path, value)
     lease.state_path = path
@@ -363,7 +372,13 @@ def _load_lease(cfg: ConfirmConfig, f: Finding) -> _FindingLease:
     raw_cwds = value.get("turn_cwds", [])
     raw_completed = value.get("completed_turns", [])
     raw_repairs = value.get("repair_turns", [])
-    if not isinstance(raw_cwds, list) or not isinstance(raw_completed, list) or not isinstance(raw_repairs, list):
+    raw_no_corrections = value.get("no_correction_drafts")
+    if (
+        not isinstance(raw_cwds, list)
+        or not isinstance(raw_completed, list)
+        or not isinstance(raw_repairs, list)
+        or not isinstance(raw_no_corrections, list)
+    ):
         raise ConfirmationFailed(f"{f.id}: invalid Phase 4 resume checkpoint lists")
     for item in raw_cwds:
         if not isinstance(item, dict):
@@ -434,6 +449,30 @@ def _load_lease(cfg: ConfirmConfig, f: Finding) -> _FindingLease:
             result_path,
             digest,
         )
+    for item in raw_no_corrections:
+        if not isinstance(item, dict):
+            raise ConfirmationFailed(f"{f.id}: invalid no-correction draft checkpoint")
+        previous_turn = item.get("previous_turn")
+        previous_role = item.get("previous_role")
+        draft_digest = item.get("draft_digest")
+        if (
+            not isinstance(previous_turn, int)
+            or isinstance(previous_turn, bool)
+            or previous_turn < 1
+            or previous_role not in {"A", "B"}
+            or not isinstance(draft_digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", draft_digest) is None
+        ):
+            raise ConfirmationFailed(f"{f.id}: invalid no-correction draft checkpoint")
+        key = (previous_turn, previous_role)
+        completed = lease.completed_turns.get(key)
+        if key in lease.no_correction_drafts:
+            raise ConfirmationFailed(f"{f.id}: duplicate no-correction draft checkpoint")
+        if completed is None or completed.verdict != "PENDING REPAIR":
+            raise ConfirmationFailed(
+                f"{f.id}: no-correction draft checkpoint is not bound to a completed PENDING REPAIR turn"
+            )
+        lease.no_correction_drafts[key] = draft_digest
     for item in raw_repairs:
         if not isinstance(item, dict):
             raise ConfirmationFailed(f"{f.id}: invalid repair-turn checkpoint")
@@ -460,7 +499,7 @@ def _load_lease(cfg: ConfirmConfig, f: Finding) -> _FindingLease:
         ):
             raise ConfirmationFailed(f"{f.id}: invalid repair-turn checkpoint")
         repair_key = (previous_turn, previous_role)
-        if repair_key in lease.repair_turns:
+        if repair_key in lease.repair_turns or repair_key in lease.no_correction_drafts:
             raise ConfirmationFailed(f"{f.id}: duplicate repair-turn checkpoint")
         lease.repair_turns[repair_key] = _RepairTurn(
             turn,
@@ -612,6 +651,7 @@ class ConfirmConfig:
             lease.completed_turns.clear()
             lease.turn_cwds.clear()
             lease.repair_turns.clear()
+            lease.no_correction_drafts.clear()
             try:
                 lease.cleanup()
             except BaseException as exc:
@@ -1235,14 +1275,16 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
             turn = 1
 
             def prepare_pending(previous_turn: int, previous_role: str = "A") -> int:
-                """Warn about a draft problem and make at most one correction turn.
+                """Reuse the durable draft decision or make at most one correction turn.
 
-                The lease records a correction's logical turn before invoking it.
-                Therefore a later B rate-limit replay cannot renumber B merely
-                because the already-completed correction left a valid draft.
+                Both correction and no-correction decisions are recorded before
+                the next turn starts. A later rate-limit replay therefore cannot
+                renumber an already-started B turn from mutable draft contents.
                 """
                 repair_key = (previous_turn, previous_role)
                 repair = lease.repair_turns.get(repair_key)
+                if repair_key in lease.no_correction_drafts:
+                    return previous_turn
                 original = repair.original if repair is not None else None
                 if repair is None:
                     problem: Exception | str | None = None
@@ -1258,6 +1300,9 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                                 original = draft_path.read_text()
 
                     if problem is None:
+                        assert original is not None
+                        lease.no_correction_drafts[repair_key] = hashlib.sha256(original.encode()).hexdigest()
+                        _persist_lease(cfg, f, lease)
                         return previous_turn
 
                     warning = str(problem)
@@ -1266,6 +1311,8 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                         if original is None:
                             assert isinstance(problem, Exception)
                             raise problem
+                        lease.no_correction_drafts[repair_key] = hashlib.sha256(original.encode()).hexdigest()
+                        _persist_lease(cfg, f, lease)
                         return previous_turn
 
                     lease.repair_retry_used = True
@@ -3136,7 +3183,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
         raise ConsolidateFailed(f"invalid model-checking input for {cfg.name}: {source_errs[0]}")
     if out.is_file() and _candidate_cache_valid(cfg, out, expected_mc_ids, expected_scenarios):
         cfg.clear_policy_states(("consolidate",))
-        resumelib.complete_turn(resume_logical)
+        resumelib.complete_turn(resume_logical, allow_previous_owner=resumelib.manual_mode())
         _log(f"  {cfg.name}: candidates.json present and valid — skipping consolidate")
         return
     bug_report = spec_dir / "bug-report.md"
@@ -3209,7 +3256,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
             out.unlink()  # drop the invalid file so load_findings does not choke on it
         raise ConsolidateFailed(f"no valid candidates.json for {cfg.name}: {errs[0]}")
     _write_candidate_cache(cfg, out)
-    resumelib.complete_turn(resume_logical)
+    resumelib.complete_turn(resume_logical, allow_previous_owner=resumelib.manual_mode())
     doc = json.loads(out.read_text())
     cand = doc.get("findings", [])
     n_merged = sum(1 for c in cand if c.get("dedup_note"))

@@ -33,6 +33,7 @@ SCHEMA_VERSION = 1
 INVOCATION_ENV = "SPECULA_INVOCATION_ID"
 MANUAL_ENV = "SPECULA_MANUAL_RESUME"
 FRESH_ENV = "SPECULA_FRESH_CONTEXT"
+RUN_LOCK_FD_ENV = "SPECULA_RUN_LOCK_FD"
 
 
 class ResumeError(RuntimeError):
@@ -119,6 +120,38 @@ def _atomic_write(path: Path, data: dict[str, Any]) -> None:
     finally:
         with contextlib.suppress(FileNotFoundError):
             tmp.unlink()
+
+
+def _clear_native_state(path: Path) -> None:
+    """Remove a previous logical turn's provider session before publication."""
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise ResumeError(f"cannot clear stale native session state {path}: {exc}") from exc
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise ResumeError(f"cannot verify cleared native session state {path}: {exc}") from exc
+    raise ResumeError(f"stale native session state still exists after removal: {path}")
+
+
+def inherited_run_lock_fds() -> tuple[int, ...]:
+    """Return the validated run-lock lease inherited from the dispatcher."""
+    raw = os.environ.get(RUN_LOCK_FD_ENV)
+    if raw is None:
+        return ()
+    try:
+        fd = int(raw)
+        info = os.fstat(fd)
+    except (OSError, ValueError) as exc:
+        raise ResumeError("inherited Specula run lock is unavailable") from exc
+    if fd < 3 or not stat.S_ISREG(info.st_mode):
+        raise ResumeError("inherited Specula run lock is invalid")
+    return (fd,)
 
 
 def _read_object(path: Path, label: str) -> dict[str, Any]:
@@ -298,6 +331,14 @@ def _claim(entry: dict[str, Any], *, attempt: int, manual: bool, resumable: bool
     )
 
 
+def _require_owner(entry: dict[str, Any], path: Path, action: str) -> None:
+    invocation = os.environ.get(INVOCATION_ENV)
+    if entry.get("owner") != invocation:
+        raise ResumeError(
+            f"cannot {action} conversation {tuple(entry.get('logical', []))!r}: checkpoint ownership changed in {path}"
+        )
+
+
 def _entries(directory: Path, label: str) -> list[dict[str, Any]]:
     _require_directory(directory, f"{label} directory")
     entries: list[dict[str, Any]] = []
@@ -362,7 +403,7 @@ def ensure_phase(phase: str) -> None:
         waiting = ", ".join(sorted(phases))
         raise ResumeError(
             f"this run has unfinished conversation(s) in {waiting}; "
-            "use the original --skip-* flags to reach that phase, or pass --fresh-context"
+            "resume that recorded phase, or pass --fresh-context to start over"
         )
 
 
@@ -445,6 +486,12 @@ def prepare_turn(
                 raise ResumeError(
                     f"native session state path already belongs to unfinished conversation {entry['logical']!r}"
                 )
+        # A native state file outlives the adapter call that created it.  For a
+        # new logical turn, remove that stale binding before making the active
+        # checkpoint visible.  A crash can now leave neither record, or an
+        # active record with no session yet, but never a new record that points
+        # at an old completed provider session.
+        _clear_native_state(resume_state)
         now = time.time_ns()
         entry = {
             "version": SCHEMA_VERSION,
@@ -478,25 +525,62 @@ def update_turn(logical: tuple[str, ...], **updates: Any) -> None:
         entry = _read_object(path, "active conversation")
         if entry.get("logical") != list(logical):
             raise ResumeError(f"active conversation identity mismatch in {path}")
+        _validate_entry(entry, path, "active conversation")
+        _require_owner(entry, path, "update")
         entry.update(updates)
         entry["updated_ns"] = time.time_ns()
         _validate_entry(entry, path, "active conversation")
         _atomic_write(path, entry)
 
 
-def complete_turn(logical: tuple[str, ...]) -> None:
+def complete_turn(logical: tuple[str, ...], *, allow_previous_owner: bool = False) -> None:
     if not enabled():
         return
     run_dir = _run_dir()
     assert run_dir is not None
     path = _entry_path(run_dir, logical)
     with _lock:
+        if not path.exists() and not path.is_symlink():
+            return
+        entry = _read_object(path, "active conversation")
+        _validate_entry(entry, path, "active conversation")
+        if entry.get("logical") != list(logical):
+            raise ResumeError(f"active conversation identity mismatch in {path}")
+        if not (allow_previous_owner and manual_mode()):
+            _require_owner(entry, path, "complete")
         try:
             path.unlink()
-        except FileNotFoundError:
-            return
         except OSError as exc:
             raise ResumeError(f"cannot complete conversation {logical!r}: {exc}") from exc
+
+
+def reconcile_completed(logical: tuple[str, ...]) -> None:
+    """Close mark_completed's safe write-before-unlink crash window."""
+    if not enabled():
+        return
+    run_dir = _run_dir()
+    assert run_dir is not None
+    active_path = _entry_path(run_dir, logical)
+    done_path = completed_dir(run_dir) / active_path.name
+    with _lock:
+        done = _read_object(done_path, "completed call")
+        _validate_entry(done, done_path, "completed call")
+        if done.get("logical") != list(logical):
+            raise ResumeError(f"completed call identity mismatch in {done_path}")
+        if not active_path.exists() and not active_path.is_symlink():
+            return
+        active = _read_object(active_path, "active conversation")
+        _validate_entry(active, active_path, "active conversation")
+        if active.get("logical") != list(logical):
+            raise ResumeError(f"active conversation identity mismatch in {active_path}")
+        comparable_active = {key: value for key, value in active.items() if key != "updated_ns"}
+        comparable_done = {key: value for key, value in done.items() if key != "updated_ns"}
+        if comparable_active != comparable_done or done["updated_ns"] < active["updated_ns"]:
+            raise ResumeError(f"completed call does not match active conversation {logical!r}")
+        try:
+            active_path.unlink()
+        except OSError as exc:
+            raise ResumeError(f"cannot reconcile completed call {logical!r}: {exc}") from exc
 
 
 def mark_completed(logical: tuple[str, ...]) -> None:
@@ -513,6 +597,7 @@ def mark_completed(logical: tuple[str, ...]) -> None:
             _validate_entry(entry, active_path, "active conversation")
             if entry["logical"] != list(logical):
                 raise ResumeError(f"active conversation identity mismatch in {active_path}")
+            _require_owner(entry, active_path, "complete")
             entry["updated_ns"] = time.time_ns()
             _atomic_write(done_path, entry)
             try:
@@ -539,11 +624,16 @@ def completed_logicals(prefix: tuple[str, ...] = ()) -> set[tuple[str, ...]]:
 
 
 def clear_completed(prefix: tuple[str, ...] = ()) -> None:
-    for logical in completed_logicals(prefix):
+    for entry in completed_entries():
+        logical = tuple(str(part) for part in entry["logical"])
+        if logical[: len(prefix)] != prefix:
+            continue
         run_dir = _run_dir()
         if run_dir is None:
             return
         path = completed_dir(run_dir) / f"{_logical_id(logical)}.json"
+        if not manual_mode():
+            _require_owner(entry, path, "clear completed")
         try:
             path.unlink()
         except FileNotFoundError:
@@ -556,7 +646,7 @@ def complete_prefix(prefix: tuple[str, ...]) -> None:
     for entry in active_entries():
         logical = tuple(str(part) for part in entry["logical"])
         if logical[: len(prefix)] == prefix:
-            complete_turn(logical)
+            complete_turn(logical, allow_previous_owner=True)
 
 
 def has_prefix(prefix: tuple[str, ...]) -> bool:

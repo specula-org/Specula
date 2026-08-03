@@ -155,7 +155,59 @@ def test_completed_turn_is_not_resumed(tmp_path: Path, monkeypatch: pytest.Monke
     claim = _prepare(files, logical=logical)
 
     assert claim == resumelib.ResumeClaim(attempt=1, manual=False, resumable=False)
+    assert not files.resume_state.exists()
     assert resumelib.active_entries()[0]["owner"] == "invocation-2"
+
+
+def test_new_turn_clears_stale_native_state_before_publishing_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_resume(tmp_path, monkeypatch)
+    files = _turn_files(tmp_path)
+    files.resume_state.write_text("OLD-COMPLETED-SESSION")
+
+    _prepare(files)
+
+    assert not files.resume_state.exists()
+    assert len(resumelib.active_entries()) == 1
+
+
+def test_new_turn_does_not_publish_checkpoint_when_stale_state_cannot_be_cleared(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_resume(tmp_path, monkeypatch)
+    files = _turn_files(tmp_path)
+    files.resume_state.mkdir()
+
+    with pytest.raises(resumelib.ResumeError, match="cannot clear stale native session state"):
+        _prepare(files)
+
+    assert resumelib.active_entries() == []
+
+
+def test_crash_after_native_state_cleanup_leaves_no_misbound_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_resume(tmp_path, monkeypatch)
+    files = _turn_files(tmp_path)
+    files.resume_state.write_text("OLD-COMPLETED-SESSION")
+    original_write = resumelib._atomic_write
+
+    def crash_before_active(path: Path, data: dict[str, object]) -> None:
+        if path.parent == resumelib.active_dir(tmp_path):
+            raise OSError("injected checkpoint publication crash")
+        original_write(path, data)
+
+    monkeypatch.setattr(resumelib, "_atomic_write", crash_before_active)
+
+    with pytest.raises(OSError, match="injected checkpoint publication crash"):
+        _prepare(files)
+
+    assert not files.resume_state.exists()
+    assert resumelib.active_entries() == []
 
 
 @pytest.mark.parametrize("state_kind", ["missing", "directory"])
@@ -166,9 +218,13 @@ def test_manual_resume_fails_closed_for_unusable_native_state(
 ) -> None:
     _enable_resume(tmp_path, monkeypatch)
     files = _turn_files(tmp_path)
+    if state_kind == "missing":
+        files.resume_state.write_text("OLD-COMPLETED-SESSION")
     _prepare(files)
     if state_kind == "directory":
         files.resume_state.mkdir()
+    else:
+        assert not files.resume_state.exists()
     _start_manual_resume(monkeypatch)
 
     with pytest.raises(resumelib.ResumeError, match="native session state|unsafe native session state"):
@@ -191,6 +247,98 @@ def test_manual_resume_fails_closed_for_binding_mismatch(
         _prepare(files, model="model-b")
 
     assert resumelib.active_entries()[0]["owner"] == "invocation-1"
+
+
+@pytest.mark.parametrize("mutation", ["update", "complete", "mark_completed"])
+def test_previous_owner_cannot_mutate_claimed_turn(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    logical = ("phase", "validation", "target")
+    _enable_resume(tmp_path, monkeypatch)
+    files = _turn_files(tmp_path)
+    _prepare(files, logical=logical)
+    files.resume_state.write_text('{"session_id": "session-1"}\n')
+    _start_manual_resume(monkeypatch)
+    _prepare(files, logical=logical)
+    claimed = resumelib.active_entries()[0]
+
+    monkeypatch.setenv(resumelib.INVOCATION_ENV, "invocation-1")
+    with pytest.raises(resumelib.ResumeError, match="checkpoint ownership changed"):
+        if mutation == "update":
+            resumelib.update_turn(logical, invocation_attempt=9)
+        elif mutation == "complete":
+            resumelib.complete_turn(logical)
+        else:
+            resumelib.mark_completed(logical)
+
+    assert resumelib.active_entries()[0] == claimed
+    assert resumelib.completed_entries() == []
+
+
+def test_previous_owner_cannot_clear_new_completed_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logical = ("phase", "validation", "target")
+    _enable_resume(tmp_path, monkeypatch)
+    files = _turn_files(tmp_path)
+    _prepare(files, logical=logical)
+    files.resume_state.write_text('{"session_id": "session-1"}\n')
+    _start_manual_resume(monkeypatch)
+    _prepare(files, logical=logical)
+    resumelib.mark_completed(logical)
+    completed = resumelib.completed_entries()[0]
+
+    monkeypatch.setenv(resumelib.INVOCATION_ENV, "invocation-1")
+    monkeypatch.delenv(resumelib.MANUAL_ENV, raising=False)
+    with pytest.raises(resumelib.ResumeError, match="checkpoint ownership changed"):
+        resumelib.clear_completed()
+
+    assert resumelib.completed_entries()[0] == completed
+
+
+def test_manual_resume_reconciles_completed_write_before_unlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logical = ("phase", "validation", "target")
+    _enable_resume(tmp_path, monkeypatch)
+    files = _turn_files(tmp_path)
+    _prepare(files, logical=logical)
+    active_path = next(resumelib.active_dir(tmp_path).glob("*.json"))
+    entry = json.loads(active_path.read_text())
+    entry["updated_ns"] += 1
+    done_path = resumelib.completed_dir(tmp_path) / active_path.name
+    resumelib._atomic_write(done_path, entry)
+    _start_manual_resume(monkeypatch)
+
+    resumelib.reconcile_completed(logical)
+
+    assert resumelib.active_entries() == []
+    assert resumelib.completed_logicals() == {logical}
+
+
+def test_manual_resume_rejects_mismatched_completed_crash_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logical = ("phase", "validation", "target")
+    _enable_resume(tmp_path, monkeypatch)
+    files = _turn_files(tmp_path)
+    _prepare(files, logical=logical)
+    active_path = next(resumelib.active_dir(tmp_path).glob("*.json"))
+    entry = json.loads(active_path.read_text())
+    entry["attempt"] += 1
+    entry["updated_ns"] += 1
+    resumelib._atomic_write(resumelib.completed_dir(tmp_path) / active_path.name, entry)
+    _start_manual_resume(monkeypatch)
+
+    with pytest.raises(resumelib.ResumeError, match="does not match active conversation"):
+        resumelib.reconcile_completed(logical)
+
+    assert len(resumelib.active_entries()) == 1
 
 
 def test_manual_resume_preserves_phase_and_turn_order(
