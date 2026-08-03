@@ -33,12 +33,22 @@ from typing import Any, TypedDict
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    # The launch shims execute this file by path. Later, bug confirmation
+    # imports ``specula.phaselib`` from worker modules; keep both names bound to
+    # this module so process-local launcher state is shared rather than copied.
+    sys.modules["specula.phaselib"] = sys.modules[__name__]
 import specula.progress as progress
 from specula import quota, resumelib
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC
 from specula.output_index import PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
 from specula.prompts import render
+from specula.resource_summary import (
+    RESOURCE_MANIFEST_ENV,
+    RESOURCE_PHASE_ENV,
+    RESOURCE_ROOT_ENV,
+    ResourceInvocationRecorder,
+)
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 from specula.snapshotlib import (
     SNAPSHOT_MODE_ENV,
@@ -67,6 +77,32 @@ MAX_DEBATE_ROUNDS = 5
 DEFAULT_POLICY_RETRIES = 20
 DEFAULT_TRANSIENT_RESUMES = 20
 TRANSIENT_RESUME_BACKOFF_MAX_SECONDS = 60.0
+
+_RESOURCE_RECORDER: ResourceInvocationRecorder | None = None
+
+
+def _resource_start_target(name: str, work_dir: Path) -> None:
+    if _RESOURCE_RECORDER is not None:
+        with contextlib.suppress(OSError, UnicodeError, ValueError):
+            _RESOURCE_RECORDER.start_target(name, work_dir)
+
+
+def _resource_note_agent(work_dir: Path, log_file: Path) -> None:
+    if _RESOURCE_RECORDER is not None:
+        with contextlib.suppress(OSError, UnicodeError, ValueError):
+            _RESOURCE_RECORDER.note_agent(work_dir, log_file.with_suffix(".usage.json"))
+
+
+def _resource_finish_target(name: str, succeeded: bool) -> None:
+    if _RESOURCE_RECORDER is not None:
+        with contextlib.suppress(OSError, UnicodeError, ValueError):
+            _RESOURCE_RECORDER.finish_target(name, succeeded)
+
+
+def _resource_fail_target(name: str) -> None:
+    if _RESOURCE_RECORDER is not None:
+        with contextlib.suppress(OSError, UnicodeError, ValueError):
+            _RESOURCE_RECORDER.fail_target(name)
 
 
 @dataclass
@@ -952,6 +988,7 @@ class Phase:
                             break
                         request = pending.pop(ready_index)
                         name = self.target_name(request.target)
+                        _resource_start_target(name, ws.work_dir(name))
                         prompt = self.build_prompt(ws, request.target)
                         self._launch(
                             ws,
@@ -990,6 +1027,7 @@ class Phase:
                         _refresh_target_indexes(ws, [completed_agent.name])
                         if rc == 0:
                             successful_names.add(completed_agent.name)
+                            _resource_finish_target(completed_agent.name, True)
                             continue
                         if rc == POLICY_BLOCKED_RC:
                             if completed_agent.policy_attempt < self._policy_retries:
@@ -1012,6 +1050,7 @@ class Phase:
                                 )
                             else:
                                 failures.append((completed_agent.name, rc))
+                                _resource_finish_target(completed_agent.name, False)
                             continue
                         if rc == TRANSIENT_FAILURE_RC:
                             if completed_agent.transient_attempt < self._transient_resumes:
@@ -1041,6 +1080,7 @@ class Phase:
                                 )
                             else:
                                 failures.append((completed_agent.name, rc))
+                                _resource_finish_target(completed_agent.name, False)
                             continue
                         if rc == quota.RATE_LIMIT_RC:
                             if self._reactive_rate_limit_enabled() and completed_agent.attempt <= retry_limit:
@@ -1057,16 +1097,19 @@ class Phase:
                                 pause_for_rate_limit = True
                             else:
                                 failures.append((completed_agent.name, rc))
+                                _resource_finish_target(completed_agent.name, False)
                                 stop_launching = True
                         else:
                             failures.append((completed_agent.name, rc))
+                            _resource_finish_target(completed_agent.name, False)
 
                     if pause_for_rate_limit and any(rc != quota.RATE_LIMIT_RC for _, rc in failures):
                         # A permanent failure wins over 75, but permanent failures
                         # alone do not suppress independent batch targets.
-                        failures.extend(
-                            (self.target_name(request.target), quota.RATE_LIMIT_RC) for request in rate_limited
-                        )
+                        for request in rate_limited:
+                            name = self.target_name(request.target)
+                            failures.append((name, quota.RATE_LIMIT_RC))
+                            _resource_finish_target(name, False)
                         stop_launching = True
 
                     if stop_launching:
@@ -1128,6 +1171,8 @@ class Phase:
             [name for name in names if name in successful_names and name not in invalid_names],
             dry_run=dry_run,
         )
+        for name in {name for name, _ in integrity_failures + finalized + handoff_failures}:
+            _resource_fail_target(name)
 
         invalid_names.update(name for name, _ in handoff_failures)
         if not dry_run:
@@ -1377,6 +1422,8 @@ class Phase:
         # hook-capable adapters arm the completion gate. Per-launch env copy,
         # not os.environ: targets differ under --max-parallel.
         env = os.environ.copy()
+        for key in (RESOURCE_MANIFEST_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
+            env.pop(key, None)
         env["SPECULA_PHASE"] = self.key
         env["SPECULA_WORK_DIR"] = str(ws.work_dir(name))
         env["SPECULA_ROOT"] = str(SPECULA_ROOT)
@@ -1438,6 +1485,7 @@ class Phase:
                 start_new_session=True,
                 pass_fds=resumelib.inherited_run_lock_fds(),
             )
+            _resource_note_agent(work_dir, files["log"])
             launched = progress.RunningAgent(
                 name=name,
                 proc=proc,
@@ -1592,6 +1640,8 @@ def run_agent_blocking(
         log_file.with_suffix(".usage.json"),
     )
     env = os.environ.copy()
+    for key in (RESOURCE_MANIFEST_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
+        env.pop(key, None)
     env["SPECULA_PHASE"] = phase_key if stop_gate else f"{phase_key}_turn"
     env["SPECULA_WORK_DIR"] = str(work_dir)
     env["SPECULA_STOP_GATE_WORK_DIR"] = str(gate_dir)
@@ -1695,6 +1745,7 @@ def run_agent_blocking(
                 with contextlib.suppress(OSError):
                     last_message_file.unlink()
 
+            _resource_note_agent(work_dir, log_file)
             rc = subprocess.run(
                 cmd,
                 env=env,
@@ -2542,6 +2593,7 @@ Prerequisites:
         successful_names: list[str] = []
         retry_limit = self._rate_limit_retries()
         for name in names:
+            _resource_start_target(name, ws.work_dir(name))
             if not dry_run:
                 print(f"  Monitor: tail -f {ws.work_dir(name)}/bug-confirmation.log")
             cfg = ConfirmConfig(
@@ -2591,12 +2643,16 @@ Prerequisites:
                     if not dry_run:
                         _refresh_target_indexes(ws, [name])
             if code != 0:
+                _resource_finish_target(name, False)
                 failures.append((name, code))
                 if code == quota.RATE_LIMIT_RC:
                     break
             else:
+                _resource_finish_target(name, True)
                 successful_names.append(name)
         handoff_failures = self.check_handoff(ws, successful_names, dry_run=dry_run)
+        for name, _ in handoff_failures:
+            _resource_fail_target(name)
         self.summarize(ws, names)
         if not dry_run:
             self._acceptance(ws, names)
@@ -2949,6 +3005,7 @@ Output:
             for name in names:
                 if name in accepted_names:
                     continue
+                _resource_start_target(name, ws.work_dir(name))
                 cursor = recovery_cursors.get(name)
                 request = (
                     _LaunchRequest(
@@ -3027,8 +3084,10 @@ Output:
                         )
                         continue
                     if rc != 0:
+                        _resource_finish_target(name, False)
                         return self._failure_code([(name, rc)])
                     resumelib.mark_completed(("review", phase, name))
+                    _resource_finish_target(name, True)
                     break
 
         print()
@@ -3155,6 +3214,8 @@ Output:
         with contextlib.suppress(OSError):
             activity_log.unlink()
         env = os.environ.copy()
+        for key in (RESOURCE_MANIFEST_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
+            env.pop(key, None)
         env["SPECULA_WORK_DIR"] = str(wd)
         if ws.uses_private_source():
             env["SPECULA_TARGET_REPO_DIR"] = repo_dir
@@ -3204,6 +3265,7 @@ Output:
                 start_new_session=True,
                 pass_fds=resumelib.inherited_run_lock_fds(),
             )
+            _resource_note_agent(wd, log_file)
             running = progress.RunningAgent(
                 name=name,
                 proc=proc,
@@ -3409,7 +3471,19 @@ def main(argv: list[str]) -> int:
     if not argv or argv[0] not in PHASES:
         print(f"usage: phaselib.py <phase> [options] <target>...\nphases: {', '.join(PHASES)}", file=sys.stderr)
         return 2
-    return PHASES[argv[0]].run(argv[1:])
+    global _RESOURCE_RECORDER
+    recorder = ResourceInvocationRecorder.from_environment()
+    previous_recorder = _RESOURCE_RECORDER
+    _RESOURCE_RECORDER = recorder
+    result: int | None = None
+    try:
+        result = PHASES[argv[0]].run(argv[1:])
+        return result
+    finally:
+        if recorder is not None:
+            with contextlib.suppress(OSError, UnicodeError, ValueError):
+                recorder.finalize(result == 0, outcomes_complete=result is not None)
+        _RESOURCE_RECORDER = previous_recorder
 
 
 if __name__ == "__main__":

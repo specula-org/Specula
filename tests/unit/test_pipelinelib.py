@@ -482,6 +482,16 @@ class _FakeResourceSummary:
     def finish_phase(self, phase: str, names: list[str], elapsed: float, succeeded: bool) -> None:
         self.events.append(("finish", phase, tuple(names), elapsed, succeeded))
 
+    def capture_invocation(
+        self,
+        phase: str,
+        names: list[str],
+        invocation_id: str,
+        *,
+        launcher_succeeded: bool,
+    ) -> None:
+        self.events.append(("invocation", phase, tuple(names), invocation_id, launcher_succeeded))
+
     def skip_phase(self, phase: str, names: list[str]) -> None:
         self.events.append(("skip", phase, tuple(names)))
 
@@ -493,23 +503,18 @@ class _FakeResourceSummary:
 
 
 class TestResourceSummaryPipeline(TmpCwd):
-    def test_grouped_phase_records_known_runtime_when_body_fails(self) -> None:
+    def test_grouped_phase_does_not_charge_targets_when_body_fails_before_a_launcher(self) -> None:
         pipeline = make_pipeline(["footest|g|l|r"])
         tracker = _FakeResourceSummary()
         pipeline.resource_summary = tracker  # type: ignore[assignment]
 
-        with (
-            mock.patch("specula.pipelinelib.time.monotonic", side_effect=[10.0, 16.25]),
-            self.assertRaisesRegex(RuntimeError, "phase failed"),
-            pipeline.resource_phase("phase1", ["footest"]),
-        ):
+        with self.assertRaisesRegex(RuntimeError, "phase failed"), pipeline.resource_phase("phase1", ["footest"]):
             raise RuntimeError("phase failed")
 
-        self.assertEqual(tracker.events[0], ("start", "phase1", ("footest",)))
-        self.assertEqual(tracker.events[1], ("capture", "phase1", ("footest",), False))
-        self.assertEqual(tracker.events[2], ("finish", "phase1", ("footest",), 6.25, False))
+        self.assertEqual(tracker.events, [])
+        self.assertIsNone(pipeline._resource_phase_key)
 
-    def test_launcher_captures_usage_before_and_after_overwrite(self) -> None:
+    def test_launcher_captures_usage_and_its_target_manifest(self) -> None:
         pipeline = make_pipeline(["footest|g|l|r"])
         tracker = _FakeResourceSummary()
         pipeline.resource_summary = tracker  # type: ignore[assignment]
@@ -521,13 +526,11 @@ class TestResourceSummaryPipeline(TmpCwd):
             pipeline._phase("confirmation", "launch_bug_confirmation.sh", ["footest"])
 
         self.assertEqual(raised.exception.code, 7)
-        self.assertEqual(
-            tracker.events,
-            [
-                ("capture", "phase4a", ("footest",), False),
-                ("capture", "phase4a", ("footest",), True),
-            ],
-        )
+        self.assertEqual(tracker.events[0], ("capture", "phase4a", ("footest",), False))
+        invocation = tracker.events[1]
+        self.assertEqual(invocation[:3], ("invocation", "phase4a", ("footest",)))
+        self.assertRegex(str(invocation[3]), r"^[0-9a-f]{32}$")
+        self.assertFalse(invocation[4])
 
     def test_main_wraps_each_user_visible_phase_group(self) -> None:
         pipeline = make_pipeline(["footest|g|l|r"])
@@ -558,10 +561,7 @@ class TestResourceSummaryPipeline(TmpCwd):
         rc, _output = quiet(pipeline.main)
 
         self.assertEqual(rc, 0)
-        self.assertEqual(
-            [event[1] for event in tracker.events if event[0] == "start"],
-            ["phase1", "phase2", "phase2_5", "phase3", "phase4a", "phase4b"],
-        )
+        self.assertFalse(any(event[0] in {"start", "finish"} for event in tracker.events))
         self.assertEqual(tracker.events[-1], ("complete",))
         self.assertEqual(
             phase_events,

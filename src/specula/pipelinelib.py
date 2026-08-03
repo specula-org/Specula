@@ -61,7 +61,13 @@ from specula.phaselib import (
     _parse_transient_resumes,
     _wc_l,
 )
-from specula.resource_summary import ResourceSummaryTracker
+from specula.resource_summary import (
+    INVOCATION_DIRNAME,
+    RESOURCE_MANIFEST_ENV,
+    RESOURCE_PHASE_ENV,
+    RESOURCE_ROOT_ENV,
+    ResourceSummaryTracker,
+)
 from specula.snapshotlib import (
     SNAPSHOT_MODE_ENV,
     SOURCE_MAP,
@@ -363,6 +369,7 @@ class Pipeline:
         self.argv: list[str] = []
         self.resource_summary: ResourceSummaryTracker | None = None
         self._resource_phase_key: str | None = None
+        self._resource_invocation_id: str | None = None
 
     # ── argument parsing (runs before the tee starts, like the bash top level) ──
     def parse_args(self, argv: list[str]) -> int | None:
@@ -1558,6 +1565,27 @@ class Pipeline:
         except Exception as exc:
             log(f"WARNING: cannot finalize resource summaries: {exc}")
 
+    def _capture_resource_invocation(
+        self,
+        phase: str,
+        names: list[str],
+        invocation_id: str,
+        *,
+        launcher_succeeded: bool,
+    ) -> None:
+        tracker = self.resource_summary
+        if tracker is None:
+            return
+        try:
+            tracker.capture_invocation(
+                phase,
+                names,
+                invocation_id,
+                launcher_succeeded=launcher_succeeded,
+            )
+        except Exception as exc:
+            log(f"WARNING: cannot update {phase} launcher accounting: {exc}")
+
     def refresh_resource_summaries(self) -> None:
         """Best-effort refresh used by the outer failure-cleanup path."""
         if self.resource_summary is None:
@@ -1569,32 +1597,13 @@ class Pipeline:
 
     @contextlib.contextmanager
     def resource_phase(self, phase: str, names: list[str]) -> Iterator[None]:
-        """Measure one grouped phase segment and preserve the phase result."""
-        tracker = self.resource_summary
-        selected = list(dict.fromkeys(names))
-        if tracker is None:
-            yield
-            return
-
-        try:
-            tracker.start_phase(phase, selected)
-        except Exception as exc:
-            log(f"WARNING: cannot start {phase} resource accounting: {exc}")
+        """Bind launcher-level target accounting to one user-visible phase."""
         previous_phase = self._resource_phase_key
         self._resource_phase_key = phase
-        started_at = time.monotonic()
-        succeeded = False
         try:
             yield
-            succeeded = True
         finally:
-            elapsed = time.monotonic() - started_at
-            self._capture_resource_usage(selected)
             self._resource_phase_key = previous_phase
-            try:
-                tracker.finish_phase(phase, selected, elapsed, succeeded)
-            except Exception as exc:
-                log(f"WARNING: cannot finish {phase} resource accounting: {exc}")
 
     def prepare_source_snapshots(self, names: list[str]) -> None:
         if not self.keep_original:
@@ -2510,6 +2519,8 @@ class Pipeline:
 
     def _run_launcher(self, script: str, args: list[str]) -> None:
         env = os.environ.copy()
+        for key in (RESOURCE_MANIFEST_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
+            env.pop(key, None)
         if self.keep_original:
             # Phase launchers calculate their exact private-source ceiling after
             # parsing targets.  Remove ambient repository selectors before even
@@ -2541,6 +2552,12 @@ class Pipeline:
             pass_fds = (self._run_lock_fd,)
         else:
             env.pop(resumelib.RUN_LOCK_FD_ENV, None)
+        if self._resource_phase_key is not None and self._resource_invocation_id is not None:
+            resource_root = Path(os.path.abspath(self.run_dir if self.run_dir is not None else _logical_cwd()))
+            manifest = resource_root / INVOCATION_DIRNAME / f"{self._resource_invocation_id}.json"
+            env[RESOURCE_ROOT_ENV] = str(resource_root)
+            env[RESOURCE_MANIFEST_ENV] = str(manifest)
+            env[RESOURCE_PHASE_ENV] = self._resource_phase_key
 
         proc: subprocess.Popen[bytes] | None = None
         received: list[tuple[int, float]] = []
@@ -2626,10 +2643,23 @@ class Pipeline:
             return
         resource_names = self._resource_names_from_args(args)
         self._capture_resource_usage(resource_names)
+        phase = self._resource_phase_key
+        invocation_id = secrets.token_hex(16)
+        previous_invocation = self._resource_invocation_id
+        self._resource_invocation_id = invocation_id
+        succeeded = False
         try:
             self._run_launcher(script, args)
+            succeeded = True
         finally:
-            self._capture_resource_usage(resource_names, require_change=True)
+            self._resource_invocation_id = previous_invocation
+            if phase is not None:
+                self._capture_resource_invocation(
+                    phase,
+                    resource_names,
+                    invocation_id,
+                    launcher_succeeded=succeeded,
+                )
             self.refresh_target_indexes()
 
     def run_phase1_analysis(self) -> None:

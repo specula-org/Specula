@@ -7,11 +7,14 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from specula.resource_summary import (
+    INVOCATION_DIRNAME,
     PHASES,
     STATE_FILENAME,
     SUMMARY_FILENAME,
+    ResourceInvocationRecorder,
     ResourceSummaryTracker,
 )
 
@@ -113,6 +116,442 @@ class TestRenderingAndRuntime(ResourceSummaryCase):
         self.assertIn("$1.50", self.summary())
         self.assertIn("**Total (incomplete)**", self.summary())
 
+
+class TestInvocationAccounting(ResourceSummaryCase):
+    def recorder(self, phase: str, invocation_id: str) -> ResourceInvocationRecorder:
+        path = self.root / INVOCATION_DIRNAME / f"{invocation_id}.json"
+        return ResourceInvocationRecorder(self.root, path, phase, invocation_id)
+
+    def test_serial_targets_receive_only_their_own_runtime(self) -> None:
+        second_work_dir = self.root / "second" / ".specula-output"
+        tracker = ResourceSummaryTracker(
+            {"demo": self.work_dir, "second": second_work_dir},
+            output_root=self.root,
+            maximum_parallelism="1",
+            tlc_memory_limit="8G",
+            tlc_worker_limit="4",
+        )
+        tracker.initialize(resume=False)
+        invocation_id = "1" * 32
+        recorder = self.recorder("phase1", invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 10.0, 10.0, 30.0, 30.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.finish_target("demo", True)
+            recorder.start_target("second", second_work_dir)
+            recorder.finish_target("second", True)
+            recorder.finalize(True)
+
+        tracker.capture_invocation(
+            "phase1",
+            ["demo", "second"],
+            invocation_id,
+            launcher_succeeded=True,
+        )
+
+        first = json.loads((self.work_dir / STATE_FILENAME).read_text())
+        second = json.loads((second_work_dir / STATE_FILENAME).read_text())
+        self.assertEqual(self.phase_state(first, "phase1")["runtime_seconds"], 10.0)
+        self.assertEqual(self.phase_state(second, "phase1")["runtime_seconds"], 20.0)
+
+    def test_failed_target_does_not_mark_successful_sibling_incomplete(self) -> None:
+        second_work_dir = self.root / "second" / ".specula-output"
+        tracker = ResourceSummaryTracker(
+            {"demo": self.work_dir, "second": second_work_dir},
+            output_root=self.root,
+            maximum_parallelism="2",
+            tlc_memory_limit="8G",
+            tlc_worker_limit="4",
+        )
+        tracker.initialize(resume=False)
+        invocation_id = "2" * 32
+        recorder = self.recorder("phase2_5", invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 0.0, 5.0, 7.0, 7.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.start_target("second", second_work_dir)
+            recorder.finish_target("demo", True)
+            recorder.finish_target("second", False)
+            recorder.finalize(False)
+
+        tracker.capture_invocation(
+            "phase2_5",
+            ["demo", "second"],
+            invocation_id,
+            launcher_succeeded=False,
+        )
+
+        first = json.loads((self.work_dir / STATE_FILENAME).read_text())
+        second = json.loads((second_work_dir / STATE_FILENAME).read_text())
+        self.assertFalse(self.phase_state(first, "phase2_5")["usage_incomplete"])
+        self.assertTrue(self.phase_state(second, "phase2_5")["usage_incomplete"])
+
+    def test_successful_zero_agent_invocation_preserves_existing_usage(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        self.write_json(
+            "bug-confirmation.usage.json",
+            _normalized(session="existing", tokens=100, cached=80, cost=1.0),
+        )
+        tracker.capture_usage("phase4a", ["demo"])
+        invocation_id = "3" * 32
+        recorder = self.recorder("phase4a", invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0, 1.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.finish_target("demo", True)
+            recorder.finalize(True)
+
+        tracker.capture_invocation("phase4a", ["demo"], invocation_id, launcher_succeeded=True)
+
+        phase = self.phase_state(self.state(), "phase4a")
+        self.assertFalse(phase["usage_incomplete"])
+        self.assertEqual(phase["total_tokens"], 100)
+        self.assertEqual(phase["cost_usd"], 1.0)
+
+    def test_successful_fresh_zero_agent_invocation_records_known_zero_usage(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        invocation_id = "8" * 32
+        recorder = self.recorder("phase4a", invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0, 1.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.finish_target("demo", True)
+            recorder.finalize(True)
+
+        tracker.capture_invocation("phase4a", ["demo"], invocation_id, launcher_succeeded=True)
+
+        phase = self.phase_state(self.state(), "phase4a")
+        self.assertTrue(phase["tokens_observed"])
+        self.assertTrue(phase["cost_observed"])
+        self.assertFalse(phase["usage_incomplete"])
+        self.assertIn("| Phase 4a | 1s | 0 total (0 cached) | $0.00 |", self.summary())
+
+    def test_agent_without_a_changed_usage_sidecar_is_incomplete(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        invocation_id = "4" * 32
+        recorder = self.recorder("phase1", invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0, 1.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.note_agent(self.work_dir, self.work_dir / "agent.usage.json")
+            recorder.finish_target("demo", True)
+            recorder.finalize(True)
+
+        tracker.capture_invocation("phase1", ["demo"], invocation_id, launcher_succeeded=True)
+
+        self.assertTrue(self.phase_state(self.state(), "phase1")["usage_incomplete"])
+
+    def test_each_expected_turn_needs_its_own_usage_sidecar(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        invocation_id = "6" * 32
+        recorder = self.recorder("phase4a", invocation_id)
+        first = self.work_dir / "confirmation" / "MC-1" / "turn01_A.usage.json"
+        second = self.work_dir / "confirmation" / "MC-1" / "turn01_B.usage.json"
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0, 1.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.note_agent(self.work_dir, first)
+            recorder.note_agent(self.work_dir, second)
+            recorder.finish_target("demo", True)
+            recorder.finalize(True)
+        self.write_json(
+            "confirmation/MC-1/turn01_A.usage.json",
+            _normalized(session="first", tokens=100, cached=80, cost=1.0),
+        )
+
+        tracker.capture_invocation("phase4a", ["demo"], invocation_id, launcher_succeeded=True)
+
+        self.assertTrue(self.phase_state(self.state(), "phase4a")["usage_incomplete"])
+
+    def test_repeated_agent_invocations_on_one_usage_path_are_incomplete(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        invocation_id = "9" * 32
+        recorder = self.recorder("phase1", invocation_id)
+        usage_path = self.work_dir / "agent.usage.json"
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0, 1.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.note_agent(self.work_dir, usage_path)
+            recorder.note_agent(self.work_dir, usage_path)
+            recorder.finish_target("demo", True)
+            recorder.finalize(True)
+        self.write_json(
+            "agent.usage.json",
+            _normalized(session="last-attempt", tokens=100, cached=80, cost=1.0),
+        )
+
+        tracker.capture_invocation("phase1", ["demo"], invocation_id, launcher_succeeded=True)
+
+        phase = self.phase_state(self.state(), "phase1")
+        self.assertEqual(phase["total_tokens"], 100)
+        self.assertTrue(phase["usage_incomplete"])
+        manifest = json.loads((self.root / INVOCATION_DIRNAME / f"{invocation_id}.json").read_text())
+        self.assertEqual(manifest["targets"]["demo"]["usage_paths"], ["agent.usage.json", "agent.usage.json"])
+
+    def test_resume_recovers_an_uncheckpointed_target_manifest(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        invocation_id = "7" * 32
+        recorder = self.recorder("phase1", invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 9.0, 9.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.note_agent(self.work_dir, self.work_dir / "agent.usage.json")
+            recorder.finish_target("demo", True)
+            recorder.finalize(True)
+        self.write_json(
+            "agent.usage.json",
+            _normalized(session="recovered", tokens=100, cached=80, cost=1.0),
+        )
+
+        resumed = self.tracker()
+        resumed.initialize(resume=True)
+
+        phase = self.phase_state(self.state(), "phase1")
+        self.assertEqual(phase["runtime_seconds"], 9.0)
+        self.assertEqual(phase["total_tokens"], 100)
+        self.assertEqual(phase["cost_usd"], 1.0)
+        self.assertFalse(self.state()["history_incomplete"])
+
+    def test_resume_marks_two_manifests_sharing_one_sidecar_incomplete(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        usage_path = self.work_dir / "agent.usage.json"
+        for invocation_id in ("d" * 32, "e" * 32):
+            recorder = self.recorder("phase1", invocation_id)
+            recorder.start_target("demo", self.work_dir)
+            recorder.note_agent(self.work_dir, usage_path)
+            recorder.finish_target("demo", True)
+            recorder.finalize(True)
+        self.write_json(
+            "agent.usage.json",
+            _normalized(session="only-visible-session", tokens=100, cached=80, cost=1.0),
+        )
+
+        resumed = self.tracker()
+        resumed.initialize(resume=True)
+
+        phase = self.phase_state(self.state(), "phase1")
+        self.assertEqual(phase["total_tokens"], 100)
+        self.assertTrue(phase["usage_incomplete"])
+
+    def test_resume_trusts_one_pending_non_codex_rewrite(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        usage_path = self.work_dir / "spec-repair.usage.json"
+        first_id = "1" * 32
+        first = self.recorder("phase4a", first_id)
+        first.start_target("demo", self.work_dir)
+        first.note_agent(self.work_dir, usage_path)
+        first.finish_target("demo", True)
+        first.finalize(True)
+        self.write_json(
+            "spec-repair.usage.json",
+            _normalized(session=first_id, tokens=100, cached=80, cost=1.0, agent="claude-code"),
+        )
+        tracker.capture_invocation("phase4a", ["demo"], first_id, launcher_succeeded=True)
+
+        second_id = "2" * 32
+        second = self.recorder("phase4a", second_id)
+        second.start_target("demo", self.work_dir)
+        second.note_agent(self.work_dir, usage_path)
+        second.finish_target("demo", True)
+        second.finalize(True)
+        self.write_json(
+            "spec-repair.usage.json",
+            _normalized(session=second_id, tokens=50, cached=40, cost=0.5, agent="claude-code"),
+        )
+
+        resumed = self.tracker()
+        resumed.initialize(resume=True)
+
+        phase = self.phase_state(self.state(), "phase4a")
+        self.assertEqual(phase["total_tokens"], 150)
+        self.assertEqual(phase["cost_usd"], 1.5)
+        self.assertFalse(phase["usage_incomplete"])
+        self.assertFalse(self.state()["history_incomplete"])
+
+    def test_resume_detects_tampered_accounted_manifest(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        invocation_id = "3" * 32
+        recorder = self.recorder("phase1", invocation_id)
+        recorder.start_target("demo", self.work_dir)
+        recorder.finish_target("demo", True)
+        recorder.finalize(True)
+        tracker.capture_invocation("phase1", ["demo"], invocation_id, launcher_succeeded=True)
+        path = self.root / INVOCATION_DIRNAME / f"{invocation_id}.json"
+        document = json.loads(path.read_text())
+        document["targets"]["demo"]["elapsed_seconds"] = 999
+        path.write_text(json.dumps(document) + "\n")
+
+        resumed = self.tracker()
+        resumed.initialize(resume=True)
+
+        self.assertTrue(self.state()["history_incomplete"])
+        phase = self.phase_state(self.state(), "phase1")
+        self.assertTrue(phase["runtime_incomplete"])
+        self.assertTrue(phase["usage_incomplete"])
+
+    def test_resume_detects_missing_accounted_manifest(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        invocation_id = "4" * 32
+        recorder = self.recorder("phase1", invocation_id)
+        recorder.start_target("demo", self.work_dir)
+        recorder.finish_target("demo", True)
+        recorder.finalize(True)
+        tracker.capture_invocation("phase1", ["demo"], invocation_id, launcher_succeeded=True)
+        (self.root / INVOCATION_DIRNAME / f"{invocation_id}.json").unlink()
+
+        resumed = self.tracker()
+        resumed.initialize(resume=True)
+
+        self.assertTrue(self.state()["history_incomplete"])
+
+    def test_resume_marks_malformed_invocation_manifest_incomplete(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        invocation_id = "5" * 32
+        path = self.root / INVOCATION_DIRNAME / f"{invocation_id}.json"
+        path.parent.mkdir()
+        path.write_text("{not json\n")
+
+        resumed = self.tracker()
+        resumed.initialize(resume=True)
+
+        self.assertTrue(self.state()["history_incomplete"])
+
+    def test_resume_rejects_invalid_invocation_signature(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        state = self.state()
+        signatures = state["invocation_signatures"]
+        assert isinstance(signatures, dict)
+        signatures["6" * 32] = "not-a-sha256"
+        (self.work_dir / STATE_FILENAME).write_text(json.dumps(state) + "\n")
+
+        resumed = self.tracker()
+        resumed.initialize(resume=True)
+
+        self.assertTrue(self.state()["history_incomplete"])
+        self.assertNotIn("not-a-sha256", json.dumps(self.state()))
+
+    def test_failed_complete_manifest_without_a_target_record_does_not_pollute_targets(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        invocation_id = "5" * 32
+        recorder = self.recorder("phase1", invocation_id)
+        recorder.finalize(False)
+
+        tracker.capture_invocation("phase1", ["demo"], invocation_id, launcher_succeeded=False)
+
+        phase = self.phase_state(self.state(), "phase1")
+        self.assertFalse(phase["runtime_incomplete"])
+        self.assertFalse(phase["usage_incomplete"])
+
+    def test_successful_complete_manifest_requires_a_target_record(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        invocation_id = "7" * 32
+        recorder = self.recorder("phase1", invocation_id)
+        recorder.finalize(True)
+
+        tracker.capture_invocation("phase1", ["demo"], invocation_id, launcher_succeeded=True)
+
+        phase = self.phase_state(self.state(), "phase1")
+        self.assertTrue(phase["runtime_incomplete"])
+        self.assertTrue(phase["usage_incomplete"])
+
+    def test_missing_manifest_marks_failed_launcher_incomplete(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+
+        tracker.capture_invocation("phase1", ["demo"], "f" * 32, launcher_succeeded=False)
+
+        phase = self.phase_state(self.state(), "phase1")
+        self.assertTrue(phase["runtime_incomplete"])
+        self.assertTrue(phase["usage_incomplete"])
+
+    def test_corrupt_manifest_marks_launcher_incomplete(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        invocation_id = "0" * 32
+        path = self.root / INVOCATION_DIRNAME / f"{invocation_id}.json"
+        path.parent.mkdir()
+        path.write_text("{not json\n")
+
+        tracker.capture_invocation("phase1", ["demo"], invocation_id, launcher_succeeded=True)
+
+        phase = self.phase_state(self.state(), "phase1")
+        self.assertTrue(phase["runtime_incomplete"])
+        self.assertTrue(phase["usage_incomplete"])
+
+    def test_unfinalized_manifest_is_not_accepted_as_complete(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        invocation_id = "a" * 32
+        recorder = self.recorder("phase4a", invocation_id)
+        recorder.start_target("demo", self.work_dir)
+        recorder.finish_target("demo", True)
+
+        tracker.capture_invocation("phase4a", ["demo"], invocation_id, launcher_succeeded=True)
+
+        phase = self.phase_state(self.state(), "phase4a")
+        self.assertFalse(phase["runtime_observed"])
+        self.assertTrue(phase["runtime_incomplete"])
+        self.assertTrue(phase["usage_incomplete"])
+
+    def test_exceptional_finalize_revokes_provisional_target_success(self) -> None:
+        invocation_id = "b" * 32
+        recorder = self.recorder("phase1", invocation_id)
+        recorder.start_target("demo", self.work_dir)
+        recorder.finish_target("demo", True)
+
+        recorder.finalize(False, outcomes_complete=False)
+
+        path = self.root / INVOCATION_DIRNAME / f"{invocation_id}.json"
+        document = json.loads(path.read_text())
+        self.assertFalse(document["targets"]["demo"]["succeeded"])
+
+    def test_invalid_recorder_path_has_no_directory_side_effect(self) -> None:
+        invocation_id = "c" * 32
+        unexpected = self.root / "unexpected" / f"{invocation_id}.json"
+
+        with self.assertRaises(ValueError):
+            ResourceInvocationRecorder(self.root, unexpected, "phase1", invocation_id)
+
+        self.assertFalse(unexpected.parent.exists())
+        self.assertFalse((self.root / INVOCATION_DIRNAME).exists())
+
+    def test_manifest_owned_non_codex_rewrite_is_a_complete_new_invocation(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        usage_path = self.work_dir / "spec-repair.usage.json"
+        for invocation_id, tokens, cached, cost in (
+            ("d" * 32, 100, 80, 1.0),
+            ("e" * 32, 50, 40, 0.5),
+        ):
+            recorder = self.recorder("phase4a", invocation_id)
+            recorder.start_target("demo", self.work_dir)
+            recorder.note_agent(self.work_dir, usage_path)
+            recorder.finish_target("demo", True)
+            recorder.finalize(True)
+            self.write_json(
+                "spec-repair.usage.json",
+                _normalized(
+                    session=invocation_id,
+                    tokens=tokens,
+                    cached=cached,
+                    cost=cost,
+                    agent="claude-code",
+                ),
+            )
+            tracker.capture_invocation("phase4a", ["demo"], invocation_id, launcher_succeeded=True)
+
+        phase = self.phase_state(self.state(), "phase4a")
+        self.assertEqual(phase["total_tokens"], 150)
+        self.assertEqual(phase["cached_input_tokens"], 120)
+        self.assertEqual(phase["cost_usd"], 1.5)
+        self.assertFalse(phase["usage_incomplete"])
+
     def test_runtime_is_cumulative_and_stale_active_time_is_not_guessed(self) -> None:
         tracker = self.tracker()
         tracker.initialize(resume=False)
@@ -166,6 +605,111 @@ class TestRenderingAndRuntime(ResourceSummaryCase):
 
 
 class TestUsageCapture(ResourceSummaryCase):
+    def test_resume_rejects_parent_traversal_in_source_checkpoint(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        outside = self.root / "outside-usage.json"
+        outside.write_text(json.dumps(_normalized(session="outside", tokens=999, cached=0, cost=9.0)))
+        state = self.state()
+        sources = state["source_signatures"]
+        assert isinstance(sources, dict)
+        phase1 = sources["phase1"]
+        assert isinstance(phase1, dict)
+        phase1["../../outside-usage.json"] = "missing"
+        (self.work_dir / STATE_FILENAME).write_text(json.dumps(state))
+
+        resumed = self.tracker()
+        resumed.initialize(resume=True)
+
+        phase = self.phase_state(self.state(), "phase1")
+        self.assertEqual(phase["total_tokens"], 0)
+        self.assertEqual(phase["cost_usd"], 0.0)
+        self.assertTrue(self.state()["history_incomplete"])
+        self.assertNotIn("outside-usage.json", json.dumps(self.state()))
+
+    def test_resume_rejects_absolute_checkpoint_path_without_disabling_target(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        outside = self.root / "absolute-usage.json"
+        outside.write_text(json.dumps(_normalized(session="outside", tokens=999, cached=0, cost=9.0)))
+        state = self.state()
+        attempts = state["attempt_signatures"]
+        assert isinstance(attempts, dict)
+        phase1 = attempts["phase1"]
+        assert isinstance(phase1, dict)
+        phase1[str(outside)] = "missing"
+        (self.work_dir / STATE_FILENAME).write_text(json.dumps(state))
+
+        resumed = self.tracker()
+        resumed.initialize(resume=True)
+
+        self.assertTrue((self.work_dir / SUMMARY_FILENAME).is_file())
+        self.assertTrue(self.state()["history_incomplete"])
+        self.assertNotIn(str(outside), json.dumps(self.state()))
+
+    def test_resume_rejects_noncanonical_alias_without_double_counting(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        self.write_json(
+            "agent.usage.json",
+            _normalized(session="canonical", tokens=100, cached=80, cost=1.0),
+        )
+        state = self.state()
+        sources = state["source_signatures"]
+        assert isinstance(sources, dict)
+        phase1 = sources["phase1"]
+        assert isinstance(phase1, dict)
+        phase1["./agent.usage.json"] = "missing"
+        (self.work_dir / STATE_FILENAME).write_text(json.dumps(state))
+
+        resumed = self.tracker()
+        resumed.initialize(resume=True)
+
+        phase = self.phase_state(self.state(), "phase1")
+        self.assertEqual(phase["total_tokens"], 100)
+        self.assertEqual(phase["cost_usd"], 1.0)
+        self.assertTrue(self.state()["history_incomplete"])
+
+    def test_resume_rejects_dot_as_a_checkpoint_path(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        state = self.state()
+        sources = state["source_signatures"]
+        assert isinstance(sources, dict)
+        phase1 = sources["phase1"]
+        assert isinstance(phase1, dict)
+        phase1["."] = "missing"
+        (self.work_dir / STATE_FILENAME).write_text(json.dumps(state))
+
+        resumed = self.tracker()
+        resumed.initialize(resume=True)
+
+        self.assertTrue(self.state()["history_incomplete"])
+        self.assertNotIn('".": "missing"', json.dumps(self.state()))
+
+    def test_resume_rejects_unrecognized_in_workdir_usage_path(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        self.write_json(
+            "unrecognized.json",
+            _normalized(session="injected", tokens=999, cached=0, cost=9.0),
+        )
+        state = self.state()
+        sources = state["source_signatures"]
+        assert isinstance(sources, dict)
+        phase1 = sources["phase1"]
+        assert isinstance(phase1, dict)
+        phase1["unrecognized.json"] = "missing"
+        (self.work_dir / STATE_FILENAME).write_text(json.dumps(state))
+
+        resumed = self.tracker()
+        resumed.initialize(resume=True)
+
+        phase = self.phase_state(self.state(), "phase1")
+        self.assertEqual(phase["total_tokens"], 0)
+        self.assertEqual(phase["cost_usd"], 0.0)
+        self.assertTrue(self.state()["history_incomplete"])
+
     def test_no_changed_sidecar_is_not_marked_partial_until_phase_finish(self) -> None:
         tracker = self.tracker()
         tracker.initialize(resume=False)

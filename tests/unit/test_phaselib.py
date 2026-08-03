@@ -48,7 +48,7 @@ if str(SRC) not in sys.path:  # test the tree this file lives in, installed or n
 
 import specula.progress as progress_module  # noqa: E402
 import specula.quota as quota  # noqa: E402
-from specula import phaselib, resumelib, snapshotlib  # noqa: E402
+from specula import phaselib, resource_summary, resumelib, snapshotlib  # noqa: E402
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC  # noqa: E402
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC  # noqa: E402
 from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
@@ -199,6 +199,9 @@ class PhaseCase(unittest.TestCase):
             resumelib.INVOCATION_ENV,
             resumelib.MANUAL_ENV,
             resumelib.FRESH_ENV,
+            resource_summary.RESOURCE_MANIFEST_ENV,
+            resource_summary.RESOURCE_ROOT_ENV,
+            resource_summary.RESOURCE_PHASE_ENV,
         ):
             self.set_env(var, str(self.run_dir) if var == "SPECULA_RUN_DIR" else None)
 
@@ -275,6 +278,57 @@ class TestDirectExecution(unittest.TestCase):
             )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("Bug confirmation", proc.stdout)
+
+    def test_path_invocation_shares_resource_recorder_with_confirmation_workers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            run_dir = root / "run"
+            work_dir = run_dir / NAME / ".specula-output"
+            spec_dir = work_dir / "spec"
+            spec_dir.mkdir(parents=True)
+            (spec_dir / "bug-report.md").write_text("# Bug report\n")
+            (work_dir / "modeling-brief.md").write_text("# Modeling brief\n")
+            artifact = root / "artifact"
+            artifact.mkdir()
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            marker = root / "claude-called"
+            fake_claude = fake_bin / "claude"
+            fake_claude.write_text('#!/bin/sh\nprintf "called\\n" > "$FAKE_CLAUDE_MARKER"\nexit 9\n')
+            fake_claude.chmod(0o755)
+            invocation_id = "e" * 32
+            manifest = run_dir / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+            env = os.environ.copy()
+            env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
+            env["FAKE_CLAUDE_MARKER"] = str(marker)
+            env["SPECULA_RUN_DIR"] = str(run_dir)
+            env["SPECULA_SANDBOX"] = "off"
+            env[resource_summary.RESOURCE_ROOT_ENV] = str(run_dir)
+            env[resource_summary.RESOURCE_MANIFEST_ENV] = str(manifest)
+            env[resource_summary.RESOURCE_PHASE_ENV] = "phase4a"
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SRC / "specula" / "phaselib.py"),
+                    "bug_confirmation",
+                    "--agent=claude-code",
+                    "--policy-retries=0",
+                    "--transient-resumes=0",
+                    f"--artifact={artifact}",
+                    NAME,
+                ],
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertTrue(marker.is_file())
+            document = json.loads(manifest.read_text())
+            self.assertEqual(document["targets"][NAME]["usage_paths"], ["spec/.consolidate.usage.json"])
 
 
 class TestPreconditionGate(PhaseCase):
@@ -709,6 +763,25 @@ class TestBugConfirmationAlternate(PhaseCase):
         rc, out = self.dry_run(BY_KEY["bug_confirmation"])
         self.assertEqual(rc, 9, out)
         self.assertEqual(calls, [(4, "0")])
+
+    def test_zero_agent_confirmation_records_an_empty_usage_list(self) -> None:
+        self._patch_confirmation([0])
+        invocation_id = "a" * 32
+        manifest = self.run_dir / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            manifest,
+            "phase4a",
+            invocation_id,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"])
+        recorder.finalize(rc == 0)
+
+        self.assertEqual(rc, 0, out)
+        document = json.loads(manifest.read_text())
+        self.assertEqual(document["targets"][NAME]["usage_paths"], [])
 
     def test_rate_limit_retries_current_target(self) -> None:
         calls = self._patch_confirmation([quota.RATE_LIMIT_RC, 0])
@@ -1745,6 +1818,44 @@ class TestLegacyRepairIdentityFinalization(PhaseCase):
 
 
 class TestRunAgentBlocking(PhaseCase):
+    def test_blocking_turn_records_its_expected_usage_path(self) -> None:
+        work_dir = self.work_dir()
+        log_file = work_dir / "confirmation" / "MC-1" / "turn01_A.log"
+        log_file.parent.mkdir(parents=True)
+        adapter = self.tmp() / "adapter.sh"
+        adapter.write_text(
+            '#!/bin/sh\nfor arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\nprintf "done\\n" > "$log"\n'
+        )
+        adapter.chmod(0o755)
+        invocation_id = "c" * 32
+        manifest = self.run_dir / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            manifest,
+            "phase4a",
+            invocation_id,
+        )
+        recorder.start_target(NAME, work_dir)
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+
+        rc, _ = phaselib.run_agent_blocking(
+            adapter,
+            "prompt body",
+            log_file.with_suffix(".prompt.md"),
+            log_file,
+            phase_key="bug_confirmation",
+            work_dir=work_dir,
+            claude_alias="profile",
+        )
+        recorder.finish_target(NAME, rc == 0)
+        recorder.finalize(rc == 0)
+
+        document = json.loads(manifest.read_text())
+        self.assertEqual(
+            document["targets"][NAME]["usage_paths"],
+            ["confirmation/MC-1/turn01_A.usage.json"],
+        )
+
     def test_snapshot_turn_clears_repository_git_environment(self) -> None:
         outer = self.tmp()
         subprocess.run(["git", "init", "--quiet", str(outer)], check=True)
@@ -2392,6 +2503,64 @@ class TestProgressReporting(PhaseCase):
         self.assertEqual(rc, 0, out)
         self.assertIn(f"{NAME}: created modeling-brief.md", out)
         self.assertIn(f"{NAME}: completed (exit 0)", out)
+
+    def test_main_writes_target_runtime_and_expected_usage_manifest(self) -> None:
+        inherited = self.tmp() / "resource-env"
+        self.write_adapter(
+            'printf "draft\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            f'printf "%s\\n%s\\n%s\\n" "${{{resource_summary.RESOURCE_ROOT_ENV}-<unset>}}" '
+            f'"${{{resource_summary.RESOURCE_MANIFEST_ENV}-<unset>}}" '
+            f'"${{{resource_summary.RESOURCE_PHASE_ENV}-<unset>}}" > "{inherited}"\n'
+        )
+        invocation_id = "b" * 32
+        manifest = self.run_dir / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        self.set_env(resource_summary.RESOURCE_ROOT_ENV, str(self.run_dir))
+        self.set_env(resource_summary.RESOURCE_MANIFEST_ENV, str(manifest))
+        self.set_env(resource_summary.RESOURCE_PHASE_ENV, "phase1")
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            rc = phaselib.main(
+                [
+                    "code_analysis",
+                    f"--agent={self.adapter.stem}",
+                    self.artifact_flag(),
+                    NAME,
+                ]
+            )
+
+        self.assertEqual(rc, 0, output.getvalue())
+        document = json.loads(manifest.read_text())
+        target = document["targets"][NAME]
+        self.assertTrue(document["complete"])
+        self.assertTrue(target["finished"])
+        self.assertTrue(target["succeeded"])
+        self.assertGreaterEqual(target["elapsed_seconds"], 0.0)
+        self.assertEqual(target["usage_paths"], ["agent.usage.json"])
+        self.assertEqual(inherited.read_text().splitlines(), ["<unset>", "<unset>", "<unset>"])
+
+    def test_main_revokes_target_success_when_post_processing_raises(self) -> None:
+        invocation_id = "d" * 32
+        manifest = self.run_dir / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        self.set_env(resource_summary.RESOURCE_ROOT_ENV, str(self.run_dir))
+        self.set_env(resource_summary.RESOURCE_MANIFEST_ENV, str(manifest))
+        self.set_env(resource_summary.RESOURCE_PHASE_ENV, "phase1")
+
+        def fail_after_success(_args: list[str]) -> int:
+            phaselib._resource_start_target(NAME, self.work_dir())
+            phaselib._resource_finish_target(NAME, True)
+            raise RuntimeError("post-processing failed")
+
+        with (
+            mock.patch.object(phaselib.PHASES["code_analysis"], "run", side_effect=fail_after_success),
+            self.assertRaisesRegex(RuntimeError, "post-processing failed"),
+        ):
+            phaselib.main(["code_analysis"])
+
+        document = json.loads(manifest.read_text())
+        self.assertTrue(document["complete"])
+        self.assertFalse(document["succeeded"])
+        self.assertFalse(document["targets"][NAME]["succeeded"])
 
     def test_direct_multi_target_command_shares_one_tlc_scope(self) -> None:
         launch_dir = self.tmp()
