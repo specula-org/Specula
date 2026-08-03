@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .adapters.utils import run_lock as adapter_run_lock
+
 RESUME_DIRNAME = ".specula-resume"
 CONFIG_FILENAME = "config.json"
 ACTIVE_DIRNAME = "active"
@@ -33,7 +35,7 @@ SCHEMA_VERSION = 1
 INVOCATION_ENV = "SPECULA_INVOCATION_ID"
 MANUAL_ENV = "SPECULA_MANUAL_RESUME"
 FRESH_ENV = "SPECULA_FRESH_CONTEXT"
-RUN_LOCK_FD_ENV = "SPECULA_RUN_LOCK_FD"
+RUN_LOCK_FD_ENV = adapter_run_lock.RUN_LOCK_FD_ENV
 
 
 class ResumeError(RuntimeError):
@@ -141,17 +143,10 @@ def _clear_native_state(path: Path) -> None:
 
 def inherited_run_lock_fds() -> tuple[int, ...]:
     """Return the validated run-lock lease inherited from the dispatcher."""
-    raw = os.environ.get(RUN_LOCK_FD_ENV)
-    if raw is None:
-        return ()
     try:
-        fd = int(raw)
-        info = os.fstat(fd)
-    except (OSError, ValueError) as exc:
-        raise ResumeError("inherited Specula run lock is unavailable") from exc
-    if fd < 3 or not stat.S_ISREG(info.st_mode):
-        raise ResumeError("inherited Specula run lock is invalid")
-    return (fd,)
+        return adapter_run_lock.inherited_run_lock_fds()
+    except adapter_run_lock.RunLockError as exc:
+        raise ResumeError(str(exc)) from exc
 
 
 def _read_object(path: Path, label: str) -> dict[str, Any]:

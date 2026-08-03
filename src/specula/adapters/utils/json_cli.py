@@ -19,6 +19,7 @@ from typing import Any
 from .event_stream import StreamStatus, stream_events
 from .policy import POLICY_BLOCKED_RC
 from .resume import capture_session_id
+from .run_lock import inherited_run_lock_fds
 from .text import summary
 from .transient import TRANSIENT_FAILURE_RC
 from .usage import augment_opencode_usage, augment_pi_usage
@@ -270,6 +271,7 @@ def run_json_cli(
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
                         env=effective_env,
+                        pass_fds=inherited_run_lock_fds(effective_env),
                     )
                 finally:
                     prompt_stream.close()

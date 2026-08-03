@@ -19,6 +19,7 @@ stdlib unittest, collected natively by pytest:
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import json
 import os
 import signal
@@ -32,6 +33,8 @@ import unittest
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any, TypedDict
+
+from specula.adapters.utils.run_lock import RUN_LOCK_FD_ENV, RunLockError, inherited_run_lock_fds
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLAUDE_PY = REPO_ROOT / "src" / "specula" / "adapters" / "claude_code.py"
@@ -99,8 +102,10 @@ _VOLATILE = (
     "ADAPTER_EXIT_CODE",
     "COPILOT_HELP_TEXT",
     "ADAPTER_PI_SESSION_FIXTURE",
+    "ADAPTER_PROVIDER_PID_FILE",
     "ADAPTER_READY_FILE",
     "ADAPTER_WAIT_SECONDS",
+    "SPECULA_RUN_LOCK_FD",
 )
 
 
@@ -199,6 +204,9 @@ class AdapterCase(unittest.TestCase):
                 '  cp "$ADAPTER_PI_SESSION_FIXTURE" "$TMPDIR/pi-subagent-session-test/run-0/session.jsonl"',
                 "fi",
             ]
+        lines.append(
+            'if [[ -n "${ADAPTER_PROVIDER_PID_FILE:-}" ]]; then printf "%s\\n" "$$" > "$ADAPTER_PROVIDER_PID_FILE"; fi'
+        )
         lines += [
             'if [[ -n "${ADAPTER_READY_FILE:-}" ]]; then',
             '  printf "ready\\n" > "$ADAPTER_READY_FILE"',
@@ -279,6 +287,121 @@ class AdapterCase(unittest.TestCase):
         p.write_text(text)
         return f"--prompt-file={p}"
 
+    def assert_provider_keeps_run_lock(
+        self,
+        base: Path,
+        cmd: list[str],
+        flags: list[str],
+        *,
+        fake_name: str,
+        fixture_text: str,
+    ) -> None:
+        bindir = base / "bin"
+        fixture = base / "fixture.txt"
+        fixture.write_text(fixture_text)
+        self._write_fake(bindir, fake_name, fixture, record_extra=False)
+        ready = base / "provider.ready"
+        provider_pid_file = base / "provider.pid"
+        lock_path = base / "run.lock"
+        owner_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        owner_closed = False
+        probe_fd: int | None = None
+        adapter: subprocess.Popen[str] | None = None
+
+        try:
+            fcntl.flock(owner_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            env = {key: value for key, value in os.environ.items() if key not in _VOLATILE}
+            env.update(
+                {
+                    "HOME": str(base),
+                    "PATH": f"{bindir}:/usr/bin:/bin",
+                    "SPECULA_RUN_LOCK_FD": str(owner_fd),
+                    "ADAPTER_PROVIDER_PID_FILE": str(provider_pid_file),
+                    "ADAPTER_READY_FILE": str(ready),
+                    "ADAPTER_WAIT_SECONDS": "30",
+                }
+            )
+            adapter = subprocess.Popen(
+                [*cmd, *flags],
+                cwd=base,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                pass_fds=(owner_fd,),
+                start_new_session=True,
+            )
+
+            deadline = time.monotonic() + 5
+            while not ready.is_file() and adapter.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(ready.is_file(), "fake provider did not become ready")
+            provider_pid = int(provider_pid_file.read_text().strip())
+
+            os.kill(adapter.pid, signal.SIGKILL)
+            adapter.wait(timeout=5)
+            self.assertEqual(adapter.returncode, -signal.SIGKILL)
+            os.close(owner_fd)
+            owner_closed = True
+
+            os.kill(provider_pid, 0)
+            probe_fd = os.open(lock_path, os.O_RDWR)
+            with self.assertRaises(BlockingIOError):
+                fcntl.flock(probe_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+            os.killpg(adapter.pid, signal.SIGKILL)
+            acquired = False
+            deadline = time.monotonic() + 5
+            while not acquired and time.monotonic() < deadline:
+                try:
+                    fcntl.flock(probe_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquired = True
+                except BlockingIOError:
+                    time.sleep(0.01)
+            self.assertTrue(acquired, "provider process group did not release the run lock")
+        finally:
+            if adapter is not None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(adapter.pid, signal.SIGKILL)
+                if adapter.poll() is None:
+                    with contextlib.suppress(subprocess.TimeoutExpired):
+                        adapter.wait(timeout=5)
+                if adapter.stdout is not None:
+                    adapter.stdout.close()
+                if adapter.stderr is not None:
+                    adapter.stderr.close()
+            if not owner_closed:
+                os.close(owner_fd)
+            if probe_fd is not None:
+                os.close(probe_fd)
+
+
+class RunLockLease(unittest.TestCase):
+    def test_missing_and_valid_inherited_lease(self) -> None:
+        self.assertEqual(inherited_run_lock_fds({}), ())
+        with tempfile.TemporaryFile() as lock_file:
+            self.assertEqual(
+                inherited_run_lock_fds({RUN_LOCK_FD_ENV: str(lock_file.fileno())}),
+                (lock_file.fileno(),),
+            )
+
+    def test_invalid_inherited_lease_fails_closed(self) -> None:
+        with self.assertRaisesRegex(RunLockError, "unavailable"):
+            inherited_run_lock_fds({RUN_LOCK_FD_ENV: "not-an-fd"})
+
+        read_fd, write_fd = os.pipe()
+        try:
+            with self.assertRaisesRegex(RunLockError, "invalid"):
+                inherited_run_lock_fds({RUN_LOCK_FD_ENV: str(read_fd)})
+        finally:
+            os.close(read_fd)
+            os.close(write_fd)
+
+        closed_fd = os.open(os.devnull, os.O_RDONLY)
+        os.close(closed_fd)
+        with self.assertRaisesRegex(RunLockError, "unavailable"):
+            inherited_run_lock_fds({RUN_LOCK_FD_ENV: str(closed_fd)})
+
 
 # ── claude-code (Python port) ────────────────────────────────────────────────
 class ClaudeCodeAdapter(AdapterCase):
@@ -292,6 +415,22 @@ class ClaudeCodeAdapter(AdapterCase):
 
     def base_flags(self, base: Path) -> list[str]:
         return [self.with_prompt_file(base), f"--log={base}/out.log"]
+
+    @unittest.skipUnless(hasattr(os, "killpg"), "requires POSIX process groups")
+    def test_native_provider_keeps_run_lock_after_adapter_is_killed(self) -> None:
+        for streaming in (False, True):
+            with self.subTest(streaming=streaming):
+                base = self.sandbox()
+                flags = self.base_flags(base)
+                if streaming:
+                    flags.append(f"--resume-state={base}/resume.json")
+                self.assert_provider_keeps_run_lock(
+                    base,
+                    self.CMD,
+                    flags,
+                    fake_name="claude",
+                    fixture_text=self.FIXTURE,
+                )
 
     def test_resume_state_captures_then_resumes_exact_claude_session(self) -> None:
         base = self.sandbox()
@@ -2268,6 +2407,17 @@ class PiAdapter(AdapterCase):
         },
     ]
     FIXTURE = "\n".join(json.dumps(record) for record in RECORDS) + "\n"
+
+    @unittest.skipUnless(hasattr(os, "killpg"), "requires POSIX process groups")
+    def test_native_provider_keeps_run_lock_after_adapter_is_killed(self) -> None:
+        base = self.sandbox()
+        self.assert_provider_keeps_run_lock(
+            base,
+            self.CMD,
+            [self.with_prompt_file(base), f"--log={base}/out.log"],
+            fake_name="pi",
+            fixture_text=self.FIXTURE,
+        )
 
     @staticmethod
     def expected_activity(records: list[dict[str, Any]]) -> str:

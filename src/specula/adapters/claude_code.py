@@ -35,6 +35,7 @@ if __package__:
     from .utils.event_stream import stream_events
     from .utils.policy import POLICY_BLOCKED_RC, final_diagnostic_has_policy_block, looks_policy_blocked
     from .utils.resume import ResumeStateError, capture_session_id, read_session_id
+    from .utils.run_lock import inherited_run_lock_fds
     from .utils.transient import TRANSIENT_FAILURE_RC, final_diagnostic_has_transient_failure, looks_transient
 else:
     from utils.event_stream import stream_events  # type: ignore[import-not-found, no-redef]
@@ -48,6 +49,7 @@ else:
         capture_session_id,
         read_session_id,
     )
+    from utils.run_lock import inherited_run_lock_fds  # type: ignore[import-not-found, no-redef]
     from utils.transient import (  # type: ignore[import-not-found, no-redef]
         TRANSIENT_FAILURE_RC,
         final_diagnostic_has_transient_failure,
@@ -517,10 +519,22 @@ def main(argv: list[str]) -> int:
         try:
             if streaming:
                 with open(prompt_input) as pin:
-                    proc = subprocess.Popen(cmd, stdin=pin, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    proc = subprocess.Popen(
+                        cmd,
+                        stdin=pin,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        pass_fds=inherited_run_lock_fds(),
+                    )
             else:
                 with open(prompt_input) as pin, open(capture_path, "w") as out:
-                    cli_rc = subprocess.run(cmd, stdin=pin, stdout=out, stderr=subprocess.STDOUT).returncode
+                    cli_rc = subprocess.run(
+                        cmd,
+                        stdin=pin,
+                        stdout=out,
+                        stderr=subprocess.STDOUT,
+                        pass_fds=inherited_run_lock_fds(),
+                    ).returncode
         except OSError as e:
             error = f"claude-code adapter: failed to run claude: {e}\n"
             for path in (capture_path, log_file) if streaming else (capture_path,):
