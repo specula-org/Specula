@@ -62,8 +62,7 @@ from specula.phaselib import (
     _wc_l,
 )
 from specula.resource_summary import (
-    INVOCATION_DIRNAME,
-    RESOURCE_MANIFEST_ENV,
+    RESOURCE_INVOCATION_ENV,
     RESOURCE_PHASE_ENV,
     RESOURCE_ROOT_ENV,
     ResourceSummaryTracker,
@@ -1530,33 +1529,6 @@ class Pipeline:
             return
         self.resource_summary = tracker
 
-    def _capture_resource_usage(
-        self,
-        names: list[str] | None = None,
-        *,
-        require_change: bool = False,
-    ) -> None:
-        tracker = self.resource_summary
-        phase = self._resource_phase_key
-        if tracker is None or phase is None:
-            return
-        try:
-            tracker.capture_usage(
-                phase,
-                self._index_names() if names is None else names,
-                require_change=require_change,
-            )
-        except Exception as exc:
-            log(f"WARNING: cannot update {phase} resource usage: {exc}")
-
-    def _skip_resource_phase(self, phase: str, names: list[str]) -> None:
-        if self.resource_summary is None:
-            return
-        try:
-            self.resource_summary.skip_phase(phase, names)
-        except Exception as exc:
-            log(f"WARNING: cannot mark {phase} resource usage as skipped: {exc}")
-
     def _complete_resource_summaries(self) -> None:
         if self.resource_summary is None:
             return
@@ -1570,19 +1542,12 @@ class Pipeline:
         phase: str,
         names: list[str],
         invocation_id: str,
-        *,
-        launcher_succeeded: bool,
     ) -> None:
         tracker = self.resource_summary
         if tracker is None:
             return
         try:
-            tracker.capture_invocation(
-                phase,
-                names,
-                invocation_id,
-                launcher_succeeded=launcher_succeeded,
-            )
+            tracker.capture_invocation(phase, names, invocation_id)
         except Exception as exc:
             log(f"WARNING: cannot update {phase} launcher accounting: {exc}")
 
@@ -2519,7 +2484,7 @@ class Pipeline:
 
     def _run_launcher(self, script: str, args: list[str]) -> None:
         env = os.environ.copy()
-        for key in (RESOURCE_MANIFEST_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
+        for key in (RESOURCE_INVOCATION_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
             env.pop(key, None)
         if self.keep_original:
             # Phase launchers calculate their exact private-source ceiling after
@@ -2554,9 +2519,8 @@ class Pipeline:
             env.pop(resumelib.RUN_LOCK_FD_ENV, None)
         if self._resource_phase_key is not None and self._resource_invocation_id is not None:
             resource_root = Path(os.path.abspath(self.run_dir if self.run_dir is not None else _logical_cwd()))
-            manifest = resource_root / INVOCATION_DIRNAME / f"{self._resource_invocation_id}.json"
             env[RESOURCE_ROOT_ENV] = str(resource_root)
-            env[RESOURCE_MANIFEST_ENV] = str(manifest)
+            env[RESOURCE_INVOCATION_ENV] = self._resource_invocation_id
             env[RESOURCE_PHASE_ENV] = self._resource_phase_key
 
         proc: subprocess.Popen[bytes] | None = None
@@ -2642,24 +2606,16 @@ class Pipeline:
             log(f"[DRY RUN] bash scripts/launch/{script} {' '.join(args)}")
             return
         resource_names = self._resource_names_from_args(args)
-        self._capture_resource_usage(resource_names)
         phase = self._resource_phase_key
         invocation_id = secrets.token_hex(16)
         previous_invocation = self._resource_invocation_id
         self._resource_invocation_id = invocation_id
-        succeeded = False
         try:
             self._run_launcher(script, args)
-            succeeded = True
         finally:
             self._resource_invocation_id = previous_invocation
             if phase is not None:
-                self._capture_resource_invocation(
-                    phase,
-                    resource_names,
-                    invocation_id,
-                    launcher_succeeded=succeeded,
-                )
+                self._capture_resource_invocation(phase, resource_names, invocation_id)
             self.refresh_target_indexes()
 
     def run_phase1_analysis(self) -> None:
@@ -3309,7 +3265,6 @@ class Pipeline:
                 self.run_review("analysis", names)
         else:
             log("Skipping Phase 1 (--skip-analysis)")
-            self._skip_resource_phase("phase1", names)
 
         if not self.skip_specgen:
             with self.resource_phase("phase2", names):
@@ -3318,7 +3273,6 @@ class Pipeline:
                 self.run_review("specgen", names)
         else:
             log("Skipping Phase 2 (--skip-specgen)")
-            self._skip_resource_phase("phase2", names)
 
         if not self.skip_harness:
             with self.resource_phase("phase2_5", names):
@@ -3326,7 +3280,6 @@ class Pipeline:
                 self.run_phase2_5_harness()
         else:
             log("Skipping Phase 2.5 (--skip-harness)")
-            self._skip_resource_phase("phase2_5", names)
 
         # Resume OPEN repairs before ordinary Phase 3. An unfinished Phase 4
         # conversation must settle first because it owns the active session.
@@ -3359,10 +3312,8 @@ class Pipeline:
         elif phase3_covered:
             source = "resumed repair loop" if resumed_repair else "recovered committed repairs"
             log(f"Ordinary Phase 3 covered for every target by the {source}")
-            self._skip_resource_phase("phase3", names)
         else:
             log("Skipping Phase 3 (--skip-validate)")
-            self._skip_resource_phase("phase3", names)
 
         phase4_covered = resumed_repair and not normal_phase3_ran
         fresh_phase4_ran = False
@@ -3377,7 +3328,6 @@ class Pipeline:
                     log("Skipping repair loop (--skip-repair-loop)")
         elif self.skip_confirmation:
             log("Skipping Phase 4a (--skip-confirmation)")
-            self._skip_resource_phase("phase4a", names)
         else:
             log("Initial Phase 4 completed by the resumed repair loop")
 
@@ -3390,7 +3340,6 @@ class Pipeline:
                 self.run_phase4b_classification()
         else:
             log("Skipping Phase 4b (--skip-classification)")
-            self._skip_resource_phase("phase4b", names)
 
         if not self.dry_run and self.run_dir is not None:
             try:

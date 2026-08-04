@@ -1,9 +1,8 @@
 """Lightweight, per-target resource summaries for full pipeline runs.
 
-The tracker records target-active wall time, adapter usage sidecars, and
-configured concurrency/TLC limits. Its JSON state and launcher manifests are
-internal checkpoints; ``summary.md`` is the only user-facing output. Missing or
-partial data never blocks the pipeline.
+Each target owns its resource records and summary state. Completed records
+contain immutable usage snapshots; interrupted records only mark that target as
+incomplete. Missing or partial data never blocks the pipeline.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 STATE_FILENAME = ".resource-summary-state.json"
 SUMMARY_FILENAME = "summary.md"
 INVOCATION_DIRNAME = ".resource-summary-invocations"
-RESOURCE_MANIFEST_ENV = "SPECULA_RESOURCE_MANIFEST"
+RESOURCE_INVOCATION_ENV = "SPECULA_RESOURCE_INVOCATION"
 RESOURCE_ROOT_ENV = "SPECULA_RESOURCE_ROOT"
 RESOURCE_PHASE_ENV = "SPECULA_RESOURCE_PHASE"
 
@@ -60,8 +59,6 @@ PHASES = (
 PHASE_BY_KEY = {phase.key: phase for phase in PHASES}
 
 _TURN_USAGE_RE = re.compile(r"^turn[0-9]{2}_(?:A|B|A-repair)\.usage\.json$")
-_TURN_ATTEMPT_RE = re.compile(r"^turn[0-9]{2}_(?:A|B|A-repair)\.usage\.attempt-[1-9][0-9]*\.json$")
-_ATTEMPT_SUFFIX_RE = re.compile(r"^(?P<stem>.+\.usage)\.attempt-[1-9][0-9]*\.json$")
 
 
 @dataclass
@@ -147,11 +144,7 @@ class TargetState:
     target: str
     run_complete: bool = False
     history_incomplete: bool = False
-    active_phase: str | None = None
-    active_segment_id: str | None = None
     phases: dict[str, PhaseState] = field(default_factory=lambda: {phase.key: PhaseState() for phase in PHASES})
-    source_signatures: dict[str, dict[str, str]] = field(default_factory=lambda: {phase.key: {} for phase in PHASES})
-    attempt_signatures: dict[str, dict[str, str]] = field(default_factory=lambda: {phase.key: {} for phase in PHASES})
     invocation_signatures: dict[str, str] = field(default_factory=dict)
     sessions: dict[str, SessionState] = field(default_factory=dict)
     maximum_parallelism: str = "-"
@@ -159,18 +152,12 @@ class TargetState:
     tlc_worker_limit: str = "-"
 
     def to_object(self) -> dict[str, object]:
-        active: dict[str, object] | None = None
-        if self.active_phase is not None:
-            active = {"phase": self.active_phase, "segment_id": self.active_segment_id}
         return {
             "version": 1,
             "target": self.target,
             "run_complete": self.run_complete,
             "history_incomplete": self.history_incomplete,
-            "active_runtime": active,
             "phases": {key: phase.to_object() for key, phase in self.phases.items()},
-            "source_signatures": self.source_signatures,
-            "attempt_signatures": self.attempt_signatures,
             "invocation_signatures": self.invocation_signatures,
             "sessions": {key: session.to_object() for key, session in self.sessions.items()},
             "configuration": {
@@ -185,27 +172,17 @@ class TargetState:
         data = _string_mapping(value)
         if data is None or data.get("version") != 1 or data.get("target") != expected_target:
             return None
-        source_signatures = _signature_mapping(data.get("source_signatures"), attempts=False)
-        attempt_signatures = _signature_mapping(data.get("attempt_signatures"), attempts=True)
         invocation_signatures = _invocation_signature_mapping(data.get("invocation_signatures", {}))
-        if source_signatures is None or attempt_signatures is None or invocation_signatures is None:
+        if invocation_signatures is None:
             return None
         phases_data = _string_mapping(data.get("phases")) or {}
         phases = {phase.key: PhaseState.from_object(phases_data.get(phase.key)) for phase in PHASES}
-        active_data = _string_mapping(data.get("active_runtime"))
-        active_phase = _optional_string(active_data.get("phase")) if active_data is not None else None
-        if active_phase not in PHASE_BY_KEY:
-            active_phase = None
         configuration = _string_mapping(data.get("configuration")) or {}
         return cls(
             target=expected_target,
             run_complete=data.get("run_complete") is True,
             history_incomplete=data.get("history_incomplete") is True,
-            active_phase=active_phase,
-            active_segment_id=(_optional_string(active_data.get("segment_id")) if active_data is not None else None),
             phases=phases,
-            source_signatures=source_signatures,
-            attempt_signatures=attempt_signatures,
             invocation_signatures=invocation_signatures,
             sessions=_session_mapping(data.get("sessions")),
             maximum_parallelism=_optional_string(configuration.get("maximum_parallelism")) or "-",
@@ -225,156 +202,128 @@ class UsageRecord:
 
 
 class ResourceInvocationRecorder:
-    """Write one private launcher manifest for target-local accounting."""
+    """Write one active or completed record inside each started target."""
 
-    def __init__(self, root: Path, path: Path, phase: str, invocation_id: str) -> None:
+    def __init__(self, root: Path, phase: str, invocation_id: str) -> None:
         self._root = Path(os.path.abspath(root))
-        self._path = Path(os.path.abspath(path))
-        expected_path = self._root / INVOCATION_DIRNAME / f"{invocation_id}.json"
-        if (
-            phase not in PHASE_BY_KEY
-            or _INVOCATION_ID_RE.fullmatch(invocation_id) is None
-            or self._path != expected_path
-        ):
-            raise ValueError("resource manifest path does not match its invocation")
+        if phase not in PHASE_BY_KEY or _INVOCATION_ID_RE.fullmatch(invocation_id) is None:
+            raise ValueError("invalid resource invocation identity")
         self._phase = phase
         self._invocation_id = invocation_id
         self._lock = threading.Lock()
         self._started: dict[str, float] = {}
-        self._document: dict[str, object] = {
-            "version": 1,
-            "invocation_id": invocation_id,
-            "phase": phase,
-            "complete": False,
-            "targets": {},
-        }
-        _prepare_work_dir(self._root, self._path.parent)
-        self._publish()
+        self._elapsed: dict[str, float] = {}
+        self._work_dirs: dict[str, Path] = {}
+        self._usage_paths: dict[str, list[str]] = {}
+        self._usage_failed: set[str] = set()
+        self._finished: set[str] = set()
 
     @classmethod
     def from_environment(cls) -> ResourceInvocationRecorder | None:
         raw_root = os.environ.get(RESOURCE_ROOT_ENV)
-        raw_path = os.environ.get(RESOURCE_MANIFEST_ENV)
+        invocation_id = os.environ.get(RESOURCE_INVOCATION_ENV)
         phase = os.environ.get(RESOURCE_PHASE_ENV)
-        if raw_root is None or raw_path is None or phase not in PHASE_BY_KEY:
-            return None
-        path = Path(raw_path)
-        invocation_id = path.stem
-        if not path.is_absolute() or _INVOCATION_ID_RE.fullmatch(invocation_id) is None:
+        if (
+            raw_root is None
+            or invocation_id is None
+            or phase not in PHASE_BY_KEY
+            or _INVOCATION_ID_RE.fullmatch(invocation_id) is None
+        ):
             return None
         try:
-            return cls(Path(raw_root), path, phase, invocation_id)
+            return cls(Path(raw_root), phase, invocation_id)
         except (OSError, UnicodeError, ValueError):
             return None
 
     def start_target(self, name: str, work_dir: Path) -> None:
         with self._lock:
+            absolute_work_dir = Path(os.path.abspath(work_dir))
+            existing_work_dir = self._work_dirs.get(name)
+            if existing_work_dir is not None and existing_work_dir != absolute_work_dir:
+                raise ValueError(f"resource target started twice with conflicting state: {name}")
+            if name in self._finished:
+                return
             if name in self._started:
                 return
-            relative = _relative_path(self._root, Path(os.path.abspath(work_dir)))
-            targets = self._targets()
-            existing = targets.get(name)
-            if existing is not None:
-                raise ValueError(f"resource target started twice with conflicting state: {name}")
-            targets[name] = {
-                "work_dir": relative,
-                "finished": False,
-                "elapsed_seconds": None,
-                "succeeded": None,
-                "usage_paths": [],
-            }
+            if existing_work_dir is None:
+                _prepare_work_dir(self._root, absolute_work_dir)
+                path = self._record_path(absolute_work_dir)
+                _prepare_work_dir(absolute_work_dir, path.parent)
+                self._work_dirs[name] = absolute_work_dir
+                self._elapsed[name] = 0.0
+                self._usage_paths[name] = []
             self._started[name] = time.monotonic()
-            self._publish()
-
-    def reuse_target(self, name: str, work_dir: Path) -> None:
-        """Record a target already completed by an earlier invocation."""
-        with self._lock:
-            targets = self._targets()
-            if name in self._started or name in targets:
-                raise ValueError(f"resource target reused with conflicting state: {name}")
-            targets[name] = {
-                "work_dir": _relative_path(self._root, Path(os.path.abspath(work_dir))),
-                "finished": True,
-                "elapsed_seconds": 0.0,
-                "succeeded": True,
-                "usage_paths": [],
-            }
-            self._publish()
+            self._publish(
+                name,
+                {
+                    "version": 1,
+                    "invocation_id": self._invocation_id,
+                    "phase": self._phase,
+                    "target": name,
+                    "status": "active",
+                },
+            )
 
     def note_agent(self, work_dir: Path, usage_path: Path) -> None:
         absolute_work_dir = Path(os.path.abspath(work_dir))
         absolute_usage = Path(os.path.abspath(usage_path))
         with self._lock:
-            targets = self._targets()
-            for name, raw in targets.items():
-                target = _string_mapping(raw)
-                if target is None:
-                    continue
-                relative_work_dir = _optional_string(target.get("work_dir"))
-                if relative_work_dir is None:
-                    continue
-                expected_work_dir = _checkpoint_path(self._root, relative_work_dir)
-                if expected_work_dir != absolute_work_dir:
+            for name, expected_work_dir in self._work_dirs.items():
+                if name not in self._started or expected_work_dir != absolute_work_dir:
                     continue
                 usage_relative = _relative_path(expected_work_dir, absolute_usage)
-                paths = target.get("usage_paths")
-                if not isinstance(paths, list):
-                    raise ValueError(f"invalid resource usage list for {name}")
-                paths.append(usage_relative)
+                if not _allowed_usage_path(self._phase, usage_relative):
+                    self._usage_failed.add(name)
+                    raise ValueError(f"unexpected resource usage path: {usage_relative}")
+                self._usage_paths[name].append(usage_relative)
                 return
+            raise ValueError(f"resource target is not active: {absolute_work_dir}")
 
-    def finish_target(self, name: str, succeeded: bool) -> None:
+    def pause_target(self, name: str) -> None:
+        """Stop the current timing segment while a target waits to retry."""
         with self._lock:
-            started_at = self._started.pop(name, None)
-            target = _string_mapping(self._targets().get(name))
-            if started_at is None or target is None:
+            self._pause_target(name)
+
+    def finish_target(self, name: str) -> None:
+        with self._lock:
+            work_dir = self._work_dirs.get(name)
+            if work_dir is None or name in self._finished:
                 return
-            target["finished"] = True
-            target["elapsed_seconds"] = max(0.0, time.monotonic() - started_at)
-            target["succeeded"] = succeeded
-            self._targets()[name] = target
-            self._publish()
+            self._pause_target(name)
+            snapshots, usage_complete = _snapshot_usage(
+                work_dir,
+                self._phase,
+                self._usage_paths.get(name, []),
+            )
+            usage_complete = usage_complete and name not in self._usage_failed
+            self._publish(
+                name,
+                {
+                    "version": 1,
+                    "invocation_id": self._invocation_id,
+                    "phase": self._phase,
+                    "target": name,
+                    "status": "completed",
+                    "elapsed_seconds": self._elapsed[name],
+                    "usage_complete": usage_complete,
+                    "usage": snapshots,
+                },
+            )
+            self._finished.add(name)
 
-    def fail_target(self, name: str) -> None:
-        with self._lock:
-            target = _string_mapping(self._targets().get(name))
-            if target is None:
-                return
-            target["succeeded"] = False
-            self._targets()[name] = target
-            self._publish()
+    def _pause_target(self, name: str) -> None:
+        started_at = self._started.pop(name, None)
+        if started_at is None:
+            return
+        self._elapsed[name] = math.fsum((self._elapsed[name], max(0.0, time.monotonic() - started_at)))
 
-    def finalize(self, succeeded: bool, *, outcomes_complete: bool = True) -> None:
-        with self._lock:
-            now = time.monotonic()
-            for name, started_at in list(self._started.items()):
-                target = _string_mapping(self._targets().get(name))
-                if target is None:
-                    continue
-                target["finished"] = True
-                target["elapsed_seconds"] = max(0.0, now - started_at)
-                target["succeeded"] = False
-                self._targets()[name] = target
-            self._started.clear()
-            if not outcomes_complete:
-                for name, raw in list(self._targets().items()):
-                    target = _string_mapping(raw)
-                    if target is not None and target.get("succeeded") is True:
-                        target["succeeded"] = False
-                        self._targets()[name] = target
-            self._document["complete"] = True
-            self._document["succeeded"] = succeeded
-            self._publish()
+    def _record_path(self, work_dir: Path) -> Path:
+        return work_dir / INVOCATION_DIRNAME / f"{self._invocation_id}.json"
 
-    def _targets(self) -> dict[str, object]:
-        targets = self._document["targets"]
-        if not isinstance(targets, dict):
-            raise ValueError("invalid resource manifest target mapping")
-        return targets
-
-    def _publish(self) -> None:
-        content = json.dumps(self._document, indent=2, sort_keys=True) + "\n"
-        _atomic_write(self._root, self._path, content)
+    def _publish(self, name: str, document: dict[str, object]) -> None:
+        work_dir = self._work_dirs[name]
+        content = json.dumps(document, indent=2, sort_keys=True) + "\n"
+        _atomic_write(work_dir, self._record_path(work_dir), content)
 
 
 class ResourceSummaryTracker:
@@ -396,53 +345,16 @@ class ResourceSummaryTracker:
         self._states: dict[str, TargetState] = {}
 
     def initialize(self, resume: bool) -> None:
-        """Create fresh state, or restore an existing run without guessing gaps."""
-        invalid_invocations = self._invalid_invocation_scope() if resume else {}
+        """Create fresh state, or consume only durable target-local records."""
         for name, work_dir in self._targets.items():
             try:
                 _prepare_work_dir(self._output_root, work_dir)
                 state = self._load_state(name, work_dir) if resume else None
                 if state is None:
                     prior_evidence = resume and self._has_prior_resource_evidence(name, work_dir)
-                    state = TargetState(
-                        target=name,
-                        history_incomplete=prior_evidence,
-                    )
-                    if prior_evidence:
-                        for phase in PHASES:
-                            self._capture_target_usage(work_dir, state, phase.key)
-                    else:
-                        self._baseline_sources(work_dir, state)
-                    self._baseline_invocations(name, work_dir, state)
-                else:
-                    if state.active_phase is not None:
-                        state.phases[state.active_phase].runtime_incomplete = True
-                        state.phases[state.active_phase].usage_incomplete = True
-                        state.history_incomplete = True
-                        state.active_phase = None
-                        state.active_segment_id = None
-                    trusted_rewrites = self._pending_trusted_rewrites(name, work_dir, state)
-                    changed_by_phase = {
-                        phase.key: self._capture_target_usage(
-                            work_dir,
-                            state,
-                            phase.key,
-                            trusted_rewrites=trusted_rewrites[phase.key],
-                        )
-                        for phase in PHASES
-                    }
-                    unexplained = {phase: set(paths) for phase, paths in changed_by_phase.items()}
-                    self._capture_pending_invocations(name, work_dir, state, changed_by_phase, unexplained)
-                    if any(unexplained.values()):
-                        state.history_incomplete = True
-                if invalid_invocations is None:
-                    state.history_incomplete = True
-                else:
-                    for phase_key in invalid_invocations.get(name, set()):
-                        state.phases[phase_key].runtime_incomplete = True
-                        state.phases[phase_key].usage_incomplete = True
-                        state.history_incomplete = True
-                state.run_complete = False
+                    state = TargetState(target=name, history_incomplete=prior_evidence)
+                if resume:
+                    self._consume_pending_records(name, work_dir, state)
                 state.maximum_parallelism = self._maximum_parallelism
                 state.tlc_memory_limit = self._tlc_memory_limit
                 state.tlc_worker_limit = self._tlc_worker_limit
@@ -451,148 +363,35 @@ class ResourceSummaryTracker:
             except (OSError, UnicodeError, ValueError) as exc:
                 self._warn(name, str(exc))
 
-    def start_phase(self, phase: str, names: Iterable[str]) -> None:
-        """Durably mark a grouped phase active before it can consume resources."""
-        if not self._valid_phase(phase):
-            return
-        segment_id = secrets.token_hex(16)
-        for name in self._selected(names):
-            state = self._states[name]
-            if state.active_phase is not None:
-                state.phases[state.active_phase].runtime_incomplete = True
-                state.phases[state.active_phase].usage_incomplete = True
-                state.history_incomplete = True
-            state.active_phase = phase
-            state.active_segment_id = segment_id
-            state.run_complete = False
-            self._publish(name)
-
-    def capture_usage(self, phase: str, names: Iterable[str], *, require_change: bool = False) -> None:
-        """Capture canonical usage files changed since the preceding capture."""
-        if not self._valid_phase(phase):
-            return
-        for name in self._selected(names):
-            work_dir = self._targets[name]
-            state = self._states[name]
-            try:
-                changed = self._capture_target_usage(work_dir, state, phase)
-                if require_change and not changed:
-                    state.phases[phase].usage_incomplete = True
-                self._publish(name)
-            except (OSError, UnicodeError, ValueError) as exc:
-                state.phases[phase].usage_incomplete = True
-                self._warn(name, str(exc))
-                self._publish(name)
-
     def capture_invocation(
         self,
         phase: str,
         names: Iterable[str],
         invocation_id: str,
-        *,
-        launcher_succeeded: bool,
     ) -> None:
-        """Capture one launcher manifest without charging sibling targets."""
+        """Capture one completed local record without charging siblings."""
         if not self._valid_phase(phase) or _INVOCATION_ID_RE.fullmatch(invocation_id) is None:
             return
-        selected = self._selected(names)
-        manifest = self._load_invocation(invocation_id)
-        for name in selected:
+        for name in self._selected(names):
             work_dir = self._targets[name]
             state = self._states[name]
             try:
-                target = self._manifest_target(manifest, phase, name, work_dir)
-                expected: set[str] = set()
-                repeated = False
-                if target is not None:
-                    expected, repeated = _manifest_usage_paths(phase, target)
-                changed = self._capture_target_usage(
-                    work_dir,
-                    state,
-                    phase,
-                    trusted_rewrites=expected if not repeated else set(),
-                )
-                if manifest is None:
-                    state.phases[phase].runtime_incomplete = True
-                    state.phases[phase].usage_incomplete = True
-                    self._publish(name)
+                record = self._load_invocation(name, work_dir, invocation_id)
+                if record is None:
                     continue
-                if target is None:
-                    if launcher_succeeded or changed:
-                        state.phases[phase].runtime_incomplete = True
-                        state.phases[phase].usage_incomplete = True
-                    self._publish(name)
-                    continue
-                self._account_invocation_target(
-                    state,
-                    phase,
-                    invocation_id,
-                    target,
-                    changed,
-                )
+                if record["phase"] != phase:
+                    raise ValueError("resource record phase does not match its launcher")
+                self._consume_record(state, invocation_id, record)
                 self._publish(name)
             except (OSError, UnicodeError, ValueError) as exc:
-                state.phases[phase].runtime_incomplete = True
-                state.phases[phase].usage_incomplete = True
+                self._mark_incomplete(state, phase)
                 self._warn(name, str(exc))
                 self._publish(name)
-
-    def finish_phase(
-        self,
-        phase: str,
-        names: Iterable[str],
-        elapsed_seconds: float,
-        succeeded: bool,
-    ) -> None:
-        """Add a known wall-time segment and clear its durable active marker."""
-        if not self._valid_phase(phase):
-            return
-        elapsed = _nonnegative_float(elapsed_seconds)
-        for name in self._selected(names):
-            state = self._states[name]
-            phase_state = state.phases[phase]
-            if state.active_phase != phase:
-                phase_state.runtime_incomplete = True
-                state.history_incomplete = True
-            if elapsed is None:
-                phase_state.runtime_incomplete = True
-                state.history_incomplete = True
-            else:
-                phase_state.runtime_seconds = math.fsum((phase_state.runtime_seconds, elapsed))
-                phase_state.runtime_observed = True
-            if not phase_state.tokens_observed or not phase_state.cost_observed:
-                phase_state.usage_incomplete = True
-            state.active_phase = None
-            state.active_segment_id = None
-            if not succeeded:
-                phase_state.usage_incomplete = True
-                state.run_complete = False
-            self._publish(name)
-
-    def skip_phase(self, phase: str, names: Iterable[str]) -> None:
-        """Refresh a skipped phase without manufacturing zero-valued usage."""
-        if not self._valid_phase(phase):
-            return
-        for name in self._selected(names):
-            state = self._states[name]
-            if state.active_phase == phase:
-                state.phases[phase].runtime_incomplete = True
-                state.phases[phase].usage_incomplete = True
-                state.history_incomplete = True
-                state.active_phase = None
-                state.active_segment_id = None
-            self._publish(name)
 
     def complete_run(self) -> None:
         """Mark normal pipeline completion; metric gaps remain visibly partial."""
         for name in self._states:
             state = self._states[name]
-            if state.active_phase is not None:
-                state.phases[state.active_phase].runtime_incomplete = True
-                state.phases[state.active_phase].usage_incomplete = True
-                state.history_incomplete = True
-                state.active_phase = None
-                state.active_segment_id = None
             state.run_complete = True
             self._publish(name)
 
@@ -612,100 +411,52 @@ class ResourceSummaryTracker:
             return None
         return TargetState.from_object(document, name)
 
-    def _baseline_sources(self, work_dir: Path, state: TargetState) -> None:
-        for phase in PHASES:
-            sources = self._canonical_sources(work_dir, phase.key, state)
-            attempts = self._attempt_sources(work_dir, phase.key, state)
-            state.source_signatures[phase.key] = _existing_signatures(work_dir, sources)
-            state.attempt_signatures[phase.key] = _existing_signatures(work_dir, attempts)
-
-    def _baseline_invocations(self, name: str, work_dir: Path, state: TargetState) -> None:
-        for invocation_id, manifest in self._invocation_manifests():
-            phase = manifest["phase"]
-            assert isinstance(phase, str)
-            try:
-                target = self._manifest_target(manifest, None, name, work_dir)
-            except ValueError:
-                state.history_incomplete = True
-                continue
-            if target is not None:
-                state.invocation_signatures[invocation_id] = _invocation_target_signature(phase, target)
-
-    def _pending_trusted_rewrites(
-        self,
-        name: str,
-        work_dir: Path,
-        state: TargetState,
-    ) -> dict[str, set[str]]:
-        claims: dict[str, dict[str, int]] = {phase.key: {} for phase in PHASES}
-        for invocation_id, manifest in self._invocation_manifests():
-            if invocation_id in state.invocation_signatures:
-                continue
-            phase = manifest["phase"]
-            assert isinstance(phase, str)
-            try:
-                target = self._manifest_target(manifest, phase, name, work_dir)
-                if target is None:
-                    continue
-                expected, repeated = _manifest_usage_paths(phase, target)
-                for relative in expected:
-                    increment = 2 if repeated else 1
-                    claims[phase][relative] = claims[phase].get(relative, 0) + increment
-            except ValueError:
-                continue
-        return {phase: {relative for relative, count in paths.items() if count == 1} for phase, paths in claims.items()}
-
-    def _capture_pending_invocations(
-        self,
-        name: str,
-        work_dir: Path,
-        state: TargetState,
-        changed_by_phase: dict[str, set[str]],
-        unexplained: dict[str, set[str]],
-    ) -> None:
-        claimed_paths: dict[str, set[str]] = {phase.key: set() for phase in PHASES}
-        seen_invocations: set[str] = set()
-        for invocation_id, manifest in self._invocation_manifests():
-            phase = manifest.get("phase")
-            if not isinstance(phase, str) or phase not in PHASE_BY_KEY:
-                continue
-            try:
-                target = self._manifest_target(manifest, phase, name, work_dir)
-                if target is not None:
-                    seen_invocations.add(invocation_id)
-                    expected, repeated = _manifest_usage_paths(phase, target)
-                    if invocation_id in state.invocation_signatures:
-                        self._account_invocation_target(
-                            state,
-                            phase,
-                            invocation_id,
-                            target,
-                            changed_by_phase[phase],
-                        )
-                        continue
-                    ambiguous = bool(expected & claimed_paths[phase])
-                    if ambiguous:
-                        state.history_incomplete = True
-                    self._account_invocation_target(
-                        state,
-                        phase,
-                        invocation_id,
-                        target,
-                        changed_by_phase[phase],
-                        usage_ambiguous=ambiguous,
-                    )
-                    if not repeated and not ambiguous and expected.issubset(changed_by_phase[phase]):
-                        unexplained[phase].difference_update(expected)
-                    claimed_paths[phase].update(expected)
-            except ValueError:
-                state.phases[phase].runtime_incomplete = True
-                state.phases[phase].usage_incomplete = True
-                state.history_incomplete = True
-        if set(state.invocation_signatures) - seen_invocations:
+    def _consume_pending_records(self, name: str, work_dir: Path, state: TargetState) -> None:
+        records, invalid = self._invocation_records(name, work_dir)
+        if invalid:
             state.history_incomplete = True
+            state.run_complete = False
+            self._warn(name, "one or more local resource records could not be read")
+        for invocation_id, record in records:
+            self._consume_record(state, invocation_id, record)
+
+    def _invocation_records(
+        self,
+        name: str,
+        work_dir: Path,
+    ) -> tuple[list[tuple[str, dict[str, object]]], bool]:
+        directory = work_dir / INVOCATION_DIRNAME
+        try:
+            directory.lstat()
+        except FileNotFoundError:
+            return [], False
+        except OSError:
+            return [], True
+        if not _safe_directory(work_dir, directory):
+            return [], True
+        try:
+            entries = sorted(directory.iterdir(), key=lambda path: path.name)
+        except OSError:
+            return [], True
+        records: list[tuple[str, dict[str, object]]] = []
+        invalid = False
+        for path in entries:
+            match = re.fullmatch(r"([0-9a-f]{32})\.json", path.name)
+            if match is None:
+                continue
+            invocation_id = match.group(1)
+            try:
+                record = self._load_invocation(name, work_dir, invocation_id)
+            except (OSError, UnicodeError, ValueError):
+                invalid = True
+                continue
+            if record is not None:
+                records.append((invocation_id, record))
+        return records, invalid
 
     def _has_prior_resource_evidence(self, name: str, work_dir: Path) -> bool:
-        for filename in (STATE_FILENAME, SUMMARY_FILENAME):
+        del name
+        for filename in (STATE_FILENAME, SUMMARY_FILENAME, INVOCATION_DIRNAME):
             try:
                 (work_dir / filename).lstat()
             except FileNotFoundError:
@@ -714,223 +465,89 @@ class ResourceSummaryTracker:
                 return True
             else:
                 return True
-        probe = TargetState(target="baseline")
         if any(
-            _file_signature(work_dir, path) is not None
-            for phase in PHASES
-            for path in (
-                *self._canonical_sources(work_dir, phase.key, probe),
-                *self._attempt_sources(work_dir, phase.key, probe),
-            )
+            _safe_regular_file(work_dir, work_dir / relative) for phase in PHASES for relative in phase.static_sources
         ):
             return True
-        for _, manifest in self._invocation_manifests():
-            try:
-                if self._manifest_target(manifest, None, name, work_dir) is not None:
-                    return True
-            except ValueError:
-                return True
-        return False
+        return bool(_confirmation_files(work_dir, _TURN_USAGE_RE))
 
-    def _capture_target_usage(
+    def _load_invocation(
         self,
-        work_dir: Path,
-        state: TargetState,
-        phase: str,
-        *,
-        trusted_rewrites: set[str] | None = None,
-    ) -> set[str]:
-        changed: set[str] = set()
-        known_sources = state.source_signatures.setdefault(phase, {})
-        source_paths = {
-            _relative_path(work_dir, path): path for path in self._canonical_sources(work_dir, phase, state)
-        }
-        for relative in known_sources:
-            source_paths.setdefault(relative, _checkpoint_path(work_dir, relative))
-        for relative, path in source_paths.items():
-            signature = _file_signature(work_dir, path)
-            previous = known_sources.get(relative, "missing")
-            if signature is None:
-                known_sources[relative] = "missing"
-                continue
-            if signature == previous:
-                continue
-            known_sources[relative] = signature
-            changed.add(relative)
-            record = _parse_usage_file(work_dir, path)
-            if record is None:
-                state.phases[phase].usage_incomplete = True
-                continue
-            self._accumulate_record(
-                state,
-                phase,
-                relative,
-                rewritten=previous != "missing",
-                trusted_rewrite=relative in (trusted_rewrites or set()),
-                record=record,
-            )
-
-        known_attempts = state.attempt_signatures.setdefault(phase, {})
-        attempt_paths = {_relative_path(work_dir, path): path for path in self._attempt_sources(work_dir, phase, state)}
-        for relative in known_attempts:
-            attempt_paths.setdefault(relative, _checkpoint_path(work_dir, relative))
-        for relative, path in attempt_paths.items():
-            signature = _file_signature(work_dir, path)
-            previous = known_attempts.get(relative, "missing")
-            if signature is None:
-                known_attempts[relative] = "missing"
-                continue
-            if signature != previous:
-                known_attempts[relative] = signature
-                state.phases[phase].usage_incomplete = True
-                changed.add(relative)
-        return changed
-
-    def _load_invocation(self, invocation_id: str, *, allow_incomplete: bool = False) -> dict[str, object] | None:
-        path = self._output_root / INVOCATION_DIRNAME / f"{invocation_id}.json"
-        try:
-            raw = _read_safe_file(self._output_root, path)
-            document: object = json.loads(raw)
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            return None
-        manifest = _string_mapping(document)
-        if manifest is None:
-            return None
-        if (
-            manifest.get("version") != 1
-            or manifest.get("invocation_id") != invocation_id
-            or manifest.get("phase") not in PHASE_BY_KEY
-            or not isinstance(manifest.get("targets"), dict)
-            or (
-                not allow_incomplete
-                and (manifest.get("complete") is not True or not isinstance(manifest.get("succeeded"), bool))
-            )
-        ):
-            return None
-        return manifest
-
-    def _invalid_invocation_scope(self) -> dict[str, set[str]] | None:
-        directory = self._output_root / INVOCATION_DIRNAME
-        try:
-            directory.lstat()
-        except FileNotFoundError:
-            return {}
-        except OSError:
-            return None
-        if not _safe_directory(self._output_root, directory):
-            return None
-        try:
-            entries = list(directory.iterdir())
-        except OSError:
-            return None
-        affected: dict[str, set[str]] = {}
-        for path in entries:
-            match = re.fullmatch(r"([0-9a-f]{32})\.json", path.name)
-            if match is None:
-                continue
-            invocation_id = match.group(1)
-            manifest = self._load_invocation(invocation_id, allow_incomplete=True)
-            if manifest is None:
-                return None
-            if manifest.get("complete") is True and isinstance(manifest.get("succeeded"), bool):
-                continue
-            phase = manifest["phase"]
-            targets = manifest["targets"]
-            assert isinstance(phase, str)
-            assert isinstance(targets, dict)
-            for name in targets:
-                affected.setdefault(str(name), set()).add(phase)
-        return affected
-
-    def _invocation_manifests(self) -> list[tuple[str, dict[str, object]]]:
-        directory = self._output_root / INVOCATION_DIRNAME
-        if not _safe_directory(self._output_root, directory):
-            return []
-        manifests: list[tuple[str, dict[str, object]]] = []
-        try:
-            entries = sorted(directory.iterdir(), key=lambda path: path.name)
-        except OSError:
-            return []
-        for path in entries:
-            match = re.fullmatch(r"([0-9a-f]{32})\.json", path.name)
-            if match is None:
-                continue
-            invocation_id = match.group(1)
-            manifest = self._load_invocation(invocation_id)
-            if manifest is not None:
-                manifests.append((invocation_id, manifest))
-        return manifests
-
-    def _manifest_target(
-        self,
-        manifest: dict[str, object] | None,
-        phase: str | None,
         name: str,
         work_dir: Path,
+        invocation_id: str,
     ) -> dict[str, object] | None:
-        if manifest is None or (phase is not None and manifest.get("phase") != phase):
+        path = work_dir / INVOCATION_DIRNAME / f"{invocation_id}.json"
+        try:
+            path.lstat()
+        except FileNotFoundError:
             return None
-        targets = _string_mapping(manifest.get("targets"))
-        if targets is None or name not in targets:
-            return None
-        target = _string_mapping(targets[name])
-        if target is None:
-            raise ValueError(f"resource manifest has an invalid target record for {name}")
-        relative_work_dir = _optional_string(target.get("work_dir"))
-        if relative_work_dir is None:
-            raise ValueError(f"resource manifest has no work directory for {name}")
-        if _checkpoint_path(self._output_root, relative_work_dir) != Path(os.path.abspath(work_dir)):
-            raise ValueError(f"resource manifest work directory does not match {name}")
-        return target
+        except OSError as exc:
+            raise OSError(f"cannot inspect resource record: {path}") from exc
+        try:
+            document: object = json.loads(_read_safe_file(work_dir, path))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid resource record JSON: {path}") from exc
+        record = _resource_record(document, name, invocation_id)
+        if record is None:
+            raise ValueError(f"invalid resource record: {path}")
+        return record
 
-    def _account_invocation_target(
+    def _consume_record(
         self,
         state: TargetState,
-        phase: str,
         invocation_id: str,
-        target: dict[str, object],
-        changed: set[str],
-        *,
-        usage_ambiguous: bool = False,
+        record: dict[str, object],
     ) -> None:
-        signature = _invocation_target_signature(phase, target)
+        phase = record["phase"]
+        assert isinstance(phase, str)
+        signature = _object_signature(record)
         previous = state.invocation_signatures.get(invocation_id)
         if previous is not None:
             if previous != signature:
-                state.phases[phase].runtime_incomplete = True
-                state.phases[phase].usage_incomplete = True
-                state.history_incomplete = True
+                self._mark_incomplete(state, phase)
+                state.invocation_signatures[invocation_id] = signature
             return
-
-        expected, repeated = _manifest_usage_paths(phase, target)
-
-        phase_state = state.phases[phase]
-        finished = target.get("finished") is True
-        elapsed = _nonnegative_float(target.get("elapsed_seconds"))
-        succeeded = target.get("succeeded") is True
-        if finished and elapsed is not None:
-            phase_state.runtime_seconds = math.fsum((phase_state.runtime_seconds, elapsed))
-            phase_state.runtime_observed = True
+        state.run_complete = False
+        if record["status"] == "active":
+            self._mark_incomplete(state, phase)
         else:
-            phase_state.runtime_incomplete = True
-            state.history_incomplete = True
-        if not succeeded:
+            self._account_completed_record(state, phase, record)
+        state.invocation_signatures[invocation_id] = signature
+
+    @staticmethod
+    def _mark_incomplete(state: TargetState, phase: str) -> None:
+        state.phases[phase].runtime_incomplete = True
+        state.phases[phase].usage_incomplete = True
+        state.history_incomplete = True
+        state.run_complete = False
+
+    def _account_completed_record(
+        self,
+        state: TargetState,
+        phase: str,
+        record: dict[str, object],
+    ) -> None:
+        phase_state = state.phases[phase]
+        elapsed = _nonnegative_float(record.get("elapsed_seconds"))
+        assert elapsed is not None
+        phase_state.runtime_seconds = math.fsum((phase_state.runtime_seconds, elapsed))
+        phase_state.runtime_observed = True
+        usage = _record_usage(phase, record)
+        assert usage is not None
+        if record.get("usage_complete") is not True:
             phase_state.usage_incomplete = True
-        if repeated or usage_ambiguous or not expected.issubset(changed):
-            phase_state.usage_incomplete = True
-        if succeeded and not expected and not phase_state.usage_incomplete:
+        for relative, snapshot in usage:
+            self._accumulate_record(state, phase, relative, snapshot)
+        if not usage and record.get("usage_complete") is True:
             phase_state.tokens_observed = True
             phase_state.cost_observed = True
-        state.invocation_signatures[invocation_id] = signature
 
     @staticmethod
     def _accumulate_record(
         state: TargetState,
         phase: str,
         relative: str,
-        *,
-        rewritten: bool,
-        trusted_rewrite: bool = False,
         record: UsageRecord,
     ) -> None:
         phase_state = state.phases[phase]
@@ -939,8 +556,6 @@ class ResourceSummaryTracker:
 
         cumulative_codex = record.agent == "codex" and record.session_id is not None
         if not cumulative_codex:
-            if rewritten and not trusted_rewrite:
-                phase_state.usage_incomplete = True
             if record.total_tokens is not None and record.cached_input_tokens is not None:
                 phase_state.total_tokens += record.total_tokens
                 phase_state.cached_input_tokens += record.cached_input_tokens
@@ -986,35 +601,6 @@ class ResourceSummaryTracker:
             phase_state.cost_observed = True
 
         state.sessions[identity] = previous
-
-    def _canonical_sources(self, work_dir: Path, phase: str, state: TargetState) -> list[Path]:
-        definition = PHASE_BY_KEY[phase]
-        paths = [work_dir / relative for relative in definition.static_sources]
-        if phase == "phase4a":
-            paths.extend(_confirmation_files(work_dir, _TURN_USAGE_RE))
-        for relative in state.source_signatures.get(phase, {}):
-            candidate = _checkpoint_path(work_dir, relative)
-            if candidate not in paths:
-                paths.append(candidate)
-        return paths
-
-    def _attempt_sources(self, work_dir: Path, phase: str, state: TargetState) -> list[Path]:
-        definition = PHASE_BY_KEY[phase]
-        paths: list[Path] = []
-        for relative in definition.static_sources:
-            canonical = work_dir / relative
-            parent = canonical.parent
-            if _safe_directory(work_dir, parent):
-                pattern = f"{canonical.stem}.attempt-*{canonical.suffix}"
-                with suppress(OSError):
-                    paths.extend(path for path in parent.glob(pattern) if _valid_attempt_for(canonical, path))
-        if phase == "phase4a":
-            paths.extend(_confirmation_files(work_dir, _TURN_ATTEMPT_RE))
-        for relative in state.attempt_signatures.get(phase, {}):
-            candidate = _checkpoint_path(work_dir, relative)
-            if candidate not in paths:
-                paths.append(candidate)
-        return paths
 
     def _publish(self, name: str) -> None:
         state = self._states[name]
@@ -1067,7 +653,7 @@ def render_summary(state: TargetState) -> str:
     total_tokens_observed = False
     total_cost = 0.0
     total_cost_observed = False
-    incomplete = not state.run_complete or state.history_incomplete or state.active_phase is not None
+    incomplete = not state.run_complete or state.history_incomplete
     for definition in PHASES:
         phase = state.phases[definition.key]
         runtime_available = phase.runtime_observed and not phase.runtime_incomplete
@@ -1115,6 +701,112 @@ def render_summary(state: TargetState) -> str:
         "",
     ]
     return "\n".join(lines)
+
+
+def _snapshot_usage(
+    work_dir: Path,
+    phase: str,
+    usage_paths: list[str],
+) -> tuple[list[dict[str, object]], bool]:
+    snapshots: list[dict[str, object]] = []
+    unique = list(dict.fromkeys(usage_paths))
+    complete = len(unique) == len(usage_paths)
+    for relative in unique:
+        if not _valid_checkpoint_relative(relative) or not _allowed_usage_path(phase, relative):
+            complete = False
+            continue
+        record = _parse_usage_file(work_dir, _checkpoint_path(work_dir, relative))
+        if record is None:
+            complete = False
+            continue
+        snapshots.append(
+            {
+                "path": relative,
+                "agent": record.agent,
+                "session_id": record.session_id,
+                "total_tokens": record.total_tokens,
+                "cached_input_tokens": record.cached_input_tokens,
+                "cost_usd": record.cost_usd,
+                "complete": record.complete,
+            }
+        )
+        complete = complete and record.complete
+    return snapshots, complete
+
+
+def _resource_record(value: object, target: str, invocation_id: str) -> dict[str, object] | None:
+    record = _string_mapping(value)
+    if record is None:
+        return None
+    phase = _optional_string(record.get("phase"))
+    status = record.get("status")
+    if (
+        record.get("version") != 1
+        or record.get("invocation_id") != invocation_id
+        or record.get("target") != target
+        or phase not in PHASE_BY_KEY
+        or status not in {"active", "completed"}
+    ):
+        return None
+    if status == "active":
+        return record
+    if (
+        _nonnegative_float(record.get("elapsed_seconds")) is None
+        or not isinstance(record.get("usage_complete"), bool)
+        or _record_usage(phase, record) is None
+    ):
+        return None
+    return record
+
+
+def _record_usage(phase: str, record: dict[str, object]) -> list[tuple[str, UsageRecord]] | None:
+    raw_usage = record.get("usage")
+    if not isinstance(raw_usage, list):
+        return None
+    result: list[tuple[str, UsageRecord]] = []
+    seen: set[str] = set()
+    for value in raw_usage:
+        snapshot = _usage_snapshot(phase, value)
+        if snapshot is None or snapshot[0] in seen:
+            return None
+        seen.add(snapshot[0])
+        result.append(snapshot)
+    return result
+
+
+def _usage_snapshot(phase: str, value: object) -> tuple[str, UsageRecord] | None:
+    data = _string_mapping(value)
+    if data is None:
+        return None
+    relative = _optional_string(data.get("path"))
+    agent = _optional_string(data.get("agent"))
+    raw_session = data.get("session_id")
+    session_id = _optional_string(raw_session)
+    tokens = _optional_nonnegative_int(data.get("total_tokens"))
+    cached = _optional_nonnegative_int(data.get("cached_input_tokens"))
+    cost = _optional_nonnegative_float(data.get("cost_usd"))
+    if (
+        relative is None
+        or not _valid_checkpoint_relative(relative)
+        or not _allowed_usage_path(phase, relative)
+        or agent is None
+        or (raw_session is not None and session_id is None)
+        or (tokens is None) != (cached is None)
+        or (tokens is not None and cached is not None and cached > tokens)
+        or not isinstance(data.get("complete"), bool)
+    ):
+        return None
+    return (
+        relative,
+        UsageRecord(
+            agent=agent,
+            session_id=session_id,
+            total_tokens=tokens,
+            cached_input_tokens=cached,
+            cost_usd=cost,
+            complete=data["complete"] is True,
+        ),
+    )
 
 
 def _parse_usage_file(root: Path, path: Path) -> UsageRecord | None:
@@ -1228,32 +920,6 @@ def _confirmation_files(work_dir: Path, pattern: re.Pattern[str]) -> list[Path]:
             continue
         paths.extend(path for path in entries if pattern.fullmatch(path.name) is not None)
     return paths
-
-
-def _valid_attempt_for(canonical: Path, candidate: Path) -> bool:
-    match = _ATTEMPT_SUFFIX_RE.fullmatch(candidate.name)
-    return match is not None and match.group("stem") == canonical.stem
-
-
-def _existing_signatures(root: Path, paths: Iterable[Path]) -> dict[str, str]:
-    found: dict[str, str] = {}
-    for path in paths:
-        signature = _file_signature(root, path)
-        if signature is not None:
-            found[_relative_path(root, path)] = signature
-    return found
-
-
-def _file_signature(root: Path, path: Path) -> str | None:
-    if not _safe_regular_file(root, path):
-        return None
-    try:
-        metadata = path.stat(follow_symlinks=False)
-        content = _read_safe_file(root, path).encode("utf-8", errors="surrogatepass")
-    except (OSError, UnicodeError):
-        return None
-    digest = hashlib.sha256(content).hexdigest()
-    return f"{metadata.st_mtime_ns}:{metadata.st_size}:{digest}"
 
 
 def _prepare_work_dir(output_root: Path, work_dir: Path) -> None:
@@ -1411,25 +1077,6 @@ def _string_mapping(value: object) -> dict[str, object] | None:
     return result
 
 
-def _signature_mapping(value: object, *, attempts: bool) -> dict[str, dict[str, str]] | None:
-    outer = _string_mapping(value)
-    if outer is None:
-        return None
-    result: dict[str, dict[str, str]] = {phase.key: {} for phase in PHASES}
-    for phase in PHASES:
-        inner = _string_mapping(outer.get(phase.key))
-        if inner is None:
-            return None
-        allowed = _allowed_attempt_path if attempts else _allowed_usage_path
-        if any(
-            not _valid_checkpoint_relative(key) or not allowed(phase.key, key) or not isinstance(item, str)
-            for key, item in inner.items()
-        ):
-            return None
-        result[phase.key] = {key: item for key, item in inner.items() if isinstance(item, str)}
-    return result
-
-
 def _invocation_signature_mapping(value: object) -> dict[str, str] | None:
     data = _string_mapping(value)
     if data is None:
@@ -1449,10 +1096,6 @@ def _object_signature(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _invocation_target_signature(phase: str, target: dict[str, object]) -> str:
-    return _object_signature({"phase": phase, "target": target})
-
-
 def _allowed_usage_path(phase: str, relative: str) -> bool:
     if relative in PHASE_BY_KEY[phase].static_sources:
         return True
@@ -1464,37 +1107,6 @@ def _allowed_usage_path(phase: str, relative: str) -> bool:
         and not parts[1].startswith(".")
         and _TURN_USAGE_RE.fullmatch(parts[2]) is not None
     )
-
-
-def _allowed_attempt_path(phase: str, relative: str) -> bool:
-    candidate = PurePosixPath(relative)
-    for source in PHASE_BY_KEY[phase].static_sources:
-        canonical = PurePosixPath(source)
-        if candidate.parent == canonical.parent:
-            match = _ATTEMPT_SUFFIX_RE.fullmatch(candidate.name)
-            if match is not None and match.group("stem") == canonical.stem:
-                return True
-    parts = candidate.parts
-    return (
-        phase == "phase4a"
-        and len(parts) == 3
-        and parts[0] == "confirmation"
-        and not parts[1].startswith(".")
-        and _TURN_ATTEMPT_RE.fullmatch(parts[2]) is not None
-    )
-
-
-def _manifest_usage_paths(phase: str, target: dict[str, object]) -> tuple[set[str], bool]:
-    usage_paths = target.get("usage_paths")
-    if not isinstance(usage_paths, list) or any(not isinstance(item, str) for item in usage_paths):
-        raise ValueError("resource manifest has an invalid usage path list")
-    expected: set[str] = set()
-    for item in usage_paths:
-        assert isinstance(item, str)
-        if not _valid_checkpoint_relative(item) or not _allowed_usage_path(phase, item):
-            raise ValueError(f"resource manifest has an unsafe usage path: {item!r}")
-        expected.add(item)
-    return expected, len(expected) != len(usage_paths)
 
 
 def _session_mapping(value: object) -> dict[str, SessionState]:

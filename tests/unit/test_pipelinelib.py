@@ -473,27 +473,13 @@ class _FakeResourceSummary:
     def __init__(self) -> None:
         self.events: list[tuple[object, ...]] = []
 
-    def start_phase(self, phase: str, names: list[str]) -> None:
-        self.events.append(("start", phase, tuple(names)))
-
-    def capture_usage(self, phase: str, names: list[str], *, require_change: bool = False) -> None:
-        self.events.append(("capture", phase, tuple(names), require_change))
-
-    def finish_phase(self, phase: str, names: list[str], elapsed: float, succeeded: bool) -> None:
-        self.events.append(("finish", phase, tuple(names), elapsed, succeeded))
-
     def capture_invocation(
         self,
         phase: str,
         names: list[str],
         invocation_id: str,
-        *,
-        launcher_succeeded: bool,
     ) -> None:
-        self.events.append(("invocation", phase, tuple(names), invocation_id, launcher_succeeded))
-
-    def skip_phase(self, phase: str, names: list[str]) -> None:
-        self.events.append(("skip", phase, tuple(names)))
+        self.events.append(("invocation", phase, tuple(names), invocation_id))
 
     def complete_run(self) -> None:
         self.events.append(("complete",))
@@ -514,7 +500,7 @@ class TestResourceSummaryPipeline(TmpCwd):
         self.assertEqual(tracker.events, [])
         self.assertIsNone(pipeline._resource_phase_key)
 
-    def test_launcher_captures_usage_and_its_target_manifest(self) -> None:
+    def test_launcher_captures_its_target_invocation(self) -> None:
         pipeline = make_pipeline(["footest|g|l|r"])
         tracker = _FakeResourceSummary()
         pipeline.resource_summary = tracker  # type: ignore[assignment]
@@ -526,11 +512,10 @@ class TestResourceSummaryPipeline(TmpCwd):
             pipeline._phase("confirmation", "launch_bug_confirmation.sh", ["footest"])
 
         self.assertEqual(raised.exception.code, 7)
-        self.assertEqual(tracker.events[0], ("capture", "phase4a", ("footest",), False))
-        invocation = tracker.events[1]
+        self.assertEqual(len(tracker.events), 1)
+        invocation = tracker.events[0]
         self.assertEqual(invocation[:3], ("invocation", "phase4a", ("footest",)))
         self.assertRegex(str(invocation[3]), r"^[0-9a-f]{32}$")
-        self.assertFalse(invocation[4])
 
     def test_main_wraps_each_user_visible_phase_group(self) -> None:
         pipeline = make_pipeline(["footest|g|l|r"])
@@ -565,7 +550,6 @@ class TestResourceSummaryPipeline(TmpCwd):
         rc, _output = quiet(pipeline.main)
 
         self.assertEqual(rc, 0)
-        self.assertFalse(any(event[0] in {"start", "finish"} for event in tracker.events))
         self.assertEqual(tracker.events[-1], ("complete",))
         self.assertEqual(
             phase_events,
@@ -2923,7 +2907,7 @@ class TestRunLauncherExitCodes(TmpCwd):
         run_dir.mkdir()
         p = self._pipeline(
             f'lock_state=$(test -e "/proc/self/fd/$SPECULA_RUN_LOCK_FD" && printf open)\n'
-            f'printf \'%s\\n\' "$PWD" "$SPECULA_RESOURCE_ROOT" "$SPECULA_RESOURCE_MANIFEST" '
+            f'printf \'%s\\n\' "$PWD" "$SPECULA_RESOURCE_ROOT" "$SPECULA_RESOURCE_INVOCATION" '
             f'"$SPECULA_RESOURCE_PHASE" "$lock_state" > "{captured}"\n'
         )
         lock_file = (self.tmp / "run.lock").open("w")
@@ -2942,7 +2926,7 @@ class TestRunLauncherExitCodes(TmpCwd):
             [
                 str(launch_cwd),
                 str(run_dir),
-                str(run_dir / ".resource-summary-invocations" / f"{invocation_id}.json"),
+                invocation_id,
                 "phase1",
                 "open",
             ],
