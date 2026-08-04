@@ -1477,6 +1477,7 @@ class Phase:
         proc: subprocess.Popen[bytes] | None = None
         launched: progress.RunningAgent | None = None
         try:
+            _resource_note_agent(work_dir, files["log"])
             proc = subprocess.Popen(
                 [
                     str(adapter),
@@ -1493,7 +1494,6 @@ class Phase:
                 start_new_session=True,
                 pass_fds=resumelib.inherited_run_lock_fds(),
             )
-            _resource_note_agent(work_dir, files["log"])
             launched = progress.RunningAgent(
                 name=name,
                 proc=proc,
@@ -3099,8 +3099,8 @@ Output:
                     if rc != 0:
                         _resource_finish_target(name)
                         return self._failure_code([(name, rc)])
-                    resumelib.mark_completed(("review", phase, name))
                     _resource_finish_target(name)
+                    resumelib.mark_completed(("review", phase, name))
                     break
 
         print()
@@ -3260,6 +3260,7 @@ Output:
         proc: subprocess.Popen[bytes] | None = None
         running: progress.RunningAgent | None = None
         try:
+            _resource_note_agent(wd, log_file)
             proc = subprocess.Popen(
                 [
                     str(adapter),
@@ -3278,7 +3279,6 @@ Output:
                 start_new_session=True,
                 pass_fds=resumelib.inherited_run_lock_fds(),
             )
-            _resource_note_agent(wd, log_file)
             running = progress.RunningAgent(
                 name=name,
                 proc=proc,

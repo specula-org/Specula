@@ -289,16 +289,17 @@ class TestRecoveryAndSnapshots(ResourceSummaryCase):
     def test_completed_record_uses_immutable_usage_snapshot(self) -> None:
         tracker = self.tracker()
         tracker.initialize(resume=False)
-        sidecar = self.write_json(
-            self.work_dir,
-            "agent.usage.json",
-            _normalized(session="snapshot", tokens=100, cached=80, cost=1.0),
-        )
+        sidecar = self.work_dir / "agent.usage.json"
         invocation_id = "b" * 32
         recorder = self.recorder("phase1", invocation_id)
         with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 2.0]):
             recorder.start_target("demo", self.work_dir)
             recorder.note_agent(self.work_dir, sidecar)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(session="snapshot", tokens=100, cached=80, cost=1.0),
+            )
             recorder.finish_target("demo")
         sidecar.write_text(json.dumps(_normalized(session="snapshot", tokens=999, cached=900, cost=9.0)) + "\n")
 
@@ -331,6 +332,63 @@ class TestRecoveryAndSnapshots(ResourceSummaryCase):
         self.assertFalse(phase["cost_observed"])
         self.assertTrue(phase["usage_incomplete"])
 
+    def test_stale_sidecar_is_not_reused_when_the_next_agent_writes_nothing(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        sidecar = self.work_dir / "agent.usage.json"
+
+        first_id = "bc" * 16
+        first = self.recorder("phase1", first_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
+            first.start_target("demo", self.work_dir)
+            first.note_agent(self.work_dir, sidecar)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(session=None, tokens=100, cached=80, cost=1.0, agent="pi"),
+            )
+            first.finish_target("demo")
+        tracker.capture_invocation("phase1", ["demo"], first_id)
+
+        second_id = "bd" * 16
+        second = self.recorder("phase1", second_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[2.0, 3.0]):
+            second.start_target("demo", self.work_dir)
+            second.note_agent(self.work_dir, sidecar)
+            self.assertFalse(sidecar.exists())
+            second.finish_target("demo")
+        tracker.capture_invocation("phase1", ["demo"], second_id)
+
+        phase = self.phase_state(self.state(self.work_dir), "phase1")
+        self.assertEqual(phase["total_tokens"], 100)
+        self.assertEqual(phase["cost_usd"], 1.0)
+        self.assertTrue(phase["usage_incomplete"])
+
+    def test_failed_stale_sidecar_cleanup_is_incomplete_and_ignored(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        sidecar = self.write_json(
+            self.work_dir,
+            "agent.usage.json",
+            _normalized(session=None, tokens=999, cached=900, cost=9.0, agent="pi"),
+        )
+        invocation_id = "be" * 16
+        recorder = self.recorder("phase1", invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
+            recorder.start_target("demo", self.work_dir)
+            with (
+                mock.patch.object(Path, "unlink", autospec=True, side_effect=PermissionError("denied")),
+                self.assertRaisesRegex(OSError, "cannot clear stale resource usage"),
+            ):
+                recorder.note_agent(self.work_dir, sidecar)
+            recorder.finish_target("demo")
+        tracker.capture_invocation("phase1", ["demo"], invocation_id)
+
+        phase = self.phase_state(self.state(self.work_dir), "phase1")
+        self.assertFalse(phase["tokens_observed"])
+        self.assertFalse(phase["cost_observed"])
+        self.assertTrue(phase["usage_incomplete"])
+
     def test_rejected_usage_path_cannot_be_reported_as_known_zero(self) -> None:
         tracker = self.tracker()
         tracker.initialize(resume=False)
@@ -352,23 +410,24 @@ class TestRecoveryAndSnapshots(ResourceSummaryCase):
     def test_partial_snapshot_keeps_available_values_and_marks_incomplete(self) -> None:
         tracker = self.tracker()
         tracker.initialize(resume=False)
-        sidecar = self.write_json(
-            self.work_dir,
-            "agent.usage.json",
-            _normalized(
-                session="partial",
-                tokens=420,
-                cached=200,
-                cost=1.5,
-                agent="pi",
-                complete=False,
-            ),
-        )
+        sidecar = self.work_dir / "agent.usage.json"
         invocation_id = "d" * 32
         recorder = self.recorder("phase1", invocation_id)
         with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
             recorder.start_target("demo", self.work_dir)
             recorder.note_agent(self.work_dir, sidecar)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(
+                    session="partial",
+                    tokens=420,
+                    cached=200,
+                    cost=1.5,
+                    agent="pi",
+                    complete=False,
+                ),
+            )
             recorder.finish_target("demo")
 
         tracker.capture_invocation("phase1", ["demo"], invocation_id)
@@ -400,21 +459,19 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
     def test_normalized_usage_and_wall_time_are_rendered(self) -> None:
         tracker = self.tracker()
         tracker.initialize(resume=False)
-        sidecar = self.write_json(
-            self.work_dir,
-            "agent.usage.json",
-            _normalized(
-                session="session-1",
-                tokens=61_000_000,
-                cached=58_900_000,
-                cost=47.55,
-            ),
+        sidecar = self.work_dir / "agent.usage.json"
+        payload = _normalized(
+            session="session-1",
+            tokens=61_000_000,
+            cached=58_900_000,
+            cost=47.55,
         )
         invocation_id = "e" * 32
         recorder = self.recorder("phase1", invocation_id)
         with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 12_480.0]):
             recorder.start_target("demo", self.work_dir)
             recorder.note_agent(self.work_dir, sidecar)
+            self.write_json(self.work_dir, "agent.usage.json", payload)
             recorder.finish_target("demo")
 
         tracker.capture_invocation("phase1", ["demo"], invocation_id)
@@ -427,39 +484,37 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
     def test_claude_model_usage_is_preferred_over_parent_usage(self) -> None:
         tracker = self.tracker()
         tracker.initialize(resume=False)
-        sidecar = self.write_json(
-            self.work_dir,
-            "agent.usage.json",
-            {
-                "session_id": "claude-session",
-                "total_cost_usd": 3.5,
-                "usage": {
-                    "input_tokens": 1,
-                    "cache_creation_input_tokens": 2,
-                    "cache_read_input_tokens": 3,
-                    "output_tokens": 4,
+        sidecar = self.work_dir / "agent.usage.json"
+        payload = {
+            "session_id": "claude-session",
+            "total_cost_usd": 3.5,
+            "usage": {
+                "input_tokens": 1,
+                "cache_creation_input_tokens": 2,
+                "cache_read_input_tokens": 3,
+                "output_tokens": 4,
+            },
+            "model_usage": {
+                "large": {
+                    "inputTokens": 10,
+                    "cacheCreationInputTokens": 20,
+                    "cacheReadInputTokens": 30,
+                    "outputTokens": 40,
                 },
-                "model_usage": {
-                    "large": {
-                        "inputTokens": 10,
-                        "cacheCreationInputTokens": 20,
-                        "cacheReadInputTokens": 30,
-                        "outputTokens": 40,
-                    },
-                    "small": {
-                        "inputTokens": 1,
-                        "cacheCreationInputTokens": 2,
-                        "cacheReadInputTokens": 3,
-                        "outputTokens": 4,
-                    },
+                "small": {
+                    "inputTokens": 1,
+                    "cacheCreationInputTokens": 2,
+                    "cacheReadInputTokens": 3,
+                    "outputTokens": 4,
                 },
             },
-        )
+        }
         invocation_id = "f" * 32
         recorder = self.recorder("phase1", invocation_id)
         with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
             recorder.start_target("demo", self.work_dir)
             recorder.note_agent(self.work_dir, sidecar)
+            self.write_json(self.work_dir, "agent.usage.json", payload)
             recorder.finish_target("demo")
 
         tracker.capture_invocation("phase1", ["demo"], invocation_id)
@@ -472,26 +527,24 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
     def test_claude_native_usage_is_the_fallback(self) -> None:
         tracker = self.tracker()
         tracker.initialize(resume=False)
-        sidecar = self.write_json(
-            self.work_dir,
-            "agent.usage.json",
-            {
-                "session_id": "claude-session",
-                "total_cost_usd": 0.5,
-                "usage": {
-                    "input_tokens": 10,
-                    "cache_creation_input_tokens": 20,
-                    "cache_read_input_tokens": 30,
-                    "output_tokens": 40,
-                },
-                "model_usage": {},
+        sidecar = self.work_dir / "agent.usage.json"
+        payload = {
+            "session_id": "claude-session",
+            "total_cost_usd": 0.5,
+            "usage": {
+                "input_tokens": 10,
+                "cache_creation_input_tokens": 20,
+                "cache_read_input_tokens": 30,
+                "output_tokens": 40,
             },
-        )
+            "model_usage": {},
+        }
         invocation_id = "0" * 32
         recorder = self.recorder("phase1", invocation_id)
         with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
             recorder.start_target("demo", self.work_dir)
             recorder.note_agent(self.work_dir, sidecar)
+            self.write_json(self.work_dir, "agent.usage.json", payload)
             recorder.finish_target("demo")
 
         tracker.capture_invocation("phase1", ["demo"], invocation_id)
@@ -504,25 +557,30 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
     def test_codex_cumulative_session_adds_only_the_delta(self) -> None:
         tracker = self.tracker()
         tracker.initialize(resume=False)
-        sidecar = self.write_json(
-            self.work_dir,
-            "agent.usage.json",
-            _normalized(session="same-session", tokens=100, cached=80, cost=1.0),
-        )
+        sidecar = self.work_dir / "agent.usage.json"
         first_id = "1a" * 16
         first = self.recorder("phase1", first_id)
         with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
             first.start_target("demo", self.work_dir)
             first.note_agent(self.work_dir, sidecar)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(session="same-session", tokens=100, cached=80, cost=1.0),
+            )
             first.finish_target("demo")
         tracker.capture_invocation("phase1", ["demo"], first_id)
 
-        sidecar.write_text(json.dumps(_normalized(session="same-session", tokens=150, cached=120, cost=1.5)) + "\n")
         second_id = "2b" * 16
         second = self.recorder("phase1", second_id)
         with mock.patch("specula.resource_summary.time.monotonic", side_effect=[2.0, 3.0]):
             second.start_target("demo", self.work_dir)
             second.note_agent(self.work_dir, sidecar)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(session="same-session", tokens=150, cached=120, cost=1.5),
+            )
             second.finish_target("demo")
         tracker.capture_invocation("phase1", ["demo"], second_id)
 
@@ -534,16 +592,17 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
     def test_missing_cost_is_a_dash_while_tokens_remain_visible(self) -> None:
         tracker = self.tracker()
         tracker.initialize(resume=False)
-        sidecar = self.write_json(
-            self.work_dir,
-            "agent.usage.json",
-            _normalized(session="no-cost", tokens=420, cached=200, cost=None),
-        )
+        sidecar = self.work_dir / "agent.usage.json"
         invocation_id = "3c" * 16
         recorder = self.recorder("phase1", invocation_id)
         with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
             recorder.start_target("demo", self.work_dir)
             recorder.note_agent(self.work_dir, sidecar)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(session="no-cost", tokens=420, cached=200, cost=None),
+            )
             recorder.finish_target("demo")
         tracker.capture_invocation("phase1", ["demo"], invocation_id)
 
@@ -643,9 +702,31 @@ class TestSafety(ResourceSummaryCase):
         tracker.capture_invocation("phase1", ["demo"], invocation_id)
 
         phase = self.phase_state(self.state(self.work_dir), "phase1")
+        self.assertTrue(outside.is_file())
+        self.assertFalse(sidecar.exists())
         self.assertFalse(phase["tokens_observed"])
         self.assertFalse(phase["cost_observed"])
         self.assertTrue(phase["usage_incomplete"])
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks unavailable")
+    def test_symlinked_usage_parent_is_rejected_without_touching_destination(self) -> None:
+        outside = self.root / "outside"
+        outside.mkdir()
+        outside_sidecar = outside / "turn01_A.usage.json"
+        outside_sidecar.write_text(json.dumps(_normalized(session=None, tokens=999, cached=900, cost=9.0)) + "\n")
+        confirmation = self.work_dir / "confirmation"
+        confirmation.mkdir(parents=True)
+        (confirmation / "MC-1").symlink_to(outside, target_is_directory=True)
+        invocation_id = "5f" * 16
+        recorder = self.recorder("phase4a", invocation_id)
+
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
+            recorder.start_target("demo", self.work_dir)
+            with self.assertRaisesRegex(OSError, "unsafe resource usage directory"):
+                recorder.note_agent(self.work_dir, confirmation / "MC-1" / "turn01_A.usage.json")
+            recorder.finish_target("demo")
+
+        self.assertTrue(outside_sidecar.is_file())
 
     def test_invalid_invocation_identity_has_no_directory_side_effect(self) -> None:
         with self.assertRaises(ValueError):

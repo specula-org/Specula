@@ -271,10 +271,14 @@ class ResourceInvocationRecorder:
             for name, expected_work_dir in self._work_dirs.items():
                 if name not in self._started or expected_work_dir != absolute_work_dir:
                     continue
-                usage_relative = _relative_path(expected_work_dir, absolute_usage)
-                if not _allowed_usage_path(self._phase, usage_relative):
+                try:
+                    usage_relative = _relative_path(expected_work_dir, absolute_usage)
+                    if not _allowed_usage_path(self._phase, usage_relative):
+                        raise ValueError(f"unexpected resource usage path: {usage_relative}")
+                    _clear_stale_usage(expected_work_dir, absolute_usage)
+                except (OSError, UnicodeError, ValueError):
                     self._usage_failed.add(name)
-                    raise ValueError(f"unexpected resource usage path: {usage_relative}")
+                    raise
                 self._usage_paths[name].append(usage_relative)
                 return
             raise ValueError(f"resource target is not active: {absolute_work_dir}")
@@ -999,6 +1003,21 @@ def _read_safe_file(root: Path, path: Path) -> str:
         with suppress(OSError):
             os.close(descriptor)
         raise
+
+
+def _clear_stale_usage(root: Path, path: Path) -> None:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    if not _safe_directory(root, path.parent):
+        raise OSError(f"unsafe resource usage directory: {path.parent}")
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise OSError(f"cannot clear stale resource usage: {path}") from exc
 
 
 def _atomic_write(root: Path, path: Path, content: str) -> None:

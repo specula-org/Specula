@@ -2564,10 +2564,16 @@ class TestProgressReporting(PhaseCase):
 
     def test_main_writes_target_runtime_and_usage_record(self) -> None:
         inherited = self.tmp() / "resource-env"
+        stale_usage = self.work_dir() / "agent.usage.json"
+        stale_usage.parent.mkdir(parents=True)
+        stale_usage.write_text(
+            '{"agent":"fake","total_cost_usd":9,"usage":{"total_tokens":999,"cached_input_tokens":900}}\n'
+        )
         self.write_adapter(
             'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
             'printf "draft\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
             "usage=${log%.log}.usage.json\n"
+            'test ! -e "$usage"\n'
             "printf '%s\\n' "
             '\'{"agent":"fake","total_cost_usd":0,"usage":{"total_tokens":0,'
             '"cached_input_tokens":0}}\' > "$usage"\n'
@@ -2598,6 +2604,42 @@ class TestProgressReporting(PhaseCase):
         self.assertGreaterEqual(record["elapsed_seconds"], 0.0)
         self.assertEqual([entry["path"] for entry in record["usage"]], ["agent.usage.json"])
         self.assertEqual(inherited.read_text().splitlines(), ["<unset>", "<unset>", "<unset>"])
+
+    def test_usage_cleanup_failure_does_not_block_agent(self) -> None:
+        self.write_adapter(
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            'printf "draft\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            "usage=${log%.log}.usage.json\n"
+            "printf '%s\\n' "
+            '\'{"agent":"fake","total_cost_usd":1,"usage":{"total_tokens":100,'
+            '"cached_input_tokens":80}}\' > "$usage"\n'
+        )
+        invocation_id = "c" * 32
+        self.set_env(resource_summary.RESOURCE_ROOT_ENV, str(self.run_dir))
+        self.set_env(resource_summary.RESOURCE_INVOCATION_ENV, invocation_id)
+        self.set_env(resource_summary.RESOURCE_PHASE_ENV, "phase1")
+        output = io.StringIO()
+
+        with (
+            mock.patch.object(resource_summary, "_clear_stale_usage", side_effect=PermissionError("denied")),
+            contextlib.redirect_stdout(output),
+            contextlib.redirect_stderr(output),
+        ):
+            rc = phaselib.main(
+                [
+                    "code_analysis",
+                    f"--agent={self.adapter.stem}",
+                    self.artifact_flag(),
+                    NAME,
+                ]
+            )
+
+        self.assertEqual(rc, 0, output.getvalue())
+        self.assertIn("WARNING: resource summary", output.getvalue())
+        record_path = self.work_dir() / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        record = json.loads(record_path.read_text())
+        self.assertFalse(record["usage_complete"])
+        self.assertEqual(record["usage"], [])
 
     def test_main_keeps_completed_record_when_post_processing_raises(self) -> None:
         invocation_id = "d" * 32
@@ -3578,6 +3620,35 @@ class TestReviewPhase(PhaseCase):
             )
 
         self.assertFalse(marker.exists())
+
+    def test_review_finishes_resource_record_before_resume_completion(self) -> None:
+        self.seed(["modeling-brief.md"])
+        self.install_adapter(
+            "fake",
+            "log=\n"
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            'printf "review\\n" > "$SPECULA_WORK_DIR/review-analysis.md"\n'
+            'printf "done\\n" > "$log"\n',
+        )
+        invocation_id = "a" * 32
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            "phase1",
+            invocation_id,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+        record_path = self.work_dir() / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+
+        def fail_after_check(_logical: tuple[str, ...]) -> None:
+            self.assertEqual(json.loads(record_path.read_text())["status"], "completed")
+            raise RuntimeError("completion interrupted")
+
+        self.patch_attr(resumelib, "mark_completed", fail_after_check)
+
+        with self.assertRaisesRegex(RuntimeError, "completion interrupted"):
+            self.run_phase("review", ["analysis", "--agent=fake", NAME])
+
+        self.assertEqual(json.loads(record_path.read_text())["status"], "completed")
 
     def test_manual_resume_reaches_exact_session_for_each_review_phase(self) -> None:
         captures = self.tmp()
