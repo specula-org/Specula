@@ -397,6 +397,7 @@ class ResourceSummaryTracker:
 
     def initialize(self, resume: bool) -> None:
         """Create fresh state, or restore an existing run without guessing gaps."""
+        invalid_invocations = self._invalid_invocation_scope() if resume else {}
         for name, work_dir in self._targets.items():
             try:
                 _prepare_work_dir(self._output_root, work_dir)
@@ -434,8 +435,13 @@ class ResourceSummaryTracker:
                     self._capture_pending_invocations(name, work_dir, state, changed_by_phase, unexplained)
                     if any(unexplained.values()):
                         state.history_incomplete = True
-                if resume and self._has_invalid_invocation_manifest():
+                if invalid_invocations is None:
                     state.history_incomplete = True
+                else:
+                    for phase_key in invalid_invocations.get(name, set()):
+                        state.phases[phase_key].runtime_incomplete = True
+                        state.phases[phase_key].usage_incomplete = True
+                        state.history_incomplete = True
                 state.run_complete = False
                 state.maximum_parallelism = self._maximum_parallelism
                 state.tlc_memory_limit = self._tlc_memory_limit
@@ -780,7 +786,7 @@ class ResourceSummaryTracker:
                 changed.add(relative)
         return changed
 
-    def _load_invocation(self, invocation_id: str) -> dict[str, object] | None:
+    def _load_invocation(self, invocation_id: str, *, allow_incomplete: bool = False) -> dict[str, object] | None:
         path = self._output_root / INVOCATION_DIRNAME / f"{invocation_id}.json"
         try:
             raw = _read_safe_file(self._output_root, path)
@@ -794,32 +800,47 @@ class ResourceSummaryTracker:
             manifest.get("version") != 1
             or manifest.get("invocation_id") != invocation_id
             or manifest.get("phase") not in PHASE_BY_KEY
-            or manifest.get("complete") is not True
-            or not isinstance(manifest.get("succeeded"), bool)
             or not isinstance(manifest.get("targets"), dict)
+            or (
+                not allow_incomplete
+                and (manifest.get("complete") is not True or not isinstance(manifest.get("succeeded"), bool))
+            )
         ):
             return None
         return manifest
 
-    def _has_invalid_invocation_manifest(self) -> bool:
+    def _invalid_invocation_scope(self) -> dict[str, set[str]] | None:
         directory = self._output_root / INVOCATION_DIRNAME
         try:
             directory.lstat()
         except FileNotFoundError:
-            return False
+            return {}
         except OSError:
-            return True
+            return None
         if not _safe_directory(self._output_root, directory):
-            return True
+            return None
         try:
             entries = list(directory.iterdir())
         except OSError:
-            return True
+            return None
+        affected: dict[str, set[str]] = {}
         for path in entries:
             match = re.fullmatch(r"([0-9a-f]{32})\.json", path.name)
-            if match is not None and self._load_invocation(match.group(1)) is None:
-                return True
-        return False
+            if match is None:
+                continue
+            invocation_id = match.group(1)
+            manifest = self._load_invocation(invocation_id, allow_incomplete=True)
+            if manifest is None:
+                return None
+            if manifest.get("complete") is True and isinstance(manifest.get("succeeded"), bool):
+                continue
+            phase = manifest["phase"]
+            targets = manifest["targets"]
+            assert isinstance(phase, str)
+            assert isinstance(targets, dict)
+            for name in targets:
+                affected.setdefault(str(name), set()).add(phase)
+        return affected
 
     def _invocation_manifests(self) -> list[tuple[str, dict[str, object]]]:
         directory = self._output_root / INVOCATION_DIRNAME

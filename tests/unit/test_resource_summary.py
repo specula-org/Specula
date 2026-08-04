@@ -425,17 +425,87 @@ class TestInvocationAccounting(ResourceSummaryCase):
         self.assertTrue(self.state()["history_incomplete"])
 
     def test_resume_marks_malformed_invocation_manifest_incomplete(self) -> None:
-        tracker = self.tracker()
+        second_work_dir = self.root / "second" / ".specula-output"
+        targets = {"demo": self.work_dir, "second": second_work_dir}
+        tracker = ResourceSummaryTracker(
+            targets,
+            output_root=self.root,
+            maximum_parallelism="1",
+            tlc_memory_limit="8G",
+            tlc_worker_limit="4",
+        )
         tracker.initialize(resume=False)
         invocation_id = "5" * 32
         path = self.root / INVOCATION_DIRNAME / f"{invocation_id}.json"
         path.parent.mkdir()
         path.write_text("{not json\n")
 
-        resumed = self.tracker()
+        resumed = ResourceSummaryTracker(
+            targets,
+            output_root=self.root,
+            maximum_parallelism="1",
+            tlc_memory_limit="8G",
+            tlc_worker_limit="4",
+        )
         resumed.initialize(resume=True)
 
         self.assertTrue(self.state()["history_incomplete"])
+        second = json.loads((second_work_dir / STATE_FILENAME).read_text())
+        self.assertTrue(second["history_incomplete"])
+
+    def test_resume_scopes_unfinalized_manifest_to_its_target(self) -> None:
+        alpha_work_dir = self.root / "alpha" / ".specula-output"
+        beta_work_dir = self.root / "beta" / ".specula-output"
+        targets = {"alpha": alpha_work_dir, "beta": beta_work_dir}
+        tracker = ResourceSummaryTracker(
+            targets,
+            output_root=self.root,
+            maximum_parallelism="1",
+            tlc_memory_limit="8G",
+            tlc_worker_limit="4",
+        )
+        tracker.initialize(resume=False)
+        for index, definition in enumerate(PHASES, start=1):
+            invocation_id = f"{index:032x}"
+            recorder = self.recorder(definition.key, invocation_id)
+            for name, work_dir in targets.items():
+                recorder.reuse_target(name, work_dir)
+            recorder.finalize(True)
+            tracker.capture_invocation(
+                definition.key,
+                targets,
+                invocation_id,
+                launcher_succeeded=True,
+            )
+        tracker.complete_run()
+
+        exact_total = "| **Total** | 0s | 0 total (0 cached) | $0.00 |"
+        self.assertIn(exact_total, (beta_work_dir / SUMMARY_FILENAME).read_text())
+        unfinished_id = "f" * 32
+        unfinished = self.recorder("phase1", unfinished_id)
+        unfinished.start_target("alpha", alpha_work_dir)
+
+        resumed = ResourceSummaryTracker(
+            targets,
+            output_root=self.root,
+            maximum_parallelism="1",
+            tlc_memory_limit="8G",
+            tlc_worker_limit="4",
+        )
+        resumed.initialize(resume=True)
+        resumed.complete_run()
+
+        alpha = json.loads((alpha_work_dir / STATE_FILENAME).read_text())
+        beta = json.loads((beta_work_dir / STATE_FILENAME).read_text())
+        self.assertTrue(alpha["history_incomplete"])
+        self.assertTrue(self.phase_state(alpha, "phase1")["runtime_incomplete"])
+        self.assertTrue(self.phase_state(alpha, "phase1")["usage_incomplete"])
+        self.assertFalse(beta["history_incomplete"])
+        self.assertFalse(self.phase_state(beta, "phase1")["runtime_incomplete"])
+        self.assertFalse(self.phase_state(beta, "phase1")["usage_incomplete"])
+        beta_summary = (beta_work_dir / SUMMARY_FILENAME).read_text()
+        self.assertIn(exact_total, beta_summary)
+        self.assertNotIn("Total (incomplete)", beta_summary)
 
     def test_resume_rejects_invalid_invocation_signature(self) -> None:
         tracker = self.tracker()
