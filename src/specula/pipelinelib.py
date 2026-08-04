@@ -3268,7 +3268,13 @@ class Pipeline:
                 log(f"ERROR: invalid interrupted review phase {review_phase!r}")
                 raise SystemExit(1)
             log(f"Restoring interrupted {review_phase} review before continuing the pipeline")
-            self.run_review(review_phase, names, force=True)
+            resource_phase = {
+                "analysis": "phase1",
+                "specgen": "phase2",
+                "validation": "phase3",
+            }[review_phase]
+            with self.resource_phase(resource_phase, names):
+                self.run_review(review_phase, names, force=True)
             self._manual_resume_phase = None
 
         # Recover before Phase 1/2/2.5 can mutate the artifacts that the

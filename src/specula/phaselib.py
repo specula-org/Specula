@@ -87,6 +87,12 @@ def _resource_start_target(name: str, work_dir: Path) -> None:
             _RESOURCE_RECORDER.start_target(name, work_dir)
 
 
+def _resource_reuse_target(name: str, work_dir: Path) -> None:
+    if _RESOURCE_RECORDER is not None:
+        with contextlib.suppress(OSError, UnicodeError, ValueError):
+            _RESOURCE_RECORDER.reuse_target(name, work_dir)
+
+
 def _resource_note_agent(work_dir: Path, log_file: Path) -> None:
     if _RESOURCE_RECORDER is not None:
         with contextlib.suppress(OSError, UnicodeError, ValueError):
@@ -958,6 +964,10 @@ class Phase:
                 _refresh_target_indexes(ws, names)
             return alt
 
+        for name in names:
+            if name in accepted_names:
+                _resource_reuse_target(name, ws.work_dir(name))
+
         integrity_snapshot = self.capture_output_integrity(
             ws,
             names,
@@ -1181,6 +1191,7 @@ class Phase:
                     resumelib.mark_completed(("phase", self.key, name))
                 except resumelib.ResumeError as exc:
                     finalized.append((name, 1))
+                    _resource_fail_target(name)
                     print(f"ERROR: {exc}")
 
         self.summarize(ws, names)
@@ -3000,6 +3011,10 @@ Output:
         print(f"Policy retries: {policy_retries}")
         print(f"Transient resumes: {transient_resumes}")
         print()
+
+        for name in names:
+            if name in accepted_names:
+                _resource_reuse_target(name, ws.work_dir(name))
 
         with _cleanup_on_signal():
             for name in names:

@@ -286,6 +286,21 @@ class ResourceInvocationRecorder:
             self._started[name] = time.monotonic()
             self._publish()
 
+    def reuse_target(self, name: str, work_dir: Path) -> None:
+        """Record a target already completed by an earlier invocation."""
+        with self._lock:
+            targets = self._targets()
+            if name in self._started or name in targets:
+                raise ValueError(f"resource target reused with conflicting state: {name}")
+            targets[name] = {
+                "work_dir": _relative_path(self._root, Path(os.path.abspath(work_dir))),
+                "finished": True,
+                "elapsed_seconds": 0.0,
+                "succeeded": True,
+                "usage_paths": [],
+            }
+            self._publish()
+
     def note_agent(self, work_dir: Path, usage_path: Path) -> None:
         absolute_work_dir = Path(os.path.abspath(work_dir))
         absolute_usage = Path(os.path.abspath(usage_path))

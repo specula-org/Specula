@@ -224,6 +224,24 @@ class TestInvocationAccounting(ResourceSummaryCase):
         self.assertFalse(phase["usage_incomplete"])
         self.assertIn("| Phase 4a | 1s | 0 total (0 cached) | $0.00 |", self.summary())
 
+    def test_reused_target_records_exact_zero_without_becoming_incomplete(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        invocation_id = "a" * 32
+        recorder = self.recorder("phase1", invocation_id)
+        recorder.reuse_target("demo", self.work_dir)
+        recorder.finalize(True)
+
+        tracker.capture_invocation("phase1", ["demo"], invocation_id, launcher_succeeded=True)
+
+        phase = self.phase_state(self.state(), "phase1")
+        self.assertTrue(phase["runtime_observed"])
+        self.assertEqual(phase["runtime_seconds"], 0.0)
+        self.assertTrue(phase["tokens_observed"])
+        self.assertTrue(phase["cost_observed"])
+        self.assertFalse(phase["runtime_incomplete"])
+        self.assertFalse(phase["usage_incomplete"])
+
     def test_agent_without_a_changed_usage_sidecar_is_incomplete(self) -> None:
         tracker = self.tracker()
         tracker.initialize(resume=False)

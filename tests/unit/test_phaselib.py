@@ -978,6 +978,32 @@ class TestHandoffGate(PhaseCase):
         self.assertIn("[Analysis report](analysis-report.md)", index)
         self.assertIn("[pipeline.log](../../pipeline.log)", index)
 
+    def test_resume_completion_failure_marks_resource_target_failed(self) -> None:
+        self.write_adapter('printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n')
+        invocation_id = "d" * 32
+        manifest = self.run_dir / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            manifest,
+            "phase1",
+            invocation_id,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+        self.patch_attr(
+            resumelib,
+            "mark_completed",
+            mock.Mock(side_effect=resumelib.ResumeError("cannot complete call")),
+        )
+
+        rc, out = self.run_analysis()
+        recorder.finalize(rc == 0)
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("ERROR: cannot complete call", out)
+        target = json.loads(manifest.read_text())["targets"][NAME]
+        self.assertTrue(target["finished"])
+        self.assertFalse(target["succeeded"])
+
     def test_live_analysis_failure_keeps_partial_results_browsable(self) -> None:
         self.write_adapter('printf "analysis\\n" > "$SPECULA_WORK_DIR/analysis-report.md"\nexit 9\n')
 
@@ -1334,7 +1360,17 @@ class TestHandoffGate(PhaseCase):
 
         self.set_env(resumelib.INVOCATION_ENV, "invocation-2")
         self.set_env(resumelib.MANUAL_ENV, "1")
+        resource_invocation = "f" * 32
+        manifest = self.run_dir / resource_summary.INVOCATION_DIRNAME / f"{resource_invocation}.json"
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            manifest,
+            "phase1",
+            resource_invocation,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
         resumed_rc, resumed_out = self.run_analysis(targets, options=["--max-parallel=1"])
+        recorder.finalize(resumed_rc == 0)
 
         self.assertEqual(resumed_rc, 0, resumed_out)
         self.assertEqual((captures / "accepted-count").read_text(), "x")
@@ -1342,6 +1378,19 @@ class TestHandoffGate(PhaseCase):
         self.assertEqual((captures / "pending-count").read_text(), "x")
         self.assertEqual(resumelib.active_entries(self.run_dir), [])
         self.assertEqual(resumelib.completed_entries(self.run_dir), [])
+        resource_targets = json.loads(manifest.read_text())["targets"]
+        self.assertEqual(
+            resource_targets["accepted"],
+            {
+                "elapsed_seconds": 0.0,
+                "finished": True,
+                "succeeded": True,
+                "usage_paths": [],
+                "work_dir": "accepted/.specula-output",
+            },
+        )
+        self.assertEqual(resource_targets["active"]["usage_paths"], ["agent.usage.json"])
+        self.assertEqual(resource_targets["pending"]["usage_paths"], ["agent.usage.json"])
 
     def test_default_transient_resume_budget_stops_after_twenty_continuations(self) -> None:
         count = self.tmp() / "count"
@@ -3557,6 +3606,76 @@ class TestReviewPhase(PhaseCase):
                 self.assertEqual((self.work_dir() / prompt_rel).read_text(), phaselib._MANUAL_SESSION_RESUME_PROMPT)
                 self.assertEqual(resumelib.active_entries(self.run_dir), [])
                 self.assertEqual(resumelib.completed_entries(self.run_dir), [])
+
+    def test_manual_resume_reuses_accepted_review_target_with_zero_resources(self) -> None:
+        captures = self.tmp()
+        self.set_env("CAPTURE_DIR", str(captures))
+        self.set_env("SPECULA_PROGRESS", "off")
+        self.install_adapter(
+            "fake",
+            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            'printf x >> "$CAPTURE_DIR/$name-count"\n'
+            'attempt=$(wc -c < "$CAPTURE_DIR/$name-count")\n'
+            "log= resume=\n"
+            'for arg do case "$arg" in '
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'if [ "$name" = pending ] && [ "$attempt" -eq 1 ]; then\n'
+            '  printf "pending-session\\n" > "$resume"\n'
+            '  printf "rate limited\\n" > "$log"\n'
+            "  exit 75\n"
+            "fi\n"
+            'if [ "$name" = pending ]; then test "$(cat "$resume")" = pending-session; fi\n'
+            'printf "review\\n" > "$SPECULA_WORK_DIR/review-analysis.md"\n'
+            'printf "done\\n" > "$log"\n',
+        )
+        resumelib.initialize_run(self.run_dir)
+        resumelib.save_configuration(self.run_dir, {"agent": "fake"})
+        self.set_env(resumelib.INVOCATION_ENV, "review-invocation-1")
+        targets = ["accepted", "pending"]
+        args = ["analysis", "--agent=fake", "--transient-resumes=0", *targets]
+
+        first_rc, first_out = self.run_phase("review", args)
+
+        self.assertEqual(first_rc, quota.RATE_LIMIT_RC, first_out)
+        self.assertEqual((captures / "accepted-count").read_text(), "x")
+        self.assertEqual((captures / "pending-count").read_text(), "x")
+        self.assertEqual(
+            resumelib.completed_logicals(("review", "analysis")),
+            {("review", "analysis", "accepted")},
+        )
+
+        self.set_env(resumelib.INVOCATION_ENV, "review-invocation-2")
+        self.set_env(resumelib.MANUAL_ENV, "1")
+        resource_invocation = "e" * 32
+        manifest = self.run_dir / resource_summary.INVOCATION_DIRNAME / f"{resource_invocation}.json"
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            manifest,
+            "phase1",
+            resource_invocation,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+
+        resumed_rc, resumed_out = self.run_phase("review", args)
+        recorder.finalize(resumed_rc == 0)
+
+        self.assertEqual(resumed_rc, 0, resumed_out)
+        self.assertEqual((captures / "accepted-count").read_text(), "x")
+        self.assertEqual((captures / "pending-count").read_text(), "xx")
+        resource_targets = json.loads(manifest.read_text())["targets"]
+        self.assertEqual(
+            resource_targets["accepted"],
+            {
+                "elapsed_seconds": 0.0,
+                "finished": True,
+                "succeeded": True,
+                "usage_paths": [],
+                "work_dir": "accepted/.specula-output",
+            },
+        )
+        self.assertEqual(resource_targets["pending"]["usage_paths"], ["review-analysis.usage.json"])
 
     def test_review_streams_activity_through_shared_monitor(self) -> None:
         event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "reviewing"}})
