@@ -246,25 +246,29 @@ TLC workers remain unbounded by default: `-w auto` uses every CPU visible to eac
 Use a stable ID when a run may need to be resumed:
 
 ```bash
-specula run <name> \
+specula run \
   --run-id=my-run \
   --artifact=/path/to/source \
   "name|owner/repository|language|reference"
 ```
 
-Attach to the same run and skip completed steps. This resumes at validation:
+If an agent call is interrupted, attach to the same run. Specula restores omitted run settings, returns to the interrupted phase, and resumes the unfinished agent conversation:
 
 ```bash
-specula run <name> \
-  --run-id=my-run \
-  --skip-analysis \
-  --skip-specgen \
-  --skip-harness \
-  --artifact=/path/to/source \
-  "name|owner/repository|language|reference"
+specula run --run-id=my-run
 ```
 
-Specula reuses `runs/<run-id>/<name>/.specula-output/`. Pass the target and artifact again when resuming, together with either `--agent-config` or the original agent, model, and effort options. A `--keep-original` run automatically resumes against its existing private source even when that flag and the original artifact are omitted. The run's TLC memory and worker limits are restored from `tlc-resources.json`; `run.json` remains an audit record, not arguments for the new invocation.
+To add guidance for the resumed agent, update the target's `.prompt-extra.md` before running the command.
+
+After the resumed phase finishes, later phases follow the skip options on the current command.
+
+If the previous phase or agent is still running, Specula refuses the attach. Wait for it to finish or stop it before retrying.
+
+Only unfinished conversations can be resumed. If resume state is unavailable, Specula stops instead of silently starting a new conversation. To keep the run's files but start with a fresh agent context, add `--fresh-context` and use skip flags to choose where to restart:
+
+```bash
+specula run --run-id=my-run --fresh-context --skip-analysis --skip-specgen --skip-harness
+```
 
 ## Individual Steps
 
@@ -336,7 +340,8 @@ specula run [options] "name|owner/repository|language|reference"
 | `--max-repair-rounds=N` | Set the global repair-loop round cap (default `10`; `0` means unlimited) |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse early-phase outputs |
 | `--skip-validate`, `--skip-confirmation`, `--skip-classification` | Reuse later-phase outputs |
-| `--run-id=ID` | Create or attach to an isolated run |
+| `--run-id=ID` | Create or attach to an isolated run; attach resumes unfinished agent conversations |
+| `--fresh-context` | With `--run-id`, abandon unfinished agent contexts and continue from retained files |
 | `--no-isolate` | Use the legacy output layout described above |
 
 `--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default. `--max-repair-rounds=N` caps rounds across the whole loop, not attempts per request; when the cap is reached, remaining open requests are deferred. For the individual `specula confirm` command, the corresponding debate flags are `--debate` and `--rounds=N` (range `1` through `5`).

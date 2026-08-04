@@ -48,7 +48,7 @@ if str(SRC) not in sys.path:  # test the tree this file lives in, installed or n
 
 import specula.progress as progress_module  # noqa: E402
 import specula.quota as quota  # noqa: E402
-from specula import phaselib, snapshotlib  # noqa: E402
+from specula import phaselib, resumelib, snapshotlib  # noqa: E402
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC  # noqa: E402
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC  # noqa: E402
 from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
@@ -196,6 +196,9 @@ class PhaseCase(unittest.TestCase):
             "CLAUDE_EFFORT",
             "SPECULA_SOURCE_SNAPSHOT",
             "GIT_CEILING_DIRECTORIES",
+            resumelib.INVOCATION_ENV,
+            resumelib.MANUAL_ENV,
+            resumelib.FRESH_ENV,
         ):
             self.set_env(var, str(self.run_dir) if var == "SPECULA_RUN_DIR" else None)
 
@@ -1082,6 +1085,191 @@ class TestHandoffGate(PhaseCase):
         self.assertEqual((self.work_dir() / "agent.log").read_text(), "continued in session-exact-123\n")
         self.assertIn("resuming the exact session (1/1)", out)
 
+    def test_manual_resume_uses_exact_session_latest_extra_and_attempt_archive(self) -> None:
+        count = self.tmp() / "count"
+        captures = self.tmp()
+        artifact = self.tmp() / "repo"
+        artifact.mkdir()
+        self.patch_attr(self, "artifact_flag", lambda: f"--artifact={artifact}")
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("CAPTURE_DIR", str(captures))
+        resumelib.initialize_run(self.run_dir)
+        resumelib.save_configuration(self.run_dir, {"agent": self.adapter.stem})
+        self.set_env(resumelib.INVOCATION_ENV, "invocation-1")
+        extra = self.work_dir() / ".prompt-extra.md"
+        extra.parent.mkdir(parents=True, exist_ok=True)
+        extra.write_text("Original priority\n")
+        self.write_adapter(
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in '
+            "--prompt-file=*) prompt=${arg#*=} ;; "
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'cp "$prompt" "$CAPTURE_DIR/prompt-$attempt.md"\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            '  printf "session-manual-123\\n" > "$resume"\n'
+            '  printf "interrupted\\n" > "$log"\n'
+            "  exit 9\n"
+            "fi\n"
+            '[ "$(cat "$resume")" = "session-manual-123" ]\n'
+            'printf "continued\\n" > "$log"\n'
+            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+        )
+
+        first_rc, first_out = self.run_analysis(options=["--transient-resumes=0"])
+        self.assertEqual(first_rc, 9, first_out)
+        self.assertEqual(len(resumelib.active_entries(self.run_dir)), 1)
+
+        extra.write_text("Focus on trace fidelity\n")
+        self.set_env(resumelib.INVOCATION_ENV, "invocation-2")
+        self.set_env(resumelib.MANUAL_ENV, "1")
+        resumed_rc, resumed_out = self.run_analysis(options=["--transient-resumes=0"])
+
+        self.assertEqual(resumed_rc, 0, resumed_out)
+        self.assertEqual(count.read_text(), "xx")
+        original_prompt = (captures / "prompt-1.md").read_text()
+        resumed_prompt = (captures / "prompt-2.md").read_text()
+        self.assertIn("modeling-brief.md", original_prompt)
+        self.assertEqual(
+            resumed_prompt,
+            phaselib._MANUAL_SESSION_RESUME_PROMPT + "\n## Target-Specific Instructions\n\nFocus on trace fidelity\n",
+        )
+        self.assertNotIn("Original priority", resumed_prompt)
+        self.assertEqual((self.work_dir() / "agent.attempt-1.log").read_text(), "interrupted\n")
+        self.assertEqual((self.work_dir() / "agent.log").read_text(), "continued\n")
+        self.assertEqual(resumelib.active_entries(self.run_dir), [])
+
+    def test_manual_resume_reaches_exact_session_for_each_single_agent_phase(self) -> None:
+        captures = self.tmp()
+        self.set_env("CAPTURE_DIR", str(captures))
+        self.write_adapter(
+            'count="$CAPTURE_DIR/$RESUME_CASE.count"\n'
+            "prompt= log= resume=\n"
+            'for arg do case "$arg" in '
+            "--prompt-file=*) prompt=${arg#*=} ;; "
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'printf x >> "$count"\n'
+            'attempt=$(wc -c < "$count")\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            '  printf "%s-session\n" "$RESUME_CASE" > "$resume"\n'
+            '  printf "interrupted\n" > "$log"\n'
+            "  exit 9\n"
+            "fi\n"
+            'test "$(cat "$resume")" = "$RESUME_CASE-session"\n'
+            'case "$SPECULA_PHASE" in\n'
+            '  code_analysis) printf "brief\n" > "$SPECULA_WORK_DIR/modeling-brief.md" ;;\n'
+            "  spec_generation)\n"
+            '    mkdir -p "$SPECULA_WORK_DIR/spec"\n'
+            "    for file in base.tla MC.tla Trace.tla instrumentation-spec.md; do\n"
+            '      printf "output\n" > "$SPECULA_WORK_DIR/spec/$file"\n'
+            "    done\n"
+            "    ;;\n"
+            "  harness_generation)\n"
+            '    mkdir -p "$SPECULA_WORK_DIR/harness" "$SPECULA_WORK_DIR/traces"\n'
+            '    printf "#!/bin/sh\n" > "$SPECULA_WORK_DIR/harness/run.sh"\n'
+            '    printf "guide\n" > "$SPECULA_WORK_DIR/harness/INSTRUMENTATION.md"\n'
+            '    printf "{}\n" > "$SPECULA_WORK_DIR/traces/one.ndjson"\n'
+            "    ;;\n"
+            '  spec_validation) printf "bug report\n" > "$SPECULA_WORK_DIR/spec/bug-report.md" ;;\n'
+            '  bug_confirmation) printf "confirmed\n" > "$SPECULA_WORK_DIR/confirmed-bugs.md" ;;\n'
+            '  bug_classification) printf "severity\n" > "$SPECULA_WORK_DIR/bug-severity.md" ;;\n'
+            "esac\n"
+            'printf "continued\n" > "$log"\n'
+        )
+        cases: list[tuple[PhaseSpec, list[str], str, str]] = [
+            (spec, [], spec["prompt"], spec["key"]) for spec in PHASES
+        ]
+        cases.append((BY_KEY["spec_validation"], ["--repair"], ".spec-repair-prompt.md", "spec_validation_repair"))
+
+        for spec, extra_args, prompt_rel, case_name in cases:
+            with self.subTest(phase=case_name):
+                self.run_dir = self.tmp()
+                self.set_env("SPECULA_RUN_DIR", str(self.run_dir))
+                self.set_env("RESUME_CASE", case_name)
+                self.set_env(resumelib.INVOCATION_ENV, f"{case_name}-invocation-1")
+                self.set_env(resumelib.MANUAL_ENV, None)
+                self.seed(spec["inputs"])
+                if spec["key"] == "harness_generation":
+                    self.seed(["spec/MC.tla"])
+                elif spec["key"] == "spec_validation":
+                    self.seed(["modeling-brief.md"])
+                resumelib.initialize_run(self.run_dir)
+                resumelib.save_configuration(self.run_dir, {"agent": self.adapter.stem})
+                args = [f"--agent={self.adapter.stem}", *extra_args]
+                if spec["key"] == "bug_confirmation":
+                    args.append("--legacy-confirm")
+                if spec["artifact"]:
+                    args.append(self.artifact_flag())
+                args.append(NAME)
+
+                first_rc, first_out = self.run_phase(spec["key"], args)
+                self.assertEqual(first_rc, 9, first_out)
+                active = resumelib.active_entries(self.run_dir)
+                self.assertEqual([entry["phase"] for entry in active], [spec["key"]])
+
+                self.set_env(resumelib.INVOCATION_ENV, f"{case_name}-invocation-2")
+                self.set_env(resumelib.MANUAL_ENV, "1")
+                resumed_rc, resumed_out = self.run_phase(spec["key"], args)
+
+                self.assertEqual(resumed_rc, 0, resumed_out)
+                self.assertEqual((captures / f"{case_name}.count").read_text(), "xx")
+                self.assertEqual((self.work_dir() / prompt_rel).read_text(), phaselib._MANUAL_SESSION_RESUME_PROMPT)
+                self.assertEqual(resumelib.active_entries(self.run_dir), [])
+                self.assertEqual(resumelib.completed_entries(self.run_dir), [])
+
+    def test_manual_resume_skips_accepted_targets_then_runs_pending_targets(self) -> None:
+        artifact = self.tmp() / "repo"
+        artifact.mkdir()
+        captures = self.tmp()
+        self.patch_attr(self, "artifact_flag", lambda: f"--artifact={artifact}")
+        self.set_env("CAPTURE_DIR", str(captures))
+        resumelib.initialize_run(self.run_dir)
+        resumelib.save_configuration(self.run_dir, {"agent": self.adapter.stem})
+        self.set_env(resumelib.INVOCATION_ENV, "invocation-1")
+        self.write_adapter(
+            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            'printf x >> "$CAPTURE_DIR/$name-count"\n'
+            'attempt=$(wc -c < "$CAPTURE_DIR/$name-count")\n'
+            'for arg do case "$arg" in '
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'if [ "$name" = active ] && [ "$attempt" -eq 1 ]; then\n'
+            '  printf "active-session\\n" > "$resume"\n'
+            '  printf "rate limited\\n" > "$log"\n'
+            "  exit 75\n"
+            "fi\n"
+            'if [ "$name" = active ]; then test "$(cat "$resume")" = active-session; fi\n'
+            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "done\\n" > "$log"\n'
+        )
+        targets = ["accepted|g|Go|r", "active|g|Go|r", "pending|g|Go|r"]
+
+        first_rc, first_out = self.run_analysis(targets, options=["--max-parallel=1"])
+        self.assertEqual(first_rc, quota.RATE_LIMIT_RC, first_out)
+        self.assertEqual((captures / "accepted-count").read_text(), "x")
+        self.assertEqual((captures / "active-count").read_text(), "x")
+        self.assertFalse((captures / "pending-count").exists())
+        self.assertEqual(
+            resumelib.completed_logicals(("phase", "code_analysis")),
+            {("phase", "code_analysis", "accepted")},
+        )
+
+        self.set_env(resumelib.INVOCATION_ENV, "invocation-2")
+        self.set_env(resumelib.MANUAL_ENV, "1")
+        resumed_rc, resumed_out = self.run_analysis(targets, options=["--max-parallel=1"])
+
+        self.assertEqual(resumed_rc, 0, resumed_out)
+        self.assertEqual((captures / "accepted-count").read_text(), "x")
+        self.assertEqual((captures / "active-count").read_text(), "xx")
+        self.assertEqual((captures / "pending-count").read_text(), "x")
+        self.assertEqual(resumelib.active_entries(self.run_dir), [])
+        self.assertEqual(resumelib.completed_entries(self.run_dir), [])
+
     def test_default_transient_resume_budget_stops_after_twenty_continuations(self) -> None:
         count = self.tmp() / "count"
         self.set_env("COUNT_FILE", str(count))
@@ -1840,6 +2028,94 @@ class TestRunAgentBlocking(PhaseCase):
         self.assertEqual((captures / "prompt-4.md").read_text(), phaselib._SESSION_RESUME_PROMPT)
         self.assertEqual((captures / "turn.attempt-3.log").read_text(), "attempt-3\n")
         self.assertEqual(log_file.read_text(), "attempt-4\n")
+
+    def test_manual_blocking_resume_restores_retry_cursor_and_archive_number(self) -> None:
+        adapter = self.tmp() / "adapter.sh"
+        count = self.tmp() / "count"
+        captures = self.tmp()
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in '
+            "--prompt-file=*) prompt=${arg#*=} ;; "
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'if [ ! -f "$resume" ]; then printf "manual-session\n" > "$resume"; fi\n'
+            'cp "$prompt" "$CAPTURE_DIR/prompt-$attempt.md"\n'
+            'printf "attempt-%s\n" "$attempt" > "$log"\n'
+            'case "$attempt" in\n'
+            "  1) exit 74 ;;\n"
+            "  2) exit 76 ;;\n"
+            "  3) exit 75 ;;\n"
+            "  4) exit 76 ;;\n"
+            "  *) exit 99 ;;\n"
+            "esac\n"
+        )
+        adapter.chmod(0o755)
+        run_dir = self.tmp()
+        resumelib.initialize_run(run_dir)
+        resumelib.save_configuration(run_dir, {"agent": adapter.stem})
+        self.set_env("SPECULA_RUN_DIR", str(run_dir))
+        self.set_env(resumelib.INVOCATION_ENV, "invocation-1")
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("CAPTURE_DIR", str(captures))
+        prompt_file = captures / "prompt.md"
+        log_file = captures / "turn.log"
+        logical = ("confirm", NAME, "finding", "MC-1", "1", "A")
+
+        with mock.patch("specula.phaselib.time.sleep"):
+            first_rc, _ = phaselib.run_agent_blocking(
+                adapter,
+                "original prompt",
+                prompt_file,
+                log_file,
+                phase_key="bug_confirmation",
+                work_dir=self.work_dir(),
+                claude_alias="profile",
+                policy_retries=1,
+                transient_resumes=1,
+                resume_logical=logical,
+                resume_phase="bug_confirmation",
+                resume_target=NAME,
+                resume_kind="finding-turn",
+                resume_finding_id="MC-1",
+            )
+        self.assertEqual(first_rc, quota.RATE_LIMIT_RC)
+
+        self.set_env(resumelib.INVOCATION_ENV, "invocation-2")
+        self.set_env(resumelib.MANUAL_ENV, "1")
+        second_rc, _ = phaselib.run_agent_blocking(
+            adapter,
+            "original prompt",
+            prompt_file,
+            log_file,
+            phase_key="bug_confirmation",
+            work_dir=self.work_dir(),
+            claude_alias="profile",
+            policy_retries=1,
+            transient_resumes=1,
+            resume_logical=logical,
+            resume_phase="bug_confirmation",
+            resume_target=NAME,
+            resume_kind="finding-turn",
+            resume_finding_id="MC-1",
+        )
+
+        self.assertEqual(second_rc, POLICY_BLOCKED_RC)
+        self.assertEqual(count.read_text(), "xxxx")
+        self.assertEqual((captures / "prompt-4.md").read_text(), phaselib._MANUAL_SESSION_RESUME_PROMPT)
+        for attempt in range(1, 4):
+            self.assertEqual(
+                (captures / f"turn.attempt-{attempt}.log").read_text(),
+                f"attempt-{attempt}\n",
+            )
+        entry = resumelib.active_entries(run_dir)[0]
+        self.assertEqual(entry["policy_attempt"], 1)
+        self.assertEqual(entry["transient_attempt"], 1)
+        self.assertEqual(entry["invocation_attempt"], 4)
 
     def test_turn_phase_scopes_stop_gate_sets_cwd_and_removes_stale_log(self) -> None:
         adapter = self.tmp() / "adapter.sh"
@@ -3052,6 +3328,67 @@ class TestReviewPhase(PhaseCase):
 
         self.assertFalse(marker.exists())
 
+    def test_manual_resume_reaches_exact_session_for_each_review_phase(self) -> None:
+        captures = self.tmp()
+        self.set_env("CAPTURE_DIR", str(captures))
+        self.set_env("SPECULA_PROGRESS", "off")
+        self.install_adapter(
+            "fake",
+            "log= resume=\n"
+            'for arg do case "$arg" in '
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'stem=$(basename "$log" .log)\n'
+            'count="$CAPTURE_DIR/$stem.count"\n'
+            'printf x >> "$count"\n'
+            'attempt=$(wc -c < "$count")\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            '  printf "%s-session\n" "$stem" > "$resume"\n'
+            '  printf "interrupted\n" > "$log"\n'
+            "  exit 9\n"
+            "fi\n"
+            'test "$(cat "$resume")" = "$stem-session"\n'
+            'case "$stem" in\n'
+            '  review-analysis) output="$SPECULA_WORK_DIR/review-analysis.md" ;;\n'
+            '  review-specgen) output="$SPECULA_WORK_DIR/spec/review-specgen.md" ;;\n'
+            '  review-validation) output="$SPECULA_WORK_DIR/spec/review-validation.md" ;;\n'
+            "esac\n"
+            'mkdir -p "$(dirname "$output")"\n'
+            'printf "review\n" > "$output"\n'
+            'printf "continued\n" > "$log"\n',
+        )
+        cases = (
+            ("analysis", ".review-analysis-prompt.md"),
+            ("specgen", "spec/.review-specgen-prompt.md"),
+            ("validation", "spec/.review-validation-prompt.md"),
+        )
+
+        for phase, prompt_rel in cases:
+            with self.subTest(phase=phase):
+                self.run_dir = self.tmp()
+                self.set_env("SPECULA_RUN_DIR", str(self.run_dir))
+                self.set_env(resumelib.INVOCATION_ENV, f"review-{phase}-invocation-1")
+                self.set_env(resumelib.MANUAL_ENV, None)
+                resumelib.initialize_run(self.run_dir)
+                resumelib.save_configuration(self.run_dir, {"agent": "fake"})
+                args = [phase, "--agent=fake", "--transient-resumes=0", NAME]
+
+                first_rc, first_out = self.run_phase("review", args)
+                self.assertEqual(first_rc, 9, first_out)
+                active = resumelib.active_entries(self.run_dir)
+                self.assertEqual([entry["phase"] for entry in active], [f"review:{phase}"])
+
+                self.set_env(resumelib.INVOCATION_ENV, f"review-{phase}-invocation-2")
+                self.set_env(resumelib.MANUAL_ENV, "1")
+                resumed_rc, resumed_out = self.run_phase("review", args)
+
+                self.assertEqual(resumed_rc, 0, resumed_out)
+                self.assertEqual((captures / f"review-{phase}.count").read_text(), "xx")
+                self.assertEqual((self.work_dir() / prompt_rel).read_text(), phaselib._MANUAL_SESSION_RESUME_PROMPT)
+                self.assertEqual(resumelib.active_entries(self.run_dir), [])
+                self.assertEqual(resumelib.completed_entries(self.run_dir), [])
+
     def test_review_streams_activity_through_shared_monitor(self) -> None:
         event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "reviewing"}})
         self.install_adapter("codex", f"printf '%s\\n' {shlex.quote(event)} > \"$SPECULA_ACTIVITY_LOG\"\n")
@@ -3249,6 +3586,39 @@ class TestReviewPhase(PhaseCase):
 
         self.assertEqual(rc, POLICY_BLOCKED_RC, out)
         self.assertEqual(count.read_text(), "xx")
+
+    def test_manual_review_resume_keeps_exhausted_policy_budget(self) -> None:
+        count = self.tmp() / "count"
+        self.install_adapter(
+            "fake",
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; --resume-state=*) resume=${arg#*=} ;; esac; done\n'
+            'test -f "$resume" || printf "review-session\n" > "$resume"\n'
+            'printf "attempt-%s\n" "$attempt" > "$log"\n'
+            'case "$attempt" in 1) exit 76 ;; 2) exit 75 ;; 3) exit 76 ;; *) exit 99 ;; esac\n',
+        )
+        resumelib.initialize_run(self.run_dir)
+        resumelib.save_configuration(self.run_dir, {"agent": "fake"})
+        self.set_env(resumelib.INVOCATION_ENV, "invocation-1")
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("SPECULA_PROGRESS", "off")
+
+        first_rc, first_out = self.run_phase(
+            "review",
+            ["analysis", "--agent=fake", "--policy-retries=1", NAME],
+        )
+        self.assertEqual(first_rc, quota.RATE_LIMIT_RC, first_out)
+
+        self.set_env(resumelib.INVOCATION_ENV, "invocation-2")
+        self.set_env(resumelib.MANUAL_ENV, "1")
+        resumed_rc, resumed_out = self.run_phase(
+            "review",
+            ["analysis", "--agent=fake", "--policy-retries=1", NAME],
+        )
+
+        self.assertEqual(resumed_rc, POLICY_BLOCKED_RC, resumed_out)
+        self.assertEqual(count.read_text(), "xxx")
 
     def test_review_zero_policy_retries_disables_continuation(self) -> None:
         count = self.tmp() / "count"

@@ -34,7 +34,7 @@ from typing import Any, TypedDict
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import specula.progress as progress
-from specula import quota
+from specula import quota, resumelib
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC
 from specula.output_index import PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
@@ -102,6 +102,8 @@ The previous invocation was interrupted because the provider blocked a response 
 """
 
 _SESSION_RESUME_PROMPT = """Continue the current Specula task from this exact session. The previous invocation was interrupted by a temporary provider, capacity, or transport failure. Preserve completed work, inspect the current workspace, and finish every remaining deliverable. Do not restart completed analysis."""
+
+_MANUAL_SESSION_RESUME_PROMPT = """Continue the current Specula task from this exact session. The previous run ended before this work was accepted. Preserve completed work, inspect the current workspace, and finish every remaining deliverable. Do not restart completed analysis."""
 
 _POLICY_SESSION_RESUME_PROMPT = """Continue the same legitimate formal-verification task from this exact session. The previous response was interrupted by the provider's content policy. Preserve completed work, rephrase the interrupted portion in neutral formal-verification terms, and finish every remaining deliverable without restarting the phase."""
 
@@ -171,11 +173,13 @@ def _transient_resume_delay(attempt: int) -> float:
     return min(TRANSIENT_RESUME_BACKOFF_MAX_SECONDS, float(2 ** min(attempt + 1, 6)))
 
 
-def _retry_prompt(original: str, reason: str, *, resumable: bool) -> str:
+def _retry_prompt(original: str, reason: str, *, resumable: bool, manual_extra: str = "") -> str:
     if not resumable:
         return _policy_recovery_prompt(original) if reason == "policy" else original
     if reason == "policy":
         return _POLICY_SESSION_RESUME_PROMPT
+    if reason == "manual":
+        return _MANUAL_SESSION_RESUME_PROMPT + manual_extra
     if reason in {"rate_limit", "transient"}:
         return _SESSION_RESUME_PROMPT
     return original
@@ -642,11 +646,8 @@ class Phase:
         )
 
     # ── shared prompt-extra injection (identical across phases) ──
-    def _read_prompt_extra(self, ws: Workspace, name: str) -> str:
-        """The target's .prompt-extra.md as an appendable block (with its section
-        header), or '' if none. Isolated runs never cd into the case dir, so the
-        cwd fallback would silently drop the canonical case-studies/<name> extra —
-        target-specific instructions must survive isolation."""
+    def _latest_prompt_extra(self, ws: Workspace, name: str) -> str:
+        """Read the current target guidance without consulting its frozen copy."""
         extra = ws.work_dir(name) / ".prompt-extra.md"
         if not extra.is_file():
             fallback = ws.case_dir(name) if ws.run_dir else ws.cwd
@@ -656,6 +657,30 @@ class Phase:
             # non-UTF-8 byte in a user's .prompt-extra.md must not crash the run.
             return "\n## Target-Specific Instructions\n\n" + extra.read_text(errors="replace")
         return ""
+
+    def _read_prompt_extra(self, ws: Workspace, name: str) -> str:
+        """Return run-frozen guidance so manual supplements do not invalidate caches."""
+        if ws.run_dir is None:
+            return self._latest_prompt_extra(ws, name)
+        frozen = ws.work_dir(name) / ".prompt-extra.initial.md"
+        if frozen.is_file() and not frozen.is_symlink():
+            content = frozen.read_text(errors="replace")
+            return "\n## Target-Specific Instructions\n\n" + content if content else ""
+        current = self._latest_prompt_extra(ws, name)
+        marker = "\n## Target-Specific Instructions\n\n"
+        raw = current[len(marker) :] if current.startswith(marker) else ""
+        frozen.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with frozen.open("x", encoding="utf-8") as stream:
+                stream.write(raw)
+        except FileExistsError as exc:
+            if frozen.is_symlink() or not frozen.is_file():
+                raise RuntimeError(f"unsafe frozen prompt-extra path: {frozen}") from exc
+            raw = frozen.read_text(errors="replace")
+        return marker + raw if raw else ""
+
+    def _manual_prompt_extra(self, ws: Workspace, name: str) -> str:
+        return self._latest_prompt_extra(ws, name) if resumelib.manual_mode() else ""
 
     def _with_extra(self, ws: Workspace, name: str, prompt: str) -> str:
         return prompt + self._read_prompt_extra(ws, name)
@@ -819,6 +844,43 @@ class Phase:
             print(f"ERROR: cannot restore private source: {exc}")
             return 1
 
+        phase_prefix = ("phase", self.key)
+        try:
+            if resumelib.manual_mode():
+                completed_calls = resumelib.completed_logicals(phase_prefix)
+                for logical in completed_calls:
+                    # Reconcile the safe write-before-unlink crash window in
+                    # mark_completed(). The accepted call must not run again.
+                    resumelib.reconcile_completed(logical)
+            else:
+                resumelib.clear_completed(phase_prefix)
+                completed_calls = set()
+        except resumelib.ResumeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        accepted_names = {
+            logical[2] for logical in completed_calls if len(logical) == 3 and logical[:2] == phase_prefix
+        }
+
+        try:
+            resumelib.ensure_phase(self.key)
+            recovering = resumelib.previous_entries(phase=self.key)
+        except resumelib.ResumeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        if recovering:
+            order = {str(entry.get("target")): index for index, entry in enumerate(recovering)}
+            original_order = {id(target): index for index, target in enumerate(targets)}
+            targets.sort(
+                key=lambda target: (order.get(self.target_name(target), len(order)), original_order[id(target)])
+            )
+            names = [self.target_name(target) for target in targets]
+            # Ordinary target agents recover one at a time. Phase 4 owns a
+            # finer per-finding recovery frontier and restores its normal
+            # parallelism after those interrupted turns are settled.
+            if self.key != "bug_confirmation" or ws.opts.get("legacy"):
+                max_parallel = 1
+
         print("========================================")
         print(f" {self.title}")
         print("========================================")
@@ -869,9 +931,9 @@ class Phase:
         show_progress = progress.enabled()
         running: list[progress.RunningAgent] = []
         failures: list[tuple[str, int]] = []
-        successful_names: set[str] = set()
-        completed_names: set[str] = set()
-        pending = [_LaunchRequest(target) for target in targets]
+        successful_names: set[str] = set(accepted_names)
+        completed_names: set[str] = set(accepted_names)
+        pending = [_LaunchRequest(target) for target in targets if self.target_name(target) not in accepted_names]
         rate_limited: list[_LaunchRequest] = []
         pause_for_rate_limit = False
         stop_launching = False
@@ -1067,6 +1129,15 @@ class Phase:
             dry_run=dry_run,
         )
 
+        invalid_names.update(name for name, _ in handoff_failures)
+        if not dry_run:
+            for name in sorted(successful_names - invalid_names):
+                try:
+                    resumelib.mark_completed(("phase", self.key, name))
+                except resumelib.ResumeError as exc:
+                    finalized.append((name, 1))
+                    print(f"ERROR: {exc}")
+
         self.summarize(ws, names)
         if not dry_run:
             _refresh_target_indexes(ws, names)
@@ -1091,7 +1162,14 @@ class Phase:
             print("Output integrity failures:")
             for name, rc in integrity_failures:
                 print(f"  FAILED  {name}: protected output was restored (exit {rc})")
-        return self._failure_code(failures + integrity_failures + finalized + handoff_failures)
+        result = self._failure_code(failures + integrity_failures + finalized + handoff_failures)
+        if result == 0 and not dry_run:
+            try:
+                resumelib.clear_completed(phase_prefix)
+            except resumelib.ResumeError as exc:
+                print(f"ERROR: {exc}")
+                return 1
+        return result
 
     def run_alternate(
         self,
@@ -1218,6 +1296,12 @@ class Phase:
         for d in files["mkdirs"]:
             d.mkdir(parents=True, exist_ok=True)
         resume_state = _resume_state_path(files["log"])
+        repo_dir = ws.find_repo_dir(name)
+        launch_cwd = Path.cwd().resolve()
+        if ws.uses_private_source():
+            if not repo_dir:
+                raise RuntimeError(f"private source is missing for {name!r}")
+            launch_cwd = Path(repo_dir)
         activity_sidecar = files["log"].with_suffix(".activity.jsonl")
         attempt_files = (
             files["prompt"],
@@ -1227,15 +1311,54 @@ class Phase:
             files["log"].with_suffix(".raw.json"),
             files["log"].with_suffix(".usage.json"),
         )
+        resume_logical = ("phase", self.key, name)
+        claim = resumelib.ResumeClaim(attempt=invocation_attempt, manual=False, resumable=False)
+        if not dry_run and resumelib.enabled():
+            checkpoint_model, checkpoint_effort = _checkpoint_tuning(adapter, self._model, self._effort)
+            claim = resumelib.prepare_turn(
+                resume_logical,
+                phase=self.key,
+                target=name,
+                kind="phase",
+                adapter=adapter,
+                model=checkpoint_model,
+                effort=checkpoint_effort,
+                claude_alias=claude_alias,
+                cwd=launch_cwd,
+                resume_state=resume_state,
+                prompt_file=files["prompt"],
+                log_file=files["log"],
+            )
         if not dry_run:
+            if claim.manual:
+                attempt = claim.rate_limit_attempt
+                policy_attempt = claim.policy_attempt
+                transient_attempt = claim.transient_attempt
+            invocation_attempt = claim.attempt
+            if resumelib.enabled():
+                resumelib.update_turn(
+                    resume_logical,
+                    rate_limit_attempt=attempt,
+                    policy_attempt=policy_attempt,
+                    transient_attempt=transient_attempt,
+                    invocation_attempt=invocation_attempt,
+                    retry_reason="manual" if claim.manual else retry_reason,
+                )
             if invocation_attempt == 1:
                 _clear_attempt_archives(attempt_files)
                 _clear_resume_state(resume_state)
             else:
                 _archive_attempt(attempt_files, invocation_attempt - 1)
         resumable = resume_state.is_file()
-        prompt_reason = "policy" if policy_attempt > 0 and not resumable else retry_reason
-        prompt = _retry_prompt(prompt, prompt_reason, resumable=resumable)
+        prompt_reason = (
+            "manual" if claim.manual else ("policy" if policy_attempt > 0 and not resumable else retry_reason)
+        )
+        prompt = _retry_prompt(
+            prompt,
+            prompt_reason,
+            resumable=resumable,
+            manual_extra=self._manual_prompt_extra(ws, name) if claim.manual else "",
+        )
         prompt = materialize_skill_refs(prompt, adapter)
         files["prompt"].write_text(prompt)
         print(f"[{_ts()}] Launching agent: {name}")
@@ -1257,16 +1380,13 @@ class Phase:
         env["SPECULA_PHASE"] = self.key
         env["SPECULA_WORK_DIR"] = str(ws.work_dir(name))
         env["SPECULA_ROOT"] = str(SPECULA_ROOT)
-        repo_dir = ws.find_repo_dir(name)
         if repo_dir:
             env["SPECULA_TARGET_REPO_DIR"] = repo_dir
-        launch_cwd: Path | None = None
         if ws.uses_private_source():
-            if not repo_dir:
-                raise RuntimeError(f"private source is missing for {name!r}")
-            launch_cwd = Path(repo_dir)
             env["PWD"] = str(launch_cwd)
             sanitize_snapshot_git_environment(env, ceiling=ws.private_git_ceiling([name]))
+        else:
+            env["PWD"] = str(launch_cwd)
         work_dir = ws.work_dir(name)
         with contextlib.suppress(OSError):
             activity_sidecar.unlink()
@@ -1316,6 +1436,7 @@ class Phase:
                 env=env,
                 cwd=launch_cwd,
                 start_new_session=True,
+                pass_fds=resumelib.inherited_run_lock_fds(),
             )
             launched = progress.RunningAgent(
                 name=name,
@@ -1372,6 +1493,18 @@ def _model_effort_argv(adapter: Path, model: str | None, effort: str | None) -> 
     return argv
 
 
+def _checkpoint_tuning(adapter: Path, model: str | None, effort: str | None) -> tuple[str | None, str | None]:
+    """Return the exact tuning values forwarded to the adapter."""
+    forwarded_model: str | None = None
+    forwarded_effort: str | None = None
+    for arg in _model_effort_argv(adapter, model, effort):
+        if arg.startswith("--model="):
+            forwarded_model = arg.removeprefix("--model=")
+        elif arg.startswith("--effort="):
+            forwarded_effort = arg.removeprefix("--effort=")
+    return forwarded_model, forwarded_effort
+
+
 def _last_message_path(log_file: Path) -> Path:
     """Mirror the Codex adapter's bash `${log_file%.log}` derivation."""
     raw = str(log_file)
@@ -1397,6 +1530,12 @@ def run_agent_blocking(
     policy_retries: int = DEFAULT_POLICY_RETRIES,
     transient_resumes: int = DEFAULT_TRANSIENT_RESUMES,
     policy_state: PolicyRetryState | None = None,
+    resume_logical: tuple[str, ...] | None = None,
+    resume_phase: str | None = None,
+    resume_target: str = "",
+    resume_kind: str = "turn",
+    resume_finding_id: str | None = None,
+    manual_prompt_extra: str = "",
 ) -> tuple[int, str]:
     """Run an agent turn, blocking, and return (returncode, log text).
 
@@ -1481,28 +1620,73 @@ def run_agent_blocking(
         f"--resume-state={resume_state}",
     ]
     state = policy_state if policy_state is not None else PolicyRetryState()
+    claim = resumelib.ResumeClaim(attempt=1, manual=False, resumable=False)
+    if resume_logical is not None:
+        checkpoint_model, checkpoint_effort = _checkpoint_tuning(adapter, model, effort)
+        claim = resumelib.prepare_turn(
+            resume_logical,
+            phase=resume_phase or phase_key,
+            target=resume_target,
+            kind=resume_kind,
+            adapter=adapter,
+            model=checkpoint_model,
+            effort=checkpoint_effort,
+            claude_alias=claude_alias,
+            cwd=run_cwd,
+            resume_state=resume_state,
+            prompt_file=prompt_file,
+            log_file=log_file,
+            finding_id=resume_finding_id,
+        )
     with state._lock:
+        if claim.attempt > 1:
+            state.policy_attempt = max(state.policy_attempt, claim.policy_attempt)
+            state.transient_attempt = max(state.transient_attempt, claim.transient_attempt)
+            state.invocation_attempt = max(
+                state.invocation_attempt,
+                claim.invocation_attempt,
+                claim.attempt - 1,
+            )
+            if not claim.manual and state.retry_reason == "fresh":
+                state.retry_reason = claim.retry_reason
         if not 0 <= state.policy_attempt <= policy_retries:
             raise ValueError("policy_state attempt must be within policy_retries")
         if not 0 <= state.transient_attempt <= transient_resumes:
             raise ValueError("policy_state transient attempt must be within transient_resumes")
+        if claim.manual:
+            state.resume_state = resume_state
+            state.retry_reason = "manual"
         if state.resume_state is None:
             _clear_attempt_archives(attempt_files)
             _clear_resume_state(resume_state)
             state.resume_state = resume_state
         elif state.resume_state != resume_state:
             raise ValueError("policy_state belongs to a different logical turn")
+
+        def persist_cursor() -> None:
+            if resume_logical is not None:
+                resumelib.update_turn(
+                    resume_logical,
+                    rate_limit_attempt=claim.rate_limit_attempt,
+                    policy_attempt=state.policy_attempt,
+                    transient_attempt=state.transient_attempt,
+                    invocation_attempt=state.invocation_attempt,
+                    retry_reason=state.retry_reason,
+                )
+
         while True:
             policy_attempt = state.policy_attempt
             state.invocation_attempt += 1
             if state.invocation_attempt > 1:
                 _archive_attempt(attempt_files, state.invocation_attempt - 1)
+            persist_cursor()
             resumable = resume_state.is_file()
             prompt_reason = "policy" if policy_attempt > 0 and not resumable else state.retry_reason
             current_prompt = _retry_prompt(
                 prompt,
                 prompt_reason,
                 resumable=resumable,
+                manual_extra=manual_prompt_extra if state.retry_reason == "manual" else "",
             )
             prompt_file.write_text(current_prompt)
             with contextlib.suppress(OSError):
@@ -1511,7 +1695,13 @@ def run_agent_blocking(
                 with contextlib.suppress(OSError):
                     last_message_file.unlink()
 
-            rc = subprocess.run(cmd, env=env, cwd=run_cwd).returncode
+            rc = subprocess.run(
+                cmd,
+                env=env,
+                cwd=run_cwd,
+                pass_fds=resumelib.inherited_run_lock_fds(),
+            ).returncode
+            persist_cursor()
             # Codex stdout is a complete CLI transcript, not the assistant's final
             # response. The adapter keeps that transcript in `log_file` for
             # diagnosis and asks `codex exec --output-last-message` for the response
@@ -1523,6 +1713,7 @@ def run_agent_blocking(
             if rc == TRANSIENT_FAILURE_RC and state.transient_attempt < transient_resumes:
                 state.transient_attempt += 1
                 state.retry_reason = "transient"
+                persist_cursor()
                 delay = _transient_resume_delay(state.transient_attempt)
                 mode = "resuming the exact session" if resume_state.is_file() else "retrying the original request"
                 print(
@@ -1534,6 +1725,7 @@ def run_agent_blocking(
             if rc == POLICY_BLOCKED_RC and policy_attempt < policy_retries:
                 state.policy_attempt = policy_attempt + 1
                 state.retry_reason = "policy"
+                persist_cursor()
                 print(
                     f"[{_ts()}] Provider policy interrupted the agent turn; retrying with a revised request "
                     f"({state.policy_attempt}/{policy_retries})"
@@ -1541,6 +1733,7 @@ def run_agent_blocking(
                 continue
             if rc == quota.RATE_LIMIT_RC:
                 state.retry_reason = "rate_limit"
+                persist_cursor()
             return rc, text
 
 
@@ -2369,6 +2562,7 @@ Prerequisites:
                 repair_token=repair_token,
                 dry_run=dry_run,
                 prompt_extra=self._read_prompt_extra(ws, name),
+                resume_prompt_extra=self._manual_prompt_extra(ws, name),
             )
             attempt = 1
             try:
@@ -2714,6 +2908,34 @@ Output:
             print(f"ERROR: cannot restore private source: {exc}")
             return 1
 
+        completed_prefix = ("review", phase)
+        try:
+            if resumelib.manual_mode():
+                completed_calls = resumelib.completed_logicals(completed_prefix)
+                for logical in completed_calls:
+                    resumelib.reconcile_completed(logical)
+            else:
+                resumelib.clear_completed(completed_prefix)
+                completed_calls = set()
+        except resumelib.ResumeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        accepted_names = {
+            logical[2] for logical in completed_calls if len(logical) == 3 and logical[:2] == completed_prefix
+        }
+
+        resume_phase = f"review:{phase}"
+        try:
+            resumelib.ensure_phase(resume_phase)
+            recovering = resumelib.previous_entries(phase=resume_phase)
+        except resumelib.ResumeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        if recovering:
+            order = {str(entry.get("target")): index for index, entry in enumerate(recovering)}
+            names = sorted(names, key=lambda name: order.get(name, len(order)))
+        recovery_cursors = {str(entry["target"]): entry for entry in recovering}
+
         _refresh_target_indexes(ws, names)
 
         print("========================================")
@@ -2725,7 +2947,21 @@ Output:
 
         with _cleanup_on_signal():
             for name in names:
-                request = _LaunchRequest(name)
+                if name in accepted_names:
+                    continue
+                cursor = recovery_cursors.get(name)
+                request = (
+                    _LaunchRequest(
+                        name,
+                        rate_limit_attempt=cursor.get("rate_limit_attempt", 1),
+                        policy_attempt=cursor.get("policy_attempt", 0),
+                        transient_attempt=cursor.get("transient_attempt", 0),
+                        invocation_attempt=max(1, cursor.get("invocation_attempt", 0)),
+                        retry_reason=cursor.get("retry_reason", "fresh"),
+                    )
+                    if cursor is not None
+                    else _LaunchRequest(name)
+                )
                 while True:
                     try:
                         rc = self._launch_review(
@@ -2734,6 +2970,7 @@ Output:
                             phase,
                             adapter,
                             claude_alias,
+                            rate_limit_attempt=request.rate_limit_attempt,
                             policy_attempt=request.policy_attempt,
                             transient_attempt=request.transient_attempt,
                             invocation_attempt=request.invocation_attempt,
@@ -2791,6 +3028,7 @@ Output:
                         continue
                     if rc != 0:
                         return self._failure_code([(name, rc)])
+                    resumelib.mark_completed(("review", phase, name))
                     break
 
         print()
@@ -2814,6 +3052,11 @@ Output:
                 print(f"  {name}: review empty (check log)")
             else:
                 print(f"  {name}: (no review file generated — check log)")
+        try:
+            resumelib.clear_completed(completed_prefix)
+        except resumelib.ResumeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
         return 0
 
     def _launch_review(
@@ -2824,6 +3067,7 @@ Output:
         adapter: Path,
         claude_alias: str,
         *,
+        rate_limit_attempt: int = 1,
         policy_attempt: int = 0,
         transient_attempt: int = 0,
         invocation_attempt: int = 1,
@@ -2845,14 +3089,52 @@ Output:
         print(f"[{_ts()}] Reviewing {name} ({phase})...")
         log_dir.mkdir(parents=True, exist_ok=True)
         pid_file = log_dir / f"review-{phase}.pid"
+        prompt_file = log_dir / f".review-{phase}-prompt.md"
         activity_log = log_file.with_suffix(".activity.jsonl")
         resume_state = _resume_state_path(log_file)
         attempt_files = (
+            prompt_file,
             log_file,
             _last_message_path(log_file),
             activity_log,
             log_file.with_suffix(".raw.json"),
             log_file.with_suffix(".usage.json"),
+        )
+        repo_dir = ws.find_repo_dir(name)
+        launch_cwd = Path.cwd().resolve()
+        if ws.uses_private_source():
+            if not repo_dir:
+                raise RuntimeError(f"private source is missing for {name!r}")
+            launch_cwd = Path(repo_dir)
+        resume_logical = ("review", phase, name)
+        checkpoint_model, checkpoint_effort = _checkpoint_tuning(adapter, self._model, self._effort)
+        claim = resumelib.prepare_turn(
+            resume_logical,
+            phase=f"review:{phase}",
+            target=name,
+            kind="review",
+            adapter=adapter,
+            model=checkpoint_model,
+            effort=checkpoint_effort,
+            claude_alias=claude_alias,
+            cwd=launch_cwd,
+            resume_state=resume_state,
+            prompt_file=prompt_file,
+            log_file=log_file,
+        )
+        if claim.manual:
+            rate_limit_attempt = claim.rate_limit_attempt
+            policy_attempt = claim.policy_attempt
+            transient_attempt = claim.transient_attempt
+            retry_reason = "manual"
+        invocation_attempt = claim.attempt
+        resumelib.update_turn(
+            resume_logical,
+            rate_limit_attempt=rate_limit_attempt,
+            policy_attempt=policy_attempt,
+            transient_attempt=transient_attempt,
+            invocation_attempt=invocation_attempt,
+            retry_reason=retry_reason,
         )
         if invocation_attempt == 1:
             _clear_attempt_archives(attempt_files)
@@ -2860,21 +3142,26 @@ Output:
         else:
             _archive_attempt(attempt_files, invocation_attempt - 1)
         resumable = resume_state.is_file()
-        prompt_reason = "policy" if policy_attempt > 0 and not resumable else retry_reason
-        prompt = _retry_prompt(prompt, prompt_reason, resumable=resumable)
+        prompt_reason = (
+            "manual" if claim.manual else ("policy" if policy_attempt > 0 and not resumable else retry_reason)
+        )
+        prompt = _retry_prompt(
+            prompt,
+            prompt_reason,
+            resumable=resumable,
+            manual_extra=self._manual_prompt_extra(ws, name) if claim.manual else "",
+        )
+        prompt_file.write_text(prompt)
         with contextlib.suppress(OSError):
             activity_log.unlink()
         env = os.environ.copy()
         env["SPECULA_WORK_DIR"] = str(wd)
-        repo_dir = ws.find_repo_dir(name)
-        launch_cwd: Path | None = None
         if ws.uses_private_source():
-            if not repo_dir:
-                raise RuntimeError(f"private source is missing for {name!r}")
-            launch_cwd = Path(repo_dir)
             env["SPECULA_TARGET_REPO_DIR"] = repo_dir
             env["PWD"] = str(launch_cwd)
             sanitize_snapshot_git_environment(env, ceiling=ws.private_git_ceiling([name]))
+        else:
+            env["PWD"] = str(launch_cwd)
         env.pop("SPECULA_ACTIVITY_LOG", None)
         show_progress = progress.enabled()
         if show_progress:
@@ -2915,6 +3202,7 @@ Output:
                 env=env,
                 cwd=launch_cwd,
                 start_new_session=True,
+                pass_fds=resumelib.inherited_run_lock_fds(),
             )
             running = progress.RunningAgent(
                 name=name,

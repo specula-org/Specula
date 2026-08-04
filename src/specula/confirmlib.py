@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from specula import quota
+from specula import quota, resumelib
 from specula.phaselib import (
     DEFAULT_POLICY_RETRIES,
     DEFAULT_TRANSIENT_RESUMES,
@@ -174,6 +174,8 @@ class _CompletedTurn:
     cwd: str | None
     verdict: str | None
     text: str
+    result_path: Path | None = None
+    result_digest: str = ""
 
 
 @dataclass
@@ -187,18 +189,347 @@ class _RepairTurn:
 
 @dataclass
 class _FindingLease:
-    """In-process state retained only across an armed reactive rc75 replay."""
+    """Per-finding state retained until a terminal verdict is durably saved."""
 
     finding_dir: Path
     repo_for_agent: str
     cleanup: Callable[[], None]
+    source_repo: str = ""
+    state_path: Path | None = None
     initialized: bool = False
     repair_retry_used: bool = False
     completed_turns: dict[tuple[int, str], _CompletedTurn] = field(default_factory=dict)
     turn_cwds: dict[tuple[int, str], Path] = field(default_factory=dict)
     repair_turns: dict[tuple[int, str], _RepairTurn] = field(default_factory=dict)
+    no_correction_drafts: dict[tuple[int, str], str] = field(default_factory=dict)
     _run_lock: Any = field(default_factory=threading.RLock, repr=False, compare=False)
     _closed: bool = False
+
+
+_LEASE_VERSION = 2
+
+
+def _lease_file(f: Finding) -> Path:
+    return f.fdir / ".resume-lease.json"
+
+
+def _lease_atomic_write(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(4)}")
+    try:
+        tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+        tmp.replace(path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            tmp.unlink()
+
+
+def _turn_result_file(cfg: ConfirmConfig, f: Finding, turn_no: int, role: str, text: str) -> Path:
+    log = f.fdir / f"turn{turn_no:02d}_{role}.log"
+    result = log.with_name(f"{log.stem}.last-message.txt") if cfg.adapter.stem == "codex" else log
+    if result.is_file() and result.read_text(errors="replace") == text:
+        return result
+    # Unit embedders may replace the adapter primitive without creating its
+    # normal result file. Keep one uniform durable result in that case.
+    result = f.fdir / f"turn{turn_no:02d}_{role}.accepted.txt"
+    result.write_text(text)
+    return result
+
+
+def _persist_lease(cfg: ConfirmConfig, f: Finding, lease: _FindingLease) -> None:
+    if not resumelib.enabled():
+        return
+    completed: list[dict[str, Any]] = []
+    for (turn_no, role), item in sorted(lease.completed_turns.items()):
+        result_path = item.result_path or _turn_result_file(cfg, f, turn_no, role, item.text)
+        try:
+            relative = result_path.absolute().relative_to(f.fdir.absolute())
+        except ValueError as exc:
+            raise ConfirmationFailed(f"{f.id}: completed turn result escapes its finding directory") from exc
+        body = result_path.read_bytes()
+        digest = hashlib.sha256(body).hexdigest()
+        completed.append(
+            {
+                "turn": turn_no,
+                "role": role,
+                "prompt_digest": item.prompt_digest,
+                "cwd": item.cwd,
+                "verdict": item.verdict,
+                "result": relative.as_posix(),
+                "result_digest": digest,
+            }
+        )
+    repair_turns = [
+        {
+            "previous_turn": previous_turn,
+            "previous_role": previous_role,
+            "turn": item.turn_no,
+            "prompt": item.prompt,
+            "original": item.original,
+            "verdict": item.verdict,
+            "disabled": item.disabled,
+        }
+        for (previous_turn, previous_role), item in sorted(lease.repair_turns.items())
+    ]
+    path = _lease_file(f)
+    value = {
+        "version": _LEASE_VERSION,
+        "finding_id": f.id,
+        "fingerprint": _verdict_fingerprint(cfg, f),
+        "source_repo": lease.source_repo or (str(Path(cfg.repo_dir).absolute()) if cfg.repo_dir else ""),
+        "repo_for_agent": lease.repo_for_agent,
+        "worktree": bool(cfg.worktree and cfg.repo_dir),
+        "initialized": lease.initialized,
+        "repair_retry_used": lease.repair_retry_used,
+        "completed_turns": completed,
+        "turn_cwds": [
+            {"turn": turn, "role": role, "path": str(path.absolute())}
+            for (turn, role), path in sorted(lease.turn_cwds.items())
+        ],
+        "repair_turns": repair_turns,
+        "no_correction_drafts": [
+            {
+                "previous_turn": previous_turn,
+                "previous_role": previous_role,
+                "draft_digest": draft_digest,
+            }
+            for (previous_turn, previous_role), draft_digest in sorted(lease.no_correction_drafts.items())
+        ],
+    }
+    _lease_atomic_write(path, value)
+    lease.state_path = path
+
+
+def _safe_retained_path(path: Path, root: Path, label: str) -> Path:
+    if path.is_symlink():
+        raise ConfirmationFailed(f"unsafe retained {label} symlink: {path}")
+    try:
+        path.resolve().relative_to(root.resolve())
+    except (OSError, ValueError) as exc:
+        raise ConfirmationFailed(f"retained {label} escapes {root}: {path}") from exc
+    return path
+
+
+def _load_lease(cfg: ConfirmConfig, f: Finding) -> _FindingLease:
+    path = _lease_file(f)
+    try:
+        if path.is_symlink() or not path.is_file():
+            raise ConfirmationFailed(f"{f.id}: missing safe Phase 4 resume checkpoint")
+        value = json.loads(path.read_text())
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ConfirmationFailed(f"{f.id}: cannot read Phase 4 resume checkpoint: {exc}") from exc
+    if not isinstance(value, dict) or value.get("version") != _LEASE_VERSION or value.get("finding_id") != f.id:
+        raise ConfirmationFailed(f"{f.id}: invalid Phase 4 resume checkpoint")
+    fingerprint = value.get("fingerprint")
+    if not isinstance(fingerprint, str) or fingerprint != _verdict_fingerprint(cfg, f):
+        raise ConfirmationFailed(f"{f.id}: Phase 4 inputs changed; pass --fresh-context to start over")
+
+    source_repo = value.get("source_repo")
+    repo_for_agent = value.get("repo_for_agent")
+    retained_worktree = value.get("worktree")
+    initialized = value.get("initialized")
+    repair_retry_used = value.get("repair_retry_used")
+    if (
+        not isinstance(source_repo, str)
+        or not isinstance(repo_for_agent, str)
+        or not isinstance(retained_worktree, bool)
+        or not isinstance(initialized, bool)
+        or not isinstance(repair_retry_used, bool)
+    ):
+        raise ConfirmationFailed(f"{f.id}: invalid Phase 4 resume checkpoint fields")
+    current_source = str(Path(cfg.repo_dir).absolute()) if cfg.repo_dir else ""
+    if source_repo != current_source:
+        raise ConfirmationFailed(f"{f.id}: retained source repository no longer matches")
+    if retained_worktree != bool(cfg.worktree and cfg.repo_dir):
+        raise ConfirmationFailed(f"{f.id}: retained worktree mode no longer matches")
+    if retained_worktree:
+        repo_path = _safe_retained_path(Path(repo_for_agent), f.fdir.absolute(), "worktree")
+        probe = subprocess.run(
+            ["git", "-C", str(repo_path), "rev-parse", "--is-inside-work-tree"],
+            env=_dispatcher_git_env(repo_path),
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode != 0 or probe.stdout.strip() != "true":
+            raise ConfirmationFailed(f"{f.id}: retained worktree is unavailable")
+        cleanup = _retained_worktree_cleanup(Path(source_repo), repo_path, f.id)
+    else:
+        if repo_for_agent != current_source:
+            raise ConfirmationFailed(f"{f.id}: retained repository no longer matches")
+
+        def cleanup() -> None:
+            return None
+
+    lease = _FindingLease(
+        f.fdir.absolute(),
+        repo_for_agent,
+        cleanup,
+        source_repo=source_repo,
+        state_path=path,
+    )
+    lease.initialized = initialized
+    lease.repair_retry_used = repair_retry_used
+    raw_cwds = value.get("turn_cwds", [])
+    raw_completed = value.get("completed_turns", [])
+    raw_repairs = value.get("repair_turns", [])
+    raw_no_corrections = value.get("no_correction_drafts")
+    if (
+        not isinstance(raw_cwds, list)
+        or not isinstance(raw_completed, list)
+        or not isinstance(raw_repairs, list)
+        or not isinstance(raw_no_corrections, list)
+    ):
+        raise ConfirmationFailed(f"{f.id}: invalid Phase 4 resume checkpoint lists")
+    for item in raw_cwds:
+        if not isinstance(item, dict):
+            raise ConfirmationFailed(f"{f.id}: invalid retained turn cwd")
+        turn = item.get("turn")
+        role = item.get("role")
+        raw_path = item.get("path")
+        if (
+            not isinstance(turn, int)
+            or isinstance(turn, bool)
+            or turn < 1
+            or role not in {"A", "B", "A-repair"}
+            or not isinstance(raw_path, str)
+            or not raw_path
+        ):
+            raise ConfirmationFailed(f"{f.id}: invalid retained turn cwd")
+        if (turn, role) in lease.turn_cwds:
+            raise ConfirmationFailed(f"{f.id}: duplicate retained turn cwd")
+        cwd = _safe_retained_path(Path(raw_path), f.fdir / ".agent-cwd", "turn cwd")
+        if not cwd.is_dir():
+            raise ConfirmationFailed(f"{f.id}: retained turn cwd is unavailable: {cwd}")
+        lease.turn_cwds[(turn, role)] = cwd
+    for item in raw_completed:
+        if not isinstance(item, dict):
+            raise ConfirmationFailed(f"{f.id}: invalid completed turn checkpoint")
+        turn = item.get("turn")
+        role = item.get("role")
+        result = item.get("result")
+        digest = item.get("result_digest")
+        prompt_digest = item.get("prompt_digest")
+        raw_cwd = item.get("cwd")
+        verdict = item.get("verdict")
+        if (
+            not isinstance(turn, int)
+            or isinstance(turn, bool)
+            or turn < 1
+            or role not in {"A", "B", "A-repair"}
+            or not isinstance(result, str)
+            or not result
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            or not isinstance(prompt_digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", prompt_digest) is None
+            or not isinstance(raw_cwd, str)
+            or verdict not in CANON
+        ):
+            raise ConfirmationFailed(f"{f.id}: invalid completed turn checkpoint")
+        key = (turn, role)
+        if (
+            key in lease.completed_turns
+            or key not in lease.turn_cwds
+            or str(lease.turn_cwds[key].absolute()) != raw_cwd
+        ):
+            raise ConfirmationFailed(f"{f.id}: completed turn checkpoint does not match its retained cwd")
+        result_path = _safe_retained_path(f.fdir / result, f.fdir, "turn result")
+        try:
+            body = result_path.read_bytes()
+        except OSError as exc:
+            raise ConfirmationFailed(f"{f.id}: retained turn result is unavailable: {result_path}") from exc
+        if hashlib.sha256(body).hexdigest() != digest:
+            raise ConfirmationFailed(f"{f.id}: retained turn result changed: {result_path}")
+        text = body.decode(errors="replace")
+        lease.completed_turns[(turn, role)] = _CompletedTurn(
+            prompt_digest,
+            raw_cwd,
+            verdict,
+            text,
+            result_path,
+            digest,
+        )
+    for item in raw_no_corrections:
+        if not isinstance(item, dict):
+            raise ConfirmationFailed(f"{f.id}: invalid no-correction draft checkpoint")
+        previous_turn = item.get("previous_turn")
+        previous_role = item.get("previous_role")
+        draft_digest = item.get("draft_digest")
+        if (
+            not isinstance(previous_turn, int)
+            or isinstance(previous_turn, bool)
+            or previous_turn < 1
+            or previous_role not in {"A", "B"}
+            or not isinstance(draft_digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", draft_digest) is None
+        ):
+            raise ConfirmationFailed(f"{f.id}: invalid no-correction draft checkpoint")
+        key = (previous_turn, previous_role)
+        completed = lease.completed_turns.get(key)
+        if key in lease.no_correction_drafts:
+            raise ConfirmationFailed(f"{f.id}: duplicate no-correction draft checkpoint")
+        if completed is None or completed.verdict != "PENDING REPAIR":
+            raise ConfirmationFailed(
+                f"{f.id}: no-correction draft checkpoint is not bound to a completed PENDING REPAIR turn"
+            )
+        lease.no_correction_drafts[key] = draft_digest
+    for item in raw_repairs:
+        if not isinstance(item, dict):
+            raise ConfirmationFailed(f"{f.id}: invalid repair-turn checkpoint")
+        previous_turn = item.get("previous_turn")
+        previous_role = item.get("previous_role")
+        turn = item.get("turn")
+        prompt = item.get("prompt")
+        original = item.get("original")
+        verdict = item.get("verdict")
+        disabled = item.get("disabled")
+        if (
+            not isinstance(previous_turn, int)
+            or isinstance(previous_turn, bool)
+            or previous_turn < 1
+            or previous_role not in {"A", "B"}
+            or not isinstance(turn, int)
+            or isinstance(turn, bool)
+            or turn < 1
+            or not isinstance(prompt, str)
+            or not prompt
+            or (original is not None and not isinstance(original, str))
+            or (verdict is not None and verdict not in CANON)
+            or not isinstance(disabled, bool)
+        ):
+            raise ConfirmationFailed(f"{f.id}: invalid repair-turn checkpoint")
+        repair_key = (previous_turn, previous_role)
+        if repair_key in lease.repair_turns or repair_key in lease.no_correction_drafts:
+            raise ConfirmationFailed(f"{f.id}: duplicate repair-turn checkpoint")
+        lease.repair_turns[repair_key] = _RepairTurn(
+            turn,
+            prompt,
+            original,
+            verdict,
+            disabled,
+        )
+    return lease
+
+
+def _remove_lease_state(lease: _FindingLease) -> None:
+    path = lease.state_path
+    if path is not None:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+
+
+def _discard_persisted_lease(cfg: ConfirmConfig, f: Finding) -> None:
+    path = _lease_file(f)
+    if not path.exists() and not path.is_symlink():
+        return
+    try:
+        lease = _load_lease(cfg, f)
+        lease.cleanup()
+    except Exception as exc:
+        _log(f"  WARNING: {f.id}: could not clean stale resume lease ({exc})")
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
 
 
 @dataclass
@@ -212,6 +543,7 @@ class ConfirmConfig:
     worktree: bool = True
     dry_run: bool = False
     prompt_extra: str = ""  # target's .prompt-extra.md, appended to every agent prompt
+    resume_prompt_extra: str = ""  # latest guidance, manual continuation only
     # New controls stay after the original fields to preserve positional callers.
     # None = no Specula override; "" = explicit reset to the CLI default.
     model: str | None = None
@@ -282,8 +614,18 @@ class ConfirmConfig:
                     break
                 pending.wait()
 
-            repo_for_agent, cleanup = setup_repo(self, f)
-            candidate = _FindingLease(finding_dir, repo_for_agent, cleanup)
+            resume_prefix = ("confirm", self.name, "finding", f.id)
+            if resumelib.has_prefix(resume_prefix) and not resumelib.fresh_mode():
+                candidate = _load_lease(self, f)
+            else:
+                repo_for_agent, cleanup = setup_repo(self, f)
+                candidate = _FindingLease(
+                    finding_dir,
+                    repo_for_agent,
+                    cleanup,
+                    source_repo=str(Path(self.repo_dir).absolute()) if self.repo_dir else "",
+                    state_path=_lease_file(f),
+                )
             with self._finding_leases_lock:
                 self._finding_leases[f.id] = candidate
             return candidate
@@ -294,7 +636,7 @@ class ConfirmConfig:
                 if pending is not None:
                     pending.set()
 
-    def release_finding_lease(self, finding_id: str) -> None:
+    def release_finding_lease(self, finding_id: str, *, force: bool = False) -> None:
         """Idempotently release one terminal finding's runtime-only lease."""
         with self._finding_leases_lock:
             lease = self._finding_leases.pop(finding_id, None)
@@ -304,9 +646,12 @@ class ConfirmConfig:
             if lease._closed:
                 return
             lease._closed = True
+            if not force and resumelib.has_prefix(("confirm", self.name, "finding", finding_id)):
+                return
             lease.completed_turns.clear()
             lease.turn_cwds.clear()
             lease.repair_turns.clear()
+            lease.no_correction_drafts.clear()
             try:
                 lease.cleanup()
             except BaseException as exc:
@@ -315,6 +660,7 @@ class ConfirmConfig:
                     _log(message)
                 except OSError:
                     print(message, flush=True)
+            _remove_lease_state(lease)
 
     def clear_retry_runtime(self) -> None:
         """Release every lease/cursor when no immediate reactive replay follows."""
@@ -443,6 +789,7 @@ def run_turn(
         _log(f"    [{f.id}] [DRY] turn {turn_no} {role} → {log.name}")
         return ("REPRODUCED" if role == "A" and turn_no == 1 else None), ""
     turn_key = (turn_no, role)
+    resume_logical = ("confirm", cfg.name, "finding", f.id, str(turn_no), role)
     prompt_digest = hashlib.sha256(prompt.encode()).hexdigest()
     turn_cwd = str(Path(cwd).absolute()) if cwd is not None else None
     if lease is not None:
@@ -455,6 +802,8 @@ def run_turn(
 
     state_key = ("finding", f.id, str(turn_no), role)
     policy_state = cfg.policy_state(state_key, prompt)
+    if lease is not None:
+        _persist_lease(cfg, f, lease)
     rc, text = run_agent_blocking(
         cfg.adapter,
         prompt,
@@ -471,6 +820,12 @@ def run_turn(
         policy_retries=cfg.policy_retries,
         transient_resumes=cfg.transient_resumes,
         policy_state=policy_state,
+        resume_logical=resume_logical,
+        resume_phase=PHASE_KEY,
+        resume_target=cfg.name,
+        resume_kind="finding-turn",
+        resume_finding_id=f.id,
+        manual_prompt_extra=cfg.resume_prompt_extra,
     )
     if rc == 75:
         raise RateLimited(f"{f.id} turn {turn_no} {role}")
@@ -479,12 +834,34 @@ def run_turn(
     if not text.strip():
         raise InvalidAgentOutput(f"{f.id} turn {turn_no} {role}: empty agent output")
     verdict = parse_verdict(text)
-    if lease is not None:
-        lease.completed_turns[turn_key] = _CompletedTurn(prompt_digest, turn_cwd, verdict, text)
-    # A completed turn is now represented by the lease cache; its native retry
-    # cursor is no longer needed. Only the unfinished rc75 turn keeps one.
-    cfg.clear_policy_states(state_key)
     return verdict, text
+
+
+def _accept_turn(
+    cfg: ConfirmConfig,
+    f: Finding,
+    role: str,
+    turn_no: int,
+    prompt: str,
+    cwd: str | Path | None,
+    lease: _FindingLease,
+    verdict: str | None,
+    text: str,
+) -> None:
+    """Commit a semantically accepted turn before making it non-resumable."""
+    turn_cwd = str(Path(cwd).absolute()) if cwd is not None else None
+    result_path = _turn_result_file(cfg, f, turn_no, role, text)
+    digest = hashlib.sha256(result_path.read_bytes()).hexdigest()
+    lease.completed_turns[(turn_no, role)] = _CompletedTurn(
+        hashlib.sha256(prompt.encode()).hexdigest(),
+        turn_cwd,
+        verdict,
+        text,
+        result_path,
+        digest,
+    )
+    _persist_lease(cfg, f, lease)
+    cfg.clear_policy_states(("finding", f.id, str(turn_no), role))
 
 
 def _fresh_turn_cwd(f: Finding, role: str, turn_no: int, lease: _FindingLease | None = None) -> Path:
@@ -567,6 +944,28 @@ def _consolidate_cwd(work_dir: Path, *, fresh: bool) -> Path:
 
 
 # ── per-finding git worktree (build isolation) ───────────────────────────────
+
+
+def _retained_worktree_cleanup(root: Path, wt: Path, finding_id: str) -> Callable[[], None]:
+    git_env = _dispatcher_git_env(root)
+
+    def cleanup() -> None:
+        result = subprocess.run(
+            ["git", "-C", str(root), "worktree", "remove", "--force", str(wt)],
+            env=git_env,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return
+        subprocess.run(["git", "-C", str(root), "worktree", "prune"], env=git_env, capture_output=True)
+        message = f"{finding_id}: could not remove isolated worktree (left on disk): {result.stderr.strip()[:200]}"
+        try:
+            _log(f"  WARNING: {message}")
+        except OSError:
+            print(f"  WARNING: {message}", flush=True)
+
+    return cleanup
 
 
 def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]:
@@ -679,29 +1078,7 @@ def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Cal
     if dirty.stdout.strip():
         _log(f"  [{f.id}] copied tracked/untracked local changes into isolated worktree")
 
-    def cleanup() -> None:
-        # Best-effort, NEVER fatal. A worktree that cannot be removed — e.g. a
-        # containerised build (sonic-dash-ha) left artifacts root-owned that this
-        # user cannot delete — is a disk-cleanup nuisance, never a reason to discard
-        # a finding whose confirmation already finished. Drop the git registration
-        # where possible and warn; the leftover directory is harmless (each finding
-        # uses its own path).
-        result = subprocess.run(
-            ["git", "-C", str(root), "worktree", "remove", "--force", str(wt)],
-            env=git_env,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0:
-            return
-        subprocess.run(["git", "-C", str(root), "worktree", "prune"], env=git_env, capture_output=True)
-        message = f"{f.id}: could not remove isolated worktree (left on disk): {result.stderr.strip()[:200]}"
-        try:
-            _log(f"  WARNING: {message}")
-        except OSError:
-            print(f"  WARNING: {message}", flush=True)
-
-    return str(wt), cleanup
+    return str(wt), _retained_worktree_cleanup(root, wt, f.id)
 
 
 def _worktree_candidates(base: Path) -> list[Path]:
@@ -898,14 +1275,16 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
             turn = 1
 
             def prepare_pending(previous_turn: int, previous_role: str = "A") -> int:
-                """Warn about a draft problem and make at most one correction turn.
+                """Reuse the durable draft decision or make at most one correction turn.
 
-                The lease records a correction's logical turn before invoking it.
-                Therefore a later B rate-limit replay cannot renumber B merely
-                because the already-completed correction left a valid draft.
+                Both correction and no-correction decisions are recorded before
+                the next turn starts. A later rate-limit replay therefore cannot
+                renumber an already-started B turn from mutable draft contents.
                 """
                 repair_key = (previous_turn, previous_role)
                 repair = lease.repair_turns.get(repair_key)
+                if repair_key in lease.no_correction_drafts:
+                    return previous_turn
                 original = repair.original if repair is not None else None
                 if repair is None:
                     problem: Exception | str | None = None
@@ -921,6 +1300,9 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                                 original = draft_path.read_text()
 
                     if problem is None:
+                        assert original is not None
+                        lease.no_correction_drafts[repair_key] = hashlib.sha256(original.encode()).hexdigest()
+                        _persist_lease(cfg, f, lease)
                         return previous_turn
 
                     warning = str(problem)
@@ -929,6 +1311,8 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                         if original is None:
                             assert isinstance(problem, Exception)
                             raise problem
+                        lease.no_correction_drafts[repair_key] = hashlib.sha256(original.encode()).hexdigest()
+                        _persist_lease(cfg, f, lease)
                         return previous_turn
 
                     lease.repair_retry_used = True
@@ -951,14 +1335,15 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                     return correction_turn
                 if repair.verdict is None:
                     draft_path = f.fdir / "repair-request.body.md"
+                    correction_cwd = _fresh_turn_cwd(f, "A-repair", correction_turn, lease)
                     try:
-                        correction_verdict, _ = run_turn(
+                        correction_verdict, correction_text = run_turn(
                             cfg,
                             f,
                             "A-repair",
                             correction_turn,
                             repair.prompt,
-                            cwd=_fresh_turn_cwd(f, "A-repair", correction_turn, lease),
+                            cwd=correction_cwd,
                             lease=lease,
                         )
                         repair.verdict = correction_verdict
@@ -967,6 +1352,8 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                     except Exception as exc:
                         repair.disabled = True
                         _restore_repair_draft(draft_path, original)
+                        _persist_lease(cfg, f, lease)
+                        cfg.clear_policy_states(("finding", f.id, str(correction_turn), "A-repair"))
                         if original is None or not original.strip():
                             raise
                         _log(f"  WARNING: {f.id}: repair-draft correction failed ({exc}); keeping the original draft")
@@ -984,6 +1371,18 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                     corrected_warning = _repair_draft_warning(cfg, f, corrected)
                     if corrected_warning is not None:
                         _log(f"  WARNING: {corrected_warning} (continuing with the non-empty draft)")
+                    _validate_turn_output(f, correction_verdict, correction_text)
+                    _accept_turn(
+                        cfg,
+                        f,
+                        "A-repair",
+                        correction_turn,
+                        repair.prompt,
+                        correction_cwd,
+                        lease,
+                        correction_verdict,
+                        correction_text,
+                    )
 
                 debate.write_text(
                     debate.read_text()
@@ -998,13 +1397,15 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                 return correction_turn
 
         # Turn 1 — Reproducer (neutral): investigate + reproduce.
+        a_prompt = prompt_reproduce(cfg, f, repo_for_agent)
+        a_cwd = _fresh_turn_cwd(f, "A", 1, lease)
         a_verdict, a_text = run_turn(
             cfg,
             f,
             "A",
             1,
-            prompt_reproduce(cfg, f, repo_for_agent),
-            cwd=_fresh_turn_cwd(f, "A", 1, lease),
+            a_prompt,
+            cwd=a_cwd,
             lease=lease,
         )
         debate.write_text(
@@ -1014,6 +1415,9 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
         )
         _validate_turn_output(f, a_verdict, a_text)
         assert a_verdict is not None
+        if a_verdict != "PENDING REPAIR" and (a_verdict not in CONFIRM or not cfg.debate):
+            _validate_final_artifacts(cfg, f, a_verdict)
+        _accept_turn(cfg, f, "A", 1, a_prompt, a_cwd, lease, a_verdict, a_text)
         if a_verdict == "PENDING REPAIR":
             turn = prepare_pending(turn)
         initial_text = a_text
@@ -1028,18 +1432,23 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
         defenses: list[str] = []
         for rnd in range(1, cfg.rounds + 1):
             turn += 1
+            b_prompt = prompt_challenge(cfg, f, repo_for_agent, str(debate))
+            b_cwd = _fresh_turn_cwd(f, "B", turn, lease)
             b_verdict, b_text = run_turn(
                 cfg,
                 f,
                 "B",
                 turn,
-                prompt_challenge(cfg, f, repo_for_agent, str(debate)),
-                cwd=_fresh_turn_cwd(f, "B", turn, lease),
+                b_prompt,
+                cwd=b_cwd,
                 lease=lease,
             )
             debate.write_text(debate.read_text() + _debate_entry(f, "B", turn, f"B (round {rnd})", b_verdict))
             _validate_turn_output(f, b_verdict, b_text)
             assert b_verdict is not None
+            if b_verdict != "PENDING REPAIR" and b_verdict == a_verdict:
+                _validate_final_artifacts(cfg, f, b_verdict)
+            _accept_turn(cfg, f, "B", turn, b_prompt, b_cwd, lease, b_verdict, b_text)
             # B agrees with A's current verdict → consensus already. Do NOT pull A
             # into a defense it does not need: A only ever hears about the debate
             # when B actually disagrees (the defend turn is where it is introduced).
@@ -1056,18 +1465,23 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                     _compose_evidence(initial_text, [*defenses, b_text]),
                 )
             turn += 1
+            defend_prompt = prompt_defend(cfg, f, repo_for_agent, str(debate))
+            defend_cwd = _fresh_turn_cwd(f, "A", turn, lease)
             a_verdict, a_text = run_turn(
                 cfg,
                 f,
                 "A",
                 turn,
-                prompt_defend(cfg, f, repo_for_agent, str(debate)),
-                cwd=_fresh_turn_cwd(f, "A", turn, lease),
+                defend_prompt,
+                cwd=defend_cwd,
                 lease=lease,
             )
             debate.write_text(debate.read_text() + _debate_entry(f, "A", turn, f"A (round {rnd})", a_verdict))
             _validate_turn_output(f, a_verdict, a_text)
             assert a_verdict is not None
+            if a_verdict != "PENDING REPAIR" and a_verdict == b_verdict:
+                _validate_final_artifacts(cfg, f, a_verdict)
+            _accept_turn(cfg, f, "A", turn, defend_prompt, defend_cwd, lease, a_verdict, a_text)
             if a_verdict == "PENDING REPAIR":
                 turn = prepare_pending(turn)
             defenses.append(a_text)
@@ -1493,7 +1907,9 @@ def run_finding_safe(
     to discard the whole target's report: the rest of the batch still delivers."""
     cached = _load_verdict(f, cfg)
     if cached is not None:
-        cfg.release_finding_lease(f.id)
+        resumelib.complete_prefix(("confirm", cfg.name, "finding", f.id))
+        cfg.release_finding_lease(f.id, force=True)
+        _discard_persisted_lease(cfg, f)
         cfg.clear_policy_states(("finding", f.id))
         _log(f"  [{f.id}] cached {cached.status} — skip (idempotent)")
         return cached
@@ -1503,7 +1919,8 @@ def run_finding_safe(
         if cfg.repair_round is not None:
             o.body = _merge_repair_evidence(prior, repair_evidence, o.body, cfg.repair_round)
         _save_verdict(o, cfg)
-        cfg.release_finding_lease(f.id)
+        resumelib.complete_prefix(("confirm", cfg.name, "finding", f.id))
+        cfg.release_finding_lease(f.id, force=True)
         cfg.clear_policy_states(("finding", f.id))
         return o
     except Exception as exc:  # RateLimited / ConfirmationFailed / anything unexpected
@@ -2761,10 +3178,12 @@ def consolidate(cfg: ConfirmConfig) -> None:
         and not (spec_dir / "confirmation-generation.json").is_file()
     )
     expected_scenarios = None if external_candidates else _expected_brief_scenarios(brief)
+    resume_logical = ("confirm", cfg.name, "consolidate")
     if source_errs:
         raise ConsolidateFailed(f"invalid model-checking input for {cfg.name}: {source_errs[0]}")
     if out.is_file() and _candidate_cache_valid(cfg, out, expected_mc_ids, expected_scenarios):
         cfg.clear_policy_states(("consolidate",))
+        resumelib.complete_turn(resume_logical, allow_previous_owner=resumelib.manual_mode())
         _log(f"  {cfg.name}: candidates.json present and valid — skipping consolidate")
         return
     bug_report = spec_dir / "bug-report.md"
@@ -2788,7 +3207,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
         return
     spec_dir.mkdir(parents=True, exist_ok=True)
     policy_state = cfg.policy_state(("consolidate",), prompt)
-    fresh = policy_state.invocation_attempt == 0
+    fresh = policy_state.invocation_attempt == 0 and not resumelib.has_prefix(resume_logical)
     if fresh:
         # Do not let a fresh failed agent make stale output look fresh. An exact
         # rc75 continuation, however, may need candidates already written by its
@@ -2812,6 +3231,11 @@ def consolidate(cfg: ConfirmConfig) -> None:
             policy_retries=cfg.policy_retries,
             transient_resumes=cfg.transient_resumes,
             policy_state=policy_state,
+            resume_logical=resume_logical,
+            resume_phase=PHASE_KEY,
+            resume_target=cfg.name,
+            resume_kind="consolidate",
+            manual_prompt_extra=cfg.resume_prompt_extra,
         )
     except BaseException:
         cfg.clear_policy_states(("consolidate",))
@@ -2832,6 +3256,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
             out.unlink()  # drop the invalid file so load_findings does not choke on it
         raise ConsolidateFailed(f"no valid candidates.json for {cfg.name}: {errs[0]}")
     _write_candidate_cache(cfg, out)
+    resumelib.complete_turn(resume_logical, allow_previous_owner=resumelib.manual_mode())
     doc = json.loads(out.read_text())
     cand = doc.get("findings", [])
     n_merged = sum(1 for c in cand if c.get("dedup_note"))
@@ -3387,8 +3812,63 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
 
     outcomes: list[Outcome] = []
     unstarted: list[Finding] = []
+    scheduled_findings = findings
     next_finding = 0
     rate_limit_seen = threading.Event()
+
+    recovery_source = resumelib.unfinished_entries if resumelib.manual_mode() else resumelib.previous_entries
+    recovery_entries = [
+        entry for entry in recovery_source(phase=PHASE_KEY, target=cfg.name) if entry.get("kind") == "finding-turn"
+    ]
+    recovery_ids = list(dict.fromkeys(str(entry.get("finding_id") or "") for entry in recovery_entries))
+    if recovery_ids:
+        by_id = {finding.id: finding for finding in findings}
+        missing = [finding_id for finding_id in recovery_ids if finding_id not in by_id]
+        if missing:
+            return _withhold(
+                cfg,
+                "resume checkpoint no longer matches current findings: " + ", ".join(missing),
+            )
+        _log(f"Restoring {len(recovery_ids)} interrupted finding conversation(s) serially")
+        failed_recovery: Outcome | None = None
+        for finding_id in recovery_ids:
+            finding = by_id[finding_id]
+            if cfg.repair_round is None:
+                recovered = run_finding_safe(cfg, finding)
+            else:
+                recovered = run_finding_safe(
+                    cfg,
+                    finding,
+                    prior=prior_by_id.get(finding.id),
+                    repair_evidence=repair_evidence_by_id[finding.id],
+                )
+            if recovered.status == INCOMPLETE:
+                failed_recovery = recovered
+                break
+        if failed_recovery is not None:
+            outcomes.append(failed_recovery)
+            for finding in findings:
+                if finding.id == failed_recovery.finding.id:
+                    continue
+                cached = _load_verdict(finding, cfg)
+                if cached is not None:
+                    outcomes.append(cached)
+                    continue
+                outcomes.append(
+                    Outcome(
+                        finding,
+                        INCOMPLETE,
+                        consensus=False,
+                        rounds=0,
+                        body=(
+                            "## Confirmation result\n"
+                            "INCOMPLETE — this finding was not started while an interrupted conversation "
+                            "was being restored. It was NOT judged and was NOT cached. Re-run to retry."
+                        ),
+                        failure_code=failed_recovery.failure_code or 1,
+                    )
+                )
+            scheduled_findings = []
 
     def run_scheduled(finding: Finding) -> Outcome | None:
         # A future may have been submitted before another worker reports a rate
@@ -3417,8 +3897,12 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
 
         def fill_wave() -> None:
             nonlocal next_finding
-            while not rate_limit_seen.is_set() and next_finding < len(findings) and len(in_flight) < cfg.max_parallel:
-                finding = findings[next_finding]
+            while (
+                not rate_limit_seen.is_set()
+                and next_finding < len(scheduled_findings)
+                and len(in_flight) < cfg.max_parallel
+            ):
+                finding = scheduled_findings[next_finding]
                 next_finding += 1
                 in_flight[ex.submit(run_scheduled, finding)] = finding
 
@@ -3456,7 +3940,7 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
                 fill_wave()
 
     if rate_limit_seen.is_set():
-        unstarted.extend(findings[next_finding:])
+        unstarted.extend(scheduled_findings[next_finding:])
         for finding in unstarted:
             cached = _load_verdict(finding, cfg)
             if cached is not None:
