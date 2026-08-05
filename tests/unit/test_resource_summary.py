@@ -7,6 +7,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from typing import cast
 from unittest import mock
 
 from specula.resource_summary import (
@@ -40,6 +41,21 @@ def _normalized(
     if complete is not None:
         payload["usage_complete"] = complete
     return payload
+
+
+def _claude(*, session: str, tokens: tuple[int, int, int, int], cost: float) -> dict[str, object]:
+    input_tokens, cache_write, cached, output = tokens
+    return {
+        "session_id": session,
+        "total_cost_usd": cost,
+        "usage": {
+            "input_tokens": input_tokens,
+            "cache_creation_input_tokens": cache_write,
+            "cache_read_input_tokens": cached,
+            "output_tokens": output,
+        },
+        "model_usage": {},
+    }
 
 
 class ResourceSummaryCase(unittest.TestCase):
@@ -588,6 +604,268 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
         self.assertEqual(phase["total_tokens"], 150)
         self.assertEqual(phase["cached_input_tokens"], 120)
         self.assertEqual(phase["cost_usd"], 1.5)
+
+    def test_claude_retry_adds_archived_invocation_usage(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        sidecar = self.work_dir / "agent.usage.json"
+        archived = self.work_dir / "agent.usage.attempt-1.json"
+        invocation_id = "2c" * 16
+        recorder = self.recorder("phase1", invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.note_agent(self.work_dir, sidecar, attempt=1)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _claude(session="claude-retry", tokens=(400, 100, 200, 40), cost=0.001784),
+            )
+            sidecar.replace(archived)
+            recorder.note_agent(
+                self.work_dir,
+                sidecar,
+                attempt=2,
+                archived_usage_path=archived,
+            )
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _claude(session="claude-retry", tokens=(100, 50, 70, 30), cost=0.001430),
+            )
+            recorder.finish_target("demo")
+        tracker.capture_invocation("phase1", ["demo"], invocation_id)
+
+        phase = self.phase_state(self.state(self.work_dir), "phase1")
+        self.assertEqual(phase["total_tokens"], 990)
+        self.assertEqual(phase["cached_input_tokens"], 270)
+        self.assertAlmostEqual(cast(float, phase["cost_usd"]), 0.003214)
+        self.assertFalse(phase["usage_incomplete"])
+        record = json.loads(self.record_path(self.work_dir, invocation_id).read_text())
+        self.assertEqual(
+            [entry["path"] for entry in record["usage"]],
+            ["agent.usage.attempt-1.json", "agent.usage.json"],
+        )
+
+    def test_codex_retry_uses_delta_across_archived_snapshot(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        sidecar = self.work_dir / "agent.usage.json"
+        archived = self.work_dir / "agent.usage.attempt-1.json"
+        invocation_id = "2d" * 16
+        recorder = self.recorder("phase1", invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.note_agent(self.work_dir, sidecar, attempt=1)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(session="codex-retry", tokens=740, cached=200, cost=0.001784),
+            )
+            sidecar.replace(archived)
+            recorder.note_agent(
+                self.work_dir,
+                sidecar,
+                attempt=2,
+                archived_usage_path=archived,
+            )
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(session="codex-retry", tokens=990, cached=270, cost=0.003214),
+            )
+            recorder.finish_target("demo")
+        tracker.capture_invocation("phase1", ["demo"], invocation_id)
+
+        phase = self.phase_state(self.state(self.work_dir), "phase1")
+        self.assertEqual(phase["total_tokens"], 990)
+        self.assertEqual(phase["cached_input_tokens"], 270)
+        self.assertAlmostEqual(cast(float, phase["cost_usd"]), 0.003214)
+        self.assertFalse(phase["usage_incomplete"])
+
+    def test_unknown_retry_keeps_latest_snapshot_and_marks_incomplete(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        sidecar = self.work_dir / "agent.usage.json"
+        archived = self.work_dir / "agent.usage.attempt-1.json"
+        invocation_id = "31" * 16
+        recorder = self.recorder("phase1", invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.note_agent(self.work_dir, sidecar, attempt=1)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(
+                    session="opencode-retry",
+                    tokens=740,
+                    cached=200,
+                    cost=0.001784,
+                    agent="opencode",
+                ),
+            )
+            sidecar.replace(archived)
+            recorder.note_agent(
+                self.work_dir,
+                sidecar,
+                attempt=2,
+                archived_usage_path=archived,
+            )
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(
+                    session="opencode-retry",
+                    tokens=250,
+                    cached=70,
+                    cost=0.001430,
+                    agent="opencode",
+                ),
+            )
+            recorder.finish_target("demo")
+        tracker.capture_invocation("phase1", ["demo"], invocation_id)
+
+        phase = self.phase_state(self.state(self.work_dir), "phase1")
+        self.assertEqual(phase["total_tokens"], 250)
+        self.assertEqual(phase["cached_input_tokens"], 70)
+        self.assertAlmostEqual(cast(float, phase["cost_usd"]), 0.001430)
+        self.assertTrue(phase["tokens_observed"])
+        self.assertTrue(phase["cost_observed"])
+        self.assertTrue(phase["usage_incomplete"])
+        record = json.loads(self.record_path(self.work_dir, invocation_id).read_text())
+        self.assertFalse(record["usage_complete"])
+        self.assertEqual(
+            [entry["path"] for entry in record["usage"]],
+            ["agent.usage.attempt-1.json", "agent.usage.json"],
+        )
+
+    def test_manual_resume_does_not_recount_prior_claude_archive(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        sidecar = self.work_dir / "agent.usage.json"
+        archived = self.work_dir / "agent.usage.attempt-1.json"
+
+        first_id = "2e" * 16
+        first = self.recorder("phase1", first_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
+            first.start_target("demo", self.work_dir)
+            first.note_agent(self.work_dir, sidecar, attempt=1)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _claude(session="claude-resume", tokens=(400, 100, 200, 40), cost=0.001784),
+            )
+            first.finish_target("demo")
+        tracker.capture_invocation("phase1", ["demo"], first_id)
+        sidecar.replace(archived)
+
+        second_id = "2f" * 16
+        second = self.recorder("phase1", second_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[2.0, 3.0]):
+            second.start_target("demo", self.work_dir)
+            second.note_agent(
+                self.work_dir,
+                sidecar,
+                attempt=2,
+                archived_usage_path=archived,
+            )
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _claude(session="claude-resume", tokens=(100, 50, 70, 30), cost=0.001430),
+            )
+            second.finish_target("demo")
+        tracker.capture_invocation("phase1", ["demo"], second_id)
+
+        phase = self.phase_state(self.state(self.work_dir), "phase1")
+        self.assertEqual(phase["total_tokens"], 990)
+        self.assertAlmostEqual(cast(float, phase["cost_usd"]), 0.003214)
+        second_record = json.loads(self.record_path(self.work_dir, second_id).read_text())
+        self.assertEqual([entry["path"] for entry in second_record["usage"]], ["agent.usage.json"])
+
+    def test_unknown_manual_continuation_is_not_double_counted(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        sidecar = self.work_dir / "agent.usage.json"
+        archived = self.work_dir / "agent.usage.attempt-1.json"
+
+        first_id = "32" * 16
+        first = self.recorder("phase1", first_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
+            first.start_target("demo", self.work_dir)
+            first.note_agent(self.work_dir, sidecar)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(
+                    session="opencode-manual",
+                    tokens=740,
+                    cached=200,
+                    cost=0.001784,
+                    agent="opencode",
+                ),
+            )
+            first.finish_target("demo")
+        tracker.capture_invocation("phase1", ["demo"], first_id)
+        sidecar.replace(archived)
+
+        second_id = "33" * 16
+        second = self.recorder("phase1", second_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[2.0, 3.0]):
+            second.start_target("demo", self.work_dir)
+            second.note_agent(
+                self.work_dir,
+                sidecar,
+                attempt=2,
+                archived_usage_path=archived,
+            )
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(
+                    session="opencode-manual",
+                    tokens=990,
+                    cached=270,
+                    cost=0.003214,
+                    agent="opencode",
+                ),
+            )
+            second.finish_target("demo")
+        tracker.capture_invocation("phase1", ["demo"], second_id)
+
+        phase = self.phase_state(self.state(self.work_dir), "phase1")
+        self.assertEqual(phase["total_tokens"], 740)
+        self.assertEqual(phase["cached_input_tokens"], 200)
+        self.assertAlmostEqual(cast(float, phase["cost_usd"]), 0.001784)
+        self.assertTrue(phase["usage_incomplete"])
+        second_record = json.loads(self.record_path(self.work_dir, second_id).read_text())
+        self.assertFalse(second_record["usage_complete"])
+        self.assertEqual(second_record["continued_usage"], ["agent.usage.json"])
+
+    def test_missing_retry_archive_keeps_final_usage_but_marks_incomplete(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        sidecar = self.work_dir / "agent.usage.json"
+        invocation_id = "30" * 16
+        recorder = self.recorder("phase1", invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.note_agent(self.work_dir, sidecar, attempt=1)
+            recorder.note_agent(self.work_dir, sidecar, attempt=2)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _claude(session="claude-missing", tokens=(100, 50, 70, 30), cost=0.001430),
+            )
+            recorder.finish_target("demo")
+        tracker.capture_invocation("phase1", ["demo"], invocation_id)
+
+        phase = self.phase_state(self.state(self.work_dir), "phase1")
+        self.assertEqual(phase["total_tokens"], 250)
+        self.assertAlmostEqual(cast(float, phase["cost_usd"]), 0.001430)
+        self.assertTrue(phase["usage_incomplete"])
+        record = json.loads(self.record_path(self.work_dir, invocation_id).read_text())
+        self.assertFalse(record["usage_complete"])
+        self.assertEqual([entry["path"] for entry in record["usage"]], ["agent.usage.json"])
 
     def test_missing_cost_is_a_dash_while_tokens_remain_visible(self) -> None:
         tracker = self.tracker()

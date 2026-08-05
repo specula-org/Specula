@@ -31,6 +31,7 @@ RESOURCE_ROOT_ENV = "SPECULA_RESOURCE_ROOT"
 RESOURCE_PHASE_ENV = "SPECULA_RESOURCE_PHASE"
 
 _INVOCATION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+_USAGE_ATTEMPT_RE = re.compile(r"^(?P<stem>.+)\.attempt-(?P<attempt>[1-9][0-9]*)\.json$")
 
 
 @dataclass(frozen=True)
@@ -215,6 +216,7 @@ class ResourceInvocationRecorder:
         self._elapsed: dict[str, float] = {}
         self._work_dirs: dict[str, Path] = {}
         self._usage_paths: dict[str, list[str]] = {}
+        self._continued_usage: dict[str, set[str]] = {}
         self._usage_failed: set[str] = set()
         self._finished: set[str] = set()
 
@@ -252,6 +254,7 @@ class ResourceInvocationRecorder:
                 self._work_dirs[name] = absolute_work_dir
                 self._elapsed[name] = 0.0
                 self._usage_paths[name] = []
+                self._continued_usage[name] = set()
             self._started[name] = time.monotonic()
             self._publish(
                 name,
@@ -264,9 +267,19 @@ class ResourceInvocationRecorder:
                 },
             )
 
-    def note_agent(self, work_dir: Path, usage_path: Path) -> None:
+    def note_agent(
+        self,
+        work_dir: Path,
+        usage_path: Path,
+        *,
+        attempt: int = 1,
+        archived_usage_path: Path | None = None,
+    ) -> None:
+        if isinstance(attempt, bool) or not isinstance(attempt, int) or attempt < 1:
+            raise ValueError("resource agent attempt must be a positive integer")
         absolute_work_dir = Path(os.path.abspath(work_dir))
         absolute_usage = Path(os.path.abspath(usage_path))
+        absolute_archive = Path(os.path.abspath(archived_usage_path)) if archived_usage_path is not None else None
         with self._lock:
             for name, expected_work_dir in self._work_dirs.items():
                 if name not in self._started or expected_work_dir != absolute_work_dir:
@@ -275,6 +288,30 @@ class ResourceInvocationRecorder:
                     usage_relative = _relative_path(expected_work_dir, absolute_usage)
                     if not _allowed_usage_path(self._phase, usage_relative):
                         raise ValueError(f"unexpected resource usage path: {usage_relative}")
+                    previous_index = next(
+                        (
+                            index
+                            for index in range(len(self._usage_paths[name]) - 1, -1, -1)
+                            if self._usage_paths[name][index] == usage_relative
+                        ),
+                        None,
+                    )
+                    if attempt > 1 and previous_index is None:
+                        logical_relative = _canonical_usage_path(self._phase, usage_relative)
+                        assert logical_relative is not None
+                        self._continued_usage[name].add(logical_relative)
+                    if previous_index is not None:
+                        expected_archive = absolute_usage.with_name(
+                            f"{absolute_usage.stem}.attempt-{attempt - 1}{absolute_usage.suffix}"
+                        )
+                        if attempt > 1 and absolute_archive == expected_archive:
+                            archive_relative = _relative_path(expected_work_dir, expected_archive)
+                            if _canonical_usage_path(self._phase, archive_relative) == usage_relative:
+                                self._usage_paths[name][previous_index] = archive_relative
+                            else:
+                                self._usage_failed.add(name)
+                        else:
+                            self._usage_failed.add(name)
                     _clear_stale_usage(expected_work_dir, absolute_usage)
                 except (OSError, UnicodeError, ValueError):
                     self._usage_failed.add(name)
@@ -298,21 +335,22 @@ class ResourceInvocationRecorder:
                 work_dir,
                 self._phase,
                 self._usage_paths.get(name, []),
+                self._continued_usage.get(name, set()),
             )
             usage_complete = usage_complete and name not in self._usage_failed
-            self._publish(
-                name,
-                {
-                    "version": 1,
-                    "invocation_id": self._invocation_id,
-                    "phase": self._phase,
-                    "target": name,
-                    "status": "completed",
-                    "elapsed_seconds": self._elapsed[name],
-                    "usage_complete": usage_complete,
-                    "usage": snapshots,
-                },
-            )
+            document: dict[str, object] = {
+                "version": 1,
+                "invocation_id": self._invocation_id,
+                "phase": self._phase,
+                "target": name,
+                "status": "completed",
+                "elapsed_seconds": self._elapsed[name],
+                "usage_complete": usage_complete,
+                "usage": snapshots,
+            }
+            if self._continued_usage[name]:
+                document["continued_usage"] = sorted(self._continued_usage[name])
+            self._publish(name, document)
             self._finished.add(name)
 
     def _pause_target(self, name: str) -> None:
@@ -539,11 +577,16 @@ class ResourceSummaryTracker:
         phase_state.runtime_observed = True
         usage = _record_usage(phase, record)
         assert usage is not None
+        continued_usage = _record_continued_usage(phase, record)
+        assert continued_usage is not None
         if record.get("usage_complete") is not True:
+            phase_state.usage_incomplete = True
+        usage, retry_complete = _select_retry_usage(phase, usage, continued_usage)
+        if not retry_complete:
             phase_state.usage_incomplete = True
         for relative, snapshot in usage:
             self._accumulate_record(state, phase, relative, snapshot)
-        if not usage and record.get("usage_complete") is True:
+        if not usage and record.get("usage_complete") is True and retry_complete:
             phase_state.tokens_observed = True
             phase_state.cost_observed = True
 
@@ -569,7 +612,9 @@ class ResourceSummaryTracker:
                 phase_state.cost_observed = True
             return
 
-        identity_seed = f"{phase}\0{relative}\0{record.agent}\0{record.session_id}"
+        logical_relative = _canonical_usage_path(phase, relative)
+        assert logical_relative is not None
+        identity_seed = f"{phase}\0{logical_relative}\0{record.agent}\0{record.session_id}"
         identity = hashlib.sha256(identity_seed.encode("utf-8", errors="replace")).hexdigest()
         previous = state.sessions.get(identity, SessionState())
 
@@ -711,8 +756,9 @@ def _snapshot_usage(
     work_dir: Path,
     phase: str,
     usage_paths: list[str],
+    continued_usage: set[str],
 ) -> tuple[list[dict[str, object]], bool]:
-    snapshots: list[dict[str, object]] = []
+    parsed: list[tuple[str, UsageRecord]] = []
     unique = list(dict.fromkeys(usage_paths))
     complete = len(unique) == len(usage_paths)
     for relative in unique:
@@ -723,19 +769,60 @@ def _snapshot_usage(
         if record is None:
             complete = False
             continue
-        snapshots.append(
-            {
-                "path": relative,
-                "agent": record.agent,
-                "session_id": record.session_id,
-                "total_tokens": record.total_tokens,
-                "cached_input_tokens": record.cached_input_tokens,
-                "cost_usd": record.cost_usd,
-                "complete": record.complete,
-            }
-        )
+        parsed.append((relative, record))
         complete = complete and record.complete
-    return snapshots, complete
+    _, retry_complete = _select_retry_usage(phase, parsed, continued_usage)
+    snapshots: list[dict[str, object]] = [
+        {
+            "path": relative,
+            "agent": record.agent,
+            "session_id": record.session_id,
+            "total_tokens": record.total_tokens,
+            "cached_input_tokens": record.cached_input_tokens,
+            "cost_usd": record.cost_usd,
+            "complete": record.complete,
+        }
+        for relative, record in parsed
+    ]
+    return snapshots, complete and retry_complete
+
+
+def _select_retry_usage(
+    phase: str,
+    usage: list[tuple[str, UsageRecord]],
+    continued_usage: set[str],
+) -> tuple[list[tuple[str, UsageRecord]], bool]:
+    """Keep retry snapshots only when their adapter semantics are known."""
+    groups: dict[str, list[tuple[str, UsageRecord]]] = {}
+    for relative, record in usage:
+        logical_relative = _canonical_usage_path(phase, relative)
+        assert logical_relative is not None
+        groups.setdefault(logical_relative, []).append((relative, record))
+
+    selected: set[str] = set()
+    complete = continued_usage.issubset(groups)
+    for logical_relative, snapshots in groups.items():
+        continued = logical_relative in continued_usage
+        retry = continued or any(relative != logical_relative for relative, _record in snapshots)
+        agents = {record.agent for _relative, record in snapshots}
+        # Claude reports each invocation separately. Codex snapshots are cumulative
+        # within a session and are reduced to deltas by _accumulate_record.
+        precise = agents == {"claude-code"} or (
+            agents == {"codex"} and all(record.session_id is not None for _relative, record in snapshots)
+        )
+        if not retry or precise:
+            selected.update(relative for relative, _record in snapshots)
+            continue
+
+        complete = False
+        if continued:
+            continue
+        current = next((relative for relative, _record in snapshots if relative == logical_relative), None)
+        if current is None:
+            current = max(snapshots, key=lambda item: _usage_attempt(item[0]))[0]
+        selected.add(current)
+
+    return [(relative, record) for relative, record in usage if relative in selected], complete
 
 
 def _resource_record(value: object, target: str, invocation_id: str) -> dict[str, object] | None:
@@ -758,6 +845,7 @@ def _resource_record(value: object, target: str, invocation_id: str) -> dict[str
         _nonnegative_float(record.get("elapsed_seconds")) is None
         or not isinstance(record.get("usage_complete"), bool)
         or _record_usage(phase, record) is None
+        or _record_continued_usage(phase, record) is None
     ):
         return None
     return record
@@ -776,6 +864,23 @@ def _record_usage(phase: str, record: dict[str, object]) -> list[tuple[str, Usag
         seen.add(snapshot[0])
         result.append(snapshot)
     return result
+
+
+def _record_continued_usage(phase: str, record: dict[str, object]) -> set[str] | None:
+    raw_paths = record.get("continued_usage", [])
+    if not isinstance(raw_paths, list):
+        return None
+    paths: set[str] = set()
+    for value in raw_paths:
+        if (
+            not isinstance(value, str)
+            or not _valid_checkpoint_relative(value)
+            or _canonical_usage_path(phase, value) != value
+            or value in paths
+        ):
+            return None
+        paths.add(value)
+    return paths
 
 
 def _usage_snapshot(phase: str, value: object) -> tuple[str, UsageRecord] | None:
@@ -1115,7 +1220,25 @@ def _object_signature(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _allowed_usage_path(phase: str, relative: str) -> bool:
+def _canonical_usage_path(phase: str, relative: str) -> str | None:
+    if _allowed_canonical_usage_path(phase, relative):
+        return relative
+    parts = PurePosixPath(relative).parts
+    if not parts:
+        return None
+    match = _USAGE_ATTEMPT_RE.fullmatch(parts[-1])
+    if match is None:
+        return None
+    canonical = PurePosixPath(*parts[:-1], f"{match.group('stem')}.json").as_posix()
+    return canonical if _allowed_canonical_usage_path(phase, canonical) else None
+
+
+def _usage_attempt(relative: str) -> int:
+    match = _USAGE_ATTEMPT_RE.fullmatch(PurePosixPath(relative).name)
+    return int(match.group("attempt")) if match is not None else 0
+
+
+def _allowed_canonical_usage_path(phase: str, relative: str) -> bool:
     if relative in PHASE_BY_KEY[phase].static_sources:
         return True
     parts = PurePosixPath(relative).parts
@@ -1126,6 +1249,10 @@ def _allowed_usage_path(phase: str, relative: str) -> bool:
         and not parts[1].startswith(".")
         and _TURN_USAGE_RE.fullmatch(parts[2]) is not None
     )
+
+
+def _allowed_usage_path(phase: str, relative: str) -> bool:
+    return _canonical_usage_path(phase, relative) is not None
 
 
 def _session_mapping(value: object) -> dict[str, SessionState]:

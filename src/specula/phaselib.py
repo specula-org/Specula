@@ -89,10 +89,21 @@ def _resource_start_target(name: str, work_dir: Path) -> None:
             print(f"WARNING: resource summary for {name}: {exc}", file=sys.stderr)
 
 
-def _resource_note_agent(work_dir: Path, log_file: Path) -> None:
+def _resource_note_agent(
+    work_dir: Path,
+    log_file: Path,
+    *,
+    attempt: int = 1,
+    archived_usage_path: Path | None = None,
+) -> None:
     if _RESOURCE_RECORDER is not None:
         try:
-            _RESOURCE_RECORDER.note_agent(work_dir, log_file.with_suffix(".usage.json"))
+            _RESOURCE_RECORDER.note_agent(
+                work_dir,
+                log_file.with_suffix(".usage.json"),
+                attempt=attempt,
+                archived_usage_path=archived_usage_path,
+            )
         except (OSError, UnicodeError, ValueError) as exc:
             print(f"WARNING: resource summary for {work_dir}: {exc}", file=sys.stderr)
 
@@ -179,12 +190,18 @@ def _attempt_path(path: Path, attempt: int) -> Path:
     return path.with_name(f"{path.stem}.attempt-{attempt}{path.suffix}")
 
 
-def _archive_attempt(paths: tuple[Path, ...], attempt: int) -> None:
+def _archive_attempt(paths: tuple[Path, ...], attempt: int) -> dict[Path, Path]:
     """Keep failed invocation evidence before an adapter truncates its logs."""
+    archived: dict[Path, Path] = {}
     for path in paths:
         if path.is_file():
-            with contextlib.suppress(OSError):
-                os.replace(path, _attempt_path(path, attempt))
+            destination = _attempt_path(path, attempt)
+            try:
+                os.replace(path, destination)
+            except OSError:
+                continue
+            archived[path] = destination
+    return archived
 
 
 def _clear_attempt_archives(paths: tuple[Path, ...]) -> None:
@@ -1382,6 +1399,7 @@ class Phase:
                 prompt_file=files["prompt"],
                 log_file=files["log"],
             )
+        archived_attempts: dict[Path, Path] = {}
         if not dry_run:
             if claim.manual:
                 attempt = claim.rate_limit_attempt
@@ -1401,7 +1419,7 @@ class Phase:
                 _clear_attempt_archives(attempt_files)
                 _clear_resume_state(resume_state)
             else:
-                _archive_attempt(attempt_files, invocation_attempt - 1)
+                archived_attempts = _archive_attempt(attempt_files, invocation_attempt - 1)
         resumable = resume_state.is_file()
         prompt_reason = (
             "manual" if claim.manual else ("policy" if policy_attempt > 0 and not resumable else retry_reason)
@@ -1477,7 +1495,13 @@ class Phase:
         proc: subprocess.Popen[bytes] | None = None
         launched: progress.RunningAgent | None = None
         try:
-            _resource_note_agent(work_dir, files["log"])
+            usage_path = files["log"].with_suffix(".usage.json")
+            _resource_note_agent(
+                work_dir,
+                files["log"],
+                attempt=invocation_attempt,
+                archived_usage_path=archived_attempts.get(usage_path),
+            )
             proc = subprocess.Popen(
                 [
                     str(adapter),
@@ -1735,8 +1759,9 @@ def run_agent_blocking(
         while True:
             policy_attempt = state.policy_attempt
             state.invocation_attempt += 1
+            archived_attempts: dict[Path, Path] = {}
             if state.invocation_attempt > 1:
-                _archive_attempt(attempt_files, state.invocation_attempt - 1)
+                archived_attempts = _archive_attempt(attempt_files, state.invocation_attempt - 1)
             persist_cursor()
             resumable = resume_state.is_file()
             prompt_reason = "policy" if policy_attempt > 0 and not resumable else state.retry_reason
@@ -1753,7 +1778,13 @@ def run_agent_blocking(
                 with contextlib.suppress(OSError):
                     last_message_file.unlink()
 
-            _resource_note_agent(work_dir, log_file)
+            usage_path = log_file.with_suffix(".usage.json")
+            _resource_note_agent(
+                work_dir,
+                log_file,
+                attempt=state.invocation_attempt,
+                archived_usage_path=archived_attempts.get(usage_path),
+            )
             rc = subprocess.run(
                 cmd,
                 env=env,
@@ -3208,11 +3239,12 @@ Output:
             invocation_attempt=invocation_attempt,
             retry_reason=retry_reason,
         )
+        archived_attempts: dict[Path, Path] = {}
         if invocation_attempt == 1:
             _clear_attempt_archives(attempt_files)
             _clear_resume_state(resume_state)
         else:
-            _archive_attempt(attempt_files, invocation_attempt - 1)
+            archived_attempts = _archive_attempt(attempt_files, invocation_attempt - 1)
         resumable = resume_state.is_file()
         prompt_reason = (
             "manual" if claim.manual else ("policy" if policy_attempt > 0 and not resumable else retry_reason)
@@ -3260,7 +3292,13 @@ Output:
         proc: subprocess.Popen[bytes] | None = None
         running: progress.RunningAgent | None = None
         try:
-            _resource_note_agent(wd, log_file)
+            usage_path = log_file.with_suffix(".usage.json")
+            _resource_note_agent(
+                wd,
+                log_file,
+                attempt=invocation_attempt,
+                archived_usage_path=archived_attempts.get(usage_path),
+            )
             proc = subprocess.Popen(
                 [
                     str(adapter),

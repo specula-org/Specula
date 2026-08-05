@@ -1914,6 +1914,67 @@ class TestRunAgentBlocking(PhaseCase):
             ["confirmation/MC-1/turn01_A.usage.json"],
         )
 
+    def test_blocking_retry_records_nested_archived_usage(self) -> None:
+        work_dir = self.work_dir()
+        log_file = work_dir / "confirmation" / "MC-1" / "turn01_A.log"
+        log_file.parent.mkdir(parents=True)
+        adapter = self.tmp() / "adapter.sh"
+        count = self.tmp() / "count"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            "usage=${log%.log}.usage.json\n"
+            'printf "attempt-%s\\n" "$attempt" > "$log"\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            "  printf '%s\\n' "
+            '\'{"session_id":"claude-turn","total_cost_usd":0.001784,'
+            '"usage":{"input_tokens":400,"cache_creation_input_tokens":100,'
+            '"cache_read_input_tokens":200,"output_tokens":40},"model_usage":{}}\' > "$usage"\n'
+            "  exit 74\n"
+            "fi\n"
+            "printf '%s\\n' "
+            '\'{"session_id":"claude-turn","total_cost_usd":0.00143,'
+            '"usage":{"input_tokens":100,"cache_creation_input_tokens":50,'
+            '"cache_read_input_tokens":70,"output_tokens":30},"model_usage":{}}\' > "$usage"\n'
+        )
+        adapter.chmod(0o755)
+        self.set_env("COUNT_FILE", str(count))
+        invocation_id = "d" * 32
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            "phase4a",
+            invocation_id,
+        )
+        recorder.start_target(NAME, work_dir)
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+
+        with mock.patch("specula.phaselib.time.sleep"):
+            rc, text = phaselib.run_agent_blocking(
+                adapter,
+                "prompt body",
+                log_file.with_suffix(".prompt.md"),
+                log_file,
+                phase_key="bug_confirmation",
+                work_dir=work_dir,
+                claude_alias="profile",
+                transient_resumes=1,
+            )
+        recorder.finish_target(NAME)
+
+        self.assertEqual((rc, text), (0, "attempt-2\n"))
+        record_path = work_dir / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        record = json.loads(record_path.read_text())
+        self.assertTrue(record["usage_complete"])
+        self.assertEqual(
+            [entry["path"] for entry in record["usage"]],
+            [
+                "confirmation/MC-1/turn01_A.usage.attempt-1.json",
+                "confirmation/MC-1/turn01_A.usage.json",
+            ],
+        )
+
     def test_snapshot_turn_clears_repository_git_environment(self) -> None:
         outer = self.tmp()
         subprocess.run(["git", "init", "--quiet", str(outer)], check=True)
@@ -3113,6 +3174,56 @@ class TestProgressReporting(PhaseCase):
         )
         self.assertEqual(a_record["elapsed_seconds"], 1.0)
         self.assertEqual(b_record["elapsed_seconds"], 5.0)
+
+    def test_retry_records_archived_and_final_usage(self) -> None:
+        count = self.tmp() / "count"
+        invocation_id = "7" * 32
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            "phase1",
+            invocation_id,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: None)
+        self.write_adapter(
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            "usage=${log%.log}.usage.json\n"
+            'if [ "$attempt" -eq 1 ]; then\n'
+            "  printf '%s\\n' "
+            '\'{"session_id":"claude-retry","total_cost_usd":0.001784,'
+            '"usage":{"input_tokens":400,"cache_creation_input_tokens":100,'
+            '"cache_read_input_tokens":200,"output_tokens":40},"model_usage":{}}\' > "$usage"\n'
+            "  stale=${usage%.json}.attempt-99.json\n"
+            "  printf '%s\\n' "
+            '\'{"session_id":"stale","total_cost_usd":99,'
+            '"usage":{"input_tokens":9999,"cache_creation_input_tokens":0,'
+            '"cache_read_input_tokens":0,"output_tokens":0},"model_usage":{}}\' > "$stale"\n'
+            "  exit 75\n"
+            "fi\n"
+            "printf '%s\\n' "
+            '\'{"session_id":"claude-retry","total_cost_usd":0.00143,'
+            '"usage":{"input_tokens":100,"cache_creation_input_tokens":50,'
+            '"cache_read_input_tokens":70,"output_tokens":30},"model_usage":{}}\' > "$usage"\n'
+            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+        )
+
+        rc, out = self.run_fake()
+
+        self.assertEqual(rc, 0, out)
+        self.assertTrue((self.work_dir() / "agent.usage.attempt-99.json").is_file())
+        record_path = self.work_dir() / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        record = json.loads(record_path.read_text())
+        self.assertTrue(record["usage_complete"])
+        self.assertEqual(
+            [entry["path"] for entry in record["usage"]],
+            ["agent.usage.attempt-1.json", "agent.usage.json"],
+        )
+        self.assertEqual([entry["total_tokens"] for entry in record["usage"]], [740, 250])
 
     def test_all_agents_launched_is_announced_after_pending_is_empty(self) -> None:
         self.write_adapter("sleep 0.02\n")
