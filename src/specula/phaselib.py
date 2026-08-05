@@ -33,12 +33,22 @@ from typing import Any, TypedDict
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    # The launch shims execute this file by path. Later, bug confirmation
+    # imports ``specula.phaselib`` from worker modules; keep both names bound to
+    # this module so process-local launcher state is shared rather than copied.
+    sys.modules["specula.phaselib"] = sys.modules[__name__]
 import specula.progress as progress
 from specula import quota, resumelib
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC
 from specula.output_index import PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
 from specula.prompts import render
+from specula.resource_summary import (
+    RESOURCE_INVOCATION_ENV,
+    RESOURCE_PHASE_ENV,
+    RESOURCE_ROOT_ENV,
+    ResourceInvocationRecorder,
+)
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 from specula.snapshotlib import (
     SNAPSHOT_MODE_ENV,
@@ -67,6 +77,51 @@ MAX_DEBATE_ROUNDS = 5
 DEFAULT_POLICY_RETRIES = 20
 DEFAULT_TRANSIENT_RESUMES = 20
 TRANSIENT_RESUME_BACKOFF_MAX_SECONDS = 60.0
+
+_RESOURCE_RECORDER: ResourceInvocationRecorder | None = None
+
+
+def _resource_start_target(name: str, work_dir: Path) -> None:
+    if _RESOURCE_RECORDER is not None:
+        try:
+            _RESOURCE_RECORDER.start_target(name, work_dir)
+        except (OSError, UnicodeError, ValueError) as exc:
+            print(f"WARNING: resource summary for {name}: {exc}", file=sys.stderr)
+
+
+def _resource_note_agent(
+    work_dir: Path,
+    log_file: Path,
+    *,
+    attempt: int = 1,
+    archived_usage_path: Path | None = None,
+) -> None:
+    if _RESOURCE_RECORDER is not None:
+        try:
+            _RESOURCE_RECORDER.note_agent(
+                work_dir,
+                log_file.with_suffix(".usage.json"),
+                attempt=attempt,
+                archived_usage_path=archived_usage_path,
+            )
+        except (OSError, UnicodeError, ValueError) as exc:
+            print(f"WARNING: resource summary for {work_dir}: {exc}", file=sys.stderr)
+
+
+def _resource_pause_target(name: str) -> None:
+    if _RESOURCE_RECORDER is not None:
+        try:
+            _RESOURCE_RECORDER.pause_target(name)
+        except (OSError, UnicodeError, ValueError) as exc:
+            print(f"WARNING: resource summary for {name}: {exc}", file=sys.stderr)
+
+
+def _resource_finish_target(name: str) -> None:
+    if _RESOURCE_RECORDER is not None:
+        try:
+            _RESOURCE_RECORDER.finish_target(name)
+        except (OSError, UnicodeError, ValueError) as exc:
+            print(f"WARNING: resource summary for {name}: {exc}", file=sys.stderr)
 
 
 @dataclass
@@ -135,12 +190,18 @@ def _attempt_path(path: Path, attempt: int) -> Path:
     return path.with_name(f"{path.stem}.attempt-{attempt}{path.suffix}")
 
 
-def _archive_attempt(paths: tuple[Path, ...], attempt: int) -> None:
+def _archive_attempt(paths: tuple[Path, ...], attempt: int) -> dict[Path, Path]:
     """Keep failed invocation evidence before an adapter truncates its logs."""
+    archived: dict[Path, Path] = {}
     for path in paths:
         if path.is_file():
-            with contextlib.suppress(OSError):
-                os.replace(path, _attempt_path(path, attempt))
+            destination = _attempt_path(path, attempt)
+            try:
+                os.replace(path, destination)
+            except OSError:
+                continue
+            archived[path] = destination
+    return archived
 
 
 def _clear_attempt_archives(paths: tuple[Path, ...]) -> None:
@@ -952,6 +1013,7 @@ class Phase:
                             break
                         request = pending.pop(ready_index)
                         name = self.target_name(request.target)
+                        _resource_start_target(name, ws.work_dir(name))
                         prompt = self.build_prompt(ws, request.target)
                         self._launch(
                             ws,
@@ -990,9 +1052,11 @@ class Phase:
                         _refresh_target_indexes(ws, [completed_agent.name])
                         if rc == 0:
                             successful_names.add(completed_agent.name)
+                            _resource_finish_target(completed_agent.name)
                             continue
                         if rc == POLICY_BLOCKED_RC:
                             if completed_agent.policy_attempt < self._policy_retries:
+                                _resource_pause_target(completed_agent.name)
                                 next_policy_attempt = completed_agent.policy_attempt + 1
                                 print(
                                     f"[{_ts()}] {completed_agent.name}: provider policy interrupted the run; "
@@ -1012,9 +1076,11 @@ class Phase:
                                 )
                             else:
                                 failures.append((completed_agent.name, rc))
+                                _resource_finish_target(completed_agent.name)
                             continue
                         if rc == TRANSIENT_FAILURE_RC:
                             if completed_agent.transient_attempt < self._transient_resumes:
+                                _resource_pause_target(completed_agent.name)
                                 next_transient_attempt = completed_agent.transient_attempt + 1
                                 delay = _transient_resume_delay(next_transient_attempt)
                                 mode = (
@@ -1041,9 +1107,11 @@ class Phase:
                                 )
                             else:
                                 failures.append((completed_agent.name, rc))
+                                _resource_finish_target(completed_agent.name)
                             continue
                         if rc == quota.RATE_LIMIT_RC:
                             if self._reactive_rate_limit_enabled() and completed_agent.attempt <= retry_limit:
+                                _resource_pause_target(completed_agent.name)
                                 rate_limited.append(
                                     _LaunchRequest(
                                         completed_agent.target,
@@ -1057,16 +1125,19 @@ class Phase:
                                 pause_for_rate_limit = True
                             else:
                                 failures.append((completed_agent.name, rc))
+                                _resource_finish_target(completed_agent.name)
                                 stop_launching = True
                         else:
                             failures.append((completed_agent.name, rc))
+                            _resource_finish_target(completed_agent.name)
 
                     if pause_for_rate_limit and any(rc != quota.RATE_LIMIT_RC for _, rc in failures):
                         # A permanent failure wins over 75, but permanent failures
                         # alone do not suppress independent batch targets.
-                        failures.extend(
-                            (self.target_name(request.target), quota.RATE_LIMIT_RC) for request in rate_limited
-                        )
+                        for request in rate_limited:
+                            name = self.target_name(request.target)
+                            failures.append((name, quota.RATE_LIMIT_RC))
+                            _resource_finish_target(name)
                         stop_launching = True
 
                     if stop_launching:
@@ -1128,7 +1199,6 @@ class Phase:
             [name for name in names if name in successful_names and name not in invalid_names],
             dry_run=dry_run,
         )
-
         invalid_names.update(name for name, _ in handoff_failures)
         if not dry_run:
             for name in sorted(successful_names - invalid_names):
@@ -1329,6 +1399,7 @@ class Phase:
                 prompt_file=files["prompt"],
                 log_file=files["log"],
             )
+        archived_attempts: dict[Path, Path] = {}
         if not dry_run:
             if claim.manual:
                 attempt = claim.rate_limit_attempt
@@ -1348,7 +1419,7 @@ class Phase:
                 _clear_attempt_archives(attempt_files)
                 _clear_resume_state(resume_state)
             else:
-                _archive_attempt(attempt_files, invocation_attempt - 1)
+                archived_attempts = _archive_attempt(attempt_files, invocation_attempt - 1)
         resumable = resume_state.is_file()
         prompt_reason = (
             "manual" if claim.manual else ("policy" if policy_attempt > 0 and not resumable else retry_reason)
@@ -1377,6 +1448,8 @@ class Phase:
         # hook-capable adapters arm the completion gate. Per-launch env copy,
         # not os.environ: targets differ under --max-parallel.
         env = os.environ.copy()
+        for key in (RESOURCE_INVOCATION_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
+            env.pop(key, None)
         env["SPECULA_PHASE"] = self.key
         env["SPECULA_WORK_DIR"] = str(ws.work_dir(name))
         env["SPECULA_ROOT"] = str(SPECULA_ROOT)
@@ -1422,6 +1495,13 @@ class Phase:
         proc: subprocess.Popen[bytes] | None = None
         launched: progress.RunningAgent | None = None
         try:
+            usage_path = files["log"].with_suffix(".usage.json")
+            _resource_note_agent(
+                work_dir,
+                files["log"],
+                attempt=invocation_attempt,
+                archived_usage_path=archived_attempts.get(usage_path),
+            )
             proc = subprocess.Popen(
                 [
                     str(adapter),
@@ -1592,6 +1672,8 @@ def run_agent_blocking(
         log_file.with_suffix(".usage.json"),
     )
     env = os.environ.copy()
+    for key in (RESOURCE_INVOCATION_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
+        env.pop(key, None)
     env["SPECULA_PHASE"] = phase_key if stop_gate else f"{phase_key}_turn"
     env["SPECULA_WORK_DIR"] = str(work_dir)
     env["SPECULA_STOP_GATE_WORK_DIR"] = str(gate_dir)
@@ -1677,8 +1759,9 @@ def run_agent_blocking(
         while True:
             policy_attempt = state.policy_attempt
             state.invocation_attempt += 1
+            archived_attempts: dict[Path, Path] = {}
             if state.invocation_attempt > 1:
-                _archive_attempt(attempt_files, state.invocation_attempt - 1)
+                archived_attempts = _archive_attempt(attempt_files, state.invocation_attempt - 1)
             persist_cursor()
             resumable = resume_state.is_file()
             prompt_reason = "policy" if policy_attempt > 0 and not resumable else state.retry_reason
@@ -1695,6 +1778,13 @@ def run_agent_blocking(
                 with contextlib.suppress(OSError):
                     last_message_file.unlink()
 
+            usage_path = log_file.with_suffix(".usage.json")
+            _resource_note_agent(
+                work_dir,
+                log_file,
+                attempt=state.invocation_attempt,
+                archived_usage_path=archived_attempts.get(usage_path),
+            )
             rc = subprocess.run(
                 cmd,
                 env=env,
@@ -1710,6 +1800,8 @@ def run_agent_blocking(
             # adapters' log contract remains result-only.
             result_file = last_message_file if adapter.stem == "codex" else log_file
             text = result_file.read_text(errors="replace") if result_file.is_file() else ""
+            # Resource runtime is target-level wall time. A Phase 4a target can
+            # have sibling turns running, so only outer target schedulers pause it.
             if rc == TRANSIENT_FAILURE_RC and state.transient_attempt < transient_resumes:
                 state.transient_attempt += 1
                 state.retry_reason = "transient"
@@ -2542,6 +2634,7 @@ Prerequisites:
         successful_names: list[str] = []
         retry_limit = self._rate_limit_retries()
         for name in names:
+            _resource_start_target(name, ws.work_dir(name))
             if not dry_run:
                 print(f"  Monitor: tail -f {ws.work_dir(name)}/bug-confirmation.log")
             cfg = ConfirmConfig(
@@ -2575,8 +2668,10 @@ Prerequisites:
                         retain_rate_limited_state=will_retry_rate_limit,
                     )
                     if code == quota.RATE_LIMIT_RC and will_retry_rate_limit:
+                        _resource_pause_target(name)
                         print(f"[{_ts()}] Rate limited: waiting before retrying {name}")
                         self._wait_for_rate_limit()
+                        _resource_start_target(name, ws.work_dir(name))
                         attempt += 1
                         continue
                     break
@@ -2591,10 +2686,12 @@ Prerequisites:
                     if not dry_run:
                         _refresh_target_indexes(ws, [name])
             if code != 0:
+                _resource_finish_target(name)
                 failures.append((name, code))
                 if code == quota.RATE_LIMIT_RC:
                     break
             else:
+                _resource_finish_target(name)
                 successful_names.append(name)
         handoff_failures = self.check_handoff(ws, successful_names, dry_run=dry_run)
         self.summarize(ws, names)
@@ -2963,6 +3060,7 @@ Output:
                     else _LaunchRequest(name)
                 )
                 while True:
+                    _resource_start_target(name, ws.work_dir(name))
                     try:
                         rc = self._launch_review(
                             ws,
@@ -2983,6 +3081,7 @@ Output:
                         and self._reactive_rate_limit_enabled()
                         and request.rate_limit_attempt <= self._rate_limit_retries()
                     ):
+                        _resource_pause_target(name)
                         print(f"[{_ts()}] Rate limited: waiting before retrying {name}")
                         self._wait_for_rate_limit()
                         request = _LaunchRequest(
@@ -2995,6 +3094,7 @@ Output:
                         )
                         continue
                     if rc == POLICY_BLOCKED_RC and request.policy_attempt < self._policy_retries:
+                        _resource_pause_target(name)
                         next_policy_attempt = request.policy_attempt + 1
                         print(
                             f"[{_ts()}] {name}: provider policy interrupted the review; "
@@ -3010,6 +3110,7 @@ Output:
                         )
                         continue
                     if rc == TRANSIENT_FAILURE_RC and request.transient_attempt < self._transient_resumes:
+                        _resource_pause_target(name)
                         next_transient_attempt = request.transient_attempt + 1
                         delay = _transient_resume_delay(next_transient_attempt)
                         print(
@@ -3027,7 +3128,9 @@ Output:
                         )
                         continue
                     if rc != 0:
+                        _resource_finish_target(name)
                         return self._failure_code([(name, rc)])
+                    _resource_finish_target(name)
                     resumelib.mark_completed(("review", phase, name))
                     break
 
@@ -3136,11 +3239,12 @@ Output:
             invocation_attempt=invocation_attempt,
             retry_reason=retry_reason,
         )
+        archived_attempts: dict[Path, Path] = {}
         if invocation_attempt == 1:
             _clear_attempt_archives(attempt_files)
             _clear_resume_state(resume_state)
         else:
-            _archive_attempt(attempt_files, invocation_attempt - 1)
+            archived_attempts = _archive_attempt(attempt_files, invocation_attempt - 1)
         resumable = resume_state.is_file()
         prompt_reason = (
             "manual" if claim.manual else ("policy" if policy_attempt > 0 and not resumable else retry_reason)
@@ -3155,6 +3259,8 @@ Output:
         with contextlib.suppress(OSError):
             activity_log.unlink()
         env = os.environ.copy()
+        for key in (RESOURCE_INVOCATION_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
+            env.pop(key, None)
         env["SPECULA_WORK_DIR"] = str(wd)
         if ws.uses_private_source():
             env["SPECULA_TARGET_REPO_DIR"] = repo_dir
@@ -3186,6 +3292,13 @@ Output:
         proc: subprocess.Popen[bytes] | None = None
         running: progress.RunningAgent | None = None
         try:
+            usage_path = log_file.with_suffix(".usage.json")
+            _resource_note_agent(
+                wd,
+                log_file,
+                attempt=invocation_attempt,
+                archived_usage_path=archived_attempts.get(usage_path),
+            )
             proc = subprocess.Popen(
                 [
                     str(adapter),
@@ -3409,7 +3522,14 @@ def main(argv: list[str]) -> int:
     if not argv or argv[0] not in PHASES:
         print(f"usage: phaselib.py <phase> [options] <target>...\nphases: {', '.join(PHASES)}", file=sys.stderr)
         return 2
-    return PHASES[argv[0]].run(argv[1:])
+    global _RESOURCE_RECORDER
+    recorder = ResourceInvocationRecorder.from_environment()
+    previous_recorder = _RESOURCE_RECORDER
+    _RESOURCE_RECORDER = recorder
+    try:
+        return PHASES[argv[0]].run(argv[1:])
+    finally:
+        _RESOURCE_RECORDER = previous_recorder
 
 
 if __name__ == "__main__":

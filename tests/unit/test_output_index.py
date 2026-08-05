@@ -89,6 +89,7 @@ class TestTargetIndex(OutputIndexCase):
     def test_final_reports_lead_supporting_analysis_without_reviews_or_machine_files(self) -> None:
         work_dir = self.root / ".specula-output"
         for relative in (
+            "summary.md",
             "modeling-brief.md",
             "analysis-report.md",
             "spec/brief-coverage.md",
@@ -117,6 +118,7 @@ class TestTargetIndex(OutputIndexCase):
 
             ## Final Reports
 
+            - [Resource summary](summary.md) — Runtime, token, and cost usage
             - [Confirmation report](confirmed-bugs.md) — Confirmation results and supporting evidence
             - [Severity report](bug-severity.md) — Impact assessment
 
@@ -136,6 +138,7 @@ class TestTargetIndex(OutputIndexCase):
         )
         rendered = oi.render_target_index("demo", work_dir)
         self.assertEqual(rendered, expected)
+        self.assertLess(rendered.index("[Resource summary]"), rendered.index("[Confirmation report]"))
         for hidden_from_humans in (
             "review-analysis.md",
             "review-specgen.md",
@@ -215,6 +218,7 @@ class TestIndexSafety(OutputIndexCase):
         outside = self.root / "outside"
         self.write(outside, "document.md")
         self.write(outside, "confirmation/MC-9/investigation.md")
+        (work_dir / "summary.md").symlink_to(outside / "document.md")
         (work_dir / "modeling-brief.md").symlink_to(outside / "document.md")
         (work_dir / "spec").mkdir()
         (work_dir / "spec" / "base.tla").symlink_to(outside / "document.md")
@@ -224,6 +228,7 @@ class TestIndexSafety(OutputIndexCase):
         with mock.patch.object(Path, "rglob", side_effect=AssertionError("recursive scan attempted")):
             rendered = oi.render_target_index("demo", work_dir)
 
+        self.assertIn("Resource summary: Not available", rendered)
         self.assertIn("| 1 | Modeling brief: Not available |", rendered)
         self.assertNotIn("## Confirmation Details", rendered)
         self.assertNotIn("## Technical Details", rendered)

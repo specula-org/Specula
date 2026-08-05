@@ -27,7 +27,7 @@ import subprocess
 import sys
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -60,6 +60,12 @@ from specula.phaselib import (
     _parse_policy_retries,
     _parse_transient_resumes,
     _wc_l,
+)
+from specula.resource_summary import (
+    RESOURCE_INVOCATION_ENV,
+    RESOURCE_PHASE_ENV,
+    RESOURCE_ROOT_ENV,
+    ResourceSummaryTracker,
 )
 from specula.snapshotlib import (
     SNAPSHOT_MODE_ENV,
@@ -360,6 +366,9 @@ class Pipeline:
         self.pipeline_log_path: Path | None = None
         self.tlc_scope = ""
         self.argv: list[str] = []
+        self.resource_summary: ResourceSummaryTracker | None = None
+        self._resource_phase_key: str | None = None
+        self._resource_invocation_id: str | None = None
 
     # ── argument parsing (runs before the tee starts, like the bash top level) ──
     def parse_args(self, argv: list[str]) -> int | None:
@@ -1497,6 +1506,70 @@ class Pipeline:
             return None
         return run_root / INDEX_FILENAME
 
+    def initialize_resource_summaries(self, names: list[str]) -> None:
+        """Create the per-target resource summaries without affecting the run."""
+        if self.dry_run:
+            return
+        targets = {name: Path(self.get_work_dir(name)) for name in dict.fromkeys(names) if is_safe_target_name(name)}
+        if not targets:
+            return
+        memory_limit = self.tlc_memory_limit or os.environ.get(MEMORY_LIMIT_ENV) or "auto (80% available)"
+        worker_limit = self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or "unbounded (report only)"
+        tracker = ResourceSummaryTracker(
+            targets,
+            output_root=self.run_dir if self.run_dir is not None else Path(_logical_cwd()),
+            maximum_parallelism=self._max_parallel_summary(),
+            tlc_memory_limit=memory_limit,
+            tlc_worker_limit=worker_limit,
+        )
+        try:
+            tracker.initialize(resume=self.run_dir is not None)
+        except Exception as exc:
+            log(f"WARNING: cannot initialize resource summaries: {exc}")
+            return
+        self.resource_summary = tracker
+
+    def _complete_resource_summaries(self) -> None:
+        if self.resource_summary is None:
+            return
+        try:
+            self.resource_summary.complete_run()
+        except Exception as exc:
+            log(f"WARNING: cannot finalize resource summaries: {exc}")
+
+    def _capture_resource_invocation(
+        self,
+        phase: str,
+        names: list[str],
+        invocation_id: str,
+    ) -> None:
+        tracker = self.resource_summary
+        if tracker is None:
+            return
+        try:
+            tracker.capture_invocation(phase, names, invocation_id)
+        except Exception as exc:
+            log(f"WARNING: cannot update {phase} launcher accounting: {exc}")
+
+    def refresh_resource_summaries(self) -> None:
+        """Best-effort refresh used by the outer failure-cleanup path."""
+        if self.resource_summary is None:
+            return
+        try:
+            self.resource_summary.refresh()
+        except Exception as exc:
+            log(f"WARNING: cannot refresh resource summaries: {exc}")
+
+    @contextlib.contextmanager
+    def resource_phase(self, phase: str, names: list[str]) -> Iterator[None]:
+        """Bind launcher-level target accounting to one user-visible phase."""
+        previous_phase = self._resource_phase_key
+        self._resource_phase_key = phase
+        try:
+            yield
+        finally:
+            self._resource_phase_key = previous_phase
+
     def prepare_source_snapshots(self, names: list[str]) -> None:
         if not self.keep_original:
             return
@@ -2411,6 +2484,8 @@ class Pipeline:
 
     def _run_launcher(self, script: str, args: list[str]) -> None:
         env = os.environ.copy()
+        for key in (RESOURCE_INVOCATION_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
+            env.pop(key, None)
         if self.keep_original:
             # Phase launchers calculate their exact private-source ceiling after
             # parsing targets.  Remove ambient repository selectors before even
@@ -2442,6 +2517,11 @@ class Pipeline:
             pass_fds = (self._run_lock_fd,)
         else:
             env.pop(resumelib.RUN_LOCK_FD_ENV, None)
+        if self._resource_phase_key is not None and self._resource_invocation_id is not None:
+            resource_root = Path(os.path.abspath(self.run_dir if self.run_dir is not None else _logical_cwd()))
+            env[RESOURCE_ROOT_ENV] = str(resource_root)
+            env[RESOURCE_INVOCATION_ENV] = self._resource_invocation_id
+            env[RESOURCE_PHASE_ENV] = self._resource_phase_key
 
         proc: subprocess.Popen[bytes] | None = None
         received: list[tuple[int, float]] = []
@@ -2508,6 +2588,16 @@ class Pipeline:
         code = 128 - returncode if returncode < 0 else returncode
         raise SystemExit(code)
 
+    def _resource_names_from_args(self, args: list[str]) -> list[str]:
+        known_names = self._index_names()
+        known = set(known_names)
+        selected = [
+            self._descriptor_name(arg)
+            for arg in args
+            if not arg.startswith("--") and self._descriptor_name(arg) in known
+        ]
+        return list(dict.fromkeys(selected)) or known_names
+
     def _phase(self, banner: str, script: str, args: list[str]) -> None:
         divider()
         log(banner)
@@ -2515,9 +2605,17 @@ class Pipeline:
         if self.dry_run:
             log(f"[DRY RUN] bash scripts/launch/{script} {' '.join(args)}")
             return
+        resource_names = self._resource_names_from_args(args)
+        phase = self._resource_phase_key
+        invocation_id = secrets.token_hex(16)
+        previous_invocation = self._resource_invocation_id
+        self._resource_invocation_id = invocation_id
         try:
             self._run_launcher(script, args)
         finally:
+            self._resource_invocation_id = previous_invocation
+            if phase is not None:
+                self._capture_resource_invocation(phase, resource_names, invocation_id)
             self.refresh_target_indexes()
 
     def run_phase1_analysis(self) -> None:
@@ -3115,6 +3213,7 @@ class Pipeline:
                     os.environ["PWD"] = str(case_dir)  # bash cd exports the new $PWD
                     log(f"Single target: cd to {case_dir}")
 
+        self.initialize_resource_summaries(self._index_names())
         self.prepare_source_snapshots(names)
 
         start_time = int(time.time())
@@ -3125,7 +3224,13 @@ class Pipeline:
                 log(f"ERROR: invalid interrupted review phase {review_phase!r}")
                 raise SystemExit(1)
             log(f"Restoring interrupted {review_phase} review before continuing the pipeline")
-            self.run_review(review_phase, names, force=True)
+            resource_phase = {
+                "analysis": "phase1",
+                "specgen": "phase2",
+                "validation": "phase3",
+            }[review_phase]
+            with self.resource_phase(resource_phase, names):
+                self.run_review(review_phase, names, force=True)
             self._manual_resume_phase = None
 
         # Recover before Phase 1/2/2.5 can mutate the artifacts that the
@@ -3149,26 +3254,30 @@ class Pipeline:
             raise SystemExit(1)
         if recovered_phase3_commits:
             log("Resuming committed repair result before upstream phases")
-            phase3_targets = self.run_repair_loop(prepared_commits=recovered_phase3_commits)
+            with self.resource_phase("phase4a", names):
+                phase3_targets = self.run_repair_loop(prepared_commits=recovered_phase3_commits)
             resumed_repair = True
 
         if not self.skip_analysis:
-            self.wait_for_phase_quota("analyze")
-            self.run_phase1_analysis()
-            self.run_review("analysis", names)
+            with self.resource_phase("phase1", names):
+                self.wait_for_phase_quota("analyze")
+                self.run_phase1_analysis()
+                self.run_review("analysis", names)
         else:
             log("Skipping Phase 1 (--skip-analysis)")
 
         if not self.skip_specgen:
-            self.wait_for_phase_quota("specgen")
-            self.run_phase2_specgen()
-            self.run_review("specgen", names)
+            with self.resource_phase("phase2", names):
+                self.wait_for_phase_quota("specgen")
+                self.run_phase2_specgen()
+                self.run_review("specgen", names)
         else:
             log("Skipping Phase 2 (--skip-specgen)")
 
         if not self.skip_harness:
-            self.wait_for_phase_quota("harness")
-            self.run_phase2_5_harness()
+            with self.resource_phase("phase2_5", names):
+                self.wait_for_phase_quota("harness")
+                self.run_phase2_5_harness()
         else:
             log("Skipping Phase 2.5 (--skip-harness)")
 
@@ -3182,7 +3291,8 @@ class Pipeline:
             and self.has_open_repair_requests()
         ):
             log("Resuming pending repair requests before the ordinary Phase 3 pass")
-            phase3_targets = self.run_repair_loop(prepared_commits=set())
+            with self.resource_phase("phase4a", names):
+                phase3_targets = self.run_repair_loop(prepared_commits=set())
             resumed_repair = True
 
         current_targets = set(names)
@@ -3194,9 +3304,10 @@ class Pipeline:
         )
         normal_phase3_ran = False
         if not self.skip_validation and not phase3_covered:
-            self.wait_for_phase_quota("validate")
-            self.run_phase3_validation()
-            self.run_review("validation", names)
+            with self.resource_phase("phase3", names):
+                self.wait_for_phase_quota("validate")
+                self.run_phase3_validation()
+                self.run_review("validation", names)
             normal_phase3_ran = True
         elif phase3_covered:
             source = "resumed repair loop" if resumed_repair else "recovered committed repairs"
@@ -3207,22 +3318,26 @@ class Pipeline:
         phase4_covered = resumed_repair and not normal_phase3_ran
         fresh_phase4_ran = False
         if not self.skip_confirmation and not phase4_covered:
-            self.wait_for_phase_quota("confirm")
-            self.run_phase4_confirmation()
-            fresh_phase4_ran = True
+            with self.resource_phase("phase4a", names):
+                self.wait_for_phase_quota("confirm")
+                self.run_phase4_confirmation()
+                fresh_phase4_ran = True
+                if not self.skip_repair_loop:
+                    self.run_repair_loop()
+                else:
+                    log("Skipping repair loop (--skip-repair-loop)")
         elif self.skip_confirmation:
             log("Skipping Phase 4a (--skip-confirmation)")
         else:
             log("Initial Phase 4 completed by the resumed repair loop")
 
-        if fresh_phase4_ran and not self.skip_repair_loop:
-            self.run_repair_loop()
-        elif self.skip_repair_loop:
+        if not fresh_phase4_ran and self.skip_repair_loop:
             log("Skipping repair loop (--skip-repair-loop)")
 
         if not self.skip_classification:
-            self.wait_for_phase_quota("classify")
-            self.run_phase4b_classification()
+            with self.resource_phase("phase4b", names):
+                self.wait_for_phase_quota("classify")
+                self.run_phase4b_classification()
         else:
             log("Skipping Phase 4b (--skip-classification)")
 
@@ -3238,6 +3353,7 @@ class Pipeline:
                 return 1
 
         self.generate_summary()
+        self._complete_resource_summaries()
         self.refresh_output_indexes()
 
         elapsed = int(time.time()) - start_time
@@ -3299,6 +3415,11 @@ def main(argv: list[str]) -> int:
             traceback.print_exc()
             if code == 0:
                 code = 130 if isinstance(e, KeyboardInterrupt) else 1
+        try:
+            p.refresh_resource_summaries()
+        except BaseException:
+            # Resource summaries are derived output and must not mask the run.
+            traceback.print_exc()
         try:
             p.refresh_output_indexes()
         except BaseException:

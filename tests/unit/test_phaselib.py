@@ -48,7 +48,7 @@ if str(SRC) not in sys.path:  # test the tree this file lives in, installed or n
 
 import specula.progress as progress_module  # noqa: E402
 import specula.quota as quota  # noqa: E402
-from specula import phaselib, resumelib, snapshotlib  # noqa: E402
+from specula import phaselib, resource_summary, resumelib, snapshotlib  # noqa: E402
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC  # noqa: E402
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC  # noqa: E402
 from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
@@ -199,6 +199,9 @@ class PhaseCase(unittest.TestCase):
             resumelib.INVOCATION_ENV,
             resumelib.MANUAL_ENV,
             resumelib.FRESH_ENV,
+            resource_summary.RESOURCE_INVOCATION_ENV,
+            resource_summary.RESOURCE_ROOT_ENV,
+            resource_summary.RESOURCE_PHASE_ENV,
         ):
             self.set_env(var, str(self.run_dir) if var == "SPECULA_RUN_DIR" else None)
 
@@ -275,6 +278,59 @@ class TestDirectExecution(unittest.TestCase):
             )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("Bug confirmation", proc.stdout)
+
+    def test_path_invocation_shares_resource_recorder_with_confirmation_workers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            run_dir = root / "run"
+            work_dir = run_dir / NAME / ".specula-output"
+            spec_dir = work_dir / "spec"
+            spec_dir.mkdir(parents=True)
+            (spec_dir / "bug-report.md").write_text("# Bug report\n")
+            (work_dir / "modeling-brief.md").write_text("# Modeling brief\n")
+            artifact = root / "artifact"
+            artifact.mkdir()
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            marker = root / "claude-called"
+            fake_claude = fake_bin / "claude"
+            fake_claude.write_text('#!/bin/sh\nprintf "called\\n" > "$FAKE_CLAUDE_MARKER"\nexit 9\n')
+            fake_claude.chmod(0o755)
+            invocation_id = "e" * 32
+            record_path = work_dir / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+            env = os.environ.copy()
+            env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
+            env["FAKE_CLAUDE_MARKER"] = str(marker)
+            env["SPECULA_RUN_DIR"] = str(run_dir)
+            env["SPECULA_SANDBOX"] = "off"
+            env[resource_summary.RESOURCE_ROOT_ENV] = str(run_dir)
+            env[resource_summary.RESOURCE_INVOCATION_ENV] = invocation_id
+            env[resource_summary.RESOURCE_PHASE_ENV] = "phase4a"
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SRC / "specula" / "phaselib.py"),
+                    "bug_confirmation",
+                    "--agent=claude-code",
+                    "--policy-retries=0",
+                    "--transient-resumes=0",
+                    f"--artifact={artifact}",
+                    NAME,
+                ],
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertTrue(marker.is_file())
+            record = json.loads(record_path.read_text())
+            self.assertEqual(record["status"], "completed")
+            self.assertFalse(record["usage_complete"])
+            self.assertEqual(record["usage"], [])
 
 
 class TestPreconditionGate(PhaseCase):
@@ -710,17 +766,48 @@ class TestBugConfirmationAlternate(PhaseCase):
         self.assertEqual(rc, 9, out)
         self.assertEqual(calls, [(4, "0")])
 
+    def test_zero_agent_confirmation_records_an_empty_usage_list(self) -> None:
+        self._patch_confirmation([0])
+        invocation_id = "a" * 32
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            "phase4a",
+            invocation_id,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+
+        rc, out = self.dry_run(BY_KEY["bug_confirmation"])
+
+        self.assertEqual(rc, 0, out)
+        record_path = self.work_dir() / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        record = json.loads(record_path.read_text())
+        self.assertEqual(record["status"], "completed")
+        self.assertTrue(record["usage_complete"])
+        self.assertEqual(record["usage"], [])
+
     def test_rate_limit_retries_current_target(self) -> None:
         calls = self._patch_confirmation([quota.RATE_LIMIT_RC, 0])
         waits: list[int] = []
+        invocation_id = "8" * 32
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            "phase4a",
+            invocation_id,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
         self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
         self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
-        rc, out = self.dry_run(BY_KEY["bug_confirmation"])
+        clock = mock.Mock()
+        clock.monotonic.side_effect = [0.0, 1.0, 100.0, 104.0]
+        with mock.patch.object(resource_summary, "time", clock):
+            rc, out = self.dry_run(BY_KEY["bug_confirmation"])
         self.assertEqual(rc, 0, out)
         self.assertEqual(len(calls), 2)
         self.assertEqual(waits, [1])
         self.assertIn("Rate limited: waiting before retrying", out)
+        record_path = self.work_dir() / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        self.assertEqual(json.loads(record_path.read_text())["elapsed_seconds"], 5.0)
 
     def test_rate_limit_retries_are_bounded(self) -> None:
         calls = self._patch_confirmation([quota.RATE_LIMIT_RC])
@@ -904,6 +991,30 @@ class TestHandoffGate(PhaseCase):
         self.assertIn("[Modeling brief](modeling-brief.md)", index)
         self.assertIn("[Analysis report](analysis-report.md)", index)
         self.assertIn("[pipeline.log](../../pipeline.log)", index)
+
+    def test_resume_completion_failure_keeps_completed_resource_record(self) -> None:
+        self.write_adapter('printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n')
+        invocation_id = "d" * 32
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            "phase1",
+            invocation_id,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+        self.patch_attr(
+            resumelib,
+            "mark_completed",
+            mock.Mock(side_effect=resumelib.ResumeError("cannot complete call")),
+        )
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("ERROR: cannot complete call", out)
+        record_path = self.work_dir() / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        record = json.loads(record_path.read_text())
+        self.assertEqual(record["status"], "completed")
+        self.assertGreaterEqual(record["elapsed_seconds"], 0.0)
 
     def test_live_analysis_failure_keeps_partial_results_browsable(self) -> None:
         self.write_adapter('printf "analysis\\n" > "$SPECULA_WORK_DIR/analysis-report.md"\nexit 9\n')
@@ -1261,6 +1372,13 @@ class TestHandoffGate(PhaseCase):
 
         self.set_env(resumelib.INVOCATION_ENV, "invocation-2")
         self.set_env(resumelib.MANUAL_ENV, "1")
+        resource_invocation = "f" * 32
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            "phase1",
+            resource_invocation,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
         resumed_rc, resumed_out = self.run_analysis(targets, options=["--max-parallel=1"])
 
         self.assertEqual(resumed_rc, 0, resumed_out)
@@ -1269,6 +1387,15 @@ class TestHandoffGate(PhaseCase):
         self.assertEqual((captures / "pending-count").read_text(), "x")
         self.assertEqual(resumelib.active_entries(self.run_dir), [])
         self.assertEqual(resumelib.completed_entries(self.run_dir), [])
+        accepted_record = (
+            self.work_dir("accepted") / resource_summary.INVOCATION_DIRNAME / f"{resource_invocation}.json"
+        )
+        self.assertFalse(accepted_record.exists())
+        for name in ("active", "pending"):
+            record_path = self.work_dir(name) / resource_summary.INVOCATION_DIRNAME / f"{resource_invocation}.json"
+            record = json.loads(record_path.read_text())
+            self.assertEqual(record["status"], "completed")
+            self.assertFalse(record["usage_complete"])
 
     def test_default_transient_resume_budget_stops_after_twenty_continuations(self) -> None:
         count = self.tmp() / "count"
@@ -1745,6 +1872,109 @@ class TestLegacyRepairIdentityFinalization(PhaseCase):
 
 
 class TestRunAgentBlocking(PhaseCase):
+    def test_blocking_turn_records_its_expected_usage_path(self) -> None:
+        work_dir = self.work_dir()
+        log_file = work_dir / "confirmation" / "MC-1" / "turn01_A.log"
+        log_file.parent.mkdir(parents=True)
+        adapter = self.tmp() / "adapter.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            'printf "done\\n" > "$log"\n'
+            "usage=${log%.log}.usage.json\n"
+            "printf '%s\\n' "
+            '\'{"agent":"fake","total_cost_usd":0,"usage":{"total_tokens":0,'
+            '"cached_input_tokens":0}}\' > "$usage"\n'
+        )
+        adapter.chmod(0o755)
+        invocation_id = "c" * 32
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            "phase4a",
+            invocation_id,
+        )
+        recorder.start_target(NAME, work_dir)
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+
+        rc, _ = phaselib.run_agent_blocking(
+            adapter,
+            "prompt body",
+            log_file.with_suffix(".prompt.md"),
+            log_file,
+            phase_key="bug_confirmation",
+            work_dir=work_dir,
+            claude_alias="profile",
+        )
+        recorder.finish_target(NAME)
+
+        record_path = work_dir / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        record = json.loads(record_path.read_text())
+        self.assertEqual(
+            [entry["path"] for entry in record["usage"]],
+            ["confirmation/MC-1/turn01_A.usage.json"],
+        )
+
+    def test_blocking_retry_records_nested_archived_usage(self) -> None:
+        work_dir = self.work_dir()
+        log_file = work_dir / "confirmation" / "MC-1" / "turn01_A.log"
+        log_file.parent.mkdir(parents=True)
+        adapter = self.tmp() / "adapter.sh"
+        count = self.tmp() / "count"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            "usage=${log%.log}.usage.json\n"
+            'printf "attempt-%s\\n" "$attempt" > "$log"\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            "  printf '%s\\n' "
+            '\'{"session_id":"claude-turn","total_cost_usd":0.001784,'
+            '"usage":{"input_tokens":400,"cache_creation_input_tokens":100,'
+            '"cache_read_input_tokens":200,"output_tokens":40},"model_usage":{}}\' > "$usage"\n'
+            "  exit 74\n"
+            "fi\n"
+            "printf '%s\\n' "
+            '\'{"session_id":"claude-turn","total_cost_usd":0.00143,'
+            '"usage":{"input_tokens":100,"cache_creation_input_tokens":50,'
+            '"cache_read_input_tokens":70,"output_tokens":30},"model_usage":{}}\' > "$usage"\n'
+        )
+        adapter.chmod(0o755)
+        self.set_env("COUNT_FILE", str(count))
+        invocation_id = "d" * 32
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            "phase4a",
+            invocation_id,
+        )
+        recorder.start_target(NAME, work_dir)
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+
+        with mock.patch("specula.phaselib.time.sleep"):
+            rc, text = phaselib.run_agent_blocking(
+                adapter,
+                "prompt body",
+                log_file.with_suffix(".prompt.md"),
+                log_file,
+                phase_key="bug_confirmation",
+                work_dir=work_dir,
+                claude_alias="profile",
+                transient_resumes=1,
+            )
+        recorder.finish_target(NAME)
+
+        self.assertEqual((rc, text), (0, "attempt-2\n"))
+        record_path = work_dir / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        record = json.loads(record_path.read_text())
+        self.assertTrue(record["usage_complete"])
+        self.assertEqual(
+            [entry["path"] for entry in record["usage"]],
+            [
+                "confirmation/MC-1/turn01_A.usage.attempt-1.json",
+                "confirmation/MC-1/turn01_A.usage.json",
+            ],
+        )
+
     def test_snapshot_turn_clears_repository_git_environment(self) -> None:
         outer = self.tmp()
         subprocess.run(["git", "init", "--quiet", str(outer)], check=True)
@@ -2393,6 +2623,106 @@ class TestProgressReporting(PhaseCase):
         self.assertIn(f"{NAME}: created modeling-brief.md", out)
         self.assertIn(f"{NAME}: completed (exit 0)", out)
 
+    def test_main_writes_target_runtime_and_usage_record(self) -> None:
+        inherited = self.tmp() / "resource-env"
+        stale_usage = self.work_dir() / "agent.usage.json"
+        stale_usage.parent.mkdir(parents=True)
+        stale_usage.write_text(
+            '{"agent":"fake","total_cost_usd":9,"usage":{"total_tokens":999,"cached_input_tokens":900}}\n'
+        )
+        self.write_adapter(
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            'printf "draft\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            "usage=${log%.log}.usage.json\n"
+            'test ! -e "$usage"\n'
+            "printf '%s\\n' "
+            '\'{"agent":"fake","total_cost_usd":0,"usage":{"total_tokens":0,'
+            '"cached_input_tokens":0}}\' > "$usage"\n'
+            f'printf "%s\\n%s\\n%s\\n" "${{{resource_summary.RESOURCE_ROOT_ENV}-<unset>}}" '
+            f'"${{{resource_summary.RESOURCE_INVOCATION_ENV}-<unset>}}" '
+            f'"${{{resource_summary.RESOURCE_PHASE_ENV}-<unset>}}" > "{inherited}"\n'
+        )
+        invocation_id = "b" * 32
+        self.set_env(resource_summary.RESOURCE_ROOT_ENV, str(self.run_dir))
+        self.set_env(resource_summary.RESOURCE_INVOCATION_ENV, invocation_id)
+        self.set_env(resource_summary.RESOURCE_PHASE_ENV, "phase1")
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            rc = phaselib.main(
+                [
+                    "code_analysis",
+                    f"--agent={self.adapter.stem}",
+                    self.artifact_flag(),
+                    NAME,
+                ]
+            )
+
+        self.assertEqual(rc, 0, output.getvalue())
+        record_path = self.work_dir() / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        record = json.loads(record_path.read_text())
+        self.assertEqual(record["status"], "completed")
+        self.assertGreaterEqual(record["elapsed_seconds"], 0.0)
+        self.assertEqual([entry["path"] for entry in record["usage"]], ["agent.usage.json"])
+        self.assertEqual(inherited.read_text().splitlines(), ["<unset>", "<unset>", "<unset>"])
+
+    def test_usage_cleanup_failure_does_not_block_agent(self) -> None:
+        self.write_adapter(
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            'printf "draft\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            "usage=${log%.log}.usage.json\n"
+            "printf '%s\\n' "
+            '\'{"agent":"fake","total_cost_usd":1,"usage":{"total_tokens":100,'
+            '"cached_input_tokens":80}}\' > "$usage"\n'
+        )
+        invocation_id = "c" * 32
+        self.set_env(resource_summary.RESOURCE_ROOT_ENV, str(self.run_dir))
+        self.set_env(resource_summary.RESOURCE_INVOCATION_ENV, invocation_id)
+        self.set_env(resource_summary.RESOURCE_PHASE_ENV, "phase1")
+        output = io.StringIO()
+
+        with (
+            mock.patch.object(resource_summary, "_clear_stale_usage", side_effect=PermissionError("denied")),
+            contextlib.redirect_stdout(output),
+            contextlib.redirect_stderr(output),
+        ):
+            rc = phaselib.main(
+                [
+                    "code_analysis",
+                    f"--agent={self.adapter.stem}",
+                    self.artifact_flag(),
+                    NAME,
+                ]
+            )
+
+        self.assertEqual(rc, 0, output.getvalue())
+        self.assertIn("WARNING: resource summary", output.getvalue())
+        record_path = self.work_dir() / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        record = json.loads(record_path.read_text())
+        self.assertFalse(record["usage_complete"])
+        self.assertEqual(record["usage"], [])
+
+    def test_main_keeps_completed_record_when_post_processing_raises(self) -> None:
+        invocation_id = "d" * 32
+        self.set_env(resource_summary.RESOURCE_ROOT_ENV, str(self.run_dir))
+        self.set_env(resource_summary.RESOURCE_INVOCATION_ENV, invocation_id)
+        self.set_env(resource_summary.RESOURCE_PHASE_ENV, "phase1")
+
+        def fail_after_success(_args: list[str]) -> int:
+            phaselib._resource_start_target(NAME, self.work_dir())
+            phaselib._resource_finish_target(NAME)
+            raise RuntimeError("post-processing failed")
+
+        with (
+            mock.patch.object(phaselib.PHASES["code_analysis"], "run", side_effect=fail_after_success),
+            self.assertRaisesRegex(RuntimeError, "post-processing failed"),
+        ):
+            phaselib.main(["code_analysis"])
+
+        record_path = self.work_dir() / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        record = json.loads(record_path.read_text())
+        self.assertEqual(record["status"], "completed")
+
     def test_direct_multi_target_command_shares_one_tlc_scope(self) -> None:
         launch_dir = self.tmp()
         capture_dir = self.tmp()
@@ -2803,6 +3133,13 @@ class TestProgressReporting(PhaseCase):
     def test_rate_limit_retries_only_the_failed_target(self) -> None:
         marker = self.tmp() / "limited-once"
         counts = self.tmp()
+        invocation_id = "9" * 32
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            "phase1",
+            invocation_id,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
         self.write_adapter(
             'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
             f'printf x >> "{counts}/$name"\n'
@@ -2812,14 +3149,81 @@ class TestProgressReporting(PhaseCase):
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
         self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
         self.set_env("SPECULA_RATE_LIMIT_RETRIES", "2")
-        rc, out = self.run_phase(
-            "code_analysis",
-            ["--max-parallel=1", f"--agent={self.adapter.stem}", self.artifact_flag(), "a|g|Go|r", "b|g|Go|r"],
-        )
+        clock = mock.Mock()
+        clock.monotonic.side_effect = [0.0, 1.0, 10.0, 11.0, 100.0, 104.0]
+        with mock.patch.object(resource_summary, "time", clock):
+            rc, out = self.run_phase(
+                "code_analysis",
+                [
+                    "--max-parallel=1",
+                    f"--agent={self.adapter.stem}",
+                    self.artifact_flag(),
+                    "a|g|Go|r",
+                    "b|g|Go|r",
+                ],
+            )
         self.assertEqual(rc, 0, out)
         self.assertEqual((counts / "a").read_text(), "x")
         self.assertEqual((counts / "b").read_text(), "xx")
         self.assertEqual(waits, [1])
+        a_record = json.loads(
+            (self.work_dir("a") / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json").read_text()
+        )
+        b_record = json.loads(
+            (self.work_dir("b") / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json").read_text()
+        )
+        self.assertEqual(a_record["elapsed_seconds"], 1.0)
+        self.assertEqual(b_record["elapsed_seconds"], 5.0)
+
+    def test_retry_records_archived_and_final_usage(self) -> None:
+        count = self.tmp() / "count"
+        invocation_id = "7" * 32
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            "phase1",
+            invocation_id,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: None)
+        self.write_adapter(
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            "usage=${log%.log}.usage.json\n"
+            'if [ "$attempt" -eq 1 ]; then\n'
+            "  printf '%s\\n' "
+            '\'{"session_id":"claude-retry","total_cost_usd":0.001784,'
+            '"usage":{"input_tokens":400,"cache_creation_input_tokens":100,'
+            '"cache_read_input_tokens":200,"output_tokens":40},"model_usage":{}}\' > "$usage"\n'
+            "  stale=${usage%.json}.attempt-99.json\n"
+            "  printf '%s\\n' "
+            '\'{"session_id":"stale","total_cost_usd":99,'
+            '"usage":{"input_tokens":9999,"cache_creation_input_tokens":0,'
+            '"cache_read_input_tokens":0,"output_tokens":0},"model_usage":{}}\' > "$stale"\n'
+            "  exit 75\n"
+            "fi\n"
+            "printf '%s\\n' "
+            '\'{"session_id":"claude-retry","total_cost_usd":0.00143,'
+            '"usage":{"input_tokens":100,"cache_creation_input_tokens":50,'
+            '"cache_read_input_tokens":70,"output_tokens":30},"model_usage":{}}\' > "$usage"\n'
+            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+        )
+
+        rc, out = self.run_fake()
+
+        self.assertEqual(rc, 0, out)
+        self.assertTrue((self.work_dir() / "agent.usage.attempt-99.json").is_file())
+        record_path = self.work_dir() / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+        record = json.loads(record_path.read_text())
+        self.assertTrue(record["usage_complete"])
+        self.assertEqual(
+            [entry["path"] for entry in record["usage"]],
+            ["agent.usage.attempt-1.json", "agent.usage.json"],
+        )
+        self.assertEqual([entry["total_tokens"] for entry in record["usage"]], [740, 250])
 
     def test_all_agents_launched_is_announced_after_pending_is_empty(self) -> None:
         self.write_adapter("sleep 0.02\n")
@@ -3328,6 +3732,35 @@ class TestReviewPhase(PhaseCase):
 
         self.assertFalse(marker.exists())
 
+    def test_review_finishes_resource_record_before_resume_completion(self) -> None:
+        self.seed(["modeling-brief.md"])
+        self.install_adapter(
+            "fake",
+            "log=\n"
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            'printf "review\\n" > "$SPECULA_WORK_DIR/review-analysis.md"\n'
+            'printf "done\\n" > "$log"\n',
+        )
+        invocation_id = "a" * 32
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            "phase1",
+            invocation_id,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+        record_path = self.work_dir() / resource_summary.INVOCATION_DIRNAME / f"{invocation_id}.json"
+
+        def fail_after_check(_logical: tuple[str, ...]) -> None:
+            self.assertEqual(json.loads(record_path.read_text())["status"], "completed")
+            raise RuntimeError("completion interrupted")
+
+        self.patch_attr(resumelib, "mark_completed", fail_after_check)
+
+        with self.assertRaisesRegex(RuntimeError, "completion interrupted"):
+            self.run_phase("review", ["analysis", "--agent=fake", NAME])
+
+        self.assertEqual(json.loads(record_path.read_text())["status"], "completed")
+
     def test_manual_resume_reaches_exact_session_for_each_review_phase(self) -> None:
         captures = self.tmp()
         self.set_env("CAPTURE_DIR", str(captures))
@@ -3388,6 +3821,71 @@ class TestReviewPhase(PhaseCase):
                 self.assertEqual((self.work_dir() / prompt_rel).read_text(), phaselib._MANUAL_SESSION_RESUME_PROMPT)
                 self.assertEqual(resumelib.active_entries(self.run_dir), [])
                 self.assertEqual(resumelib.completed_entries(self.run_dir), [])
+
+    def test_manual_resume_does_not_record_reused_review_target(self) -> None:
+        captures = self.tmp()
+        self.set_env("CAPTURE_DIR", str(captures))
+        self.set_env("SPECULA_PROGRESS", "off")
+        self.install_adapter(
+            "fake",
+            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            'printf x >> "$CAPTURE_DIR/$name-count"\n'
+            'attempt=$(wc -c < "$CAPTURE_DIR/$name-count")\n'
+            "log= resume=\n"
+            'for arg do case "$arg" in '
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'if [ "$name" = pending ] && [ "$attempt" -eq 1 ]; then\n'
+            '  printf "pending-session\\n" > "$resume"\n'
+            '  printf "rate limited\\n" > "$log"\n'
+            "  exit 75\n"
+            "fi\n"
+            'if [ "$name" = pending ]; then test "$(cat "$resume")" = pending-session; fi\n'
+            'printf "review\\n" > "$SPECULA_WORK_DIR/review-analysis.md"\n'
+            'printf "done\\n" > "$log"\n',
+        )
+        resumelib.initialize_run(self.run_dir)
+        resumelib.save_configuration(self.run_dir, {"agent": "fake"})
+        self.set_env(resumelib.INVOCATION_ENV, "review-invocation-1")
+        targets = ["accepted", "pending"]
+        args = ["analysis", "--agent=fake", "--transient-resumes=0", *targets]
+
+        first_rc, first_out = self.run_phase("review", args)
+
+        self.assertEqual(first_rc, quota.RATE_LIMIT_RC, first_out)
+        self.assertEqual((captures / "accepted-count").read_text(), "x")
+        self.assertEqual((captures / "pending-count").read_text(), "x")
+        self.assertEqual(
+            resumelib.completed_logicals(("review", "analysis")),
+            {("review", "analysis", "accepted")},
+        )
+
+        self.set_env(resumelib.INVOCATION_ENV, "review-invocation-2")
+        self.set_env(resumelib.MANUAL_ENV, "1")
+        resource_invocation = "e" * 32
+        recorder = resource_summary.ResourceInvocationRecorder(
+            self.run_dir,
+            "phase1",
+            resource_invocation,
+        )
+        self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
+
+        resumed_rc, resumed_out = self.run_phase("review", args)
+
+        self.assertEqual(resumed_rc, 0, resumed_out)
+        self.assertEqual((captures / "accepted-count").read_text(), "x")
+        self.assertEqual((captures / "pending-count").read_text(), "xx")
+        accepted_record = (
+            self.work_dir("accepted") / resource_summary.INVOCATION_DIRNAME / f"{resource_invocation}.json"
+        )
+        self.assertFalse(accepted_record.exists())
+        pending_record_path = (
+            self.work_dir("pending") / resource_summary.INVOCATION_DIRNAME / f"{resource_invocation}.json"
+        )
+        pending_record = json.loads(pending_record_path.read_text())
+        self.assertEqual(pending_record["status"], "completed")
+        self.assertFalse(pending_record["usage_complete"])
 
     def test_review_streams_activity_through_shared_monitor(self) -> None:
         event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "reviewing"}})

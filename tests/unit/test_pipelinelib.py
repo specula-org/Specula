@@ -469,6 +469,148 @@ def make_pipeline(targets: list[str], **attrs: Any) -> pl.Pipeline:
     return p
 
 
+class _FakeResourceSummary:
+    def __init__(self) -> None:
+        self.events: list[tuple[object, ...]] = []
+
+    def capture_invocation(
+        self,
+        phase: str,
+        names: list[str],
+        invocation_id: str,
+    ) -> None:
+        self.events.append(("invocation", phase, tuple(names), invocation_id))
+
+    def complete_run(self) -> None:
+        self.events.append(("complete",))
+
+    def refresh(self) -> None:
+        self.events.append(("refresh",))
+
+
+class TestResourceSummaryPipeline(TmpCwd):
+    def test_grouped_phase_does_not_charge_targets_when_body_fails_before_a_launcher(self) -> None:
+        pipeline = make_pipeline(["footest|g|l|r"])
+        tracker = _FakeResourceSummary()
+        pipeline.resource_summary = tracker  # type: ignore[assignment]
+
+        with self.assertRaisesRegex(RuntimeError, "phase failed"), pipeline.resource_phase("phase1", ["footest"]):
+            raise RuntimeError("phase failed")
+
+        self.assertEqual(tracker.events, [])
+        self.assertIsNone(pipeline._resource_phase_key)
+
+    def test_launcher_captures_its_target_invocation(self) -> None:
+        pipeline = make_pipeline(["footest|g|l|r"])
+        tracker = _FakeResourceSummary()
+        pipeline.resource_summary = tracker  # type: ignore[assignment]
+        pipeline._resource_phase_key = "phase4a"
+        pipeline._run_launcher = mock.Mock(side_effect=SystemExit(7))  # type: ignore[method-assign]
+        pipeline.refresh_target_indexes = mock.Mock(return_value=[])  # type: ignore[method-assign]
+
+        with self.assertRaises(SystemExit) as raised:
+            pipeline._phase("confirmation", "launch_bug_confirmation.sh", ["footest"])
+
+        self.assertEqual(raised.exception.code, 7)
+        self.assertEqual(len(tracker.events), 1)
+        invocation = tracker.events[0]
+        self.assertEqual(invocation[:3], ("invocation", "phase4a", ("footest",)))
+        self.assertRegex(str(invocation[3]), r"^[0-9a-f]{32}$")
+
+    def test_main_wraps_each_user_visible_phase_group(self) -> None:
+        pipeline = make_pipeline(["footest|g|l|r"])
+        tracker = _FakeResourceSummary()
+        pipeline.resource_summary = tracker  # type: ignore[assignment]
+        phase_events: list[str] = []
+        pipeline.initialize_resource_summaries = lambda names: None  # type: ignore[method-assign]
+        pipeline.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+        pipeline.prepare_source_snapshots = lambda names: None  # type: ignore[method-assign]
+        pipeline.prepare_repair_state = lambda: set()  # type: ignore[method-assign]
+        pipeline.refresh_output_indexes = lambda: None  # type: ignore[method-assign]
+        pipeline.generate_summary = lambda: None  # type: ignore[method-assign]
+        pipeline.wait_for_phase_quota = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
+
+        def run_review(phase: str, names: list[str], *, force: bool = False) -> None:
+            phase_events.append(f"review:{phase}")
+
+        pipeline.run_review = run_review  # type: ignore[method-assign]
+        pipeline.run_phase1_analysis = lambda: phase_events.append("phase1")  # type: ignore[method-assign]
+        pipeline.run_phase2_specgen = lambda: phase_events.append("phase2")  # type: ignore[method-assign]
+        pipeline.run_phase2_5_harness = lambda: phase_events.append("phase2.5")  # type: ignore[method-assign]
+        pipeline.run_phase3_validation = lambda: phase_events.append("phase3")  # type: ignore[method-assign]
+        pipeline.run_phase4_confirmation = lambda: phase_events.append("phase4a")  # type: ignore[method-assign]
+
+        def run_repair_loop(*args: object, **kwargs: object) -> set[str]:
+            phase_events.append("repair")
+            return set()
+
+        pipeline.run_repair_loop = run_repair_loop  # type: ignore[method-assign]
+        pipeline.run_phase4b_classification = lambda: phase_events.append("phase4b")  # type: ignore[method-assign]
+
+        rc, _output = quiet(pipeline.main)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(tracker.events[-1], ("complete",))
+        self.assertEqual(
+            phase_events,
+            [
+                "phase1",
+                "review:analysis",
+                "phase2",
+                "review:specgen",
+                "phase2.5",
+                "phase3",
+                "review:validation",
+                "phase4a",
+                "repair",
+                "phase4b",
+            ],
+        )
+
+    def test_interrupted_manual_reviews_use_their_resource_phase(self) -> None:
+        def check_review(review_phase: str, resource_phase: str) -> None:
+            pipeline = make_pipeline(
+                ["footest|g|l|r"],
+                skip_analysis=True,
+                skip_specgen=True,
+                skip_harness=True,
+                skip_validation=True,
+                skip_confirmation=True,
+                skip_classification=True,
+                skip_repair_loop=True,
+            )
+            pipeline._manual_resume_phase = f"review:{review_phase}"
+            pipeline.initialize_resource_summaries = lambda names: None  # type: ignore[method-assign]
+            pipeline.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+            pipeline.prepare_source_snapshots = lambda names: None  # type: ignore[method-assign]
+            pipeline.prepare_repair_state = lambda: set()  # type: ignore[method-assign]
+            pipeline.refresh_output_indexes = lambda: None  # type: ignore[method-assign]
+            pipeline.generate_summary = lambda: None  # type: ignore[method-assign]
+            observed: list[tuple[str, tuple[str, ...], bool, str | None]] = []
+
+            def run_review(phase: str, names: list[str], *, force: bool = False) -> None:
+                observed.append((phase, tuple(names), force, pipeline._resource_phase_key))
+
+            pipeline.run_review = run_review  # type: ignore[method-assign]
+
+            rc, _output = quiet(pipeline.main)
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(observed, [(review_phase, ("footest",), True, resource_phase)])
+            self.assertIsNone(pipeline._resource_phase_key)
+            self.assertIsNone(pipeline._manual_resume_phase)
+
+        expected = {
+            "analysis": "phase1",
+            "specgen": "phase2",
+            "validation": "phase3",
+        }
+
+        for review_phase, resource_phase in expected.items():
+            with self.subTest(review_phase=review_phase):
+                check_review(review_phase, resource_phase)
+
+
 def write_agent_config(path: Path, phases: dict[str, str] | None = None) -> Path:
     path.write_text(
         json.dumps(
@@ -2756,6 +2898,39 @@ class TestRunLauncherExitCodes(TmpCwd):
         p.tlc_scope = "/tmp/specula-run-scope"
         p._run_launcher("fake.sh", [])
         self.assertEqual(captured.read_text().splitlines(), ["80G", "12", "/tmp/specula-run-scope"])
+
+    def test_resume_lock_and_resource_context_reach_the_same_launcher(self) -> None:
+        captured = self.tmp / "launcher-context"
+        launch_cwd = self.tmp / "resume-cwd"
+        launch_cwd.mkdir()
+        run_dir = self.tmp / "run"
+        run_dir.mkdir()
+        p = self._pipeline(
+            f'lock_state=$(test -e "/proc/self/fd/$SPECULA_RUN_LOCK_FD" && printf open)\n'
+            f'printf \'%s\\n\' "$PWD" "$SPECULA_RESOURCE_ROOT" "$SPECULA_RESOURCE_INVOCATION" '
+            f'"$SPECULA_RESOURCE_PHASE" "$lock_state" > "{captured}"\n'
+        )
+        lock_file = (self.tmp / "run.lock").open("w")
+        self.addCleanup(lock_file.close)
+        invocation_id = "a" * 32
+        p.run_dir = run_dir
+        p._manual_launch_cwd = launch_cwd
+        p._run_lock_fd = lock_file.fileno()
+        p._resource_phase_key = "phase1"
+        p._resource_invocation_id = invocation_id
+
+        p._run_launcher("fake.sh", [])
+
+        self.assertEqual(
+            captured.read_text().splitlines(),
+            [
+                str(launch_cwd),
+                str(run_dir),
+                invocation_id,
+                "phase1",
+                "open",
+            ],
+        )
 
     def test_snapshot_phase_child_drops_repository_selectors_only(self) -> None:
         captured = self.tmp / "snapshot-env"
