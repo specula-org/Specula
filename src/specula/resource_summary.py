@@ -1,8 +1,9 @@
-"""Lightweight, per-target resource summaries for full pipeline runs.
+"""Per-target human summaries and lightweight resource accounting.
 
 Each target owns its resource records and summary state. Completed records
 contain immutable usage snapshots; interrupted records only mark that target as
-incomplete. Missing or partial data never blocks the pipeline.
+incomplete. The final report embeds an agent-written findings fragment only
+after the run completes. Missing or partial resource data never blocks the pipeline.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 STATE_FILENAME = ".resource-summary-state.json"
 SUMMARY_FILENAME = "summary.md"
+FINDINGS_SUMMARY_FILENAME = ".summary-findings.md"
 INVOCATION_DIRNAME = ".resource-summary-invocations"
 RESOURCE_INVOCATION_ENV = "SPECULA_RESOURCE_INVOCATION"
 RESOURCE_ROOT_ENV = "SPECULA_RESOURCE_ROOT"
@@ -32,6 +34,13 @@ RESOURCE_PHASE_ENV = "SPECULA_RESOURCE_PHASE"
 
 _INVOCATION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 _USAGE_ATTEMPT_RE = re.compile(r"^(?P<stem>.+)\.attempt-(?P<attempt>[1-9][0-9]*)\.json$")
+_LINK_MARKUP_RES = (
+    re.compile(r"!?\[[^\]\n]+\]\([^\)\n]+\)"),
+    re.compile(r"!?\[[^\]\n]+\]\[[^\]\n]*\]"),
+    re.compile(r"(?m)^\s*\[[^\]\n]+\]:\s*\S+"),
+    re.compile(r"(?i)<\s*(?:a|img)\b[^>]*(?:href|src)\s*="),
+    re.compile(r"(?i)<[^<>\n]+\.(?:md|html?)(?:#[^<>\n]*)?>"),
+)
 
 
 @dataclass(frozen=True)
@@ -200,6 +209,16 @@ class UsageRecord:
     cached_input_tokens: int | None
     cost_usd: float | None
     complete: bool
+
+
+@dataclass(frozen=True)
+class RunDetails:
+    """Small set of deterministic run metadata shown in the summary."""
+
+    source_commit: str | None = None
+    agent: str | None = None
+    model: str | None = None
+    reasoning_effort: str | None = None
 
 
 class ResourceInvocationRecorder:
@@ -378,16 +397,25 @@ class ResourceSummaryTracker:
         maximum_parallelism: str,
         tlc_memory_limit: str,
         tlc_worker_limit: str,
+        run_details: RunDetails | None = None,
+        validation_limits: Iterable[str] = (),
+        findings_summary_enabled: bool = True,
     ) -> None:
         self._targets = {name: Path(os.path.abspath(path)) for name, path in targets.items()}
         self._output_root = Path(os.path.abspath(output_root))
         self._maximum_parallelism = maximum_parallelism
         self._tlc_memory_limit = tlc_memory_limit
         self._tlc_worker_limit = tlc_worker_limit
+        self._run_details = run_details or RunDetails()
+        self._validation_limits = tuple(
+            limit for limit in validation_limits if isinstance(limit, str) and limit.strip()
+        )
+        self._findings_summary_enabled = findings_summary_enabled
         self._states: dict[str, TargetState] = {}
 
-    def initialize(self, resume: bool) -> None:
+    def initialize(self, resume: bool, *, restart_names: Iterable[str] = ()) -> None:
         """Create fresh state, or consume only durable target-local records."""
+        restarted = set(restart_names)
         for name, work_dir in self._targets.items():
             try:
                 _prepare_work_dir(self._output_root, work_dir)
@@ -397,6 +425,8 @@ class ResourceSummaryTracker:
                     state = TargetState(target=name, history_incomplete=prior_evidence)
                 if resume:
                     self._consume_pending_records(name, work_dir, state)
+                if name in restarted:
+                    state.run_complete = False
                 state.maximum_parallelism = self._maximum_parallelism
                 state.tlc_memory_limit = self._tlc_memory_limit
                 state.tlc_worker_limit = self._tlc_worker_limit
@@ -430,9 +460,10 @@ class ResourceSummaryTracker:
                 self._warn(name, str(exc))
                 self._publish(name)
 
-    def complete_run(self) -> None:
+    def complete_run(self, names: Iterable[str] | None = None) -> None:
         """Mark normal pipeline completion; metric gaps remain visibly partial."""
-        for name in self._states:
+        selected = list(self._states) if names is None else self._selected(names)
+        for name in selected:
             state = self._states[name]
             state.run_complete = True
             self._publish(name)
@@ -660,7 +691,17 @@ class ResourceSummaryTracker:
         except (OSError, UnicodeError, ValueError) as exc:
             self._warn(name, f"state write failed: {exc}")
         try:
-            _atomic_write(work_dir, work_dir / SUMMARY_FILENAME, render_summary(state))
+            _atomic_write(
+                work_dir,
+                work_dir / SUMMARY_FILENAME,
+                render_summary(
+                    state,
+                    work_dir=work_dir,
+                    run_details=self._run_details,
+                    validation_limits=self._validation_limits,
+                    findings_summary_enabled=self._findings_summary_enabled,
+                ),
+            )
         except (OSError, UnicodeError, ValueError) as exc:
             self._warn(name, f"summary write failed: {exc}")
 
@@ -685,12 +726,60 @@ class ResourceSummaryTracker:
         print(f"WARNING: resource summary for {name}: {message}", file=sys.stderr)
 
 
-def render_summary(state: TargetState) -> str:
-    """Render the intentionally small first-version summary."""
+def render_summary(
+    state: TargetState,
+    *,
+    work_dir: Path | None = None,
+    run_details: RunDetails | None = None,
+    validation_limits: Iterable[str] = (),
+    findings_summary_enabled: bool = True,
+) -> str:
+    """Render the target's human-facing entry point without inferring findings."""
+    details = run_details or RunDetails()
+    limits = tuple(limit for limit in validation_limits if isinstance(limit, str) and limit.strip())
+    findings = _findings_summary(state, work_dir, findings_summary_enabled)
+
     lines = [
         "# Specula Summary",
         "",
-        "## Resource Usage",
+        "## Result",
+        "",
+        f"- Run status: **{'Complete' if state.run_complete else 'Incomplete'}**",
+        "",
+    ]
+    if findings is None:
+        lines += [
+            "## Findings",
+            "",
+            "The findings summary is unavailable because final reporting did not complete.",
+            "",
+            "## Validation limits",
+            "",
+            "- The final findings summary is unavailable.",
+        ]
+    else:
+        lines.append(findings)
+    if limits:
+        lines += ["", "### Run coverage", "", *[f"- {_markdown_text(limit)}" for limit in limits]]
+
+    agent = _markdown_optional(details.agent)
+    model = _markdown_optional(details.model)
+    lines += [
+        "",
+        "## Run details",
+        "",
+        "| Item | Value |",
+        "|---|---|",
+        f"| Target | {_markdown_text(state.target)} |",
+        f"| Source commit | {_markdown_optional(details.source_commit)} |",
+        f"| Agent / model | {agent} / {model} |",
+        f"| Reasoning effort | {_markdown_optional(details.reasoning_effort)} |",
+        "",
+        "## Detailed reports",
+        "",
+        *_report_links(work_dir),
+        "",
+        "## Resource usage",
         "",
         "| Phase | Runtime | Tokens | Estimated cost |",
         "|---|---:|---:|---:|",
@@ -750,6 +839,50 @@ def render_summary(state: TargetState) -> str:
         "",
     ]
     return "\n".join(lines)
+
+
+def _findings_summary(state: TargetState, work_dir: Path | None, enabled: bool) -> str | None:
+    if not state.run_complete or not enabled or work_dir is None:
+        return None
+    try:
+        content = _read_safe_file(work_dir, work_dir / FINDINGS_SUMMARY_FILENAME)
+    except (OSError, UnicodeError):
+        return None
+    return content if content.strip() and findings_fragment_issue(content) is None else None
+
+
+def findings_fragment_issue(content: str) -> str | None:
+    """Return a small structural/display-contract violation, without interpreting findings."""
+    findings = list(re.finditer(r"(?m)^## Findings\s*$", content))
+    limits = list(re.finditer(r"(?m)^## Validation limits\s*$", content))
+    if len(findings) != 1 or len(limits) != 1:
+        return "must contain one Findings section and one Validation limits section"
+    if not content[: findings[0].start()].strip() or limits[0].start() <= findings[0].start():
+        return "must begin with a conclusion followed by Findings and Validation limits"
+    headings = re.findall(r"(?m)^#{1,6}\s+.+$", content)
+    if headings != ["## Findings", "## Validation limits"]:
+        return "contains an unexpected heading"
+    if re.search(r"(?i)\bseverity\b", content):
+        return "contains severity text"
+    if re.search(r"(?i)\blevel\s+[0-9]+\b", content):
+        return "contains an internal reproduction level"
+    if re.search(r"(?i)\b(?:https?://|www\.)", content) or any(pattern.search(content) for pattern in _LINK_MARKUP_RES):
+        return "contains a URL or link markup"
+    return None
+
+
+def _report_links(work_dir: Path | None) -> list[str]:
+    reports = (
+        ("Confirmation report", "confirmed-bugs.md"),
+        ("Severity report", "bug-severity.md"),
+    )
+    lines: list[str] = []
+    for label, filename in reports:
+        if work_dir is not None and _safe_regular_file(work_dir, work_dir / filename):
+            lines.append(f"- [{label}]({filename})")
+        else:
+            lines.append(f"- {label}: -")
+    return lines
 
 
 def _snapshot_usage(
@@ -1315,3 +1448,7 @@ def _format_cost(value: float) -> str:
 def _markdown_text(value: str) -> str:
     one_line = " ".join(value.splitlines()).strip()
     return html.escape(one_line, quote=False).replace("\\", "\\\\").replace("|", "\\|") or "-"
+
+
+def _markdown_optional(value: str | None) -> str:
+    return _markdown_text(value) if value else "-"

@@ -22,6 +22,7 @@ import os
 import re
 import secrets
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -48,6 +49,7 @@ from specula.resource_summary import (
     RESOURCE_PHASE_ENV,
     RESOURCE_ROOT_ENV,
     ResourceInvocationRecorder,
+    findings_fragment_issue,
 )
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 from specula.snapshotlib import (
@@ -583,6 +585,9 @@ class Phase:
 
     def build_prompt(self, ws: Workspace, target: str) -> str:
         raise NotImplementedError
+
+    def prepare_fresh_outputs(self, ws: Workspace, name: str) -> None:
+        """Remove phase-owned outputs that a fresh agent must replace."""
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
         raise NotImplementedError
@@ -1418,6 +1423,8 @@ class Phase:
             if invocation_attempt == 1:
                 _clear_attempt_archives(attempt_files)
                 _clear_resume_state(resume_state)
+                if not claim.manual:
+                    self.prepare_fresh_outputs(ws, name)
             else:
                 archived_attempts = _archive_attempt(attempt_files, invocation_attempt - 1)
         resumable = resume_state.is_file()
@@ -2223,12 +2230,11 @@ class BugClassificationPhase(Phase):
     key = "bug_classification"
     title = "Specula — Bug Classification Batch Runner"
     usage = r"""
-Batch launcher: spawn one agent per target system for Phase 4b severity
-classification. Each agent reads the confirmed-bugs.md produced by Phase 4a
-(bug-confirmation) and writes a separate bug-severity.md table. REPRODUCED bugs
-and ENV_LIMITED/MASKED findings receive Critical / High / Medium / Low; other
-dispositions receive no severity. No new analysis, no repro work, no
-modification to confirmed-bugs.md.
+Batch launcher: spawn one agent per target system for Phase 4b final reporting.
+Each agent reads the confirmed-bugs.md produced by Phase 4a (bug-confirmation),
+writes bug-severity.md, then writes .summary-findings.md for the user-facing
+summary. No new analysis, no repro work, and no modification to
+confirmed-bugs.md.
 
 Usage:
   specula classify [options] "name" [...]
@@ -2287,9 +2293,9 @@ Prerequisites:
         # NOTE: bash bug_classification generate_prompt does NOT inject .prompt-extra.
         name = self.target_name(target)
         wd = ws.work_dir(name)
-        return f"""# Bug Classification Task: {name}
+        return f"""# Final Bug Reporting Task: {name}
 
-You are classifying the Phase 4 entries for **{name}**.
+You are completing the Phase 4 final reports for **{name}**.
 
 ## Input
 
@@ -2298,13 +2304,73 @@ You are classifying the Phase 4 entries for **{name}**.
 ## Output
 
 - **Severity classification**: {wd}/bug-severity.md (you create this file)
+- **Findings summary fragment**: {wd}/.summary-findings.md (you create this file)
 
 ## Methodology
 
-Use the installed Specula skill {prompt_skill_ids("bug-classification")}. Read it in full and follow it exactly — it is the single source of methodology. Assign a four-tier Severity only to `REPRODUCED`, `ENV_LIMITED`, and `MASKED`; use `—` for `FALSE POSITIVE`, `NEEDS MORE INFO`, `DROPPED`, `PENDING REPAIR`, `DEFERRED`, and `INCOMPLETE`. Keep reproduced bugs, finding-tier entries, and no-severity dispositions separate in the mandatory Summary. Do not modify confirmed-bugs.md or any Status field.
+Use the installed Specula skill {prompt_skill_ids("bug-classification")}. Read it in full and follow it exactly — it is the single source of methodology. For bug-severity.md, assign a four-tier Severity only to `REPRODUCED`, `ENV_LIMITED`, and `MASKED`; use `—` for `FALSE POSITIVE`, `NEEDS MORE INFO`, `DROPPED`, `PENDING REPAIR`, `DEFERRED`, and `INCOMPLETE`. Keep reproduced bugs, finding-tier entries, and no-severity dispositions separate in the mandatory Summary. Complete and validate bug-severity.md before starting .summary-findings.md. The findings summary must not contain severity classifications, internal reproduction levels, URLs, or Markdown links. Do not modify confirmed-bugs.md or any Status field.
 
 Do everything the skill specifies. Do not add, relax, or override any step here.
 """
+
+    def prepare_fresh_outputs(self, ws: Workspace, name: str) -> None:
+        for filename in ("bug-severity.md", ".summary-findings.md"):
+            path = ws.work_dir(name) / filename
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise RuntimeError(f"cannot clear stale Phase 4b output {path}: {exc}") from exc
+
+    def finalize_outputs(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        if dry_run:
+            return []
+        failures: list[tuple[str, int]] = []
+        contracts = {
+            "bug-severity.md": ("## Summary", "## Per-entry classification"),
+            ".summary-findings.md": ("## Findings", "## Validation limits"),
+        }
+        for name in names:
+            issues: list[str] = []
+            contents: dict[str, str] = {}
+            for filename, headings in contracts.items():
+                path = ws.work_dir(name) / filename
+                try:
+                    info = path.lstat()
+                except OSError:
+                    issues.append(f"{filename} missing")
+                    continue
+                if not stat.S_ISREG(info.st_mode):
+                    issues.append(f"{filename} is not a regular file")
+                    continue
+                try:
+                    text = path.read_text()
+                except (OSError, UnicodeError):
+                    issues.append(f"{filename} unreadable")
+                    continue
+                if not text.strip():
+                    issues.append(f"{filename} empty")
+                    continue
+                contents[filename] = text
+                if any(heading not in text for heading in headings):
+                    issues.append(f"{filename} has an invalid structure")
+            summary = contents.get(".summary-findings.md")
+            if summary is not None:
+                issue = findings_fragment_issue(summary)
+                if issue is not None:
+                    issues.append(f".summary-findings.md {issue}")
+            if issues:
+                print(f"  {name}: Phase 4b output invalid ({'; '.join(issues)})")
+                failures.append((name, 1))
+        return failures
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
         print()
@@ -2312,8 +2378,23 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
         print(" Results")
         print("========================================")
         for name in names:
-            report = ws.work_dir(name) / "bug-severity.md"
-            if report.is_file() and report.stat().st_size > 0:
+            wd = ws.work_dir(name)
+            report = wd / "bug-severity.md"
+            summary = wd / ".summary-findings.md"
+            try:
+                report_info = report.lstat()
+            except OSError:
+                report_info = None
+            try:
+                summary_info = summary.lstat()
+            except OSError:
+                summary_info = None
+            summary_state = (
+                "yes"
+                if summary_info is not None and stat.S_ISREG(summary_info.st_mode) and summary_info.st_size > 0
+                else "missing"
+            )
+            if report_info is not None and stat.S_ISREG(report_info.st_mode) and report_info.st_size > 0:
                 text = report.read_text(errors="replace")  # bash grep is byte-safe
                 total = _grep_num(text, "- Total entries:")
                 bugs = _grep_num(text, "- Reproduced bugs:")
@@ -2325,9 +2406,10 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
                 dispositions = _grep_num(text, "- No-severity dispositions:")
                 print(
                     f"  {name}: entries={total}  bugs={bugs} findings={findings}  "
-                    f"C={critical} H={high} M={medium} L={low}  dispositions={dispositions}"
+                    f"C={critical} H={high} M={medium} L={low}  dispositions={dispositions}  "
+                    f"summary={summary_state}"
                 )
-            elif report.is_file():
+            elif report_info is not None and stat.S_ISREG(report_info.st_mode):
                 print(f"  {name}: bug-severity.md empty (check log)")
             else:
                 print(f"  {name}: (no report — check log)")

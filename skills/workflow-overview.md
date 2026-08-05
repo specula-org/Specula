@@ -154,6 +154,7 @@ After all applicable phases have run, assign a Report Tier (A/B/C) based on the 
 
 - `confirmed-bugs.md` — Final confirmation report with reproduction results and dispositions
 - `bug-severity.md` — Severity classification for the confirmation report
+- `summary.md` — Concise per-target results, validation limits, run details, and resource usage
 - `repro/test_bug*` — Executable reproduction tests
 
 ---
@@ -187,6 +188,7 @@ Pauses when API usage exceeds threshold, waits for reset, resumes automatically.
 ├── .prompt-extra.md             # Target-specific instructions for pipeline agents
 ├── confirmed-bugs.md            # Phase 4 final confirmation report
 ├── bug-severity.md              # Phase 4b severity classification
+├── summary.md                   # Final per-target summary
 ├── spec/
 │   ├── base.tla + base.cfg     # Phase 2
 │   ├── MC.tla + MC.cfg         # Phase 2

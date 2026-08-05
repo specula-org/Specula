@@ -34,6 +34,7 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 from specula import pipelinelib as pl
 from specula import resumelib
 from specula.phaselib import Workspace, _logical_cwd
+from specula.resource_summary import RunDetails
 from specula.snapshotlib import SOURCE_MAP, SnapshotError
 
 RR_TEMPLATE = """\
@@ -481,8 +482,8 @@ class _FakeResourceSummary:
     ) -> None:
         self.events.append(("invocation", phase, tuple(names), invocation_id))
 
-    def complete_run(self) -> None:
-        self.events.append(("complete",))
+    def complete_run(self, names: list[str]) -> None:
+        self.events.append(("complete", tuple(names)))
 
     def refresh(self) -> None:
         self.events.append(("refresh",))
@@ -550,7 +551,7 @@ class TestResourceSummaryPipeline(TmpCwd):
         rc, _output = quiet(pipeline.main)
 
         self.assertEqual(rc, 0)
-        self.assertEqual(tracker.events[-1], ("complete",))
+        self.assertEqual(tracker.events[-1], ("complete", ("footest",)))
         self.assertEqual(
             phase_events,
             [
@@ -609,6 +610,144 @@ class TestResourceSummaryPipeline(TmpCwd):
         for review_phase, resource_phase in expected.items():
             with self.subTest(review_phase=review_phase):
                 check_review(review_phase, resource_phase)
+
+    def test_resumed_summary_uses_run_metadata_without_guessing_stage_coverage(self) -> None:
+        run = self.tmp / "run"
+        run.mkdir()
+        (run / "run.json").write_text(
+            json.dumps(
+                {
+                    "artifact_git_sha": "abc123",
+                    "agent": "claude-code",
+                    "model": "older-model",
+                    "effort": "max",
+                    "argv": ["--skip-harness", "footest|g|l|r"],
+                }
+            )
+        )
+        pipeline = make_pipeline(
+            ["footest|g|l|r"],
+            run_dir=run,
+            skip_analysis=True,
+            skip_specgen=True,
+            skip_harness=True,
+            skip_validation=True,
+            skip_confirmation=True,
+            agent="codex",
+            model="gpt-5.6-sol",
+            effort="high",
+        )
+        pipeline._attached_existing_run = True
+        tracker = mock.Mock()
+
+        with mock.patch.object(pl, "ResourceSummaryTracker", return_value=tracker) as tracker_type:
+            pipeline.initialize_resource_summaries(["footest"])
+
+        tracker.initialize.assert_called_once_with(resume=True, restart_names=())
+        kwargs = tracker_type.call_args.kwargs
+        self.assertEqual(
+            kwargs["run_details"],
+            RunDetails(
+                source_commit="abc123",
+                agent="codex",
+                model="gpt-5.6-sol",
+                reasoning_effort="high",
+            ),
+        )
+        self.assertEqual(
+            kwargs["validation_limits"],
+            (
+                "Stage coverage details are unavailable because this run resumed after an interruption.",
+                "Independent reviews were not run.",
+            ),
+        )
+        self.assertTrue(kwargs["findings_summary_enabled"])
+
+    def test_summary_marks_phase_specific_agent_configuration(self) -> None:
+        run = self.tmp / "run"
+        run.mkdir()
+        (run / "run.json").write_text(json.dumps({"artifact_git_sha": None}))
+        config = write_agent_config(
+            self.tmp / "agents.json",
+            {
+                "analyze": "codex",
+                "classify": "copilot",
+            },
+        )
+        pipeline = pl.Pipeline()
+        self.assertIsNone(pipeline.parse_args([f"--agent-config={config}", "footest|g|l|r"]))
+        pipeline.run_dir = run
+
+        self.assertEqual(
+            pipeline._summary_run_details(),
+            RunDetails(
+                agent="Varies by task",
+                model="Varies by task",
+                reasoning_effort="Varies by task",
+            ),
+        )
+
+    def test_summary_initialization_failure_does_not_stop_pipeline(self) -> None:
+        pipeline = make_pipeline(["footest|g|l|r"])
+
+        with mock.patch.object(pl, "ResourceSummaryTracker", side_effect=OSError("injected failure")):
+            _, output = quiet(pipeline.initialize_resource_summaries, ["footest"])
+
+        self.assertIsNone(pipeline.resource_summary)
+        self.assertIn("cannot initialize resource summaries: injected failure", output)
+
+    def test_fresh_context_restarts_only_current_targets(self) -> None:
+        run = self.tmp / "run"
+        run.mkdir()
+        (run / "run.json").write_text(
+            json.dumps(
+                {
+                    "targets": ["alpha|g|l|r", "beta|g|l|r"],
+                    "artifact_git_sha": None,
+                }
+            )
+        )
+        pipeline = make_pipeline(
+            ["alpha|g|l|r"],
+            run_dir=run,
+            fresh_context=True,
+        )
+        tracker = mock.Mock()
+
+        with mock.patch.object(pl, "ResourceSummaryTracker", return_value=tracker) as tracker_type:
+            pipeline.initialize_resource_summaries(["alpha"])
+
+        self.assertEqual(set(tracker_type.call_args.args[0]), {"alpha"})
+        tracker.initialize.assert_called_once_with(resume=True, restart_names=("alpha",))
+
+    def test_main_does_not_initialize_retained_index_only_sibling(self) -> None:
+        run = self.tmp / "run"
+        run.mkdir()
+        (run / "run.json").write_text(json.dumps({"targets": ["alpha|g|l|r", "beta|g|l|r"]}))
+        pipeline = make_pipeline(
+            ["alpha|g|l|r"],
+            run_dir=run,
+            dry_run=True,
+            skip_analysis=True,
+            skip_specgen=True,
+            skip_harness=True,
+            skip_validation=True,
+            skip_confirmation=True,
+            skip_classification=True,
+            skip_repair_loop=True,
+        )
+        initialized: list[list[str]] = []
+        pipeline.initialize_resource_summaries = lambda names: initialized.append(list(names))  # type: ignore[method-assign]
+        pipeline.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+        pipeline.prepare_source_snapshots = lambda names: None  # type: ignore[method-assign]
+        pipeline.prepare_repair_state = lambda: set()  # type: ignore[method-assign]
+        pipeline.refresh_output_indexes = lambda: None  # type: ignore[method-assign]
+        pipeline.generate_summary = lambda: None  # type: ignore[method-assign]
+
+        rc, _output = quiet(pipeline.main)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(initialized, [["alpha"]])
 
 
 def write_agent_config(path: Path, phases: dict[str, str] | None = None) -> Path:

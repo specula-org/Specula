@@ -1,6 +1,6 @@
 ---
 name: bug-classification
-description: "Severity classification of Phase 4a results. Assign severity to REPRODUCED bugs and ENV_LIMITED/MASKED findings, while recording non-severity dispositions such as FALSE POSITIVE, PENDING REPAIR, DEFERRED, and INCOMPLETE."
+description: "Final reporting for Phase 4a results. Classify severity in bug-severity.md, then write a concise human-readable findings fragment for summary.md."
 ---
 
-Read `guide.md` for the full classification methodology.
+Read `guide.md` for the complete reporting methodology and both required output contracts.
