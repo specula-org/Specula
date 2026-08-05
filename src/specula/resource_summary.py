@@ -760,7 +760,7 @@ def render_summary(
     else:
         lines.append(findings)
     if limits:
-        lines += ["", "### Run coverage", "", *[f"- {_markdown_text(limit)}" for limit in limits]]
+        lines += ["", "## Run coverage", "", *[f"- {_markdown_text(limit)}" for limit in limits]]
 
     agent = _markdown_optional(details.agent)
     model = _markdown_optional(details.model)
@@ -862,10 +862,6 @@ def findings_fragment_issue(content: str) -> str | None:
     headings = re.findall(r"(?m)^#{1,6}\s+.+$", content)
     if headings != ["## Findings", "## Validation limits"]:
         return "contains an unexpected heading"
-    if re.search(r"(?i)\bseverity\b", content):
-        return "contains severity text"
-    if re.search(r"(?i)\blevel\s+[0-9]+\b", content):
-        return "contains an internal reproduction level"
     if re.search(r"(?i)\b(?:https?://|www\.)", content) or any(pattern.search(content) for pattern in _LINK_MARKUP_RES):
         return "contains a URL or link markup"
     return None

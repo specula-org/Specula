@@ -517,6 +517,7 @@ class TestDryRunCommand(PhaseCase):
         self.assertIn(str(self.work_dir() / ".summary-findings.md"), body)
         self.assertLess(body.index("bug-severity.md"), body.index(".summary-findings.md"))
         self.assertIn("Complete and validate bug-severity.md before starting .summary-findings.md", body)
+        self.assertIn("must not contain severity classifications, internal reproduction levels", body)
         for status in (
             "REPRODUCED",
             "ENV_LIMITED",
@@ -540,6 +541,7 @@ class TestDryRunCommand(PhaseCase):
         self.assertIn("## Findings", guide)
         self.assertIn("## Validation limits", guide)
         self.assertIn("Do not include Severity labels", guide)
+        self.assertIn("Do not include internal reproduction tiers or levels", guide)
         self.assertIn("Do not include URLs, Markdown links", guide)
 
     def test_confirmation_docs_have_no_recheck_pass_and_allow_deferred_terminal(self) -> None:
@@ -1651,8 +1653,6 @@ class TestBugClassificationOutputs(PhaseCase):
 
     def test_rejects_findings_fragment_that_breaks_display_contract(self) -> None:
         invalid = (
-            ("- Severity: High.", "contains severity text"),
-            ("- Evidence: Level 3 reproduction.", "contains an internal reproduction level"),
             ("- [Detailed evidence](confirmed-bugs.md)", "contains a URL or link markup"),
             (
                 "- [Detailed evidence][report]\n\n[report]: confirmed-bugs.md",
@@ -1676,6 +1676,22 @@ class TestBugClassificationOutputs(PhaseCase):
 
                 self.assertEqual(rc, 1, out)
                 self.assertIn(expected, out)
+
+    def test_accepts_incidental_policy_words_in_findings_prose(self) -> None:
+        findings = (
+            "One issue was reproduced.\n\n"
+            "## Findings\n\n"
+            "- The severity field stayed unchanged while the Level 3 cache recovered.\n\n"
+            "## Validation limits\n\n"
+            "None recorded.\n"
+        )
+        self.write_adapter(
+            self.write_output("bug-severity.md", self.SEVERITY) + self.write_output(".summary-findings.md", findings)
+        )
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 0, out)
 
     def test_rejects_non_utf8_findings_fragment(self) -> None:
         self.write_adapter(

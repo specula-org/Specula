@@ -966,7 +966,8 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
         text = self.summary(self.work_dir)
         self.assertIn("- Run status: **Complete**", text)
         self.assertIn(fragment, text)
-        self.assertIn("### Run coverage\n\n- The validation review was skipped.", text)
+        self.assertIn("\n## Run coverage\n\n- The validation review was skipped.", text)
+        self.assertNotIn("\n### Run coverage\n", text)
         self.assertIn("| Target | demo |", text)
         self.assertIn("| Source commit | abc123 |", text)
         self.assertIn("| Agent / model | codex / gpt-5.6-sol |", text)
@@ -977,6 +978,7 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
             "## Result",
             "## Findings",
             "## Validation limits",
+            "## Run coverage",
             "## Run details",
             "## Detailed reports",
             "## Resource usage",
@@ -1088,8 +1090,6 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
 
     def test_fragment_display_contract_is_enforced_before_rendering(self) -> None:
         invalid_bodies = (
-            "- Severity: High.",
-            "- Evidence: Level 3 reproduction.",
             "- [Detailed evidence](confirmed-bugs.md)",
             "- [Detailed evidence][report]\n\n[report]: confirmed-bugs.md",
             '- <a href="confirmed-bugs.md">Detailed evidence</a>',
@@ -1109,6 +1109,20 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
                 text = self.summary(self.work_dir)
                 self.assertNotIn(body, text)
                 self.assertIn("The findings summary is unavailable", text)
+
+    def test_fragment_wording_does_not_hide_an_otherwise_valid_summary(self) -> None:
+        body = "- The severity field stayed unchanged while the Level 3 cache recovered."
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / FINDINGS_SUMMARY_FILENAME).write_text(
+            f"One issue was reproduced.\n\n## Findings\n\n{body}\n\n## Validation limits\n\nNone recorded.\n"
+        )
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        tracker.complete_run()
+
+        text = self.summary(self.work_dir)
+        self.assertIn(body, text)
+        self.assertNotIn("The findings summary is unavailable", text)
 
 
 class TestSafety(ResourceSummaryCase):
