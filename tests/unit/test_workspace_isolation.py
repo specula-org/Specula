@@ -29,6 +29,7 @@ import time
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 PKG = Path(__file__).resolve().parents[2] / "src" / "specula"
 
@@ -478,6 +479,48 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         self.assertEqual(resumelib.active_entries(resumed.run_dir), [])
         self.assertEqual(os.environ[resumelib.FRESH_ENV], "1")
         self.assertNotIn(resumelib.MANUAL_ENV, os.environ)
+
+    def test_fresh_context_invalidates_summary_before_resetting_resume_state(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(["--run-id=fresh-summary", "foo|o/r|Go|ref"], root)
+        self._seed_active_turn(first)
+        assert first.run_dir is not None
+        summary = first.run_dir / "foo" / ".specula-output" / "summary.md"
+        summary.parent.mkdir(parents=True, exist_ok=True)
+        summary.write_text("OLD COMPLETE FINDINGS\n")
+        real_initialize = resumelib.initialize_run
+        invalidated_before_reset: list[bool] = []
+
+        def observe_reset(run_dir: Path, *, reset: bool = False) -> None:
+            if reset:
+                invalidated_before_reset.append(not summary.exists())
+            real_initialize(run_dir, reset=reset)
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=fresh-summary", "--fresh-context"]))
+        with mock.patch.object(resumelib, "initialize_run", side_effect=observe_reset):
+            self.assertIsNone(resumed.resolve_run_dir())
+
+        self.assertEqual(invalidated_before_reset, [True])
+        self.assertFalse(summary.exists())
+        self.assertEqual(resumelib.active_entries(first.run_dir), [])
+
+    def test_fresh_context_invalidation_failure_preserves_resume_state(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(["--run-id=fresh-summary-failure", "foo|o/r|Go|ref"], root)
+        self._seed_active_turn(first)
+        assert first.run_dir is not None
+        before = resumelib.active_entries(first.run_dir)
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=fresh-summary-failure", "--fresh-context"]))
+        with (
+            mock.patch.object(pl, "invalidate_summary", side_effect=OSError("injected failure")),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(resumed.resolve_run_dir(), 1)
+
+        self.assertEqual(resumelib.active_entries(first.run_dir), before)
 
     def test_fresh_agent_and_confirmation_mode_do_not_inherit_incompatible_tuning(self) -> None:
         root = self.tmp()

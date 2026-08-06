@@ -490,6 +490,21 @@ class _FakeResourceSummary:
 
 
 class TestResourceSummaryPipeline(TmpCwd):
+    def git_commit(self, repo: Path, content: str) -> str:
+        if not (repo / ".git").exists():
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.com"], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test"], check=True)
+        (repo / "source.txt").write_text(content)
+        subprocess.run(["git", "-C", str(repo), "add", "source.txt"], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", content.strip()], check=True)
+        return subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
     def test_grouped_phase_does_not_charge_targets_when_body_fails_before_a_launcher(self) -> None:
         pipeline = make_pipeline(["footest|g|l|r"])
         tracker = _FakeResourceSummary()
@@ -523,9 +538,10 @@ class TestResourceSummaryPipeline(TmpCwd):
         tracker = _FakeResourceSummary()
         pipeline.resource_summary = tracker  # type: ignore[assignment]
         phase_events: list[str] = []
-        pipeline.initialize_resource_summaries = lambda names: None  # type: ignore[method-assign]
+        setup_events: list[str] = []
+        pipeline.initialize_resource_summaries = lambda names: setup_events.append("summary")  # type: ignore[method-assign]
         pipeline.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
-        pipeline.prepare_source_snapshots = lambda names: None  # type: ignore[method-assign]
+        pipeline.prepare_source_snapshots = lambda names: setup_events.append("snapshot")  # type: ignore[method-assign]
         pipeline.prepare_repair_state = lambda: set()  # type: ignore[method-assign]
         pipeline.refresh_output_indexes = lambda: None  # type: ignore[method-assign]
         pipeline.generate_summary = lambda: None  # type: ignore[method-assign]
@@ -551,6 +567,7 @@ class TestResourceSummaryPipeline(TmpCwd):
         rc, _output = quiet(pipeline.main)
 
         self.assertEqual(rc, 0)
+        self.assertEqual(setup_events, ["snapshot", "summary"])
         self.assertEqual(tracker.events[-1], ("complete", ("footest",)))
         self.assertEqual(
             phase_events,
@@ -647,12 +664,14 @@ class TestResourceSummaryPipeline(TmpCwd):
         kwargs = tracker_type.call_args.kwargs
         self.assertEqual(
             kwargs["run_details"],
-            RunDetails(
-                source_commit="abc123",
-                agent="codex",
-                model="gpt-5.6-sol",
-                reasoning_effort="high",
-            ),
+            {
+                "footest": RunDetails(
+                    original_source_commit="abc123",
+                    agent="codex",
+                    model="gpt-5.6-sol",
+                    reasoning_effort="high",
+                )
+            },
         )
         self.assertEqual(
             kwargs["validation_limits"],
@@ -679,13 +698,42 @@ class TestResourceSummaryPipeline(TmpCwd):
         pipeline.run_dir = run
 
         self.assertEqual(
-            pipeline._summary_run_details(),
+            pipeline._summary_run_details("footest"),
             RunDetails(
                 agent="Varies by task",
                 model="Varies by task",
                 reasoning_effort="Varies by task",
             ),
         )
+
+    def test_fresh_context_keeps_original_commit_and_records_current_attempt(self) -> None:
+        repo = self.tmp / "repo"
+        repo.mkdir()
+        original = self.git_commit(repo, "original\n")
+        run = self.tmp / "run"
+        run.mkdir()
+        (run / "run.json").write_text(json.dumps({"artifact_git_sha": original}))
+        first = make_pipeline(
+            ["footest|g|l|r"],
+            run_dir=run,
+            artifact=str(repo),
+        )
+        first.initialize_resource_summaries(["footest"])
+        assert first.resource_summary is not None
+        first.resource_summary.complete_run(["footest"])
+
+        current = self.git_commit(repo, "current\n")
+        fresh = make_pipeline(
+            ["footest|g|l|r"],
+            run_dir=run,
+            artifact=str(repo),
+            fresh_context=True,
+        )
+        fresh.initialize_resource_summaries(["footest"])
+
+        summary = (run / "footest" / ".specula-output" / "summary.md").read_text()
+        self.assertIn(f"| Original source commit | {original} |", summary)
+        self.assertIn(f"| Current attempt source commit | {current} |", summary)
 
     def test_summary_initialization_failure_does_not_stop_pipeline(self) -> None:
         pipeline = make_pipeline(["footest|g|l|r"])
@@ -1571,6 +1619,34 @@ class TestSourceSnapshots(TmpCwd):
         self.assertEqual(Workspace(p.targets, artifact=str(original)).find_repo_dir("demo"), str(source))
         self.assertEqual(os.environ["SPECULA_SANDBOX_EXTRA_WRITE"].split(os.pathsep), ["/cache", str(source)])
         self.assertFalse(any(arg.startswith("--artifact=") for arg in p._phase_args(p.targets)))
+
+    def test_attempt_provenance_uses_the_private_snapshot_commit(self) -> None:
+        original = self.tmp / "original"
+        original.mkdir()
+        subprocess.run(["git", "init", "-q", str(original)], check=True)
+        subprocess.run(["git", "-C", str(original), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(original), "config", "user.name", "Test"], check=True)
+        (original / "source.txt").write_text("snapshot\n")
+        subprocess.run(["git", "-C", str(original), "add", "source.txt"], check=True)
+        subprocess.run(["git", "-C", str(original), "commit", "-q", "-m", "snapshot"], check=True)
+        snapshot_head = subprocess.run(
+            ["git", "-C", str(original), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        run = self.tmp / "run"
+        run.mkdir()
+        p = make_pipeline(["demo|g|l|r"], keep_original=True)
+        p.run_dir = run
+        p._snapshot_sources = {"demo": original}
+        p.prepare_source_snapshots(["demo"])
+        (original / "source.txt").write_text("new original\n")
+        subprocess.run(["git", "-C", str(original), "commit", "-qam", "new original"], check=True)
+
+        details = p._summary_run_details("demo")
+
+        self.assertEqual(details.attempt_source_commit, snapshot_head)
 
     def test_prepare_rejects_path_list_separator_before_copy(self) -> None:
         original = self.tmp / "original"

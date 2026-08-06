@@ -62,11 +62,13 @@ from specula.phaselib import (
     _wc_l,
 )
 from specula.resource_summary import (
+    CLASSIFICATION_SKIPPED_LIMIT,
     RESOURCE_INVOCATION_ENV,
     RESOURCE_PHASE_ENV,
     RESOURCE_ROOT_ENV,
     ResourceSummaryTracker,
     RunDetails,
+    invalidate_summary,
 )
 from specula.snapshotlib import (
     SNAPSHOT_MODE_ENV,
@@ -196,6 +198,28 @@ def divider() -> None:
 def _date_iseconds() -> str:
     """Mirror `date -Iseconds` (local time, seconds precision, tz offset)."""
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _git_source_commit(path: Path) -> str | None:
+    try:
+        source = path.resolve(strict=True)
+        result = subprocess.run(
+            ["git", "-C", str(source), "rev-parse", "--show-toplevel", "HEAD"],
+            env=clean_git_environment(),
+            capture_output=True,
+            text=True,
+        )
+        lines = result.stdout.splitlines()
+        if (
+            result.returncode == 0
+            and len(lines) == 2
+            and Path(lines[0]).resolve() == source
+            and re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", lines[1]) is not None
+        ):
+            return lines[1]
+    except (OSError, RuntimeError, UnicodeError):
+        pass
+    return None
 
 
 def _b(flag: bool) -> str:
@@ -1050,7 +1074,6 @@ class Pipeline:
             self._attached_existing_run = True
             try:
                 if self.fresh_context:
-                    resumelib.initialize_run(self.run_dir, reset=True)
                     try:
                         stored_configuration = resumelib.load_configuration(self.run_dir)
                     except resumelib.ResumeError:
@@ -1059,6 +1082,8 @@ class Pipeline:
                         pass
                     else:
                         self._restore_resume_configuration(stored_configuration, allow_overrides=True)
+                    self._invalidate_fresh_context_summaries()
+                    resumelib.initialize_run(self.run_dir, reset=True)
                     os.environ[resumelib.FRESH_ENV] = "1"
                 else:
                     resumelib.require_supported_run(self.run_dir)
@@ -1272,16 +1297,7 @@ class Pipeline:
             return
         artifact_sha: str | None = None
         if self.artifact:
-            artifact = Path(self.artifact).resolve()
-            with contextlib.suppress(Exception):
-                r = subprocess.run(
-                    ["git", "-C", str(artifact), "rev-parse", "--show-toplevel", "HEAD"],
-                    env=clean_git_environment(),
-                    capture_output=True,
-                )
-                lines = r.stdout.decode(errors="replace").splitlines()
-                if r.returncode == 0 and len(lines) == 2 and Path(lines[0]).resolve() == artifact:
-                    artifact_sha = lines[1]
+            artifact_sha = _git_source_commit(Path(self.artifact))
         default_selection = self._agent_selection()
         model, effort = self._resolved_run_tuning(default_selection)
         resume_configuration = self._resume_configuration_document()
@@ -1423,6 +1439,16 @@ class Pipeline:
             return f"{_logical_cwd()}/.specula-output"
         return f"{_logical_cwd()}/{name}/.specula-output"
 
+    def _invalidate_fresh_context_summaries(self) -> None:
+        assert self.run_dir is not None
+        for name in dict.fromkeys(self.extract_names()):
+            if not is_safe_target_name(name):
+                raise resumelib.ResumeError(f"cannot invalidate summary for unsafe target name {name!r}")
+            try:
+                invalidate_summary(Path(self.get_work_dir(name)), self.run_dir)
+            except (OSError, UnicodeError, ValueError) as exc:
+                raise resumelib.ResumeError(f"cannot invalidate summary for {name}: {exc}") from exc
+
     @staticmethod
     def _descriptor_name(target: str) -> str:
         first_line = target.split("\n", 1)[0]
@@ -1524,7 +1550,7 @@ class Pipeline:
                 maximum_parallelism=self._max_parallel_summary(),
                 tlc_memory_limit=memory_limit,
                 tlc_worker_limit=worker_limit,
-                run_details=self._summary_run_details(),
+                run_details={name: self._summary_run_details(name) for name in targets},
                 validation_limits=self._summary_validation_limits(),
                 findings_summary_enabled=not self.skip_classification,
             )
@@ -1554,7 +1580,26 @@ class Pipeline:
             return next(iter(distinct))
         return "Varies by task"
 
-    def _summary_run_details(self) -> RunDetails:
+    def _summary_attempt_source_commit(self, name: str) -> str | None:
+        source: Path | None = None
+        if self.keep_original and self.run_dir is not None:
+            private_source = self.run_dir / name / "source"
+            try:
+                metadata = private_source.lstat()
+            except OSError:
+                metadata = None
+            if metadata is not None and stat.S_ISDIR(metadata.st_mode) and not stat.S_ISLNK(metadata.st_mode):
+                source = private_source
+            else:
+                source = self._snapshot_sources.get(name)
+        else:
+            workspace = Workspace(self.targets, artifact=self.artifact, run_dir=self.run_dir)
+            repo = workspace.find_repo_dir(name)
+            if repo:
+                source = Path(repo)
+        return _git_source_commit(source) if source is not None else None
+
+    def _summary_run_details(self, name: str) -> RunDetails:
         metadata = self._summary_run_metadata()
         source_commit = metadata.get("artifact_git_sha")
         if not isinstance(source_commit, str) or not source_commit:
@@ -1573,7 +1618,8 @@ class Pipeline:
             model = self._summary_config_value([tuning[0] for tuning in tunings])
             effort = self._summary_config_value([tuning[1] for tuning in tunings])
         return RunDetails(
-            source_commit=source_commit,
+            original_source_commit=source_commit,
+            attempt_source_commit=self._summary_attempt_source_commit(name),
             agent=agent,
             model=model,
             reasoning_effort=effort,
@@ -1586,7 +1632,7 @@ class Pipeline:
             ("harness", "Execution trace collection was skipped."),
             ("validation", "Trace validation and model checking were skipped."),
             ("confirmation", "Candidate confirmation was skipped."),
-            ("classification", "Final findings reporting was skipped."),
+            ("classification", CLASSIFICATION_SKIPPED_LIMIT),
             ("repair", "Automated repair follow-up was skipped."),
         )
         if self._attached_existing_run and not self.fresh_context:
@@ -3293,8 +3339,8 @@ class Pipeline:
                     os.environ["PWD"] = str(case_dir)  # bash cd exports the new $PWD
                     log(f"Single target: cd to {case_dir}")
 
-        self.initialize_resource_summaries(names)
         self.prepare_source_snapshots(names)
+        self.initialize_resource_summaries(names)
 
         start_time = int(time.time())
 

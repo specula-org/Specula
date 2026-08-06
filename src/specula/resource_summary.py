@@ -69,6 +69,20 @@ PHASES = (
 PHASE_BY_KEY = {phase.key: phase for phase in PHASES}
 
 _TURN_USAGE_RE = re.compile(r"^turn[0-9]{2}_(?:A|B|A-repair)\.usage\.json$")
+_FINDING_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+_IMPACT_FINDING_STATUSES = frozenset({"REPRODUCED", "MASKED", "ENV_LIMITED"})
+_REPORT_STATUSES = (
+    "PENDING REPAIR",
+    "FALSE POSITIVE",
+    "NEEDS MORE INFO",
+    "ENV_LIMITED",
+    "REPRODUCED",
+    "INCOMPLETE",
+    "DEFERRED",
+    "DROPPED",
+    "MASKED",
+)
+CLASSIFICATION_SKIPPED_LIMIT = "Final findings reporting was skipped."
 
 
 @dataclass
@@ -149,6 +163,37 @@ class SessionState:
         )
 
 
+@dataclass(frozen=True)
+class RunDetails:
+    """Small set of deterministic run metadata shown in the summary."""
+
+    original_source_commit: str | None = None
+    attempt_source_commit: str | None = None
+    agent: str | None = None
+    model: str | None = None
+    reasoning_effort: str | None = None
+
+    def to_object(self) -> dict[str, object]:
+        return {
+            "original_source_commit": self.original_source_commit,
+            "attempt_source_commit": self.attempt_source_commit,
+            "agent": self.agent,
+            "model": self.model,
+            "reasoning_effort": self.reasoning_effort,
+        }
+
+    @classmethod
+    def from_object(cls, value: object) -> RunDetails:
+        data = _string_mapping(value) or {}
+        return cls(
+            original_source_commit=_optional_string(data.get("original_source_commit")),
+            attempt_source_commit=_optional_string(data.get("attempt_source_commit")),
+            agent=_optional_string(data.get("agent")),
+            model=_optional_string(data.get("model")),
+            reasoning_effort=_optional_string(data.get("reasoning_effort")),
+        )
+
+
 @dataclass
 class TargetState:
     target: str
@@ -160,6 +205,9 @@ class TargetState:
     maximum_parallelism: str = "-"
     tlc_memory_limit: str = "-"
     tlc_worker_limit: str = "-"
+    run_details: RunDetails = field(default_factory=RunDetails)
+    validation_limits: tuple[str, ...] = ()
+    findings_summary_enabled: bool = True
 
     def to_object(self) -> dict[str, object]:
         return {
@@ -175,6 +223,9 @@ class TargetState:
                 "tlc_memory_limit": self.tlc_memory_limit,
                 "tlc_worker_limit": self.tlc_worker_limit,
             },
+            "run_details": self.run_details.to_object(),
+            "validation_limits": list(self.validation_limits),
+            "findings_summary_enabled": self.findings_summary_enabled,
         }
 
     @classmethod
@@ -198,6 +249,9 @@ class TargetState:
             maximum_parallelism=_optional_string(configuration.get("maximum_parallelism")) or "-",
             tlc_memory_limit=_optional_string(configuration.get("tlc_memory_limit")) or "-",
             tlc_worker_limit=_optional_string(configuration.get("tlc_worker_limit")) or "-",
+            run_details=RunDetails.from_object(data.get("run_details")),
+            validation_limits=_string_tuple(data.get("validation_limits")),
+            findings_summary_enabled=data.get("findings_summary_enabled") is not False,
         )
 
 
@@ -209,16 +263,6 @@ class UsageRecord:
     cached_input_tokens: int | None
     cost_usd: float | None
     complete: bool
-
-
-@dataclass(frozen=True)
-class RunDetails:
-    """Small set of deterministic run metadata shown in the summary."""
-
-    source_commit: str | None = None
-    agent: str | None = None
-    model: str | None = None
-    reasoning_effort: str | None = None
 
 
 class ResourceInvocationRecorder:
@@ -397,7 +441,7 @@ class ResourceSummaryTracker:
         maximum_parallelism: str,
         tlc_memory_limit: str,
         tlc_worker_limit: str,
-        run_details: RunDetails | None = None,
+        run_details: RunDetails | Mapping[str, RunDetails] | None = None,
         validation_limits: Iterable[str] = (),
         findings_summary_enabled: bool = True,
     ) -> None:
@@ -406,7 +450,11 @@ class ResourceSummaryTracker:
         self._maximum_parallelism = maximum_parallelism
         self._tlc_memory_limit = tlc_memory_limit
         self._tlc_worker_limit = tlc_worker_limit
-        self._run_details = run_details or RunDetails()
+        if isinstance(run_details, Mapping):
+            self._run_details = {name: run_details.get(name, RunDetails()) for name in self._targets}
+        else:
+            common_details = run_details or RunDetails()
+            self._run_details = {name: common_details for name in self._targets}
         self._validation_limits = tuple(
             limit for limit in validation_limits if isinstance(limit, str) and limit.strip()
         )
@@ -423,13 +471,44 @@ class ResourceSummaryTracker:
                 if state is None:
                     prior_evidence = resume and self._has_prior_resource_evidence(name, work_dir)
                     state = TargetState(target=name, history_incomplete=prior_evidence)
+                    incoming = self._run_details[name]
+                    state.run_details = RunDetails(
+                        original_source_commit=(
+                            incoming.original_source_commit
+                            or (None if prior_evidence else incoming.attempt_source_commit)
+                        ),
+                        attempt_source_commit=incoming.attempt_source_commit,
+                        agent=incoming.agent,
+                        model=incoming.model,
+                        reasoning_effort=incoming.reasoning_effort,
+                    )
                 if resume:
                     self._consume_pending_records(name, work_dir, state)
                 if name in restarted:
                     state.run_complete = False
+                    incoming = self._run_details[name]
+                    state.run_details = RunDetails(
+                        original_source_commit=(
+                            state.run_details.original_source_commit or incoming.original_source_commit
+                        ),
+                        attempt_source_commit=incoming.attempt_source_commit,
+                        agent=incoming.agent,
+                        model=incoming.model,
+                        reasoning_effort=incoming.reasoning_effort,
+                    )
+                elif resume and state.run_details == RunDetails():
+                    incoming = self._run_details[name]
+                    state.run_details = RunDetails(
+                        original_source_commit=incoming.original_source_commit,
+                        agent=incoming.agent,
+                        model=incoming.model,
+                        reasoning_effort=incoming.reasoning_effort,
+                    )
                 state.maximum_parallelism = self._maximum_parallelism
                 state.tlc_memory_limit = self._tlc_memory_limit
                 state.tlc_worker_limit = self._tlc_worker_limit
+                state.validation_limits = self._validation_limits
+                state.findings_summary_enabled = self._findings_summary_enabled
                 self._states[name] = state
                 self._publish(name)
             except (OSError, UnicodeError, ValueError) as exc:
@@ -697,9 +776,6 @@ class ResourceSummaryTracker:
                 render_summary(
                     state,
                     work_dir=work_dir,
-                    run_details=self._run_details,
-                    validation_limits=self._validation_limits,
-                    findings_summary_enabled=self._findings_summary_enabled,
                 ),
             )
         except (OSError, UnicodeError, ValueError) as exc:
@@ -726,18 +802,66 @@ class ResourceSummaryTracker:
         print(f"WARNING: resource summary for {name}: {message}", file=sys.stderr)
 
 
+def invalidate_summary(work_dir: Path, output_root: Path) -> None:
+    """Remove one human-facing summary before starting work that makes it stale."""
+    root = Path(os.path.abspath(output_root))
+    target = Path(os.path.abspath(work_dir))
+    _prepare_work_dir(root, target)
+    path = target / SUMMARY_FILENAME
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return
+    if not (stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode)):
+        raise OSError(f"resource summary destination is not removable: {path}")
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise OSError(f"cannot invalidate resource summary: {path}") from exc
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    raise OSError(f"resource summary remained after invalidation: {path}")
+
+
+def publish_findings_summary(target_name: str, work_dir: Path, output_root: Path) -> None:
+    """Rebuild one summary after standalone final reporting succeeds."""
+    root = Path(os.path.abspath(output_root))
+    target = Path(os.path.abspath(work_dir))
+    invalidate_summary(target, root)
+    state_path = target / STATE_FILENAME
+    try:
+        state_path.lstat()
+    except FileNotFoundError:
+        state = TargetState(target=target_name)
+    else:
+        document: object
+        try:
+            document = json.loads(_read_safe_file(target, state_path))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid resource summary state: {state_path}") from exc
+        loaded_state = TargetState.from_object(document, target_name)
+        if loaded_state is None:
+            raise ValueError(f"invalid resource summary state: {state_path}")
+        state = loaded_state
+    state.findings_summary_enabled = True
+    state.validation_limits = tuple(limit for limit in state.validation_limits if limit != CLASSIFICATION_SKIPPED_LIMIT)
+    _atomic_write(target, state_path, json.dumps(state.to_object(), indent=2, sort_keys=True) + "\n")
+    _atomic_write(target, target / SUMMARY_FILENAME, render_summary(state, work_dir=target))
+
+
 def render_summary(
     state: TargetState,
     *,
     work_dir: Path | None = None,
-    run_details: RunDetails | None = None,
-    validation_limits: Iterable[str] = (),
-    findings_summary_enabled: bool = True,
 ) -> str:
     """Render the target's human-facing entry point without inferring findings."""
-    details = run_details or RunDetails()
-    limits = tuple(limit for limit in validation_limits if isinstance(limit, str) and limit.strip())
-    findings = _findings_summary(state, work_dir, findings_summary_enabled)
+    details = state.run_details
+    limits = state.validation_limits
+    findings = _findings_summary(state, work_dir, state.findings_summary_enabled)
 
     lines = [
         "# Specula Summary",
@@ -771,7 +895,8 @@ def render_summary(
         "| Item | Value |",
         "|---|---|",
         f"| Target | {_markdown_text(state.target)} |",
-        f"| Source commit | {_markdown_optional(details.source_commit)} |",
+        f"| Original source commit | {_markdown_optional(details.original_source_commit)} |",
+        f"| Current attempt source commit | {_markdown_optional(details.attempt_source_commit)} |",
         f"| Agent / model | {agent} / {model} |",
         f"| Reasoning effort | {_markdown_optional(details.reasoning_effort)} |",
         "",
@@ -846,12 +971,13 @@ def _findings_summary(state: TargetState, work_dir: Path | None, enabled: bool) 
         return None
     try:
         content = _read_safe_file(work_dir, work_dir / FINDINGS_SUMMARY_FILENAME)
+        confirmed = _read_safe_file(work_dir, work_dir / "confirmed-bugs.md")
     except (OSError, UnicodeError):
         return None
-    return content if content.strip() and findings_fragment_issue(content) is None else None
+    return content if content.strip() and findings_fragment_issue(content, confirmed) is None else None
 
 
-def findings_fragment_issue(content: str) -> str | None:
+def findings_fragment_issue(content: str, confirmed_bugs: str | None = None) -> str | None:
     """Return a small structural/display-contract violation, without interpreting findings."""
     findings = list(re.finditer(r"(?m)^## Findings\s*$", content))
     limits = list(re.finditer(r"(?m)^## Validation limits\s*$", content))
@@ -859,12 +985,103 @@ def findings_fragment_issue(content: str) -> str | None:
         return "must contain one Findings section and one Validation limits section"
     if not content[: findings[0].start()].strip() or limits[0].start() <= findings[0].start():
         return "must begin with a conclusion followed by Findings and Validation limits"
+    findings_body = content[findings[0].end() : limits[0].start()]
+    limits_body = content[limits[0].end() :]
+    if not findings_body.strip() or not limits_body.strip():
+        return "contains an empty Findings or Validation limits section"
     headings = re.findall(r"(?m)^#{1,6}\s+.+$", content)
     if headings != ["## Findings", "## Validation limits"]:
         return "contains an unexpected heading"
     if re.search(r"(?i)\b(?:https?://|www\.)", content) or any(pattern.search(content) for pattern in _LINK_MARKUP_RES):
         return "contains a URL or link markup"
+    if confirmed_bugs is not None:
+        expected = _confirmation_finding_statuses(confirmed_bugs)
+        if expected is None:
+            return "cannot parse finding IDs and statuses from confirmed-bugs.md"
+        actual = _fragment_finding_statuses(content, findings[0].end(), limits[0].start())
+        if actual is None:
+            return "cannot parse finding IDs and statuses"
+        if actual != expected:
+            return "finding IDs or statuses do not match confirmed-bugs.md"
     return None
+
+
+def _confirmation_finding_statuses(content: str) -> dict[str, str] | None:
+    lines = content.splitlines()
+    headers = [
+        index
+        for index, line in enumerate(lines)
+        if line.strip() == "| Entry | Finding | Status | Counts as final bug? |"
+    ]
+    if len(headers) != 1 or headers[0] + 1 >= len(lines):
+        return None
+    separator = [cell.strip() for cell in lines[headers[0] + 1].strip().strip("|").split("|")]
+    if len(separator) != 4 or any(re.fullmatch(r":?-{3,}:?", cell) is None for cell in separator):
+        return None
+    statuses: dict[str, str] = {}
+    seen: set[str] = set()
+    for line in lines[headers[0] + 2 :]:
+        if not line.strip():
+            break
+        if not line.lstrip().startswith("|"):
+            return None
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 4 or not cells[0].isdigit():
+            return None
+        finding_id = cells[1]
+        if _FINDING_ID_RE.fullmatch(finding_id) is None or finding_id in {".", ".."} or finding_id in seen:
+            return None
+        seen.add(finding_id)
+        status = next(
+            (
+                candidate
+                for candidate in _REPORT_STATUSES
+                if cells[2] == candidate or cells[2].startswith(f"{candidate} (")
+            ),
+            None,
+        )
+        if status is None:
+            return None
+        if status in _IMPACT_FINDING_STATUSES:
+            statuses[finding_id] = status
+    return statuses
+
+
+def _fragment_finding_statuses(content: str, start: int, end: int) -> dict[str, str] | None:
+    statuses: dict[str, str] = {}
+    section = content[start:end]
+    status_fields = len(re.findall(r"\bStatus\s*:", section))
+    bullets = list(re.finditer(r"(?m)^[ ]{0,3}[-+*][ \t]+", section))
+    for index, bullet in enumerate(bullets):
+        stop = bullets[index + 1].start() if index + 1 < len(bullets) else len(section)
+        block = section[bullet.end() : stop].strip()
+        if not block.startswith("**"):
+            if re.search(r"\bStatus\s*:", block):
+                return None
+            continue
+        title_end = block.find("**", 2)
+        if title_end < 0:
+            return None
+        title = block[2:title_end].strip()
+        finding_match = re.match(
+            r"^`?(?P<id>[A-Za-z0-9._-]+)`?(?=[\s—:])",
+            title,
+        )
+        remainder = block[title_end + 2 :]
+        status_match = re.match(
+            r"\s*(?:—|-|:)?\s*Status\s*:\s*`?(REPRODUCED|MASKED|ENV_LIMITED)`?(?=[.\s]|$)",
+            remainder,
+            flags=re.DOTALL,
+        )
+        if status_match is None or finding_match is None:
+            return None
+        if re.search(r"\bStatus\s*:", remainder[status_match.end() :]):
+            return None
+        finding_id = finding_match.group("id")
+        if finding_id in {".", ".."} or finding_id in statuses:
+            return None
+        statuses[finding_id] = status_match.group(1)
+    return statuses if status_fields == len(statuses) else None
 
 
 def _report_links(work_dir: Path | None) -> list[str]:
@@ -1387,6 +1604,12 @@ def _allowed_usage_path(phase: str, relative: str) -> bool:
 def _session_mapping(value: object) -> dict[str, SessionState]:
     data = _string_mapping(value) or {}
     return {key: SessionState.from_object(item) for key, item in data.items()}
+
+
+def _string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, str) and item.strip())
 
 
 def _optional_string(value: object) -> str | None:

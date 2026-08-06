@@ -50,6 +50,8 @@ from specula.resource_summary import (
     RESOURCE_ROOT_ENV,
     ResourceInvocationRecorder,
     findings_fragment_issue,
+    invalidate_summary,
+    publish_findings_summary,
 )
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 from specula.snapshotlib import (
@@ -589,6 +591,12 @@ class Phase:
     def prepare_fresh_outputs(self, ws: Workspace, name: str) -> None:
         """Remove phase-owned outputs that a fresh agent must replace."""
 
+    def invalidate_target_output(self, ws: Workspace, name: str) -> None:
+        """Remove user-facing output that is stale while a target is unfinished."""
+
+    def publish_target_output(self, ws: Workspace, name: str) -> None:
+        """Publish user-facing output after target results pass validation."""
+
     def summarize(self, ws: Workspace, names: list[str]) -> None:
         raise NotImplementedError
 
@@ -999,6 +1007,8 @@ class Phase:
         failures: list[tuple[str, int]] = []
         successful_names: set[str] = set(accepted_names)
         completed_names: set[str] = set(accepted_names)
+        started_names: set[str] = set()
+        published_names: set[str] = set()
         pending = [_LaunchRequest(target) for target in targets if self.target_name(target) not in accepted_names]
         rate_limited: list[_LaunchRequest] = []
         pause_for_rate_limit = False
@@ -1018,6 +1028,14 @@ class Phase:
                             break
                         request = pending.pop(ready_index)
                         name = self.target_name(request.target)
+                        if not dry_run:
+                            try:
+                                self.invalidate_target_output(ws, name)
+                            except (OSError, UnicodeError, ValueError) as exc:
+                                print(f"ERROR: cannot invalidate output for {name}: {exc}")
+                                failures.append((name, 1))
+                                continue
+                            started_names.add(name)
                         _resource_start_target(name, ws.work_dir(name))
                         prompt = self.build_prompt(ws, request.target)
                         self._launch(
@@ -1180,6 +1198,11 @@ class Phase:
             except BaseException:
                 self._terminate_agents(running)
                 if not dry_run:
+                    for name in sorted(started_names):
+                        try:
+                            self.invalidate_target_output(ws, name)
+                        except (OSError, UnicodeError, ValueError) as exc:
+                            print(f"ERROR: cannot invalidate output for {name}: {exc}")
                     _refresh_target_indexes(ws, names)
                 raise
 
@@ -1207,11 +1230,37 @@ class Phase:
         invalid_names.update(name for name, _ in handoff_failures)
         if not dry_run:
             for name in sorted(successful_names - invalid_names):
+                publish_required = name not in accepted_names
+                if not publish_required:
+                    try:
+                        summary_info = (ws.work_dir(name) / "summary.md").lstat()
+                    except OSError:
+                        publish_required = True
+                    else:
+                        publish_required = not stat.S_ISREG(summary_info.st_mode)
+                if publish_required:
+                    try:
+                        self.publish_target_output(ws, name)
+                    except (OSError, UnicodeError, ValueError) as exc:
+                        finalized.append((name, 1))
+                        invalid_names.add(name)
+                        print(f"ERROR: cannot publish output for {name}: {exc}")
+                        continue
                 try:
                     resumelib.mark_completed(("phase", self.key, name))
                 except resumelib.ResumeError as exc:
                     finalized.append((name, 1))
                     print(f"ERROR: {exc}")
+                    continue
+                if name in started_names:
+                    published_names.add(name)
+
+            for name in sorted(started_names - published_names):
+                try:
+                    self.invalidate_target_output(ws, name)
+                except (OSError, UnicodeError, ValueError) as exc:
+                    finalized.append((name, 1))
+                    print(f"ERROR: cannot invalidate output for {name}: {exc}")
 
         self.summarize(ws, names)
         if not dry_run:
@@ -2323,6 +2372,16 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
             except OSError as exc:
                 raise RuntimeError(f"cannot clear stale Phase 4b output {path}: {exc}") from exc
 
+    def invalidate_target_output(self, ws: Workspace, name: str) -> None:
+        invalidate_summary(ws.work_dir(name), ws.run_dir if ws.run_dir is not None else ws.cwd)
+
+    def publish_target_output(self, ws: Workspace, name: str) -> None:
+        publish_findings_summary(
+            name,
+            ws.work_dir(name),
+            ws.run_dir if ws.run_dir is not None else ws.cwd,
+        )
+
     def finalize_outputs(
         self,
         ws: Workspace,
@@ -2334,39 +2393,54 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
         if dry_run:
             return []
         failures: list[tuple[str, int]] = []
-        contracts = {
-            "bug-severity.md": ("## Summary", "## Per-entry classification"),
-            ".summary-findings.md": ("## Findings", "## Validation limits"),
-        }
         for name in names:
             issues: list[str] = []
-            contents: dict[str, str] = {}
-            for filename, headings in contracts.items():
-                path = ws.work_dir(name) / filename
-                try:
-                    info = path.lstat()
-                except OSError:
-                    issues.append(f"{filename} missing")
-                    continue
-                if not stat.S_ISREG(info.st_mode):
-                    issues.append(f"{filename} is not a regular file")
-                    continue
-                try:
-                    text = path.read_text()
-                except (OSError, UnicodeError):
-                    issues.append(f"{filename} unreadable")
-                    continue
-                if not text.strip():
-                    issues.append(f"{filename} empty")
-                    continue
-                contents[filename] = text
-                if any(heading not in text for heading in headings):
-                    issues.append(f"{filename} has an invalid structure")
-            summary = contents.get(".summary-findings.md")
-            if summary is not None:
-                issue = findings_fragment_issue(summary)
-                if issue is not None:
-                    issues.append(f".summary-findings.md {issue}")
+            report = ws.work_dir(name) / "bug-severity.md"
+            try:
+                report_info = report.lstat()
+            except OSError:
+                issues.append("bug-severity.md missing")
+            else:
+                if not stat.S_ISREG(report_info.st_mode):
+                    issues.append("bug-severity.md is not a regular file")
+                else:
+                    try:
+                        report_text = report.read_text()
+                    except (OSError, UnicodeError):
+                        issues.append("bug-severity.md unreadable")
+                    else:
+                        if not report_text.strip():
+                            issues.append("bug-severity.md empty")
+                        elif any(
+                            heading not in report_text for heading in ("## Summary", "## Per-entry classification")
+                        ):
+                            issues.append("bug-severity.md has an invalid structure")
+
+            fragment_issue: str | None = None
+            fragment = ws.work_dir(name) / ".summary-findings.md"
+            try:
+                fragment_info = fragment.lstat()
+            except OSError:
+                fragment_issue = "missing"
+            else:
+                if not stat.S_ISREG(fragment_info.st_mode):
+                    fragment_issue = "is not a regular file"
+                else:
+                    try:
+                        fragment_text = fragment.read_text()
+                        confirmed_text = (ws.work_dir(name) / "confirmed-bugs.md").read_text()
+                    except (OSError, UnicodeError):
+                        fragment_issue = "or confirmed-bugs.md is unreadable"
+                    else:
+                        if not fragment_text.strip():
+                            fragment_issue = "empty"
+                        else:
+                            fragment_issue = findings_fragment_issue(fragment_text, confirmed_text)
+            if fragment_issue is not None:
+                print(
+                    f"  WARNING: {name}: .summary-findings.md {fragment_issue}; "
+                    "summary.md will omit the findings fragment"
+                )
             if issues:
                 print(f"  {name}: Phase 4b output invalid ({'; '.join(issues)})")
                 failures.append((name, 1))
