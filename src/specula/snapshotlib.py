@@ -31,7 +31,7 @@ _PATHSPEC = (
     ":(exclude,glob)**/.git",
     ":(exclude,glob)**/.git/**",
 )
-_RAW_ATTRIBUTES = "* !diff -filter -ident -text !eol !working-tree-encoding\ntraces/**/*.ndjson -diff\n"
+_RAW_ATTRIBUTES = "* -filter -ident -text !eol !working-tree-encoding\ntraces/**/*.ndjson -diff\n"
 
 # Repository-local variables reported by ``git rev-parse --local-env-vars``,
 # plus the discovery/config selectors that can make a child Git process ignore

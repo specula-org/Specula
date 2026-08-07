@@ -167,6 +167,25 @@ class SnapshotTests(unittest.TestCase):
         self.assertFalse((original / "traces").exists())
         self.assertEqual((snapshot / "traces" / "run.ndjson").read_text(), '{"state": "expensive"}\n')
 
+    def test_review_diff_preserves_project_binary_attributes(self) -> None:
+        original = self._repo()
+        (original / ".gitattributes").write_text("*.dat binary\n")
+        (original / "printable.dat").write_text("printable bytes before\n")
+        _git(original, "add", ".gitattributes", "printable.dat")
+        _git(original, "commit", "--quiet", "-m", "mark dat files binary")
+        run = self.root / "run"
+        run.mkdir()
+
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+        (source / "printable.dat").write_text("printable bytes after\n")
+
+        sl.capture_changes(run)
+        content = (run / "demo" / "changes.patch").read_bytes()
+
+        self.assertIn(b"Binary files a/printable.dat and b/printable.dat differ", content)
+        self.assertNotIn(b"printable bytes before", content)
+        self.assertNotIn(b"printable bytes after", content)
+
     def test_review_diff_keeps_paths_visible_at_either_endpoint(self) -> None:
         original = self._repo()
         (original / "later-ignored.txt").write_text("initial visible bytes\n")
