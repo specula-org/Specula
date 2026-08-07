@@ -132,6 +132,10 @@ The reference algorithm is the Tendermint paper (arXiv:1807.04938). Run /code-an
 Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) in `.specula-output` that the next skill will consume. 
 When one skill completes, invoke the next. You can also run any skill independently, e.g., `validation-workflow` on an existing spec.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release history and notable changes.
+
 ## Citation
 
 If you use Specula in your research, please cite our paper:
