@@ -183,7 +183,10 @@ def render_target_index(name: str, work_dir: Path, *, pipeline_log: Path | None 
         "",
         "## Final Reports",
         "",
-        (f"- {_document('Resource summary', work_dir / 'summary.md', work_dir)} — Runtime, token, and cost usage"),
+        (
+            f"- {_document('Summary', work_dir / 'summary.md', work_dir)} "
+            "— Results, validation limits, run details, and resource usage"
+        ),
         (
             f"- {_document('Confirmation report', work_dir / 'confirmed-bugs.md', work_dir)} "
             "— Confirmation results and supporting evidence"

@@ -214,7 +214,7 @@ runs/<run-id>/
 └── <name>/
     ├── .specula-output/
     │   ├── index.md
-    │   ├── summary.md       # Per-target resource usage
+    │   ├── summary.md       # Per-target results and resource usage
     │   └── ...             # Existing phase outputs stay in place
     ├── source/          # --keep-original only
     └── changes.patch   # --keep-original only
@@ -222,7 +222,7 @@ runs/<run-id>/
 
 The run-level `index.md` is a compact target chooser with direct links to each target's confirmation and severity reports. Each target link opens its `.specula-output/index.md`, which presents `summary.md` first, followed by the confirmation and severity reports, Supporting Analysis, Confirmation Details, Technical Details, and Troubleshooting. It intentionally omits review artifacts, machine-readable records, state sidecars, caches, and detailed phase logs; those files remain in their existing locations. No existing phase output is moved. `pipeline-summary.md` remains the final run status, and `runs/latest` points to the newest run; no run-level `summary.md` is generated.
 
-Each target's `summary.md` shows per-phase runtime, total and cached tokens, adapter-reported estimated cost, and configured parallelism and TLC limits. Missing values are shown as `-`; partial totals are marked `Total (incomplete)`.
+Each target's `summary.md` is the primary results report. It presents the run status, confirmed bugs, masked findings, findings that could not be reproduced in the current environment, explicit validation limits, run details, links to the confirmation and severity reports, and resource usage. Run details distinguish the source commit recorded when the run was created from the commit used by the current attempt. Finding descriptions are written during classification from the final confirmation evidence; runtime, token, cost, and configuration fields are filled deterministically. Missing resource values are shown as `-`, and partial resource totals are marked `Total (incomplete)`.
 
 By default, Specula works directly in the source passed through `--artifact`, so harness or reproduction work may modify it. Use `--keep-original` to run every phase on a private copy instead. The original checkout stays unchanged, and the final filesystem changes are written to `changes.patch`.
 
@@ -284,7 +284,7 @@ Most users should run `specula run`, which executes every step in order. The com
 | `harness` | Instruments the implementation and runs test scenarios to collect execution traces | Source and generated specifications | `harness/` and `traces/*.ndjson` |
 | `validate` | Checks real traces against the specification, runs TLC, and investigates counterexamples | Source, specifications, harness, and traces | `spec/bug-report.md`, `spec/findings.json`, TLC output, and `spec/changelog.md` |
 | `confirm` | Audits and reproduces each candidate bug against the real implementation | Source, modeling brief, and bug report | `confirmed-bugs.md`, reproduction tests, and any repair requests |
-| `classify` | Assigns severity to reproduced bugs and finding-tier entries; records other dispositions without severity | `confirmed-bugs.md` | `bug-severity.md` |
+| `classify` | Assigns severity and prepares the concise findings text used by the target summary | `confirmed-bugs.md` | `bug-severity.md` and the summary findings section |
 
 For example, run only the code analysis with Codex:
 

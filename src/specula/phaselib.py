@@ -22,6 +22,7 @@ import os
 import re
 import secrets
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -48,6 +49,9 @@ from specula.resource_summary import (
     RESOURCE_PHASE_ENV,
     RESOURCE_ROOT_ENV,
     ResourceInvocationRecorder,
+    findings_fragment_issue,
+    invalidate_summary,
+    publish_findings_summary,
 )
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 from specula.snapshotlib import (
@@ -584,6 +588,15 @@ class Phase:
     def build_prompt(self, ws: Workspace, target: str) -> str:
         raise NotImplementedError
 
+    def prepare_fresh_outputs(self, ws: Workspace, name: str) -> None:
+        """Remove phase-owned outputs that a fresh agent must replace."""
+
+    def invalidate_target_output(self, ws: Workspace, name: str) -> None:
+        """Remove user-facing output that is stale while a target is unfinished."""
+
+    def publish_target_output(self, ws: Workspace, name: str) -> None:
+        """Publish user-facing output after target results pass validation."""
+
     def summarize(self, ws: Workspace, names: list[str]) -> None:
         raise NotImplementedError
 
@@ -994,6 +1007,8 @@ class Phase:
         failures: list[tuple[str, int]] = []
         successful_names: set[str] = set(accepted_names)
         completed_names: set[str] = set(accepted_names)
+        started_names: set[str] = set()
+        published_names: set[str] = set()
         pending = [_LaunchRequest(target) for target in targets if self.target_name(target) not in accepted_names]
         rate_limited: list[_LaunchRequest] = []
         pause_for_rate_limit = False
@@ -1013,6 +1028,14 @@ class Phase:
                             break
                         request = pending.pop(ready_index)
                         name = self.target_name(request.target)
+                        if not dry_run:
+                            try:
+                                self.invalidate_target_output(ws, name)
+                            except (OSError, UnicodeError, ValueError) as exc:
+                                print(f"ERROR: cannot invalidate output for {name}: {exc}")
+                                failures.append((name, 1))
+                                continue
+                            started_names.add(name)
                         _resource_start_target(name, ws.work_dir(name))
                         prompt = self.build_prompt(ws, request.target)
                         self._launch(
@@ -1175,6 +1198,11 @@ class Phase:
             except BaseException:
                 self._terminate_agents(running)
                 if not dry_run:
+                    for name in sorted(started_names):
+                        try:
+                            self.invalidate_target_output(ws, name)
+                        except (OSError, UnicodeError, ValueError) as exc:
+                            print(f"ERROR: cannot invalidate output for {name}: {exc}")
                     _refresh_target_indexes(ws, names)
                 raise
 
@@ -1202,11 +1230,37 @@ class Phase:
         invalid_names.update(name for name, _ in handoff_failures)
         if not dry_run:
             for name in sorted(successful_names - invalid_names):
+                publish_required = name not in accepted_names
+                if not publish_required:
+                    try:
+                        summary_info = (ws.work_dir(name) / "summary.md").lstat()
+                    except OSError:
+                        publish_required = True
+                    else:
+                        publish_required = not stat.S_ISREG(summary_info.st_mode)
+                if publish_required:
+                    try:
+                        self.publish_target_output(ws, name)
+                    except (OSError, UnicodeError, ValueError) as exc:
+                        finalized.append((name, 1))
+                        invalid_names.add(name)
+                        print(f"ERROR: cannot publish output for {name}: {exc}")
+                        continue
                 try:
                     resumelib.mark_completed(("phase", self.key, name))
                 except resumelib.ResumeError as exc:
                     finalized.append((name, 1))
                     print(f"ERROR: {exc}")
+                    continue
+                if name in started_names:
+                    published_names.add(name)
+
+            for name in sorted(started_names - published_names):
+                try:
+                    self.invalidate_target_output(ws, name)
+                except (OSError, UnicodeError, ValueError) as exc:
+                    finalized.append((name, 1))
+                    print(f"ERROR: cannot invalidate output for {name}: {exc}")
 
         self.summarize(ws, names)
         if not dry_run:
@@ -1418,6 +1472,8 @@ class Phase:
             if invocation_attempt == 1:
                 _clear_attempt_archives(attempt_files)
                 _clear_resume_state(resume_state)
+                if not claim.manual:
+                    self.prepare_fresh_outputs(ws, name)
             else:
                 archived_attempts = _archive_attempt(attempt_files, invocation_attempt - 1)
         resumable = resume_state.is_file()
@@ -2223,12 +2279,11 @@ class BugClassificationPhase(Phase):
     key = "bug_classification"
     title = "Specula — Bug Classification Batch Runner"
     usage = r"""
-Batch launcher: spawn one agent per target system for Phase 4b severity
-classification. Each agent reads the confirmed-bugs.md produced by Phase 4a
-(bug-confirmation) and writes a separate bug-severity.md table. REPRODUCED bugs
-and ENV_LIMITED/MASKED findings receive Critical / High / Medium / Low; other
-dispositions receive no severity. No new analysis, no repro work, no
-modification to confirmed-bugs.md.
+Batch launcher: spawn one agent per target system for Phase 4b final reporting.
+Each agent reads the confirmed-bugs.md produced by Phase 4a (bug-confirmation),
+writes bug-severity.md, then writes .summary-findings.md for the user-facing
+summary. No new analysis, no repro work, and no modification to
+confirmed-bugs.md.
 
 Usage:
   specula classify [options] "name" [...]
@@ -2287,9 +2342,9 @@ Prerequisites:
         # NOTE: bash bug_classification generate_prompt does NOT inject .prompt-extra.
         name = self.target_name(target)
         wd = ws.work_dir(name)
-        return f"""# Bug Classification Task: {name}
+        return f"""# Final Bug Reporting Task: {name}
 
-You are classifying the Phase 4 entries for **{name}**.
+You are completing the Phase 4 final reports for **{name}**.
 
 ## Input
 
@@ -2298,13 +2353,98 @@ You are classifying the Phase 4 entries for **{name}**.
 ## Output
 
 - **Severity classification**: {wd}/bug-severity.md (you create this file)
+- **Findings summary fragment**: {wd}/.summary-findings.md (you create this file)
 
 ## Methodology
 
-Use the installed Specula skill {prompt_skill_ids("bug-classification")}. Read it in full and follow it exactly — it is the single source of methodology. Assign a four-tier Severity only to `REPRODUCED`, `ENV_LIMITED`, and `MASKED`; use `—` for `FALSE POSITIVE`, `NEEDS MORE INFO`, `DROPPED`, `PENDING REPAIR`, `DEFERRED`, and `INCOMPLETE`. Keep reproduced bugs, finding-tier entries, and no-severity dispositions separate in the mandatory Summary. Do not modify confirmed-bugs.md or any Status field.
+Use the installed Specula skill {prompt_skill_ids("bug-classification")}. Read it in full and follow it exactly — it is the single source of methodology. For bug-severity.md, assign a four-tier Severity only to `REPRODUCED`, `ENV_LIMITED`, and `MASKED`; use `—` for `FALSE POSITIVE`, `NEEDS MORE INFO`, `DROPPED`, `PENDING REPAIR`, `DEFERRED`, and `INCOMPLETE`. Keep reproduced bugs, finding-tier entries, and no-severity dispositions separate in the mandatory Summary. Complete and validate bug-severity.md before starting .summary-findings.md. The findings summary must not contain severity classifications, internal reproduction levels, URLs, or Markdown links. Do not modify confirmed-bugs.md or any Status field.
 
 Do everything the skill specifies. Do not add, relax, or override any step here.
 """
+
+    def prepare_fresh_outputs(self, ws: Workspace, name: str) -> None:
+        for filename in ("bug-severity.md", ".summary-findings.md"):
+            path = ws.work_dir(name) / filename
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise RuntimeError(f"cannot clear stale Phase 4b output {path}: {exc}") from exc
+
+    def invalidate_target_output(self, ws: Workspace, name: str) -> None:
+        invalidate_summary(ws.work_dir(name), ws.run_dir if ws.run_dir is not None else ws.cwd)
+
+    def publish_target_output(self, ws: Workspace, name: str) -> None:
+        publish_findings_summary(
+            name,
+            ws.work_dir(name),
+            ws.run_dir if ws.run_dir is not None else ws.cwd,
+        )
+
+    def finalize_outputs(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        if dry_run:
+            return []
+        failures: list[tuple[str, int]] = []
+        for name in names:
+            issues: list[str] = []
+            report = ws.work_dir(name) / "bug-severity.md"
+            try:
+                report_info = report.lstat()
+            except OSError:
+                issues.append("bug-severity.md missing")
+            else:
+                if not stat.S_ISREG(report_info.st_mode):
+                    issues.append("bug-severity.md is not a regular file")
+                else:
+                    try:
+                        report_text = report.read_text()
+                    except (OSError, UnicodeError):
+                        issues.append("bug-severity.md unreadable")
+                    else:
+                        if not report_text.strip():
+                            issues.append("bug-severity.md empty")
+                        elif any(
+                            heading not in report_text for heading in ("## Summary", "## Per-entry classification")
+                        ):
+                            issues.append("bug-severity.md has an invalid structure")
+
+            fragment_issue: str | None = None
+            fragment = ws.work_dir(name) / ".summary-findings.md"
+            try:
+                fragment_info = fragment.lstat()
+            except OSError:
+                fragment_issue = "missing"
+            else:
+                if not stat.S_ISREG(fragment_info.st_mode):
+                    fragment_issue = "is not a regular file"
+                else:
+                    try:
+                        fragment_text = fragment.read_text()
+                        confirmed_text = (ws.work_dir(name) / "confirmed-bugs.md").read_text()
+                    except (OSError, UnicodeError):
+                        fragment_issue = "or confirmed-bugs.md is unreadable"
+                    else:
+                        if not fragment_text.strip():
+                            fragment_issue = "empty"
+                        else:
+                            fragment_issue = findings_fragment_issue(fragment_text, confirmed_text)
+            if fragment_issue is not None:
+                print(
+                    f"  WARNING: {name}: .summary-findings.md {fragment_issue}; "
+                    "summary.md will omit the findings fragment"
+                )
+            if issues:
+                print(f"  {name}: Phase 4b output invalid ({'; '.join(issues)})")
+                failures.append((name, 1))
+        return failures
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
         print()
@@ -2312,8 +2452,23 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
         print(" Results")
         print("========================================")
         for name in names:
-            report = ws.work_dir(name) / "bug-severity.md"
-            if report.is_file() and report.stat().st_size > 0:
+            wd = ws.work_dir(name)
+            report = wd / "bug-severity.md"
+            summary = wd / ".summary-findings.md"
+            try:
+                report_info = report.lstat()
+            except OSError:
+                report_info = None
+            try:
+                summary_info = summary.lstat()
+            except OSError:
+                summary_info = None
+            summary_state = (
+                "yes"
+                if summary_info is not None and stat.S_ISREG(summary_info.st_mode) and summary_info.st_size > 0
+                else "missing"
+            )
+            if report_info is not None and stat.S_ISREG(report_info.st_mode) and report_info.st_size > 0:
                 text = report.read_text(errors="replace")  # bash grep is byte-safe
                 total = _grep_num(text, "- Total entries:")
                 bugs = _grep_num(text, "- Reproduced bugs:")
@@ -2325,9 +2480,10 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
                 dispositions = _grep_num(text, "- No-severity dispositions:")
                 print(
                     f"  {name}: entries={total}  bugs={bugs} findings={findings}  "
-                    f"C={critical} H={high} M={medium} L={low}  dispositions={dispositions}"
+                    f"C={critical} H={high} M={medium} L={low}  dispositions={dispositions}  "
+                    f"summary={summary_state}"
                 )
-            elif report.is_file():
+            elif report_info is not None and stat.S_ISREG(report_info.st_mode):
                 print(f"  {name}: bug-severity.md empty (check log)")
             else:
                 print(f"  {name}: (no report — check log)")

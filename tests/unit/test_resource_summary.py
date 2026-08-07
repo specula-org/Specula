@@ -11,12 +11,15 @@ from typing import cast
 from unittest import mock
 
 from specula.resource_summary import (
+    FINDINGS_SUMMARY_FILENAME,
     INVOCATION_DIRNAME,
     PHASES,
     STATE_FILENAME,
     SUMMARY_FILENAME,
     ResourceInvocationRecorder,
     ResourceSummaryTracker,
+    RunDetails,
+    invalidate_summary,
 )
 
 
@@ -58,6 +61,16 @@ def _claude(*, session: str, tokens: tuple[int, int, int, int], cost: float) -> 
     }
 
 
+def _confirmed_report(*entries: tuple[str, str]) -> str:
+    lines = [
+        "| Entry | Finding | Status | Counts as final bug? |",
+        "|---|---|---|---|",
+    ]
+    for index, (finding_id, status) in enumerate(entries, 1):
+        lines.append(f"| {index} | {finding_id} | {status} | {'yes' if status == 'REPRODUCED' else 'no'} |")
+    return "\n".join([*lines, ""]) + "\n"
+
+
 class ResourceSummaryCase(unittest.TestCase):
     def setUp(self) -> None:
         self._temporary = tempfile.TemporaryDirectory()
@@ -68,13 +81,23 @@ class ResourceSummaryCase(unittest.TestCase):
     def target_dir(self, name: str) -> Path:
         return self.root / name / ".specula-output"
 
-    def tracker(self, targets: dict[str, Path] | None = None) -> ResourceSummaryTracker:
+    def tracker(
+        self,
+        targets: dict[str, Path] | None = None,
+        *,
+        run_details: RunDetails | dict[str, RunDetails] | None = None,
+        validation_limits: tuple[str, ...] = (),
+        findings_summary_enabled: bool = True,
+    ) -> ResourceSummaryTracker:
         return ResourceSummaryTracker(
             targets or {"demo": self.work_dir},
             output_root=self.root,
             maximum_parallelism="1",
             tlc_memory_limit="8G",
             tlc_worker_limit="4",
+            run_details=run_details,
+            validation_limits=validation_limits,
+            findings_summary_enabled=findings_summary_enabled,
         )
 
     def recorder(self, phase: str, invocation_id: str) -> ResourceInvocationRecorder:
@@ -911,6 +934,16 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
 
         text = self.summary(self.work_dir)
         self.assertIn("# Specula Summary", text)
+        self.assertIn("## Result\n\n- Run status: **Incomplete**", text)
+        self.assertIn("## Findings\n\nThe findings summary is unavailable", text)
+        self.assertIn("## Validation limits", text)
+        self.assertIn("| Target | demo |", text)
+        self.assertIn("| Original source commit | - |", text)
+        self.assertIn("| Current attempt source commit | - |", text)
+        self.assertIn("| Agent / model | - / - |", text)
+        self.assertIn("| Reasoning effort | - |", text)
+        self.assertIn("- Confirmation report: -", text)
+        self.assertIn("- Severity report: -", text)
         self.assertIn("| Phase | Runtime | Tokens | Estimated cost |", text)
         for label in ("Phase 1", "Phase 2", "Phase 2.5", "Phase 3", "Phase 4a", "Phase 4b"):
             self.assertIn(f"| {label} | - | - | - |", text)
@@ -918,8 +951,429 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
         self.assertIn("- Configured maximum parallelism: 1", text)
         self.assertIn("- Configured TLC limits: 8G memory; 4 workers", text)
 
+    def test_complete_summary_preserves_final_findings_and_orders_sections(self) -> None:
+        fragment = (
+            "The run reproduced one issue and found one mitigated issue.\n\n"
+            "## Findings\n\n"
+            "- **F-1 — Delayed update** — Status: `REPRODUCED`. "
+            "Impact: A delayed update can replace current state.\n\n"
+            "## Validation limits\n\n"
+            "- The reproduction used a public API with controlled timing.\n"
+        )
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / FINDINGS_SUMMARY_FILENAME).write_text(fragment)
+        (self.work_dir / "confirmed-bugs.md").write_text(_confirmed_report(("F-1", "REPRODUCED")))
+        (self.work_dir / "bug-severity.md").write_text("severity\n")
+        tracker = self.tracker(
+            run_details=RunDetails(
+                original_source_commit="abc123",
+                attempt_source_commit="def456",
+                agent="codex",
+                model="gpt-5.6-sol",
+                reasoning_effort="high",
+            ),
+            validation_limits=("The validation review was skipped.",),
+        )
+        tracker.initialize(resume=False)
+        tracker.complete_run()
+
+        text = self.summary(self.work_dir)
+        self.assertIn("- Run status: **Complete**", text)
+        self.assertIn(fragment, text)
+        self.assertIn("\n## Run coverage\n\n- The validation review was skipped.", text)
+        self.assertNotIn("\n### Run coverage\n", text)
+        self.assertIn("| Target | demo |", text)
+        self.assertIn("| Original source commit | abc123 |", text)
+        self.assertIn("| Current attempt source commit | def456 |", text)
+        self.assertIn("| Agent / model | codex / gpt-5.6-sol |", text)
+        self.assertIn("| Reasoning effort | high |", text)
+        self.assertIn("- [Confirmation report](confirmed-bugs.md)", text)
+        self.assertIn("- [Severity report](bug-severity.md)", text)
+        headings = [
+            "## Result",
+            "## Findings",
+            "## Validation limits",
+            "## Run coverage",
+            "## Run details",
+            "## Detailed reports",
+            "## Resource usage",
+        ]
+        positions = [text.index(heading) for heading in headings]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_incomplete_run_never_displays_existing_findings_fragment(self) -> None:
+        marker = "STALE FINDING MUST NOT BE SHOWN"
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / FINDINGS_SUMMARY_FILENAME).write_text(f"## Findings\n\n{marker}\n")
+        tracker = self.tracker()
+
+        tracker.initialize(resume=False)
+
+        text = self.summary(self.work_dir)
+        self.assertNotIn(marker, text)
+        self.assertIn("The findings summary is unavailable", text)
+
+    def test_fresh_context_hides_findings_from_a_previously_complete_run(self) -> None:
+        marker = "FINDING FROM THE PREVIOUS COMPLETED RUN"
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / FINDINGS_SUMMARY_FILENAME).write_text(
+            f"Previous result.\n\n## Findings\n\n{marker}\n\n## Validation limits\n\nNone.\n"
+        )
+        (self.work_dir / "confirmed-bugs.md").write_text(_confirmed_report())
+        first = self.tracker()
+        first.initialize(resume=False)
+        first.complete_run()
+        self.assertIn(marker, self.summary(self.work_dir))
+
+        restarted = self.tracker()
+        restarted.initialize(resume=True, restart_names=("demo",))
+
+        text = self.summary(self.work_dir)
+        self.assertIn("- Run status: **Incomplete**", text)
+        self.assertNotIn(marker, text)
+        self.assertIn("The findings summary is unavailable", text)
+
+    def test_fresh_context_only_restarts_selected_target(self) -> None:
+        targets = {
+            "alpha": self.target_dir("alpha"),
+            "beta": self.target_dir("beta"),
+        }
+        for name, work_dir in targets.items():
+            work_dir.mkdir(parents=True)
+            (work_dir / FINDINGS_SUMMARY_FILENAME).write_text(
+                f"{name} result.\n\n## Findings\n\n{name.upper()} FINDING\n\n## Validation limits\n\nNone.\n"
+            )
+            (work_dir / "confirmed-bugs.md").write_text(_confirmed_report())
+        first = self.tracker(targets)
+        first.initialize(resume=False)
+        first.complete_run()
+
+        beta_before = (targets["beta"] / SUMMARY_FILENAME).read_bytes()
+        restarted = self.tracker({"alpha": targets["alpha"]})
+        restarted.initialize(resume=True, restart_names=("alpha",))
+        restarted.refresh()
+
+        alpha = self.summary(targets["alpha"])
+        beta = self.summary(targets["beta"])
+        self.assertIn("- Run status: **Incomplete**", alpha)
+        self.assertNotIn("ALPHA FINDING", alpha)
+        self.assertIn("- Run status: **Complete**", beta)
+        self.assertIn("BETA FINDING", beta)
+        self.assertEqual((targets["beta"] / SUMMARY_FILENAME).read_bytes(), beta_before)
+
+    def test_completing_selected_target_does_not_promote_incomplete_sibling(self) -> None:
+        targets = {
+            "alpha": self.target_dir("alpha"),
+            "beta": self.target_dir("beta"),
+        }
+        first = self.tracker(targets)
+        first.initialize(resume=False)
+        first.complete_run(("alpha",))
+        self.assertIn("- Run status: **Incomplete**", self.summary(targets["beta"]))
+
+        beta_before = (targets["beta"] / SUMMARY_FILENAME).read_bytes()
+        resumed = self.tracker({"alpha": targets["alpha"]})
+        resumed.initialize(resume=True, restart_names=("alpha",))
+        resumed.complete_run(("alpha",))
+        resumed.refresh()
+
+        self.assertIn("- Run status: **Complete**", self.summary(targets["alpha"]))
+        self.assertIn("- Run status: **Incomplete**", self.summary(targets["beta"]))
+        self.assertEqual((targets["beta"] / SUMMARY_FILENAME).read_bytes(), beta_before)
+
+    def test_disabled_findings_summary_stays_hidden_after_success(self) -> None:
+        marker = "STALE FINDING FROM AN EARLIER RUN"
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / FINDINGS_SUMMARY_FILENAME).write_text(f"## Findings\n\n{marker}\n")
+        tracker = self.tracker(findings_summary_enabled=False)
+        tracker.initialize(resume=False)
+
+        tracker.complete_run()
+
+        text = self.summary(self.work_dir)
+        self.assertIn("- Run status: **Complete**", text)
+        self.assertNotIn(marker, text)
+        self.assertIn("The findings summary is unavailable", text)
+
+    def test_whitespace_only_findings_fragment_is_unavailable(self) -> None:
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / FINDINGS_SUMMARY_FILENAME).write_text(" \n\t\n")
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+
+        tracker.complete_run()
+
+        self.assertIn("The findings summary is unavailable", self.summary(self.work_dir))
+
+    def test_fragment_display_contract_is_enforced_before_rendering(self) -> None:
+        invalid_bodies = (
+            "- [Detailed evidence](confirmed-bugs.md)",
+            "- [Detailed evidence][report]\n\n[report]: confirmed-bugs.md",
+            '- <a href="confirmed-bugs.md">Detailed evidence</a>',
+            "- <confirmed-bugs.md>",
+            "- Evidence: https://example.invalid/report",
+        )
+        self.work_dir.mkdir(parents=True)
+        for body in invalid_bodies:
+            with self.subTest(body=body):
+                (self.work_dir / FINDINGS_SUMMARY_FILENAME).write_text(
+                    f"One issue was reproduced.\n\n## Findings\n\n{body}\n\n## Validation limits\n\nNone recorded.\n"
+                )
+                tracker = self.tracker()
+                tracker.initialize(resume=False)
+                tracker.complete_run()
+
+                text = self.summary(self.work_dir)
+                self.assertNotIn(body, text)
+                self.assertIn("The findings summary is unavailable", text)
+
+    def test_fragment_wording_does_not_hide_an_otherwise_valid_summary(self) -> None:
+        body = "- The severity field stayed unchanged while the Level 3 cache recovered."
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / FINDINGS_SUMMARY_FILENAME).write_text(
+            f"One issue was reproduced.\n\n## Findings\n\n{body}\n\n## Validation limits\n\nNone recorded.\n"
+        )
+        (self.work_dir / "confirmed-bugs.md").write_text(_confirmed_report())
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        tracker.complete_run()
+
+        text = self.summary(self.work_dir)
+        self.assertIn(body, text)
+        self.assertNotIn("The findings summary is unavailable", text)
+
+    def test_fragment_checks_only_stable_ids_and_canonical_statuses(self) -> None:
+        fragment = (
+            "The natural-language count is intentionally not checked; the severity field and Level 3 cache are domain terms.\n\n"
+            "## Findings\n\n"
+            "- **CR-2 [title punctuation changed]** — Status: `MASKED`. Any impact wording.\n"
+            "- **MC-1: another title** — Status: `REPRODUCED`. Evidence wording may vary.\n\n"
+            "## Validation limits\n\nAnything supported by the report.\n"
+        )
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / FINDINGS_SUMMARY_FILENAME).write_text(fragment)
+        (self.work_dir / "confirmed-bugs.md").write_text(_confirmed_report(("MC-1", "REPRODUCED"), ("CR-2", "MASKED")))
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        tracker.complete_run()
+
+        self.assertIn(fragment, self.summary(self.work_dir))
+
+    def test_fragment_identity_or_status_conflicts_are_hidden(self) -> None:
+        cases = {
+            "missing": (
+                _confirmed_report(("MC-1", "REPRODUCED")),
+                "- Other dispositions: 0.",
+            ),
+            "extra": (
+                _confirmed_report(),
+                "- **MC-1 — extra** — Status: `REPRODUCED`.",
+            ),
+            "duplicate": (
+                _confirmed_report(("MC-1", "REPRODUCED")),
+                "- **MC-1 — one** — Status: `REPRODUCED`.\n- **MC-1 — two** — Status: `REPRODUCED`.",
+            ),
+            "status": (
+                _confirmed_report(("MC-1", "REPRODUCED")),
+                "- **MC-1 — wrong** — Status: `MASKED`.",
+            ),
+            "report": ("not a generated confirmation report\n", "- Other dispositions: 0."),
+            "fabricated-without-status": (
+                _confirmed_report(("MC-1", "REPRODUCED")),
+                "- **MC-1 — real** — Status: `REPRODUCED`.\n- **CR-99 — fabricated** — Impact: fabricated.",
+            ),
+            "status-in-title": (
+                _confirmed_report(("MC-1", "REPRODUCED")),
+                "- **MC-1 Status: REPRODUCED — title** — Status: `MASKED`.",
+            ),
+            "status-after-evidence": (
+                _confirmed_report(("MC-1", "REPRODUCED")),
+                "- **MC-1 — title** — status: MASKED. **Evidence** Status: REPRODUCED.",
+            ),
+            "missing-title-close": (
+                _confirmed_report(("MC-1", "REPRODUCED")),
+                "- **MC-1 — title\n  **Evidence** Status: REPRODUCED.",
+            ),
+            "plain-extra": (
+                _confirmed_report(),
+                "- CR-99 — fabricated — Status: MASKED.",
+            ),
+            "star-extra": (
+                _confirmed_report(("MC-1", "REPRODUCED")),
+                "* **CR-99 — fabricated** — Status: `MASKED`.\n- **MC-1 — real** — Status: `REPRODUCED`.",
+            ),
+            "indented-extra": (
+                _confirmed_report(("MC-1", "REPRODUCED")),
+                "  + **CR-99 — fabricated** — Status: `MASKED`.\n- **MC-1 — real** — Status: `REPRODUCED`.",
+            ),
+        }
+        self.work_dir.mkdir(parents=True)
+        for label, (confirmed, findings) in cases.items():
+            with self.subTest(label=label):
+                (self.work_dir / "confirmed-bugs.md").write_text(confirmed)
+                (self.work_dir / FINDINGS_SUMMARY_FILENAME).write_text(
+                    f"Conclusion.\n\n## Findings\n\n{findings}\n\n## Validation limits\n\nNone.\n"
+                )
+                tracker = self.tracker()
+                tracker.initialize(resume=False)
+                tracker.complete_run()
+
+                text = self.summary(self.work_dir)
+                self.assertIn("The findings summary is unavailable", text)
+                self.assertNotIn(findings, text)
+
+    def test_fragment_accepts_wrapped_structured_status(self) -> None:
+        fragment = (
+            "One issue was reproduced.\n\n"
+            "## Findings\n\n"
+            "- **MC-1 — wrapped title** —\n"
+            "  Status: `REPRODUCED`. Impact wording remains unchecked.\n\n"
+            "## Validation limits\n\nNone recorded.\n"
+        )
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / FINDINGS_SUMMARY_FILENAME).write_text(fragment)
+        (self.work_dir / "confirmed-bugs.md").write_text(_confirmed_report(("MC-1", "REPRODUCED")))
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        tracker.complete_run()
+
+        self.assertIn(fragment, self.summary(self.work_dir))
+
+    def test_fragment_with_empty_section_is_hidden(self) -> None:
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / "confirmed-bugs.md").write_text(_confirmed_report())
+        tracker = self.tracker()
+        for fragment in (
+            "Conclusion.\n\n## Findings\n\n## Validation limits\n\nNone.\n",
+            "Conclusion.\n\n## Findings\n\n- Other dispositions: 0.\n\n## Validation limits\n",
+        ):
+            with self.subTest(fragment=fragment):
+                (self.work_dir / FINDINGS_SUMMARY_FILENAME).write_text(fragment)
+                tracker.initialize(resume=False)
+                tracker.complete_run()
+                self.assertIn("The findings summary is unavailable", self.summary(self.work_dir))
+
+    def test_fresh_context_pins_original_and_current_attempt_commits(self) -> None:
+        first = self.tracker(
+            run_details=RunDetails(
+                original_source_commit="commit-a",
+                attempt_source_commit="commit-a",
+            )
+        )
+        first.initialize(resume=False)
+        first.complete_run()
+
+        fresh = self.tracker(
+            run_details=RunDetails(
+                original_source_commit="commit-a",
+                attempt_source_commit="commit-b",
+            )
+        )
+        fresh.initialize(resume=True, restart_names=("demo",))
+        fresh_text = self.summary(self.work_dir)
+        self.assertIn("| Original source commit | commit-a |", fresh_text)
+        self.assertIn("| Current attempt source commit | commit-b |", fresh_text)
+
+        resumed = self.tracker(
+            run_details=RunDetails(
+                original_source_commit="commit-a",
+                attempt_source_commit="commit-c",
+            )
+        )
+        resumed.initialize(resume=True)
+        resumed_text = self.summary(self.work_dir)
+        self.assertIn("| Original source commit | commit-a |", resumed_text)
+        self.assertIn("| Current attempt source commit | commit-b |", resumed_text)
+
+    def test_fresh_context_does_not_invent_an_unknown_original_commit(self) -> None:
+        legacy = self.tracker()
+        legacy.initialize(resume=False)
+        legacy.complete_run()
+
+        fresh = self.tracker(run_details=RunDetails(attempt_source_commit="current-head"))
+        fresh.initialize(resume=True, restart_names=("demo",))
+
+        text = self.summary(self.work_dir)
+        self.assertIn("| Original source commit | - |", text)
+        self.assertIn("| Current attempt source commit | current-head |", text)
+
+    def test_historical_output_without_state_does_not_invent_original_commit(self) -> None:
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / "agent.usage.json").write_text("{}\n")
+        resumed = self.tracker(run_details=RunDetails(attempt_source_commit="current-head"))
+
+        resumed.initialize(resume=True)
+
+        text = self.summary(self.work_dir)
+        self.assertIn("| Original source commit | - |", text)
+        self.assertIn("| Current attempt source commit | current-head |", text)
+
+    def test_source_provenance_is_target_local(self) -> None:
+        targets = {
+            "alpha": self.target_dir("alpha"),
+            "beta": self.target_dir("beta"),
+        }
+        tracker = self.tracker(
+            targets,
+            run_details={
+                "alpha": RunDetails(attempt_source_commit="alpha-head"),
+                "beta": RunDetails(attempt_source_commit="beta-head"),
+            },
+        )
+
+        tracker.initialize(resume=False)
+
+        alpha = self.summary(targets["alpha"])
+        beta = self.summary(targets["beta"])
+        self.assertIn("| Original source commit | alpha-head |", alpha)
+        self.assertIn("| Current attempt source commit | alpha-head |", alpha)
+        self.assertIn("| Original source commit | beta-head |", beta)
+        self.assertIn("| Current attempt source commit | beta-head |", beta)
+
 
 class TestSafety(ResourceSummaryCase):
+    def test_summary_invalidation_removes_only_the_entry(self) -> None:
+        outside = self.root / "outside.md"
+        outside.write_text("outside\n")
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / SUMMARY_FILENAME).symlink_to(outside)
+
+        invalidate_summary(self.work_dir, self.root)
+
+        self.assertFalse((self.work_dir / SUMMARY_FILENAME).exists())
+        self.assertEqual(outside.read_text(), "outside\n")
+
+    def test_summary_invalidation_failure_is_explicit(self) -> None:
+        path = self.work_dir / SUMMARY_FILENAME
+        path.mkdir(parents=True)
+
+        with self.assertRaisesRegex(OSError, "not removable"):
+            invalidate_summary(self.work_dir, self.root)
+
+        self.assertTrue(path.is_dir())
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks unavailable")
+    def test_symlinked_findings_fragment_and_report_are_not_exposed(self) -> None:
+        outside_findings = self.root / "outside-findings.md"
+        outside_findings.write_text("## Findings\n\nOUTSIDE FINDING\n")
+        outside_report = self.root / "outside-report.md"
+        outside_report.write_text("outside report\n")
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / FINDINGS_SUMMARY_FILENAME).symlink_to(outside_findings)
+        (self.work_dir / "confirmed-bugs.md").symlink_to(outside_report)
+        (self.work_dir / "bug-severity.md").write_text("severity\n")
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+
+        tracker.complete_run()
+
+        text = self.summary(self.work_dir)
+        self.assertNotIn("OUTSIDE FINDING", text)
+        self.assertIn("The findings summary is unavailable", text)
+        self.assertNotIn("[Confirmation report](confirmed-bugs.md)", text)
+        self.assertIn("- Confirmation report: -", text)
+        self.assertIn("- [Severity report](bug-severity.md)", text)
+
     def test_restored_usage_path_cannot_escape_target(self) -> None:
         outside = self.root / "outside-usage.json"
         outside.write_text(json.dumps(_normalized(session="outside", tokens=999, cached=900, cost=9.0)) + "\n")

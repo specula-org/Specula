@@ -1,11 +1,18 @@
-# Bug Classification
+# Bug Classification and Findings Summary
 
-Assign a Severity tier to each impact-bearing entry in `confirmed-bugs.md` (produced by Phase 4a / `bug-confirmation`). Single responsibility: classify by external impact. **Do nothing else.**
+Turn the final Phase 4a report into two final reporting artifacts. Complete them in order:
+
+1. Classify every entry by external impact in `bug-severity.md`.
+2. Write a concise, human-readable findings fragment in `.summary-findings.md`.
+
+Finish and validate the severity classification before starting the findings fragment. Do not weaken, abbreviate, or otherwise change the classification task to make room for the second output.
 
 ## Scope
 
 - **Input**: `<work_dir>/confirmed-bugs.md` — every entry already has a Phase 4 Status and supporting evidence.
-- **Output**: `<work_dir>/bug-severity.md` — a single table with one row per input entry.
+- **Outputs**:
+  - `<work_dir>/bug-severity.md` — a single table with one row per input entry.
+  - `<work_dir>/.summary-findings.md` — a short result narrative consumed by the user-facing `summary.md`.
 - **You do not**: write new bug analysis, change reproduction status, reject bugs, re-do investigation, or modify `confirmed-bugs.md`.
 
 Classify each status exactly as follows:
@@ -50,7 +57,7 @@ For each entry in `confirmed-bugs.md`:
 
 Do not re-do Phase 4a's investigation. If you find that Phase 4a's Status is wrong, do not change it — note the concern in the Reasoning and leave the Status alone. Phase 4a is the authority on Status; Phase 4b is the authority on Severity.
 
-## Output schema
+## Severity output schema
 
 Write to `<work_dir>/bug-severity.md` with exactly this structure:
 
@@ -86,7 +93,7 @@ Write to `<work_dir>/bug-severity.md` with exactly this structure:
 
 The Summary section at the top is mandatory. `Total entries = Reproduced bugs + Severity-bearing findings + No-severity dispositions`, and `Critical + High + Medium + Low = Reproduced bugs + Severity-bearing findings`.
 
-## What NOT to do
+## Classification boundaries
 
 - **Do not modify `confirmed-bugs.md`.** It is read-only input.
 - **Do not add entries** that are not already in `confirmed-bugs.md`. If you notice a bug Phase 4a missed, note it in a separate file or skip it — classifier is not the place to introduce new findings.
@@ -103,7 +110,7 @@ The Summary section at the top is mandatory. `Total entries = Reproduced bugs + 
 - **Documented design vs bug**: if Phase 4a set `FALSE POSITIVE`, use `—`; if Phase 4a kept it `REPRODUCED`, classify on its actual impact and let Reasoning note the disagreement.
 - **Entry count mismatch**: if `confirmed-bugs.md` has 8 `## Entry N:` headers, the output table must have 8 rows. Preserve the input identifiers; do not silently repair the Phase 4 report.
 
-## Output validation checklist
+## Severity validation checklist
 
 Before finishing, verify:
 
@@ -114,3 +121,65 @@ Before finishing, verify:
 - Every non-`—` Reasoning names at least one consequence (what goes wrong) and one surface (where it's triggerable from).
 - Summary entry classes add up to Total entries, and severity counts add up to reproduced bugs plus severity-bearing findings.
 - `confirmed-bugs.md` is unchanged (mtime not bumped, content not edited).
+
+Only after every check above passes, write `.summary-findings.md`.
+
+## Findings summary
+
+The findings fragment gives a reader the final result without repeating the full confirmation report. Base it only on statements explicitly supported by `confirmed-bugs.md`. Do not use `bug-severity.md` as a source for this fragment.
+
+Include every entry whose leading canonical Status is `REPRODUCED`, `MASKED`, or `ENV_LIMITED`. For each entry, provide:
+
+- the stable finding ID;
+- the title;
+- the canonical Status;
+- one sentence describing the practical impact; and
+- one short evidence note when the report explicitly states how the result was reproduced, constrained, or masked.
+
+Count all other dispositions together. Do not list or describe those entries individually.
+
+Evidence notes must use plain language. For example, state that a result was exercised through a public API, required controlled timing or component state, could not be exercised because a named dependency was unavailable, or is repaired by a named existing mechanism. Do not use internal reproduction tiers or levels.
+
+### Findings fragment schema
+
+Write `.summary-findings.md` with exactly this section order:
+
+```markdown
+<one short paragraph stating the final status counts and the main practical conclusion supported by the report>
+
+## Findings
+
+- **<ID> — <title>** — Status: `<REPRODUCED | MASKED | ENV_LIMITED>`. Impact: <one sentence>. Evidence: <explicit evidence note>.
+- Other dispositions: <N>.
+
+## Validation limits
+
+- <important limitation explicitly recorded in confirmed-bugs.md>
+```
+
+Omit `Evidence:` from an item when `confirmed-bugs.md` does not support a clear evidence note. When there are no impact-bearing entries, say so under `## Findings` and still report the disposition count. When the input records no finding-specific validation limits, write `No finding-specific validation limits were recorded.` under `## Validation limits`.
+
+The validation-limits section may summarize unavailable dependencies, component-only validation, controlled preconditions or timing, and named masking or recovery behavior already recorded in the input. Do not inspect logs or modeling artifacts to infer additional limitations.
+
+### Findings fragment boundaries
+
+- Do not include Severity labels, severity counts, or severity reasoning.
+- Do not include internal reproduction tiers or levels.
+- Do not include URLs, Markdown links, source paths, or heading anchors.
+- Do not add trigger steps, code locations, repair advice, or new technical analysis.
+- Do not choose only the most important findings; include every `REPRODUCED`, `MASKED`, and `ENV_LIMITED` entry.
+- Do not soften `MASKED` or `ENV_LIMITED` into `REPRODUCED`; preserve the canonical Status.
+- Do not copy detailed report prose when one clear sentence will do.
+
+## Findings summary validation checklist
+
+Before finishing, verify:
+
+- A short paragraph with the final status counts and main practical conclusion appears before `## Findings`.
+- `## Findings` appears before `## Validation limits`.
+- Every `REPRODUCED`, `MASKED`, and `ENV_LIMITED` input entry appears exactly once with its ID, title, Status, and practical impact.
+- Other dispositions appear only as a combined count.
+- Every evidence statement and validation limit is explicitly supported by `confirmed-bugs.md`.
+- No Severity, internal reproduction level, URL, or Markdown link appears in the fragment.
+- `bug-severity.md` remains complete and unchanged after its validation.
+- `confirmed-bugs.md` remains unchanged.

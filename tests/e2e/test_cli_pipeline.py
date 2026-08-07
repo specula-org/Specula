@@ -198,7 +198,10 @@ class CliE2E(unittest.TestCase):
             '> "$SPECULA_WORK_DIR/spec/candidates.json"\n'
             "    ;;\n"
             "  bug_classification)\n"
-            '    printf "severity\n" > "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            '    printf "# Severity Classification\\n\\n## Summary\\n\\n## Per-entry classification\\n" '
+            '> "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            '    printf "No impact-bearing findings were recorded.\\n\\n## Findings\\n\\n- Other dispositions: 0.\\n\\n## Validation limits\\n\\nNo finding-specific validation limits were recorded.\\n" '
+            '> "$SPECULA_WORK_DIR/.summary-findings.md"\n'
             "    ;;\n"
             "  *) exit 97 ;;\n"
             "esac\n"
@@ -261,6 +264,14 @@ class CliE2E(unittest.TestCase):
         )
         self.assertTrue((wd / "confirmed-bugs.md").is_file())
         self.assertTrue((wd / "bug-severity.md").is_file())
+        self.assertTrue((wd / ".summary-findings.md").is_file())
+        summary = (wd / "summary.md").read_text()
+        self.assertIn("- Run status: **Complete**", summary)
+        self.assertIn("No impact-bearing findings were recorded.", summary)
+        self.assertIn("## Findings", summary)
+        self.assertIn("## Validation limits", summary)
+        self.assertIn("## Detailed reports", summary)
+        self.assertIn("## Resource usage", summary)
         self.assertEqual(list((run / ".specula-resume" / "active").glob("*.json")), [])
         self.assertEqual(list((run / ".specula-resume" / "completed").glob("*.json")), [])
 
@@ -369,12 +380,15 @@ class CliE2E(unittest.TestCase):
 
         self.assertIn("# footest Results", target_index)
         self.assertIn("## Final Reports", target_index)
-        self.assertIn("[Resource summary](summary.md)", target_index)
+        self.assertIn("[Summary](summary.md)", target_index)
         self.assertIn("## Supporting Analysis", target_index)
         self.assertIn("Modeling brief: Not available", target_index)
         self.assertIn("[pipeline.log](../../pipeline.log)", target_index)
         self.assertNotIn("## Reviews", target_index)
         self.assertNotIn("findings.json", target_index)
+        self.assertIn("- Run status: **Complete**", resource_summary)
+        self.assertIn("The findings summary is unavailable", resource_summary)
+        self.assertIn("Final findings reporting was skipped.", resource_summary)
         self.assertIn("| **Total (incomplete)** | - | - | - |", resource_summary)
         self.assertFalse((run / "reports").exists())
         self.assertFalse((target_dir / "classification").exists())

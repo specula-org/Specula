@@ -513,6 +513,11 @@ class TestDryRunCommand(PhaseCase):
         rc, out = self.dry_run(BY_KEY["bug_classification"])
         self.assertEqual(rc, 0, out)
         body = (self.work_dir() / ".bug-classification-prompt.md").read_text()
+        self.assertIn(str(self.work_dir() / "bug-severity.md"), body)
+        self.assertIn(str(self.work_dir() / ".summary-findings.md"), body)
+        self.assertLess(body.index("bug-severity.md"), body.index(".summary-findings.md"))
+        self.assertIn("Complete and validate bug-severity.md before starting .summary-findings.md", body)
+        self.assertIn("must not contain severity classifications, internal reproduction levels", body)
         for status in (
             "REPRODUCED",
             "ENV_LIMITED",
@@ -532,6 +537,12 @@ class TestDryRunCommand(PhaseCase):
         self.assertIn("- Reproduced bugs: N", guide)
         self.assertIn("- Severity-bearing findings: N", guide)
         self.assertIn("- No-severity dispositions: N", guide)
+        self.assertIn("## Findings summary", guide)
+        self.assertIn("## Findings", guide)
+        self.assertIn("## Validation limits", guide)
+        self.assertIn("Do not include Severity labels", guide)
+        self.assertIn("Do not include internal reproduction tiers or levels", guide)
+        self.assertIn("Do not include URLs, Markdown links", guide)
 
     def test_confirmation_docs_have_no_recheck_pass_and_allow_deferred_terminal(self) -> None:
         skill = SRC.parent / "skills" / "bug-confirmation"
@@ -1287,7 +1298,12 @@ class TestHandoffGate(PhaseCase):
             "    ;;\n"
             '  spec_validation) printf "bug report\n" > "$SPECULA_WORK_DIR/spec/bug-report.md" ;;\n'
             '  bug_confirmation) printf "confirmed\n" > "$SPECULA_WORK_DIR/confirmed-bugs.md" ;;\n'
-            '  bug_classification) printf "severity\n" > "$SPECULA_WORK_DIR/bug-severity.md" ;;\n'
+            "  bug_classification)\n"
+            '    printf "# Severity Classification\\n\\n## Summary\\n\\n## Per-entry classification\\n" '
+            '> "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            '    printf "No impact-bearing findings were recorded.\\n\\n## Findings\\n\\n- Other dispositions: 0.\\n\\n## Validation limits\\n\\nNo finding-specific validation limits were recorded.\\n" '
+            '> "$SPECULA_WORK_DIR/.summary-findings.md"\n'
+            "    ;;\n"
             "esac\n"
             'printf "continued\n" > "$log"\n'
         )
@@ -1526,6 +1542,427 @@ class TestHandoffGate(PhaseCase):
 
         self.assertEqual(rc, 9, out)
         self.assertEqual(count.read_text(), "x")
+
+
+class TestBugClassificationOutputs(PhaseCase):
+    CONFIRMED = "| Entry | Finding | Status | Counts as final bug? |\n|---|---|---|---|\n\n"
+    SEVERITY = (
+        "# Severity Classification — target\n\n"
+        "## Summary\n\n"
+        "- Total entries: 0\n"
+        "- Reproduced bugs: 0\n"
+        "- Severity-bearing findings: 0\n"
+        "- Critical: 0\n"
+        "- High: 0\n"
+        "- Medium: 0\n"
+        "- Low: 0\n"
+        "- No-severity dispositions: 0\n\n"
+        "## Per-entry classification\n\n"
+        "| Entry | Finding | Status | Severity | Reasoning |\n"
+        "|-------|---------|--------|----------|-----------|\n"
+    )
+    FINDINGS = (
+        "No impact-bearing findings were recorded.\n\n"
+        "## Findings\n\n"
+        "- Other dispositions: 0.\n\n"
+        "## Validation limits\n\n"
+        "No finding-specific validation limits were recorded.\n"
+    )
+
+    def setUp(self) -> None:
+        super().setUp()
+        adapters = self.tmp() / "adapters"
+        adapters.mkdir()
+        self.patch_attr(phaselib, "LAUNCH_DIR", adapters.parent)
+        self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
+        self.patch_attr(phaselib.Phase, "progress_config", ProgressConfig(poll_seconds=0.005))
+        self.set_env("SPECULA_PROGRESS", "off")
+        self.adapter = adapters / "fake.sh"
+        self.seed(BY_KEY["bug_classification"]["inputs"])
+        (self.work_dir() / "confirmed-bugs.md").write_text(self.CONFIRMED)
+
+    def write_adapter(self, body: str) -> None:
+        self.adapter.write_text("#!/usr/bin/env sh\nset -eu\n" + body)
+        self.adapter.chmod(0o755)
+
+    @staticmethod
+    def write_output(filename: str, content: str) -> str:
+        return f'printf %s {shlex.quote(content)} > "$SPECULA_WORK_DIR/{filename}"\n'
+
+    def run_classification(self, options: list[str] | None = None) -> tuple[int, str]:
+        return self.run_phase(
+            "bug_classification",
+            [*(options or []), f"--agent={self.adapter.stem}", NAME],
+        )
+
+    def seed_complete_summary(self, marker: str = "OLD FINDINGS", name: str = NAME) -> None:
+        work_dir = self.work_dir(name)
+        work_dir.mkdir(parents=True, exist_ok=True)
+        (work_dir / "confirmed-bugs.md").write_text(self.CONFIRMED)
+        (work_dir / ".summary-findings.md").write_text(
+            f"{marker}\n\n## Findings\n\n- Other dispositions: 0.\n\n## Validation limits\n\nNone recorded.\n"
+        )
+        tracker = resource_summary.ResourceSummaryTracker(
+            {name: work_dir},
+            output_root=self.run_dir,
+            maximum_parallelism="1",
+            tlc_memory_limit="8G",
+            tlc_worker_limit="4",
+            run_details=resource_summary.RunDetails(
+                original_source_commit="original",
+                attempt_source_commit="attempt",
+                agent="codex",
+                model="model",
+                reasoning_effort="high",
+            ),
+            validation_limits=(resource_summary.CLASSIFICATION_SKIPPED_LIMIT,),
+        )
+        tracker.initialize(resume=False)
+        tracker.complete_run((name,))
+
+    def test_missing_findings_fragment_is_fail_soft(self) -> None:
+        self.write_adapter(self.write_output("bug-severity.md", self.SEVERITY))
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 0, out)
+        self.assertIn(".summary-findings.md missing", out)
+        self.assertNotIn("Output validation failures:", out)
+        summary = (self.work_dir() / "summary.md").read_text()
+        self.assertIn("Run status: **Incomplete**", summary)
+        self.assertIn("The findings summary is unavailable", summary)
+
+    def test_requires_severity_output(self) -> None:
+        self.seed_complete_summary()
+        self.write_adapter(self.write_output(".summary-findings.md", self.FINDINGS))
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("bug-severity.md missing", out)
+        self.assertFalse((self.work_dir() / "summary.md").exists())
+
+    def test_accepts_complete_final_reporting_outputs(self) -> None:
+        self.write_adapter(
+            self.write_output("bug-severity.md", self.SEVERITY)
+            + self.write_output(".summary-findings.md", self.FINDINGS)
+        )
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 0, out)
+        self.assertIn("summary=yes", out)
+
+    def test_standalone_success_rebuilds_summary_after_invalidating_old_findings(self) -> None:
+        self.seed_complete_summary()
+        self.assertIn("OLD FINDINGS", (self.work_dir() / "summary.md").read_text())
+        new_findings = self.FINDINGS.replace(
+            "No impact-bearing findings were recorded.",
+            "NEW FINDINGS",
+        )
+        self.write_adapter(
+            'test ! -e "$SPECULA_WORK_DIR/summary.md"\n'
+            + self.write_output("bug-severity.md", self.SEVERITY)
+            + self.write_output(".summary-findings.md", new_findings)
+        )
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 0, out)
+        summary = (self.work_dir() / "summary.md").read_text()
+        self.assertIn("Run status: **Complete**", summary)
+        self.assertIn("NEW FINDINGS", summary)
+        self.assertNotIn("OLD FINDINGS", summary)
+        self.assertNotIn(resource_summary.CLASSIFICATION_SKIPPED_LIMIT, summary)
+
+    def test_standalone_success_preserves_an_incomplete_run_status(self) -> None:
+        tracker = resource_summary.ResourceSummaryTracker(
+            {NAME: self.work_dir()},
+            output_root=self.run_dir,
+            maximum_parallelism="1",
+            tlc_memory_limit="8G",
+            tlc_worker_limit="4",
+        )
+        tracker.initialize(resume=False)
+        self.write_adapter(
+            self.write_output("bug-severity.md", self.SEVERITY)
+            + self.write_output(".summary-findings.md", self.FINDINGS)
+        )
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 0, out)
+        summary = (self.work_dir() / "summary.md").read_text()
+        self.assertIn("Run status: **Incomplete**", summary)
+        self.assertIn("The findings summary is unavailable", summary)
+
+    def test_standalone_failure_leaves_old_summary_unavailable(self) -> None:
+        self.seed_complete_summary()
+        self.write_adapter('test ! -e "$SPECULA_WORK_DIR/summary.md"\nexit 9\n')
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 9, out)
+        self.assertFalse((self.work_dir() / "summary.md").exists())
+
+    def test_failed_adapter_cannot_publish_its_own_summary(self) -> None:
+        self.write_adapter('printf "FORGED_AFTER_START\\n" > "$SPECULA_WORK_DIR/summary.md"\nexit 9\n')
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 9, out)
+        self.assertFalse((self.work_dir() / "summary.md").exists())
+
+    def test_check_only_does_not_invalidate_completed_summary(self) -> None:
+        self.seed_complete_summary()
+        self.write_adapter("exit 0\n")
+        summary = self.work_dir() / "summary.md"
+        before = summary.read_bytes()
+
+        rc, out = self.run_classification(options=["--check"])
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(summary.read_bytes(), before)
+
+    def test_unstarted_sibling_keeps_its_completed_summary(self) -> None:
+        self.seed_complete_summary("ALPHA OLD", NAME)
+        self.seed_complete_summary("BETA OLD", "beta")
+        beta_summary = self.work_dir("beta") / "summary.md"
+        before = beta_summary.read_bytes()
+        self.write_adapter("exit 75\n")
+
+        rc, out = self.run_phase(
+            "bug_classification",
+            ["--max-parallel=1", f"--agent={self.adapter.stem}", NAME, "beta"],
+        )
+
+        self.assertEqual(rc, 75, out)
+        self.assertFalse((self.work_dir() / "summary.md").exists())
+        self.assertEqual(beta_summary.read_bytes(), before)
+
+    def test_manual_resume_does_not_republish_completed_target_summary(self) -> None:
+        self.seed_complete_summary()
+        (self.work_dir() / "bug-severity.md").write_text(self.SEVERITY)
+        summary = self.work_dir() / "summary.md"
+        before = summary.read_bytes()
+        resumelib.initialize_run(self.run_dir)
+        self.set_env(resumelib.INVOCATION_ENV, "classify-finished-invocation")
+        logical = ("phase", "bug_classification", NAME)
+        resumelib.prepare_turn(
+            logical,
+            phase="bug_classification",
+            target=NAME,
+            kind="phase",
+            adapter=self.adapter,
+            model=None,
+            effort=None,
+            claude_alias="claude",
+            cwd=self.tmp(),
+            resume_state=self.work_dir() / ".bug-classification.resume",
+            prompt_file=self.work_dir() / ".bug-classification-prompt.md",
+            log_file=self.work_dir() / "bug-classification.log",
+        )
+        resumelib.mark_completed(logical)
+        self.set_env(resumelib.INVOCATION_ENV, "classify-resume-invocation")
+        self.set_env(resumelib.MANUAL_ENV, "1")
+        self.write_adapter("exit 99\n")
+
+        with mock.patch.object(phaselib, "publish_findings_summary") as publish:
+            rc, out = self.run_classification()
+
+        self.assertEqual(rc, 0, out)
+        publish.assert_not_called()
+        self.assertEqual(summary.read_bytes(), before)
+
+    def test_manual_resume_restores_summary_after_durable_completion_marker(self) -> None:
+        self.seed_complete_summary()
+        resumelib.initialize_run(self.run_dir)
+        self.set_env(resumelib.INVOCATION_ENV, "classify-first-invocation")
+        self.write_adapter(
+            self.write_output("bug-severity.md", self.SEVERITY)
+            + self.write_output(".summary-findings.md", self.FINDINGS)
+        )
+        real_mark_completed = resumelib.mark_completed
+
+        def fail_after_completion(logical: tuple[str, ...]) -> None:
+            real_mark_completed(logical)
+            raise resumelib.ResumeError("injected post-commit failure")
+
+        with mock.patch.object(resumelib, "mark_completed", side_effect=fail_after_completion):
+            first_rc, first_out = self.run_classification()
+
+        self.assertEqual(first_rc, 1, first_out)
+        self.assertFalse((self.work_dir() / "summary.md").exists())
+        self.assertEqual(
+            resumelib.completed_logicals(("phase", "bug_classification")),
+            {("phase", "bug_classification", NAME)},
+        )
+
+        self.set_env(resumelib.INVOCATION_ENV, "classify-resume-invocation")
+        self.set_env(resumelib.MANUAL_ENV, "1")
+        resumed_rc, resumed_out = self.run_classification()
+
+        self.assertEqual(resumed_rc, 0, resumed_out)
+        self.assertTrue((self.work_dir() / "summary.md").is_file())
+        self.assertEqual(resumelib.completed_logicals(("phase", "bug_classification")), set())
+
+    def test_inconsistent_findings_fragment_is_hidden_without_failing_classification(self) -> None:
+        self.seed_complete_summary()
+        (self.work_dir() / "confirmed-bugs.md").write_text(
+            "| Entry | Finding | Status | Counts as final bug? |\n"
+            "|---|---|---|---|\n"
+            "| 1 | MC-1 | REPRODUCED | yes |\n\n"
+        )
+        self.write_adapter(
+            self.write_output("bug-severity.md", self.SEVERITY)
+            + self.write_output(".summary-findings.md", self.FINDINGS)
+        )
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 0, out)
+        self.assertIn("finding IDs or statuses do not match confirmed-bugs.md", out)
+        summary = (self.work_dir() / "summary.md").read_text()
+        self.assertIn("Run status: **Complete**", summary)
+        self.assertIn("The findings summary is unavailable", summary)
+        self.assertNotIn("OLD FINDINGS", summary)
+
+    def test_fresh_run_cannot_reuse_stale_outputs(self) -> None:
+        wd = self.work_dir()
+        (wd / "bug-severity.md").write_text(self.SEVERITY)
+        (wd / ".summary-findings.md").write_text(self.FINDINGS)
+        self.write_adapter(
+            'test ! -e "$SPECULA_WORK_DIR/bug-severity.md"\ntest ! -e "$SPECULA_WORK_DIR/.summary-findings.md"\n'
+        )
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 1, out)
+        self.assertFalse((wd / "bug-severity.md").exists())
+        self.assertFalse((wd / ".summary-findings.md").exists())
+        self.assertIn("bug-severity.md missing", out)
+        self.assertIn(".summary-findings.md missing", out)
+
+    def test_rejects_symlink_output(self) -> None:
+        external = self.tmp() / "external-severity.md"
+        external.write_text(self.SEVERITY)
+        self.set_env("EXTERNAL_OUTPUT", str(external))
+        self.write_adapter(
+            'ln -s "$EXTERNAL_OUTPUT" "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            + self.write_output(".summary-findings.md", self.FINDINGS)
+        )
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("bug-severity.md is not a regular file", out)
+
+    def test_findings_fragment_display_violations_are_fail_soft(self) -> None:
+        invalid = (
+            ("- [Detailed evidence](confirmed-bugs.md)", "contains a URL or link markup"),
+            (
+                "- [Detailed evidence][report]\n\n[report]: confirmed-bugs.md",
+                "contains a URL or link markup",
+            ),
+            ('- <a href="confirmed-bugs.md">Detailed evidence</a>', "contains a URL or link markup"),
+            ("- <confirmed-bugs.md>", "contains a URL or link markup"),
+            ("- Evidence: https://example.invalid/report", "contains a URL or link markup"),
+        )
+        for body, expected in invalid:
+            with self.subTest(body=body):
+                findings = (
+                    f"One issue was reproduced.\n\n## Findings\n\n{body}\n\n## Validation limits\n\nNone recorded.\n"
+                )
+                self.write_adapter(
+                    self.write_output("bug-severity.md", self.SEVERITY)
+                    + self.write_output(".summary-findings.md", findings)
+                )
+
+                rc, out = self.run_classification()
+
+                self.assertEqual(rc, 0, out)
+                self.assertIn(expected, out)
+                self.assertNotIn("Output validation failures:", out)
+
+    def test_accepts_incidental_policy_words_in_findings_prose(self) -> None:
+        findings = (
+            "One issue was reproduced.\n\n"
+            "## Findings\n\n"
+            "- The severity field stayed unchanged while the Level 3 cache recovered.\n\n"
+            "## Validation limits\n\n"
+            "None recorded.\n"
+        )
+        self.write_adapter(
+            self.write_output("bug-severity.md", self.SEVERITY) + self.write_output(".summary-findings.md", findings)
+        )
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 0, out)
+
+    def test_non_utf8_findings_fragment_is_fail_soft(self) -> None:
+        self.write_adapter(
+            self.write_output("bug-severity.md", self.SEVERITY)
+            + 'printf "Result.\\n\\n## Findings\\n\\n\\377\\n\\n## Validation limits\\n\\nNone.\\n" '
+            '> "$SPECULA_WORK_DIR/.summary-findings.md"\n'
+        )
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 0, out)
+        self.assertIn(".summary-findings.md or confirmed-bugs.md is unreadable", out)
+
+    def test_policy_retry_preserves_first_attempt_output(self) -> None:
+        count = self.tmp() / "count"
+        self.set_env("COUNT_FILE", str(count))
+        self.write_adapter(
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            + self.write_output("bug-severity.md", self.SEVERITY)
+            + "  exit 76\n"
+            + "fi\n"
+            + 'test -s "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            + self.write_output(".summary-findings.md", self.FINDINGS)
+        )
+
+        rc, out = self.run_classification(options=["--policy-retries=1"])
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(count.read_text(), "xx")
+        self.assertEqual((self.work_dir() / "bug-severity.md").read_text(), self.SEVERITY)
+
+    def test_manual_resume_preserves_partial_output(self) -> None:
+        count = self.tmp() / "count"
+        self.set_env("COUNT_FILE", str(count))
+        resumelib.initialize_run(self.run_dir)
+        resumelib.save_configuration(self.run_dir, {"agent": self.adapter.stem})
+        self.set_env(resumelib.INVOCATION_ENV, "classify-invocation-1")
+        self.write_adapter(
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in --resume-state=*) resume=${arg#*=} ;; esac; done\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            + self.write_output("bug-severity.md", self.SEVERITY)
+            + '  printf "classify-session\\n" > "$resume"\n'
+            + "  exit 9\n"
+            + "fi\n"
+            + 'test -s "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            + self.write_output(".summary-findings.md", self.FINDINGS)
+        )
+
+        first_rc, first_out = self.run_classification(options=["--transient-resumes=0"])
+        self.assertEqual(first_rc, 9, first_out)
+        self.assertEqual((self.work_dir() / "bug-severity.md").read_text(), self.SEVERITY)
+
+        self.set_env(resumelib.INVOCATION_ENV, "classify-invocation-2")
+        self.set_env(resumelib.MANUAL_ENV, "1")
+        resumed_rc, resumed_out = self.run_classification(options=["--transient-resumes=0"])
+
+        self.assertEqual(resumed_rc, 0, resumed_out)
+        self.assertEqual(count.read_text(), "xx")
+        self.assertEqual((self.work_dir() / "bug-severity.md").read_text(), self.SEVERITY)
+        self.assertEqual((self.work_dir() / ".summary-findings.md").read_text(), self.FINDINGS)
 
 
 class TestLegacyRepairIdentityFinalization(PhaseCase):
