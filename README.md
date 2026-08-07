@@ -107,9 +107,10 @@ specula run mysys --artifact=/path/to/repo
 Outputs are stored in `runs/<run-id>`. 
 
 Add `--keep-original` to leave the source checkout untouched. Specula runs the
-same agents against a full private copy and writes the final filesystem diff to
-`runs/<run-id>/mysys/changes.patch`. The diff includes ignored and untracked
-files; Specula does not apply it to the original checkout.
+same agents against a full private copy and writes a reviewable source diff to
+`runs/<run-id>/mysys/changes.patch`. Ignored build output is omitted, while
+binary and trace contents remain in the private source instead of being
+inlined. Specula does not apply the diff to the original checkout.
 
 The detailed usage and configurations can be found in the [Usage Guide](./docs/Usage.md).
 
