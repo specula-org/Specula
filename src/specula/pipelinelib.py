@@ -152,7 +152,7 @@ Options:
   --model=NAME           Model forwarded to every agent adapter
   --effort=LEVEL         Reasoning effort forwarded to every agent adapter
   --artifact=PATH        Path to system artifact/source code
-  --keep-original        Work in a full private copy and write changes.patch
+  --keep-original        Work in a full private copy and write a reviewable changes.patch
   --tlc-memory-limit=SIZE
                          Aggregate -m + -M budget for TLCs in this run (default: auto,
                          80% of effective available memory at the first TLC start)

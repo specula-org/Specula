@@ -1,8 +1,9 @@
-"""Full-tree source snapshots for ``specula run --keep-original``.
+"""Private source snapshots for ``specula run --keep-original``.
 
-Copy the working tree once, rebuild private Git metadata without repository
-hooks or config, then record every non-``.git`` byte in a separate baseline.
-Git ignore and index state do not decide what is included in the final diff.
+Copy the full working tree once and rebuild private Git metadata without
+repository hooks or config.  New runs emit a reviewable source-change diff:
+Git-visible paths are included, ignored build output is omitted, and trace and
+binary payloads remain available in the private source without being inlined.
 """
 
 from __future__ import annotations
@@ -20,7 +21,8 @@ from pathlib import Path
 
 SOURCE_MAP = "source-map.json"
 SNAPSHOT_MODE_ENV = "SPECULA_SOURCE_SNAPSHOT"
-_SOURCE_MAP_VERSION = 3
+_SOURCE_MAP_VERSION = 4
+_LEGACY_SOURCE_MAP_VERSION = 3
 _BASELINE_REF = "refs/specula/baseline"
 _PATHSPEC = (
     ".",
@@ -29,7 +31,7 @@ _PATHSPEC = (
     ":(exclude,glob)**/.git",
     ":(exclude,glob)**/.git/**",
 )
-_RAW_ATTRIBUTES = "* !diff -filter -ident -text !eol !working-tree-encoding\n"
+_RAW_ATTRIBUTES = "* !diff -filter -ident -text !eol !working-tree-encoding\ntraces/**/*.ndjson -diff\n"
 
 # Repository-local variables reported by ``git rev-parse --local-env-vars``,
 # plus the discovery/config selectors that can make a child Git process ignore
@@ -68,6 +70,7 @@ class SourceSnapshot:
     baseline: str
     patch: Path
     is_git: bool
+    reviewable_diff: bool
 
 
 def sanitize_snapshot_git_environment(env: MutableMapping[str, str], *, ceiling: str | None = None) -> None:
@@ -298,14 +301,90 @@ def _create_private_git(original: Path, destination: Path) -> None:
     _restore_sparse_checkout(original, destination)
 
 
-def _create_baseline(control: Path, source: Path, index: Path) -> str:
+def _git_nul_paths(args: Sequence[str], *, cwd: Path | None = None) -> list[str]:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            env=_git_env(),
+            check=True,
+            capture_output=True,
+        )
+    except FileNotFoundError as exc:
+        raise SnapshotError("Git is required for --keep-original") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = os.fsdecode(exc.stderr or exc.stdout or b"Git command failed").strip()
+        raise SnapshotError(f"git {' '.join(args[:3])} failed: {detail[:500]}") from exc
+    return [os.fsdecode(path) for path in result.stdout.split(b"\0") if path]
+
+
+def _existing_tracked_paths(source: Path, *, is_git: bool) -> list[str]:
+    if not is_git:
+        return []
+    existing: list[str] = []
+    for relative in _git_nul_paths(["-C", str(source), "ls-files", "--cached", "-z"]):
+        path = Path(relative)
+        if path.is_absolute() or ".." in path.parts:
+            raise SnapshotError(f"unsafe tracked path in private source: {relative!r}")
+        candidate = source / path
+        if candidate.is_file() or candidate.is_symlink():
+            existing.append(relative)
+    return existing
+
+
+def _trace_paths(source: Path) -> list[str]:
+    trace_dir = source / "traces"
+    if trace_dir.is_symlink() or not trace_dir.is_dir():
+        return []
+    return [
+        os.fspath(path.relative_to(source))
+        for path in trace_dir.rglob("*.ndjson")
+        if path.is_file() or path.is_symlink()
+    ]
+
+
+def _force_add_paths(paths: Sequence[str], *, cwd: Path, env: Mapping[str, str]) -> None:
+    encoded = b"".join(os.fsencode(path) + b"\0" for path in dict.fromkeys(paths))
+    if not encoded:
+        return
+    try:
+        subprocess.run(
+            [
+                "git",
+                "--literal-pathspecs",
+                "add",
+                "--all",
+                "--force",
+                "--pathspec-from-file=-",
+                "--pathspec-file-nul",
+            ],
+            cwd=cwd,
+            env=_git_env(env),
+            check=True,
+            input=encoded,
+            capture_output=True,
+        )
+    except OSError as exc:
+        raise SnapshotError(f"cannot stage protected source paths: {exc}") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = os.fsdecode(exc.stderr or exc.stdout or b"Git command failed").strip()
+        raise SnapshotError(f"cannot stage protected source paths: {detail[:500]}") from exc
+
+
+def _stage_review_tree(source: Path, *, is_git: bool, env: Mapping[str, str]) -> None:
+    _git(["add", "--all", "--", *_PATHSPEC], cwd=source, env=env)
+    protected = [*_existing_tracked_paths(source, is_git=is_git), *_trace_paths(source)]
+    _force_add_paths(protected, cwd=source, env=env)
+
+
+def _create_baseline(control: Path, source: Path, index: Path, *, is_git: bool) -> str:
     _git(["init", "--quiet", "--bare", "--template=", str(control)])
     (control / "info").mkdir(exist_ok=True)
     (control / "info" / "attributes").write_text(_RAW_ATTRIBUTES)
     env = _controller_env(control, source, index)
     try:
         _git(["read-tree", "--empty"], cwd=source, env=env)
-        _git(["add", "--all", "--force", "--", *_PATHSPEC], cwd=source, env=env)
+        _stage_review_tree(source, is_git=is_git, env=env)
         tree = _git(["write-tree"], cwd=source, env=env)
         baseline = _git(["commit-tree", tree, "-m", "Specula source baseline"], cwd=source, env=env)
         _git(["update-ref", _BASELINE_REF, baseline], cwd=source, env=env)
@@ -396,11 +475,8 @@ def load_sources(run_dir: Path) -> dict[str, SourceSnapshot]:
         document = json.loads(map_path.read_text())
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise SnapshotError(f"cannot read private source map {map_path}: {exc}") from exc
-    targets = (
-        document.get("targets")
-        if isinstance(document, dict) and document.get("version") == _SOURCE_MAP_VERSION
-        else None
-    )
+    version = document.get("version") if isinstance(document, dict) else None
+    targets = document.get("targets") if version in {_LEGACY_SOURCE_MAP_VERSION, _SOURCE_MAP_VERSION} else None
     if not isinstance(targets, dict):
         raise SnapshotError(f"invalid private source map: {map_path}")
     snapshots: dict[str, SourceSnapshot] = {}
@@ -439,6 +515,7 @@ def load_sources(run_dir: Path) -> dict[str, SourceSnapshot]:
             baseline=baseline,
             patch=patch,
             is_git=is_git,
+            reviewable_diff=version == _SOURCE_MAP_VERSION,
         )
     return snapshots
 
@@ -509,12 +586,12 @@ def prepare_sources(run_dir: Path, sources: Mapping[str, Path]) -> dict[str, Sou
                 _validate_source_tree(source)
                 _validate_private_git(source, is_git)
                 index = target / ".baseline-index"
-                baseline = _create_baseline(control_stage, source, index)
+                baseline = _create_baseline(control_stage, source, index, is_git=is_git)
                 control_stage.replace(control)
             finally:
                 _remove_snapshot_path(source_stage)
                 _remove_snapshot_path(control_stage)
-            prepared[name] = SourceSnapshot(original, source, control, baseline, patch, is_git)
+            prepared[name] = SourceSnapshot(original, source, control, baseline, patch, is_git, True)
 
         map_attempted = True
         _write_map(map_path, _snapshot_document(prepared))
@@ -532,7 +609,7 @@ def prepare_sources(run_dir: Path, sources: Mapping[str, Path]) -> dict[str, Sou
 
 
 def capture_changes(run_dir: Path) -> dict[str, bool]:
-    """Write a complete binary Git-format filesystem diff for every source."""
+    """Write a source-focused Git-format review diff for every source."""
     changed: dict[str, bool] = {}
     for name, item in load_sources(run_dir).items():
         index = item.patch.parent / ".changes-index"
@@ -542,13 +619,17 @@ def capture_changes(run_dir: Path) -> dict[str, bool]:
         try:
             with os.fdopen(fd, "wb") as output:
                 _git(["read-tree", item.baseline], cwd=item.source, env=env)
-                _git(["add", "--all", "--force", "--", *_PATHSPEC], cwd=item.source, env=env)
+                if item.reviewable_diff:
+                    _stage_review_tree(item.source, is_git=item.is_git, env=env)
+                else:
+                    _git(["add", "--all", "--force", "--", *_PATHSPEC], cwd=item.source, env=env)
+                binary_option = [] if item.reviewable_diff else ["--binary"]
                 subprocess.run(
                     [
                         "git",
                         "diff",
                         "--cached",
-                        "--binary",
+                        *binary_option,
                         "--full-index",
                         "--no-ext-diff",
                         "--no-textconv",

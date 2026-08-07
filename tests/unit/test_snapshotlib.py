@@ -108,8 +108,13 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(env["SSH_AUTH_SOCK"], "/tmp/agent.sock")
         self.assertEqual(env["GITHUB_TOKEN"], "token")
 
-    def test_full_tree_diff_round_trip_leaves_original_unchanged(self) -> None:
+    def test_review_diff_keeps_source_changes_without_ignored_or_binary_payloads(self) -> None:
         original = self._repo()
+        (original / ".gitignore").write_text("ignored-*\ntraces/\n")
+        (original / "ignored-tracked.txt").write_text("tracked despite ignore\n")
+        _git(original, "add", ".gitignore")
+        _git(original, "add", "--force", "ignored-tracked.txt")
+        _git(original, "commit", "--quiet", "-m", "ignore generated files")
         original_index = (original / ".git" / "index").read_bytes()
         run = self.root / "run"
         run.mkdir()
@@ -123,29 +128,105 @@ class SnapshotTests(unittest.TestCase):
         (snapshot / "new.txt").write_text("new\n")
         (snapshot / "ignored-cache").write_text("changed ignored bytes\n")
         (snapshot / "ignored-new").write_text("new ignored bytes\n")
+        (snapshot / "ignored-tracked.txt").write_text("changed tracked bytes\n")
         (snapshot / "binary.bin").write_bytes(b"after\0data\n")
+        (snapshot / "traces").mkdir()
+        (snapshot / "traces" / "run.ndjson").write_text('{"state": "expensive"}\n')
         _git(snapshot, "add", "tracked.txt")
         _git(snapshot, "commit", "--quiet", "-m", "agent commit")
+        (snapshot / "ignored-staged-new.txt").write_text("agent explicitly tracked this\n")
+        _git(snapshot, "add", "--force", "ignored-staged-new.txt")
 
         changed = sl.capture_changes(run)
         patch = run / "demo" / "changes.patch"
         content = patch.read_bytes()
 
         self.assertEqual(changed, {"demo": True})
-        for path in (b"tracked.txt", b"delete.txt", b"new.txt", b"ignored-cache", b"ignored-new"):
+        for path in (
+            b"tracked.txt",
+            b"delete.txt",
+            b"new.txt",
+            b"ignored-tracked.txt",
+            b"ignored-staged-new.txt",
+            b"binary.bin",
+            b"traces/run.ndjson",
+        ):
             self.assertIn(path, content)
-        self.assertIn(b"GIT binary patch", content)
+        self.assertNotIn(b"ignored-cache", content)
+        self.assertNotIn(b"ignored-new", content)
+        self.assertNotIn(b"GIT binary patch", content)
+        self.assertIn(b"Binary files a/binary.bin and b/binary.bin differ", content)
+        self.assertIn(b"Binary files /dev/null and b/traces/run.ndjson differ", content)
+        self.assertNotIn(b'"state": "expensive"', content)
+        trace_diff = content.split(b"diff --git a/traces/run.ndjson b/traces/run.ndjson\n", 1)[1]
+        self.assertRegex(trace_diff.split(b"diff --git", 1)[0], rb"index 0{40}\.\.[0-9a-f]{40}")
         self.assertNotIn(b"/.git/", content)
         self.assertEqual((original / "tracked.txt").read_text(), "before\n")
         self.assertEqual((original / "ignored-cache").read_text(), "initial ignored bytes\n")
         self.assertEqual((original / ".git" / "index").read_bytes(), original_index)
+        self.assertFalse((original / "traces").exists())
+        self.assertEqual((snapshot / "traces" / "run.ndjson").read_text(), '{"state": "expensive"}\n')
 
-        _git(original, "apply", str(patch))
-        self.assertEqual((original / "tracked.txt").read_text(), "after\n")
-        self.assertFalse((original / "delete.txt").exists())
-        self.assertEqual((original / "ignored-cache").read_text(), "changed ignored bytes\n")
-        self.assertEqual((original / "ignored-new").read_text(), "new ignored bytes\n")
-        self.assertEqual((original / "binary.bin").read_bytes(), b"after\0data\n")
+    def test_review_diff_keeps_paths_visible_at_either_endpoint(self) -> None:
+        original = self._repo()
+        (original / "later-ignored.txt").write_text("initial visible bytes\n")
+        (original / "ignored-later-visible").write_text("initial ignored bytes\n")
+        run = self.root / "run"
+        run.mkdir()
+
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+        (source / ".gitignore").write_text("ignored-cache\nignored-new\nlater-ignored.txt\n")
+        (source / "later-ignored.txt").write_text("changed after ignore\n")
+        (source / "ignored-later-visible").write_text("changed after unignore\n")
+
+        sl.capture_changes(run)
+        content = (run / "demo" / "changes.patch").read_bytes()
+
+        self.assertIn(b"later-ignored.txt", content)
+        self.assertIn(b"changed after ignore", content)
+        self.assertIn(b"ignored-later-visible", content)
+        self.assertIn(b"changed after unignore", content)
+
+    def test_plain_source_uses_gitignore_and_keeps_trace_metadata(self) -> None:
+        original = self._plain_source()
+        (original / ".gitignore").write_text("build/\ntraces/\n")
+        (original / "build").mkdir()
+        (original / "build" / "cache.o").write_bytes(b"before\0cache")
+        run = self.root / "run"
+        run.mkdir()
+
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+        (source / "file.txt").write_text("changed source\n")
+        (source / "build" / "cache.o").write_bytes(b"after\0cache")
+        (source / "build" / "new.o").write_bytes(b"new\0cache")
+        (source / "traces").mkdir()
+        (source / "traces" / "run.ndjson").write_text('{"state": 1}\n')
+
+        sl.capture_changes(run)
+        content = (run / "demo" / "changes.patch").read_bytes()
+
+        self.assertIn(b"file.txt", content)
+        self.assertNotIn(b"build/cache.o", content)
+        self.assertNotIn(b"build/new.o", content)
+        self.assertIn(b"traces/run.ndjson", content)
+        self.assertIn(b"Binary files /dev/null and b/traces/run.ndjson differ", content)
+        self.assertNotIn(b'"state": 1', content)
+
+    def test_plain_source_without_gitignore_does_not_guess_build_paths(self) -> None:
+        original = self._plain_source()
+        (original / "target").mkdir()
+        (original / "target" / "generated.txt").write_text("before\n")
+        run = self.root / "run"
+        run.mkdir()
+
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+        (source / "target" / "generated.txt").write_text("after\n")
+
+        sl.capture_changes(run)
+        content = (run / "demo" / "changes.patch").read_bytes()
+
+        self.assertIn(b"target/generated.txt", content)
+        self.assertIn(b"+after", content)
 
     def test_private_git_preserves_index_state(self) -> None:
         original = self._repo()
@@ -487,9 +568,11 @@ class SnapshotTests(unittest.TestCase):
         snapshots = sl.prepare_sources(run, {"git": git_source, "plain": plain_source})
         document = json.loads((run / sl.SOURCE_MAP).read_text())
 
-        self.assertEqual(document["version"], 3)
+        self.assertEqual(document["version"], 4)
         self.assertTrue(snapshots["git"].is_git)
         self.assertFalse(snapshots["plain"].is_git)
+        self.assertTrue(snapshots["git"].reviewable_diff)
+        self.assertTrue(snapshots["plain"].reviewable_diff)
         self.assertTrue(document["targets"]["git"]["is_git"])
         self.assertFalse(document["targets"]["plain"]["is_git"])
 
@@ -497,7 +580,26 @@ class SnapshotTests(unittest.TestCase):
         with self.assertRaisesRegex(sl.SnapshotError, "Git type"):
             sl.load_sources(run)
 
-    def test_old_source_map_version_is_rejected(self) -> None:
+    def test_legacy_source_map_keeps_full_binary_diff_behavior(self) -> None:
+        original = self._repo()
+        run = self.root / "run"
+        run.mkdir()
+        source = sl.prepare_sources(run, {"demo": original})["demo"].source
+        map_path = run / sl.SOURCE_MAP
+        document = json.loads(map_path.read_text())
+        document["version"] = 3
+        map_path.write_text(json.dumps(document))
+        (source / "ignored-binary").write_bytes(b"legacy\0payload")
+
+        snapshots = sl.load_sources(run)
+        sl.capture_changes(run)
+        content = (run / "demo" / "changes.patch").read_bytes()
+
+        self.assertFalse(snapshots["demo"].reviewable_diff)
+        self.assertIn(b"ignored-binary", content)
+        self.assertIn(b"GIT binary patch", content)
+
+    def test_unsupported_source_map_version_is_rejected(self) -> None:
         original = self._repo()
         run = self.root / "run"
         run.mkdir()
