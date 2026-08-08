@@ -10,8 +10,8 @@ bash original (git history preserves it).
 Cutover changes (per-task isolation, agreed 2026-07-04):
   - every task's pipeline gets --run-id=<scheduler-run>-<n>-<name>: outputs go
     to an isolated runs/<id>/ workspace instead of the canonical
-    case-studies/<name>/ dirs (which keep holding the *inputs* this scheduler
-    sets up: the artifact clone and .prompt-extra.md). One run dir per task,
+    case-studies/<name>/ dirs (which keep holding the artifact clone this
+    scheduler sets up). One run dir per task,
     not per scheduler run — the run-scoped artifacts (pipeline.log, run.json)
     live at the run root and would collide across parallel workers.
   - the transient-retry agent.log probe reads the isolated run's real phase-1
@@ -28,10 +28,9 @@ Cutover changes (per-task isolation, agreed 2026-07-04):
 
 Wart fixes (step 7, 2026-07-04 — goldens intentionally regenerated):
   - setup runs once, in main()'s setup phase. The bash ran setup_task again
-    inside every run_task, doubling the setup logs and rewriting
-    .prompt-extra.md mid-run; a clone failure now aborts the scheduler in the
-    setup phase (the bash main-scope set -e did the same) instead of also
-    having a silent per-task death path.
+    inside every run_task, doubling the setup logs; a clone failure now aborts
+    the scheduler in the setup phase (the bash main-scope set -e did the same)
+    instead of also having a silent per-task death path.
   - the summary tally counts dry-run tasks (`Dry=N`); the bash printed their
     DRY lines but counted them nowhere, so the tally didn't add up to Total.
   - the exit code is 1 when any task failed (0 otherwise); the bash always
@@ -59,8 +58,8 @@ Sanctioned deviations from the bash (agreed 2026-07-04, unit-test pinned):
     --workers additionally requires >= 1: bash took 0/negative and the fill
     loop spun forever without ever dispatching a task.
   - a flag missing its value errors out cleanly; bash died on `set -u`.
-  - a relative --prompt whose directory doesn't exist resolves via abspath;
-    bash died in `cd "$(dirname ...)"`.
+  - a relative --prompt resolves via abspath; missing or unreadable guidance
+    fails before scheduler logs or task workspaces are created.
 """
 
 from __future__ import annotations
@@ -100,8 +99,8 @@ Options:
   --windows N         Max resets to wait through (default: 3)
   --queue FILE     Task queue file (default: scripts/exp/tasks.queue)
   --max-turns N    Max agent turns per task (default: 0 = unlimited)
-  --prompt FILE     Copy extra instructions into every task workspace
-  --setup-only     Only clone repos and write prompts, don't run pipeline
+  --prompt FILE     Pass one guidance file to every task
+  --setup-only     Only clone repos, don't run pipeline
   --dry-run        Print commands without executing
   --claude-alias NAME  Claude CLI profile (default: claude).
                        Forwarded to specula run so quota checks target the
@@ -115,8 +114,7 @@ Queue format (tab-separated):
 
 Workspace: every task's pipeline runs isolated under runs/<run>-<n>-<name>/
 (scheduler passes --run-id; canonical inputs stay in case-studies/<name>/).
-A --prompt file is copied to case-studies/<name>/.prompt-extra.md for ALL
-tasks; for per-task prompts, place .prompt-extra.md there yourself first.
+When --prompt is set, the file is forwarded as modeling guidance to every task.
 """
 
 _TRANSIENT_RE = re.compile(r"API Error: 5[0-9][0-9]|Internal server error|overloaded_error|Overloaded")
@@ -337,7 +335,7 @@ class Scheduler:
             self.task_flags.append(flags)
         self.log(f"Loaded {len(self.task_targets)} tasks from {self.queue_file}")
 
-    # ── setup: clone repo + write .prompt-extra.md ──────────────────────────
+    # ── setup: clone repo ───────────────────────────────────────────────────
     def setup_task(self, idx: int) -> None:
         target = self.task_targets[idx]
         fields = target.split("|")
@@ -370,13 +368,6 @@ class Scheduler:
                     # set -e parity: aborts the scheduler from main()'s setup
                     # phase before any task starts
                     raise SystemExit(proc.returncode)
-
-        if self.prompt_file and os.path.isfile(self.prompt_file):
-            if self.dry_run:
-                self.log(f"DRY-RUN: cp {self.prompt_file} -> {work_dir}/.prompt-extra.md")
-            else:
-                (work_dir / ".prompt-extra.md").write_bytes(Path(self.prompt_file).read_bytes())
-                self.log(f"PROMPT {name}: wrote .prompt-extra.md")
 
     # ── worker ──────────────────────────────────────────────────────────────
     def _write_status(self, idx: int, status: str) -> None:
@@ -415,6 +406,8 @@ class Scheduler:
             cmd += flags.split()  # bash `read -ra` word-splitting: no quote handling
         if self.max_turns > 0:
             cmd.append(f"--max-turns={self.max_turns}")
+        if self.prompt_file:
+            cmd.append(f"--guidance={self.prompt_file}")
         cmd.append(target)
 
         if self.dry_run:
@@ -563,6 +556,13 @@ class Scheduler:
 
         if self.prompt_file and not self.prompt_file.startswith("/"):
             self.prompt_file = os.path.abspath(self.prompt_file)
+        if self.prompt_file:
+            try:
+                with Path(self.prompt_file).open("rb"):
+                    pass
+            except OSError as exc:
+                print(f"ERROR: cannot read --prompt file '{self.prompt_file}': {exc}", file=sys.stderr)
+                return 1
 
         self.run_id = time.strftime("%Y%m%d_%H%M%S")
         self.log_dir = f"{SPECULA_ROOT}/logs/scheduler/{self.run_id}"

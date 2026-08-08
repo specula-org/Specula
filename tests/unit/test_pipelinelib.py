@@ -1062,6 +1062,76 @@ class TestParsing(TmpCwd):
         self.assertIn(f"--artifact={repo}", p._phase_args(["t"]))
         self.assertNotIn(f"--artifact={repo}", p._phase_args(["t"], with_artifact=False))
 
+    def test_guidance_path_is_absolute_without_resolving_symlink(self) -> None:
+        source = self.tmp / "source.md"
+        source.write_text("focus on recovery\n")
+        link = self.tmp / "guidance.md"
+        link.symlink_to(source)
+        nested = self.tmp / "nested"
+        nested.mkdir()
+
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["--guidance=nested/../guidance.md", "t|g|l|r"]))
+
+        self.assertEqual(p.guidance_path, link)
+        self.assertNotEqual(p.guidance_path, source)
+        self.assertEqual(p.guidance_text, "focus on recovery\n")
+
+    def test_guidance_accepts_arbitrary_bytes_without_content_validation(self) -> None:
+        guidance = self.tmp / "guidance.bin"
+        guidance.write_bytes(b"scope: \xff\n")
+        p = pl.Pipeline()
+
+        self.assertIsNone(p.parse_args([f"--guidance={guidance}", "t|g|l|r"]))
+
+        self.assertEqual(p.guidance_text, "scope: \ufffd\n")
+
+    def test_guidance_requires_one_readable_file_and_one_target(self) -> None:
+        guidance = self.tmp / "guidance.md"
+        guidance.write_text("scope\n")
+        cases = (
+            (["--guidance=", "t"], "requires a path"),
+            ([f"--guidance={self.tmp / 'missing'}", "t"], "cannot read --guidance"),
+            ([f"--guidance={self.tmp}", "t"], "cannot read --guidance"),
+            ([f"--guidance={guidance}", "a", "b"], "exactly one target"),
+            ([f"--guidance={guidance}", f"--guidance={guidance}", "t"], "only once"),
+        )
+        for argv, message in cases:
+            with self.subTest(argv=argv):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    self.assertEqual(pl.Pipeline().parse_args(argv), 1)
+                self.assertIn(message, err.getvalue())
+
+    def test_guidance_is_read_once_and_staged_for_all_phases(self) -> None:
+        guidance = self.tmp / "guidance.md"
+        guidance.write_text("first version\n")
+        run = self.tmp / "run"
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args([f"--guidance={guidance}", "t|g|l|r"]))
+        p.run_dir = run
+
+        guidance.write_text("changed during invocation\n")
+        p.stage_guidance(["t"])
+
+        work = run / "t" / ".specula-output"
+        self.assertEqual((work / ".prompt-extra.md").read_text(), "first version\n")
+        self.assertEqual((work / ".prompt-extra.initial.md").read_text(), "first version\n")
+
+    def test_omitted_guidance_does_not_touch_existing_compatibility_input(self) -> None:
+        run = self.tmp / "run"
+        work = run / "t" / ".specula-output"
+        work.mkdir(parents=True)
+        compatibility_input = work / ".prompt-extra.md"
+        compatibility_input.write_text("existing\n")
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["t|g|l|r"]))
+        p.run_dir = run
+
+        p.stage_guidance(["t"])
+
+        self.assertEqual(compatibility_input.read_text(), "existing\n")
+
     def test_relative_artifact_is_stable_after_working_directory_changes(self) -> None:
         repo = self.tmp / "repo"
         repo.mkdir()
@@ -1271,6 +1341,7 @@ class TestParsing(TmpCwd):
         self.assertIn("--effort=LEVEL", out)
         self.assertIn("--policy-retries=N", out)
         self.assertIn("--transient-resumes=N", out)
+        self.assertIn("--guidance=PATH", out)
         self.assertIn("--skip-validate", out)
         self.assertNotIn("--skip-validation", out)
         self.assertIn("default: 20", out)

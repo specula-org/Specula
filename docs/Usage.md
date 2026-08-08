@@ -119,6 +119,21 @@ specula run \
 
 Quote the target descriptor because `|` has special meaning in the shell. Its fields identify the output name, GitHub repository, primary language, and reference algorithm or design document.
 
+For more consistent scope across repeated runs and to focus resources on your
+highest-priority modules and scenarios, we recommend starting from the
+[modeling guidance template](./modeling-guidance-template.md) and passing your
+edited file to a single-target run:
+
+```bash
+specula run \
+  --artifact=/work/cometbft \
+  --guidance=/absolute/path/to/cometbft-guidance.md \
+  "cometbft|cometbft/cometbft|Go|Tendermint BFT"
+```
+
+Guidance is optional. Without it, Specula determines the modeling scope
+automatically.
+
 With the default isolated workspace, an external source checkout must be supplied with `--artifact`. Alternatively, Specula finds canonical checkouts under `case-studies/<name>/artifact/`.
 
 Select an agent, model, and reasoning effort when needed:
@@ -261,7 +276,10 @@ If an agent call is interrupted, attach to the same run. Specula restores omitte
 specula run --run-id=my-run
 ```
 
-To add guidance for the resumed agent, update the target's `.prompt-extra.md` before running the command.
+When a run was created with `--guidance`, an omitted flag on resume reuses the
+same absolute path and reads its current contents. You may edit that file
+between invocations, but resuming with a different guidance path is rejected,
+including with `--fresh-context`.
 
 After the resumed phase finishes, later phases follow the skip options on the current command.
 
@@ -327,6 +345,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--model=NAME` | Override the configured model |
 | `--effort=LEVEL` | Override reasoning effort |
 | `--artifact=PATH` | Set the target source checkout |
+| `--guidance=PATH` | Read optional modeling guidance for a single-target run |
 | `--keep-original` | Run against a full private source copy and write `changes.patch` |
 | `--tlc-memory-limit=SIZE` | Set the run-wide aggregate TLC heap + direct-memory budget; default is 80% of effective available memory at the first TLC start |
 | `--tlc-worker-limit=N` | Optionally bound aggregate TLC exploration workers; omitted means report-only |

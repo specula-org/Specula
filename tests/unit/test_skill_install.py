@@ -90,7 +90,7 @@ class TestInstallSkills(SkillInstallCase):
                 "tla-checking-workflow",
                 "tla-trace-workflow",
                 "validation-workflow",
-                "writing-prompt-extra",
+                "writing-modeling-guidance",
             ],
         )
         result = skill_install.install_skills(REPO_ROOT / "skills", self.target)

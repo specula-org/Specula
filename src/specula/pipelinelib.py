@@ -152,6 +152,7 @@ Options:
   --model=NAME           Model forwarded to every agent adapter
   --effort=LEVEL         Reasoning effort forwarded to every agent adapter
   --artifact=PATH        Path to system artifact/source code
+  --guidance=PATH        Target-specific modeling guidance (single-target runs only)
   --keep-original        Work in a full private copy and write a reviewable changes.patch
   --tlc-memory-limit=SIZE
                          Aggregate -m + -M budget for TLCs in this run (default: auto,
@@ -362,6 +363,9 @@ class Pipeline:
         self._effort_given = False
         self.artifact = ""
         self._artifact_given = False
+        self.guidance_path: Path | None = None
+        self.guidance_text: str | None = None
+        self._guidance_given = False
         self.keep_original = False
         self._keep_original_given = False
         self._snapshot_sources: dict[str, Path] = {}
@@ -499,6 +503,24 @@ class Pipeline:
             elif arg.startswith("--artifact="):
                 self.artifact = arg.split("=", 1)[1]
                 self._artifact_given = True
+            elif arg.startswith("--guidance="):
+                if self._guidance_given:
+                    print("ERROR: --guidance may be specified only once", file=sys.stderr)
+                    return 1
+                raw_path = arg.split("=", 1)[1]
+                if not raw_path:
+                    print("ERROR: --guidance requires a path", file=sys.stderr)
+                    return 1
+                self._guidance_given = True
+                try:
+                    expanded = Path(raw_path).expanduser()
+                    if not expanded.is_absolute():
+                        expanded = _logical_cwd() / expanded
+                    self.guidance_path = Path(os.path.abspath(expanded))
+                    self.guidance_text = self.guidance_path.read_text(errors="replace")
+                except (OSError, RuntimeError) as exc:
+                    print(f"ERROR: cannot read --guidance file '{raw_path}': {exc}", file=sys.stderr)
+                    return 1
             elif arg == "--keep-original":
                 self.keep_original = True
                 self._keep_original_given = True
@@ -535,6 +557,9 @@ class Pipeline:
         if not self.targets:
             self.targets.append(_logical_cwd().name)  # bash `basename "$PWD"` (logical)
         self._targets_given = targets_given
+        if self.guidance_path is not None and len(self.targets) != 1:
+            print("ERROR: --guidance supports exactly one target per run", file=sys.stderr)
+            return 1
         # order-independent: the two are contradictory however they arrive
         # (e.g. scheduler-injected --run-id + a --no-isolate from queue flags)
         if self._run_id_given and self._no_isolate_given:
@@ -705,6 +730,7 @@ class Pipeline:
             "skip_reviews": self.skip_reviews,
             "targets": list(self.targets),
             "artifact": self.artifact,
+            "guidance": str(self.guidance_path) if self.guidance_path is not None else None,
         }
 
     def _restore_resume_configuration(self, raw: dict[str, Any], *, allow_overrides: bool = False) -> None:
@@ -873,6 +899,19 @@ class Pipeline:
                 raise resumelib.ResumeError("targets differ from this run; pass --fresh-context to change them")
         else:
             self.targets = list(stored_targets)
+
+        stored_guidance = raw.get("guidance")
+        if stored_guidance is not None and (
+            not isinstance(stored_guidance, str) or not Path(stored_guidance).is_absolute()
+        ):
+            raise resumelib.ResumeError("invalid stored guidance path")
+        if self._guidance_given:
+            if stored_guidance is None or self.guidance_path != Path(stored_guidance):
+                raise resumelib.ResumeError("--guidance path differs from this run; resume with the original path")
+        elif stored_guidance is not None:
+            self.guidance_path = Path(stored_guidance)
+        if self.guidance_path is not None and len(self.targets) != 1:
+            raise resumelib.ResumeError("stored guidance requires exactly one target")
 
         stored_artifact = raw.get("artifact")
         if not isinstance(stored_artifact, str):
@@ -1128,6 +1167,13 @@ class Pipeline:
                 print(f"ERROR: {exc}", file=sys.stderr)
                 return fail()
 
+        if self.guidance_path is not None and self.guidance_text is None:
+            try:
+                self.guidance_text = self.guidance_path.read_text(errors="replace")
+            except OSError as exc:
+                print(f"ERROR: cannot read guidance file '{self.guidance_path}': {exc}", file=sys.stderr)
+                return fail()
+
         source_map = self.run_dir / SOURCE_MAP
         if source_map.exists() or source_map.is_symlink():
             try:
@@ -1314,6 +1360,7 @@ class Pipeline:
             "claude_alias": self.claude_alias,
             "artifact": self.artifact,
             "artifact_git_sha": artifact_sha,
+            "guidance": str(self.guidance_path) if self.guidance_path is not None else None,
             "tlc_memory_limit": self.tlc_memory_limit or os.environ.get(MEMORY_LIMIT_ENV) or "auto",
             "tlc_worker_limit": self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or None,
             "resume_configuration": resume_configuration,
@@ -1438,6 +1485,22 @@ class Pipeline:
         if len(self.targets) == 1:
             return f"{_logical_cwd()}/.specula-output"
         return f"{_logical_cwd()}/{name}/.specula-output"
+
+    def stage_guidance(self, names: list[str]) -> None:
+        """Publish the guidance text read for this invocation to phase inputs."""
+        if self.guidance_text is None:
+            return
+        if len(self.targets) != 1 or len(names) != 1:
+            raise SystemExit("ERROR: --guidance supports exactly one target per run")
+        name = names[0]
+        if not is_safe_target_name(name):
+            raise SystemExit(f"ERROR: unsafe target name for --guidance: {name!r}")
+        work_dir = Path(self.get_work_dir(name))
+        self._atomic_replace_text(work_dir / ".prompt-extra.md", self.guidance_text)
+        if self.run_dir is not None:
+            # Phase launchers freeze this file within an invocation. Replace it
+            # on resume so every phase started now sees the same current text.
+            self._atomic_replace_text(work_dir / ".prompt-extra.initial.md", self.guidance_text)
 
     def _invalidate_fresh_context_summaries(self) -> None:
         assert self.run_dir is not None
@@ -3303,6 +3366,8 @@ class Pipeline:
         worker_limit = self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or "unbounded (report only)"
         print(f"TLC memory:   {memory_limit}")
         print(f"TLC workers:  {worker_limit}")
+        if self.guidance_path is not None:
+            print(f"Guidance:     {self.guidance_path}")
         if self.run_dir:
             print(f"Run:          {self.run_id}  ({self.run_dir})")
         print()
@@ -3338,6 +3403,8 @@ class Pipeline:
                     os.chdir(case_dir)
                     os.environ["PWD"] = str(case_dir)  # bash cd exports the new $PWD
                     log(f"Single target: cd to {case_dir}")
+
+        self.stage_guidance(names)
 
         self.prepare_source_snapshots(names)
         self.initialize_resource_summaries(names)
