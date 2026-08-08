@@ -185,7 +185,6 @@ Pauses when API usage exceeds threshold, waits for reset, resumes automatically.
 .specula-output/
 ├── analysis-report.md           # Phase 1
 ├── modeling-brief.md            # Phase 1 → Phase 2 handoff
-├── .prompt-extra.md             # Target-specific instructions for pipeline agents
 ├── confirmed-bugs.md            # Phase 4 final confirmation report
 ├── bug-severity.md              # Phase 4b severity classification
 ├── summary.md                   # Final per-target summary

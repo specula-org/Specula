@@ -407,6 +407,71 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         self.assertEqual(stored["configuration"]["claude_alias"], "work")
         self.assertEqual(stored["configuration"]["targets"], ["foo|o/r|Go|ref"])
 
+    def test_guidance_path_is_recorded_and_current_content_is_reloaded_on_resume(self) -> None:
+        root = self.tmp()
+        guidance = self.tmp() / "guidance.md"
+        guidance.write_text("first\n")
+        first = self._pipeline(
+            ["--run-id=guided", f"--guidance={guidance}", "foo|o/r|Go|ref"],
+            root,
+        )
+        assert first.run_dir is not None
+        first.stage_guidance(["foo"])
+        self._seed_active_turn(first)
+
+        meta = json.loads((first.run_dir / "run.json").read_text())
+        stored = json.loads(resumelib.config_path(first.run_dir).read_text())["configuration"]
+        self.assertEqual(meta["guidance"], str(guidance))
+        self.assertEqual(stored["guidance"], str(guidance))
+        self.assertFalse(any("guidance" in key and "sha" in key for key in meta))
+
+        guidance.write_text("second\n")
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=guided"]))
+        self.assertIsNone(resumed.resolve_run_dir())
+        self.assertEqual(resumed.guidance_path, guidance)
+        self.assertEqual(resumed.guidance_text, "second\n")
+        resumed.stage_guidance(["foo"])
+
+        work = first.run_dir / "foo" / ".specula-output"
+        self.assertEqual((work / ".prompt-extra.md").read_text(), "second\n")
+        self.assertEqual((work / ".prompt-extra.initial.md").read_text(), "second\n")
+
+    def test_resume_rejects_a_different_guidance_path_even_with_fresh_context(self) -> None:
+        root = self.tmp()
+        first_guidance = self.tmp() / "first.md"
+        second_guidance = self.tmp() / "second.md"
+        first_guidance.write_text("first\n")
+        second_guidance.write_text("second\n")
+        self._pipeline(
+            ["--run-id=guided-stable", f"--guidance={first_guidance}", "foo|o/r|Go|ref"],
+            root,
+        )
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(
+            resumed.parse_args(["--run-id=guided-stable", "--fresh-context", f"--guidance={second_guidance}"])
+        )
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(resumed.resolve_run_dir(), 1)
+        self.assertIn("--guidance path differs from this run", err.getvalue())
+
+    def test_resume_accepts_same_guidance_path_with_changed_content(self) -> None:
+        root = self.tmp()
+        guidance = self.tmp() / "guidance.md"
+        guidance.write_text("first\n")
+        self._pipeline(
+            ["--run-id=guided-same", f"--guidance={guidance}", "foo|o/r|Go|ref"],
+            root,
+        )
+        guidance.write_text("changed\n")
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=guided-same", "--fresh-context", f"--guidance={guidance}"]))
+        self.assertIsNone(resumed.resolve_run_dir())
+        self.assertEqual(resumed.guidance_text, "changed\n")
+
     def test_attach_restores_omitted_agent_tuning_alias_and_targets(self) -> None:
         root = self.tmp()
         first = self._pipeline(

@@ -137,6 +137,7 @@ class TestParseArgs(Base):
         self.assertEqual(rc, 0)
         self.assertIn("Overnight batch scheduler", out.getvalue())
         self.assertIn("--prompt FILE", out.getvalue())
+        self.assertIn("Pass one guidance file to every task", out.getvalue())
         self.assertIn("Queue format (tab-separated):", out.getvalue())
 
     def test_unknown_flag(self) -> None:
@@ -478,20 +479,17 @@ class TestSetupTask(WorkerBase):
         s.setup_task(0)
         self.assertEqual([ln for ln in s.lines if ln.startswith("CLONE")], [])
 
-    def test_prompt_copied_only_when_file_exists(self) -> None:
+    def test_setup_does_not_copy_prompt_into_case_study(self) -> None:
         root = self.root()
         self.seed_repo(root, "footest", "bar")
         s = self.sched()
         self.task(s, "footest|foo/bar|Go|r")
-        s.prompt_file = str(self.tmp() / "missing.md")
-        s.setup_task(0)  # silently skipped, bash [[ -f ]] parity
-        self.assertEqual(s.lines, [])
         pf = self.tmp() / "p.md"
         pf.write_text("extra instructions\n")
         s.prompt_file = str(pf)
         s.setup_task(0)
-        self.assertEqual(s.lines[-1], "PROMPT footest: wrote .prompt-extra.md")
-        self.assertEqual((root / "case-studies" / "footest" / ".prompt-extra.md").read_text(), "extra instructions\n")
+        self.assertEqual(s.lines, [])
+        self.assertFalse(any(path.is_file() for path in (root / "case-studies" / "footest").iterdir()))
 
     def test_clone_failure_dies_like_set_e(self) -> None:
         self.root()
@@ -532,7 +530,7 @@ class TestSetupTask(WorkerBase):
 
     def test_run_task_does_not_rerun_setup(self) -> None:
         # wart fix (step 7): the bash ran setup_task again inside run_task,
-        # doubling the CLONE/PROMPT logs; run_task now only runs the pipeline
+        # doubling the setup logs; run_task now only runs the pipeline
         root = self.root("#!/usr/bin/env bash\nexit 0\n")
         s = self.sched()
         pf = self.tmp() / "p.md"
@@ -540,7 +538,7 @@ class TestSetupTask(WorkerBase):
         s.prompt_file = str(pf)
         self.task(s, "footest|foo/bar|Go|r")
         s.run_task(0)
-        setup_lines = [ln for ln in s.lines if ln.startswith(("CLONE", "PROMPT", "DRY-RUN: git", "DRY-RUN: cp"))]
+        setup_lines = [ln for ln in s.lines if ln.startswith(("CLONE", "DRY-RUN: git"))]
         self.assertEqual(setup_lines, [])
         self.assertFalse((root / "case-studies" / "footest").exists())
 
@@ -563,13 +561,17 @@ class TestRunTask(WorkerBase):
         s.dry_run = True
         s.max_turns = 7
         s.claude_alias = "myalias"
+        guidance = self.tmp() / "guidance.md"
+        guidance.write_text("scope\n")
+        s.prompt_file = str(guidance)
         self.task(s, "footest|foo/bar|Go|Raft demo", "--skip-analysis\t--skip-specgen")
         s.run_task(0)
         self.assertEqual(
             s.lines[-1],
             f"DRY-RUN: bash {root}/scripts/launch/launch_pipeline.sh --claude-alias=myalias"
             " --run-id=20990101_000000-1-footest"
-            " --skip-analysis --skip-specgen --max-turns=7 footest|foo/bar|Go|Raft demo",
+            f" --skip-analysis --skip-specgen --max-turns=7 --guidance={guidance}"
+            " footest|foo/bar|Go|Raft demo",
         )
         self.assertEqual((Path(s.log_dir) / "status" / "0").read_text(), "dry-run\n")
 
@@ -761,10 +763,23 @@ class TestRun(Base):
         old_cwd = os.getcwd()
         self.addCleanup(lambda: os.chdir(old_cwd))
         os.chdir(root)
+        (root / "notes").mkdir()
+        (root / "notes" / "extra.md").write_text("scope\n")
         s = Sched()
         rc = s.run(["--queue", str(qf), "--prompt", "notes/extra.md"])
         self.assertEqual(rc, 0)
         self.assertEqual(s.prompt_file, f"{root}/notes/extra.md")
+
+    def test_missing_prompt_fails_before_log_dir_creation(self) -> None:
+        root = self.tmp()
+        self.patch_mod("SPECULA_ROOT", root)
+        s = Sched()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = s.run(["--prompt", str(root / "missing.md")])
+        self.assertEqual(rc, 1)
+        self.assertIn("cannot read --prompt file", err.getvalue())
+        self.assertFalse((root / "logs").exists())
 
     def test_parse_error_short_circuits_before_log_dir(self) -> None:
         root = self.tmp()
