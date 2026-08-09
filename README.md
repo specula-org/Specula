@@ -98,22 +98,16 @@ Automatic MCP configuration is skipped for older Copilot CLI versions; upgrade t
 
 ## Auto Mode
 
-For more consistent modeling scope across repeated runs, and to focus Specula's
-time and resources on the modules and scenarios you care about most, we
-recommend providing target-specific modeling guidance. Copy the template, edit
-it for your system, and pass the resulting file with `--guidance`. See the
-[modeling guidance template](./docs/modeling-guidance-template.md) for the
-recommended structure.
-
 ```bash
-cp docs/modeling-guidance-template.md /absolute/path/to/mysys-guidance.md
 specula run mysys \
   --artifact=/path/to/repo \
   --guidance=/absolute/path/to/mysys-guidance.md
 ```
 
-Guidance is optional. Without it, Specula determines the modeling scope
-automatically.
+The `mysys-guidance.md` is optional but highly recommended.
+It is a configuration file that guides Specula to focus on target modules and scenarios,
+	with consistent modeling scope across runs.
+We provide a [template](./docs/modeling-guidance-template.md). 
 
 Outputs are stored in `runs/<run-id>`. 
 
@@ -168,4 +162,4 @@ If you use Specula in your research, please cite our paper:
 
 ## License
 
-See [LICENSE](LICENSE).
+[Apache License 2.0](LICENSE).
