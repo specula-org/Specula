@@ -1160,6 +1160,37 @@ class TestParsing(TmpCwd):
 
         prompt.assert_not_called()
 
+    def test_guidance_confirmation_preflight_distinguishes_new_and_saved_runs(self) -> None:
+        runs = self.tmp / "runs"
+        guided = runs / "guided"
+        unguided = runs / "unguided"
+        legacy = runs / "legacy"
+        guided.mkdir(parents=True)
+        unguided.mkdir()
+        legacy.mkdir()
+        resumelib.initialize_run(guided)
+        resumelib.initialize_run(unguided)
+        resumelib.initialize_run(legacy)
+        resumelib.save_configuration(guided, {"guidance": "/tmp/guidance.md"})
+        resumelib.save_configuration(unguided, {"guidance": None})
+
+        cases = (
+            ("new", False, True),
+            ("guided", False, False),
+            ("unguided", False, True),
+            ("legacy", False, False),
+            ("legacy", True, True),
+        )
+        with mock.patch.object(pl, "SPECULA_ROOT", self.tmp):
+            for run_id, fresh_context, expected in cases:
+                with self.subTest(run_id=run_id):
+                    p = pl.Pipeline()
+                    args = [f"--run-id={run_id}", "t|g|l|r"]
+                    if fresh_context:
+                        args.insert(1, "--fresh-context")
+                    self.assertIsNone(p.parse_args(args))
+                    self.assertEqual(p.should_confirm_without_guidance_before_resolve(), expected)
+
     def test_guidance_is_read_once_and_staged_for_all_phases(self) -> None:
         guidance = self.tmp / "guidance.md"
         guidance.write_text("first version\n")
@@ -3436,6 +3467,34 @@ class TestMainTeeTeardown(TmpCwd):
             f"sys.exit(pl.main({args!r}))\n"
         )
         return subprocess.run([sys.executable, str(d)], cwd=self.tmp, capture_output=True, text=True)
+
+    def test_declining_guidance_does_not_create_explicit_run(self) -> None:
+        root = self.tmp / "root"
+        run = root / "runs" / "declined"
+        r = self._run_entry(
+            f"pl.SPECULA_ROOT = pl.Path({str(root)!r})\npl.Pipeline.confirm_without_guidance = lambda self: False",
+            ["--run-id=declined", "t|g|l|r"],
+        )
+
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertFalse(run.exists())
+        self.assertFalse((root / "runs" / "latest").exists())
+
+    def test_declining_guidance_does_not_reset_existing_fresh_context(self) -> None:
+        root = self.tmp / "root"
+        run = root / "runs" / "existing"
+        run.mkdir(parents=True)
+        resumelib.initialize_run(run)
+        resumelib.save_configuration(run, {"guidance": None})
+        active = resumelib.active_dir(run) / "keep.json"
+        active.write_text("{}\n")
+        r = self._run_entry(
+            f"pl.SPECULA_ROOT = pl.Path({str(root)!r})\npl.Pipeline.confirm_without_guidance = lambda self: False",
+            ["--run-id=existing", "--fresh-context", "t|g|l|r"],
+        )
+
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertTrue(active.is_file())
 
     def test_unexpected_exception_traceback_reaches_log(self) -> None:
         # bash set -e left the failing command's stderr in pipeline.log; an
