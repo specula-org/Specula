@@ -122,7 +122,9 @@ Quote the target descriptor because `|` has special meaning in the shell. Its fi
 For more consistent scope across repeated runs and to focus resources on your
 highest-priority modules and scenarios, we recommend starting from the
 [modeling guidance template](./modeling-guidance-template.md) and passing your
-edited file to a single-target run:
+edited file to a single-target run. See the
+[completed SONiC linkmgrd example](./modeling-guidance-example.md) for a
+concrete configuration:
 
 ```bash
 specula run \
