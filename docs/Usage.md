@@ -370,6 +370,10 @@ specula run [options] "name|owner/repository|language|reference"
 
 `--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default. `--max-repair-rounds=N` caps rounds across the whole loop, not attempts per request; when the cap is reached, remaining open requests are deferred. For the individual `specula confirm` command, the corresponding debate flags are `--debate` and `--rounds=N` (range `1` through `5`).
 
+When an interactive `specula run` has no `--guidance`, Specula asks before
+continuing. Non-interactive and batch runs print a warning and continue without
+waiting for input, so unattended jobs are not blocked.
+
 Use command-specific help for the authoritative option list:
 
 ```bash

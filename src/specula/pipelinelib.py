@@ -627,6 +627,32 @@ class Pipeline:
                 return 1
         return None
 
+    def confirm_without_guidance(self) -> bool:
+        """Confirm an interactive run that has no target-specific guidance.
+
+        Never read stdin when the prompt could be hidden or unattended. Batch
+        workers redirect their output, so they take this non-interactive path
+        even when the scheduler itself was started from a terminal.
+        """
+        if self.guidance_path is not None:
+            return True
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            print(
+                "WARNING: no --guidance file provided; continuing without "
+                "target-specific guidance in non-interactive mode.",
+                file=sys.stderr,
+            )
+            return True
+        try:
+            answer = input("No --guidance file was provided. Continue without target-specific guidance? [y/N] ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            answer = ""
+        if answer.strip().lower() not in {"y", "yes"}:
+            print("Aborted. Pass --guidance=PATH to provide target-specific guidance.")
+            return False
+        return True
+
     # ── workspace isolation (step 4; runs before the tee so pipeline.log can
     #    land in the run root) ──
     def _resolve_snapshot_sources(self, fallback_artifact: str = "") -> dict[str, Path]:
@@ -3568,9 +3594,14 @@ def main(argv: list[str]) -> int:
         # --help / unknown option exit before the tee starts, like the bash
         # top-level parse: no .specula-output/, no pipeline.log.
         return rc
+    if not p._run_id_given and not p.confirm_without_guidance():
+        return 1
     rc = p.resolve_run_dir(acquire_lock=True)
     if rc is not None:
         return rc  # invalid --run-id: pre-tee exit, like the option errors
+    if p._run_id_given and not p.confirm_without_guidance():
+        p._release_run_lock()
+        return 1
 
     if p.run_dir:
         # isolated: the log is a run-scoped artifact, it lives at the run root

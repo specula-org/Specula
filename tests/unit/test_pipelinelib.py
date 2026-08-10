@@ -1103,6 +1103,63 @@ class TestParsing(TmpCwd):
                     self.assertEqual(pl.Pipeline().parse_args(argv), 1)
                 self.assertIn(message, err.getvalue())
 
+    def test_interactive_run_confirms_omitted_guidance(self) -> None:
+        class TTYBuffer(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["t|g|l|r"]))
+
+        for answer, expected in (("yes", True), ("n", False), ("", False)):
+            with self.subTest(answer=answer):
+                stdin = TTYBuffer()
+                stdout = TTYBuffer()
+                with (
+                    mock.patch.object(sys, "stdin", stdin),
+                    contextlib.redirect_stdout(stdout),
+                    mock.patch("builtins.input", return_value=answer) as prompt,
+                ):
+                    self.assertEqual(p.confirm_without_guidance(), expected)
+                prompt.assert_called_once_with(
+                    "No --guidance file was provided. Continue without target-specific guidance? [y/N] "
+                )
+                if not expected:
+                    self.assertIn("Aborted.", stdout.getvalue())
+
+    def test_noninteractive_run_never_prompts_for_omitted_guidance(self) -> None:
+        class TTYBuffer(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args(["t|g|l|r"]))
+
+        for stdin, stdout in ((io.StringIO(), TTYBuffer()), (TTYBuffer(), io.StringIO())):
+            with self.subTest(stdin_tty=stdin.isatty(), stdout_tty=stdout.isatty()):
+                err = io.StringIO()
+                with (
+                    mock.patch.object(sys, "stdin", stdin),
+                    contextlib.redirect_stdout(stdout),
+                    contextlib.redirect_stderr(err),
+                    mock.patch("builtins.input") as prompt,
+                ):
+                    self.assertTrue(p.confirm_without_guidance())
+
+                prompt.assert_not_called()
+                self.assertIn("continuing without target-specific guidance", err.getvalue())
+
+    def test_configured_guidance_skips_confirmation(self) -> None:
+        guidance = self.tmp / "guidance.md"
+        guidance.write_text("scope\n")
+        p = pl.Pipeline()
+        self.assertIsNone(p.parse_args([f"--guidance={guidance}", "t|g|l|r"]))
+
+        with mock.patch("builtins.input") as prompt:
+            self.assertTrue(p.confirm_without_guidance())
+
+        prompt.assert_not_called()
+
     def test_guidance_is_read_once_and_staged_for_all_phases(self) -> None:
         guidance = self.tmp / "guidance.md"
         guidance.write_text("first version\n")
