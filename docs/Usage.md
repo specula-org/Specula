@@ -122,7 +122,9 @@ Quote the target descriptor because `|` has special meaning in the shell. Its fi
 For more consistent scope across repeated runs and to focus resources on your
 highest-priority modules and scenarios, we recommend starting from the
 [modeling guidance template](./modeling-guidance-template.md) and passing your
-edited file to a single-target run:
+edited file to a single-target run. See the
+[completed SONiC linkmgrd example](./modeling-guidance-example.md) for a
+concrete configuration:
 
 ```bash
 specula run \
@@ -367,6 +369,10 @@ specula run [options] "name|owner/repository|language|reference"
 | `--no-isolate` | Use the legacy output layout described above |
 
 `--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default. `--max-repair-rounds=N` caps rounds across the whole loop, not attempts per request; when the cap is reached, remaining open requests are deferred. For the individual `specula confirm` command, the corresponding debate flags are `--debate` and `--rounds=N` (range `1` through `5`).
+
+When an interactive `specula run` has no `--guidance`, Specula asks before
+continuing. Non-interactive and batch runs print a warning and continue without
+waiting for input, so unattended jobs are not blocked.
 
 Use command-specific help for the authoritative option list:
 

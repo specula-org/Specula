@@ -23,9 +23,11 @@ If none apply, explain that guidance is optional and Specula can determine the m
 
 1. **State WHAT to verify, not HOW to model it.** Specification generation decides modeling abstractions.
 2. **Phrase hypotheses as questions.** Ask whether an event can cause an outcome instead of declaring a formal invariant.
-3. **Cite real `file:line` locations or symbols whenever possible.**
+3. **Use real `file:line` locations or symbols when the user supplies them or asks for help locating relevant code.** Source anchors are optional and must not replace user intent.
 4. **Keep it concise.** Aim for roughly 20–60 lines.
 5. **Do not repeat what source analysis can discover.** Prioritize user intent, incidents, risks, and exclusions.
+6. **Do not invent or silently complete user intent.** Ask a focused question when a missing priority, expected behavior, or assumption would materially change what gets verified. Resolving a user-selected question to code locations is useful; adding a new priority or contract is not.
+7. **Treat expected behavior as a contract to test.** Do not assume it is implemented correctly or encode it into a model guard or assumption so that violations become unreachable.
 
 ## Keep / Remove
 
@@ -41,19 +43,28 @@ Self-test before writing: would the guidance still make sense if Specula switche
 
 ## Recommended structure
 
-Start from `docs/modeling-guidance-template.md` and include only sections the target needs:
+Start from `docs/modeling-guidance-template.md`. Complete every Required section and include only relevant Optional sections:
 
-1. Objective.
-2. Required scope and key entry points.
-3. Required interactions and failure, recovery, concurrency, or ordering coverage.
-4. Scenario hypotheses.
-5. Known incidents and references.
-6. Out-of-scope behavior.
+Required sections:
+
+1. Goal: the decision or confidence the run should support.
+2. Scope and boundary.
+3. Prioritized questions, each pairing a trigger or condition with an observable outcome and the intended contract. Three to five is typical, but never invent filler to reach that range.
+4. Module or component interactions that must be followed.
+5. Non-obvious caller, environment, or fault assumptions; write `None` when there are none.
+
+Optional sections:
+
+1. Known incidents and references.
+2. Suggested source locations or symbols.
+3. Additional exploration after the priority questions.
+
+Priority questions are a coverage floor, not an exploration ceiling. Agents should address every priority question without treating it as a known bug, then remain free to investigate adjacent risks derived from the code.
 
 ## Procedure
 
 1. Confirm the target system, the user's priorities, and any hypotheses or exclusions.
-2. Read enough source to cite real paths, lines, or symbols. Research relevant incidents when requested or needed.
+2. If the user supplies source locations or requests help finding them, verify enough source to cite real paths, lines, or symbols. Research incidents when requested or needed to ground user-provided context; do not mine either as a substitute for missing intent.
 3. Draft concise guidance using the template and hard rules.
 4. Show the draft to the user before writing it, including any sections intentionally omitted.
 5. Write the approved text to a user-chosen path and show the corresponding `specula run --guidance=/absolute/path/to/file ...` command.
@@ -63,6 +74,8 @@ Start from `docs/modeling-guidance-template.md` and include only sections the ta
 - Formal variable, operator, invariant, or action definitions.
 - State-space bounds selected by the guidance author.
 - Hypotheses presented as established bugs without evidence.
+- Expected behavior encoded as an action guard or assumption instead of a property that may be violated.
+- AI-generated priorities, contracts, or assumptions presented as if the user supplied them.
 - README summaries or generic correctness advice.
 - Long protocol background that source analysis can recover.
 

@@ -627,6 +627,63 @@ class Pipeline:
                 return 1
         return None
 
+    def confirm_without_guidance(self) -> bool:
+        """Confirm an interactive run that has no target-specific guidance.
+
+        Never read stdin when the prompt could be hidden or unattended. Batch
+        workers redirect their output, so they take this non-interactive path
+        even when the scheduler itself was started from a terminal.
+        """
+        if self.guidance_path is not None:
+            return True
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            print(
+                "WARNING: no --guidance file provided; continuing without "
+                "target-specific guidance in non-interactive mode.",
+                file=sys.stderr,
+            )
+            return True
+        try:
+            answer = input("No --guidance file was provided. Continue without target-specific guidance? [y/N] ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            answer = ""
+        if answer.strip().lower() not in {"y", "yes"}:
+            print("Aborted. Pass --guidance=PATH to provide target-specific guidance.")
+            return False
+        return True
+
+    def should_confirm_without_guidance_before_resolve(self) -> bool:
+        """Return whether the CLI should prompt before run state can change.
+
+        Existing explicit runs may already have guidance in their immutable
+        resume configuration. Read only that field here; full validation and
+        restoration remain resolve_run_dir's responsibility.
+        """
+        if self.guidance_path is not None:
+            return False
+        if not self._run_id_given:
+            return True
+        if not _valid_run_id(self.run_id):
+            return False  # resolve_run_dir reports the invalid ID
+
+        run_dir = SPECULA_ROOT / "runs" / self.run_id
+        try:
+            run_info = run_dir.lstat()
+        except FileNotFoundError:
+            return True
+        except OSError:
+            return False  # resolve_run_dir reports the inspection failure
+        if not stat.S_ISDIR(run_info.st_mode):
+            return False  # resolve_run_dir reports the unsafe run path
+        try:
+            stored = resumelib.load_configuration(run_dir)
+        except resumelib.ResumeError:
+            # A legacy run without checkpoints can proceed only through
+            # --fresh-context, so confirm before that reset can discard state.
+            return self.fresh_context
+        return stored.get("guidance") is None
+
     # ── workspace isolation (step 4; runs before the tee so pipeline.log can
     #    land in the run root) ──
     def _resolve_snapshot_sources(self, fallback_artifact: str = "") -> dict[str, Path]:
@@ -3568,6 +3625,8 @@ def main(argv: list[str]) -> int:
         # --help / unknown option exit before the tee starts, like the bash
         # top-level parse: no .specula-output/, no pipeline.log.
         return rc
+    if p.should_confirm_without_guidance_before_resolve() and not p.confirm_without_guidance():
+        return 1
     rc = p.resolve_run_dir(acquire_lock=True)
     if rc is not None:
         return rc  # invalid --run-id: pre-tee exit, like the option errors

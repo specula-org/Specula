@@ -77,6 +77,8 @@ Counter-bound fault-injection actions (timeout, crash, message loss, etc.). Do N
 
 This is a self-check, not a grading rubric. Glance over brief §2 / §5 / §6.1 while finalizing Phase 2, identify any obvious gaps, and either close them or note honestly why something is out of scope. The audit is **brief-driven, not taxonomy-driven** — if the brief did not raise it, you do not have to cover it. Fill the audit by reading actual cfg files, not from memory of what you intended.
 
+When target-specific guidance is provided, preserve its intent while translating the Modeling Brief into the spec. Make it clear in `brief-coverage.md` how the user's priorities are represented or why another verification route is more appropriate, using whatever form and level of detail fit the target. Do not distort implementation evidence or modeling decisions merely to echo the guidance.
+
 See `references/brief-coverage-checklist.md` for table sketches and a worked failure example.
 
 ---
