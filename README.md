@@ -104,11 +104,11 @@ specula run mysys \
   --guidance=/absolute/path/to/mysys-guidance.md
 ```
 
-The `mysys-guidance.md` is optional but highly recommended.
+The `mysys-guidance.md` is optional but recommended.
 It is a configuration file that guides Specula to focus on target modules and scenarios,
 	with consistent modeling scope across runs.
-We provide a [template](./docs/modeling-guidance-template.md) and a
-[completed example](./docs/modeling-guidance-example.md).
+We provide a [template](./docs/modeling-guidance-template.md) and an
+[example](./docs/modeling-guidance-example.md).
 
 Outputs are stored in `runs/<run-id>`. 
 
