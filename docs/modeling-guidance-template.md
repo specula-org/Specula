@@ -1,29 +1,52 @@
 # Target-Specific Modeling Guidance
 
-## Objective
+Complete the Required sections and remove unused Optional sections. Describe
+WHAT should be verified, not HOW to model it. Priority questions are a coverage
+floor: Specula should verify each one against the code and may also explore
+adjacent code-derived risks. Expected behavior is a contract to test, not an
+implementation fact to assume.
 
-- [Describe the behavior, risk, or subsystem this run should prioritize.]
+## Required
 
-## Required Scope
+### Goal
 
-- `[path/to/file:line or symbol]`: [Explain why this code must be analyzed.]
-- [List the other modules or entry points that belong in scope.]
+- [What decision or confidence should this run support?]
 
-## Required Coverage
+### Scope
 
-- [Describe an important interaction or call path that must be followed.]
-- [Identify the normal, failure, recovery, concurrency, or ordering behavior that must be considered.]
+- In scope: [Subsystems, operations, or interfaces.]
+- Boundaries/exclusions: [Explicit trust boundaries or exclusions, if any; otherwise `None`.]
 
-## Scenario Hypotheses
+### Priority Questions
 
-- Can [event or interleaving] cause [undesired outcome]?
-- What happens when [failure or recovery event] occurs while [operation] is in progress?
-- Does [component or code path] preserve [expected behavior] across [state transition]?
+List genuine priorities in order (typically 3–5). Never invent questions only
+to reach that range.
 
-## Known Incidents and References
+1. When [event or condition], can [observable undesired outcome]?
+   Expected behavior: [The intended user-visible or system contract.]
+2. When [event or condition], can [observable undesired outcome]?
+   Expected behavior: [The intended contract.]
 
-- [Issue, pull request, incident, paper, or design document]: [Briefly explain why it matters.]
+### Must-cover Interactions
 
-## Out of Scope
+- [Module/component A] ↔ [Module/component B]:
+  [Operation, lifecycle, or state transition that must be followed.]
+- Consider: [Relevant failure, recovery, concurrency, or ordering conditions.]
 
-- [Subsystem or behavior]: [Explain why it should be excluded.]
+### Assumptions
+
+- [Only non-obvious caller, environment, or fault assumptions; write `None` if none.]
+
+## Optional
+
+### Known Incidents and References
+
+- [Issue, incident, paper, or design document]: [Why it matters.]
+
+### Suggested Starting Points
+
+- `[path/to/file:line or symbol]`: [Why it may be relevant.]
+
+### Additional Exploration
+
+- [Adjacent risks worth exploring after the priority questions; omit to leave exploration open.]

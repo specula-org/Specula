@@ -84,6 +84,8 @@ Every finding MUST be verified: re-read exact code lines, check for compensating
 
 **Goal**: Synthesize findings into an actionable document for Spec Generation — select top Scenarios, propose spec extensions, state what NOT to model and why, classify remaining findings by verification method.
 
+When target-specific guidance is provided, treat its priorities and scope as required investigative intent. Make their handling visible in the Modeling Brief through the relevant Scenarios, findings, exclusions, or unresolved questions, without imposing a separate format. Guidance determines what must be investigated, not what the evidence must conclude, and it remains a coverage floor rather than a ceiling on code-driven exploration. Respect explicit boundaries, while reading adjacent code when needed to establish in-scope behavior.
+
 **Read `references/modeling-brief-format.md`** for the format specification.
 **See `examples/hashicorp-raft-modeling-brief.md`** for a complete example.
 
