@@ -189,7 +189,7 @@ class TestCodexPluginSkillContract(unittest.TestCase):
                 lock_version,
                 cast(str, manifest["version"]),
             },
-            {"1.0.0"},
+            {"1.1.0"},
         )
 
 

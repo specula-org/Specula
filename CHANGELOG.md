@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-13
+
+### Added
+
+- Added exact-session resume for unfinished agent conversations across supported adapters. `specula run --run-id` returns to the interrupted work, while `--fresh-context` explicitly starts with a new agent context.
+- Added per-target `.specula-output/summary.md` reports with run status, findings, evidence limits, report links, timing, token usage, estimated cost, and configured resource limits.
+- Added optional `--guidance=PATH` input for target-specific modeling priorities, with a reusable template and completed example carried through code analysis and specification generation.
+
+### Changed
+
+- Made `--keep-original` snapshots honor project ignore rules and produce reviewable Git patches without embedding binary or trace payloads.
+- Kept resumed and incomplete summaries target-local and excluded stale or invalid findings from final results.
+
 ## [1.0.0] - 2026-08-01
 
 ### Added
@@ -82,7 +95,8 @@ See the [v0.2.0 release notes](https://github.com/specula-org/Specula/releases/t
 - Added initial support for Claude Code, Codex, and Copilot CLI.
 - Added the trace-debugger MCP tooling and curated methodology for validating model fidelity before interpreting model-checking results.
 
-[Unreleased]: https://github.com/specula-org/Specula/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/specula-org/Specula/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/specula-org/Specula/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/specula-org/Specula/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/specula-org/Specula/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/specula-org/Specula/compare/v0.1.0...v0.2.0
