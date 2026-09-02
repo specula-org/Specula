@@ -111,6 +111,7 @@ We provide a [template](./docs/modeling-guidance-template.md) and an
 [example](./docs/modeling-guidance-example.md).
 
 Outputs are stored in `runs/<run-id>`. 
+After a run, start with `runs/latest/pipeline-summary.md`.
 
 Add `--keep-original` to leave the source checkout untouched. Specula runs the
 same agents against a full private copy and writes a reviewable source diff to
