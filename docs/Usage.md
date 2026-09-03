@@ -151,6 +151,27 @@ specula run \
 
 Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencode`, and `pi`. Model names and effort values are interpreted by the selected agent. OpenCode and Pi model names use `provider/model` syntax.
 
+## Bring Your Own Model (BYOM)
+
+Use `--byom` when you already have a TLA+ model or other verification assets:
+
+```bash
+specula run \
+  --byom=/absolute/path/to/model-or-assets \
+  --artifact=/absolute/path/to/source \
+  "name|owner/repository|language|reference"
+```
+
+The path may name one model file or a directory containing any combination of models, configs, TraceSpec files, instrumentation, harnesses, traces, and replay instructions. For a multi-target run, every target receives the same BYOM root and selects its own assets from the target name and your instructions.
+
+Clearly describe in your prompt what the BYOM path provides and how those artifacts should be used. The existing `--guidance` option remains available for single-target runs only.
+
+BYOM skips the full code-analysis phase. Its Phase 2 and Phase 2.5 agents inspect the supplied assets, perform a focused Scenario supplement, reuse usable work, and fill only missing or incompatible specification, instrumentation, harness, and trace responsibilities. Existing traces are used without rerunning the harness by default; the agent may run or adjust the harness when validation requires it. The standard validation, confirmation, repair, and classification workflow then continues unchanged.
+
+Specula does not modify the original BYOM path. Later phases may modify the adopted workspace copies under their normal validation and repair rules. At the end of each target run, `byom-modification-report.md` summarizes which supplied assets were reused or modified, what Specula added, and why. The report is an agent-produced comparison, not a mechanically complete patch.
+
+BYOM requires the default isolated layout and conflicts with `--no-isolate` and every `--skip-*` option. Other `specula run` options retain their normal behavior. A resumed run reuses its stored absolute BYOM path; use `--fresh-context` to select a different path.
+
 ### Hybrid agent configuration
 
 Use an agent configuration file to select different agents or models for different pipeline phases:
@@ -347,6 +368,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--model=NAME` | Override the configured model |
 | `--effort=LEVEL` | Override reasoning effort |
 | `--artifact=PATH` | Set the target source checkout |
+| `--byom=PATH` | Start from a user-provided model file or verification-assets directory and run Phase 2 onward |
 | `--guidance=PATH` | Read optional modeling guidance for a single-target run |
 | `--keep-original` | Run against a full private source copy and write `changes.patch` |
 | `--tlc-memory-limit=SIZE` | Set the run-wide aggregate TLC heap + direct-memory budget; default is 80% of effective available memory at the first TLC start |
@@ -369,6 +391,8 @@ specula run [options] "name|owner/repository|language|reference"
 | `--no-isolate` | Use the legacy output layout described above |
 
 `--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default. `--max-repair-rounds=N` caps rounds across the whole loop, not attempts per request; when the cap is reached, remaining open requests are deferred. For the individual `specula confirm` command, the corresponding debate flags are `--debate` and `--rounds=N` (range `1` through `5`).
+
+`--byom` is supported only by `specula run`. It conflicts with `--no-isolate`, `--skip-analysis`, `--skip-specgen`, `--skip-harness`, `--skip-validate`, `--skip-confirmation`, `--skip-classification`, and `--skip-repair-loop`.
 
 When an interactive `specula run` has no `--guidance`, Specula asks before
 continuing. Non-interactive and batch runs print a warning and continue without

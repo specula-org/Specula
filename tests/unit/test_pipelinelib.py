@@ -1009,6 +1009,85 @@ class TestParsing(TmpCwd):
         self.assertEqual(p.tlc_worker_limit, "24")
         self.assertEqual(p.targets, ["t|g|l|r"])
 
+    def test_byom_accepts_file_or_directory_and_multiple_targets(self) -> None:
+        model = self.tmp / "Model.tla"
+        model.write_text("---- MODULE Model ----\n====\n")
+        bundle = self.tmp / "bundle"
+        bundle.mkdir()
+
+        for supplied in (model, bundle):
+            with self.subTest(supplied=supplied):
+                p = pl.Pipeline()
+                self.assertIsNone(
+                    p.parse_args(
+                        [
+                            f"--byom={supplied.relative_to(self.tmp)}",
+                            "alpha|o/a|Go|ref",
+                            "beta|o/b|Rust|ref",
+                        ]
+                    )
+                )
+                self.assertEqual(p.byom_path, supplied)
+                self.assertTrue(p.skip_analysis)
+                self.assertFalse(p.skip_specgen)
+                self.assertFalse(p.skip_harness)
+
+    def test_byom_rejects_missing_duplicate_and_empty_paths(self) -> None:
+        model = self.tmp / "Model.tla"
+        model.write_text("---- MODULE Model ----\n====\n")
+        cases = (
+            (["--byom=", "t"], "requires a path"),
+            ([f"--byom={self.tmp / 'missing'}", "t"], "invalid --byom path"),
+            ([f"--byom={model}", f"--byom={model}", "t"], "only once"),
+        )
+        for argv, message in cases:
+            with self.subTest(argv=argv):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    self.assertEqual(pl.Pipeline().parse_args(argv), 1)
+                self.assertIn(message, err.getvalue())
+
+    def test_byom_rejects_phase_skips_and_legacy_layout(self) -> None:
+        model = self.tmp / "Model.tla"
+        model.write_text("---- MODULE Model ----\n====\n")
+        for flag in (*pl.BYOM_CONFLICTING_FLAGS, "--no-isolate"):
+            with self.subTest(flag=flag):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    self.assertEqual(pl.Pipeline().parse_args([f"--byom={model}", flag, "t"]), 1)
+                self.assertIn("--byom", err.getvalue())
+                if flag == "--no-isolate":
+                    self.assertIn("remove --no-isolate", err.getvalue())
+                else:
+                    self.assertIn(flag, err.getvalue())
+
+    def test_byom_resume_restores_or_explicitly_replaces_path(self) -> None:
+        first_path = self.tmp / "first.tla"
+        first_path.write_text("first\n")
+        second_path = self.tmp / "second.tla"
+        second_path.write_text("second\n")
+        initial = pl.Pipeline()
+        self.assertIsNone(initial.parse_args([f"--byom={first_path}", "t|g|l|r"]))
+        stored = initial._resume_configuration_document()
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args([]))
+        resumed._restore_resume_configuration(stored)
+        self.assertEqual(resumed.byom_path, first_path)
+        self.assertTrue(resumed.skip_analysis)
+
+        changed = pl.Pipeline()
+        self.assertIsNone(changed.parse_args([f"--byom={second_path}", "t|g|l|r"]))
+        with self.assertRaisesRegex(resumelib.ResumeError, "--byom differs"):
+            changed._restore_resume_configuration(stored)
+        changed._restore_resume_configuration(stored, allow_overrides=True)
+        self.assertEqual(changed.byom_path, second_path)
+
+        conflicting = pl.Pipeline()
+        self.assertIsNone(conflicting.parse_args(["--skip-harness"]))
+        with self.assertRaisesRegex(resumelib.ResumeError, "--byom conflicts with --skip-harness"):
+            conflicting._restore_resume_configuration(stored)
+
     def test_invalid_tlc_resource_limits_are_rejected_at_parse(self) -> None:
         for flag in (
             "--tlc-memory-limit=lots",
@@ -1430,6 +1509,7 @@ class TestParsing(TmpCwd):
         self.assertIn("--policy-retries=N", out)
         self.assertIn("--transient-resumes=N", out)
         self.assertIn("--guidance=PATH", out)
+        self.assertIn("--byom=PATH", out)
         self.assertIn("--skip-validate", out)
         self.assertNotIn("--skip-validation", out)
         self.assertIn("default: 20", out)

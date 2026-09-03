@@ -51,6 +51,7 @@ import specula.quota as quota  # noqa: E402
 from specula import phaselib, resource_summary, resumelib, snapshotlib  # noqa: E402
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC  # noqa: E402
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC  # noqa: E402
+from specula.output_index import BYOM_REPORT_FILENAME  # noqa: E402
 from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
 from specula.skill_refs import CODEX_PLUGIN_NAME, prompt_skill_ids  # noqa: E402
 
@@ -192,6 +193,7 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_CLAUDE_ALIAS",
             "SPECULA_MODEL",
             "SPECULA_EFFORT",
+            phaselib.BYOM_PATH_ENV,
             "CLAUDE_ALIAS",
             "CLAUDE_EFFORT",
             "SPECULA_SOURCE_SNAPSHOT",
@@ -356,6 +358,17 @@ class TestPreconditionGate(PhaseCase):
         self.assertEqual(rc, 1, out)
         self.assertIn(BY_KEY["code_analysis"]["fail"], out)
         self.assertIn("cannot update output index", err.getvalue())
+
+    def test_byom_spec_generation_does_not_require_phase1_output(self) -> None:
+        supplied = self.tmp() / "Model.tla"
+        supplied.write_text("---- MODULE Model ----\n====\n")
+        self.set_env(phaselib.BYOM_PATH_ENV, str(supplied))
+
+        rc, out = self.run_phase("spec_generation", ["--check", self.artifact_flag(), NAME])
+
+        self.assertEqual(rc, 0, out)
+        self.assertIn("BYOM input OK", out)
+        self.assertNotIn("MISSING modeling-brief.md", out)
 
 
 class TestCheckOnly(PhaseCase):
@@ -553,6 +566,31 @@ class TestDryRunCommand(PhaseCase):
         self.assertIn("OPEN | IN_REPAIR | CONSUMED | DEFERRED", repair_format)
         self.assertIn("| `OPEN` → `DEFERRED` | pipeline orchestrator |", repair_format)
         self.assertIn("Terminal states: `CONSUMED`", repair_format)
+
+    def test_byom_wraps_phase2_phase2_5_and_final_reporting_prompts(self) -> None:
+        supplied = self.tmp() / "provided"
+        supplied.mkdir()
+        self.set_env(phaselib.BYOM_PATH_ENV, str(supplied))
+        self.seed(["modeling-brief.md"])
+        (self.work_dir() / ".prompt-extra.md").write_text("Use the supplied replay command.\n")
+
+        for key, expected in (
+            ("spec_generation", "Phase 2 responsibilities"),
+            ("harness_generation", "Phase 2.5 responsibilities"),
+            ("bug_classification", "BYOM Modification Report"),
+        ):
+            with self.subTest(key=key):
+                rc, out = self.dry_run(BY_KEY[key])
+                self.assertEqual(rc, 0, out)
+                body = (self.work_dir() / BY_KEY[key]["prompt"]).read_text()
+                self.assertIn("**byom**", body)
+                self.assertIn(str(supplied), body)
+                self.assertIn(expected, body)
+                self.assertIn("Use the supplied replay command.", body)
+
+        classification = (self.work_dir() / ".bug-classification-prompt.md").read_text()
+        self.assertIn("**bug-classification**", classification)
+        self.assertIn("byom-modification-report.md", classification)
 
     def test_ordinary_phase_default_max_parallel_stays_one(self) -> None:
         rc, out = self.dry_run(BY_KEY["code_analysis"])
@@ -1652,6 +1690,38 @@ class TestBugClassificationOutputs(PhaseCase):
 
         self.assertEqual(rc, 0, out)
         self.assertIn("summary=yes", out)
+
+    def test_byom_requires_modification_report(self) -> None:
+        supplied = self.tmp() / "provided"
+        supplied.mkdir()
+        self.set_env(phaselib.BYOM_PATH_ENV, str(supplied))
+        (self.work_dir() / BYOM_REPORT_FILENAME).write_text("stale\n")
+        self.write_adapter(
+            self.write_output("bug-severity.md", self.SEVERITY)
+            + self.write_output(".summary-findings.md", self.FINDINGS)
+        )
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("byom-modification-report.md missing", out)
+        self.assertFalse((self.work_dir() / BYOM_REPORT_FILENAME).exists())
+        self.assertFalse((self.work_dir() / "summary.md").exists())
+
+    def test_byom_accepts_nonempty_modification_report(self) -> None:
+        supplied = self.tmp() / "provided"
+        supplied.mkdir()
+        self.set_env(phaselib.BYOM_PATH_ENV, str(supplied))
+        self.write_adapter(
+            self.write_output("bug-severity.md", self.SEVERITY)
+            + self.write_output(".summary-findings.md", self.FINDINGS)
+            + self.write_output(BYOM_REPORT_FILENAME, "No supplied assets were modified.\n")
+        )
+
+        rc, out = self.run_classification()
+
+        self.assertEqual(rc, 0, out)
+        self.assertTrue((self.work_dir() / BYOM_REPORT_FILENAME).is_file())
 
     def test_standalone_success_rebuilds_summary_after_invalidating_old_findings(self) -> None:
         self.seed_complete_summary()

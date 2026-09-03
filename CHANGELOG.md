@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Added `specula run --byom=PATH` for continuing Phase 2 onward from user-provided model, instrumentation, harness, or trace artifacts, with a final modification report for each target.
+
 ## [1.1.0] - 2026-08-13
 
 ### Added
