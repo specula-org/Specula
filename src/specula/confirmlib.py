@@ -636,8 +636,14 @@ class ConfirmConfig:
                 if pending is not None:
                     pending.set()
 
-    def release_finding_lease(self, finding_id: str, *, force: bool = False) -> None:
-        """Idempotently release one terminal finding's runtime-only lease."""
+    def release_finding_lease(
+        self,
+        finding_id: str,
+        *,
+        force: bool = False,
+        retain_worktree: bool = False,
+    ) -> None:
+        """Release runtime-only state, optionally retaining the evidence worktree."""
         with self._finding_leases_lock:
             lease = self._finding_leases.pop(finding_id, None)
         if lease is None:
@@ -652,14 +658,15 @@ class ConfirmConfig:
             lease.turn_cwds.clear()
             lease.repair_turns.clear()
             lease.no_correction_drafts.clear()
-            try:
-                lease.cleanup()
-            except BaseException as exc:
-                message = f"  WARNING: {finding_id}: retry-lease cleanup failed ({exc})"
+            if not retain_worktree:
                 try:
-                    _log(message)
-                except OSError:
-                    print(message, flush=True)
+                    lease.cleanup()
+                except BaseException as exc:
+                    message = f"  WARNING: {finding_id}: retry-lease cleanup failed ({exc})"
+                    try:
+                        _log(message)
+                    except OSError:
+                        print(message, flush=True)
             _remove_lease_state(lease)
 
     def clear_retry_runtime(self) -> None:
@@ -1920,7 +1927,10 @@ def run_finding_safe(
             o.body = _merge_repair_evidence(prior, repair_evidence, o.body, cfg.repair_round)
         _save_verdict(o, cfg)
         resumelib.complete_prefix(("confirm", cfg.name, "finding", f.id))
-        cfg.release_finding_lease(f.id, force=True)
+        # Reproduction scripts may depend on files or builds in this exact
+        # isolated checkout. Keep it as part of the terminal evidence bundle;
+        # a later rerun safely replaces it through the stale-worktree path.
+        cfg.release_finding_lease(f.id, force=True, retain_worktree=True)
         cfg.clear_policy_states(("finding", f.id))
         return o
     except Exception as exc:  # RateLimited / ConfirmationFailed / anything unexpected

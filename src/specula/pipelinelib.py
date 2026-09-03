@@ -3352,7 +3352,9 @@ class Pipeline:
             out += [f"### {name}", ""]
 
             brief = work_dir / "modeling-brief.md"
-            if brief.is_file():
+            if self.byom_path is not None:
+                out.append("- **Phase 1 (Analysis)**: SKIPPED (BYOM)")
+            elif brief.is_file():
                 out.append(f"- **Phase 1 (Analysis)**: OK (modeling-brief: {_wc_l(brief)} lines)")
             else:
                 out.append("- **Phase 1 (Analysis)**: MISSING")

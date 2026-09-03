@@ -285,6 +285,9 @@ class CliE2E(unittest.TestCase):
         run = self.sole_run_dir(root)
         target = run / "footest" / ".specula-output"
         self.assertTrue((target / "byom-modification-report.md").is_file())
+        summary = (run / "pipeline-summary.md").read_text()
+        self.assertIn("- **Phase 1 (Analysis)**: SKIPPED (BYOM)", summary)
+        self.assertNotIn("- **Phase 1 (Analysis)**: OK", summary)
         self.assertIn(
             "[BYOM modification report](byom-modification-report.md)",
             (target / "index.md").read_text(),

@@ -62,14 +62,16 @@ function validate {
 
     set -o pipefail
     if [ "${log_to_file}" = "true" ]; then
-        env JSON="${trace}" java -XX:+UseParallelGC -cp ${tooldir}/tla2tools.jar:${tooldir}/CommunityModules-deps.jar tlc2.TLC -config "${config}" "${spec}" -lncheck final -metadir "${statedir}" -fpmem 0.9 2>&1 | tee "${log}" | sed -nuE "s/<<\"Progress %:\", ([0-9]+)>>$/${id} \1/p"
+        env JSON="${trace}" java -XX:+UseParallelGC -cp ${tooldir}/tla2tools.jar:${tooldir}/CommunityModules-deps.jar tlc2.TLC -config "${config}" "${spec}" -lncheck final -metadir "${statedir}" -fpmem 0.9 2>&1 | tee "${log}" | sed -nuE "s/<<\"Progress %:\", ([0-9]{1,2})>>$/${id} \1/p"
         local tlc_status=${PIPESTATUS[0]}
     else
-        env JSON="${trace}" java -XX:+UseParallelGC -cp ${tooldir}/tla2tools.jar:${tooldir}/CommunityModules-deps.jar tlc2.TLC -config "${config}" "${spec}" -lncheck final -metadir "${statedir}" -fpmem 0.9 2>&1 | sed -nuE "s/<<\"Progress %:\", ([0-9]+)>>$/${id} \1/p"
+        env JSON="${trace}" java -XX:+UseParallelGC -cp ${tooldir}/tla2tools.jar:${tooldir}/CommunityModules-deps.jar tlc2.TLC -config "${config}" "${spec}" -lncheck final -metadir "${statedir}" -fpmem 0.9 2>&1 | sed -nuE "s/<<\"Progress %:\", ([0-9]{1,2})>>$/${id} \1/p"
         local tlc_status=${PIPESTATUS[0]}
     fi
 
-    if [ "${tlc_status}" -ne 0 ]; then
+    if [ "${tlc_status}" -eq 0 ]; then
+        echo "${id} 100"
+    else
         echo "${id} -1"
     fi
 }
