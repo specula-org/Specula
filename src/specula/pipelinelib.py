@@ -52,6 +52,7 @@ from specula.output_index import (
     write_target_index,
 )
 from specula.phaselib import (
+    BYOM_PATH_ENV,
     DEFAULT_POLICY_RETRIES,
     DEFAULT_TRANSIENT_RESUMES,
     Workspace,
@@ -152,6 +153,7 @@ Options:
   --model=NAME           Model forwarded to every agent adapter
   --effort=LEVEL         Reasoning effort forwarded to every agent adapter
   --artifact=PATH        Path to system artifact/source code
+  --byom=PATH            Use user-provided model artifacts and run Phase 2 onward
   --guidance=PATH        Target-specific modeling guidance (single-target runs only)
   --keep-original        Work in a full private copy and write a reviewable changes.patch
   --tlc-memory-limit=SIZE
@@ -184,6 +186,15 @@ Output navigation (default isolated layout):
 """
 
 DIVIDER = "════════════════════════════════════════════════════════════"
+BYOM_CONFLICTING_FLAGS = (
+    "--skip-analysis",
+    "--skip-specgen",
+    "--skip-harness",
+    "--skip-validate",
+    "--skip-confirmation",
+    "--skip-classification",
+    "--skip-repair-loop",
+)
 
 
 def log(msg: str) -> None:
@@ -363,6 +374,8 @@ class Pipeline:
         self._effort_given = False
         self.artifact = ""
         self._artifact_given = False
+        self.byom_path: Path | None = None
+        self._byom_given = False
         self.guidance_path: Path | None = None
         self.guidance_text: str | None = None
         self._guidance_given = False
@@ -503,6 +516,20 @@ class Pipeline:
             elif arg.startswith("--artifact="):
                 self.artifact = arg.split("=", 1)[1]
                 self._artifact_given = True
+            elif arg.startswith("--byom="):
+                if self._byom_given:
+                    print("ERROR: --byom may be specified only once", file=sys.stderr)
+                    return 1
+                raw_path = arg.split("=", 1)[1]
+                if not raw_path:
+                    print("ERROR: --byom requires a path", file=sys.stderr)
+                    return 1
+                self._byom_given = True
+                try:
+                    self.byom_path = self._normalize_byom_path(raw_path)
+                except (OSError, RuntimeError, ValueError) as exc:
+                    print(f"ERROR: invalid --byom path '{raw_path}': {exc}", file=sys.stderr)
+                    return 1
             elif arg.startswith("--guidance="):
                 if self._guidance_given:
                     print("ERROR: --guidance may be specified only once", file=sys.stderr)
@@ -557,6 +584,12 @@ class Pipeline:
         if not self.targets:
             self.targets.append(_logical_cwd().name)  # bash `basename "$PWD"` (logical)
         self._targets_given = targets_given
+        byom_error = self._byom_option_error()
+        if byom_error is not None:
+            print(f"ERROR: {byom_error}", file=sys.stderr)
+            return 1
+        if self.byom_path is not None:
+            self.skip_analysis = True
         if self.guidance_path is not None and len(self.targets) != 1:
             print("ERROR: --guidance supports exactly one target per run", file=sys.stderr)
             return 1
@@ -625,6 +658,28 @@ class Pipeline:
             if conv is float and not math.isfinite(parsed):
                 print(f"ERROR: {label} must be a finite number, got '{val}'", file=sys.stderr)
                 return 1
+        return None
+
+    @staticmethod
+    def _normalize_byom_path(raw_path: str) -> Path:
+        expanded = Path(raw_path).expanduser()
+        if not expanded.is_absolute():
+            expanded = _logical_cwd() / expanded
+        path = expanded.resolve(strict=True)
+        if not (path.is_file() or path.is_dir()):
+            raise ValueError("expected an existing file or directory")
+        if not os.access(path, os.R_OK):
+            raise ValueError("path is not readable")
+        return path
+
+    def _byom_option_error(self) -> str | None:
+        if self.byom_path is None:
+            return None
+        conflicts = [flag for flag in BYOM_CONFLICTING_FLAGS if flag in self.argv]
+        if conflicts:
+            return f"--byom conflicts with {', '.join(conflicts)}; BYOM runs every phase after analysis"
+        if not self.isolate:
+            return "--byom requires isolated mode; remove --no-isolate (isolation is the default)"
         return None
 
     def confirm_without_guidance(self) -> bool:
@@ -787,6 +842,7 @@ class Pipeline:
             "skip_reviews": self.skip_reviews,
             "targets": list(self.targets),
             "artifact": self.artifact,
+            "byom": str(self.byom_path) if self.byom_path is not None else None,
             "guidance": str(self.guidance_path) if self.guidance_path is not None else None,
         }
 
@@ -969,6 +1025,27 @@ class Pipeline:
             self.guidance_path = Path(stored_guidance)
         if self.guidance_path is not None and len(self.targets) != 1:
             raise resumelib.ResumeError("stored guidance requires exactly one target")
+
+        stored_byom = raw.get("byom")
+        if stored_byom is not None and (not isinstance(stored_byom, str) or not Path(stored_byom).is_absolute()):
+            raise resumelib.ResumeError("invalid stored BYOM path")
+        if self._byom_given:
+            if not allow_overrides and (
+                stored_byom is None or self.byom_path is None or self.byom_path != Path(stored_byom)
+            ):
+                raise resumelib.ResumeError(
+                    "--byom differs from this run; pass --fresh-context to use another input path"
+                )
+        elif stored_byom is not None:
+            try:
+                self.byom_path = self._normalize_byom_path(stored_byom)
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise resumelib.ResumeError(f"this run's BYOM input is unavailable: {stored_byom} ({exc})") from exc
+        byom_error = self._byom_option_error()
+        if byom_error is not None:
+            raise resumelib.ResumeError(byom_error)
+        if self.byom_path is not None:
+            self.skip_analysis = True
 
         stored_artifact = raw.get("artifact")
         if not isinstance(stored_artifact, str):
@@ -1270,6 +1347,10 @@ class Pipeline:
                 print(f"ERROR: {exc}", file=sys.stderr)
                 return fail()
         os.environ["SPECULA_RUN_DIR"] = str(self.run_dir)  # phase subprocesses inherit
+        if self.byom_path is not None:
+            os.environ[BYOM_PATH_ENV] = str(self.byom_path)
+        else:
+            os.environ.pop(BYOM_PATH_ENV, None)
         if self.keep_original:
             os.environ[SNAPSHOT_MODE_ENV] = "1"
         else:
@@ -1417,6 +1498,7 @@ class Pipeline:
             "claude_alias": self.claude_alias,
             "artifact": self.artifact,
             "artifact_git_sha": artifact_sha,
+            "byom": str(self.byom_path) if self.byom_path is not None else None,
             "guidance": str(self.guidance_path) if self.guidance_path is not None else None,
             "tlc_memory_limit": self.tlc_memory_limit or os.environ.get(MEMORY_LIMIT_ENV) or "auto",
             "tlc_worker_limit": self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or None,
@@ -3425,6 +3507,8 @@ class Pipeline:
         print(f"TLC workers:  {worker_limit}")
         if self.guidance_path is not None:
             print(f"Guidance:     {self.guidance_path}")
+        if self.byom_path is not None:
+            print(f"BYOM input:   {self.byom_path}")
         if self.run_dir:
             print(f"Run:          {self.run_id}  ({self.run_dir})")
         print()

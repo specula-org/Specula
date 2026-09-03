@@ -42,7 +42,7 @@ import specula.progress as progress
 from specula import quota, resumelib
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC
-from specula.output_index import PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
+from specula.output_index import BYOM_REPORT_FILENAME, PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
 from specula.prompts import render
 from specula.resource_summary import (
     RESOURCE_INVOCATION_ENV,
@@ -81,8 +81,14 @@ MAX_DEBATE_ROUNDS = 5
 DEFAULT_POLICY_RETRIES = 20
 DEFAULT_TRANSIENT_RESUMES = 20
 TRANSIENT_RESUME_BACKOFF_MAX_SECONDS = 60.0
+BYOM_PATH_ENV = "SPECULA_BYOM_PATH"
 
 _RESOURCE_RECORDER: ResourceInvocationRecorder | None = None
+
+
+def _byom_path() -> Path | None:
+    raw = os.environ.get(BYOM_PATH_ENV)
+    return Path(raw) if raw else None
 
 
 def _resource_start_target(name: str, work_dir: Path) -> None:
@@ -2050,10 +2056,16 @@ Prerequisites:
 
     def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True
+        byom_path = _byom_path()
         for name in names:
             brief = ws.work_dir(name) / "modeling-brief.md"
             repo_dir = ws.find_repo_dir(name)
-            if brief.is_file():
+            if byom_path is not None and (byom_path.is_file() or byom_path.is_dir()):
+                line = f"  {name:<20} BYOM input OK"
+            elif byom_path is not None:
+                line = f"  {name:<20} BYOM input MISSING"
+                ok = False
+            elif brief.is_file():
                 lines = _wc_l(brief)
                 line = f"  {name:<20} modeling-brief.md ({lines} lines)"
             else:
@@ -2080,6 +2092,19 @@ Prerequisites:
         spec_dir = wd / "spec"
         brief = wd / "modeling-brief.md"
         repo_dir = ws.find_repo_dir(name)
+        byom_path = _byom_path()
+        if byom_path is not None:
+            prompt = f"""# BYOM Phase 2 Task: {name}
+
+Use the installed Specula skill {prompt_skill_ids("byom")}. Read it in full and complete its Phase 2 responsibilities for this target.
+
+- **User-provided artifacts**: {byom_path}
+- **Source code**: {repo_dir}
+- **Target workspace**: {wd}
+
+Combine those artifacts with the target-specific instructions below. Reuse supplied work, perform the focused Scenario supplement, and leave the ordinary Phase 2 outputs ready for the harness phase.
+"""
+            return self._with_extra(ws, name, prompt)
         prompt = f"""# TLA+ Spec Generation Task
 
 You are generating a TLA+ specification for: **{name}**
@@ -2185,6 +2210,7 @@ Prerequisites:
 
     def check(self, ws: Workspace, names: list[str]) -> bool:
         ok = True
+        byom_path = _byom_path()
         for name in names:
             spec_dir = ws.work_dir(name) / "spec"
             repo_dir = ws.find_repo_dir(name)
@@ -2199,6 +2225,12 @@ Prerequisites:
             else:
                 line += "  instr MISSING"
                 ok = False
+            if byom_path is not None:
+                if (ws.work_dir(name) / "modeling-brief.md").is_file():
+                    line += "  brief OK"
+                else:
+                    line += "  brief MISSING"
+                    ok = False
             line += "  repo OK" if repo_dir else "  repo MISSING"
             if not repo_dir:
                 ok = False
@@ -2219,6 +2251,20 @@ Prerequisites:
         wd = ws.work_dir(name)
         spec_dir = wd / "spec"
         repo_dir = ws.find_repo_dir(name)
+        byom_path = _byom_path()
+        if byom_path is not None:
+            prompt = f"""# BYOM Phase 2.5 Task: {name}
+
+Use the installed Specula skill {prompt_skill_ids("byom")}. Read it in full and complete its Phase 2.5 responsibilities for this target.
+
+- **User-provided artifacts**: {byom_path}
+- **Source code**: {repo_dir}
+- **Specification workspace**: {spec_dir}
+- **Target workspace**: {wd}
+
+Combine those artifacts with the target-specific instructions below. Reuse supplied instrumentation, harnesses, and traces; fill only what is missing or unusable; then leave the ordinary Phase 2.5 outputs ready for validation.
+"""
+            return self._with_extra(ws, name, prompt)
         prompt = f"""# Trace Harness Generation Task: {name}
 
 You are generating a trace harness for **{name}** — instrumenting the real source code to produce NDJSON traces for TLA+ trace validation.
@@ -2342,7 +2388,7 @@ Prerequisites:
         # NOTE: bash bug_classification generate_prompt does NOT inject .prompt-extra.
         name = self.target_name(target)
         wd = ws.work_dir(name)
-        return f"""# Final Bug Reporting Task: {name}
+        prompt = f"""# Final Bug Reporting Task: {name}
 
 You are completing the Phase 4 final reports for **{name}**.
 
@@ -2361,9 +2407,27 @@ Use the installed Specula skill {prompt_skill_ids("bug-classification")}. Read i
 
 Do everything the skill specifies. Do not add, relax, or override any step here.
 """
+        byom_path = _byom_path()
+        if byom_path is None:
+            return prompt
+        prompt += f"""
+## BYOM Modification Report
+
+After completing and validating the normal Phase 4b outputs, use the installed Specula skill {prompt_skill_ids("byom")} and complete its final modification-report responsibility.
+
+- **Original user-provided artifacts**: {byom_path}
+- **Final target workspace**: {wd}
+- **Required report**: {wd}/{BYOM_REPORT_FILENAME}
+
+Compare the supplied artifacts with the final workspace, explain what was reused, modified, or added and why, and state any uncertain correspondence. Do not modify verification artifacts while writing this report.
+"""
+        return prompt + self._read_prompt_extra(ws, name)
 
     def prepare_fresh_outputs(self, ws: Workspace, name: str) -> None:
-        for filename in ("bug-severity.md", ".summary-findings.md"):
+        filenames = ["bug-severity.md", ".summary-findings.md"]
+        if _byom_path() is not None:
+            filenames.append(BYOM_REPORT_FILENAME)
+        for filename in filenames:
             path = ws.work_dir(name) / filename
             try:
                 path.unlink()
@@ -2441,6 +2505,23 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
                     f"  WARNING: {name}: .summary-findings.md {fragment_issue}; "
                     "summary.md will omit the findings fragment"
                 )
+            if _byom_path() is not None:
+                byom_report = ws.work_dir(name) / BYOM_REPORT_FILENAME
+                try:
+                    byom_report_info = byom_report.lstat()
+                except OSError:
+                    issues.append(f"{BYOM_REPORT_FILENAME} missing")
+                else:
+                    if not stat.S_ISREG(byom_report_info.st_mode):
+                        issues.append(f"{BYOM_REPORT_FILENAME} is not a regular file")
+                    else:
+                        try:
+                            byom_report_text = byom_report.read_text()
+                        except (OSError, UnicodeError):
+                            issues.append(f"{BYOM_REPORT_FILENAME} unreadable")
+                        else:
+                            if not byom_report_text.strip():
+                                issues.append(f"{BYOM_REPORT_FILENAME} empty")
             if issues:
                 print(f"  {name}: Phase 4b output invalid ({'; '.join(issues)})")
                 failures.append((name, 1))
