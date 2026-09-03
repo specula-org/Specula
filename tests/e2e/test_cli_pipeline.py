@@ -54,6 +54,7 @@ _VOLATILE = (
     "SPECULA_STOP_GATE",
     "SPECULA_MODEL",
     "SPECULA_EFFORT",
+    "SPECULA_BYOM_PATH",
     "CLAUDE_CONFIG_DIR",
     "CLAUDE_ALIAS",
     "CLAUDE_EFFORT",
@@ -164,6 +165,141 @@ class CliE2E(unittest.TestCase):
         self.assertIn("Specula", out)
         self.assertIn("[DRY RUN] bash scripts/launch/launch_code_analysis.sh", out)
         self.assertIn("Pipeline completed", out)
+
+    def test_byom_dry_run_skips_analysis_and_keeps_multi_target_pipeline(self) -> None:
+        root = self.specroot(case_dirs=("alpha", "beta"))
+        work = self.workdir()
+        supplied = work / "provided"
+        supplied.mkdir()
+        proc = self.run_cli(
+            root,
+            [
+                "run",
+                "--dry-run",
+                f"--byom={supplied}",
+                "alpha|o/a|Go|ref",
+                "beta|o/b|Rust|ref",
+            ],
+            cwd=work,
+        )
+
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("Skipping Phase 1 (--skip-analysis)", proc.stdout)
+        self.assertNotIn("launch_code_analysis.sh", proc.stdout)
+        for launcher in (
+            "launch_spec_generation.sh",
+            "launch_harness_generation.sh",
+            "launch_spec_validation.sh",
+            "launch_bug_confirmation.sh",
+            "launch_bug_classification.sh",
+        ):
+            self.assertIn(launcher, proc.stdout)
+        meta = json.loads((self.sole_run_dir(root) / "run.json").read_text())
+        self.assertEqual(meta["byom"], str(supplied))
+        self.assertEqual(meta["resume_configuration"]["byom"], str(supplied))
+
+    def test_byom_rejects_skips_and_legacy_layout(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        supplied = work / "Model.tla"
+        supplied.write_text("---- MODULE Model ----\n====\n")
+        for flag in (*ALL_PHASE_SKIPS, "--no-isolate"):
+            with self.subTest(flag=flag):
+                proc = self.run_cli(root, ["run", f"--byom={supplied}", flag, "footest"], cwd=work)
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("--byom", proc.stderr)
+
+    def test_byom_is_not_a_public_individual_phase_option(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        supplied = work / "Model.tla"
+        supplied.write_text("---- MODULE Model ----\n====\n")
+
+        proc = self.run_cli(root, ["specgen", f"--byom={supplied}", "footest"], cwd=work)
+
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("Unknown option: --byom", proc.stdout)
+
+    def test_byom_fake_adapter_completes_phase2_through_final_report(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        artifact = work / "artifact"
+        artifact.mkdir()
+        supplied = work / "Model.tla"
+        supplied.write_text("---- MODULE Model ----\n====\n")
+        adapter = root / "scripts" / "launch" / "adapters" / "fake.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            'printf "%s\\n" "$SPECULA_PHASE" >> "$0.phases"\n'
+            'test "$SPECULA_BYOM_PATH" = "' + str(supplied) + '"\n'
+            'case "$SPECULA_PHASE" in\n'
+            "  spec_generation)\n"
+            '    mkdir -p "$SPECULA_WORK_DIR/spec"\n'
+            '    printf "# BYOM brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            "    for file in base.tla MC.tla Trace.tla instrumentation-spec.md; do\n"
+            '      printf "seeded\\n" > "$SPECULA_WORK_DIR/spec/$file"\n'
+            "    done\n"
+            "    ;;\n"
+            "  harness_generation)\n"
+            '    mkdir -p "$SPECULA_WORK_DIR/harness" "$SPECULA_WORK_DIR/traces"\n'
+            '    printf "#!/bin/sh\\n" > "$SPECULA_WORK_DIR/harness/run.sh"\n'
+            '    printf \'{"event":"seed"}\\n\' > "$SPECULA_WORK_DIR/traces/seed.ndjson"\n'
+            "    ;;\n"
+            "  spec_validation)\n"
+            '    printf "# Bug report\\n\\nNo violations found.\\n" > "$SPECULA_WORK_DIR/spec/bug-report.md"\n'
+            '    printf \'{"schema_version":"2","system":"footest","generated_by":"validation-workflow","findings":[]}\\n\' '
+            '> "$SPECULA_WORK_DIR/spec/findings.json"\n'
+            '    printf "# Validation changelog\\n" > "$SPECULA_WORK_DIR/spec/changelog.md"\n'
+            "    ;;\n"
+            "  bug_confirmation_turn)\n"
+            '    printf \'{"generated_by":"consolidate","findings":[]}\\n\' '
+            '> "$SPECULA_WORK_DIR/spec/candidates.json"\n'
+            "    ;;\n"
+            "  bug_classification)\n"
+            '    printf "# Severity Classification\\n\\n## Summary\\n\\n## Per-entry classification\\n" '
+            '> "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            '    printf "No impact-bearing findings were recorded.\\n\\n## Findings\\n\\n- Other dispositions: 0.\\n\\n## Validation limits\\n\\nNo finding-specific validation limits were recorded.\\n" '
+            '> "$SPECULA_WORK_DIR/.summary-findings.md"\n'
+            '    printf "# BYOM Modification Report\\n\\nThe supplied model was reused.\\n" '
+            '> "$SPECULA_WORK_DIR/byom-modification-report.md"\n'
+            "    ;;\n"
+            "  *) exit 97 ;;\n"
+            "esac\n"
+        )
+        adapter.chmod(0o755)
+
+        proc = self.run_cli(
+            root,
+            [
+                "run",
+                "--agent=fake",
+                f"--artifact={artifact}",
+                f"--byom={supplied}",
+                "footest|owner/repo|Go|reference",
+            ],
+            cwd=work,
+        )
+
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        run = self.sole_run_dir(root)
+        target = run / "footest" / ".specula-output"
+        self.assertTrue((target / "byom-modification-report.md").is_file())
+        summary = (run / "pipeline-summary.md").read_text()
+        self.assertIn("- **Phase 1 (Analysis)**: SKIPPED (BYOM)", summary)
+        self.assertNotIn("- **Phase 1 (Analysis)**: OK", summary)
+        self.assertIn(
+            "[BYOM modification report](byom-modification-report.md)",
+            (target / "index.md").read_text(),
+        )
+        phases = Path(f"{adapter}.phases").read_text().splitlines()
+        self.assertNotIn("code_analysis", phases)
+        self.assertIn("spec_generation", phases)
+        self.assertIn("harness_generation", phases)
+        self.assertIn("spec_validation", phases)
+        self.assertIn("bug_confirmation_turn", phases)
+        self.assertIn("bug_classification", phases)
+        self.assertEqual(supplied.read_text(), "---- MODULE Model ----\n====\n")
 
     def test_run_id_resumes_interrupted_validation_without_phase_skip_flags(self) -> None:
         root = self.specroot()

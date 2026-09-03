@@ -84,6 +84,7 @@ class TestInstallSkills(SkillInstallCase):
             [
                 "bug-classification",
                 "bug-confirmation",
+                "byom",
                 "code-analysis",
                 "harness-generation",
                 "spec-generation",
@@ -97,6 +98,23 @@ class TestInstallSkills(SkillInstallCase):
         self.assertTrue(result.complete)
         for skill in skills:
             self.assertEqual((self.target / skill.name).resolve(), skill.path.resolve())
+
+    def test_byom_uses_the_repository_skill_layout(self) -> None:
+        skill = REPO_ROOT / "skills" / "byom"
+        guide = (skill / "guide.md").read_text()
+
+        self.assertEqual(
+            (skill / "SKILL.md").read_text().splitlines()[-1],
+            "Read `guide.md` for the full workflow methodology.",
+        )
+        self.assertTrue((skill / "guide.md").is_file())
+        self.assertFalse((skill / "agents" / "openai.yaml").exists())
+        self.assertIn("Complete only the phase assigned by the launcher prompt.", guide)
+        self.assertIn("The pipeline launches each later phase separately.", guide)
+        self.assertIn(
+            "they do not authorize performing the referenced skill's phase.",
+            guide,
+        )
 
     def test_first_install_uses_registered_names(self) -> None:
         code = self.skill("code_analysis", "code-analysis")

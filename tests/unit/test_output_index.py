@@ -98,6 +98,7 @@ class TestTargetIndex(OutputIndexCase):
             "spec/bug-report.md",
             "confirmed-bugs.md",
             "bug-severity.md",
+            "byom-modification-report.md",
         ):
             self.write(work_dir, relative)
         for hidden_from_humans in (
@@ -121,6 +122,7 @@ class TestTargetIndex(OutputIndexCase):
             - [Summary](summary.md) — Results, validation limits, run details, and resource usage
             - [Confirmation report](confirmed-bugs.md) — Confirmation results and supporting evidence
             - [Severity report](bug-severity.md) — Impact assessment
+            - [BYOM modification report](byom-modification-report.md) — Changes to supplied assets
 
             > Availability means that a document exists. It does not imply review approval
             > or confirmation of every finding.

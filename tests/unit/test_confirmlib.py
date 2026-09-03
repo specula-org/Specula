@@ -690,7 +690,8 @@ class TestDriver(ConfirmCase):
         self.assertEqual((root / "resume-check").read_text(), "passed")
         self.assertEqual(cfg._finding_leases, {})
         self.assertEqual(cfg._policy_states, {})
-        self.assertFalse(leased_repo.exists())
+        self.assertTrue(leased_repo.is_dir())
+        self.assertTrue((leased_repo / "lease-marker").is_file())
 
     def test_manual_resume_reloads_accepted_a_and_exact_interrupted_b(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
@@ -789,7 +790,8 @@ class TestDriver(ConfirmCase):
         self.assertFalse(lease_checkpoint.exists())
         self.assertEqual(resumed_cfg._finding_leases, {})
         self.assertEqual(resumed_cfg._policy_states, {})
-        self.assertFalse(leased_repo.exists())
+        self.assertTrue(leased_repo.is_dir())
+        self.assertTrue((leased_repo / "lease-marker").is_file())
 
     def test_manual_resume_keeps_no_correction_decision_and_exact_interrupted_b(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
