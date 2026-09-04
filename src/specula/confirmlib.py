@@ -32,6 +32,7 @@ import os
 import re
 import secrets
 import shutil
+import stat
 import subprocess
 import threading
 import traceback
@@ -991,6 +992,170 @@ def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]
         raise ConfirmationFailed(f"{f.id}: worktree isolation failed: {exc}") from exc
 
 
+def _nested_worktree_names(path: Path) -> bytes | None:
+    """List a nested checkout's working files, or None for a plain directory."""
+    marker = path / ".git"
+    try:
+        marker_mode = marker.lstat().st_mode
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise ConfirmationFailed(f"cannot inspect nested Git checkout marker {marker}: {exc}") from exc
+    if not (stat.S_ISDIR(marker_mode) or stat.S_ISREG(marker_mode)):
+        raise ConfirmationFailed(f"nested Git checkout has an unsafe .git entry: {marker}")
+    git_env = _dispatcher_git_env(path)
+    root_result = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+        env=git_env,
+        capture_output=True,
+    )
+    if root_result.returncode != 0:
+        raise ConfirmationFailed(f"untracked directory is not a readable nested Git checkout: {path}")
+    nested_root = Path(root_result.stdout.decode(errors="surrogateescape").strip()).resolve()
+    if nested_root != path.resolve():
+        raise ConfirmationFailed(f"untracked directory is not a nested Git checkout root: {path}")
+    files = subprocess.run(
+        ["git", "-C", str(path), "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "."],
+        env=git_env,
+        capture_output=True,
+    )
+    if files.returncode != 0:
+        raise ConfirmationFailed(f"could not inspect nested Git checkout: {path}")
+    return files.stdout
+
+
+def _visible_snapshot_path(root: Path, relative: Path) -> tuple[Path, os.stat_result] | None:
+    """Return the first non-directory on a path, without following symlinks."""
+    current = root
+    visible = Path()
+    for part in relative.parts:
+        visible /= part
+        current /= part
+        try:
+            entry_stat = current.lstat()
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise ConfirmationFailed(f"cannot inspect untracked repository entry {current}: {exc}") from exc
+        if stat.S_ISLNK(entry_stat.st_mode) or stat.S_ISREG(entry_stat.st_mode):
+            return visible, entry_stat
+        if not stat.S_ISDIR(entry_stat.st_mode):
+            raise ConfirmationFailed(f"unsupported untracked repository entry: {current}")
+    return (visible, entry_stat) if relative.parts else None
+
+
+def _validate_snapshot_symlink(root: Path, relative: Path) -> None:
+    source = root / relative
+    try:
+        raw_target = os.readlink(source)
+    except OSError as exc:
+        raise ConfirmationFailed(f"cannot read untracked repository symlink {source}: {exc}") from exc
+    target = Path(raw_target)
+    if target.is_absolute():
+        raise ConfirmationFailed(f"untracked repository symlink escapes the isolated worktree: {source}")
+    remaining = list(relative.parent.parts)
+    for part in target.parts:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if not remaining:
+                raise ConfirmationFailed(f"untracked repository symlink escapes the isolated worktree: {source}")
+            remaining.pop()
+        else:
+            remaining.append(part)
+    try:
+        (source.parent / target).resolve(strict=False).relative_to(root.resolve())
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ConfirmationFailed(f"untracked repository symlink escapes the isolated worktree: {source}") from exc
+
+
+def _untracked_snapshot_paths(root: Path, raw_names: bytes) -> list[Path]:
+    """Expand untracked nested checkouts into the working files to snapshot."""
+    paths: set[Path] = set()
+    pending = [(Path(), raw_names)]
+    expanded: set[Path] = set()
+    while pending:
+        prefix, names = pending.pop()
+        for raw_name in (name for name in names.split(b"\0") if name):
+            nested_relative = Path(os.fsdecode(raw_name))
+            if not nested_relative.parts or nested_relative.is_absolute() or ".." in nested_relative.parts:
+                raise ConfirmationFailed(f"unsafe untracked repository path: {nested_relative}")
+            requested = prefix / nested_relative
+            visible = _visible_snapshot_path(root, requested)
+            if visible is None:
+                # A nested tracked file may have been deleted. Its absence is
+                # the desired snapshot state, so there is nothing to copy.
+                continue
+            relative, entry_stat = visible
+            paths.add(relative)
+            if stat.S_ISLNK(entry_stat.st_mode):
+                _validate_snapshot_symlink(root, relative)
+                continue
+            if stat.S_ISREG(entry_stat.st_mode) or relative in expanded:
+                continue
+            nested_names = _nested_worktree_names(root / relative)
+            if nested_names is not None:
+                expanded.add(relative)
+                pending.append((relative, nested_names))
+    return sorted(paths, key=lambda path: os.fsencode(path.as_posix()))
+
+
+def _snapshot_path_lstat(root: Path, relative: Path) -> os.stat_result:
+    visible = _visible_snapshot_path(root, relative)
+    if visible is None or visible[0] != relative:
+        raise ConfirmationFailed(f"untracked repository entry changed while being snapshotted: {root / relative}")
+    return visible[1]
+
+
+def _safe_snapshot_destination(wt: Path, relative: Path) -> Path:
+    current = wt
+    for part in relative.parent.parts:
+        current /= part
+        try:
+            entry_stat = current.lstat()
+        except FileNotFoundError:
+            current.mkdir()
+            entry_stat = current.lstat()
+        except OSError as exc:
+            raise ConfirmationFailed(f"cannot inspect isolated worktree path {current}: {exc}") from exc
+        if not stat.S_ISDIR(entry_stat.st_mode):
+            raise ConfirmationFailed(f"untracked repository entry escapes the isolated worktree: {current}")
+    return current / relative.name
+
+
+def _copy_untracked_paths(root: Path, wt: Path, paths: list[Path]) -> None:
+    directory_modes: list[tuple[Path, int]] = []
+    for relative in paths:
+        source = root / relative
+        source_stat = _snapshot_path_lstat(root, relative)
+        destination = _safe_snapshot_destination(wt, relative)
+        if stat.S_ISLNK(source_stat.st_mode):
+            _validate_snapshot_symlink(root, relative)
+            if destination.exists() or destination.is_symlink():
+                raise ConfirmationFailed(f"isolated worktree destination already exists: {destination}")
+            destination.symlink_to(os.readlink(source))
+        elif stat.S_ISDIR(source_stat.st_mode):
+            try:
+                destination_stat = destination.lstat()
+            except FileNotFoundError:
+                destination.mkdir()
+            else:
+                if not stat.S_ISDIR(destination_stat.st_mode):
+                    raise ConfirmationFailed(f"isolated worktree destination is not a directory: {destination}")
+            directory_modes.append((destination, stat.S_IMODE(source_stat.st_mode)))
+        elif stat.S_ISREG(source_stat.st_mode):
+            if destination.exists() or destination.is_symlink():
+                raise ConfirmationFailed(f"isolated worktree destination already exists: {destination}")
+            shutil.copy2(source, destination)
+        else:
+            raise ConfirmationFailed(f"unsupported untracked repository entry: {source}")
+    for destination, mode in reversed(directory_modes):
+        destination_stat = destination.lstat()
+        if not stat.S_ISDIR(destination_stat.st_mode):
+            raise ConfirmationFailed(f"isolated worktree directory changed while being copied: {destination}")
+        os.chmod(destination, mode, follow_symlinks=False)
+
+
 def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Callable[[], None]]:
     """Per-finding detached git worktree with the launch dir's local changes copied
     in. Raises on any failure; the finding then remains uncached and retryable."""
@@ -1034,6 +1199,7 @@ def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Cal
     )
     if patch.returncode != 0 or untracked.returncode != 0:
         raise ConfirmationFailed(f"{f.id}: could not snapshot local repository changes")
+    untracked_paths = _untracked_snapshot_paths(root, untracked.stdout)
     base_wt = f.fdir.absolute() / "worktree"
     try:
         base_wt.parent.resolve().relative_to(cfg.ws.work_dir(cfg.name).resolve())
@@ -1065,15 +1231,7 @@ def _setup_worktree(cfg: ConfirmConfig, f: Finding, repo: str) -> tuple[str, Cal
                     f"{f.id}: could not apply tracked local changes to isolated worktree: "
                     f"{applied.stderr.decode(errors='replace').strip()[:200]}"
                 )
-        for raw_name in (name for name in untracked.stdout.split(b"\0") if name):
-            relative = Path(os.fsdecode(raw_name))
-            source = root / relative
-            destination = wt / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            if source.is_symlink():
-                destination.symlink_to(os.readlink(source))
-            else:
-                shutil.copy2(source, destination)
+        _copy_untracked_paths(root, wt, untracked_paths)
     except Exception:
         subprocess.run(
             ["git", "-C", str(root), "worktree", "remove", "--force", str(wt)],
@@ -1626,12 +1784,22 @@ def _repo_cache_identity(cfg: ConfirmConfig) -> dict[str, str]:
     if any(result.returncode != 0 for result in (diff, status, untracked)):
         raise ConfirmationFailed(f"could not inspect repository state for cache identity: {root}")
     local = hashlib.sha256(diff.stdout + b"\0" + status.stdout)
-    for raw_name in sorted(name for name in untracked.stdout.split(b"\0") if name):
-        local.update(b"\0" + raw_name + b"\0")
-        try:
-            local.update((root / raw_name.decode(errors="surrogateescape")).read_bytes())
-        except OSError as exc:
-            local.update(f"<unreadable:{exc}>".encode())
+    for relative in _untracked_snapshot_paths(root, untracked.stdout):
+        path = root / relative
+        local.update(b"\0" + os.fsencode(relative.as_posix()) + b"\0")
+        entry_stat = _snapshot_path_lstat(root, relative)
+        local.update(f"<mode:{entry_stat.st_mode:o}>".encode())
+        if stat.S_ISLNK(entry_stat.st_mode):
+            local.update(b"<symlink>" + os.fsencode(os.readlink(path)))
+        elif stat.S_ISDIR(entry_stat.st_mode):
+            local.update(b"<directory>")
+        elif stat.S_ISREG(entry_stat.st_mode):
+            try:
+                local.update(path.read_bytes())
+            except OSError as exc:
+                local.update(f"<unreadable:{exc}>".encode())
+        else:
+            raise ConfirmationFailed(f"unsupported untracked repository entry: {path}")
     identity["local"] = local.hexdigest()
     return identity
 
