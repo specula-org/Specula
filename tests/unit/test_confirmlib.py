@@ -3632,13 +3632,8 @@ class TestEvidenceAndRendering(ConfirmCase):
 
 
 class TestRepoIsolation(ConfirmCase):
-    def _repo(self) -> Path:
-        repo = Path(self.tmp) / "repo"
-        repo.mkdir()
-        subprocess.run(["git", "init", "-q", str(repo)], check=True)
-        (repo / "tracked.txt").write_text("base\n")
-        (repo / "delete-me.txt").write_text("delete me\n")
-        subprocess.run(["git", "-C", str(repo), "add", "tracked.txt", "delete-me.txt"], check=True)
+    def _commit(self, repo: Path, *paths: str) -> None:
+        subprocess.run(["git", "-C", str(repo), "add", *paths], check=True)
         subprocess.run(
             [
                 "git",
@@ -3650,10 +3645,18 @@ class TestRepoIsolation(ConfirmCase):
                 "user.email=test@example.com",
                 "commit",
                 "-qm",
-                "initial",
+                "test fixture",
             ],
             check=True,
         )
+
+    def _repo(self) -> Path:
+        repo = Path(self.tmp) / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / "tracked.txt").write_text("base\n")
+        (repo / "delete-me.txt").write_text("delete me\n")
+        self._commit(repo, "tracked.txt", "delete-me.txt")
         return repo
 
     def _repo_cfg(self, repo: Path, *, worktree: bool) -> tuple[C.ConfirmConfig, mock.Mock]:
@@ -3661,6 +3664,18 @@ class TestRepoIsolation(ConfirmCase):
         ws.work_dir.return_value = repo / ".specula-output"
         cfg = C.ConfirmConfig(name="T", ws=ws, adapter=Path("/x"), repo_dir=str(repo), worktree=worktree)
         return cfg, ws
+
+    def _nested_repo(self, repo: Path) -> Path:
+        nested = repo / "benchmark"
+        subprocess.run(["git", "init", "-q", str(nested)], check=True)
+        (nested / ".gitignore").write_text("ignored.log\n")
+        (nested / "tracked.txt").write_text("committed\n")
+        (nested / "link.txt").symlink_to("tracked.txt")
+        self._commit(nested, ".gitignore", "tracked.txt", "link.txt")
+        (nested / "tracked.txt").write_text("locally modified\n")
+        (nested / "untracked.txt").write_text("untracked\n")
+        (nested / "ignored.log").write_text("ignored\n")
+        return nested
 
     def test_dispatcher_output_does_not_make_clean_repo_dirty(self) -> None:
         repo = self._repo()
@@ -3727,6 +3742,103 @@ class TestRepoIsolation(ConfirmCase):
         alpha = C._repo_cache_identity(cfg)
         untracked.write_text("beta")
         self.assertNotEqual(alpha, C._repo_cache_identity(cfg))
+
+    def test_local_cache_hashes_nested_repo_working_files(self) -> None:
+        repo = self._repo()
+        nested = self._nested_repo(repo)
+        cfg, _ws = self._repo_cfg(repo, worktree=False)
+
+        first = C._repo_cache_identity(cfg)
+        (nested / "ignored.log").write_text("changed but still ignored\n")
+        self.assertEqual(first, C._repo_cache_identity(cfg))
+        (nested / "tracked.txt").write_text("changed working file\n")
+        self.assertNotEqual(first, C._repo_cache_identity(cfg))
+
+    def test_local_cache_hashes_nested_repo_file_permissions(self) -> None:
+        repo = self._repo()
+        nested = self._nested_repo(repo)
+        cfg, _ws = self._repo_cfg(repo, worktree=False)
+
+        first = C._repo_cache_identity(cfg)
+        os.chmod(nested / "tracked.txt", 0o755)
+        self.assertNotEqual(first, C._repo_cache_identity(cfg))
+
+    def test_untracked_nested_repo_is_copied_without_git_metadata_or_ignored_files(self) -> None:
+        repo = self._repo()
+        self._nested_repo(repo)
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+
+        path, cleanup = C.setup_repo(cfg, f)
+        try:
+            copied = Path(path) / "benchmark"
+            self.assertEqual((copied / "tracked.txt").read_text(), "locally modified\n")
+            self.assertEqual((copied / "untracked.txt").read_text(), "untracked\n")
+            self.assertTrue((copied / "link.txt").is_symlink())
+            self.assertEqual(os.readlink(copied / "link.txt"), "tracked.txt")
+            self.assertFalse((copied / "ignored.log").exists())
+            self.assertFalse((copied / ".git").exists())
+        finally:
+            cleanup()
+
+    def test_untracked_nested_linked_worktree_is_copied_without_git_pointer(self) -> None:
+        repo = self._repo()
+        source = Path(self.tmp) / "nested-source"
+        subprocess.run(["git", "init", "-q", str(source)], check=True)
+        (source / "tracked.txt").write_text("committed\n")
+        self._commit(source, "tracked.txt")
+        nested = repo / "benchmark"
+        subprocess.run(["git", "-C", str(source), "worktree", "add", "--detach", str(nested)], check=True)
+        self.assertTrue((nested / ".git").is_file())
+        (nested / "tracked.txt").write_text("locally modified\n")
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+
+        path, cleanup = C.setup_repo(cfg, f)
+        try:
+            copied = Path(path) / "benchmark"
+            self.assertEqual((copied / "tracked.txt").read_text(), "locally modified\n")
+            self.assertFalse((copied / ".git").exists())
+        finally:
+            cleanup()
+
+    def test_untracked_nested_repo_rejects_symlink_that_escapes_worktree(self) -> None:
+        repo = self._repo()
+        nested = repo / "benchmark"
+        subprocess.run(["git", "init", "-q", str(nested)], check=True)
+        (nested / "escape").mkdir()
+        (nested / "escape" / "payload.txt").write_text("committed\n")
+        self._commit(nested, "escape/payload.txt")
+        shutil.rmtree(nested / "escape")
+        (nested / "escape").symlink_to("../..")
+        (repo.parent / "payload.txt").write_text("must stay outside\n")
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+
+        with self.assertRaisesRegex(C.ConfirmationFailed, "symlink escapes the isolated worktree"):
+            C.setup_repo(cfg, f)
+        self.assertFalse((f.fdir / "payload.txt").exists())
+
+    def test_nested_tracked_file_replaced_by_directory_is_copied(self) -> None:
+        repo = self._repo()
+        nested = repo / "benchmark"
+        subprocess.run(["git", "init", "-q", str(nested)], check=True)
+        item = nested / "item"
+        item.write_text("file\n")
+        self._commit(nested, "item")
+        item.unlink()
+        item.mkdir()
+        (item / "child.txt").write_text("child\n")
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+
+        path, cleanup = C.setup_repo(cfg, f)
+        try:
+            copied = Path(path) / "benchmark" / "item"
+            self.assertTrue(copied.is_dir())
+            self.assertEqual((copied / "child.txt").read_text(), "child\n")
+        finally:
+            cleanup()
 
     def test_pipeline_instrumentation_is_copied_into_isolated_worktree(self) -> None:
         repo = self._repo()
