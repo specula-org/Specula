@@ -23,7 +23,7 @@ Read and apply the relevant parts of the existing skills rather than restating t
 - For evidence, Scenario construction, exclusions, category-specific reasoning, and modeling granularity, read and apply the installed Specula **code-analysis** skill. Follow its category routing when the update changes or stresses distributed/concurrent boundaries.
 - For code-faithful base/MC/Trace/instrumentation edits, source annotations, action splitting, and cfg coverage, read and apply the installed Specula **spec-generation** skill. Read its referenced generation documents for every artifact type touched by the update.
 - For reusing or modifying the prior harness and collecting fresh traces, read and apply only the relevant parts of the installed Specula **harness-generation** skill.
-- For running and debugging trace validation, follow the installed Specula **tla-trace-workflow** skill rather than duplicating its debugger methodology here.
+- For running and debugging trace validation, follow the installed Specula **tla-trace-workflow** skill. Use [Validation 3's category-specific completion evidence](references/validation/03-trace-validation-loop.md#completion-evidence) in place of generic template requirements that assume every trace needs a temporal completion property.
 - For full trace/MC convergence, follow the installed Specula **validation-workflow** skill with the incremental ordering and gates defined here.
 - For counterexample confirmation and reproduction, follow the installed Specula **bug-confirmation** skill.
 

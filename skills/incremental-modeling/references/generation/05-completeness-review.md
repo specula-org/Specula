@@ -55,12 +55,14 @@ Reopen the updated modeling brief and analysis report. Ensure every selected upd
 
 ## 5. Stop Conditions
 
+These conditions complete the current Generation pass. On a repair back-edge, recheck the affected artifacts and return to the calling Validation/Model Checking loop; prior execution of those phases does not prevent this handoff.
+
 For `MODEL_CHANGE_REQUIRED`, finish only when:
 
 - the complete reference suite is updated and syntax/config preflights pass;
 - `Update.tla` and its required cfgs exist and reference real MC/base definitions;
 - the completeness reread found no unresolved semantic gap;
-- no trace validation, TLC campaign, simulation, confirmation, or reproduction has been started.
+- executable checks within this Generation pass were limited to syntax and static configuration preflights; trace validation, TLC campaigns, and reproduction remain owned by their respective phases.
 
 For `NO_MODEL_CHANGE`, finish only when:
 

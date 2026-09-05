@@ -23,7 +23,7 @@ Report coverage for the selected scenarios and observed effects, not exhaustive 
 - Compatible prior scenarios were rerun on the new implementation rather than represented only by archived traces.
 - Every archived trace has a retained, superseded, or environment-limited disposition.
 - The complete retained new-version trace suite passes against the stable candidate under [Validation 3's final regression gate](03-trace-validation-loop.md#4-full-regression-on-the-stable-candidate); local checks alone do not satisfy this gate.
-- `TraceMatched`/`TraceFullyConsumed` is enabled correctly, post-state validation is not a stub, and silent Actions are constrained.
+- Each trace has [category-appropriate completion evidence](03-trace-validation-loop.md#completion-evidence): a completed temporal-property check for linear replay or a full-consumption witness for timebox replay. In either case, post-state checks are active and silent Actions are constrained; property names alone do not satisfy the gate.
 - The changelog records every fix and the final fresh trace inventory.
 
 Write a concise validation handoff containing the current source SHA, harness command, fresh trace paths, affected/interaction coverage, archived-trace dispositions, and whether validation changed semantic spec files. Initial model-checking campaigns require this gate to pass. Later semantic repairs use Validation 3's local-feedback loop; final workflow convergence still requires full trace regression and applicable model checking on the final artifacts.

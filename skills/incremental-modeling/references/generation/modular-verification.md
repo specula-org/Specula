@@ -51,7 +51,7 @@ The generation phase only creates these operators/configs. Later validation must
 2. concrete focused checking;
 3. open focused checking;
 4. discharge checking;
-5. full checks again after any revision.
+5. full checks on the stabilized repaired suite under the [model-checking repair loop and final-check rules](../model-checking/01-update-focused-checking.md#counterexamples-and-back-edges), not after each individual edit.
 
 Focused checking never replaces full reference validation. When `EnvUpdate` is used, discharge is additional, not an alternative to full `MCNext`.
 

@@ -9,7 +9,12 @@ Follow the installed Specula **tla-trace-workflow** skill for validation, layere
 3. Validate fresh traces regenerated from the prior regression scenarios.
 4. Once the related repairs stabilize, run the trace workflow's parallel validation over every retained fresh new-version trace.
 
-For Category B, validation succeeds only when some legal timebox interleaving fully consumes the trace. A deadlocked or pruned ordering rejects only that ordering. Look for a full-consumption witness while retaining the semantic and field checks; disabling deadlock detection alone is not a success criterion. Without such a witness, an unfinished search leaves conformance unresolved.
+### Completion Evidence
+
+- **Category A (linear replay):** enable the suite's correctly defined temporal completion property, such as `TraceMatched` or `TraceFullyConsumed`, and retain its completed check result.
+- **Category B (timebox replay):** establish at least one legal interleaving that consumes every thread's trace while enforcing the semantic and field checks. A deadlocked or pruned ordering rejects only that ordering; a separate universal temporal completion check is not required for this existential criterion.
+
+A Category B completion witness may be obtained by checking the negation of the completion predicate: an expected invariant violation counts only when the saved path ends with every per-thread cursor past its final event and retains the required checks. An unrelated violation, a property name, or an error-free run with deadlock detection disabled is not a completion witness. Without a witness, an exhausted search establishes no match under the checked model/configuration; an unfinished search leaves conformance unresolved. These category-specific criteria also govern the final validation gate when applying the reused Specula skills.
 
 ## 2. Classify Before Editing
 
