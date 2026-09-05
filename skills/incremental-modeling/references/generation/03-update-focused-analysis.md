@@ -31,6 +31,8 @@ Each Scenario must identify real code paths, the model Actions needed to exercis
 
 Derive expectations from implementation behavior and system guarantees, then use them to challenge the draft. Include relevant boundaries where a behavior must be rejected, delayed, or become ineffective, as well as paths where it should occur. Recheck reused assumptions when a Scenario depends on them; a path admitted by the model is not by itself evidence of implementation reachability.
 
+Use [Chapter 5's two-way behavioral review](05-completeness-review.md#2-close-the-reference-semantics) to look for missing implementation paths and unsupported model paths. Turn consequential uncertainties into Scenarios for later trace validation or model checking, with expected outcomes justified from the source rather than the draft's assignments. A successful trace replay shows that observed behavior is admitted; it does not rule out extra model behavior. Check that the selected properties can expose wrong interactions, rather than relying only on properties that restate the draft's assumptions.
+
 ## 3. Derive Properties
 
 Classify properties as:

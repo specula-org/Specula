@@ -12,6 +12,13 @@ Also inspect the final spec diff against the prior suite. Apply Chapter 2's repa
 
 ## 2. Close the Reference Semantics
 
+Completeness means both expressing the new behavior and keeping old behavior valid in new or refined contexts. Review in both directions:
+
+- **Source to model:** follow the operation from its entry through the changed code to its observable result. Check semantically distinct caller contexts, including surrounding guards and side effects, before generalizing a local conclusion to the whole operation.
+- **Model to source:** in states introduced or affected by the update, inspect the alternatives enabled by the complete `Next`. Can an old Action bypass, interrupt, or complete the new path in a way the implementation cannot? Include Actions that affect shared control state or enablement without mentioning new variables. Adding a more specific Action does not override an older one.
+
+Try to construct a distinguishing execution: a legal implementation path the model cannot represent, or a model path unsupported by the implementation. Before calling it a defect, account for the chosen scope, atomicity, and intentional abstraction; different step counts or representations alone are not errors. Use concrete mismatches to guide repairs and later checks, not as a reason to expand every model or disable every overlapping Action.
+
 Verify all relevant surfaces directly in the actual files:
 
 - constants, declarations, record/message fields, variable groups, assumptions, and type predicates;

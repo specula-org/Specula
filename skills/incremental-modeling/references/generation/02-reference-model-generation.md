@@ -23,7 +23,7 @@ Work in this order, revisiting earlier steps whenever later reasoning reveals a 
 2. `Init` and setup/recovery initialization;
 3. changed helpers and all semantic callers;
 4. changed Actions and every parallel/special/general code path implementing the same mechanism;
-5. unaffected Actions that must initialize, preserve, or consume new/changed state;
+5. old Actions that initialize, preserve, or consume changed state, or whose applicability and effects need reconsideration in new/refined states;
 6. `Next`, reachability, fairness, and common properties;
 7. MC wrappers, counters, constraints, standard cfg, and Scenario hunt cfgs;
 8. Trace event wrappers, `ValidatePostState`, silent transitions, and instrumentation mapping;
