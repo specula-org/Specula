@@ -13,8 +13,10 @@ Finish incremental trace validation only when all of the following hold.
 - Instrumentation around the update observes its producer/setup, branch or pre-state, committed effect, and first high-risk unchanged consumer/fault boundary; any omitted layer has an evidence-backed reason.
 - Every `AffectedAction` is observed in a fresh trace or has a cited environment limitation.
 - Every selected high-risk Interaction Scenario has a fresh trace with the required producer/consumer/fault evidence.
-- Required identity and post-state fields are emitted and checked non-vacuously.
+- Required identity and result fields are emitted and compared by active Trace predicates at source-faithful observation points, following [Validation 1's comparison rule](01-reuse-prior-harness.md#4-close-instrumentation-semantics).
 - Category B trace quality includes real overlap, contention, and per-thread order.
+
+Report coverage for the selected scenarios and observed effects, not exhaustive interaction coverage. Unobserved interactions and effects whose results were not compared remain explicit gaps; a bounded coverage limitation is distinct from an unresolved replay mismatch.
 
 ## Regression and Conformance
 

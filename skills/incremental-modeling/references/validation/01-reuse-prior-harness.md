@@ -53,6 +53,8 @@ Cover every changed special/general call site rather than assuming one probe rep
 - Keep silent Actions narrowly guarded. Prefer observing an affected or high-risk interaction Action over making it silent.
 - Instrument real code, never a simulator, and never hand-write traces.
 
+For each update or repair effect claimed as validated, identify the actual Trace predicate comparing its captured result with the corresponding model state or outcome. Observing the event or checking unrelated fields is not enough. If the effect completes asynchronously, compare it at a later coherent observation point tied to the same operation; a weak check at the earlier event does not validate that effect. When no reliable comparison is available, report the effect as unvalidated rather than dropping the check and crediting the action.
+
 Update `harness/INSTRUMENTATION.md` with only the changed points and the normal rebuild/rerun instructions.
 
 ## 5. CI Reproducibility
