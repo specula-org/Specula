@@ -20,8 +20,8 @@ Finish incremental trace validation only when all of the following hold.
 
 - Compatible prior scenarios were rerun on the new implementation rather than represented only by archived traces.
 - Every archived trace has a retained, superseded, or environment-limited disposition.
-- All retained fresh new-version traces pass together after the final semantic or harness change.
+- The complete retained new-version trace suite passes against the stable candidate under [Validation 3's final regression gate](03-trace-validation-loop.md#4-full-regression-on-the-stable-candidate); local checks alone do not satisfy this gate.
 - `TraceMatched`/`TraceFullyConsumed` is enabled correctly, post-state validation is not a stub, and silent Actions are constrained.
 - The changelog records every fix and the final fresh trace inventory.
 
-Write a concise validation handoff containing the current source SHA, harness command, fresh trace paths, affected/interaction coverage, archived-trace dispositions, and whether validation changed semantic spec files. Do not claim full convergence or begin model checking until the model-checking part executes and returns to trace validation after any semantic repair.
+Write a concise validation handoff containing the current source SHA, harness command, fresh trace paths, affected/interaction coverage, archived-trace dispositions, and whether validation changed semantic spec files. Initial model-checking campaigns require this gate to pass. Later semantic repairs use Validation 3's local-feedback loop; final workflow convergence still requires full trace regression and applicable model checking on the final artifacts.

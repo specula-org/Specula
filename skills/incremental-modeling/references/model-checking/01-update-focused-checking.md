@@ -4,7 +4,7 @@ Use the installed Specula **validation-workflow** skill for trace/MC convergence
 
 ## Entry Gate
 
-Begin only after the fresh new-version trace suite passes. Apply the no-change reuse rule below before starting new campaigns; otherwise first run the standard `MC.cfg` convergence round from the main validation workflow. Any semantic spec or invariant repair returns to full fresh trace validation before model checking continues.
+Enter the campaign phase only after the complete fresh new-version trace suite passes. Apply the no-change reuse rule below before starting new campaigns; otherwise first run the standard `MC.cfg` convergence round from the main validation workflow. Subsequent repairs follow [Validation 3's local-feedback loop](../validation/03-trace-validation-loop.md#3-repair-with-local-feedback), not full trace replay after every edit.
 
 For `NO_MODEL_CHANGE`, when semantic artifacts are unchanged, fresh trace validation passes, and applicable prior model-checking evidence is available, retain that evidence and stop. If the reference was repaired or prior evidence is insufficient, run the main validation/checking loop on the current suite and check the repaired behavior and its interactions. Use applicable existing Update views or ordinary MC configs; repair-only work does not require a new `Update.tla`.
 
@@ -16,7 +16,7 @@ For `MODEL_CHANGE_REQUIRED`, run in this order:
 2. **Concrete focused check** — run the generated `AffectedActions \/ InteractionActions` configs so TLC spends its state budget on the changed mechanism and its high-risk unchanged producers, consumers, retries, faults, persistence, and recovery.
 3. **Open and discharge checks** — when `EnvUpdate` exists, run the open config and the discharge config. Treat an open result as provisional until omitted real context Actions satisfy the rely/frame obligation.
 4. **Scenario hunts** — run the generated update Scenario configs with the BFS/simulation strategy from the main checking workflow. Each Scenario needs a reachability canary or witness; a property that passes only because its update interaction is unreachable is not coverage.
-5. **Final full check** — rerun the standard full model and full update properties after every repair made during focused checking.
+5. **Final full check** — after repairs stabilize and the final full trace regression gate is satisfied, rerun the standard full model and full update properties if repairs invalidated their earlier results.
 
 These are independent TLC campaigns. They restrict or widen the enabled Action set; they do not impose a single execution order. Scenario-specific monitors may observe a producer/affected/consumer path, but must not redefine reference behavior.
 
@@ -31,9 +31,9 @@ Apply the main checking workflow's classification unchanged. Incremental model c
 - A violation of a new or revised property is not automatically an invariant problem; a faithful updated model may have exposed an implementation bug.
 - A focused-only violation must also be admitted by full current reference behavior, or have a valid open/discharge basis, before it becomes a finding.
 - A finding is update-related only when its path crosses an affected Action, depends on updated setup/assumptions/state, or demonstrates that the update moved or removed a prior mask. Attribution does not change whether the bug is real.
-- Any Case A/B repair that changes semantic artifacts returns to the complete fresh trace suite, then restarts every affected campaign above.
+- For Case A/B semantic repairs, use local source/trace/operator checks and batch related fixes. Recheck the repaired behavior in the affected campaign; earlier affected results are provisional until rerun on the final artifacts. Defer complete trace replay to the stable-candidate gate, and repeat affected final checks if later repairs invalidate them.
 - Save actual Case C counterexamples and continue the remaining campaigns. Pass them to `../reproduction/01-confirm-counterexample.md`; do not reproduce a Scenario with no violation.
 
 ## Completion
 
-Finish only when standard trace/MC convergence holds, every selected update or repair Scenario is reachable, all applicable campaigns have explicit outcomes, no Case A/B remains unresolved, and final full checks required by repairs have been rerun. Record timeout or resource exhaustion as limited coverage, never as a pass.
+Finish only when standard trace/MC convergence holds, every selected update or repair Scenario is reachable, all applicable campaigns have explicit outcomes, no Case A/B remains unresolved, and the full trace regression and required final model checks apply to the final artifacts. Record timeout or resource exhaustion as limited coverage, never as a pass.

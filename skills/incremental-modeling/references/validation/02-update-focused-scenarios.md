@@ -12,7 +12,7 @@ Run compatible prior harness scenarios against the new implementation and collec
 
 ## 2. Add Update Scenarios
 
-For every selected update Scenario, create a real execution that targets the corresponding source path and model Actions. Cover, when supported by the implementation:
+For every selected update Scenario, obtain a real execution that targets the corresponding source path and model Actions. Reuse a suitable fresh new-version trace when available; add a scenario when existing executions leave a specific behavior, timing, or observation gap. A spec repair alone does not require a new scenario. Cover, when supported by the implementation:
 
 ```text
 old producer -> affected Action -> old consumer

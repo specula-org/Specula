@@ -87,7 +87,7 @@ Run the validation chapters in order:
 
 1. `references/validation/01-reuse-prior-harness.md` — rebase the prior CI harness onto the new source with the smallest evidence-backed changes.
 2. `references/validation/02-update-focused-scenarios.md` — rerun prior scenarios and add focused traces for affected Actions and high-risk interactions.
-3. `references/validation/03-trace-validation-loop.md` — validate and debug fresh new-version traces, revisiting generation when evidence changes the model.
+3. `references/validation/03-trace-validation-loop.md` — debug with local feedback and related repair batches, revisiting generation when evidence changes the model.
 4. `references/validation/04-validation-completeness.md` — verify harness provenance, update coverage, trace quality, and regression closure.
 
 `NO_MODEL_CHANGE` still enters validation: run the reused harness against the new implementation and validate fresh traces against the current reference. A mismatch may expose either a missed source change or an existing model defect; distinguish them using both revisions. Semantic repairs require renewed validation and applicable model checking even when the source disposition remains `NO_MODEL_CHANGE`.
@@ -104,4 +104,4 @@ When Part 3 produces an actual counterexample, enter through `references/reprodu
 
 ## Current Stop Boundary
 
-Generation may run syntax and static configuration preflights only. Validation may build the reused harness, collect traces, and run trace validation. Model checking begins only after the validation gate, and reproduction begins only with an actual counterexample.
+Generation may run syntax and static configuration preflights only. Validation may build the reused harness, collect/replay traces, and run bounded local semantic diagnostics as described in Validation 3. Model-checking campaigns begin only after the initial validation gate; subsequent repairs use the local-feedback loop and final regression gate. Reproduction begins only with an actual counterexample.
