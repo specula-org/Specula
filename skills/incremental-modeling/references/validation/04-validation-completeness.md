@@ -1,0 +1,27 @@
+# Validation 4: Completeness and Handoff
+
+Finish incremental trace validation only when all of the following hold.
+
+## Harness and Provenance
+
+- The prior harness was reused or minimally rebased; every replacement has an explicit incompatibility rationale.
+- `harness/run.sh` applies to the new source and reproducibly builds, runs, and collects traces.
+- Updated instrumentation points cite real source symbols and agree with `instrumentation-spec.md` and `Trace.tla`.
+
+## Update Coverage
+
+- Instrumentation around the update observes its producer/setup, branch or pre-state, committed effect, and first high-risk unchanged consumer/fault boundary; any omitted layer has an evidence-backed reason.
+- Every `AffectedAction` is observed in a fresh trace or has a cited environment limitation.
+- Every selected high-risk Interaction Scenario has a fresh trace with the required producer/consumer/fault evidence.
+- Required identity and post-state fields are emitted and checked non-vacuously.
+- Category B trace quality includes real overlap, contention, and per-thread order.
+
+## Regression and Conformance
+
+- Compatible prior scenarios were rerun on the new implementation rather than represented only by archived traces.
+- Every archived trace has a retained, superseded, or environment-limited disposition.
+- All retained fresh new-version traces pass together after the final semantic or harness change.
+- `TraceMatched`/`TraceFullyConsumed` is enabled correctly, post-state validation is not a stub, and silent Actions are constrained.
+- The changelog records every fix and the final fresh trace inventory.
+
+Write a concise validation handoff containing the current source SHA, harness command, fresh trace paths, affected/interaction coverage, archived-trace dispositions, and whether validation changed semantic spec files. Do not claim full convergence or begin model checking until the model-checking part executes and returns to trace validation after any semantic repair.

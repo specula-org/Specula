@@ -87,6 +87,7 @@ class TestInstallSkills(SkillInstallCase):
                 "byom",
                 "code-analysis",
                 "harness-generation",
+                "incremental-modeling",
                 "spec-generation",
                 "tla-checking-workflow",
                 "tla-trace-workflow",
