@@ -4,9 +4,9 @@ Use the installed Specula **validation-workflow** skill for trace/MC convergence
 
 ## Entry Gate
 
-Begin only after the fresh new-version trace suite passes. First run the standard `MC.cfg` convergence round from the main validation workflow. Any semantic spec or invariant repair returns to full fresh trace validation before model checking continues.
+Begin only after the fresh new-version trace suite passes. Apply the no-change reuse rule below before starting new campaigns; otherwise first run the standard `MC.cfg` convergence round from the main validation workflow. Any semantic spec or invariant repair returns to full fresh trace validation before model checking continues.
 
-For `NO_MODEL_CHANGE`, when semantic artifacts are byte-identical and fresh trace validation passes, retain the prior model-checking evidence and stop. Do not create an empty `Update.tla` or rerun an unchanged state space merely to exercise this chapter.
+For `NO_MODEL_CHANGE`, when semantic artifacts are unchanged, fresh trace validation passes, and applicable prior model-checking evidence is available, retain that evidence and stop. If the reference was repaired or prior evidence is insufficient, run the main validation/checking loop on the current suite and check the repaired behavior and its interactions. Use applicable existing Update views or ordinary MC configs; repair-only work does not require a new `Update.tla`.
 
 ## Incremental Campaign
 
@@ -19,6 +19,8 @@ For `MODEL_CHANGE_REQUIRED`, run in this order:
 5. **Final full check** — rerun the standard full model and full update properties after every repair made during focused checking.
 
 These are independent TLC campaigns. They restrict or widen the enabled Action set; they do not impose a single execution order. Scenario-specific monitors may observe a producer/affected/consumer path, but must not redefine reference behavior.
+
+Check witness paths against the source assumptions they depend on. A reachability canary establishes a model path; a passing property establishes what was checked in that model. Neither alone validates the abstraction. Revisit generation when source evidence contradicts a reused guard, state meaning, or property interpretation, including defects inherited from the prior suite.
 
 Do not reduce bounds on update-relevant Actions or faults merely to make BFS deeper. Reduce unrelated domains when justified, then use the main workflow's simulation follow-up for depth.
 
@@ -34,4 +36,4 @@ Apply the main checking workflow's classification unchanged. Incremental model c
 
 ## Completion
 
-Finish only when standard trace/MC convergence holds, every selected update Scenario is reachable, full/concrete/open/discharge campaigns have explicit outcomes, no Case A/B remains unresolved, and the final full checks have been rerun. Record timeout or resource exhaustion as limited coverage, never as a pass.
+Finish only when standard trace/MC convergence holds, every selected update or repair Scenario is reachable, all applicable campaigns have explicit outcomes, no Case A/B remains unresolved, and final full checks required by repairs have been rerun. Record timeout or resource exhaustion as limited coverage, never as a pass.

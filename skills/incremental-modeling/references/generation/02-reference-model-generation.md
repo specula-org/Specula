@@ -1,6 +1,6 @@
 # Chapter 2: Generate the Complete New Reference Suite
 
-Read and follow the installed Specula **spec-generation** skill for all touched artifacts. This chapter changes the input condition: start from the prior validated suite and revise it into the complete semantic model of the new source revision.
+Read and follow the installed Specula **spec-generation** skill for all touched artifacts. Start from the prior suite and revise it into the complete semantic model of the new source revision, correcting implementation-backed inconsistencies in the relevant old abstraction as needed.
 
 ## 1. Keep One Behavioral Source of Truth
 
@@ -31,7 +31,9 @@ Work in this order, revisiting earlier steps whenever later reasoning reveals a 
 
 Use the existing source-faithfulness rules: model the implementation rather than the intended paper algorithm; preserve real atomicity boundaries; split actions where code paths or interleaving windows diverge.
 
-Completeness is not permission to change unaffected semantics. Preserve every unchanged Action boundary, message lifecycle, guard, side effect, and special/general path unless the source update or evidence requires a change. Follow affected values through callers and consumers, but do not import behavior that existed before the update merely because the new analysis noticed it.
+Preserve old behavior whose abstraction remains valid. Every semantic edit needs evidence from the source change, its interactions, an existing model/implementation mismatch, or a justified property correction. Do not preserve a known modeling defect solely because the corresponding code is unchanged. Prioritize defects affecting the update or its verification; record independent defects for separate work.
+
+Reuse the meaning of an abstraction, not just its assignments or guards. Check that the relevant action preconditions and state meanings remain consistent through production, consumption, and recovery. An unchanged concrete field need not mean an unchanged abstract value. Adjust variables or action boundaries when necessary to preserve that meaning, then update all dependent reference, MC, Trace, and Update definitions. Choose a semantically sufficient repair; changed line count and reuse of the original representation are not correctness criteria. Keep intentional abstractions explicit and appropriate to the properties being checked.
 
 ## 3. Property Placement
 

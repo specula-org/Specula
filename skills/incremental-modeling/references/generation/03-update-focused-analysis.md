@@ -29,12 +29,14 @@ changed Action -> retry/timeout/configuration change
 
 Each Scenario must identify real code paths, the model Actions needed to exercise them, the uncertainty to resolve, and a plausible correctness consequence.
 
+Derive expectations from implementation behavior and system guarantees, then use them to challenge the draft. Include relevant boundaries where a behavior must be rejected, delayed, or become ineffective, as well as paths where it should occur. Recheck reused assumptions when a Scenario depends on them; a path admitted by the model is not by itself evidence of implementation reachability.
+
 ## 3. Derive Properties
 
 Classify properties as:
 
 - preserved old properties whose justification must be rechecked;
-- revised properties such as `Inv_new` when the system's guarantee changed;
+- revised properties such as `Inv_new` when the system's guarantee changed or evidence shows the old formulation was incorrect;
 - newly introduced safety/liveness properties;
 - interaction properties that observe the changed behavior through an old consumer;
 - structural properties needed to keep focused checking meaningful.

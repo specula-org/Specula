@@ -8,7 +8,7 @@ After all generation edits, reread the complete old/new source diff and the chan
 
 Do not equate one code hunk with one spec edit. Do not stop after changing the first matching Action.
 
-Also inspect the final spec diff against the prior suite. Every semantic edit must be required by the source update, its dependency closure, or an evidence-backed property change. Remove collateral edits to unchanged Action boundaries, message production/consumption, retry behavior, or old special paths.
+Also inspect the final spec diff against the prior suite. Apply Chapter 2's repair criteria: every semantic edit needs an implementation or property justification. Record source-driven updates and repairs of old model defects separately. Remove unsupported behavior changes while retaining justified repairs, even where the source code is unchanged.
 
 ## 2. Close the Reference Semantics
 
@@ -26,11 +26,13 @@ Verify all relevant surfaces directly in the actual files:
 - equality of old/new projected post-state sets for every branch classified `NO_MODEL_CHANGE`;
 - agreement between mandatory instrumentation fields and non-vacuous Trace checks.
 
+Recheck the assumptions behind reused Actions and state representations, including why each affected behavior is enabled and what later consumers infer from its results. Consistent definitions across the suite are necessary, but their shared interpretation must also agree with the implementation. Record any intentional abstraction and its limits rather than treating agreement among generated artifacts as independent confirmation.
+
 If the review exposes a missing edit, revise the reference and repeat the affected checks. A syntactically valid partial update is not complete.
 
 ## 3. Close the Update Focus
 
-Verify:
+When `Update.tla` is used, verify:
 
 - every directly changed reference Action is represented in `AffectedActions`;
 - every high-risk producer/consumer/fault interaction identified by analysis is concrete in `InteractionActions`;
@@ -55,8 +57,10 @@ For `MODEL_CHANGE_REQUIRED`, finish only when:
 
 For `NO_MODEL_CHANGE`, finish only when:
 
-- evidence shows the update is outside the modeled behavior/property scope at the existing granularity;
+- evidence shows the source update leaves modeled behavior and correctness requirements unchanged at the chosen granularity;
 - every changed branch has equal old/new post-state sets after projection onto the existing model vocabulary;
-- semantic spec artifacts remain unchanged;
+- semantic spec artifacts remain unchanged, or every model repair is separately justified and the affected generation checks above pass;
 - no empty or documentary `Update.tla` was created;
 - the rationale is recorded in the existing brief/report for later validation.
+
+Repair-only work proceeds through validation and applicable model checking; a no-change source disposition does not waive those checks for modified semantic artifacts.

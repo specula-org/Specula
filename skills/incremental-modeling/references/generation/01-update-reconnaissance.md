@@ -15,13 +15,15 @@ Do not infer protocol importance from diff size. A one-line guard can be model-c
 
 Before editing TLA+, determine:
 
-- the intended implementation behavior before and after the update;
+- the implementation behavior before and after the update;
 - whether that behavior is inside the old modeling scope and at the old abstraction granularity;
 - the state, messages, assumptions, setup, atomicity boundaries, and externally visible consequences directly changed;
 - prior Scenarios/findings whose mechanism, reachability, mask, or consequence may have changed;
 - likely reference surfaces to revisit, without treating the first matches as a complete list.
 
 Project every changed behavioral branch onto the existing model vocabulary. Excluding an internal mechanism, phase, state, or discriminator excludes its representation, not its effects on variables, messages, Actions, or properties already present in the reference. When a hidden discriminator selects different visible effects, preserve the concrete effects' nondeterministic union unless distinguishing the hidden state is necessary for correctness.
+
+Check that the reused abstraction still expresses the relevant implementation behavior. An unchanged code path can become important to a new interaction, and an old simplification can already be wrong. Treat the existing vocabulary as a starting point: when evidence requires a different representation or action boundary within the modeling scope, explain the reason and revise it through Chapter 2.
 
 For `NO_MODEL_CHANGE`, show that the old and new projected post-state sets are equal for every changed behavioral branch. A difference in any existing modeled state, message, enablement condition, atomicity boundary, or promised property requires `MODEL_CHANGE_REQUIRED`, even when the concrete cause is otherwise excluded.
 
@@ -32,7 +34,7 @@ Choose one disposition:
 
 Do not emit either label as an interim placeholder. Choose once the projection and call-path checks are complete.
 
-For `NO_MODEL_CHANGE`, verify the conclusion against the old scope and all changed call paths. Record why every projected result is unchanged; do not edit semantic spec content.
+For `NO_MODEL_CHANGE`, verify the conclusion against the scope and all changed call paths. Record why every projected result is unchanged. Separately record any discovered defect in the old model; its repair does not make the source delta model-relevant. Follow the repair route in [the workflow guide](../../guide.md).
 
 ## 3. Prepare the First Reference Draft
 

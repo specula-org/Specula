@@ -9,10 +9,12 @@ The workflow has four parts under `references/`: `generation/`, `validation/`, `
 Require:
 
 - the old and new source revisions, or an exact diff plus both source trees;
-- the prior validated `.specula-output/`, including its modeling brief, analysis report, specs, instrumentation mapping, traces, validation history, findings, and reproductions when present;
+- the prior `.specula-output/`, including its modeling brief, analysis report, specs, instrumentation mapping, traces, validation history, findings, and reproductions when present;
 - a separate working copy for the new artifacts. Never overwrite the prior run.
 
 If the prior spec has not completed trace/model convergence, say so in the analysis and treat its conclusions as provisional.
+
+Preserve correct system semantics rather than the old model's text. Prior validation provides evidence within its coverage; it does not make every old abstraction correct. Recheck the assumptions and state meanings on which the update depends, and actively repair implementation-backed inconsistencies within the modeling scope. Prioritize repairs needed for the update and its interactions; record independent issues for separate work. Chapter 2 defines the repair criteria.
 
 ## Reuse the Existing Specula Methods
 
@@ -31,10 +33,12 @@ Do not rerun full-project archaeology by default. Reuse the old run and investig
 
 Run Chapter 1 before making any semantic spec edit. It must end with exactly one disposition:
 
-- `NO_MODEL_CHANGE`: the source update changes neither behavior nor correctness requirements at the existing modeling scope and granularity. Record the evidence and exclusion rationale, keep semantic spec artifacts unchanged, skip Chapters 2–4, run the no-change branch of Chapter 5, and stop generation.
+- `NO_MODEL_CHANGE`: the source update changes neither behavior nor correctness requirements at the modeling scope and granularity. Record the evidence and exclusion rationale. When no model repair is needed, skip Chapters 2–4 and run the no-change completion checks in Chapter 5.
 - `MODEL_CHANGE_REQUIRED`: the update changes modeled behavior, assumptions/setup, atomicity, or correctness requirements. Continue through Chapters 2–5.
 
 Do not create `Update.tla` merely to document a no-change decision. Do not proceed with reference edits while the disposition is still unresolved.
+
+The disposition describes the source delta, not whether spec files changed. An existing model defect may require repair even with `NO_MODEL_CHANGE`; record that repair separately in the analysis and changelog without relabeling the source delta. Follow the affected generation and validation chapters for the repair. Reopen the disposition only if new evidence changes the assessment of the source delta.
 
 ## Part 1: Generation
 
@@ -44,7 +48,7 @@ First execute the decision chapter:
 
 Then branch:
 
-- For `NO_MODEL_CHANGE`, skip generation chapters and execute only the no-change completion checks in `references/generation/05-completeness-review.md`.
+- For `NO_MODEL_CHANGE` without a repair, execute only the no-change completion checks in `references/generation/05-completeness-review.md`. For a repair, apply Chapters 2, 3, and 5 and update existing checking views as needed; repair-only work can use ordinary MC configs without creating `Update.tla`.
 - For `MODEL_CHANGE_REQUIRED`, execute the remaining chapters in order:
 
 2. `references/generation/02-reference-model-generation.md` — draft the complete new reference suite.
@@ -75,7 +79,7 @@ For `MODEL_CHANGE_REQUIRED`, produce:
 - `spec/Update.tla` plus the update-specific cfgs needed for full-property, concrete-focused, open-focused, and discharge checking;
 - three-way source comments connecting changed code, changed reference locations, and the corresponding `Update.tla` focus.
 
-For `NO_MODEL_CHANGE`, leave all semantic spec artifacts unchanged and record the evidence and modeling-scope rationale in the existing analysis/brief. Do not generate an empty `Update.tla`.
+For `NO_MODEL_CHANGE`, record the evidence and modeling-scope rationale in the existing analysis/brief. Preserve semantic artifacts unless an implementation-backed repair is needed; document and validate any repair through the same loop. Do not generate an empty `Update.tla`.
 
 ## Part 2: Validation
 
@@ -86,7 +90,9 @@ Run the validation chapters in order:
 3. `references/validation/03-trace-validation-loop.md` — validate and debug fresh new-version traces, revisiting generation when evidence changes the model.
 4. `references/validation/04-validation-completeness.md` — verify harness provenance, update coverage, trace quality, and regression closure.
 
-`NO_MODEL_CHANGE` still enters validation: run the reused harness against the new implementation and validate fresh traces against the unchanged semantic spec. A fresh trace that exposes a new projected behavior reopens the generation decision.
+`NO_MODEL_CHANGE` still enters validation: run the reused harness against the new implementation and validate fresh traces against the current reference. A mismatch may expose either a missed source change or an existing model defect; distinguish them using both revisions. Semantic repairs require renewed validation and applicable model checking even when the source disposition remains `NO_MODEL_CHANGE`.
+
+For repair-only work, apply the validation coverage requirements to the repaired Actions and their interactions identified in the analysis, whether or not `Update.tla` is used.
 
 ## Part 3: Model Checking
 

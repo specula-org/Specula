@@ -22,6 +22,8 @@ For each failure, identify which evidence is wrong:
 
 A trace mismatch alone is not a code-bug verdict. Do not force the model to an intended paper algorithm, and do not weaken post-state checks to make a trace pass.
 
+Passing traces establish conformance for the observed executions; they do not validate every behavior the model permits. For the update's important assumptions and any model repair, use source-backed boundary scenarios and check that logged values have the intended abstract meaning. Do not derive a Trace expectation solely from the reference assignment it is meant to validate. Investigate contradictions even when the old suite used the same interpretation.
+
 ## 3. Reopen Generation When Evidence Changes
 
 Any semantic base/MC/Trace fix reopens the affected Generation chapters:
@@ -32,6 +34,6 @@ Any semantic base/MC/Trace fix reopens the affected Generation chapters:
 - recollect any trace whose event schema or capture timing changed;
 - restart validation from the first affected trace, then rerun the full fresh suite.
 
-For a prior `NO_MODEL_CHANGE` disposition, a fresh trace that demonstrates different projected behavior reopens the Chapter 1 decision gate. Do not preserve no-change merely to retain byte identity.
+For a prior `NO_MODEL_CHANGE` disposition, compare the mismatch with both source revisions. A missed change in projected implementation behavior reopens the Chapter 1 decision gate. An existing model defect requires repair and renewed validation, while the source-delta disposition remains unchanged. Record the reason separately so file changes are not mistaken for implementation changes.
 
 Record every harness, trace, and semantic fix concisely in `spec/changelog.md`, distinguishing archived-trace disposition from fresh-trace validation.
