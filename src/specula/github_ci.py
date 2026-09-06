@@ -12,7 +12,6 @@ import re
 import secrets
 import shutil
 import stat
-import subprocess
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -25,7 +24,7 @@ if __package__ in (None, ""):
 from specula import ci_init
 from specula.adapters.utils.run_lock import CI_EVENT_LOCK_FD_ENV
 from specula.ci_identity import check_key
-from specula.ci_inheritance import candidate_for, inherit, result_key
+from specula.ci_inheritance import candidate_for, inherit, matches_source, result_key
 from specula.ci_store import CIError, CIStore, git, read_json, write_json
 from specula.ci_workflow import CIPipeline
 from specula.pipelinelib import Pipeline, _valid_run_id
@@ -41,45 +40,12 @@ def mapping(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def is_merged_pr(event: Event) -> bool:
-    """Distinguish a rebased PR group from an ordinary multi-commit push."""
-    query = ".[] | {merged_at, merge_commit_sha, branch: .base.ref} | @json"
-    try:
-        result = subprocess.run(
-            [
-                "gh",
-                "api",
-                "--paginate",
-                f"repos/{event.repository}/commits/{event.target}/pulls?per_page=100",
-                "--jq",
-                query,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise CIError("could not confirm PR merge identity; no replacement check was started") from exc
-    if result.returncode:
-        raise CIError("could not confirm PR merge identity; check GitHub CLI read access to pull requests")
-    for line in result.stdout.splitlines():
-        item = mapping(json.loads(line))
-        if (
-            item.get("merged_at")
-            and item.get("merge_commit_sha") == event.target
-            and item.get("branch") == event.branch
-        ):
-            return True
-    return False
-
-
 @dataclass(frozen=True)
 class Event:
     repository: str
     branch: str
     kind: str
     target: str
-    before: str | None = None
     pr_number: int | None = None
 
     @classmethod
@@ -100,7 +66,7 @@ class Event:
             number = payload.get("number")
             if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
                 raise CIError("invalid PR number")
-            return cls(repository, branch, "pr", sha(head.get("sha")), payload.get("before"), number)
+            return cls(repository, branch, "pr", sha(head.get("sha")), pr_number=number)
         if name == "merge_group":
             group = mapping(payload.get("merge_group"))
             ref = group.get("base_ref", "")
@@ -119,7 +85,7 @@ class Event:
         if name == "push" and payload.get("deleted"):
             return None
         target = sha(payload.get("after") if name == "push" else environment.get("GITHUB_SHA"))
-        return cls(repository, ref[len("refs/heads/") :], name, target, payload.get("before"))
+        return cls(repository, ref[len("refs/heads/") :], name, target)
 
 
 class GitHubCI:
@@ -223,8 +189,8 @@ class GitHubCI:
         return key
 
     def _attempt_path(self, event: Event, commit: str, configuration: str | None) -> Path:
-        # A failed SHA remains attempted even when later commits advance the
-        # model. Only an explicit manual force request reruns that task.
+        # Do not automatically retry a failed task. Native resume can supply a
+        # completed result; newer targets include its changes cumulatively.
         candidate = event.kind in {"pr", "candidate"}
         source_id = git(self.source, "rev-parse", f"{commit}^{{tree}}") if candidate else commit
         identity = json.dumps(
@@ -276,15 +242,13 @@ class GitHubCI:
         current = self.store.current()
         configuration = self.configuration(current)
         attempt_path = self._attempt_path(event, commit, configuration)
-        if attempt_path.exists() and not force:
-            previous = read_json(attempt_path)
-            self.rows.append({**previous, "status": f"already attempted ({previous['status']})"})
-            return 0 if previous.get("complete") is True else 1
         git(self.source, "checkout", "--quiet", "--detach", commit)
+        # A native resume can publish a result after this event recorded a
+        # failure. Reconcile validated publications before consulting attempts.
         if candidate and not force and configuration is not None:
             tree = git(self.source, "rev-parse", f"{commit}^{{tree}}")
             reused_candidate = candidate_for(self.store, current, tree, configuration)
-            from_current = current.get("source_tree") == tree and current.get("check_key") == configuration
+            from_current = matches_source(self.store, current, tree, configuration)
             if from_current or reused_candidate is not None:
                 evidence = current if from_current else reused_candidate
                 assert evidence is not None
@@ -309,6 +273,10 @@ class GitHubCI:
                 write_json(attempt_path, result)
                 self.rows.append(result)
                 return 0
+        if attempt_path.exists() and not force:
+            previous = read_json(attempt_path)
+            self.rows.append({**previous, "status": f"already attempted ({previous['status']})"})
+            return 0 if previous.get("complete") is True else 1
         result = {"commit": commit, "status": "incomplete", "complete": False}
         write_json(attempt_path, result)
         code, receipt = self._invoke(candidate=candidate)
@@ -361,70 +329,34 @@ class GitHubCI:
                 else:
                     target = event.target
                 return self.check(event, target, candidate=True, force=force)
-            cursor_path = self.directory / "cursor.json"
-            cursor = read_json(cursor_path)["commit"] if cursor_path.exists() else current["source_commit"]
-            with contextlib.suppress(CIError):
-                git(self.source, "merge-base", "--is-ancestor", cursor, current["source_commit"])
-                cursor = current["source_commit"]
+            target = event.target
             if event.kind in {"schedule", "workflow_dispatch"}:
                 target = self._branch_tip(event.branch, event.target)
                 if revision:
                     requested = git(self.source, "rev-parse", "--verify", f"{revision}^{{commit}}")
                     git(self.source, "merge-base", "--is-ancestor", requested, target)
                     target = requested
-                dispatch_code = self.check(event, target, candidate=False, force=force)
-                if dispatch_code == 0:
-                    write_json(cursor_path, {"commit": target})
-                return dispatch_code
-            try:
-                git(self.source, "merge-base", "--is-ancestor", cursor, event.target)
-            except CIError:
-                git(self.source, "merge-base", "--is-ancestor", event.target, cursor)
-                previous = self._attempt_path(event, event.target, self.configuration(current))
-                if previous.exists():
-                    result = read_json(previous)
-                    self.rows.append({**result, "status": f"already attempted ({result['status']})"})
-                    return 0 if result.get("complete") is True else 1
-                self.rows.append(
-                    {
-                        "commit": event.target,
-                        "status": "superseded by a newer branch event; no new check",
-                        "complete": False,
-                    }
-                )
-                return 0
-            commits = git(
-                self.source, "rev-list", "--reverse", "--first-parent", f"{cursor}..{event.target}"
-            ).splitlines()
-            if not commits:
-                return self.check(event, event.target, candidate=False)
-            # A rebased PR can create several mainline SHAs even though its
-            # final merged tree was already checked. Inherit that group before
-            # advancing through intermediate commits invalidates its baseline.
-            if len(commits) > 1 and event.before == cursor:
-                configuration = self.configuration(current)
-                tree = git(self.source, "rev-parse", f"{event.target}^{{tree}}")
-                ready = candidate_for(self.store, current, tree, configuration)
-                if ready is not None and is_merged_pr(event):
-                    inherited = inherit(self.store, self.source, event.target, configuration)
-                    assert inherited is not None
+            if target != current["source_commit"]:
+                try:
+                    git(self.source, "merge-base", "--is-ancestor", current["source_commit"], target)
+                except CIError:
+                    git(self.source, "merge-base", "--is-ancestor", target, current["source_commit"])
+                    if revision or force:
+                        raise CIError(
+                            "requested revision is older than the current model; cannot move it backward"
+                        ) from None
                     self.rows.append(
                         {
-                            "commit": event.target,
-                            "status": "inherited PR result (final merged tree)",
-                            "complete": True,
-                            "run_id": inherited["evidence_run_id"],
-                            "commit_group": commits,
+                            "commit": target,
+                            "status": f"included in cumulative update to {current['source_commit']}; no separate check for this event",
+                            "complete": False,
+                            "run_id": current["evidence_run_id"],
                         }
                     )
-                    write_json(cursor_path, {"commit": event.target})
                     return 0
-            failures = 0
-            for commit in commits:
-                if self.check(event, commit, candidate=False):
-                    failures += 1
-                write_json(cursor_path, {"commit": commit})
-            return 1 if failures else 0
+            # The incremental runner diffs from the last successful snapshot to
+            # this target, including all intervening net changes in one run.
+            return self.check(event, target, candidate=False, force=force)
 
     def report(self, error: str | None = None) -> None:
         self.reports.mkdir(parents=True, exist_ok=False)
@@ -433,10 +365,6 @@ class GitHubCI:
             lines.append(
                 f"| {html.escape(str(row['commit']))} | {html.escape(str(row['status']))} | {html.escape(str(row.get('run_id') or '-'))} |"
             )
-            if row.get("commit_group"):
-                lines.append(
-                    f"\nThis PR's {len(row['commit_group'])} mainline commits were adopted as one checked update; intermediate commits were not separately checked.\n"
-                )
             run_id = row.get("run_id")
             if not isinstance(run_id, str) or not _valid_run_id(run_id):
                 continue
@@ -466,6 +394,7 @@ class GitHubCI:
             lines += ["", f"Error: {html.escape(error)}"]
         lines += [
             "",
+            "Each update checks the cumulative diff to its target, not every intermediate version separately.",
             "Reused/inherited rows launch no additional Agent; their usage summaries belong to the original run.",
             "Reports describe actual coverage; completion is not a proof of safety.",
             "",
@@ -505,7 +434,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.branch and event is not None:
             if args.event_name not in {"schedule", "workflow_dispatch"} and args.branch != event.branch:
                 raise CIError("configured branch does not match the source event")
-            event = Event(event.repository, args.branch, event.kind, event.target, event.before, event.pr_number)
+            event = Event(event.repository, args.branch, event.kind, event.target, pr_number=event.pr_number)
         if args.force and args.event_name != "workflow_dispatch":
             raise CIError("--force is only available for an explicit manual dispatch")
         if args.revision and (args.event_name != "workflow_dispatch" or args.revision.startswith("-")):

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import test_ci_store as fixtures
 
-from specula.ci_inheritance import inherit, register_candidate
+from specula.ci_inheritance import inherit, matches_source, register_candidate
 from specula.ci_store import CIError, git
 from specula.github_ci import Event, GitHubCI
 
@@ -70,6 +70,16 @@ class InheritanceTests(unittest.TestCase):
         self.assertIsNone(inherit(self.store, self.merged, self.merge_commit, "b" * 64))
         self.assertIsNone(inherit(self.store, self.merged, self.merge_commit, None))
         self.assertEqual(self.store.current_token(), self.initial)
+
+    def test_reuse_requires_both_clean_identity_and_matching_frozen_source(self) -> None:
+        candidate = self.store.snapshot(self.token)
+        tree = candidate["source_tree"]
+        self.assertTrue(matches_source(self.store, candidate, tree, "a" * 64))
+        self.assertFalse(matches_source(self.store, {**candidate, "dirty": True}, tree, "a" * 64))
+        self.assertFalse(matches_source(self.store, candidate, tree, "b" * 64))
+        original = self.store.current()
+        claimed = {**original, "source_tree": tree, "check_key": "a" * 64}
+        self.assertFalse(matches_source(self.store, claimed, tree, "a" * 64))
 
     def test_advanced_model_baseline_cannot_be_overwritten_by_old_candidate(self) -> None:
         self.store.publish(self.fixture.run_dir, self.fixture.work, {**self.fixture.inputs, "previous": self.initial})

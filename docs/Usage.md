@@ -210,11 +210,15 @@ Copy the [workflow template](../examples/ci/specula-ci.yml) into your project's
 `SPECULA_EFFORT`. Edit the branch filters to suit your repository. Each
 independently evolving branch needs its own initialized CI directory.
 
-Direct pushes check new mainline commits in order. Same-repository PRs check the
-proposed merged code without changing the branch's current model. When the code
-is merged, matching completed results are inherited without another Agent run.
-Rebased PR commits are inherited as one checked update, not reported as separate
-checks of every intermediate version.
+Each push checks the cumulative diff from the last successful model baseline to
+the pushed version. One check may include several commits; intermediate versions
+are not checked separately. Scheduled checks use the latest branch version.
+Once the model reaches that version, delayed events for earlier commits do not
+repeat the work or move the model backward.
+
+Same-repository PRs check the proposed merged code without changing the branch's
+current model. When the code is merged, matching completed results are inherited
+without another Agent run, including squash and rebase merges.
 Changes to the code, model baseline, or check configuration require a new check.
 External-fork PRs do not run automatically on the runner.
 

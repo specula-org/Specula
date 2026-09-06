@@ -27,12 +27,6 @@ class GitHubEvents(unittest.TestCase):
         self.source = self.fixture.source
         self.fixture.git("branch", "-M", "trunk")
         self.fixture.initialize()
-        self.bin = self.fixture.work / "bin"
-        self.bin.mkdir()
-        self.gh = self.bin / "gh"
-        self.gh.write_text('#!/bin/sh\ncat "$0.response"\n')
-        self.gh.chmod(0o755)
-        Path(str(self.gh) + ".response").write_text("")
 
     def calls(self) -> int:
         return Path(str(self.fixture.adapter) + ".phases").read_text().splitlines().count("incremental")
@@ -60,7 +54,6 @@ class GitHubEvents(unittest.TestCase):
                 "HOME": str(self.fixture.work),
             }
         )
-        environment["PATH"] = str(self.bin) + os.pathsep + environment.get("PATH", "")
         result = subprocess.run(
             [
                 sys.executable,
@@ -137,7 +130,7 @@ class GitHubEvents(unittest.TestCase):
         self.squash()
         pushed, reports = self.push()
         self.assertEqual(pushed.returncode, 0, pushed.stdout + pushed.stderr)
-        self.assertEqual(self.calls(), 3)
+        self.assertEqual(self.calls(), 2)
         self.assertNotIn("inherited PR result", (reports / "summary.md").read_text())
 
     def test_changed_configuration_does_not_reuse_pr_result(self) -> None:
@@ -165,14 +158,11 @@ class GitHubEvents(unittest.TestCase):
         )
         self.fixture.git("update-ref", "refs/heads/trunk", rebased_second)
         self.fixture.git("checkout", "-q", "--detach", rebased_second)
-        Path(str(self.gh) + ".response").write_text(
-            json.dumps({"merged_at": "2026-09-06", "merge_commit_sha": rebased_second, "branch": "trunk"}) + "\n"
-        )
         result, reports = self.event("push", {"ref": "refs/heads/trunk", "before": base, "after": rebased_second})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls(), 1)
         self.assertEqual(CIStore(self.ci).current()["source_commit"], rebased_second)
-        self.assertIn("intermediate commits were not separately checked", (reports / "summary.md").read_text())
+        self.assertIn("inherited PR result", (reports / "summary.md").read_text())
 
     def test_duplicate_pr_event_reuses_the_same_checked_tree(self) -> None:
         self.prepare_pr()
@@ -207,19 +197,133 @@ class GitHubEvents(unittest.TestCase):
         ).stdout.strip()
         self.assertEqual(actual, self.fixture.git("rev-parse", "trunk"))
 
-    def test_push_covers_all_new_mainline_commits_and_old_events_do_not_regress(self) -> None:
+    def test_push_checks_cumulative_diff_and_old_events_do_not_regress(self) -> None:
         self.fixture.change_source("B\n")
         earlier = self.fixture.git("rev-parse", "HEAD")
+        (self.source / "another-module.txt").write_text("C addition\n")
         self.fixture.change_source("C\n")
         latest = self.fixture.git("rev-parse", "HEAD")
         result, _ = self.push()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.calls(), 2)
+        self.assertEqual(self.calls(), 1)
+        diff = (self.fixture.latest() / "source.diff").read_text()
+        self.assertIn("-initial\n+C", diff)
+        self.assertIn("+C addition", diff)
         for target in (latest, earlier):
-            result, _ = self.push(target)
+            result, reports = self.push(target)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.calls(), 2)
+        self.assertIn("cumulative update", (reports / "summary.md").read_text())
+        self.assertIn("no separate check for this event", (reports / "summary.md").read_text())
+        self.assertEqual(self.calls(), 1)
         self.assertEqual(CIStore(self.ci).current()["source_commit"], latest)
+        result, _ = self.event("workflow_dispatch", {}, f"--revision={earlier}", "--force")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot move it backward", result.stderr)
+        self.assertEqual(self.calls(), 1)
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], latest)
+
+    def test_schedule_includes_intermediate_changes_before_their_push_event(self) -> None:
+        self.fixture.change_source("B change\n")
+        earlier = self.fixture.git("rev-parse", "HEAD")
+        (self.source / "another-module.txt").write_text("C addition\n")
+        self.fixture.commit("C")
+        latest = self.fixture.git("rev-parse", "HEAD")
+        result, _ = self.event("schedule", {})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        diff = (self.fixture.latest() / "source.diff").read_text()
+        self.assertIn("-initial\n+B change", diff)
+        self.assertIn("+C addition", diff)
+        result, reports = self.push(earlier)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("cumulative update", (reports / "summary.md").read_text())
+        self.assertEqual(self.calls(), 1)
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], latest)
+
+    def test_clean_pr_cannot_reuse_a_dirty_initialization(self) -> None:
+        self.ci = self.fixture.ci = self.fixture.work / "dirty-ci"
+        (self.source / "logic.txt").write_text("uncommitted initialization\n")
+        result = self.fixture.run_ci(
+            "--ci-init",
+            "--agent=fake",
+            "--model=fixture-model",
+            "--effort=high",
+            f"--artifact={self.source}",
+            "footest",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(CIStore(self.ci).current()["dirty"])
+        (self.source / "logic.txt").write_text("initial\n")
+        self.fixture.git("checkout", "-qb", "feature")
+        self.fixture.git("commit", "--allow-empty", "-qm", "same committed tree")
+        self.fixture.git("checkout", "-q", "trunk")
+        result, reports = self.open_pr()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls(), 1)
+        self.assertNotIn("reused current result", (reports / "summary.md").read_text())
+        self.assertIn("-uncommitted initialization\n+initial", (self.fixture.latest() / "source.diff").read_text())
+        result, reports = self.open_pr()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("reused candidate result", (reports / "summary.md").read_text())
+        self.assertEqual(self.calls(), 1)
+
+    def check_manual_resume(self, *, candidate: bool) -> None:
+        if candidate:
+            self.prepare_pr()
+        else:
+            self.fixture.change_source("B\n")
+        event = self.open_pr if candidate else self.push
+        original = (self.ci / "current").resolve()
+        fail = Path(str(self.fixture.adapter) + ".fail")
+        fail.touch()
+        result, _ = event()
+        self.assertNotEqual(result.returncode, 0)
+        run = self.fixture.latest()
+        self.assertEqual((self.ci / "current").resolve(), original)
+        fail.unlink()
+        result = self.fixture.run_ci(f"--run-id={run.name}")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        resumed = (self.ci / "current").resolve()
+        self.assertEqual(resumed == original, candidate)
+        result, reports = event()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls(), 2)  # Failed call + native resume; event adds no Agent call.
+        self.assertEqual((self.ci / "current").resolve(), resumed)
+        self.assertIn("reused", (reports / "summary.md").read_text())
+        attempts = list((self.ci / ".github-ci/attempts").glob("*.json"))
+        self.assertEqual(len(attempts), 1)
+        attempt = json.loads(attempts[0].read_text())
+        self.assertTrue(attempt["complete"])
+        self.assertEqual(attempt["run_id"], run.name)
+
+    def test_branch_manual_resume_reconciles_failed_attempt(self) -> None:
+        self.check_manual_resume(candidate=False)
+
+    def test_pr_manual_resume_reconciles_failed_attempt(self) -> None:
+        self.check_manual_resume(candidate=True)
+
+    def test_failed_update_is_included_in_the_next_successful_cumulative_diff(self) -> None:
+        self.fixture.change_source("B change\n")
+        earlier = self.fixture.git("rev-parse", "HEAD")
+        original = (self.ci / "current").resolve()
+        fail = Path(str(self.fixture.adapter) + ".fail")
+        fail.touch()
+        result, _ = self.push()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.ci / "current").resolve(), original)
+        fail.unlink()
+        (self.source / "another-module.txt").write_text("C addition\n")
+        self.fixture.commit("C")
+        result, _ = self.push()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        diff = (self.fixture.latest() / "source.diff").read_text()
+        self.assertIn("-initial\n+B change", diff)
+        self.assertIn("+C addition", diff)
+        latest = (self.ci / "current").resolve()
+        result, reports = self.push(earlier)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("no separate check for this event", (reports / "summary.md").read_text())
+        self.assertEqual((self.ci / "current").resolve(), latest)
+        self.assertEqual(self.calls(), 2)
 
     def test_failure_is_not_retried_by_schedule_but_manual_force_can_rerun(self) -> None:
         self.fixture.change_source("B\n")
@@ -229,6 +333,10 @@ class GitHubEvents(unittest.TestCase):
         result, _ = self.push()
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((self.ci / "current").resolve(), previous)
+        # A stray completion file is not a successfully published result.
+        (self.fixture.latest() / "ci-result.json").write_text(
+            json.dumps({"complete": True, "candidate": False, "snapshot": previous.relative_to(self.ci).as_posix()})
+        )
         fail.unlink()
         for name, payload in (
             ("push", {"ref": "refs/heads/trunk", "after": self.fixture.git("rev-parse", "HEAD")}),

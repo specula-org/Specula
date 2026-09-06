@@ -28,7 +28,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 # Use the dedicated runner's job queue. Do not add a concurrency group that
 # cancels earlier pending runs. The event adapter also serializes CI storage.
@@ -61,7 +60,6 @@ jobs:
         shell: bash
         env:
           REPORTS: ${{ runner.temp }}/specula-${{ github.run_id }}-${{ github.run_attempt }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           : "${CI_DIR:?Set the SPECULA_CI_DIR repository variable}"

@@ -16,6 +16,16 @@ def result_key(base: str, tree: str, configuration: str) -> str:
     return hashlib.sha256(json.dumps([base, tree, configuration]).encode()).hexdigest()
 
 
+def matches_source(store: CIStore, checked: dict[str, Any], tree: str, configuration: str) -> bool:
+    """Match the frozen, pre-instrumentation source, not just its original HEAD."""
+    return (
+        checked.get("source_tree") == tree
+        and checked.get("check_key") == configuration
+        and checked.get("dirty") is False
+        and git(store.path(checked["source"]), "rev-parse", f"{checked['snapshot_commit']}^{{tree}}") == tree
+    )
+
+
 def register_candidate(store: CIStore, token: str) -> None:
     candidate = store.snapshot(token)
     configuration = candidate.get("check_key")
@@ -38,11 +48,7 @@ def candidate_for(store: CIStore, current: dict[str, Any], tree: str, configurat
         configuration,
     ):
         raise CIError("candidate index does not match its immutable check inputs")
-    source = store.path(candidate["source"])
-    if (
-        candidate.get("dirty") is not False
-        or git(source, "rev-parse", f"{candidate['snapshot_commit']}^{{tree}}") != tree
-    ):
+    if not matches_source(store, candidate, tree, configuration):
         return None
     return candidate
 
@@ -53,7 +59,7 @@ def inherit(store: CIStore, source: Path, commit: str, configuration: str | None
         return None
     current = store.current()
     tree = git(source, "rev-parse", f"{commit}^{{tree}}")
-    from_current = current.get("source_tree") == tree and current.get("check_key") == configuration
+    from_current = matches_source(store, current, tree, configuration)
     if from_current:
         candidate = current
     else:
@@ -61,12 +67,6 @@ def inherit(store: CIStore, source: Path, commit: str, configuration: str | None
         if found is None:
             return None
         candidate = found
-    checked_source = store.path(candidate["source"])
-    if (
-        candidate.get("dirty") is not False
-        or git(checked_source, "rev-parse", f"{candidate['snapshot_commit']}^{{tree}}") != tree
-    ):
-        return None
     git(source, "merge-base", "--is-ancestor", current["source_commit"], commit)
     if from_current and current["source_commit"] == commit:
         return {**current, "reuse_kind": "current"}
