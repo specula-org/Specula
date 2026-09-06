@@ -130,10 +130,37 @@ class IncrementalCLI(unittest.TestCase):
         original = (self.ci / "current/model/spec/base.tla").read_bytes()
         self.change_source("documentation-only fixture update\n")
         Path(str(self.adapter) + ".nochange").touch()
-        result = self.run_ci("--incremental", "--agent=fake", "--run-id=chosen-id")
+        result = self.run_ci("--incremental", "--agent=fake")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual((self.ci / "current/model/spec/base.tla").read_bytes(), original)
         self.assertEqual(CIStore(self.ci).current()["source_commit"], self.git("rev-parse", "HEAD"))
+
+    def test_unknown_run_id_cannot_start_or_publish_a_new_workflow(self) -> None:
+        self.initialize()
+        current = (self.ci / "current").resolve()
+        state = (current / "state.json").read_bytes()
+        model = (current / "model/spec/base.tla").read_bytes()
+        runs = set((self.ci / "runs").iterdir())
+        phases = Path(str(self.adapter) + ".phases").read_bytes()
+        for index, flags in enumerate(([], ["--incremental"], ["--ci-init"], ["--dry-run"])):
+            with self.subTest(flags=flags):
+                result = self.run_ci(
+                    *flags, f"--run-id=missing-{index}", "--agent=fake", f"--artifact={self.source}", "footest"
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("does not exist; cannot resume", result.stderr)
+                self.assertEqual(set((self.ci / "runs").iterdir()), runs)
+                self.assertEqual(Path(str(self.adapter) + ".phases").read_bytes(), phases)
+                self.assertEqual((self.ci / "current").resolve(), current)
+                self.assertEqual((current / "state.json").read_bytes(), state)
+                self.assertEqual((current / "model/spec/base.tla").read_bytes(), model)
+
+    def test_unknown_run_id_does_not_create_a_ci_directory(self) -> None:
+        result = self.run_ci("--run-id=missing", "--agent=fake", f"--artifact={self.source}", "footest")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not exist; cannot resume", result.stderr)
+        self.assertFalse(self.ci.exists())
+        self.assertFalse(Path(str(self.adapter) + ".phases").exists())
 
     def test_zero_exit_and_existing_artifacts_are_not_completion(self) -> None:
         self.initialize()

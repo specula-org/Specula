@@ -142,3 +142,18 @@ class StoreTests(unittest.TestCase):
                     pipeline.parse_args(["--incremental", f"--ci-dir={self.root / 'not-created'}", *extra]), 1
                 )
         self.assertFalse((self.root / "not-created").exists())
+
+    def test_ci_resume_rejects_missing_invalid_and_symlinked_runs_before_locking(self) -> None:
+        alias = self.root / "runs/alias"
+        alias.symlink_to(self.run_dir, target_is_directory=True)
+        (self.root / "runs/file").write_text("not a run directory")
+        for run_id in ("missing", "", "../first", "alias", "file"):
+            with self.subTest(run_id=run_id), contextlib.redirect_stderr(io.StringIO()):
+                pipeline = CIPipeline()
+                self.assertIsNone(pipeline.parse_args([f"--ci-dir={self.root}", f"--run-id={run_id}"]))
+                assert pipeline.store is not None
+                with mock.patch.object(pipeline.store, "acquire") as acquire:
+                    self.assertEqual(pipeline.resolve_run_dir(acquire_lock=True), 1)
+                acquire.assert_not_called()
+        self.assertFalse((self.root / "runs/missing").exists())
+        self.assertFalse((self.root / ".lock").exists())

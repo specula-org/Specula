@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import contextlib
 import shlex
+import stat
 import sys
 from pathlib import Path
 from typing import Any
 
 from specula import ci_init, resumelib
 from specula.ci_store import CIError, CIStore, freeze_source, git, read_json, write_json
-from specula.pipelinelib import Pipeline
+from specula.pipelinelib import Pipeline, _valid_run_id
 from specula.snapshotlib import load_sources
 
 
@@ -113,11 +114,32 @@ class CIPipeline(Pipeline):
             return
         super()._position_at_manual_resume_phase(active)
 
+    def _require_resume_run(self) -> None:
+        if not self._run_id_given:
+            return
+        assert self.store is not None
+        if not _valid_run_id(self.run_id):
+            raise CIError(f"invalid --run-id '{self.run_id}' (allowed: [A-Za-z0-9._-]+)")
+        run_dir = self.store.path(f"runs/{self.run_id}")
+        try:
+            mode = run_dir.lstat().st_mode
+        except FileNotFoundError as exc:
+            raise CIError(
+                f"CI run '{self.run_id}' does not exist; cannot resume. Omit --run-id to start a new run."
+            ) from exc
+        if not stat.S_ISDIR(mode):
+            raise CIError(f"CI run '{self.run_id}' is not a real run directory; cannot resume")
+
     def resolve_run_dir(self, *, acquire_lock: bool = False) -> int | None:
         assert self.store is not None
         try:
+            # A CI --run-id only resumes: reject typos before creating storage.
+            self._require_resume_run()
             self.store.acquire()
-            attaching = self._run_id_given and (self.run_storage_root() / self.run_id).exists()
+            # Recheck under the project lease before the ordinary resolver,
+            # whose non-CI semantics also allow naming a new run.
+            self._require_resume_run()
+            attaching = self._run_id_given
             if self.incremental and not attaching:
                 current = self.store.current()
                 if self._targets_given and self.targets != [current["target"]]:
