@@ -200,6 +200,11 @@ def render_target_index(name: str, work_dir: Path, *, pipeline_log: Path | None 
     byom_report = work_dir / BYOM_REPORT_FILENAME
     if _is_file_under(work_dir, byom_report):
         lines.append(f"- {_document('BYOM modification report', byom_report, work_dir)} — Changes to supplied assets")
+    ci_report = work_dir / "ci-report.md"
+    if _is_file_under(work_dir, ci_report):
+        lines.append(
+            f"- {_document('Incremental CI report', ci_report, work_dir)} — Model update and verification results"
+        )
 
     lines += [
         "",
