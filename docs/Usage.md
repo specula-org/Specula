@@ -165,38 +165,13 @@ specula run --ci-init \
 
 `--guidance` remains optional. Your text is preserved verbatim and combined with
 the built-in CI guidance, with your explicit scope and exclusions taking precedence.
-No extra model call rewrites the guidance. Both inputs and the effective guidance
-are saved under `runs/<run-id>/ci-init/inputs/` and injected through the existing
-phase prompts. Ordinary runs are unchanged.
 
-CI initialization supports one target and isolated output. It rejects `--byom`,
-`--skip-*`, and `--no-isolate`; `--dry-run` previews the full sequence without
-registering a baseline. Resume an interrupted initialization with
-`specula run --run-id=<run-id>`: its CI mode and original options are restored,
-and already completed phases are not repeated. As with ordinary runs, edits to
-an explicit guidance file are read on resume; each distinct effective input is
-retained without repeatedly appending CI guidance.
+Initialization saves a reference model and supporting verification assets as a
+baseline, recorded in `runs/<run-id>/ci-baseline.json`. This provides the starting
+point for future incremental CI checks, where the model can evolve alongside
+the project's code.
 
-At finalization, when a readable, nonempty `spec/base.tla` exists, initialization
-automatically registers the first baseline in `runs/<run-id>/ci-baseline.json`. The record links
-to a copied snapshot of the available specs, analysis, harness and traces, with
-file hashes, source commits/dirty-state observations (including original vs private
-checkout identity with `--keep-original`), missing assets, and the
-pipeline exit code. Paths in the record are relative to its `run_root`.
-The run's artifact checkout and common build/TLC scratch directories are not copied
-into the baseline; full run outputs remain in their normal locations. A dirty or
-unversioned source is reported as such, not certified by its HEAD commit alone.
-
-Registration is **not verification approval**. Baselines are marked `UNVERIFIED`;
-inspect the retained changelog, reports and logs for actual trace/MC outcomes,
-coverage limits and known issues. Validation failures do not prevent registration
-when a reference exists, and a successful process exit does not certify a model.
-Missing reference models are reported without registering an empty baseline.
-Later resumes preserve the first registration and save separate baseline snapshots;
-the command prints the newly saved record. No baseline is silently replaced.
-
-This entrypoint prepares assets only. Automated commit/schedule triggers and
-incremental baseline promotion are not enabled by `--ci-init`.
+To resume an interrupted initialization, run `specula run --run-id=<run-id>`.
 
 ## Bring Your Own Model (BYOM)
 
