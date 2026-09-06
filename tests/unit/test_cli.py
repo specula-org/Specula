@@ -22,7 +22,7 @@ from specula import cli
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# captured from the bash dispatcher (git history: `specula` pre-cutover)
+# Public help retains the dispatcher layout as commands are added.
 BASH_HELP = """\
 usage: specula <command> [options] "name|github|lang|reference" [...]
 
@@ -30,6 +30,7 @@ A framework for finding deep bugs in system code using TLA+.
 
 commands:
   run       Run the full pipeline (all phases: analysis -> classification)
+  ci        Handle a GitHub event using a persistent CI model
   batch     Batch-run the pipeline over a task queue (workers, quota gate, retries)
   analyze   Phase 1 - static code analysis -> modeling brief
   specgen   Phase 2 - generate TLA+ specs from the modeling brief

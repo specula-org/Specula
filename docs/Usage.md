@@ -197,6 +197,37 @@ specula run --ci-dir=/work/project-ci --run-id=<run-id>
 To start over, rerun the incremental command without `--run-id`. Run checks
 sharing a CI directory one at a time.
 
+### Run automatically with GitHub Actions
+
+Install Specula, the selected agent, and the project's build dependencies under
+the account running a dedicated Linux runner labeled `specula`. Initialize the
+CI directory under that same account so later runs can reuse its files and
+Agent sessions.
+
+Copy the [workflow template](../examples/ci/specula-ci.yml) into your project's
+`.github/workflows/specula-ci.yml`. Set the repository variables
+`SPECULA_CI_DIR` and `SPECULA_MODEL`; optionally set `SPECULA_AGENT` and
+`SPECULA_EFFORT`. Edit the branch filters to suit your repository. Each
+independently evolving branch needs its own initialized CI directory.
+
+Direct pushes check new mainline commits in order. Same-repository PRs check the
+proposed merged code without changing the branch's current model. When the code
+is merged, matching completed results are inherited without another Agent run.
+Rebased PR commits are inherited as one checked update, not reported as separate
+checks of every intermediate version.
+Changes to the code, model baseline, or check configuration require a new check.
+External-fork PRs do not run automatically on the runner.
+
+Manual runs are available in the Actions tab. Uncomment `schedule` to enable
+cron; use `SPECULA_CI_BRANCH` to select a non-default branch for scheduled runs.
+Change `SPECULA_CI_ENVIRONMENT` when updating the runner's toolchain or external
+configuration so older check results are not reused under a different setup.
+
+The Actions summary lists each revision's outcome, with downloadable reports
+and usage summaries. Full working files and conversation state stay in the CI
+directory. Failed checks are reported, not automatically retried; use the
+existing resume command or request an explicit manual rerun.
+
 ## Bring Your Own Model (BYOM)
 
 Use `--byom` when you already have a TLA+ model or other verification assets:
