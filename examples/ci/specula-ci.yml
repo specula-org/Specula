@@ -1,0 +1,82 @@
+name: Specula CI
+
+on:
+  push:
+    branches: [main] # Set the branches you want to watch.
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Target branch (empty uses the configured/default branch)
+        required: false
+        type: string
+      revision:
+        description: Specific commit on that branch (empty checks the latest)
+        required: false
+        type: string
+      force:
+        description: Explicitly rerun an already attempted check
+        type: boolean
+        default: false
+  # Uncomment to enable scheduled checks; cron uses UTC.
+  # schedule:
+  #   - cron: '17 2 * * *'
+
+permissions:
+  contents: read
+
+# Use the dedicated runner's job queue. Do not add a concurrency group that
+# cancels earlier pending runs. The event adapter also serializes CI storage.
+jobs:
+  check:
+    # pull_request_target uses the base workflow, so a fork cannot remove this
+    # guard. Only same-repository PR code runs on the privileged runner.
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, specula]
+    timeout-minutes: 1440
+    env:
+      CI_DIR: ${{ vars.SPECULA_CI_DIR }}
+      SPECULA_AGENT: ${{ vars.SPECULA_AGENT || 'codex' }}
+      SPECULA_MODEL: ${{ vars.SPECULA_MODEL }}
+      SPECULA_EFFORT: ${{ vars.SPECULA_EFFORT || 'high' }}
+      # Change this when the runner toolchain/configuration changes.
+      SPECULA_CI_ENVIRONMENT: ${{ vars.SPECULA_CI_ENVIRONMENT || '1' }}
+      TARGET_BRANCH: ${{ inputs.branch || vars.SPECULA_CI_BRANCH }}
+      TARGET_REVISION: ${{ inputs.revision }}
+      FORCE_CHECK: ${{ inputs.force }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the update
+        shell: bash
+        env:
+          REPORTS: ${{ runner.temp }}/specula-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          : "${CI_DIR:?Set the SPECULA_CI_DIR repository variable}"
+          : "${SPECULA_MODEL:?Set an explicit SPECULA_MODEL repository variable}"
+          args=(--ci-dir="$CI_DIR" --artifact="$GITHUB_WORKSPACE" --reports-dir="$REPORTS"
+                --agent="$SPECULA_AGENT" --model="$SPECULA_MODEL" --effort="$SPECULA_EFFORT")
+          if [[ "$GITHUB_EVENT_NAME" == schedule || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            [[ -z "$TARGET_BRANCH" ]] || args+=(--branch="$TARGET_BRANCH")
+          fi
+          [[ -z "$TARGET_REVISION" ]] || args+=(--revision="$TARGET_REVISION")
+          [[ "$FORCE_CHECK" != true ]] || args+=(--force)
+          # Use the trusted Specula installation on the runner, not PR-provided scripts.
+          specula ci "${args[@]}"
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: specula-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/specula-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn

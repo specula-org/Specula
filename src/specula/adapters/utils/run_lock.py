@@ -8,6 +8,7 @@ from collections.abc import Mapping
 
 RUN_LOCK_FD_ENV = "SPECULA_RUN_LOCK_FD"
 CI_LOCK_FD_ENV = "SPECULA_CI_LOCK_FD"
+CI_EVENT_LOCK_FD_ENV = "SPECULA_CI_EVENT_LOCK_FD"
 
 
 class RunLockError(OSError):
@@ -18,7 +19,7 @@ def inherited_run_lock_fds(env: Mapping[str, str] | None = None) -> tuple[int, .
     """Return the validated run-lock lease inherited from the dispatcher."""
     source = os.environ if env is None else env
     descriptors: list[int] = []
-    for key in (RUN_LOCK_FD_ENV, CI_LOCK_FD_ENV):
+    for key in (RUN_LOCK_FD_ENV, CI_LOCK_FD_ENV, CI_EVENT_LOCK_FD_ENV):
         raw = source.get(key)
         if raw is None:
             continue
