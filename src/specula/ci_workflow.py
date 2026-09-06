@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import contextlib
+import os
+import re
 import shlex
 import stat
 import sys
@@ -10,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from specula import ci_init, resumelib
+from specula.ci_identity import check_key
+from specula.ci_inheritance import register_candidate
 from specula.ci_store import CIError, CIStore, freeze_source, git, read_json, write_json
 from specula.pipelinelib import Pipeline, _valid_run_id
 from specula.snapshotlib import load_sources
@@ -23,12 +27,17 @@ class CIPipeline(Pipeline):
         self.revision: str | None = None
         self.store: CIStore | None = None
         self.inputs: dict[str, Any] | None = None
+        self.candidate = False
+        self._candidate_given = False
+        self.receipt: Path | None = None
 
     def parse_args(self, argv: list[str]) -> int | None:
         ordinary: list[str] = []
         for arg in argv:
             if arg == "--incremental":
                 self.incremental = True
+            elif arg == "--ci-candidate":
+                self.candidate = self._candidate_given = True
             elif arg.startswith("--ci-dir="):
                 raw = arg.split("=", 1)[1]
                 if not raw or self.ci_dir is not None:
@@ -52,6 +61,9 @@ class CIPipeline(Pipeline):
         self.argv = list(argv)
         if self.ci_dir is None:
             print("ERROR: --incremental requires --ci-dir=PATH", file=sys.stderr)
+            return 1
+        if self.candidate and (self.ci_init or not (self.incremental or self._run_id_given)):
+            print("ERROR: --ci-candidate requires an incremental run", file=sys.stderr)
             return 1
         if (self.ci_init and self.incremental) or not (self.ci_init or self.incremental or self._run_id_given):
             print("ERROR: choose --ci-init, --incremental, or --run-id with --ci-dir", file=sys.stderr)
@@ -91,6 +103,7 @@ class CIPipeline(Pipeline):
             "ci_directory": str(self.ci_dir),
             "incremental": self.incremental,
             "revision": self.revision,
+            "candidate": self.candidate,
         }
 
     def _restore_resume_configuration(self, raw: dict[str, Any], *, allow_overrides: bool = False) -> None:
@@ -102,6 +115,10 @@ class CIPipeline(Pipeline):
         if self.revision is not None and self.revision != raw.get("revision"):
             raise resumelib.ResumeError("target revision cannot change on resume; start a new run")
         self.incremental = mode
+        candidate = raw.get("candidate", False)
+        if not isinstance(candidate, bool) or (self._candidate_given and not candidate):
+            raise resumelib.ResumeError("candidate publication mode cannot change on resume")
+        self.candidate = candidate
         self.revision = raw.get("revision")
         super()._restore_resume_configuration(raw, allow_overrides=allow_overrides)
         if self.incremental:
@@ -135,7 +152,7 @@ class CIPipeline(Pipeline):
         try:
             # A CI --run-id only resumes: reject typos before creating storage.
             self._require_resume_run()
-            self.store.acquire()
+            self.store.acquire(allow_inherited=os.environ.get("SPECULA_CI_BORROW_LEASE") == "1")
             # Recheck under the project lease before the ordinary resolver,
             # whose non-CI semantics also allow naming a new run.
             self._require_resume_run()
@@ -154,6 +171,14 @@ class CIPipeline(Pipeline):
             rc = super().resolve_run_dir(acquire_lock=acquire_lock)
             if rc is not None:
                 self.store.close()
+            elif not self.dry_run:
+                request = os.environ.get("SPECULA_CI_RECEIPT")
+                if request:
+                    if re.fullmatch(r"[0-9a-f]{32}", request) is None:
+                        raise CIError("invalid CI receipt identity")
+                    directory = ci_init._directory(self.store.root, ".github-ci/receipts")
+                    self.receipt = directory / f"{request}.json"
+                    write_json(self.receipt, {"run_id": self.run_id, "complete": False})
             return rc
         except BlockingIOError:
             print("ERROR: another run is using this CI directory; retry after it finishes", file=sys.stderr)
@@ -274,8 +299,19 @@ class CIPipeline(Pipeline):
         publication = dict(self.inputs)
         if self.incremental and self.guidance_text is not None:
             publication["guidance"] = self.guidance_text
-        current = self.store.publish(self.run_dir, work, publication)
+        publication["check_key"] = check_key(self, publication["guidance"])
+        current = self.store.publish(self.run_dir, work, publication, advance=False)
+        token = current.relative_to(self.store.root).as_posix()
+        result = {"run_id": self.run_id, "complete": True, "candidate": self.candidate, "snapshot": token}
+        write_json(self.run_dir / "ci-result.json", result)
+        if self.receipt is not None:
+            write_json(self.receipt, result)
+        if not self.candidate:
+            current = self.store.advance(token)
+        else:
+            register_candidate(self.store, token)
         if self.resource_summary is not None:
             with contextlib.suppress(OSError, ValueError):
                 self.resource_summary.complete_run([name])
-        return f"Current CI model updated: {current}/model\nResults and usage: {work}/summary.md"
+        label = "CI candidate saved; current model unchanged" if self.candidate else "Current CI model updated"
+        return f"{label}: {current}/model\nResults and usage: {work}/summary.md"

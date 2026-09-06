@@ -161,6 +161,7 @@ Options:
                          (one target, full pipeline, isolated output; registration is not verification)
   --ci-dir=PATH          Persistent project directory shared by initialization and incremental runs
   --incremental          Run one Agent through the incremental-modeling skill using --ci-dir
+  --ci-candidate         Save an incremental result without updating the branch's current model
   --revision=REF         Verify that the supplied CI source is checked out at this revision
   --keep-original        Work in a full private copy and write a reviewable changes.patch
   --tlc-memory-limit=SIZE
@@ -2972,9 +2973,9 @@ class Pipeline:
         pass_fds: tuple[int, ...] = ()
         if self._run_lock_fd is not None:
             env[resumelib.RUN_LOCK_FD_ENV] = str(self._run_lock_fd)
-            pass_fds = inherited_run_lock_fds(env)
         else:
             env.pop(resumelib.RUN_LOCK_FD_ENV, None)
+        pass_fds = inherited_run_lock_fds(env)
         if self._resource_phase_key is not None and self._resource_invocation_id is not None:
             resource_root = Path(os.path.abspath(self.run_dir if self.run_dir is not None else _logical_cwd()))
             env[RESOURCE_ROOT_ENV] = str(resource_root)

@@ -95,10 +95,27 @@ class CIStore:
         self.root = root
         self.fd: int | None = None
 
-    def acquire(self) -> None:
+    def acquire(self, *, allow_inherited: bool = False) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         if self.root.is_symlink() or not self.root.is_dir():
             raise CIError(f"CI directory is not a real directory: {self.root}")
+        inherited = os.environ.get(CI_LOCK_FD_ENV) if allow_inherited else None
+        if inherited is not None:
+            try:
+                descriptor = int(inherited)
+                info = os.fstat(descriptor)
+                expected = (self.root / ".lock").lstat()
+            except (ValueError, OSError) as exc:
+                raise CIError("inherited CI lease is unavailable") from exc
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or not stat.S_ISREG(expected.st_mode)
+                or (info.st_dev, info.st_ino) != (expected.st_dev, expected.st_ino)
+            ):
+                raise CIError("inherited CI lease belongs to another directory")
+            self.fd = os.dup(descriptor)
+            os.environ[CI_LOCK_FD_ENV] = str(self.fd)
+            return
         fd = os.open(self.root / ".lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         try:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
@@ -146,6 +163,10 @@ class CIStore:
         token = self.current_token()
         if token is None:
             raise CIError("CI directory has no current model; run --ci-init --ci-dir=PATH first")
+        return self.snapshot(token)
+
+    def snapshot(self, token: str) -> dict[str, Any]:
+        """Load a completed model publication without assuming it is current."""
         directory = self.path(token)
         state = read_json(directory / "state.json")
         if state.get("version") != 1:
@@ -161,7 +182,7 @@ class CIStore:
         state["model_path"] = str(directory / "model")
         return state
 
-    def publish(self, run_dir: Path, work: Path, inputs: dict[str, Any]) -> Path:
+    def publish(self, run_dir: Path, work: Path, inputs: dict[str, Any], *, advance: bool = True) -> Path:
         if self.current_token() != inputs["previous"]:
             raise CIError("current model advanced since this run started; start a new incremental run")
         for required in ("spec/base.tla", "harness/run.sh"):
@@ -205,9 +226,21 @@ class CIStore:
             "run_id": run_dir.name,
             "files_sha256": files,
             "verification": "Agent-reported workflow completion; inspect retained evidence, not a proof of safety.",
+            "previous": inputs["previous"],
+            "check_key": inputs.get("check_key"),
+            "source_tree": inputs.get("source_tree")
+            or git(self.path(inputs["source"]), "rev-parse", f"{inputs['source_commit']}^{{tree}}"),
+            "checked_source_commit": inputs.get("checked_source_commit", inputs["source_commit"]),
+            "evidence_run_id": inputs.get("evidence_run_id", run_dir.name),
         }
         write_json(destination / "state.json", state)
         token = destination.relative_to(self.root).as_posix()
+        if not advance:
+            return destination
+        return self.advance(token)
+
+    def advance(self, token: str) -> Path:
+        self.path(token)
         temporary = self.root / f".current-{secrets.token_hex(8)}"
         temporary.symlink_to(token)
         temporary.replace(self.root / "current")

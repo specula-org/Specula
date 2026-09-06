@@ -1510,6 +1510,7 @@ class Phase:
         # hook-capable adapters arm the completion gate. Per-launch env copy,
         # not os.environ: targets differ under --max-parallel.
         env = os.environ.copy()
+        env.pop("SPECULA_CI_BORROW_LEASE", None)
         for key in (RESOURCE_INVOCATION_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
             env.pop(key, None)
         env["SPECULA_PHASE"] = self.key
@@ -1734,6 +1735,7 @@ def run_agent_blocking(
         log_file.with_suffix(".usage.json"),
     )
     env = os.environ.copy()
+    env.pop("SPECULA_CI_BORROW_LEASE", None)
     for key in (RESOURCE_INVOCATION_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
         env.pop(key, None)
     env["SPECULA_PHASE"] = phase_key if stop_gate else f"{phase_key}_turn"

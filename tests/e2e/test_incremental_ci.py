@@ -125,6 +125,24 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual(usage["phases"]["incremental"]["total_tokens"], 150)
         self.assertTrue(usage["phases"]["incremental"]["usage_incomplete"])
 
+    def test_candidate_resume_cannot_update_the_current_model(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("candidate source\n")
+        flag = Path(str(self.adapter) + ".fail")
+        flag.touch()
+        first = self.run_ci("--incremental", "--ci-candidate", "--agent=fake", "--model=fixture-model")
+        self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
+        run = self.latest()
+        flag.unlink()
+        result = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.ci / "current").resolve(), previous)
+        receipt = json.loads((run / "ci-result.json").read_text())
+        self.assertTrue(receipt["candidate"])
+        self.assertTrue(receipt["complete"])
+        self.assertTrue((self.ci / receipt["snapshot"] / "model/spec/base.tla").is_file())
+
     def test_no_model_change_still_advances_source_version(self) -> None:
         self.initialize()
         original = (self.ci / "current/model/spec/base.tla").read_bytes()
