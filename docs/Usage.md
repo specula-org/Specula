@@ -151,31 +151,17 @@ specula run \
 
 Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencode`, and `pi`. Model names and effort values are interpreted by the selected agent. OpenCode and Pi model names use `provider/model` syntax.
 
-## Initialize a CI Baseline
+## Add Specula to CI
 
-Use `--ci-init` to run the normal full pipeline with additional guidance for a
-deep, reusable model of the project's core logic and interactions:
+Specula maintains a reference model and harness that evolve with your project's
+code. Choose a persistent CI directory outside the source checkout, and use the
+same directory for initialization and subsequent checks.
 
-```bash
-specula run --ci-init \
-  --artifact=/absolute/path/to/source \
-  --guidance=/absolute/path/to/project-guidance.md \
-  "name|owner/repository|language|reference"
-```
+### Initialize once
 
-`--guidance` remains optional. Your text is preserved verbatim and combined with
-the built-in CI guidance, with your explicit scope and exclusions taking precedence.
-
-Initialization saves a reference model and supporting verification assets as a
-baseline, recorded in `runs/<run-id>/ci-baseline.json`. This provides the starting
-point for future incremental CI checks, where the model can evolve alongside
-the project's code.
-
-To resume an interrupted initialization, run `specula run --run-id=<run-id>`.
-
-## Incremental CI
-
-Choose a persistent directory for the project and initialize it once:
+Initialization runs the full Specula workflow, focusing on the depth of the core
+logic and its interactions. Optional `--guidance` supplies your modeling scope
+and priorities.
 
 ```bash
 specula run --ci-init --ci-dir=/work/project-ci \
@@ -183,32 +169,33 @@ specula run --ci-init --ci-dir=/work/project-ci \
   "name|owner/repository|language|reference"
 ```
 
-After checking out a new commit in the source repository, run:
+### Check updates
+
+For each update, check out the target commit in the source repository and run:
 
 ```bash
 specula run --incremental --ci-dir=/work/project-ci
 ```
 
-The command reads the current model and harness, computes the source changes,
-and runs one Agent through the complete incremental-modeling skill. Use the
-ordinary `--agent`, `--model`, and `--effort` options to select that Agent.
-The repository path and user guidance are reused; `--artifact` and `--guidance`
-can supply new inputs. Optional `--revision=SHA` checks that the source checkout
-is at the intended commit.
+Specula computes the changes since the current model's source version, then
+runs one Agent through the incremental-modeling workflow using the existing
+model and harness. The repository path and user guidance are reused. Use the
+ordinary `--agent`, `--model`, and `--effort` options to select the Agent.
 
-Completed runs update `current/model/` in the CI directory. Reports, model diffs,
-logs, and resource usage are saved under `runs/<run-id>/`. Incomplete runs leave
-the current model unchanged. Resume the original Agent conversation with:
+Completed runs update `current/model/` in the CI directory. Reports, diffs, logs,
+and resource usage are saved under `runs/<run-id>/` in the same directory.
+
+### Resume an interrupted run
+
+Incomplete runs leave the current model unchanged. Resume the original Agent
+conversation and working directory with:
 
 ```bash
 specula run --ci-dir=/work/project-ci --run-id=<run-id>
 ```
 
-To start over, rerun the incremental command without `--run-id`. Runs sharing a
-CI directory must execute one at a time. Use a persistent directory outside the
-source checkout on a dedicated runner; automatic CI triggers are not installed
-by these commands. Completion follows the Agent's report and execution checks;
-consult `ci-report.md` for actual verification coverage and findings.
+To start over, rerun the incremental command without `--run-id`. Run checks
+sharing a CI directory one at a time.
 
 ## Bring Your Own Model (BYOM)
 
