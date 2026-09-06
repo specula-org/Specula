@@ -166,6 +166,171 @@ class CliE2E(unittest.TestCase):
         self.assertIn("[DRY RUN] bash scripts/launch/launch_code_analysis.sh", out)
         self.assertIn("Pipeline completed", out)
 
+    def test_ci_init_dry_run_composes_guidance_and_keeps_full_sequence(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        guidance = work / "guidance.md"
+        user_text = "Keep this scope and {{literal}} unchanged.\n"
+        guidance.write_text(user_text)
+        proc = self.run_cli(root, ["run", "--ci-init", "--dry-run", f"--guidance={guidance}", "footest"], cwd=work)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        run = self.sole_run_dir(root)
+        meta = json.loads((run / "run.json").read_text())
+        self.assertTrue(meta["ci_init"])
+        self.assertTrue(meta["resume_configuration"]["ci_init"])
+        self.assertEqual(meta["guidance"], str(guidance))
+        inputs = list((run / "ci-init/inputs").iterdir())
+        self.assertEqual(len(inputs), 1)
+        self.assertEqual((inputs[0] / "user-guidance.md").read_text(), user_text)
+        effective = (inputs[0] / "effective-guidance.md").read_text()
+        self.assertEqual((run / "footest/.specula-output/.prompt-extra.initial.md").read_text(), effective)
+        self.assertEqual(guidance.read_text(), user_text)
+        self.assertFalse((run / "ci-baseline.json").exists())
+        for launcher in (
+            "launch_code_analysis.sh",
+            "launch_spec_generation.sh",
+            "launch_harness_generation.sh",
+            "launch_spec_validation.sh",
+            "launch_bug_confirmation.sh",
+            "launch_bug_classification.sh",
+        ):
+            self.assertIn(launcher, proc.stdout)
+
+    def _ci_init_adapter(self, root: Path, *, interrupt_validation: bool = False) -> Path:
+        adapter = root / "scripts/launch/adapters/fake.sh"
+        adapter.write_text(
+            "#!/bin/sh\nset -eu\n"
+            "prompt= log= resume=\n"
+            'for arg do case "$arg" in\n'
+            "  --prompt-file=*) prompt=${arg#*=} ;;\n"
+            "  --log=*) log=${arg#*=} ;;\n"
+            "  --resume-state=*) resume=${arg#*=} ;;\n"
+            "esac; done\n"
+            'printf "%s\\n" "$SPECULA_PHASE" >> "$0.phases"\n'
+            'cp "$prompt" "$0.$SPECULA_PHASE.prompt"\n'
+            'case "$SPECULA_PHASE" in\n'
+            "  code_analysis)\n"
+            '    printf "# Fixture modeling brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            "    ;;\n"
+            "  spec_generation)\n"
+            '    mkdir -p "$SPECULA_WORK_DIR/spec"\n'
+            "    for file in base.tla MC.tla Trace.tla instrumentation-spec.md; do\n"
+            '      printf "fixture model\\n" > "$SPECULA_WORK_DIR/spec/$file"\n'
+            "    done\n"
+            "    ;;\n"
+            "  harness_generation)\n"
+            '    mkdir -p "$SPECULA_WORK_DIR/harness" "$SPECULA_WORK_DIR/traces"\n'
+            '    printf "#!/bin/sh\\n" > "$SPECULA_WORK_DIR/harness/run.sh"\n'
+            '    printf \'{"event":"fixture"}\\n\' > "$SPECULA_WORK_DIR/traces/fixture.ndjson"\n'
+            "    ;;\n"
+            "  spec_validation)\n"
+            '    printf x >> "$0.validation-count"\n'
+            f'    if [ {int(interrupt_validation)} -eq 1 ] && [ "$(wc -c < "$0.validation-count")" -eq 1 ]; then\n'
+            '      printf "fixture-session\\n" > "$resume"\n'
+            '      printf "interrupted\\n" > "$log"\n'
+            "      exit 9\n"
+            "    fi\n"
+            '    printf "# Fixture report\\nValidation remains unverified.\\n" > "$SPECULA_WORK_DIR/spec/bug-report.md"\n'
+            '    printf \'{"schema_version":"2","system":"footest","generated_by":"validation-workflow","findings":[]}\\n\' '
+            '> "$SPECULA_WORK_DIR/spec/findings.json"\n'
+            '    printf "# Fixture validation limits\\nMC was not run by this fixture.\\n" > "$SPECULA_WORK_DIR/spec/changelog.md"\n'
+            "    ;;\n"
+            "  bug_confirmation_turn)\n"
+            '    printf \'{"generated_by":"consolidate","findings":[]}\\n\' > "$SPECULA_WORK_DIR/spec/candidates.json"\n'
+            "    ;;\n"
+            "  bug_classification)\n"
+            '    printf "# Severity Classification\\n\\n## Summary\\n\\n## Per-entry classification\\n" > "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            '    printf "No impact-bearing findings were recorded.\\n\\n## Findings\\n\\n- Other dispositions: 0.\\n\\n## Validation limits\\n\\nFixture only; no semantic validation was performed.\\n" > "$SPECULA_WORK_DIR/.summary-findings.md"\n'
+            "    ;;\n"
+            "  *) exit 97 ;;\n"
+            "esac\n"
+            'if [ -n "$log" ]; then printf "fixture completed\\n" > "$log"; fi\n'
+        )
+        adapter.chmod(0o755)
+        return adapter
+
+    def test_ci_init_registers_real_phase_outputs_without_claiming_validation(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        artifact = work / "artifact"
+        artifact.mkdir()
+        adapter = self._ci_init_adapter(root)
+        guidance = work / "guidance.md"
+        guidance.write_text("User-specific scope, {{literal}}.\n")
+        proc = self.run_cli(
+            root,
+            ["run", "--ci-init", "--agent=fake", f"--artifact={artifact}", f"--guidance={guidance}", "footest"],
+            cwd=work,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        run = self.sole_run_dir(root)
+        baseline = json.loads((run / "ci-baseline.json").read_text())
+        self.assertEqual(baseline["pipeline_exit_code"], 0)
+        self.assertEqual(baseline["validation_status"], "UNVERIFIED")
+        self.assertEqual(baseline["source"]["before"]["path"], str(artifact))
+        self.assertIsNone(baseline["source"]["before"]["commit"])
+        snapshot = run / baseline["assets"]
+        self.assertEqual((snapshot / "spec/base.tla").read_text(), "fixture model\n")
+        self.assertTrue((snapshot / "harness/run.sh").is_file())
+        self.assertTrue((snapshot / "traces/fixture.ndjson").is_file())
+        self.assertIn("ci-baseline.json", (run / "index.md").read_text())
+        effective = (run / baseline["guidance"] / "effective-guidance.md").read_text()
+        phases = Path(f"{adapter}.phases").read_text().splitlines()
+        for phase in (
+            "code_analysis",
+            "spec_generation",
+            "harness_generation",
+            "spec_validation",
+            "bug_confirmation_turn",
+        ):
+            self.assertIn(phase, phases)
+            prompt = Path(f"{adapter}.{phase}.prompt").read_text()
+            self.assertIn(effective, prompt)
+        self.assertIn("bug_classification", phases)
+
+    def test_ci_init_resume_restores_mode_and_preserves_first_baseline(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        artifact = work / "artifact"
+        artifact.mkdir()
+        adapter = self._ci_init_adapter(root, interrupt_validation=True)
+        first = self.run_cli(root, ["run", "--ci-init", "--agent=fake", f"--artifact={artifact}", "footest"], cwd=work)
+        self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
+        run = self.sole_run_dir(root)
+        baseline = (run / "ci-baseline.json").read_bytes()
+        self.assertEqual(json.loads(baseline)["pipeline_exit_code"], 9)
+        effective = (run / "footest/.specula-output/.prompt-extra.initial.md").read_text()
+        resumed = self.run_cli(root, ["run", f"--run-id={run.name}"], cwd=work)
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertEqual((run / "ci-baseline.json").read_bytes(), baseline)
+        self.assertEqual((run / "footest/.specula-output/.prompt-extra.initial.md").read_text(), effective)
+        snapshots = list((run / "ci-init/baselines").iterdir())
+        self.assertEqual(len(snapshots), 2)
+        self.assertEqual(
+            {json.loads((path / "ci-baseline.json").read_text())["pipeline_exit_code"] for path in snapshots}, {0, 9}
+        )
+        phases = Path(f"{adapter}.phases").read_text().splitlines()
+        self.assertEqual(phases.count("code_analysis"), 1)
+        self.assertEqual(phases.count("spec_generation"), 1)
+        self.assertEqual(phases.count("harness_generation"), 1)
+        self.assertEqual(phases.count("spec_validation"), 2)
+        self.assertEqual(Path(f"{adapter}.spec_validation.prompt").read_text().count(effective), 1)
+
+    def test_ci_init_cannot_enable_on_an_existing_ordinary_dry_run(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        first = self.run_cli(root, ["run", "--dry-run", "footest"], cwd=work)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        run = self.sole_run_dir(root)
+        before = (run / "run.json").read_bytes()
+        converted = self.run_cli(
+            root, ["run", "--ci-init", "--fresh-context", "--dry-run", f"--run-id={run.name}"], cwd=work
+        )
+        self.assertNotEqual(converted.returncode, 0)
+        self.assertIn("existing ordinary run", converted.stderr)
+        self.assertEqual((run / "run.json").read_bytes(), before)
+        self.assertFalse((run / "ci-init").exists())
+
     def test_byom_dry_run_skips_analysis_and_keeps_multi_target_pipeline(self) -> None:
         root = self.specroot(case_dirs=("alpha", "beta"))
         work = self.workdir()

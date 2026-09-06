@@ -151,6 +151,28 @@ specula run \
 
 Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencode`, and `pi`. Model names and effort values are interpreted by the selected agent. OpenCode and Pi model names use `provider/model` syntax.
 
+## Initialize a CI Baseline
+
+Use `--ci-init` to run the normal full pipeline with additional guidance for a
+deep, reusable model of the project's core logic and interactions:
+
+```bash
+specula run --ci-init \
+  --artifact=/absolute/path/to/source \
+  --guidance=/absolute/path/to/project-guidance.md \
+  "name|owner/repository|language|reference"
+```
+
+`--guidance` remains optional. Your text is preserved verbatim and combined with
+the built-in CI guidance, with your explicit scope and exclusions taking precedence.
+
+Initialization saves a reference model and supporting verification assets as a
+baseline, recorded in `runs/<run-id>/ci-baseline.json`. This provides the starting
+point for future incremental CI checks, where the model can evolve alongside
+the project's code.
+
+To resume an interrupted initialization, run `specula run --run-id=<run-id>`.
+
 ## Bring Your Own Model (BYOM)
 
 Use `--byom` when you already have a TLA+ model or other verification assets:
@@ -370,6 +392,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--artifact=PATH` | Set the target source checkout |
 | `--byom=PATH` | Start from a user-provided model file or verification-assets directory and run Phase 2 onward |
 | `--guidance=PATH` | Read optional modeling guidance for a single-target run |
+| `--ci-init` | Run full single-target CI initialization and register an unverified baseline |
 | `--keep-original` | Run against a full private source copy and write `changes.patch` |
 | `--tlc-memory-limit=SIZE` | Set the run-wide aggregate TLC heap + direct-memory budget; default is 80% of effective available memory at the first TLC start |
 | `--tlc-worker-limit=N` | Optionally bound aggregate TLC exploration workers; omitted means report-only |
