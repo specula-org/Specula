@@ -3756,6 +3756,10 @@ def main(argv: list[str]) -> int:
     # non-UTF-8 locale must not kill the launcher on the first non-ASCII byte.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(line_buffering=True, errors="replace")
+    if argv and argv[0] == "incremental":
+        from specula.ci_phase import IncrementalPhase
+
+        PHASES["incremental"] = IncrementalPhase()
     if not argv or argv[0] not in PHASES:
         print(f"usage: phaselib.py <phase> [options] <target>...\nphases: {', '.join(PHASES)}", file=sys.stderr)
         return 2

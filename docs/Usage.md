@@ -173,6 +173,43 @@ the project's code.
 
 To resume an interrupted initialization, run `specula run --run-id=<run-id>`.
 
+## Incremental CI
+
+Choose a persistent directory for the project and initialize it once:
+
+```bash
+specula run --ci-init --ci-dir=/work/project-ci \
+  --artifact=/work/project --guidance=/work/project-guidance.md \
+  "name|owner/repository|language|reference"
+```
+
+After checking out a new commit in the source repository, run:
+
+```bash
+specula run --incremental --ci-dir=/work/project-ci
+```
+
+The command reads the current model and harness, computes the source changes,
+and runs one Agent through the complete incremental-modeling skill. Use the
+ordinary `--agent`, `--model`, and `--effort` options to select that Agent.
+The repository path and user guidance are reused; `--artifact` and `--guidance`
+can supply new inputs. Optional `--revision=SHA` checks that the source checkout
+is at the intended commit.
+
+Completed runs update `current/model/` in the CI directory. Reports, model diffs,
+logs, and resource usage are saved under `runs/<run-id>/`. Incomplete runs leave
+the current model unchanged. Resume the original Agent conversation with:
+
+```bash
+specula run --ci-dir=/work/project-ci --run-id=<run-id>
+```
+
+To start over, rerun the incremental command without `--run-id`. Runs sharing a
+CI directory must execute one at a time. Use a persistent directory outside the
+source checkout on a dedicated runner; automatic CI triggers are not installed
+by these commands. Completion follows the Agent's report and execution checks;
+consult `ci-report.md` for actual verification coverage and findings.
+
 ## Bring Your Own Model (BYOM)
 
 Use `--byom` when you already have a TLA+ model or other verification assets:

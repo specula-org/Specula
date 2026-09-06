@@ -40,8 +40,10 @@ from typing import Any
 # process (see scripts/launch/adapters/claude-code.sh for why that matters).
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    sys.modules["specula.pipelinelib"] = sys.modules[__name__]
 from specula import ci_init, resumelib
 from specula import quota as _quota
+from specula.adapters.utils.run_lock import inherited_run_lock_fds
 from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
 from specula.output_index import (
     INDEX_FILENAME,
@@ -157,6 +159,9 @@ Options:
   --guidance=PATH        Target-specific modeling guidance (single-target runs only)
   --ci-init              Build and register an initial CI baseline with core-depth guidance
                          (one target, full pipeline, isolated output; registration is not verification)
+  --ci-dir=PATH          Persistent project directory shared by initialization and incremental runs
+  --incremental          Run one Agent through the incremental-modeling skill using --ci-dir
+  --revision=REF         Verify that the supplied CI source is checked out at this revision
   --keep-original        Work in a full private copy and write a reviewable changes.patch
   --tlc-memory-limit=SIZE
                          Aggregate -m + -M budget for TLCs in this run (default: auto,
@@ -749,7 +754,7 @@ class Pipeline:
         if not _valid_run_id(self.run_id):
             return False  # resolve_run_dir reports the invalid ID
 
-        run_dir = SPECULA_ROOT / "runs" / self.run_id
+        run_dir = self.run_storage_root() / self.run_id
         try:
             run_info = run_dir.lstat()
         except FileNotFoundError:
@@ -1197,6 +1202,13 @@ class Pipeline:
             os.close(fd)
         self._run_lock_fd = None
 
+    def run_storage_root(self) -> Path:
+        return SPECULA_ROOT / "runs"
+
+    def finalize_ci_run(self, exit_code: int) -> str | None:
+        """Publish persistent CI state after output and log finalization."""
+        return None
+
     def resolve_run_dir(self, *, acquire_lock: bool = False) -> int | None:
         """Establish the per-run root. Returns an exit code for an invalid
         --run-id (pre-tee, like the option errors), None to proceed.
@@ -1230,7 +1242,7 @@ class Pipeline:
                 return 1
             if not self._run_id_given:
                 self.run_id = generate_run_id()
-            self.run_dir = SPECULA_ROOT / "runs" / self.run_id
+            self.run_dir = self.run_storage_root() / self.run_id
 
         run_preexisting = self.run_dir.exists()
         locked_here = False
@@ -2960,7 +2972,7 @@ class Pipeline:
         pass_fds: tuple[int, ...] = ()
         if self._run_lock_fd is not None:
             env[resumelib.RUN_LOCK_FD_ENV] = str(self._run_lock_fd)
-            pass_fds = (self._run_lock_fd,)
+            pass_fds = inherited_run_lock_fds(env)
         else:
             env.pop(resumelib.RUN_LOCK_FD_ENV, None)
         if self._resource_phase_key is not None and self._resource_invocation_id is not None:
@@ -3827,7 +3839,12 @@ def main(argv: list[str]) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(line_buffering=True)
 
-    p = Pipeline()
+    if "--incremental" in argv or any(arg.startswith("--ci-dir=") for arg in argv):
+        from specula.ci_workflow import CIPipeline
+
+        p: Pipeline = CIPipeline()
+    else:
+        p = Pipeline()
     rc = p.parse_args(argv)
     if rc is not None:
         # --help / unknown option exit before the tee starts, like the bash
@@ -3919,6 +3936,14 @@ def main(argv: list[str]) -> int:
                 print(f"CI baseline registration failed: {exc}", file=terminal_stdout, flush=True)
                 if code == 0:
                     code = 1
+        try:
+            ci_message = p.finalize_ci_run(code)
+            if ci_message is not None:
+                print(ci_message, file=terminal_stdout, flush=True)
+        except Exception as exc:
+            print(f"CI state was not updated: {exc}", file=terminal_stdout, flush=True)
+            if code == 0:
+                code = 1
         try:
             if code == 0 and result_index is not None:
                 with contextlib.suppress(OSError, UnicodeError):
