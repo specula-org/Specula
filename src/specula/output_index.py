@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote_from_bytes
 
+from specula.ci_init import BASELINE_FILENAME
+
 INDEX_FILENAME = "index.md"
 BYOM_REPORT_FILENAME = "byom-modification-report.md"
 PIPELINE_LOG_ENV = "SPECULA_PIPELINE_LOG"
@@ -323,6 +325,11 @@ def render_run_index(
         f"- Final summary: {summary_cell}",
         f"- Full pipeline log: {log_cell}",
     ]
+    baseline = run_root / BASELINE_FILENAME
+    if _is_file_under(run_root, baseline):
+        lines.append(
+            f"- CI baseline: {_link('Registration and verification evidence', baseline, run_root)} (unverified)"
+        )
     return "\n".join(lines) + "\n"
 
 
