@@ -151,6 +151,53 @@ specula run \
 
 Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencode`, and `pi`. Model names and effort values are interpreted by the selected agent. OpenCode and Pi model names use `provider/model` syntax.
 
+## Initialize a CI Baseline
+
+Use `--ci-init` to run the normal full pipeline with additional guidance for a
+deep, reusable model of the project's core logic and interactions:
+
+```bash
+specula run --ci-init \
+  --artifact=/absolute/path/to/source \
+  --guidance=/absolute/path/to/project-guidance.md \
+  "name|owner/repository|language|reference"
+```
+
+`--guidance` remains optional. Your text is preserved verbatim and combined with
+the built-in CI guidance, with your explicit scope and exclusions taking precedence.
+No extra model call rewrites the guidance. Both inputs and the effective guidance
+are saved under `runs/<run-id>/ci-init/inputs/` and injected through the existing
+phase prompts. Ordinary runs are unchanged.
+
+CI initialization supports one target and isolated output. It rejects `--byom`,
+`--skip-*`, and `--no-isolate`; `--dry-run` previews the full sequence without
+registering a baseline. Resume an interrupted initialization with
+`specula run --run-id=<run-id>`: its CI mode and original options are restored,
+and already completed phases are not repeated. As with ordinary runs, edits to
+an explicit guidance file are read on resume; each distinct effective input is
+retained without repeatedly appending CI guidance.
+
+At finalization, when a readable, nonempty `spec/base.tla` exists, initialization
+automatically registers the first baseline in `runs/<run-id>/ci-baseline.json`. The record links
+to a copied snapshot of the available specs, analysis, harness and traces, with
+file hashes, source commits/dirty-state observations (including original vs private
+checkout identity with `--keep-original`), missing assets, and the
+pipeline exit code. Paths in the record are relative to its `run_root`.
+The run's artifact checkout and common build/TLC scratch directories are not copied
+into the baseline; full run outputs remain in their normal locations. A dirty or
+unversioned source is reported as such, not certified by its HEAD commit alone.
+
+Registration is **not verification approval**. Baselines are marked `UNVERIFIED`;
+inspect the retained changelog, reports and logs for actual trace/MC outcomes,
+coverage limits and known issues. Validation failures do not prevent registration
+when a reference exists, and a successful process exit does not certify a model.
+Missing reference models are reported without registering an empty baseline.
+Later resumes preserve the first registration and save separate baseline snapshots;
+the command prints the newly saved record. No baseline is silently replaced.
+
+This entrypoint prepares assets only. Automated commit/schedule triggers and
+incremental baseline promotion are not enabled by `--ci-init`.
+
 ## Bring Your Own Model (BYOM)
 
 Use `--byom` when you already have a TLA+ model or other verification assets:
@@ -370,6 +417,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--artifact=PATH` | Set the target source checkout |
 | `--byom=PATH` | Start from a user-provided model file or verification-assets directory and run Phase 2 onward |
 | `--guidance=PATH` | Read optional modeling guidance for a single-target run |
+| `--ci-init` | Run full single-target CI initialization and register an unverified baseline |
 | `--keep-original` | Run against a full private source copy and write `changes.patch` |
 | `--tlc-memory-limit=SIZE` | Set the run-wide aggregate TLC heap + direct-memory budget; default is 80% of effective available memory at the first TLC start |
 | `--tlc-worker-limit=N` | Optionally bound aggregate TLC exploration workers; omitted means report-only |

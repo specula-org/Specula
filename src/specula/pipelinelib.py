@@ -40,8 +40,8 @@ from typing import Any
 # process (see scripts/launch/adapters/claude-code.sh for why that matters).
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from specula import ci_init, resumelib
 from specula import quota as _quota
-from specula import resumelib
 from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
 from specula.output_index import (
     INDEX_FILENAME,
@@ -155,6 +155,8 @@ Options:
   --artifact=PATH        Path to system artifact/source code
   --byom=PATH            Use user-provided model artifacts and run Phase 2 onward
   --guidance=PATH        Target-specific modeling guidance (single-target runs only)
+  --ci-init              Build and register an initial CI baseline with core-depth guidance
+                         (one target, full pipeline, isolated output; registration is not verification)
   --keep-original        Work in a full private copy and write a reviewable changes.patch
   --tlc-memory-limit=SIZE
                          Aggregate -m + -M budget for TLCs in this run (default: auto,
@@ -379,6 +381,10 @@ class Pipeline:
         self.guidance_path: Path | None = None
         self.guidance_text: str | None = None
         self._guidance_given = False
+        self.ci_init = False
+        self._ci_init_given = False
+        self._ci_init_inputs: Path | None = None
+        self._ci_init_source_before: dict[str, Any] | None = None
         self.keep_original = False
         self._keep_original_given = False
         self._snapshot_sources: dict[str, Path] = {}
@@ -420,6 +426,9 @@ class Pipeline:
         for arg in argv:
             if arg == "--dry-run":
                 self.dry_run = True
+            elif arg == "--ci-init":
+                self.ci_init = True
+                self._ci_init_given = True
             elif arg == "--skip-analysis":
                 self.skip_analysis = True
             elif arg == "--skip-specgen":
@@ -584,6 +593,10 @@ class Pipeline:
         if not self.targets:
             self.targets.append(_logical_cwd().name)  # bash `basename "$PWD"` (logical)
         self._targets_given = targets_given
+        ci_error = self._ci_init_option_error()
+        if ci_error is not None:
+            print(f"ERROR: {ci_error}", file=sys.stderr)
+            return 1
         byom_error = self._byom_option_error()
         if byom_error is not None:
             print(f"ERROR: {byom_error}", file=sys.stderr)
@@ -682,6 +695,20 @@ class Pipeline:
             return "--byom requires isolated mode; remove --no-isolate (isolation is the default)"
         return None
 
+    def _ci_init_option_error(self) -> str | None:
+        if not self.ci_init:
+            return None
+        conflicts = [flag for flag in BYOM_CONFLICTING_FLAGS if flag in self.argv]
+        if self.byom_path is not None:
+            conflicts.append("--byom")
+        if conflicts:
+            return f"--ci-init conflicts with {', '.join(conflicts)}; initialization requests the full pipeline"
+        if len(self.targets) != 1:
+            return "--ci-init supports exactly one target per run"
+        if not self.isolate:
+            return "--ci-init requires isolated output; remove --no-isolate"
+        return None
+
     def confirm_without_guidance(self) -> bool:
         """Confirm an interactive run that has no target-specific guidance.
 
@@ -689,7 +716,7 @@ class Pipeline:
         workers redirect their output, so they take this non-interactive path
         even when the scheduler itself was started from a terminal.
         """
-        if self.guidance_path is not None:
+        if self.guidance_path is not None or self.ci_init:
             return True
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             print(
@@ -715,7 +742,7 @@ class Pipeline:
         resume configuration. Read only that field here; full validation and
         restoration remain resolve_run_dir's responsibility.
         """
-        if self.guidance_path is not None:
+        if self.guidance_path is not None or self.ci_init:
             return False
         if not self._run_id_given:
             return True
@@ -737,7 +764,7 @@ class Pipeline:
             # A legacy run without checkpoints can proceed only through
             # --fresh-context, so confirm before that reset can discard state.
             return self.fresh_context
-        return stored.get("guidance") is None
+        return stored.get("guidance") is None and stored.get("ci_init") is not True
 
     # ── workspace isolation (step 4; runs before the tee so pipeline.log can
     #    land in the run root) ──
@@ -844,6 +871,7 @@ class Pipeline:
             "artifact": self.artifact,
             "byom": str(self.byom_path) if self.byom_path is not None else None,
             "guidance": str(self.guidance_path) if self.guidance_path is not None else None,
+            **({"ci_init": True} if self.ci_init else {}),
         }
 
     def _restore_resume_configuration(self, raw: dict[str, Any], *, allow_overrides: bool = False) -> None:
@@ -851,6 +879,12 @@ class Pipeline:
             raise resumelib.ResumeError(
                 "this run was created without manual conversation checkpoints; pass --fresh-context to continue"
             )
+        stored_ci_init = raw.get("ci_init", False)
+        if not isinstance(stored_ci_init, bool):
+            raise resumelib.ResumeError("invalid stored CI initialization mode")
+        if self._ci_init_given and not stored_ci_init:
+            raise resumelib.ResumeError("cannot enable --ci-init on an existing ordinary run; start a new run")
+        self.ci_init = stored_ci_init
         stored_default = self._selection_from_document(raw.get("default"), "resume default")
         raw_routes = raw.get("routes")
         stored_routes: dict[str, AgentSelection] | None = None
@@ -1008,6 +1042,8 @@ class Pipeline:
         ):
             raise resumelib.ResumeError("invalid stored targets")
         if self._targets_given:
+            if self.ci_init and self.targets != stored_targets:
+                raise resumelib.ResumeError("CI initialization targets cannot change within a run; start a new run")
             if not allow_overrides and self.targets != stored_targets:
                 raise resumelib.ResumeError("targets differ from this run; pass --fresh-context to change them")
         else:
@@ -1046,6 +1082,10 @@ class Pipeline:
             raise resumelib.ResumeError(byom_error)
         if self.byom_path is not None:
             self.skip_analysis = True
+
+        ci_error = self._ci_init_option_error()
+        if ci_error is not None:
+            raise resumelib.ResumeError(ci_error)
 
         stored_artifact = raw.get("artifact")
         if not isinstance(stored_artifact, str):
@@ -1246,15 +1286,23 @@ class Pipeline:
         if self._run_id_given and run_preexisting:
             self._attached_existing_run = True
             try:
+                if self._ci_init_given and (metadata is None or metadata.get("ci_init") is not True):
+                    raise resumelib.ResumeError("cannot enable --ci-init on an existing ordinary run; start a new run")
                 if self.fresh_context:
                     try:
                         stored_configuration = resumelib.load_configuration(self.run_dir)
                     except resumelib.ResumeError:
+                        if metadata is not None and metadata.get("ci_init") is True:
+                            raise resumelib.ResumeError(
+                                "cannot restore CI initialization configuration; preserve this run and start a new run"
+                            ) from None
                         # Runs created before checkpoints have no configuration to
                         # restore. The fresh invocation becomes their baseline.
                         pass
                     else:
                         self._restore_resume_configuration(stored_configuration, allow_overrides=True)
+                        if metadata is not None and metadata.get("ci_init", False) != self.ci_init:
+                            raise resumelib.ResumeError("CI initialization mode disagrees with run metadata")
                     self._invalidate_fresh_context_summaries()
                     resumelib.initialize_run(self.run_dir, reset=True)
                     os.environ[resumelib.FRESH_ENV] = "1"
@@ -1263,6 +1311,8 @@ class Pipeline:
                     if metadata is None:
                         raise resumelib.ResumeError(f"cannot read run metadata from {meta_file}")
                     self._restore_resume_configuration(resumelib.load_configuration(self.run_dir))
+                    if metadata.get("ci_init", False) != self.ci_init:
+                        raise resumelib.ResumeError("CI initialization mode disagrees with run metadata")
                     active = resumelib.active_entries(self.run_dir)
                     if not active:
                         raise resumelib.ResumeError(
@@ -1503,6 +1553,7 @@ class Pipeline:
             "tlc_memory_limit": self.tlc_memory_limit or os.environ.get(MEMORY_LIMIT_ENV) or "auto",
             "tlc_worker_limit": self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or None,
             "resume_configuration": resume_configuration,
+            **({"ci_init": True} if self.ci_init else {}),
         }
         if self.agent_routing is not None:
             assert self.agent_config_path is not None
@@ -1627,7 +1678,7 @@ class Pipeline:
 
     def stage_guidance(self, names: list[str]) -> None:
         """Publish the guidance text read for this invocation to phase inputs."""
-        if self.guidance_text is None:
+        if self.guidance_text is None and not self.ci_init:
             return
         if len(self.targets) != 1 or len(names) != 1:
             raise SystemExit("ERROR: --guidance supports exactly one target per run")
@@ -1635,11 +1686,78 @@ class Pipeline:
         if not is_safe_target_name(name):
             raise SystemExit(f"ERROR: unsafe target name for --guidance: {name!r}")
         work_dir = Path(self.get_work_dir(name))
-        self._atomic_replace_text(work_dir / ".prompt-extra.md", self.guidance_text)
+        text = self.guidance_text
+        if self.ci_init:
+            assert self.run_dir is not None
+            work_dir = ci_init.prepare_output_directory(self.run_dir, name)
+            if text is None:
+                # Preserve the original compatibility input, not the composed
+                # .prompt-extra.md left by a previous invocation.
+                fallback = work_dir / ".prompt-extra.md"
+                if not fallback.is_file():
+                    fallback = SPECULA_ROOT / "case-studies" / name / ".prompt-extra.md"
+                text = ci_init.fallback_guidance(self.run_dir, fallback)
+            text, self._ci_init_inputs = ci_init.stage_inputs(self.run_dir, text)
+            log(f"CI initialization guidance: {self._ci_init_inputs / 'effective-guidance.md'}")
+        assert text is not None
+        self._atomic_replace_text(work_dir / ".prompt-extra.md", text)
         if self.run_dir is not None:
             # Phase launchers freeze this file within an invocation. Replace it
             # on resume so every phase started now sees the same current text.
-            self._atomic_replace_text(work_dir / ".prompt-extra.initial.md", self.guidance_text)
+            self._atomic_replace_text(work_dir / ".prompt-extra.initial.md", text)
+
+    def _ci_source_state(self, name: str) -> dict[str, Any]:
+        workspace = Workspace(self.targets, artifact=self.artifact, run_dir=self.run_dir)
+        source = self.run_dir / name / "source" if self.keep_original and self.run_dir else None
+        if source is None:
+            repo = workspace.find_repo_dir(name)
+            source = Path(repo) if repo else None
+        commit = _git_source_commit(source) if source is not None else None
+        dirty: bool | None = None
+        if source is not None and commit is not None:
+            result = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(source),
+                    "-c",
+                    "core.fsmonitor=false",
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=normal",
+                ],
+                env=clean_git_environment(),
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                dirty = bool(result.stdout)
+        original = self._snapshot_sources.get(name) if self.keep_original else source
+        return {
+            "path": str(source) if source is not None else None,
+            "commit": commit,
+            "dirty": dirty,
+            "source_mode": "snapshot" if self.keep_original else "in-place",
+            "original_path": str(original) if original is not None else None,
+            "original_commit": _git_source_commit(original) if original is not None else None,
+        }
+
+    def finalize_ci_initialization(self, exit_code: int) -> Path | None:
+        if not self.ci_init or self.dry_run or self.run_dir is None or self._ci_init_inputs is None:
+            return None
+        names = self.extract_names()
+        if len(names) != 1 or not is_safe_target_name(names[0]):
+            raise ci_init.CIInitError("cannot register CI baseline for an invalid target")
+        name = names[0]
+        return ci_init.register_baseline(
+            self.run_dir,
+            Path(self.get_work_dir(name)),
+            target=name,
+            invocation=os.environ.get(resumelib.INVOCATION_ENV, ""),
+            inputs_dir=self._ci_init_inputs,
+            source={"before": self._ci_init_source_before, "after": self._ci_source_state(name)},
+            pipeline_exit_code=exit_code,
+        )
 
     def _invalidate_fresh_context_summaries(self) -> None:
         assert self.run_dir is not None
@@ -3511,6 +3629,8 @@ class Pipeline:
             print(f"Guidance:     {self.guidance_path}")
         if self.byom_path is not None:
             print(f"BYOM input:   {self.byom_path}")
+        if self.ci_init:
+            print("CI mode:      initialization (registration does not imply verified coverage)")
         if self.run_dir:
             print(f"Run:          {self.run_id}  ({self.run_dir})")
         print()
@@ -3550,6 +3670,8 @@ class Pipeline:
         self.stage_guidance(names)
 
         self.prepare_source_snapshots(names)
+        if self.ci_init:
+            self._ci_init_source_before = self._ci_source_state(names[0])
         self.initialize_resource_summaries(names)
 
         start_time = int(time.time())
@@ -3783,6 +3905,20 @@ def main(argv: list[str]) -> int:
             result_index = p.refresh_output_indexes()
         if tee_rc != 0:
             code = tee_rc
+        if p.ci_init and not p.dry_run:
+            try:
+                baseline = p.finalize_ci_initialization(code)
+                message = (
+                    f"CI baseline saved (UNVERIFIED): {baseline}"
+                    if baseline is not None
+                    else "CI baseline not registered: no readable reference model was produced; run outputs were retained."
+                )
+                print(message, file=terminal_stdout, flush=True)
+                result_index = p.refresh_output_indexes()
+            except (OSError, ci_init.CIInitError) as exc:
+                print(f"CI baseline registration failed: {exc}", file=terminal_stdout, flush=True)
+                if code == 0:
+                    code = 1
         try:
             if code == 0 and result_index is not None:
                 with contextlib.suppress(OSError, UnicodeError):
