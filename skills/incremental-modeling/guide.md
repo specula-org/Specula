@@ -12,7 +12,7 @@ Require:
 - the prior `.specula-output/`, including its modeling brief, analysis report, specs, instrumentation mapping, traces, validation history, findings, and reproductions when present;
 - a separate working copy for the new artifacts. Never overwrite the prior run.
 
-If the prior spec has not completed trace/model convergence, say so in the analysis and treat its conclusions as provisional.
+If prior trace/model validation has unresolved errors, say so in the analysis and treat its conclusions as provisional. Retain its reported coverage limits, including budget-limited model checking.
 
 Preserve correct system semantics rather than the old model's text. Prior validation provides evidence within its coverage; it does not make every old abstraction correct. Recheck the assumptions and state meanings on which the update depends, and actively repair implementation-backed inconsistencies within the modeling scope. Prioritize repairs needed for the update and its interactions; record independent issues for separate work. Chapter 2 defines the repair criteria.
 
@@ -24,7 +24,7 @@ Read and apply the relevant parts of the existing skills rather than restating t
 - For code-faithful base/MC/Trace/instrumentation edits, source annotations, action splitting, and cfg coverage, read and apply the installed Specula **spec-generation** skill. Read its referenced generation documents for every artifact type touched by the update.
 - For reusing or modifying the prior harness and collecting fresh traces, read and apply only the relevant parts of the installed Specula **harness-generation** skill.
 - For running and debugging trace validation, follow the installed Specula **tla-trace-workflow** skill. Use [Validation 3's category-specific completion evidence](references/validation/03-trace-validation-loop.md#completion-evidence) in place of generic template requirements that assume every trace needs a temporal completion property.
-- For full trace/MC convergence, follow the installed Specula **validation-workflow** skill with the incremental ordering and gates defined here.
+- For the trace/MC validation loop, follow the installed Specula **validation-workflow** skill with the incremental ordering and budgeted completion rules in Part 3.
 - For counterexample confirmation and reproduction, follow the installed Specula **bug-confirmation** skill.
 
 Do not rerun full-project archaeology by default. Reuse the old run and investigate history/issues only where the update introduces uncertainty, changes a known mechanism, or invalidates prior evidence.
@@ -96,7 +96,7 @@ For repair-only work, apply the validation coverage requirements to the repaired
 
 ## Part 3: Model Checking
 
-Read `references/model-checking/01-update-focused-checking.md`. It delegates ordinary convergence, TLC operation, and counterexample classification to the installed Specula skills, while defining the incremental full/focused/open/discharge order and validation back-edge.
+Read `references/model-checking/01-update-focused-checking.md`. It reuses the installed Specula validation loop, TLC operation, BFS/simulation strategy, and counterexample classification, while defining the incremental full/focused/open/discharge order and validation back-edge. Its budgeted completion rules take precedence over convergence/completion wording in the referenced skills for this incremental workflow; state-space exhaustion is not required.
 
 ## Part 4: Reproduction
 
