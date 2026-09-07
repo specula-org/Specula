@@ -1,12 +1,18 @@
 # Update-Focused Model Checking
 
-Use the installed Specula **validation-workflow** skill for trace/MC convergence and the installed **tla-checking-workflow** skill for TLC execution, counterexample analysis, classification, and fixes. Do not restate those methods here.
+Use the installed Specula **validation-workflow** skill for the trace/MC repair loop and the installed **tla-checking-workflow** skill for TLC execution, counterexample analysis, classification, and fixes. Reuse their one-shot checking methods with the budgeted completion rules below.
 
 ## Entry Gate
 
-Enter the campaign phase only after the complete fresh new-version trace suite passes. Apply the no-change reuse rule below before starting new campaigns; otherwise first run the standard `MC.cfg` convergence round from the main validation workflow. Subsequent repairs follow [Validation 3's local-feedback loop](../validation/03-trace-validation-loop.md#3-repair-with-local-feedback), not full trace replay after every edit.
+Enter the campaign phase only after the complete fresh new-version trace suite passes. Apply the no-change reuse rule below before starting new campaigns; otherwise first run the standard `MC.cfg` round from the main validation workflow. Subsequent repairs follow [Validation 3's local-feedback loop](../validation/03-trace-validation-loop.md#3-repair-with-local-feedback), not full trace replay after every edit.
 
 For `NO_MODEL_CHANGE`, when semantic artifacts are unchanged, fresh trace validation passes, and applicable prior model-checking evidence is available, retain that evidence and stop. If the reference was repaired or prior evidence is insufficient, run the main validation/checking loop on the current suite and check the repaired behavior and its interactions. Use applicable existing Update views or ordinary MC configs; repair-only work does not require a new `Update.tla`.
+
+## Budgeted Completion
+
+For standard MC and subsequent BFS/simulation campaigns, successfully executing a run does not require exhausting its state space. When TLC has actually explored the model and stops at its configured exploration time limit, record the explored coverage and findings, then continue the remaining campaigns. A nonempty state queue alone must not block hunting, simulation, reproduction, or CI completion. This rule governs convergence/completion when applying the referenced skills in this workflow.
+
+Keep planned exploration time limits distinct from failed startup, parsing errors, crashes, unexpected hangs, or interrupted execution. They also do not resolve failed or unfinished trace replay, unclassified counterexamples, or outstanding model/invariant repairs.
 
 ## Incremental Campaign
 
@@ -15,10 +21,12 @@ For `MODEL_CHANGE_REQUIRED`, run in this order:
 1. **Full update check** — check update properties over complete `MCNext` using the generated full config. This is the guard against interactions omitted by focused models.
 2. **Concrete focused check** — run the generated `AffectedActions \/ InteractionActions` configs so TLC spends its state budget on the changed mechanism and its high-risk unchanged producers, consumers, retries, faults, persistence, and recovery.
 3. **Open and discharge checks** — when `EnvUpdate` exists, run the open config and the discharge config. Treat an open result as provisional until omitted real context Actions satisfy the rely/frame obligation.
-4. **Scenario hunts** — run the generated update Scenario configs with the BFS/simulation strategy from the main checking workflow. Each Scenario needs a reachability canary or witness; a property that passes only because its update interaction is unreachable is not coverage.
+4. **Scenario hunts** — run the applicable inherited hunt configs and generated update Scenario configs with the BFS/simulation strategy from the main workflow. Each Scenario needs a reachability canary or witness; a property that passes only because its update interaction is unreachable is not coverage.
 5. **Final full check** — after repairs stabilize and the final full trace regression gate is satisfied, rerun the standard full model and full update properties if repairs invalidated their earlier results.
 
 These are independent TLC campaigns. They restrict or widen the enabled Action set; they do not impose a single execution order. Scenario-specific monitors may observe a producer/affected/consumer path, but must not redefine reference behavior.
+
+The main skills' 30-minute limit is per run, not for this entire stage. Work through the applicable Scenarios and use their prescribed simulation follow-up when BFS is shallow; do not stop after one or two broad BFS runs while Scenario checks remain. Respect any user-specified overall budget and explicitly report campaigns that could not be run; a single campaign's time limit does not cancel the rest.
 
 Check witness paths against the source assumptions they depend on. A reachability canary establishes a model path; a passing property establishes what was checked in that model. Neither alone validates the abstraction. Revisit generation when source evidence contradicts a reused guard, state meaning, or property interpretation, including defects inherited from the prior suite.
 
@@ -36,4 +44,4 @@ Apply the main checking workflow's classification unchanged. Incremental model c
 
 ## Completion
 
-Finish only when standard trace/MC convergence holds, every selected update or repair Scenario is reachable, all applicable campaigns have explicit outcomes, no Case A/B remains unresolved, and the full trace regression and required final model checks apply to the final artifacts. Record timeout or resource exhaustion as limited coverage, never as a pass.
+Finish when required trace validation passes, every selected update or repair Scenario is reachable, all applicable campaigns have explicit execution outcomes, no Case A/B remains unresolved, and the full trace regression and required final model checks apply to the final artifacts. A normally budget-terminated exploration satisfies the MC execution requirement; it must not by itself make the workflow `INCOMPLETE` or prevent its completion marker. Report it as budget-limited exploration, with any findings and coverage limits, not as an exhaustive pass or proof of safety. Unrun required campaigns remain unfinished work.
