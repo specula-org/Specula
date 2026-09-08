@@ -6,7 +6,9 @@ The fixture does not perform semantic verification or call an LLM.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -73,6 +75,44 @@ class IncrementalCLI(unittest.TestCase):
     def change_source(self, text: str) -> None:
         (self.source / "logic.txt").write_text(text)
         self.commit("update")
+
+    def test_compaction_yield_does_not_publish_and_failure_continues(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        original_assets = asset_hashes(previous)
+        tool = self.root / "tools/context_control"
+        (tool / ".venv/bin").mkdir(parents=True)
+        (tool / ".venv/bin/python").symlink_to(sys.executable)
+        shutil.copy2(fixtures.REAL_ROOT / "tools/context_control/compact.py", tool / "compact.py")
+        # The real controller calls the native compactor, which reports that
+        # this fixture-only backend has no native compaction API.
+        script = self.adapter.read_text().replace(
+            "  incremental)\n",
+            "  incremental)\n"
+            '    if [ ! -f "$0.context-yielded" ]; then\n'
+            f'      test "$(readlink -f "{self.ci}/current")" = "{previous}"\n'
+            '      printf "Pending fixture check; no semantic verification performed.\\n" > "$SPECULA_WORK_DIR/ci-context.md"\n'
+            '      python3 -c \'import json,os,sys; from pathlib import Path; sys.path.insert(0,os.environ["SPECULA_ROOT"]+"/src"); '
+            "from specula.context_control import request_compaction; "
+            'Path(sys.argv[1]).write_text(json.dumps({"adapter":"fake","session_id":"fixture-context-session","cwd":os.getcwd()})); '
+            'request_compaction("ci-context.md")\' "$resume"\n'
+            '      printf "SPECULA_CONTEXT_YIELD %s\\n" "$SPECULA_CONTEXT_TOKEN" > "$log"\n'
+            '      touch "$0.context-yielded"\n'
+            "      exit 0\n"
+            "    fi\n",
+        )
+        self.adapter.write_text(script)
+        self.change_source("changed\n")
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Context compaction failed; continuing", result.stdout)
+        self.assertNotEqual((self.ci / "current").resolve(), previous)
+        self.assertEqual(asset_hashes(previous), original_assets)
+        state = json.loads(Path(f"{self.adapter}.resumed").read_text())
+        self.assertEqual(state["session_id"], "fixture-context-session")
+        work = self.latest() / "footest/.specula-output"
+        self.assertEqual(len(list(work.glob(".context-control/*/1/compaction.json"))), 1)
+        self.assertFalse((self.ci / "current/model/.context-control").exists())
 
     def latest(self) -> Path:
         return (self.ci / "runs/latest").resolve()

@@ -4,6 +4,29 @@ Treat the prior Specula run as semantic evidence and the new source as the imple
 
 The workflow has four parts under `references/`: `generation/`, `validation/`, `model-checking/`, and `reproduction/`. Execute them in that order.
 
+## Preserve Context Across Long CI Runs
+
+At a major stage transition or after a coherent batch of analysis/repairs, consider
+`request_context_compaction` if earlier exploration is making the conversation
+large. Before requesting it, update the actual artifacts and write a short
+`.context-control/ci-context.md` in the working directory. This is run-local
+working memory, not a reusable baseline result. Preserve current source/model identity,
+important modeling decisions and evidence paths, valid versus invalidated checks,
+unresolved counterexamples, pending work, and the next step. Review that handoff
+yourself; do not replace it with a copied transcript or a rigid change contract.
+
+Collect outstanding tool results before yielding; native terminal handles may
+not survive the pause. Keep durable commands/logs for any externally managed work.
+Call the tool with the handoff path and follow its yield instruction. This is an
+internal pause, not CI completion: do not finalize reports or emit the CI completion
+marker. The controller compacts and resumes the same native conversation.
+
+After continuation, read the handoff first and reopen evidence as needed, not all
+historical logs. Keep unresolved or invalidated work pending. If the tool is absent,
+or compaction fails, continue the existing task without repeatedly requesting it.
+This optional CI capability does not apply to initialization or ordinary one-shot
+runs and does not change any verification or reproduction requirement below.
+
 ## Inputs
 
 Require:

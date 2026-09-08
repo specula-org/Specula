@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import re
 import sys
 from collections.abc import Callable, Iterable
@@ -116,6 +117,14 @@ def _claude_events(record: object, concise: bool) -> list[_LogEvent]:
 def _copilot_events(record: object, concise: bool) -> list[_LogEvent]:
     if not isinstance(record, dict):
         return []
+    if (
+        record.get("type") == "session.task_complete"
+        and os.environ.get("SPECULA_PHASE") == "incremental"
+        and os.environ.get("SPECULA_CONTEXT_REQUEST")
+    ):
+        data = record.get("data")
+        if isinstance(data, dict) and data.get("success") is True and isinstance(data.get("summary"), str):
+            return [_text_event(data["summary"], concise)]
     data = record.get("data")
     if record.get("type") == "session.error":
         if not isinstance(data, dict):
