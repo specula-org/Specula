@@ -134,6 +134,37 @@ Read `references/model-checking/01-update-focused-checking.md`. It reuses the in
 
 When Part 3 produces an actual counterexample, enter through `references/reproduction/01-confirm-counterexample.md`. That file adds only incremental provenance and old/new control guidance; the installed Specula **bug-confirmation** skill owns investigation, reproduction, verdicts, and repair requests.
 
+## Readiness and Final Reporting
+
+Keep required stage artifacts current as you work: decisions, checks, counterexamples,
+repairs, and reproduction outcomes belong in their existing records. Do not defer
+evidence until the end or repeatedly rewrite complete reports to finish a turn.
+
+Before final reporting, briefly check the existing evidence yourself. Applicable
+trace validation, MC/simulation, and reproduction must have explicit outcomes; all
+started work must have been observed; no required work or counterexample disposition
+may remain unresolved. Evidence must apply to the final artifacts, with invalidated
+checks rerun where required. Use Part 3's budgeted completion rules: exhaustive
+exploration is not required, and a confirmed real code bug does not itself block
+completion. This is a reasoning step, not a separate checklist file or reviewer.
+
+If work remains, continue the relevant phase before reporting. If genuinely blocked
+or interrupted, save brief progress, evidence paths, unresolved items, and the next
+step in the existing records or handoff, then explain the interruption briefly.
+Do not write a final CI report or claim completion merely to end the conversation.
+
+Once ready, write `ci-report.md` as the single human-facing wrap-up: modeling
+decision and changes, verification results, important findings, and limits, with
+links to existing evidence. A few lines suffice for an uneventful update. Preserve
+required stage reports and machine artifacts, but do not duplicate them or rebuild
+the one-shot reporting bundle. Leave resource summaries and cost calculation to
+the existing tools.
+
+Finalize once for the same candidate. On resume, continue valid completed work
+and any partial report in place. If later changes invalidate evidence or conclusions,
+complete the affected rechecks and update those conclusions before finishing;
+avoiding duplicate reporting must never preserve stale results.
+
 ## Current Stop Boundary
 
 Generation may run syntax and static configuration preflights only. Validation may build the reused harness, collect/replay traces, and run bounded local semantic diagnostics as described in Validation 3. Model-checking campaigns begin only after the initial validation gate; subsequent repairs use the local-feedback loop and final regression gate. Reproduction begins only with an actual counterexample.

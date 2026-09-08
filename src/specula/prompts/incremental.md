@@ -27,17 +27,21 @@ not automatic stage-completion or conversation-resume checkpoints.
 
 ## Finish
 
-Write a concise `{{work_dir}}/ci-report.md` explaining the modeling decision,
-model changes or repairs, trace validation, checking coverage, findings and
-reproduction outcomes, with paths to actual commands, logs, traces and reports.
-Distinguish limited exploration from unresolved required validation. A real code
-bug does not by itself invalidate a faithful model or prevent workflow completion.
+Follow the skill's Readiness and Final Reporting guidance. First briefly check
+readiness against the existing evidence; if required work remains, continue it
+before final reporting. This self-check does not need a separate file.
+
+Only once ready, write `{{work_dir}}/ci-report.md` as a short result summary with
+evidence links. A few lines suffice for an uneventful update. Reuse the maintained
+stage records rather than rewriting the one-shot reports; resource summaries and
+costs are handled by the existing tools.
 
 Only when the skill's applicable completion conditions are satisfied and all
 started work has been observed, end your final response with this exact line:
 
 SPECULA_INCREMENTAL_COMPLETE {{run_id}}
 
-If work remains unresolved or execution is interrupted, report what remains and
-do not emit that line. The current CI model will remain unchanged. On manual
-resume, continue this same conversation and workspace; do not restart completed work.
+If blocked or interrupted, save brief progress and the next step in the existing
+records or handoff, not a final CI report, and do not emit that line. The current
+CI model will remain unchanged. On manual resume, continue this same conversation
+and workspace, including any partial report; do not restart valid completed work.
