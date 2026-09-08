@@ -15,6 +15,7 @@ from specula import ci_init, resumelib
 from specula.ci_identity import check_key
 from specula.ci_inheritance import register_candidate
 from specula.ci_store import CIError, CIStore, freeze_source, git, read_json, write_json
+from specula.output_index import BYOM_REPORT_FILENAME
 from specula.pipelinelib import Pipeline, _valid_run_id
 from specula.snapshotlib import load_sources
 
@@ -68,8 +69,8 @@ class CIPipeline(Pipeline):
         if (self.ci_init and self.incremental) or not (self.ci_init or self.incremental or self._run_id_given):
             print("ERROR: choose --ci-init, --incremental, or --run-id with --ci-dir", file=sys.stderr)
             return 1
-        if not self.isolate or self.byom_path is not None or len(self.targets) != 1:
-            print("ERROR: persistent CI requires one target, isolated output, and no --byom", file=sys.stderr)
+        if not self.isolate or len(self.targets) != 1:
+            print("ERROR: persistent CI requires one target and isolated output", file=sys.stderr)
             return 1
         if any(arg.startswith("--skip-") for arg in argv) or self._enable_reviews_given:
             print("ERROR: CI runs the complete workflow; skip and review flags are not supported", file=sys.stderr)
@@ -89,6 +90,12 @@ class CIPipeline(Pipeline):
         self._isolate_explicit = True
         self.store = CIStore(self.ci_dir)
         return None
+
+    def _byom_option_error(self) -> str | None:
+        error = super()._byom_option_error()
+        if error is None and self.byom_path is not None and self.incremental:
+            return "--byom cannot be used with --incremental; initialize a new CI directory with --ci-init"
+        return error
 
     def run_storage_root(self) -> Path:
         assert self.ci_dir is not None
@@ -121,6 +128,8 @@ class CIPipeline(Pipeline):
         self.candidate = candidate
         self.revision = raw.get("revision")
         super()._restore_resume_configuration(raw, allow_overrides=allow_overrides)
+        if self.ci_init == self.incremental:
+            raise resumelib.ResumeError("invalid stored CI run mode; expected initialization or incremental checking")
         if self.incremental:
             self.skip_classification = True
 
@@ -251,7 +260,7 @@ class CIPipeline(Pipeline):
             ci_init._copy_assets(Path(current["model_path"]), work)
             # Prior run summaries remain available in old_model; they are not
             # this run's findings, completion evidence, or resource history.
-            for filename in ("summary.md", ".summary-findings.md", "ci-report.md"):
+            for filename in ("summary.md", ".summary-findings.md", "ci-report.md", BYOM_REPORT_FILENAME):
                 (work / filename).unlink(missing_ok=True)
         write_json(record, inputs)
         self.inputs = inputs

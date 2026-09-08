@@ -15,6 +15,7 @@ from unittest import mock
 
 from specula import ci_init, resumelib
 from specula import pipelinelib as pl
+from specula.ci_workflow import CIPipeline
 
 
 class TestCIInit(unittest.TestCase):
@@ -149,14 +150,65 @@ class TestCIInit(unittest.TestCase):
         target.symlink_to(outside, target_is_directory=True)
         self.assertIsNone(self.register())
 
-    def test_ci_mode_rejects_skips_byom_and_multiple_targets(self) -> None:
+    def test_ci_mode_rejects_skips_and_multiple_targets_with_or_without_byom(self) -> None:
         provided = self.root / "model.tla"
         provided.write_text("provided")
         invalid = [[flag, "project"] for flag in pl.BYOM_CONFLICTING_FLAGS]
-        invalid += [[f"--byom={provided}", "project"], ["a", "b"], ["--no-isolate", "project"]]
-        for args in invalid:
-            with self.subTest(args=args), contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(pl.Pipeline().parse_args(["--ci-init", *args]), 1)
+        invalid += [["a", "b"], ["--no-isolate", "project"]]
+        for byom in ([], [f"--byom={provided}"]):
+            for args in invalid:
+                with self.subTest(args=args, byom=byom), contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(pl.Pipeline().parse_args(["--ci-init", *byom, *args]), 1)
+
+    def test_ci_byom_file_and_directory_restore_without_repeating_flags(self) -> None:
+        model = self.root / "model.tla"
+        model.write_text("provided")
+        bundle = self.root / "bundle"
+        bundle.mkdir()
+        for persistent in (False, True):
+            for provided in (model, bundle):
+                with self.subTest(persistent=persistent, provided=provided):
+                    initial = CIPipeline() if persistent else pl.Pipeline()
+                    storage = [f"--ci-dir={self.root / 'ci'}"] if persistent else []
+                    self.assertIsNone(initial.parse_args([*storage, "--ci-init", f"--byom={provided}", "project"]))
+                    resumed = CIPipeline() if persistent else pl.Pipeline()
+                    self.assertIsNone(resumed.parse_args([*storage, "--run-id=existing"]))
+                    resumed._restore_resume_configuration(initial._resume_configuration_document())
+                    self.assertTrue(resumed.ci_init)
+                    self.assertEqual(resumed.byom_path, provided)
+                    self.assertTrue(resumed.skip_analysis)
+                    self.assertFalse(resumed.skip_specgen)
+                    self.assertFalse(resumed.skip_harness)
+                    self.assertFalse(resumed.skip_validation)
+
+    def test_incremental_byom_is_rejected_on_parse_and_configuration_restore(self) -> None:
+        provided = self.root / "model.tla"
+        provided.write_text("provided")
+        storage = [f"--ci-dir={self.root / 'ci'}"]
+        for flags in (["--incremental"], ["--incremental", "--run-id=existing"]):
+            with self.subTest(flags=flags), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(CIPipeline().parse_args([*storage, *flags, f"--byom={provided}"]), 1)
+        initial = CIPipeline()
+        self.assertIsNone(initial.parse_args([*storage, "--incremental", "project"]))
+        stored = initial._resume_configuration_document()
+        stored["byom"] = str(provided)
+        resumed = CIPipeline()
+        self.assertIsNone(resumed.parse_args([*storage, "--run-id=existing"]))
+        with self.assertRaisesRegex(resumelib.ResumeError, "--byom cannot be used with --incremental"):
+            resumed._restore_resume_configuration(stored)
+        self.assertFalse((self.root / "ci").exists())
+
+    def test_ci_resume_requires_exactly_one_stored_workflow_mode(self) -> None:
+        storage = [f"--ci-dir={self.root / 'ci'}"]
+        initial = CIPipeline()
+        self.assertIsNone(initial.parse_args([*storage, "--ci-init", "project"]))
+        for enabled in (False, True):
+            stored = initial._resume_configuration_document()
+            stored.update(ci_init=enabled, incremental=enabled)
+            resumed = CIPipeline()
+            self.assertIsNone(resumed.parse_args([*storage, "--run-id=existing"]))
+            with self.subTest(enabled=enabled), self.assertRaisesRegex(resumelib.ResumeError, "CI run mode"):
+                resumed._restore_resume_configuration(stored)
 
     def test_ci_mode_restores_on_resume_and_rejects_explicit_skip(self) -> None:
         initial = pl.Pipeline()

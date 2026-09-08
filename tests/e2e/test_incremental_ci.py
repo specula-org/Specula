@@ -12,7 +12,7 @@ from pathlib import Path
 
 import test_cli_pipeline as fixtures
 
-from specula.ci_store import CIStore
+from specula.ci_store import CIStore, asset_hashes
 
 
 class IncrementalCLI(unittest.TestCase):
@@ -76,6 +76,187 @@ class IncrementalCLI(unittest.TestCase):
 
     def latest(self) -> Path:
         return (self.ci / "runs/latest").resolve()
+
+    def supplied_model(self) -> Path:
+        model = self.work / "Supplied.tla"
+        model.write_text("---- MODULE Supplied ----\nSuppliedInvariant == TRUE\n====\n")
+        return model
+
+    def test_byom_model_initialization_then_incremental_update(self) -> None:
+        supplied = self.supplied_model()
+        original = supplied.read_bytes()
+        guidance = self.work / "guidance.md"
+        guidance.write_text("Preserve the supplied election scope.\n")
+        result = self.run_ci(
+            "--ci-init",
+            "--agent=fake",
+            f"--artifact={self.source}",
+            f"--byom={supplied}",
+            f"--guidance={guidance}",
+            "footest",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        run = self.latest()
+        old = (self.ci / "current").resolve()
+        self.assertEqual((old / "model/spec/base.tla").read_bytes(), original)
+        self.assertTrue((old / "model/harness/run.sh").is_file())
+        self.assertTrue((old / "model/byom-modification-report.md").is_file())
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], self.initial_sha)
+        phases = Path(f"{self.adapter}.phases").read_text().splitlines()
+        self.assertEqual(
+            phases,
+            [
+                "spec_generation",
+                "harness_generation",
+                "spec_validation",
+                "bug_confirmation_turn",
+                "bug_classification",
+            ],
+        )
+        for phase in ("spec_generation", "harness_generation"):
+            prompt = Path(f"{self.adapter}.{phase}.prompt").read_text()
+            self.assertIn("# BYOM Phase", prompt)
+            self.assertIn("## CI Initialization Guidance", prompt)
+            self.assertIn(guidance.read_text(), prompt)
+        self.assertIn("SKIPPED (BYOM)", (run / "pipeline-summary.md").read_text())
+        self.assertIn(
+            "[BYOM modification report](byom-modification-report.md)",
+            (run / "footest/.specula-output/index.md").read_text(),
+        )
+        self.assertEqual(supplied.read_bytes(), original)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+        self.change_source("updated\n")
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], self.git("rev-parse", "HEAD"))
+        self.assertEqual((old / "model/spec/base.tla").read_bytes(), original)
+        self.assertEqual((self.ci / "current/model/spec/base.tla").read_text(), "updated fixture model\n")
+        self.assertTrue((old / "model/byom-modification-report.md").is_file())
+        self.assertFalse((self.ci / "current/model/byom-modification-report.md").exists())
+        self.assertNotIn("BYOM modification report", (self.latest() / "footest/.specula-output/index.md").read_text())
+        self.assertIn("SuppliedInvariant", (self.latest() / "model.diff").read_text())
+        self.assertEqual(Path(f"{self.adapter}.incremental.byom").read_text().strip(), "")
+        prompt = Path(f"{self.adapter}.incremental.prompt").read_text()
+        self.assertIn(guidance.read_text(), prompt)
+        self.assertNotIn("## CI Initialization Guidance", prompt)
+        self.assertEqual(supplied.read_bytes(), original)
+
+    def test_byom_bundle_is_adopted_and_still_validated(self) -> None:
+        supplied = self.work / "bundle"
+        assets = {
+            "modeling-brief.md": "# Supplied scope\n",
+            "spec/base.tla": "supplied reference\n",
+            "spec/MC.tla": "supplied MC wrapper\n",
+            "spec/MC.cfg": "supplied MC config\n",
+            "spec/Trace.tla": "supplied Trace wrapper\n",
+            "spec/Trace.cfg": "supplied Trace config\n",
+            "spec/instrumentation-spec.md": "supplied mapping\n",
+            "harness/run.sh": "#!/bin/sh\n# Supplied harness\nexit 0\n",
+            "traces/retained.ndjson": '{"event":"retained"}\n',
+            "spec/old-validation.log": "Prior evidence only.\n",
+        }
+        for name, content in assets.items():
+            path = supplied / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+        (supplied / "harness/run.sh").chmod(0o755)
+        before = asset_hashes(supplied)
+        result = self.run_ci("--ci-init", "--agent=fake", f"--artifact={self.source}", f"--byom={supplied}", "footest")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for name, content in assets.items():
+            self.assertEqual((self.ci / "current/model" / name).read_text(), content)
+        self.assertEqual(asset_hashes(supplied), before)
+        self.assertEqual(Path(f"{self.adapter}.validation-count").read_text(), "x")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_byom_initialization_failure_and_resume_preserve_inputs(self) -> None:
+        supplied = self.supplied_model()
+        original = supplied.read_bytes()
+        self.adapter = self.helper._ci_init_adapter(self.root, interrupt_validation=True)
+        first = self.run_ci("--ci-init", "--agent=fake", f"--artifact={self.source}", f"--byom={supplied}", "footest")
+        self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
+        run = self.latest()
+        self.assertFalse((self.ci / "current").is_symlink())
+        self.assertFalse((run / "ci-result.json").exists())
+        baseline = (run / "ci-baseline.json").read_bytes()
+        self.assertEqual(json.loads(baseline)["validation_status"], "UNVERIFIED")
+        phases_before = Path(f"{self.adapter}.phases").read_bytes()
+
+        replacement = self.work / "replacement.tla"
+        replacement.write_text("another input\n")
+        rejected = self.run_ci(f"--run-id={run.name}", f"--byom={replacement}")
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("--byom differs", rejected.stderr)
+        self.assertIn("start a new run", rejected.stderr)
+        self.assertEqual(Path(f"{self.adapter}.phases").read_bytes(), phases_before)
+        supplied.rename(self.work / "saved.tla")
+        rejected = self.run_ci(f"--run-id={run.name}")
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("BYOM input is unavailable", rejected.stderr)
+        self.assertEqual(Path(f"{self.adapter}.phases").read_bytes(), phases_before)
+        (self.work / "saved.tla").rename(supplied)
+
+        self.change_source("later source\n")
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertEqual(self.latest(), run)
+        self.assertEqual((run / "ci-baseline.json").read_bytes(), baseline)
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], self.initial_sha)
+        self.assertEqual((self.ci / "current/model/spec/base.tla").read_bytes(), original)
+        self.assertEqual(supplied.read_bytes(), original)
+        self.assertEqual(Path(f"{self.adapter}.spec_validation.byom").read_text().strip(), str(supplied))
+        self.assertIn("exact session", Path(f"{self.adapter}.spec_validation.prompt").read_text())
+        phases = Path(f"{self.adapter}.phases").read_text().splitlines()
+        self.assertNotIn("code_analysis", phases)
+        self.assertEqual(phases.count("spec_generation"), 1)
+        self.assertEqual(phases.count("harness_generation"), 1)
+        self.assertEqual(phases.count("spec_validation"), 2)
+        self.assertTrue((self.ci / "current/model/byom-modification-report.md").is_file())
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_byom_dry_run_and_invalid_modes_do_not_publish(self) -> None:
+        supplied = self.supplied_model()
+        result = self.run_ci("--ci-init", "--dry-run", f"--artifact={self.source}", f"--byom={supplied}", "footest")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.ci / "current").is_symlink())
+        self.assertFalse(Path(f"{self.adapter}.phases").exists())
+        runs = set((self.ci / "runs").iterdir())
+        for flags in (
+            ["--incremental"],
+            ["--ci-init", "--ci-candidate"],
+            ["--ci-init", "--skip-validate"],
+            ["--ci-init", "--no-isolate"],
+            ["--ci-init", "--enable-reviews"],
+            ["--ci-init", "--run-id=missing"],
+        ):
+            with self.subTest(flags=flags):
+                rejected = self.run_ci(*flags, f"--byom={supplied}", "footest")
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertEqual(set((self.ci / "runs").iterdir()), runs)
+                self.assertFalse((self.ci / "current").is_symlink())
+                self.assertFalse(Path(f"{self.adapter}.phases").exists())
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_byom_cannot_overwrite_an_initialized_ci_directory(self) -> None:
+        self.initialize()
+        old = (self.ci / "current").resolve()
+        before = asset_hashes(old)
+        phases = Path(f"{self.adapter}.phases").read_bytes()
+        result = self.run_ci("--ci-init", f"--byom={self.supplied_model()}", "footest")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("already initialized", result.stderr)
+        self.assertEqual((self.ci / "current").resolve(), old)
+        self.assertEqual(asset_hashes(old), before)
+        self.assertEqual(Path(f"{self.adapter}.phases").read_bytes(), phases)
+
+    def test_missing_byom_report_prevents_publication(self) -> None:
+        supplied = self.supplied_model()
+        Path(f"{self.adapter}.omit-byom-report").touch()
+        result = self.run_ci("--ci-init", "--agent=fake", f"--artifact={self.source}", f"--byom={supplied}", "footest")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.ci / "current").is_symlink())
+        self.assertFalse((self.latest() / "ci-result.json").exists())
 
     def test_initialization_then_single_agent_incremental_update(self) -> None:
         self.initialize()
