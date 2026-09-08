@@ -1565,17 +1565,20 @@ class Phase:
                 attempt=invocation_attempt,
                 archived_usage_path=archived_attempts.get(usage_path),
             )
+            command = [
+                str(adapter),
+                f"--prompt-file={files['prompt']}",
+                f"--max-turns={max_turns}",
+                f"--claude-alias={claude_alias}",
+                *_model_effort_argv(adapter, self._model, self._effort),
+                f"--log={files['log']}",
+                f"--resume-state={resume_state}",
+                "--background",
+            ]
+            if self.key == "incremental":
+                command = [sys.executable, str(SCRIPT_DIR / "context_runner.py"), *command]
             proc = subprocess.Popen(
-                [
-                    str(adapter),
-                    f"--prompt-file={files['prompt']}",
-                    f"--max-turns={max_turns}",
-                    f"--claude-alias={claude_alias}",
-                    *_model_effort_argv(adapter, self._model, self._effort),
-                    f"--log={files['log']}",
-                    f"--resume-state={resume_state}",
-                    "--background",
-                ],
+                command,
                 env=env,
                 cwd=launch_cwd,
                 start_new_session=True,

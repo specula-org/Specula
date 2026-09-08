@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -149,6 +150,24 @@ def main(argv: list[str]) -> int:
     if options.effort:
         command += ["--variant", options.effort]
     child_env = os.environ.copy()
+    context_config = child_env.get("SPECULA_CONTEXT_MCP_JSON")
+    if child_env.get("SPECULA_PHASE") == "incremental" and context_config:
+        # Newer OpenCode releases renamed the non-interactive approval flag.
+        try:
+            help_result = subprocess.run(["opencode", "run", "--help"], capture_output=True, text=True, timeout=10)
+            if help_result.returncode == 0 and "--auto" in help_result.stdout + help_result.stderr:
+                command[command.index("--dangerously-skip-permissions")] = "--auto"
+        except (OSError, subprocess.TimeoutExpired):
+            pass  # Keep the existing adapter behavior if help is unavailable.
+        entry = json.loads(context_config)["mcpServers"]["specula_context"]
+        config = json.loads(child_env.get("OPENCODE_CONFIG_CONTENT") or "{}")
+        config.setdefault("mcp", {})["specula_context"] = {
+            "type": "local",
+            "command": [entry["command"], *entry["args"]],
+            "environment": entry["env"],
+            "enabled": True,
+        }
+        child_env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
     child_env["OPENCODE_FAKE_VCS"] = "git"
     _allow_external_directories(child_env)
     return run_json_cli("opencode", command, options, child_env=child_env)

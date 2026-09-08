@@ -165,6 +165,9 @@ fi
 # Keep the scripting channel free of version-specific stats footers. Provider
 # diagnostics still go to stderr, which is captured below for policy recovery.
 CMD=(copilot -p "$PROMPT" --allow-all --autopilot --silent)
+if [[ "${SPECULA_PHASE:-}" == "incremental" && -n "${SPECULA_CONTEXT_MCP_JSON:-}" ]]; then
+  CMD+=(--additional-mcp-config "$SPECULA_CONTEXT_MCP_JSON")
+fi
 
 if [[ -n "$RESUME_SESSION_ID" ]]; then
   if [[ ! "$RESUME_SESSION_ID" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then

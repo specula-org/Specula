@@ -356,6 +356,14 @@ setup_python_tool_env \
   "$INV_CHECKING_TOOL_VENV" \
   "$INV_CHECKING_TOOL_PYTHON"
 
+# Registered per CI invocation, not in the user's global Agent configuration.
+setup_python_tool_env \
+  "CI context control" \
+  "$PROJECT_ROOT/tools/context_control" \
+  "$PROJECT_ROOT/tools/context_control/.venv" \
+  "$PROJECT_ROOT/tools/context_control/.venv/bin/python" \
+  "$PROJECT_ROOT/tools/context_control/requirements.txt"
+
 # ─── Skills directory check ──────────────────────────────────────────────────
 
 if [[ ! -d "$SKILLS_SOURCE" ]]; then
@@ -469,6 +477,19 @@ fi
 echo ""
 
 # ─── Done ────────────────────────────────────────────────────────────────────
+
+for agent in opencode pi; do
+  if command_exists "$agent" && ask_yn "Install Specula skills for $agent?"; then
+    case "$agent" in
+      opencode) setup_skills "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills" "$SKILLS_SOURCE" ;;
+      pi) setup_skills "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills" "$SKILLS_SOURCE" ;;
+    esac
+  fi
+done
+print_status "CI context tools are registered automatically for incremental runs."
+if command_exists copilot && ! "$PROJECT_ROOT/tools/context_control/.venv/bin/python" -c 'import copilot' >/dev/null 2>&1; then
+  print_warning "Copilot context compaction needs Python 3.11+; other CI functionality remains available."
+fi
 
 if [[ "$SKILL_SETUP_INCOMPLETE" == true ]]; then
   print_warning "Setup completed with an incomplete Specula skill installation."
