@@ -158,12 +158,16 @@ class TestSetupAgentDetection(unittest.TestCase):
             Path("tools/cfa"),
             Path("tools/spec_analyzer"),
             Path("tools/inv_checking_tool"),
+            Path("tools/context_control"),
             Path("skills"),
             Path("lib"),
         ):
             (root / relative).mkdir(parents=True)
         (root / "lib/tla2tools.jar").touch()
         (root / "lib/CommunityModules-deps.jar").touch()
+        shutil.copy2(
+            REPO_ROOT / "tools/context_control/requirements.txt", root / "tools/context_control/requirements.txt"
+        )
 
         home = root / "home"
         home.mkdir()
@@ -271,6 +275,16 @@ printf '\\n' >> "$FAKE_COMMAND_LOG"
         self.assertNotIn("claude\tmcp", commands)
         self.assertNotIn("codex\tmcp", commands)
         self.assertNotIn("copilot\tmcp", commands)
+
+    def test_opencode_and_pi_setup_include_context_dependencies_and_skills(self) -> None:
+        for agent, destination in (("opencode", ".config/opencode/skills"), ("pi", ".pi/agent/skills")):
+            with self.subTest(agent=agent), tempfile.TemporaryDirectory() as tmp:
+                result, commands = self.run_setup(Path(tmp), {agent}, "y\n")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("tools/context_control/requirements.txt", commands)
+                self.assertIn("src/specula/skill_install.py", commands)
+                self.assertIn(destination, commands)
+                self.assertIn("registered automatically for incremental runs", result.stdout)
 
     def test_only_agents_on_path_are_prompted(self) -> None:
         for installed_agent in self.AGENT_PROMPTS:

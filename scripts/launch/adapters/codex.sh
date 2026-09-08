@@ -427,6 +427,9 @@ run_codex() {
   cmd+=(codex exec --dangerously-bypass-approvals-and-sandbox --output-last-message "$last_message_file")
   # Keep one large tool result from jumping past Codex's auto-compaction point.
   cmd+=(-c "tool_output_token_limit=10000")
+  if [[ "${SPECULA_PHASE:-}" == "incremental" && -n "${SPECULA_CONTEXT_CODEX_CONFIG:-}" ]]; then
+    cmd+=(-c "mcp_servers.specula_context=$SPECULA_CONTEXT_CODEX_CONFIG")
+  fi
   # Model / reasoning effort (additive — empty leaves codex config.toml default).
   [[ -n "$MODEL" ]] && cmd+=(-m "$MODEL")
   [[ -n "$EFFORT" ]] && cmd+=(-c "model_reasoning_effort=$EFFORT")

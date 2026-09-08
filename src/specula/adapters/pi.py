@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 if __package__:
     from .utils.json_cli import AdapterArgumentError, parse_options, run_json_cli
@@ -61,6 +62,8 @@ def main(argv: list[str]) -> int:
         return 1
 
     command = ["pi", "--print", "--mode", "json"]
+    if os.environ.get("SPECULA_PHASE") == "incremental" and os.environ.get("SPECULA_CONTEXT_REQUEST"):
+        command += ["--extension", str(Path(__file__).resolve().parents[3] / "tools/context_control/pi-extension.js")]
     if options.resume_state is None:
         # Preserve the standalone adapter's historical ephemeral behavior.
         command.append("--no-session")

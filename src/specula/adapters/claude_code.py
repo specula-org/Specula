@@ -486,6 +486,8 @@ def main(argv: list[str]) -> int:
         streaming = bool(stream_activity_log)
         output_format = "stream-json" if streaming else "json"
         cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", output_format]
+        if os.environ.get("SPECULA_PHASE") == "incremental" and os.environ.get("SPECULA_CONTEXT_MCP_CONFIG"):
+            cmd += ["--mcp-config", os.environ["SPECULA_CONTEXT_MCP_CONFIG"]]
         if resume_session_id:
             cmd += ["--resume", resume_session_id]
         if streaming:
