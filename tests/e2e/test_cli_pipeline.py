@@ -208,20 +208,29 @@ class CliE2E(unittest.TestCase):
             "esac; done\n"
             'printf "%s\\n" "$SPECULA_PHASE" >> "$0.phases"\n'
             'cp "$prompt" "$0.$SPECULA_PHASE.prompt"\n'
+            'printf "%s\\n" "${SPECULA_BYOM_PATH-}" > "$0.$SPECULA_PHASE.byom"\n'
             'case "$SPECULA_PHASE" in\n'
             "  code_analysis)\n"
             '    printf "# Fixture modeling brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
             "    ;;\n"
             "  spec_generation)\n"
             '    mkdir -p "$SPECULA_WORK_DIR/spec"\n'
+            '    if [ -n "${SPECULA_BYOM_PATH-}" ]; then\n'
+            '      printf "# Adopted fixture scope\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            '      if [ -d "$SPECULA_BYOM_PATH" ]; then\n'
+            '        cp -R "$SPECULA_BYOM_PATH/." "$SPECULA_WORK_DIR/"\n'
+            "      else\n"
+            '        cp "$SPECULA_BYOM_PATH" "$SPECULA_WORK_DIR/spec/base.tla"\n'
+            "      fi\n"
+            "    fi\n"
             "    for file in base.tla MC.tla Trace.tla instrumentation-spec.md; do\n"
-            '      printf "fixture model\\n" > "$SPECULA_WORK_DIR/spec/$file"\n'
+            '      if [ ! -f "$SPECULA_WORK_DIR/spec/$file" ]; then printf "fixture model\\n" > "$SPECULA_WORK_DIR/spec/$file"; fi\n'
             "    done\n"
             "    ;;\n"
             "  harness_generation)\n"
             '    mkdir -p "$SPECULA_WORK_DIR/harness" "$SPECULA_WORK_DIR/traces"\n'
-            '    printf "#!/bin/sh\\n" > "$SPECULA_WORK_DIR/harness/run.sh"\n'
-            '    printf \'{"event":"fixture"}\\n\' > "$SPECULA_WORK_DIR/traces/fixture.ndjson"\n'
+            '    if [ ! -f "$SPECULA_WORK_DIR/harness/run.sh" ]; then printf "#!/bin/sh\\n" > "$SPECULA_WORK_DIR/harness/run.sh"; fi\n'
+            '    if [ -z "$(ls -A "$SPECULA_WORK_DIR/traces")" ]; then printf \'{"event":"fixture"}\\n\' > "$SPECULA_WORK_DIR/traces/fixture.ndjson"; fi\n'
             "    ;;\n"
             "  spec_validation)\n"
             '    printf x >> "$0.validation-count"\n'
@@ -241,6 +250,9 @@ class CliE2E(unittest.TestCase):
             "  bug_classification)\n"
             '    printf "# Severity Classification\\n\\n## Summary\\n\\n## Per-entry classification\\n" > "$SPECULA_WORK_DIR/bug-severity.md"\n'
             '    printf "No impact-bearing findings were recorded.\\n\\n## Findings\\n\\n- Other dispositions: 0.\\n\\n## Validation limits\\n\\nFixture only; no semantic validation was performed.\\n" > "$SPECULA_WORK_DIR/.summary-findings.md"\n'
+            '    if [ -n "${SPECULA_BYOM_PATH-}" ] && [ ! -f "$0.omit-byom-report" ]; then\n'
+            '      printf "# BYOM Modification Report\\nSupplied assets copied; missing fixture assets added. No semantic verification performed.\\n" > "$SPECULA_WORK_DIR/byom-modification-report.md"\n'
+            "    fi\n"
             "    ;;\n"
             "  *) exit 97 ;;\n"
             "esac\n"

@@ -19,3 +19,12 @@ Produce reusable properties, scenarios, instrumentation, and harness assets thro
 the existing workflow. Distinguish observed and checked behavior from unresolved
 questions and budget-limited exploration. Finding a real implementation bug does not
 by itself invalidate a faithful model; finishing the workflow is not a proof of safety.
+
+When using BYOM, follow the existing BYOM workflow and preserve the supplied model's
+scope unless the user explicitly requests an expansion. Reuse usable assets and fill
+missing or incompatible responsibilities within that scope. The supplied source is
+the initialization target: assess model and harness correspondence to that version,
+and use the normal validation and repair workflow to adapt workspace copies as needed.
+Report unresolved correspondence and coverage gaps rather than claiming adaptation
+is complete. Existing logs do not replace this run's validation. Describe adaptations
+in the normal BYOM modification report.

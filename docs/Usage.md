@@ -169,6 +169,35 @@ specula run --ci-init --ci-dir=/work/project-ci \
   "name|owner/repository|language|reference"
 ```
 
+For a long-lived CI baseline, we recommend initializing from source as above.
+A model from an ordinary one-shot run may focus on a few scenarios and carry
+coverage gaps into later checks; CI initialization focuses on reusable core logic
+and interactions. Regenerating a model does not guarantee better coverage.
+
+To reuse an existing model or verification assets, add [BYOM](#bring-your-own-model-byom):
+
+```bash
+specula run --ci-init --ci-dir=/work/project-ci \
+  --byom=/work/existing-model-or-assets --artifact=/work/project \
+  --guidance=/work/project-guidance.md \
+  "name|owner/repository|language|reference"
+```
+
+The Agent organizes supplied assets and completes missing or incompatible parts,
+preserving the model's scope unless you request an expansion in your guidance.
+It may adapt workspace copies of an older model and harness to the supplied source.
+Usable traces are reused by default, followed by the standard BYOM validation,
+confirmation, and repair workflow. Prior logs alone do not complete initialization.
+Review `byom-modification-report.md` in the target's output for adaptations and
+remaining gaps. Successful completion publishes the baseline for subsequent checks;
+registration is not a proof of safety.
+
+Keep the original BYOM files available and unchanged until initialization and any
+resume finish. BYOM stores their path, not an input snapshot. To change the input,
+start a new initialization run; use a new CI directory if one is already initialized.
+`--byom` cannot be combined with `--incremental` or `--skip-*` options. CI initialization
+supports one target and requires isolated output.
+
 ### Check updates
 
 For each update, check out the target commit in the source repository and run:
@@ -194,8 +223,10 @@ conversation and working directory with:
 specula run --ci-dir=/work/project-ci --run-id=<run-id>
 ```
 
-To start over, rerun the incremental command without `--run-id`. Run checks
-sharing a CI directory one at a time.
+For BYOM initialization, the same resume command restores the original BYOM path;
+you do not need to repeat `--ci-init` or `--byom`. Persistent CI does not support
+`--fresh-context`. To start over, rerun the initialization or incremental command
+without `--run-id`. Run checks sharing a CI directory one at a time.
 
 ### Run automatically with GitHub Actions
 
@@ -251,7 +282,7 @@ BYOM skips the full code-analysis phase. Its Phase 2 and Phase 2.5 agents inspec
 
 Specula does not modify the original BYOM path. Later phases may modify the adopted workspace copies under their normal validation and repair rules. At the end of each target run, `byom-modification-report.md` summarizes which supplied assets were reused or modified, what Specula added, and why. The report is an agent-produced comparison, not a mechanically complete patch.
 
-BYOM requires the default isolated layout and conflicts with `--no-isolate` and every `--skip-*` option. Other `specula run` options retain their normal behavior. A resumed run reuses its stored absolute BYOM path; use `--fresh-context` to select a different path.
+BYOM requires the default isolated layout and conflicts with `--no-isolate` and every `--skip-*` option. A resumed run reuses its stored absolute BYOM path; keep the original files available and unchanged until the run and any resume finish. Ordinary runs can use `--fresh-context` to select a different path. For persistent CI, use [BYOM initialization](#initialize-once); `--incremental` does not accept `--byom`, and changing the initialization input requires a new run.
 
 ### Hybrid agent configuration
 

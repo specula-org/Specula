@@ -158,7 +158,7 @@ Options:
   --byom=PATH            Use user-provided model artifacts and run Phase 2 onward
   --guidance=PATH        Target-specific modeling guidance (single-target runs only)
   --ci-init              Build and register an initial CI baseline with core-depth guidance
-                         (one target, full pipeline, isolated output; registration is not verification)
+                         (one target, isolated output; accepts --byom; registration is not verification)
   --ci-dir=PATH          Persistent project directory shared by initialization and incremental runs
   --incremental          Run one Agent through the incremental-modeling skill using --ci-dir
   --ci-candidate         Save an incremental result without updating the branch's current model
@@ -705,10 +705,8 @@ class Pipeline:
         if not self.ci_init:
             return None
         conflicts = [flag for flag in BYOM_CONFLICTING_FLAGS if flag in self.argv]
-        if self.byom_path is not None:
-            conflicts.append("--byom")
         if conflicts:
-            return f"--ci-init conflicts with {', '.join(conflicts)}; initialization requests the full pipeline"
+            return f"--ci-init conflicts with {', '.join(conflicts)}; initialization does not allow phase skips"
         if len(self.targets) != 1:
             return "--ci-init supports exactly one target per run"
         if not self.isolate:
@@ -1075,9 +1073,7 @@ class Pipeline:
             if not allow_overrides and (
                 stored_byom is None or self.byom_path is None or self.byom_path != Path(stored_byom)
             ):
-                raise resumelib.ResumeError(
-                    "--byom differs from this run; pass --fresh-context to use another input path"
-                )
+                raise resumelib.ResumeError("--byom differs from this run; start a new run to use another input path")
         elif stored_byom is not None:
             try:
                 self.byom_path = self._normalize_byom_path(stored_byom)
