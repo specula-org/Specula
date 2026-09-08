@@ -320,6 +320,32 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual(usage["phases"]["incremental"]["cost_usd"], 0.01)
         self.assertTrue(usage["run_complete"])
 
+    def test_repair_can_finish_without_an_intermediate_ci_report(self) -> None:
+        self.initialize()
+        old = (self.ci / "current").resolve()
+        self.change_source("repair fixture\n")
+        # Simulate persisted repair evidence before the fixture's final model
+        # and report. This checks lifecycle compatibility, not Agent reasoning.
+        script = self.adapter.read_text().replace(
+            "  incremental)\n",
+            "  incremental)\n"
+            '    test ! -e "$SPECULA_WORK_DIR/ci-report.md" || exit 10\n'
+            '    printf "fixture model needing repair\\n" > "$SPECULA_WORK_DIR/spec/base.tla"\n'
+            '    printf "Fixture repair and recheck recorded; no semantic verification performed.\\n" > "$SPECULA_WORK_DIR/spec/changelog.md"\n'
+            '    test ! -e "$SPECULA_WORK_DIR/ci-report.md" || exit 10\n',
+        )
+        self.adapter.write_text(script)
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        model = self.ci / "current/model"
+        self.assertNotEqual((self.ci / "current").resolve(), old)
+        self.assertEqual((model / "spec/base.tla").read_text(), "updated fixture model\n")
+        self.assertIn("Fixture repair and recheck", (model / "spec/changelog.md").read_text())
+        self.assertTrue((model / "ci-report.md").is_file())
+        phases = Path(f"{self.adapter}.phases").read_text().splitlines()
+        self.assertEqual(phases.count("incremental"), 1)
+        self.assertEqual(phases[-1], "incremental")
+
     def test_failure_keeps_current_and_resume_uses_original_conversation_and_source(self) -> None:
         self.initialize()
         old = (self.ci / "current").resolve()
@@ -331,6 +357,10 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
         self.assertEqual((self.ci / "current").resolve(), old)
         run = self.latest()
+        work = run / "footest/.specula-output"
+        self.assertFalse((work / "ci-report.md").exists())
+        self.assertEqual((work / "spec/base.tla").read_text(), "unfinished edit\n")
+        self.assertFalse((run / "ci-result.json").exists())
         original_diff = (run / "source.diff").read_bytes()
         self.change_source("version C\n")
         flag.unlink()
@@ -339,6 +369,7 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual(CIStore(self.ci).current()["source_commit"], sha_b)
         self.assertEqual((run / "source.diff").read_bytes(), original_diff)
         self.assertEqual(Path(str(self.adapter) + ".resumed").read_text(), "fixture-native-session\n")
+        self.assertEqual((self.ci / "current/model/ci-report.md").read_bytes(), (work / "ci-report.md").read_bytes())
         prompt = Path(str(self.adapter) + ".incremental.prompt").read_text()
         self.assertIn("exact session", prompt)
         self.assertNotIn("# Incremental CI Task", prompt)
