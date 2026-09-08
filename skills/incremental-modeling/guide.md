@@ -6,33 +6,13 @@ The workflow has four parts under `references/`: `generation/`, `validation/`, `
 
 ## Preserve Context Across Long CI Runs
 
-Consider `request_context_compaction` when a coherent unit of analysis or repair
-has reached a stable stopping point, its essential state can be handed off briefly,
-and there has been substantive progress since the previous compaction. Do not wait
-for a full context window or compact at every stage by default. Do not interrupt an
-active derivation or counterexample diagnosis to compact; when repeated attempts
-make no progress, diagnose the stall rather than using compaction as a reset.
+Consider `request_context_compaction` when a coherent unit of analysis or repair has reached a stable stopping point, its essential state can be handed off briefly, and there has been substantive progress since the previous compaction. Do not wait for a full context window or compact at every stage by default. Do not interrupt an active derivation or counterexample diagnosis to compact; when repeated attempts make no progress, diagnose the stall rather than using compaction as a reset.
 
-Before requesting it, update the actual artifacts and write a short
-`.context-control/ci-context.md` in the working directory. This is run-local
-working memory, not a reusable baseline result. Preserve current source/model identity,
-important modeling decisions and evidence paths, key failed approaches and their
-reasons, valid versus invalidated checks, unresolved counterexamples, pending work,
-and the next step. Remove repetitive exploration, not uncertain items: retain their
-unresolved or unverified status. Review that handoff yourself; do not replace it
-with a copied transcript or a rigid change contract.
+Before requesting it, update the actual artifacts and write a short `.context-control/ci-context.md` in the working directory. This is run-local working memory, not a reusable baseline result. Preserve current source/model identity, important modeling decisions and evidence paths, key failed approaches and their reasons, valid versus invalidated checks, unresolved counterexamples, pending work, and the next step. Remove repetitive exploration, not uncertain items: retain their unresolved or unverified status. Review that handoff yourself; do not replace it with a copied transcript or a rigid change contract.
 
-Collect outstanding tool results before yielding; native terminal handles may
-not survive the pause. Keep durable commands/logs for any externally managed work.
-Call the tool with the handoff path and follow its yield instruction. This is an
-internal pause, not CI completion: do not finalize reports or emit the CI completion
-marker. The controller compacts and resumes the same native conversation.
+Collect outstanding tool results before yielding; native terminal handles may not survive the pause. Keep durable commands/logs for any externally managed work. Call the tool with the handoff path and follow its yield instruction. This is an internal pause, not CI completion: do not finalize reports or emit the CI completion marker. The controller compacts and resumes the same native conversation.
 
-After continuation, read the handoff first and reopen evidence as needed, not all
-historical logs. Keep unresolved or invalidated work pending. If the tool is absent,
-or compaction fails, continue the existing task without repeatedly requesting it.
-This optional CI capability does not apply to initialization or ordinary one-shot
-runs and does not change any verification or reproduction requirement below.
+After continuation, read the handoff first and reopen evidence as needed, not all historical logs. Keep unresolved or invalidated work pending. If the tool is absent, or compaction fails, continue the existing task without repeatedly requesting it. This optional CI capability does not apply to initialization or ordinary one-shot runs and does not change any verification or reproduction requirement below.
 
 Timing guidance adapted from [SelfCompact](https://arxiv.org/html/2606.23525v2#S3).
 
@@ -133,6 +113,14 @@ Read `references/model-checking/01-update-focused-checking.md`. It reuses the in
 ## Part 4: Reproduction
 
 When Part 3 produces an actual counterexample, enter through `references/reproduction/01-confirm-counterexample.md`. That file adds only incremental provenance and old/new control guidance; the installed Specula **bug-confirmation** skill owns investigation, reproduction, verdicts, and repair requests.
+
+## Readiness and Final Reporting
+
+Keep required stage evidence current. Before final reporting, briefly check readiness against the applicable completion rules in Parts 1–4 and the current artifacts; no separate checklist is needed.
+
+If work remains, continue it. If blocked or interrupted, save a brief handoff instead of a final report. On resume, continue from saved progress and any partial report; recheck evidence invalidated by later changes.
+
+Once ready, write one short `ci-report.md` per candidate: results, important findings, limits, and evidence links. A few lines suffice for an uneventful update. Reference maintained stage records instead of rebuilding the one-shot reports; leave resource summaries and cost calculation to the existing tools.
 
 ## Current Stop Boundary
 
