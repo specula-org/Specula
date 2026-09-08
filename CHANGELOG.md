@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Added `specula run --byom=PATH` for continuing Phase 2 onward from user-provided model, instrumentation, harness, or trace artifacts, with a final modification report for each target.
+- Added BYOM support to CI initialization, reusing supplied verification assets through the standard workflow before publishing a persistent CI baseline.
 
 ## [1.1.0] - 2026-08-13
 
