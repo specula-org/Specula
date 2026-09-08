@@ -6,14 +6,21 @@ The workflow has four parts under `references/`: `generation/`, `validation/`, `
 
 ## Preserve Context Across Long CI Runs
 
-At a major stage transition or after a coherent batch of analysis/repairs, consider
-`request_context_compaction` if earlier exploration is making the conversation
-large. Before requesting it, update the actual artifacts and write a short
+Consider `request_context_compaction` when a coherent unit of analysis or repair
+has reached a stable stopping point, its essential state can be handed off briefly,
+and there has been substantive progress since the previous compaction. Do not wait
+for a full context window or compact at every stage by default. Do not interrupt an
+active derivation or counterexample diagnosis to compact; when repeated attempts
+make no progress, diagnose the stall rather than using compaction as a reset.
+
+Before requesting it, update the actual artifacts and write a short
 `.context-control/ci-context.md` in the working directory. This is run-local
 working memory, not a reusable baseline result. Preserve current source/model identity,
-important modeling decisions and evidence paths, valid versus invalidated checks,
-unresolved counterexamples, pending work, and the next step. Review that handoff
-yourself; do not replace it with a copied transcript or a rigid change contract.
+important modeling decisions and evidence paths, key failed approaches and their
+reasons, valid versus invalidated checks, unresolved counterexamples, pending work,
+and the next step. Remove repetitive exploration, not uncertain items: retain their
+unresolved or unverified status. Review that handoff yourself; do not replace it
+with a copied transcript or a rigid change contract.
 
 Collect outstanding tool results before yielding; native terminal handles may
 not survive the pause. Keep durable commands/logs for any externally managed work.
@@ -26,6 +33,8 @@ historical logs. Keep unresolved or invalidated work pending. If the tool is abs
 or compaction fails, continue the existing task without repeatedly requesting it.
 This optional CI capability does not apply to initialization or ordinary one-shot
 runs and does not change any verification or reproduction requirement below.
+
+Timing guidance adapted from [SelfCompact](https://arxiv.org/html/2606.23525v2#S3).
 
 ## Inputs
 
