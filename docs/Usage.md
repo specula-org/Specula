@@ -186,15 +186,6 @@ Specula computes the changes since the current model's source version, then runs
 
 Completed runs update `current/model/` in the CI directory. Reports, diffs, logs, and resource usage are saved under `runs/<run-id>/` in the same directory.
 
-After `specula setup`, incremental runs can request native context compaction.
-The agent saves a short `.context-control/ci-context.md` handoff before pausing, then continues
-the same conversation. Compaction failures do not stop CI. Initialization and
-ordinary one-shot runs are unchanged.
-Copilot compaction requires Python 3.11+ for its SDK. Native compaction receipts
-and per-turn usage remain in the run's `.context-control/` directory.
-When a backend omits compaction usage, the cost total is marked incomplete;
-the recorded per-turn costs remain available.
-
 ### Resume an interrupted run
 
 Incomplete runs leave the current model unchanged. Resume the original Agent conversation and working directory with:
