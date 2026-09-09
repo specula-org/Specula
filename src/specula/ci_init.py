@@ -1,8 +1,4 @@
-"""Guidance composition and run-scoped baseline registration for CI initialization.
-
-Registration preserves reusable artifacts; it deliberately makes no automatic
-semantic-quality verdict. The ordinary pipeline remains the execution owner.
-"""
+"""Guidance composition and run-scoped baseline registration for CI initialization."""
 
 from __future__ import annotations
 
@@ -186,7 +182,7 @@ def register_baseline(
         "source": source,
         "pipeline_exit_code": pipeline_exit_code,
         "validation_status": "UNVERIFIED",
-        "validation_note": "Registration is not a verification verdict; inspect the retained validation evidence.",
+        "validation_note": "See the retained validation reports for results.",
         "assets": str(assets.relative_to(run_dir)),
         "guidance": str(inputs_dir.relative_to(run_dir)),
         "run_output": str(work_dir.relative_to(run_dir)),

@@ -1,4 +1,4 @@
-"""Derive CI success from current finding dispositions, separately from completion."""
+"""Compute CI verdicts from current finding dispositions."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def conclusion(findings: list[dict[str, str]]) -> str:
 
 def exit_code(verdict: object) -> int:
     if not isinstance(verdict, str) or verdict not in VERDICTS:
-        raise CIError("missing or invalid CI verdict; a completed workflow is not a passing check")
+        raise CIError("missing or invalid CI verdict")
     return BUG_EXIT_CODE if verdict == "FAIL" else 0
 
 
@@ -76,7 +76,7 @@ def _read(work: Path, run_id: str | None = None) -> dict[str, Any]:
 
 
 def prior_findings(work: Path) -> dict[str, str]:
-    """The prior inventory schedules fresh confirmation, never supplies a verdict."""
+    """Read prior finding IDs and dispositions for rechecking."""
     if (work / FILENAME).exists() or (work / FILENAME).is_symlink():
         return {finding["id"]: finding["status"] for finding in _read(work)["findings"]}
     if ci_init._regular_file(work, "confirmed-bugs.md"):
@@ -100,7 +100,7 @@ def read(work: Path, run_id: str | None = None, *, previous: Path | None = None)
 
 
 def from_confirmation(work: Path, run_id: str) -> str:
-    """Initialization already has a canonical report; do not ask for another one."""
+    """Build the initialization verdict from the canonical confirmation report."""
     if not ci_init._regular_file(work, "confirmed-bugs.md"):
         raise CIError("missing CI initialization confirmation report")
     statuses = _confirmation_finding_statuses((work / "confirmed-bugs.md").read_text(), impact_only=False)

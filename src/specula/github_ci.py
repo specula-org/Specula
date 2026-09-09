@@ -420,7 +420,6 @@ class GitHubCI:
             "",
             "Each update checks the cumulative diff to its target, not every intermediate version separately.",
             "Reused/inherited rows launch no additional Agent; their usage summaries belong to the original run.",
-            "Reports describe actual coverage; completion is not a proof of safety.",
             "FAIL means confirmed bugs (REPRODUCED or ENV_LIMITED); WARNING means masked findings only.",
             "",
         ]

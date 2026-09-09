@@ -159,7 +159,7 @@ specula run --ci-init --ci-dir=/work/project-ci \
   "name|owner/repository|language|reference"
 ```
 
-For a long-lived CI baseline, we recommend initializing from source as above. A model from an ordinary one-shot run may focus on a few scenarios and carry coverage gaps into later checks; CI initialization focuses on reusable core logic and interactions. Regenerating a model does not guarantee better coverage.
+For a long-lived CI baseline, we recommend initializing from source as above.
 
 To reuse an existing model or verification assets, add [BYOM](#bring-your-own-model-byom):
 
@@ -170,7 +170,7 @@ specula run --ci-init --ci-dir=/work/project-ci \
   "name|owner/repository|language|reference"
 ```
 
-The Agent organizes supplied assets and completes missing or incompatible parts, preserving the model's scope unless you request an expansion in your guidance. It may adapt workspace copies of an older model and harness to the supplied source. Usable traces are reused by default, followed by the standard BYOM validation, confirmation, and repair workflow. Prior logs alone do not complete initialization. Review `byom-modification-report.md` in the target's output for adaptations and remaining gaps. Successful completion publishes the baseline for subsequent checks; registration is not a proof of safety.
+The Agent organizes supplied assets and completes missing or incompatible parts, preserving the model's scope unless you request an expansion in your guidance. It may adapt workspace copies of an older model and harness to the supplied source. Usable traces are reused by default, followed by the standard BYOM validation, confirmation, and repair workflow. Review `byom-modification-report.md` in the target's output for adaptations and remaining gaps. Successful completion publishes the baseline for subsequent checks.
 
 Keep the original BYOM files available and unchanged until initialization and any resume finish. BYOM stores their path, not an input snapshot. To change the input, start a new initialization run; use a new CI directory if one is already initialized. `--byom` cannot be combined with `--incremental` or `--skip-*` options. CI initialization supports one target and requires isolated output.
 
@@ -186,9 +186,9 @@ Specula computes the changes since the current model's source version, then runs
 
 Completed runs update `current/model/` in the CI directory. Reports, diffs, logs, and resource usage are saved under `runs/<run-id>/` in the same directory.
 
-CI returns exit code `2` when the current confirmation results contain `REPRODUCED` or `ENV_LIMITED` bugs, regardless of whether the update introduced them. `MASKED` findings produce a warning and exit code `0`; completed checks without these findings also return `0`. Incomplete checks cannot pass. Inspect `ci-report.md` and `ci-verdict.json` for the incremental result and evidence. Initialization derives the same verdict from `confirmed-bugs.md`.
+CI returns exit code `2` when the current confirmation results contain `REPRODUCED` or `ENV_LIMITED` bugs, regardless of whether the update introduced them. `MASKED` findings produce a warning and exit code `0`; completed checks without these findings also return `0`. Unfinished checks return a nonzero exit code. Inspect `ci-report.md` and `ci-verdict.json` for the incremental result and evidence. Initialization derives the same verdict from `confirmed-bugs.md`.
 
-Finding a bug does not invalidate the model: a completed check still advances the branch's model baseline even when CI fails. Each new incremental run reattempts confirmation/reproduction of unresolved prior findings on the current revision, including updates that do not change the model. Reports retain exploration limits; a passing check is not a proof of safety.
+Each new incremental run reattempts confirmation/reproduction of unresolved prior findings on the current revision, including updates that do not change the model.
 
 ### Resume an interrupted run
 

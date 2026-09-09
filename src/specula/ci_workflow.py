@@ -276,9 +276,7 @@ class CIPipeline(Pipeline):
 
     def _summary_validation_limits(self) -> tuple[str, ...]:
         if self.incremental:
-            return (
-                "See ci-report.md for actual verification coverage and remaining limits; completion is not a proof of safety.",
-            )
+            return ()
         return super()._summary_validation_limits()
 
     def main(self) -> int:

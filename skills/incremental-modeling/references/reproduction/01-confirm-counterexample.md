@@ -20,7 +20,7 @@ Before delegating, attach only the evidence the main skill needs:
 
 Confirm and reproduce against the new implementation revision. When the same test and environment are compatible with the old revision, run it as a control to distinguish introduced, newly exposed, and pre-existing behavior. The old-version control strengthens attribution but does not replace reproduction on the new version.
 
-Reattempt every unresolved prior finding on each new run, including unchanged mechanisms and `NO_MODEL_CHANGE` runs. Reuse the reproduction test, not its previous outcome. Record the current attempt and disposition under the same finding ID. Rechecking an already confirmed finding is not new code-review discovery: do not apply the known-code-review pre-filter or drop it merely because it is known. When the update fixes a prior defect, record `FIXED` in the CI verdict with source and fresh test/control evidence; an unsuccessful reproduction alone is insufficient.
+Reattempt every unresolved prior finding on each new run, including unchanged mechanisms and `NO_MODEL_CHANGE` runs. Rerun the existing reproduction test and record the current attempt and disposition under the same finding ID. Skip the known-code-review pre-filter when rechecking an already confirmed finding. When the update fixes a prior defect, record `FIXED` in the CI verdict with source and fresh test/control evidence.
 
 ## Delegate and Preserve Verdict Boundaries
 
