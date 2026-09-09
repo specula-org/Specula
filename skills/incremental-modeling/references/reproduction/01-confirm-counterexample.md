@@ -4,7 +4,7 @@ This is a thin entry point. Read and follow the installed Specula **bug-confirma
 
 ## Preconditions
 
-- An actual TLC counterexample exists. A Scenario, code suspicion, or model-checking run with no violation is not an MC finding.
+- For a new finding, an actual TLC counterexample exists. A Scenario, code suspicion, or model-checking run with no violation is not an MC finding. Prior bug and warning findings enter for a fresh reproduction attempt on the current revision, even if this run finds no new counterexample.
 - The finding names its violated property, saved TLC output/trace, current source revision, reference Actions, and update Scenario.
 - A focused-only violation must also be admitted by full current reference behavior, or be supported by a valid open/discharge argument. Otherwise return it to model-checking repair before reproduction.
 - Trace validation and model-checking evidence identify the current suite used to produce the finding.
@@ -20,6 +20,8 @@ Before delegating, attach only the evidence the main skill needs:
 
 Confirm and reproduce against the new implementation revision. When the same test and environment are compatible with the old revision, run it as a control to distinguish introduced, newly exposed, and pre-existing behavior. The old-version control strengthens attribution but does not replace reproduction on the new version.
 
+Reattempt prior bug and warning findings on each new run, including unchanged mechanisms and `NO_MODEL_CHANGE` runs. Rerun the existing reproduction test and record the current attempt and disposition under the same finding ID. Skip the known-code-review pre-filter when rechecking an already confirmed finding. When the update fixes a prior defect, record `FIXED` in the CI verdict with source and fresh test/control evidence.
+
 ## Delegate and Preserve Verdict Boundaries
 
 Use the main **bug-confirmation** workflow to:
@@ -32,4 +34,4 @@ Use the main **bug-confirmation** workflow to:
 
 Never classify a new invariant violation as a model defect merely because it appears after the update. A faithful new model may have exposed a real implementation bug. Conversely, a syntactically valid focused counterexample is not a bug until code reachability and consequence are established.
 
-Accept MC counterexamples only. Do not discover or enqueue standalone code-review findings.
+Accept new MC counterexamples and prior bug and warning findings for rechecking. Do not discover or enqueue new standalone code-review findings.
