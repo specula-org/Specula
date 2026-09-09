@@ -15,7 +15,7 @@ BUG_EXIT_CODE = 2
 VERDICTS = {"PASS", "WARNING", "FAIL"}
 BUG_STATUSES = {"REPRODUCED", "ENV_LIMITED"}
 LIVE_STATUSES = BUG_STATUSES | {"MASKED"}
-TERMINAL_STATUSES = LIVE_STATUSES | {"FALSE POSITIVE", "DROPPED", "FIXED"}
+TERMINAL_STATUSES = LIVE_STATUSES | {"FALSE POSITIVE", "DROPPED", "FIXED", "NEEDS MORE INFO", "DEFERRED"}
 
 
 def conclusion(findings: list[dict[str, str]]) -> str:
@@ -57,6 +57,8 @@ def _read(work: Path, run_id: str | None = None) -> dict[str, Any]:
         ):
             raise CIError("CI finding IDs must be unique and nonempty")
         seen.add(fid)
+        if status == "PENDING REPAIR":
+            raise CIError(f"{fid}: CI workflow did not converge (PENDING REPAIR)")
         if not isinstance(status, str) or status not in TERMINAL_STATUSES:
             raise CIError(f"{fid}: unresolved or invalid CI finding status: {status}")
         if not isinstance(evidence, str) or not evidence:

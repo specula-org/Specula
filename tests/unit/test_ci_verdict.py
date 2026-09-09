@@ -35,6 +35,9 @@ def write_record(work: Path, statuses: list[str], **overrides: Any) -> None:
         (["MASKED"], "WARNING", 0),
         (["FALSE POSITIVE", "FIXED", "DROPPED"], "PASS", 0),
         (["MASKED", "REPRODUCED"], "FAIL", 2),
+        (["NEEDS MORE INFO", "DEFERRED"], "PASS", 0),
+        (["NEEDS MORE INFO", "REPRODUCED"], "FAIL", 2),
+        (["DEFERRED", "MASKED"], "WARNING", 0),
     ],
 )
 def test_verdict_is_computed_from_all_dispositions(
@@ -45,10 +48,10 @@ def test_verdict_is_computed_from_all_dispositions(
     assert ci_verdict.exit_code(verdict) == code
 
 
-@pytest.mark.parametrize("status", ["NEEDS MORE INFO", "PENDING REPAIR", "DEFERRED", "INCOMPLETE", "unknown"])
+@pytest.mark.parametrize("status", ["PENDING REPAIR", "INCOMPLETE", "unknown"])
 def test_unresolved_disposition_cannot_pass(tmp_path: Path, status: str) -> None:
     write_record(tmp_path, [status])
-    with pytest.raises(CIError, match="unresolved or invalid"):
+    with pytest.raises(CIError, match="did not converge|unresolved or invalid"):
         ci_verdict.read(tmp_path, "current")
 
 
@@ -97,20 +100,38 @@ def test_prior_bug_cannot_disappear_from_the_next_run(tmp_path: Path) -> None:
         ci_verdict.read(current, "current", previous=prior)
 
 
-@pytest.mark.parametrize("status", ["REPRODUCED", "ENV_LIMITED", "MASKED", "NEEDS MORE INFO"])
-def test_initialization_uses_final_confirmation_dispositions(tmp_path: Path, status: str) -> None:
+def test_prior_information_does_not_require_further_processing(tmp_path: Path) -> None:
+    prior, current = tmp_path / "old", tmp_path / "new"
+    write_record(prior, ["NEEDS MORE INFO", "DEFERRED"])
+    retained = (prior / ci_verdict.FILENAME).read_bytes()
+    write_record(current, [])
+    assert ci_verdict.read(current, "current", previous=prior) == "PASS"
+    assert (prior / ci_verdict.FILENAME).read_bytes() == retained
+
+
+@pytest.mark.parametrize(
+    ("status", "verdict"),
+    [
+        ("REPRODUCED", "FAIL"),
+        ("ENV_LIMITED", "FAIL"),
+        ("MASKED", "WARNING"),
+        ("NEEDS MORE INFO", "PASS"),
+        ("DEFERRED (repair loop exhausted; RR-001 in deferred/)", "PASS"),
+        ("PENDING REPAIR (RR-001)", None),
+    ],
+)
+def test_initialization_uses_final_confirmation_dispositions(tmp_path: Path, status: str, verdict: str | None) -> None:
     (tmp_path / "confirmed-bugs.md").write_text(
         "# Confirmation Report\n\n"
         "| Entry | Finding | Status | Counts as final bug? |\n"
         "|---|---|---|---|\n"
         f"| 1 | MC-1 | {status} | no |\n\n"
     )
-    if status == "NEEDS MORE INFO":
-        with pytest.raises(CIError, match="unresolved"):
+    if verdict is None:
+        with pytest.raises(CIError, match="did not converge"):
             ci_verdict.from_confirmation(tmp_path, "init")
     else:
-        verdict = ci_verdict.from_confirmation(tmp_path, "init")
-        assert verdict == ("WARNING" if status == "MASKED" else "FAIL")
+        assert ci_verdict.from_confirmation(tmp_path, "init") == verdict
 
 
 def test_missing_or_malformed_cached_verdict_is_not_green() -> None:

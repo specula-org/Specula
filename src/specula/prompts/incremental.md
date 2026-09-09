@@ -20,7 +20,7 @@ Follow the skill's Readiness and Final Reporting guidance. First briefly check r
 
 Only once ready, write `{{work_dir}}/ci-report.md` as a short result summary with evidence links, and `{{work_dir}}/ci-verdict.json` following the skill's CI Verdict format with run ID `{{run_id}}`. A few lines suffice for an uneventful update. Reuse the maintained stage records rather than rewriting the one-shot reports; resource summaries and costs are handled by the existing tools.
 
-Reattempt confirmation/reproduction for every unresolved prior finding on this revision, including for `NO_MODEL_CHANGE`. Keep their finding IDs and record the current disposition in `ci-verdict.json`; a verified repair is `FIXED`. Inspect the prior finding reports even when the baseline predates this verdict file.
+Reattempt confirmation/reproduction for prior bug and warning findings on this revision, including for `NO_MODEL_CHANGE`. Keep their finding IDs and record the current disposition in `ci-verdict.json`; a verified repair is `FIXED`. Inspect the prior finding reports even when the baseline predates this verdict file.
 
 Only when the skill's applicable completion conditions are satisfied and all started work has been observed, end your final response with this exact line:
 

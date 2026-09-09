@@ -130,6 +130,25 @@ class IncrementalCLI(unittest.TestCase):
                 self.assertIn(self.latest().name, evidence)
         self.assertIn("-MASKED fixture\n+FIXED fixture", (self.latest() / "source.diff").read_text())
 
+    def test_information_is_saved_but_pending_repair_fails_without_publishing(self) -> None:
+        self.initialize()
+        for status in ("NEEDS MORE INFO", "DEFERRED"):
+            self.change_source(f"{status} fixture\n")
+            self.finding_status(status)
+            result = self.run_ci("--incremental", "--agent=fake")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            record = json.loads((self.ci / "current/model/ci-verdict.json").read_text())
+            self.assertEqual(record["findings"][0]["status"], status)
+            self.assertEqual(CIStore(self.ci).current()["verdict"], "PASS")
+        baseline = (self.ci / "current").resolve()
+        self.change_source("pending repair fixture\n")
+        self.finding_status("PENDING REPAIR")
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("CI workflow did not converge (PENDING REPAIR)", result.stdout)
+        self.assertEqual((self.ci / "current").resolve(), baseline)
+        self.assertFalse((self.latest() / "ci-result.json").exists())
+
     def test_old_findings_require_a_current_disposition_even_without_model_changes(self) -> None:
         self.initialize()
         self.change_source("bug fixture\n")
