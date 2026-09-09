@@ -159,6 +159,7 @@ class TestSetupAgentDetection(unittest.TestCase):
             Path("tools/spec_analyzer"),
             Path("tools/inv_checking_tool"),
             Path("tools/context_control"),
+            Path("tools/tlc_tools"),
             Path("skills"),
             Path("lib"),
         ):
@@ -168,6 +169,7 @@ class TestSetupAgentDetection(unittest.TestCase):
         shutil.copy2(
             REPO_ROOT / "tools/context_control/requirements.txt", root / "tools/context_control/requirements.txt"
         )
+        shutil.copy2(REPO_ROOT / "tools/tlc_tools/requirements.txt", root / "tools/tlc_tools/requirements.txt")
 
         home = root / "home"
         home.mkdir()
@@ -282,6 +284,7 @@ printf '\\n' >> "$FAKE_COMMAND_LOG"
                 result, commands = self.run_setup(Path(tmp), {agent}, "y\n")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("tools/context_control/requirements.txt", commands)
+                self.assertIn("tools/tlc_tools/requirements.txt", commands)
                 self.assertIn("src/specula/skill_install.py", commands)
                 self.assertIn(destination, commands)
                 self.assertIn("registered automatically for incremental runs", result.stdout)

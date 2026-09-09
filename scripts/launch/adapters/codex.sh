@@ -430,6 +430,9 @@ run_codex() {
   if [[ "${SPECULA_PHASE:-}" == "incremental" && -n "${SPECULA_CONTEXT_CODEX_CONFIG:-}" ]]; then
     cmd+=(-c "mcp_servers.specula_context=$SPECULA_CONTEXT_CODEX_CONFIG")
   fi
+  if [[ -n "${SPECULA_TLC_TOOL_CODEX:-}" ]]; then
+    cmd+=(-c "mcp_servers.specula_tlc=$SPECULA_TLC_TOOL_CODEX")
+  fi
   # Model / reasoning effort (additive — empty leaves codex config.toml default).
   [[ -n "$MODEL" ]] && cmd+=(-m "$MODEL")
   [[ -n "$EFFORT" ]] && cmd+=(-c "model_reasoning_effort=$EFFORT")

@@ -39,7 +39,7 @@ if __package__ in (None, ""):
     # this module so process-local launcher state is shared rather than copied.
     sys.modules["specula.phaselib"] = sys.modules[__name__]
 import specula.progress as progress
-from specula import quota, resumelib
+from specula import quota, resumelib, tlc_tasks
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC
 from specula.output_index import BYOM_REPORT_FILENAME, PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
@@ -684,6 +684,8 @@ class Phase:
 
     @classmethod
     def _terminate_agents(cls, running: list[progress.RunningAgent], *, announce: bool = True) -> None:
+        for agent in running:
+            tlc_tasks.stop_owned_tasks(agent.work_dir, agent.log)
         cls._terminate_processes([agent.proc for agent in running], announce=announce)
 
     @staticmethod
@@ -1577,6 +1579,7 @@ class Phase:
             ]
             if self.key == "incremental":
                 command = [sys.executable, str(SCRIPT_DIR / "context_runner.py"), *command]
+            tlc_tasks.prepare_environment(env, files["log"], SPECULA_ROOT)
             proc = subprocess.Popen(
                 command,
                 env=env,
@@ -1852,12 +1855,16 @@ def run_agent_blocking(
                 attempt=state.invocation_attempt,
                 archived_usage_path=archived_attempts.get(usage_path),
             )
-            rc = subprocess.run(
-                cmd,
-                env=env,
-                cwd=run_cwd,
-                pass_fds=resumelib.inherited_run_lock_fds(),
-            ).returncode
+            try:
+                tlc_tasks.prepare_environment(env, log_file, SPECULA_ROOT)
+                rc = subprocess.run(
+                    cmd,
+                    env=env,
+                    cwd=run_cwd,
+                    pass_fds=resumelib.inherited_run_lock_fds(),
+                ).returncode
+            finally:
+                tlc_tasks.stop_owned_tasks(work_dir, log_file)
             persist_cursor()
             # Codex stdout is a complete CLI transcript, not the assistant's final
             # response. The adapter keeps that transcript in `log_file` for
@@ -3541,6 +3548,7 @@ Output:
                 attempt=invocation_attempt,
                 archived_usage_path=archived_attempts.get(usage_path),
             )
+            tlc_tasks.prepare_environment(env, log_file, SPECULA_ROOT)
             proc = subprocess.Popen(
                 [
                     str(adapter),

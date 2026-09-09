@@ -190,6 +190,10 @@ class AdapterCase(unittest.TestCase):
                 'if [[ -n "${OPENCODE_CONFIG:-}" && -f "$OPENCODE_CONFIG" ]]; then '
                 'cat "$OPENCODE_CONFIG" > "${ADAPTER_OPENCODE_CONFIG_FILE:-/dev/null}"; fi'
             )
+            lines.append(
+                'if [[ -n "${OPENCODE_CONFIG_CONTENT:-}" ]]; then '
+                'printf "%s" "$OPENCODE_CONFIG_CONTENT" > "${ADAPTER_OPENCODE_CONFIG_FILE:-/dev/null}"; fi'
+            )
         if record_extra:
             if name != "opencode":
                 lines.append('printf "%s\\n" "${CLAUDE_CONFIG_DIR:-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"')

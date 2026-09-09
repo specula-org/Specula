@@ -167,6 +167,8 @@ fi
 CMD=(copilot -p "$PROMPT" --allow-all --autopilot --silent)
 if [[ "${SPECULA_PHASE:-}" == "incremental" && -n "${SPECULA_CONTEXT_MCP_JSON:-}" ]]; then
   CMD+=(--additional-mcp-config "$SPECULA_CONTEXT_MCP_JSON")
+elif [[ -n "${SPECULA_TLC_TOOL_JSON:-}" ]]; then
+  CMD+=(--additional-mcp-config "$SPECULA_TLC_TOOL_JSON")
 fi
 
 if [[ -n "$RESUME_SESSION_ID" ]]; then
