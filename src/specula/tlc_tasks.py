@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import fcntl
 import json
 import os
 import re
@@ -21,11 +22,12 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from specula.context_control import write_json
-from specula.tlc_resources import _process_alive, _process_identity
 
 ROOT = Path(__file__).resolve().parents[2]
 MAX_WAIT_SECONDS = 3600
 CLIENT_TIMEOUT_MS = (MAX_WAIT_SECONDS + 120) * 1000
+_LAUNCHER_LOCKS: dict[tuple[Path, Path], tuple[Path, int]] = {}
+_LOCK_GUARD = threading.Lock()
 START_DESCRIPTION = (
     "Start TLC model checking or simulation in the background using Specula's resource-budgeted wrapper. "
     "Prefer this over starting java/tlc2.TLC in a shell. Returns a durable task ID, log paths, and waiting instructions. "
@@ -41,6 +43,45 @@ WAIT_DESCRIPTION = (
     "Returns process outcomes and evidence paths, not a verification verdict. Read logs to interpret counterexamples "
     "and coverage; a normal TLC time budget ending is not itself CI failure."
 )
+
+
+def _hold_lock(path: Path) -> int:
+    descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        # Only the owner holds this descriptor, never its Agent/MCP/TLC children.
+        os.set_inheritable(descriptor, False)
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _lock_is_held(path: Path) -> bool:
+    """Probe the shared inode, not a PID from another namespace."""
+    try:
+        descriptor = os.open(path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        return False
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        return False
+    finally:
+        os.close(descriptor)
+
+
+def _launcher_lock(work: Path, owner: Path) -> Path:
+    key = (work.resolve(), owner.resolve())
+    with _LOCK_GUARD:
+        if key not in _LAUNCHER_LOCKS:
+            directory = key[0] / ".tlc-tasks/owners"
+            directory.mkdir(parents=True, exist_ok=True)
+            path = directory / f"{uuid.uuid4().hex}.lock"
+            _LAUNCHER_LOCKS[key] = (path, _hold_lock(path))
+        return _LAUNCHER_LOCKS[key][0]
 
 
 def prepare_environment(env: dict[str, str], log: Path, root: Path = ROOT) -> None:
@@ -77,8 +118,7 @@ def prepare_environment(env: dict[str, str], log: Path, root: Path = ROOT) -> No
         {
             "SPECULA_ROOT": str(root),
             "SPECULA_TLC_TOOL_OWNER": str(log.resolve()),
-            "SPECULA_TLC_TOOL_PARENT": str(os.getpid()),
-            "SPECULA_TLC_TOOL_PARENT_IDENTITY": _process_identity(os.getpid()) or "",
+            "SPECULA_TLC_TOOL_PARENT_LOCK": str(_launcher_lock(Path(env["SPECULA_WORK_DIR"]), log)),
         }
     )
     entry = {"command": str(python), "args": [str(root / "tools/tlc_tools/mcp_server.py")], "env": tool_env}
@@ -138,8 +178,7 @@ def status(task_id: str) -> dict[str, Any]:
     pid = path / "worker.json"
     state = "starting"
     if pid.is_file():
-        worker = json.loads(pid.read_text())
-        state = "running" if _process_alive(worker["pid"], worker["identity"]) else "interrupted"
+        state = "running" if _lock_is_held(path / "worker.lock") else "interrupted"
         # The result may have been committed between reading it and probing liveness.
         if result.is_file():
             return dict(json.loads(result.read_text()))
@@ -247,7 +286,9 @@ def _stop_child(process: subprocess.Popen[bytes]) -> None:
 
 def worker(path: Path) -> None:
     request = json.loads((path / "request.json").read_text())
-    write_json(path / "worker.json", {"pid": os.getpid(), "identity": _process_identity(os.getpid()) or ""})
+    worker_lock = _hold_lock(path / "worker.lock")
+    # PID is diagnostic only; the lock is the cross-namespace liveness authority.
+    write_json(path / "worker.json", {"pid": os.getpid()})
     stopped = False
 
     def interrupt(_signum: int, _frame: Any) -> None:
@@ -256,8 +297,7 @@ def worker(path: Path) -> None:
 
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, interrupt)
-    parent = int(os.environ.get("SPECULA_TLC_TOOL_PARENT", "0"))
-    parent_identity = os.environ.get("SPECULA_TLC_TOOL_PARENT_IDENTITY", "")
+    parent_lock = os.environ.get("SPECULA_TLC_TOOL_PARENT_LOCK")
     result: dict[str, Any] = {
         "task_id": path.name,
         "status": "interrupted",
@@ -287,7 +327,7 @@ def worker(path: Path) -> None:
                 start_new_session=True,
             )
             while process.poll() is None:
-                if stopped or (parent and not _process_alive(parent, parent_identity)):
+                if stopped or (path / "stop.json").exists() or (parent_lock and not _lock_is_held(Path(parent_lock))):
                     stopped = True
                     _stop_child(process)
                     break
@@ -296,10 +336,13 @@ def worker(path: Path) -> None:
     except Exception as exc:
         result["error"] = str(exc)
     finally:
-        if process is not None and process.poll() is None:
-            _stop_child(process)
-        result["finished_at"] = time.time()
-        write_json(path / "result.json", result)
+        try:
+            if process is not None and process.poll() is None:
+                _stop_child(process)
+            result["finished_at"] = time.time()
+            write_json(path / "result.json", result)
+        finally:
+            os.close(worker_lock)
 
 
 def stop_owned_tasks(work: Path, owner: Path) -> None:
@@ -309,11 +352,13 @@ def stop_owned_tasks(work: Path, owner: Path) -> None:
             request = json.loads(request_file.read_text())
             if request["owner"] != str(owner.resolve()) or request_file.with_name("result.json").exists():
                 continue
-            worker_record = json.loads(request_file.with_name("worker.json").read_text())
-            if _process_alive(worker_record["pid"], worker_record["identity"]):
-                os.kill(worker_record["pid"], signal.SIGTERM)
+            write_json(request_file.with_name("stop.json"), {})
         except (OSError, ValueError, KeyError):
             continue
+    with _LOCK_GUARD:
+        lease = _LAUNCHER_LOCKS.pop((work.resolve(), owner.resolve()), None)
+        if lease is not None:
+            os.close(lease[1])
 
 
 def main() -> None:

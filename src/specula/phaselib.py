@@ -1747,7 +1747,6 @@ def run_agent_blocking(
     env["SPECULA_PHASE"] = phase_key if stop_gate else f"{phase_key}_turn"
     env["SPECULA_WORK_DIR"] = str(work_dir)
     env["SPECULA_STOP_GATE_WORK_DIR"] = str(gate_dir)
-    tlc_tasks.prepare_environment(env, log_file, SPECULA_ROOT)
     # subprocess cwd changes the process's real working directory but does not
     # rewrite an explicitly inherited PWD.  OpenCode prefers PWD over getcwd()
     # when selecting its project root, so keep both views on the trusted cwd.
@@ -1857,6 +1856,7 @@ def run_agent_blocking(
                 archived_usage_path=archived_attempts.get(usage_path),
             )
             try:
+                tlc_tasks.prepare_environment(env, log_file, SPECULA_ROOT)
                 rc = subprocess.run(
                     cmd,
                     env=env,
