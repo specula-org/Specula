@@ -907,7 +907,7 @@ def render_summary(
         "",
         "## Detailed reports",
         "",
-        *_report_links(work_dir),
+        *_report_links(work_dir, complete=state.run_complete),
         "",
         "## Resource usage",
         "",
@@ -1017,7 +1017,7 @@ def findings_fragment_issue(content: str, confirmed_bugs: str | None = None) -> 
     return None
 
 
-def _confirmation_finding_statuses(content: str) -> dict[str, str] | None:
+def _confirmation_finding_statuses(content: str, *, impact_only: bool = True) -> dict[str, str] | None:
     lines = content.splitlines()
     headers = [
         index
@@ -1053,7 +1053,7 @@ def _confirmation_finding_statuses(content: str) -> dict[str, str] | None:
         )
         if status is None:
             return None
-        if status in _IMPACT_FINDING_STATUSES:
+        if not impact_only or status in _IMPACT_FINDING_STATUSES:
             statuses[finding_id] = status
     return statuses
 
@@ -1095,12 +1095,20 @@ def _fragment_finding_statuses(content: str, start: int, end: int) -> dict[str, 
     return statuses if status_fields == len(statuses) else None
 
 
-def _report_links(work_dir: Path | None) -> list[str]:
+def _report_links(work_dir: Path | None, *, complete: bool) -> list[str]:
     reports = (
         ("Confirmation report", "confirmed-bugs.md"),
         ("Severity report", "bug-severity.md"),
     )
     lines: list[str] = []
+    if work_dir is not None and _safe_regular_file(work_dir, work_dir / "ci-verdict.json"):
+        from specula import ci_verdict
+
+        try:
+            verdict = ci_verdict.read(work_dir) if complete else "INCOMPLETE"
+        except (OSError, ValueError, RuntimeError):
+            verdict = "INCOMPLETE"
+        lines.append(f"- CI verdict: **{verdict}** ([finding dispositions](ci-verdict.json))")
     if work_dir is not None and _safe_regular_file(work_dir, work_dir / "ci-report.md"):
         lines.append("- [Incremental CI report](ci-report.md)")
     for label, filename in reports:

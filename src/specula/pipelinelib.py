@@ -1202,9 +1202,14 @@ class Pipeline:
     def run_storage_root(self) -> Path:
         return SPECULA_ROOT / "runs"
 
-    def finalize_ci_run(self, exit_code: int) -> str | None:
+    def finalize_ci_run(self, exit_code: int) -> tuple[str | None, int]:
         """Publish persistent CI state after output and log finalization."""
-        return None
+        if self.ci_init and not self.dry_run and exit_code == 0:
+            from specula import ci_verdict
+
+            verdict = ci_verdict.from_confirmation(Path(self.get_work_dir(self.extract_names()[0])), self.run_id)
+            return f"CI verdict: {verdict}", ci_verdict.exit_code(verdict)
+        return None, exit_code
 
     def resolve_run_dir(self, *, acquire_lock: bool = False) -> int | None:
         """Establish the per-run root. Returns an exit code for an invalid
@@ -3934,7 +3939,7 @@ def main(argv: list[str]) -> int:
                 if code == 0:
                     code = 1
         try:
-            ci_message = p.finalize_ci_run(code)
+            ci_message, code = p.finalize_ci_run(code)
             if ci_message is not None:
                 print(ci_message, file=terminal_stdout, flush=True)
         except Exception as exc:

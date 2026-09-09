@@ -225,7 +225,8 @@ class CIStore:
             "guidance": inputs["guidance"],
             "run_id": run_dir.name,
             "files_sha256": files,
-            "verification": "Agent-reported workflow completion; inspect retained evidence, not a proof of safety.",
+            "verification": "Completed verification workflow.",
+            "verdict": inputs.get("verdict"),
             "previous": inputs["previous"],
             "check_key": inputs.get("check_key"),
             "source_tree": inputs.get("source_tree")

@@ -19,7 +19,8 @@ def result_key(base: str, tree: str, configuration: str) -> str:
 def matches_source(store: CIStore, checked: dict[str, Any], tree: str, configuration: str) -> bool:
     """Match the frozen, pre-instrumentation source, not just its original HEAD."""
     return (
-        checked.get("source_tree") == tree
+        checked.get("verdict") in ("PASS", "WARNING", "FAIL")
+        and checked.get("source_tree") == tree
         and checked.get("check_key") == configuration
         and checked.get("dirty") is False
         and git(store.path(checked["source"]), "rev-parse", f"{checked['snapshot_commit']}^{{tree}}") == tree

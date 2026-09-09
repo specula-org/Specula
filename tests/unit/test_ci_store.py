@@ -44,6 +44,7 @@ class StoreTests(unittest.TestCase):
             "snapshot_commit": commit,
             "dirty": False,
             "guidance": "scope",
+            "verdict": "PASS",
         }
 
     def test_publication_copies_assets_and_binds_source(self) -> None:

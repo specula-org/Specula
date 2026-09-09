@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from specula import ci_init, stop_gate
+from specula import ci_init, ci_verdict, stop_gate
 from specula.ci_store import CIError, read_json
 from specula.phaselib import AgentFiles, Phase, Workspace, _last_message_path
 from specula.prompts import render
@@ -69,6 +69,8 @@ class IncrementalPhase(Phase):
                         raise CIError(f"missing required result: {required}")
                 if stop_gate._accept_main(self.key, str(work)) != 0:
                     raise CIError("incremental run left blocked or unfinished work")
+                inputs = read_json(ws.run_dir / "ci-input.json")
+                ci_verdict.read(work, ws.run_dir.name, previous=Path(inputs["old_model"]))
             except (OSError, ValueError, CIError) as exc:
                 print(f"ERROR: {exc}; current model will not be updated")
                 failures.append((name, 1))
