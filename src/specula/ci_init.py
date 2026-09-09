@@ -129,7 +129,7 @@ def _copy_assets(work_dir: Path, destination: Path) -> tuple[dict[str, str], lis
             omitted.append(relative.as_posix())
 
     for path in sorted(work_dir.iterdir()):
-        if path.name in ASSET_DIRS or path.suffix == ".md":
+        if path.name in ASSET_DIRS or path.suffix == ".md" or path.name == "ci-verdict.json":
             copy(path)
     return files, omitted
 

@@ -112,7 +112,7 @@ Read `references/model-checking/01-update-focused-checking.md`. It reuses the in
 
 ## Part 4: Reproduction
 
-When Part 3 produces an actual counterexample, enter through `references/reproduction/01-confirm-counterexample.md`. That file adds only incremental provenance and old/new control guidance; the installed Specula **bug-confirmation** skill owns investigation, reproduction, verdicts, and repair requests.
+When Part 3 produces an actual counterexample, enter through `references/reproduction/01-confirm-counterexample.md`. Also reattempt confirmation/reproduction of every unresolved prior finding against the current source on each new run, including `NO_MODEL_CHANGE`. Keep its ID; inspect prior reports even if they predate `ci-verdict.json`. Prior conclusions do not replace current evidence. The installed Specula **bug-confirmation** skill owns investigation, reproduction, verdicts, and repair requests.
 
 ## Readiness and Final Reporting
 
@@ -122,6 +122,26 @@ If work remains, continue it. If blocked or interrupted, save a brief handoff in
 
 Once ready, write one short `ci-report.md` per candidate: results, important findings, limits, and evidence links. A few lines suffice for an uneventful update. Reference maintained stage records instead of rebuilding the one-shot reports; leave resource summaries and cost calculation to the existing tools.
 
+### CI Verdict
+
+Write `ci-verdict.json` alongside the report, using the run ID provided by the CI task:
+
+```json
+{
+  "version": 1,
+  "run_id": "<current-run-id>",
+  "findings": [
+    {"id": "MC-1", "status": "REPRODUCED", "evidence": "spec/reproduction-MC-1.md"}
+  ]
+}
+```
+
+Include every finding investigated in this run and every unresolved prior finding, with unique, stable IDs. Use `"findings": []` only when both are empty. Evidence paths must name nonempty current confirmation records relative to the work directory, under `spec/`, `harness/`, or `traces/`, or a top-level Markdown file. Link the actual reproduction commands, observed outcomes, source revision, and any environment limits from that record; do not duplicate the evidence in the JSON.
+
+`REPRODUCED` and `ENV_LIMITED` fail CI, regardless of novelty, severity, or update attribution. `MASKED` produces a nonblocking warning. `FALSE POSITIVE` and `DROPPED` retain the main skill's meanings. Use `FIXED` only for a prior defect whose repair is supported by current source analysis and a fresh reproduction/control attempt; explain why the previous trigger no longer harms. Failure to trigger alone does not establish a fix. These dispositions do not fail CI. Pending repairs, insufficient information, and unfinished confirmation are incomplete work and cannot produce a passing result.
+
+A completed workflow with confirmed bugs still emits the completion marker and publishes its valid model under the usual branch/candidate rules. The controller computes the CI verdict from these dispositions; workflow completion does not imply CI success. Keep budget-limited exploration labeled as such; a passing verdict is not a proof of safety.
+
 ## Current Stop Boundary
 
-Generation may run syntax and static configuration preflights only. Validation may build the reused harness, collect/replay traces, and run bounded local semantic diagnostics as described in Validation 3. Model-checking campaigns begin only after the initial validation gate; subsequent repairs use the local-feedback loop and final regression gate. Reproduction begins only with an actual counterexample.
+Generation may run syntax and static configuration preflights only. Validation may build the reused harness, collect/replay traces, and run bounded local semantic diagnostics as described in Validation 3. Model-checking campaigns begin only after the initial validation gate; subsequent repairs use the local-feedback loop and final regression gate. Reproduction handles actual counterexamples and rechecks unresolved prior findings.

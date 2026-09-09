@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from specula import ci_init, resumelib
+from specula import ci_init, ci_verdict, resumelib
 from specula.ci_identity import check_key
 from specula.ci_inheritance import register_candidate
 from specula.ci_store import CIError, CIStore, freeze_source, git, read_json, write_json
@@ -260,7 +260,13 @@ class CIPipeline(Pipeline):
             ci_init._copy_assets(Path(current["model_path"]), work)
             # Prior run summaries remain available in old_model; they are not
             # this run's findings, completion evidence, or resource history.
-            for filename in ("summary.md", ".summary-findings.md", "ci-report.md", BYOM_REPORT_FILENAME):
+            for filename in (
+                "summary.md",
+                ".summary-findings.md",
+                "ci-report.md",
+                ci_verdict.FILENAME,
+                BYOM_REPORT_FILENAME,
+            ):
                 (work / filename).unlink(missing_ok=True)
         write_json(record, inputs)
         self.inputs = inputs
@@ -290,14 +296,17 @@ class CIPipeline(Pipeline):
             self._phase("INCREMENTAL WORKFLOW", "launch_incremental.sh", self._phase_args(names))
         return 0
 
-    def finalize_ci_run(self, exit_code: int) -> str | None:
+    def finalize_ci_run(self, exit_code: int) -> tuple[str | None, int]:
         if self.dry_run:
-            return None
+            return None, exit_code
         resume = f"specula run --ci-dir={shlex.quote(str(self.ci_dir))} --run-id={self.run_id}"
         if exit_code:
             if self.run_dir is not None and resumelib.active_entries(self.run_dir):
-                return f"Current CI model unchanged. To resume the conversation: {resume}"
-            return "Current CI model unchanged. No unfinished conversation is available; fix the error and start a new run."
+                return f"Current CI model unchanged. To resume the conversation: {resume}", exit_code
+            return (
+                "Current CI model unchanged. No unfinished conversation is available; fix the error and start a new run.",
+                exit_code,
+            )
         if self.inputs is None or self.store is None or self.run_dir is None:
             raise CIError("no frozen CI inputs; current model unchanged")
         source = self.store.path(self.inputs["source"])
@@ -305,13 +314,25 @@ class CIPipeline(Pipeline):
             raise CIError("pre-instrumentation source was modified during the run")
         name = self.extract_names()[0]
         work = Path(self.get_work_dir(name))
+        verdict = (
+            ci_verdict.read(work, self.run_id, previous=Path(self.inputs["old_model"]))
+            if self.incremental
+            else ci_verdict.from_confirmation(work, self.run_id)
+        )
         publication = dict(self.inputs)
+        publication["verdict"] = verdict
         if self.incremental and self.guidance_text is not None:
             publication["guidance"] = self.guidance_text
         publication["check_key"] = check_key(self, publication["guidance"])
         current = self.store.publish(self.run_dir, work, publication, advance=False)
         token = current.relative_to(self.store.root).as_posix()
-        result = {"run_id": self.run_id, "complete": True, "candidate": self.candidate, "snapshot": token}
+        result = {
+            "run_id": self.run_id,
+            "complete": True,
+            "verdict": verdict,
+            "candidate": self.candidate,
+            "snapshot": token,
+        }
         write_json(self.run_dir / "ci-result.json", result)
         if self.receipt is not None:
             write_json(self.receipt, result)
@@ -323,4 +344,7 @@ class CIPipeline(Pipeline):
             with contextlib.suppress(OSError, ValueError):
                 self.resource_summary.complete_run([name])
         label = "CI candidate saved; current model unchanged" if self.candidate else "Current CI model updated"
-        return f"{label}: {current}/model\nResults and usage: {work}/summary.md"
+        return (
+            f"CI verdict: {verdict}\n{label}: {current}/model\nResults and usage: {work}/summary.md",
+            ci_verdict.exit_code(verdict),
+        )

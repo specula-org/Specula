@@ -21,7 +21,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from specula import ci_init
+from specula import ci_init, ci_verdict
 from specula.adapters.utils.run_lock import CI_EVENT_LOCK_FD_ENV
 from specula.ci_identity import check_key
 from specula.ci_inheritance import candidate_for, inherit, matches_source, result_key
@@ -256,11 +256,12 @@ class GitHubCI:
                     "commit": commit,
                     "status": "reused current result" if from_current else "reused candidate result",
                     "complete": True,
+                    "verdict": evidence["verdict"],
                     "run_id": evidence.get("evidence_run_id", evidence["run_id"]),
                 }
                 write_json(attempt_path, result)
                 self.rows.append(result)
-                return 0
+                return ci_verdict.exit_code(evidence["verdict"])
         if not candidate and not force:
             reused = inherit(self.store, self.source, commit, configuration)
             if reused is not None:
@@ -268,26 +269,45 @@ class GitHubCI:
                     "commit": commit,
                     "status": "inherited PR result" if reused["reuse_kind"] == "candidate" else "reused current result",
                     "complete": True,
+                    "verdict": reused["verdict"],
                     "run_id": reused["evidence_run_id"],
                 }
                 write_json(attempt_path, result)
                 self.rows.append(result)
-                return 0
+                return ci_verdict.exit_code(reused["verdict"])
         if attempt_path.exists() and not force:
             previous = read_json(attempt_path)
-            self.rows.append({**previous, "status": f"already attempted ({previous['status']})"})
-            return 0 if previous.get("complete") is True else 1
+            if previous.get("complete") is not True:
+                self.rows.append({**previous, "status": f"already attempted ({previous['status']})"})
+                return 1
+            if previous.get("verdict") in ("PASS", "WARNING", "FAIL"):
+                self.rows.append({**previous, "status": f"already attempted ({previous['status']})"})
+                return ci_verdict.exit_code(previous["verdict"])
+            # Legacy completion receipts have no bug verdict; run a fresh check.
         result = {"commit": commit, "status": "incomplete", "complete": False}
         write_json(attempt_path, result)
         code, receipt = self._invoke(candidate=candidate)
         result.update({"run_id": receipt.get("run_id"), "exit_code": code})
-        if code == 0:
-            if receipt.get("complete") is not True or receipt.get("candidate") is not candidate:
+        if code in {0, ci_verdict.BUG_EXIT_CODE} and receipt.get("complete") is True:
+            if receipt.get("candidate") is not candidate:
                 raise CIError("incremental command did not return a completed result receipt")
             snapshot = self.store.snapshot(receipt["snapshot"])
             if snapshot["source_commit"] != commit or snapshot["check_key"] != configuration:
                 raise CIError("completed result does not match this task's source/configuration")
-            result.update({"status": "candidate checked" if candidate else "checked", "complete": True})
+            if (
+                snapshot.get("verdict") != receipt.get("verdict")
+                or ci_verdict.exit_code(snapshot.get("verdict")) != code
+            ):
+                raise CIError("completed result does not match the CI verdict/exit status")
+            result.update(
+                {
+                    "status": "candidate checked" if candidate else "checked",
+                    "complete": True,
+                    "verdict": snapshot["verdict"],
+                }
+            )
+        elif code == 0:
+            raise CIError("incremental command did not return a completed result receipt")
         else:
             result["status"] = "failed"
         write_json(attempt_path, result)
@@ -350,21 +370,24 @@ class GitHubCI:
                             "commit": target,
                             "status": f"included in cumulative update to {current['source_commit']}; no separate check for this event",
                             "complete": False,
+                            "verdict": current.get("verdict"),
                             "run_id": current["evidence_run_id"],
                         }
                     )
-                    return 0
-            # The incremental runner diffs from the last successful snapshot to
+                    return ci_verdict.exit_code(current.get("verdict"))
+            # The incremental runner diffs from the last completed snapshot to
             # this target, including all intervening net changes in one run.
             return self.check(event, target, candidate=False, force=force)
 
     def report(self, error: str | None = None) -> None:
         self.reports.mkdir(parents=True, exist_ok=False)
-        lines = ["# Specula CI", "", "| Source commit | Result | Specula run |", "|---|---|---|"]
+        lines = ["# Specula CI", "", "| Source commit | Result | Verdict | Specula run |", "|---|---|---|---|"]
         for row in self.rows:
             lines.append(
-                f"| {html.escape(str(row['commit']))} | {html.escape(str(row['status']))} | {html.escape(str(row.get('run_id') or '-'))} |"
+                f"| {html.escape(str(row['commit']))} | {html.escape(str(row['status']))} | {html.escape(str(row.get('verdict') or '-'))} | {html.escape(str(row.get('run_id') or '-'))} |"
             )
+            if row.get("verdict") == "WARNING" and os.environ.get("GITHUB_ACTIONS") == "true":
+                print("::warning::Specula found masked defects; see the CI report for their safeguards and evidence.")
             run_id = row.get("run_id")
             if not isinstance(run_id, str) or not _valid_run_id(run_id):
                 continue
@@ -378,6 +401,7 @@ class GitHubCI:
             destination.mkdir(exist_ok=True)
             for relative in (
                 "ci-report.md",
+                ci_verdict.FILENAME,
                 "summary.md",
                 "confirmed-bugs.md",
                 "spec/changelog.md",
@@ -397,6 +421,7 @@ class GitHubCI:
             "Each update checks the cumulative diff to its target, not every intermediate version separately.",
             "Reused/inherited rows launch no additional Agent; their usage summaries belong to the original run.",
             "Reports describe actual coverage; completion is not a proof of safety.",
+            "FAIL means confirmed bugs (REPRODUCED or ENV_LIMITED); WARNING means masked findings only.",
             "",
         ]
         content = "\n".join(lines)

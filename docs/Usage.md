@@ -186,6 +186,10 @@ Specula computes the changes since the current model's source version, then runs
 
 Completed runs update `current/model/` in the CI directory. Reports, diffs, logs, and resource usage are saved under `runs/<run-id>/` in the same directory.
 
+CI returns exit code `2` when the current confirmation results contain `REPRODUCED` or `ENV_LIMITED` bugs, regardless of whether the update introduced them. `MASKED` findings produce a warning and exit code `0`; completed checks without these findings also return `0`. Incomplete checks cannot pass. Inspect `ci-report.md` and `ci-verdict.json` for the incremental result and evidence. Initialization derives the same verdict from `confirmed-bugs.md`.
+
+Finding a bug does not invalidate the model: a completed check still advances the branch's model baseline even when CI fails. Each new incremental run reattempts confirmation/reproduction of unresolved prior findings on the current revision, including updates that do not change the model. Reports retain exploration limits; a passing check is not a proof of safety.
+
 ### Resume an interrupted run
 
 Incomplete runs leave the current model unchanged. Resume the original Agent conversation and working directory with:
@@ -202,9 +206,9 @@ Install Specula, the selected agent, and the project's build dependencies under 
 
 Copy the [workflow template](../examples/ci/specula-ci.yml) into your project's `.github/workflows/specula-ci.yml`. Set the repository variables `SPECULA_CI_DIR` and `SPECULA_MODEL`; optionally set `SPECULA_AGENT` and `SPECULA_EFFORT`. Edit the branch filters to suit your repository. Each independently evolving branch needs its own initialized CI directory.
 
-Each push checks the cumulative diff from the last successful model baseline to the pushed version. One check may include several commits; intermediate versions are not checked separately. Scheduled checks use the latest branch version. Once the model reaches that version, delayed events for earlier commits do not repeat the work or move the model backward.
+Each push checks the cumulative diff from the last completed model baseline to the pushed version. One check may include several commits; intermediate versions are not checked separately. Scheduled checks use the latest branch version. Once the model reaches that version, delayed events for earlier commits do not repeat the work or move the model backward.
 
-Same-repository PRs check the proposed merged code without changing the branch's current model. When the code is merged, matching completed results are inherited without another Agent run, including squash and rebase merges. Changes to the code, model baseline, or check configuration require a new check. External-fork PRs do not run automatically on the runner.
+Same-repository PRs check the proposed merged code without changing the branch's current model. When the code is merged, matching completed results are inherited without another Agent run, including squash and rebase merges. Reused results preserve their verdict, including failures and warnings. Changes to the code, model baseline, or check configuration require a new check. External-fork PRs do not run automatically on the runner.
 
 Manual runs are available in the Actions tab. Uncomment `schedule` to enable cron; use `SPECULA_CI_BRANCH` to select a non-default branch for scheduled runs. Change `SPECULA_CI_ENVIRONMENT` when updating the runner's toolchain or external configuration so older check results are not reused under a different setup.
 

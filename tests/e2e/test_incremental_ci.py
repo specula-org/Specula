@@ -48,6 +48,14 @@ class IncrementalCLI(unittest.TestCase):
             '    if [ -f "$resume" ]; then cp "$resume" "$0.resumed"; fi\n'
             '    if [ ! -f "$0.nochange" ]; then printf "updated fixture model\\n" > "$SPECULA_WORK_DIR/spec/base.tla"; fi\n'
             '    printf "# CI fixture report\\nNo real verification performed.\\n" > "$SPECULA_WORK_DIR/ci-report.md"\n'
+            "    python3 -c 'import json,sys; from pathlib import Path; "
+            "work,run,adapter=map(Path,sys.argv[1:]); "
+            'flag=Path(str(adapter)+".findings"); '
+            "findings=json.loads(flag.read_text()) if flag.exists() else []; "
+            '(work/"spec/confirmation-fixture.md").write_text("Current fixture confirmation for " + run.name); '
+            '(work/"ci-verdict.json").write_text(json.dumps({"version":1,"run_id":run.name,"findings":findings}))\' '
+            '"$SPECULA_WORK_DIR" "$SPECULA_RUN_DIR" "$0"\n'
+            '    if [ -f "$0.omit-verdict" ]; then rm "$SPECULA_WORK_DIR/ci-verdict.json"; fi\n'
             '    printf \'{"agent":"codex","session_id":"fixture-native-session","usage":{"total_tokens":150,"cached_input_tokens":50},"total_cost_usd":0.01,"usage_complete":true}\\n\' > "${log%.log}.usage.json"\n'
             '    printf "SPECULA_INCREMENTAL_COMPLETE %s\\n" "$(basename "$SPECULA_RUN_DIR")" > "$log"\n'
             "    exit 0\n"
@@ -75,6 +83,80 @@ class IncrementalCLI(unittest.TestCase):
     def change_source(self, text: str) -> None:
         (self.source / "logic.txt").write_text(text)
         self.commit("update")
+
+    def finding_status(self, status: str) -> None:
+        Path(f"{self.adapter}.findings").write_text(
+            json.dumps([{"id": "MC-1", "status": status, "evidence": "spec/confirmation-fixture.md"}])
+        )
+
+    def test_confirmed_bugs_fail_but_publish_a_completed_model(self) -> None:
+        self.initialize()
+        for status in ("REPRODUCED", "ENV_LIMITED"):
+            with self.subTest(status=status):
+                previous = (self.ci / "current").resolve()
+                self.change_source(f"{status} fixture\n")
+                self.finding_status(status)
+                result = self.run_ci("--incremental", "--agent=fake")
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("CI verdict: FAIL", result.stdout)
+                self.assertIn("Current CI model updated", result.stdout)
+                self.assertNotEqual((self.ci / "current").resolve(), previous)
+                state = CIStore(self.ci).current()
+                self.assertEqual(state["source_commit"], self.git("rev-parse", "HEAD"))
+                self.assertEqual(state["verdict"], "FAIL")
+                receipt = json.loads((self.latest() / "ci-result.json").read_text())
+                self.assertTrue(receipt["complete"])
+                self.assertEqual(receipt["verdict"], "FAIL")
+                self.assertIn(
+                    "CI verdict: **FAIL**", (self.latest() / "footest/.specula-output/summary.md").read_text()
+                )
+                usage = json.loads((self.latest() / "footest/.specula-output/.resource-summary-state.json").read_text())
+                self.assertTrue(usage["run_complete"])
+
+    def test_warning_and_verified_fix_can_advance_a_red_baseline(self) -> None:
+        self.initialize()
+        self.change_source("bug fixture\n")
+        self.finding_status("REPRODUCED")
+        self.assertEqual(self.run_ci("--incremental", "--agent=fake").returncode, 2)
+        for status, verdict in (("MASKED", "WARNING"), ("FIXED", "PASS")):
+            with self.subTest(status=status):
+                self.change_source(f"{status} fixture\n")
+                self.finding_status(status)
+                result = self.run_ci("--incremental", "--agent=fake")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(CIStore(self.ci).current()["verdict"], verdict)
+                self.assertIn(f"CI verdict: {verdict}", result.stdout)
+                evidence = (self.ci / "current/model/spec/confirmation-fixture.md").read_text()
+                self.assertIn(self.latest().name, evidence)
+        self.assertIn("-MASKED fixture\n+FIXED fixture", (self.latest() / "source.diff").read_text())
+
+    def test_old_findings_require_a_current_disposition_even_without_model_changes(self) -> None:
+        self.initialize()
+        self.change_source("bug fixture\n")
+        self.finding_status("REPRODUCED")
+        self.assertEqual(self.run_ci("--incremental", "--agent=fake").returncode, 2)
+        baseline = (self.ci / "current").resolve()
+        self.change_source("unrelated fixture update\n")
+        Path(f"{self.adapter}.nochange").touch()
+        Path(f"{self.adapter}.findings").unlink()
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("prior findings need current confirmation: MC-1", result.stdout)
+        self.assertEqual((self.ci / "current").resolve(), baseline)
+        self.assertFalse((self.latest() / "ci-result.json").exists())
+        summary = (self.latest() / "footest/.specula-output/summary.md").read_text()
+        self.assertNotIn("CI verdict: **PASS**", summary)
+        self.assertIn("CI verdict: **INCOMPLETE**", summary)
+
+    def test_completion_marker_without_verdict_is_not_a_passing_check(self) -> None:
+        self.initialize()
+        baseline = (self.ci / "current").resolve()
+        self.change_source("update\n")
+        Path(f"{self.adapter}.omit-verdict").touch()
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing current ci-verdict.json", result.stdout)
+        self.assertEqual((self.ci / "current").resolve(), baseline)
 
     def test_compaction_yield_does_not_publish_and_failure_continues(self) -> None:
         self.initialize()
