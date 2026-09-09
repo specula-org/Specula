@@ -62,6 +62,8 @@ def main(argv: list[str]) -> int:
         return 1
 
     command = ["pi", "--print", "--mode", "json"]
+    if os.environ.get("SPECULA_TLC_TOOL_EXTENSION"):
+        command += ["--extension", os.environ["SPECULA_TLC_TOOL_EXTENSION"]]
     if os.environ.get("SPECULA_PHASE") == "incremental" and os.environ.get("SPECULA_CONTEXT_REQUEST"):
         command += ["--extension", str(Path(__file__).resolve().parents[3] / "tools/context_control/pi-extension.js")]
     if options.resume_state is None:

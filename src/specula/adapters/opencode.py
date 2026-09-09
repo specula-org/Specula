@@ -169,6 +169,17 @@ def main(argv: list[str]) -> int:
         }
         child_env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
     child_env["OPENCODE_FAKE_VCS"] = "git"
+    if child_env.get("SPECULA_TLC_TOOL_JSON"):
+        entry = json.loads(child_env["SPECULA_TLC_TOOL_JSON"])["mcpServers"]["specula_tlc"]
+        config = json.loads(child_env.get("OPENCODE_CONFIG_CONTENT") or "{}")
+        config.setdefault("mcp", {})["specula_tlc"] = {
+            "type": "local",
+            "command": [entry["command"], *entry["args"]],
+            "environment": entry["env"],
+            "enabled": True,
+            "timeout": entry["timeout"],
+        }
+        child_env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
     _allow_external_directories(child_env)
     return run_json_cli("opencode", command, options, child_env=child_env)
 

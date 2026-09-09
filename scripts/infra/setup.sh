@@ -366,6 +366,14 @@ setup_python_tool_env \
 
 # ─── Skills directory check ──────────────────────────────────────────────────
 
+# Registered per invocation for both ordinary and incremental runs.
+setup_python_tool_env \
+  "TLC task tools" \
+  "$PROJECT_ROOT/tools/tlc_tools" \
+  "$PROJECT_ROOT/tools/tlc_tools/.venv" \
+  "$PROJECT_ROOT/tools/tlc_tools/.venv/bin/python" \
+  "$PROJECT_ROOT/tools/tlc_tools/requirements.txt"
+
 if [[ ! -d "$SKILLS_SOURCE" ]]; then
   print_error "Skills directory not found: $SKILLS_SOURCE"
   exit 1
@@ -487,6 +495,7 @@ for agent in opencode pi; do
   fi
 done
 print_status "CI context tools are registered automatically for incremental runs."
+print_status "TLC task tools are registered automatically for Specula runs."
 if command_exists copilot && ! "$PROJECT_ROOT/tools/context_control/.venv/bin/python" -c 'import copilot' >/dev/null 2>&1; then
   print_warning "Copilot context compaction needs Python 3.11+; other CI functionality remains available."
 fi

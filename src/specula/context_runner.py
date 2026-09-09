@@ -36,6 +36,13 @@ def tool_environment(directory: Path, work: Path, python: Path, agent: str = "")
     )
     # Native MCP servers may be launched with a restricted inherited environment.
     config = mcp_config(python, ROOT / "tools/context_control/mcp_server.py", env)
+    if env.get("SPECULA_TLC_TOOL_CONFIG"):
+        tlc_config = (
+            json.loads(env["SPECULA_TLC_TOOL_JSON"])
+            if agent == "copilot-cli"
+            else json.loads(Path(env["SPECULA_TLC_TOOL_CONFIG"]).read_text())
+        )
+        config["mcpServers"].update(tlc_config["mcpServers"])
     write_json(directory / "mcp.json", config)
     env[MCP_ENV] = str(directory / "mcp.json")
     env["SPECULA_CONTEXT_MCP_JSON"] = json.dumps(config)
