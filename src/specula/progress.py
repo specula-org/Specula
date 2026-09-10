@@ -20,8 +20,6 @@ class ProgressConfig:
     change_report_seconds: float = 5.0
     status_after_seconds: float = 60.0
     status_repeat_seconds: float = 300.0
-    quiet_after_seconds: float = 300.0
-    quiet_repeat_seconds: float = 300.0
 
 
 @dataclass
@@ -32,15 +30,11 @@ class RunningAgent:
     log: Path
     activity_log: Path
     ignored: set[Path]
-    snapshot: dict[Path, tuple[int, int]]
     reported_snapshot: dict[Path, tuple[int, int]]
-    last_observed_at: float
     log_stamp: tuple[int, int] | None
     activity_stamp: tuple[int, int] | None
     adapter_name: str
     last_change_report_at: float = 0.0
-    last_status_report_at: float = 0.0
-    last_quiet_report_at: float = 0.0
     last_output_report_at: float = 0.0
     reported_output: bool = False
     reported_sustained_output: bool = False
@@ -89,17 +83,6 @@ def workspace_snapshot(work_dir: Path, ignored: set[Path]) -> dict[Path, tuple[i
 
 def _ts() -> str:
     return time.strftime("%H:%M:%S")
-
-
-def _elapsed(seconds: float) -> str:
-    total = max(0, int(seconds))
-    hours, remainder = divmod(total, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if hours:
-        return f"{hours}h{minutes:02}m"
-    if minutes:
-        return f"{minutes}m{secs:02}s"
-    return f"{secs}s"
 
 
 def _changes(before: dict[Path, tuple[int, int]], after: dict[Path, tuple[int, int]]) -> list[tuple[str, Path]]:
@@ -175,15 +158,12 @@ def report(running: list[RunningAgent], config: ProgressConfig) -> None:
     for agent in running:
         finished = agent.proc.poll() is not None
         snapshot = workspace_snapshot(agent.work_dir, agent.ignored)
-        observed_changes = _changes(agent.snapshot, snapshot)
-        agent.snapshot = snapshot
 
         activity_stamp = file_stamp(agent.activity_log)
         activity_changed = activity_stamp != agent.activity_stamp
         printed_event = False
         if activity_changed or (finished and agent.activity_buffer):
             agent.activity_stamp = activity_stamp
-            agent.last_observed_at = now
             for event in _read_events(agent, finished):
                 if not event or event == agent.last_event:
                     continue
@@ -195,12 +175,9 @@ def report(running: list[RunningAgent], config: ProgressConfig) -> None:
         log_changed = log_stamp != agent.log_stamp
         if log_changed:
             agent.log_stamp = log_stamp
-            agent.last_observed_at = now
 
         if not finished and (activity_changed or log_changed or printed_event):
             _report_output_state(agent, now, printed_event, config)
-        if observed_changes:
-            agent.last_observed_at = now
 
         reportable_changes = _changes(agent.reported_snapshot, snapshot)
         if reportable_changes and (
@@ -211,17 +188,3 @@ def report(running: list[RunningAgent], config: ProgressConfig) -> None:
             print(f"[{_ts()}] {agent.name}: {_describe_changes(reportable_changes)}")
             agent.reported_snapshot = snapshot
             agent.last_change_report_at = now
-
-        if not finished:
-            quiet_for = now - agent.last_observed_at
-            if quiet_for >= config.quiet_after_seconds:
-                if not agent.last_quiet_report_at or now - agent.last_quiet_report_at >= config.quiet_repeat_seconds:
-                    print(f"[{_ts()}] {agent.name}: quiet for {_elapsed(quiet_for)}; process is still alive")
-                    agent.last_quiet_report_at = now
-            elif quiet_for >= config.status_after_seconds:
-                if not agent.last_status_report_at or now - agent.last_status_report_at >= config.status_repeat_seconds:
-                    print(
-                        f"[{_ts()}] {agent.name}: no observable activity for "
-                        f"{_elapsed(quiet_for)}; process is still alive"
-                    )
-                    agent.last_status_report_at = now

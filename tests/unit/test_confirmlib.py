@@ -158,6 +158,102 @@ class TestVerdict(ConfirmCase):
         self.assertEqual(C.parse_verdict("VERDICT: DROPPED\nVERDICT: FALSE POSITIVE"), "FALSE POSITIVE")
 
 
+class TestHistoricalConfirmationFiles(ConfirmCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        self.work_dir = self.ws.work_dir("T")
+        self.fdir = self.work_dir / "confirmation" / "MC-1"
+        self.fdir.mkdir(parents=True)
+
+    def test_existing_verdict_is_labelled_once_on_success_and_cache_reuse(self) -> None:
+        verdict = self.fdir / "verdict.md"
+        original = b"# Previous verdict\r\nVERDICT: NEEDS MORE INFO\r\n"
+        verdict.write_bytes(original)
+        with mock.patch.object(
+            C, "run_agent_blocking", _fake_turn_with_repro(self.ws, "T", "MC-1", _response("REPRODUCED"))
+        ):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+
+        labelled = verdict.read_bytes()
+        self.assertTrue(labelled.startswith(b"> Historical record."))
+        self.assertTrue(labelled.endswith(original))
+        self.assertIn(b"[confirmed-bugs.md](../../confirmed-bugs.md)", labelled)
+        cache = (self.fdir / "verdict.json").read_bytes()
+        report = (self.work_dir / "confirmed-bugs.md").read_bytes()
+        self.assertIn(b"| 1 | MC-1 | REPRODUCED |", report)
+
+        verdict.write_bytes(original)
+        with mock.patch.object(C, "run_agent_blocking", _boom):
+            for _attempt in range(2):
+                self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+                self.assertEqual(verdict.read_bytes(), labelled)
+                self.assertEqual((self.fdir / "verdict.json").read_bytes(), cache)
+                self.assertEqual((self.work_dir / "confirmed-bugs.md").read_bytes(), report)
+
+    def test_missing_verdict_markdown_is_not_created(self) -> None:
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("FALSE POSITIVE"))):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+        self.assertFalse((self.fdir / "verdict.md").exists())
+
+    def test_label_write_failure_preserves_original_and_confirmation_result(self) -> None:
+        verdict = self.fdir / "verdict.md"
+        original = b"VERDICT: NEEDS MORE INFO\n"
+        verdict.write_bytes(original)
+        original_replace = Path.replace
+
+        def fail_label_replace(path: Path, target: str | os.PathLike[str]) -> Path:
+            if Path(target) == verdict:
+                raise OSError("cannot replace historical note")
+            return original_replace(path, target)
+
+        with (
+            mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("FALSE POSITIVE"))),
+            mock.patch.object(Path, "replace", fail_label_replace),
+            mock.patch.object(C, "_log") as log,
+        ):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+
+        self.assertEqual(verdict.read_bytes(), original)
+        self.assertIn("cannot replace historical note", str(log.call_args_list))
+        self.assertEqual(list(self.fdir.glob(".verdict.md.*.tmp")), [])
+        self.assertEqual(json.loads((self.fdir / "verdict.json").read_text())["status"], "FALSE POSITIVE")
+
+    def test_errors_append_and_survive_success_and_cache_reuse(self) -> None:
+        error = self.fdir / "error.txt"
+        original = b"older failure without a trailing newline"
+        error.write_bytes(original)
+        for failure_code in (9, 75):
+            before = error.read_bytes()
+            with mock.patch.object(C, "run_agent_blocking", _fake_turn("", rc=failure_code)):
+                self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 75 if failure_code == 75 else 1)
+            self.assertTrue(error.read_bytes().startswith(before + b"\n"))
+
+        history = error.read_bytes()
+        self.assertIn(b"adapter exited 9", history)
+        self.assertIn(b"RateLimited: MC-1 turn 1 A", history)
+        self.assertEqual(len(re.findall(rb"=== Error at \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC ===", history)), 2)
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("FALSE POSITIVE"))):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+        with mock.patch.object(C, "run_agent_blocking", _boom):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+        self.assertEqual(error.read_bytes(), history)
+
+    def test_failed_rerun_keeps_previous_json_and_labels_existing_markdown(self) -> None:
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("FALSE POSITIVE"))):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+        cache = (self.fdir / "verdict.json").read_bytes()
+        verdict = self.fdir / "verdict.md"
+        original = b"VERDICT: FALSE POSITIVE\n"
+        verdict.write_bytes(original)
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn("", rc=9)):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T", model="another-model")), 1)
+        self.assertEqual((self.fdir / "verdict.json").read_bytes(), cache)
+        self.assertTrue(verdict.read_bytes().startswith(b"> Historical record."))
+        self.assertTrue(verdict.read_bytes().endswith(original))
+        self.assertIn("| 1 | MC-1 | INCOMPLETE |", (self.work_dir / "confirmed-bugs.md").read_text())
+
+
 class TestConfirmConfigCompatibility(ConfirmCase):
     def test_legacy_positional_arguments_keep_their_meaning(self) -> None:
         ws = Workspace(["T"])

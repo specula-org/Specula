@@ -4,7 +4,7 @@
 Runs the full phase sequence (analysis → specgen → harness → validation →
 confirmation [+ repair loop] → classification → summary) by invoking the
 per-phase launchers as subprocesses, exactly like the bash did — the dry-run
-command lines, the `main 2>&1 | tee pipeline.log` plumbing, the repair-request
+command lines, the `main 2>&1 | tee -a pipeline.log` plumbing, the repair-request
 state machine and the quota gate are all faithful ports of the bash, covered by
 tests/unit/test_pipelinelib.py and the end-to-end dry-run chain in tests/e2e.
 
@@ -3834,6 +3834,11 @@ class Pipeline:
         return 0
 
 
+def _invocation_boundary(invocation_id: str, status: str) -> str:
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+    return f"=== Pipeline invocation {invocation_id}: {status} at {timestamp} ==="
+
+
 def main(argv: list[str]) -> int:
     # bash echo flushed per line; python block-buffers when stdout is a pipe
     # (everything below runs through the tee), which would hold progress lines
@@ -3869,7 +3874,8 @@ def main(argv: list[str]) -> int:
         out_dir.mkdir(parents=True, exist_ok=True)
         log_path = out_dir / "pipeline.log"
     p.pipeline_log_path = log_path
-    tee = subprocess.Popen(["tee", str(log_path)], stdin=subprocess.PIPE)
+    invocation_id = os.environ[resumelib.INVOCATION_ENV] if p.run_dir else secrets.token_hex(16)
+    tee = subprocess.Popen(["tee", "-a", str(log_path)], stdin=subprocess.PIPE)
     assert tee.stdin is not None  # stdin=PIPE
     tee_in = tee.stdin
     terminal_stdout = os.fdopen(os.dup(1), "w", encoding="utf-8", errors="surrogateescape")
@@ -3878,6 +3884,7 @@ def main(argv: list[str]) -> int:
     os.dup2(tee_in.fileno(), 1)  # fd-level: phase subprocesses inherit the tee
     os.dup2(tee_in.fileno(), 2)
     try:
+        print("\n" + _invocation_boundary(invocation_id, "started"))
         code = p.main()
     except SystemExit as e:
         code = e.code if isinstance(e.code, int) else 1
@@ -3947,6 +3954,16 @@ def main(argv: list[str]) -> int:
             if code == 0:
                 code = 1
         try:
+            boundary = _invocation_boundary(invocation_id, f"finished (exit {code})")
+            if tee_rc == 0:
+                try:
+                    with log_path.open("a", encoding="utf-8") as log_stream:
+                        log_stream.write("\n" + boundary + "\n")
+                except OSError as exc:
+                    with contextlib.suppress(OSError, UnicodeError):
+                        print(f"WARNING: cannot append pipeline log: {exc}", file=terminal_stdout, flush=True)
+            with contextlib.suppress(OSError, UnicodeError):
+                print(boundary, file=terminal_stdout, flush=True)
             if code == 0 and result_index is not None:
                 with contextlib.suppress(OSError, UnicodeError):
                     print(

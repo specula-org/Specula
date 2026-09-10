@@ -1553,7 +1553,6 @@ class Phase:
             with contextlib.suppress(ValueError):
                 ignored.add(path.relative_to(work_dir))
         snapshot = progress.workspace_snapshot(work_dir, ignored)
-        started_at = time.monotonic()
         prelaunch_log_stamp = progress.file_stamp(files["log"])
         activity_log = activity_sidecar
         prelaunch_activity_stamp = progress.file_stamp(activity_log)
@@ -1594,9 +1593,7 @@ class Phase:
                 log=files["log"],
                 activity_log=activity_log,
                 ignored=ignored,
-                snapshot=snapshot,
                 reported_snapshot=snapshot,
-                last_observed_at=started_at,
                 log_stamp=prelaunch_log_stamp,
                 activity_stamp=prelaunch_activity_stamp,
                 adapter_name=adapter.stem,
@@ -3537,7 +3534,6 @@ Output:
         snapshot = progress.workspace_snapshot(wd, ignored)
         prelaunch_log_stamp = progress.file_stamp(log_file)
         prelaunch_activity_stamp = progress.file_stamp(activity_log)
-        started_at = time.monotonic()
         proc: subprocess.Popen[bytes] | None = None
         running: progress.RunningAgent | None = None
         try:
@@ -3574,9 +3570,7 @@ Output:
                 log=log_file,
                 activity_log=activity_log,
                 ignored=ignored,
-                snapshot=snapshot,
                 reported_snapshot=snapshot,
-                last_observed_at=started_at,
                 log_stamp=prelaunch_log_stamp,
                 activity_stamp=prelaunch_activity_stamp,
                 adapter_name=adapter.stem,
