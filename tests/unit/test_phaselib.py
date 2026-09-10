@@ -3107,8 +3107,6 @@ class TestProgressReporting(PhaseCase):
             change_report_seconds=0.0,
             status_after_seconds=0.01,
             status_repeat_seconds=0.01,
-            quiet_after_seconds=0.025,
-            quiet_repeat_seconds=0.01,
         )
         self.patch_attr(phaselib.Phase, "progress_config", self.config)
         self.adapter = adapters / "fake.sh"
@@ -3368,12 +3366,13 @@ class TestProgressReporting(PhaseCase):
         self.assertIn(f"{NAME}: adapter error: BYOK providers require an explicit model.", out)
         self.assertIn(f"FAILED  {NAME}: adapter exited 1", out)
 
-    def test_quiet_liveness_is_sparse_and_can_be_disabled(self) -> None:
+    def test_quiet_agent_only_reports_completion(self) -> None:
         self.write_adapter("sleep 0.06\n")
         rc, out = self.run_fake()
         self.assertEqual(rc, 0, out)
-        self.assertIn(f"{NAME}: no observable activity", out)
-        self.assertIn(f"{NAME}: quiet for", out)
+        self.assertNotIn(f"{NAME}: no observable activity", out)
+        self.assertNotIn(f"{NAME}: quiet for", out)
+        self.assertIn(f"{NAME}: completed (exit 0)", out)
 
         self.set_env("SPECULA_PROGRESS", "off")
         rc, out = self.run_fake()
@@ -3438,9 +3437,7 @@ class TestProgressReporting(PhaseCase):
             log=root / "agent.log",
             activity_log=root / "agent.activity.jsonl",
             ignored=set(),
-            snapshot={},
             reported_snapshot={},
-            last_observed_at=0.0,
             log_stamp=None,
             activity_stamp=None,
             adapter_name="fake",
@@ -3481,9 +3478,7 @@ class TestProgressReporting(PhaseCase):
             log=root / "agent.log",
             activity_log=root / "agent.activity.jsonl",
             ignored=set(),
-            snapshot={},
             reported_snapshot={},
-            last_observed_at=0.0,
             log_stamp=None,
             activity_stamp=None,
             adapter_name="fake",
@@ -3523,9 +3518,7 @@ class TestProgressReporting(PhaseCase):
             log=root / "agent.log",
             activity_log=root / "agent.activity.jsonl",
             ignored=set(),
-            snapshot={},
             reported_snapshot={},
-            last_observed_at=0.0,
             log_stamp=None,
             activity_stamp=None,
             adapter_name="fake",
@@ -3553,9 +3546,7 @@ class TestProgressReporting(PhaseCase):
             log=root / "agent.log",
             activity_log=root / "agent.activity.jsonl",
             ignored=set(),
-            snapshot={},
             reported_snapshot={},
-            last_observed_at=0.0,
             log_stamp=None,
             activity_stamp=None,
             adapter_name="fake",
@@ -3577,9 +3568,7 @@ class TestProgressReporting(PhaseCase):
             log=root / "agent.log",
             activity_log=activity,
             ignored=set(),
-            snapshot={},
             reported_snapshot={},
-            last_observed_at=time.monotonic(),
             log_stamp=None,
             activity_stamp=progress_module.file_stamp(activity),
             adapter_name="codex",

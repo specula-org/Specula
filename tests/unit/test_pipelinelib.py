@@ -17,6 +17,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -3587,6 +3588,84 @@ class TestMainTeeTeardown(TmpCwd):
         log_text = (self.tmp / ".specula-output" / "pipeline.log").read_text()
         self.assertIn("pre-crash progress", log_text)
         self.assertIn("ValueError: boom", log_text)
+
+    def test_legacy_restarts_append_history_and_distinct_invocation_boundaries(self) -> None:
+        out = self.tmp / ".specula-output"
+        out.mkdir()
+        log_path = out / "pipeline.log"
+        original = b"older interrupted output without a newline"
+        log_path.write_bytes(original)
+        first = self._run_entry(
+            "def boom(self):\n    print('first attempt')\n    raise ValueError('boom')\npl.Pipeline.main = boom"
+        )
+        self.assertEqual(first.returncode, 1, first.stdout + first.stderr)
+        first_log = log_path.read_bytes()
+        self.assertTrue(first_log.startswith(original + b"\n"))
+
+        second = self._run_entry(
+            "def succeed(self):\n    print('second attempt')\n    return 0\npl.Pipeline.main = succeed"
+        )
+
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertTrue(log_path.read_bytes().startswith(first_log))
+        log_text = log_path.read_text()
+        starts = re.findall(r"=== Pipeline invocation ([0-9a-f]{32}): started at .* UTC ===", log_text)
+        finishes = re.findall(
+            r"=== Pipeline invocation ([0-9a-f]{32}): finished \(exit (\d+)\) at .* UTC ===", log_text
+        )
+        self.assertEqual(len(starts), 2, log_text)
+        self.assertEqual(len(set(starts)), 2)
+        self.assertEqual(finishes, [(starts[0], "1"), (starts[1], "0")])
+        self.assertLess(log_text.index("first attempt"), log_text.index("second attempt"))
+        self.assertEqual(log_text.count("ValueError: boom"), 1)
+        self.assertNotIn("first attempt", second.stdout)
+
+    def test_isolated_restart_preserves_interrupted_log(self) -> None:
+        setup = f"pl.SPECULA_ROOT = pl.Path({str(self.tmp)!r})\n"
+        first = self._run_entry(
+            setup
+            + "def interrupt(self):\n    print('before interruption')\n    raise KeyboardInterrupt\npl.Pipeline.main = interrupt",
+            ["--run-id=restart-run", "t|g|l|r"],
+        )
+        self.assertEqual(first.returncode, 130, first.stdout + first.stderr)
+        log_path = self.tmp / "runs" / "restart-run" / "pipeline.log"
+        first_log = log_path.read_bytes()
+        self.assertIn(b"finished (exit 130)", first_log)
+
+        second = self._run_entry(
+            setup + "pl.Pipeline.main = lambda self: 0",
+            ["--run-id=restart-run", "--fresh-context", "t|g|l|r"],
+        )
+
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertTrue(log_path.read_bytes().startswith(first_log))
+        self.assertIn("finished (exit 0)", log_path.read_text())
+
+    def test_log_boundary_records_final_ci_exit_code(self) -> None:
+        result = self._run_entry(
+            "pl.Pipeline.main = lambda self: 0\n"
+            "pl.Pipeline.finalize_ci_run = lambda self, code: ('CI verdict: FAIL', 2)"
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        log_text = (self.tmp / ".specula-output" / "pipeline.log").read_text()
+        self.assertIn("finished (exit 2)", log_text)
+        self.assertNotIn("finished (exit 0)", log_text)
+
+    def test_log_boundary_write_failure_fails_pipeline(self) -> None:
+        result = self._run_entry(
+            "original_open = pl.Path.open\n"
+            "def fail_boundary(path, mode='r', *args, **kwargs):\n"
+            "    if path.name == 'pipeline.log' and mode == 'a':\n"
+            "        raise OSError('boundary write failed')\n"
+            "    return original_open(path, mode, *args, **kwargs)\n"
+            "pl.Path.open = fail_boundary\n"
+            "pl.Pipeline.main = lambda self: 0"
+        )
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("boundary write failed", result.stdout)
+        self.assertNotIn("View all results:", result.stdout)
 
     def test_final_source_capture_runs_after_pipeline_failure(self) -> None:
         marker = self.tmp / "captured"

@@ -7,10 +7,10 @@ import io
 import json
 import subprocess
 import tempfile
-import time
 import unittest
 from collections.abc import Iterator
 from pathlib import Path
+from unittest import mock
 
 from specula import progress
 from specula.adapters.utils.event_stream import parse_events, stream_events
@@ -263,9 +263,7 @@ class TestProgressParsing(unittest.TestCase):
                 log=root / "agent.log",
                 activity_log=activity,
                 ignored={activity.relative_to(root)},
-                snapshot={},
                 reported_snapshot={},
-                last_observed_at=time.monotonic(),
                 log_stamp=None,
                 activity_stamp=None,
                 adapter_name="codex",
@@ -350,6 +348,45 @@ class TestProgressParsing(unittest.TestCase):
             self.assertIn("activity log", stderr.getvalue())
             self.assertEqual(log.read_text(), "first\nfinal\n")
 
+    def test_quiet_agent_stays_silent_and_reports_later_activity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            activity = root / "agent.activity.jsonl"
+            proc = mock.Mock(spec=subprocess.Popen)
+            proc.poll.return_value = None
+            agent = progress.RunningAgent(
+                name="target",
+                proc=proc,
+                work_dir=root,
+                log=root / "agent.log",
+                activity_log=activity,
+                ignored={activity.relative_to(root)},
+                reported_snapshot={},
+                log_stamp=None,
+                activity_stamp=None,
+                adapter_name="copilot-cli",
+            )
+            output = io.StringIO()
+            for tick in (61.0, 301.0, 601.0, 1201.0):
+                with (
+                    mock.patch("specula.progress.time.monotonic", return_value=tick),
+                    contextlib.redirect_stdout(output),
+                ):
+                    progress.report([agent], progress.ProgressConfig())
+                self.assertEqual(output.getvalue(), "")
+
+            events = [
+                {"type": "tool.execution_start", "data": {"toolName": "bash", "arguments": {"command": "make test"}}},
+                {"type": "session.error", "data": {"message": "provider unavailable"}},
+            ]
+            activity.write_text("\n".join(json.dumps(event) for event in events) + "\n")
+            (root / "report.md").write_text("new evidence\n")
+            with contextlib.redirect_stdout(output):
+                progress.report([agent], progress.ProgressConfig())
+            self.assertIn("target: running make test", output.getvalue())
+            self.assertIn("target: adapter error: provider unavailable", output.getvalue())
+            self.assertIn("target: created report.md", output.getvalue())
+
     def test_finished_agent_never_claims_process_is_still_alive(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -362,9 +399,7 @@ class TestProgressParsing(unittest.TestCase):
                 log=root / "agent.log",
                 activity_log=root / "agent.activity.jsonl",
                 ignored=set(),
-                snapshot={},
                 reported_snapshot={},
-                last_observed_at=time.monotonic() - 600,
                 log_stamp=None,
                 activity_stamp=None,
                 adapter_name="codex",
@@ -388,9 +423,7 @@ class TestProgressParsing(unittest.TestCase):
                 log=log,
                 activity_log=root / "agent.activity.jsonl",
                 ignored={Path("agent.log")},
-                snapshot={},
                 reported_snapshot={},
-                last_observed_at=time.monotonic(),
                 log_stamp=None,
                 activity_stamp=None,
                 adapter_name="fake",
