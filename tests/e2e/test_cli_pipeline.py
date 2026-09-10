@@ -538,6 +538,8 @@ class CliE2E(unittest.TestCase):
         )
         self.assertEqual(setup.returncode, 0, setup.stderr)
         run = root / "runs" / run_id
+        pipeline_log = run / "pipeline.log"
+        setup_log = pipeline_log.read_bytes()
         wd = run / "footest" / ".specula-output"
         for rel in (
             "modeling-brief.md",
@@ -566,10 +568,19 @@ class CliE2E(unittest.TestCase):
             cwd=work,
         )
         self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
+        interrupted_log = pipeline_log.read_bytes()
+        self.assertTrue(interrupted_log.startswith(setup_log))
+        self.assertIn(b"finished (exit 9)", interrupted_log)
 
         resumed = self.run_cli(root, ["run", f"--run-id={run_id}"], cwd=work)
 
         self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertTrue(pipeline_log.read_bytes().startswith(interrupted_log))
+        log_text = pipeline_log.read_text()
+        starts = re.findall(r"=== Pipeline invocation ([0-9a-f]{32}): started at", log_text)
+        finishes = re.findall(r"=== Pipeline invocation ([0-9a-f]{32}): finished \(exit (\d+)\)", log_text)
+        self.assertEqual(len(set(starts)), 3, log_text)
+        self.assertEqual(finishes, list(zip(starts, ("0", "9", "0"), strict=True)))
         self.assertEqual(Path(f"{adapter}.validation-count").read_text(), "xx")
         self.assertEqual(
             Path(f"{adapter}.validation-prompt").read_text(),
