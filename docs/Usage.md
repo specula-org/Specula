@@ -491,3 +491,5 @@ The scheduler owns `--run-id`, `--isolate`, and `--no-isolate` so that each task
 Agent activity is printed during each step and written to its log. Silent periods do not produce inactivity reminders. Set `SPECULA_PROGRESS=off` to disable live reporting. During or after a default isolated run, start with the run-level `index.md` to choose a target and browse its results; for a legacy single-target run, start with `.specula-output/index.md`. Use `pipeline-summary.md` for final deliverable status and `pipeline.log` for troubleshooting.
 
 Starting or resuming a run appends to its existing `pipeline.log`. Each invocation has a unique ID, UTC start and end timestamps, and its final exit code. Previous output is retained without automatic rotation or cleanup.
+
+Use `confirmed-bugs.md` for current confirmation results. Existing per-finding `verdict.md` files are labelled as historical records without changing their original text. Each finding's `error.txt` retains timestamped errors across retries, including after a successful confirmation.

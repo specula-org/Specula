@@ -35,6 +35,7 @@ import shutil
 import stat
 import subprocess
 import threading
+import time
 import traceback
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
@@ -2107,7 +2108,9 @@ def run_finding_safe(
             cfg.clear_policy_states(("finding", f.id))
         try:
             f.fdir.mkdir(parents=True, exist_ok=True)
-            (f.fdir / "error.txt").write_text(traceback.format_exc())
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+            with (f.fdir / "error.txt").open("a", encoding="utf-8") as error_log:
+                error_log.write(f"\n=== Error at {timestamp} ===\n{traceback.format_exc()}")
         except OSError:
             pass
         failure_code = quota.RATE_LIMIT_RC if isinstance(exc, RateLimited) else 1
@@ -3478,6 +3481,26 @@ def _report_body(body: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _label_historical_verdict(finding: Finding) -> None:
+    path = finding.fdir / "verdict.md"
+    if path.is_symlink() or not path.is_file():
+        return
+    notice = b"> Historical record. See [confirmed-bugs.md](../../confirmed-bugs.md) for the current result.\n\n"
+    temporary = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+    try:
+        original = path.read_bytes()
+        if original.startswith(notice):
+            return
+        temporary.write_bytes(notice + original)
+        temporary.replace(path)
+    except OSError as exc:
+        with contextlib.suppress(OSError):
+            _log(f"  WARNING: cannot label historical verdict {path}: {exc}")
+    finally:
+        with contextlib.suppress(OSError):
+            temporary.unlink(missing_ok=True)
+
+
 def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
     """Write the phase's confirmed-bugs.md from the per-finding outcomes. This is
     the canonical Phase-4 deliverable the classification phase (Phase 4b) and the
@@ -3585,6 +3608,8 @@ def aggregate(cfg: ConfirmConfig, outcomes: list[Outcome]) -> None:
         lines.append("---")
         lines.append("")
     report.write_text("\n".join(lines))
+    for outcome in outcomes:
+        _label_historical_verdict(outcome.finding)
     _log(f"\nWrote {report}  ({len(outcomes)} findings, {len(reproduced)} reproduced)")
 
 
