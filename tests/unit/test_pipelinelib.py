@@ -3652,20 +3652,27 @@ class TestMainTeeTeardown(TmpCwd):
         self.assertIn("finished (exit 2)", log_text)
         self.assertNotIn("finished (exit 0)", log_text)
 
-    def test_log_boundary_write_failure_fails_pipeline(self) -> None:
-        result = self._run_entry(
-            "original_open = pl.Path.open\n"
-            "def fail_boundary(path, mode='r', *args, **kwargs):\n"
-            "    if path.name == 'pipeline.log' and mode == 'a':\n"
-            "        raise OSError('boundary write failed')\n"
-            "    return original_open(path, mode, *args, **kwargs)\n"
-            "pl.Path.open = fail_boundary\n"
-            "pl.Pipeline.main = lambda self: 0"
-        )
+    def test_log_boundary_write_failure_preserves_final_exit_code(self) -> None:
+        for exit_code in (0, 2, 9):
+            with self.subTest(exit_code=exit_code):
+                result = self._run_entry(
+                    "original_open = pl.Path.open\n"
+                    "def fail_boundary(path, mode='r', *args, **kwargs):\n"
+                    "    if path.name == 'pipeline.log' and mode == 'a':\n"
+                    "        raise OSError('boundary write failed')\n"
+                    "    return original_open(path, mode, *args, **kwargs)\n"
+                    "pl.Path.open = fail_boundary\n"
+                    "pl.Pipeline.main = lambda self: 0\n"
+                    f"pl.Pipeline.finalize_ci_run = lambda self, code: (None, {exit_code})"
+                )
 
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("boundary write failed", result.stdout)
-        self.assertNotIn("View all results:", result.stdout)
+                self.assertEqual(result.returncode, exit_code, result.stdout + result.stderr)
+                self.assertIn("WARNING: cannot append pipeline log: boundary write failed", result.stdout)
+                self.assertIn(f"finished (exit {exit_code})", result.stdout)
+                if exit_code == 0:
+                    self.assertIn("View all results:", result.stdout)
+                else:
+                    self.assertNotIn("View all results:", result.stdout)
 
     def test_final_source_capture_runs_after_pipeline_failure(self) -> None:
         marker = self.tmp / "captured"

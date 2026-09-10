@@ -113,6 +113,35 @@ class IncrementalCLI(unittest.TestCase):
                 usage = json.loads((self.latest() / "footest/.specula-output/.resource-summary-state.json").read_text())
                 self.assertTrue(usage["run_complete"])
 
+    def test_final_log_failure_preserves_passing_result_and_published_baseline(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("updated source\n")
+        script = self.adapter.read_text().replace(
+            "    exit 0\n    ;;\n",
+            '    mv "$SPECULA_RUN_DIR/pipeline.log" "$SPECULA_RUN_DIR/pipeline-running.log"\n'
+            '    mkdir "$SPECULA_RUN_DIR/pipeline.log"\n'
+            "    exit 0\n    ;;\n",
+            1,
+        )
+        self.adapter.write_text(script)
+
+        result = self.run_ci("--incremental", "--agent=fake")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("WARNING: cannot append pipeline log:", result.stdout)
+        self.assertIn("finished (exit 0)", result.stdout)
+        current = (self.ci / "current").resolve()
+        self.assertNotEqual(current, previous)
+        self.assertEqual(CIStore(self.ci).current()["verdict"], "PASS")
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], self.git("rev-parse", "HEAD"))
+        receipt = json.loads((self.latest() / "ci-result.json").read_text())
+        self.assertTrue(receipt["complete"])
+        self.assertEqual(receipt["verdict"], "PASS")
+        self.assertEqual(current, self.ci / receipt["snapshot"])
+        self.assertEqual((current / "model/spec/base.tla").read_text(), "updated fixture model\n")
+        self.assertTrue((self.latest() / "pipeline-running.log").is_file())
+
     def test_warning_and_verified_fix_can_advance_a_red_baseline(self) -> None:
         self.initialize()
         self.change_source("bug fixture\n")

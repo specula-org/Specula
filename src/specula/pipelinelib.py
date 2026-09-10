@@ -3960,10 +3960,8 @@ def main(argv: list[str]) -> int:
                     with log_path.open("a", encoding="utf-8") as log_stream:
                         log_stream.write("\n" + boundary + "\n")
                 except OSError as exc:
-                    print(f"ERROR: cannot append pipeline log: {exc}", file=terminal_stdout, flush=True)
-                    if code == 0:
-                        code = 1
-                    boundary = _invocation_boundary(invocation_id, f"finished (exit {code})")
+                    with contextlib.suppress(OSError, UnicodeError):
+                        print(f"WARNING: cannot append pipeline log: {exc}", file=terminal_stdout, flush=True)
             with contextlib.suppress(OSError, UnicodeError):
                 print(boundary, file=terminal_stdout, flush=True)
             if code == 0 and result_index is not None:
