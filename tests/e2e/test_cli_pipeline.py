@@ -479,6 +479,12 @@ class CliE2E(unittest.TestCase):
         self.assertEqual(supplied.read_text(), "---- MODULE Model ----\n====\n")
 
     def test_run_id_resumes_interrupted_validation_without_phase_skip_flags(self) -> None:
+        self._resume_interrupted_validation(enable_reviews=False)
+
+    def test_run_id_resumes_interrupted_validation_with_saved_review_route(self) -> None:
+        self._resume_interrupted_validation(enable_reviews=True)
+
+    def _resume_interrupted_validation(self, *, enable_reviews: bool) -> None:
         root = self.specroot()
         work = self.workdir()
         artifact = work / "artifact"
@@ -523,13 +529,40 @@ class CliE2E(unittest.TestCase):
         adapter.chmod(0o755)
         target = "footest|owner/repo|Go|reference"
         run_id = "resume-validation"
+        config = work / "agents.json"
+        reviewer = adapter.with_name("fake-reviewer.sh")
+        routing_args = ["--agent=fake"]
+        if enable_reviews:
+            config.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "default_profile": "worker",
+                        "profiles": {
+                            "worker": {"agent": "fake", "model": "worker-model", "effort": "medium"},
+                            "reviewer": {"agent": "fake-reviewer", "model": "review-model", "effort": "high"},
+                        },
+                        "phases": {"review": "reviewer"},
+                    }
+                )
+            )
+            reviewer.write_text(
+                "#!/bin/sh\nset -eu\n"
+                'printf "%s\\n" "$@" > "$0.args"\n'
+                'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+                'test "${log##*/}" = "review-validation.log"\n'
+                'printf "fixture review\\n" > "$SPECULA_WORK_DIR/spec/review-validation.md"\n'
+                'printf "review completed\\n" > "$log"\n'
+            )
+            reviewer.chmod(0o755)
+            routing_args = [f"--agent-config={config}", "--enable-reviews"]
 
         setup = self.run_cli(
             root,
             [
                 "run",
                 f"--run-id={run_id}",
-                "--agent=fake",
+                *routing_args,
                 f"--artifact={artifact}",
                 *ALL_PHASE_SKIPS,
                 target,
@@ -558,6 +591,7 @@ class CliE2E(unittest.TestCase):
                 "run",
                 f"--run-id={run_id}",
                 "--fresh-context",
+                *(routing_args if enable_reviews else []),
                 "--skip-analysis",
                 "--skip-specgen",
                 "--skip-harness",
@@ -571,10 +605,18 @@ class CliE2E(unittest.TestCase):
         interrupted_log = pipeline_log.read_bytes()
         self.assertTrue(interrupted_log.startswith(setup_log))
         self.assertIn(b"finished (exit 9)", interrupted_log)
+        if enable_reviews:
+            self.assertFalse(Path(f"{reviewer}.args").exists())
+            config.unlink()
 
         resumed = self.run_cli(root, ["run", f"--run-id={run_id}"], cwd=work)
 
         self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        if enable_reviews:
+            self.assertTrue((wd / "spec/review-validation.md").is_file())
+            review_args = Path(f"{reviewer}.args").read_text().splitlines()
+            self.assertIn("--model=review-model", review_args)
+            self.assertIn("--effort=high", review_args)
         self.assertTrue(pipeline_log.read_bytes().startswith(interrupted_log))
         log_text = pipeline_log.read_text()
         starts = re.findall(r"=== Pipeline invocation ([0-9a-f]{32}): started at", log_text)
