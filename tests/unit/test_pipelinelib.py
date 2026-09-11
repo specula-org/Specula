@@ -1729,6 +1729,50 @@ class TestAgentRouting(TmpCwd):
         self.assertEqual(explicit_calls[0][0], "analysis")
         self.assertEqual(self._agent_arg(explicit_calls[0]), "--agent=copilot-cli")
 
+    def test_restored_review_commands_keep_saved_routes_and_tuning(self) -> None:
+        for explicit_review in (False, True):
+            with self.subTest(explicit_review=explicit_review):
+                phases = {"analyze": "codex", "validate": "copilot"}
+                if explicit_review:
+                    phases["review"] = "codex"
+                config = write_agent_config(self.tmp / "agents.json", phases)
+                original = pl.Pipeline()
+                self.assertIsNone(original.parse_args([f"--agent-config={config}", "--enable-reviews", "t"]))
+                original.run_id = f"run-{explicit_review}"
+                original.run_dir = self.tmp / original.run_id
+                original.run_dir.mkdir()
+                original._write_run_meta()
+                saved = json.loads((original.run_dir / "run.json").read_text())["resume_configuration"]
+                config.unlink()
+
+                restored = pl.Pipeline()
+                self.assertIsNone(restored.parse_args([f"--run-id={original.run_id}"]))
+                restored._restore_resume_configuration(saved)
+                restored.wait_for_quota = mock.Mock()  # type: ignore[method-assign]
+                launch = mock.Mock()
+                restored._phase = launch  # type: ignore[method-assign]
+                expected = (
+                    [("codex", "gpt-5.5", "high")] * 3
+                    if explicit_review
+                    else [
+                        ("codex", "gpt-5.5", "high"),
+                        ("claude-code", "claude-sonnet", "max"),
+                        ("copilot-cli", "gpt-5-mini", "low"),
+                    ]
+                )
+                for phase, (agent, model, effort) in zip(("analysis", "specgen", "validation"), expected, strict=True):
+                    with self.subTest(phase=phase):
+                        restored.run_review(phase, ["t"])
+                        args = launch.call_args.args[2]
+                        self.assertEqual(args[0], phase)
+                        self.assertIn(f"--agent={agent}", args)
+                        self.assertIn(f"--model={model}", args)
+                        self.assertIn(f"--effort={effort}", args)
+
+                phase_args = restored._phase_args(["t"], phase="validate")
+                self.assertIn("--agent=copilot-cli", phase_args)
+                self.assertIn("--model=gpt-5-mini", phase_args)
+
     def test_proactive_quota_waits_only_for_claude_routes(self) -> None:
         config = write_agent_config(
             self.tmp / "agents.json",

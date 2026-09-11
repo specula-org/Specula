@@ -1593,7 +1593,9 @@ class Pipeline:
             if phase is None:
                 assert self._restored_default is not None
                 return self._restored_default
-            route = f"review:{fallback}" if phase == "review" and fallback is not None else phase
+            route = phase
+            if phase == "review" and fallback is not None:
+                route = next(key for key, spec in self._route_specs().items() if spec == (phase, fallback))
             return self._restored_routes[route]
         if self.agent_routing is None:
             return AgentSelection(agent=self.agent, model=self.model, effort=self.effort)
