@@ -400,13 +400,6 @@ run_codex() {
   local specula_src
   adapter_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   specula_src="$adapter_dir/../../../src"
-  if [[ -z "$RESUME_STATE" ]]; then
-    if ! session_id_file="$(mktemp "${TMPDIR:-/tmp}/specula-codex-session-XXXXXX.id")"; then
-      session_id_file=""
-      echo "codex adapter: usage unavailable: unable to create session ID file" >&2
-    fi
-  fi
-
   # ── Optional outer srt sandbox (M1.3) ──
   # Opt-in via SPECULA_SANDBOX=on; additive — off/unset leaves the codex argv
   # byte-for-byte. One outer layer wraps codex and every descendant (TLC/MCP/
@@ -419,6 +412,25 @@ run_codex() {
     cmd+=(node "$backend" --workspace "${SPECULA_WORK_DIR:-$PWD}")
     [[ -n "${SPECULA_SANDBOX_CONFIG:-}" ]] && cmd+=(--config "$SPECULA_SANDBOX_CONFIG")
     cmd+=(--)
+  fi
+  local code_mode_enabled=""
+  if [[ -n "${SPECULA_TLC_TOOL_CODEX:-}" ]]; then
+    # A nested override replaces boolean code_mode=true with a table. Preserve
+    # Codex's resolved feature state in the same environment as the session.
+    if ! code_mode_enabled="$("${cmd[@]}" codex features list </dev/null | awk '$1 == "code_mode" {print $NF}')"; then
+      echo "codex adapter: could not read the configured Code Mode state" >&2
+      return 1
+    fi
+    case "$code_mode_enabled" in
+      true|false) ;;
+      *) echo "codex adapter: Code Mode state was missing or invalid" >&2; return 1 ;;
+    esac
+  fi
+  if [[ -z "$RESUME_STATE" ]]; then
+    if ! session_id_file="$(mktemp "${TMPDIR:-/tmp}/specula-codex-session-XXXXXX.id")"; then
+      session_id_file=""
+      echo "codex adapter: usage unavailable: unable to create session ID file" >&2
+    fi
   fi
   # Feed the prompt via stdin (`-`), never as one argv element: Linux caps a
   # single argument at MAX_ARG_STRLEN, while confirmation/debate prompts can be
@@ -434,6 +446,7 @@ run_codex() {
     cmd+=(-c "mcp_servers.specula_tlc=$SPECULA_TLC_TOOL_CODEX")
     # Keep a blocking TLC wait out of Code Mode's yielding exec/wait loop.
     cmd+=(-c 'features.code_mode.direct_only_tool_namespaces=["mcp__specula_tlc"]')
+    cmd+=(-c "features.code_mode.enabled=$code_mode_enabled")
   fi
   # Model / reasoning effort (additive — empty leaves codex config.toml default).
   [[ -n "$MODEL" ]] && cmd+=(-m "$MODEL")

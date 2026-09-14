@@ -587,6 +587,7 @@ def test_all_adapters_receive_tools_without_skill_changes(tmp_path: Path, phase:
         if agent == "codex":
             assert "mcp_servers.specula_tlc=" + env["SPECULA_TLC_TOOL_CODEX"] in argv
             assert 'features.code_mode.direct_only_tool_namespaces=["mcp__specula_tlc"]' in argv
+            assert "features.code_mode.enabled=false" in argv
             assert ("resume" in argv) is resume
         elif agent == "claude-code":
             assert argv[argv.index("--mcp-config") + 1] == env["SPECULA_TLC_TOOL_CONFIG"]
