@@ -24,6 +24,7 @@ import test_run_model_check as wrappers
 
 from specula import context_runner, phaselib
 from specula import tlc_tasks as tasks
+from specula.adapters.utils.resume import capture_session_id
 
 
 @pytest.fixture(autouse=True)
@@ -539,8 +540,11 @@ def test_real_launcher_exit_releases_lock_across_namespace(
 
 
 @pytest.mark.parametrize("phase", ["spec_validation", "incremental"])
-@pytest.mark.parametrize("agent", ["codex", "claude-code", "copilot-cli", "opencode", "pi"])
-def test_all_adapters_receive_tools_without_skill_changes(tmp_path: Path, phase: str, agent: str) -> None:
+@pytest.mark.parametrize(
+    ("agent", "resume"),
+    [(agent, False) for agent in ("codex", "claude-code", "copilot-cli", "opencode", "pi")] + [("codex", True)],
+)
+def test_all_adapters_receive_tools_without_skill_changes(tmp_path: Path, phase: str, agent: str, resume: bool) -> None:
     case = adapters.AdapterCase()
     tool = tmp_path / "tools/tlc_tools/.venv/bin"
     tool.mkdir(parents=True)
@@ -556,19 +560,34 @@ def test_all_adapters_receive_tools_without_skill_changes(tmp_path: Path, phase:
         fixture = json.dumps(
             {"type": "message_end", "message": {"role": "assistant", "content": [], "stopReason": "stop"}}
         )
+    flags = ["--prompt=tool registration smoke", "--max-turns=1", f"--log={tmp_path / 'agent.log'}"]
+    if resume and agent == "codex":
+        state = tmp_path / "resume.json"
+        session_id = "019f0000-0000-7000-8000-000000000000"
+        capture_session_id(state, adapter="codex", session_id=session_id, cwd=str(tmp_path))
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": session_id}),
+                json.dumps({"type": "turn.completed", "usage": {}}),
+            ]
+        )
+        flags.append(f"--resume-state={state}")
     try:
         observed = case.run_adapter(
             [str(tasks.ROOT / "scripts/launch/adapters" / f"{agent}.sh")],
-            ["--prompt=tool registration smoke", "--max-turns=1", f"--log={tmp_path / 'agent.log'}"],
+            flags,
             fake_name=fake,
             fixture_text=fixture,
             env_extra=env,
             timeout=10,
+            run_dir=tmp_path,
         )
         assert observed["returncode"] == 0, observed["stderr"]
         argv = observed["argv"]
         if agent == "codex":
             assert "mcp_servers.specula_tlc=" + env["SPECULA_TLC_TOOL_CODEX"] in argv
+            assert 'features.code_mode.direct_only_tool_namespaces=["mcp__specula_tlc"]' in argv
+            assert ("resume" in argv) is resume
         elif agent == "claude-code":
             assert argv[argv.index("--mcp-config") + 1] == env["SPECULA_TLC_TOOL_CONFIG"]
         elif agent == "copilot-cli":

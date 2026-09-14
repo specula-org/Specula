@@ -432,6 +432,8 @@ run_codex() {
   fi
   if [[ -n "${SPECULA_TLC_TOOL_CODEX:-}" ]]; then
     cmd+=(-c "mcp_servers.specula_tlc=$SPECULA_TLC_TOOL_CODEX")
+    # Keep a blocking TLC wait out of Code Mode's yielding exec/wait loop.
+    cmd+=(-c 'features.code_mode.direct_only_tool_namespaces=["mcp__specula_tlc"]')
   fi
   # Model / reasoning effort (additive — empty leaves codex config.toml default).
   [[ -n "$MODEL" ]] && cmd+=(-m "$MODEL")
