@@ -99,6 +99,8 @@ _VOLATILE = (
     "SPECULA_RESUME_MODEL",
     "SPECULA_RESUME_EFFORT",
     "CODEX_HOME",
+    "CODEX_FEATURES_TEXT",
+    "CODEX_FEATURES_EXIT",
     "ADAPTER_EXIT_CODE",
     "COPILOT_HELP_TEXT",
     "ADAPTER_PI_SESSION_FIXTURE",
@@ -155,6 +157,13 @@ class AdapterCase(unittest.TestCase):
                 'if [[ "${1:-}" == "--help" ]]; then',
                 '  printf "%s\\n" "${COPILOT_HELP_TEXT:-}"',
                 "  exit 0",
+                "fi",
+            ]
+        if name == "codex":
+            lines += [
+                'if [[ "${1:-}" == "features" && "${2:-}" == "list" ]]; then',
+                '  printf "%s\\n" "${CODEX_FEATURES_TEXT-code_mode under development false}"',
+                '  exit "${CODEX_FEATURES_EXIT:-0}"',
                 "fi",
             ]
         lines.append('printf "%s\\n" "$@" > "${ADAPTER_ARGV_FILE:-/dev/null}"')
@@ -3218,6 +3227,72 @@ class CodexAdapter(AdapterCase):
             ],
         )
         self.assertEqual(r["stdin"], "the prompt")
+
+    def test_tlc_preserves_resolved_code_mode_state(self) -> None:
+        for enabled in ("true", "false"):
+            with self.subTest(enabled=enabled):
+                base = self.sandbox()
+                result = self.invoke(
+                    self.base_flags(base),
+                    env_extra={
+                        "SPECULA_TLC_TOOL_CODEX": '{command="python3"}',
+                        "CODEX_FEATURES_TEXT": f"code_mode_host stable true\ncode_mode under development {enabled}\n",
+                    },
+                )
+                self.assertEqual(result["returncode"], 0, result["stderr"])
+                self.assertIn(f"features.code_mode.enabled={enabled}", result["argv"])
+                self.assertIn('features.code_mode.direct_only_tool_namespaces=["mcp__specula_tlc"]', result["argv"])
+                self.assertEqual(result["stdin"], "the prompt")
+
+    def test_tlc_does_not_guess_an_unreadable_code_mode_state(self) -> None:
+        for features, code in (("", "0"), ("code_mode unknown maybe", "0"), ("code_mode stable true", "1")):
+            with self.subTest(features=features, code=code):
+                base = self.sandbox()
+                result = self.invoke(
+                    self.base_flags(base),
+                    env_extra={
+                        "SPECULA_TLC_TOOL_CODEX": '{command="python3"}',
+                        "CODEX_FEATURES_TEXT": features,
+                        "CODEX_FEATURES_EXIT": code,
+                    },
+                )
+                self.assertEqual(result["returncode"], 1)
+                self.assertIn("Code Mode state", result["stderr"])
+                self.assertEqual(result["argv"], [])
+
+    def test_tlc_reads_code_mode_through_the_session_sandbox(self) -> None:
+        base = self.sandbox()
+        bindir = base / "bin"
+        bindir.mkdir()
+        node = bindir / "node"
+        node.write_text(
+            "#!/usr/bin/env bash\n"
+            'printf "%s\\n" "$*" >> "$SANDBOX_CALLS"\n'
+            'while [[ "$1" != "--" ]]; do shift; done\n'
+            "shift\n"
+            'export CODEX_FEATURES_TEXT="code_mode under development true"\n'
+            'exec "$@"\n'
+        )
+        node.chmod(0o755)
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="codex",
+            fixture_text='{"type":"turn.completed","usage":{}}',
+            env_extra={
+                "SPECULA_TLC_TOOL_CODEX": '{command="python3"}',
+                "SPECULA_SANDBOX": "on",
+                "SPECULA_SANDBOX_BACKEND": str(base / "backend.mjs"),
+                "SANDBOX_CALLS": str(base / "sandbox-calls.txt"),
+                "CODEX_FEATURES_TEXT": "code_mode under development false",
+            },
+            run_dir=base,
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertIn("features.code_mode.enabled=true", result["argv"])
+        calls = (base / "sandbox-calls.txt").read_text().splitlines()
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(calls[0].endswith("codex features list"))
 
     def test_stop_gate_reset_uses_worker_scope(self) -> None:
         base = self.sandbox()
