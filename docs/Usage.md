@@ -190,11 +190,7 @@ Completed runs update `current/model/` in the CI directory. Reports, diffs, logs
 
 CI returns exit code `2` when the current confirmation results contain `REPRODUCED` or `ENV_LIMITED` bugs, regardless of whether the update introduced them. `MASKED` findings produce a warning and exit code `0`; completed checks without these findings also return `0`. Unfinished checks return a nonzero exit code. Inspect `ci-report.md` and `ci-verdict.json` for the incremental result and evidence. Initialization derives the same verdict from `confirmed-bugs.md`.
 
-New `NEEDS MORE INFO` and `DEFERRED` findings are stored as nonblocking information; they cannot clear a previously established unresolved defect. A remaining `PENDING REPAIR` fails CI.
-
-Each candidate finding is first matched against a small index of unresolved issues. When its relevant source/model dependencies and evidence premises still apply, Specula reuses completed analysis and reproduction work and labels the report **Still unresolved; historical conclusion reused**. The original classification still affects CI. Changed dependencies, new consequences, or uncertain matches require targeted reanalysis; unrelated updates do not invalidate every finding.
-
-The index contains only `REPRODUCED`, `ENV_LIMITED`, and `MASKED` issues. Confirmed fixes remove their entries and bundled evidence; false positives and model/invariant repair issues are excluded. Legacy records without dependency metadata require analysis before reuse. Use `specula issues --work /path/to/target/.specula-output lookup --query SYMBOL` to inspect matching summaries.
+`NEEDS MORE INFO` and `DEFERRED` are nonblocking for new findings. A remaining `PENDING REPAIR` fails CI.
 
 ### Resume an interrupted run
 
