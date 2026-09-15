@@ -79,12 +79,6 @@ class CIPipeline(Pipeline):
             print("ERROR: resume the original conversation, or omit --run-id to start a new CI run", file=sys.stderr)
             return 1
         if self.incremental:
-            if (self._policy_retries_given and self.policy_retries) or (
-                self._transient_resumes_given and self.transient_resumes
-            ):
-                print("ERROR: incremental CI does not retry failed Agent calls automatically", file=sys.stderr)
-                return 1
-            self.policy_retries = self.transient_resumes = 0
             self.skip_classification = True  # Findings live in the single Agent's ci-report.md.
         self.keep_original = True
         self._isolate_explicit = True
