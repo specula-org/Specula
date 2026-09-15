@@ -1,25 +1,21 @@
 # Confirm ONE finding: {{finding_id}}
 
-Confirm finding **{{finding_id}}** by following the bug-confirmation skill (`guide.md` + `phases/01-investigation.md` + `phases/02-reproduction.md`): perform the early historical lookup when a CI issue index is available; otherwise investigate, reproduce, then emit ONE verdict chosen from the skill's decision table. Execute the skill — do not restate it.
+Confirm finding **{{finding_id}}** by following the bug-confirmation skill (`guide.md` + `phases/01-investigation.md` + `phases/02-reproduction.md`): investigate, reproduce, then emit ONE verdict chosen from the skill's decision table. Execute the skill — do not restate it.
 
 {{context}}
 
 ## Output (the dispatcher parses these)
-
-- For a finding requiring fresh confirmation, write and ACTUALLY EXECUTE `repro/test_bug{{finding_id}}_*`.
-- In a CI initialization run, after completing the analysis for a real unresolved defect, write `{{fdir}}/issue.json` using `references/issue-reuse.md`: concise identity/premises, complete relevant dependency selectors, and selected evidence paths relative to the target output directory. The dispatcher registers it using the final verdict. Do not write the shared issue index. This is metadata from the completed investigation, not another investigation.
+- Write and ACTUALLY EXECUTE `repro/test_bug{{finding_id}}_*`.
 - Header fields:
   - `- **Source**: MC` (real counterexample) or `Code Review` (no-violation / code-review)
-  - `- **Novelty**: NEW` or `KNOWN (cite: <URL/dataset-id>; fix-status: unfixed|fixed)` — set from evidence, not by default (see the skill); Code Review AND known → `VERDICT: DROPPED`. Before writing `NEW`, do at least one prior-report search — upstream issues **and recently merged/closed PRs** (a fix that landed days ago still makes it KNOWN); `NEW` means you looked and found nothing for THIS mechanism, not that you skipped looking. (Do this via the issue tracker / git history only — do NOT open `bug-report.md` or other findings, per the "Do NOT" list below.)
+  - `- **Novelty**: NEW` or `KNOWN (cite: <URL/dataset-id>; fix-status: unfixed|fixed)` — set from evidence, not by default (see the skill); follow the skill’s known-status policy. Before writing `NEW`, do at least one prior-report search — upstream issues **and recently merged/closed PRs** (a fix that landed days ago still makes it KNOWN); `NEW` means you looked and found nothing for THIS mechanism, not that you skipped looking. (Do this via the issue tracker / git history only — do NOT open `bug-report.md` or other findings, per the "Do NOT" list below.)
   - `- **Location**: file:line`
 - Body sections (they become the verdict body): `## Description`, `## Trigger scenario`, `## Developer intent`, `## Reproduction result` (paste real output), `## Recommendation`.
 - End your ENTIRE response with one line: `VERDICT: <one of: {{canon}}>`.
 - For `PENDING REPAIR`: also write the semantic draft `{{fdir}}/repair-request.body.md` using the installed skill's repair-request format. It MUST contain YAML frontmatter with only `target:` (SPEC_REPAIR | FAULT_MODEL | INVARIANT), `counterexample:`, and a concrete `scope:` (`actions`, `invariants`, `hunt_cfgs`, `fault_actions`), followed by non-empty `## Trigger` and cited `## Evidence`, plus optional `## Proposed change`. Do NOT include `id`, `bug_id`, `finding_id`, `allocation_key`, `status`, `round`, or `## History`; the dispatcher owns those and is the only writer of the shared `repair-requests/` queue.
 
 ## Before any `VERDICT: REPRODUCED` — answer this checklist in your response
-
 State each answer explicitly (it will be checked against your captured output):
-
 1. Did **Level 0 or Level 1 alone** trigger it — real public API / normal ops, timing help only? **yes / no**.
 2. If **no**, and you used Level 2 (state injection) or Level 3 (source patch): the injected pre-condition must be reachable through a **real-API call sequence** or correspond to an admissible **counterexample-trace step**. Paste the sequence or cite the exact step.
 3. Which **real consumer/caller** observes a wrong outcome? Name it (`file:line`), or state the consequence is argued-only (a finding, not a reproduced bug).
@@ -35,5 +31,5 @@ If you cannot honestly answer these in the bug's favour, do NOT manufacture a pa
 `DROPPED` remains only for the code-review × already-reported pre-filter. Every honest outcome beats a fabricated `REPRODUCED`.
 
 ## Do NOT
-- Except for the bounded historical issue lookup, do not read or touch other findings, the spec files, `bug-report.md`, `confirmed-bugs.md`, or the shared `repair-requests/` queue. Do not allocate an RR number yourself.
+- Do not read or touch other findings, the spec files, `bug-report.md`, `confirmed-bugs.md`, or the shared `repair-requests/` queue. Do not allocate an RR number yourself.
 - Do not fabricate or force the trigger to reach `REPRODUCED`: no hand-built unreachable pre-condition, no mock emitting what a real peer never sends, no source patch that creates the symptom.

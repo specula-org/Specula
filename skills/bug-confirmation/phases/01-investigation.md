@@ -1,7 +1,5 @@
 # Phase 1: Investigation (evidence only — no verdict)
 
-Before code audit or developer-history research, perform the [lightweight unresolved-issue lookup](../references/issue-reuse.md). If a historical conclusion applies, reuse it and skip this investigation.
-
 Gather the evidence needed to decide the finding's verdict later: what the code
 actually does, whether the buggy path is reachable, and what the developers know
 about it. **Phase 1 records; it does not judge.** With ONE exception (the

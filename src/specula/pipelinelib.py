@@ -156,6 +156,7 @@ Options:
   --effort=LEVEL         Reasoning effort forwarded to every agent adapter
   --artifact=PATH        Path to system artifact/source code
   --byom=PATH            Use user-provided model artifacts and run Phase 2 onward
+  --findings-from=PATH   Reuse unresolved findings from a prior target output
   --guidance=PATH        Target-specific modeling guidance (single-target runs only)
   --ci-init              Build and register an initial CI baseline with core-depth guidance
                          (one target, isolated output; accepts --byom; registration is not verification)
@@ -382,6 +383,7 @@ class Pipeline:
         self._effort_given = False
         self.artifact = ""
         self._artifact_given = False
+        self.findings_from: Path | None = None
         self.byom_path: Path | None = None
         self._byom_given = False
         self.guidance_path: Path | None = None
@@ -475,6 +477,12 @@ class Pipeline:
                 self._isolate_explicit = True
             elif arg == "--fresh-context":
                 self.fresh_context = True
+            elif arg.startswith("--findings-from="):
+                raw = arg.split("=", 1)[1]
+                if not raw or self.findings_from is not None or not Path(raw).expanduser().is_dir():
+                    print("ERROR: --findings-from requires one existing prior output directory", file=sys.stderr)
+                    return 1
+                self.findings_from = Path(raw).expanduser().resolve()
             elif arg.startswith("--max-parallel="):
                 self.max_parallel = arg.split("=", 1)[1]
                 self._max_parallel_given = True
@@ -599,6 +607,9 @@ class Pipeline:
         if not self.targets:
             self.targets.append(_logical_cwd().name)  # bash `basename "$PWD"` (logical)
         self._targets_given = targets_given
+        if self.findings_from is not None and len(self.targets) != 1:
+            print("ERROR: --findings-from supports exactly one target", file=sys.stderr)
+            return 1
         ci_error = self._ci_init_option_error()
         if ci_error is not None:
             print(f"ERROR: {ci_error}", file=sys.stderr)
@@ -873,6 +884,7 @@ class Pipeline:
             "skip_reviews": self.skip_reviews,
             "targets": list(self.targets),
             "artifact": self.artifact,
+            "findings_from": str(self.findings_from) if self.findings_from else None,
             "byom": str(self.byom_path) if self.byom_path is not None else None,
             "guidance": str(self.guidance_path) if self.guidance_path is not None else None,
             **({"ci_init": True} if self.ci_init else {}),
@@ -889,6 +901,14 @@ class Pipeline:
         if self._ci_init_given and not stored_ci_init:
             raise resumelib.ResumeError("cannot enable --ci-init on an existing ordinary run; start a new run")
         self.ci_init = stored_ci_init
+        stored_findings = raw.get("findings_from")
+        if stored_findings is not None and (
+            not isinstance(stored_findings, str) or not Path(stored_findings).is_absolute()
+        ):
+            raise resumelib.ResumeError("invalid stored findings history")
+        if self.findings_from is not None and str(self.findings_from) != stored_findings:
+            raise resumelib.ResumeError("--findings-from differs from this run; start a new run")
+        self.findings_from = Path(stored_findings) if stored_findings else None
         stored_default = self._selection_from_document(raw.get("default"), "resume default")
         raw_routes = raw.get("routes")
         stored_routes: dict[str, AgentSelection] | None = None
@@ -1052,6 +1072,8 @@ class Pipeline:
                 raise resumelib.ResumeError("targets differ from this run; pass --fresh-context to change them")
         else:
             self.targets = list(stored_targets)
+        if self.findings_from is not None and len(self.targets) != 1:
+            raise resumelib.ResumeError("stored findings history requires exactly one target")
 
         stored_guidance = raw.get("guidance")
         if stored_guidance is not None and (
@@ -2051,6 +2073,34 @@ class Pipeline:
         )
         for name in names:
             log(f"Private source for {name}: {snapshots[name].source}")
+
+    def prepare_persistent_findings(self, names: list[str]) -> None:
+        if self.dry_run:
+            return
+        from specula import persistent_findings
+
+        ws = Workspace(self.targets, artifact=self.artifact, run_dir=self.run_dir)
+        for name in names:
+            work = Path(self.get_work_dir(name)).absolute()
+            if self.findings_from is not None and not (work / persistent_findings.INDEX).exists():
+                persistent_findings.import_history(work, self.findings_from)
+            if (work / persistent_findings.CONTEXT).exists():
+                _, run_id, _ = persistent_findings.context(work)
+                if run_id == self.run_id:
+                    continue
+            source = ws.find_repo_dir(name)
+            if source:
+                persistent_findings.configure(work, Path(source), self.run_id or generate_run_id(), self.findings_from)
+
+    def persist_findings(self, names: list[str]) -> None:
+        if self.dry_run:
+            return
+        from specula import persistent_findings
+
+        for name in names:
+            work = Path(self.get_work_dir(name)).absolute()
+            if (work / persistent_findings.CONTEXT).exists():
+                persistent_findings.finalize_confirmation(work)
 
     def finalize_source_snapshots(self) -> None:
         if not self.keep_original or self.dry_run or not self._snapshot_paths:
@@ -3686,6 +3736,7 @@ class Pipeline:
         self.stage_guidance(names)
 
         self.prepare_source_snapshots(names)
+        self.prepare_persistent_findings(names)
         if self.ci_init:
             self._ci_init_source_before = self._ci_source_state(names[0])
         self.initialize_resource_summaries(names)
@@ -3736,6 +3787,7 @@ class Pipeline:
             with self.resource_phase("phase1", names):
                 self.wait_for_phase_quota("analyze")
                 self.run_phase1_analysis()
+                self.prepare_persistent_findings(names)
                 self.run_review("analysis", names)
         else:
             log("Skipping Phase 1 (--skip-analysis)")
@@ -3807,6 +3859,9 @@ class Pipeline:
 
         if not fresh_phase4_ran and self.skip_repair_loop:
             log("Skipping repair loop (--skip-repair-loop)")
+
+        if fresh_phase4_ran or phase4_covered:
+            self.persist_findings(names)
 
         if not self.skip_classification:
             with self.resource_phase("phase4b", names):

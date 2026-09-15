@@ -2,6 +2,8 @@
 
 Treat the prior Specula run as semantic evidence and the new source as the implementation to verify. Keep one complete current reference suite, reuse proven CI assets, and focus new validation effort on the update and its interactions with unchanged behavior.
 
+When a candidate defect appears, follow [Persistent Findings](../bug-confirmation/references/persistent-findings.md) for a lightweight history match before deeper analysis or reproduction.
+
 The workflow has four parts under `references/`: `generation/`, `validation/`, `model-checking/`, and `reproduction/`. Execute them in that order.
 
 ## Preserve Context Across Long CI Runs
@@ -112,7 +114,7 @@ Read `references/model-checking/01-update-focused-checking.md`. It reuses the in
 
 ## Part 4: Reproduction
 
-At the first candidate defect in any part, perform the lightweight lookup from the installed **bug-confirmation** skill’s `references/issue-reuse.md`, before complex analysis. For actual counterexamples that need analysis, enter through `references/reproduction/01-confirm-counterexample.md`. Prior `REPRODUCED`, `ENV_LIMITED`, and `MASKED` issues also need a disposition when not rediscovered: reuse applicable historical work, or reanalyze the affected issue. Preserve stable IDs. `NO_MODEL_CHANGE` does not replace the issue dependency/premise check. Query the small unresolved index rather than rereading all prior reports.
+When Part 3 produces an actual counterexample, enter through `references/reproduction/01-confirm-counterexample.md`. The installed Specula **bug-confirmation** skill owns investigation, reproduction, verdicts, and repair requests.
 
 ## Readiness and Final Reporting
 
@@ -124,7 +126,7 @@ Once ready, write one short `ci-report.md` per candidate: results, important fin
 
 ### CI Verdict
 
-Write `ci-verdict.json` alongside the report, using the run ID provided by the CI task:
+For CI runs, write `ci-verdict.json` alongside the report, using the run ID provided by the CI task:
 
 ```json
 {
@@ -136,14 +138,14 @@ Write `ci-verdict.json` alongside the report, using the run ID provided by the C
 }
 ```
 
-Include every finding investigated in this run and prior bug and warning findings, with unique, stable IDs. Successful `specula issues reuse` receipts are merged by the controller, preserving their original status and a run-bound `reuse` field; the report includes “Still unresolved; historical conclusion reused” and links to evidence and limits. Do not rewrite a reused issue as a fresh confirmation. Use `"findings": []` only when both are empty. Evidence paths must name nonempty current confirmation records or generated reuse notes relative to the work directory, under `spec/`, `harness/`, or `traces/`, or a top-level Markdown file. Link the actual reproduction commands, observed outcomes, source revision, and any environment limits from that record; do not duplicate the evidence in the JSON.
+Include every finding investigated in this run and every prior unresolved bug or warning, with unique, stable IDs, even when not rediscovered. Valid Persistent Findings reuse receipts are merged by the controller and retain their original status; label these entries “Still unresolved; historical conclusion reused” and link their evidence and limits. Use `"findings": []` only when both are empty. Evidence paths must name nonempty confirmation or reuse records relative to the work directory, under `spec/`, `harness/`, or `traces/`, or a top-level Markdown file. Link the actual reproduction commands, observed outcomes, source revision, and any environment limits from that record; do not duplicate the evidence in the JSON.
 
 `REPRODUCED` and `ENV_LIMITED` fail CI, regardless of novelty, severity, or update attribution. `MASKED` produces a nonblocking warning. `FALSE POSITIVE` and `DROPPED` retain the main skill's meanings. Use `FIXED` for a prior defect whose repair is supported by current source analysis and a fresh reproduction/control attempt; explain why the previous trigger no longer harms. `FALSE POSITIVE`, `DROPPED`, and `FIXED` are nonblocking. Complete pending repairs and confirmation before final reporting.
 
-Store new `NEEDS MORE INFO` and `DEFERRED` findings as nonblocking information in `ci-verdict.json`; they do not enter the unresolved-issue registry. They cannot erase a previously established unresolved defect: finish its targeted recheck or record an applicable historical conclusion. A remaining `PENDING REPAIR` means the workflow has not converged and fails CI.
+Store new `NEEDS MORE INFO` and `DEFERRED` findings as nonblocking information in `ci-verdict.json`; they cannot clear an established unresolved defect. A remaining `PENDING REPAIR` means the workflow has not converged and fails CI.
 
 After completing the workflow, emit the completion marker. The controller publishes the model and computes the CI verdict from the recorded dispositions.
 
 ## Current Stop Boundary
 
-Generation may run syntax and static configuration preflights only. Validation may build the reused harness, collect/replay traces, and run bounded local semantic diagnostics as described in Validation 3. Model-checking campaigns begin only after the initial validation gate; subsequent repairs use the local-feedback loop and final regression gate. Reproduction handles unmatched/invalidated counterexamples and prior issues requiring reanalysis. Applicable historical conclusions skip duplicate confirmation work.
+Generation may run syntax and static configuration preflights only. Validation may build the reused harness, collect/replay traces, and run bounded local semantic diagnostics as described in Validation 3. Model-checking campaigns begin only after the initial validation gate; subsequent repairs use the local-feedback loop and final regression gate. Reproduction handles findings handed off for current confirmation.

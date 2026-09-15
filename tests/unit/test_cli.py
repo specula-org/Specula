@@ -31,7 +31,7 @@ A framework for finding deep bugs in system code using TLA+.
 commands:
   run       Run the full pipeline (all phases: analysis -> classification)
   ci        Handle a GitHub event using a persistent CI model
-  issues    Look up and reuse unresolved CI findings
+  findings  Look up and reuse persistent findings
   batch     Batch-run the pipeline over a task queue (workers, quota gate, retries)
   analyze   Phase 1 - static code analysis -> modeling brief
   specgen   Phase 2 - generate TLA+ specs from the modeling brief

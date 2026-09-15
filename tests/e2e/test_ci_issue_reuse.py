@@ -9,7 +9,7 @@ from pathlib import Path
 
 import test_incremental_ci as fixtures
 
-from specula import ci_issues
+from specula import persistent_findings
 from specula.ci_store import CIStore
 
 
@@ -24,14 +24,14 @@ class IssueReuseCLI(unittest.TestCase):
         helper.write_text(
             "import json, subprocess, sys\nfrom pathlib import Path\n"
             f"sys.path.insert(0, {str(fixture.root / 'src')!r})\n"
-            "from specula import ci_issues\n"
+            "from specula import persistent_findings\n"
             "work, adapter = map(Path, sys.argv[1:])\n"
             "mode = Path(str(adapter) + '.issue-mode').read_text()\n"
             "if mode == 'record':\n"
             "    counter = Path(str(adapter) + '.analysis-count')\n"
             "    counter.write_text(counter.read_text() + 'x' if counter.exists() else 'x')\n"
             "    proposal = {\n"
-            "      'id': 'MC-1', 'status': 'REPRODUCED', 'title': 'Fixture unresolved reply',\n"
+            "      'id': 'MC-1', 'status': 'REPRODUCED', 'source': 'model-checking', 'title': 'Fixture unresolved reply',\n"
             "      'cause': 'Fixture ordering defect', 'trigger': 'Delayed fixture reply',\n"
             "      'consequence': 'Wrong fixture result', 'sites': ['logic.txt'],\n"
             "      'actions': ['Reply'], 'invariants': ['ReplySafety'],\n"
@@ -44,7 +44,7 @@ class IssueReuseCLI(unittest.TestCase):
             "    path.write_text(json.dumps(proposal))\n"
             "elif mode == 'reuse':\n"
             f"    subprocess.run([sys.executable, {str(fixture.root / 'src/specula/cli.py')!r},\n"
-            "        'issues', '--work', str(work), 'reuse', '--id', 'MC-1',\n"
+            "        'findings', '--work', str(work), 'reuse', '--id', 'MC-1',\n"
             "        '--reason', 'Same fixture mechanism, consequence and premises.'], check=True)\n"
         )
         fixture.adapter.write_text(
@@ -60,9 +60,9 @@ class IssueReuseCLI(unittest.TestCase):
         first = fixture.run_ci("--incremental", "--agent=fake")
         self.assertEqual(first.returncode, 2, first.stdout + first.stderr)
         baseline = (fixture.ci / "current/model").resolve()
-        original = ci_issues.load(baseline, "MC-1")
+        original = persistent_findings.load(baseline, "MC-1")
         self.assertTrue(original["reusable"])
-        self.assertEqual(ci_issues.lookup(baseline, ["ReplySafety"])[0]["id"], "MC-1")
+        self.assertEqual(persistent_findings.lookup(baseline, ["ReplySafety"])[0]["id"], "MC-1")
 
         mode.write_text("reuse")
         Path(f"{fixture.adapter}.findings").unlink()
@@ -71,7 +71,7 @@ class IssueReuseCLI(unittest.TestCase):
         self.assertEqual(reused.returncode, 2, reused.stdout + reused.stderr)
         current = (fixture.ci / "current/model").resolve()
         self.assertNotEqual(current, baseline)
-        self.assertEqual(ci_issues.load(current, "MC-1"), original)
+        self.assertEqual(persistent_findings.load(current, "MC-1"), original)
         self.assertEqual(Path(f"{fixture.adapter}.analysis-count").read_text(), "x")
         report = (current / "ci-report.md").read_text()
         self.assertIn("historical conclusion reused", report)
@@ -89,7 +89,7 @@ class IssueReuseCLI(unittest.TestCase):
         self.assertEqual((fixture.ci / "current/model").resolve(), current)
         self.assertFalse((fixture.latest() / "ci-result.json").exists())
         work = fixture.latest() / "footest/.specula-output"
-        self.assertFalse((work / ci_issues.RECEIPTS / "MC-1.json").exists())
+        self.assertFalse((work / persistent_findings.RECEIPTS / "MC-1.json").exists())
         self.assertFalse((work / "spec/issue-input/MC-1.json").exists())
 
         mode.write_text("fixed")
@@ -98,6 +98,6 @@ class IssueReuseCLI(unittest.TestCase):
         self.assertEqual(fixed.returncode, 0, fixed.stdout + fixed.stderr)
         current = (fixture.ci / "current/model").resolve()
         self.assertEqual(CIStore(fixture.ci).current()["verdict"], "PASS")
-        self.assertEqual(ci_issues.lookup(current, ["ReplySafety"]), [])
-        self.assertFalse((current / ci_issues._record_path("MC-1")).exists())
-        self.assertFalse((current / ci_issues.DIRECTORY / "evidence/MC-1").exists())
+        self.assertEqual(persistent_findings.lookup(current, ["ReplySafety"]), [])
+        self.assertFalse((current / persistent_findings._record_path("MC-1")).exists())
+        self.assertFalse((current / persistent_findings.DIRECTORY / "evidence/MC-1").exists())
