@@ -15,6 +15,7 @@ from pathlib import Path
 import test_cli_pipeline as fixtures
 
 from specula.ci_store import CIStore, asset_hashes
+from specula.phaselib import _POLICY_SESSION_RESUME_PROMPT, _SESSION_RESUME_PROMPT
 
 
 class IncrementalCLI(unittest.TestCase):
@@ -88,6 +89,109 @@ class IncrementalCLI(unittest.TestCase):
         Path(f"{self.adapter}.findings").write_text(
             json.dumps([{"id": "MC-1", "status": status, "evidence": "spec/confirmation-fixture.md"}])
         )
+
+    def interrupt_incremental(self, codes: tuple[int, ...]) -> None:
+        previous = (self.ci / "current").resolve()
+        interruptions = "".join(
+            f'      {attempt}) printf "fixture interruption {code}\\n" > "$log"; exit {code} ;;\n'
+            for attempt, code in enumerate(codes, 1)
+        )
+        self.adapter.write_text(
+            self.adapter.read_text().replace(
+                "  incremental)\n",
+                "  incremental)\n"
+                f'    test "$(readlink -f "{self.ci}/current")" = "{previous}"\n'
+                "    attempt=0\n"
+                '    if [ -f "$0.attempts" ]; then attempt=$(cat "$0.attempts"); fi\n'
+                "    attempt=$((attempt + 1))\n"
+                '    printf "%s\\n" "$attempt" > "$0.attempts"\n'
+                '    cp "$prompt" "$0.prompt-$attempt"\n'
+                '    if [ "$attempt" -gt 1 ]; then\n'
+                '      test "$(cat "$resume")" = fixture-native-session\n'
+                '      test "$(cat "$SPECULA_WORK_DIR/retry-work.txt")" = retained-work\n'
+                "    fi\n"
+                '    printf "fixture-native-session\\n" > "$resume"\n'
+                '    printf "retained-work\\n" > "$SPECULA_WORK_DIR/retry-work.txt"\n'
+                '    case "$attempt" in\n' + interruptions + "    esac\n",
+            )
+        )
+
+    def test_default_retries_resume_the_incremental_session_through_context_runner(self) -> None:
+        self.initialize()
+        self.change_source("retry fixture\n")
+        tool_python = self.root / "tools/context_control/.venv/bin/python"
+        tool_python.parent.mkdir(parents=True)
+        tool_python.symlink_to(sys.executable)
+        self.interrupt_incremental((74, 76))
+
+        result = self.run_ci("--incremental", "--agent=fake")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(Path(f"{self.adapter}.attempts").read_text(), "3\n")
+        self.assertEqual(Path(f"{self.adapter}.prompt-2").read_text(), _SESSION_RESUME_PROMPT)
+        self.assertEqual(Path(f"{self.adapter}.prompt-3").read_text(), _POLICY_SESSION_RESUME_PROMPT)
+        run = self.latest()
+        meta = json.loads((run / "run.json").read_text())
+        for config in (meta, meta["resume_configuration"]):
+            self.assertEqual(config["policy_retries"], 20)
+            self.assertEqual(config["transient_resumes"], 20)
+        work = run / "footest/.specula-output"
+        self.assertEqual(len(list((work / ".context-control").glob("invocation-*"))), 3)
+        for attempt, code in enumerate((74, 76), 1):
+            self.assertEqual(
+                (work / f"incremental.attempt-{attempt}.log").read_text(), f"fixture interruption {code}\n"
+            )
+        self.assertTrue(json.loads((run / "ci-result.json").read_text())["complete"])
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], self.git("rev-parse", "HEAD"))
+
+    def test_incremental_retry_budgets_are_independent(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("retry exhaustion fixture\n")
+        original = self.adapter.read_text()
+        for codes, policy, transient in (((74, 76, 74), 2, 1), ((76, 74, 76), 1, 2)):
+            with self.subTest(codes=codes):
+                self.adapter.write_text(original)
+                Path(f"{self.adapter}.attempts").unlink(missing_ok=True)
+                self.interrupt_incremental(codes)
+                result = self.run_ci(
+                    "--incremental", "--agent=fake", f"--policy-retries={policy}", f"--transient-resumes={transient}"
+                )
+                self.assertEqual(result.returncode, codes[-1], result.stdout + result.stderr)
+                self.assertEqual(Path(f"{self.adapter}.attempts").read_text(), "3\n")
+                self.assertEqual((self.ci / "current").resolve(), previous)
+                self.assertFalse((self.latest() / "ci-result.json").exists())
+
+    def test_incremental_zero_budgets_and_rate_limits_stop_without_retry(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("disabled retry fixture\n")
+        original = self.adapter.read_text()
+        for code, flags in ((74, ["--transient-resumes=0"]), (76, ["--policy-retries=0"]), (75, [])):
+            with self.subTest(code=code):
+                self.adapter.write_text(original)
+                Path(f"{self.adapter}.attempts").unlink(missing_ok=True)
+                self.interrupt_incremental((code,))
+                result = self.run_ci("--incremental", "--agent=fake", *flags)
+                self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+                self.assertEqual(Path(f"{self.adapter}.attempts").read_text(), "1\n")
+                self.assertEqual((self.ci / "current").resolve(), previous)
+                self.assertFalse((self.latest() / "ci-result.json").exists())
+
+    def test_successful_retry_still_requires_incremental_completion(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("incomplete retry fixture\n")
+        self.interrupt_incremental((76,))
+        Path(f"{self.adapter}.reject").touch()
+
+        result = self.run_ci("--incremental", "--agent=fake")
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(Path(f"{self.adapter}.attempts").read_text(), "2\n")
+        self.assertIn("did not report completion", result.stdout)
+        self.assertEqual((self.ci / "current").resolve(), previous)
+        self.assertFalse((self.latest() / "ci-result.json").exists())
 
     def test_confirmed_bugs_fail_but_publish_a_completed_model(self) -> None:
         self.initialize()
