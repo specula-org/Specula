@@ -14,6 +14,7 @@ from unittest import mock
 from specula.adapters.utils.run_lock import CI_LOCK_FD_ENV, RUN_LOCK_FD_ENV, inherited_run_lock_fds
 from specula.ci_store import CIError, CIStore, asset_hashes, git
 from specula.ci_workflow import CIPipeline
+from specula.pipelinelib import Pipeline
 
 
 class StoreTests(unittest.TestCase):
@@ -135,7 +136,6 @@ class StoreTests(unittest.TestCase):
             ["--ci-init"],
             ["--no-isolate"],
             ["--enable-reviews"],
-            ["--policy-retries=1"],
         ):
             with self.subTest(extra=extra), contextlib.redirect_stderr(io.StringIO()):
                 pipeline = CIPipeline()
@@ -143,6 +143,26 @@ class StoreTests(unittest.TestCase):
                     pipeline.parse_args(["--incremental", f"--ci-dir={self.root / 'not-created'}", *extra]), 1
                 )
         self.assertFalse((self.root / "not-created").exists())
+
+    def test_ci_retry_defaults_and_overrides_match_one_shot(self) -> None:
+        for flags in (
+            [],
+            ["--policy-retries=0", "--transient-resumes=0"],
+            ["--policy-retries=2", "--transient-resumes=3"],
+            ["--policy-retries=4"],
+            ["--transient-resumes=5"],
+        ):
+            for mode in ("--ci-init", "--incremental"):
+                with self.subTest(flags=flags, mode=mode):
+                    ordinary = Pipeline()
+                    self.assertIsNone(ordinary.parse_args([*flags, "project"]))
+                    pipeline = CIPipeline()
+                    self.assertIsNone(pipeline.parse_args([mode, f"--ci-dir={self.root}", *flags, "project"]))
+                    self.assertEqual(pipeline.policy_retries, ordinary.policy_retries)
+                    self.assertEqual(pipeline.transient_resumes, ordinary.transient_resumes)
+                    phase_args = pipeline._phase_args(["project"])
+                    self.assertIn(f"--policy-retries={ordinary.policy_retries}", phase_args)
+                    self.assertIn(f"--transient-resumes={ordinary.transient_resumes}", phase_args)
 
     def test_ci_resume_rejects_missing_invalid_and_symlinked_runs_before_locking(self) -> None:
         alias = self.root / "runs/alias"

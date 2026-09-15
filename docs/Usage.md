@@ -184,6 +184,8 @@ specula run --incremental --ci-dir=/work/project-ci
 
 Specula computes the changes since the current model's source version, then runs one Agent through the incremental-modeling workflow using the existing model and harness. The repository path and user guidance are reused. Use the ordinary `--agent`, `--model`, and `--effort` options to select the Agent.
 
+New incremental runs use the same retry defaults as one-shot runs: `--policy-retries=20` for provider-policy interruptions and `--transient-resumes=20` for temporary provider or transport failures. Each budget applies to the entire incremental Agent conversation. Set either option to a non-negative integer to override its budget; `0` disables that recovery path. Resuming an existing run preserves its saved budgets.
+
 Completed runs update `current/model/` in the CI directory. Reports, diffs, logs, and resource usage are saved under `runs/<run-id>/` in the same directory.
 
 CI returns exit code `2` when the current confirmation results contain `REPRODUCED` or `ENV_LIMITED` bugs, regardless of whether the update introduced them. `MASKED` findings produce a warning and exit code `0`; completed checks without these findings also return `0`. Unfinished checks return a nonzero exit code. Inspect `ci-report.md` and `ci-verdict.json` for the incremental result and evidence. Initialization derives the same verdict from `confirmed-bugs.md`.
@@ -214,7 +216,7 @@ Same-repository PRs check the proposed merged code without changing the branch's
 
 Manual runs are available in the Actions tab. Uncomment `schedule` to enable cron; use `SPECULA_CI_BRANCH` to select a non-default branch for scheduled runs. Change `SPECULA_CI_ENVIRONMENT` when updating the runner's toolchain or external configuration so older check results are not reused under a different setup.
 
-The Actions summary lists each revision's outcome, with downloadable reports and usage summaries. Full working files and conversation state stay in the CI directory. Failed checks are reported, not automatically retried; use the existing resume command or request an explicit manual rerun.
+The Actions summary lists each revision's outcome, with downloadable reports and usage summaries. Full working files and conversation state stay in the CI directory. Agent calls may recover within their configured retry budgets. Once a check exits with a failure, Actions reports it without automatically rerunning the check; use the existing resume command or request an explicit manual rerun.
 
 ## Bring Your Own Model (BYOM)
 
