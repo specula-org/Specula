@@ -2,6 +2,8 @@
 
 Run TLC model checking, monitor execution, analyze counterexamples, and determine whether violations stem from invariant mismatches, spec modeling issues, or real system bugs.
 
+When a candidate defect appears, follow [Persistent Findings](../bug-confirmation/references/persistent-findings.md) for a lightweight history match before deeper analysis or reproduction.
+
 ## Input / Output
 
 **Input**: Model checking spec (`MC.tla` + `MC.cfg`), system implementation source code (ground truth), run command

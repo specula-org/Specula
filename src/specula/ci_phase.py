@@ -70,7 +70,7 @@ class IncrementalPhase(Phase):
                 if stop_gate._accept_main(self.key, str(work)) != 0:
                     raise CIError("incremental run left blocked or unfinished work")
                 inputs = read_json(ws.run_dir / "ci-input.json")
-                ci_verdict.read(work, ws.run_dir.name, previous=Path(inputs["old_model"]))
+                ci_verdict.finalize(work, ws.run_dir / "ci-source", ws.run_dir.name, previous=Path(inputs["old_model"]))
             except (OSError, ValueError, CIError) as exc:
                 print(f"ERROR: {exc}; current model will not be updated")
                 failures.append((name, 1))

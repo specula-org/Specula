@@ -2,6 +2,8 @@
 
 Investigate a system implementation to find bugs. Some bugs can be confirmed directly (copy-paste errors, data races). The most critical bugs — protocol safety violations — need TLA+ model checking to verify. The **Modeling Brief** captures findings and plans how to verify them.
 
+When a candidate defect appears, follow [Persistent Findings](../bug-confirmation/references/persistent-findings.md) for a lightweight history match before deeper analysis or reproduction.
+
 ## Input / Output
 
 **Input**: Repository path + reference algorithm/paper (optional) + GitHub URL (optional)

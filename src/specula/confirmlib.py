@@ -2081,6 +2081,20 @@ def run_finding_safe(
     malformed output — is recorded as an INCOMPLETE outcome (error.txt kept for
     diagnosis, and NOT cached so a later retry re-attempts it). It never propagates
     to discard the whole target's report: the rest of the batch still delivers."""
+    from specula import persistent_findings
+
+    work = cfg.ws.work_dir(cfg.name).absolute()
+    receipt_path = work / persistent_findings.RECEIPTS / f"{f.id}.json"
+    if cfg.repair_round is None and receipt_path.is_file():
+        try:
+            source, run_id, previous = persistent_findings.context(work)
+            receipt = json.loads(persistent_findings._bytes(work, f"{persistent_findings.RECEIPTS}/{f.id}.json"))
+            persistent_findings.validate_reuse(work, source, run_id, receipt, previous)
+            _log(f"  [{f.id}] {receipt['status']} — historical conclusion reused")
+            return Outcome(f, receipt["status"], True, 0, persistent_findings.reused_body(work, f.id))
+        except (OSError, ValueError, RuntimeError, KeyError) as exc:
+            _log(f"  [{f.id}] historical conclusion needs reanalysis: {exc}")
+            receipt_path.unlink(missing_ok=True)
     cached = _load_verdict(f, cfg)
     if cached is not None:
         resumelib.complete_prefix(("confirm", cfg.name, "finding", f.id))
@@ -3929,6 +3943,18 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
                     f"consolidate failed ({exc}) — deliverable withheld; downstream gate + retry settle it",
                 )
             findings = load_findings(cfg)
+            from specula import persistent_findings
+
+            work = cfg.ws.work_dir(cfg.name).absolute()
+            ids = {finding.id for finding in findings}
+            for receipt in persistent_findings.receipts(work):
+                if receipt["id"] not in ids:
+                    record = persistent_findings.load(work, receipt["id"])
+                    findings.extend(_findings_from_data(cfg, [{"id": record["id"], "title": record["title"]}]))
+            history = persistent_findings.index(work)
+            for finding in findings:
+                if finding.id in history:
+                    finding.data["persistent_record"] = str(work / persistent_findings._record_path(finding.id))
             catalog = findings
         else:
             commit = _load_repair_commit(cfg)

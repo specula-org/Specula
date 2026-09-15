@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from specula import ci_init
+from specula import ci_init, persistent_findings
 from specula.ci_store import CIError, read_json, write_json
 from specula.resource_summary import _confirmation_finding_statuses
 
@@ -18,7 +18,7 @@ LIVE_STATUSES = BUG_STATUSES | {"MASKED"}
 TERMINAL_STATUSES = LIVE_STATUSES | {"FALSE POSITIVE", "DROPPED", "FIXED", "NEEDS MORE INFO", "DEFERRED"}
 
 
-def conclusion(findings: list[dict[str, str]]) -> str:
+def conclusion(findings: list[dict[str, Any]]) -> str:
     statuses = {finding["status"] for finding in findings}
     if statuses & BUG_STATUSES:
         return "FAIL"
@@ -31,7 +31,7 @@ def exit_code(verdict: object) -> int:
     return BUG_EXIT_CODE if verdict == "FAIL" else 0
 
 
-def _read(work: Path, run_id: str | None = None) -> dict[str, Any]:
+def _read(work: Path, run_id: str | None = None, *, merge_reuse: bool = False) -> dict[str, Any]:
     if not ci_init._regular_file(work, FILENAME):
         raise CIError(f"missing current {FILENAME}")
     record = read_json(work / FILENAME)
@@ -44,6 +44,8 @@ def _read(work: Path, run_id: str | None = None) -> dict[str, Any]:
     findings = record.get("findings")
     if not isinstance(findings, list):
         raise CIError("CI verdict must contain a findings list, including when empty")
+    if merge_reuse:
+        persistent_findings.merge_receipts(work, record)
     seen: set[str] = set()
     for finding in findings:
         if not isinstance(finding, dict):
@@ -64,6 +66,10 @@ def _read(work: Path, run_id: str | None = None) -> dict[str, Any]:
         if not isinstance(evidence, str) or not evidence:
             raise CIError(f"{fid}: missing current confirmation evidence")
         path = Path(evidence)
+        if "reuse" not in finding and path.as_posix().startswith(
+            (persistent_findings.DIRECTORY + "/", persistent_findings.RECEIPTS + "/")
+        ):
+            raise CIError(f"{fid}: historical evidence requires a checked reuse receipt")
         if (
             path.is_absolute()
             or ".." in path.parts
@@ -88,17 +94,60 @@ def prior_findings(work: Path) -> dict[str, str]:
     return {}
 
 
-def read(work: Path, run_id: str | None = None, *, previous: Path | None = None) -> str:
+def read(work: Path, run_id: str | None = None, *, previous: Path | None = None, source: Path | None = None) -> str:
     record = _read(work, run_id)
+    reused = [finding for finding in record["findings"] if "reuse" in finding]
+    if reused:
+        if source is None:
+            source, _, context_previous = persistent_findings.context(work)
+            previous = previous or context_previous
+        for finding in reused:
+            persistent_findings.validate_reuse(work, source, record["run_id"], finding, previous)
+    required = set(persistent_findings.index(work))
     if previous is not None:
-        required = {fid for fid, status in prior_findings(previous).items() if status in LIVE_STATUSES}
+        required.update(fid for fid, status in prior_findings(previous).items() if status in LIVE_STATUSES)
+    if required:
         current = {finding["id"]: finding["status"] for finding in record["findings"]}
         missing = required - current.keys()
         if missing:
             raise CIError(f"prior findings need current confirmation: {', '.join(sorted(missing))}")
         if any(current[fid] == "DROPPED" for fid in required):
             raise CIError("prior confirmed findings cannot be dropped; record a current confirmation or repair verdict")
+        if any(current[fid] in {"NEEDS MORE INFO", "DEFERRED"} for fid in required):
+            raise CIError("prior unresolved defects require a completed recheck or applicable historical conclusion")
     return conclusion(record["findings"])
+
+
+def finalize(work: Path, source: Path, run_id: str, *, previous: Path | None = None) -> str:
+    """Accept checked reuse receipts, then publish the small active issue set."""
+    record = _read(work, run_id, merge_reuse=True)
+    # Validate before updating the registry or removing any resolved issue.
+    for finding in record["findings"]:
+        if "reuse" in finding:
+            persistent_findings.validate_reuse(work, source, run_id, finding, previous)
+    write_json(work / FILENAME, record)
+    verdict = read(work, run_id, previous=previous, source=source)
+    persistent_findings.reconcile(work, source, run_id, record["findings"])
+    if (work / "ci-report.md").is_file():
+        _report_reuse(work, record["findings"])
+    return verdict
+
+
+def seed_issues(work: Path, old_source: Path, previous: Path) -> None:
+    """Give legacy baselines a small index without claiming they are reusable."""
+    if (work / persistent_findings.INDEX).exists():
+        return
+    if (previous / FILENAME).exists():
+        record = _read(previous)
+        findings = record["findings"]
+        run_id = record["run_id"]
+    else:
+        findings = [
+            {"id": fid, "status": status, "evidence": "confirmed-bugs.md"}
+            for fid, status in prior_findings(previous).items()
+        ]
+        run_id = "legacy"
+    persistent_findings.reconcile(work, old_source, run_id, findings)
 
 
 def from_confirmation(work: Path, run_id: str) -> str:
@@ -108,12 +157,28 @@ def from_confirmation(work: Path, run_id: str) -> str:
     statuses = _confirmation_finding_statuses((work / "confirmed-bugs.md").read_text(), impact_only=False)
     if statuses is None:
         raise CIError("cannot read CI initialization finding dispositions")
+    findings = persistent_findings.confirmation_findings(work, run_id)
     record = {
         "version": 1,
         "run_id": run_id,
-        "findings": [
-            {"id": fid, "status": status, "evidence": "confirmed-bugs.md"} for fid, status in statuses.items()
-        ],
+        "findings": findings,
     }
     write_json(work / FILENAME, record)
     return read(work, run_id)
+
+
+def _report_reuse(work: Path, findings: list[dict[str, Any]]) -> None:
+    reused = [finding for finding in findings if "reuse" in finding]
+    report = work / "ci-report.md"
+    start, end = "<!-- issue-reuse:start -->", "<!-- issue-reuse:end -->"
+    content = report.read_text()
+    content = re.sub(re.escape(start) + r".*?" + re.escape(end) + r"\n?", "", content, flags=re.S)
+    if not reused:
+        report.write_text(content.rstrip() + "\n")
+        return
+    rows = "\n".join(
+        f"- **{finding['id']}** ({finding['status']}): still unresolved; historical conclusion reused. "
+        f"[Evidence and limits]({finding['evidence']})."
+        for finding in reused
+    )
+    report.write_text(content.rstrip() + f"\n\n{start}\n## Reused unresolved findings\n\n{rows}\n{end}\n")
