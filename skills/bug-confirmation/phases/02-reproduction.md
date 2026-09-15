@@ -2,7 +2,7 @@
 
 **This phase decides the verdict.** Phase 1 only gathered evidence (in `investigation.md`) and judged nothing (except the code-review × known drop). Here you attempt reproduction, then choose exactly ONE verdict from the decision table (`guide.md`) using the Phase-1 investigation record **plus** the reproduction result together.
 
-**Every bug must attempt reproduction.** New, known, or historical — no exemption. Work through the escalation ladder; either you trigger the live harm (→ `REPRODUCED`) or you do not.
+**Every bug without an applicable historical conclusion must attempt reproduction.** Complete the [early reuse check](../references/issue-reuse.md) before entering this phase. Work through the escalation ladder; either you trigger the live harm (→ `REPRODUCED`) or you do not.
 
 **Reuse before declaring the environment unavailable.** A binary missing from `PATH`, or one failed build/bootstrap command, is not enough for `ENV_LIMITED`. First inspect the target checkout and current `.specula-output/` for compatible existing build artifacts (including symlinks), and inspect prior harness/build logs for a known-successful command and environment. Check each artifact's source SHA, build configuration, and provenance before reuse. Treat an instrumented or uncertain artifact as a smoke check and recipe source unless its modifications are explicitly compatible with the reached escalation level and documented. Before giving up on a build/runtime problem, make one bounded attempt within the caller's time and resource budget to replay or rebuild from an applicable known-good recipe, and record what you searched, reused, attempted, or rejected.
 

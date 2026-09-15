@@ -2,13 +2,14 @@
 
 Confirm finding **{{finding_id}}** by following the bug-confirmation skill
 (`guide.md` + `phases/01-investigation.md` + `phases/02-reproduction.md`):
-investigate, reproduce, then emit ONE verdict chosen from the skill's decision
+perform the early historical lookup when a CI issue index is available; otherwise investigate, reproduce, then emit ONE verdict chosen from the skill's decision
 table. Execute the skill — do not restate it.
 
 {{context}}
 
 ## Output (the dispatcher parses these)
-- Write and ACTUALLY EXECUTE `repro/test_bug{{finding_id}}_*`.
+- For a finding requiring fresh confirmation, write and ACTUALLY EXECUTE `repro/test_bug{{finding_id}}_*`.
+- In a CI initialization run, after completing the analysis for a real unresolved defect, write `{{fdir}}/issue.json` using `references/issue-reuse.md`: concise identity/premises, complete relevant dependency selectors, and selected evidence paths relative to the target output directory. The dispatcher registers it using the final verdict. Do not write the shared issue index. This is metadata from the completed investigation, not another investigation.
 - Header fields:
   - `- **Source**: MC` (real counterexample) or `Code Review` (no-violation / code-review)
   - `- **Novelty**: NEW` or `KNOWN (cite: <URL/dataset-id>; fix-status: unfixed|fixed)` — set from evidence, not by default (see the skill); Code Review AND known → `VERDICT: DROPPED`. Before writing `NEW`, do at least one prior-report search — upstream issues **and recently merged/closed PRs** (a fix that landed days ago still makes it KNOWN); `NEW` means you looked and found nothing for THIS mechanism, not that you skipped looking. (Do this via the issue tracker / git history only — do NOT open `bug-report.md` or other findings, per the "Do NOT" list below.)
@@ -34,5 +35,5 @@ If you cannot honestly answer these in the bug's favour, do NOT manufacture a pa
 `DROPPED` remains only for the code-review × already-reported pre-filter. Every honest outcome beats a fabricated `REPRODUCED`.
 
 ## Do NOT
-- Do not read or touch other findings, the spec files, `bug-report.md`, `confirmed-bugs.md`, or the shared `repair-requests/` queue. Do not allocate an RR number yourself.
+- Except for the bounded historical issue lookup, do not read or touch other findings, the spec files, `bug-report.md`, `confirmed-bugs.md`, or the shared `repair-requests/` queue. Do not allocate an RR number yourself.
 - Do not fabricate or force the trigger to reach `REPRODUCED`: no hand-built unreachable pre-condition, no mock emitting what a real peer never sends, no source patch that creates the symptom.

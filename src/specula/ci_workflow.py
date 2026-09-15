@@ -6,12 +6,13 @@ import contextlib
 import os
 import re
 import shlex
+import shutil
 import stat
 import sys
 from pathlib import Path
 from typing import Any
 
-from specula import ci_init, ci_verdict, resumelib
+from specula import ci_init, ci_issues, ci_verdict, resumelib
 from specula.ci_identity import check_key
 from specula.ci_inheritance import register_candidate
 from specula.ci_store import CIError, CIStore, freeze_source, git, read_json, write_json
@@ -252,6 +253,12 @@ class CIPipeline(Pipeline):
             inputs["old_model"] = current["model_path"]
             work = ci_init.prepare_output_directory(self.run_dir, name)
             ci_init._copy_assets(Path(current["model_path"]), work)
+            ci_verdict.seed_issues(work, old_source, Path(current["model_path"]))
+            # Applicability receipts and fresh-analysis proposals belong only
+            # to their original run. The active issue records cross updates.
+            for relative in (ci_issues.RECEIPTS, "spec/issue-input"):
+                if (work / relative).exists():
+                    shutil.rmtree(work / relative)
             # Prior run summaries remain available in old_model; they are not
             # this run's findings, completion evidence, or resource history.
             for filename in (
@@ -306,10 +313,13 @@ class CIPipeline(Pipeline):
             raise CIError("pre-instrumentation source was modified during the run")
         name = self.extract_names()[0]
         work = Path(self.get_work_dir(name))
-        verdict = (
-            ci_verdict.read(work, self.run_id, previous=Path(self.inputs["old_model"]))
-            if self.incremental
-            else ci_verdict.from_confirmation(work, self.run_id)
+        if not self.incremental:
+            ci_verdict.from_confirmation(work, self.run_id)
+        verdict = ci_verdict.finalize(
+            work,
+            source,
+            self.run_id,
+            previous=Path(self.inputs["old_model"]) if self.incremental else None,
         )
         publication = dict(self.inputs)
         publication["verdict"] = verdict

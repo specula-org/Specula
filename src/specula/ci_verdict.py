@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from specula import ci_init
+from specula import ci_init, ci_issues
 from specula.ci_store import CIError, read_json, write_json
 from specula.resource_summary import _confirmation_finding_statuses
 
@@ -18,7 +18,7 @@ LIVE_STATUSES = BUG_STATUSES | {"MASKED"}
 TERMINAL_STATUSES = LIVE_STATUSES | {"FALSE POSITIVE", "DROPPED", "FIXED", "NEEDS MORE INFO", "DEFERRED"}
 
 
-def conclusion(findings: list[dict[str, str]]) -> str:
+def conclusion(findings: list[dict[str, Any]]) -> str:
     statuses = {finding["status"] for finding in findings}
     if statuses & BUG_STATUSES:
         return "FAIL"
@@ -63,6 +63,8 @@ def _read(work: Path, run_id: str | None = None) -> dict[str, Any]:
             raise CIError(f"{fid}: unresolved or invalid CI finding status: {status}")
         if not isinstance(evidence, str) or not evidence:
             raise CIError(f"{fid}: missing current confirmation evidence")
+        if "reuse" not in finding and evidence.startswith((ci_issues.DIRECTORY + "/", ci_issues.RECEIPTS + "/")):
+            raise CIError(f"{fid}: historical evidence requires a checked reuse receipt")
         path = Path(evidence)
         if (
             path.is_absolute()
@@ -88,17 +90,61 @@ def prior_findings(work: Path) -> dict[str, str]:
     return {}
 
 
-def read(work: Path, run_id: str | None = None, *, previous: Path | None = None) -> str:
+def read(work: Path, run_id: str | None = None, *, previous: Path | None = None, source: Path | None = None) -> str:
     record = _read(work, run_id)
+    reused = [finding for finding in record["findings"] if "reuse" in finding]
+    if reused:
+        if source is None:
+            source, _, context_previous = ci_issues.context(work)
+            previous = previous or context_previous
+        for finding in reused:
+            ci_issues.validate_reuse(work, source, record["run_id"], finding, previous)
+    required = set(ci_issues.index(work))
     if previous is not None:
-        required = {fid for fid, status in prior_findings(previous).items() if status in LIVE_STATUSES}
+        required.update(fid for fid, status in prior_findings(previous).items() if status in LIVE_STATUSES)
+    if required:
         current = {finding["id"]: finding["status"] for finding in record["findings"]}
         missing = required - current.keys()
         if missing:
             raise CIError(f"prior findings need current confirmation: {', '.join(sorted(missing))}")
         if any(current[fid] == "DROPPED" for fid in required):
             raise CIError("prior confirmed findings cannot be dropped; record a current confirmation or repair verdict")
+        if any(current[fid] in {"NEEDS MORE INFO", "DEFERRED"} for fid in required):
+            raise CIError("prior unresolved defects require a completed recheck or applicable historical conclusion")
     return conclusion(record["findings"])
+
+
+def finalize(work: Path, source: Path, run_id: str, *, previous: Path | None = None) -> str:
+    """Accept checked reuse receipts, then publish the small active issue set."""
+    record = _read(work, run_id)
+    ci_issues.merge_receipts(work, record)
+    # Validate before updating the registry or removing any resolved issue.
+    for finding in record["findings"]:
+        if "reuse" in finding:
+            ci_issues.validate_reuse(work, source, run_id, finding, previous)
+    write_json(work / FILENAME, record)
+    verdict = read(work, run_id, previous=previous, source=source)
+    ci_issues.reconcile(work, source, run_id, record["findings"])
+    if (work / "ci-report.md").is_file():
+        ci_issues.report_reuse(work, record["findings"])
+    return verdict
+
+
+def seed_issues(work: Path, old_source: Path, previous: Path) -> None:
+    """Give legacy baselines a small index without claiming they are reusable."""
+    if (work / ci_issues.INDEX).exists():
+        return
+    if (previous / FILENAME).exists():
+        record = _read(previous)
+        findings = record["findings"]
+        run_id = record["run_id"]
+    else:
+        findings = [
+            {"id": fid, "status": status, "evidence": "confirmed-bugs.md"}
+            for fid, status in prior_findings(previous).items()
+        ]
+        run_id = "legacy"
+    ci_issues.reconcile(work, old_source, run_id, findings)
 
 
 def from_confirmation(work: Path, run_id: str) -> str:
@@ -108,12 +154,24 @@ def from_confirmation(work: Path, run_id: str) -> str:
     statuses = _confirmation_finding_statuses((work / "confirmed-bugs.md").read_text(), impact_only=False)
     if statuses is None:
         raise CIError("cannot read CI initialization finding dispositions")
+    findings = []
+    for fid, status in statuses.items():
+        evidence = "confirmed-bugs.md"
+        worker = f"confirmation/{fid}/verdict.json"
+        if status in LIVE_STATUSES and ci_init._regular_file(work, worker):
+            saved = read_json(work / worker)
+            body = saved.get("body")
+            if saved.get("status") == status and isinstance(body, str) and body.strip():
+                # Keep one issue's evidence small instead of bundling the whole
+                # batch report into every issue record.
+                evidence = f"spec/issue-confirmation/{ci_issues._id(fid)}.md"
+                ci_init._directory(work, "spec/issue-confirmation")
+                (work / evidence).write_text(f"# {fid}\n\nStatus: {status}\nRun: {run_id}\n\n{body}\n")
+        findings.append({"id": fid, "status": status, "evidence": evidence})
     record = {
         "version": 1,
         "run_id": run_id,
-        "findings": [
-            {"id": fid, "status": status, "evidence": "confirmed-bugs.md"} for fid, status in statuses.items()
-        ],
+        "findings": findings,
     }
     write_json(work / FILENAME, record)
     return read(work, run_id)
