@@ -182,7 +182,9 @@ def import_history(work: Path, previous: Path) -> None:
                 (work / relative).chmod(path.stat().st_mode & 0o777)
 
 
-def configure(work: Path, source: Path, run_id: str, previous: Path | None = None) -> None:
+def configure(
+    work: Path, source: Path, run_id: str, previous: Path | None = None, *, allow_source_change: bool = False
+) -> None:
     """Bind explicit run inputs and import only the supplied unresolved records."""
     source = source.resolve()
     previous = previous.resolve() if previous is not None else None
@@ -200,13 +202,17 @@ def configure(work: Path, source: Path, run_id: str, previous: Path | None = Non
     }
     if previous is not None and not previous.is_dir():
         raise FindingsError("supplied findings history is not a directory")
+    rebind_source = False
     if (work / CONTEXT).exists():
         saved = read_json(work / CONTEXT)
         if saved.get("run_id") == run_id:
-            if any(saved.get(key) != value for key, value in expected.items()):
+            changed = {key for key, value in expected.items() if saved.get(key) != value}
+            if not changed:
+                return
+            if not allow_source_change or changed != {"source"}:
                 raise FindingsError("persistent finding inputs changed within the same run")
-            return
-    if previous is not None:
+            rebind_source = True
+    if previous is not None and not rebind_source:
         import_history(work, previous)
     expected["inherited_records"] = {fid: record_digest(work, fid) for fid in index(work)}
     if (work / RECEIPTS).exists():
@@ -467,7 +473,11 @@ def validate_reuse(work: Path, source: Path, run_id: str, finding: dict[str, Any
 
 def merge_receipts(work: Path, record: dict[str, Any]) -> None:
     """Carry an explicitly checked old issue even when it was not rediscovered."""
-    present = {finding["id"] for finding in record["findings"]}
+    present = {
+        finding["id"]: finding
+        for finding in record["findings"]
+        if isinstance(finding, dict) and isinstance(finding.get("id"), str)
+    }
     for path in sorted((work / RECEIPTS).glob("*.json")):
         fid = _id(path.stem)
         finding = json.loads(_bytes(work, f"{RECEIPTS}/{path.name}"))
@@ -475,7 +485,17 @@ def merge_receipts(work: Path, record: dict[str, Any]) -> None:
             raise FindingsError("invalid issue reuse receipt")
         if fid not in present:
             record["findings"].append(finding)
-            present.add(fid)
+            present[fid] = finding
+        else:
+            current = present[fid]
+            if (
+                "reuse" not in current
+                and current.get("status") == finding.get("status")
+                and isinstance(current.get("evidence"), str)
+                and isinstance(finding.get("evidence"), str)
+                and Path(current["evidence"]) == Path(finding["evidence"])
+            ):
+                current["reuse"] = finding.get("reuse")
 
 
 def receipts(work: Path) -> list[dict[str, Any]]:
@@ -544,11 +564,23 @@ def reused_body(work: Path, fid: str) -> str:
 def reconcile(work: Path, source: Path, run_id: str, findings: list[dict[str, Any]]) -> None:
     """Publish only current unresolved entries; fixed/dismissed entries are deleted."""
     live = {finding["id"]: finding for finding in findings if finding["status"] in LIVE}
+    binding = read_json(work / CONTEXT) if _regular_file(work, CONTEXT) else {}
+    inherited = (
+        binding.get("inherited_records", {})
+        if binding.get("run_id") == run_id and binding.get("source") == str(source.resolve())
+        else {}
+    )
     for fid, finding in live.items():
         if "reuse" in finding:
             continue  # The original record/evidence stays byte-identical.
         registered = load(work, fid) if (work / _record_path(fid)).exists() else None
-        if registered is not None and registered["origin_run"] == run_id and registered["reusable"]:
+        # A fresh source binding can inherit records with the same run ID.
+        if (
+            registered is not None
+            and registered["origin_run"] == run_id
+            and registered["reusable"]
+            and inherited.get(fid) != record_digest(work, fid)
+        ):
             if registered["status"] != finding["status"] or check(work, source, fid):
                 raise FindingsError(f"{fid}: recorded conclusion changed; reanalyze and record it again")
         proposal_path = f"spec/issue-input/{_id(fid)}.json"

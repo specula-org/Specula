@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ import pytest
 
 from specula import ci_init, ci_verdict, persistent_findings
 from specula.ci_store import CIError, write_json
+from specula.pipelinelib import Pipeline
 
 ERRORS = (CIError, persistent_findings.FindingsError)
 
@@ -506,3 +508,125 @@ def test_cli_does_not_silently_ignore_source_overrides(baseline: tuple[Path, Pat
         == 1
     )
     assert not persistent_findings.receipts(work)
+
+
+def test_fresh_context_rebinds_changed_source_and_retains_findings(baseline: tuple[Path, Path]) -> None:
+    source_a, previous = baseline
+    work = next_work(previous)
+    pipeline = Pipeline()
+    pipeline.targets, pipeline.artifact, pipeline.run_id = ["T"], str(source_a), "v2"
+    with patch.object(pipeline, "get_work_dir", return_value=str(work)):
+        pipeline.prepare_persistent_findings(["T"])
+        receipt = persistent_findings.reuse_issue(work, source_a, "v2", "MC-1", "A still matches.")
+        context_before = (work / persistent_findings.CONTEXT).read_bytes()
+        pipeline.prepare_persistent_findings(["T"])
+        assert (work / persistent_findings.CONTEXT).read_bytes() == context_before
+        assert persistent_findings.receipts(work) == [receipt]
+        resumed = Pipeline()
+        resumed.targets, resumed.artifact, resumed.run_id = ["T"], str(source_a), "v2"
+        with patch.object(resumed, "get_work_dir", return_value=str(work)):
+            resumed.prepare_persistent_findings(["T"])
+        assert persistent_findings.receipts(work) == [receipt]
+
+        source_b = source_a.parent / "source-b"
+        shutil.copytree(source_a, source_b)
+        write(source_b / "caller.go", "changed dependency in B\n")
+        with pytest.raises(ERRORS, match="inputs changed"):
+            persistent_findings.configure(work, source_b, "v2")
+        stored = (work / persistent_findings._record_path("MC-1")).read_bytes()
+        pipeline.artifact, pipeline.fresh_context = str(source_b), True
+        pipeline.prepare_persistent_findings(["T"])
+        assert persistent_findings.context(work)[0] == source_b
+        assert persistent_findings.receipts(work) == []
+        assert not (work / receipt["evidence"]).exists()
+        assert (work / persistent_findings._record_path("MC-1")).read_bytes() == stored
+        assert persistent_findings.check(work, persistent_findings.context(work)[0], "MC-1")
+        with pytest.raises(ERRORS, match="reanalysis required"):
+            persistent_findings.reuse_issue(work, persistent_findings.context(work)[0], "v2", "MC-1", "B differs.")
+        # The second preparation of this fresh invocation must not clear new work.
+        marker = work / persistent_findings.RECEIPTS / "new-stage.md"
+        write(marker, "new stage's work\n")
+        pipeline.prepare_persistent_findings(["T"])
+        assert marker.exists()
+
+
+def test_fresh_source_reanalysis_can_replace_the_same_run_record(baseline: tuple[Path, Path]) -> None:
+    source_a, work = baseline
+    persistent_findings.configure(work, source_a, "v1")
+    source_b = source_a.parent / "source-b"
+    shutil.copytree(source_a, source_b)
+    write(source_b / "caller.go", "changed dependency in B\n")
+    persistent_findings.configure(work, source_b, "v1", allow_source_change=True)
+    write(work / "evidence.md", "Fresh fixture confirmation on B.\n")
+    write(work / "spec/issue-input/MC-1.json", json.dumps(proposal()))
+    persistent_findings.reconcile(
+        work, source_b, "v1", [{"id": "MC-1", "status": "REPRODUCED", "evidence": "evidence.md"}]
+    )
+    assert not persistent_findings.check(work, source_b, "MC-1")
+
+
+def test_no_isolate_keeps_one_findings_id_and_reports_phase1_reuse(baseline: tuple[Path, Path]) -> None:
+    from specula import confirmlib
+    from specula.phaselib import Workspace
+
+    source, previous = baseline
+    work = next_work(previous)
+    pipeline = Pipeline()
+    pipeline.targets, pipeline.artifact, pipeline.isolate = ["T"], str(source), False
+    with patch("specula.pipelinelib.generate_run_id", side_effect=["invocation-one", "invocation-two"]):
+        with patch.object(pipeline, "get_work_dir", return_value=str(work)):
+            pipeline.prepare_persistent_findings(["T"])
+            first_id = persistent_findings.context(work)[1]
+            receipt = persistent_findings.reuse_issue(work, source, first_id, "MC-1", "Phase 1 matched history.")
+            pipeline.prepare_persistent_findings(["T"])
+        assert persistent_findings.context(work)[1] == first_id
+        assert persistent_findings.receipts(work) == [receipt]
+        assert pipeline.run_id == "" and pipeline.run_dir is None
+
+        # No later rediscovery: the real confirmation driver must still report it.
+        write(work / "spec/candidates.json", '{"findings": []}\n')
+        ws = Workspace(["T"], artifact=str(source))
+        cfg = confirmlib.ConfirmConfig("T", ws, Path("/unused-adapter"), repo_dir=str(source), worktree=False)
+        with (
+            patch.object(ws, "work_dir", return_value=work),
+            patch.object(
+                confirmlib, "run_agent_blocking", side_effect=AssertionError("must reuse without confirmation")
+            ),
+        ):
+            assert confirmlib.run_parallel_confirmation(cfg) == 0
+        assert "historical conclusion reused" in (work / "confirmed-bugs.md").read_text()
+        assert "MC-1" in (work / "confirmed-bugs.md").read_text()
+
+        next_pipeline = Pipeline()
+        next_pipeline.targets, next_pipeline.artifact, next_pipeline.isolate = ["T"], str(source), False
+        with patch.object(next_pipeline, "get_work_dir", return_value=str(work)):
+            next_pipeline.prepare_persistent_findings(["T"])
+        assert persistent_findings.context(work)[1] != first_id
+        assert not persistent_findings.receipts(work)
+
+
+@pytest.mark.parametrize("listed", [False, True])
+def test_ci_merges_receipt_into_listed_or_unlisted_finding(baseline: tuple[Path, Path], listed: bool) -> None:
+    source, previous = baseline
+    work = next_work(previous)
+    receipt = persistent_findings.reuse_issue(work, source, "v2", "MC-1", "Unchanged fixture.")
+    if listed:
+        record = json.loads((work / ci_verdict.FILENAME).read_text())
+        record["findings"] = [{key: receipt[key] for key in ("id", "status", "evidence")}]
+        write_json(work / ci_verdict.FILENAME, record)
+    assert ci_verdict.finalize(work, source, "v2", previous=previous) == "FAIL"
+    assert ci_verdict.exit_code(ci_verdict.read(work, "v2", source=source, previous=previous)) == 2
+    assert json.loads((work / ci_verdict.FILENAME).read_text())["findings"] == [receipt]
+
+
+def test_listed_reuse_still_rejects_invalid_receipt(baseline: tuple[Path, Path]) -> None:
+    source, previous = baseline
+    work = next_work(previous)
+    receipt = persistent_findings.reuse_issue(work, source, "v2", "MC-1", "Unchanged fixture.")
+    record = json.loads((work / ci_verdict.FILENAME).read_text())
+    record["findings"] = [{key: receipt[key] for key in ("id", "status", "evidence")}]
+    write_json(work / ci_verdict.FILENAME, record)
+    receipt["reuse"]["run_id"] = "stale-run"
+    write_json(work / persistent_findings.RECEIPTS / "MC-1.json", receipt)
+    with pytest.raises(ERRORS, match="reuse receipt does not match"):
+        ci_verdict.finalize(work, source, "v2", previous=previous)

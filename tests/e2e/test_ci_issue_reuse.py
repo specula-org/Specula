@@ -81,6 +81,19 @@ class IssueReuseCLI(unittest.TestCase):
         bundled = current / original["evidence"][0]["path"]
         self.assertIn(original["origin_run"], bundled.read_text())
 
+        # The documented explicit row must publish the same FAIL as auto-append.
+        Path(f"{fixture.adapter}.findings").write_text(
+            json.dumps([{"id": "MC-1", "status": "REPRODUCED", "evidence": "spec/finding-reuse/MC-1.md"}])
+        )
+        fixture.change_source("BUG\naccept old reply\nEND\nlogging v3\n")
+        listed = fixture.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(listed.returncode, 2, listed.stdout + listed.stderr)
+        current = (fixture.ci / "current/model").resolve()
+        self.assertTrue(json.loads((fixture.latest() / "ci-result.json").read_text())["complete"])
+        entry = json.loads((current / "ci-verdict.json").read_text())["findings"][0]
+        self.assertEqual(entry["reuse"]["run_id"], fixture.latest().name)
+        self.assertEqual(CIStore(fixture.ci).current()["verdict"], "FAIL")
+
         # A relevant change invalidates the old conclusion before any costly
         # fixture confirmation. A failed run cannot advance the baseline.
         fixture.change_source("BUG\nvalidate then accept\nEND\nlogging v2\n")

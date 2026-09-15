@@ -384,6 +384,7 @@ class Pipeline:
         self.artifact = ""
         self._artifact_given = False
         self.findings_from: Path | None = None
+        self._findings_run_id = ""
         self.byom_path: Path | None = None
         self._byom_given = False
         self.guidance_path: Path | None = None
@@ -2079,6 +2080,8 @@ class Pipeline:
             return
         from specula import persistent_findings
 
+        if not self._findings_run_id:
+            self._findings_run_id = self.run_id or generate_run_id()
         ws = Workspace(self.targets, artifact=self.artifact, run_dir=self.run_dir)
         for name in names:
             work = Path(self.get_work_dir(name)).absolute()
@@ -2086,11 +2089,17 @@ class Pipeline:
                 persistent_findings.import_history(work, self.findings_from)
             if (work / persistent_findings.CONTEXT).exists():
                 _, run_id, _ = persistent_findings.context(work)
-                if run_id == self.run_id:
+                if run_id == self._findings_run_id and not self.fresh_context:
                     continue
             source = ws.find_repo_dir(name)
             if source:
-                persistent_findings.configure(work, Path(source), self.run_id or generate_run_id(), self.findings_from)
+                persistent_findings.configure(
+                    work,
+                    Path(source),
+                    self._findings_run_id,
+                    self.findings_from,
+                    allow_source_change=self.fresh_context,
+                )
 
     def persist_findings(self, names: list[str]) -> None:
         if self.dry_run:

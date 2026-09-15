@@ -31,7 +31,7 @@ def exit_code(verdict: object) -> int:
     return BUG_EXIT_CODE if verdict == "FAIL" else 0
 
 
-def _read(work: Path, run_id: str | None = None) -> dict[str, Any]:
+def _read(work: Path, run_id: str | None = None, *, merge_reuse: bool = False) -> dict[str, Any]:
     if not ci_init._regular_file(work, FILENAME):
         raise CIError(f"missing current {FILENAME}")
     record = read_json(work / FILENAME)
@@ -44,6 +44,8 @@ def _read(work: Path, run_id: str | None = None) -> dict[str, Any]:
     findings = record.get("findings")
     if not isinstance(findings, list):
         raise CIError("CI verdict must contain a findings list, including when empty")
+    if merge_reuse:
+        persistent_findings.merge_receipts(work, record)
     seen: set[str] = set()
     for finding in findings:
         if not isinstance(finding, dict):
@@ -118,8 +120,7 @@ def read(work: Path, run_id: str | None = None, *, previous: Path | None = None,
 
 def finalize(work: Path, source: Path, run_id: str, *, previous: Path | None = None) -> str:
     """Accept checked reuse receipts, then publish the small active issue set."""
-    record = _read(work, run_id)
-    persistent_findings.merge_receipts(work, record)
+    record = _read(work, run_id, merge_reuse=True)
     # Validate before updating the registry or removing any resolved issue.
     for finding in record["findings"]:
         if "reuse" in finding:
