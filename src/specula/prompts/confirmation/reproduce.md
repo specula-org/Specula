@@ -1,13 +1,11 @@
 # Confirm ONE finding: {{finding_id}}
 
-Confirm finding **{{finding_id}}** by following the bug-confirmation skill
-(`guide.md` + `phases/01-investigation.md` + `phases/02-reproduction.md`):
-perform the early historical lookup when a CI issue index is available; otherwise investigate, reproduce, then emit ONE verdict chosen from the skill's decision
-table. Execute the skill — do not restate it.
+Confirm finding **{{finding_id}}** by following the bug-confirmation skill (`guide.md` + `phases/01-investigation.md` + `phases/02-reproduction.md`): perform the early historical lookup when a CI issue index is available; otherwise investigate, reproduce, then emit ONE verdict chosen from the skill's decision table. Execute the skill — do not restate it.
 
 {{context}}
 
 ## Output (the dispatcher parses these)
+
 - For a finding requiring fresh confirmation, write and ACTUALLY EXECUTE `repro/test_bug{{finding_id}}_*`.
 - In a CI initialization run, after completing the analysis for a real unresolved defect, write `{{fdir}}/issue.json` using `references/issue-reuse.md`: concise identity/premises, complete relevant dependency selectors, and selected evidence paths relative to the target output directory. The dispatcher registers it using the final verdict. Do not write the shared issue index. This is metadata from the completed investigation, not another investigation.
 - Header fields:
@@ -19,7 +17,9 @@ table. Execute the skill — do not restate it.
 - For `PENDING REPAIR`: also write the semantic draft `{{fdir}}/repair-request.body.md` using the installed skill's repair-request format. It MUST contain YAML frontmatter with only `target:` (SPEC_REPAIR | FAULT_MODEL | INVARIANT), `counterexample:`, and a concrete `scope:` (`actions`, `invariants`, `hunt_cfgs`, `fault_actions`), followed by non-empty `## Trigger` and cited `## Evidence`, plus optional `## Proposed change`. Do NOT include `id`, `bug_id`, `finding_id`, `allocation_key`, `status`, `round`, or `## History`; the dispatcher owns those and is the only writer of the shared `repair-requests/` queue.
 
 ## Before any `VERDICT: REPRODUCED` — answer this checklist in your response
+
 State each answer explicitly (it will be checked against your captured output):
+
 1. Did **Level 0 or Level 1 alone** trigger it — real public API / normal ops, timing help only? **yes / no**.
 2. If **no**, and you used Level 2 (state injection) or Level 3 (source patch): the injected pre-condition must be reachable through a **real-API call sequence** or correspond to an admissible **counterexample-trace step**. Paste the sequence or cite the exact step.
 3. Which **real consumer/caller** observes a wrong outcome? Name it (`file:line`), or state the consequence is argued-only (a finding, not a reproduced bug).
