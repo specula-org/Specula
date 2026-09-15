@@ -1,9 +1,6 @@
 # Confirm ONE finding: {{finding_id}}
 
-Confirm finding **{{finding_id}}** by following the bug-confirmation skill
-(`guide.md` + `phases/01-investigation.md` + `phases/02-reproduction.md`):
-investigate, reproduce, then emit ONE verdict chosen from the skill's decision
-table. Execute the skill — do not restate it.
+Confirm finding **{{finding_id}}** by following the bug-confirmation skill (`guide.md` + `phases/01-investigation.md` + `phases/02-reproduction.md`): investigate, reproduce, then emit ONE verdict chosen from the skill's decision table. Execute the skill — do not restate it.
 
 {{context}}
 
@@ -11,7 +8,7 @@ table. Execute the skill — do not restate it.
 - Write and ACTUALLY EXECUTE `repro/test_bug{{finding_id}}_*`.
 - Header fields:
   - `- **Source**: MC` (real counterexample) or `Code Review` (no-violation / code-review)
-  - `- **Novelty**: NEW` or `KNOWN (cite: <URL/dataset-id>; fix-status: unfixed|fixed)` — set from evidence, not by default (see the skill); Code Review AND known → `VERDICT: DROPPED`. Before writing `NEW`, do at least one prior-report search — upstream issues **and recently merged/closed PRs** (a fix that landed days ago still makes it KNOWN); `NEW` means you looked and found nothing for THIS mechanism, not that you skipped looking. (Do this via the issue tracker / git history only — do NOT open `bug-report.md` or other findings, per the "Do NOT" list below.)
+  - `- **Novelty**: NEW` or `KNOWN (cite: <URL/dataset-id>; fix-status: unfixed|fixed)` — set from evidence, not by default (see the skill); follow the skill’s known-status policy. Before writing `NEW`, do at least one prior-report search — upstream issues **and recently merged/closed PRs** (a fix that landed days ago still makes it KNOWN); `NEW` means you looked and found nothing for THIS mechanism, not that you skipped looking. (Do this via the issue tracker / git history only — do NOT open `bug-report.md` or other findings, per the "Do NOT" list below.)
   - `- **Location**: file:line`
 - Body sections (they become the verdict body): `## Description`, `## Trigger scenario`, `## Developer intent`, `## Reproduction result` (paste real output), `## Recommendation`.
 - End your ENTIRE response with one line: `VERDICT: <one of: {{canon}}>`.

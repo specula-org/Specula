@@ -6,12 +6,13 @@ import contextlib
 import os
 import re
 import shlex
+import shutil
 import stat
 import sys
 from pathlib import Path
 from typing import Any
 
-from specula import ci_init, ci_verdict, resumelib
+from specula import ci_init, ci_verdict, persistent_findings, resumelib
 from specula.ci_identity import check_key
 from specula.ci_inheritance import register_candidate
 from specula.ci_store import CIError, CIStore, freeze_source, git, read_json, write_json
@@ -59,6 +60,9 @@ class CIPipeline(Pipeline):
         rc = super().parse_args(ordinary)
         if rc is not None:
             return rc
+        if self.findings_from is not None and self.incremental:
+            print("ERROR: CI selects prior findings from its current baseline", file=sys.stderr)
+            return 1
         self.argv = list(argv)
         if self.ci_dir is None:
             print("ERROR: --incremental requires --ci-dir=PATH", file=sys.stderr)
@@ -205,6 +209,12 @@ class CIPipeline(Pipeline):
             self.inputs = read_json(record)
             if self.store.current_token() != self.inputs["previous"]:
                 raise CIError("current model advanced since this run started; start a new incremental run")
+            persistent_findings.configure(
+                Path(self.get_work_dir(names[0])),
+                self.run_dir / "ci-source",
+                self.run_id,
+                Path(self.inputs["old_model"]) if "old_model" in self.inputs else self.findings_from,
+            )
             return
         name = names[0]
         snapshot = load_sources(self.run_dir)[name]
@@ -252,6 +262,12 @@ class CIPipeline(Pipeline):
             inputs["old_model"] = current["model_path"]
             work = ci_init.prepare_output_directory(self.run_dir, name)
             ci_init._copy_assets(Path(current["model_path"]), work)
+            ci_verdict.seed_issues(work, old_source, Path(current["model_path"]))
+            # Applicability receipts and fresh-analysis proposals belong only
+            # to their original run. The active issue records cross updates.
+            for relative in (persistent_findings.RECEIPTS, "spec/issue-input"):
+                if (work / relative).exists():
+                    shutil.rmtree(work / relative)
             # Prior run summaries remain available in old_model; they are not
             # this run's findings, completion evidence, or resource history.
             for filename in (
@@ -264,6 +280,12 @@ class CIPipeline(Pipeline):
                 (work / filename).unlink(missing_ok=True)
         write_json(record, inputs)
         self.inputs = inputs
+        persistent_findings.configure(
+            Path(self.get_work_dir(name)),
+            source,
+            self.run_id,
+            Path(inputs["old_model"]) if "old_model" in inputs else self.findings_from,
+        )
 
     def _max_parallel_summary(self) -> str:
         return "1 workflow Agent" if self.incremental else super()._max_parallel_summary()
@@ -306,10 +328,13 @@ class CIPipeline(Pipeline):
             raise CIError("pre-instrumentation source was modified during the run")
         name = self.extract_names()[0]
         work = Path(self.get_work_dir(name))
-        verdict = (
-            ci_verdict.read(work, self.run_id, previous=Path(self.inputs["old_model"]))
-            if self.incremental
-            else ci_verdict.from_confirmation(work, self.run_id)
+        if not self.incremental:
+            ci_verdict.from_confirmation(work, self.run_id)
+        verdict = ci_verdict.finalize(
+            work,
+            source,
+            self.run_id,
+            previous=Path(self.inputs["old_model"]) if self.incremental else None,
         )
         publication = dict(self.inputs)
         publication["verdict"] = verdict

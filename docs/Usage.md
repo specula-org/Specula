@@ -190,9 +190,7 @@ Completed runs update `current/model/` in the CI directory. Reports, diffs, logs
 
 CI returns exit code `2` when the current confirmation results contain `REPRODUCED` or `ENV_LIMITED` bugs, regardless of whether the update introduced them. `MASKED` findings produce a warning and exit code `0`; completed checks without these findings also return `0`. Unfinished checks return a nonzero exit code. Inspect `ci-report.md` and `ci-verdict.json` for the incremental result and evidence. Initialization derives the same verdict from `confirmed-bugs.md`.
 
-`NEEDS MORE INFO` and `DEFERRED` are stored as nonblocking information. A remaining `PENDING REPAIR` fails CI.
-
-Each new incremental run reattempts confirmation/reproduction of prior bug and warning findings on the current revision, including updates that do not change the model.
+`NEEDS MORE INFO` and `DEFERRED` are nonblocking for new findings. A remaining `PENDING REPAIR` fails CI.
 
 ### Resume an interrupted run
 
