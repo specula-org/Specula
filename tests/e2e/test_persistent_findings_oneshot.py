@@ -119,3 +119,18 @@ class OneShotFindings(unittest.TestCase):
         self.assertEqual(adapter.with_suffix(".confirmation-count").read_text(), "xx")
         self.assertEqual(findings.load(third, "MC-1")["origin_run"], third_run.name)
         self.assertNotIn("historical conclusion reused", (third / "confirmed-bugs.md").read_text())
+
+        # A fresh invocation of this same run must also handle in-place source edits.
+        previous_record = findings.record_digest(third, "MC-1")
+        fixture.change_source("BUG\nchanged reply logic again\nEND\nlogging v2\n")
+        result = fixture.helper.run_cli(
+            fixture.root,
+            [*args, f"--findings-from={second}", f"--run-id={third_run.name}", "--fresh-context"],
+            cwd=fixture.work,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((fixture.root / "runs/latest").resolve(), third_run)
+        self.assertEqual(adapter.with_suffix(".confirmation-count").read_text(), "xxx")
+        self.assertNotEqual(findings.record_digest(third, "MC-1"), previous_record)
+        self.assertEqual(findings.check(third, fixture.source, "MC-1"), [])
+        self.assertNotIn("historical conclusion reused", (third / "confirmed-bugs.md").read_text())

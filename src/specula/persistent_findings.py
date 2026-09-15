@@ -183,7 +183,7 @@ def import_history(work: Path, previous: Path) -> None:
 
 
 def configure(
-    work: Path, source: Path, run_id: str, previous: Path | None = None, *, allow_source_change: bool = False
+    work: Path, source: Path, run_id: str, previous: Path | None = None, *, fresh_context: bool = False
 ) -> None:
     """Bind explicit run inputs and import only the supplied unresolved records."""
     source = source.resolve()
@@ -202,17 +202,17 @@ def configure(
     }
     if previous is not None and not previous.is_dir():
         raise FindingsError("supplied findings history is not a directory")
-    rebind_source = False
+    restart_binding = False
     if (work / CONTEXT).exists():
         saved = read_json(work / CONTEXT)
         if saved.get("run_id") == run_id:
             changed = {key for key, value in expected.items() if saved.get(key) != value}
-            if not changed:
+            if not changed and not fresh_context:
                 return
-            if not allow_source_change or changed != {"source"}:
+            if changed and (not fresh_context or changed != {"source"}):
                 raise FindingsError("persistent finding inputs changed within the same run")
-            rebind_source = True
-    if previous is not None and not rebind_source:
+            restart_binding = True
+    if previous is not None and not restart_binding:
         import_history(work, previous)
     expected["inherited_records"] = {fid: record_digest(work, fid) for fid in index(work)}
     if (work / RECEIPTS).exists():

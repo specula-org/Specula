@@ -556,7 +556,7 @@ def test_fresh_source_reanalysis_can_replace_the_same_run_record(baseline: tuple
     source_b = source_a.parent / "source-b"
     shutil.copytree(source_a, source_b)
     write(source_b / "caller.go", "changed dependency in B\n")
-    persistent_findings.configure(work, source_b, "v1", allow_source_change=True)
+    persistent_findings.configure(work, source_b, "v1", fresh_context=True)
     write(work / "evidence.md", "Fresh fixture confirmation on B.\n")
     write(work / "spec/issue-input/MC-1.json", json.dumps(proposal()))
     persistent_findings.reconcile(

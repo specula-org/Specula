@@ -385,6 +385,7 @@ class Pipeline:
         self._artifact_given = False
         self.findings_from: Path | None = None
         self._findings_run_id = ""
+        self._findings_fresh_targets: set[str] = set()
         self.byom_path: Path | None = None
         self._byom_given = False
         self.guidance_path: Path | None = None
@@ -2085,11 +2086,12 @@ class Pipeline:
         ws = Workspace(self.targets, artifact=self.artifact, run_dir=self.run_dir)
         for name in names:
             work = Path(self.get_work_dir(name)).absolute()
+            fresh_context = self.fresh_context and name not in self._findings_fresh_targets
             if self.findings_from is not None and not (work / persistent_findings.INDEX).exists():
                 persistent_findings.import_history(work, self.findings_from)
             if (work / persistent_findings.CONTEXT).exists():
                 _, run_id, _ = persistent_findings.context(work)
-                if run_id == self._findings_run_id and not self.fresh_context:
+                if run_id == self._findings_run_id and not fresh_context:
                     continue
             source = ws.find_repo_dir(name)
             if source:
@@ -2098,8 +2100,10 @@ class Pipeline:
                     Path(source),
                     self._findings_run_id,
                     self.findings_from,
-                    allow_source_change=self.fresh_context,
+                    fresh_context=fresh_context,
                 )
+                if fresh_context:
+                    self._findings_fresh_targets.add(name)
 
     def persist_findings(self, names: list[str]) -> None:
         if self.dry_run:
