@@ -237,7 +237,18 @@ Specula does not modify the original BYOM path. Later phases may modify the adop
 
 BYOM requires the default isolated layout and conflicts with `--no-isolate` and every `--skip-*` option. A resumed run reuses its stored absolute BYOM path; keep the original files available and unchanged until the run and any resume finish. Ordinary runs can use `--fresh-context` to select a different path. For persistent CI, use [BYOM initialization](#initialize-once); `--incremental` does not accept `--byom`, and changing the initialization input requires a new run.
 
-### Hybrid agent configuration
+## Reuse unresolved findings
+
+To carry unresolved findings into a new single-target run, pass the previous target's output directory:
+
+```bash
+specula run mysys --artifact=/path/to/source \
+  --findings-from=/path/to/previous-run/mysys/.specula-output
+```
+
+The workflow checks whether a prior finding still describes the same issue and whether its dependencies and assumptions still apply before reusing its evidence. Persistent CI carries this history forward automatically. Active records retain `REPRODUCED`, `ENV_LIMITED`, and `MASKED` findings; fixed findings and false positives are removed. Use `specula findings --help` to inspect the available lookup commands.
+
+## Hybrid agent configuration
 
 Use an agent configuration file to select different agents or models for different pipeline phases:
 
@@ -435,6 +446,9 @@ specula run [options] "name|owner/repository|language|reference"
 | `--byom=PATH` | Start from a user-provided model file or verification-assets directory and run Phase 2 onward |
 | `--guidance=PATH` | Read optional modeling guidance for a single-target run |
 | `--ci-init` | Run full single-target CI initialization and register an unverified baseline |
+| `--ci-dir=PATH` | Store persistent CI state outside the source checkout |
+| `--incremental` | Check source changes against the current CI model; see `specula run --incremental --help` |
+| `--findings-from=PATH` | Import unresolved findings from a prior target output into a new single-target run |
 | `--keep-original` | Run against a full private source copy and write `changes.patch` |
 | `--tlc-memory-limit=SIZE` | Set the run-wide aggregate TLC heap + direct-memory budget; default is 80% of effective available memory at the first TLC start |
 | `--tlc-worker-limit=N` | Optionally bound aggregate TLC exploration workers; omitted means report-only |
