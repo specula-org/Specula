@@ -26,7 +26,7 @@ It uses coding agents to write TLA+ specs of the target system, including invari
 
 We maintain [a list of bugs found by Specula](https://docs.google.com/spreadsheets/d/1AVXdKjNfD4952hZqyB-_wTdrzeTw0SD73f3F0zWJ0as). We would love to hear about the bugs you find using Specula.
 
-Browse the [case-study archive](https://github.com/specula-org/specula-case-studies) for reports, models, and reproduction evidence. The `case-studies` submodule pins the archive and its [system and run indexes](case-studies/catalog/README.md) for this checkout.
+Browse the [case-study archive](https://github.com/specula-org/specula-case-studies) for reports, models, and reproduction evidence. The `case-studies` submodule pins the archive and its [system and run indexes](https://github.com/specula-org/specula-case-studies/blob/2797de3e0801442d3451f26491ccfe876aaf2f2f/catalog/README.md) for this checkout.
 
 ## Prerequisites
 
