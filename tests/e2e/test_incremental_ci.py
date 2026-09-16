@@ -39,6 +39,7 @@ class IncrementalCLI(unittest.TestCase):
             'case "$SPECULA_PHASE" in\n',
             'case "$SPECULA_PHASE" in\n'
             "  incremental)\n"
+            '    printf "%s\\n" "$@" > "$0.incremental.args"\n'
             '    if [ -f "$0.fail" ]; then\n'
             '      printf "fixture-native-session\\n" > "$resume"\n'
             '      printf "unfinished edit\\n" > "$SPECULA_WORK_DIR/spec/base.tla"\n'
@@ -84,6 +85,89 @@ class IncrementalCLI(unittest.TestCase):
     def change_source(self, text: str) -> None:
         (self.source / "logic.txt").write_text(text)
         self.commit("update")
+
+    def test_incremental_rejects_phase_options_before_creating_storage(self) -> None:
+        for flag in ("--confirm-debate", "--legacy-confirm", "--max-repair-rounds=1", "--max-parallel=2"):
+            with self.subTest(flag=flag):
+                result = self.run_ci("--incremental", flag)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("not supported for incremental CI", result.stderr)
+                self.assertFalse(self.ci.exists())
+                self.assertFalse(Path(f"{self.adapter}.phases").exists())
+
+    def test_single_profile_configuration_and_native_resume(self) -> None:
+        self.initialize()
+        self.change_source("configured update\n")
+        config = self.work / "agents.json"
+        selected = {"agent": "fake", "model": "selected-model", "effort": "high"}
+        document = {
+            "version": 1,
+            "default_profile": "selected",
+            "profiles": {
+                "selected": selected,
+                "unused": {"agent": "uninstalled-adapter", "model": "unused-model"},
+            },
+        }
+        config.write_text(json.dumps(document))
+        failed = Path(f"{self.adapter}.fail")
+        failed.touch()
+        first = self.run_ci("--incremental", f"--agent-config={config}")
+        self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
+        run = self.latest()
+        meta = json.loads((run / "run.json").read_text())
+        self.assertEqual(meta["agent_routes"], {"incremental": selected})
+        phases = Path(f"{self.adapter}.phases").read_bytes()
+        for flag in ("--confirm-debate", "--legacy-confirm", "--max-repair-rounds=1", "--max-parallel=2"):
+            with self.subTest(flag=flag):
+                rejected = self.run_ci(f"--run-id={run.name}", flag)
+                self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+                self.assertIn("not supported for incremental CI", rejected.stderr)
+                self.assertEqual(Path(f"{self.adapter}.phases").read_bytes(), phases)
+        config.write_text(json.dumps({**document, "phases": {"confirm": "selected"}}))
+        rejected = self.run_ci(f"--run-id={run.name}", f"--agent-config={config}")
+        self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+        self.assertIn("phases must be omitted or empty", rejected.stderr)
+        self.assertEqual(Path(f"{self.adapter}.phases").read_bytes(), phases)
+        failed.unlink()
+        config.unlink()  # Resume restores the saved selection without rereading the file.
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        args = Path(f"{self.adapter}.incremental.args").read_text().splitlines()
+        self.assertIn("--model=selected-model", args)
+        self.assertIn("--effort=high", args)
+        self.assertEqual(Path(f"{self.adapter}.resumed").read_text(), "fixture-native-session\n")
+
+    def test_initialization_retains_phase_configuration(self) -> None:
+        config = self.work / "agents.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "default_profile": "default",
+                    "profiles": {
+                        "default": {"agent": "fake", "model": "default-model"},
+                        "confirm": {"agent": "fake", "model": "reproduction-model"},
+                    },
+                    "phases": {"confirm": "confirm"},
+                }
+            )
+        )
+        result = self.run_ci(
+            "--ci-init",
+            "--dry-run",
+            f"--artifact={self.source}",
+            f"--agent-config={config}",
+            "--confirm-debate",
+            "--max-repair-rounds=1",
+            "--max-parallel=2",
+            "footest",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        confirmation = next(line for line in result.stdout.splitlines() if "launch_bug_confirmation.sh" in line)
+        self.assertIn("--debate", confirmation)
+        self.assertIn("--max-parallel=2", confirmation)
+        self.assertIn("--model=reproduction-model", confirmation)
+        self.assertIn("global_cap=1", result.stdout)
 
     def finding_status(self, status: str) -> None:
         Path(f"{self.adapter}.findings").write_text(

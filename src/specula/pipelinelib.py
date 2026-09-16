@@ -162,6 +162,7 @@ Options:
                          (one target, isolated output; accepts --byom; registration is not verification)
   --ci-dir=PATH          Persistent project directory shared by initialization and incremental runs
   --incremental          Run one Agent through the incremental-modeling skill using --ci-dir
+                         (see 'specula run --incremental --help' for supported options)
   --ci-candidate         Save an incremental result without updating the branch's current model
   --revision=REF         Verify that the supplied CI source is checked out at this revision
   --keep-original        Work in a full private copy and write a reviewable changes.patch
@@ -812,8 +813,7 @@ class Pipeline:
             if run_root == source or run_root.is_relative_to(source) or source.is_relative_to(run_root):
                 raise SnapshotError(f"run storage must be outside the source tree: {source}")
 
-    @staticmethod
-    def _route_specs() -> dict[str, tuple[str, str | None]]:
+    def _route_specs(self) -> dict[str, tuple[str, str | None]]:
         return {
             "analyze": ("analyze", None),
             "specgen": ("specgen", None),
@@ -1691,13 +1691,16 @@ class Pipeline:
                 names.append(name)
         return names
 
-    def validate_agent_adapter(self) -> None:
+    def _configured_agents(self) -> set[str]:
         agents = {self.agent}
         if self._restored_routes is not None:
             agents = {selection.agent for selection in self._restored_routes.values()}
         elif self.agent_routing is not None:
             agents = {selection.agent for selection in self.agent_routing.profiles.values()}
-        for agent in sorted(agents):
+        return agents
+
+    def validate_agent_adapter(self) -> None:
+        for agent in sorted(self._configured_agents()):
             adapter = LAUNCH_DIR / "adapters" / f"{agent}.sh"
             if not adapter.is_file():
                 print(

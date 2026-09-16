@@ -20,6 +20,44 @@ from specula.output_index import BYOM_REPORT_FILENAME
 from specula.pipelinelib import Pipeline, _valid_run_id
 from specula.snapshotlib import load_sources
 
+INCREMENTAL_PHASE_OPTIONS = frozenset({"--confirm-debate", "--legacy-confirm", "--max-repair-rounds", "--max-parallel"})
+
+INCREMENTAL_USAGE = """
+Incremental Specula CI: one Agent conversation for the complete update workflow.
+
+Usage:
+  specula run --incremental --ci-dir=PATH [options]
+  specula run --ci-dir=PATH --run-id=ID [options]
+
+Options:
+  --ci-dir=PATH          Persistent CI directory, previously initialized with --ci-init
+  --incremental          Check the source update using the current model and harness
+  --ci-candidate         Save the result without updating the current model
+  --revision=REF         Require the source checkout to be at this Git revision
+  --run-id=ID            Resume an unfinished conversation with its saved configuration
+  --agent=NAME           Agent adapter (default: claude-code)
+  --model=NAME           Model used throughout the conversation
+  --effort=LEVEL         Reasoning effort used throughout the conversation
+  --agent-config=PATH    Use default_profile's agent/model/effort for the entire workflow;
+                         phases must be omitted or empty. Cannot combine with
+                         --agent, --model, or --effort. Unused profiles are allowed.
+  --claude-alias=NAME    Claude CLI profile (default: claude)
+  --max-turns=N          Adapter-specific turn limit (default: 0 = unlimited)
+  --policy-retries=N     Policy continuation budget for the conversation (default: 20)
+  --transient-resumes=N  Transient session recovery budget for the conversation (default: 20)
+  --artifact=PATH        Source checkout (default: reuse the initialized path)
+  --guidance=PATH        Modeling guidance (default: reuse the current CI guidance)
+  --tlc-memory-limit=SIZE
+                         Aggregate TLC heap + direct-memory budget (default: auto)
+  --tlc-worker-limit=N   Aggregate TLC worker limit (default: unset)
+  --dry-run              Print the workflow command without starting the Agent
+  --help, -h             Show this help
+
+CI always uses one target and an isolated private source copy. Stage selection,
+phase-specific agent routing, and Phase 4 scheduling options are not supported.
+Initialization uses the full pipeline; see 'specula run --help' for its options.
+"""
+
 
 class CIPipeline(Pipeline):
     def __init__(self) -> None:
@@ -57,9 +95,21 @@ class CIPipeline(Pipeline):
                     return 1
             else:
                 ordinary.append(arg)
+        if self.incremental and any(arg in ("--help", "-h") for arg in ordinary):
+            sys.stdout.write(INCREMENTAL_USAGE)
+            return 0
+        self.argv = list(argv)
+        error = self._incremental_option_error()
+        if error is not None:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 1
         rc = super().parse_args(ordinary)
         if rc is not None:
             return rc
+        error = self._incremental_option_error()
+        if error is not None:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 1
         if self.findings_from is not None and self.incremental:
             print("ERROR: CI selects prior findings from its current baseline", file=sys.stderr)
             return 1
@@ -88,6 +138,26 @@ class CIPipeline(Pipeline):
         self._isolate_explicit = True
         self.store = CIStore(self.ci_dir)
         return None
+
+    def _incremental_option_error(self) -> str | None:
+        if not self.incremental:
+            return None
+        unsupported = sorted({arg.split("=", 1)[0] for arg in self.argv} & INCREMENTAL_PHASE_OPTIONS)
+        if unsupported:
+            return f"{', '.join(unsupported)} not supported for incremental CI; it runs one Agent conversation"
+        if self.agent_routing is not None and self.agent_routing.phases:
+            return "incremental CI uses only default_profile; --agent-config phases must be omitted or empty"
+        return None
+
+    def _route_specs(self) -> dict[str, tuple[str, str | None]]:
+        if self.incremental:
+            return {"incremental": ("incremental", None)}
+        return super()._route_specs()
+
+    def _configured_agents(self) -> set[str]:
+        if self.incremental:
+            return {self._agent_selection().agent}
+        return super()._configured_agents()
 
     def _byom_option_error(self) -> str | None:
         error = super()._byom_option_error()
@@ -120,6 +190,9 @@ class CIPipeline(Pipeline):
         if self.revision is not None and self.revision != raw.get("revision"):
             raise resumelib.ResumeError("target revision cannot change on resume; start a new run")
         self.incremental = mode
+        error = self._incremental_option_error()
+        if error is not None:
+            raise resumelib.ResumeError(error)
         candidate = raw.get("candidate", False)
         if not isinstance(candidate, bool) or (self._candidate_given and not candidate):
             raise resumelib.ResumeError("candidate publication mode cannot change on resume")
