@@ -182,11 +182,7 @@ For each update, check out the target commit in the source repository and run:
 specula run --incremental --ci-dir=/work/project-ci
 ```
 
-Specula computes the changes since the current model's source version, then runs one Agent through the incremental-modeling workflow using the existing model and harness. The repository path and user guidance are reused. Use the ordinary `--agent`, `--model`, and `--effort` options to select the Agent.
-
-Alternatively, use `--agent-config=PATH` with the [agent configuration format](#hybrid-agent-configuration). Incremental CI uses only `default_profile` for the entire conversation; `phases` must be omitted or empty. The file may define other profiles, but they are not used. Do not combine `--agent-config` with `--agent`, `--model`, or `--effort`.
-
-Incremental CI does not accept `--confirm-debate`, `--legacy-confirm`, `--max-repair-rounds`, or `--max-parallel`. These options and per-phase agent routing remain available for initialization with `--ci-init`. Persistent CI does not accept `--skip-*` or `--enable-reviews`. Run `specula run --incremental --help` for incremental options.
+Specula computes the changes since the current model's source version, then runs one Agent through the incremental-modeling workflow using the existing model and harness. The repository path and user guidance are reused. Use the ordinary `--agent`, `--model`, and `--effort` options to select the Agent. See `specula run --incremental --help` for supported options.
 
 New incremental runs use the same retry defaults as one-shot runs: `--policy-retries=20` for provider-policy interruptions and `--transient-resumes=20` for temporary provider or transport failures. Each budget applies to the entire incremental Agent conversation. Set either option to a non-negative integer to override its budget; `0` disables that recovery path. Resuming an existing run preserves its saved budgets.
 
@@ -275,7 +271,7 @@ Unmapped phases use `default_profile`. `repair` inherits `validate`, and reviews
 
 Valid phase keys are `analyze`, `specgen`, `harness`, `validate`, `confirm`, `repair`, `classify`, and `review`.
 
-Phase routing applies to ordinary runs and CI initialization. For `--incremental`, omit `phases` or set it to `{}`; the entire workflow uses `default_profile`.
+With `--incremental`, only `default_profile` is used; omit `phases` or set it to `{}`.
 
 `--agent-config` cannot be combined with `--agent`, `--model`, or `--effort`; configured agents use their existing CLI authentication.
 
