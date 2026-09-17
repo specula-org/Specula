@@ -122,23 +122,13 @@ Keep required stage evidence current. Before final reporting, briefly check read
 
 If work remains, continue it. If blocked or interrupted, save a brief handoff instead of a final report. On resume, continue from saved progress and any partial report; recheck evidence invalidated by later changes.
 
-Once ready, write one short `ci-report.md` per candidate: results, important findings, limits, and evidence links. A few lines suffice for an uneventful update. Reference maintained stage records instead of rebuilding the one-shot reports; leave resource summaries and cost calculation to the existing tools.
+Once ready, follow the output contract in the CI task. New runs use [the final-result format](references/final-result.md): write one `spec/final-result.json`, then run `specula ci-result --work=<output-directory>`. The command generates the reports, CI verdict, and persistent findings through the existing issue store. It does not advance the current model. Correct any reported errors before finishing; interrupted runs can be resumed manually.
+
+This final file replaces the separate confirmation report, severity table, summary fragment, CI report/verdict, and persistence proposals for incremental CI. Keep investigation notes, reproductions, and validation evidence in their existing files and reference them. Do not rewrite generated reports. Resource summaries and cost calculation remain tool-owned. Retained runs whose task requests the legacy reports keep that output contract, including the existing Persistent Findings record/reuse commands.
 
 ### CI Verdict
 
-For CI runs, write `ci-verdict.json` alongside the report, using the run ID provided by the CI task:
-
-```json
-{
-  "version": 1,
-  "run_id": "<current-run-id>",
-  "findings": [
-    {"id": "MC-1", "status": "REPRODUCED", "evidence": "spec/reproduction-MC-1.md"}
-  ]
-}
-```
-
-Include every finding investigated in this run and every prior unresolved bug or warning, with unique, stable IDs, even when not rediscovered. Valid Persistent Findings reuse receipts are merged by the controller and retain their original status; label these entries “Still unresolved; historical conclusion reused” and link their evidence and limits. Use `"findings": []` only when both are empty. Evidence paths must name nonempty confirmation or reuse records relative to the work directory, under `spec/`, `harness/`, or `traces/`, or a top-level Markdown file. Link the actual reproduction commands, observed outcomes, source revision, and any environment limits from that record; do not duplicate the evidence in the JSON.
+Include every finding investigated in this run and every prior unresolved bug or warning, with unique, stable IDs. Use an empty findings list only when both are empty. Reuse retains the original status and evidence limits; it is not a fresh reproduction.
 
 `REPRODUCED` and `ENV_LIMITED` fail CI, regardless of novelty, severity, or update attribution. `MASKED` produces a nonblocking warning. `FALSE POSITIVE` and `DROPPED` retain the main skill's meanings. Use `FIXED` for a prior defect whose repair is supported by current source analysis and a fresh reproduction/control attempt; explain why the previous trigger no longer harms. `FALSE POSITIVE`, `DROPPED`, and `FIXED` are nonblocking. Complete pending repairs and confirmation before final reporting.
 

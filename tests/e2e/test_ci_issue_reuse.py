@@ -27,6 +27,8 @@ class IssueReuseCLI(unittest.TestCase):
             "from specula import persistent_findings\n"
             "work, adapter = map(Path, sys.argv[1:])\n"
             "mode = Path(str(adapter) + '.issue-mode').read_text()\n"
+            "path = work / 'spec/final-result.json'\n"
+            "document = json.loads(path.read_text())\n"
             "if mode == 'record':\n"
             "    counter = Path(str(adapter) + '.analysis-count')\n"
             "    counter.write_text(counter.read_text() + 'x' if counter.exists() else 'x')\n"
@@ -39,13 +41,11 @@ class IssueReuseCLI(unittest.TestCase):
             "      'dependencies': [{'root':'source','path':'logic.txt','start':'BUG','end':'END'},\n"
             "                       {'root':'work','path':'spec/base.tla'}],\n"
             "      'evidence': ['spec/confirmation-fixture.md']}\n"
-            "    path = work / 'spec/issue-input/MC-1.json'\n"
-            "    path.parent.mkdir(parents=True, exist_ok=True)\n"
-            "    path.write_text(json.dumps(proposal))\n"
+            "    document['findings'][0].update({k: proposal[k] for k in ('title','source','cause','trigger','consequence')})\n"
+            "    document['findings'][0]['persistence'] = {k: proposal[k] for k in ('sites','actions','invariants','premises','dependencies')}\n"
             "elif mode == 'reuse':\n"
-            f"    subprocess.run([sys.executable, {str(fixture.root / 'src/specula/cli.py')!r},\n"
-            "        'findings', '--work', str(work), 'reuse', '--id', 'MC-1',\n"
-            "        '--reason', 'Same fixture mechanism, consequence and premises.'], check=True)\n"
+            "    document['findings'] = [{'id':'MC-1', 'reuse':'Same fixture mechanism, consequence and premises.'}]\n"
+            "path.write_text(json.dumps(document))\n"
         )
         fixture.adapter.write_text(
             fixture.adapter.read_text().replace(
@@ -81,7 +81,7 @@ class IssueReuseCLI(unittest.TestCase):
         bundled = current / original["evidence"][0]["path"]
         self.assertIn(original["origin_run"], bundled.read_text())
 
-        # The documented explicit row must publish the same FAIL as auto-append.
+        # The explicit reuse decision remains valid across another unrelated update.
         Path(f"{fixture.adapter}.findings").write_text(
             json.dumps([{"id": "MC-1", "status": "REPRODUCED", "evidence": "spec/finding-reuse/MC-1.md"}])
         )

@@ -30,6 +30,7 @@ SCRIPTS_DIR = SPECULA_ROOT / "scripts"
 COMMANDS: list[tuple[str, str, str]] = [
     ("run", "launch/launch_pipeline.sh", "Run the full pipeline (all phases: analysis -> classification)"),
     ("ci", "launch/launch_github_ci.sh", "Handle a GitHub event using a persistent CI model"),
+    ("ci-result", "launch/launch_ci_result.sh", "Generate incremental CI deliverables from one final result"),
     ("findings", "launch/launch_persistent_findings.sh", "Look up and reuse persistent findings"),
     ("batch", "exp/scheduler.sh", "Batch-run the pipeline over a task queue (workers, quota gate, retries)"),
     ("analyze", "launch/launch_code_analysis.sh", "Phase 1 - static code analysis -> modeling brief"),
