@@ -133,7 +133,7 @@ class CIPipeline(Pipeline):
             print("ERROR: resume the original conversation, or omit --run-id to start a new CI run", file=sys.stderr)
             return 1
         if self.incremental:
-            self.skip_classification = True  # Findings live in the single Agent's ci-report.md.
+            self.skip_classification = True  # The incremental workflow owns final reporting.
         self.keep_original = True
         self._isolate_explicit = True
         self.store = CIStore(self.ci_dir)
@@ -364,6 +364,11 @@ class CIPipeline(Pipeline):
 
     def _max_parallel_summary(self) -> str:
         return "1 workflow Agent" if self.incremental else super()._max_parallel_summary()
+
+    def _summary_findings_enabled(self) -> bool:
+        if self.incremental:
+            return self.inputs is not None and ci_result.enabled(self.inputs)
+        return super()._summary_findings_enabled()
 
     def _summary_validation_limits(self) -> tuple[str, ...]:
         if self.incremental:

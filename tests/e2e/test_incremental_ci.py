@@ -342,6 +342,42 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual((current / "model/spec/base.tla").read_text(), "updated fixture model\n")
         self.assertTrue((self.latest() / "pipeline-running.log").is_file())
 
+    def test_final_result_summary_is_visible_without_a_classification_phase(self) -> None:
+        self.initialize()
+        phases = Path(f"{self.adapter}.phases")
+        classification_count = phases.read_text().splitlines().count("bug_classification")
+        cases: tuple[tuple[list[tuple[str, str]], str], ...] = (
+            ([], "PASS"),
+            ([("MC-1", "REPRODUCED")], "FAIL"),
+            ([("MC-1", "FIXED"), ("CR-2", "REPRODUCED")], "FAIL"),
+            ([("CR-2", "FIXED")], "PASS"),
+        )
+        for number, (findings, verdict) in enumerate(cases):
+            with self.subTest(findings=findings):
+                self.change_source(f"summary fixture {number}\n")
+                Path(f"{self.adapter}.findings").write_text(
+                    json.dumps(
+                        [
+                            {"id": fid, "status": status, "evidence": "spec/confirmation-fixture.md"}
+                            for fid, status in findings
+                        ]
+                    )
+                )
+                result = self.run_ci("--incremental", "--agent=fake")
+                self.assertEqual(result.returncode, 2 if verdict == "FAIL" else 0, result.stdout + result.stderr)
+                work = self.latest() / "footest/.specula-output"
+                summary = (work / "summary.md").read_text()
+                self.assertIn("Run status: **Complete**", summary)
+                self.assertIn(f"CI verdict: **{verdict}**", summary)
+                self.assertNotIn("findings summary is unavailable", summary)
+                self.assertIn((work / ".summary-findings.md").read_text().strip(), summary)
+                for fid, status in findings:
+                    if status == "REPRODUCED":
+                        self.assertIn(fid, summary)
+                    else:
+                        self.assertNotIn(fid, summary)
+                self.assertEqual(phases.read_text().splitlines().count("bug_classification"), classification_count)
+
     def test_warning_and_verified_fix_can_advance_a_red_baseline(self) -> None:
         self.initialize()
         self.change_source("bug fixture\n")
@@ -423,6 +459,9 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
         self.assertTrue((self.ci / "current/model/spec/final-result.json").is_file())
         self.assertTrue((self.ci / "current/model/confirmed-bugs.md").is_file())
+        summary = (run / "footest/.specula-output/summary.md").read_text()
+        self.assertNotIn("findings summary is unavailable", summary)
+        self.assertIn("Reproduced bugs: 0", summary)
 
     def test_preexisting_run_keeps_legacy_reporting_on_resume(self) -> None:
         self.initialize()

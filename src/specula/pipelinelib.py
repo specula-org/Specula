@@ -1915,7 +1915,7 @@ class Pipeline:
                 tlc_worker_limit=worker_limit,
                 run_details={name: self._summary_run_details(name) for name in targets},
                 validation_limits=self._summary_validation_limits(),
-                findings_summary_enabled=not self.skip_classification,
+                findings_summary_enabled=self._summary_findings_enabled(),
             )
             restarted = participants if self.fresh_context else ()
             tracker.initialize(resume=self.run_dir is not None, restart_names=restarted)
@@ -1987,6 +1987,9 @@ class Pipeline:
             model=model,
             reasoning_effort=effort,
         )
+
+    def _summary_findings_enabled(self) -> bool:
+        return not self.skip_classification
 
     def _summary_validation_limits(self) -> tuple[str, ...]:
         descriptions = (

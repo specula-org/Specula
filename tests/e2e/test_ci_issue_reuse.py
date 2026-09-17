@@ -75,6 +75,9 @@ class IssueReuseCLI(unittest.TestCase):
         self.assertEqual(Path(f"{fixture.adapter}.analysis-count").read_text(), "x")
         report = (current / "ci-report.md").read_text()
         self.assertIn("historical conclusion reused", report)
+        summary = (fixture.latest() / "footest/.specula-output/summary.md").read_text()
+        self.assertIn("MC-1", summary)
+        self.assertNotIn("findings summary is unavailable", summary)
         self.assertEqual(CIStore(fixture.ci).current()["verdict"], "FAIL")
         entry = json.loads((current / "ci-verdict.json").read_text())["findings"][0]
         self.assertEqual(entry["reuse"]["run_id"], fixture.latest().name)
