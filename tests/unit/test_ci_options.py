@@ -39,6 +39,22 @@ class CIOptions(unittest.TestCase):
         }
         self.config.write_text(json.dumps(self.document))
 
+    def test_oneshot_and_initialization_keep_the_classification_summary_setting(self) -> None:
+        for pipeline in (Pipeline(), CIPipeline()):
+            for skipped in (False, True):
+                with self.subTest(pipeline=type(pipeline).__name__, skipped=skipped):
+                    pipeline.skip_classification = skipped
+                    self.assertEqual(pipeline._summary_findings_enabled(), not skipped)
+
+    def test_incremental_summary_uses_the_final_result_contract(self) -> None:
+        pipeline = CIPipeline()
+        self.assertIsNone(pipeline.parse_args(["--incremental", self.ci_flag]))
+        for inputs, enabled in ((None, False), ({}, False), ({"final_result_version": 1}, True)):
+            with self.subTest(inputs=inputs):
+                pipeline.inputs = inputs
+                self.assertEqual(pipeline._summary_findings_enabled(), enabled)
+                self.assertTrue(pipeline.skip_classification)
+
     def test_phase_options_are_rejected_only_for_incremental_runs(self) -> None:
         for flag in PHASE_FLAGS:
             with self.subTest(flag=flag):
