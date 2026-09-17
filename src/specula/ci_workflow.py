@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from specula import ci_init, ci_verdict, persistent_findings, resumelib
+from specula import ci_init, ci_result, ci_verdict, persistent_findings, resumelib
 from specula.ci_identity import check_key
 from specula.ci_inheritance import register_candidate
 from specula.ci_store import CIError, CIStore, freeze_source, git, read_json, write_json
@@ -316,6 +316,7 @@ class CIPipeline(Pipeline):
             assert self._ci_init_inputs is not None
             inputs["guidance"] = (self._ci_init_inputs / "user-guidance.md").read_text()
         else:
+            inputs[ci_result.VERSION_KEY] = 1
             current = self.store.current()
             old_source = self.store.path(current["source"])
             git(source, "merge-base", "--is-ancestor", current["source_commit"], source_commit)
@@ -348,6 +349,7 @@ class CIPipeline(Pipeline):
                 ".summary-findings.md",
                 "ci-report.md",
                 ci_verdict.FILENAME,
+                ci_result.FILENAME,
                 BYOM_REPORT_FILENAME,
             ):
                 (work / filename).unlink(missing_ok=True)

@@ -190,6 +190,8 @@ Completed runs update `current/model/` in the CI directory. Reports, diffs, logs
 
 CI returns exit code `2` when the current confirmation results contain `REPRODUCED` or `ENV_LIMITED` bugs, regardless of whether the update introduced them. `MASKED` findings produce a warning and exit code `0`; completed checks without these findings also return `0`. Unfinished checks return a nonzero exit code. Inspect `ci-report.md` and `ci-verdict.json` for the incremental result and evidence. Initialization derives the same verdict from `confirmed-bugs.md`.
 
+New incremental runs write `spec/final-result.json` and use `specula ci-result --work=/path/to/.specula-output` to generate the final reports, verdict, and persistent findings. Edit that input rather than the generated reports. Missing reuse metadata disables automatic reuse without discarding a confirmed finding; missing confirmation evidence prevents publication. Correct the input and rerun the command, or resume the interrupted run. Existing runs retain their original report format; initialization and one-shot reporting are unchanged.
+
 `NEEDS MORE INFO` and `DEFERRED` are nonblocking for new findings. A remaining `PENDING REPAIR` fails CI.
 
 ### Resume an interrupted run
