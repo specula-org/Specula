@@ -82,6 +82,7 @@ _REPORT_STATUSES = (
     "INCOMPLETE",
     "DEFERRED",
     "DROPPED",
+    "FIXED",
     "MASKED",
 )
 CLASSIFICATION_SKIPPED_LIMIT = "Final findings reporting was skipped."

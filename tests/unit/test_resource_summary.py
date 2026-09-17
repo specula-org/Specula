@@ -19,6 +19,7 @@ from specula.resource_summary import (
     ResourceInvocationRecorder,
     ResourceSummaryTracker,
     RunDetails,
+    _confirmation_finding_statuses,
     invalidate_summary,
 )
 
@@ -1141,6 +1142,32 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
         text = self.summary(self.work_dir)
         self.assertIn(body, text)
         self.assertNotIn("The findings summary is unavailable", text)
+
+    def test_fixed_finding_does_not_hide_an_unresolved_finding(self) -> None:
+        report = _confirmed_report(("MC-1", "FIXED"), ("CR-3", "REPRODUCED"))
+        self.assertEqual(_confirmation_finding_statuses(report), {"CR-3": "REPRODUCED"})
+        self.assertEqual(
+            _confirmation_finding_statuses(report, impact_only=False),
+            {"MC-1": "FIXED", "CR-3": "REPRODUCED"},
+        )
+        fragment = (
+            "One issue remains; one prior issue was fixed.\n\n"
+            "## Findings\n\n"
+            "- **CR-3 — Remaining issue** — Status: `REPRODUCED`. Impact: State is inconsistent.\n"
+            "- Other dispositions: 1.\n\n"
+            "## Validation limits\n\nFixture evidence only.\n"
+        )
+        self.work_dir.mkdir(parents=True)
+        (self.work_dir / "confirmed-bugs.md").write_text(report)
+        (self.work_dir / FINDINGS_SUMMARY_FILENAME).write_text(fragment)
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        tracker.complete_run()
+
+        summary = self.summary(self.work_dir)
+        self.assertIn(fragment, summary)
+        self.assertNotIn("The findings summary is unavailable", summary)
+        self.assertNotIn("MC-1", summary)
 
     def test_fragment_checks_only_stable_ids_and_canonical_statuses(self) -> None:
         fragment = (
