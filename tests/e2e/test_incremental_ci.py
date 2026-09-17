@@ -34,12 +34,31 @@ class IncrementalCLI(unittest.TestCase):
         self.initial_sha = self.git("rev-parse", "HEAD")
         self.ci = self.work / "ci"
         self.adapter = self.helper._ci_init_adapter(self.root)
+        Path(f"{self.adapter}.result.py").write_text(
+            "import json, sys\nfrom pathlib import Path\n"
+            "work, run, adapter = map(Path, sys.argv[1:])\n"
+            "flag = Path(str(adapter) + '.findings')\n"
+            "findings = json.loads(flag.read_text()) if flag.exists() else []\n"
+            "(work / 'spec/confirmation-fixture.md').write_text('Current fixture confirmation for ' + run.name)\n"
+            "inputs = json.loads((run / 'ci-input.json').read_text())\n"
+            "if 'final_result_version' not in inputs:\n"
+            "    (work / 'ci-report.md').write_text('# Fixture report\\nNo real verification performed.\\n')\n"
+            "    (work / 'ci-verdict.json').write_text(json.dumps({'version': 1, 'run_id': run.name, 'findings': findings}))\n"
+            "else:\n"
+            "    rows = [dict(title='Fixture finding', source='code-review', cause='Fixture cause',\n"
+            "                 trigger='Fixture trigger', consequence='Fixture consequence',\n"
+            "                 **{k: v for k, v in f.items() if k != 'evidence'}, evidence=[f['evidence']]) for f in findings]\n"
+            "    (work / 'spec/final-result.json').write_text(json.dumps({\n"
+            "        'version': 1, 'run_id': run.name, 'summary': 'Fixture update; no real verification performed.',\n"
+            "        'validation_limits': ['Fixture only.'], 'findings': rows}))\n"
+        )
         script = self.adapter.read_text()
         script = script.replace(
             'case "$SPECULA_PHASE" in\n',
             'case "$SPECULA_PHASE" in\n'
             "  incremental)\n"
             '    printf "%s\\n" "$@" > "$0.incremental.args"\n'
+            '    if [ ! -f "$resume" ]; then printf "fixture-native-session\\n" > "$resume"; fi\n'
             '    if [ -f "$0.fail" ]; then\n'
             '      printf "fixture-native-session\\n" > "$resume"\n'
             '      printf "unfinished edit\\n" > "$SPECULA_WORK_DIR/spec/base.tla"\n'
@@ -49,15 +68,8 @@ class IncrementalCLI(unittest.TestCase):
             '    if [ -f "$0.reject" ]; then printf "not complete\\n" > "$log"; exit 0; fi\n'
             '    if [ -f "$resume" ]; then cp "$resume" "$0.resumed"; fi\n'
             '    if [ ! -f "$0.nochange" ]; then printf "updated fixture model\\n" > "$SPECULA_WORK_DIR/spec/base.tla"; fi\n'
-            '    printf "# CI fixture report\\nNo real verification performed.\\n" > "$SPECULA_WORK_DIR/ci-report.md"\n'
-            "    python3 -c 'import json,sys; from pathlib import Path; "
-            "work,run,adapter=map(Path,sys.argv[1:]); "
-            'flag=Path(str(adapter)+".findings"); '
-            "findings=json.loads(flag.read_text()) if flag.exists() else []; "
-            '(work/"spec/confirmation-fixture.md").write_text("Current fixture confirmation for " + run.name); '
-            '(work/"ci-verdict.json").write_text(json.dumps({"version":1,"run_id":run.name,"findings":findings}))\' '
-            '"$SPECULA_WORK_DIR" "$SPECULA_RUN_DIR" "$0"\n'
-            '    if [ -f "$0.omit-verdict" ]; then rm "$SPECULA_WORK_DIR/ci-verdict.json"; fi\n'
+            '    python3 "$0.result.py" "$SPECULA_WORK_DIR" "$SPECULA_RUN_DIR" "$0"\n'
+            '    if [ -f "$0.omit-verdict" ]; then rm "$SPECULA_WORK_DIR/spec/final-result.json"; fi\n'
             '    printf \'{"agent":"codex","session_id":"fixture-native-session","usage":{"total_tokens":150,"cached_input_tokens":50},"total_cost_usd":0.01,"usage_complete":true}\\n\' > "${log%.log}.usage.json"\n'
             '    printf "SPECULA_INCREMENTAL_COMPLETE %s\\n" "$(basename "$SPECULA_RUN_DIR")" > "$log"\n'
             "    exit 0\n"
@@ -362,7 +374,7 @@ class IncrementalCLI(unittest.TestCase):
         self.finding_status("PENDING REPAIR")
         result = self.run_ci("--incremental", "--agent=fake")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("CI workflow did not converge (PENDING REPAIR)", result.stdout)
+        self.assertIn("unresolved or invalid final status: PENDING REPAIR", result.stdout)
         self.assertEqual((self.ci / "current").resolve(), baseline)
         self.assertFalse((self.latest() / "ci-result.json").exists())
 
@@ -382,7 +394,7 @@ class IncrementalCLI(unittest.TestCase):
         self.assertFalse((self.latest() / "ci-result.json").exists())
         summary = (self.latest() / "footest/.specula-output/summary.md").read_text()
         self.assertNotIn("CI verdict: **PASS**", summary)
-        self.assertIn("CI verdict: **INCOMPLETE**", summary)
+        self.assertIn("Run status: **Incomplete**", summary)
 
     def test_completion_marker_without_verdict_is_not_a_passing_check(self) -> None:
         self.initialize()
@@ -391,8 +403,58 @@ class IncrementalCLI(unittest.TestCase):
         Path(f"{self.adapter}.omit-verdict").touch()
         result = self.run_ci("--incremental", "--agent=fake")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("missing current ci-verdict.json", result.stdout)
+        self.assertIn("missing current spec/final-result.json", result.stdout)
         self.assertEqual((self.ci / "current").resolve(), baseline)
+
+    def test_final_result_failure_can_be_manually_resumed(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("new result format\n")
+        flag = Path(f"{self.adapter}.omit-verdict")
+        flag.touch()
+        failed = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        self.assertEqual((self.ci / "current").resolve(), previous)
+        run = self.latest()
+        self.assertFalse((run / "ci-result.json").exists())
+        self.assertEqual(Path(f"{self.adapter}.phases").read_text().splitlines().count("incremental"), 1)
+        flag.unlink()
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertTrue((self.ci / "current/model/spec/final-result.json").is_file())
+        self.assertTrue((self.ci / "current/model/confirmed-bugs.md").is_file())
+
+    def test_preexisting_run_keeps_legacy_reporting_on_resume(self) -> None:
+        self.initialize()
+        self.change_source("legacy resume fixture\n")
+        flag = Path(f"{self.adapter}.fail")
+        flag.touch()
+        self.assertEqual(self.run_ci("--incremental", "--agent=fake").returncode, 9)
+        run = self.latest()
+        inputs_path = run / "ci-input.json"
+        inputs = json.loads(inputs_path.read_text())
+        del inputs["final_result_version"]  # A run created before the format was introduced.
+        inputs_path.write_text(json.dumps(inputs))
+        flag.unlink()
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertFalse((run / "footest/.specula-output/spec/final-result.json").exists())
+        self.assertEqual(CIStore(self.ci).current()["verdict"], "PASS")
+
+    def test_agent_can_generate_and_check_results_before_completion(self) -> None:
+        self.initialize()
+        self.change_source("preflight final result\n")
+        self.finding_status("REPRODUCED")
+        script = self.adapter.read_text().replace(
+            '    if [ -f "$0.omit-verdict" ];',
+            f'    python3 "{self.root}/src/specula/cli.py" ci-result --work="$SPECULA_WORK_DIR"\n'
+            '    if [ -f "$0.omit-verdict" ];',
+        )
+        self.adapter.write_text(script)
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(CIStore(self.ci).current()["verdict"], "FAIL")
+        self.assertTrue(json.loads((self.latest() / "ci-result.json").read_text())["complete"])
 
     def test_compaction_yield_does_not_publish_and_failure_continues(self) -> None:
         self.initialize()
