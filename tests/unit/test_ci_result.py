@@ -157,6 +157,21 @@ def test_fixed_record_is_removed_but_retained_in_current_report(workspace: tuple
     assert ci_result.generate(work, source, "v2", old) == "PASS"
 
 
+def test_mixed_fixed_and_unresolved_results_remain_parseable(workspace: tuple[Path, Path, Path]) -> None:
+    source, old, work = workspace
+    seed(source, old, work, "MC-1")
+    result(work, [finding("MC-1", "FIXED"), finding("CR-3")])
+    assert ci_result.generate(work, source, "v2", old) == "FAIL"
+    report = (work / "confirmed-bugs.md").read_text()
+    fragment = (work / ".summary-findings.md").read_text()
+    assert findings_fragment_issue(fragment, report) is None
+    assert _confirmation_finding_statuses(report, impact_only=False) == {"MC-1": "FIXED", "CR-3": "REPRODUCED"}
+    assert _confirmation_finding_statuses(report) == {"CR-3": "REPRODUCED"}
+    assert set(issues.index(work)) == {"CR-3"}
+    assert not (work / issues._record_path("MC-1")).exists()
+    assert not (work / issues.DIRECTORY / "evidence/MC-1").exists()
+
+
 @pytest.mark.parametrize(
     "status,verdict",
     [
