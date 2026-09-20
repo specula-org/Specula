@@ -1,4 +1,4 @@
-"""Continue one incremental conversation across explicitly requested compactions."""
+"""Continue an incremental conversation across compactions and confirmation handoffs."""
 
 from __future__ import annotations
 
@@ -16,14 +16,26 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from specula.adapters.utils.usage import UsageTotals, accumulate_usage
-from specula.context_control import MCP_ENV, PYTHON_ENV, REQUEST_ENV, TOKEN_ENV, YIELD_PREFIX, mcp_config, write_json
+from specula.context_control import (
+    CONFIRMATION_REQUEST,
+    CONFIRMATION_YIELD_RC,
+    MCP_ENV,
+    PYTHON_ENV,
+    REQUEST_ENV,
+    TOKEN_ENV,
+    YIELD_PREFIX,
+    mcp_config,
+    write_json,
+)
 from specula.resource_summary import UsageRecord, _claude_usage, _normalized_usage, _parse_usage_file
 from specula.resumelib import inherited_run_lock_fds
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def tool_environment(directory: Path, work: Path, python: Path, agent: str = "") -> dict[str, str]:
+def tool_environment(
+    directory: Path, work: Path, python: Path, agent: str = "", *, mcp_available: bool = True
+) -> dict[str, str]:
     env = os.environ.copy()
     env.update(
         {
@@ -34,6 +46,8 @@ def tool_environment(directory: Path, work: Path, python: Path, agent: str = "")
             "SPECULA_CONTEXT_AGENT": agent,
         }
     )
+    if not mcp_available:
+        return env  # The stdlib request.py bridge still supports confirmation.
     # Native MCP servers may be launched with a restricted inherited environment.
     config = mcp_config(python, ROOT / "tools/context_control/mcp_server.py", env)
     if env.get("SPECULA_TLC_TOOL_CONFIG"):
@@ -108,9 +122,9 @@ def run(adapter: Path, arguments: list[str]) -> int:
     if os.environ.get("SPECULA_PHASE") != "incremental":
         return subprocess.call([str(adapter), *arguments], pass_fds=inherited_run_lock_fds())
     python = ROOT / "tools/context_control/.venv/bin/python"
-    if not python.is_file():
-        print("WARNING: context tool is not installed; run specula setup to enable CI compaction.", flush=True)
-        return subprocess.call([str(adapter), *arguments], pass_fds=inherited_run_lock_fds())
+    mcp_available = python.is_file()
+    if not mcp_available:
+        python = Path(sys.executable)
     work = Path(os.environ["SPECULA_WORK_DIR"]).resolve()
     log = Path(options["log"])
     resume = Path(options["resume-state"])
@@ -119,7 +133,7 @@ def run(adapter: Path, arguments: list[str]) -> int:
     try:
         control.mkdir(exist_ok=True)
         directory = Path(tempfile.mkdtemp(prefix="invocation-", dir=control))
-        env = tool_environment(directory, work, python, adapter.stem)
+        env = tool_environment(directory, work, python, adapter.stem, mcp_available=mcp_available)
     except OSError as exc:
         print(f"WARNING: context tool unavailable ({exc}); continuing without compaction.", flush=True)
         return subprocess.call([str(adapter), *arguments], pass_fds=inherited_run_lock_fds())
@@ -154,10 +168,13 @@ def run(adapter: Path, arguments: list[str]) -> int:
                 return 1
             state = json.loads(resume.read_text())
             if state.get("adapter") != adapter.stem or not state.get("session_id"):
-                raise ValueError("Compaction requires the exact persisted native session")
+                raise ValueError("CI continuation requires the exact persisted native session")
             if session_id is not None and session_id != state["session_id"]:
-                raise ValueError("Native conversation changed during compaction")
+                raise ValueError("Native conversation changed during CI continuation")
             session_id = state["session_id"]
+            if pending.get("action") == "confirm":
+                write_json(work / CONFIRMATION_REQUEST, {"session_id": session_id, "status": "pending"})
+                return CONFIRMATION_YIELD_RC
             round_number += 1
             archive = directory / str(round_number)
             archive.mkdir()

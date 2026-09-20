@@ -16,14 +16,15 @@ from specula import ci_init, ci_result, ci_verdict, persistent_findings, resumel
 from specula.ci_identity import check_key
 from specula.ci_inheritance import register_candidate
 from specula.ci_store import CIError, CIStore, freeze_source, git, read_json, write_json
+from specula.context_control import CONFIRMATION_REQUEST, CONFIRMATION_YIELD_RC
 from specula.output_index import BYOM_REPORT_FILENAME
 from specula.pipelinelib import Pipeline, _valid_run_id
 from specula.snapshotlib import load_sources
 
-INCREMENTAL_PHASE_OPTIONS = frozenset({"--confirm-debate", "--legacy-confirm", "--max-repair-rounds", "--max-parallel"})
+INCREMENTAL_PHASE_OPTIONS = frozenset({"--legacy-confirm", "--max-repair-rounds"})
 
 INCREMENTAL_USAGE = """
-Incremental Specula CI: one Agent conversation for the complete update workflow.
+Incremental Specula CI: one update conversation with parallel bug confirmation.
 
 Usage:
   specula run --incremental --ci-dir=PATH [options]
@@ -36,11 +37,13 @@ Options:
   --revision=REF         Require the source checkout to be at this Git revision
   --run-id=ID            Resume an unfinished conversation with its saved configuration
   --agent=NAME           Agent adapter (default: claude-code)
-  --model=NAME           Model used throughout the conversation
-  --effort=LEVEL         Reasoning effort used throughout the conversation
-  --agent-config=PATH    Use default_profile's agent/model/effort for the entire workflow;
-                         phases must be omitted or empty. Cannot combine with
-                         --agent, --model, or --effort. Unused profiles are allowed.
+  --model=NAME           Default model for the workflow and confirmation
+  --effort=LEVEL         Default reasoning effort
+  --agent-config=PATH    Use default_profile for the update conversation; phases.confirm
+                         optionally selects the confirmation agent/model/effort.
+                         Cannot combine with --agent, --model, or --effort.
+  --max-parallel=N      Concurrent confirmation tasks (default: 4)
+  --confirm-debate      Enable the one-shot confirmation debate (default: off)
   --claude-alias=NAME    Claude CLI profile (default: claude)
   --max-turns=N          Adapter-specific turn limit (default: 0 = unlimited)
   --policy-retries=N     Policy continuation budget for the conversation (default: 20)
@@ -53,8 +56,8 @@ Options:
   --dry-run              Print the workflow command without starting the Agent
   --help, -h             Show this help
 
-CI always uses one target and an isolated private source copy. Stage selection,
-phase-specific agent routing, and Phase 4 scheduling options are not supported.
+CI uses one target and an isolated private source copy. The update conversation
+waits for each confirmation batch. Only the confirm phase can override the default.
 Initialization uses the full pipeline; see 'specula run --help' for its options.
 """
 
@@ -145,18 +148,18 @@ class CIPipeline(Pipeline):
         unsupported = sorted({arg.split("=", 1)[0] for arg in self.argv} & INCREMENTAL_PHASE_OPTIONS)
         if unsupported:
             return f"{', '.join(unsupported)} not supported for incremental CI; it runs one Agent conversation"
-        if self.agent_routing is not None and self.agent_routing.phases:
-            return "incremental CI uses only default_profile; --agent-config phases must be omitted or empty"
+        if self.agent_routing is not None and set(self.agent_routing.phases) - {"confirm"}:
+            return "incremental CI supports only phases.confirm; other phases use default_profile"
         return None
 
     def _route_specs(self) -> dict[str, tuple[str, str | None]]:
         if self.incremental:
-            return {"incremental": ("incremental", None)}
+            return {"incremental": ("incremental", None), "confirm": ("confirm", None)}
         return super()._route_specs()
 
     def _configured_agents(self) -> set[str]:
         if self.incremental:
-            return {self._agent_selection().agent}
+            return {self._agent_selection().agent, self._agent_selection("confirm").agent}
         return super()._configured_agents()
 
     def _byom_option_error(self) -> str | None:
@@ -203,6 +206,12 @@ class CIPipeline(Pipeline):
             raise resumelib.ResumeError("invalid stored CI run mode; expected initialization or incremental checking")
         if self.incremental:
             self.skip_classification = True
+
+    def _resume_phase(self, active: list[dict[str, Any]]) -> str:
+        phases = {str(entry.get("phase")) for entry in active}
+        if self.incremental and "incremental" in phases and phases <= {"incremental", "bug_confirmation"}:
+            return "incremental"
+        return super()._resume_phase(active)
 
     def _position_at_manual_resume_phase(self, active: list[dict[str, Any]] | None = None) -> None:
         if self.incremental:
@@ -363,7 +372,11 @@ class CIPipeline(Pipeline):
         )
 
     def _max_parallel_summary(self) -> str:
-        return "1 workflow Agent" if self.incremental else super()._max_parallel_summary()
+        return (
+            f"1 workflow Agent; up to {self.max_parallel or '4'} confirmation tasks"
+            if self.incremental
+            else super()._max_parallel_summary()
+        )
 
     def _summary_findings_enabled(self) -> bool:
         if self.incremental:
@@ -386,9 +399,63 @@ class CIPipeline(Pipeline):
         self.stage_guidance(names)
         self.initialize_resource_summaries(names)
         print(f"CI directory: {self.ci_dir}\nRun: {self.run_id}\nSource update: {self.run_dir}/source.diff")
-        with self.resource_phase("incremental", names):
-            self._phase("INCREMENTAL WORKFLOW", "launch_incremental.sh", self._phase_args(names))
-        return 0
+        work = Path(self.get_work_dir(names[0]))
+        request_path = work / CONFIRMATION_REQUEST
+        while True:
+            if request_path.exists():
+                request = read_json(request_path)
+                state = read_json(work / "incremental.resume.json")
+                if not request.get("session_id") or request["session_id"] != state.get("session_id"):
+                    raise CIError("confirmation request belongs to another incremental conversation")
+                if request.get("status") == "pending":
+                    repair = self.load_open_repair_snapshot(names[0])
+                    commit = self.load_repair_phase3_commit(names[0])
+                    if repair is not None and commit is None:
+                        self.publish_repair_phase3_commit(repair[1], names)
+                        commit = self.load_repair_phase3_commit(names[0])
+                    previous = os.environ.get("SPECULA_CI_CONFIRMATION")
+                    os.environ["SPECULA_CI_CONFIRMATION"] = "1"
+                    try:
+                        self.wait_for_phase_quota("confirm")
+                        with self.resource_phase("phase4a", names):
+                            if commit is None:
+                                self.run_phase4_confirmation()
+                            else:
+                                self._run_repair_result_dispatcher(
+                                    names[0], commit["repair_round"], commit["commit_token"], commit["violation_ids"]
+                                )
+                    finally:
+                        if previous is None:
+                            os.environ.pop("SPECULA_CI_CONFIRMATION", None)
+                        else:
+                            os.environ["SPECULA_CI_CONFIRMATION"] = previous
+                    # Keep the one-shot result as evidence when ci-result later
+                    # replaces the public report. No second report format.
+                    report = work / "confirmed-bugs.md"
+                    (work / "spec/confirmation-report.md").write_text(report.read_text())
+                    self.persist_findings(names)
+                    request["status"] = "completed"
+                    request["repair_round"] = commit["repair_round"] if commit is not None else 0
+                    write_json(request_path, request)
+                elif request.get("status") != "completed":
+                    raise CIError("invalid confirmation request status")
+                # Keep the existing scoped repair checkpoint until the batch is
+                # durably accepted, then snapshot any new requests before the
+                # main conversation can change their status or model evidence.
+                if self.load_repair_phase3_commit(names[0]) is not None:
+                    self.clear_open_repair_snapshot(names[0])
+                snapshot = self.snapshot_open_repair_requests(names[0])
+                if snapshot and self.load_open_repair_snapshot(names[0]) is None:
+                    self.persist_open_repair_snapshot(names[0], snapshot, int(request.get("repair_round", 0)) + 1)
+            try:
+                with self.resource_phase("incremental", names):
+                    self._phase("INCREMENTAL WORKFLOW", "launch_incremental.sh", self._phase_args(names))
+                return 0
+            except SystemExit as exc:
+                if exc.code != CONFIRMATION_YIELD_RC:
+                    raise
+                if not request_path.is_file() or read_json(request_path).get("status") != "pending":
+                    raise CIError("incremental conversation yielded without a confirmation request") from exc
 
     def finalize_ci_run(self, exit_code: int) -> tuple[str | None, int]:
         if self.dry_run:

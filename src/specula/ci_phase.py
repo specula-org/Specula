@@ -7,6 +7,7 @@ from pathlib import Path
 
 from specula import ci_init, ci_result, ci_verdict, stop_gate
 from specula.ci_store import CIError, read_json
+from specula.context_control import CONFIRMATION_REQUEST
 from specula.phaselib import AgentFiles, Phase, Workspace, _last_message_path
 from specula.prompts import render
 from specula.skill_refs import prompt_skill_ids
@@ -62,7 +63,22 @@ class IncrementalPhase(Phase):
             run_id=ws.run_dir.name,
             final_reporting=final_reporting,
         )
-        return self._with_extra(ws, target, prompt)
+        return self._with_extra(ws, target, prompt + self._confirmation_context(ws, target))
+
+    @staticmethod
+    def _confirmation_context(ws: Workspace, target: str) -> str:
+        request = ws.work_dir(target) / CONFIRMATION_REQUEST
+        if request.is_file() and read_json(request).get("status") == "completed":
+            return (
+                "\nThe requested confirmation batch has completed. Continue this same conversation. "
+                "Read spec/confirmation-report.md and the referenced per-finding evidence. "
+                "Handle any repair requests, revalidate affected behavior, then request another confirmation "
+                "batch only if needed. Use the completed results in the final result; do not repeat confirmation.\n"
+            )
+        return ""
+
+    def _manual_prompt_extra(self, ws: Workspace, name: str) -> str:
+        return super()._manual_prompt_extra(ws, name) + self._confirmation_context(ws, name)
 
     def finalize_outputs(
         self, ws: Workspace, names: list[str], *, adapter: Path, dry_run: bool
@@ -81,6 +97,14 @@ class IncrementalPhase(Phase):
                 expected = f"SPECULA_INCREMENTAL_COMPLETE {ws.run_dir.name}"
                 if response.read_text(errors="replace").strip().splitlines()[-1:] != [expected]:
                     raise CIError("Agent did not report completion of the incremental workflow")
+                if any(
+                    (work / "spec" / filename).exists()
+                    for filename in (
+                        ".repair-phase3-snapshot.json",
+                        ".repair-phase3-commit.json",
+                    )
+                ):
+                    raise CIError("confirmation repair is unfinished; request confirmation after revalidation")
                 inputs = read_json(ws.run_dir / "ci-input.json")
                 if ci_result.enabled(inputs):
                     ci_result.generate(work, ws.run_dir / "ci-source", ws.run_dir.name, Path(inputs["old_model"]))

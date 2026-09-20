@@ -1,6 +1,8 @@
 # Incremental CI Task: {{target}}
 
-Read the installed Specula skill {{skill}} and its guide. Execute its complete workflow in one continuous session: generation, trace validation, model checking, and reproduction when an actual counterexample requires it. Apply the referenced Specula methods. You own the analysis, planning, repairs, and verification loop.
+Read the installed Specula skill {{skill}} and its guide. Execute generation, trace validation, and model checking in this continuous session. Collect both code-review candidates and actual model-checking counterexamples using the one-shot formats. You own the analysis, planning, repairs, and verification loop.
+
+For confirmation, save the current `modeling-brief.md`, `spec/bug-report.md`, and `spec/findings.json` when present, then call `request_bug_confirmation`. Reuse applicable persistent findings first. The controller pauses this conversation, runs the existing one-shot confirmation workflow with the configured agent and concurrency, then resumes this exact session with the results. Do not independently reproduce the same candidates or start confirmation agents yourself. If the tool is unavailable, run `python3 "$SPECULA_ROOT/tools/context_control/request.py" --confirm` and follow its returned yield instruction.
 
 For long conversations, follow the skill's context-preservation guidance. The `request_context_compaction` tool can yield an internal turn after you save a handoff; the controller resumes this same session. Such a yield is not completion of the workflow and does not require final reports. Compaction is optional; failure does not prevent continuing the task.
 

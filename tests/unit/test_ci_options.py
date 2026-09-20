@@ -10,15 +10,15 @@ import unittest
 from pathlib import Path
 
 from specula.agent_config import PHASES
+from specula.ci_phase import IncrementalPhase
 from specula.ci_workflow import CIPipeline
+from specula.phaselib import Workspace
 from specula.pipelinelib import Pipeline
 from specula.resumelib import ResumeError
 
 PHASE_FLAGS = (
-    "--confirm-debate",
     "--legacy-confirm",
     "--max-repair-rounds=1",
-    "--max-parallel=2",
 )
 
 
@@ -55,6 +55,18 @@ class CIOptions(unittest.TestCase):
                 self.assertEqual(pipeline._summary_findings_enabled(), enabled)
                 self.assertTrue(pipeline.skip_classification)
 
+    def test_final_marker_cannot_skip_confirmation_repair_reconciliation(self) -> None:
+        ws = Workspace(["project"], run_dir=self.root)
+        work = ws.work_dir("project")
+        (work / "spec").mkdir(parents=True)
+        (work / "incremental.log").write_text(f"SPECULA_INCREMENTAL_COMPLETE {self.root.name}\n")
+        (work / "spec/.repair-phase3-snapshot.json").write_text("{}")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            failures = IncrementalPhase().finalize_outputs(ws, ["project"], adapter=Path("fake.sh"), dry_run=False)
+        self.assertEqual(failures, [("project", 1)])
+        self.assertIn("confirmation repair is unfinished", output.getvalue())
+
     def test_phase_options_are_rejected_only_for_incremental_runs(self) -> None:
         for flag in PHASE_FLAGS:
             with self.subTest(flag=flag):
@@ -82,7 +94,7 @@ class CIOptions(unittest.TestCase):
         original = CIPipeline()
         self.assertIsNone(original.parse_args(["--incremental", self.ci_flag, f"--agent-config={self.config}"]))
         saved = original._resume_configuration_document()
-        for phase in sorted(PHASES):
+        for phase in sorted(PHASES - {"confirm"}):
             with self.subTest(phase=phase):
                 self.config.write_text(json.dumps({**self.document, "phases": {phase: "selected"}}))
                 error = io.StringIO()
@@ -90,12 +102,12 @@ class CIOptions(unittest.TestCase):
                     self.assertEqual(
                         CIPipeline().parse_args(["--incremental", self.ci_flag, f"--agent-config={self.config}"]), 1
                     )
-                self.assertIn("phases must be omitted or empty", error.getvalue())
+                self.assertIn("supports only phases.confirm", error.getvalue())
                 resumed = CIPipeline()
                 self.assertIsNone(
                     resumed.parse_args([self.ci_flag, "--run-id=existing", f"--agent-config={self.config}"])
                 )
-                with self.assertRaisesRegex(ResumeError, "phases must be omitted or empty"):
+                with self.assertRaisesRegex(ResumeError, "supports only phases.confirm"):
                     resumed._restore_resume_configuration(saved)
                 self.assertIsNone(
                     CIPipeline().parse_args(["--ci-init", self.ci_flag, f"--agent-config={self.config}", "project"])
@@ -116,7 +128,7 @@ class CIOptions(unittest.TestCase):
                 self.assertIn("--model=selected-model", args)
                 self.assertIn("--effort=high", args)
                 saved = original._resume_configuration_document()
-                self.assertEqual(set(saved["routes"]), {"incremental"})
+                self.assertEqual(set(saved["routes"]), {"incremental", "confirm"})
                 resumed = CIPipeline()
                 self.assertIsNone(resumed.parse_args([self.ci_flag, "--run-id=existing"]))
                 resumed._restore_resume_configuration(saved)
@@ -149,6 +161,41 @@ class CIOptions(unittest.TestCase):
                 else:
                     with self.assertRaisesRegex(ResumeError, "agent-config differs"):
                         resumed._restore_resume_configuration(saved)
+
+    def test_confirm_route_and_controls_survive_resume_without_the_config_file(self) -> None:
+        profiles = self.document["profiles"]
+        assert isinstance(profiles, dict)
+        document = {
+            **self.document,
+            "profiles": {
+                **profiles,
+                "confirmation": {"agent": "pi", "model": "confirm-model", "effort": "low"},
+            },
+            "phases": {"confirm": "confirmation"},
+        }
+        self.config.write_text(json.dumps(document))
+        original = CIPipeline()
+        self.assertIsNone(
+            original.parse_args(
+                [
+                    "--incremental",
+                    self.ci_flag,
+                    f"--agent-config={self.config}",
+                    "--confirm-debate",
+                    "--max-parallel=2",
+                ]
+            )
+        )
+        saved = original._resume_configuration_document()
+        self.config.unlink()
+        resumed = CIPipeline()
+        self.assertIsNone(resumed.parse_args([self.ci_flag, "--run-id=existing"]))
+        resumed._restore_resume_configuration(saved)
+        self.assertEqual(resumed._configured_agents(), {"codex", "pi"})
+        self.assertTrue(resumed.confirm_debate)
+        self.assertEqual(resumed.max_parallel, "2")
+        self.assertIn("--model=confirm-model", resumed._phase_args(["project"], phase="confirm"))
+        self.assertIn("--model=selected-model", resumed._phase_args(["project"]))
 
     def test_incremental_help_is_mode_specific_and_order_independent(self) -> None:
         for args in (["--incremental", "--help"], ["--help", "--incremental"]):
