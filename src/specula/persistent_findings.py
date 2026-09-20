@@ -16,6 +16,7 @@ import shutil
 import stat
 import subprocess
 import sys
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
@@ -542,11 +543,12 @@ def confirmation_findings(work: Path, run_id: str) -> list[dict[str, Any]]:
     return list(by_id.values())
 
 
-def finalize_confirmation(work: Path) -> None:
+def finalize_confirmation(work: Path, *, confirmed_ids: Collection[str] = ()) -> None:
+    """Persist the report, refreshing only successful dispatcher results."""
     if not _regular_file(work, "confirmed-bugs.md"):
         return
     source, run_id, _ = context(work)
-    reconcile(work, source, run_id, confirmation_findings(work, run_id))
+    reconcile(work, source, run_id, confirmation_findings(work, run_id), confirmed_ids=confirmed_ids)
 
 
 def reused_body(work: Path, fid: str) -> str:
@@ -561,7 +563,9 @@ def reused_body(work: Path, fid: str) -> str:
     )
 
 
-def reconcile(work: Path, source: Path, run_id: str, findings: list[dict[str, Any]]) -> None:
+def reconcile(
+    work: Path, source: Path, run_id: str, findings: list[dict[str, Any]], *, confirmed_ids: Collection[str] = ()
+) -> None:
     """Publish only current unresolved entries; fixed/dismissed entries are deleted."""
     live = {finding["id"]: finding for finding in findings if finding["status"] in LIVE}
     binding = read_json(work / CONTEXT) if _regular_file(work, CONTEXT) else {}
@@ -574,6 +578,11 @@ def reconcile(work: Path, source: Path, run_id: str, findings: list[dict[str, An
         if "reuse" in finding:
             continue  # The original record/evidence stays byte-identical.
         registered = load(work, fid) if (work / _record_path(fid)).exists() else None
+        proposal_path = f"spec/issue-input/{_id(fid)}.json"
+        worker_path = f"confirmation/{fid}/issue.json"
+        refreshed = fid in confirmed_ids and (work / worker_path).exists()
+        if refreshed or not (work / proposal_path).exists():
+            proposal_path = worker_path
         # A fresh source binding can inherit records with the same run ID.
         if (
             registered is not None
@@ -581,12 +590,11 @@ def reconcile(work: Path, source: Path, run_id: str, findings: list[dict[str, An
             and registered["reusable"]
             and inherited.get(fid) != record_digest(work, fid)
         ):
-            if registered["status"] != finding["status"] or check(work, source, fid):
+            # A successfully dispatched confirmation may replace its old
+            # dependencies using the worker's new proposal. Other findings
+            # still reject stale proposals that merely rehash changed inputs.
+            if not refreshed and (registered["status"] != finding["status"] or check(work, source, fid)):
                 raise FindingsError(f"{fid}: recorded conclusion changed; reanalyze and record it again")
-        proposal_path = f"spec/issue-input/{_id(fid)}.json"
-        worker_path = f"confirmation/{fid}/issue.json"
-        if not (work / proposal_path).exists():
-            proposal_path = worker_path
         if (work / proposal_path).exists():
             proposal = json.loads(_bytes(work, proposal_path))
             if not isinstance(proposal, dict) or proposal.get("id") != fid:
