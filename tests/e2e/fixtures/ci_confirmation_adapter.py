@@ -21,6 +21,7 @@ resume = Path(options["resume-state"])
 prompt = Path(options["prompt-file"]).read_text()
 phase = os.environ["SPECULA_PHASE"]
 repair_enabled = (Path(__file__).parent / "repair-confirmation").exists()
+reconfirm_model = (Path(__file__).parent / "reconfirm-model-dependency").exists()
 name = "main" if phase == "incremental" else log.parent.name
 session = "workflow" if name == "main" else log.stem + "-" + name
 if resume.exists():
@@ -89,6 +90,10 @@ if phase == "incremental":
                     }
                 )
             )
+            if reconfirm_model:
+                doc = json.loads((work / "spec/findings.json").read_text())
+                doc["findings"].append({**doc["findings"][0], "id": "MC-2", "title": "Surviving defect"})
+                (work / "spec/findings.json").write_text(json.dumps(doc))
         source, rid, _ = persistent_findings.context(work)
         for fid in persistent_findings.index(work):
             persistent_findings.reuse_issue(work, source, rid, fid, "Same fixture logic and premises.")
@@ -100,12 +105,16 @@ if phase == "incremental":
         assert (work / "spec/confirmation-report.md").is_file()
         rr = work / "spec/repair-requests/RR-001.md"
         if repair_enabled and "status: OPEN" in rr.read_text():
+            if reconfirm_model:
+                (work / "spec/MC-2-before.json").write_text(json.dumps(persistent_findings.load(work, "MC-2")))
             rr.write_text(
                 rr.read_text().replace("status: OPEN", "status: CONSUMED").replace("round: 0", "round: 1")
                 + "\n- r1: Fixed model; full trace regression and scoped checks passed.\n"
             )
             (work / "spec/base.tla").write_text("Fixture repaired model.\n")
-            (work / "spec/findings.json").write_text('{"findings": []}')
+            doc = json.loads((work / "spec/findings.json").read_text())
+            doc["findings"] = [finding for finding in doc["findings"] if finding["id"] == "MC-2"]
+            (work / "spec/findings.json").write_text(json.dumps(doc))
             request_confirmation()
             log.write_text(YIELD_PREFIX + " " + os.environ[TOKEN_ENV] + "\n")
             event("end")
@@ -146,6 +155,15 @@ if phase == "incremental":
                     "evidence": ["spec/confirmation-report.md"],
                 }
             )
+        if reconfirm_model:
+            current_source, _run_id, _previous = persistent_findings.context(work)
+            assert not persistent_findings.check(work, current_source, "MC-2")
+            current = persistent_findings.load(work, "MC-2")
+            (work / "spec/MC-2-after.json").write_text(json.dumps(current))
+            row = {key: current[key] for key in ("id", "title", "source", "status", "cause", "trigger", "consequence")}
+            row["evidence"] = ["spec/confirmation-report.md"]
+            row["persistence"] = {key: current[key] for key in ("premises", "dependencies", "invariants")}
+            findings.append(row)
         (work / "spec/final-result.json").write_text(
             json.dumps(
                 {
@@ -189,7 +207,7 @@ elif "Consolidate + dedup" in prompt:
     (work / "spec/candidates.json").write_text(json.dumps({"generated_by": "consolidate", "findings": candidates}))
     log.write_text("Fixture candidates written.\n")
 else:
-    assert name in {"CR-1", "CR-2", "CR-3", "MC-1"}
+    assert name in {"CR-1", "CR-2", "CR-3", "MC-1", "MC-2"}
     repo = re.search(r"Source repo \(build/run here\): (.+)", prompt)
     repo_file = log.parent / "fixture-repo.txt"
     if repo:
@@ -210,6 +228,37 @@ else:
         )
         log.write_text(
             "VERDICT: PENDING REPAIR\n- **Source**: MC\nThe fixture counterexample requires a model repair.\n"
+        )
+        event("end")
+        raise SystemExit(0)
+    if name == "MC-2":
+        (work / "repro/test_bugMC-2_fixture.py").write_text("print('surviving defect')\n")
+        dependencies = [{"root": "source", "path": "logic.txt"}, {"root": "work", "path": "spec/base.tla"}]
+        if (Path(__file__).parent / "interrupt-model-record").exists() and "repaired" in (
+            work / "spec/base.tla"
+        ).read_text():
+            dependencies.append({"root": "work", "path": "spec/missing-evidence.tla"})
+        (log.parent / "issue.json").write_text(
+            json.dumps(
+                {
+                    "id": name,
+                    "title": "Surviving defect",
+                    "status": "REPRODUCED",
+                    "source": "model-checking",
+                    "cause": "Fixture cause",
+                    "trigger": "Fixture trigger",
+                    "consequence": "Fixture consequence",
+                    "sites": ["logic.txt:1"],
+                    "actions": [],
+                    "invariants": ["Inv"],
+                    "premises": ["Fixture premise"],
+                    "dependencies": dependencies,
+                    "evidence": ["spec/output/x.out", "repro/test_bugMC-2_fixture.py"],
+                }
+            )
+        )
+        log.write_text(
+            "VERDICT: REPRODUCED\n- **Source**: MC\n- **Novelty**: NEW\nFresh confirmation on the current model.\n"
         )
         event("end")
         raise SystemExit(0)

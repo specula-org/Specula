@@ -286,6 +286,54 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual(sum(e["kind"] == "start" and e["name"] == "main" for e in events), 3)
         self.assertFalse((work / "spec/final-result.json").exists())
 
+    def test_reconfirmation_refreshes_recorded_model_dependencies(self) -> None:
+        self._check_model_dependency_reconfirmation(interrupt=False)
+
+    def test_pending_reconfirmation_can_resume_after_persistence_failure(self) -> None:
+        self._check_model_dependency_reconfirmation(interrupt=True)
+
+    def _check_model_dependency_reconfirmation(self, *, interrupt: bool) -> None:
+        self.initialize()
+        self.change_source("new candidates\n")
+        config = self.confirmation_fixture()
+        (self.adapter.parent / "repair-confirmation").touch()
+        (self.adapter.parent / "reconfirm-model-dependency").touch()
+        if interrupt:
+            (self.adapter.parent / "interrupt-model-record").touch()
+        result = self.run_ci("--incremental", f"--agent-config={config}")
+        run = self.latest()
+        work = run / "footest/.specula-output"
+        before = json.loads((work / "spec/MC-2-before.json").read_text())
+        if interrupt:
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("missing-evidence.tla", result.stdout + result.stderr)
+            self.assertEqual(json.loads((work / ".context-control/confirmation.json").read_text())["status"], "pending")
+            self.assertEqual(json.loads((work / "spec/persistent-findings/MC-2.json").read_text()), before)
+            proposal = work / "confirmation/MC-2/issue.json"
+            document = json.loads(proposal.read_text())
+            document["dependencies"] = [
+                dep for dep in document["dependencies"] if dep["path"] != "spec/missing-evidence.tla"
+            ]
+            proposal.write_text(json.dumps(document))
+            result = self.run_ci(f"--run-id={run.name}")
+            self.assertIn("cached REPRODUCED", result.stdout)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        after = json.loads((work / "spec/MC-2-after.json").read_text())
+
+        before_hash = next(dep["sha256"] for dep in before["dependencies"] if dep["path"] == "spec/base.tla")
+        after_hash = next(dep["sha256"] for dep in after["dependencies"] if dep["path"] == "spec/base.tla")
+        self.assertNotEqual(before_hash, after_hash)
+        self.assertEqual(after["origin_run"], run.name)
+        self.assertTrue(after["reusable"])
+        self.assertEqual(json.loads((work / ".context-control/confirmation.json").read_text())["status"], "completed")
+        self.assertFalse((work / "spec/.repair-phase3-commit.json").exists())
+        events = [json.loads(line) for line in (work / "dispatch.jsonl").read_text().splitlines()]
+        starts = [event["name"] for event in events if event["kind"] == "start"]
+        self.assertEqual(starts.count("MC-1"), 1)
+        self.assertEqual(starts.count("MC-2"), 2)
+        self.assertEqual(starts.count("main"), 3)
+        self.assertEqual(json.loads((run / "ci-result.json").read_text())["verdict"], "FAIL")
+
     def finding_status(self, status: str) -> None:
         Path(f"{self.adapter}.findings").write_text(
             json.dumps([{"id": "MC-1", "status": status, "evidence": "spec/confirmation-fixture.md"}])

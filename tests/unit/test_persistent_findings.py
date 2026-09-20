@@ -385,6 +385,49 @@ def test_recorded_dependencies_are_not_rehashed_by_a_stale_proposal(baseline: tu
         ci_verdict.finalize(old, source, "v1")
 
 
+def test_reconfirmation_updates_the_current_record_from_its_worker_proposal(baseline: tuple[Path, Path]) -> None:
+    source, work = baseline
+    before = persistent_findings.record_digest(work, "MC-1")
+    write(work / "spec/Invariant.tla", "repaired model property\n")
+    write(work / "evidence.md", "Fresh confirmation after model repair.\n")
+    fresh = {**proposal(), "cause": "Freshly reconfirmed cause."}
+    write(work / "confirmation/MC-1/issue.json", json.dumps(fresh))
+    # A leftover proposal must not shadow the completed worker's result.
+    write(work / "spec/issue-input/MC-1.json", json.dumps(proposal()))
+    findings = [{"id": "MC-1", "status": "REPRODUCED", "source": "model-checking", "evidence": "evidence.md"}]
+    assert persistent_findings.check(work, source, "MC-1")
+    with pytest.raises(ERRORS, match="recorded conclusion changed"):
+        persistent_findings.reconcile(work, source, "v1", findings, confirmed_ids=["MC-2"])
+    assert persistent_findings.record_digest(work, "MC-1") == before
+    persistent_findings.reconcile(work, source, "v1", findings, confirmed_ids=["MC-1"])
+    assert not persistent_findings.check(work, source, "MC-1")
+    assert persistent_findings.load(work, "MC-1")["cause"] == fresh["cause"]
+    assert persistent_findings.record_digest(work, "MC-1") != before
+    accepted = persistent_findings.record_digest(work, "MC-1")
+    persistent_findings.reconcile(work, source, "v1", findings, confirmed_ids=["MC-1"])
+    assert persistent_findings.record_digest(work, "MC-1") == accepted
+
+
+@pytest.mark.parametrize("worker_proposal", [None, {"id": "wrong"}])
+def test_reconfirmation_without_a_valid_proposal_keeps_the_previous_record(
+    baseline: tuple[Path, Path], worker_proposal: dict[str, Any] | None
+) -> None:
+    source, work = baseline
+    before = persistent_findings.record_digest(work, "MC-1")
+    write(work / "spec/Invariant.tla", "repaired model property\n")
+    if worker_proposal is not None:
+        write(work / "confirmation/MC-1/issue.json", json.dumps(worker_proposal))
+    with pytest.raises(ERRORS, match="recorded conclusion changed|invalid issue proposal"):
+        persistent_findings.reconcile(
+            work,
+            source,
+            "v1",
+            [{"id": "MC-1", "status": "REPRODUCED", "evidence": "evidence.md"}],
+            confirmed_ids=["MC-1"],
+        )
+    assert persistent_findings.record_digest(work, "MC-1") == before
+
+
 def test_initialization_bundles_one_findings_confirmation(baseline: tuple[Path, Path]) -> None:
     source, old = baseline
     write(

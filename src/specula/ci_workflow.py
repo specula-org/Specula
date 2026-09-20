@@ -433,7 +433,13 @@ class CIPipeline(Pipeline):
                     # replaces the public report. No second report format.
                     report = work / "confirmed-bugs.md"
                     (work / "spec/confirmation-report.md").write_text(report.read_text())
-                    self.persist_findings(names)
+                    if not self.dry_run:
+                        confirmed_ids = (
+                            commit["violation_ids"]
+                            if commit is not None
+                            else [finding["id"] for finding in read_json(work / "spec/candidates.json")["findings"]]
+                        )
+                        persistent_findings.finalize_confirmation(work, confirmed_ids=confirmed_ids)
                     request["status"] = "completed"
                     request["repair_round"] = commit["repair_round"] if commit is not None else 0
                     write_json(request_path, request)
