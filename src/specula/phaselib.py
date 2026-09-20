@@ -42,6 +42,7 @@ import specula.progress as progress
 from specula import quota, resumelib, tlc_tasks
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC
+from specula.context_control import CONFIRMATION_YIELD_RC
 from specula.output_index import BYOM_REPORT_FILENAME, PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
 from specula.prompts import render
 from specula.resource_summary import (
@@ -1214,6 +1215,10 @@ class Phase:
                     _refresh_target_indexes(ws, names)
                 raise
 
+        if self.key == "incremental" and failures and all(rc == CONFIRMATION_YIELD_RC for _, rc in failures):
+            print("Incremental conversation yielded to bug confirmation.")
+            return CONFIRMATION_YIELD_RC
+
         integrity_failures = self.audit_output_integrity(
             ws,
             [name for name in names if name in completed_names],
@@ -1463,10 +1468,12 @@ class Phase:
             )
         archived_attempts: dict[Path, Path] = {}
         if not dry_run:
-            if claim.manual:
-                attempt = claim.rate_limit_attempt
-                policy_attempt = claim.policy_attempt
-                transient_attempt = claim.transient_attempt
+            if claim.manual or claim.attempt > 1:
+                # A CI confirmation handoff re-enters this launcher while the
+                # same logical conversation and its spent budgets stay active.
+                attempt = max(attempt, claim.rate_limit_attempt)
+                policy_attempt = max(policy_attempt, claim.policy_attempt)
+                transient_attempt = max(transient_attempt, claim.transient_attempt)
             invocation_attempt = claim.attempt
             if resumelib.enabled():
                 resumelib.update_turn(

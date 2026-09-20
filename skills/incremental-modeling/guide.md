@@ -114,7 +114,7 @@ Read `references/model-checking/01-update-focused-checking.md`. It reuses the in
 
 ## Part 4: Reproduction
 
-When Part 3 produces an actual counterexample, enter through `references/reproduction/01-confirm-counterexample.md`. The installed Specula **bug-confirmation** skill owns investigation, reproduction, verdicts, and repair requests.
+After Part 3, submit new MC and code-review candidates through `references/reproduction/01-confirm-counterexample.md`. Reuse applicable persistent findings first. The controller runs the one-shot confirmation workflow and resumes this conversation with its results; the installed Specula **bug-confirmation** skill owns investigation, reproduction, verdicts, and repair requests.
 
 ## Readiness and Final Reporting
 
