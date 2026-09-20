@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from mcp.server.fastmcp import FastMCP
 
-from specula.context_control import TOOL_DESCRIPTION, request_compaction
+from specula.context_control import CONFIRMATION_DESCRIPTION, TOOL_DESCRIPTION, request_compaction, request_confirmation
 
 server = FastMCP("specula_context")
 
@@ -16,6 +16,11 @@ server = FastMCP("specula_context")
 @server.tool(description=TOOL_DESCRIPTION)
 def request_context_compaction(handoff_path: str) -> dict[str, str]:
     return request_compaction(handoff_path)
+
+
+@server.tool(description=CONFIRMATION_DESCRIPTION)
+def request_bug_confirmation() -> dict[str, str]:
+    return request_confirmation()
 
 
 if __name__ == "__main__":

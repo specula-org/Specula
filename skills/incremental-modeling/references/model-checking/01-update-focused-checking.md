@@ -40,7 +40,7 @@ Apply the main checking workflow's classification unchanged. Incremental model c
 - A focused-only violation must also be admitted by full current reference behavior, or have a valid open/discharge basis, before it becomes a finding.
 - A finding is update-related only when its path crosses an affected Action, depends on updated setup/assumptions/state, or demonstrates that the update moved or removed a prior mask. Attribution does not change whether the bug is real.
 - For Case A/B semantic repairs, use local source/trace/operator checks and batch related fixes. Recheck the repaired behavior in the affected campaign; earlier affected results are provisional until rerun on the final artifacts. Defer complete trace replay to the stable-candidate gate, and repeat affected final checks if later repairs invalidate them.
-- Save actual Case C counterexamples and continue the remaining campaigns. Pass them to `../reproduction/01-confirm-counterexample.md`; do not reproduce a Scenario with no violation.
+- Save actual Case C counterexamples and continue the remaining campaigns. Pass them, together with the current code-review Scenarios, to `../reproduction/01-confirm-counterexample.md`. A Scenario with no actual counterexample remains code-review-sourced.
 
 ## Completion
 

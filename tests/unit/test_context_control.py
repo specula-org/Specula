@@ -68,6 +68,24 @@ def test_request_keeps_two_invocations_separate(monkeypatch: pytest.MonkeyPatch,
     assert (tmp_path / "first/request.json").read_text() != (tmp_path / "second/request.json").read_text()
 
 
+def test_confirmation_request_uses_existing_inputs_and_requires_incremental_scope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    work = configure(monkeypatch, tmp_path)
+    with pytest.raises(ValueError, match="modeling-brief"):
+        control.request_confirmation()
+    (work / "modeling-brief.md").write_text("## Scenario 1: CR candidate")
+    (work / "spec").mkdir()
+    (work / "spec/bug-report.md").write_text("No MC violation; CR candidates remain.")
+    result = control.request_confirmation()
+    assert "confirmation" in result["instruction"]
+    assert control.YIELD_PREFIX in result["instruction"]
+    assert json.loads((tmp_path / "request.json").read_text()) == {"token": "this-invocation", "action": "confirm"}
+    monkeypatch.setenv("SPECULA_PHASE", "bug_confirmation_turn")
+    with pytest.raises(ValueError, match="incremental"):
+        control.request_confirmation()
+
+
 @pytest.mark.asyncio
 async def test_mcp_discovery_and_real_tool_call(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from mcp import ClientSession, StdioServerParameters
@@ -80,7 +98,7 @@ async def test_mcp_discovery_and_real_tool_call(monkeypatch: pytest.MonkeyPatch,
     async with stdio_client(params) as (reader, writer), ClientSession(reader, writer) as session:
         await session.initialize()
         listed = await session.list_tools()
-        assert [tool.name for tool in listed.tools] == [control.TOOL_NAME]
+        assert {tool.name for tool in listed.tools} == {control.TOOL_NAME, control.CONFIRMATION_TOOL}
         result = await session.call_tool(control.TOOL_NAME, {"handoff_path": "handoff.md"})
         assert not result.isError
     assert json.loads((tmp_path / "request.json").read_text())["handoff_path"] == str(work / "handoff.md")

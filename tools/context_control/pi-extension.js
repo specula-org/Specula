@@ -4,6 +4,18 @@ import { fileURLToPath } from "node:url";
 export default function (pi) {
   if (process.env.SPECULA_PHASE !== "incremental" || !process.env.SPECULA_CONTEXT_REQUEST) return;
   pi.registerTool({
+    name: "request_bug_confirmation",
+    label: "Request bug confirmation",
+    description: "After saving current MC findings and code-review Scenarios, request Specula's parallel confirmation. Follow the returned yield instructions; this is not CI completion.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute() {
+      const output = execFileSync(process.env.SPECULA_CONTEXT_PYTHON, [
+        fileURLToPath(new URL("request.py", import.meta.url)), "--confirm",
+      ], { encoding: "utf8" });
+      return { content: [{ type: "text", text: output }], details: {} };
+    },
+  });
+  pi.registerTool({
     name: "request_context_compaction",
     label: "Request context compaction",
     description: "After saving a Markdown handoff and collecting outstanding tool results, request compaction of this CI conversation. Follow the returned yield instructions; this is not CI completion.",

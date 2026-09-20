@@ -1130,6 +1130,14 @@ class Pipeline:
             self.artifact = artifact
             self._artifact_given = True
 
+    def _resume_phase(self, active: list[dict[str, Any]]) -> str:
+        phases = {str(entry.get("phase")) for entry in active}
+        if len(phases) != 1:
+            raise resumelib.ResumeError(
+                "unfinished conversations span multiple phases; pass --fresh-context to start over"
+            )
+        return phases.pop()
+
     def _position_at_manual_resume_phase(self, active: list[dict[str, Any]] | None = None) -> None:
         phase = self._manual_resume_phase
         if phase is None:
@@ -1356,12 +1364,7 @@ class Pipeline:
                         raise resumelib.ResumeError(
                             "this run has no unfinished agent conversation; pass --fresh-context to start over"
                         )
-                    phases = {str(entry.get("phase")) for entry in active}
-                    if len(phases) != 1:
-                        raise resumelib.ResumeError(
-                            "unfinished conversations span multiple phases; pass --fresh-context to start over"
-                        )
-                    self._manual_resume_phase = phases.pop()
+                    self._manual_resume_phase = self._resume_phase(active)
                     self._position_at_manual_resume_phase(active)
                     if not self.keep_original:
                         launch_cwds = {entry.get("cwd") for entry in active if entry.get("kind") in {"phase", "review"}}

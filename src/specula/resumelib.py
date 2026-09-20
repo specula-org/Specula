@@ -394,6 +394,12 @@ def ensure_phase(phase: str) -> None:
     if not old:
         return
     phases = {str(entry.get("phase")) for entry in old}
+    if (
+        phase == "bug_confirmation"
+        and os.environ.get("SPECULA_CI_CONFIRMATION") == "1"
+        and phases <= {"incremental", "bug_confirmation"}
+    ):
+        return  # The CI controller keeps the parent conversation suspended.
     if phases != {phase}:
         waiting = ", ".join(sorted(phases))
         raise ResumeError(

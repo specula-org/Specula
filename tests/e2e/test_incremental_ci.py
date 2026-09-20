@@ -99,7 +99,7 @@ class IncrementalCLI(unittest.TestCase):
         self.commit("update")
 
     def test_incremental_rejects_phase_options_before_creating_storage(self) -> None:
-        for flag in ("--confirm-debate", "--legacy-confirm", "--max-repair-rounds=1", "--max-parallel=2"):
+        for flag in ("--legacy-confirm", "--max-repair-rounds=1"):
             with self.subTest(flag=flag):
                 result = self.run_ci("--incremental", flag)
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -127,18 +127,18 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
         run = self.latest()
         meta = json.loads((run / "run.json").read_text())
-        self.assertEqual(meta["agent_routes"], {"incremental": selected})
+        self.assertEqual(meta["agent_routes"], {"incremental": selected, "confirm": selected})
         phases = Path(f"{self.adapter}.phases").read_bytes()
-        for flag in ("--confirm-debate", "--legacy-confirm", "--max-repair-rounds=1", "--max-parallel=2"):
+        for flag in ("--legacy-confirm", "--max-repair-rounds=1"):
             with self.subTest(flag=flag):
                 rejected = self.run_ci(f"--run-id={run.name}", flag)
                 self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
                 self.assertIn("not supported for incremental CI", rejected.stderr)
                 self.assertEqual(Path(f"{self.adapter}.phases").read_bytes(), phases)
-        config.write_text(json.dumps({**document, "phases": {"confirm": "selected"}}))
+        config.write_text(json.dumps({**document, "phases": {"validate": "selected"}}))
         rejected = self.run_ci(f"--run-id={run.name}", f"--agent-config={config}")
         self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
-        self.assertIn("phases must be omitted or empty", rejected.stderr)
+        self.assertIn("supports only phases.confirm", rejected.stderr)
         self.assertEqual(Path(f"{self.adapter}.phases").read_bytes(), phases)
         failed.unlink()
         config.unlink()  # Resume restores the saved selection without rereading the file.
@@ -180,6 +180,111 @@ class IncrementalCLI(unittest.TestCase):
         self.assertIn("--max-parallel=2", confirmation)
         self.assertIn("--model=reproduction-model", confirmation)
         self.assertIn("global_cap=1", result.stdout)
+
+    def confirmation_fixture(self) -> Path:
+        script = self.adapter.parent / "ci_confirmation_adapter.py"
+        shutil.copyfile(Path(__file__).parent / "fixtures/ci_confirmation_adapter.py", script)
+        for adapter in (self.adapter, self.adapter.with_name("confirmfake.sh")):
+            adapter.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n')
+            adapter.chmod(0o755)
+        config = self.work / "confirm-agents.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "default_profile": "main",
+                    "profiles": {
+                        "main": {"agent": "fake", "model": "main-model"},
+                        "confirm": {"agent": "confirmfake", "model": "confirm-model"},
+                    },
+                    "phases": {"confirm": "confirm"},
+                }
+            )
+        )
+        return config
+
+    def test_confirmation_routes_and_waits_for_parallel_debate_then_resumes_main(self) -> None:
+        self.initialize()
+        self.change_source("new candidates\n")
+        config = self.confirmation_fixture()
+        result = self.run_ci("--incremental", f"--agent-config={config}", "--max-parallel=2", "--confirm-debate")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        work = self.latest() / "footest/.specula-output"
+        events = [json.loads(line) for line in (work / "dispatch.jsonl").read_text().splitlines()]
+        starts = [event for event in events if event["kind"] == "start"]
+        self.assertEqual([event["model"] for event in starts if event["name"] == "main"], ["main-model"] * 2)
+        self.assertTrue(all(event["model"] == "confirm-model" for event in starts if event["name"] != "main"))
+        workers = [event for event in events if event["name"].startswith("CR-")]
+        self.assertLess(max(event["time"] for event in workers), starts[-1]["time"])
+        a = [event for event in workers if event["log"] == "turn01_A.log" and event["name"] != "CR-3"]
+        self.assertLess(
+            max(e["time"] for e in a if e["kind"] == "start"), min(e["time"] for e in a if e["kind"] == "end")
+        )
+        for fid in ("CR-1", "CR-2"):
+            self.assertTrue((work / "confirmation" / fid / "turn02_B.log").is_file())
+        self.assertFalse((work / "confirmation/CR-3/turn02_B.log").exists())
+        self.assertFalse(list((work / "repro").glob("test_bugCR-3_*")))
+        state = json.loads((work / ".resource-summary-state.json").read_text())
+        self.assertAlmostEqual(state["phases"]["incremental"]["cost_usd"], 0.02)
+        self.assertAlmostEqual(state["phases"]["phase4a"]["cost_usd"], 0.06)
+
+    def test_confirmation_failure_resumes_workers_before_main_and_reuses_history_next_run(self) -> None:
+        self.initialize()
+        self.change_source("new candidates\n")
+        config = self.confirmation_fixture()
+        failure = self.adapter.parent / "fail-confirmation"
+        failure.touch()
+        result = self.run_ci("--incremental", f"--agent-config={config}", "--max-parallel=1")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        run = self.latest()
+        work = run / "footest/.specula-output"
+        self.assertFalse((work / "spec/final-result.json").exists())
+        failure.unlink()
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 2, resumed.stdout + resumed.stderr)
+        events = [json.loads(line) for line in (work / "dispatch.jsonl").read_text().splitlines()]
+        self.assertEqual(sum(e["kind"] == "start" and e["name"] == "CR-1" for e in events), 1)
+        self.assertEqual(sum(e["kind"] == "start" and e["name"] == "CR-2" for e in events), 2)
+        self.assertFalse(list((work / "confirmation").glob("*/turn02_B.log")))
+        (self.source / "unrelated.txt").write_text("unrelated change\n")
+        self.commit("unrelated")
+        reused = self.run_ci("--incremental", "--agent=fake", "--model=shared-model")
+        self.assertEqual(reused.returncode, 2, reused.stdout + reused.stderr)
+        newer = self.latest() / "footest/.specula-output"
+        events = [json.loads(line) for line in (newer / "dispatch.jsonl").read_text().splitlines()]
+        self.assertFalse(any(e["name"] in {"CR-1", "CR-2"} for e in events))
+        self.assertTrue(all(e["model"] == "shared-model" for e in events))
+        self.assertIn("historical conclusion reused", (newer / "confirmed-bugs.md").read_text())
+
+    def test_confirmation_repair_uses_scoped_oneshot_reconciliation(self) -> None:
+        self.initialize()
+        self.change_source("new candidates\n")
+        config = self.confirmation_fixture()
+        (self.adapter.parent / "repair-confirmation").touch()
+        result = self.run_ci("--incremental", f"--agent-config={config}")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        work = self.latest() / "footest/.specula-output"
+        events = [json.loads(line) for line in (work / "dispatch.jsonl").read_text().splitlines()]
+        starts = [e for e in events if e["kind"] == "start"]
+        self.assertEqual(sum(e["name"] == "main" for e in starts), 3)
+        for name in ("CR-1", "CR-2", "CR-3", "MC-1"):
+            self.assertEqual(sum(e["name"] == name for e in starts), 1)
+        self.assertIn("status: CONSUMED", (work / "spec/repair-requests/RR-001.md").read_text())
+        self.assertFalse((work / "spec/.repair-phase3-commit.json").exists())
+        self.assertFalse((work / "spec/.repair-phase3-snapshot.json").exists())
+        self.assertIn("| MC-1 | FALSE POSITIVE |", (work / "confirmed-bugs.md").read_text())
+
+    def test_confirmation_handoff_does_not_reset_parent_retry_budget(self) -> None:
+        self.initialize()
+        self.change_source("new candidates\n")
+        config = self.confirmation_fixture()
+        (self.adapter.parent / "policy-confirmation").touch()
+        result = self.run_ci("--incremental", f"--agent-config={config}", "--policy-retries=1")
+        self.assertEqual(result.returncode, 76, result.stdout + result.stderr)
+        work = self.latest() / "footest/.specula-output"
+        events = [json.loads(line) for line in (work / "dispatch.jsonl").read_text().splitlines()]
+        self.assertEqual(sum(e["kind"] == "start" and e["name"] == "main" for e in events), 3)
+        self.assertFalse((work / "spec/final-result.json").exists())
 
     def finding_status(self, status: str) -> None:
         Path(f"{self.adapter}.findings").write_text(
