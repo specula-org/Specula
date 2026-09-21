@@ -1362,10 +1362,13 @@ class Pipeline:
                     active = resumelib.active_entries(self.run_dir)
                     if not active:
                         work_dirs = [Path(self.get_work_dir(name)) for name in self.extract_names()]
-                        post_confirmation = bool(work_dirs) and all(
-                            (work / "confirmed-bugs.md").is_file()
-                            and not (work / ci_result.FILENAME).exists()
-                            for work in work_dirs
+                        post_confirmation = (
+                            metadata.get("ci_init") is True
+                            and bool(work_dirs)
+                            and all(
+                                (work / "confirmed-bugs.md").is_file() and not (work / ci_result.FILENAME).exists()
+                                for work in work_dirs
+                            )
                         )
                         if not post_confirmation:
                             raise resumelib.ResumeError(
