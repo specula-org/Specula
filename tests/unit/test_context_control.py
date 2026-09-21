@@ -200,7 +200,7 @@ def test_copilot_autopilot_yield_uses_successful_native_completion(
     assert not event_stream._copilot_events(record, False)
     monkeypatch.setenv("SPECULA_PHASE", "code_analysis")
     record["data"] = {"success": True, "summary": "SPECULA_CONTEXT_YIELD token"}
-    assert not event_stream._copilot_events(record, False)
+    assert event_stream._copilot_events(record, False)[0].text == "SPECULA_CONTEXT_YIELD token"
 
 
 class Input:
