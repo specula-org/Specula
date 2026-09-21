@@ -52,6 +52,11 @@ class InitializationVerdict(unittest.TestCase):
         self.assertEqual(CIStore(fixture.ci).current()["verdict"], "FAIL")
         self.assertTrue((fixture.ci / "current/model/spec/base.tla").is_file())
         self.assertTrue(json.loads((fixture.latest() / "ci-result.json").read_text())["complete"])
+        phases = Path(f"{fixture.adapter}.phases").read_bytes()
+        resumed = fixture.run_ci(f"--run-id={fixture.latest().name}")
+        self.assertEqual(resumed.returncode, 1, resumed.stdout + resumed.stderr)
+        self.assertIn("no unfinished conversation or resumable post-confirmation work", resumed.stderr)
+        self.assertEqual(Path(f"{fixture.adapter}.phases").read_bytes(), phases)
 
 
 class BugVerdictEvents(unittest.TestCase):

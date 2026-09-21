@@ -703,16 +703,8 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
 
     def test_ci_init_attach_resumes_post_confirmation_failure(self) -> None:
         root = self.tmp()
-        first = self._pipeline(["--run-id=post-confirm", "foo|o/r|Go|ref"], root)
+        first = self._pipeline(["--ci-init", "--run-id=post-confirm", "foo|o/r|Go|ref"], root)
         assert first.run_dir is not None
-        metadata_path = first.run_dir / "run.json"
-        metadata = json.loads(metadata_path.read_text())
-        metadata["ci_init"] = True
-        metadata_path.write_text(json.dumps(metadata))
-        configuration_path = first.run_dir / ".specula-resume/config.json"
-        configuration = json.loads(configuration_path.read_text())
-        configuration["configuration"]["ci_init"] = True
-        configuration_path.write_text(json.dumps(configuration))
         work = first.run_dir / "foo/.specula-output"
         work.mkdir(parents=True)
         (work / "confirmed-bugs.md").write_text("# Complete confirmation\n")
@@ -726,6 +718,41 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         self.assertTrue(resumed.skip_harness)
         self.assertTrue(resumed.skip_validation)
         self.assertFalse(resumed.skip_confirmation)
+
+    def test_ci_init_attach_checks_current_terminal_verdict(self) -> None:
+        for run_id, status, completed in (
+            ("previous", "REPRODUCED", False),
+            ("current", "PENDING REPAIR", False),
+            ("current", "INCOMPLETE", False),
+            ("current", "REPRODUCED", True),
+            ("current", "FALSE POSITIVE", True),
+        ):
+            with self.subTest(run_id=run_id, status=status):
+                root = self.tmp()
+                first = self._pipeline(["--ci-init", "--run-id=current", "foo|o/r|Go|ref"], root)
+                assert first.run_dir is not None
+                work = Path(first.get_work_dir("foo"))
+                (work / "spec").mkdir(parents=True)
+                (work / "confirmed-bugs.md").write_text("Retained confirmation evidence.\n")
+                (work / "spec/final-result.json").write_text('{"run_id": "previous"}')
+                (work / "ci-verdict.json").write_text(
+                    json.dumps(
+                        {
+                            "version": 1,
+                            "run_id": run_id,
+                            "findings": [{"id": "MC-1", "status": status, "evidence": "confirmed-bugs.md"}],
+                        }
+                    )
+                )
+                resumed = pl.Pipeline()
+                self.assertIsNone(resumed.parse_args(["--run-id=current"]))
+                error = io.StringIO()
+                with contextlib.redirect_stderr(error):
+                    self.assertEqual(resumed.resolve_run_dir(), 1 if completed else None)
+                if completed:
+                    self.assertIn("no unfinished conversation or resumable post-confirmation work", error.getvalue())
+                else:
+                    self.assertEqual(resumed._manual_resume_phase, "bug_confirmation")
 
     def test_attach_rejects_skip_for_interrupted_classification(self) -> None:
         root = self.tmp()

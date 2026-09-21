@@ -41,7 +41,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     sys.modules["specula.pipelinelib"] = sys.modules[__name__]
-from specula import ci_init, ci_result, resumelib
+from specula import ci_init, ci_verdict, resumelib
 from specula import quota as _quota
 from specula.adapters.utils.run_lock import inherited_run_lock_fds
 from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
@@ -1234,11 +1234,28 @@ class Pipeline:
     def run_storage_root(self) -> Path:
         return SPECULA_ROOT / "runs"
 
+    def _ci_initialization_complete(self) -> bool:
+        """Standalone initialization finishes with a valid verdict for this run."""
+        work = Path(self.get_work_dir(self.extract_names()[0]))
+        try:
+            ci_verdict.read(work, self.run_id)
+        except (OSError, ValueError, RuntimeError):
+            return False
+        return True
+
+    def _can_resume_ci_post_confirmation(self) -> bool:
+        if not self.ci_init or self.run_dir is None:
+            return False
+        names = self.extract_names()
+        return (
+            len(names) == 1
+            and ci_init._regular_file(Path(self.get_work_dir(names[0])), "confirmed-bugs.md")
+            and not self._ci_initialization_complete()
+        )
+
     def finalize_ci_run(self, exit_code: int) -> tuple[str | None, int]:
         """Publish persistent CI state after output and log finalization."""
         if self.ci_init and not self.dry_run and exit_code == 0:
-            from specula import ci_verdict
-
             verdict = ci_verdict.from_confirmation(Path(self.get_work_dir(self.extract_names()[0])), self.run_id)
             return f"CI verdict: {verdict}", ci_verdict.exit_code(verdict)
         return None, exit_code
@@ -1361,16 +1378,12 @@ class Pipeline:
                         raise resumelib.ResumeError("CI initialization mode disagrees with run metadata")
                     active = resumelib.active_entries(self.run_dir)
                     if not active:
-                        work_dirs = [Path(self.get_work_dir(name)) for name in self.extract_names()]
-                        post_confirmation = (
-                            metadata.get("ci_init") is True
-                            and bool(work_dirs)
-                            and all(
-                                (work / "confirmed-bugs.md").is_file() and not (work / ci_result.FILENAME).exists()
-                                for work in work_dirs
-                            )
-                        )
-                        if not post_confirmation:
+                        if not self._can_resume_ci_post_confirmation():
+                            if self.ci_init:
+                                raise resumelib.ResumeError(
+                                    "this CI initialization has no unfinished conversation or resumable "
+                                    "post-confirmation work; omit --run-id to start a new run"
+                                )
                             raise resumelib.ResumeError(
                                 "this run has no unfinished agent conversation; pass --fresh-context to start over"
                             )

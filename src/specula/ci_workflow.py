@@ -463,6 +463,12 @@ class CIPipeline(Pipeline):
                 if not request_path.is_file() or read_json(request_path).get("status") != "pending":
                     raise CIError("incremental conversation yielded without a confirmation request") from exc
 
+    def _ci_initialization_complete(self) -> bool:
+        # Initialization starts without a current model. A verdict or receipt
+        # can precede publication; only advancing current closes recovery.
+        assert self.store is not None
+        return self.store.current_token() is not None
+
     def finalize_ci_run(self, exit_code: int) -> tuple[str | None, int]:
         if self.dry_run:
             return None, exit_code
@@ -470,6 +476,8 @@ class CIPipeline(Pipeline):
         if exit_code:
             if self.run_dir is not None and resumelib.active_entries(self.run_dir):
                 return f"Current CI model unchanged. To resume the conversation: {resume}", exit_code
+            if self._can_resume_ci_post_confirmation():
+                return f"Current CI model unchanged. To resume post-confirmation processing: {resume}", exit_code
             return (
                 "Current CI model unchanged. No unfinished conversation is available; fix the error and start a new run.",
                 exit_code,
