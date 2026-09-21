@@ -6,6 +6,7 @@ The fixture does not perform semantic verification or call an LLM.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -97,6 +98,81 @@ class IncrementalCLI(unittest.TestCase):
     def change_source(self, text: str) -> None:
         (self.source / "logic.txt").write_text(text)
         self.commit("update")
+
+    def _fail_initialization(self, fault: str, *extra: str) -> subprocess.CompletedProcess[str]:
+        script = (
+            "import sys\nfrom unittest.mock import patch\n"
+            f"sys.path.insert(0, {str(self.root / 'src')!r})\n"
+            "from specula import pipelinelib\n"
+            f"with patch({fault!r}, side_effect=OSError('injected finalization failure')):\n"
+            "    raise SystemExit(pipelinelib.main(sys.argv[1:]))\n"
+        )
+        return subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                script,
+                f"--ci-dir={self.ci}",
+                "--ci-init",
+                "--agent=fake",
+                f"--artifact={self.source}",
+                *extra,
+                "footest",
+            ],
+            cwd=self.work,
+            env={key: value for key, value in os.environ.items() if key not in fixtures._VOLATILE},
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+
+    def test_byom_initialization_resumes_post_confirmation_with_prior_final_result(self) -> None:
+        supplied = self.work / "bundle"
+        (supplied / "spec").mkdir(parents=True)
+        (supplied / "spec/base.tla").write_text("Supplied fixture reference.\n")
+        prior = {"version": 1, "run_id": "previous-run", "findings": []}
+        (supplied / "spec/final-result.json").write_text(json.dumps(prior))
+        (supplied / "ci-verdict.json").write_text(json.dumps(prior))
+        failed = self._fail_initialization("specula.pipelinelib.Pipeline.persist_findings", f"--byom={supplied}")
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        self.assertIn("injected finalization failure", failed.stdout)
+        self.assertIn("To resume post-confirmation processing:", failed.stdout)
+        run = self.latest()
+        work = run / "footest/.specula-output"
+        self.assertTrue((work / "confirmed-bugs.md").is_file())
+        self.assertEqual(list((run / ".specula-resume/active").glob("*.json")), [])
+        self.assertEqual(json.loads((work / "spec/final-result.json").read_text()), prior)
+        self.assertFalse((run / "ci-result.json").exists())
+        self.assertIsNone(CIStore(self.ci).current_token())
+        phases = Path(f"{self.adapter}.phases").read_text().splitlines()
+
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertIn("skipping consolidate", resumed.stdout)
+        after = Path(f"{self.adapter}.phases").read_text().splitlines()
+        self.assertEqual(after[len(phases) :], ["bug_classification"])
+        self.assertTrue(json.loads((run / "ci-result.json").read_text())["complete"])
+        self.assertEqual(CIStore(self.ci).current()["run_id"], run.name)
+
+        metadata = (run / "run.json").read_bytes()
+        rejected = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+        self.assertIn("no unfinished conversation or resumable post-confirmation work", rejected.stderr)
+        self.assertEqual(Path(f"{self.adapter}.phases").read_text().splitlines(), after)
+        self.assertEqual((run / "run.json").read_bytes(), metadata)
+
+    def test_initialization_can_resume_after_receipt_before_publication(self) -> None:
+        failed = self._fail_initialization("specula.ci_store.CIStore.advance")
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        self.assertIn("injected finalization failure", failed.stdout)
+        run = self.latest()
+        self.assertTrue(json.loads((run / "ci-result.json").read_text())["complete"])
+        self.assertIsNone(CIStore(self.ci).current_token())
+        self.assertEqual(list((run / ".specula-resume/active").glob("*.json")), [])
+
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertEqual(CIStore(self.ci).current()["run_id"], run.name)
 
     def test_incremental_rejects_phase_options_before_creating_storage(self) -> None:
         for flag in ("--legacy-confirm", "--max-repair-rounds=1"):
