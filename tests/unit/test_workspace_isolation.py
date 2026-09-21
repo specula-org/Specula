@@ -701,6 +701,32 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
             self.assertEqual(resumed.resolve_run_dir(), 1)
         self.assertIn("no unfinished agent conversation", err.getvalue())
 
+    def test_ci_init_attach_resumes_post_confirmation_failure(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(["--run-id=post-confirm", "foo|o/r|Go|ref"], root)
+        assert first.run_dir is not None
+        metadata_path = first.run_dir / "run.json"
+        metadata = json.loads(metadata_path.read_text())
+        metadata["ci_init"] = True
+        metadata_path.write_text(json.dumps(metadata))
+        configuration_path = first.run_dir / ".specula-resume/config.json"
+        configuration = json.loads(configuration_path.read_text())
+        configuration["configuration"]["ci_init"] = True
+        configuration_path.write_text(json.dumps(configuration))
+        work = first.run_dir / "foo/.specula-output"
+        work.mkdir(parents=True)
+        (work / "confirmed-bugs.md").write_text("# Complete confirmation\n")
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=post-confirm"]))
+        self.assertIsNone(resumed.resolve_run_dir())
+        self.assertEqual(resumed._manual_resume_phase, "bug_confirmation")
+        self.assertTrue(resumed.skip_analysis)
+        self.assertTrue(resumed.skip_specgen)
+        self.assertTrue(resumed.skip_harness)
+        self.assertTrue(resumed.skip_validation)
+        self.assertFalse(resumed.skip_confirmation)
+
     def test_attach_rejects_skip_for_interrupted_classification(self) -> None:
         root = self.tmp()
         first = self._pipeline(["--run-id=classification", "foo|o/r|Go|ref"], root)
