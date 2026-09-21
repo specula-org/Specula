@@ -41,7 +41,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     sys.modules["specula.pipelinelib"] = sys.modules[__name__]
-from specula import ci_init, resumelib
+from specula import ci_init, ci_result, resumelib
 from specula import quota as _quota
 from specula.adapters.utils.run_lock import inherited_run_lock_fds
 from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
@@ -1361,11 +1361,21 @@ class Pipeline:
                         raise resumelib.ResumeError("CI initialization mode disagrees with run metadata")
                     active = resumelib.active_entries(self.run_dir)
                     if not active:
-                        raise resumelib.ResumeError(
-                            "this run has no unfinished agent conversation; pass --fresh-context to start over"
+                        work_dirs = [Path(self.get_work_dir(name)) for name in self.extract_names()]
+                        post_confirmation = bool(work_dirs) and all(
+                            (work / "confirmed-bugs.md").is_file()
+                            and not (work / ci_result.FILENAME).exists()
+                            for work in work_dirs
                         )
-                    self._manual_resume_phase = self._resume_phase(active)
-                    self._position_at_manual_resume_phase(active)
+                        if not post_confirmation:
+                            raise resumelib.ResumeError(
+                                "this run has no unfinished agent conversation; pass --fresh-context to start over"
+                            )
+                        self._manual_resume_phase = "bug_confirmation"
+                        self._position_at_manual_resume_phase()
+                    else:
+                        self._manual_resume_phase = self._resume_phase(active)
+                        self._position_at_manual_resume_phase(active)
                     if not self.keep_original:
                         launch_cwds = {entry.get("cwd") for entry in active if entry.get("kind") in {"phase", "review"}}
                         if launch_cwds:
