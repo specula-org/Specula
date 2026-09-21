@@ -300,6 +300,13 @@ class CliE2E(unittest.TestCase):
             self.assertIn(effective, prompt)
         self.assertIn("bug_classification", phases)
 
+        metadata = (run / "run.json").read_bytes()
+        resumed = self.run_cli(root, ["run", f"--run-id={run.name}"], cwd=work)
+        self.assertEqual(resumed.returncode, 1, resumed.stdout + resumed.stderr)
+        self.assertIn("no unfinished conversation or resumable post-confirmation work", resumed.stderr)
+        self.assertEqual(Path(f"{adapter}.phases").read_text().splitlines(), phases)
+        self.assertEqual((run / "run.json").read_bytes(), metadata)
+
     def test_ci_init_resume_restores_mode_and_preserves_first_baseline(self) -> None:
         root = self.specroot()
         work = self.workdir()
