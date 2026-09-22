@@ -157,24 +157,13 @@ When one skill completes, invoke the next. You can also run any skill independen
 
 See [CHANGELOG.md](CHANGELOG.md) for release history and notable changes.
 
-## Citation
+## Acknowledgement
 
-If you use Specula in your research, please cite our paper:
-
-```bibtex
-@misc{cheng2026specula,
-  title         = {{Specula}: Scaling formal specifications for autonomous
-                   model checking of system code},
-  author        = {Qian Cheng and Saad Mohammad Rafid Pial and Ruize Tang and
-                   Yiming Su and Emilie Ma and Finn Hackett and
-                   Ivan Beschastnikh and Yu Huang and Tianyin Xu},
-  year          = {2026},
-  eprint        = {2607.25333},
-  archivePrefix = {arXiv},
-  primaryClass  = {cs.SE},
-  url           = {https://arxiv.org/abs/2607.25333}
-}
-```
+We are grateful to the generous funding support from
+* TLA+ Foundation
+* OpenAI
+* Anthropic (AI for Science Program)
+* Qingrong Chen
 
 ## License
 
