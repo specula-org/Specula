@@ -323,6 +323,76 @@ def test_missing_or_ambiguous_dependency_boundaries_require_analysis(baseline: t
         )
 
 
+def test_dependency_error_identifies_finding_and_selector(baseline: tuple[Path, Path]) -> None:
+    source, old = baseline
+    work = next_work(old)
+    invalid = proposal("CR-2")
+    invalid["source"] = "code-review"
+    invalid["dependencies"][0]["start"] = "  func reply() {"
+    with pytest.raises(
+        persistent_findings.FindingsError,
+        match=r"CR-2: dependency 1: missing or ambiguous dependency boundaries: protocol\.go",
+    ):
+        persistent_findings.record_issue(work, source, "v2", invalid)
+    assert not (work / persistent_findings._record_path("CR-2")).exists()
+
+
+def test_reconcile_validates_all_proposals_before_writing_any_record(baseline: tuple[Path, Path]) -> None:
+    source, old = baseline
+    work = next_work(old)
+    write(work / "repro/check.sh", "fixture recipe\n")
+    first = proposal("CR-2")
+    first["source"] = "code-review"
+    second = proposal("CR-3")
+    second["source"] = "code-review"
+    second["dependencies"][0]["start"] = "  func reply() {"
+    write(work / "confirmation/CR-2/issue.json", json.dumps(first))
+    write(work / "confirmation/CR-3/issue.json", json.dumps(second))
+    findings = [
+        {"id": "CR-2", "status": "REPRODUCED", "source": "code-review", "evidence": "evidence.md"},
+        {"id": "CR-3", "status": "REPRODUCED", "source": "code-review", "evidence": "evidence.md"},
+    ]
+
+    with pytest.raises(persistent_findings.FindingsError, match=r"CR-3: dependency 1"):
+        persistent_findings.reconcile(work, source, "v2", findings, confirmed_ids=["CR-2", "CR-3"])
+
+    assert not (work / persistent_findings._record_path("CR-2")).exists()
+    assert not (work / persistent_findings._record_path("CR-3")).exists()
+
+
+def test_validate_proposal_has_no_registry_side_effects(baseline: tuple[Path, Path]) -> None:
+    source, old = baseline
+    work = next_work(old)
+    persistent_findings.configure(work, source, "v2", old)
+    write(work / "repro/check.sh", "fixture recipe\n")
+    path = work / "confirmation/CR-2/issue.json"
+    entry = proposal("CR-2")
+    entry["source"] = "code-review"
+    write(path, json.dumps(entry))
+
+    validated = persistent_findings.validate_issue_proposal(work, path)
+
+    assert validated["id"] == "CR-2"
+    assert not (work / persistent_findings._record_path("CR-2")).exists()
+    assert not (work / persistent_findings.DIRECTORY / "evidence/CR-2").exists()
+
+
+def test_validate_proposal_can_apply_confirmed_source(baseline: tuple[Path, Path]) -> None:
+    source, old = baseline
+    work = next_work(old)
+    persistent_findings.configure(work, source, "v2", old)
+    write(work / "repro/check.sh", "fixture recipe\n")
+    path = work / "confirmation/CR-2/issue.json"
+    entry = proposal("CR-2")
+    entry.pop("source")
+    write(path, json.dumps(entry))
+
+    validated = persistent_findings.validate_issue_proposal(work, path, source_kind="code-review")
+
+    assert validated["source"] == "code-review"
+    assert "source" not in json.loads(path.read_text())
+
+
 def test_worker_proposal_uses_final_status_and_retains_only_selected_evidence(baseline: tuple[Path, Path]) -> None:
     source, old = baseline
     work = next_work(old)
@@ -458,6 +528,8 @@ def test_standalone_cli_initializes_records_and_reuses_without_ci_or_git(tmp_pat
     data.write_text(json.dumps(entry))
     run = persistent_findings.main
     assert run(["--work", str(first), "--source", str(source), "--run-id", "one", "init"]) == 0
+    assert run(["--work", str(first), "validate", "--input", str(data)]) == 0
+    assert not (first / persistent_findings._record_path("CR-1")).exists()
     assert run(["--work", str(first), "record", "--input", str(data)]) == 0
     assert "unversioned" in persistent_findings.load(first, "CR-1")["source_revision"]
     assert (

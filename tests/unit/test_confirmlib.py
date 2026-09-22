@@ -27,10 +27,10 @@ from typing import Any
 from unittest import mock
 
 from specula import confirmlib as C
+from specula import persistent_findings, resumelib
 from specula import phaselib as PhaseLib
 from specula import pipelinelib as PL
 from specula import prompts as P
-from specula import resumelib
 from specula.phaselib import Workspace
 
 EVIDENCE = "The investigation inspected the real call path and captured concrete observed behavior."
@@ -156,6 +156,25 @@ class TestVerdict(ConfirmCase):
         self.assertIsNone(C.parse_verdict("VERDICT: not-a-status"))
         # last VERDICT line wins
         self.assertEqual(C.parse_verdict("VERDICT: DROPPED\nVERDICT: FALSE POSITIVE"), "FALSE POSITIVE")
+
+    def test_live_verdict_rejects_invalid_persistent_issue_proposal(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T")
+        finding = self.finding(ws, "T", "CR-1")
+        finding.fdir.mkdir(parents=True)
+        (finding.fdir / "issue.json").write_text("{}\n")
+        (ws.work_dir("T") / persistent_findings.CONTEXT).write_text("{}\n")
+
+        with (
+            mock.patch.object(
+                persistent_findings,
+                "validate_issue_proposal",
+                side_effect=persistent_findings.FindingsError("dependency 2 is invalid"),
+            ) as validate,
+            self.assertRaisesRegex(C.InvalidAgentOutput, "invalid persistent issue proposal"),
+        ):
+            C._validate_final_artifacts(cfg, finding, "MASKED")
+        validate.assert_called_once_with(ws.work_dir("T"), finding.fdir / "issue.json", source_kind="code-review")
 
 
 class TestHistoricalConfirmationFiles(ConfirmCase):

@@ -34,6 +34,8 @@ After confirmation finishes, persist only unresolved `REPRODUCED`, `ENV_LIMITED`
 
 After confirmation, write a proposal to `spec/issue-input/ID.json`, or to `confirmation/ID/issue.json` in a per-finding worker. The pipeline registers it using the final confirmation verdict, including debate. Standalone callers use `record --input /path/to/proposal.json`. Fill it from the completed analysis; do not launch another investigation to produce metadata. Dependency fingerprints use the source supplied by the caller and the current model; CI supplies its frozen pre-instrumentation source.
 
+Boundary values are exact source lines, including leading whitespace. In a configured run, validate a completed proposal before returning with `specula findings --work /path/to/.specula-output validate --input /path/to/issue.json`; validation reads and fingerprints every dependency and evidence file without modifying the persistent registry.
+
 Allocate an unused ID for a new defect, even when its local MC number collides with an old issue. When reanalysis updates an existing historical issue, include `"revises": "<record_sha256 from show>"` in the proposal to identify that prior record explicitly. Reusing a local number does not establish issue identity.
 
 ```json
