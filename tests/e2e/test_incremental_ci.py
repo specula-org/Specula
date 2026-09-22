@@ -365,7 +365,7 @@ class IncrementalCLI(unittest.TestCase):
     def test_reconfirmation_refreshes_recorded_model_dependencies(self) -> None:
         self._check_model_dependency_reconfirmation(interrupt=False)
 
-    def test_pending_reconfirmation_can_resume_after_persistence_failure(self) -> None:
+    def test_pending_reconfirmation_can_resume_after_proposal_validation_failure(self) -> None:
         self._check_model_dependency_reconfirmation(interrupt=True)
 
     def _check_model_dependency_reconfirmation(self, *, interrupt: bool) -> None:
@@ -391,8 +391,9 @@ class IncrementalCLI(unittest.TestCase):
                 dep for dep in document["dependencies"] if dep["path"] != "spec/missing-evidence.tla"
             ]
             proposal.write_text(json.dumps(document))
+            (self.adapter.parent / "interrupt-model-record").unlink()
             result = self.run_ci(f"--run-id={run.name}")
-            self.assertIn("cached REPRODUCED", result.stdout)
+            self.assertIn("[MC-2] A: REPRODUCED", result.stdout)
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         after = json.loads((work / "spec/MC-2-after.json").read_text())
 
@@ -406,7 +407,7 @@ class IncrementalCLI(unittest.TestCase):
         events = [json.loads(line) for line in (work / "dispatch.jsonl").read_text().splitlines()]
         starts = [event["name"] for event in events if event["kind"] == "start"]
         self.assertEqual(starts.count("MC-1"), 1)
-        self.assertEqual(starts.count("MC-2"), 2)
+        self.assertEqual(starts.count("MC-2"), 3 if interrupt else 2)
         self.assertEqual(starts.count("main"), 3)
         self.assertEqual(json.loads((run / "ci-result.json").read_text())["verdict"], "FAIL")
 
