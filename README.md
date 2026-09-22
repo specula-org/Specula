@@ -26,6 +26,8 @@ It uses coding agents to write TLA+ specs of the target system, including invari
 
 We maintain [a list of bugs found by Specula](https://docs.google.com/spreadsheets/d/1AVXdKjNfD4952hZqyB-_wTdrzeTw0SD73f3F0zWJ0as). We would love to hear about the bugs you find using Specula.
 
+Browse the [case-study archive](https://github.com/specula-org/specula-case-studies) for reports, models, and reproduction evidence. The `case-studies` submodule pins the archive and its [system and run indexes](https://github.com/specula-org/specula-case-studies/blob/2797de3e0801442d3451f26491ccfe876aaf2f2f/catalog/README.md) for this checkout.
+
 ## Prerequisites
 
 - Python 3.10+ with pip
@@ -111,6 +113,7 @@ We provide a [template](./docs/modeling-guidance-template.md) and an
 [example](./docs/modeling-guidance-example.md).
 
 Outputs are stored in `runs/<run-id>`. 
+After a run, start with `runs/latest/pipeline-summary.md`.
 
 Add `--keep-original` to leave the source checkout untouched. Specula runs the
 same agents against a full private copy and writes a reviewable source diff to
@@ -119,6 +122,18 @@ binary and trace contents remain in the private source instead of being
 inlined. Specula does not apply the diff to the original checkout.
 
 The detailed usage and configurations can be found in the [Usage Guide](./docs/Usage.md).
+
+## Continuous Verification
+
+Initialize a persistent model and harness, then check later source changes incrementally:
+
+```bash
+specula run --ci-init --ci-dir=/work/mysys-ci \
+  --artifact=/path/to/repo --guidance=/path/to/mysys-guidance.md mysys
+specula run --incremental --ci-dir=/work/mysys-ci
+```
+
+Keep the CI directory outside the source checkout. See [Add Specula to CI](docs/Usage.md#add-specula-to-ci) for setup, results, and the GitHub Actions workflow. Existing TLA+ models and verification assets can be imported with [Bring Your Own Model](docs/Usage.md#bring-your-own-model-byom).
 
 ## Interactive Mode
 

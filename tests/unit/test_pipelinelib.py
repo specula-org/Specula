@@ -17,6 +17,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -1009,6 +1010,85 @@ class TestParsing(TmpCwd):
         self.assertEqual(p.tlc_worker_limit, "24")
         self.assertEqual(p.targets, ["t|g|l|r"])
 
+    def test_byom_accepts_file_or_directory_and_multiple_targets(self) -> None:
+        model = self.tmp / "Model.tla"
+        model.write_text("---- MODULE Model ----\n====\n")
+        bundle = self.tmp / "bundle"
+        bundle.mkdir()
+
+        for supplied in (model, bundle):
+            with self.subTest(supplied=supplied):
+                p = pl.Pipeline()
+                self.assertIsNone(
+                    p.parse_args(
+                        [
+                            f"--byom={supplied.relative_to(self.tmp)}",
+                            "alpha|o/a|Go|ref",
+                            "beta|o/b|Rust|ref",
+                        ]
+                    )
+                )
+                self.assertEqual(p.byom_path, supplied)
+                self.assertTrue(p.skip_analysis)
+                self.assertFalse(p.skip_specgen)
+                self.assertFalse(p.skip_harness)
+
+    def test_byom_rejects_missing_duplicate_and_empty_paths(self) -> None:
+        model = self.tmp / "Model.tla"
+        model.write_text("---- MODULE Model ----\n====\n")
+        cases = (
+            (["--byom=", "t"], "requires a path"),
+            ([f"--byom={self.tmp / 'missing'}", "t"], "invalid --byom path"),
+            ([f"--byom={model}", f"--byom={model}", "t"], "only once"),
+        )
+        for argv, message in cases:
+            with self.subTest(argv=argv):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    self.assertEqual(pl.Pipeline().parse_args(argv), 1)
+                self.assertIn(message, err.getvalue())
+
+    def test_byom_rejects_phase_skips_and_legacy_layout(self) -> None:
+        model = self.tmp / "Model.tla"
+        model.write_text("---- MODULE Model ----\n====\n")
+        for flag in (*pl.BYOM_CONFLICTING_FLAGS, "--no-isolate"):
+            with self.subTest(flag=flag):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    self.assertEqual(pl.Pipeline().parse_args([f"--byom={model}", flag, "t"]), 1)
+                self.assertIn("--byom", err.getvalue())
+                if flag == "--no-isolate":
+                    self.assertIn("remove --no-isolate", err.getvalue())
+                else:
+                    self.assertIn(flag, err.getvalue())
+
+    def test_byom_resume_restores_or_explicitly_replaces_path(self) -> None:
+        first_path = self.tmp / "first.tla"
+        first_path.write_text("first\n")
+        second_path = self.tmp / "second.tla"
+        second_path.write_text("second\n")
+        initial = pl.Pipeline()
+        self.assertIsNone(initial.parse_args([f"--byom={first_path}", "t|g|l|r"]))
+        stored = initial._resume_configuration_document()
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args([]))
+        resumed._restore_resume_configuration(stored)
+        self.assertEqual(resumed.byom_path, first_path)
+        self.assertTrue(resumed.skip_analysis)
+
+        changed = pl.Pipeline()
+        self.assertIsNone(changed.parse_args([f"--byom={second_path}", "t|g|l|r"]))
+        with self.assertRaisesRegex(resumelib.ResumeError, "--byom differs"):
+            changed._restore_resume_configuration(stored)
+        changed._restore_resume_configuration(stored, allow_overrides=True)
+        self.assertEqual(changed.byom_path, second_path)
+
+        conflicting = pl.Pipeline()
+        self.assertIsNone(conflicting.parse_args(["--skip-harness"]))
+        with self.assertRaisesRegex(resumelib.ResumeError, "--byom conflicts with --skip-harness"):
+            conflicting._restore_resume_configuration(stored)
+
     def test_invalid_tlc_resource_limits_are_rejected_at_parse(self) -> None:
         for flag in (
             "--tlc-memory-limit=lots",
@@ -1430,6 +1510,7 @@ class TestParsing(TmpCwd):
         self.assertIn("--policy-retries=N", out)
         self.assertIn("--transient-resumes=N", out)
         self.assertIn("--guidance=PATH", out)
+        self.assertIn("--byom=PATH", out)
         self.assertIn("--skip-validate", out)
         self.assertNotIn("--skip-validation", out)
         self.assertIn("default: 20", out)
@@ -1647,6 +1728,50 @@ class TestAgentRouting(TmpCwd):
 
         self.assertEqual(explicit_calls[0][0], "analysis")
         self.assertEqual(self._agent_arg(explicit_calls[0]), "--agent=copilot-cli")
+
+    def test_restored_review_commands_keep_saved_routes_and_tuning(self) -> None:
+        for explicit_review in (False, True):
+            with self.subTest(explicit_review=explicit_review):
+                phases = {"analyze": "codex", "validate": "copilot"}
+                if explicit_review:
+                    phases["review"] = "codex"
+                config = write_agent_config(self.tmp / "agents.json", phases)
+                original = pl.Pipeline()
+                self.assertIsNone(original.parse_args([f"--agent-config={config}", "--enable-reviews", "t"]))
+                original.run_id = f"run-{explicit_review}"
+                original.run_dir = self.tmp / original.run_id
+                original.run_dir.mkdir()
+                original._write_run_meta()
+                saved = json.loads((original.run_dir / "run.json").read_text())["resume_configuration"]
+                config.unlink()
+
+                restored = pl.Pipeline()
+                self.assertIsNone(restored.parse_args([f"--run-id={original.run_id}"]))
+                restored._restore_resume_configuration(saved)
+                restored.wait_for_quota = mock.Mock()  # type: ignore[method-assign]
+                launch = mock.Mock()
+                restored._phase = launch  # type: ignore[method-assign]
+                expected = (
+                    [("codex", "gpt-5.5", "high")] * 3
+                    if explicit_review
+                    else [
+                        ("codex", "gpt-5.5", "high"),
+                        ("claude-code", "claude-sonnet", "max"),
+                        ("copilot-cli", "gpt-5-mini", "low"),
+                    ]
+                )
+                for phase, (agent, model, effort) in zip(("analysis", "specgen", "validation"), expected, strict=True):
+                    with self.subTest(phase=phase):
+                        restored.run_review(phase, ["t"])
+                        args = launch.call_args.args[2]
+                        self.assertEqual(args[0], phase)
+                        self.assertIn(f"--agent={agent}", args)
+                        self.assertIn(f"--model={model}", args)
+                        self.assertIn(f"--effort={effort}", args)
+
+                phase_args = restored._phase_args(["t"], phase="validate")
+                self.assertIn("--agent=copilot-cli", phase_args)
+                self.assertIn("--model=gpt-5-mini", phase_args)
 
     def test_proactive_quota_waits_only_for_claude_routes(self) -> None:
         config = write_agent_config(
@@ -3507,6 +3632,91 @@ class TestMainTeeTeardown(TmpCwd):
         log_text = (self.tmp / ".specula-output" / "pipeline.log").read_text()
         self.assertIn("pre-crash progress", log_text)
         self.assertIn("ValueError: boom", log_text)
+
+    def test_legacy_restarts_append_history_and_distinct_invocation_boundaries(self) -> None:
+        out = self.tmp / ".specula-output"
+        out.mkdir()
+        log_path = out / "pipeline.log"
+        original = b"older interrupted output without a newline"
+        log_path.write_bytes(original)
+        first = self._run_entry(
+            "def boom(self):\n    print('first attempt')\n    raise ValueError('boom')\npl.Pipeline.main = boom"
+        )
+        self.assertEqual(first.returncode, 1, first.stdout + first.stderr)
+        first_log = log_path.read_bytes()
+        self.assertTrue(first_log.startswith(original + b"\n"))
+
+        second = self._run_entry(
+            "def succeed(self):\n    print('second attempt')\n    return 0\npl.Pipeline.main = succeed"
+        )
+
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertTrue(log_path.read_bytes().startswith(first_log))
+        log_text = log_path.read_text()
+        starts = re.findall(r"=== Pipeline invocation ([0-9a-f]{32}): started at .* UTC ===", log_text)
+        finishes = re.findall(
+            r"=== Pipeline invocation ([0-9a-f]{32}): finished \(exit (\d+)\) at .* UTC ===", log_text
+        )
+        self.assertEqual(len(starts), 2, log_text)
+        self.assertEqual(len(set(starts)), 2)
+        self.assertEqual(finishes, [(starts[0], "1"), (starts[1], "0")])
+        self.assertLess(log_text.index("first attempt"), log_text.index("second attempt"))
+        self.assertEqual(log_text.count("ValueError: boom"), 1)
+        self.assertNotIn("first attempt", second.stdout)
+
+    def test_isolated_restart_preserves_interrupted_log(self) -> None:
+        setup = f"pl.SPECULA_ROOT = pl.Path({str(self.tmp)!r})\n"
+        first = self._run_entry(
+            setup
+            + "def interrupt(self):\n    print('before interruption')\n    raise KeyboardInterrupt\npl.Pipeline.main = interrupt",
+            ["--run-id=restart-run", "t|g|l|r"],
+        )
+        self.assertEqual(first.returncode, 130, first.stdout + first.stderr)
+        log_path = self.tmp / "runs" / "restart-run" / "pipeline.log"
+        first_log = log_path.read_bytes()
+        self.assertIn(b"finished (exit 130)", first_log)
+
+        second = self._run_entry(
+            setup + "pl.Pipeline.main = lambda self: 0",
+            ["--run-id=restart-run", "--fresh-context", "t|g|l|r"],
+        )
+
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertTrue(log_path.read_bytes().startswith(first_log))
+        self.assertIn("finished (exit 0)", log_path.read_text())
+
+    def test_log_boundary_records_final_ci_exit_code(self) -> None:
+        result = self._run_entry(
+            "pl.Pipeline.main = lambda self: 0\n"
+            "pl.Pipeline.finalize_ci_run = lambda self, code: ('CI verdict: FAIL', 2)"
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        log_text = (self.tmp / ".specula-output" / "pipeline.log").read_text()
+        self.assertIn("finished (exit 2)", log_text)
+        self.assertNotIn("finished (exit 0)", log_text)
+
+    def test_log_boundary_write_failure_preserves_final_exit_code(self) -> None:
+        for exit_code in (0, 2, 9):
+            with self.subTest(exit_code=exit_code):
+                result = self._run_entry(
+                    "original_open = pl.Path.open\n"
+                    "def fail_boundary(path, mode='r', *args, **kwargs):\n"
+                    "    if path.name == 'pipeline.log' and mode == 'a':\n"
+                    "        raise OSError('boundary write failed')\n"
+                    "    return original_open(path, mode, *args, **kwargs)\n"
+                    "pl.Path.open = fail_boundary\n"
+                    "pl.Pipeline.main = lambda self: 0\n"
+                    f"pl.Pipeline.finalize_ci_run = lambda self, code: (None, {exit_code})"
+                )
+
+                self.assertEqual(result.returncode, exit_code, result.stdout + result.stderr)
+                self.assertIn("WARNING: cannot append pipeline log: boundary write failed", result.stdout)
+                self.assertIn(f"finished (exit {exit_code})", result.stdout)
+                if exit_code == 0:
+                    self.assertIn("View all results:", result.stdout)
+                else:
+                    self.assertNotIn("View all results:", result.stdout)
 
     def test_final_source_capture_runs_after_pipeline_failure(self) -> None:
         marker = self.tmp / "captured"

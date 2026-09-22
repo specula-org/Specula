@@ -1,0 +1,1164 @@
+"""Exercise the real CLI and native resume wiring with a deterministic adapter.
+
+The fixture does not perform semantic verification or call an LLM.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import unittest
+from pathlib import Path
+
+import test_cli_pipeline as fixtures
+
+from specula.ci_store import CIStore, asset_hashes
+from specula.phaselib import _POLICY_SESSION_RESUME_PROMPT, _SESSION_RESUME_PROMPT
+
+
+class IncrementalCLI(unittest.TestCase):
+    def setUp(self) -> None:
+        self.helper = fixtures.CliE2E()
+        self.addCleanup(self.helper.doCleanups)
+        self.root = self.helper.specroot()
+        self.work = self.helper.workdir()
+        self.source = self.work / "source"
+        self.source.mkdir()
+        self.git("init", "-q")
+        self.git("config", "user.name", "Fixture")
+        self.git("config", "user.email", "fixture@example.com")
+        (self.source / "logic.txt").write_text("initial\n")
+        self.commit("initial")
+        self.initial_sha = self.git("rev-parse", "HEAD")
+        self.ci = self.work / "ci"
+        self.adapter = self.helper._ci_init_adapter(self.root)
+        Path(f"{self.adapter}.result.py").write_text(
+            "import json, sys\nfrom pathlib import Path\n"
+            "work, run, adapter = map(Path, sys.argv[1:])\n"
+            "flag = Path(str(adapter) + '.findings')\n"
+            "findings = json.loads(flag.read_text()) if flag.exists() else []\n"
+            "(work / 'spec/confirmation-fixture.md').write_text('Current fixture confirmation for ' + run.name)\n"
+            "inputs = json.loads((run / 'ci-input.json').read_text())\n"
+            "if 'final_result_version' not in inputs:\n"
+            "    (work / 'ci-report.md').write_text('# Fixture report\\nNo real verification performed.\\n')\n"
+            "    (work / 'ci-verdict.json').write_text(json.dumps({'version': 1, 'run_id': run.name, 'findings': findings}))\n"
+            "else:\n"
+            "    rows = [dict(title='Fixture finding', source='code-review', cause='Fixture cause',\n"
+            "                 trigger='Fixture trigger', consequence='Fixture consequence',\n"
+            "                 **{k: v for k, v in f.items() if k != 'evidence'}, evidence=[f['evidence']]) for f in findings]\n"
+            "    (work / 'spec/final-result.json').write_text(json.dumps({\n"
+            "        'version': 1, 'run_id': run.name, 'summary': 'Fixture update; no real verification performed.',\n"
+            "        'validation_limits': ['Fixture only.'], 'findings': rows}))\n"
+        )
+        script = self.adapter.read_text()
+        script = script.replace(
+            'case "$SPECULA_PHASE" in\n',
+            'case "$SPECULA_PHASE" in\n'
+            "  incremental)\n"
+            '    printf "%s\\n" "$@" > "$0.incremental.args"\n'
+            '    if [ ! -f "$resume" ]; then printf "fixture-native-session\\n" > "$resume"; fi\n'
+            '    if [ -f "$0.fail" ]; then\n'
+            '      printf "fixture-native-session\\n" > "$resume"\n'
+            '      printf "unfinished edit\\n" > "$SPECULA_WORK_DIR/spec/base.tla"\n'
+            '      printf "interrupted\\n" > "$log"\n'
+            "      exit 9\n"
+            "    fi\n"
+            '    if [ -f "$0.reject" ]; then printf "not complete\\n" > "$log"; exit 0; fi\n'
+            '    if [ -f "$resume" ]; then cp "$resume" "$0.resumed"; fi\n'
+            '    if [ ! -f "$0.nochange" ]; then printf "updated fixture model\\n" > "$SPECULA_WORK_DIR/spec/base.tla"; fi\n'
+            '    python3 "$0.result.py" "$SPECULA_WORK_DIR" "$SPECULA_RUN_DIR" "$0"\n'
+            '    if [ -f "$0.omit-verdict" ]; then rm "$SPECULA_WORK_DIR/spec/final-result.json"; fi\n'
+            '    printf \'{"agent":"codex","session_id":"fixture-native-session","usage":{"total_tokens":150,"cached_input_tokens":50},"total_cost_usd":0.01,"usage_complete":true}\\n\' > "${log%.log}.usage.json"\n'
+            '    printf "SPECULA_INCREMENTAL_COMPLETE %s\\n" "$(basename "$SPECULA_RUN_DIR")" > "$log"\n'
+            "    exit 0\n"
+            "    ;;\n",
+        )
+        self.adapter.write_text(script)
+
+    def git(self, *args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(self.source), *args], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    def commit(self, message: str) -> None:
+        self.git("add", ".")
+        self.git("commit", "-qm", message)
+
+    def run_ci(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return self.helper.run_cli(self.root, ["run", f"--ci-dir={self.ci}", *args], cwd=self.work)
+
+    def initialize(self) -> None:
+        result = self.run_ci("--ci-init", "--agent=fake", f"--artifact={self.source}", "footest")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.ci / "current/model/spec/base.tla").is_file())
+
+    def change_source(self, text: str) -> None:
+        (self.source / "logic.txt").write_text(text)
+        self.commit("update")
+
+    def _fail_initialization(self, fault: str, *extra: str) -> subprocess.CompletedProcess[str]:
+        script = (
+            "import sys\nfrom unittest.mock import patch\n"
+            f"sys.path.insert(0, {str(self.root / 'src')!r})\n"
+            "from specula import pipelinelib\n"
+            f"with patch({fault!r}, side_effect=OSError('injected finalization failure')):\n"
+            "    raise SystemExit(pipelinelib.main(sys.argv[1:]))\n"
+        )
+        return subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                script,
+                f"--ci-dir={self.ci}",
+                "--ci-init",
+                "--agent=fake",
+                f"--artifact={self.source}",
+                *extra,
+                "footest",
+            ],
+            cwd=self.work,
+            env={key: value for key, value in os.environ.items() if key not in fixtures._VOLATILE},
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+
+    def test_byom_initialization_resumes_post_confirmation_with_prior_final_result(self) -> None:
+        supplied = self.work / "bundle"
+        (supplied / "spec").mkdir(parents=True)
+        (supplied / "spec/base.tla").write_text("Supplied fixture reference.\n")
+        prior = {"version": 1, "run_id": "previous-run", "findings": []}
+        (supplied / "spec/final-result.json").write_text(json.dumps(prior))
+        (supplied / "ci-verdict.json").write_text(json.dumps(prior))
+        failed = self._fail_initialization("specula.pipelinelib.Pipeline.persist_findings", f"--byom={supplied}")
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        self.assertIn("injected finalization failure", failed.stdout)
+        self.assertIn("To resume post-confirmation processing:", failed.stdout)
+        run = self.latest()
+        work = run / "footest/.specula-output"
+        self.assertTrue((work / "confirmed-bugs.md").is_file())
+        self.assertEqual(list((run / ".specula-resume/active").glob("*.json")), [])
+        self.assertEqual(json.loads((work / "spec/final-result.json").read_text()), prior)
+        self.assertFalse((run / "ci-result.json").exists())
+        self.assertIsNone(CIStore(self.ci).current_token())
+        phases = Path(f"{self.adapter}.phases").read_text().splitlines()
+
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertIn("skipping consolidate", resumed.stdout)
+        after = Path(f"{self.adapter}.phases").read_text().splitlines()
+        self.assertEqual(after[len(phases) :], ["bug_classification"])
+        self.assertTrue(json.loads((run / "ci-result.json").read_text())["complete"])
+        self.assertEqual(CIStore(self.ci).current()["run_id"], run.name)
+
+        metadata = (run / "run.json").read_bytes()
+        rejected = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+        self.assertIn("no unfinished conversation or resumable post-confirmation work", rejected.stderr)
+        self.assertEqual(Path(f"{self.adapter}.phases").read_text().splitlines(), after)
+        self.assertEqual((run / "run.json").read_bytes(), metadata)
+
+    def test_initialization_can_resume_after_receipt_before_publication(self) -> None:
+        failed = self._fail_initialization("specula.ci_store.CIStore.advance")
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        self.assertIn("injected finalization failure", failed.stdout)
+        run = self.latest()
+        self.assertTrue(json.loads((run / "ci-result.json").read_text())["complete"])
+        self.assertIsNone(CIStore(self.ci).current_token())
+        self.assertEqual(list((run / ".specula-resume/active").glob("*.json")), [])
+
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertEqual(CIStore(self.ci).current()["run_id"], run.name)
+
+    def test_incremental_rejects_phase_options_before_creating_storage(self) -> None:
+        for flag in ("--legacy-confirm", "--max-repair-rounds=1"):
+            with self.subTest(flag=flag):
+                result = self.run_ci("--incremental", flag)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("not supported for incremental CI", result.stderr)
+                self.assertFalse(self.ci.exists())
+                self.assertFalse(Path(f"{self.adapter}.phases").exists())
+
+    def test_single_profile_configuration_and_native_resume(self) -> None:
+        self.initialize()
+        self.change_source("configured update\n")
+        config = self.work / "agents.json"
+        selected = {"agent": "fake", "model": "selected-model", "effort": "high"}
+        document = {
+            "version": 1,
+            "default_profile": "selected",
+            "profiles": {
+                "selected": selected,
+                "unused": {"agent": "uninstalled-adapter", "model": "unused-model"},
+            },
+        }
+        config.write_text(json.dumps(document))
+        failed = Path(f"{self.adapter}.fail")
+        failed.touch()
+        first = self.run_ci("--incremental", f"--agent-config={config}")
+        self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
+        run = self.latest()
+        meta = json.loads((run / "run.json").read_text())
+        self.assertEqual(meta["agent_routes"], {"incremental": selected, "confirm": selected})
+        phases = Path(f"{self.adapter}.phases").read_bytes()
+        for flag in ("--legacy-confirm", "--max-repair-rounds=1"):
+            with self.subTest(flag=flag):
+                rejected = self.run_ci(f"--run-id={run.name}", flag)
+                self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+                self.assertIn("not supported for incremental CI", rejected.stderr)
+                self.assertEqual(Path(f"{self.adapter}.phases").read_bytes(), phases)
+        config.write_text(json.dumps({**document, "phases": {"validate": "selected"}}))
+        rejected = self.run_ci(f"--run-id={run.name}", f"--agent-config={config}")
+        self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+        self.assertIn("supports only phases.confirm", rejected.stderr)
+        self.assertEqual(Path(f"{self.adapter}.phases").read_bytes(), phases)
+        failed.unlink()
+        config.unlink()  # Resume restores the saved selection without rereading the file.
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        args = Path(f"{self.adapter}.incremental.args").read_text().splitlines()
+        self.assertIn("--model=selected-model", args)
+        self.assertIn("--effort=high", args)
+        self.assertEqual(Path(f"{self.adapter}.resumed").read_text(), "fixture-native-session\n")
+
+    def test_initialization_retains_phase_configuration(self) -> None:
+        config = self.work / "agents.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "default_profile": "default",
+                    "profiles": {
+                        "default": {"agent": "fake", "model": "default-model"},
+                        "confirm": {"agent": "fake", "model": "reproduction-model"},
+                    },
+                    "phases": {"confirm": "confirm"},
+                }
+            )
+        )
+        result = self.run_ci(
+            "--ci-init",
+            "--dry-run",
+            f"--artifact={self.source}",
+            f"--agent-config={config}",
+            "--confirm-debate",
+            "--max-repair-rounds=1",
+            "--max-parallel=2",
+            "footest",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        confirmation = next(line for line in result.stdout.splitlines() if "launch_bug_confirmation.sh" in line)
+        self.assertIn("--debate", confirmation)
+        self.assertIn("--max-parallel=2", confirmation)
+        self.assertIn("--model=reproduction-model", confirmation)
+        self.assertIn("global_cap=1", result.stdout)
+
+    def confirmation_fixture(self) -> Path:
+        script = self.adapter.parent / "ci_confirmation_adapter.py"
+        shutil.copyfile(Path(__file__).parent / "fixtures/ci_confirmation_adapter.py", script)
+        for adapter in (self.adapter, self.adapter.with_name("confirmfake.sh")):
+            adapter.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n')
+            adapter.chmod(0o755)
+        config = self.work / "confirm-agents.json"
+        config.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "default_profile": "main",
+                    "profiles": {
+                        "main": {"agent": "fake", "model": "main-model"},
+                        "confirm": {"agent": "confirmfake", "model": "confirm-model"},
+                    },
+                    "phases": {"confirm": "confirm"},
+                }
+            )
+        )
+        return config
+
+    def test_confirmation_routes_and_waits_for_parallel_debate_then_resumes_main(self) -> None:
+        self.initialize()
+        self.change_source("new candidates\n")
+        config = self.confirmation_fixture()
+        result = self.run_ci("--incremental", f"--agent-config={config}", "--max-parallel=2", "--confirm-debate")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        work = self.latest() / "footest/.specula-output"
+        events = [json.loads(line) for line in (work / "dispatch.jsonl").read_text().splitlines()]
+        starts = [event for event in events if event["kind"] == "start"]
+        self.assertEqual([event["model"] for event in starts if event["name"] == "main"], ["main-model"] * 2)
+        self.assertTrue(all(event["model"] == "confirm-model" for event in starts if event["name"] != "main"))
+        workers = [event for event in events if event["name"].startswith("CR-")]
+        self.assertLess(max(event["time"] for event in workers), starts[-1]["time"])
+        a = [event for event in workers if event["log"] == "turn01_A.log" and event["name"] != "CR-3"]
+        self.assertLess(
+            max(e["time"] for e in a if e["kind"] == "start"), min(e["time"] for e in a if e["kind"] == "end")
+        )
+        for fid in ("CR-1", "CR-2"):
+            self.assertTrue((work / "confirmation" / fid / "turn02_B.log").is_file())
+        self.assertFalse((work / "confirmation/CR-3/turn02_B.log").exists())
+        self.assertFalse(list((work / "repro").glob("test_bugCR-3_*")))
+        state = json.loads((work / ".resource-summary-state.json").read_text())
+        self.assertAlmostEqual(state["phases"]["incremental"]["cost_usd"], 0.02)
+        self.assertAlmostEqual(state["phases"]["phase4a"]["cost_usd"], 0.06)
+
+    def test_confirmation_failure_resumes_workers_before_main_and_reuses_history_next_run(self) -> None:
+        self.initialize()
+        self.change_source("new candidates\n")
+        config = self.confirmation_fixture()
+        failure = self.adapter.parent / "fail-confirmation"
+        failure.touch()
+        result = self.run_ci("--incremental", f"--agent-config={config}", "--max-parallel=1")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        run = self.latest()
+        work = run / "footest/.specula-output"
+        self.assertFalse((work / "spec/final-result.json").exists())
+        failure.unlink()
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 2, resumed.stdout + resumed.stderr)
+        events = [json.loads(line) for line in (work / "dispatch.jsonl").read_text().splitlines()]
+        self.assertEqual(sum(e["kind"] == "start" and e["name"] == "CR-1" for e in events), 1)
+        self.assertEqual(sum(e["kind"] == "start" and e["name"] == "CR-2" for e in events), 2)
+        self.assertFalse(list((work / "confirmation").glob("*/turn02_B.log")))
+        (self.source / "unrelated.txt").write_text("unrelated change\n")
+        self.commit("unrelated")
+        reused = self.run_ci("--incremental", "--agent=fake", "--model=shared-model")
+        self.assertEqual(reused.returncode, 2, reused.stdout + reused.stderr)
+        newer = self.latest() / "footest/.specula-output"
+        events = [json.loads(line) for line in (newer / "dispatch.jsonl").read_text().splitlines()]
+        self.assertFalse(any(e["name"] in {"CR-1", "CR-2"} for e in events))
+        self.assertTrue(all(e["model"] == "shared-model" for e in events))
+        self.assertIn("historical conclusion reused", (newer / "confirmed-bugs.md").read_text())
+
+    def test_confirmation_repair_uses_scoped_oneshot_reconciliation(self) -> None:
+        self.initialize()
+        self.change_source("new candidates\n")
+        config = self.confirmation_fixture()
+        (self.adapter.parent / "repair-confirmation").touch()
+        result = self.run_ci("--incremental", f"--agent-config={config}")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        work = self.latest() / "footest/.specula-output"
+        events = [json.loads(line) for line in (work / "dispatch.jsonl").read_text().splitlines()]
+        starts = [e for e in events if e["kind"] == "start"]
+        self.assertEqual(sum(e["name"] == "main" for e in starts), 3)
+        for name in ("CR-1", "CR-2", "CR-3", "MC-1"):
+            self.assertEqual(sum(e["name"] == name for e in starts), 1)
+        self.assertIn("status: CONSUMED", (work / "spec/repair-requests/RR-001.md").read_text())
+        self.assertFalse((work / "spec/.repair-phase3-commit.json").exists())
+        self.assertFalse((work / "spec/.repair-phase3-snapshot.json").exists())
+        self.assertIn("| MC-1 | FALSE POSITIVE |", (work / "confirmed-bugs.md").read_text())
+
+    def test_confirmation_handoff_does_not_reset_parent_retry_budget(self) -> None:
+        self.initialize()
+        self.change_source("new candidates\n")
+        config = self.confirmation_fixture()
+        (self.adapter.parent / "policy-confirmation").touch()
+        result = self.run_ci("--incremental", f"--agent-config={config}", "--policy-retries=1")
+        self.assertEqual(result.returncode, 76, result.stdout + result.stderr)
+        work = self.latest() / "footest/.specula-output"
+        events = [json.loads(line) for line in (work / "dispatch.jsonl").read_text().splitlines()]
+        self.assertEqual(sum(e["kind"] == "start" and e["name"] == "main" for e in events), 3)
+        self.assertFalse((work / "spec/final-result.json").exists())
+
+    def test_reconfirmation_refreshes_recorded_model_dependencies(self) -> None:
+        self._check_model_dependency_reconfirmation(interrupt=False)
+
+    def test_pending_reconfirmation_can_resume_after_proposal_validation_failure(self) -> None:
+        self._check_model_dependency_reconfirmation(interrupt=True)
+
+    def _check_model_dependency_reconfirmation(self, *, interrupt: bool) -> None:
+        self.initialize()
+        self.change_source("new candidates\n")
+        config = self.confirmation_fixture()
+        (self.adapter.parent / "repair-confirmation").touch()
+        (self.adapter.parent / "reconfirm-model-dependency").touch()
+        if interrupt:
+            (self.adapter.parent / "interrupt-model-record").touch()
+        result = self.run_ci("--incremental", f"--agent-config={config}")
+        run = self.latest()
+        work = run / "footest/.specula-output"
+        before = json.loads((work / "spec/MC-2-before.json").read_text())
+        if interrupt:
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("missing-evidence.tla", result.stdout + result.stderr)
+            self.assertEqual(json.loads((work / ".context-control/confirmation.json").read_text())["status"], "pending")
+            self.assertEqual(json.loads((work / "spec/persistent-findings/MC-2.json").read_text()), before)
+            proposal = work / "confirmation/MC-2/issue.json"
+            document = json.loads(proposal.read_text())
+            document["dependencies"] = [
+                dep for dep in document["dependencies"] if dep["path"] != "spec/missing-evidence.tla"
+            ]
+            proposal.write_text(json.dumps(document))
+            (self.adapter.parent / "interrupt-model-record").unlink()
+            result = self.run_ci(f"--run-id={run.name}")
+            self.assertIn("[MC-2] A: REPRODUCED", result.stdout)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        after = json.loads((work / "spec/MC-2-after.json").read_text())
+
+        before_hash = next(dep["sha256"] for dep in before["dependencies"] if dep["path"] == "spec/base.tla")
+        after_hash = next(dep["sha256"] for dep in after["dependencies"] if dep["path"] == "spec/base.tla")
+        self.assertNotEqual(before_hash, after_hash)
+        self.assertEqual(after["origin_run"], run.name)
+        self.assertTrue(after["reusable"])
+        self.assertEqual(json.loads((work / ".context-control/confirmation.json").read_text())["status"], "completed")
+        self.assertFalse((work / "spec/.repair-phase3-commit.json").exists())
+        events = [json.loads(line) for line in (work / "dispatch.jsonl").read_text().splitlines()]
+        starts = [event["name"] for event in events if event["kind"] == "start"]
+        self.assertEqual(starts.count("MC-1"), 1)
+        self.assertEqual(starts.count("MC-2"), 3 if interrupt else 2)
+        self.assertEqual(starts.count("main"), 3)
+        self.assertEqual(json.loads((run / "ci-result.json").read_text())["verdict"], "FAIL")
+
+    def finding_status(self, status: str) -> None:
+        Path(f"{self.adapter}.findings").write_text(
+            json.dumps([{"id": "MC-1", "status": status, "evidence": "spec/confirmation-fixture.md"}])
+        )
+
+    def interrupt_incremental(self, codes: tuple[int, ...]) -> None:
+        previous = (self.ci / "current").resolve()
+        interruptions = "".join(
+            f'      {attempt}) printf "fixture interruption {code}\\n" > "$log"; exit {code} ;;\n'
+            for attempt, code in enumerate(codes, 1)
+        )
+        self.adapter.write_text(
+            self.adapter.read_text().replace(
+                "  incremental)\n",
+                "  incremental)\n"
+                f'    test "$(readlink -f "{self.ci}/current")" = "{previous}"\n'
+                "    attempt=0\n"
+                '    if [ -f "$0.attempts" ]; then attempt=$(cat "$0.attempts"); fi\n'
+                "    attempt=$((attempt + 1))\n"
+                '    printf "%s\\n" "$attempt" > "$0.attempts"\n'
+                '    cp "$prompt" "$0.prompt-$attempt"\n'
+                '    if [ "$attempt" -gt 1 ]; then\n'
+                '      test "$(cat "$resume")" = fixture-native-session\n'
+                '      test "$(cat "$SPECULA_WORK_DIR/retry-work.txt")" = retained-work\n'
+                "    fi\n"
+                '    printf "fixture-native-session\\n" > "$resume"\n'
+                '    printf "retained-work\\n" > "$SPECULA_WORK_DIR/retry-work.txt"\n'
+                '    case "$attempt" in\n' + interruptions + "    esac\n",
+            )
+        )
+
+    def test_default_retries_resume_the_incremental_session_through_context_runner(self) -> None:
+        self.initialize()
+        self.change_source("retry fixture\n")
+        tool_python = self.root / "tools/context_control/.venv/bin/python"
+        tool_python.parent.mkdir(parents=True)
+        tool_python.symlink_to(sys.executable)
+        self.interrupt_incremental((74, 76))
+
+        result = self.run_ci("--incremental", "--agent=fake")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(Path(f"{self.adapter}.attempts").read_text(), "3\n")
+        self.assertEqual(Path(f"{self.adapter}.prompt-2").read_text(), _SESSION_RESUME_PROMPT)
+        self.assertEqual(Path(f"{self.adapter}.prompt-3").read_text(), _POLICY_SESSION_RESUME_PROMPT)
+        run = self.latest()
+        meta = json.loads((run / "run.json").read_text())
+        for config in (meta, meta["resume_configuration"]):
+            self.assertEqual(config["policy_retries"], 20)
+            self.assertEqual(config["transient_resumes"], 20)
+        work = run / "footest/.specula-output"
+        self.assertEqual(len(list((work / ".context-control").glob("invocation-*"))), 3)
+        for attempt, code in enumerate((74, 76), 1):
+            self.assertEqual(
+                (work / f"incremental.attempt-{attempt}.log").read_text(), f"fixture interruption {code}\n"
+            )
+        self.assertTrue(json.loads((run / "ci-result.json").read_text())["complete"])
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], self.git("rev-parse", "HEAD"))
+
+    def test_incremental_retry_budgets_are_independent(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("retry exhaustion fixture\n")
+        original = self.adapter.read_text()
+        for codes, policy, transient in (((74, 76, 74), 2, 1), ((76, 74, 76), 1, 2)):
+            with self.subTest(codes=codes):
+                self.adapter.write_text(original)
+                Path(f"{self.adapter}.attempts").unlink(missing_ok=True)
+                self.interrupt_incremental(codes)
+                result = self.run_ci(
+                    "--incremental", "--agent=fake", f"--policy-retries={policy}", f"--transient-resumes={transient}"
+                )
+                self.assertEqual(result.returncode, codes[-1], result.stdout + result.stderr)
+                self.assertEqual(Path(f"{self.adapter}.attempts").read_text(), "3\n")
+                self.assertEqual((self.ci / "current").resolve(), previous)
+                self.assertFalse((self.latest() / "ci-result.json").exists())
+
+    def test_incremental_zero_budgets_and_rate_limits_stop_without_retry(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("disabled retry fixture\n")
+        original = self.adapter.read_text()
+        for code, flags in ((74, ["--transient-resumes=0"]), (76, ["--policy-retries=0"]), (75, [])):
+            with self.subTest(code=code):
+                self.adapter.write_text(original)
+                Path(f"{self.adapter}.attempts").unlink(missing_ok=True)
+                self.interrupt_incremental((code,))
+                result = self.run_ci("--incremental", "--agent=fake", *flags)
+                self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+                self.assertEqual(Path(f"{self.adapter}.attempts").read_text(), "1\n")
+                self.assertEqual((self.ci / "current").resolve(), previous)
+                self.assertFalse((self.latest() / "ci-result.json").exists())
+
+    def test_successful_retry_still_requires_incremental_completion(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("incomplete retry fixture\n")
+        self.interrupt_incremental((76,))
+        Path(f"{self.adapter}.reject").touch()
+
+        result = self.run_ci("--incremental", "--agent=fake")
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(Path(f"{self.adapter}.attempts").read_text(), "2\n")
+        self.assertIn("did not report completion", result.stdout)
+        self.assertEqual((self.ci / "current").resolve(), previous)
+        self.assertFalse((self.latest() / "ci-result.json").exists())
+
+    def test_confirmed_bugs_fail_but_publish_a_completed_model(self) -> None:
+        self.initialize()
+        for status in ("REPRODUCED", "ENV_LIMITED"):
+            with self.subTest(status=status):
+                previous = (self.ci / "current").resolve()
+                self.change_source(f"{status} fixture\n")
+                self.finding_status(status)
+                result = self.run_ci("--incremental", "--agent=fake")
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("CI verdict: FAIL", result.stdout)
+                self.assertIn("Current CI model updated", result.stdout)
+                self.assertNotEqual((self.ci / "current").resolve(), previous)
+                state = CIStore(self.ci).current()
+                self.assertEqual(state["source_commit"], self.git("rev-parse", "HEAD"))
+                self.assertEqual(state["verdict"], "FAIL")
+                receipt = json.loads((self.latest() / "ci-result.json").read_text())
+                self.assertTrue(receipt["complete"])
+                self.assertEqual(receipt["verdict"], "FAIL")
+                self.assertIn(
+                    "CI verdict: **FAIL**", (self.latest() / "footest/.specula-output/summary.md").read_text()
+                )
+                usage = json.loads((self.latest() / "footest/.specula-output/.resource-summary-state.json").read_text())
+                self.assertTrue(usage["run_complete"])
+
+    def test_final_log_failure_preserves_passing_result_and_published_baseline(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("updated source\n")
+        script = self.adapter.read_text().replace(
+            "    exit 0\n    ;;\n",
+            '    mv "$SPECULA_RUN_DIR/pipeline.log" "$SPECULA_RUN_DIR/pipeline-running.log"\n'
+            '    mkdir "$SPECULA_RUN_DIR/pipeline.log"\n'
+            "    exit 0\n    ;;\n",
+            1,
+        )
+        self.adapter.write_text(script)
+
+        result = self.run_ci("--incremental", "--agent=fake")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("WARNING: cannot append pipeline log:", result.stdout)
+        self.assertIn("finished (exit 0)", result.stdout)
+        current = (self.ci / "current").resolve()
+        self.assertNotEqual(current, previous)
+        self.assertEqual(CIStore(self.ci).current()["verdict"], "PASS")
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], self.git("rev-parse", "HEAD"))
+        receipt = json.loads((self.latest() / "ci-result.json").read_text())
+        self.assertTrue(receipt["complete"])
+        self.assertEqual(receipt["verdict"], "PASS")
+        self.assertEqual(current, self.ci / receipt["snapshot"])
+        self.assertEqual((current / "model/spec/base.tla").read_text(), "updated fixture model\n")
+        self.assertTrue((self.latest() / "pipeline-running.log").is_file())
+
+    def test_final_result_summary_is_visible_without_a_classification_phase(self) -> None:
+        self.initialize()
+        phases = Path(f"{self.adapter}.phases")
+        classification_count = phases.read_text().splitlines().count("bug_classification")
+        cases: tuple[tuple[list[tuple[str, str]], str], ...] = (
+            ([], "PASS"),
+            ([("MC-1", "REPRODUCED")], "FAIL"),
+            ([("MC-1", "FIXED"), ("CR-2", "REPRODUCED")], "FAIL"),
+            ([("CR-2", "FIXED")], "PASS"),
+        )
+        for number, (findings, verdict) in enumerate(cases):
+            with self.subTest(findings=findings):
+                self.change_source(f"summary fixture {number}\n")
+                Path(f"{self.adapter}.findings").write_text(
+                    json.dumps(
+                        [
+                            {"id": fid, "status": status, "evidence": "spec/confirmation-fixture.md"}
+                            for fid, status in findings
+                        ]
+                    )
+                )
+                result = self.run_ci("--incremental", "--agent=fake")
+                self.assertEqual(result.returncode, 2 if verdict == "FAIL" else 0, result.stdout + result.stderr)
+                work = self.latest() / "footest/.specula-output"
+                summary = (work / "summary.md").read_text()
+                self.assertIn("Run status: **Complete**", summary)
+                self.assertIn(f"CI verdict: **{verdict}**", summary)
+                self.assertNotIn("findings summary is unavailable", summary)
+                self.assertIn((work / ".summary-findings.md").read_text().strip(), summary)
+                for fid, status in findings:
+                    if status == "REPRODUCED":
+                        self.assertIn(fid, summary)
+                    else:
+                        self.assertNotIn(fid, summary)
+                self.assertEqual(phases.read_text().splitlines().count("bug_classification"), classification_count)
+
+    def test_warning_and_verified_fix_can_advance_a_red_baseline(self) -> None:
+        self.initialize()
+        self.change_source("bug fixture\n")
+        self.finding_status("REPRODUCED")
+        self.assertEqual(self.run_ci("--incremental", "--agent=fake").returncode, 2)
+        for status, verdict in (("MASKED", "WARNING"), ("FIXED", "PASS")):
+            with self.subTest(status=status):
+                self.change_source(f"{status} fixture\n")
+                self.finding_status(status)
+                result = self.run_ci("--incremental", "--agent=fake")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(CIStore(self.ci).current()["verdict"], verdict)
+                self.assertIn(f"CI verdict: {verdict}", result.stdout)
+                evidence = (self.ci / "current/model/spec/confirmation-fixture.md").read_text()
+                self.assertIn(self.latest().name, evidence)
+        self.assertIn("-MASKED fixture\n+FIXED fixture", (self.latest() / "source.diff").read_text())
+
+    def test_information_is_saved_but_pending_repair_fails_without_publishing(self) -> None:
+        self.initialize()
+        for status in ("NEEDS MORE INFO", "DEFERRED"):
+            self.change_source(f"{status} fixture\n")
+            self.finding_status(status)
+            result = self.run_ci("--incremental", "--agent=fake")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            record = json.loads((self.ci / "current/model/ci-verdict.json").read_text())
+            self.assertEqual(record["findings"][0]["status"], status)
+            self.assertEqual(CIStore(self.ci).current()["verdict"], "PASS")
+        baseline = (self.ci / "current").resolve()
+        self.change_source("pending repair fixture\n")
+        self.finding_status("PENDING REPAIR")
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unresolved or invalid final status: PENDING REPAIR", result.stdout)
+        self.assertEqual((self.ci / "current").resolve(), baseline)
+        self.assertFalse((self.latest() / "ci-result.json").exists())
+
+    def test_old_findings_require_a_current_disposition_even_without_model_changes(self) -> None:
+        self.initialize()
+        self.change_source("bug fixture\n")
+        self.finding_status("REPRODUCED")
+        self.assertEqual(self.run_ci("--incremental", "--agent=fake").returncode, 2)
+        baseline = (self.ci / "current").resolve()
+        self.change_source("unrelated fixture update\n")
+        Path(f"{self.adapter}.nochange").touch()
+        Path(f"{self.adapter}.findings").unlink()
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("prior findings need current confirmation: MC-1", result.stdout)
+        self.assertEqual((self.ci / "current").resolve(), baseline)
+        self.assertFalse((self.latest() / "ci-result.json").exists())
+        summary = (self.latest() / "footest/.specula-output/summary.md").read_text()
+        self.assertNotIn("CI verdict: **PASS**", summary)
+        self.assertIn("Run status: **Incomplete**", summary)
+
+    def test_completion_marker_without_verdict_is_not_a_passing_check(self) -> None:
+        self.initialize()
+        baseline = (self.ci / "current").resolve()
+        self.change_source("update\n")
+        Path(f"{self.adapter}.omit-verdict").touch()
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing current spec/final-result.json", result.stdout)
+        self.assertEqual((self.ci / "current").resolve(), baseline)
+
+    def test_final_result_failure_can_be_manually_resumed(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("new result format\n")
+        flag = Path(f"{self.adapter}.omit-verdict")
+        flag.touch()
+        failed = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        self.assertEqual((self.ci / "current").resolve(), previous)
+        run = self.latest()
+        self.assertFalse((run / "ci-result.json").exists())
+        self.assertEqual(Path(f"{self.adapter}.phases").read_text().splitlines().count("incremental"), 1)
+        flag.unlink()
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertTrue((self.ci / "current/model/spec/final-result.json").is_file())
+        self.assertTrue((self.ci / "current/model/confirmed-bugs.md").is_file())
+        summary = (run / "footest/.specula-output/summary.md").read_text()
+        self.assertNotIn("findings summary is unavailable", summary)
+        self.assertIn("Reproduced bugs: 0", summary)
+
+    def test_preexisting_run_keeps_legacy_reporting_on_resume(self) -> None:
+        self.initialize()
+        self.change_source("legacy resume fixture\n")
+        flag = Path(f"{self.adapter}.fail")
+        flag.touch()
+        self.assertEqual(self.run_ci("--incremental", "--agent=fake").returncode, 9)
+        run = self.latest()
+        inputs_path = run / "ci-input.json"
+        inputs = json.loads(inputs_path.read_text())
+        del inputs["final_result_version"]  # A run created before the format was introduced.
+        inputs_path.write_text(json.dumps(inputs))
+        flag.unlink()
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertFalse((run / "footest/.specula-output/spec/final-result.json").exists())
+        self.assertEqual(CIStore(self.ci).current()["verdict"], "PASS")
+
+    def test_agent_can_generate_and_check_results_before_completion(self) -> None:
+        self.initialize()
+        self.change_source("preflight final result\n")
+        self.finding_status("REPRODUCED")
+        script = self.adapter.read_text().replace(
+            '    if [ -f "$0.omit-verdict" ];',
+            f'    python3 "{self.root}/src/specula/cli.py" ci-result --work="$SPECULA_WORK_DIR"\n'
+            '    if [ -f "$0.omit-verdict" ];',
+        )
+        self.adapter.write_text(script)
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(CIStore(self.ci).current()["verdict"], "FAIL")
+        self.assertTrue(json.loads((self.latest() / "ci-result.json").read_text())["complete"])
+
+    def test_compaction_yield_does_not_publish_and_failure_continues(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        original_assets = asset_hashes(previous)
+        tool = self.root / "tools/context_control"
+        (tool / ".venv/bin").mkdir(parents=True)
+        (tool / ".venv/bin/python").symlink_to(sys.executable)
+        shutil.copy2(fixtures.REAL_ROOT / "tools/context_control/compact.py", tool / "compact.py")
+        # The real controller calls the native compactor, which reports that
+        # this fixture-only backend has no native compaction API.
+        script = self.adapter.read_text().replace(
+            "  incremental)\n",
+            "  incremental)\n"
+            '    if [ ! -f "$0.context-yielded" ]; then\n'
+            f'      test "$(readlink -f "{self.ci}/current")" = "{previous}"\n'
+            '      printf "Pending fixture check; no semantic verification performed.\\n" > "$SPECULA_WORK_DIR/ci-context.md"\n'
+            '      python3 -c \'import json,os,sys; from pathlib import Path; sys.path.insert(0,os.environ["SPECULA_ROOT"]+"/src"); '
+            "from specula.context_control import request_compaction; "
+            'Path(sys.argv[1]).write_text(json.dumps({"adapter":"fake","session_id":"fixture-context-session","cwd":os.getcwd()})); '
+            'request_compaction("ci-context.md")\' "$resume"\n'
+            '      printf "SPECULA_CONTEXT_YIELD %s\\n" "$SPECULA_CONTEXT_TOKEN" > "$log"\n'
+            '      touch "$0.context-yielded"\n'
+            "      exit 0\n"
+            "    fi\n",
+        )
+        self.adapter.write_text(script)
+        self.change_source("changed\n")
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Context compaction failed; continuing", result.stdout)
+        self.assertNotEqual((self.ci / "current").resolve(), previous)
+        self.assertEqual(asset_hashes(previous), original_assets)
+        state = json.loads(Path(f"{self.adapter}.resumed").read_text())
+        self.assertEqual(state["session_id"], "fixture-context-session")
+        work = self.latest() / "footest/.specula-output"
+        self.assertEqual(len(list(work.glob(".context-control/*/1/compaction.json"))), 1)
+        self.assertFalse((self.ci / "current/model/.context-control").exists())
+
+    def latest(self) -> Path:
+        return (self.ci / "runs/latest").resolve()
+
+    def supplied_model(self) -> Path:
+        model = self.work / "Supplied.tla"
+        model.write_text("---- MODULE Supplied ----\nSuppliedInvariant == TRUE\n====\n")
+        return model
+
+    def test_byom_model_initialization_then_incremental_update(self) -> None:
+        supplied = self.supplied_model()
+        original = supplied.read_bytes()
+        guidance = self.work / "guidance.md"
+        guidance.write_text("Preserve the supplied election scope.\n")
+        result = self.run_ci(
+            "--ci-init",
+            "--agent=fake",
+            f"--artifact={self.source}",
+            f"--byom={supplied}",
+            f"--guidance={guidance}",
+            "footest",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        run = self.latest()
+        old = (self.ci / "current").resolve()
+        self.assertEqual((old / "model/spec/base.tla").read_bytes(), original)
+        self.assertTrue((old / "model/harness/run.sh").is_file())
+        self.assertTrue((old / "model/byom-modification-report.md").is_file())
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], self.initial_sha)
+        phases = Path(f"{self.adapter}.phases").read_text().splitlines()
+        self.assertEqual(
+            phases,
+            [
+                "spec_generation",
+                "harness_generation",
+                "spec_validation",
+                "bug_confirmation_turn",
+                "bug_classification",
+            ],
+        )
+        for phase in ("spec_generation", "harness_generation"):
+            prompt = Path(f"{self.adapter}.{phase}.prompt").read_text()
+            self.assertIn("# BYOM Phase", prompt)
+            self.assertIn("## CI Initialization Guidance", prompt)
+            self.assertIn(guidance.read_text(), prompt)
+        self.assertIn("SKIPPED (BYOM)", (run / "pipeline-summary.md").read_text())
+        self.assertIn(
+            "[BYOM modification report](byom-modification-report.md)",
+            (run / "footest/.specula-output/index.md").read_text(),
+        )
+        self.assertEqual(supplied.read_bytes(), original)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+        self.change_source("updated\n")
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], self.git("rev-parse", "HEAD"))
+        self.assertEqual((old / "model/spec/base.tla").read_bytes(), original)
+        self.assertEqual((self.ci / "current/model/spec/base.tla").read_text(), "updated fixture model\n")
+        self.assertTrue((old / "model/byom-modification-report.md").is_file())
+        self.assertFalse((self.ci / "current/model/byom-modification-report.md").exists())
+        self.assertNotIn("BYOM modification report", (self.latest() / "footest/.specula-output/index.md").read_text())
+        self.assertIn("SuppliedInvariant", (self.latest() / "model.diff").read_text())
+        self.assertEqual(Path(f"{self.adapter}.incremental.byom").read_text().strip(), "")
+        prompt = Path(f"{self.adapter}.incremental.prompt").read_text()
+        self.assertIn(guidance.read_text(), prompt)
+        self.assertNotIn("## CI Initialization Guidance", prompt)
+        self.assertEqual(supplied.read_bytes(), original)
+
+    def test_byom_bundle_is_adopted_and_still_validated(self) -> None:
+        supplied = self.work / "bundle"
+        assets = {
+            "modeling-brief.md": "# Supplied scope\n",
+            "spec/base.tla": "supplied reference\n",
+            "spec/MC.tla": "supplied MC wrapper\n",
+            "spec/MC.cfg": "supplied MC config\n",
+            "spec/Trace.tla": "supplied Trace wrapper\n",
+            "spec/Trace.cfg": "supplied Trace config\n",
+            "spec/instrumentation-spec.md": "supplied mapping\n",
+            "harness/run.sh": "#!/bin/sh\n# Supplied harness\nexit 0\n",
+            "traces/retained.ndjson": '{"event":"retained"}\n',
+            "spec/old-validation.log": "Prior evidence only.\n",
+        }
+        for name, content in assets.items():
+            path = supplied / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+        (supplied / "harness/run.sh").chmod(0o755)
+        before = asset_hashes(supplied)
+        result = self.run_ci("--ci-init", "--agent=fake", f"--artifact={self.source}", f"--byom={supplied}", "footest")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for name, content in assets.items():
+            self.assertEqual((self.ci / "current/model" / name).read_text(), content)
+        self.assertEqual(asset_hashes(supplied), before)
+        self.assertEqual(Path(f"{self.adapter}.validation-count").read_text(), "x")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_byom_initialization_failure_and_resume_preserve_inputs(self) -> None:
+        supplied = self.supplied_model()
+        original = supplied.read_bytes()
+        self.adapter = self.helper._ci_init_adapter(self.root, interrupt_validation=True)
+        first = self.run_ci("--ci-init", "--agent=fake", f"--artifact={self.source}", f"--byom={supplied}", "footest")
+        self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
+        run = self.latest()
+        self.assertFalse((self.ci / "current").is_symlink())
+        self.assertFalse((run / "ci-result.json").exists())
+        baseline = (run / "ci-baseline.json").read_bytes()
+        self.assertEqual(json.loads(baseline)["validation_status"], "UNVERIFIED")
+        phases_before = Path(f"{self.adapter}.phases").read_bytes()
+
+        replacement = self.work / "replacement.tla"
+        replacement.write_text("another input\n")
+        rejected = self.run_ci(f"--run-id={run.name}", f"--byom={replacement}")
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("--byom differs", rejected.stderr)
+        self.assertIn("start a new run", rejected.stderr)
+        self.assertEqual(Path(f"{self.adapter}.phases").read_bytes(), phases_before)
+        supplied.rename(self.work / "saved.tla")
+        rejected = self.run_ci(f"--run-id={run.name}")
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("BYOM input is unavailable", rejected.stderr)
+        self.assertEqual(Path(f"{self.adapter}.phases").read_bytes(), phases_before)
+        (self.work / "saved.tla").rename(supplied)
+
+        self.change_source("later source\n")
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertEqual(self.latest(), run)
+        self.assertEqual((run / "ci-baseline.json").read_bytes(), baseline)
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], self.initial_sha)
+        self.assertEqual((self.ci / "current/model/spec/base.tla").read_bytes(), original)
+        self.assertEqual(supplied.read_bytes(), original)
+        self.assertEqual(Path(f"{self.adapter}.spec_validation.byom").read_text().strip(), str(supplied))
+        self.assertIn("exact session", Path(f"{self.adapter}.spec_validation.prompt").read_text())
+        phases = Path(f"{self.adapter}.phases").read_text().splitlines()
+        self.assertNotIn("code_analysis", phases)
+        self.assertEqual(phases.count("spec_generation"), 1)
+        self.assertEqual(phases.count("harness_generation"), 1)
+        self.assertEqual(phases.count("spec_validation"), 2)
+        self.assertTrue((self.ci / "current/model/byom-modification-report.md").is_file())
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_byom_dry_run_and_invalid_modes_do_not_publish(self) -> None:
+        supplied = self.supplied_model()
+        result = self.run_ci("--ci-init", "--dry-run", f"--artifact={self.source}", f"--byom={supplied}", "footest")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.ci / "current").is_symlink())
+        self.assertFalse(Path(f"{self.adapter}.phases").exists())
+        runs = set((self.ci / "runs").iterdir())
+        for flags in (
+            ["--incremental"],
+            ["--ci-init", "--ci-candidate"],
+            ["--ci-init", "--skip-validate"],
+            ["--ci-init", "--no-isolate"],
+            ["--ci-init", "--enable-reviews"],
+            ["--ci-init", "--run-id=missing"],
+        ):
+            with self.subTest(flags=flags):
+                rejected = self.run_ci(*flags, f"--byom={supplied}", "footest")
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertEqual(set((self.ci / "runs").iterdir()), runs)
+                self.assertFalse((self.ci / "current").is_symlink())
+                self.assertFalse(Path(f"{self.adapter}.phases").exists())
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_byom_cannot_overwrite_an_initialized_ci_directory(self) -> None:
+        self.initialize()
+        old = (self.ci / "current").resolve()
+        before = asset_hashes(old)
+        phases = Path(f"{self.adapter}.phases").read_bytes()
+        result = self.run_ci("--ci-init", f"--byom={self.supplied_model()}", "footest")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("already initialized", result.stderr)
+        self.assertEqual((self.ci / "current").resolve(), old)
+        self.assertEqual(asset_hashes(old), before)
+        self.assertEqual(Path(f"{self.adapter}.phases").read_bytes(), phases)
+
+    def test_missing_byom_report_prevents_publication(self) -> None:
+        supplied = self.supplied_model()
+        Path(f"{self.adapter}.omit-byom-report").touch()
+        result = self.run_ci("--ci-init", "--agent=fake", f"--artifact={self.source}", f"--byom={supplied}", "footest")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.ci / "current").is_symlink())
+        self.assertFalse((self.latest() / "ci-result.json").exists())
+
+    def test_initialization_then_single_agent_incremental_update(self) -> None:
+        self.initialize()
+        old = (self.ci / "current").resolve()
+        self.change_source("updated\n")
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        state = CIStore(self.ci).current()
+        self.assertEqual(state["source_commit"], self.git("rev-parse", "HEAD"))
+        self.assertNotEqual((self.ci / "current").resolve(), old)
+        self.assertEqual((old / "model/spec/base.tla").read_text(), "fixture model\n")
+        self.assertEqual((self.ci / "current/model/spec/base.tla").read_text(), "updated fixture model\n")
+        self.assertIn("-initial\n+updated", (self.latest() / "source.diff").read_text())
+        self.assertTrue((self.latest() / "model.diff").is_file())
+        self.assertEqual((self.source / "logic.txt").read_text(), "updated\n")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertEqual(Path(str(self.adapter) + ".phases").read_text().splitlines()[-1], "incremental")
+        self.assertIn("Incremental workflow", (self.latest() / "footest/.specula-output/summary.md").read_text())
+        usage = json.loads((self.latest() / "footest/.specula-output/.resource-summary-state.json").read_text())
+        self.assertEqual(usage["phases"]["incremental"]["total_tokens"], 150)
+        self.assertEqual(usage["phases"]["incremental"]["cost_usd"], 0.01)
+        self.assertTrue(usage["run_complete"])
+
+    def test_repair_can_finish_without_an_intermediate_ci_report(self) -> None:
+        self.initialize()
+        old = (self.ci / "current").resolve()
+        self.change_source("repair fixture\n")
+        # Simulate persisted repair evidence before the fixture's final model
+        # and report. This checks lifecycle compatibility, not Agent reasoning.
+        script = self.adapter.read_text().replace(
+            "  incremental)\n",
+            "  incremental)\n"
+            '    test ! -e "$SPECULA_WORK_DIR/ci-report.md" || exit 10\n'
+            '    printf "fixture model needing repair\\n" > "$SPECULA_WORK_DIR/spec/base.tla"\n'
+            '    printf "Fixture repair and recheck recorded; no semantic verification performed.\\n" > "$SPECULA_WORK_DIR/spec/changelog.md"\n'
+            '    test ! -e "$SPECULA_WORK_DIR/ci-report.md" || exit 10\n',
+        )
+        self.adapter.write_text(script)
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        model = self.ci / "current/model"
+        self.assertNotEqual((self.ci / "current").resolve(), old)
+        self.assertEqual((model / "spec/base.tla").read_text(), "updated fixture model\n")
+        self.assertIn("Fixture repair and recheck", (model / "spec/changelog.md").read_text())
+        self.assertTrue((model / "ci-report.md").is_file())
+        phases = Path(f"{self.adapter}.phases").read_text().splitlines()
+        self.assertEqual(phases.count("incremental"), 1)
+        self.assertEqual(phases[-1], "incremental")
+
+    def test_failure_keeps_current_and_resume_uses_original_conversation_and_source(self) -> None:
+        self.initialize()
+        old = (self.ci / "current").resolve()
+        self.change_source("version B\n")
+        sha_b = self.git("rev-parse", "HEAD")
+        flag = Path(str(self.adapter) + ".fail")
+        flag.touch()
+        first = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
+        self.assertEqual((self.ci / "current").resolve(), old)
+        run = self.latest()
+        work = run / "footest/.specula-output"
+        self.assertFalse((work / "ci-report.md").exists())
+        self.assertEqual((work / "spec/base.tla").read_text(), "unfinished edit\n")
+        self.assertFalse((run / "ci-result.json").exists())
+        original_diff = (run / "source.diff").read_bytes()
+        self.change_source("version C\n")
+        flag.unlink()
+        resumed = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], sha_b)
+        self.assertEqual((run / "source.diff").read_bytes(), original_diff)
+        self.assertEqual(Path(str(self.adapter) + ".resumed").read_text(), "fixture-native-session\n")
+        self.assertEqual((self.ci / "current/model/ci-report.md").read_bytes(), (work / "ci-report.md").read_bytes())
+        prompt = Path(str(self.adapter) + ".incremental.prompt").read_text()
+        self.assertIn("exact session", prompt)
+        self.assertNotIn("# Incremental CI Task", prompt)
+        usage = json.loads((run / "footest/.specula-output/.resource-summary-state.json").read_text())
+        self.assertEqual(usage["phases"]["incremental"]["total_tokens"], 150)
+        self.assertTrue(usage["phases"]["incremental"]["usage_incomplete"])
+
+    def test_candidate_resume_cannot_update_the_current_model(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("candidate source\n")
+        flag = Path(str(self.adapter) + ".fail")
+        flag.touch()
+        first = self.run_ci("--incremental", "--ci-candidate", "--agent=fake", "--model=fixture-model")
+        self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
+        run = self.latest()
+        flag.unlink()
+        result = self.run_ci(f"--run-id={run.name}")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.ci / "current").resolve(), previous)
+        receipt = json.loads((run / "ci-result.json").read_text())
+        self.assertTrue(receipt["candidate"])
+        self.assertTrue(receipt["complete"])
+        self.assertTrue((self.ci / receipt["snapshot"] / "model/spec/base.tla").is_file())
+
+    def test_no_model_change_still_advances_source_version(self) -> None:
+        self.initialize()
+        original = (self.ci / "current/model/spec/base.tla").read_bytes()
+        self.change_source("documentation-only fixture update\n")
+        Path(str(self.adapter) + ".nochange").touch()
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.ci / "current/model/spec/base.tla").read_bytes(), original)
+        self.assertEqual(CIStore(self.ci).current()["source_commit"], self.git("rev-parse", "HEAD"))
+
+    def test_unknown_run_id_cannot_start_or_publish_a_new_workflow(self) -> None:
+        self.initialize()
+        current = (self.ci / "current").resolve()
+        state = (current / "state.json").read_bytes()
+        model = (current / "model/spec/base.tla").read_bytes()
+        runs = set((self.ci / "runs").iterdir())
+        phases = Path(str(self.adapter) + ".phases").read_bytes()
+        for index, flags in enumerate(([], ["--incremental"], ["--ci-init"], ["--dry-run"])):
+            with self.subTest(flags=flags):
+                result = self.run_ci(
+                    *flags, f"--run-id=missing-{index}", "--agent=fake", f"--artifact={self.source}", "footest"
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("does not exist; cannot resume", result.stderr)
+                self.assertEqual(set((self.ci / "runs").iterdir()), runs)
+                self.assertEqual(Path(str(self.adapter) + ".phases").read_bytes(), phases)
+                self.assertEqual((self.ci / "current").resolve(), current)
+                self.assertEqual((current / "state.json").read_bytes(), state)
+                self.assertEqual((current / "model/spec/base.tla").read_bytes(), model)
+
+    def test_unknown_run_id_does_not_create_a_ci_directory(self) -> None:
+        result = self.run_ci("--run-id=missing", "--agent=fake", f"--artifact={self.source}", "footest")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not exist; cannot resume", result.stderr)
+        self.assertFalse(self.ci.exists())
+        self.assertFalse(Path(str(self.adapter) + ".phases").exists())
+
+    def test_zero_exit_and_existing_artifacts_are_not_completion(self) -> None:
+        self.initialize()
+        old = (self.ci / "current").resolve()
+        self.change_source("version B\n")
+        Path(str(self.adapter) + ".reject").touch()
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.ci / "current").resolve(), old)
+        self.assertIn("did not report completion", result.stdout)
+
+    def test_new_run_after_failure_uses_cumulative_diff(self) -> None:
+        self.initialize()
+        self.change_source("version B\n")
+        flag = Path(str(self.adapter) + ".fail")
+        flag.touch()
+        self.assertEqual(self.run_ci("--incremental", "--agent=fake").returncode, 9)
+        failed = self.latest()
+        self.change_source("version C\n")
+        flag.unlink()
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        diff = (self.latest() / "source.diff").read_text()
+        self.assertIn("-initial\n+version C", diff)
+        current = (self.ci / "current").resolve()
+        stale = self.run_ci(f"--run-id={failed.name}")
+        self.assertNotEqual(stale.returncode, 0)
+        self.assertEqual((self.ci / "current").resolve(), current)
+
+    def test_ci_directory_lock_rejects_concurrent_invocation(self) -> None:
+        self.initialize()
+        store = CIStore(self.ci)
+        store.acquire()
+        try:
+            result = self.run_ci("--incremental", "--agent=fake")
+        finally:
+            store.close()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("another run", result.stderr)
+
+    def test_dirty_initial_source_is_preserved_in_the_update_diff(self) -> None:
+        (self.source / "logic.txt").write_text("dirty initial\n")
+        (self.source / "untracked.txt").write_text("initial extra\n")
+        self.initialize()
+        state = CIStore(self.ci).current()
+        self.assertTrue(state["dirty"])
+        self.assertEqual((self.ci / state["source"] / "logic.txt").read_text(), "dirty initial\n")
+        self.change_source("new committed source\n")
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("-dirty initial\n+new committed source", (self.latest() / "source.diff").read_text())
+
+    def test_wrong_target_revision_does_not_launch_agent(self) -> None:
+        self.initialize()
+        self.change_source("version B\n")
+        phases = Path(str(self.adapter) + ".phases").read_text()
+        result = self.run_ci("--incremental", "--agent=fake", f"--revision={self.initial_sha}")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(Path(str(self.adapter) + ".phases").read_text(), phases)
+
+    def test_dry_run_does_not_publish_or_instrument(self) -> None:
+        result = self.run_ci("--ci-init", "--dry-run", f"--artifact={self.source}", "footest")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.ci / "current").exists())
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_saved_inputs_identify_both_versions_and_original_user_guidance(self) -> None:
+        guidance = self.work / "guidance.md"
+        guidance.write_text("Only the core protocol.\n")
+        initial = self.run_ci(
+            "--ci-init", "--agent=fake", f"--artifact={self.source}", f"--guidance={guidance}", "footest"
+        )
+        self.assertEqual(initial.returncode, 0, initial.stdout + initial.stderr)
+        self.change_source("update\n")
+        result = self.run_ci("--incremental", "--agent=fake")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        inputs = json.loads((self.latest() / "ci-input.json").read_text())
+        self.assertTrue(Path(inputs["old_source"]).is_dir())
+        self.assertTrue(Path(inputs["old_model"]).is_dir())
+        prompt = Path(str(self.adapter) + ".incremental.prompt").read_text()
+        self.assertIn("Only the core protocol.", prompt)
+        self.assertNotIn("## CI Initialization Guidance", prompt)

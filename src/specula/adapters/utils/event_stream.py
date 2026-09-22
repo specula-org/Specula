@@ -116,6 +116,10 @@ def _claude_events(record: object, concise: bool) -> list[_LogEvent]:
 def _copilot_events(record: object, concise: bool) -> list[_LogEvent]:
     if not isinstance(record, dict):
         return []
+    if record.get("type") == "session.task_complete":
+        data = record.get("data")
+        if isinstance(data, dict) and data.get("success") is True and isinstance(data.get("summary"), str):
+            return [_text_event(data["summary"], concise)]
     data = record.get("data")
     if record.get("type") == "session.error":
         if not isinstance(data, dict):

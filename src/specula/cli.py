@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 PROG = "specula"
-VERSION = "1.0.0"
+VERSION = "1.2.0"
 
 SPECULA_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = SPECULA_ROOT / "scripts"
@@ -29,6 +29,9 @@ SCRIPTS_DIR = SPECULA_ROOT / "scripts"
 # The order here is the order shown in `specula --help`.
 COMMANDS: list[tuple[str, str, str]] = [
     ("run", "launch/launch_pipeline.sh", "Run the full pipeline (all phases: analysis -> classification)"),
+    ("ci", "launch/launch_github_ci.sh", "Handle a GitHub event using a persistent CI model"),
+    ("ci-result", "launch/launch_ci_result.sh", "Generate incremental CI deliverables from one final result"),
+    ("findings", "launch/launch_persistent_findings.sh", "Look up and reuse persistent findings"),
     ("batch", "exp/scheduler.sh", "Batch-run the pipeline over a task queue (workers, quota gate, retries)"),
     ("analyze", "launch/launch_code_analysis.sh", "Phase 1 - static code analysis -> modeling brief"),
     ("specgen", "launch/launch_spec_generation.sh", "Phase 2 - generate TLA+ specs from the modeling brief"),

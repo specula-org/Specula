@@ -27,10 +27,10 @@ from typing import Any
 from unittest import mock
 
 from specula import confirmlib as C
+from specula import persistent_findings, resumelib
 from specula import phaselib as PhaseLib
 from specula import pipelinelib as PL
 from specula import prompts as P
-from specula import resumelib
 from specula.phaselib import Workspace
 
 EVIDENCE = "The investigation inspected the real call path and captured concrete observed behavior."
@@ -156,6 +156,173 @@ class TestVerdict(ConfirmCase):
         self.assertIsNone(C.parse_verdict("VERDICT: not-a-status"))
         # last VERDICT line wins
         self.assertEqual(C.parse_verdict("VERDICT: DROPPED\nVERDICT: FALSE POSITIVE"), "FALSE POSITIVE")
+
+    def test_live_verdict_rejects_invalid_persistent_issue_proposal(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T")
+        finding = self.finding(ws, "T", "CR-1")
+        finding.fdir.mkdir(parents=True)
+        (finding.fdir / "issue.json").write_text("{}\n")
+        (ws.work_dir("T") / persistent_findings.CONTEXT).write_text("{}\n")
+
+        with (
+            mock.patch.object(
+                persistent_findings,
+                "validate_issue_proposal",
+                side_effect=persistent_findings.FindingsError("dependency 2 is invalid"),
+            ) as validate,
+            self.assertRaisesRegex(C.InvalidAgentOutput, "invalid persistent issue proposal"),
+        ):
+            C._validate_final_artifacts(cfg, finding, "MASKED")
+        validate.assert_called_once_with(ws.work_dir("T"), finding.fdir / "issue.json", source_kind="code-review")
+
+    def test_mismatched_proposal_id_is_not_cached_and_can_retry(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T")
+        finding = self.finding(ws, "T", "CR-1")
+        finding.fdir.mkdir(parents=True)
+        work = ws.work_dir("T")
+        source = Path(self.tmp) / "source"
+        source.mkdir()
+        (source / "logic.txt").write_text("fixture source\n")
+        (work / "evidence.md").write_text(EVIDENCE)
+        persistent_findings.configure(work, source, "fixture-run")
+        proposal = {
+            "id": "CR-2",
+            "status": "MASKED",
+            "source": "code-review",
+            "title": "Fixture finding",
+            "cause": "Fixture cause",
+            "trigger": "Fixture trigger",
+            "consequence": "Fixture consequence",
+            "sites": [],
+            "actions": [],
+            "invariants": [],
+            "premises": ["Fixture premise"],
+            "dependencies": [{"root": "source", "path": "logic.txt"}],
+            "evidence": ["evidence.md"],
+        }
+        proposal_path = finding.fdir / "issue.json"
+        proposal_path.write_text(json.dumps(proposal))
+
+        with mock.patch.object(C, "run_agent_blocking", side_effect=_fake_turn(_response("MASKED"))) as agent:
+            failed = C.run_finding_safe(cfg, finding)
+            self.assertEqual((failed.status, failed.failure_code), (C.INCOMPLETE, 1))
+            self.assertIn("proposal ID 'CR-2' does not match finding ID 'CR-1'", failed.body)
+            self.assertFalse((finding.fdir / "verdict.json").exists())
+
+            proposal["id"] = finding.id
+            proposal_path.write_text(json.dumps(proposal))
+            retried = C.run_finding_safe(cfg, finding)
+            self.assertEqual(retried.status, "MASKED")
+            self.assertEqual(agent.call_count, 2)
+
+        persistent_findings.reconcile(
+            work,
+            source,
+            "fixture-run",
+            [{"id": finding.id, "status": retried.status, "source": "code-review", "evidence": "evidence.md"}],
+            confirmed_ids=[finding.id],
+        )
+        self.assertEqual(persistent_findings.load(work, finding.id)["status"], "MASKED")
+        with mock.patch.object(C, "run_agent_blocking", _boom):
+            self.assertEqual(C.run_finding_safe(cfg, finding).status, "MASKED")
+
+
+class TestHistoricalConfirmationFiles(ConfirmCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        self.work_dir = self.ws.work_dir("T")
+        self.fdir = self.work_dir / "confirmation" / "MC-1"
+        self.fdir.mkdir(parents=True)
+
+    def test_existing_verdict_is_labelled_once_on_success_and_cache_reuse(self) -> None:
+        verdict = self.fdir / "verdict.md"
+        original = b"# Previous verdict\r\nVERDICT: NEEDS MORE INFO\r\n"
+        verdict.write_bytes(original)
+        with mock.patch.object(
+            C, "run_agent_blocking", _fake_turn_with_repro(self.ws, "T", "MC-1", _response("REPRODUCED"))
+        ):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+
+        labelled = verdict.read_bytes()
+        self.assertTrue(labelled.startswith(b"> Historical record."))
+        self.assertTrue(labelled.endswith(original))
+        self.assertIn(b"[confirmed-bugs.md](../../confirmed-bugs.md)", labelled)
+        cache = (self.fdir / "verdict.json").read_bytes()
+        report = (self.work_dir / "confirmed-bugs.md").read_bytes()
+        self.assertIn(b"| 1 | MC-1 | REPRODUCED |", report)
+
+        verdict.write_bytes(original)
+        with mock.patch.object(C, "run_agent_blocking", _boom):
+            for _attempt in range(2):
+                self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+                self.assertEqual(verdict.read_bytes(), labelled)
+                self.assertEqual((self.fdir / "verdict.json").read_bytes(), cache)
+                self.assertEqual((self.work_dir / "confirmed-bugs.md").read_bytes(), report)
+
+    def test_missing_verdict_markdown_is_not_created(self) -> None:
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("FALSE POSITIVE"))):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+        self.assertFalse((self.fdir / "verdict.md").exists())
+
+    def test_label_write_failure_preserves_original_and_confirmation_result(self) -> None:
+        verdict = self.fdir / "verdict.md"
+        original = b"VERDICT: NEEDS MORE INFO\n"
+        verdict.write_bytes(original)
+        original_replace = Path.replace
+
+        def fail_label_replace(path: Path, target: str | os.PathLike[str]) -> Path:
+            if Path(target) == verdict:
+                raise OSError("cannot replace historical note")
+            return original_replace(path, target)
+
+        with (
+            mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("FALSE POSITIVE"))),
+            mock.patch.object(Path, "replace", fail_label_replace),
+            mock.patch.object(C, "_log") as log,
+        ):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+
+        self.assertEqual(verdict.read_bytes(), original)
+        self.assertIn("cannot replace historical note", str(log.call_args_list))
+        self.assertEqual(list(self.fdir.glob(".verdict.md.*.tmp")), [])
+        self.assertEqual(json.loads((self.fdir / "verdict.json").read_text())["status"], "FALSE POSITIVE")
+
+    def test_errors_append_and_survive_success_and_cache_reuse(self) -> None:
+        error = self.fdir / "error.txt"
+        original = b"older failure without a trailing newline"
+        error.write_bytes(original)
+        for failure_code in (9, 75):
+            before = error.read_bytes()
+            with mock.patch.object(C, "run_agent_blocking", _fake_turn("", rc=failure_code)):
+                self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 75 if failure_code == 75 else 1)
+            self.assertTrue(error.read_bytes().startswith(before + b"\n"))
+
+        history = error.read_bytes()
+        self.assertIn(b"adapter exited 9", history)
+        self.assertIn(b"RateLimited: MC-1 turn 1 A", history)
+        self.assertEqual(len(re.findall(rb"=== Error at \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC ===", history)), 2)
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("FALSE POSITIVE"))):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+        with mock.patch.object(C, "run_agent_blocking", _boom):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+        self.assertEqual(error.read_bytes(), history)
+
+    def test_failed_rerun_keeps_previous_json_and_labels_existing_markdown(self) -> None:
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn(_response("FALSE POSITIVE"))):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T")), 0)
+        cache = (self.fdir / "verdict.json").read_bytes()
+        verdict = self.fdir / "verdict.md"
+        original = b"VERDICT: FALSE POSITIVE\n"
+        verdict.write_bytes(original)
+        with mock.patch.object(C, "run_agent_blocking", _fake_turn("", rc=9)):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(self.ws, "T", model="another-model")), 1)
+        self.assertEqual((self.fdir / "verdict.json").read_bytes(), cache)
+        self.assertTrue(verdict.read_bytes().startswith(b"> Historical record."))
+        self.assertTrue(verdict.read_bytes().endswith(original))
+        self.assertIn("| 1 | MC-1 | INCOMPLETE |", (self.work_dir / "confirmed-bugs.md").read_text())
 
 
 class TestConfirmConfigCompatibility(ConfirmCase):
@@ -690,7 +857,8 @@ class TestDriver(ConfirmCase):
         self.assertEqual((root / "resume-check").read_text(), "passed")
         self.assertEqual(cfg._finding_leases, {})
         self.assertEqual(cfg._policy_states, {})
-        self.assertFalse(leased_repo.exists())
+        self.assertTrue(leased_repo.is_dir())
+        self.assertTrue((leased_repo / "lease-marker").is_file())
 
     def test_manual_resume_reloads_accepted_a_and_exact_interrupted_b(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
@@ -789,7 +957,8 @@ class TestDriver(ConfirmCase):
         self.assertFalse(lease_checkpoint.exists())
         self.assertEqual(resumed_cfg._finding_leases, {})
         self.assertEqual(resumed_cfg._policy_states, {})
-        self.assertFalse(leased_repo.exists())
+        self.assertTrue(leased_repo.is_dir())
+        self.assertTrue((leased_repo / "lease-marker").is_file())
 
     def test_manual_resume_keeps_no_correction_decision_and_exact_interrupted_b(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
@@ -3630,13 +3799,8 @@ class TestEvidenceAndRendering(ConfirmCase):
 
 
 class TestRepoIsolation(ConfirmCase):
-    def _repo(self) -> Path:
-        repo = Path(self.tmp) / "repo"
-        repo.mkdir()
-        subprocess.run(["git", "init", "-q", str(repo)], check=True)
-        (repo / "tracked.txt").write_text("base\n")
-        (repo / "delete-me.txt").write_text("delete me\n")
-        subprocess.run(["git", "-C", str(repo), "add", "tracked.txt", "delete-me.txt"], check=True)
+    def _commit(self, repo: Path, *paths: str) -> None:
+        subprocess.run(["git", "-C", str(repo), "add", *paths], check=True)
         subprocess.run(
             [
                 "git",
@@ -3648,10 +3812,18 @@ class TestRepoIsolation(ConfirmCase):
                 "user.email=test@example.com",
                 "commit",
                 "-qm",
-                "initial",
+                "test fixture",
             ],
             check=True,
         )
+
+    def _repo(self) -> Path:
+        repo = Path(self.tmp) / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / "tracked.txt").write_text("base\n")
+        (repo / "delete-me.txt").write_text("delete me\n")
+        self._commit(repo, "tracked.txt", "delete-me.txt")
         return repo
 
     def _repo_cfg(self, repo: Path, *, worktree: bool) -> tuple[C.ConfirmConfig, mock.Mock]:
@@ -3659,6 +3831,18 @@ class TestRepoIsolation(ConfirmCase):
         ws.work_dir.return_value = repo / ".specula-output"
         cfg = C.ConfirmConfig(name="T", ws=ws, adapter=Path("/x"), repo_dir=str(repo), worktree=worktree)
         return cfg, ws
+
+    def _nested_repo(self, repo: Path) -> Path:
+        nested = repo / "benchmark"
+        subprocess.run(["git", "init", "-q", str(nested)], check=True)
+        (nested / ".gitignore").write_text("ignored.log\n")
+        (nested / "tracked.txt").write_text("committed\n")
+        (nested / "link.txt").symlink_to("tracked.txt")
+        self._commit(nested, ".gitignore", "tracked.txt", "link.txt")
+        (nested / "tracked.txt").write_text("locally modified\n")
+        (nested / "untracked.txt").write_text("untracked\n")
+        (nested / "ignored.log").write_text("ignored\n")
+        return nested
 
     def test_dispatcher_output_does_not_make_clean_repo_dirty(self) -> None:
         repo = self._repo()
@@ -3725,6 +3909,103 @@ class TestRepoIsolation(ConfirmCase):
         alpha = C._repo_cache_identity(cfg)
         untracked.write_text("beta")
         self.assertNotEqual(alpha, C._repo_cache_identity(cfg))
+
+    def test_local_cache_hashes_nested_repo_working_files(self) -> None:
+        repo = self._repo()
+        nested = self._nested_repo(repo)
+        cfg, _ws = self._repo_cfg(repo, worktree=False)
+
+        first = C._repo_cache_identity(cfg)
+        (nested / "ignored.log").write_text("changed but still ignored\n")
+        self.assertEqual(first, C._repo_cache_identity(cfg))
+        (nested / "tracked.txt").write_text("changed working file\n")
+        self.assertNotEqual(first, C._repo_cache_identity(cfg))
+
+    def test_local_cache_hashes_nested_repo_file_permissions(self) -> None:
+        repo = self._repo()
+        nested = self._nested_repo(repo)
+        cfg, _ws = self._repo_cfg(repo, worktree=False)
+
+        first = C._repo_cache_identity(cfg)
+        os.chmod(nested / "tracked.txt", 0o755)
+        self.assertNotEqual(first, C._repo_cache_identity(cfg))
+
+    def test_untracked_nested_repo_is_copied_without_git_metadata_or_ignored_files(self) -> None:
+        repo = self._repo()
+        self._nested_repo(repo)
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+
+        path, cleanup = C.setup_repo(cfg, f)
+        try:
+            copied = Path(path) / "benchmark"
+            self.assertEqual((copied / "tracked.txt").read_text(), "locally modified\n")
+            self.assertEqual((copied / "untracked.txt").read_text(), "untracked\n")
+            self.assertTrue((copied / "link.txt").is_symlink())
+            self.assertEqual(os.readlink(copied / "link.txt"), "tracked.txt")
+            self.assertFalse((copied / "ignored.log").exists())
+            self.assertFalse((copied / ".git").exists())
+        finally:
+            cleanup()
+
+    def test_untracked_nested_linked_worktree_is_copied_without_git_pointer(self) -> None:
+        repo = self._repo()
+        source = Path(self.tmp) / "nested-source"
+        subprocess.run(["git", "init", "-q", str(source)], check=True)
+        (source / "tracked.txt").write_text("committed\n")
+        self._commit(source, "tracked.txt")
+        nested = repo / "benchmark"
+        subprocess.run(["git", "-C", str(source), "worktree", "add", "--detach", str(nested)], check=True)
+        self.assertTrue((nested / ".git").is_file())
+        (nested / "tracked.txt").write_text("locally modified\n")
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+
+        path, cleanup = C.setup_repo(cfg, f)
+        try:
+            copied = Path(path) / "benchmark"
+            self.assertEqual((copied / "tracked.txt").read_text(), "locally modified\n")
+            self.assertFalse((copied / ".git").exists())
+        finally:
+            cleanup()
+
+    def test_untracked_nested_repo_rejects_symlink_that_escapes_worktree(self) -> None:
+        repo = self._repo()
+        nested = repo / "benchmark"
+        subprocess.run(["git", "init", "-q", str(nested)], check=True)
+        (nested / "escape").mkdir()
+        (nested / "escape" / "payload.txt").write_text("committed\n")
+        self._commit(nested, "escape/payload.txt")
+        shutil.rmtree(nested / "escape")
+        (nested / "escape").symlink_to("../..")
+        (repo.parent / "payload.txt").write_text("must stay outside\n")
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+
+        with self.assertRaisesRegex(C.ConfirmationFailed, "symlink escapes the isolated worktree"):
+            C.setup_repo(cfg, f)
+        self.assertFalse((f.fdir / "payload.txt").exists())
+
+    def test_nested_tracked_file_replaced_by_directory_is_copied(self) -> None:
+        repo = self._repo()
+        nested = repo / "benchmark"
+        subprocess.run(["git", "init", "-q", str(nested)], check=True)
+        item = nested / "item"
+        item.write_text("file\n")
+        self._commit(nested, "item")
+        item.unlink()
+        item.mkdir()
+        (item / "child.txt").write_text("child\n")
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+
+        path, cleanup = C.setup_repo(cfg, f)
+        try:
+            copied = Path(path) / "benchmark" / "item"
+            self.assertTrue(copied.is_dir())
+            self.assertEqual((copied / "child.txt").read_text(), "child\n")
+        finally:
+            cleanup()
 
     def test_pipeline_instrumentation_is_copied_into_isolated_worktree(self) -> None:
         repo = self._repo()

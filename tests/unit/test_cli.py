@@ -22,23 +22,26 @@ from specula import cli
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# captured from the bash dispatcher (git history: `specula` pre-cutover)
+# Public help retains the dispatcher layout as commands are added.
 BASH_HELP = """\
 usage: specula <command> [options] "name|github|lang|reference" [...]
 
 A framework for finding deep bugs in system code using TLA+.
 
 commands:
-  run       Run the full pipeline (all phases: analysis -> classification)
-  batch     Batch-run the pipeline over a task queue (workers, quota gate, retries)
-  analyze   Phase 1 - static code analysis -> modeling brief
-  specgen   Phase 2 - generate TLA+ specs from the modeling brief
-  harness   Phase 2.5 - instrument the system + collect traces
-  validate  Phase 3 - trace validation + model checking (bug hunting)
-  confirm   Phase 4a - confirm & reproduce model-checking bugs
-  classify  Phase 4b - assign severity tiers to confirmed bugs
-  review    Run an inter-phase review agent
-  setup     Install Specula agent skills + MCP tools
+  run        Run the full pipeline (all phases: analysis -> classification)
+  ci         Handle a GitHub event using a persistent CI model
+  ci-result  Generate incremental CI deliverables from one final result
+  findings   Look up and reuse persistent findings
+  batch      Batch-run the pipeline over a task queue (workers, quota gate, retries)
+  analyze    Phase 1 - static code analysis -> modeling brief
+  specgen    Phase 2 - generate TLA+ specs from the modeling brief
+  harness    Phase 2.5 - instrument the system + collect traces
+  validate   Phase 3 - trace validation + model checking (bug hunting)
+  confirm    Phase 4a - confirm & reproduce model-checking bugs
+  classify   Phase 4b - assign severity tiers to confirmed bugs
+  review     Run an inter-phase review agent
+  setup      Install Specula agent skills + MCP tools
 
 Every argument after <command> is forwarded verbatim to the underlying
 launch script. Run 'specula <command> --help' for a command's full flag set.
@@ -83,7 +86,7 @@ class TestHelp(CaptureExec):
 
     def test_version(self) -> None:
         rc, out, err = self._main(["--version"])
-        self.assertEqual((rc, out, err), (0, "specula 1.0.0\n", ""))
+        self.assertEqual((rc, out, err), (0, "specula 1.2.0\n", ""))
         self.assertEqual(self.execs, [])
 
 
@@ -150,4 +153,4 @@ class TestShim(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "specula 1.0.0\n", ""))
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "specula 1.2.0\n", ""))

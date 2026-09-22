@@ -213,6 +213,7 @@ Pauses when API usage exceeds threshold, waits for reset, resumes automatically.
 
 | Skill | Phase | Location |
 |-------|-------|----------|
+| `byom` | 2–4 | `skills/byom/` |
 | `code_analysis` | 1 | `skills/code_analysis/` |
 | `spec_generation` | 2 | `skills/spec_generation/` |
 | `harness-generation` | 2.5 | `skills/harness-generation/` |

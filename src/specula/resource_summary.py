@@ -67,6 +67,8 @@ PHASES = (
     PhaseDefinition("phase4b", "Phase 4b", ("bug-classification.usage.json",)),
 )
 PHASE_BY_KEY = {phase.key: phase for phase in PHASES}
+INCREMENTAL_PHASE = PhaseDefinition("incremental", "Incremental workflow", ("incremental.usage.json",))
+PHASE_BY_KEY[INCREMENTAL_PHASE.key] = INCREMENTAL_PHASE
 
 _TURN_USAGE_RE = re.compile(r"^turn[0-9]{2}_(?:A|B|A-repair)\.usage\.json$")
 _FINDING_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -80,6 +82,7 @@ _REPORT_STATUSES = (
     "INCOMPLETE",
     "DEFERRED",
     "DROPPED",
+    "FIXED",
     "MASKED",
 )
 CLASSIFICATION_SKIPPED_LIMIT = "Final findings reporting was skipped."
@@ -199,7 +202,7 @@ class TargetState:
     target: str
     run_complete: bool = False
     history_incomplete: bool = False
-    phases: dict[str, PhaseState] = field(default_factory=lambda: {phase.key: PhaseState() for phase in PHASES})
+    phases: dict[str, PhaseState] = field(default_factory=lambda: {key: PhaseState() for key in PHASE_BY_KEY})
     invocation_signatures: dict[str, str] = field(default_factory=dict)
     sessions: dict[str, SessionState] = field(default_factory=dict)
     maximum_parallelism: str = "-"
@@ -238,6 +241,9 @@ class TargetState:
             return None
         phases_data = _string_mapping(data.get("phases")) or {}
         phases = {phase.key: PhaseState.from_object(phases_data.get(phase.key)) for phase in PHASES}
+        phases["incremental"] = (
+            PhaseState.from_object(phases_data["incremental"]) if "incremental" in phases_data else PhaseState()
+        )
         configuration = _string_mapping(data.get("configuration")) or {}
         return cls(
             target=expected_target,
@@ -902,7 +908,7 @@ def render_summary(
         "",
         "## Detailed reports",
         "",
-        *_report_links(work_dir),
+        *_report_links(work_dir, complete=state.run_complete),
         "",
         "## Resource usage",
         "",
@@ -917,7 +923,13 @@ def render_summary(
     total_cost = 0.0
     total_cost_observed = False
     incomplete = not state.run_complete or state.history_incomplete
-    for definition in PHASES:
+    incremental = state.phases.get("incremental")
+    definitions = (
+        (INCREMENTAL_PHASE,)
+        if incremental is not None and (incremental.runtime_observed or incremental.tokens_observed)
+        else PHASES
+    )
+    for definition in definitions:
         phase = state.phases[definition.key]
         runtime_available = phase.runtime_observed and not phase.runtime_incomplete
         runtime = _format_runtime(phase.runtime_seconds) if runtime_available else "-"
@@ -1006,7 +1018,7 @@ def findings_fragment_issue(content: str, confirmed_bugs: str | None = None) -> 
     return None
 
 
-def _confirmation_finding_statuses(content: str) -> dict[str, str] | None:
+def _confirmation_finding_statuses(content: str, *, impact_only: bool = True) -> dict[str, str] | None:
     lines = content.splitlines()
     headers = [
         index
@@ -1042,7 +1054,7 @@ def _confirmation_finding_statuses(content: str) -> dict[str, str] | None:
         )
         if status is None:
             return None
-        if status in _IMPACT_FINDING_STATUSES:
+        if not impact_only or status in _IMPACT_FINDING_STATUSES:
             statuses[finding_id] = status
     return statuses
 
@@ -1084,12 +1096,22 @@ def _fragment_finding_statuses(content: str, start: int, end: int) -> dict[str, 
     return statuses if status_fields == len(statuses) else None
 
 
-def _report_links(work_dir: Path | None) -> list[str]:
+def _report_links(work_dir: Path | None, *, complete: bool) -> list[str]:
     reports = (
         ("Confirmation report", "confirmed-bugs.md"),
         ("Severity report", "bug-severity.md"),
     )
     lines: list[str] = []
+    if work_dir is not None and _safe_regular_file(work_dir, work_dir / "ci-verdict.json"):
+        from specula import ci_verdict
+
+        try:
+            verdict = ci_verdict.read(work_dir) if complete else "INCOMPLETE"
+        except (OSError, ValueError, RuntimeError):
+            verdict = "INCOMPLETE"
+        lines.append(f"- CI verdict: **{verdict}** ([finding dispositions](ci-verdict.json))")
+    if work_dir is not None and _safe_regular_file(work_dir, work_dir / "ci-report.md"):
+        lines.append("- [Incremental CI report](ci-report.md)")
     for label, filename in reports:
         if work_dir is not None and _safe_regular_file(work_dir, work_dir / filename):
             lines.append(f"- [{label}]({filename})")

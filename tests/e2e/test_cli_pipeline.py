@@ -54,6 +54,7 @@ _VOLATILE = (
     "SPECULA_STOP_GATE",
     "SPECULA_MODEL",
     "SPECULA_EFFORT",
+    "SPECULA_BYOM_PATH",
     "CLAUDE_CONFIG_DIR",
     "CLAUDE_ALIAS",
     "CLAUDE_EFFORT",
@@ -165,7 +166,332 @@ class CliE2E(unittest.TestCase):
         self.assertIn("[DRY RUN] bash scripts/launch/launch_code_analysis.sh", out)
         self.assertIn("Pipeline completed", out)
 
+    def test_ci_init_dry_run_composes_guidance_and_keeps_full_sequence(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        guidance = work / "guidance.md"
+        user_text = "Keep this scope and {{literal}} unchanged.\n"
+        guidance.write_text(user_text)
+        proc = self.run_cli(root, ["run", "--ci-init", "--dry-run", f"--guidance={guidance}", "footest"], cwd=work)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        run = self.sole_run_dir(root)
+        meta = json.loads((run / "run.json").read_text())
+        self.assertTrue(meta["ci_init"])
+        self.assertTrue(meta["resume_configuration"]["ci_init"])
+        self.assertEqual(meta["guidance"], str(guidance))
+        inputs = list((run / "ci-init/inputs").iterdir())
+        self.assertEqual(len(inputs), 1)
+        self.assertEqual((inputs[0] / "user-guidance.md").read_text(), user_text)
+        effective = (inputs[0] / "effective-guidance.md").read_text()
+        self.assertEqual((run / "footest/.specula-output/.prompt-extra.initial.md").read_text(), effective)
+        self.assertEqual(guidance.read_text(), user_text)
+        self.assertFalse((run / "ci-baseline.json").exists())
+        for launcher in (
+            "launch_code_analysis.sh",
+            "launch_spec_generation.sh",
+            "launch_harness_generation.sh",
+            "launch_spec_validation.sh",
+            "launch_bug_confirmation.sh",
+            "launch_bug_classification.sh",
+        ):
+            self.assertIn(launcher, proc.stdout)
+
+    def _ci_init_adapter(self, root: Path, *, interrupt_validation: bool = False) -> Path:
+        adapter = root / "scripts/launch/adapters/fake.sh"
+        adapter.write_text(
+            "#!/bin/sh\nset -eu\n"
+            "prompt= log= resume=\n"
+            'for arg do case "$arg" in\n'
+            "  --prompt-file=*) prompt=${arg#*=} ;;\n"
+            "  --log=*) log=${arg#*=} ;;\n"
+            "  --resume-state=*) resume=${arg#*=} ;;\n"
+            "esac; done\n"
+            'printf "%s\\n" "$SPECULA_PHASE" >> "$0.phases"\n'
+            'cp "$prompt" "$0.$SPECULA_PHASE.prompt"\n'
+            'printf "%s\\n" "${SPECULA_BYOM_PATH-}" > "$0.$SPECULA_PHASE.byom"\n'
+            'case "$SPECULA_PHASE" in\n'
+            "  code_analysis)\n"
+            '    printf "# Fixture modeling brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            "    ;;\n"
+            "  spec_generation)\n"
+            '    mkdir -p "$SPECULA_WORK_DIR/spec"\n'
+            '    if [ -n "${SPECULA_BYOM_PATH-}" ]; then\n'
+            '      printf "# Adopted fixture scope\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            '      if [ -d "$SPECULA_BYOM_PATH" ]; then\n'
+            '        cp -R "$SPECULA_BYOM_PATH/." "$SPECULA_WORK_DIR/"\n'
+            "      else\n"
+            '        cp "$SPECULA_BYOM_PATH" "$SPECULA_WORK_DIR/spec/base.tla"\n'
+            "      fi\n"
+            "    fi\n"
+            "    for file in base.tla MC.tla Trace.tla instrumentation-spec.md; do\n"
+            '      if [ ! -f "$SPECULA_WORK_DIR/spec/$file" ]; then printf "fixture model\\n" > "$SPECULA_WORK_DIR/spec/$file"; fi\n'
+            "    done\n"
+            "    ;;\n"
+            "  harness_generation)\n"
+            '    mkdir -p "$SPECULA_WORK_DIR/harness" "$SPECULA_WORK_DIR/traces"\n'
+            '    if [ ! -f "$SPECULA_WORK_DIR/harness/run.sh" ]; then printf "#!/bin/sh\\n" > "$SPECULA_WORK_DIR/harness/run.sh"; fi\n'
+            '    if [ -z "$(ls -A "$SPECULA_WORK_DIR/traces")" ]; then printf \'{"event":"fixture"}\\n\' > "$SPECULA_WORK_DIR/traces/fixture.ndjson"; fi\n'
+            "    ;;\n"
+            "  spec_validation)\n"
+            '    printf x >> "$0.validation-count"\n'
+            f'    if [ {int(interrupt_validation)} -eq 1 ] && [ "$(wc -c < "$0.validation-count")" -eq 1 ]; then\n'
+            '      printf "fixture-session\\n" > "$resume"\n'
+            '      printf "interrupted\\n" > "$log"\n'
+            "      exit 9\n"
+            "    fi\n"
+            '    printf "# Fixture report\\nValidation remains unverified.\\n" > "$SPECULA_WORK_DIR/spec/bug-report.md"\n'
+            '    printf \'{"schema_version":"2","system":"footest","generated_by":"validation-workflow","findings":[]}\\n\' '
+            '> "$SPECULA_WORK_DIR/spec/findings.json"\n'
+            '    printf "# Fixture validation limits\\nMC was not run by this fixture.\\n" > "$SPECULA_WORK_DIR/spec/changelog.md"\n'
+            "    ;;\n"
+            "  bug_confirmation_turn)\n"
+            '    printf \'{"generated_by":"consolidate","findings":[]}\\n\' > "$SPECULA_WORK_DIR/spec/candidates.json"\n'
+            "    ;;\n"
+            "  bug_classification)\n"
+            '    printf "# Severity Classification\\n\\n## Summary\\n\\n## Per-entry classification\\n" > "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            '    printf "No impact-bearing findings were recorded.\\n\\n## Findings\\n\\n- Other dispositions: 0.\\n\\n## Validation limits\\n\\nFixture only; no semantic validation was performed.\\n" > "$SPECULA_WORK_DIR/.summary-findings.md"\n'
+            '    if [ -n "${SPECULA_BYOM_PATH-}" ] && [ ! -f "$0.omit-byom-report" ]; then\n'
+            '      printf "# BYOM Modification Report\\nSupplied assets copied; missing fixture assets added. No semantic verification performed.\\n" > "$SPECULA_WORK_DIR/byom-modification-report.md"\n'
+            "    fi\n"
+            "    ;;\n"
+            "  *) exit 97 ;;\n"
+            "esac\n"
+            'if [ -n "$log" ]; then printf "fixture completed\\n" > "$log"; fi\n'
+        )
+        adapter.chmod(0o755)
+        return adapter
+
+    def test_ci_init_registers_real_phase_outputs_without_claiming_validation(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        artifact = work / "artifact"
+        artifact.mkdir()
+        adapter = self._ci_init_adapter(root)
+        guidance = work / "guidance.md"
+        guidance.write_text("User-specific scope, {{literal}}.\n")
+        proc = self.run_cli(
+            root,
+            ["run", "--ci-init", "--agent=fake", f"--artifact={artifact}", f"--guidance={guidance}", "footest"],
+            cwd=work,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        run = self.sole_run_dir(root)
+        baseline = json.loads((run / "ci-baseline.json").read_text())
+        self.assertEqual(baseline["pipeline_exit_code"], 0)
+        self.assertEqual(baseline["validation_status"], "UNVERIFIED")
+        self.assertEqual(baseline["source"]["before"]["path"], str(artifact))
+        self.assertIsNone(baseline["source"]["before"]["commit"])
+        snapshot = run / baseline["assets"]
+        self.assertEqual((snapshot / "spec/base.tla").read_text(), "fixture model\n")
+        self.assertTrue((snapshot / "harness/run.sh").is_file())
+        self.assertTrue((snapshot / "traces/fixture.ndjson").is_file())
+        self.assertIn("ci-baseline.json", (run / "index.md").read_text())
+        effective = (run / baseline["guidance"] / "effective-guidance.md").read_text()
+        phases = Path(f"{adapter}.phases").read_text().splitlines()
+        for phase in (
+            "code_analysis",
+            "spec_generation",
+            "harness_generation",
+            "spec_validation",
+            "bug_confirmation_turn",
+        ):
+            self.assertIn(phase, phases)
+            prompt = Path(f"{adapter}.{phase}.prompt").read_text()
+            self.assertIn(effective, prompt)
+        self.assertIn("bug_classification", phases)
+
+        metadata = (run / "run.json").read_bytes()
+        resumed = self.run_cli(root, ["run", f"--run-id={run.name}"], cwd=work)
+        self.assertEqual(resumed.returncode, 1, resumed.stdout + resumed.stderr)
+        self.assertIn("no unfinished conversation or resumable post-confirmation work", resumed.stderr)
+        self.assertEqual(Path(f"{adapter}.phases").read_text().splitlines(), phases)
+        self.assertEqual((run / "run.json").read_bytes(), metadata)
+
+    def test_ci_init_resume_restores_mode_and_preserves_first_baseline(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        artifact = work / "artifact"
+        artifact.mkdir()
+        adapter = self._ci_init_adapter(root, interrupt_validation=True)
+        first = self.run_cli(root, ["run", "--ci-init", "--agent=fake", f"--artifact={artifact}", "footest"], cwd=work)
+        self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
+        run = self.sole_run_dir(root)
+        baseline = (run / "ci-baseline.json").read_bytes()
+        self.assertEqual(json.loads(baseline)["pipeline_exit_code"], 9)
+        effective = (run / "footest/.specula-output/.prompt-extra.initial.md").read_text()
+        resumed = self.run_cli(root, ["run", f"--run-id={run.name}"], cwd=work)
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertEqual((run / "ci-baseline.json").read_bytes(), baseline)
+        self.assertEqual((run / "footest/.specula-output/.prompt-extra.initial.md").read_text(), effective)
+        snapshots = list((run / "ci-init/baselines").iterdir())
+        self.assertEqual(len(snapshots), 2)
+        self.assertEqual(
+            {json.loads((path / "ci-baseline.json").read_text())["pipeline_exit_code"] for path in snapshots}, {0, 9}
+        )
+        phases = Path(f"{adapter}.phases").read_text().splitlines()
+        self.assertEqual(phases.count("code_analysis"), 1)
+        self.assertEqual(phases.count("spec_generation"), 1)
+        self.assertEqual(phases.count("harness_generation"), 1)
+        self.assertEqual(phases.count("spec_validation"), 2)
+        self.assertEqual(Path(f"{adapter}.spec_validation.prompt").read_text().count(effective), 1)
+
+    def test_ci_init_cannot_enable_on_an_existing_ordinary_dry_run(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        first = self.run_cli(root, ["run", "--dry-run", "footest"], cwd=work)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        run = self.sole_run_dir(root)
+        before = (run / "run.json").read_bytes()
+        converted = self.run_cli(
+            root, ["run", "--ci-init", "--fresh-context", "--dry-run", f"--run-id={run.name}"], cwd=work
+        )
+        self.assertNotEqual(converted.returncode, 0)
+        self.assertIn("existing ordinary run", converted.stderr)
+        self.assertEqual((run / "run.json").read_bytes(), before)
+        self.assertFalse((run / "ci-init").exists())
+
+    def test_byom_dry_run_skips_analysis_and_keeps_multi_target_pipeline(self) -> None:
+        root = self.specroot(case_dirs=("alpha", "beta"))
+        work = self.workdir()
+        supplied = work / "provided"
+        supplied.mkdir()
+        proc = self.run_cli(
+            root,
+            [
+                "run",
+                "--dry-run",
+                f"--byom={supplied}",
+                "alpha|o/a|Go|ref",
+                "beta|o/b|Rust|ref",
+            ],
+            cwd=work,
+        )
+
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("Skipping Phase 1 (--skip-analysis)", proc.stdout)
+        self.assertNotIn("launch_code_analysis.sh", proc.stdout)
+        for launcher in (
+            "launch_spec_generation.sh",
+            "launch_harness_generation.sh",
+            "launch_spec_validation.sh",
+            "launch_bug_confirmation.sh",
+            "launch_bug_classification.sh",
+        ):
+            self.assertIn(launcher, proc.stdout)
+        meta = json.loads((self.sole_run_dir(root) / "run.json").read_text())
+        self.assertEqual(meta["byom"], str(supplied))
+        self.assertEqual(meta["resume_configuration"]["byom"], str(supplied))
+
+    def test_byom_rejects_skips_and_legacy_layout(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        supplied = work / "Model.tla"
+        supplied.write_text("---- MODULE Model ----\n====\n")
+        for flag in (*ALL_PHASE_SKIPS, "--no-isolate"):
+            with self.subTest(flag=flag):
+                proc = self.run_cli(root, ["run", f"--byom={supplied}", flag, "footest"], cwd=work)
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("--byom", proc.stderr)
+
+    def test_byom_is_not_a_public_individual_phase_option(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        supplied = work / "Model.tla"
+        supplied.write_text("---- MODULE Model ----\n====\n")
+
+        proc = self.run_cli(root, ["specgen", f"--byom={supplied}", "footest"], cwd=work)
+
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("Unknown option: --byom", proc.stdout)
+
+    def test_byom_fake_adapter_completes_phase2_through_final_report(self) -> None:
+        root = self.specroot()
+        work = self.workdir()
+        artifact = work / "artifact"
+        artifact.mkdir()
+        supplied = work / "Model.tla"
+        supplied.write_text("---- MODULE Model ----\n====\n")
+        adapter = root / "scripts" / "launch" / "adapters" / "fake.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            'printf "%s\\n" "$SPECULA_PHASE" >> "$0.phases"\n'
+            'test "$SPECULA_BYOM_PATH" = "' + str(supplied) + '"\n'
+            'case "$SPECULA_PHASE" in\n'
+            "  spec_generation)\n"
+            '    mkdir -p "$SPECULA_WORK_DIR/spec"\n'
+            '    printf "# BYOM brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            "    for file in base.tla MC.tla Trace.tla instrumentation-spec.md; do\n"
+            '      printf "seeded\\n" > "$SPECULA_WORK_DIR/spec/$file"\n'
+            "    done\n"
+            "    ;;\n"
+            "  harness_generation)\n"
+            '    mkdir -p "$SPECULA_WORK_DIR/harness" "$SPECULA_WORK_DIR/traces"\n'
+            '    printf "#!/bin/sh\\n" > "$SPECULA_WORK_DIR/harness/run.sh"\n'
+            '    printf \'{"event":"seed"}\\n\' > "$SPECULA_WORK_DIR/traces/seed.ndjson"\n'
+            "    ;;\n"
+            "  spec_validation)\n"
+            '    printf "# Bug report\\n\\nNo violations found.\\n" > "$SPECULA_WORK_DIR/spec/bug-report.md"\n'
+            '    printf \'{"schema_version":"2","system":"footest","generated_by":"validation-workflow","findings":[]}\\n\' '
+            '> "$SPECULA_WORK_DIR/spec/findings.json"\n'
+            '    printf "# Validation changelog\\n" > "$SPECULA_WORK_DIR/spec/changelog.md"\n'
+            "    ;;\n"
+            "  bug_confirmation_turn)\n"
+            '    printf \'{"generated_by":"consolidate","findings":[]}\\n\' '
+            '> "$SPECULA_WORK_DIR/spec/candidates.json"\n'
+            "    ;;\n"
+            "  bug_classification)\n"
+            '    printf "# Severity Classification\\n\\n## Summary\\n\\n## Per-entry classification\\n" '
+            '> "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            '    printf "No impact-bearing findings were recorded.\\n\\n## Findings\\n\\n- Other dispositions: 0.\\n\\n## Validation limits\\n\\nNo finding-specific validation limits were recorded.\\n" '
+            '> "$SPECULA_WORK_DIR/.summary-findings.md"\n'
+            '    printf "# BYOM Modification Report\\n\\nThe supplied model was reused.\\n" '
+            '> "$SPECULA_WORK_DIR/byom-modification-report.md"\n'
+            "    ;;\n"
+            "  *) exit 97 ;;\n"
+            "esac\n"
+        )
+        adapter.chmod(0o755)
+
+        proc = self.run_cli(
+            root,
+            [
+                "run",
+                "--agent=fake",
+                f"--artifact={artifact}",
+                f"--byom={supplied}",
+                "footest|owner/repo|Go|reference",
+            ],
+            cwd=work,
+        )
+
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        run = self.sole_run_dir(root)
+        target = run / "footest" / ".specula-output"
+        self.assertTrue((target / "byom-modification-report.md").is_file())
+        summary = (run / "pipeline-summary.md").read_text()
+        self.assertIn("- **Phase 1 (Analysis)**: SKIPPED (BYOM)", summary)
+        self.assertNotIn("- **Phase 1 (Analysis)**: OK", summary)
+        self.assertIn(
+            "[BYOM modification report](byom-modification-report.md)",
+            (target / "index.md").read_text(),
+        )
+        phases = Path(f"{adapter}.phases").read_text().splitlines()
+        self.assertNotIn("code_analysis", phases)
+        self.assertIn("spec_generation", phases)
+        self.assertIn("harness_generation", phases)
+        self.assertIn("spec_validation", phases)
+        self.assertIn("bug_confirmation_turn", phases)
+        self.assertIn("bug_classification", phases)
+        self.assertEqual(supplied.read_text(), "---- MODULE Model ----\n====\n")
+
     def test_run_id_resumes_interrupted_validation_without_phase_skip_flags(self) -> None:
+        self._resume_interrupted_validation(enable_reviews=False)
+
+    def test_run_id_resumes_interrupted_validation_with_saved_review_route(self) -> None:
+        self._resume_interrupted_validation(enable_reviews=True)
+
+    def _resume_interrupted_validation(self, *, enable_reviews: bool) -> None:
         root = self.specroot()
         work = self.workdir()
         artifact = work / "artifact"
@@ -210,13 +536,40 @@ class CliE2E(unittest.TestCase):
         adapter.chmod(0o755)
         target = "footest|owner/repo|Go|reference"
         run_id = "resume-validation"
+        config = work / "agents.json"
+        reviewer = adapter.with_name("fake-reviewer.sh")
+        routing_args = ["--agent=fake"]
+        if enable_reviews:
+            config.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "default_profile": "worker",
+                        "profiles": {
+                            "worker": {"agent": "fake", "model": "worker-model", "effort": "medium"},
+                            "reviewer": {"agent": "fake-reviewer", "model": "review-model", "effort": "high"},
+                        },
+                        "phases": {"review": "reviewer"},
+                    }
+                )
+            )
+            reviewer.write_text(
+                "#!/bin/sh\nset -eu\n"
+                'printf "%s\\n" "$@" > "$0.args"\n'
+                'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+                'test "${log##*/}" = "review-validation.log"\n'
+                'printf "fixture review\\n" > "$SPECULA_WORK_DIR/spec/review-validation.md"\n'
+                'printf "review completed\\n" > "$log"\n'
+            )
+            reviewer.chmod(0o755)
+            routing_args = [f"--agent-config={config}", "--enable-reviews"]
 
         setup = self.run_cli(
             root,
             [
                 "run",
                 f"--run-id={run_id}",
-                "--agent=fake",
+                *routing_args,
                 f"--artifact={artifact}",
                 *ALL_PHASE_SKIPS,
                 target,
@@ -225,6 +578,8 @@ class CliE2E(unittest.TestCase):
         )
         self.assertEqual(setup.returncode, 0, setup.stderr)
         run = root / "runs" / run_id
+        pipeline_log = run / "pipeline.log"
+        setup_log = pipeline_log.read_bytes()
         wd = run / "footest" / ".specula-output"
         for rel in (
             "modeling-brief.md",
@@ -243,6 +598,7 @@ class CliE2E(unittest.TestCase):
                 "run",
                 f"--run-id={run_id}",
                 "--fresh-context",
+                *(routing_args if enable_reviews else []),
                 "--skip-analysis",
                 "--skip-specgen",
                 "--skip-harness",
@@ -253,10 +609,27 @@ class CliE2E(unittest.TestCase):
             cwd=work,
         )
         self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
+        interrupted_log = pipeline_log.read_bytes()
+        self.assertTrue(interrupted_log.startswith(setup_log))
+        self.assertIn(b"finished (exit 9)", interrupted_log)
+        if enable_reviews:
+            self.assertFalse(Path(f"{reviewer}.args").exists())
+            config.unlink()
 
         resumed = self.run_cli(root, ["run", f"--run-id={run_id}"], cwd=work)
 
         self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        if enable_reviews:
+            self.assertTrue((wd / "spec/review-validation.md").is_file())
+            review_args = Path(f"{reviewer}.args").read_text().splitlines()
+            self.assertIn("--model=review-model", review_args)
+            self.assertIn("--effort=high", review_args)
+        self.assertTrue(pipeline_log.read_bytes().startswith(interrupted_log))
+        log_text = pipeline_log.read_text()
+        starts = re.findall(r"=== Pipeline invocation ([0-9a-f]{32}): started at", log_text)
+        finishes = re.findall(r"=== Pipeline invocation ([0-9a-f]{32}): finished \(exit (\d+)\)", log_text)
+        self.assertEqual(len(set(starts)), 3, log_text)
+        self.assertEqual(finishes, list(zip(starts, ("0", "9", "0"), strict=True)))
         self.assertEqual(Path(f"{adapter}.validation-count").read_text(), "xx")
         self.assertEqual(
             Path(f"{adapter}.validation-prompt").read_text(),

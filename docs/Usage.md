@@ -119,12 +119,7 @@ specula run \
 
 Quote the target descriptor because `|` has special meaning in the shell. Its fields identify the output name, GitHub repository, primary language, and reference algorithm or design document.
 
-For more consistent scope across repeated runs and to focus resources on your
-highest-priority modules and scenarios, we recommend starting from the
-[modeling guidance template](./modeling-guidance-template.md) and passing your
-edited file to a single-target run. See the
-[completed SONiC linkmgrd example](./modeling-guidance-example.md) for a
-concrete configuration:
+For more consistent scope across repeated runs and to focus resources on your highest-priority modules and scenarios, we recommend starting from the [modeling guidance template](./modeling-guidance-template.md) and passing your edited file to a single-target run. See the [completed SONiC linkmgrd example](./modeling-guidance-example.md) for a concrete configuration:
 
 ```bash
 specula run \
@@ -133,8 +128,7 @@ specula run \
   "cometbft|cometbft/cometbft|Go|Tendermint BFT"
 ```
 
-Guidance is optional. Without it, Specula determines the modeling scope
-automatically.
+Guidance is optional. Without it, Specula determines the modeling scope automatically.
 
 With the default isolated workspace, an external source checkout must be supplied with `--artifact`. Alternatively, Specula finds canonical checkouts under `case-studies/<name>/artifact/`.
 
@@ -151,7 +145,110 @@ specula run \
 
 Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencode`, and `pi`. Model names and effort values are interpreted by the selected agent. OpenCode and Pi model names use `provider/model` syntax.
 
-### Hybrid agent configuration
+## Add Specula to CI
+
+Specula maintains a reference model and harness that evolve with your project's code. Choose a persistent CI directory outside the source checkout, and use the same directory for initialization and subsequent checks.
+
+### Initialize once
+
+Initialization runs the full Specula workflow, focusing on the depth of the core logic and its interactions. Optional `--guidance` supplies your modeling scope and priorities.
+
+```bash
+specula run --ci-init --ci-dir=/work/project-ci \
+  --artifact=/work/project --guidance=/work/project-guidance.md \
+  "name|owner/repository|language|reference"
+```
+
+For a long-lived CI baseline, we recommend initializing from source as above.
+
+To reuse an existing model or verification assets, add [BYOM](#bring-your-own-model-byom):
+
+```bash
+specula run --ci-init --ci-dir=/work/project-ci \
+  --byom=/work/existing-model-or-assets --artifact=/work/project \
+  --guidance=/work/project-guidance.md \
+  "name|owner/repository|language|reference"
+```
+
+The Agent organizes supplied assets and completes missing or incompatible parts, preserving the model's scope unless you request an expansion in your guidance. It may adapt workspace copies of an older model and harness to the supplied source. Usable traces are reused by default, followed by the standard BYOM validation, confirmation, and repair workflow. Review `byom-modification-report.md` in the target's output for adaptations and remaining gaps. Successful completion publishes the baseline for subsequent checks.
+
+Keep the original BYOM files available and unchanged until initialization and any resume finish. BYOM stores their path, not an input snapshot. To change the input, start a new initialization run; use a new CI directory if one is already initialized. `--byom` cannot be combined with `--incremental` or `--skip-*` options. CI initialization supports one target and requires isolated output.
+
+### Check updates
+
+For each update, check out the target commit in the source repository and run:
+
+```bash
+specula run --incremental --ci-dir=/work/project-ci
+```
+
+Specula computes the changes since the current model's source version, then runs a main Agent through the incremental-modeling workflow using the existing model and harness. New MC and code-review candidates use the one-shot confirmation workflow; the main Agent waits for confirmation and resumes with its results. The repository path and user guidance are reused. Use `--agent`, `--model`, and `--effort` for the default Agent, or [hybrid agent configuration](#hybrid-agent-configuration) to select a separate confirmation Agent. See `specula run --incremental --help` for supported options.
+
+New incremental runs use the same retry defaults as one-shot runs: `--policy-retries=20` for provider-policy interruptions and `--transient-resumes=20` for temporary provider or transport failures. Each budget applies separately to the main Agent conversation and each confirmation turn. Set either option to a non-negative integer to override its budget; `0` disables that recovery path. Resuming an existing run preserves its saved budgets.
+
+Completed runs update `current/model/` in the CI directory. Reports, diffs, logs, and resource usage are saved under `runs/<run-id>/` in the same directory.
+
+CI returns exit code `2` when the current confirmation results contain `REPRODUCED` or `ENV_LIMITED` bugs, regardless of whether the update introduced them. `MASKED` findings produce a warning and exit code `0`; completed checks without these findings also return `0`. Unfinished checks return a nonzero exit code. Inspect `ci-report.md` and `ci-verdict.json` for the incremental result and evidence. Initialization derives the same verdict from `confirmed-bugs.md`.
+
+`NEEDS MORE INFO` and `DEFERRED` are nonblocking for new findings. A remaining `PENDING REPAIR` fails CI.
+
+### Resume an interrupted run
+
+Incomplete runs leave the current model unchanged. Resume the original Agent conversation and working directory with:
+
+```bash
+specula run --ci-dir=/work/project-ci --run-id=<run-id>
+```
+
+For BYOM initialization, the same resume command restores the original BYOM path; you do not need to repeat `--ci-init` or `--byom`. Persistent CI does not support `--fresh-context`. To start over, rerun the initialization or incremental command without `--run-id`. Run checks sharing a CI directory one at a time.
+
+### Run automatically with GitHub Actions
+
+Install Specula, the selected agent, and the project's build dependencies under the account running a dedicated Linux runner labeled `specula`. Initialize the CI directory under that same account so later runs can reuse its files and Agent sessions.
+
+Copy the [workflow template](../examples/ci/specula-ci.yml) into your project's `.github/workflows/specula-ci.yml`. Set the repository variables `SPECULA_CI_DIR` and `SPECULA_MODEL`; optionally set `SPECULA_AGENT` and `SPECULA_EFFORT`. Edit the branch filters to suit your repository. Each independently evolving branch needs its own initialized CI directory.
+
+Each push checks the cumulative diff from the last completed model baseline to the pushed version. One check may include several commits; intermediate versions are not checked separately. Scheduled checks use the latest branch version. Once the model reaches that version, delayed events for earlier commits do not repeat the work or move the model backward.
+
+Same-repository PRs check the proposed merged code without changing the branch's current model. When the code is merged, matching completed results are inherited without another Agent run, including squash and rebase merges. Reused results preserve their verdict, including failures and warnings. Changes to the code, model baseline, or check configuration require a new check. External-fork PRs do not run automatically on the runner.
+
+Manual runs are available in the Actions tab. Uncomment `schedule` to enable cron; use `SPECULA_CI_BRANCH` to select a non-default branch for scheduled runs. Change `SPECULA_CI_ENVIRONMENT` when updating the runner's toolchain or external configuration so older check results are not reused under a different setup.
+
+The Actions summary lists each revision's outcome, with downloadable reports and usage summaries. Full working files and conversation state stay in the CI directory. Agent calls may recover within their configured retry budgets. Once a check exits with a failure, Actions reports it without automatically rerunning the check; use the existing resume command or request an explicit manual rerun.
+
+## Bring Your Own Model (BYOM)
+
+Use `--byom` when you already have a TLA+ model or other verification assets:
+
+```bash
+specula run \
+  --byom=/absolute/path/to/model-or-assets \
+  --artifact=/absolute/path/to/source \
+  "name|owner/repository|language|reference"
+```
+
+The path may name one model file or a directory containing any combination of models, configs, TraceSpec files, instrumentation, harnesses, traces, and replay instructions. For a multi-target run, every target receives the same BYOM root and selects its own assets from the target name and your instructions.
+
+Clearly describe in your prompt what the BYOM path provides and how those artifacts should be used. The existing `--guidance` option remains available for single-target runs only.
+
+BYOM skips the full code-analysis phase. Its Phase 2 and Phase 2.5 agents inspect the supplied assets, perform a focused Scenario supplement, reuse usable work, and fill only missing or incompatible specification, instrumentation, harness, and trace responsibilities. Existing traces are used without rerunning the harness by default; the agent may run or adjust the harness when validation requires it. The standard validation, confirmation, repair, and classification workflow then continues unchanged.
+
+Specula does not modify the original BYOM path. Later phases may modify the adopted workspace copies under their normal validation and repair rules. At the end of each target run, `byom-modification-report.md` summarizes which supplied assets were reused or modified, what Specula added, and why. The report is an agent-produced comparison, not a mechanically complete patch.
+
+BYOM requires the default isolated layout and conflicts with `--no-isolate` and every `--skip-*` option. A resumed run reuses its stored absolute BYOM path; keep the original files available and unchanged until the run and any resume finish. Ordinary runs can use `--fresh-context` to select a different path. For persistent CI, use [BYOM initialization](#initialize-once); `--incremental` does not accept `--byom`, and changing the initialization input requires a new run.
+
+## Reuse unresolved findings
+
+To carry unresolved findings into a new single-target run, pass the previous target's output directory:
+
+```bash
+specula run mysys --artifact=/path/to/source \
+  --findings-from=/path/to/previous-run/mysys/.specula-output
+```
+
+The workflow checks whether a prior finding still describes the same issue and whether its dependencies and assumptions still apply before reusing its evidence. Persistent CI carries this history forward automatically. Active records retain `REPRODUCED`, `ENV_LIMITED`, and `MASKED` findings; fixed findings and false positives are removed. Use `specula findings --help` to inspect the available lookup commands.
+
+## Hybrid agent configuration
 
 Use an agent configuration file to select different agents or models for different pipeline phases:
 
@@ -184,6 +281,8 @@ specula run --agent-config=/abs/path/hybrid-agents.json ...
 Unmapped phases use `default_profile`. `repair` inherits `validate`, and reviews inherit the phase they review unless either is mapped explicitly.
 
 Valid phase keys are `analyze`, `specgen`, `harness`, `validate`, `confirm`, `repair`, `classify`, and `review`.
+
+With `--incremental`, `default_profile` selects the main Agent and `phases.confirm` optionally selects the confirmation Agent. Other phase overrides are not supported. Confirmation uses the one-shot workflow, with up to 4 concurrent tasks by default (`--max-parallel=N`); `--confirm-debate` enables debate, which is off by default. The main Agent waits for confirmation and then continues the same conversation.
 
 `--agent-config` cannot be combined with `--agent`, `--model`, or `--effort`; configured agents use their existing CLI authentication.
 
@@ -278,10 +377,7 @@ If an agent call is interrupted, attach to the same run. Specula restores omitte
 specula run --run-id=my-run
 ```
 
-When a run was created with `--guidance`, an omitted flag on resume reuses the
-same absolute path and reads its current contents. You may edit that file
-between invocations, but resuming with a different guidance path is rejected,
-including with `--fresh-context`.
+When a run was created with `--guidance`, an omitted flag on resume reuses the same absolute path and reads its current contents. You may edit that file between invocations, but resuming with a different guidance path is rejected, including with `--fresh-context`.
 
 After the resumed phase finishes, later phases follow the skip options on the current command.
 
@@ -347,7 +443,12 @@ specula run [options] "name|owner/repository|language|reference"
 | `--model=NAME` | Override the configured model |
 | `--effort=LEVEL` | Override reasoning effort |
 | `--artifact=PATH` | Set the target source checkout |
+| `--byom=PATH` | Start from a user-provided model file or verification-assets directory and run Phase 2 onward |
 | `--guidance=PATH` | Read optional modeling guidance for a single-target run |
+| `--ci-init` | Run full single-target CI initialization and register an unverified baseline |
+| `--ci-dir=PATH` | Store persistent CI state outside the source checkout |
+| `--incremental` | Check source changes against the current CI model; see `specula run --incremental --help` |
+| `--findings-from=PATH` | Import unresolved findings from a prior target output into a new single-target run |
 | `--keep-original` | Run against a full private source copy and write `changes.patch` |
 | `--tlc-memory-limit=SIZE` | Set the run-wide aggregate TLC heap + direct-memory budget; default is 80% of effective available memory at the first TLC start |
 | `--tlc-worker-limit=N` | Optionally bound aggregate TLC exploration workers; omitted means report-only |
@@ -370,9 +471,9 @@ specula run [options] "name|owner/repository|language|reference"
 
 `--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default. `--max-repair-rounds=N` caps rounds across the whole loop, not attempts per request; when the cap is reached, remaining open requests are deferred. For the individual `specula confirm` command, the corresponding debate flags are `--debate` and `--rounds=N` (range `1` through `5`).
 
-When an interactive `specula run` has no `--guidance`, Specula asks before
-continuing. Non-interactive and batch runs print a warning and continue without
-waiting for input, so unattended jobs are not blocked.
+`--byom` is supported only by `specula run`. It conflicts with `--no-isolate`, `--skip-analysis`, `--skip-specgen`, `--skip-harness`, `--skip-validate`, `--skip-confirmation`, `--skip-classification`, and `--skip-repair-loop`.
+
+When an interactive `specula run` has no `--guidance`, Specula asks before continuing. Non-interactive and batch runs print a warning and continue without waiting for input, so unattended jobs are not blocked.
 
 Use command-specific help for the authoritative option list:
 
@@ -403,4 +504,8 @@ The scheduler owns `--run-id`, `--isolate`, and `--no-isolate` so that each task
 
 ## Progress and Logs
 
-Agent activity is printed during each step and written to its log. Set `SPECULA_PROGRESS=off` to disable live reporting. During or after a default isolated run, start with the run-level `index.md` to choose a target and browse its results; for a legacy single-target run, start with `.specula-output/index.md`. Use `pipeline-summary.md` for final deliverable status and `pipeline.log` for troubleshooting.
+Agent activity is printed during each step and written to its log. Silent periods do not produce inactivity reminders. Set `SPECULA_PROGRESS=off` to disable live reporting. During or after a default isolated run, start with the run-level `index.md` to choose a target and browse its results; for a legacy single-target run, start with `.specula-output/index.md`. Use `pipeline-summary.md` for final deliverable status and `pipeline.log` for troubleshooting.
+
+Starting or resuming a run appends to its existing `pipeline.log`. Each invocation has a unique ID, UTC start and end timestamps, and its final exit code. Previous output is retained without automatic rotation or cleanup.
+
+Use `confirmed-bugs.md` for current confirmation results. Existing per-finding `verdict.md` files are labelled as historical records without changing their original text. Each finding's `error.txt` retains timestamped errors across retries, including after a successful confirmation.

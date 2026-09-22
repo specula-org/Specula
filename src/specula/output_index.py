@@ -14,7 +14,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote_from_bytes
 
+from specula.ci_init import BASELINE_FILENAME
+
 INDEX_FILENAME = "index.md"
+BYOM_REPORT_FILENAME = "byom-modification-report.md"
 PIPELINE_LOG_ENV = "SPECULA_PIPELINE_LOG"
 _NOT_AVAILABLE = "Not available"
 
@@ -192,6 +195,18 @@ def render_target_index(name: str, work_dir: Path, *, pipeline_log: Path | None 
             "— Confirmation results and supporting evidence"
         ),
         (f"- {_document('Severity report', work_dir / 'bug-severity.md', work_dir)} — Impact assessment"),
+    ]
+
+    byom_report = work_dir / BYOM_REPORT_FILENAME
+    if _is_file_under(work_dir, byom_report):
+        lines.append(f"- {_document('BYOM modification report', byom_report, work_dir)} — Changes to supplied assets")
+    ci_report = work_dir / "ci-report.md"
+    if _is_file_under(work_dir, ci_report):
+        lines.append(
+            f"- {_document('Incremental CI report', ci_report, work_dir)} — Model update and verification results"
+        )
+
+    lines += [
         "",
         "> Availability means that a document exists. It does not imply review approval",
         "> or confirmation of every finding.",
@@ -315,6 +330,11 @@ def render_run_index(
         f"- Final summary: {summary_cell}",
         f"- Full pipeline log: {log_cell}",
     ]
+    baseline = run_root / BASELINE_FILENAME
+    if _is_file_under(run_root, baseline):
+        lines.append(
+            f"- CI baseline: {_link('Registration and verification evidence', baseline, run_root)} (unverified)"
+        )
     return "\n".join(lines) + "\n"
 
 

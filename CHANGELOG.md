@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-16
+
+### Added
+
+- Added persistent CI with `--ci-init`, `--ci-dir`, and `--incremental`, evolving an existing model and trace harness as the target source changes.
+- Added `specula ci` and a GitHub Actions workflow template for push, pull request, merge queue, scheduled, and manual checks, including reuse of matching PR results after merge.
+- Added `specula run --byom=PATH` for continuing Phase 2 onward from user-provided model, instrumentation, harness, or trace artifacts, with a final modification report for each target.
+- Added BYOM support to CI initialization, reusing supplied verification assets through the standard workflow before publishing a persistent CI baseline.
+- Added persistent unresolved findings for one-shot and CI runs, with `--findings-from=PATH` and `specula findings` for importing, inspecting, and reusing applicable prior results.
+- Added native context compaction for incremental CI and tools for starting and waiting on TLC tasks.
+
+### Changed
+
+- Made CI outcomes reflect current confirmation results while retaining usable models for subsequent updates. Reports distinguish findings, validation evidence, and model-checking limits.
+- Preserved pipeline logs across starts and resumes, with invocation timestamps and exit codes, and retained per-finding error history across retries.
+- Refreshed the case-study snapshot and catalogs with new NVFlare, Temporal, CloudNativePG, vsr-rs, Nanvix, Solr Operator, and SlateDB records, plus updated CometBFT reproduction evidence and libspdm classifications.
+
+### Fixed
+
+- Preserved nested repository contents when creating confirmation worktree snapshots.
+- Corrected review-agent routing when resuming runs.
+- Kept Codex TLC waits outside Code Mode to preserve pending tool responses.
+- Aligned new incremental runs with the standard retry defaults and rejected unsupported incremental options before starting work.
+
+See the [v1.2.0 release notes](docs/releases/v1.2.0.md) for upgrade instructions and CI requirements.
+
+## [1.1.0] - 2026-08-13
+
+### Added
+
+- Added exact-session resume for unfinished agent conversations across supported adapters. `specula run --run-id` returns to the interrupted work, while `--fresh-context` explicitly starts with a new agent context.
+- Added per-target `.specula-output/summary.md` reports with run status, findings, evidence limits, report links, timing, token usage, estimated cost, and configured resource limits.
+- Added optional `--guidance=PATH` input for target-specific modeling priorities, with a reusable template and completed example carried through code analysis and specification generation.
+
+### Changed
+
+- Made `--keep-original` snapshots honor project ignore rules and produce reviewable Git patches without embedding binary or trace payloads.
+- Kept resumed and incomplete summaries target-local and excluded stale or invalid findings from final results.
+
 ## [1.0.0] - 2026-08-01
 
 ### Added
@@ -82,7 +121,9 @@ See the [v0.2.0 release notes](https://github.com/specula-org/Specula/releases/t
 - Added initial support for Claude Code, Codex, and Copilot CLI.
 - Added the trace-debugger MCP tooling and curated methodology for validating model fidelity before interpreting model-checking results.
 
-[Unreleased]: https://github.com/specula-org/Specula/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/specula-org/Specula/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/specula-org/Specula/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/specula-org/Specula/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/specula-org/Specula/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/specula-org/Specula/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/specula-org/Specula/compare/v0.1.0...v0.2.0
