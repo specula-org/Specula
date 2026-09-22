@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from specula import quota, resumelib
+from specula import persistent_findings, quota, resumelib
 from specula.phaselib import (
     DEFAULT_POLICY_RETRIES,
     DEFAULT_TRANSIENT_RESUMES,
@@ -1352,6 +1352,14 @@ def _validate_final_artifacts(cfg: ConfirmConfig, f: Finding, status: str) -> No
             raise InvalidAgentOutput(f"{f.id}: REPRODUCED requires a non-empty repro/test_bug{f.id}_* artifact")
     if status == "PENDING REPAIR":
         _read_repair_draft(cfg, f)
+    if status in CONFIRM:
+        work = cfg.ws.work_dir(cfg.name)
+        proposal = f.fdir / "issue.json"
+        if proposal.is_file() and (work / persistent_findings.CONTEXT).is_file():
+            try:
+                persistent_findings.validate_issue_proposal(work, proposal, source_kind=_source_kind(f))
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                raise InvalidAgentOutput(f"{f.id}: invalid persistent issue proposal: {exc}") from exc
 
 
 def _repair_draft_warning(cfg: ConfirmConfig, f: Finding, draft: RepairDraft) -> str | None:

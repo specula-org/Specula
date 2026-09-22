@@ -342,9 +342,9 @@ def lookup(work: Path, queries: list[str], *, limit: int = 5, offset: int = 0) -
     return results
 
 
-def record_issue(
-    work: Path, source: Path, run_id: str, proposal: dict[str, Any], *, rebuild: bool = True
-) -> dict[str, Any]:
+def _prepare_issue(
+    work: Path, source: Path, run_id: str, proposal: dict[str, Any]
+) -> tuple[dict[str, Any], list[tuple[str, bytes, int]]]:
     fid = _id(proposal.get("id"))
     status = proposal.get("status")
     if not isinstance(status, str) or status not in LIVE:
@@ -386,13 +386,17 @@ def record_issue(
         and not any(d.get("root") == "work" for d in deps)
     ):
         raise FindingsError("issues linked to model actions/invariants require model dependencies")
-    record["dependencies"] = [{**dep, "sha256": _digest(_dependency_bytes(dep, source, work))} for dep in deps]
+    record["dependencies"] = []
+    for index, dep in enumerate(deps, 1):
+        try:
+            content = _dependency_bytes(dep, source, work)
+        except FindingsError as exc:
+            raise FindingsError(f"{fid}: dependency {index}: {exc}") from exc
+        record["dependencies"].append({**dep, "sha256": _digest(content)})
     evidence = _strings(proposal.get("evidence"), "evidence")
     if not evidence:
         raise FindingsError("issue evidence must not be empty")
-    # Read everything before replacing a previous issue. Retain just this
-    # issue's selected evidence, without accumulating copies on each update.
-    captured = []
+    captured: list[tuple[str, bytes, int]] = []
     for name in evidence:
         name = _path(name)
         if name.startswith(DIRECTORY + "/") or name.startswith(RECEIPTS + "/"):
@@ -402,16 +406,34 @@ def record_issue(
             raise FindingsError(f"empty issue evidence: {name}")
         captured.append((name, content, (work / name).stat().st_mode & 0o777))
     destination = f"{DIRECTORY}/evidence/{fid}"
+    record["evidence"] = [
+        {
+            "original": name,
+            "path": f"{destination}/{name}",
+            "sha256": _digest(content),
+        }
+        for name, content, _ in captured
+    ]
+    return record, captured
+
+
+def _commit_issue(
+    work: Path,
+    prepared: tuple[dict[str, Any], list[tuple[str, bytes, int]]],
+    *,
+    rebuild: bool,
+) -> dict[str, Any]:
+    record, captured = prepared
+    fid = record["id"]
+    destination = f"{DIRECTORY}/evidence/{fid}"
     if (work / destination).exists():
         _directory(work, destination)
         shutil.rmtree(work / destination)
-    record["evidence"] = []
     for name, content, mode in captured:
         relative = f"{destination}/{name}"
         _directory(work, str(Path(relative).parent))
         (work / relative).write_bytes(content)
         (work / relative).chmod(mode)
-        record["evidence"].append({"original": name, "path": relative, "sha256": _digest(content)})
     _directory(work, DIRECTORY)
     write_json(work / _record_path(fid), record)
     for suffix in (".json", ".md"):
@@ -419,6 +441,21 @@ def record_issue(
     if rebuild:
         rebuild_index(work)
     return record
+
+
+def validate_issue_proposal(work: Path, proposal_path: Path, *, source_kind: str | None = None) -> dict[str, Any]:
+    source, run_id, _ = context(work)
+    proposal = read_json(proposal_path)
+    if source_kind is not None:
+        proposal["source"] = source_kind
+    record, _ = _prepare_issue(work, source, run_id, proposal)
+    return record
+
+
+def record_issue(
+    work: Path, source: Path, run_id: str, proposal: dict[str, Any], *, rebuild: bool = True
+) -> dict[str, Any]:
+    return _commit_issue(work, _prepare_issue(work, source, run_id, proposal), rebuild=rebuild)
 
 
 def reuse_issue(work: Path, source: Path, run_id: str, fid: str, reason: str) -> dict[str, Any]:
@@ -568,6 +605,7 @@ def reconcile(
 ) -> None:
     """Publish only current unresolved entries; fixed/dismissed entries are deleted."""
     live = {finding["id"]: finding for finding in findings if finding["status"] in LIVE}
+    prepared: list[tuple[dict[str, Any], list[tuple[str, bytes, int]]]] = []
     binding = read_json(work / CONTEXT) if _regular_file(work, CONTEXT) else {}
     inherited = (
         binding.get("inherited_records", {})
@@ -607,7 +645,7 @@ def reconcile(
             if finding.get("source") in {"model-checking", "code-review"}:
                 proposal["source"] = finding["source"]
             proposal["evidence"] = list(dict.fromkeys([finding["evidence"], *proposal.get("evidence", [])]))
-            record_issue(work, source, run_id, proposal, rebuild=False)
+            prepared.append(_prepare_issue(work, source, run_id, proposal))
         elif (work / _record_path(fid)).exists() and load(work, fid)["origin_run"] == run_id:
             registered = load(work, fid)
             if registered["status"] != finding["status"] or (registered["reusable"] and check(work, source, fid)):
@@ -622,28 +660,31 @@ def reconcile(
                 raise FindingsError(f"{fid}: fresh reanalysis requires updated issue metadata or a valid reuse receipt")
             # Older outputs remain searchable but do not acquire invented
             # dependency scopes or automatically become eligible for reuse.
-            record_issue(
-                work,
-                source,
-                run_id,
-                {
-                    "id": fid,
-                    "status": finding["status"],
-                    "source": finding.get("source", "unknown"),
-                    "title": fid,
-                    "cause": "Prior confirmation lacks a dependency record; reanalysis required.",
-                    "trigger": "See confirmation evidence.",
-                    "consequence": "See confirmation evidence.",
-                    "sites": [],
-                    "actions": [],
-                    "invariants": [],
-                    "premises": [],
-                    "dependencies": [],
-                    "evidence": [finding["evidence"]],
-                    "reusable": False,
-                },
-                rebuild=False,
+            prepared.append(
+                _prepare_issue(
+                    work,
+                    source,
+                    run_id,
+                    {
+                        "id": fid,
+                        "status": finding["status"],
+                        "source": finding.get("source", "unknown"),
+                        "title": fid,
+                        "cause": "Prior confirmation lacks a dependency record; reanalysis required.",
+                        "trigger": "See confirmation evidence.",
+                        "consequence": "See confirmation evidence.",
+                        "sites": [],
+                        "actions": [],
+                        "invariants": [],
+                        "premises": [],
+                        "dependencies": [],
+                        "evidence": [finding["evidence"]],
+                        "reusable": False,
+                    },
+                )
             )
+    for issue in prepared:
+        _commit_issue(work, issue, rebuild=False)
     resolved = {finding["id"] for finding in findings if finding["status"] in {"FIXED", "FALSE POSITIVE"}}
     for path in (work / DIRECTORY).glob("*.json"):
         if path.name != "index.json" and path.stem in resolved:
@@ -679,8 +720,12 @@ def main(argv: list[str] | None = None) -> int:
         sub.add_argument("--id", required=True)
         if name == "reuse":
             sub.add_argument("--reason", required=True, help="same mechanism/consequence and unchanged premises")
-    save = commands.add_parser("record", help="capture a completed issue and its selected dependencies/evidence")
-    save.add_argument("--input", required=True, type=Path)
+    for name, help_text in (
+        ("validate", "validate an issue proposal without changing the registry"),
+        ("record", "capture a completed issue and its selected dependencies/evidence"),
+    ):
+        save = commands.add_parser(name, help=help_text)
+        save.add_argument("--input", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         work = args.work.absolute()
@@ -705,6 +750,9 @@ def main(argv: list[str] | None = None) -> int:
                 historical = load(work, args.id)
                 _validate_origin(work, historical, run_id, previous)
                 result = reuse_issue(work, source, run_id, args.id, args.reason)
+            elif args.command == "validate":
+                saved = validate_issue_proposal(work, args.input)
+                result = {"id": saved["id"], "status": saved["status"], "valid": True}
             else:
                 saved = record_issue(work, source, run_id, read_json(args.input))
                 result = {"id": saved["id"], "status": saved["status"], "record": _record_path(saved["id"])}
