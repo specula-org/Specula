@@ -176,6 +176,58 @@ class TestVerdict(ConfirmCase):
             C._validate_final_artifacts(cfg, finding, "MASKED")
         validate.assert_called_once_with(ws.work_dir("T"), finding.fdir / "issue.json", source_kind="code-review")
 
+    def test_mismatched_proposal_id_is_not_cached_and_can_retry(self) -> None:
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T")
+        finding = self.finding(ws, "T", "CR-1")
+        finding.fdir.mkdir(parents=True)
+        work = ws.work_dir("T")
+        source = Path(self.tmp) / "source"
+        source.mkdir()
+        (source / "logic.txt").write_text("fixture source\n")
+        (work / "evidence.md").write_text(EVIDENCE)
+        persistent_findings.configure(work, source, "fixture-run")
+        proposal = {
+            "id": "CR-2",
+            "status": "MASKED",
+            "source": "code-review",
+            "title": "Fixture finding",
+            "cause": "Fixture cause",
+            "trigger": "Fixture trigger",
+            "consequence": "Fixture consequence",
+            "sites": [],
+            "actions": [],
+            "invariants": [],
+            "premises": ["Fixture premise"],
+            "dependencies": [{"root": "source", "path": "logic.txt"}],
+            "evidence": ["evidence.md"],
+        }
+        proposal_path = finding.fdir / "issue.json"
+        proposal_path.write_text(json.dumps(proposal))
+
+        with mock.patch.object(C, "run_agent_blocking", side_effect=_fake_turn(_response("MASKED"))) as agent:
+            failed = C.run_finding_safe(cfg, finding)
+            self.assertEqual((failed.status, failed.failure_code), (C.INCOMPLETE, 1))
+            self.assertIn("proposal ID 'CR-2' does not match finding ID 'CR-1'", failed.body)
+            self.assertFalse((finding.fdir / "verdict.json").exists())
+
+            proposal["id"] = finding.id
+            proposal_path.write_text(json.dumps(proposal))
+            retried = C.run_finding_safe(cfg, finding)
+            self.assertEqual(retried.status, "MASKED")
+            self.assertEqual(agent.call_count, 2)
+
+        persistent_findings.reconcile(
+            work,
+            source,
+            "fixture-run",
+            [{"id": finding.id, "status": retried.status, "source": "code-review", "evidence": "evidence.md"}],
+            confirmed_ids=[finding.id],
+        )
+        self.assertEqual(persistent_findings.load(work, finding.id)["status"], "MASKED")
+        with mock.patch.object(C, "run_agent_blocking", _boom):
+            self.assertEqual(C.run_finding_safe(cfg, finding).status, "MASKED")
+
 
 class TestHistoricalConfirmationFiles(ConfirmCase):
     def setUp(self) -> None:

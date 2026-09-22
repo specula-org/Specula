@@ -1357,7 +1357,11 @@ def _validate_final_artifacts(cfg: ConfirmConfig, f: Finding, status: str) -> No
         proposal = f.fdir / "issue.json"
         if proposal.is_file() and (work / persistent_findings.CONTEXT).is_file():
             try:
-                persistent_findings.validate_issue_proposal(work, proposal, source_kind=_source_kind(f))
+                record = persistent_findings.validate_issue_proposal(work, proposal, source_kind=_source_kind(f))
+                if record["id"] != f.id:
+                    raise persistent_findings.FindingsError(
+                        f"proposal ID {record['id']!r} does not match finding ID {f.id!r}"
+                    )
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 raise InvalidAgentOutput(f"{f.id}: invalid persistent issue proposal: {exc}") from exc
 
