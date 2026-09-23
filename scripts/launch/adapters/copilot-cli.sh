@@ -207,14 +207,30 @@ fi
 
 ACTIVITY_LOG="${SPECULA_ACTIVITY_LOG:-}"
 TEMP_ACTIVITY_LOG=""
+USAGE_SESSION_FILE=""
+cleanup_temporary_files() {
+  if [[ -n "$TEMP_ACTIVITY_LOG" ]]; then
+    rm -f -- "$TEMP_ACTIVITY_LOG"
+  fi
+  if [[ -n "$USAGE_SESSION_FILE" ]]; then
+    rm -f -- "$USAGE_SESSION_FILE"
+  fi
+}
+trap cleanup_temporary_files EXIT
 if [[ -n "$RESUME_STATE" && -z "$ACTIVITY_LOG" ]]; then
   if ! TEMP_ACTIVITY_LOG="$(mktemp "${TMPDIR:-/tmp}/specula-copilot-activity-XXXXXX.jsonl")"; then
     echo "copilot-cli adapter: unable to create temporary activity log for session capture" >&2
     exit 1
   fi
   ACTIVITY_LOG="$TEMP_ACTIVITY_LOG"
-  trap 'rm -f -- "$TEMP_ACTIVITY_LOG"' EXIT
 fi
+
+collect_usage() {
+  local session_id="${1:-}"
+  python3 -I -c \
+    'import sys; sys.path.insert(0, sys.argv.pop(1)); from specula.adapters.utils.copilot_usage import main; raise SystemExit(main(sys.argv[1:]))' \
+    "$SPECULA_SRC" "$session_id" "$LOG_FILE"
+}
 
 failed_log_is_policy_blocked() {
   python3 -I -c \
@@ -232,6 +248,8 @@ if [[ -z "$ACTIVITY_LOG" ]]; then
   set +e
   "${CMD[@]}" > "$LOG_FILE" 2>&1
   COPILOT_RC=$?
+  collect_usage ""
+  USAGE_RC=$?
   set -e
   if (( COPILOT_RC == 75 )); then
     exit 75
@@ -246,6 +264,9 @@ if [[ -z "$ACTIVITY_LOG" ]]; then
     exit "$TRANSIENT_FAILURE_RC"
   fi
   if (( COPILOT_RC == TRANSIENT_FAILURE_RC )); then
+    exit 1
+  fi
+  if (( USAGE_RC != 0 )); then
     exit 1
   fi
   exit "$COPILOT_RC"
@@ -264,9 +285,13 @@ fi
 if grep -q -- '--stream' <<< "$COPILOT_HELP"; then
   CMD+=(--stream on)
 fi
+if ! USAGE_SESSION_FILE="$(mktemp "${TMPDIR:-/tmp}/specula-copilot-session-XXXXXX")"; then
+  echo "copilot-cli adapter: unable to create temporary session file for usage collection" >&2
+  exit 1
+fi
 
 set +e
-STREAM_ARGS=("$STREAM_ADAPTER" "$ACTIVITY_LOG" "$LOG_FILE")
+STREAM_ARGS=("$STREAM_ADAPTER" "$ACTIVITY_LOG" "$LOG_FILE" "$USAGE_SESSION_FILE")
 if [[ -n "$RESUME_STATE" ]]; then
   STREAM_ARGS+=("$RESUME_STATE" "$(pwd -P)" "$MODEL" "$EFFORT")
 fi
@@ -278,6 +303,9 @@ set -e
 
 COPILOT_RC="${PIPELINE_STATUS[0]}"
 STREAM_RC="${PIPELINE_STATUS[1]}"
+USAGE_SESSION_ID="$(head -n 1 "$USAGE_SESSION_FILE" 2>/dev/null || true)"
+collect_usage "$USAGE_SESSION_ID"
+USAGE_RC=$?
 if (( STREAM_RC == RESUME_STATE_FAILURE_RC )); then
   # Never let a retryable native exit mask a changed/malformed exact session.
   exit 1
@@ -314,6 +342,9 @@ if (( COPILOT_RC != 0 )); then
     exit 1
   fi
   exit "$COPILOT_RC"
+fi
+if (( USAGE_RC != 0 )); then
+  exit 1
 fi
 if (( STREAM_RC == PLAIN_POLICY_DIAGNOSTIC_RC )); then
   exit 0

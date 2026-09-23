@@ -958,27 +958,28 @@ def stream_events(
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) not in {3, 4, 7} or argv[0] not in _ADAPTER_NAMES:
+    if len(argv) not in {3, 4, 7, 8} or argv[0] not in _ADAPTER_NAMES:
         print(
             "usage: python -m specula.adapters.utils.event_stream "
             "{claude|codex|copilot|opencode|pi} ACTIVITY_JSONL LOG_FILE "
-            "[SESSION_ID_FILE | RESUME_STATE CWD MODEL EFFORT]",
+            "[SESSION_ID_FILE] [RESUME_STATE CWD MODEL EFFORT]",
             file=sys.stderr,
         )
         return 2
-    session_id_path = Path(argv[3]) if len(argv) == 4 else None
+    session_id_path = Path(argv[3]) if len(argv) in {4, 8} else None
     session_capture: Callable[[str], None] | None = None
-    if len(argv) == 7:
+    if len(argv) in {7, 8}:
         adapter_name = _ADAPTER_NAMES[argv[0]]
+        offset = 4 if len(argv) == 8 else 3
 
         def explicit_capture(session_id: str) -> None:
             capture_session_id(
-                argv[3],
+                argv[offset],
                 adapter=adapter_name,
                 session_id=session_id,
-                cwd=argv[4],
-                model=argv[5],
-                effort=argv[6],
+                cwd=argv[offset + 1],
+                model=argv[offset + 2],
+                effort=argv[offset + 3],
             )
 
         session_capture = explicit_capture

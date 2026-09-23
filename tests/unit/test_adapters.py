@@ -74,6 +74,7 @@ _VOLATILE = (
     "CLAUDE_ALIAS",
     "CLAUDE_EFFORT",
     "CLAUDE_MODEL",
+    "COPILOT_HOME",
     "COPILOT_MODEL",
     "CODEX_MODEL",
     "CODEX_EFFORT",
@@ -4542,6 +4543,86 @@ class CopilotAdapter(AdapterCase):
 
     def base_flags(self, base: Path) -> list[str]:
         return [self.with_prompt_file(base), f"--log={base}/out.log"]
+
+    @staticmethod
+    def seed_usage(base: Path, session_id: str) -> None:
+        root = base / ".copilot"
+        root.mkdir()
+        with sqlite3.connect(root / "session-store.db") as connection:
+            connection.execute(
+                """
+                CREATE TABLE assistant_usage_events (
+                    session_id TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    copilot_usage_model TEXT,
+                    input_tokens INTEGER,
+                    output_tokens INTEGER,
+                    cache_read_tokens INTEGER,
+                    cache_write_tokens INTEGER,
+                    reasoning_tokens INTEGER,
+                    total_nano_aiu INTEGER,
+                    duration_ms INTEGER
+                )
+                """
+            )
+            connection.execute(
+                "INSERT INTO assistant_usage_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (session_id, "gpt-6-astra", None, 100, 30, 70, 20, 5, 1_200_000_000_000, 400),
+            )
+
+    def test_json_stream_collects_usage_by_exact_session_id(self) -> None:
+        base = self.sandbox()
+        session_id = "10111111-1111-4111-8111-111111111111"
+        self.seed_usage(base, session_id)
+        fixture = json.dumps({"type": "result", "sessionId": session_id, "exitCode": 0, "usage": {}})
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra={
+                "SPECULA_ACTIVITY_LOG": str(base / "out.activity.jsonl"),
+                "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream",
+                "TMPDIR": str(base),
+            },
+            run_dir=base,
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        payload = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(payload["agent"], "copilot-cli")
+        self.assertEqual(payload["session_id"], session_id)
+        self.assertEqual(payload["usage"]["input_tokens"], 10)
+        self.assertEqual(payload["usage"]["cached_input_tokens"], 70)
+        self.assertEqual(payload["usage"]["cache_write_input_tokens"], 20)
+        self.assertEqual(payload["usage"]["output_tokens"], 30)
+        self.assertEqual(payload["usage"]["total_tokens"], 130)
+        self.assertEqual(payload["request_count"], 1)
+        self.assertEqual(payload["ai_credits"], 1200.0)
+        self.assertEqual(payload["total_cost_usd"], 12.0)
+
+    def test_missing_usage_database_writes_unavailable_not_zero(self) -> None:
+        base = self.sandbox()
+        session_id = "20222222-2222-4222-8222-222222222222"
+        fixture = json.dumps({"type": "result", "sessionId": session_id, "exitCode": 0, "usage": {}})
+        result = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="copilot",
+            fixture_text=fixture,
+            env_extra={
+                "SPECULA_ACTIVITY_LOG": str(base / "out.activity.jsonl"),
+                "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream",
+                "TMPDIR": str(base),
+            },
+            run_dir=base,
+        )
+
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        payload = json.loads((base / "out.usage.json").read_text())
+        self.assertFalse(payload["usage_complete"])
+        self.assertEqual(payload["usage"], {})
+        self.assertIn("database unavailable", payload["usage_warning"])
 
     def test_resume_state_captures_result_id_then_uses_fail_closed_resume(self) -> None:
         base = self.sandbox()
