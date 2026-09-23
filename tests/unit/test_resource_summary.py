@@ -706,6 +706,54 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
         self.assertAlmostEqual(cast(float, phase["cost_usd"]), 0.003214)
         self.assertFalse(phase["usage_incomplete"])
 
+    def test_copilot_retry_uses_delta_across_archived_snapshot(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        sidecar = self.work_dir / "agent.usage.json"
+        archived = self.work_dir / "agent.usage.attempt-1.json"
+        invocation_id = "3d" * 16
+        recorder = self.recorder("phase1", invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.note_agent(self.work_dir, sidecar, attempt=1)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(
+                    session="copilot-retry",
+                    tokens=740,
+                    cached=200,
+                    cost=0.001784,
+                    agent="copilot-cli",
+                ),
+            )
+            sidecar.replace(archived)
+            recorder.note_agent(
+                self.work_dir,
+                sidecar,
+                attempt=2,
+                archived_usage_path=archived,
+            )
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                _normalized(
+                    session="copilot-retry",
+                    tokens=990,
+                    cached=270,
+                    cost=0.003214,
+                    agent="copilot-cli",
+                ),
+            )
+            recorder.finish_target("demo")
+        tracker.capture_invocation("phase1", ["demo"], invocation_id)
+
+        phase = self.phase_state(self.state(self.work_dir), "phase1")
+        self.assertEqual(phase["total_tokens"], 990)
+        self.assertEqual(phase["cached_input_tokens"], 270)
+        self.assertAlmostEqual(cast(float, phase["cost_usd"]), 0.003214)
+        self.assertFalse(phase["usage_incomplete"])
+
     def test_unknown_retry_keeps_latest_snapshot_and_marks_incomplete(self) -> None:
         tracker = self.tracker()
         tracker.initialize(resume=False)
@@ -912,6 +960,35 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
             "| Phase 1 | 1s | 420 total (200 cached) | - |",
             self.summary(self.work_dir),
         )
+
+    def test_unavailable_usage_is_a_dash_instead_of_zero_tokens(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        sidecar = self.work_dir / "agent.usage.json"
+        invocation_id = "4c" * 16
+        recorder = self.recorder("phase1", invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, 1.0]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.note_agent(self.work_dir, sidecar)
+            self.write_json(
+                self.work_dir,
+                "agent.usage.json",
+                {
+                    "agent": "copilot-cli",
+                    "session_id": "missing",
+                    "total_cost_usd": None,
+                    "usage": {},
+                    "usage_complete": False,
+                    "usage_warning": "telemetry unavailable",
+                },
+            )
+            recorder.finish_target("demo")
+        tracker.capture_invocation("phase1", ["demo"], invocation_id)
+
+        phase = self.phase_state(self.state(self.work_dir), "phase1")
+        self.assertFalse(phase["tokens_observed"])
+        self.assertTrue(phase["usage_incomplete"])
+        self.assertIn("| Phase 1 | 1s | - | - |", self.summary(self.work_dir))
 
     def test_complete_run_has_an_unqualified_total_when_all_phases_are_known(self) -> None:
         tracker = self.tracker()

@@ -717,8 +717,8 @@ class ResourceSummaryTracker:
         if not record.complete:
             phase_state.usage_incomplete = True
 
-        cumulative_codex = record.agent == "codex" and record.session_id is not None
-        if not cumulative_codex:
+        cumulative_session = record.agent in {"codex", "copilot-cli"} and record.session_id is not None
+        if not cumulative_session:
             if record.total_tokens is not None and record.cached_input_tokens is not None:
                 phase_state.total_tokens += record.total_tokens
                 phase_state.cached_input_tokens += record.cached_input_tokens
@@ -1173,10 +1173,12 @@ def _select_retry_usage(
         continued = logical_relative in continued_usage
         retry = continued or any(relative != logical_relative for relative, _record in snapshots)
         agents = {record.agent for _relative, record in snapshots}
-        # Claude reports each invocation separately. Codex snapshots are cumulative
-        # within a session and are reduced to deltas by _accumulate_record.
+        # Claude reports each invocation separately. Codex and Copilot snapshots
+        # are cumulative within a session and are reduced to deltas by
+        # _accumulate_record.
         precise = agents == {"claude-code"} or (
-            agents == {"codex"} and all(record.session_id is not None for _relative, record in snapshots)
+            agents in ({"codex"}, {"copilot-cli"})
+            and all(record.session_id is not None for _relative, record in snapshots)
         )
         if not retry or precise:
             selected.update(relative for relative, _record in snapshots)
