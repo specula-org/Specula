@@ -304,8 +304,10 @@ set -e
 COPILOT_RC="${PIPELINE_STATUS[0]}"
 STREAM_RC="${PIPELINE_STATUS[1]}"
 USAGE_SESSION_ID="$(head -n 1 "$USAGE_SESSION_FILE" 2>/dev/null || true)"
+set +e
 collect_usage "$USAGE_SESSION_ID"
 USAGE_RC=$?
+set -e
 if (( STREAM_RC == RESUME_STATE_FAILURE_RC )); then
   # Never let a retryable native exit mask a changed/malformed exact session.
   exit 1

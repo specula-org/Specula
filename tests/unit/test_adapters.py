@@ -4624,6 +4624,47 @@ class CopilotAdapter(AdapterCase):
         self.assertEqual(payload["usage"], {})
         self.assertIn("database unavailable", payload["usage_warning"])
 
+    def test_usage_write_failure_preserves_exit_status(self) -> None:
+        cases = [
+            (75, None, 75),
+            (76, None, 76),
+            (
+                9,
+                {
+                    "errorType": "model_at_capacity",
+                    "message": "Selected model is at capacity. Please try again.",
+                    "statusCode": 503,
+                },
+                74,
+            ),
+            (0, None, 1),
+        ]
+        for native_rc, error_data, expected_rc in cases:
+            with self.subTest(native_rc=native_rc, expected_rc=expected_rc):
+                base = self.sandbox()
+                session_id = "30333333-3333-4333-8333-333333333333"
+                self.seed_usage(base, session_id)
+                (base / "out.usage.json").mkdir()
+                events = []
+                if error_data is not None:
+                    events.append(json.dumps({"type": "session.error", "data": error_data}))
+                events.append(json.dumps({"type": "result", "sessionId": session_id, "exitCode": int(native_rc != 0)}))
+                result = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="copilot",
+                    fixture_text="\n".join(events),
+                    env_extra={
+                        "ADAPTER_EXIT_CODE": str(native_rc),
+                        "SPECULA_ACTIVITY_LOG": str(base / "out.activity.jsonl"),
+                        "COPILOT_HELP_TEXT": "--autopilot\n--output-format\n--stream",
+                        "TMPDIR": str(base),
+                    },
+                    run_dir=base,
+                )
+                self.assertIn("usage write failed", result["stderr"])
+                self.assertEqual(result["returncode"], expected_rc, result["stderr"])
+
     def test_resume_state_captures_result_id_then_uses_fail_closed_resume(self) -> None:
         base = self.sandbox()
         state = base / "resume.json"
