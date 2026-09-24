@@ -42,10 +42,6 @@ under the project's license.
 4. Ensure all commits are signed off
 5. Submit a pull request
 
-## Specula Lite resources
-
-Lite bundles existing skill guides and the TLC output reader so it can be installed independently. Edit their original files, then regenerate the resource archive with `python3 scripts/infra/bundle_lite.py`. CI checks that `skills/specula-lite/assets/shared.zip` matches those sources. Lite-specific workflow rules belong in `skills/specula-lite/SKILL.md`.
-
 ## License
 
 By contributing, you agree that your contributions will be licensed under the
