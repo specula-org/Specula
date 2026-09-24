@@ -168,9 +168,12 @@ def java_works(executable: str) -> bool:
 def ensure_java() -> str:
     override = os.environ.get("SPECULA_LITE_JAVA")
     if override:
-        if not java_works(override):
+        resolved = shutil.which(override)
+        if resolved is not None:
+            resolved = str(Path(resolved).resolve())
+        if resolved is None or not java_works(resolved):
             raise RuntimeError(f"SPECULA_LITE_JAVA is not a working Java 21+: {override}")
-        return str(Path(override).resolve())
+        return resolved
     candidates = []
     executable = "java.exe" if os.name == "nt" else "java"
     if os.environ.get("JAVA_HOME"):

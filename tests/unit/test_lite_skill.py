@@ -103,6 +103,42 @@ class LiteSkillTests(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in self.root.iterdir()), ["installed skill", "tool.jar"])
 
     @unittest.skipUnless(os.name == "posix", "fixture uses a POSIX executable")
+    def test_java_override_resolves_and_validates_the_executable_used_later(self) -> None:
+        bin_dir = self.root / "java bin"
+        bin_dir.mkdir()
+        java = bin_dir / "java"
+        java.write_text("#!/bin/sh\necho 'openjdk version \"21.0.12\"' >&2\n")
+        java.chmod(0o755)
+        execution_dir = self.root / "model directory"
+        execution_dir.mkdir()
+        for override in ("java", str(java), os.path.relpath(java)):
+            with (
+                self.subTest(override=override),
+                mock.patch.dict(os.environ, {"PATH": str(bin_dir), "SPECULA_LITE_JAVA": override}),
+                mock.patch.object(self.prepare, "java_works", wraps=self.prepare.java_works) as probe,
+            ):
+                resolved = self.prepare.ensure_java()
+                self.assertEqual(resolved, str(java.resolve()))
+                probe.assert_called_once_with(resolved)
+                result = subprocess.run([resolved, "-version"], cwd=execution_dir, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('version "21.', result.stderr)
+
+    @unittest.skipUnless(os.name == "posix", "fixture uses a POSIX executable")
+    def test_invalid_java_override_does_not_fall_back_to_a_download(self) -> None:
+        java = self.root / "old-java"
+        java.write_text("#!/bin/sh\necho 'openjdk version \"17.0.1\"' >&2\n")
+        java.chmod(0o755)
+        for override in ("missing-java", str(java)):
+            with (
+                self.subTest(override=override),
+                mock.patch.dict(os.environ, {"PATH": str(self.root), "SPECULA_LITE_JAVA": override}),
+                mock.patch.object(self.prepare, "download", side_effect=AssertionError("unexpected fallback")),
+                self.assertRaisesRegex(RuntimeError, "SPECULA_LITE_JAVA is not a working Java 21"),
+            ):
+                self.prepare.ensure_java()
+
+    @unittest.skipUnless(os.name == "posix", "fixture uses a POSIX executable")
     def test_missing_java_is_prepared_without_system_install(self) -> None:
         archive = self.root / "jre.tar.gz"
         executable = b"#!/bin/sh\necho 'openjdk version \"21.0.12\"' >&2\n"
