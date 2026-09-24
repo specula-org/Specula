@@ -89,6 +89,7 @@ class TestInstallSkills(SkillInstallCase):
                 "harness-generation",
                 "incremental-modeling",
                 "spec-generation",
+                "specula-lite",
                 "tla-checking-workflow",
                 "tla-trace-workflow",
                 "validation-workflow",
