@@ -28,6 +28,18 @@ We maintain [a list of bugs found by Specula](https://docs.google.com/spreadshee
 
 Browse the [case-study archive](https://github.com/specula-org/specula-case-studies) for reports, models, and reproduction evidence. The `case-studies` submodule pins the archive and its [system and run indexes](https://github.com/specula-org/specula-case-studies/blob/2797de3e0801442d3451f26491ccfe876aaf2f2f/catalog/README.md) for this checkout.
 
+## Specula Lite
+
+Install just the [Specula Lite skill](skills/specula-lite/SKILL.md) into your coding agent:
+
+```bash
+npx skills add specula-org/Specula --skill specula-lite
+```
+
+Invoke `specula-lite` in your agent and tell it which code and problems to investigate. One agent handles analysis, TLA+ modeling, model checking, and code-level reproduction, then reports reproduced bugs and unconfirmed findings separately. It asks before proceeding to fixes. Lite supports long investigations without a default task deadline and skips implementation-trace instrumentation and trace validation.
+
+Lite needs a coding agent with skills and shell access, plus Python 3.10+. On first use it automatically prepares missing Java and TLA+ tools in the user cache. No Specula CLI, MCP configuration, or full repository checkout is required. You can also copy the complete `skills/specula-lite` directory into your agent's skills directory. The setup below is for standard Specula.
+
 ## Prerequisites
 
 - Python 3.10+ with pip
