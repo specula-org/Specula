@@ -82,6 +82,8 @@ jobs:
       # Single source of truth for deps: the dev extra in pyproject.toml.
       - name: Install deps
         run: uv sync --locked --extra dev
+      - name: Lite shared resources match their source files
+        run: uv run python scripts/infra/bundle_lite.py --check
       - name: inv_checking_tool tests
         env:
           PYTHONPATH: tools
