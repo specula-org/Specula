@@ -4044,6 +4044,87 @@ class TestRepoIsolation(ConfirmCase):
         (repo / "untracked.txt").write_text("new\n")
         self.assertIsNone(C._load_verdict(f, cfg))
 
+    def test_verdict_keeps_inspected_revision_after_concurrent_commit(self) -> None:
+        repo = self._repo()
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+        original = C._verdict_fingerprint(cfg, f)
+        inspected: list[str] = []
+
+        def agent(*_args: object, **_kwargs: object) -> tuple[int, str]:
+            snapshot = Path(cfg._finding_leases[f.id].repo_for_agent)
+            inspected.append((snapshot / "tracked.txt").read_text())
+            if len(inspected) == 1:
+                (repo / "tracked.txt").write_text("changed\n")
+                self._commit(repo, "tracked.txt")
+                return 0, _response("FALSE POSITIVE")
+            return 0, _response("NEEDS MORE INFO")
+
+        with mock.patch.object(C, "run_agent_blocking", side_effect=agent) as run:
+            first = C.run_finding_safe(cfg, f)
+            self.assertEqual(first.status, "FALSE POSITIVE")
+            self.assertEqual(json.loads((f.fdir / "verdict.json").read_text())["fingerprint"], original)
+            self.assertIsNone(C._load_verdict(f, cfg))
+            # Later bookkeeping and reloads must not rebind the old result.
+            stored = C._load_stored_verdict(f)
+            assert stored is not None
+            for outcome in (first, stored):
+                C._save_verdict(outcome, cfg)
+                self.assertIsNone(C._load_verdict(f, cfg))
+            self.assertEqual(C.run_finding_safe(cfg, f).status, "NEEDS MORE INFO")
+            self.assertEqual(C.run_finding_safe(cfg, f).status, "NEEDS MORE INFO")
+            self.assertEqual(run.call_count, 2)
+        self.assertEqual(inspected, ["base\n", "changed\n"])
+        cached = C._load_verdict(f, cfg)
+        assert cached is not None
+        (repo / "untracked.txt").write_text("another source change\n")
+        C._save_verdict(cached, cfg)
+        self.assertIsNone(C._load_verdict(f, cfg))
+        # Old-format fingerprints may have been mislabeled; never reuse them.
+        with mock.patch.object(C, "_VERDICT_FINGERPRINT_VERSION", 3):
+            C._save_verdict(C.Outcome(f, "FALSE POSITIVE", True, 0, EVIDENCE), cfg)
+        self.assertIsNone(C._load_verdict(f, cfg))
+
+    def test_snapshot_preparation_rejects_concurrent_source_change(self) -> None:
+        repo = self._repo()
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+        setup = C.setup_repo
+
+        def changed(config: C.ConfirmConfig, finding: C.Finding) -> tuple[str, Callable[[], None]]:
+            result = setup(config, finding)
+            (repo / "tracked.txt").write_text("changed during setup\n")
+            return result
+
+        with (
+            mock.patch.object(C, "setup_repo", side_effect=changed),
+            mock.patch.object(C, "run_agent_blocking") as agent,
+        ):
+            outcome = C.run_finding_safe(cfg, f)
+        agent.assert_not_called()
+        self.assertEqual(outcome.status, C.INCOMPLETE)
+        self.assertFalse((f.fdir / "verdict.json").exists())
+        self.assertFalse((f.fdir / "worktree").exists())
+
+    def test_resume_checkpoint_preserves_original_input_identity(self) -> None:
+        repo = self._repo()
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+        root = Path(self.tmp)
+        resumelib.initialize_run(root)
+        resumelib.save_configuration(root, {"agent": "x"})
+        with mock.patch.dict(os.environ, {resumelib.INVOCATION_ENV: "first"}):
+            lease = cfg.acquire_finding_lease(f)
+            self.addCleanup(lease.cleanup)
+            C._persist_lease(cfg, f, lease)
+            restored = C._load_lease(cfg, f)
+            original = restored.fingerprint
+            (repo / "tracked.txt").write_text("changed while interrupted\n")
+            C._persist_lease(cfg, f, restored)
+            self.assertEqual(json.loads(C._lease_file(f).read_text())["fingerprint"], original)
+            with self.assertRaisesRegex(C.ConfirmationFailed, "inputs changed"):
+                C._load_lease(cfg, f)
+
     def test_repo_change_reuses_open_repair_then_allocates_after_consumed(self) -> None:
         repo = self._repo()
         cfg, ws = self._repo_cfg(repo, worktree=False)

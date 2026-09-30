@@ -318,6 +318,8 @@ After a Copilot invocation, Specula uses that exact session UUID to read cumulat
 
 An exact resume preserves the provider-persisted conversation and the files already written in the retained workspace. It cannot restore the terminated CLI process's in-memory state or an in-flight child process, and a provider may omit a partial response that was never committed to the native session.
 
+Specula rechecks confirmation results from versions that did not record which code each worker checked. To restart unfinished confirmations from those versions, use `--fresh-context`. For persistent CI, start a new run without `--run-id`.
+
 ## Output Structure
 
 Runs are isolated by default under:
