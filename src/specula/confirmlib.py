@@ -83,6 +83,7 @@ INCOMPLETE = "INCOMPLETE"
 VALID_SOURCES = {"model-checking", "code-review"}
 ID_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
 _CACHE_VERSION = 3
+_VERDICT_FINGERPRINT_VERSION = 4  # Invalidate verdicts saved before snapshot binding.
 _CANDIDATE_CACHE = ".candidates-cache.json"
 
 _VERDICT_RE = re.compile(r"^\s*VERDICT:\s*(.+?)\s*$", re.MULTILINE)
@@ -197,6 +198,7 @@ class _FindingLease:
     repo_for_agent: str
     cleanup: Callable[[], None]
     source_repo: str = ""
+    fingerprint: str = ""
     state_path: Path | None = None
     initialized: bool = False
     repair_retry_used: bool = False
@@ -277,7 +279,7 @@ def _persist_lease(cfg: ConfirmConfig, f: Finding, lease: _FindingLease) -> None
     value = {
         "version": _LEASE_VERSION,
         "finding_id": f.id,
-        "fingerprint": _verdict_fingerprint(cfg, f),
+        "fingerprint": lease.fingerprint,
         "source_repo": lease.source_repo or (str(Path(cfg.repo_dir).absolute()) if cfg.repo_dir else ""),
         "repo_for_agent": lease.repo_for_agent,
         "worktree": bool(cfg.worktree and cfg.repo_dir),
@@ -367,6 +369,7 @@ def _load_lease(cfg: ConfirmConfig, f: Finding) -> _FindingLease:
         repo_for_agent,
         cleanup,
         source_repo=source_repo,
+        fingerprint=fingerprint,
         state_path=path,
     )
     lease.initialized = initialized
@@ -620,14 +623,7 @@ class ConfirmConfig:
             if resumelib.has_prefix(resume_prefix) and not resumelib.fresh_mode():
                 candidate = _load_lease(self, f)
             else:
-                repo_for_agent, cleanup = setup_repo(self, f)
-                candidate = _FindingLease(
-                    finding_dir,
-                    repo_for_agent,
-                    cleanup,
-                    source_repo=str(Path(self.repo_dir).absolute()) if self.repo_dir else "",
-                    state_path=_lease_file(f),
-                )
+                candidate = _new_finding_lease(self, f)
             with self._finding_leases_lock:
                 self._finding_leases[f.id] = candidate
             return candidate
@@ -693,6 +689,7 @@ class Outcome:
     # scheduler may retry after rate limiting; 1 means a permanent/format/infra
     # failure. Canonical outcomes leave this at zero.
     failure_code: int = 0
+    fingerprint: str | None = None  # Identity inspected by the worker; retained across later saves.
 
 
 # ── prompt builders ──────────────────────────────────────────────────────────
@@ -991,6 +988,25 @@ def setup_repo(cfg: ConfirmConfig, f: Finding) -> tuple[str, Callable[[], None]]
         raise
     except Exception as exc:
         raise ConfirmationFailed(f"{f.id}: worktree isolation failed: {exc}") from exc
+
+
+def _new_finding_lease(cfg: ConfirmConfig, f: Finding) -> _FindingLease:
+    fingerprint = _verdict_fingerprint(cfg, f)
+    repo, cleanup = setup_repo(cfg, f)
+    try:
+        if fingerprint != _verdict_fingerprint(cfg, f):
+            raise ConfirmationFailed(f"{f.id}: inputs changed while preparing the confirmation snapshot; retry")
+    except BaseException:
+        cleanup()
+        raise
+    return _FindingLease(
+        f.fdir.absolute(),
+        repo,
+        cleanup,
+        source_repo=str(Path(cfg.repo_dir).absolute()) if cfg.repo_dir else "",
+        fingerprint=fingerprint,
+        state_path=_lease_file(f),
+    )
 
 
 def _nested_worktree_names(path: Path) -> bytes | None:
@@ -1424,11 +1440,7 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
     repro_dir = cfg.ws.work_dir(cfg.name).absolute() / "repro"
     repro_dir.mkdir(parents=True, exist_ok=True)
     owned_lease = _lease is None
-    if _lease is None:
-        repo_for_agent, cleanup = setup_repo(cfg, f)
-        lease = _FindingLease(f.fdir.absolute(), repo_for_agent, cleanup)
-    else:
-        lease = _lease
+    lease = _new_finding_lease(cfg, f) if _lease is None else _lease
     if lease.finding_dir != f.fdir.absolute() or lease._closed:
         raise ConfirmationFailed(f"{f.id}: invalid retry lease")
     debate = f.fdir / "debate.md"
@@ -1885,7 +1897,7 @@ def _verdict_fingerprint(cfg: ConfirmConfig, f: Finding) -> str:
         }
     return _digest(
         {
-            "version": _CACHE_VERSION,
+            "version": _VERDICT_FINGERPRINT_VERSION,
             "generation": confirmation_identity,
             "finding": f.data,
             "spec": _spec_identity(cfg, f),
@@ -1991,6 +2003,8 @@ def _artifact_identity(cfg: ConfirmConfig, o: Outcome) -> dict[str, Any]:
 
 
 def _save_verdict(o: Outcome, cfg: ConfirmConfig) -> None:
+    if o.fingerprint is None:
+        o.fingerprint = _verdict_fingerprint(cfg, o.finding)
     o.finding.fdir.mkdir(parents=True, exist_ok=True)
     vf = o.finding.fdir / "verdict.json"
     tmp = vf.with_suffix(".json.tmp")
@@ -1998,7 +2012,7 @@ def _save_verdict(o: Outcome, cfg: ConfirmConfig) -> None:
         json.dumps(
             {
                 "cache_version": _CACHE_VERSION,
-                "fingerprint": _verdict_fingerprint(cfg, o.finding),
+                "fingerprint": o.fingerprint,
                 "status": o.status,
                 "consensus": o.consensus,
                 "rounds": o.rounds,
@@ -2028,6 +2042,7 @@ def _load_verdict(f: Finding, cfg: ConfirmConfig) -> Outcome | None:
             return None
         _validate_status_source(f, status)
         outcome = Outcome(f, status, bool(d["consensus"]), int(d["rounds"]), str(d["body"]), d.get("rr"))
+        outcome.fingerprint = d["fingerprint"]
         if d.get("artifacts") != _artifact_identity(cfg, outcome):
             return None
         return outcome
@@ -2064,6 +2079,7 @@ def _load_stored_verdict(f: Finding) -> Outcome | None:
             int(data["rounds"]),
             str(data["body"]),
             rr,
+            fingerprint=str(data.get("fingerprint", "")),
         )
     except (KeyError, TypeError, ValueError, OSError, ConfirmationFailed):
         return None
@@ -2118,6 +2134,7 @@ def run_finding_safe(
     try:
         lease = cfg.acquire_finding_lease(f)
         o = run_finding(cfg, f, _lease=lease)
+        o.fingerprint = lease.fingerprint
         if cfg.repair_round is not None:
             o.body = _merge_repair_evidence(prior, repair_evidence, o.body, cfg.repair_round)
         _save_verdict(o, cfg)
