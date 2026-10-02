@@ -2584,7 +2584,7 @@ class TestRepairLoop(RRDirCase):
 
         self.assertEqual(covered, {"footest"})
         self.assertEqual(confirmations, [1, 2])
-        self.assertEqual(repairs, [1])
+        self.assertEqual(repairs, [3])
         self.assertEqual(pl.rr_status(self.rr_dir / "RR-2.md"), "CONSUMED")
         self.assertIn("Scoped result pass opened repair requests", out)
 
@@ -2969,6 +2969,7 @@ class TestRepairLoop(RRDirCase):
 
     def test_scoped_phase4_failure_retries_exact_committed_violations(self) -> None:
         request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        self.p.max_repair_rounds = "1"
         phase4_calls: list[int] = []
 
         def successful_repair(round_: int, names: list[str] | None = None) -> None:
@@ -2988,6 +2989,7 @@ class TestRepairLoop(RRDirCase):
             phase4_calls.append(len(phase4_calls) + 1)
             if len(phase4_calls) == 1:
                 raise SystemExit(8)
+            make_rr(self.rr_dir, "RR-2", "OPEN", bug_id="MC-1")
 
         self.p.run_phase3_repair = successful_repair  # type: ignore[method-assign]
         self.p.run_repair_confirmation = confirmation  # type: ignore[method-assign]
@@ -3017,6 +3019,7 @@ class TestRepairLoop(RRDirCase):
         self.assertIn("completed its pending scoped result pass", retry_out)
         self.assertFalse(self.p.repair_phase3_commit_path("footest").exists())
         self.assertEqual(pl.rr_status(request), "CONSUMED")
+        self.assertEqual(pl.rr_status(self.rr_dir / "deferred" / "RR-2.md"), "DEFERRED")
 
     def test_only_progress_followed_by_cap_defers(self) -> None:
         first = make_rr(self.rr_dir, "RR-1", "OPEN")
@@ -3051,6 +3054,72 @@ class TestRepairLoop(RRDirCase):
         self.assertEqual(pl.rr_status(request), "OPEN")
         self.assertFalse((self.rr_dir / "deferred" / request.name).exists())
 
+    def test_resume_preserves_round_budget_after_result_checkpoint_is_cleared(self) -> None:
+        first = make_rr(self.rr_dir, "RR-1", "OPEN")
+        self.p.max_repair_rounds = "1"
+        self.write_repair_findings(("MC-1",))
+        first_rounds = self.configure(self.resolve())
+        self.p.run_repair_confirmation = lambda *_args: make_rr(  # type: ignore[assignment]
+            self.rr_dir, "RR-2", "OPEN", bug_id="MC-1"
+        )
+        # Interrupt after the result pass has removed its commit marker.
+        # The round limit must survive even without that recovery marker.
+        self.p.snapshot_confirmed_bugs = mock.Mock(side_effect=SystemExit(9))  # type: ignore[method-assign]
+        with self.assertRaises(SystemExit):
+            quiet(self.p.run_repair_loop)
+        self.assertEqual(first_rounds, [1])
+        self.assertFalse(self.p.repair_phase3_commit_path("footest").exists())
+
+        self.p = make_pipeline(["footest|g|l|r"], max_repair_rounds="1")
+        resumed_rounds = self.configure(self.resolve("RR-2"))
+        quiet(self.p.run_repair_loop)
+
+        self.assertEqual(resumed_rounds, [])
+        self.assertEqual(pl.rr_status(first), "CONSUMED")
+        self.assertEqual(pl.rr_status(self.rr_dir / "deferred" / "RR-2.md"), "DEFERRED")
+
+    def test_resume_finishes_remaining_targets_within_the_original_round(self) -> None:
+        root = self.tmp / "run"
+        targets = ["alpha|g|l|r", "beta|g|l|r"]
+        self.p = make_pipeline(targets, run_dir=root, max_repair_rounds="1")
+        requests: dict[str, Path] = {}
+        for name in ("alpha", "beta"):
+            directory = Path(self.p.repair_dir(name))
+            directory.mkdir(parents=True)
+            requests[name] = make_rr(directory, "RR-1", "OPEN")
+        repairs: list[tuple[str, int]] = []
+
+        def repair(round_: int, names: list[str] | None = None) -> None:
+            assert names is not None
+            name = names[0]
+            repairs.append((name, round_))
+            pl.rr_set_status(requests[name], "CONSUMED", "repaired")
+            if len(repairs) == 2:
+                raise RuntimeError("interrupted beta")
+            self.write_repair_findings(name=name)
+            self.p.publish_repair_phase3_commit(round_, names)
+
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        self.p.run_phase3_repair = repair  # type: ignore[method-assign]
+        with self.assertRaisesRegex(RuntimeError, "interrupted beta"):
+            quiet(self.p.run_repair_loop)
+
+        self.p = make_pipeline(targets, run_dir=root, max_repair_rounds="1")
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        self.p.run_phase3_repair = repair  # type: ignore[method-assign]
+
+        def reconcile(name: str, repair_round: int, repair_token: str) -> None:
+            self.assertEqual(repair_round, 1)
+            if name == "alpha":
+                make_rr(requests[name].parent, "RR-2", "OPEN", bug_id="A-2")
+
+        self.p.reconcile_repair_without_violations = reconcile  # type: ignore[method-assign]
+        quiet(self.p.run_repair_loop)
+
+        self.assertEqual(repairs, [("alpha", 1), ("beta", 1), ("beta", 1)])
+        self.assertEqual(pl.rr_status(requests["alpha"].parent / "deferred" / "RR-2.md"), "DEFERRED")
+        self.assertTrue(all(pl.rr_status(path) == "CONSUMED" for path in requests.values()))
+
     def test_direct_invalid_cap_fails_before_mutation(self) -> None:
         request = make_rr(self.rr_dir, "RR-1", "OPEN")
         self.p.max_repair_rounds = "-1"
@@ -3058,6 +3127,98 @@ class TestRepairLoop(RRDirCase):
             quiet(self.p.run_repair_loop)
         self.assertEqual(ctx.exception.code, 1)
         self.assertTrue(request.exists())
+
+    def test_fresh_context_subset_keeps_completed_round_budget(self) -> None:
+        root = self.tmp / "run"
+        targets = ["alpha|g|l|r", "beta|g|l|r"]
+        previous = make_pipeline(targets, run_dir=root, max_repair_rounds="1")
+        previous.save_repair_loop_state(1, [])
+        resumed = make_pipeline([targets[1]], run_dir=root, fresh_context=True, max_repair_rounds="1")
+        resumed.run_phase3_repair = mock.Mock(side_effect=AssertionError("round cap reset"))  # type: ignore[method-assign]
+
+        quiet(resumed.run_repair_loop)
+        directory = Path(resumed.repair_dir("beta"))
+        directory.mkdir(parents=True, exist_ok=True)
+        make_rr(directory, "RR-1", "OPEN")
+        quiet(resumed.run_repair_loop)
+
+        self.assertEqual(pl.rr_status(directory / "deferred" / "RR-1.md"), "DEFERRED")
+        self.assertEqual(previous.load_repair_loop_state(), (1, []))
+
+    def test_subset_resume_preserves_unselected_pending_targets(self) -> None:
+        root = self.tmp / "run"
+        targets = ["alpha|g|l|r", "beta|g|l|r"]
+        previous = make_pipeline(targets, run_dir=root, max_repair_rounds="1")
+        requests: dict[str, Path] = {}
+        for name in ("alpha", "beta"):
+            directory = Path(previous.repair_dir(name))
+            directory.mkdir(parents=True)
+            requests[name] = make_rr(directory, "RR-1", "OPEN")
+        previous.save_repair_loop_state(1, ["alpha", "beta"])
+        repairs: list[tuple[str, int]] = []
+
+        def repair(round_: int, names: list[str] | None = None) -> None:
+            assert names is not None
+            name = names[0]
+            repairs.append((name, round_))
+            pl.rr_set_status(requests[name], "CONSUMED", "repaired")
+            self.write_repair_findings(name=name)
+            self.p.publish_repair_phase3_commit(round_, names)
+
+        for name, remaining in (("alpha", ["beta"]), ("beta", [])):
+            self.p = make_pipeline([f"{name}|g|l|r"], run_dir=root, fresh_context=True, max_repair_rounds="1")
+            self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+            self.p.run_phase3_repair = repair  # type: ignore[method-assign]
+            self.p.reconcile_repair_without_violations = lambda *_args: None  # type: ignore[method-assign]
+            quiet(self.p.run_repair_loop)
+            self.assertEqual(previous.load_repair_loop_state(), (1, remaining))
+
+        self.assertEqual(repairs, [("alpha", 1), ("beta", 1)])
+
+    def test_subset_cannot_advance_past_an_unselected_pending_target(self) -> None:
+        root = self.tmp / "run"
+        previous = make_pipeline(["alpha|g|l|r", "beta|g|l|r"], run_dir=root)
+        previous.save_repair_loop_state(1, ["beta"])
+        resumed = make_pipeline(["alpha|g|l|r"], run_dir=root, fresh_context=True)
+        directory = Path(resumed.repair_dir("alpha"))
+        directory.mkdir(parents=True)
+        request = make_rr(directory, "RR-2", "OPEN")
+        resumed.run_phase3_repair = mock.Mock(side_effect=AssertionError("unfinished round advanced"))  # type: ignore[method-assign]
+
+        with self.assertRaisesRegex(RuntimeError, "resume.*beta.*before starting another repair round"):
+            quiet(resumed.run_repair_loop)
+
+        self.assertEqual(previous.load_repair_loop_state(), (1, ["beta"]))
+        self.assertEqual(pl.rr_status(request), "OPEN")
+
+    def test_legacy_batches_have_independent_repair_budgets(self) -> None:
+        repairs: list[tuple[str, int]] = []
+
+        def repair(round_: int, names: list[str] | None = None) -> None:
+            assert names is not None
+            name = names[0]
+            repairs.append((name, round_))
+            request = Path(self.p.repair_dir(name)) / "RR-1.md"
+            pl.rr_set_status(request, "CONSUMED", "repaired")
+            self.write_repair_findings(name=name)
+            self.p.publish_repair_phase3_commit(round_, names)
+
+        for names in (("alpha", "beta"), ("gamma", "delta")):
+            self.p = make_pipeline([f"{name}|g|l|r" for name in names], max_repair_rounds="1")
+            directory = Path(self.p.repair_dir(names[0]))
+            directory.mkdir(parents=True)
+            make_rr(directory, "RR-1", "OPEN")
+            self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+            self.p.run_phase3_repair = repair  # type: ignore[method-assign]
+            self.p.reconcile_repair_without_violations = lambda *_args: None  # type: ignore[method-assign]
+            quiet(self.p.run_repair_loop)
+
+        self.assertEqual(repairs, [("alpha", 1), ("gamma", 1)])
+        resumed = make_pipeline(["beta|g|l|r", "alpha|g|l|r"], max_repair_rounds="1")
+        directory = Path(resumed.repair_dir("alpha"))
+        make_rr(directory, "RR-2", "OPEN")
+        quiet(resumed.run_repair_loop)
+        self.assertEqual(pl.rr_status(directory / "deferred" / "RR-2.md"), "DEFERRED")
 
 
 class TestConfirmationGeneration(RRDirCase):
