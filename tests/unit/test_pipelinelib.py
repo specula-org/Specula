@@ -2584,7 +2584,7 @@ class TestRepairLoop(RRDirCase):
 
         self.assertEqual(covered, {"footest"})
         self.assertEqual(confirmations, [1, 2])
-        self.assertEqual(repairs, [1])
+        self.assertEqual(repairs, [3])
         self.assertEqual(pl.rr_status(self.rr_dir / "RR-2.md"), "CONSUMED")
         self.assertIn("Scoped result pass opened repair requests", out)
 
@@ -2969,6 +2969,7 @@ class TestRepairLoop(RRDirCase):
 
     def test_scoped_phase4_failure_retries_exact_committed_violations(self) -> None:
         request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        self.p.max_repair_rounds = "1"
         phase4_calls: list[int] = []
 
         def successful_repair(round_: int, names: list[str] | None = None) -> None:
@@ -2988,6 +2989,7 @@ class TestRepairLoop(RRDirCase):
             phase4_calls.append(len(phase4_calls) + 1)
             if len(phase4_calls) == 1:
                 raise SystemExit(8)
+            make_rr(self.rr_dir, "RR-2", "OPEN", bug_id="MC-1")
 
         self.p.run_phase3_repair = successful_repair  # type: ignore[method-assign]
         self.p.run_repair_confirmation = confirmation  # type: ignore[method-assign]
@@ -3017,6 +3019,7 @@ class TestRepairLoop(RRDirCase):
         self.assertIn("completed its pending scoped result pass", retry_out)
         self.assertFalse(self.p.repair_phase3_commit_path("footest").exists())
         self.assertEqual(pl.rr_status(request), "CONSUMED")
+        self.assertEqual(pl.rr_status(self.rr_dir / "deferred" / "RR-2.md"), "DEFERRED")
 
     def test_only_progress_followed_by_cap_defers(self) -> None:
         first = make_rr(self.rr_dir, "RR-1", "OPEN")
@@ -3050,6 +3053,151 @@ class TestRepairLoop(RRDirCase):
         self.assertTrue(request.exists())
         self.assertEqual(pl.rr_status(request), "OPEN")
         self.assertFalse((self.rr_dir / "deferred" / request.name).exists())
+
+    def test_resume_preserves_round_budget_after_result_checkpoint_is_cleared(self) -> None:
+        for cap in ("1", "2", "0"):
+            with self.subTest(cap=cap):
+                root = self.tmp / f"run-{cap}"
+                self.p = make_pipeline(["footest|g|l|r"], run_dir=root, max_repair_rounds=cap)
+                self.rr_dir = Path(self.p.repair_dir("footest"))
+                self.rr_dir.mkdir(parents=True)
+                first = make_rr(self.rr_dir, "RR-1", "OPEN")
+
+                def repair(round_: int) -> None:
+                    pl.rr_set_status(self.rr_dir / f"RR-{round_}.md", "CONSUMED", "repaired")
+                    self.write_repair_findings(("MC-1",))
+
+                first_rounds = self.configure(repair)
+                self.p.run_repair_confirmation = lambda *_args: make_rr(  # type: ignore[assignment]
+                    self.rr_dir, "RR-2", "OPEN", bug_id="MC-1"
+                )
+                # The result pass has finished and removed its commit marker.
+                # A restart must still remember the round that just completed.
+                self.p.snapshot_confirmed_bugs = mock.Mock(side_effect=SystemExit(9))  # type: ignore[method-assign]
+                with self.assertRaises(SystemExit):
+                    quiet(self.p.run_repair_loop)
+                self.assertEqual(first_rounds, [1])
+                self.assertFalse(self.p.repair_phase3_commit_path("footest").exists())
+
+                self.p = make_pipeline(["footest|g|l|r"], run_dir=root, max_repair_rounds=cap)
+                resumed_rounds = self.configure(repair)
+                quiet(self.p.run_repair_loop)
+
+                self.assertEqual(pl.rr_status(first), "CONSUMED")
+                if cap == "1":
+                    self.assertEqual(resumed_rounds, [])
+                    self.assertEqual(pl.rr_status(self.rr_dir / "deferred" / "RR-2.md"), "DEFERRED")
+                else:
+                    self.assertEqual(resumed_rounds, [2])
+                    self.assertEqual(pl.rr_status(self.rr_dir / "RR-2.md"), "CONSUMED")
+
+    def test_resume_finishes_remaining_targets_within_the_original_round(self) -> None:
+        for interruption in ("phase3", "snapshot cleanup", "round checkpoint"):
+            with self.subTest(interruption=interruption):
+                self._assert_resume_finishes_remaining_targets(interruption)
+
+    def _assert_resume_finishes_remaining_targets(self, interruption: str) -> None:
+        root = self.tmp / interruption
+        targets = ["alpha|g|l|r", "beta|g|l|r"]
+        self.p = make_pipeline(targets, run_dir=root, max_repair_rounds="1")
+        requests: dict[str, Path] = {}
+        for name in ("alpha", "beta"):
+            directory = Path(self.p.repair_dir(name))
+            directory.mkdir(parents=True)
+            requests[name] = make_rr(directory, "RR-1", "OPEN")
+        repairs: list[tuple[str, int]] = []
+
+        def repair(round_: int, names: list[str] | None = None) -> None:
+            assert names is not None
+            name = names[0]
+            repairs.append((name, round_))
+            pl.rr_set_status(requests[name], "CONSUMED", "repaired")
+            if interruption == "phase3" and len(repairs) == 2:
+                raise RuntimeError("interrupted beta")
+            self.write_repair_findings(name=name)
+            self.p.publish_repair_phase3_commit(round_, names)
+
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        self.p.run_phase3_repair = repair  # type: ignore[method-assign]
+        if interruption == "snapshot cleanup":
+            self.p.clear_repair_phase3_snapshot = mock.Mock(  # type: ignore[method-assign]
+                side_effect=RuntimeError("interrupted snapshot cleanup")
+            )
+        elif interruption == "round checkpoint":
+            save = self.p.save_repair_loop_state
+
+            def interrupted_save(round_: int, pending: list[str]) -> None:
+                if repairs:
+                    raise RuntimeError("interrupted round checkpoint")
+                save(round_, pending)
+
+            self.p.save_repair_loop_state = interrupted_save  # type: ignore[method-assign]
+        with self.assertRaisesRegex(RuntimeError, "interrupted"):
+            quiet(self.p.run_repair_loop)
+
+        self.p = make_pipeline(targets, run_dir=root, max_repair_rounds="1")
+        self.p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        self.p.run_phase3_repair = repair  # type: ignore[method-assign]
+
+        def reconcile(name: str, repair_round: int, repair_token: str) -> None:
+            self.assertEqual(repair_round, 1)
+            if name == "alpha":
+                make_rr(requests[name].parent, "RR-2", "OPEN", bug_id="A-2")
+
+        self.p.reconcile_repair_without_violations = reconcile  # type: ignore[method-assign]
+        quiet(self.p.run_repair_loop)
+
+        expected = [("alpha", 1)] + ([("beta", 1)] if interruption == "phase3" else []) + [("beta", 1)]
+        self.assertEqual(repairs, expected)
+        self.assertEqual(pl.rr_status(requests["alpha"].parent / "deferred" / "RR-2.md"), "DEFERRED")
+        self.assertTrue(all(pl.rr_status(path) == "CONSUMED" for path in requests.values()))
+
+    def test_invalid_round_checkpoint_never_resets_the_budget(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        original = request.read_bytes()
+        state = {"version": 1, "round": 1, "targets": ["footest"], "pending": []}
+        invalid = ["{", "[]"] + [
+            json.dumps({**state, **change})
+            for change in (
+                {"round": True},
+                {"round": 0},
+                {"pending": ["other"]},
+                {"pending": ["footest", "footest"]},
+                {"targets": ["other"]},
+            )
+        ]
+        phase3 = mock.Mock()
+        self.p.run_phase3_repair = phase3  # type: ignore[method-assign]
+        for text in invalid:
+            with self.subTest(text=text):
+                self.p.repair_loop_state_path().write_text(text)
+                with self.assertRaisesRegex(RuntimeError, "repair loop state"):
+                    quiet(self.p.run_repair_loop)
+                self.assertEqual(request.read_bytes(), original)
+                self.assertEqual(self.p.repair_loop_state_path().read_text(), text)
+        phase3.assert_not_called()
+
+    def test_round_checkpoint_write_failure_prevents_dispatch(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        original = request.read_bytes()
+        phase3 = mock.Mock()
+        self.p.run_phase3_repair = phase3  # type: ignore[method-assign]
+        with (
+            mock.patch.object(self.p, "save_repair_loop_state", side_effect=OSError("disk full")),
+            self.assertRaisesRegex(OSError, "disk full"),
+        ):
+            quiet(self.p.run_repair_loop)
+        phase3.assert_not_called()
+        self.assertEqual(request.read_bytes(), original)
+
+    def test_dry_run_does_not_consume_round_budget(self) -> None:
+        request = make_rr(self.rr_dir, "RR-1", "OPEN")
+        original = request.read_bytes()
+        self.p.dry_run = True
+        self.configure(lambda _: None)
+        quiet(self.p.run_repair_loop)
+        self.assertFalse(self.p.repair_loop_state_path().exists())
+        self.assertEqual(request.read_bytes(), original)
 
     def test_direct_invalid_cap_fails_before_mutation(self) -> None:
         request = make_rr(self.rr_dir, "RR-1", "OPEN")

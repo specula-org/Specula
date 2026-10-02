@@ -473,7 +473,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--fresh-context` | With `--run-id`, abandon unfinished agent contexts and continue from retained files |
 | `--no-isolate` | Use the legacy output layout described above |
 
-`--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default. `--max-repair-rounds=N` caps rounds across the whole loop, not attempts per request; when the cap is reached, remaining open requests are deferred. For the individual `specula confirm` command, the corresponding debate flags are `--debate` and `--rounds=N` (range `1` through `5`).
+`--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default. `--max-repair-rounds=N` caps rounds across the whole loop, including resumed runs, not attempts per request; when the cap is reached, remaining open requests are deferred. Resuming an unfinished round completes its remaining targets without using another round. For the individual `specula confirm` command, the corresponding debate flags are `--debate` and `--rounds=N` (range `1` through `5`).
 
 `--byom` is supported only by `specula run`. It conflicts with `--no-isolate`, `--skip-analysis`, `--skip-specgen`, `--skip-harness`, `--skip-validate`, `--skip-confirmation`, `--skip-classification`, and `--skip-repair-loop`.
 

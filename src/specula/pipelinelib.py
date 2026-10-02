@@ -3363,6 +3363,41 @@ class Pipeline:
             self._phase_args(self.extract_names(), with_artifact=False, phase="classify"),
         )
 
+    def repair_loop_state_path(self) -> Path:
+        root = self.run_dir or Path(_logical_cwd()) / ".specula-output"
+        return root / "repair-loop.json"
+
+    def load_repair_loop_state(self) -> tuple[int, list[str]]:
+        """Restore the global round and its unfinished Phase-3 targets."""
+        path = self.repair_loop_state_path()
+        try:
+            doc = json.loads(path.read_text())
+        except FileNotFoundError:
+            return 0, []
+        except (OSError, UnicodeError, ValueError) as exc:
+            raise RuntimeError(f"cannot read repair loop state: {path}") from exc
+        if not isinstance(doc, dict):
+            raise RuntimeError(f"invalid repair loop state: {path}")
+        round_ = doc.get("round")
+        pending = doc.get("pending")
+        if (
+            doc.get("version") != 1
+            or not isinstance(round_, int)
+            or isinstance(round_, bool)
+            or round_ < 1
+            or doc.get("targets") != self.extract_names()
+            or not isinstance(pending, list)
+            or not all(isinstance(name, str) and name in self.extract_names() for name in pending)
+            or len(set(pending)) != len(pending)
+        ):
+            raise RuntimeError(f"invalid repair loop state or target set: {path}")
+        return round_, pending
+
+    def save_repair_loop_state(self, round_: int, pending: list[str]) -> None:
+        if not self.dry_run:
+            doc = {"version": 1, "round": round_, "targets": self.extract_names(), "pending": pending}
+            self._atomic_replace_text(self.repair_loop_state_path(), json.dumps(doc) + "\n")
+
     def run_repair_loop(self, prepared_commits: set[str] | None = None) -> set[str]:
         """Confirmation back-edge over current conformance violations only.
 
@@ -3389,10 +3424,22 @@ class Pipeline:
         log(f"REPAIR LOOP (confirmation back-edge) — cap={cap_disp}")
         divider()
 
+        round_, pending = self.load_repair_loop_state()
         recovered_commits = self.prepare_repair_state() if prepared_commits is None else set(prepared_commits)
         self.refresh_target_indexes()
         phase3_targets = set(recovered_commits)
         if recovered_commits:
+            # A crash may leave the round checkpoint behind a durable Phase-3
+            # commit. Record completion before reconciliation can open a new RR.
+            if round_ == 0:
+                # Retained commits also seed progress for pre-checkpoint runs.
+                for name in recovered_commits:
+                    commit = self.load_repair_phase3_commit(name)
+                    assert commit is not None
+                    round_ = max(round_, int(commit["repair_round"]))
+                pending = self.names_with_open_repair_requests()
+            pending = [name for name in pending if name not in recovered_commits]
+            self.save_repair_loop_state(round_, pending)
             try:
                 self.process_pending_repair_results(recovered_commits)
             except BaseException as exc:
@@ -3410,23 +3457,26 @@ class Pipeline:
             if self.has_open_repair_requests():
                 log("Scoped result pass opened repair requests; continuing the repair loop.")
 
-        if not self.has_open_repair_requests():
+        if not pending and not self.has_open_repair_requests():
             if not recovered_commits:
                 log("No OPEN repair requests — repair loop is a no-op.")
             return phase3_targets
 
-        round_ = 0
-        while self.has_open_repair_requests():
-            if cap != 0 and round_ >= cap:
-                deferred = self.move_open_requests_to_deferred()
-                self.regenerate_ledger()
-                log(f"Repair loop reached its {cap}-round cap; deferred {deferred} still-OPEN request(s).")
-                return phase3_targets
-
-            round_ += 1
+        while pending or self.has_open_repair_requests():
+            if not pending:
+                if cap != 0 and round_ >= cap:
+                    deferred = self.move_open_requests_to_deferred()
+                    self.regenerate_ledger()
+                    log(f"Repair loop reached its {cap}-round cap; deferred {deferred} still-OPEN request(s).")
+                    return phase3_targets
+                round_ += 1
+                pending = self.names_with_open_repair_requests()
+                # Reserve once before dispatch; interrupted targets retry in
+                # this same round rather than consuming another budget slot.
+                self.save_repair_loop_state(round_, pending)
             sig_before = self.repair_state_sig()
             repaired_names: list[str] = []
-            for name in self.names_with_open_repair_requests():
+            for name in list(pending):
                 try:
                     self.wait_for_phase_quota(
                         "repair", fallback="validate"
@@ -3480,6 +3530,8 @@ class Pipeline:
                     raise
                 repaired_names.append(name)
                 phase3_targets.add(name)
+                pending.remove(name)
+                self.save_repair_loop_state(round_, pending)
 
             try:
                 self.process_pending_repair_results(set(repaired_names))
