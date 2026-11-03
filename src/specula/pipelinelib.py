@@ -761,14 +761,29 @@ class Pipeline:
             self.skip_validation = True
             self.skip_repair_loop = True
 
+    @staticmethod
+    def _seal_scenarios(name: str, work: Path) -> confirm_first.Sealed:
+        """Seal one target's Scenario results.
+
+        Unfinished Scenario conversations are retired first: the late pass
+        confirms those candidates in new conversations, and a sealed target
+        must leave no Scenario conversation for resume to mistake for the
+        late pass or for Phase 2 to wait on.
+        """
+        for fid in confirm_first.unfinished(work):
+            resumelib.complete_prefix(("confirm", name, "finding", fid))
+        return confirm_first.seal(work)
+
     def _confirm_first_pending(self, names: list[str]) -> list[str]:
         """Targets whose Scenario confirmation has not been sealed for the current brief."""
         pending: list[str] = []
         for name in names:
             work = Path(self.get_work_dir(name))
             try:
+                if confirm_first.interrupted(work):
+                    self._seal_scenarios(name, work)
                 current = confirm_first.is_current(work)
-            except (confirm_first.SealError, OSError) as exc:
+            except (confirm_first.SealError, resumelib.ResumeError, OSError) as exc:
                 log(f"ERROR: {name}: {exc}")
                 raise SystemExit(1) from None
             if current:
@@ -806,8 +821,8 @@ class Pipeline:
         for name in pending:
             work = Path(self.get_work_dir(name))
             try:
-                sealed = confirm_first.seal(work)
-            except (confirm_first.SealError, OSError) as exc:
+                sealed = self._seal_scenarios(name, work)
+            except (confirm_first.SealError, resumelib.ResumeError, OSError) as exc:
                 log(f"ERROR: {name}: cannot seal the Scenario confirmation: {exc}")
                 raise SystemExit(1) from None
             log(f"{name}: sealed {len(sealed.candidates)} Scenario verdict(s) in {work / confirm_first.DIRECTORY}")

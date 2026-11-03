@@ -110,6 +110,19 @@ def interrupted(work: Path) -> bool:
     return (work / _STAGING).exists() or (work / _STAGING).is_symlink()
 
 
+def unfinished(work: Path) -> list[str]:
+    """Candidates the unsealed Scenario report lists as INCOMPLETE."""
+    if sealed_exists(work):
+        return []
+    for report in (work / "confirmed-bugs.md", work / _STAGING / "confirmed-bugs.md"):
+        if _regular(report):
+            try:
+                return sorted(set(_INCOMPLETE_ROW.findall(report.read_text())))
+            except (OSError, UnicodeError) as exc:
+                raise SealError(f"cannot read {report}: {exc}") from exc
+    return []
+
+
 def seal(work: Path) -> Sealed:
     """Move the Scenario confirmation results out of the model phases' way.
 

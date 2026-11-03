@@ -387,6 +387,29 @@ class TestIncompleteScenario(Case):
         self.assertIn("- MC-1: MC-1 violation. Confirmed separately", report)
         CF.load(self.work)
 
+    def test_unfinished_conversations_are_retired_before_sealing(self) -> None:
+        self.incomplete_pass()
+        self.assertEqual(CF.unfinished(self.work), ["CR-2"])
+        staging = self.work / ".confirm-first.tmp"
+        staging.mkdir()
+        os.replace(self.work / "spec" / "candidates.json", staging / "candidates.json")  # interrupted seal
+        events: list[tuple[str, ...]] = []
+        real_seal = CF.seal
+
+        def seal(work: Path) -> CF.Sealed:
+            events.append(("seal",))
+            return real_seal(work)
+
+        with (
+            mock.patch.object(resumelib, "complete_prefix", side_effect=events.append),
+            mock.patch.object(CF, "seal", seal),
+            mock.patch.object(PL.Pipeline, "get_work_dir", return_value=str(self.work)),
+        ):
+            self.assertEqual(PL.Pipeline()._confirm_first_pending([self.name]), [])
+        self.assertEqual(events, [("confirm", self.name, "finding", "CR-2"), ("seal",)])
+        self.assertEqual(CF.load(self.work).incomplete, ["CR-2"])
+        self.assertEqual(CF.unfinished(self.work), [])
+
 
 class TestConfirmationPhase(Case):
     def test_option_rules(self) -> None:
