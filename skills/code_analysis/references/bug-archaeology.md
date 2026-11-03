@@ -30,15 +30,15 @@ For each bug fix commit, record:
 
 ### 1.4 Already-Fixed Bugs Are Reference, Not Targets
 
-If a historical bug is already fixed in mainline, reproducing it adds value only if the reproduction itself produces something the upstream fix did not — e.g., a deeper mechanism explanation the original PR missed, a generalization to other sites the upstream did not audit, or a regression test the project does not have.
+Historical fixes explain current guards, failure paths, and correctness contracts. They can support baseline modeling, regression validation, and investigation of related sites or interactions.
 
-**Re-deriving the bug via formal methods is not new value.** TLA+ and Miri both recovering "this fix is necessary" is equivalent to `git revert <commit> && cargo test` — useful as methodology demonstration, but contributes zero information about the system itself.
+**Reproducing a historical defect is not a new discovery.** Label any historical or regression experiment separately from findings about the current implementation, and preserve the current fix in the reference model.
 
-When a historical fix has no such added value, record it as **reference context** in the brief (under "Reference Pointers" or as evidence for a bug-prone mechanism) — not as a Model-Checkable Finding or as a modeling target. A modeling-brief entry of the form "MC1: recreate pre-`<commit>` state of #<issue>" is target painting and should be rewritten as either (a) an unaudited-site question of the same mechanism, or (b) demoted to reference.
+Record historical defects as reference context or explicitly labeled regression targets. A new Model-Checkable Finding must identify an unresolved question about current behavior rather than merely recreate a pre-fix state.
 
-**Value-driven containment**: a historical fix's citation flows from § 2 Evidence (as bug-prone-mechanism evidence) and stays in § 7 Reference Pointers. It must **not** propagate into § 4 Proposed Extensions, § 5 Proposed Invariants, or § 6.1 Model-Checkable Findings — including when the propagation is rationalized as "defense-confirmation target", "defense audit", "X-style attack probe", "boundary test at the threshold", "test the brief's MC-N hypothesis", or "verify the fix is load-bearing". Each of these framings predictably produces a Phase 4 writeup that admits the finding is "hardening / no externally observable consequence / deliberate developer intent / documented design choice" — zero information beyond the existing PR. Specula's compute and agent effort are spent to produce information the user does not already have; observed cost of generating predictable zero-value findings is ~$100 per case in the BFT corpus. Stop the propagation at § 2.
+**Separate historical evidence from new findings.** Historical fixes can explain current guards, state transitions, and properties in the baseline model and its extensions. Preserve that behavior when it is part of the requested scope. Do not list re-creating an already-fixed defect as a new § 6.1 Model-Checkable Finding or remove its fix from the model to obtain a violation. A current interaction or generalization needs its own source-grounded question and a clear distinction from the historical result.
 
-**Scope: § 6.1 only.** Value-driven containment applies to Model-Checkable Findings (§ 6.1) because each MC hunt-cfg costs $30-80 in observed runs. § 6.3 (Code-Review-Only) candidates are NOT subject to this principle — they cost only brief-space to enumerate, and the "predict the Phase 4 verdict" heuristic is unreliable enough that pre-pruning reliably drops real bugs (helper-layer one-liners, code patterns whose effects only become clear after reading the call chain). Send every § 6.3 candidate through Phase 4 audit; let Phase 4 decide.
+**Use evidence for finding triage.** Do not discard unresolved candidates based on predicted confirmation outcomes or assumed verification cost. Record the open mechanism question, evidence still needed, and the appropriate verification route; keep baseline coverage independent of candidate novelty.
 
 ---
 
@@ -78,7 +78,7 @@ Check open PRs — they often contain bug fixes waiting for review or discussion
 
 ### 2.4 Parallelization
 
-Use multiple Task subagents to verify issues in parallel (5-10 issues per subagent).
+Use multiple Task subagents to verify independent discussions in parallel when available. Size assignments to their complexity and record which discussions were actually read.
 
 ---
 

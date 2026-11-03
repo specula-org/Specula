@@ -6,15 +6,15 @@ How to write a TLA+ base spec from a Modeling Brief.
 
 > **Category vocabulary** — fault-category vocabulary lives in `code_analysis/references/distributed-analysis.md`, `concurrent-analysis.md`, and (for BFT) `bft-analysis.md`. Use it as shorthand when it helps; do not treat any category list as a checklist that every target must cover.
 
-## Principle: Scenario-Driven, Code-Faithful
+## Principle: Scope-Driven, Code-Faithful
 
-The spec's **scope** is driven by Scenarios — what variables to add, how to split actions, what invariants to check. But the **logic** within each action must faithfully follow the implementation's actual control flow. For the code paths we model, the spec must match the implementation's conditions, branches, and state updates precisely.
+The spec's **scope** follows the requested behavior, system contracts, and Scenarios in the modeling handoff. Include the state and interactions needed for that scope even without a suspected defect. The **logic** within each action must faithfully follow the implementation's actual control flow. For the code paths we model, the spec must match the implementation's conditions, branches, and state updates precisely.
 
 **Every logic block within an action must be annotated with source code line references.**
 
 ## Variable Design
 
-Start from standard protocol variables, then add **extension variables** from Scenarios. Every extension variable must cite which Scenario motivates it and what code it models.
+Start from the system's actors, identities, state, and interfaces. Every extension variable must cite the scope requirement, contract, or Scenario motivating it and the code it models.
 
 Group variables for UNCHANGED clauses (e.g., `serverVars`, `logVars`, `leaderVars`).
 
@@ -123,9 +123,9 @@ Common patterns: log entry records with type fields, message bags (Send/Discard/
 
 This section defines the fault **actions** — state transitions the adversary can take. The MC spec wraps these with counter bounds (see `mc-spec-pattern.md`). The base spec describes what the adversary can do; the MC spec bounds how often.
 
-**Design fault-injection actions based on what your Scenarios actually identify, not on common fault categories or other case studies' lists.** System-specific fault actions take priority — disk IO blocking, non-atomic persist windows, mid-election config change, NIC packet reorder, signal-during-RMW, JIT barrier reordering, etc. — whatever the target's code and the open question demand. The fault-category vocabularies in `distributed-analysis.md`, `concurrent-analysis.md`, and `bft-analysis.md` are starting points for naming, not a constraint on design.
+**Derive fault-injection actions from the implementation and the failure assumptions of the requested scope and Scenarios.** System-specific fault actions take priority — disk IO blocking, non-atomic persist windows, mid-election config change, NIC packet reorder, signal-during-RMW, JIT barrier reordering, etc. A supported failure does not need a prior bug hypothesis to be represented. The fault-category vocabularies in `distributed-analysis.md`, `concurrent-analysis.md`, and `bft-analysis.md` are starting points for naming, not a constraint on design.
 
-A reminder applicable to all categories: if you can characterise a fault action's effect as "equivalent to `git revert <commit>`" for some past commit — drop it. The MC run produces no information the closed PR didn't already record. See `mc-spec-pattern.md` § "Fault Category Wrappers — Guidance, Not Templates".
+Preserve current fixes and guards. A fault action that removes them describes a modified implementation, so keep any historical regression or mutation experiment separate from the current reference model and its findings. See `mc-spec-pattern.md` § "Fault Category Wrappers — Guidance, Not Templates".
 
 ## Crash and Recovery
 
