@@ -38,7 +38,7 @@ Specula is used by researchers and engineers at organizations including:
   <a href="https://www.amazon.com"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/amazon-dark.png"><img src="docs/logos/amazon.png" height="35" alt="Amazon"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.nvidia.com"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/nvidia-dark.png"><img src="docs/logos/nvidia.png" height="25" alt="NVIDIA"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.oracle.com"><img src="docs/logos/oracle.png" height="16" alt="Oracle"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.huawei.com"><img src="docs/logos/huawei.png" height="48" alt="Huawei"></a>
+  <a href="https://www.huawei.com"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/huawei-dark.png"><img src="docs/logos/huawei.png" height="48" alt="Huawei"></picture></a>
 </p>
 
 <p align="center">
