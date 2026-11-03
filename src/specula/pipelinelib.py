@@ -42,7 +42,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     sys.modules["specula.pipelinelib"] = sys.modules[__name__]
-from specula import ci_init, ci_verdict, resumelib
+from specula import ci_init, ci_verdict, confirm_first, resumelib
 from specula import quota as _quota
 from specula.adapters.utils.run_lock import inherited_run_lock_fds
 from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
@@ -141,6 +141,9 @@ Options:
   --skip-confirmation    Skip Phase 4a bug confirmation
   --skip-classification  Skip Phase 4b severity classification
   --skip-repair-loop     Skip the confirmation back-edge repair loop (default: enabled)
+  --confirm-first=MODE   Confirm the Phase 1 Scenarios before modeling. 'only' stops after their
+                         confirmation and classification; 'continue' then runs Phases 2-3 unchanged and
+                         confirms only model-checking findings that do not repeat a confirmed defect
   --legacy-confirm       Phase 4a: single-agent confirmation instead of the default parallel per-finding
   --confirm-debate       Phase 4a: add the adversarial Challenger debate (parallel mode; default off)
   --max-repair-rounds=N  Global repair-loop round cap; unresolved requests are then filed under deferred/ (default: 10; 0 = unlimited)
@@ -361,6 +364,8 @@ class Pipeline:
         self.skip_confirmation = False
         self.skip_classification = False
         self.skip_repair_loop = False
+        self.confirm_first: str | None = None  # --confirm-first=only|continue
+        self._confirm_first_given = False
         self.confirm_legacy = False  # --legacy-confirm: single-agent Phase 4a instead of the default parallel
         self.confirm_debate = False  # --confirm-debate: add the adversarial Challenger (parallel mode)
         self._confirm_legacy_given = False
@@ -456,6 +461,13 @@ class Pipeline:
                 self.skip_classification = True
             elif arg == "--skip-repair-loop":
                 self.skip_repair_loop = True
+            elif arg == "--confirm-first" or arg.startswith("--confirm-first="):
+                mode = arg.split("=", 1)[1] if "=" in arg else ""
+                if mode not in confirm_first.MODES or self._confirm_first_given:
+                    print("ERROR: --confirm-first requires one value: only or continue", file=sys.stderr)
+                    return 1
+                self.confirm_first = mode
+                self._confirm_first_given = True
             elif arg == "--legacy-confirm":
                 self.confirm_legacy = True
                 self._confirm_legacy_given = True
@@ -625,6 +637,11 @@ class Pipeline:
             return 1
         if self.byom_path is not None:
             self.skip_analysis = True
+        confirm_first_error = self._confirm_first_option_error()
+        if confirm_first_error is not None:
+            print(f"ERROR: {confirm_first_error}", file=sys.stderr)
+            return 1
+        self._apply_confirm_first()
         if self.guidance_path is not None and len(self.targets) != 1:
             print("ERROR: --guidance supports exactly one target per run", file=sys.stderr)
             return 1
@@ -716,6 +733,76 @@ class Pipeline:
         if not self.isolate:
             return "--byom requires isolated mode; remove --no-isolate (isolation is the default)"
         return None
+
+    def _confirm_first_option_error(self) -> str | None:
+        if self.confirm_first is None:
+            return None
+        flag = f"--confirm-first={self.confirm_first}"
+        for enabled, other in (
+            (self.byom_path is not None, "--byom"),
+            (self.ci_init, "--ci-init"),
+            (self.confirm_legacy, "--legacy-confirm"),
+            (self.skip_confirmation, "--skip-confirmation"),
+        ):
+            if enabled:
+                return f"{flag} cannot be combined with {other}"
+        if self.confirm_first == "continue":
+            if self.findings_from is not None:
+                return f"{flag} cannot be combined with --findings-from"
+            if not self.isolate:
+                return f"{flag} requires isolated output; remove --no-isolate"
+        return None
+
+    def _apply_confirm_first(self) -> None:
+        """``only`` has no model phases and therefore no model to repair."""
+        if self.confirm_first == "only":
+            self.skip_specgen = True
+            self.skip_harness = True
+            self.skip_validation = True
+            self.skip_repair_loop = True
+
+    def _confirm_first_pending(self, names: list[str]) -> list[str]:
+        """Targets whose Scenario confirmation has not been sealed for the current brief."""
+        pending: list[str] = []
+        for name in names:
+            work = Path(self.get_work_dir(name))
+            try:
+                current = confirm_first.is_current(work)
+            except (confirm_first.SealError, OSError) as exc:
+                log(f"ERROR: {name}: {exc}")
+                raise SystemExit(1) from None
+            if current:
+                continue
+            if confirm_first.sealed_exists(work):
+                log(f"{name}: the modeling brief changed; discarding the earlier Scenario confirmation")
+                confirm_first.discard(work)
+            pending.append(name)
+        return pending
+
+    def run_confirm_first_stage(self, names: list[str]) -> None:
+        """Confirm and seal the Scenario candidates before Phase 2 (continue mode)."""
+        pending = names if self.dry_run else self._confirm_first_pending(names)
+        if not pending:
+            log("Scenario confirmation already sealed; continuing with modeling")
+            return
+        pre = ["--scenarios-only", *(["--debate"] if self.confirm_debate else [])]
+        with self.resource_phase("phase4a", pending):
+            self.wait_for_phase_quota("confirm")
+            self._phase(
+                "CONFIRM FIRST: SCENARIO CONFIRMATION (before modeling)",
+                "launch_bug_confirmation.sh",
+                self._phase_args(pending, pre=pre, phase="confirm"),
+            )
+        if self.dry_run:
+            return
+        for name in pending:
+            work = Path(self.get_work_dir(name))
+            try:
+                sealed = confirm_first.seal(work)
+            except (confirm_first.SealError, OSError) as exc:
+                log(f"ERROR: {name}: cannot seal the Scenario confirmation: {exc}")
+                raise SystemExit(1) from None
+            log(f"{name}: sealed {len(sealed.candidates)} Scenario verdict(s) in {work / confirm_first.DIRECTORY}")
 
     def _ci_init_option_error(self) -> str | None:
         if not self.ci_init:
@@ -892,6 +979,7 @@ class Pipeline:
             "byom": str(self.byom_path) if self.byom_path is not None else None,
             "guidance": str(self.guidance_path) if self.guidance_path is not None else None,
             **({"ci_init": True} if self.ci_init else {}),
+            **({"confirm_first": self.confirm_first} if self.confirm_first else {}),
         }
 
     def _restore_resume_configuration(self, raw: dict[str, Any], *, allow_overrides: bool = False) -> None:
@@ -905,6 +993,13 @@ class Pipeline:
         if self._ci_init_given and not stored_ci_init:
             raise resumelib.ResumeError("cannot enable --ci-init on an existing ordinary run; start a new run")
         self.ci_init = stored_ci_init
+        stored_confirm_first = raw.get("confirm_first")
+        if stored_confirm_first is not None and stored_confirm_first not in confirm_first.MODES:
+            raise resumelib.ResumeError("invalid stored --confirm-first mode")
+        if self._confirm_first_given and self.confirm_first != stored_confirm_first:
+            raise resumelib.ResumeError("--confirm-first differs from this run; start a new run")
+        self.confirm_first = stored_confirm_first
+        self._apply_confirm_first()
         stored_findings = raw.get("findings_from")
         if stored_findings is not None and (
             not isinstance(stored_findings, str) or not Path(stored_findings).is_absolute()
@@ -1114,6 +1209,9 @@ class Pipeline:
         ci_error = self._ci_init_option_error()
         if ci_error is not None:
             raise resumelib.ResumeError(ci_error)
+        confirm_first_error = self._confirm_first_option_error()
+        if confirm_first_error is not None:
+            raise resumelib.ResumeError(confirm_first_error)
 
         stored_artifact = raw.get("artifact")
         if not isinstance(stored_artifact, str):
@@ -1192,8 +1290,24 @@ class Pipeline:
             raise resumelib.ResumeError(
                 f"cannot position the pipeline at interrupted phase {phase!r}; pass --fresh-context to start over"
             )
+        if phase == "bug_confirmation" and self._resuming_scenario_confirmation():
+            preceding = ("skip_analysis",)
         for field in preceding:
             setattr(self, field, True)
+
+    def _resuming_scenario_confirmation(self) -> bool:
+        """An interrupted continue-mode confirmation before every target is sealed
+        is the Scenario pass; the model phases still follow it."""
+        if self.confirm_first != "continue" or self.run_dir is None:
+            return False
+        for name in self.extract_names():
+            work = Path(self.get_work_dir(name))
+            try:
+                if not confirm_first.has_current_seal(work):
+                    return True
+            except (confirm_first.SealError, OSError) as exc:
+                raise resumelib.ResumeError(f"{name}: {exc}") from exc
+        return False
 
     def _acquire_run_lock(self) -> None:
         if self.run_dir is None or self._run_lock_fd is not None:
@@ -1623,6 +1737,7 @@ class Pipeline:
             "tlc_worker_limit": self.tlc_worker_limit or os.environ.get(WORKER_LIMIT_ENV) or None,
             "resume_configuration": resume_configuration,
             **({"ci_init": True} if self.ci_init else {}),
+            **({"confirm_first": self.confirm_first} if self.confirm_first else {}),
         }
         if self.agent_routing is not None:
             assert self.agent_config_path is not None
@@ -2023,7 +2138,7 @@ class Pipeline:
         return not self.skip_classification
 
     def _summary_validation_limits(self) -> tuple[str, ...]:
-        descriptions = (
+        descriptions: tuple[tuple[str, str], ...] = (
             ("analysis", "Source analysis was skipped."),
             ("specgen", "Formal model generation was skipped."),
             ("harness", "Execution trace collection was skipped."),
@@ -2032,11 +2147,22 @@ class Pipeline:
             ("classification", CLASSIFICATION_SKIPPED_LIMIT),
             ("repair", "Automated repair follow-up was skipped."),
         )
+        if self.confirm_first == "only":
+            # The model phases are absent by design, not skipped.
+            descriptions = tuple(
+                (key, text) for key, text in descriptions if key not in {"specgen", "harness", "validation", "repair"}
+            )
         if self._attached_existing_run and not self.fresh_context:
             limits = ["Stage coverage details are unavailable because this run resumed after an interruption."]
         else:
             skipped = self._current_summary_skips()
             limits = [description for key, description in descriptions if skipped[key]]
+        if self.confirm_first == "only":
+            limits.insert(
+                0,
+                "Formal modeling was not part of this run (--confirm-first=only): "
+                "candidates come from the Phase 1 Scenarios.",
+            )
         if self.skip_reviews:
             limits.append("Independent reviews were not run.")
         return tuple(limits)
@@ -3239,13 +3365,21 @@ class Pipeline:
         )
         self.advance_confirmation_generation(0)
 
+    def _confirm_first_phase4_args(self) -> list[str]:
+        return {"only": ["--scenarios-only"], "continue": ["--after-scenarios"]}.get(self.confirm_first or "", [])
+
     def run_phase4_confirmation(self) -> None:
         pre: list[str] = []
         if self.confirm_legacy:
             pre.append("--legacy-confirm")
         if self.confirm_debate:
             pre.append("--debate")
+        pre.extend(self._confirm_first_phase4_args())
         mode = "single-agent, legacy" if self.confirm_legacy else "parallel per-finding"
+        if self.confirm_first == "only":
+            mode += ", Scenarios only"
+        elif self.confirm_first == "continue":
+            mode += ", after Scenario confirmation"
         debate = " + debate" if self.confirm_debate and not self.confirm_legacy else ""
         self._phase(
             f"PHASE 4: BUG CONFIRMATION ({mode}{debate})",
@@ -3277,6 +3411,8 @@ class Pipeline:
         ]
         if self.confirm_debate:
             pre.append("--debate")
+        if self.confirm_first == "continue":
+            pre.append("--after-scenarios")
         if violation_ids:
             banner = (
                 f"REPAIR ROUND {repair_round}: PHASE 4 "
@@ -3667,46 +3803,54 @@ class Pipeline:
 
             out.append(self._review_line("Analysis Review", work_dir / "review-analysis.md"))
 
-            spec_count = sum(
-                (spec_dir / f).is_file() for f in ("base.tla", "MC.tla", "Trace.tla", "instrumentation-spec.md")
-            )
-            if spec_count == 4:
-                out.append(
-                    f"- **Phase 2 (Spec Gen)**: OK ({spec_count}/4 files, base: {_wc_l(spec_dir / 'base.tla')} lines)"
+            if self.confirm_first == "continue":
+                sealed = confirm_first.summary(work_dir)
+                out.append(f"- **Confirm first**: {sealed or 'MISSING (no sealed Scenario confirmation)'}")
+            if self.confirm_first == "only":
+                out.append("- **Phases 2–3 (Modeling)**: not part of this run (--confirm-first=only)")
+            else:
+                spec_count = sum(
+                    (spec_dir / f).is_file() for f in ("base.tla", "MC.tla", "Trace.tla", "instrumentation-spec.md")
                 )
-            elif spec_count > 0:
-                out.append(f"- **Phase 2 (Spec Gen)**: INCOMPLETE ({spec_count}/4 files)")
-            else:
-                out.append("- **Phase 2 (Spec Gen)**: MISSING")
+                if spec_count == 4:
+                    out.append(
+                        f"- **Phase 2 (Spec Gen)**: OK ({spec_count}/4 files, base: {_wc_l(spec_dir / 'base.tla')} lines)"
+                    )
+                elif spec_count > 0:
+                    out.append(f"- **Phase 2 (Spec Gen)**: INCOMPLETE ({spec_count}/4 files)")
+                else:
+                    out.append("- **Phase 2 (Spec Gen)**: MISSING")
 
-            out.append(self._review_line("Spec Gen Review", spec_dir / "review-specgen.md"))
+                out.append(self._review_line("Spec Gen Review", spec_dir / "review-specgen.md"))
 
-            harness_dir = work_dir / "harness"
-            traces_dir = work_dir / "traces"
-            if (harness_dir / "run.sh").is_file():
-                # bash `find "$traces_dir" -name '*.ndjson'` (default -P) does not
-                # descend a symlinked start dir; is_dir() alone would follow it.
-                trace_count = (
-                    len(list(traces_dir.rglob("*.ndjson")))
-                    if traces_dir.is_dir() and not traces_dir.is_symlink()
-                    else 0
-                )
-                instr_guide = "yes" if (harness_dir / "INSTRUMENTATION.md").is_file() else "no"
-                out.append(f"- **Phase 2.5 (Harness)**: OK (traces: {trace_count}, INSTRUMENTATION.md: {instr_guide})")
-            elif harness_dir.is_dir():
-                out.append("- **Phase 2.5 (Harness)**: INCOMPLETE (harness/ exists but no run.sh)")
-            else:
-                out.append("- **Phase 2.5 (Harness)**: MISSING")
+                harness_dir = work_dir / "harness"
+                traces_dir = work_dir / "traces"
+                if (harness_dir / "run.sh").is_file():
+                    # bash `find "$traces_dir" -name '*.ndjson'` (default -P) does not
+                    # descend a symlinked start dir; is_dir() alone would follow it.
+                    trace_count = (
+                        len(list(traces_dir.rglob("*.ndjson")))
+                        if traces_dir.is_dir() and not traces_dir.is_symlink()
+                        else 0
+                    )
+                    instr_guide = "yes" if (harness_dir / "INSTRUMENTATION.md").is_file() else "no"
+                    out.append(
+                        f"- **Phase 2.5 (Harness)**: OK (traces: {trace_count}, INSTRUMENTATION.md: {instr_guide})"
+                    )
+                elif harness_dir.is_dir():
+                    out.append("- **Phase 2.5 (Harness)**: INCOMPLETE (harness/ exists but no run.sh)")
+                else:
+                    out.append("- **Phase 2.5 (Harness)**: MISSING")
 
-            changelog = spec_dir / "changelog.md"
-            if changelog.is_file() and changelog.stat().st_size > 0:
-                out.append(f"- **Phase 3 (Validation)**: changelog written ({_wc_l(changelog)} lines)")
-            elif changelog.is_file():
-                out.append("- **Phase 3 (Validation)**: changelog empty (check log)")
-            else:
-                out.append("- **Phase 3 (Validation)**: SKIPPED")
+                changelog = spec_dir / "changelog.md"
+                if changelog.is_file() and changelog.stat().st_size > 0:
+                    out.append(f"- **Phase 3 (Validation)**: changelog written ({_wc_l(changelog)} lines)")
+                elif changelog.is_file():
+                    out.append("- **Phase 3 (Validation)**: changelog empty (check log)")
+                else:
+                    out.append("- **Phase 3 (Validation)**: SKIPPED")
 
-            out.append(self._review_line("Validation Review", spec_dir / "review-validation.md"))
+                out.append(self._review_line("Validation Review", spec_dir / "review-validation.md"))
 
             confirmed = work_dir / "confirmed-bugs.md"
             if confirmed.is_file() and confirmed.stat().st_size > 0:
@@ -3819,6 +3963,10 @@ class Pipeline:
             print(f"BYOM input:   {self.byom_path}")
         if self.ci_init:
             print("CI mode:      initialization (registration does not imply verified coverage)")
+        if self.confirm_first == "only":
+            print("Workflow:     confirm first, only (Scenario confirmation; no model phases)")
+        elif self.confirm_first == "continue":
+            print("Workflow:     confirm first, continue (Scenario confirmation, then the model phases)")
         if self.run_dir:
             print(f"Run:          {self.run_id}  ({self.run_dir})")
         print()
@@ -3914,19 +4062,24 @@ class Pipeline:
         else:
             log("Skipping Phase 1 (--skip-analysis)")
 
+        if self.confirm_first == "continue":
+            self.run_confirm_first_stage(names)
+        elif self.confirm_first == "only":
+            log("Confirm first (only): Phases 2, 2.5, and 3 and the repair loop are not part of this run")
+
         if not self.skip_specgen:
             with self.resource_phase("phase2", names):
                 self.wait_for_phase_quota("specgen")
                 self.run_phase2_specgen()
                 self.run_review("specgen", names)
-        else:
+        elif self.confirm_first != "only":
             log("Skipping Phase 2 (--skip-specgen)")
 
         if not self.skip_harness:
             with self.resource_phase("phase2_5", names):
                 self.wait_for_phase_quota("harness")
                 self.run_phase2_5_harness()
-        else:
+        elif self.confirm_first != "only":
             log("Skipping Phase 2.5 (--skip-harness)")
 
         # Resume OPEN repairs before ordinary Phase 3. An unfinished Phase 4
@@ -3960,7 +4113,7 @@ class Pipeline:
         elif phase3_covered:
             source = "resumed repair loop" if resumed_repair else "recovered committed repairs"
             log(f"Ordinary Phase 3 covered for every target by the {source}")
-        else:
+        elif self.confirm_first != "only":
             log("Skipping Phase 3 (--skip-validate)")
 
         phase4_covered = resumed_repair and not normal_phase3_ran
@@ -3972,14 +4125,14 @@ class Pipeline:
                 fresh_phase4_ran = True
                 if not self.skip_repair_loop:
                     self.run_repair_loop()
-                else:
+                elif self.confirm_first != "only":
                     log("Skipping repair loop (--skip-repair-loop)")
         elif self.skip_confirmation:
             log("Skipping Phase 4a (--skip-confirmation)")
         else:
             log("Initial Phase 4 completed by the resumed repair loop")
 
-        if not fresh_phase4_ran and self.skip_repair_loop:
+        if not fresh_phase4_ran and self.skip_repair_loop and self.confirm_first != "only":
             log("Skipping repair loop (--skip-repair-loop)")
 
         if fresh_phase4_ran or phase4_covered:

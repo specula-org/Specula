@@ -248,6 +248,22 @@ specula run mysys --artifact=/path/to/source \
 
 The workflow checks whether a prior finding still describes the same issue and whether its dependencies and assumptions still apply before reusing its evidence. Persistent CI carries this history forward automatically. Active records retain `REPRODUCED`, `ENV_LIMITED`, and `MASKED` findings; fixed findings and false positives are removed. Use `specula findings --help` to inspect the available lookup commands.
 
+## Confirm Scenarios first
+
+Use `--confirm-first` to confirm the Phase 1 Scenarios at the code level before any model is built:
+
+```bash
+specula run --confirm-first=only --artifact=/path/to/source \
+  "name|owner/repository|language|reference"
+```
+
+- `--confirm-first=only` runs Phase 1, confirms every Scenario as a code-review candidate, classifies the results, and stops. It does not build a model.
+- `--confirm-first=continue` confirms the Scenarios the same way, then runs Phases 2–3 and the repair loop exactly as in a full run. Phase 4 then confirms the model-checking findings. A finding that repeats a Scenario defect already confirmed as `REPRODUCED`, `ENV_LIMITED`, or `MASKED` reuses that verdict instead of being reproduced again. Every other finding is confirmed with its counterexample.
+
+In `continue` runs, the Scenario results are kept in `confirm-first/` in each target's output. In `confirmed-bugs.md`, a model-checking finding that repeats a confirmed Scenario defect has no entry of its own; the Scenario's entry names it. `spec/candidates.json` records which Scenario candidates each model-checking finding matched, and the pipeline summary counts how many model-checking findings repeated a confirmed defect, matched an unconfirmed Scenario candidate, or were new.
+
+`--confirm-first` cannot be combined with `--byom`, `--ci-init`, `--legacy-confirm`, or `--skip-confirmation`. `continue` also requires isolated output and cannot be combined with `--findings-from`.
+
 ## Hybrid agent configuration
 
 Use an agent configuration file to select different agents or models for different pipeline phases:
@@ -462,6 +478,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--transient-resumes=N` | Set native-session continuation retries for retryable provider or transport failures (default `20`; `0` disables recovery) |
 | `--enable-reviews` | Enable reviews between steps |
 | `--legacy-confirm` | Use one confirmation agent instead of per-finding agents |
+| `--confirm-first=MODE` | Confirm the Phase 1 Scenarios before modeling; `only` stops after them, `continue` then runs the model phases; see [Confirm Scenarios first](#confirm-scenarios-first) |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse earlier outputs |
 | `--skip-validate`, `--skip-confirmation`, `--skip-classification` | Reuse later outputs |
 | `--confirm-debate` | Add the adversarial confirmation debate in parallel Phase 4 mode |

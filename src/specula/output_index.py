@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote_from_bytes
 
+from specula import confirm_first
 from specula.ci_init import BASELINE_FILENAME
 
 INDEX_FILENAME = "index.md"
@@ -200,6 +201,12 @@ def render_target_index(name: str, work_dir: Path, *, pipeline_log: Path | None 
     byom_report = work_dir / BYOM_REPORT_FILENAME
     if _is_file_under(work_dir, byom_report):
         lines.append(f"- {_document('BYOM modification report', byom_report, work_dir)} — Changes to supplied assets")
+    scenario_report = work_dir / confirm_first.REPORT
+    if _is_file_under(work_dir, scenario_report):
+        lines.append(
+            f"- {_document('Scenario confirmation report', scenario_report, work_dir)} "
+            "— Phase 1 Scenarios confirmed before modeling"
+        )
     ci_report = work_dir / "ci-report.md"
     if _is_file_under(work_dir, ci_report):
         lines.append(

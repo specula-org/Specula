@@ -39,11 +39,11 @@ import time
 import traceback
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from specula import persistent_findings, quota, resumelib
+from specula import confirm_first, persistent_findings, quota, resumelib
 from specula.phaselib import (
     DEFAULT_POLICY_RETRIES,
     DEFAULT_TRANSIENT_RESUMES,
@@ -563,6 +563,11 @@ class ConfirmConfig:
     # Initial Phase 4 leaves both unset and retains its existing behavior.
     repair_round: int | None = None
     repair_token: str | None = None
+    # --confirm-first: ``scenarios_only`` confirms the Phase 1 Scenarios before
+    # any model exists; ``after_scenarios`` confirms model checking against the
+    # sealed Scenario results (confirm_first.py).
+    scenarios_only: bool = False
+    after_scenarios: bool = False
     # Runtime-only cursors survive this config's automatic rc75 retries. They
     # are deliberately absent from candidate/verdict fingerprints and disk.
     _policy_states: dict[tuple[str, ...], tuple[str, PolicyRetryState]] = field(
@@ -3311,27 +3316,35 @@ def _expected_brief_scenarios(brief: Path) -> set[str] | None:
 def _candidate_fingerprint(cfg: ConfirmConfig) -> str:
     wd = cfg.ws.work_dir(cfg.name)
     spec_dir = wd / "spec"
-    files: dict[str, str] = {}
-    for label, path in (
-        ("findings", spec_dir / "findings.json"),
-        ("bug_report", spec_dir / "bug-report.md"),
+    prompts = Path(__file__).resolve().parent / "prompts" / "confirmation"
+    sources: list[tuple[str, Path]] = [
         ("brief", wd / "modeling-brief.md"),
-        ("prompt", Path(__file__).resolve().parent / "prompts" / "confirmation" / "consolidate.md"),
         ("schema", SKILLS / "validation-workflow" / "references" / "findings-json-format.md"),
-    ):
-        files[label] = path.read_text(errors="replace") if path.is_file() else ""
-    return _digest(
-        {
-            "version": _CACHE_VERSION,
-            "generation": _generation_content(cfg),
-            "prompt_extra": cfg.prompt_extra,
-            "adapter": _adapter_identity(cfg),
-            "claude_alias": cfg.claude_alias,
-            "max_turns": cfg.max_turns,
-            "tuning": _tuning_identity(cfg),
-            "files": files,
-        }
-    )
+    ]
+    if not cfg.scenarios_only:
+        # A Scenario-only pass ignores model outputs, so they do not bind it.
+        sources += [("findings", spec_dir / "findings.json"), ("bug_report", spec_dir / "bug-report.md")]
+    if cfg.after_scenarios:
+        sources += [
+            ("prompt", prompts / "consolidate-after-scenarios.md"),
+            ("sealed", wd / confirm_first.STATE),
+        ]
+    else:
+        sources.append(("prompt", prompts / "consolidate.md"))
+    files = {label: path.read_text(errors="replace") if path.is_file() else "" for label, path in sources}
+    identity: dict[str, Any] = {
+        "version": _CACHE_VERSION,
+        "generation": _generation_content(cfg),
+        "prompt_extra": cfg.prompt_extra,
+        "adapter": _adapter_identity(cfg),
+        "claude_alias": cfg.claude_alias,
+        "max_turns": cfg.max_turns,
+        "tuning": _tuning_identity(cfg),
+        "files": files,
+    }
+    if cfg.scenarios_only or cfg.after_scenarios:
+        identity["mode"] = "scenarios-only" if cfg.scenarios_only else "after-scenarios"
+    return _digest(identity)
 
 
 def _candidate_output_digest(path: Path) -> str:
@@ -3384,51 +3397,19 @@ def _write_candidate_cache(cfg: ConfirmConfig, out: Path) -> None:
     tmp.replace(sidecar)
 
 
-def consolidate(cfg: ConfirmConfig) -> None:
-    """Phase-4 step 0: one agent merges MC (bug-report/findings.json) with
-    code-review Scenarios (modeling-brief) and dedups them into candidates.json.
-    Idempotent: a present-and-valid candidates.json is reused. Raises
-    RateLimited on exit 75; raises RuntimeError if the output is missing/invalid."""
+def _run_consolidate_agent(
+    cfg: ConfirmConfig,
+    prompt: str,
+    out: Path,
+    resume_logical: tuple[str, ...],
+    *,
+    stem: str = "consolidate",
+    stale: tuple[Path, ...] = (),
+) -> None:
+    """Run one consolidation agent that writes ``out``. Raises RateLimited on
+    exit 75 and ConsolidateFailed on any other nonzero exit."""
     wd = cfg.ws.work_dir(cfg.name)
     spec_dir = wd / "spec"
-    out = spec_dir / "candidates.json"
-    expected_mc_ids, source_errs = _expected_mc_ids(spec_dir)
-    brief = wd / "modeling-brief.md"
-    external_candidates = (
-        out.is_file()
-        and not (spec_dir / "findings.json").is_file()
-        and not (spec_dir / "bug-report.md").is_file()
-        and not brief.is_file()
-        and not (spec_dir / "confirmation-generation.json").is_file()
-    )
-    expected_scenarios = None if external_candidates else _expected_brief_scenarios(brief)
-    resume_logical = ("confirm", cfg.name, "consolidate")
-    if source_errs:
-        raise ConsolidateFailed(f"invalid model-checking input for {cfg.name}: {source_errs[0]}")
-    if out.is_file() and _candidate_cache_valid(cfg, out, expected_mc_ids, expected_scenarios):
-        cfg.clear_policy_states(("consolidate",))
-        resumelib.complete_turn(resume_logical, allow_previous_owner=resumelib.manual_mode())
-        _log(f"  {cfg.name}: candidates.json present and valid — skipping consolidate")
-        return
-    bug_report = spec_dir / "bug-report.md"
-    findings_json = spec_dir / "findings.json"
-    mc_src = (
-        f"`{findings_json}` (structured MC findings — prefer this)" if findings_json.is_file() else f"`{bug_report}`"
-    )
-    prompt = (
-        render(
-            "confirmation/consolidate",
-            name=cfg.name,
-            mc_src=mc_src,
-            brief=str(brief),
-            out=str(out),
-            validation_workflow_skill=prompt_skill_ids("validation-workflow"),
-        )
-        + cfg.prompt_extra
-    )
-    if cfg.dry_run:
-        _log(f"  {cfg.name}: [DRY] consolidate → {out}")
-        return
     spec_dir.mkdir(parents=True, exist_ok=True)
     policy_state = cfg.policy_state(("consolidate",), prompt)
     fresh = policy_state.invocation_attempt == 0 and not resumelib.has_prefix(resume_logical)
@@ -3438,13 +3419,15 @@ def consolidate(cfg: ConfirmConfig) -> None:
         # still-live native session, so the replay must not delete them.
         out.unlink(missing_ok=True)
         (spec_dir / _CANDIDATE_CACHE).unlink(missing_ok=True)
+        for path in stale:
+            path.unlink(missing_ok=True)
     run_cwd = _consolidate_cwd(wd, fresh=fresh)
     try:
         rc, _ = run_agent_blocking(
             cfg.adapter,
             prompt,
-            spec_dir / ".consolidate.prompt.md",
-            spec_dir / ".consolidate.log",
+            spec_dir / f".{stem}.prompt.md",
+            spec_dir / f".{stem}.log",
             phase_key=PHASE_KEY,
             work_dir=wd,
             cwd=run_cwd,
@@ -3470,6 +3453,64 @@ def consolidate(cfg: ConfirmConfig) -> None:
     if rc != 0:
         out.unlink(missing_ok=True)
         raise ConsolidateFailed(f"consolidate adapter exited {rc}")
+
+
+def consolidate(cfg: ConfirmConfig) -> None:
+    """Phase-4 step 0: one agent merges MC (bug-report/findings.json) with
+    code-review Scenarios (modeling-brief) and dedups them into candidates.json.
+    Idempotent: a present-and-valid candidates.json is reused. Raises
+    RateLimited on exit 75; raises RuntimeError if the output is missing/invalid."""
+    if cfg.after_scenarios:
+        _consolidate_after_scenarios(cfg)
+        return
+    wd = cfg.ws.work_dir(cfg.name)
+    spec_dir = wd / "spec"
+    out = spec_dir / "candidates.json"
+    # A Scenario-only pass runs before any model exists. It ignores model
+    # outputs even when a reused work directory still holds them.
+    expected_mc_ids, source_errs = (None, []) if cfg.scenarios_only else _expected_mc_ids(spec_dir)
+    brief = wd / "modeling-brief.md"
+    external_candidates = (
+        out.is_file()
+        and not (spec_dir / "findings.json").is_file()
+        and not (spec_dir / "bug-report.md").is_file()
+        and not brief.is_file()
+        and not (spec_dir / "confirmation-generation.json").is_file()
+    )
+    expected_scenarios = None if external_candidates else _expected_brief_scenarios(brief)
+    resume_logical = ("confirm", cfg.name, "consolidate")
+    if source_errs:
+        raise ConsolidateFailed(f"invalid model-checking input for {cfg.name}: {source_errs[0]}")
+    if out.is_file() and _candidate_cache_valid(cfg, out, expected_mc_ids, expected_scenarios):
+        cfg.clear_policy_states(("consolidate",))
+        resumelib.complete_turn(resume_logical, allow_previous_owner=resumelib.manual_mode())
+        _log(f"  {cfg.name}: candidates.json present and valid — skipping consolidate")
+        return
+    if cfg.scenarios_only:
+        mc_src = "none. This pass confirms the Scenarios before any model exists, so emit only code-review candidates."
+    else:
+        bug_report = spec_dir / "bug-report.md"
+        findings_json = spec_dir / "findings.json"
+        mc_src = (
+            f"`{findings_json}` (structured MC findings — prefer this)"
+            if findings_json.is_file()
+            else f"`{bug_report}`"
+        )
+    prompt = (
+        render(
+            "confirmation/consolidate",
+            name=cfg.name,
+            mc_src=mc_src,
+            brief=str(brief),
+            out=str(out),
+            validation_workflow_skill=prompt_skill_ids("validation-workflow"),
+        )
+        + cfg.prompt_extra
+    )
+    if cfg.dry_run:
+        _log(f"  {cfg.name}: [DRY] consolidate → {out}")
+        return
+    _run_consolidate_agent(cfg, prompt, out, resume_logical)
     errs = (
         _validate_candidates(out, expected_mc_ids, expected_scenarios)
         if out.is_file()
@@ -3485,6 +3526,90 @@ def consolidate(cfg: ConfirmConfig) -> None:
     cand = doc.get("findings", [])
     n_merged = sum(1 for c in cand if c.get("dedup_note"))
     _log(f"  {cfg.name}: consolidated {len(cand)} candidates ({n_merged} absorbed a code-review dup)")
+
+
+def _consolidate_after_scenarios(cfg: ConfirmConfig) -> None:
+    """Step 0 after a sealed Scenario confirmation (--confirm-first=continue).
+
+    The agent lists the model-checking findings and marks the sealed Scenario
+    candidates each one repeats. The dispatcher then merges the sealed
+    candidates in; their verdicts are carried, not confirmed again."""
+    wd = cfg.ws.work_dir(cfg.name)
+    spec_dir = wd / "spec"
+    out = spec_dir / "candidates.json"
+    raw = wd / confirm_first.MODEL_CANDIDATES
+    try:
+        sealed = confirm_first.load(wd)
+    except confirm_first.SealError as exc:
+        raise ConsolidateFailed(str(exc)) from exc
+    _, source_errs = _expected_mc_ids(spec_dir)
+    if source_errs:
+        raise ConsolidateFailed(f"invalid model-checking input for {cfg.name}: {source_errs[0]}")
+    resume_logical = ("confirm", cfg.name, "consolidate-after-scenarios")
+    if out.is_file() and _candidate_cache_valid(cfg, out, None):
+        cfg.clear_policy_states(("consolidate",))
+        resumelib.complete_turn(resume_logical, allow_previous_owner=resumelib.manual_mode())
+        _log(f"  {cfg.name}: candidates.json present and valid — skipping consolidate")
+        return
+    findings_json = spec_dir / "findings.json"
+    bug_report = spec_dir / "bug-report.md"
+    if cfg.dry_run:
+        _log(f"  {cfg.name}: [DRY] match model checking to the sealed Scenario results → {out}")
+        return
+    if findings_json.is_file() or bug_report.is_file():
+        mc_src = (
+            f"`{findings_json}` (structured MC findings — prefer this)"
+            if findings_json.is_file()
+            else f"`{bug_report}`"
+        )
+        prompt = (
+            render(
+                "confirmation/consolidate-after-scenarios",
+                name=cfg.name,
+                mc_src=mc_src,
+                scenario_candidates=str(wd / confirm_first.CANDIDATES),
+                scenario_report=str(wd / confirm_first.REPORT),
+                out=str(raw),
+                validation_workflow_skill=prompt_skill_ids("validation-workflow"),
+            )
+            + cfg.prompt_extra
+        )
+        _run_consolidate_agent(
+            cfg,
+            prompt,
+            raw,
+            resume_logical,
+            stem="consolidate-after-scenarios",
+            stale=(out,),
+        )
+        try:
+            doc = json.loads(raw.read_text())
+        except (OSError, ValueError) as exc:
+            raise ConsolidateFailed(f"no valid {confirm_first.MODEL_CANDIDATES} for {cfg.name}: {exc}") from exc
+        model = doc.get("findings") if isinstance(doc, dict) else None
+        if not isinstance(model, list):
+            raise ConsolidateFailed(f"no valid {confirm_first.MODEL_CANDIDATES} for {cfg.name}: 'findings' missing")
+    else:
+        model = []
+    merged, warnings = confirm_first.merge(model, sealed)
+    for warning in warnings:
+        _log(f"  {cfg.name}: WARNING: {warning}")
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_name(f".{out.name}.{secrets.token_hex(4)}.tmp")
+    tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=2) + "\n")
+    errs = _validate_candidates(tmp)
+    if errs:
+        tmp.unlink(missing_ok=True)
+        raise ConsolidateFailed(f"no valid candidates.json for {cfg.name}: {errs[0]}")
+    tmp.replace(out)
+    _write_candidate_cache(cfg, out)
+    resumelib.complete_turn(resume_logical, allow_previous_owner=resumelib.manual_mode())
+    covered = len(confirm_first.covered_ids(merged))
+    model_count = len(merged["findings"]) - len(sealed.candidates)
+    _log(
+        f"  {cfg.name}: {model_count + covered} model-checking candidate(s); {covered} repeat an earlier "
+        f"confirmed defect and reuse its verdict; {len(sealed.candidates)} Scenario verdict(s) carried"
+    )
 
 
 # ── aggregation → confirmed-bugs.md ──────────────────────────────────────────
@@ -3819,6 +3944,8 @@ def _prepare_repair_findings(cfg: ConfirmConfig) -> tuple[list[Finding], list[Fi
         catalog_data = list(report_catalog)
         doc = {"findings": catalog_data}
 
+    covered = confirm_first.covered_ids(doc) if cfg.after_scenarios else set()
+    current_by_id = {fid: item for fid, item in current_by_id.items() if fid not in covered}
     positions = {str(item["id"]): index for index, item in enumerate(catalog_data)}
     for item in report_catalog:
         fid = str(item["id"])
@@ -3848,6 +3975,55 @@ def _prepare_repair_findings(cfg: ConfirmConfig) -> tuple[list[Finding], list[Fi
     current = _findings_from_data(cfg, list(current_by_id.values()))
     catalog = _findings_from_data(cfg, catalog_data)
     return current, catalog
+
+
+def _carried_outcomes(cfg: ConfirmConfig, findings: list[Finding]) -> dict[str, Outcome]:
+    """Sealed Scenario verdicts, reported again without another confirmation."""
+    try:
+        sealed = confirm_first.load(cfg.ws.work_dir(cfg.name))
+    except confirm_first.SealError as exc:
+        raise ConfirmationFailed(str(exc)) from exc
+    by_id = {finding.id: finding for finding in findings}
+    carried: dict[str, Outcome] = {}
+    for fid in sealed.ids:
+        finding = by_id.get(fid)
+        if finding is None:
+            raise ConfirmationFailed(f"sealed Scenario candidate {fid} is missing from candidates.json")
+        stored = _load_stored_verdict(finding)
+        if stored is None or stored.status != sealed.statuses[fid]:
+            raise ConfirmationFailed(f"{fid}: sealed Scenario verdict cannot be loaded")
+        carried[fid] = stored
+    return carried
+
+
+def _candidate_doc(cfg: ConfirmConfig) -> dict[str, Any]:
+    path = cfg.ws.work_dir(cfg.name) / "spec" / "candidates.json"
+    if not path.is_file():
+        return {}
+    doc = json.loads(path.read_text())
+    return doc if isinstance(doc, dict) else {}
+
+
+def _covered_ids(cfg: ConfirmConfig) -> set[str]:
+    return confirm_first.covered_ids(_candidate_doc(cfg))
+
+
+def _confirm_first_notes(cfg: ConfirmConfig) -> dict[str, str]:
+    if not cfg.after_scenarios or cfg.dry_run:
+        return {}
+    return confirm_first.report_notes(_candidate_doc(cfg))
+
+
+def _with_notes(outcomes: list[Outcome], notes: dict[str, str]) -> list[Outcome]:
+    """Report copies with model-checking cross-references; saved verdicts stay unchanged."""
+    if not notes:
+        return outcomes
+    return [
+        replace(outcome, body=f"{outcome.body.rstrip()}\n\n{notes[outcome.finding.id]}")
+        if outcome.finding.id in notes
+        else outcome
+        for outcome in outcomes
+    ]
 
 
 def load_findings(cfg: ConfirmConfig) -> list[Finding]:
@@ -3956,6 +4132,7 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
 
     prior_by_id: dict[str, Outcome] = {}
     repair_evidence_by_id: dict[str, str] = {}
+    carried: dict[str, Outcome] = {}
     try:
         if cfg.repair_round is None:
             try:
@@ -3985,10 +4162,17 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
                 if finding.id in history:
                     finding.data["persistent_record"] = str(work / persistent_findings._record_path(finding.id))
             catalog = findings
+            if cfg.after_scenarios and not cfg.dry_run:
+                carried = _carried_outcomes(cfg, findings)
+                findings = [finding for finding in findings if finding.id not in carried]
         else:
             commit = _load_repair_commit(cfg)
             findings, catalog = _prepare_repair_findings(cfg)
-            if [finding.id for finding in findings] != commit["violation_ids"]:
+            # Violations that repeat a confirmed Scenario defect keep reusing
+            # that verdict in repair rounds too.
+            covered = _covered_ids(cfg) if cfg.after_scenarios else set()
+            expected_ids = [fid for fid in commit["violation_ids"] if fid not in covered]
+            if [finding.id for finding in findings] != expected_ids:
                 raise ConfirmationFailed("current repair findings do not match the committed violation ids")
             requests = _repair_round_requests(cfg, commit["request_ids"])
             current_findings = {finding.id: finding for finding in findings}
@@ -4047,8 +4231,11 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
                     )
                     _rewrite_stored_body(finding, body)
                     prior.body = body
+        notes = _confirm_first_notes(cfg)
     except (ConfirmationFailed, OSError, ValueError, TypeError) as exc:
         return _withhold(cfg, f"candidate loading failed ({exc}) — deliverable withheld")
+    if carried:
+        _log(f"  {cfg.name}: {len(carried)} sealed Scenario verdict(s) carried without another confirmation")
     _log(
         f"Parallel confirmation: {cfg.name} — {len(findings)} "
         f"{'current repair violations' if cfg.repair_round is not None else 'findings'}, "
@@ -4060,12 +4247,12 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
         return 0
     if not findings:
         if cfg.repair_round is None:
-            aggregate(cfg, [])
+            preserved = [carried[finding.id] for finding in catalog if finding.id in carried]
         else:
             preserved = [prior_by_id[finding.id] for finding in catalog if finding.id in prior_by_id]
-            for index, preserved_outcome in enumerate(preserved, 1):
-                preserved_outcome.bug_no = index
-            aggregate(cfg, preserved)
+        for index, preserved_outcome in enumerate(preserved, 1):
+            preserved_outcome.bug_no = index
+        aggregate(cfg, _with_notes(preserved, notes))
         return _post_validate_repair_state(cfg)
 
     outcomes: list[Outcome] = []
@@ -4230,7 +4417,8 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
     # INCOMPLETE row, clearly marked; every completed finding is still reported. A
     # single infra error / rate limit no longer withholds the whole target.
     if cfg.repair_round is None:
-        order = {f.id: i for i, f in enumerate(findings)}
+        outcomes.extend(carried.values())
+        order = {f.id: i for i, f in enumerate(catalog)}
         outcomes.sort(key=lambda o: order[o.finding.id])
     else:
         current_outcomes = {outcome.finding.id: outcome for outcome in outcomes}
@@ -4246,7 +4434,7 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
             if o.status.startswith("PENDING REPAIR") and o.rr is None and not cfg.dry_run:
                 o.rr = allocate_rr(cfg, o)
                 _save_verdict(o, cfg)  # persist the assigned RR into the idempotent cache
-        aggregate(cfg, outcomes)
+        aggregate(cfg, _with_notes(outcomes, notes))
     except (ConfirmationFailed, OSError, ValueError) as exc:
         return _withhold(cfg, f"confirmation aggregation failed ({exc}) — deliverable withheld")
     post_validation = _post_validate_repair_state(cfg)

@@ -2770,6 +2770,8 @@ Options:
   --legacy-confirm    Single-agent confirmation (one agent, all findings) instead of parallel
   --repair-round=N    Internal: confirm only Phase-3 violations from repair round N
   --repair-token=ID   Internal: durable identity of the committed Phase-3 repair result
+  --scenarios-only    Confirm only the Phase 1 Scenarios; no model outputs are needed or read
+  --after-scenarios   Confirm model checking against sealed Scenario results (<name>/confirm-first/)
   --debate            Add an adversarial Challenger after each confirmation (parallel mode; default off)
   --rounds=N          Max debate rounds with --debate (default: 5; range: 1-5)
   --max-parallel=N    Hard limit for concurrent findings in parallel mode, or concurrent target agents in
@@ -2784,7 +2786,7 @@ Options:
   --artifact=PATH     Explicit path to the artifact repo (overrides auto-detection)
 
 Prerequisites:
-  - Bug report at <name>/spec/bug-report.md (from Phase 3)
+  - Bug report at <name>/spec/bug-report.md (from Phase 3; not with --scenarios-only)
   - Modeling brief at <name>/modeling-brief.md (from Phase 1)
   - Source repo at <name>/artifact/<repo>/ (or supplied via --artifact)
 
@@ -2808,6 +2810,9 @@ Prerequisites:
         if arg.startswith("--rounds="):
             extra["rounds"] = arg[len("--rounds=") :]
             return True
+        if arg in ("--scenarios-only", "--after-scenarios"):
+            extra[arg[2:].replace("-", "_")] = True
+            return True
         return False
 
     def default_max_parallel(self, extra: dict[str, str | bool]) -> int:
@@ -2818,6 +2823,12 @@ Prerequisites:
             return "Invalid options: --legacy-confirm and --debate cannot be used together"
         if extra.get("legacy") and "repair_round" in extra:
             return "Invalid options: --legacy-confirm and --repair-round cannot be used together"
+        if extra.get("scenarios_only") and extra.get("after_scenarios"):
+            return "Invalid options: --scenarios-only and --after-scenarios cannot be used together"
+        if extra.get("legacy") and (extra.get("scenarios_only") or extra.get("after_scenarios")):
+            return "Invalid options: --legacy-confirm cannot be used with --scenarios-only or --after-scenarios"
+        if extra.get("scenarios_only") and "repair_round" in extra:
+            return "Invalid options: --scenarios-only and --repair-round cannot be used together"
         if "repair_token" in extra and "repair_round" not in extra:
             return "Invalid options: --repair-token requires --repair-round"
         if "repair_round" in extra and "repair_token" not in extra:
@@ -2906,6 +2917,8 @@ Prerequisites:
                 transient_resumes=self._transient_resumes,
                 repair_round=repair_round,
                 repair_token=repair_token,
+                scenarios_only=bool(ws.opts.get("scenarios_only")),
+                after_scenarios=bool(ws.opts.get("after_scenarios")),
                 dry_run=dry_run,
                 prompt_extra=self._read_prompt_extra(ws, name),
                 resume_prompt_extra=self._manual_prompt_extra(ws, name),
@@ -3065,14 +3078,26 @@ Prerequisites:
         return failures
 
     def check(self, ws: Workspace, names: list[str]) -> bool:
+        from specula import confirm_first
+
         ok = True
         repair_mode = "repair_round" in ws.opts
+        scenarios_only = bool(ws.opts.get("scenarios_only"))
         for name in names:
             wd = ws.work_dir(name)
             repo_dir = ws.find_repo_dir(name)
             repair_has_findings = True
             line = f"  {name:<20}"
-            if repair_mode and (wd / "spec" / "findings.json").is_file():
+            if ws.opts.get("after_scenarios"):
+                try:
+                    confirm_first.load(wd)
+                    line += "Scenario results OK  "
+                except confirm_first.SealError as exc:
+                    line += f"Scenario results INVALID ({exc})  "
+                    ok = False
+            if scenarios_only:
+                line += "Scenarios only"
+            elif repair_mode and (wd / "spec" / "findings.json").is_file():
                 line += "findings OK"
                 try:
                     findings_doc = json.loads((wd / "spec" / "findings.json").read_text())
