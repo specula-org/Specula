@@ -66,8 +66,6 @@ Specula is used by researchers and engineers at organizations including:
   <a href="https://www.virginia.edu"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/uva-dark.png"><img src="docs/logos/uva.png" height="36" alt="University of Virginia"></picture></a>
 </p>
 
-<p align="center"><sub>Logos are trademarks of their respective owners.</sub></p>
-
 ## Prerequisites
 
 - Python 3.10+ with pip
