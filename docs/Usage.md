@@ -248,6 +248,20 @@ specula run mysys --artifact=/path/to/source \
 
 The workflow checks whether a prior finding still describes the same issue and whether its dependencies and assumptions still apply before reusing its evidence. Persistent CI carries this history forward automatically. Active records retain `REPRODUCED`, `ENV_LIMITED`, and `MASKED` findings; fixed findings and false positives are removed. Use `specula findings --help` to inspect the available lookup commands.
 
+## Confirm bugs during code analysis
+
+Use `--confirm-first` to reproduce the bug candidates from code analysis right away, before any model is built:
+
+```bash
+specula run --confirm-first=only --artifact=/path/to/source \
+  "name|owner/repository|language|reference"
+```
+
+- `only` confirms these candidates, classifies the results, and stops.
+- `continue` confirms them first and then runs the full workflow. A model-checking finding that repeats an already confirmed bug reuses its verdict instead of being reproduced again. The pipeline summary shows how many model-checking findings were new.
+
+The early results are kept in `confirm-first/` in the target's output. `--confirm-first` cannot be combined with `--byom`, `--ci-init`, `--legacy-confirm`, or `--skip-confirmation`. `continue` also requires isolated output and cannot be combined with `--findings-from`.
+
 ## Hybrid agent configuration
 
 Use an agent configuration file to select different agents or models for different pipeline phases:
@@ -462,6 +476,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--transient-resumes=N` | Set native-session continuation retries for retryable provider or transport failures (default `20`; `0` disables recovery) |
 | `--enable-reviews` | Enable reviews between steps |
 | `--legacy-confirm` | Use one confirmation agent instead of per-finding agents |
+| `--confirm-first=MODE` | Confirm the code-analysis bug candidates before modeling; `only` stops there, `continue` then runs the full workflow; see [Confirm bugs during code analysis](#confirm-bugs-during-code-analysis) |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse earlier outputs |
 | `--skip-validate`, `--skip-confirmation`, `--skip-classification` | Reuse later outputs |
 | `--confirm-debate` | Add the adversarial confirmation debate in parallel Phase 4 mode |
