@@ -62,7 +62,7 @@ Specula is used by researchers and engineers at organizations including:
   <a href="https://www.berkeley.edu"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/berkeley-dark.png"><img src="docs/logos/berkeley.png" height="35" alt="UC Berkeley"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://illinois.edu"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/uiuc-dark.png"><img src="docs/logos/uiuc.png" height="32" alt="University of Illinois Urbana-Champaign"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.purdue.edu"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/purdue-dark.png"><img src="docs/logos/purdue.png" height="36" alt="Purdue University"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.nyu.edu"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/nyu-dark.png"><img src="docs/logos/nyu.png" height="40" alt="New York University"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.nyu.edu"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/nyu-dark.png"><img src="docs/logos/nyu.png" height="38" alt="New York University"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.virginia.edu"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/uva-dark.png"><img src="docs/logos/uva.png" height="36" alt="University of Virginia"></picture></a>
 </p>
 
