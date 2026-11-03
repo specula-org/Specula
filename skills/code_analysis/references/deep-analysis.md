@@ -114,7 +114,7 @@ Which files count as “core” depends on the category-specific reference file.
 
 ### 3.2 Parallelization
 
-Use multiple Task subagents — one per major source file:
+Use multiple Task subagents for coherent components, mechanisms, or source files when available. Include the adjacent code needed to establish each assignment's interfaces and effects. For example:
 
 ```text
 Subagent A: Analyze core file 1

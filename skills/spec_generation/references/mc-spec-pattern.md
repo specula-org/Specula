@@ -46,7 +46,7 @@ A few mechanics that are usually universal:
 - Reactive actions (message handlers, state advancement, completion of in-flight operations) should not be bounded — only the actions that *introduce* non-determinism are.
 - The base spec's action granularity is decided in `base.tla`; the MC layer should not silently merge or split actions to manage state space.
 
-Beyond those mechanics, the right question is not "which category am I checking off?" but "what concrete, open question about my target am I trying to answer?" If you cannot articulate a concrete open question — not anchored to any past commit, fix, or known PR — then there is probably no wrapper worth writing for that category in this case. See `bug-archaeology.md` § 1.4 and `modeling-brief-format.md` § 6.1 for the value-driven principle that constrains which wrappers are worth writing.
+Choose wrappers to explore the supported failure assumptions and contracts of the requested model as well as specific Scenario questions. Historical evidence may explain why a current guard or failure path belongs in that model; a prior bug hypothesis is not required. Preserve current fixes and distinguish baseline verification from claims of a new defect. See `bug-archaeology.md` § 1.4 and `modeling-brief-format.md` § 6.1 for classifying findings.
 
 If a target has a domain-specific fault that isn't named in any taxonomy file, model it directly. The taxonomy is a vocabulary, not a definition of "fault model".
 
@@ -63,7 +63,7 @@ ClientRequest <- MCClientRequest
 
 ## Tuning Constants
 
-Start in the 2-8 range per constant. Too small misses bugs; increase one constant at a time if needed. State space grows exponentially.
+Choose finite bounds that admit the behavior being investigated. The values below are examples from small protocol models, not limits on model size or supported interactions. Increase bounds when lifecycle length, topology, or reachability requires it, and record the checked configurations. State space grows exponentially.
 
 | Constant | Recommended | Notes |
 |----------|-------------|-------|
@@ -83,8 +83,8 @@ Generate one `MC_hunt_<scenario>.cfg` per Scenario from the modeling brief. Thes
 
 **Pattern** — differ from `MC.cfg` in two ways:
 
-1. **Tight bounds**: reduce irrelevant action limits to 0-1, keep only the limits that trigger the target bug mechanism
-2. **Targeted invariants**: only the Scenario invariant + core safety. Do not include structural invariants or other Scenarios' invariants
+1. **Focused bounds**: reduce unrelated action limits when justified, preserving the mechanism and its enabling interactions
+2. **Targeted invariants**: enable the Scenario properties and useful safety, structural, and interaction properties; document any checks omitted from a particular campaign
 
 **MC.cfg invariant organization**: group invariants by category with comments, and **comment out** extension (scenario) invariants.
 
@@ -97,8 +97,8 @@ Generate one `MC_hunt_<scenario>.cfg` per Scenario from the modeling brief. Thes
 
 For concurrent / lock-free systems, a good hunting config usually has:
 
-1. **One mechanism only** — e.g. stale head, premature reclaim, skipped re-check
-2. **Tiny structure bounds** — capacity 2-3, 1-3 keys/values, 2-3 threads
+1. **A defined mechanism or interaction** — e.g. stale head, premature reclaim, skipped re-check, or their composition across shared state
+2. **Finite structure bounds** — start with small instances where sufficient, then expand to admit the required actors, identities, and lifecycle stages
 3. **Real bad-state invariants** — no use-after-free, no double-consume, no lost element, no over-capacity, no parked-on-aborted
 4. **Irrelevant actions near zero** — but keep the target mechanism and its enabling interleavings alive
 

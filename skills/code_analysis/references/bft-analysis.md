@@ -52,7 +52,7 @@ Useful questions to ask of any candidate Byzantine action, regardless of which l
 - Does the target's code actually expose a check whose failure would admit this behavior? If not, modeling the action explores nothing the protocol layer can see.
 - Is the receiver-side validation predicate the bug surface, or the sender-side decision? Most BFT bugs in real implementations live in receiver-side verification (cert validation, freshness checks, value-binding), not in inventing more sender-side mischief.
 - Does the action compose with a real-world environmental fault the brief already models (timeout, partition, crash, config change)? Byzantine bugs frequently cross categories — pure Byzantine actions in isolation often reproduce textbook results rather than uncovering new ones.
-- Can you state the Phase 4 verdict you predict? If the only honest verdict is "reproduces a known bug that's already fixed", that's the answer-key anti-pattern — drop it. See `modeling-brief-format.md` § 6.1 and `bug-archaeology.md` § 1.4.
+- Does this represent current behavior under the declared threat model? Distinguish checks of current defenses, unresolved mechanism questions, and historical regression experiments. See `modeling-brief-format.md` § 6.1 and `bug-archaeology.md` § 1.4.
 
 ---
 
@@ -76,13 +76,13 @@ When the brief justifies adversary actions, the encoding is target-specific. A f
 - **Authentication axiom**: Byzantine identities sign as themselves; honest signatures are unforgeable. Do **not** model cryptographic primitive breaks unless the case study is specifically about key compromise.
 - **Receiver-side validation is the bug surface**. Whatever Byzantine action you write, route it through whatever verification predicate the protocol actually runs (`ValidValue`, `ValidateQC`, `VerifyTC`, `ValidEvidence`, etc.). The wrapper exists so TLC can ask "is this predicate strong enough?"; if you bypass the predicate, the run answers nothing about the implementation.
 - **Counters are TLC search budgets, not adversary semantics**. If you bound Byzantine actions, the bounds belong in `MC.tla`, not in `base.tla` — a real adversary is not "limited to 3 equivocations". Each fault-injection action takes its own counter, checked AND incremented on the same transition.
-- **Some categories require base-spec changes** rather than just a wrapper. Selective dissemination needs a directed message bag (`m.to ⊆ Server`); evidence lifecycle needs a per-node evidence pool; amnesia needs per-validator history (`PriorLocks`, `LastVote`, etc.) the rest of the spec wouldn't otherwise track. Plan accordingly, or drop the category.
+- **Some categories require base-spec changes** rather than just a wrapper. Selective dissemination needs a directed message bag (`m.to ⊆ Server`); evidence lifecycle needs a per-node evidence pool; amnesia needs per-validator history (`PriorLocks`, `LastVote`, etc.) the rest of the spec wouldn't otherwise track. Include those dependencies for in-scope behavior and record any unresolved modeling work.
 
-Beyond those mechanics, the right question is not "which category am I checking off?" but "what concrete, open question about my target am I trying to answer?". If you cannot articulate a concrete open question — not anchored to any past commit, fix, or known PR — then there is probably no wrapper worth writing for that category in this case.
+Give each modeled behavior a source-grounded purpose in the requested scope, threat model, or an unresolved question. Historical fixes can justify retaining current defenses and their interactions; a suspected new defect is not required.
 
 ### Caveat: no answer-key adversaries
 
-The most common failure mode we've seen in BFT specs is adversaries whose only effect is to reproduce an already-fixed bug — wrappers that, on inspection, amount to `git revert <commit>` in spec form. If you can characterise an adversary action that way, drop it. The MC run produces no information the closed PR didn't already record. Closed PRs are evidence of mechanism bug-proneness, not target lists for the spec to re-enumerate. See `modeling-brief-format.md` § 6.1 (output-value litmus) and `bug-archaeology.md` § 1.4 (value-driven containment).
+Preserve current guards and fixes in the reference model. An adversary that merely removes an existing fix explores a modified implementation; it cannot establish a new defect in the current code. Keep any such historical regression experiment explicitly separate. See `modeling-brief-format.md` § 6.1 and `bug-archaeology.md` § 1.4.
 
 ---
 
@@ -90,7 +90,7 @@ The most common failure mode we've seen in BFT specs is adversaries whose only e
 
 BFT adversary actions usually layer on top of the distributed fault vocabulary, not replace it. Byzantine bugs frequently *cross categories* — pure Byzantine actions in isolation often reproduce textbook results, while the practically interesting bugs come from Byzantine behavior composed with timing / partition / crash / config-change.
 
-That said, composition explodes state space and clouds blame attribution, so compose only when the open question requires it. If the hypothesis inherently crosses categories, model the composition directly and document in the brief which components are being combined.
+Include compositions supported by the requested scope and threat model, including interactions without a known bug hypothesis. Document the combined components and assumptions in the brief; use measured checking difficulties to guide later reductions.
 
 ---
 
@@ -100,7 +100,7 @@ That said, composition explodes state space and clouds blame attribution, so com
 - **Do not** copy wrapper names, counter shapes, or schematic templates from other case studies — their design decisions reflect those targets' specific code and threat models.
 - **Do not** add protocol-specific Byzantine behaviors as new top-level categories. Twins, surround-votes, lunatic / amnesia attacks, etc., are instances of the existing vocabulary; name them in the brief if the protocol names them, but don't expand the vocabulary list.
 - **Do not** model cryptographic primitive breaks by default. If the case study is specifically about key compromise, document the exception in the brief.
-- **Do not** stub a required base-spec dependency with a `TRUE` / `SUBSET Server` placeholder — that silently weakens or strengthens the attack and produces unreliable counterexamples. Either implement the dependency faithfully or drop the category.
+- **Do not** stub a required base-spec dependency with a `TRUE` / `SUBSET Server` placeholder — that silently weakens or strengthens the attack and produces unreliable counterexamples. Implement the dependency faithfully or report the associated behavior as an unresolved coverage gap.
 
 ---
 
