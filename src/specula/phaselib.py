@@ -169,7 +169,7 @@ The previous invocation was interrupted because the provider blocked a response 
 
 _SESSION_RESUME_PROMPT = """Continue the current Specula task from this exact session. The previous invocation was interrupted by a temporary provider, capacity, or transport failure. Preserve completed work, inspect the current workspace, and finish every remaining deliverable. Do not restart completed analysis."""
 
-_MANUAL_SESSION_RESUME_PROMPT = """Continue the current Specula task from this exact session. The previous run ended before this work was accepted. Preserve completed work, inspect the current workspace, and finish every remaining deliverable. Do not restart completed analysis."""
+_MANUAL_SESSION_RESUME_PROMPT = """Continue the current Specula task from this exact session. The previous run ended before this work was accepted. Inspect the latest failure for this task in the pipeline log (`$SPECULA_PIPELINE_LOG` when set) and any relevant `error.txt`. If artifact validation failed, fix the reported issues and recheck the required deliverables before submitting again; do not merely repeat the previous response. Preserve completed work, inspect the current workspace, and finish every remaining deliverable. Do not restart completed analysis."""
 
 _POLICY_SESSION_RESUME_PROMPT = """Continue the same legitimate formal-verification task from this exact session. The previous response was interrupted by the provider's content policy. Preserve completed work, rephrase the interrupted portion in neutral formal-verification terms, and finish every remaining deliverable without restarting the phase."""
 
