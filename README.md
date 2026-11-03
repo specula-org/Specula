@@ -157,6 +157,44 @@ When one skill completes, invoke the next. You can also run any skill independen
 
 See [CHANGELOG.md](CHANGELOG.md) for release history and notable changes.
 
+## Who uses Specula?
+
+Specula is used by researchers and engineers at organizations including:
+
+<p align="center">
+  <a href="https://www.google.com"><img src="docs/logos/google.png" height="37" alt="Google"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.microsoft.com"><img src="docs/logos/microsoft.png" height="28" alt="Microsoft"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.amazon.com"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/amazon-dark.png"><img src="docs/logos/amazon.png" height="35" alt="Amazon"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.nvidia.com"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/nvidia-dark.png"><img src="docs/logos/nvidia.png" height="25" alt="NVIDIA"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.oracle.com"><img src="docs/logos/oracle.png" height="16" alt="Oracle"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.huawei.com"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/huawei-dark.png"><img src="docs/logos/huawei.png" height="48" alt="Huawei"></picture></a>
+</p>
+
+<p align="center">
+  <a href="https://www.alibabagroup.com"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/alibaba-dark.png"><img src="docs/logos/alibaba.png" height="20" alt="Alibaba Group"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.antgroup.com"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/ant-group-dark.png"><img src="docs/logos/ant-group.png" height="43" alt="Ant Group"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.mongodb.com"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/mongodb-dark.png"><img src="docs/logos/mongodb.png" height="32" alt="MongoDB"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.datadoghq.com"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/datadog-dark.png"><img src="docs/logos/datadog.png" height="31" alt="Datadog"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.cloudera.com"><img src="docs/logos/cloudera.png" height="16" alt="Cloudera"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://shopee.com"><img src="docs/logos/shopee.png" height="48" alt="Shopee"></a>
+</p>
+
+<p align="center">
+  <a href="https://milvus.io"><img src="docs/logos/milvus.png" height="29" alt="Milvus"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://ozone.apache.org"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/ozone-dark.png"><img src="docs/logos/ozone.png" height="25" alt="Apache Ozone"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://ratis.apache.org"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/ratis-dark.png"><img src="docs/logos/ratis.png" height="27" alt="Apache Ratis"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://asterinas.github.io"><img src="docs/logos/asterinas.png" height="31" alt="Asterinas"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://sregym.com"><img src="docs/logos/sregym.png" height="31" alt="SREGym"></a>
+</p>
+
+<p align="center">
+  <a href="https://www.berkeley.edu"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/berkeley-dark.png"><img src="docs/logos/berkeley.png" height="35" alt="UC Berkeley"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://illinois.edu"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/uiuc-dark.png"><img src="docs/logos/uiuc.png" height="32" alt="University of Illinois Urbana-Champaign"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.purdue.edu"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/purdue-dark.png"><img src="docs/logos/purdue.png" height="36" alt="Purdue University"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.nyu.edu"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/nyu-dark.png"><img src="docs/logos/nyu.png" height="38" alt="New York University"></picture></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.virginia.edu"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/uva-dark.png"><img src="docs/logos/uva.png" height="36" alt="University of Virginia"></picture></a>
+</p>
+
 ## Acknowledgement
 
 We are grateful to the generous support from
