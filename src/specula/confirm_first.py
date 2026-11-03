@@ -3,7 +3,8 @@
 ``only`` confirms the Scenario candidates and stops. ``continue`` confirms them,
 seals the results under ``confirm-first/``, runs the model phases unchanged, and
 then confirms only the model-checking findings that do not repeat an earlier
-confirmed defect. This module owns the sealed record and the candidate merge;
+confirmed defect, together with any Scenario candidate whose confirmation could
+not finish. This module owns the sealed record and the candidate merge;
 confirmation itself stays in confirmlib.
 """
 
@@ -12,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +33,11 @@ DOC_KEY = "confirm_first"
 # finding that repeats one reuses it; any other earlier verdict is confirmed
 # again with the counterexample.
 REUSED = frozenset({"REPRODUCED", "ENV_LIMITED", "MASKED"})
+# A candidate whose confirmation could not finish (for example, a provider kept
+# refusing the turn). It is sealed without a verdict and confirmed again after
+# modeling instead of holding the model phases back.
+INCOMPLETE = "INCOMPLETE"
+_INCOMPLETE_ROW = re.compile(r"^\|\s*\d+\s*\|\s*(\S+?)\s*\|\s*INCOMPLETE\s*\|", re.MULTILINE)
 
 _VERSION = 1
 _STAGING = ".confirm-first.tmp"
@@ -55,6 +62,10 @@ class Sealed:
     @property
     def ids(self) -> list[str]:
         return [str(candidate["id"]) for candidate in self.candidates]
+
+    @property
+    def incomplete(self) -> list[str]:
+        return [fid for fid in self.ids if self.statuses.get(fid) == INCOMPLETE]
 
 
 def _sha(path: Path) -> str:
@@ -125,9 +136,16 @@ def seal(work: Path) -> Sealed:
         if not _regular(path):
             raise SealError(f"Scenario confirmation did not produce {path.name}")
     verdicts: dict[str, dict[str, str]] = {}
+    try:
+        incomplete = set(_INCOMPLETE_ROW.findall(report.read_text()))
+    except (OSError, UnicodeError) as exc:
+        raise SealError(f"cannot read {report}: {exc}") from exc
     for finding in _read_findings(candidates):
         fid = finding["id"]
         verdict = work / "confirmation" / fid / "verdict.json"
+        if fid in incomplete:
+            verdicts[fid] = {"status": INCOMPLETE}
+            continue
         if not _regular(verdict):
             raise SealError(f"{fid} has no final verdict; resume the Scenario confirmation")
         try:
@@ -182,6 +200,10 @@ def load(work: Path) -> Sealed:
     for candidate in candidates:
         fid = candidate["id"]
         entry = verdicts.get(fid)
+        if isinstance(entry, dict) and entry.get("status") == INCOMPLETE:
+            # No verdict was bound; the late confirmation may write one.
+            statuses[fid] = INCOMPLETE
+            continue
         verdict = work / "confirmation" / fid / "verdict.json"
         if not isinstance(entry, dict) or not _regular(verdict) or _sha(verdict) != entry.get("sha256"):
             raise SealError(f"{fid}: verdict changed after the Scenario confirmation was sealed")
@@ -285,9 +307,11 @@ def summary(work: Path) -> str | None:
     except SealError:
         return None
     reproduced = sum(status == "REPRODUCED" for status in sealed.statuses.values())
+    incomplete = len(sealed.incomplete)
+    retried = f", {incomplete} incomplete and confirmed again after modeling" if incomplete else ""
     line = (
         f"{len(sealed.candidates)} Scenario candidate(s) confirmed before modeling "
-        f"({reproduced} reproduced; report: {REPORT})"
+        f"({reproduced} reproduced{retried}; report: {REPORT})"
     )
     try:
         doc = json.loads((work / "spec" / "candidates.json").read_text())

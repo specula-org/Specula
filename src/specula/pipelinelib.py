@@ -788,11 +788,19 @@ class Pipeline:
         pre = ["--scenarios-only", *(["--debate"] if self.confirm_debate else [])]
         with self.resource_phase("phase4a", pending):
             self.wait_for_phase_quota("confirm")
-            self._phase(
-                "CONFIRM FIRST: SCENARIO CONFIRMATION (before modeling)",
-                "launch_bug_confirmation.sh",
-                self._phase_args(pending, pre=pre, phase="confirm"),
-            )
+            try:
+                self._phase(
+                    "CONFIRM FIRST: SCENARIO CONFIRMATION (before modeling)",
+                    "launch_bug_confirmation.sh",
+                    self._phase_args(pending, pre=pre, phase="confirm"),
+                )
+            except SystemExit as exc:
+                # Exit 1 includes a report with INCOMPLETE findings. Those do
+                # not hold modeling back: sealing accepts them and the late
+                # pass confirms them again. Sealing rejects any other failure.
+                if exc.code != 1:
+                    raise
+                log("Scenario confirmation did not finish every candidate; checking what can be sealed")
         if self.dry_run:
             return
         for name in pending:
@@ -803,6 +811,11 @@ class Pipeline:
                 log(f"ERROR: {name}: cannot seal the Scenario confirmation: {exc}")
                 raise SystemExit(1) from None
             log(f"{name}: sealed {len(sealed.candidates)} Scenario verdict(s) in {work / confirm_first.DIRECTORY}")
+            if sealed.incomplete:
+                log(
+                    f"{name}: {', '.join(sealed.incomplete)} INCOMPLETE; "
+                    "confirmed again with the model-checking findings"
+                )
 
     def _ci_init_option_error(self) -> str | None:
         if not self.ci_init:

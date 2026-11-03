@@ -93,6 +93,14 @@ class Case(unittest.TestCase):
         (self.work / "confirmed-bugs.md").write_text("# Scenario report\n")
         return candidates
 
+    def incomplete_pass(self) -> None:
+        """A Scenario-only pass whose CR-2 confirmation could not finish."""
+        self.scenario_pass()
+        (self.work / "confirmation" / "CR-2" / "verdict.json").unlink()
+        (self.work / "confirmed-bugs.md").write_text(
+            "| 1 | CR-1 | REPRODUCED | yes |\n| 2 | CR-2 | INCOMPLETE | no |\n"
+        )
+
     def mc(self, fid: str, **extra: Any) -> dict[str, Any]:
         counterexample = self.work / "spec" / "output" / f"{fid}.out"
         counterexample.parent.mkdir(parents=True, exist_ok=True)
@@ -146,6 +154,15 @@ class TestSeal(Case):
         self.assertTrue((self.work / "spec" / "candidates.json").is_file())
         self.assertTrue((self.work / "confirmed-bugs.md").is_file())
         self.assertFalse(CF.sealed_exists(self.work))
+
+    def test_incomplete_candidates_are_sealed_without_a_verdict(self) -> None:
+        self.incomplete_pass()
+        sealed = CF.seal(self.work)
+        self.assertEqual(sealed.statuses, {"CR-1": "REPRODUCED", "CR-2": "INCOMPLETE"})
+        self.assertEqual(sealed.incomplete, ["CR-2"])
+        self.assertIn("1 incomplete and confirmed again after modeling", CF.summary(self.work) or "")
+        self.save(scenario("CR-2", 2), "FALSE POSITIVE")  # the late pass may confirm it
+        self.assertEqual(CF.load(self.work).statuses["CR-2"], "INCOMPLETE")
 
     def test_interrupted_seal_is_completed(self) -> None:
         self.scenario_pass()
@@ -344,6 +361,33 @@ class TestAfterScenarios(Case):
         self.assertEqual(CF.covered_ids(candidates), {"MC-1"})
 
 
+class TestIncompleteScenario(Case):
+    def test_incomplete_candidate_is_confirmed_with_the_model_findings(self) -> None:
+        self.incomplete_pass()
+        CF.seal(self.work)
+        self.model_outputs([self.mc("MC-1"), self.mc("MC-2")])
+        confirmed: list[str] = []
+
+        def run(_adapter: Path, prompt: str, prompt_file: Path, *_args: object, **_kwargs: object) -> tuple[int, str]:
+            if Path(prompt_file).name == ".consolidate-after-scenarios.prompt.md":
+                findings = [{**self.mc("MC-1"), CF.MATCH_KEY: ["CR-2"]}, {**self.mc("MC-2"), CF.MATCH_KEY: ["CR-1"]}]
+                (self.work / CF.MODEL_CANDIDATES).write_text(json.dumps({"findings": findings}))
+                return (0, "")
+            confirmed.append(prompt.split("Confirm finding **", 1)[1].split("**", 1)[0])
+            return (0, f"{EVIDENCE}\nVERDICT: NEEDS MORE INFO")
+
+        with mock.patch.object(C, "run_agent_blocking", run):
+            rc, _ = quiet(C.run_parallel_confirmation, self.cfg(after_scenarios=True))
+        self.assertEqual(rc, 0)
+        self.assertEqual(sorted(confirmed), ["CR-2", "MC-1"])
+        report = (self.work / "confirmed-bugs.md").read_text()
+        self.assertIn("| CR-1 | REPRODUCED |", report)
+        self.assertIn("| CR-2 | NEEDS MORE INFO |", report)
+        self.assertNotIn("| MC-2 |", report)
+        self.assertIn("- MC-1: MC-1 violation. Confirmed separately", report)
+        CF.load(self.work)
+
+
 class TestConfirmationPhase(Case):
     def test_option_rules(self) -> None:
         phase = PhaseLib.BugConfirmationPhase()
@@ -429,6 +473,49 @@ class TestPipeline(unittest.TestCase):
         self.assertIn("--after-scenarios", confirmations[1])
         self.assertNotIn("--scenarios-only", confirmations[1])
         self.assertEqual(self.sealed, 1)
+
+    def run_after_scenario_failure(self, code: int) -> tuple[list[str], str, object]:
+        """Run continue mode with the Scenario confirmation exiting with ``code``."""
+        p = PL.Pipeline()
+        self.assertIsNone(quiet(p.parse_args, ["--confirm-first=continue", "a|g|l|r"])[0])
+        scripts: list[str] = []
+
+        def phase(banner: str, script: str, args: list[str]) -> None:
+            scripts.append(script)
+            if "--scenarios-only" in args:
+                raise SystemExit(code)
+
+        def repair_loop(*_args: object, **_kwargs: object) -> set[str]:
+            return set()
+
+        p.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
+        p.wait_for_quota = lambda **kwargs: None  # type: ignore[method-assign]
+        p.generate_summary = lambda: None  # type: ignore[method-assign]
+        p.run_repair_loop = repair_loop  # type: ignore[method-assign]
+        p._phase = phase  # type: ignore[method-assign]
+        sealed = CF.Sealed([scenario("CR-1", 1)], {"CR-1": "INCOMPLETE"}, "")
+        out = io.StringIO()
+        exit_code: object = None
+        with (
+            mock.patch.object(CF, "seal", return_value=sealed),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(out),
+        ):
+            try:
+                p.main()
+            except SystemExit as exc:
+                exit_code = exc.code
+        return scripts, out.getvalue(), exit_code
+
+    def test_incomplete_scenario_candidates_do_not_hold_modeling_back(self) -> None:
+        scripts, out, _ = self.run_after_scenario_failure(1)
+        self.assertIn("launch_spec_generation.sh", scripts)
+        self.assertIn("CR-1 INCOMPLETE; confirmed again with the model-checking findings", out)
+        for code in (75, 130):
+            with self.subTest(code=code):
+                scripts, _, exit_code = self.run_after_scenario_failure(code)
+                self.assertEqual(exit_code, code)
+                self.assertNotIn("launch_spec_generation.sh", scripts)
 
     def test_ordinary_run_is_unchanged(self) -> None:
         calls = self.run_main(["--no-isolate", "--skip-repair-loop", "a|g|l|r"])

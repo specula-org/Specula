@@ -3978,7 +3978,11 @@ def _prepare_repair_findings(cfg: ConfirmConfig) -> tuple[list[Finding], list[Fi
 
 
 def _carried_outcomes(cfg: ConfirmConfig, findings: list[Finding]) -> dict[str, Outcome]:
-    """Sealed Scenario verdicts, reported again without another confirmation."""
+    """Sealed Scenario verdicts, reported again without another confirmation.
+
+    A candidate sealed as INCOMPLETE has no verdict to carry; it is confirmed
+    again in this pass like any other finding.
+    """
     try:
         sealed = confirm_first.load(cfg.ws.work_dir(cfg.name))
     except confirm_first.SealError as exc:
@@ -3986,6 +3990,8 @@ def _carried_outcomes(cfg: ConfirmConfig, findings: list[Finding]) -> dict[str, 
     by_id = {finding.id: finding for finding in findings}
     carried: dict[str, Outcome] = {}
     for fid in sealed.ids:
+        if fid in sealed.incomplete:
+            continue
         finding = by_id.get(fid)
         if finding is None:
             raise ConfirmationFailed(f"sealed Scenario candidate {fid} is missing from candidates.json")
