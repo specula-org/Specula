@@ -50,7 +50,7 @@ For **Category B** systems, do **not** force a message-passing template onto the
 2. **Read source code as needed** — start with the cited functions, then follow callers, callees, shared state, configuration, and failure paths needed to establish in-scope behavior. Brief references are starting points, not a file allowlist
 3. **Design variables** — standard protocol variables (Category A) or concurrency variables (Category B: thread-local snapshots, reclamation state, handoff flags, cached views) + state needed for the requested behavior, contracts, and Scenarios
 4. **Write actions** — name after implementation functions, follow code's control flow faithfully, annotate every logic block with `file:line`
-5. **Write invariants** — standard safety properties + extension invariants targeting Scenarios + structural invariants
+5. **Write properties** — standard safety properties, extension and structural invariants, and requested liveness properties with explicit fairness and environment assumptions
 6. **Write Init and Next**
 
 **Read `references/base-spec-methodology.md`** for patterns, annotation style, and action design.
@@ -124,7 +124,7 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 8. **Silent actions must be tightly constrained.** Unconstrained silent actions cause state space explosion.
 9. **MC spec bounds fault-injection, not normal operations.**
 10. **For Category B, split operations at real semantic boundaries.** If code has separate read/confirm, reserve/publish, retire/reclaim, or signal/complete windows, do not collapse them into one action just because the public API looks atomic.
-11. **`brief-coverage.md` is a mandatory phase output.** Every Safety invariant in brief §5 must end up enabled in ≥1 hunt cfg, every brief §2 scenario must have a targeting hunt cfg (or an explicit, written-out merger), every §6.1 finding must have a hunt cfg whose fault setup makes it reachable. Use the checklist as a self-check before writing the final audit doc — see Phase 2.5 and `references/brief-coverage-checklist.md`.
+11. **`brief-coverage.md` is a mandatory phase output.** Every Safety invariant in brief §5 must end up enabled in ≥1 hunt cfg, every brief §2 scenario must have a targeting hunt cfg (or an explicit, written-out merger), every §6.1 finding must have a hunt cfg whose fault setup makes it reachable. Also account for user-requested or brief-proposed liveness properties and their fairness assumptions: identify enabled temporal checks or explicitly explain why a property remains unverified. Route test/code-review candidates to the appropriate verification phase. Use the checklist before writing the final audit doc — see Phase 2.5 and `references/brief-coverage-checklist.md`.
 
 ---
 

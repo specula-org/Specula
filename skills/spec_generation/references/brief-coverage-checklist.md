@@ -28,10 +28,10 @@ Useful mappings:
 |---|---|---|
 | Scope guidance and §1 / §3 baseline behavior | components, contracts, configuration, and lifecycle interactions | corresponding state/actions and source mappings, with abstractions and unresolved coverage explained |
 | §2 Scenarios | named Scenarios with mechanism + suggested invariants/actions | usually one `MC_hunt_<scenario>.cfg` per Scenario, or an explicit merger |
-| §5 Proposed Invariants | named invariants with type + targets | each Safety invariant defined, wired, and enabled in ≥1 hunt cfg |
+| §5 Proposed Invariants and requested properties | safety and liveness properties with targets and assumptions | safety invariants defined, wired, and enabled in checking configs; liveness properties and fairness assumptions mapped to enabled temporal checks or explicitly recorded as unverified |
 | §6.1 Model-Checkable Findings | concrete mechanism questions with expected violated invariant | each finding has a hunt cfg whose fault setup makes the trigger reachable |
 
-Liveness invariants and §6.2 / §6.3 findings are out of scope for this audit unless the brief says otherwise.
+Include liveness properties requested by the user or proposed in the handoff. Check their fairness and environment assumptions against the implementation and record which temporal checks are enabled; explain any unverified property or missing assumption explicitly. Route §6.2 / §6.3 findings to testing or code review as appropriate, without forcing them into model checking.
 
 ## What to glance at
 
@@ -39,7 +39,7 @@ The following tables can support `spec/brief-coverage.md`; include the baseline 
 
 **Scenarios (brief §2)** — for each named Scenario, which hunt cfg covers it? Mergers are fine if explicit.
 
-**Invariants (brief §5)** — for each Safety invariant: defined where, wired in MC.tla, enabled in which hunt cfg(s)? **The "enabled in cfg" column is the one that breaks most often** — fill it by reading the actual cfg files, not from memory of what you intended to write.
+**Properties (brief §5 and user scope)** — for each safety or liveness property: defined where, wired in MC.tla, enabled in which cfg(s), and under which assumptions? For liveness, identify the fairness assumptions and temporal-property configuration; mark unverified properties explicitly. **The "enabled in cfg" column is the one that breaks most often** — fill it by reading the actual cfg files, not from memory of what you intended to write.
 
 **Findings (brief §6.1)** — for each finding: trigger mechanism, expected violated invariant, hunt cfg targeting it. A finding with no targeting cfg won't be hunted — if you genuinely can't reach the trigger, say so plainly.
 
@@ -50,4 +50,4 @@ The following tables can support `spec/brief-coverage.md`; include the baseline 
 - It does **not** require one hunt cfg per Scenario if mergers are honest and written down.
 - It does **not** care about action granularity, instrumentation mapping, or trace spec — those have their own discussions elsewhere.
 
-The one thing it tries to catch: the gap between *defining* coverage and *enabling* it.
+The audit connects requested behavior and interfaces to the model, and proposed properties to enabled checks or explicit verification gaps.
