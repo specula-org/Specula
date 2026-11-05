@@ -13,9 +13,9 @@
 #                          "claude" maps to the default $HOME/.claude)
 #   default              — $HOME/.claude/.credentials.json
 #
-# On macOS the default profile's credentials live in the login Keychain rather
-# than in a file, so the resolved path does not exist and the Keychain item is
-# read instead.
+# On macOS the credentials live in the login Keychain rather than in a file, so
+# when the resolved file does not exist the profile's Keychain item is read
+# instead (set CLAUDE_CREDENTIALS to force a file and skip the Keychain).
 #
 # Exit codes:
 #   0  ok (or under threshold in --check mode)
@@ -34,17 +34,28 @@ else
   CREDENTIALS="$HOME/.claude/.credentials.json"
 fi
 
+# Base name of Claude Code's Keychain item.
 KEYCHAIN_SERVICE="${CLAUDE_KEYCHAIN_SERVICE:-Claude Code-credentials}"
 
 die() { echo "error: $*" >&2; exit 2; }
 
-# Only the default profile maps to this unsuffixed Keychain item; Claude Code
-# namespaces other config dirs with a hash that cannot be derived here, so
-# serving the default account's quota for another profile must not happen.
-keychain_eligible() {
+# Keychain items to try, in order. Claude Code names its item
+# "<base>-<h>", h being the first 8 hex digits of sha256(config dir), whenever
+# CLAUDE_CONFIG_DIR is set (even to ~/.claude), and plain "<base>" otherwise.
+# Specula's adapter always sets it, so the suffixed item comes first; the plain
+# item is only ever the default profile's, so no other profile may fall back to it.
+keychain_services() {
   [[ "$(uname -s)" == "Darwin" ]] || return 1
   [[ -z "${CLAUDE_CREDENTIALS:-}" ]] || return 1
-  [[ "$CREDENTIALS" == "$HOME/.claude/.credentials.json" ]]
+  local hash
+  hash="$(python3 -c '
+import hashlib, sys, unicodedata
+print(hashlib.sha256(unicodedata.normalize("NFC", sys.argv[1]).encode()).hexdigest()[:8])
+' "${CREDENTIALS%/.credentials.json}")" || return 1
+  printf '%s\n' "$KEYCHAIN_SERVICE-$hash"
+  if [[ -z "${CLAUDE_CONFIG_DIR:-}" && "$CREDENTIALS" == "$HOME/.claude/.credentials.json" ]]; then
+    printf '%s\n' "$KEYCHAIN_SERVICE"
+  fi
 }
 
 # An existing file always wins, so file-based profiles are unaffected.
@@ -53,18 +64,22 @@ credentials_json() {
     cat "$CREDENTIALS"
     return 0
   fi
-  if keychain_eligible; then
-    security find-generic-password -s "$KEYCHAIN_SERVICE" -w 2>/dev/null
-    return $?
-  fi
+  local service json
+  while IFS= read -r service; do
+    if json="$(security find-generic-password -s "$service" -w 2>/dev/null)" && [[ -n "$json" ]]; then
+      printf '%s' "$json"
+      return 0
+    fi
+  done < <(keychain_services)
   return 1
 }
 
 fetch_usage() {
-  local credentials token
+  local credentials token tried nl=$'\n'
   if ! credentials="$(credentials_json)" || [[ -z "$credentials" ]]; then
-    if keychain_eligible; then
-      die "credentials not found at $CREDENTIALS, and Keychain item \"$KEYCHAIN_SERVICE\" is unavailable (run: claude /login)"
+    tried="$(keychain_services || true)"
+    if [[ -n "$tried" ]]; then
+      die "credentials not found at $CREDENTIALS, and no Keychain item named ${tried//$nl/ or } (run: claude /login)"
     fi
     die "credentials not found at $CREDENTIALS"
   fi
