@@ -13,6 +13,10 @@
 #                          "claude" maps to the default $HOME/.claude)
 #   default              — $HOME/.claude/.credentials.json
 #
+# On macOS the default profile's credentials live in the login Keychain rather
+# than in a file, so the resolved path does not exist and the Keychain item is
+# read instead.
+#
 # Exit codes:
 #   0  ok (or under threshold in --check mode)
 #   1  over threshold (--check mode)
@@ -30,15 +34,43 @@ else
   CREDENTIALS="$HOME/.claude/.credentials.json"
 fi
 
+KEYCHAIN_SERVICE="${CLAUDE_KEYCHAIN_SERVICE:-Claude Code-credentials}"
+
 die() { echo "error: $*" >&2; exit 2; }
 
+# Only the default profile maps to this unsuffixed Keychain item; Claude Code
+# namespaces other config dirs with a hash that cannot be derived here, so
+# serving the default account's quota for another profile must not happen.
+keychain_eligible() {
+  [[ "$(uname -s)" == "Darwin" ]] || return 1
+  [[ -z "${CLAUDE_CREDENTIALS:-}" ]] || return 1
+  [[ "$CREDENTIALS" == "$HOME/.claude/.credentials.json" ]]
+}
+
+# An existing file always wins, so file-based profiles are unaffected.
+credentials_json() {
+  if [[ -f "$CREDENTIALS" ]]; then
+    cat "$CREDENTIALS"
+    return 0
+  fi
+  if keychain_eligible; then
+    security find-generic-password -s "$KEYCHAIN_SERVICE" -w 2>/dev/null
+    return $?
+  fi
+  return 1
+}
+
 fetch_usage() {
-  [[ -f "$CREDENTIALS" ]] || die "credentials not found at $CREDENTIALS"
-  local token
-  token="$(python3 -c "
+  local credentials token
+  if ! credentials="$(credentials_json)" || [[ -z "$credentials" ]]; then
+    if keychain_eligible; then
+      die "credentials not found at $CREDENTIALS, and Keychain item \"$KEYCHAIN_SERVICE\" is unavailable (run: claude /login)"
+    fi
+    die "credentials not found at $CREDENTIALS"
+  fi
+  token="$(printf '%s' "$credentials" | python3 -c "
 import json, sys
-with open('$CREDENTIALS') as f:
-    d = json.load(f)
+d = json.load(sys.stdin)
 token = d.get('claudeAiOauth', d).get('accessToken', '')
 if not token:
     sys.exit(1)
