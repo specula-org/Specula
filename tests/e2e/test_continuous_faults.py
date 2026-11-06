@@ -25,6 +25,7 @@ import time
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import test_cli_pipeline as fixtures
 
@@ -73,6 +74,11 @@ class ContinuousFaults(unittest.TestCase):
         self.helper = fixtures.CliE2E()
         self.addCleanup(self.helper.doCleanups)
         self.root = self.helper.specroot(("footest",))
+        # SANY checks every handoff: a fake one; no ambient TLA+ tools or strict switch.
+        path = f"{self.helper.fake_sany(self.root)}{os.pathsep}{os.environ.get('PATH', '')}"
+        patcher = mock.patch.dict(os.environ, {"PATH": path, "SPECULA_ROOT": "", "SPECULA_STRICT_OUTPUTS": ""})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.work = self.helper.workdir()
         self.source = self.work / "source"
         self.source.mkdir()

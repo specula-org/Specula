@@ -184,6 +184,31 @@ class TestTargetIndex(OutputIndexCase):
         for machine_file in ("findings.json", "candidates.json", "verdict.json"):
             self.assertNotIn(machine_file, rendered)
 
+    def test_continuous_targets_omit_absent_advisory_documents(self) -> None:
+        work_dir = self.root / "run" / "demo" / ".specula-output"
+        for relative in ("modeling-brief.md", "spec/bug-report.md", "spec/instrumentation-spec.md"):
+            self.write(work_dir, relative)
+        phased = oi.render_target_index("demo", work_dir)
+        self.assertIn("| 2 | Analysis report: Not available |", phased)
+        self.assertIn("Validation changelog: Not available", phased)
+
+        self.write(work_dir, ".context-control/main-state.json", "{}\n")
+        with mock.patch.dict(os.environ, {"SPECULA_STRICT_OUTPUTS": ""}):
+            tolerant = oi.render_target_index("demo", work_dir)
+        table = tolerant.split("|---:|---|---|\n", 1)[1].split("\n\n", 1)[0]
+        self.assertEqual(
+            table,
+            "| 1 | [Modeling brief](modeling-brief.md) | System model, Scenarios, and proposed invariants |\n"
+            "| 2 | [Instrumentation map](spec/instrumentation-spec.md) | How the analysis was translated into the model |\n"
+            "| 3 | [Model-checking report](spec/bug-report.md) | Candidate findings from model checking |\n",
+        )
+        self.assertNotIn("Not available", table)
+        (work_dir / "spec/bug-report.md").unlink()  # a missing required document is still shown as missing
+        with mock.patch.dict(os.environ, {"SPECULA_STRICT_OUTPUTS": ""}):
+            self.assertIn("| 3 | Model-checking report: Not available |", oi.render_target_index("demo", work_dir))
+        with mock.patch.dict(os.environ, {"SPECULA_STRICT_OUTPUTS": "on"}):
+            self.assertIn("| 2 | Analysis report: Not available |", oi.render_target_index("demo", work_dir))
+
     def test_working_notes_index_is_listed_under_technical_details_only_when_present(self) -> None:
         work_dir = self.root / ".specula-output"
         self.write(work_dir, "notes/build-recipe.md")

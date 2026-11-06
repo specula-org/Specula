@@ -30,6 +30,11 @@ class ContinuousCLI(unittest.TestCase):
         self.helper = fixtures.CliE2E()
         self.addCleanup(self.helper.doCleanups)
         self.root = self.helper.specroot(("footest", "bartest"))
+        # SANY checks every handoff: a fake one; no ambient TLA+ tools or strict switch.
+        path = f"{self.helper.fake_sany(self.root)}{os.pathsep}{os.environ.get('PATH', '')}"
+        patcher = mock.patch.dict(os.environ, {"PATH": path, "SPECULA_ROOT": "", "SPECULA_STRICT_OUTPUTS": ""})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.work = self.helper.workdir()
         self.source = self.work / "source"
         self.source.mkdir()
@@ -243,6 +248,105 @@ class ContinuousCLI(unittest.TestCase):
         self.assertEqual(self.request(run)["status"], "rejected")
         self.assertEqual(self.state(run)["auto_resumes"], 0)
         self.assertIn("declared that it cannot finish", failed.stdout)
+
+    # ── output contract ──
+    def test_required_outputs_alone_complete_the_run_and_report_cleanly(self) -> None:
+        self.flag("minimal")
+        sany = self.work / "sany-calls.jsonl"
+        with mock.patch.dict(os.environ, {"FIXTURE_SANY_LOG": str(sany)}):
+            result = self.run_cli("--agent=fake", "footest")
+        run = self.run_dir()
+        self.assert_complete(result, run)
+        work = run / "footest/.specula-output"
+        for advisory in ("analysis-report.md", "spec/instrumentation-spec.md", "spec/changelog.md"):
+            self.assertFalse((work / advisory).exists(), advisory)
+        self.assertEqual(
+            [json.loads(line)["module"] for line in sany.read_text().splitlines()][:3],
+            [
+                "base.tla",
+                "MC.tla",
+                "Trace.tla",
+            ],
+        )
+        self.assertIn("required outputs OK", result.stdout)
+        prompt = self.prompt(1)
+        self.assertIn("### Required", prompt)
+        self.assertIn("### Recommended", prompt)
+        self.assertNotIn("follow it exactly", prompt)
+        summary = (run / "pipeline-summary.md").read_text()
+        self.assertIn("- **Phase 2 (Spec Gen)**: OK (5/5 required files, base: 1 lines)", summary)
+        self.assertIn("- **Phase 2.5 (Harness)**: OK (traces: 1)", summary)
+        self.assertIn("- **Phase 3 (Validation)**: bug-report.md written (2 lines)", summary)
+        self.assertNotIn("INCOMPLETE", summary)
+        self.assertNotIn("(Validation)**: SKIPPED", summary)
+        index = (work / "index.md").read_text()
+        for advisory in ("Analysis report", "Spec coverage", "Instrumentation map", "Validation changelog"):
+            self.assertNotIn(advisory, index)
+        self.assertIn("| 2 | [Model-checking report](spec/bug-report.md) |", index)
+
+    def test_unparsable_module_is_rejected_with_sany_errors_and_fixed_in_the_same_session(self) -> None:
+        self.flag("sany-error")
+        self.flag("fix-on-rejection")
+        result = self.run_cli("--agent=fake", "footest")
+        run = self.run_dir()
+        self.assert_complete(result, run)
+        self.assertEqual([e["session"] for e in self.main_events()], ["main-footest-1"] * 2)
+        resumed = self.prompt(2)
+        self.assertIn("Confirmation Request Not Accepted", resumed)
+        self.assertIn("Required outputs are missing or invalid", resumed)
+        self.assertIn("- `spec/Trace.tla` does not parse with SANY (exit 255).", resumed)
+        self.assertIn("tla2sany.SANY Trace.tla", resumed)
+        self.assertIn('Encountered "SANY-ERROR"', resumed)
+        fixes = [e for e in self.events() if e["kind"] == "fix"]
+        self.assertEqual([e["fixed"] for e in fixes], [["spec/Trace.tla"]])
+        self.assertEqual(self.worker_starts("CR-1"), 1)
+
+    def test_strict_outputs_restore_the_full_contract_and_survive_an_attach(self) -> None:
+        self.flag("minimal")
+        with mock.patch.dict(os.environ, {"SPECULA_STRICT_OUTPUTS": "on"}):
+            failed = self.run_cli("--agent=fake", "footest")
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        run = self.run_dir()
+        config = json.loads((run / ".specula-resume/config.json").read_text())["configuration"]
+        self.assertIs(config["strict_outputs"], True)
+        self.assertIs(json.loads((run / "run.json").read_text())["resume_configuration"]["strict_outputs"], True)
+        self.assertIn("Outputs:       every phase output is required (SPECULA_STRICT_OUTPUTS=on)", failed.stdout)
+        first = self.prompt(1)
+        self.assertIn("Every output below is required", first)
+        self.assertIn("follow it exactly", first.lower())
+        self.assertNotIn("### Recommended", first)
+        rejection = self.state(run)["rejection"]
+        for missing in ("analysis-report.md", "spec/instrumentation-spec.md", "spec/changelog.md", "harness/src/"):
+            self.assertIn(f"`{missing}` is missing", rejection)
+        self.assertEqual(len(self.main_events()), 3)  # the initial pass plus two automatic resumes
+
+        # The attach keeps the strict contract although the switch is now off.
+        self.flag("fix-on-rejection")
+        resumed = self.run_cli(f"--run-id={run.name}")
+        self.assert_complete(resumed, run)
+        self.assertIn("SPECULA_STRICT_OUTPUTS: this run was created with strict outputs on", resumed.stdout)
+        self.assertIn("every phase output (SPECULA_STRICT_OUTPUTS) OK", resumed.stdout)
+        work = run / "footest/.specula-output"
+        self.assertTrue((work / "spec/instrumentation-spec.md").is_file())
+        summary = (run / "pipeline-summary.md").read_text()
+        self.assertIn("- **Phase 2 (Spec Gen)**: OK (4/4 files", summary)  # the phased lines
+
+    def test_missing_sany_stops_without_resuming_main_and_attach_rechecks_the_handoff(self) -> None:
+        jar = self.root / "lib/tla2tools.jar"
+        jar.unlink()
+        failed = self.run_cli("--agent=fake", "footest")
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        self.assertIn("cannot check the confirmation handoff: tla2tools.jar not found", failed.stdout)
+        run = self.run_dir()
+        self.assertIn(f"--run-id={run.name}", failed.stdout)
+        self.assertEqual(self.request(run)["status"], "pending")
+        self.assertEqual(self.state(run)["auto_resumes"], 0)
+        self.assertEqual(self.worker_starts("CR-1"), 0)
+        jar.write_bytes(b"")
+        resumed = self.run_cli(f"--run-id={run.name}")
+        self.assert_complete(resumed, run)
+        self.assertEqual(len(self.main_events()), 1)
+        self.assertEqual(self.worker_starts("CR-1"), 1)
 
     # ── interruption and recovery ──
     def test_interrupted_main_resumes_the_same_native_session(self) -> None:

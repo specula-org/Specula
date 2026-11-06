@@ -97,6 +97,24 @@ class CliE2E(unittest.TestCase):
             (root / "case-studies" / c).mkdir(parents=True)
         return root
 
+    @staticmethod
+    def fake_sany(root: Path) -> Path:
+        """Make SANY available to a specroot without a JVM.
+
+        A placeholder ``lib/tla2tools.jar`` and a fake ``java``
+        (``fixtures/fake_sany.py``); returns the directory to put first on PATH.
+        """
+        (root / "lib").mkdir(exist_ok=True)
+        (root / "lib/tla2tools.jar").write_bytes(b"")
+        bindir = root / "fake-bin"
+        bindir.mkdir(exist_ok=True)
+        java = bindir / "java"
+        java.write_text(
+            f'#!/bin/sh\nexec "{sys.executable}" "{Path(__file__).parent / "fixtures/fake_sany.py"}" "$@"\n'
+        )
+        java.chmod(0o755)
+        return bindir
+
     def workdir(self) -> Path:
         d = tempfile.TemporaryDirectory()
         self.addCleanup(d.cleanup)

@@ -8,6 +8,10 @@ Behavior switches are files next to this script:
   unconsumed-once ... only on the first repair turn
   blocked         the first pass writes spec/BLOCKED.md instead of its deliverables
   fail-confirm    the CR-1 worker fails once
+  minimal         the first pass writes only the outputs continuous mode requires
+  sany-error      the first pass writes a Trace.tla that the fake SANY rejects
+  fix-on-rejection  a main call resumed with unaccepted required outputs rewrites
+                  each output the reason names
 
 Fault-injection switches (tests/e2e/test_continuous_faults.py):
   block-POINT     at POINT, publish reached-POINT.json (pid, pgid, session) and
@@ -174,7 +178,8 @@ def first_pass(session: str, call: int) -> None:
     done = remembered(session)
     if "analysis" not in done:
         (work / "modeling-brief.md").write_text("# Fixture brief\n\n## Scenario 1: Candidate one\n")
-        (work / "analysis-report.md").write_text("Fixture analysis; no real verification.\n")
+        if not (here / "minimal").exists():
+            (work / "analysis-report.md").write_text("Fixture analysis; no real verification.\n")
         if (here / "background").exists() and not (here / "job.json").exists():
             start_background_job()
         remember(session, "analysis")
@@ -193,12 +198,17 @@ def validation() -> None:
     spec = work / "spec"
     for directory in (spec, work / "harness", work / "traces"):
         directory.mkdir(parents=True, exist_ok=True)
+    minimal = (here / "minimal").exists()
     for name in ("base.tla", "base.cfg", "MC.tla", "MC.cfg", "Trace.tla", "Trace.cfg", "instrumentation-spec.md"):
-        (spec / name).write_text(f"fixture {name}\n")
-    (spec / "brief-coverage.md").write_text("Fixture coverage.\n")
+        if not (minimal and name in ("base.cfg", "instrumentation-spec.md")):
+            (spec / name).write_text(f"fixture {name}\n")
+    if (here / "sany-error").exists():
+        (spec / "Trace.tla").write_text("fixture Trace.tla\nSANY-ERROR\n")
+    if not minimal:
+        (spec / "brief-coverage.md").write_text("Fixture coverage.\n")
+        (spec / "changelog.md").write_text("Fixture validation; MC was not run.\n")
     (work / "harness/run.sh").write_text("#!/bin/sh\n")
     (work / "traces/fixture.ndjson").write_text('{"event":"fixture"}\n')
-    (spec / "changelog.md").write_text("Fixture validation; MC was not run.\n")
     (spec / "bug-report.md").write_text("# Fixture report\nNo semantic verification performed.\n")
     findings: list[dict[str, str]] = []
     if (here / "repair").exists():
@@ -217,6 +227,21 @@ def validation() -> None:
             }
         )
     (spec / "findings.json").write_text(json.dumps({"findings": findings}))
+
+
+def fix_rejected_outputs() -> None:
+    """Rewrite each output an unaccepted handoff named, as an agent reading the reason would."""
+    fixed = []
+    for relative in re.findall(r"^- `([^`]+)`", prompt, flags=re.MULTILINE):
+        path = work / relative.rstrip("/")
+        if relative.endswith("/"):
+            path.mkdir(parents=True, exist_ok=True)
+            (path / "fixture.txt").write_text("fixture\n")
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"fixture {relative}\n")
+        fixed.append(relative)
+    event("fix", "fix", target=target, fixed=fixed)
 
 
 def repair_pass(session: str, call: int) -> None:
@@ -264,6 +289,8 @@ if phase == "main":
     if (here / f"policy-{calls}").exists():
         respond("Fixture provider policy block.")
         raise SystemExit(76)
+    if (here / "fix-on-rejection").exists() and "Required outputs are missing or invalid" in prompt:
+        fix_rejected_outputs()
     # The conversation knows it is repairing even when resumed with a generic prompt.
     if (work / "spec/.repair-phase3-snapshot.json").exists():
         repair_pass(session, calls)

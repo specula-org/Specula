@@ -11,39 +11,14 @@ You are running the Specula modeling workflow for this system in one continuous 
 
 ## Workflow
 
-Complete these stages in order. Each stage's installed Specula skill is the single source of its methodology. Read a stage's skill in full when you reach that stage, not all at the start, and follow it exactly: do everything it specifies; do not add, relax, or override any step here. Later stages build on what you learned earlier in this session. Do not turn the stages into separate lossy handoffs, and do not restart completed stages.
+Complete these stages in order. Each stage has an installed Specula skill; read it in full when you reach that stage, not all at the start. Later stages build on what you learned earlier in this session. Do not turn the stages into separate lossy handoffs, and do not restart completed stages.
 
 1. **Code analysis**: use {{analysis_skill}} (its 4 phases, references, rules, Scenario modeling-brief format, and Category A/B handling).
-2. **Spec generation**: use {{specgen_skill}} (its phases, references, rules, Category A/B handling, and the mandatory brief-coverage self-audit), with the modeling brief as its input.
+2. **Spec generation**: use {{specgen_skill}} (its phases, references, rules, Category A/B handling, and the brief-coverage self-audit), with the modeling brief as its input.
 3. **Harness generation**: use {{harness_skill}} (instrument real code, trace format, run.sh, end-to-end validation).
-4. **Validation and bug hunting**: use {{validation_skill}} (its iterative trace-validation ↔ model-checking loop, the Case A/B/C classification, convergence, bug hunting, and required artifacts such as changelog.md / bug-report.md), including the {{trace_skill}} and {{checking_skill}} skills it delegates to.
+4. **Validation and bug hunting**: use {{validation_skill}} (its iterative trace-validation ↔ model-checking loop, the Case A/B/C classification, convergence, and bug hunting), including the {{trace_skill}} and {{checking_skill}} skills it delegates to.
 
-## Output
-
-Write each stage's outputs to the same paths, in the same formats, as the separate Specula phases. Specula, the confirmation agents, and later runs read them there.
-
-Code analysis:
-- `{{work_dir}}/modeling-brief.md` — The primary deliverable (input to spec generation and confirmation)
-- `{{work_dir}}/analysis-report.md` — Detailed audit trail of all findings
-
-Spec generation (create `{{spec_dir}}/`):
-- `{{spec_dir}}/base.tla` — Base specification
-- `{{spec_dir}}/base.cfg` — Base config
-- `{{spec_dir}}/MC.tla` — Model checking specification
-- `{{spec_dir}}/MC.cfg` — Model checking config
-- `{{spec_dir}}/brief-coverage.md` — Coverage audit mapping brief §2/§5/§6.1 to hunt cfgs and invariants
-- `{{spec_dir}}/Trace.tla` — Trace validation specification
-- `{{spec_dir}}/Trace.cfg` — Trace validation config
-- `{{spec_dir}}/instrumentation-spec.md` — Instrumentation mapping
-
-Harness generation (harness files in `{{work_dir}}/harness/`, traces in `{{work_dir}}/traces/`):
-- `{{work_dir}}/harness/src/` — Trace emission module + test scenarios
-- `{{work_dir}}/harness/apply.sh` — Apply instrumentation to artifact
-- `{{work_dir}}/harness/run.sh` — One-command build + run + collect traces
-- `{{work_dir}}/harness/INSTRUMENTATION.md` — Guide for adjusting the instrumentation during validation
-- `{{work_dir}}/traces/*.ndjson` — Trace files from test runs
-
-Validation: every artifact the validation skill requires, including `{{spec_dir}}/changelog.md`, `{{spec_dir}}/bug-report.md`, and `{{spec_dir}}/findings.json`.
+{{output_contract}}
 
 ## Hand Off to Confirmation
 

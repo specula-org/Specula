@@ -42,7 +42,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     sys.modules["specula.pipelinelib"] = sys.modules[__name__]
-from specula import ci_init, ci_verdict, confirm_first, notes, resumelib, rules
+from specula import ci_init, ci_verdict, confirm_first, notes, output_contract, resumelib, rules
 from specula import quota as _quota
 from specula.adapters.utils.run_lock import inherited_run_lock_fds
 from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
@@ -1081,10 +1081,13 @@ class Pipeline:
             # is also how runs from before these features behave.
             **({"rules": True} if rules.enabled() else {}),
             **({"notes": True} if notes.enabled() else {}),
+            # Ablation switch for the continuous output contract; it has no
+            # effect on phased runs, so only continuous runs record it.
+            **({"strict_outputs": True} if self.orchestration == "continuous" and output_contract.strict() else {}),
         }
 
     def _restore_prompt_toggles(self, raw: dict[str, Any], *, allow_overrides: bool) -> None:
-        """Run child processes with the rules/notes setting stored at creation."""
+        """Run child processes with the rules/notes (and strict-outputs) setting stored at creation."""
         for key, variable, module in (("rules", rules.RULES_ENV, rules), ("notes", notes.NOTES_ENV, notes)):
             stored = raw.get(key, False)
             if not isinstance(stored, bool):
@@ -1098,6 +1101,19 @@ class Pipeline:
                     f"{variable}: this run was created with {key} {'on' if stored else 'off'}; "
                     f"keeping that instead of the current {'on' if current else 'off'} so resumed prompts match"
                 )
+        if self.orchestration != "continuous":
+            return  # the strict output contract only applies to continuous runs
+        stored = raw.get("strict_outputs", False)
+        if not isinstance(stored, bool):
+            raise resumelib.ResumeError("invalid stored strict_outputs setting")
+        current = output_contract.strict()
+        if not allow_overrides and current != stored:
+            os.environ[output_contract.STRICT_ENV] = "on" if stored else "off"
+            self.resume_notices.append(
+                f"{output_contract.STRICT_ENV}: this run was created with strict outputs "
+                f"{'on' if stored else 'off'}; keeping that instead of the current {'on' if current else 'off'} "
+                "so its output contract does not change"
+            )
 
     def _restore_orchestration(self, raw: dict[str, Any]) -> None:
         # Runs created before continuous orchestration have no field: phased.
@@ -3932,6 +3948,43 @@ class Pipeline:
         return moved
 
     # ── final summary ──
+    def _continuous_summary_lines(self, work_dir: Path) -> list[str]:
+        """Phase 2-3 lines of a continuous run, judged by its required outputs only."""
+        spec_dir = work_dir / "spec"
+        required = output_contract.SPEC_FILES
+        present = sum((work_dir / relative).is_file() for relative in required)
+        if present == len(required):
+            spec = f"OK ({present}/{len(required)} required files, base: {_wc_l(spec_dir / 'base.tla')} lines)"
+        elif present:
+            spec = f"INCOMPLETE ({present}/{len(required)} required files)"
+        else:
+            spec = "MISSING"
+        harness_dir = work_dir / "harness"
+        traces_dir = work_dir / "traces"
+        if (harness_dir / "run.sh").is_file():
+            trace_count = (
+                len(list(traces_dir.rglob("*.ndjson"))) if traces_dir.is_dir() and not traces_dir.is_symlink() else 0
+            )
+            harness = f"OK (traces: {trace_count})"
+        elif harness_dir.is_dir():
+            harness = "INCOMPLETE (harness/ exists but no run.sh)"
+        else:
+            harness = "MISSING"
+        report = spec_dir / "bug-report.md"
+        if report.is_file() and report.stat().st_size > 0:
+            validation = f"bug-report.md written ({_wc_l(report)} lines)"
+        elif report.is_file():
+            validation = "bug-report.md empty (check log)"
+        else:
+            validation = "MISSING (no bug-report.md)"
+        return [
+            f"- **Phase 2 (Spec Gen)**: {spec}",
+            self._review_line("Spec Gen Review", spec_dir / "review-specgen.md"),
+            f"- **Phase 2.5 (Harness)**: {harness}",
+            f"- **Phase 3 (Validation)**: {validation}",
+            self._review_line("Validation Review", spec_dir / "review-validation.md"),
+        ]
+
     def generate_summary(self) -> None:
         names = self.extract_names()
         divider()
@@ -3946,6 +3999,9 @@ class Pipeline:
             pwd = str(_logical_cwd())  # bash $PWD, matching get_work_dir and the tee log dir
             summary_file = Path(pwd) / ".specula-output" / "pipeline-summary.md"
         summary_file.parent.mkdir(parents=True, exist_ok=True)
+        # A continuous main session need not write the advisory files the
+        # phased hand-offs require, so their absence is not reported here.
+        advisory = self.orchestration == "continuous" and not output_contract.strict()
         out: list[str] = []
         out += ["# Specula Pipeline Summary", "", f"Generated: {_date_iseconds()}", "", "## Systems Processed", ""]
 
@@ -3969,6 +4025,8 @@ class Pipeline:
                 out.append(f"- **Confirm first**: {sealed or 'MISSING (no sealed Scenario confirmation)'}")
             if self.confirm_first == "only":
                 out.append("- **Phases 2–3 (Modeling)**: not part of this run (--confirm-first=only)")
+            elif advisory:
+                out += self._continuous_summary_lines(work_dir)
             else:
                 spec_count = sum(
                     (spec_dir / f).is_file() for f in ("base.tla", "MC.tla", "Trace.tla", "instrumentation-spec.md")

@@ -56,14 +56,13 @@ from typing import TYPE_CHECKING, Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from specula import resumelib, stop_gate
+from specula import output_contract, resumelib, stop_gate
 from specula.context_control import CONFIRMATION_REQUEST, CONFIRMATION_YIELD_RC, REPAIR_SNAPSHOT, write_json
 from specula.notes import notes_section
 from specula.phaselib import (
     AgentFiles,
     BugConfirmationPhase,
     Phase,
-    SpecValidationPhase,
     Workspace,
     _resume_state_path,
     _trim,
@@ -78,7 +77,7 @@ if TYPE_CHECKING:
 
 PHASE_KEY = "main"
 LAUNCHER = "launch_continuous.sh"
-STATE_FILE = ".context-control/main-state.json"
+STATE_FILE = output_contract.MAIN_STATE_FILE
 ABANDONED_DIR = ".context-control/abandoned"
 ABANDONING_FILE = ".context-control/abandoning.json"  # a --fresh-context abandonment in progress
 STAGES = ("main", "confirm", "closed", "classified", "complete")
@@ -443,8 +442,14 @@ Options:
         parts += [""] * (4 - len(parts))
         name, github, language, reference = parts
         work = ws.work_dir(name)
+        contract = render(
+            "continuous-outputs-strict" if output_contract.strict() else "continuous-outputs",
+            work_dir=str(work),
+            spec_dir=str(work / "spec"),
+        )
         prompt = render(
             "continuous",
+            output_contract=contract.rstrip("\n"),
             name=name,
             github=github,
             language=language,
@@ -571,6 +576,8 @@ class ContinuousRun:
         p.print_run_header()
         print("Orchestration: continuous (one main session per target for analysis through validation;")
         print("               confirmation and classification run in separate clean contexts)")
+        if output_contract.strict():
+            print(f"Outputs:       every phase output is required ({output_contract.STRICT_ENV}=on)")
         print()
         p.validate_agent_adapter()
         names = self.names
@@ -862,25 +869,54 @@ class ContinuousRun:
         self._decide(completed, states)
 
     # ── confirmation dispatch ──
+    def _require_sany(self) -> None:
+        """Handoffs are checked with SANY; without it, stop instead of resuming an agent that cannot fix it."""
+        try:
+            output_contract.sany_tools()
+        except output_contract.SanyUnavailable as exc:
+            raise self._sany_error(exc) from exc
+
+    def _sany_error(self, exc: Exception) -> ContinuousError:
+        return ContinuousError(
+            f"cannot check the confirmation handoff: {exc}. Make SANY available, then rerun with "
+            f"--run-id={self.p.run_id} to check the same handoff again (no agent work is lost)"
+        )
+
     def _handoff_error(self, name: str, state: MainState) -> str | None:
-        """Repeat the phased end-of-phase artifact checks at the handoff."""
+        """Check the confirmation prerequisites and the session's required outputs at the handoff."""
         p = self.p
         work = self.work(name)
         opts: dict[str, str | bool] = {"repair_round": str(state.repair_round)} if state.repair_round else {}
         ws = Workspace(p.targets, artifact=p.artifact, run_dir=p.run_dir, opts=opts)
+        strict = output_contract.strict()
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            accepted = SpecValidationPhase().check(ws, [name]) & BugConfirmationPhase().check(ws, [name])
+            accepted = BugConfirmationPhase().check(ws, [name])
+            try:
+                problems = output_contract.handoff_problems(work, strict=strict)
+            except output_contract.SanyUnavailable as exc:
+                raise self._sany_error(exc) from exc
+            scope = "every phase output (SPECULA_STRICT_OUTPUTS)" if strict else "required outputs"
+            if problems:
+                print(f"  {name:<20}{scope} INVALID ({len(problems)} problem(s))")
+            else:
+                print(f"  {name:<20}{scope} OK")
             gate = stop_gate._accept_main(PHASE_KEY, str(work))
         report = buffer.getvalue()
         print()
         print("Checking handoff to bug_confirmation...")
         sys.stdout.write(report)
+        for problem in problems:
+            print(f"    - {problem.splitlines()[0]}")
         if gate != 0:
             print("Acceptance gate:")
             print(f"  FAILED  {name}: see the message above")
         if not accepted:
             return "Confirmation prerequisites are missing:\n" + report.rstrip()
+        if problems:
+            listed = "\n".join(f"- {problem}" for problem in problems)
+            note = "" if strict else "\n\nRecommended outputs are not checked."
+            return f"Required outputs are missing or invalid:\n\n{listed}{note}"
         if gate != 0:
             # Confirmation must never run beside a stray job of the main session
             # (e.g. after the stop-gate fuse opened or on an adapter without hooks).
@@ -991,6 +1027,8 @@ class ContinuousRun:
         full: list[str] = []
         scoped: list[str] = []
         rejected: list[str] = []
+        if any((load_request(self.work(name)) or {}).get("status") == "pending" for name in names):
+            self._require_sany()  # before any handoff of this batch is accepted
         for name in names:
             request = load_request(self.work(name))
             assert request is not None

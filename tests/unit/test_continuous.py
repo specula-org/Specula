@@ -15,7 +15,7 @@ import pytest
 
 from specula import context_control as control
 from specula import context_runner as runner
-from specula import continuous, resumelib, rules, stop_gate
+from specula import continuous, output_contract, resumelib, rules, stop_gate
 from specula import pipelinelib as pl
 from specula.agent_config import AgentConfigError, AgentSelection, load_agent_routing
 from specula.notes import NOTES_ENV, notes_section
@@ -37,7 +37,7 @@ def _clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "MAX_REPAIR_ROUNDS",
     ):
         monkeypatch.delenv(key, raising=False)
-    for key in (rules.RULES_ENV, NOTES_ENV):
+    for key in (rules.RULES_ENV, NOTES_ENV, output_contract.STRICT_ENV):
         # Registered so values the code under test writes are undone too.
         monkeypatch.setenv(key, "")
         monkeypatch.delenv(key)
@@ -229,6 +229,40 @@ def test_prompt_toggles_are_stored_at_creation_and_restored_on_attach(monkeypatc
         parse(["--run-id=x"])[0]._restore_resume_configuration(dict(document, rules="yes"))
 
 
+def test_strict_outputs_are_stored_for_continuous_runs_and_restored_on_attach(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(output_contract.STRICT_ENV, "on")
+    document = parse(["t|g|l|r"])[0]._resume_configuration_document()
+    assert document["strict_outputs"] is True
+    phased = parse(["--orchestration=phased", "t|g|l|r"])[0]._resume_configuration_document()
+    assert "strict_outputs" not in phased  # no effect there, so phased configurations stay unchanged
+    monkeypatch.setenv(output_contract.STRICT_ENV, "off")
+    default = parse(["t|g|l|r"])[0]._resume_configuration_document()
+    assert "strict_outputs" not in default
+
+    attach, _, _ = parse(["--run-id=x"])
+    attach._restore_resume_configuration(document)
+    assert os.environ[output_contract.STRICT_ENV] == "on" and output_contract.strict()
+    assert attach.resume_notices == [
+        "SPECULA_STRICT_OUTPUTS: this run was created with strict outputs on; keeping that instead of the "
+        "current off so its output contract does not change"
+    ]
+    relaxed, _, _ = parse(["--run-id=x"])
+    relaxed._restore_resume_configuration(default)
+    assert not output_contract.strict() and len(relaxed.resume_notices) == 1
+
+    monkeypatch.setenv(output_contract.STRICT_ENV, "on")
+    phased_attach, _, _ = parse(["--run-id=x"])
+    phased_attach._restore_resume_configuration(phased)
+    assert output_contract.strict() and phased_attach.resume_notices == []  # phased runs are left alone
+    fresh, _, _ = parse(["--run-id=x", "--fresh-context"])
+    fresh._restore_resume_configuration(default, allow_overrides=True)
+    assert output_contract.strict() and fresh.resume_notices == []
+    with pytest.raises(resumelib.ResumeError, match="invalid stored strict_outputs"):
+        parse(["--run-id=x"])[0]._restore_resume_configuration(dict(document, strict_outputs="on"))
+
+
 def test_routed_resume_configuration_uses_main_routes(tmp_path: Path) -> None:
     config = write_config(tmp_path / "agents.json", {"main": "main", "confirm": "check"})
     pipeline, _, _ = parse([f"--agent-config={config}", "t|g|l|r"])
@@ -340,6 +374,23 @@ def test_first_launch_uses_the_full_prompt_with_phase_output_contract(run_worksp
     ):
         assert expected in prompt
     assert "Continue From Existing Work" not in prompt
+
+
+def test_strict_outputs_restore_the_full_prompt_contract(
+    run_workspace: tuple[Workspace, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws, work = run_workspace
+    default = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
+    assert "### Required" in default and "### Recommended" in default
+    assert "methodology reference" in default and "follow it exactly" not in default.lower()
+    assert default.index(f"{work}/spec/instrumentation-spec.md") > default.index("### Recommended")
+    monkeypatch.setenv(output_contract.STRICT_ENV, "on")
+    strict = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
+    assert "### Recommended" not in strict and "Every output below is required" in strict
+    assert "Follow it exactly: do everything it specifies; do not add, relax, or override any step here." in strict
+    for prompt in (default, strict):
+        assert "\n\n\n" not in prompt
+        assert "## Hand Off to Confirmation" in prompt and "BLOCKED.md" in prompt
 
 
 def test_repair_resume_sends_only_the_continuation(
@@ -862,3 +913,131 @@ def test_continuations_point_to_the_staged_guidance(run_workspace: tuple[Workspa
     assert pointer not in restarted
     template = (Path(continuous.__file__).parent / "prompts/continuous.md").read_text()
     assert "check the work against the Target-Specific Instructions" in template
+
+
+# ── handoff checks ──────────────────────────────────────────────────────────
+
+
+def handoff_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[continuous.ContinuousRun, Path]:
+    """A one-target controller whose required outputs exist; SANY rejects modules marked SANY-ERROR."""
+    source = tmp_path / "source"
+    source.mkdir()
+    pipeline = pl.Pipeline()
+    pipeline.targets = ["t|g|l|r"]
+    pipeline.artifact = str(source)
+    pipeline.run_dir = tmp_path / "run"
+    pipeline.run_id = "run-1"
+    work = Path(pipeline.get_work_dir("t"))
+    for relative in output_contract.REQUIRED_FILES:
+        (work / relative).parent.mkdir(parents=True, exist_ok=True)
+        (work / relative).write_text(f"fixture {relative}\n")
+    (work / "spec/findings.json").write_text(json.dumps({"findings": []}))
+    (work / "traces").mkdir()
+    (work / "traces/t.ndjson").write_text("{}\n")
+
+    def sany(spec_dir: Path, module: str, java: str, jars: list[Path]) -> str | None:
+        text = (spec_dir / module).read_text()
+        return f"`spec/{module}` does not parse with SANY (exit 255)." if "SANY-ERROR" in text else None
+
+    monkeypatch.setattr(output_contract, "sany_tools", lambda: ("java", []))
+    monkeypatch.setattr(output_contract, "sany_problem", sany)
+    return continuous.ContinuousRun(pipeline), work
+
+
+def test_handoff_requires_only_the_required_outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    run, work = handoff_run(tmp_path, monkeypatch)
+    state = continuous.MainState(stage="confirm", session_id="s")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert run._handoff_error("t", state) is None
+    assert "required outputs OK" in out.getvalue()
+    for relative in output_contract.ADVISORY_FILES:
+        assert not (work / relative).exists()
+
+    (work / "spec/MC.cfg").unlink()
+    (work / "spec/Trace.tla").write_text("SANY-ERROR\n")
+    with contextlib.redirect_stdout(out):
+        reason = run._handoff_error("t", state)
+    assert reason is not None and reason.startswith("Required outputs are missing or invalid:\n\n")
+    assert "- `spec/MC.cfg` is missing: write the model-checking configuration." in reason
+    assert "- `spec/Trace.tla` does not parse with SANY (exit 255)." in reason
+    assert reason.endswith("Recommended outputs are not checked.")
+    assert "required outputs INVALID (2 problem(s))" in out.getvalue()
+
+    (work / "spec/MC.cfg").write_text("INVARIANT Inv\n")
+    (work / "spec/Trace.tla").write_text("fixed\n")
+    monkeypatch.setenv(output_contract.STRICT_ENV, "on")
+    with contextlib.redirect_stdout(out):
+        reason = run._handoff_error("t", state)
+    assert reason is not None and "`spec/instrumentation-spec.md` is missing" in reason
+    assert "not checked" not in reason
+
+    # The confirmation launcher's own prerequisites still come first.
+    monkeypatch.delenv(output_contract.STRICT_ENV)
+    (work / "modeling-brief.md").unlink()
+    with contextlib.redirect_stdout(out):
+        reason = run._handoff_error("t", state)
+    assert reason is not None and reason.startswith("Confirmation prerequisites are missing")
+    assert "brief MISSING" in reason
+
+
+def test_missing_sany_stops_before_any_handoff_is_accepted_or_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run, work = handoff_run(tmp_path, monkeypatch)
+    state = continuous.MainState(stage="confirm", session_id="s")
+    continuous.save_state(work, "t", state, "yield")
+    control.write_json(work / control.CONFIRMATION_REQUEST, {"session_id": "s", "status": "pending"})
+
+    def unavailable() -> tuple[str, list[Path]]:
+        raise output_contract.SanyUnavailable("java was not found on PATH")
+
+    monkeypatch.setattr(output_contract, "sany_tools", unavailable)
+    with pytest.raises(continuous.ContinuousError) as raised:
+        run._dispatch(["t"], {"t": state})
+    assert str(raised.value) == (
+        "cannot check the confirmation handoff: java was not found on PATH. Make SANY available, then rerun with "
+        "--run-id=run-1 to check the same handoff again (no agent work is lost)"
+    )
+    request = continuous.load_request(work)
+    assert request is not None and request["status"] == "pending"
+    saved = continuous.load_state(work, "t")
+    assert saved is not None and saved.rejection is None and saved.auto_resumes == 0
+
+
+def test_summary_judges_a_continuous_run_by_its_required_outputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run, work = handoff_run(tmp_path, monkeypatch)
+    pipeline = run.p
+
+    def summary(orchestration: str) -> str:
+        pipeline.orchestration = orchestration
+        with contextlib.redirect_stdout(io.StringIO()):
+            pipeline.generate_summary()
+        assert pipeline.run_dir is not None
+        return (pipeline.run_dir / "pipeline-summary.md").read_text()
+
+    tolerant = summary("continuous")
+    assert "- **Phase 2 (Spec Gen)**: OK (5/5 required files, base: 1 lines)" in tolerant
+    assert "- **Phase 2.5 (Harness)**: OK (traces: 1)" in tolerant
+    assert "- **Phase 3 (Validation)**: bug-report.md written (1 lines)" in tolerant
+    assert "INCOMPLETE" not in tolerant and "INSTRUMENTATION.md" not in tolerant
+    assert "- **Spec Gen Review**: SKIPPED" in tolerant  # the phased line layout is kept
+
+    phased = summary("phased")  # the phased hand-off files are still reported there
+    assert "- **Phase 2 (Spec Gen)**: INCOMPLETE (3/4 files)" in phased
+    assert "- **Phase 3 (Validation)**: SKIPPED" in phased
+    monkeypatch.setenv(output_contract.STRICT_ENV, "on")  # strict continuous runs report like phased ones
+
+    def body(text: str) -> list[str]:
+        return [line for line in text.splitlines() if not line.startswith("Generated:")]
+
+    assert body(summary("continuous")) == body(phased)
+
+    monkeypatch.delenv(output_contract.STRICT_ENV)
+    (work / "spec/MC.cfg").unlink()
+    (work / "spec/bug-report.md").unlink()
+    broken = summary("continuous")
+    assert "- **Phase 2 (Spec Gen)**: INCOMPLETE (4/5 required files)" in broken
+    assert "- **Phase 3 (Validation)**: MISSING (no bug-report.md)" in broken
