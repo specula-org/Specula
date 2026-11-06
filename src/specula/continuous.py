@@ -658,6 +658,42 @@ class ContinuousRun:
                     raise ContinuousError(f"{name}: confirmation request exists without controller state")
                 self._save(name, MainState(), "start")
         p.reconcile_deferred_state()
+        dangling = {name for name in self.names if self._dangling_commit(name)}
+        if dangling:
+            # Finish it before a main session rewrites the findings it is bound to.
+            self._finish_committed_repairs(dangling, "a committed repair result no confirmation request covers")
+        p.regenerate_ledger()
+
+    def _dangling_commit(self, name: str) -> bool:
+        """A repair commit proof that the current handoff will not dispatch."""
+        commit = self.p.load_repair_phase3_commit(name)
+        if commit is None:
+            return False
+        work = self.work(name)
+        state = load_state(work, name)
+        request = load_request(work)
+        if (
+            state is None
+            or request is None
+            or state.stage not in ("main", "confirm")
+            or state.repair_round != int(commit["repair_round"])
+        ):
+            return True
+        if request.get("kind") == "scoped" and request["status"] == "confirming":
+            return False  # _dispatch_scoped binds (or refuses) it by its token
+        return request["status"] not in ("pending", "rejected")
+
+    def _finish_committed_repairs(self, recovered: set[str], what: str) -> None:
+        p = self.p
+        if p.skip_confirmation or p.skip_repair_loop:
+            disabled = "--skip-confirmation" if p.skip_confirmation else "--skip-repair-loop"
+            raise ContinuousError(
+                f"cannot use {disabled} while a committed repair result is pending; "
+                "resume once without that flag so its exact findings can be reconciled"
+            )
+        _log(f"Finishing {what}")
+        with p.resource_phase("phase4a", self.names), _confirmation_environment():
+            p.process_pending_repair_results(recovered)
         p.regenerate_ledger()
 
     def _abandon_previous_sessions(self) -> None:
@@ -690,17 +726,10 @@ class ContinuousRun:
         # Recover like the phased pipeline: restore an uncommitted repair
         # snapshot to OPEN and finish any committed result before new work.
         recovered = p.prepare_repair_state()
-        if recovered and (p.skip_confirmation or p.skip_repair_loop):
-            disabled = "--skip-confirmation" if p.skip_confirmation else "--skip-repair-loop"
-            raise ContinuousError(
-                f"cannot use {disabled} while a committed repair result is pending; "
-                "resume once without that flag so its exact findings can be reconciled"
-            )
         if recovered:
-            _log("Finishing the committed repair result of the abandoned session before the fresh main session")
-            with p.resource_phase("phase4a", self.names), _confirmation_environment():
-                p.process_pending_repair_results(recovered)
-            p.regenerate_ledger()
+            self._finish_committed_repairs(
+                recovered, "the committed repair result of the abandoned session before the fresh main session"
+            )
         for name in self.names:
             self._save(name, MainState(context="fresh"), "fresh-context")
         if not p.skip_confirmation and not p.skip_repair_loop:

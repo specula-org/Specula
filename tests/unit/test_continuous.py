@@ -757,3 +757,51 @@ def test_an_interrupted_reservation_is_finished_before_any_main_session(tmp_path
         run._drive()
     assert launched == [("A", 1), ("B", 1)]
     assert pipeline.load_repair_loop_state() == (1, ["A", "B"])
+
+
+def test_start_finishes_only_a_dangling_repair_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pipeline = pl.Pipeline()
+    pipeline.targets = ["t|g|l|r"]
+    pipeline.run_dir = tmp_path
+    work = Path(pipeline.get_work_dir("t"))
+    (work / "spec").mkdir(parents=True)
+    findings = json.dumps({"findings": []})
+    (work / "spec/findings.json").write_text(findings)
+    token = "a" * 32
+    commit = {"version": 2, "repair_round": 1, "commit_token": token, "request_ids": ["RR-001"]}
+    (work / "spec/.repair-phase3-commit.json").write_text(
+        json.dumps({**commit, "violation_ids": [], "findings_json": findings})
+    )
+    processed: list[set[str]] = []
+
+    def process(names: set[str]) -> set[str]:
+        processed.append(set(names))
+        return names
+
+    monkeypatch.setattr(pipeline, "process_pending_repair_results", process)
+    monkeypatch.setattr(pipeline, "resource_phase", lambda *_args, **_kwargs: contextlib.nullcontext())
+    run = continuous.ContinuousRun(pipeline)
+    request = work / control.CONFIRMATION_REQUEST
+    bound = [
+        (continuous.MainState(stage="confirm", repair_round=1, session_id="s"), {"status": "pending"}),
+        (continuous.MainState(repair_round=1, rejection="r"), {"status": "rejected"}),
+        (
+            continuous.MainState(stage="confirm", repair_round=1, session_id="s"),
+            {"status": "confirming", "kind": "scoped", "commit_token": token},
+        ),
+    ]
+    for state, document in bound:  # the current handoff dispatches (or refuses) these itself
+        continuous.save_state(work, "t", state, "seed")
+        control.write_json(request, {"session_id": "s", **document})
+        with contextlib.redirect_stdout(io.StringIO()):
+            run._start()
+        assert processed == []
+    # A fresh session (round 0, no request) must not inherit the abandoned session's proof.
+    request.unlink()
+    continuous.save_state(work, "t", continuous.MainState(context="fresh"), "fresh-context")
+    with contextlib.redirect_stdout(io.StringIO()):
+        run._start()
+    assert processed == [{"t"}]
+    pipeline.skip_repair_loop = True
+    with contextlib.redirect_stdout(io.StringIO()), pytest.raises(continuous.ContinuousError, match="skip-repair-loop"):
+        run._start()
