@@ -48,7 +48,7 @@ if str(SRC) not in sys.path:  # test the tree this file lives in, installed or n
 
 import specula.progress as progress_module  # noqa: E402
 import specula.quota as quota  # noqa: E402
-from specula import phaselib, resource_summary, resumelib, snapshotlib  # noqa: E402
+from specula import notes, phaselib, resource_summary, resumelib, snapshotlib  # noqa: E402
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC  # noqa: E402
 from specula.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC  # noqa: E402
 from specula.output_index import BYOM_REPORT_FILENAME  # noqa: E402
@@ -193,6 +193,7 @@ class PhaseCase(unittest.TestCase):
             "SPECULA_CLAUDE_ALIAS",
             "SPECULA_MODEL",
             "SPECULA_EFFORT",
+            notes.NOTES_ENV,
             phaselib.BYOM_PATH_ENV,
             "CLAUDE_ALIAS",
             "CLAUDE_EFFORT",
@@ -672,6 +673,96 @@ class TestRepairMode(PhaseCase):
         self.assertNotIn("<!-- specula-skill:", body)
         self.assertNotIn("/skills/", body)
         self.assertNotIn(".claude/skills", body)
+
+
+class TestWorkingNotes(PhaseCase):
+    """S1b: every phase prompt points at the shared notes area, appended after the
+    phase's own contract and before the target guidance; SPECULA_NOTES=off removes
+    exactly that section and nothing else."""
+
+    # (phase key, extra flags, prompt filename, first?)
+    CASES: list[tuple[str, list[str], str, bool]] = [
+        ("code_analysis", [], ".prompt.md", True),
+        ("spec_generation", [], ".spec-gen-prompt.md", False),
+        ("harness_generation", [], ".harness-gen-prompt.md", False),
+        ("spec_validation", [], ".spec-validation-prompt.md", False),
+        ("spec_validation", ["--repair"], ".spec-repair-prompt.md", False),
+        ("bug_confirmation", ["--legacy-confirm"], ".bug-confirmation-prompt.md", False),
+        ("bug_classification", [], ".bug-classification-prompt.md", False),
+    ]
+    EXTRA = "\n## Target-Specific Instructions\n\n"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.repo = self.tmp() / "repo"
+        self.repo.mkdir()
+        self.work_dir().mkdir(parents=True)
+        (self.work_dir() / ".prompt-extra.md").write_text("Target guidance.\n")
+
+    def prompt(self, key: str, extra: list[str], filename: str) -> str:
+        spec = BY_KEY[key]
+        self.seed(spec["inputs"])
+        args = ["--dry-run", *extra]
+        if spec["artifact"]:
+            args.append(f"--artifact={self.repo}")
+        rc, out = self.run_phase(key, [*args, NAME])
+        self.assertEqual(rc, 0, out)
+        path = self.work_dir() / filename
+        body = path.read_text()
+        path.unlink()
+        return body
+
+    def test_each_phase_prompt_carries_the_notes_section_before_target_guidance(self) -> None:
+        for key, extra, filename, first in self.CASES:
+            with self.subTest(phase=key, extra=extra):
+                body = self.prompt(key, extra, filename)
+                section = notes.notes_section(self.work_dir(), first=first)
+                self.assertEqual(body.count("## Working Notes"), 1)
+                self.assertIn(section, body)
+                self.assertIn(str(self.work_dir() / "notes"), body)
+                if self.EXTRA in body:
+                    self.assertLess(body.index(section), body.index(self.EXTRA))
+                else:
+                    # Phase 4b appends no target guidance outside BYOM.
+                    self.assertEqual(key, "bug_classification")
+                    self.assertTrue(body.endswith(section))
+
+    def test_only_phase_one_opens_the_area(self) -> None:
+        for key, extra, filename, first in self.CASES:
+            with self.subTest(phase=key, extra=extra):
+                body = self.prompt(key, extra, filename)
+                self.assertEqual("Start notes whenever" in body, first)
+                self.assertEqual("Earlier phases may have left notes there" in body, not first)
+
+    def test_off_removes_exactly_the_notes_section(self) -> None:
+        for key, extra, filename, first in self.CASES:
+            with self.subTest(phase=key, extra=extra):
+                self.set_env(notes.NOTES_ENV, None)
+                section = notes.notes_section(self.work_dir(), first=first)
+                on = self.prompt(key, extra, filename)
+                self.set_env(notes.NOTES_ENV, "off")
+                off = self.prompt(key, extra, filename)
+                self.assertNotIn("Working Notes", off)
+                self.assertNotIn("/notes/", off)
+                self.assertEqual(on.replace(section, "", 1), off)
+
+    def test_byom_prompts_carry_the_notes_section_before_target_guidance(self) -> None:
+        supplied = self.tmp() / "provided"
+        supplied.mkdir()
+        self.set_env(phaselib.BYOM_PATH_ENV, str(supplied))
+        section = notes.notes_section(self.work_dir(), first=False)
+        for key, filename in (
+            ("spec_generation", ".spec-gen-prompt.md"),
+            ("harness_generation", ".harness-gen-prompt.md"),
+            ("bug_classification", ".bug-classification-prompt.md"),
+        ):
+            with self.subTest(phase=key):
+                body = self.prompt(key, [], filename)
+                self.assertIn("**byom**", body)
+                self.assertEqual(body.count("## Working Notes"), 1)
+                self.assertLess(body.index(section), body.index(self.EXTRA))
+                if key == "bug_classification":
+                    self.assertLess(body.index("## BYOM Modification Report"), body.index(section))
 
 
 class TestArgErrors(PhaseCase):

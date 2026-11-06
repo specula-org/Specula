@@ -43,6 +43,7 @@ from specula import quota, resumelib, tlc_tasks
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC
 from specula.context_control import CONFIRMATION_YIELD_RC
+from specula.notes import notes_section
 from specula.output_index import BYOM_REPORT_FILENAME, PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
 from specula.prompts import render
 from specula.resource_summary import (
@@ -2066,6 +2067,7 @@ Write your outputs to:
 - `{work_dir}/modeling-brief.md` — The primary deliverable (handoff to Spec Generation)
 - `{work_dir}/analysis-report.md` — Detailed audit trail of all findings
 """
+        prompt += notes_section(work_dir, first=True)
         return self._with_extra(ws, name, prompt)
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
@@ -2174,6 +2176,7 @@ Use the installed Specula skill {prompt_skill_ids("byom")}. Read it in full and 
 
 Combine those artifacts with the target-specific instructions below. Reuse supplied work, perform the focused Scenario supplement, and leave the ordinary Phase 2 outputs ready for the harness phase.
 """
+            prompt += notes_section(wd, first=False)
             return self._with_extra(ws, name, prompt)
         prompt = f"""# TLA+ Spec Generation Task
 
@@ -2206,6 +2209,7 @@ Expected files:
 - `{spec_dir}/Trace.cfg` — Trace validation config
 - `{spec_dir}/instrumentation-spec.md` — Instrumentation mapping
 """
+        prompt += notes_section(wd, first=False)
         return self._with_extra(ws, name, prompt)
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
@@ -2334,6 +2338,7 @@ Use the installed Specula skill {prompt_skill_ids("byom")}. Read it in full and 
 
 Combine those artifacts with the target-specific instructions below. Reuse supplied instrumentation, harnesses, and traces; fill only what is missing or unusable; then leave the ordinary Phase 2.5 outputs ready for validation.
 """
+            prompt += notes_section(wd, first=False)
             return self._with_extra(ws, name, prompt)
         prompt = f"""# Trace Harness Generation Task: {name}
 
@@ -2364,6 +2369,7 @@ Expected outputs:
 - `{wd}/harness/INSTRUMENTATION.md` — Guide for Phase 3 agent to adjust instrumentation
 - `{wd}/traces/*.ndjson` — Trace files from test runs
 """
+        prompt += notes_section(wd, first=False)
         return self._with_extra(ws, name, prompt)
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
@@ -2479,7 +2485,7 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
 """
         byom_path = _byom_path()
         if byom_path is None:
-            return prompt
+            return prompt + notes_section(wd, first=False)
         prompt += f"""
 ## BYOM Modification Report
 
@@ -2491,6 +2497,7 @@ After completing and validating the normal Phase 4b outputs, use the installed S
 
 Compare the supplied artifacts with the final workspace, explain what was reused, modified, or added and why, and state any uncertain correspondence. Do not modify verification artifacts while writing this report.
 """
+        prompt += notes_section(wd, first=False)
         return prompt + self._read_prompt_extra(ws, name)
 
     def prepare_fresh_outputs(self, ws: Workspace, name: str) -> None:
@@ -2778,6 +2785,7 @@ Use the installed Specula skill {prompt_skill_ids("validation-workflow")}. Read 
 
 Do everything the skill specifies. Do not add, relax, or override any step here. Harness and traces already exist from Phase 2.5 under `{wd}/traces/` and `{wd}/harness/`; the skill's Phase 0 covers verifying and (if needed) regenerating them.
 """
+        prompt += notes_section(wd, first=False)
         return self._with_extra(ws, name, prompt)
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
@@ -3215,6 +3223,7 @@ Prerequisites:
             report=str(wd / "confirmed-bugs.md"),
             bug_confirmation_skill=prompt_skill_ids("bug-confirmation"),
         )
+        prompt += notes_section(wd, first=False)
         return self._with_extra(ws, name, prompt)
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:

@@ -27,7 +27,7 @@ from typing import Any
 from unittest import mock
 
 from specula import confirmlib as C
-from specula import persistent_findings, resumelib
+from specula import notes, persistent_findings, resumelib
 from specula import phaselib as PhaseLib
 from specula import pipelinelib as PL
 from specula import prompts as P
@@ -3241,6 +3241,70 @@ class TestPromptExtraAndLog(ConfirmCase):
         cfg = self.cfg(ws, "T", prompt_extra="\n## Target-Specific Instructions\n\nCHECK THE FOO RACE")
         f = C.Finding({"id": "MC-1", "title": "t", "summary": "s"}, ws.work_dir("T") / "confirmation" / "MC-1")
         self.assertIn("CHECK THE FOO RACE", C.prompt_reproduce(cfg, f, "/repo"))
+
+    def _isolate_notes_env(self) -> None:
+        patcher = mock.patch.dict(os.environ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop(notes.NOTES_ENV, None)
+
+    def test_finding_turns_read_shared_notes_but_write_only_their_finding_dir(self) -> None:
+        self._isolate_notes_env()
+        ws = self.seed("T", [])
+        extra = "\n## Target-Specific Instructions\n\nCHECK THE FOO RACE"
+        cfg = self.cfg(ws, "T", prompt_extra=extra)
+        f = self.finding(ws, "T")
+        section = notes.worker_notes_section(ws.work_dir("T").absolute(), f.fdir.absolute())
+        self.assertIn(str(f.fdir.absolute()), section)
+        self.assertIn("Do not edit the shared notes", section)
+        for prompt in (
+            C.prompt_reproduce(cfg, f, "/repo"),
+            C.prompt_challenge(cfg, f, "/repo", "/debate.md"),
+            C.prompt_defend(cfg, f, "/repo", "/debate.md"),
+        ):
+            self.assertEqual(prompt.count("## Working Notes"), 1)
+            self.assertTrue(prompt.endswith(section + extra))
+        # A focused draft correction redoes no investigation and gets no notes.
+        retry = C.prompt_repair_draft_retry(cfg, f, "/repo", "warn", Path("/prev.log"))
+        self.assertNotIn("Working Notes", retry)
+
+    def test_notes_off_restores_worker_prompts_and_verdict_fingerprint(self) -> None:
+        self._isolate_notes_env()
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T")
+        f = self.finding(ws, "T")
+        identities: list[dict[str, Any]] = []
+        real_digest = C._digest
+
+        def capture(value: Any) -> str:
+            if isinstance(value, dict) and "prompts" in value:
+                identities.append(value)
+            return real_digest(value)
+
+        def worker_prompts() -> list[str]:
+            return [
+                C.prompt_reproduce(cfg, f, "/repo"),
+                C.prompt_challenge(cfg, f, "/repo", "/debate.md"),
+                C.prompt_defend(cfg, f, "/repo", "/debate.md"),
+            ]
+
+        on_prompts = worker_prompts()
+        section = notes.worker_notes_section(ws.work_dir("T").absolute(), f.fdir.absolute())
+        with mock.patch.object(C, "_digest", side_effect=capture):
+            on_fingerprint = C._verdict_fingerprint(cfg, f)
+        os.environ[notes.NOTES_ENV] = "off"
+        off_prompts = worker_prompts()
+        with mock.patch.object(C, "_digest", side_effect=capture):
+            off_fingerprint = C._verdict_fingerprint(cfg, f)
+
+        for on, off in zip(on_prompts, off_prompts, strict=True):
+            self.assertNotIn("Working Notes", off)
+            self.assertEqual(on.replace(section, "", 1), off)
+        self.assertNotEqual(on_fingerprint, off_fingerprint)
+        self.assertEqual(identities[0]["notes"], (P.PROMPTS_DIR / "notes-worker.md").read_text())
+        # Off omits the key entirely, so fingerprints saved before notes existed stay valid.
+        self.assertNotIn("notes", identities[1])
+        self.assertEqual({key: value for key, value in identities[0].items() if key != "notes"}, identities[1])
 
     def test_parallel_prompts_assign_rr_queue_only_to_dispatcher(self) -> None:
         ws = self.seed("T", [])

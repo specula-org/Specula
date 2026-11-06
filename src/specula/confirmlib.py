@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from specula import confirm_first, persistent_findings, quota, resumelib
+from specula.notes import worker_notes_identity, worker_notes_section
 from specula.phaselib import (
     DEFAULT_POLICY_RETRIES,
     DEFAULT_TRANSIENT_RESUMES,
@@ -775,6 +776,20 @@ def _context(cfg: ConfirmConfig, f: Finding, repo_for_agent: str) -> str:
     )
 
 
+def _worker_notes(cfg: ConfirmConfig, f: Finding) -> str:
+    """Read-only working-notes pointer for one finding's confirmation turns."""
+    return worker_notes_section(cfg.ws.work_dir(cfg.name).absolute(), f.fdir.absolute())
+
+
+def _worker_notes_identity() -> dict[str, str]:
+    """Verdict-fingerprint entry for the worker notes guidance.
+
+    Empty when notes are off, so SPECULA_NOTES=off keeps pre-notes fingerprints.
+    """
+    identity = worker_notes_identity()
+    return {"notes": identity} if identity else {}
+
+
 def prompt_reproduce(cfg: ConfirmConfig, f: Finding, repo: str) -> str:
     return (
         render(
@@ -785,6 +800,7 @@ def prompt_reproduce(cfg: ConfirmConfig, f: Finding, repo: str) -> str:
             work_dir=str(cfg.ws.work_dir(cfg.name).absolute()),
             context=_context(cfg, f, repo),
         )
+        + _worker_notes(cfg, f)
         + cfg.prompt_extra
     )
 
@@ -810,6 +826,7 @@ def prompt_challenge(cfg: ConfirmConfig, f: Finding, repo: str, debate: str) -> 
             debate=debate,
             context=_context(cfg, f, repo),
         )
+        + _worker_notes(cfg, f)
         + cfg.prompt_extra
     )
 
@@ -824,6 +841,7 @@ def prompt_defend(cfg: ConfirmConfig, f: Finding, repo: str, debate: str) -> str
             fdir=str(f.fdir.absolute()),
             context=_context(cfg, f, repo),
         )
+        + _worker_notes(cfg, f)
         + cfg.prompt_extra
     )
 
@@ -2245,6 +2263,7 @@ def _verdict_fingerprint(cfg: ConfirmConfig, f: Finding) -> str:
             "tuning": _tuning_identity(cfg),
             "prompts": _prompt_sources(),
             "skill": _skill_identity(),
+            **_worker_notes_identity(),
         }
     )
 
