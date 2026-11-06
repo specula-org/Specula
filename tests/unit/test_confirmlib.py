@@ -32,6 +32,7 @@ from specula import phaselib as PhaseLib
 from specula import pipelinelib as PL
 from specula import prompts as P
 from specula.phaselib import Workspace
+from specula.rules import with_rules
 
 EVIDENCE = "The investigation inspected the real call path and captured concrete observed behavior."
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1287,7 +1288,7 @@ class TestDriver(ConfirmCase):
         self.assertEqual((root / "a-count").read_text(), "x")
         self.assertEqual((root / "b-count").read_text(), "xx")
         self.assertEqual(len(set((root / "b-cwds").read_text().splitlines())), 1)
-        self.assertEqual((root / "b-resume-prompt").read_text(), PhaseLib._SESSION_RESUME_PROMPT)
+        self.assertEqual((root / "b-resume-prompt").read_text(), with_rules(PhaseLib._SESSION_RESUME_PROMPT))
         self.assertEqual((root / "resume-check").read_text(), "passed")
         self.assertEqual(cfg._finding_leases, {})
         self.assertEqual(cfg._policy_states, {})
@@ -1385,7 +1386,7 @@ class TestDriver(ConfirmCase):
         self.assertEqual((root / "a-count").read_text(), "x")
         self.assertEqual((root / "b-count").read_text(), "xx")
         self.assertEqual(len(set((root / "b-cwds").read_text().splitlines())), 1)
-        self.assertEqual((root / "b-resume-prompt").read_text(), PhaseLib._MANUAL_SESSION_RESUME_PROMPT)
+        self.assertEqual((root / "b-resume-prompt").read_text(), with_rules(PhaseLib._MANUAL_SESSION_RESUME_PROMPT))
         self.assertEqual((root / "resume-check").read_text(), "passed")
         self.assertEqual(resumelib.active_entries(root), [])
         self.assertFalse(lease_checkpoint.exists())
@@ -1523,7 +1524,7 @@ class TestDriver(ConfirmCase):
         )
         self.assertEqual((root / "b-count").read_text(), "xx")
         self.assertEqual(len(set((root / "b-cwds").read_text().splitlines())), 1)
-        self.assertEqual((root / "b-resume-prompt").read_text(), PhaseLib._MANUAL_SESSION_RESUME_PROMPT)
+        self.assertEqual((root / "b-resume-prompt").read_text(), with_rules(PhaseLib._MANUAL_SESSION_RESUME_PROMPT))
         self.assertEqual((root / "resume-check").read_text(), "passed")
         self.assertEqual(
             (ws.work_dir("T") / "confirmation" / "MC-1" / "repair-request.body.md").read_text(),
@@ -1867,7 +1868,7 @@ class TestDriver(ConfirmCase):
         self.assertEqual((root / "consolidate-count").read_text(), "xx")
         self.assertEqual(
             (root / "consolidate-prompt-2").read_text(),
-            PhaseLib._SESSION_RESUME_PROMPT,
+            with_rules(PhaseLib._SESSION_RESUME_PROMPT),
         )
         self.assertEqual(cfg._policy_states, {})
 
@@ -1923,7 +1924,7 @@ class TestDriver(ConfirmCase):
         self.assertEqual((root / "consolidate-count").read_text(), "xx")
         self.assertEqual(
             (root / "consolidate-prompt-2").read_text(),
-            PhaseLib._MANUAL_SESSION_RESUME_PROMPT,
+            with_rules(PhaseLib._MANUAL_SESSION_RESUME_PROMPT),
         )
         self.assertEqual(resumelib.active_entries(root), [])
 

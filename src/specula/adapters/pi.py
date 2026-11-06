@@ -9,6 +9,8 @@ Options:
   --model=NAME          Provider/model (default: PI_MODEL)
   --log=FILE            Log file path (required)
   --resume-state=PATH   Persist/resume the exact native Pi session
+  --system-prompt-file=FILE
+                        Append FILE to Pi's system prompt (--append-system-prompt)
   --background          Accepted; caller handles backgrounding
   --help                Show this help
 """
@@ -78,6 +80,11 @@ def main(argv: list[str]) -> int:
         command += ["--model", options.model]
     if options.effort:
         command += ["--thinking", options.effort]
+    if options.system_prompt_file is not None:
+        # Pi's documented `--append-system-prompt <text|path>` appends an existing
+        # file's contents. Pi rebuilds its system prompt on every launch, including
+        # `--session` resumes, so passing it each time keeps the rules after compaction.
+        command += ["--append-system-prompt", str(options.system_prompt_file)]
     return run_json_cli("pi", command, options)
 
 

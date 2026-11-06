@@ -9,6 +9,8 @@ Options:
   --model=NAME          Provider/model (default: OPENCODE_MODEL)
   --log=FILE            Log file path (required)
   --resume-state=PATH   Persist/resume the exact native OpenCode session
+  --system-prompt-file=FILE
+                        Add FILE to OpenCode's system prompt (config `instructions`)
   --background          Accepted; caller handles backgrounding
   --help                Show this help
 """
@@ -17,8 +19,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 if __package__:
@@ -110,6 +114,38 @@ def _allow_external_directories(env: dict[str, str]) -> None:
     env["OPENCODE_PERMISSION"] = json.dumps(permission, separators=(",", ":"))
 
 
+def _stage_system_prompt(env: dict[str, str], system_prompt_file: Path | None) -> Path | None:
+    """Expose ``system_prompt_file`` through OpenCode's ``instructions`` config.
+
+    OpenCode has no system-prompt flag. Its config ``instructions`` list (paths or
+    globs) is read into the system prompt of every request, so the rules survive
+    compaction and ``--session`` resumes; config layers concatenate the list, so
+    user instruction files are kept. OpenCode globs each path's basename, so the
+    file is copied under a fixed, metacharacter-free name into a private
+    directory, which the caller removes after the CLI exits. Invalid native
+    ``OPENCODE_CONFIG_CONTENT`` is left untouched for OpenCode to report.
+    """
+    if system_prompt_file is None:
+        return None
+    try:
+        config = json.loads(env.get("OPENCODE_CONFIG_CONTENT") or "{}")
+    except json.JSONDecodeError:
+        return None
+    instructions = config.get("instructions", []) if isinstance(config, dict) else None
+    if not isinstance(config, dict) or not isinstance(instructions, list):
+        return None
+    directory = Path(tempfile.mkdtemp(prefix="specula-opencode-rules-"))
+    try:
+        copy = directory / "specula-rules.md"
+        shutil.copyfile(system_prompt_file, copy)
+    except BaseException:
+        shutil.rmtree(directory, ignore_errors=True)
+        raise
+    config["instructions"] = [*instructions, str(copy)]
+    env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
+    return directory
+
+
 def main(argv: list[str]) -> int:
     if len(argv) == 1 and argv[0] in {"--help", "-h"}:
         print(HELP)
@@ -181,7 +217,17 @@ def main(argv: list[str]) -> int:
         }
         child_env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
     _allow_external_directories(child_env)
-    return run_json_cli("opencode", command, options, child_env=child_env)
+    staged: Path | None = None
+    try:
+        staged = _stage_system_prompt(child_env, options.system_prompt_file)
+    except OSError as exc:
+        # The rules still lead the task prompt; only the system-prompt copy is lost.
+        print(f"opencode adapter: system prompt not staged ({exc}); continuing without it", file=sys.stderr)
+    try:
+        return run_json_cli("opencode", command, options, child_env=child_env)
+    finally:
+        if staged is not None:
+            shutil.rmtree(staged, ignore_errors=True)
 
 
 if __name__ == "__main__":

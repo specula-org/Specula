@@ -21,6 +21,8 @@
 #                          Empty -> codex config.toml default.
 #   --resume-state PATH    Persist the exact Codex session ID and resume it when
 #                          the state already contains one. Never selects --last.
+#   --system-prompt-file F Pass F's text as Codex developer_instructions (skipped
+#                          when config.toml sets its own developer_instructions).
 #   --help                 Show this help
 
 set -euo pipefail
@@ -33,6 +35,8 @@ BACKGROUND=false
 CLAUDE_ALIAS=""
 RESUME_STATE=""
 RESUME_STATE_SET=false
+SYSTEM_PROMPT_FILE=""
+SYSTEM_PROMPT_FILE_SET=false
 # Read adapter-specific environment defaults before parsing so an explicit
 # empty flag can still win and clear them.
 EFFORT="${CODEX_EFFORT:-}"
@@ -55,6 +59,7 @@ for arg in "$@"; do
     --effort=*)      EFFORT="${arg#*=}" ;;
     --model=*)       MODEL="${arg#*=}" ;;
     --resume-state=*) RESUME_STATE="${arg#*=}"; RESUME_STATE_SET=true ;;
+    --system-prompt-file=*) SYSTEM_PROMPT_FILE="${arg#*=}"; SYSTEM_PROMPT_FILE_SET=true ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -98,6 +103,16 @@ fi
 
 if [[ -n "$RESUME_STATE" && -d "$RESUME_STATE" ]]; then
   echo "codex adapter: --resume-state must be a file path: $RESUME_STATE" >&2
+  exit 1
+fi
+
+if [[ "$SYSTEM_PROMPT_FILE_SET" == true && -z "$SYSTEM_PROMPT_FILE" ]]; then
+  echo "codex adapter: --system-prompt-file requires a path" >&2
+  exit 1
+fi
+
+if [[ -n "$SYSTEM_PROMPT_FILE" && ! -f "$SYSTEM_PROMPT_FILE" ]]; then
+  echo "codex adapter: system prompt file not found: $SYSTEM_PROMPT_FILE" >&2
   exit 1
 fi
 
@@ -454,6 +469,31 @@ run_codex() {
   # Model / reasoning effort (additive — empty leaves codex config.toml default).
   [[ -n "$MODEL" ]] && cmd+=(-m "$MODEL")
   [[ -n "$EFFORT" ]] && cmd+=(-c "model_reasoning_effort=$EFFORT")
+  # Codex has no system-prompt file flag; its documented `developer_instructions`
+  # config string is injected into the session as developer instructions and
+  # survives compaction. It is an exec-level override, so it also applies to
+  # `resume`. The text is encoded as a TOML basic string (JSON string escapes
+  # are valid TOML) and travels in argv, so it must stay small. A user's own
+  # config.toml developer_instructions is never replaced: the rules then stay in
+  # the task prompt only.
+  if [[ -n "$SYSTEM_PROMPT_FILE" ]]; then
+    local codex_config="${CODEX_HOME:-$HOME/.codex}/config.toml"
+    if [[ -f "$codex_config" ]] && grep -Eq '^[[:space:]]*developer_instructions[[:space:]]*=' "$codex_config"; then
+      echo "codex adapter: $codex_config sets developer_instructions; leaving it in place (system prompt file not applied)" >&2
+    else
+      local developer_instructions
+      if ! developer_instructions="$(python3 -I -c '
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    text = stream.read()
+sys.stdout.write(json.dumps(text, ensure_ascii=False).replace("\x7f", "\\u007f"))
+' "$SYSTEM_PROMPT_FILE")"; then
+        echo "codex adapter: cannot read system prompt file: $SYSTEM_PROMPT_FILE" >&2
+        return 1
+      fi
+      cmd+=(-c "developer_instructions=$developer_instructions")
+    fi
+  fi
   if [[ -n "$RESUME_SESSION_ID" ]]; then
     cmd+=(resume "$RESUME_SESSION_ID")
   fi

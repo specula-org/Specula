@@ -22,6 +22,8 @@
 #                          --reasoning-effort (requires Copilot CLI 1.0.4+)
 #   --log output.log       Log file path (required)
 #   --resume-state PATH    Persist/resume the exact native Copilot session
+#   --system-prompt-file F Load F as Copilot custom instructions (an AGENTS.md
+#                          in a private COPILOT_CUSTOM_INSTRUCTIONS_DIRS entry)
 #   --background           Run in background, print PID to stdout (default: foreground)
 #   --help                 Show this help
 
@@ -35,6 +37,8 @@ EFFORT=""
 LOG_FILE=""
 RESUME_STATE=""
 RESUME_STATE_SET=false
+SYSTEM_PROMPT_FILE=""
+SYSTEM_PROMPT_FILE_SET=false
 BACKGROUND=false
 POLICY_BLOCKED_RC=76  # Keep in sync with src/specula/adapters/utils/policy.py.
 PLAIN_POLICY_DIAGNOSTIC_RC=77  # Internal event-stream candidate; never returned to the runner.
@@ -53,6 +57,7 @@ for arg in "$@"; do
     --effort=*)      EFFORT="${arg#*=}" ;;
     --log=*)         LOG_FILE="${arg#*=}" ;;
     --resume-state=*) RESUME_STATE="${arg#*=}"; RESUME_STATE_SET=true ;;
+    --system-prompt-file=*) SYSTEM_PROMPT_FILE="${arg#*=}"; SYSTEM_PROMPT_FILE_SET=true ;;
     --background)    BACKGROUND=true ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
@@ -87,6 +92,16 @@ fi
 
 if [[ "$RESUME_STATE_SET" == true && -z "$RESUME_STATE" ]]; then
   echo "copilot-cli adapter: --resume-state requires a path" >&2
+  exit 1
+fi
+
+if [[ "$SYSTEM_PROMPT_FILE_SET" == true && -z "$SYSTEM_PROMPT_FILE" ]]; then
+  echo "copilot-cli adapter: --system-prompt-file requires a path" >&2
+  exit 1
+fi
+
+if [[ -n "$SYSTEM_PROMPT_FILE" && ! -f "$SYSTEM_PROMPT_FILE" ]]; then
+  echo "copilot-cli adapter: system prompt file not found: $SYSTEM_PROMPT_FILE" >&2
   exit 1
 fi
 
@@ -209,6 +224,7 @@ fi
 ACTIVITY_LOG="${SPECULA_ACTIVITY_LOG:-}"
 TEMP_ACTIVITY_LOG=""
 USAGE_SESSION_FILE=""
+SYSTEM_PROMPT_DIR=""
 cleanup_temporary_files() {
   if [[ -n "$TEMP_ACTIVITY_LOG" ]]; then
     rm -f -- "$TEMP_ACTIVITY_LOG"
@@ -216,8 +232,30 @@ cleanup_temporary_files() {
   if [[ -n "$USAGE_SESSION_FILE" ]]; then
     rm -f -- "$USAGE_SESSION_FILE"
   fi
+  if [[ -n "$SYSTEM_PROMPT_DIR" ]]; then
+    rm -rf -- "$SYSTEM_PROMPT_DIR"
+  fi
 }
 trap cleanup_temporary_files EXIT
+
+# ── System prompt ──
+#
+# Copilot CLI has no system-prompt flag. Its documented
+# COPILOT_CUSTOM_INSTRUCTIONS_DIRS (comma-separated; see `copilot help
+# environment`) adds directories whose AGENTS.md is loaded as custom
+# instructions, which Copilot renders into the system prompt of every session,
+# including --resume, so they survive compaction. The file is staged as
+# AGENTS.md in a private directory appended to any inherited list. Staging
+# failures only lose the system-prompt copy: the rules still lead the prompt.
+if [[ -n "$SYSTEM_PROMPT_FILE" ]]; then
+  if SYSTEM_PROMPT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/specula-copilot-rules-XXXXXX")" \
+     && [[ "$SYSTEM_PROMPT_DIR" != *,* ]] \
+     && cp -- "$SYSTEM_PROMPT_FILE" "$SYSTEM_PROMPT_DIR/AGENTS.md"; then
+    export COPILOT_CUSTOM_INSTRUCTIONS_DIRS="${COPILOT_CUSTOM_INSTRUCTIONS_DIRS:+$COPILOT_CUSTOM_INSTRUCTIONS_DIRS,}$SYSTEM_PROMPT_DIR"
+  else
+    echo "copilot-cli adapter: system prompt not staged; continuing without it" >&2
+  fi
+fi
 if [[ -n "$RESUME_STATE" && -z "$ACTIVITY_LOG" ]]; then
   if ! TEMP_ACTIVITY_LOG="$(mktemp "${TMPDIR:-/tmp}/specula-copilot-activity-XXXXXX.jsonl")"; then
     echo "copilot-cli adapter: unable to create temporary activity log for session capture" >&2

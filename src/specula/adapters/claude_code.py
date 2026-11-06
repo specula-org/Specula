@@ -15,6 +15,8 @@ Options:
   --effort=LEVEL        low|medium|high|xhigh|max (default: max; via CLAUDE_EFFORT)
   --model=NAME          Model alias/name (default: profile default; via CLAUDE_MODEL)
   --resume-state=FILE   Persist or resume the exact Claude session for this logical turn
+  --system-prompt-file=FILE
+                        Append FILE to Claude's system prompt (--append-system-prompt-file)
   --log=FILE            Log file path (required)
   --background          Run in background (accepted; caller handles backgrounding)
   --help                Show this help
@@ -393,6 +395,8 @@ def main(argv: list[str]) -> int:
     max_budget = ""
     resume_state = ""
     resume_state_set = False
+    system_prompt_file = ""
+    system_prompt_file_set = False
     log_file = ""
     _background = False  # accepted; caller does the backgrounding, as in bash
     # `or`: bash ${VAR:-default} treats an exported-but-empty var as unset — an
@@ -419,6 +423,9 @@ def main(argv: list[str]) -> int:
         elif arg.startswith("--resume-state="):
             resume_state = arg[len("--resume-state=") :]
             resume_state_set = True
+        elif arg.startswith("--system-prompt-file="):
+            system_prompt_file = arg[len("--system-prompt-file=") :]
+            system_prompt_file_set = True
         elif arg.startswith("--log="):
             log_file = arg[len("--log=") :]
         elif arg == "--background":
@@ -446,6 +453,12 @@ def main(argv: list[str]) -> int:
         return _die("claude-code adapter: --log is required")
     if resume_state_set and not resume_state:
         return _die("claude-code adapter: --resume-state requires a path")
+    if system_prompt_file_set and not system_prompt_file:
+        return _die("claude-code adapter: --system-prompt-file requires a path")
+    if system_prompt_file:
+        if not os.path.isfile(system_prompt_file):
+            return _die(f"claude-code adapter: system prompt file not found: {system_prompt_file}")
+        system_prompt_file = os.path.abspath(system_prompt_file)
 
     # A resume state belongs to one exact logical turn.  Refuse mismatched or
     # malformed state rather than silently starting a fresh session and
@@ -571,6 +584,13 @@ def main(argv: list[str]) -> int:
             cmd += ["--max-budget-usd", max_budget]
         if model:
             cmd += ["--model", model]
+        if system_prompt_file:
+            # Print-mode option (hidden from `claude --help`, present in the CLI's
+            # option table): appended to the default system prompt, so the pinned
+            # rules survive compaction. Passed on --resume invocations too: Claude
+            # re-renders its system prompt after a compaction from the current
+            # launch's flags. A path, not the text, keeps the cmdline clean.
+            cmd += ["--append-system-prompt-file", system_prompt_file]
         cmd += settings_args
         cmd = _maybe_wrap_sandbox(cmd, work_dir)
 

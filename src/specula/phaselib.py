@@ -55,6 +55,7 @@ from specula.resource_summary import (
     invalidate_summary,
     publish_findings_summary,
 )
+from specula.rules import rules_block, with_rules
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 from specula.snapshotlib import (
     SNAPSHOT_MODE_ENV,
@@ -285,6 +286,16 @@ def _transient_failure_label(rc: int) -> str:
 
 
 def _retry_prompt(original: str, reason: str, *, resumable: bool, manual_extra: str = "") -> str:
+    """The exact prompt an invocation sends: fresh, replayed, or a continuation.
+
+    Every launcher (phase agents, reviews, blocking confirmation turns) writes
+    its prompt file through here, so the pinned rules block (specula.rules) is
+    prepended exactly once to every fresh, replayed, and continuation prompt.
+    """
+    return with_rules(_select_retry_prompt(original, reason, resumable=resumable, manual_extra=manual_extra))
+
+
+def _select_retry_prompt(original: str, reason: str, *, resumable: bool, manual_extra: str = "") -> str:
     if not resumable:
         return _policy_recovery_prompt(original) if reason == "policy" else original
     if reason == "policy":
@@ -294,6 +305,27 @@ def _retry_prompt(original: str, reason: str, *, resumable: bool, manual_extra: 
     if reason in {"rate_limit", "transient"}:
         return _SESSION_RESUME_PROMPT
     return original
+
+
+def _system_prompt_path(prompt_file: Path) -> Path:
+    """Sidecar holding the pinned rules for the adapter's system prompt."""
+    return prompt_file.with_name(f"{prompt_file.stem}.system{prompt_file.suffix}")
+
+
+def _system_prompt_argv(prompt_file: Path) -> list[str]:
+    """Write the rules beside ``prompt_file`` and return the adapter flag.
+
+    The flag is repeated on every invocation of a logical turn, including
+    native-session resumes, so adapters whose CLI rebuilds its system prompt
+    after compaction keep the rules. ``SPECULA_RULES=off`` writes nothing and
+    returns no flag, leaving the adapter argv exactly as before rule pinning.
+    """
+    block = rules_block()
+    if not block:
+        return []
+    path = _system_prompt_path(prompt_file)
+    path.write_text(block)
+    return [f"--system-prompt-file={path}"]
 
 
 # bash pathname expansion (`for d in .../*/`) orders by the locale collating
@@ -1554,6 +1586,7 @@ class Phase:
             )
             print(f"  Prompt saved: {files['prompt']}")
             return None
+        system_prompt_args = _system_prompt_argv(files["prompt"])
         # Generic stop-gate interface (src/specula/stop_gate.py): tell the
         # adapter which phase this agent runs and where its work dir is, so
         # hook-capable adapters arm the completion gate. Per-launch env copy,
@@ -1587,6 +1620,7 @@ class Phase:
         # files as well when they live in the workspace.
         runtime_files = (
             files["prompt"],
+            _system_prompt_path(files["prompt"]),
             files["pid"],
             files["log"],
             _last_message_path(files["log"]),
@@ -1621,6 +1655,7 @@ class Phase:
                 *_model_effort_argv(adapter, self._model, self._effort),
                 f"--log={files['log']}",
                 f"--resume-state={resume_state}",
+                *system_prompt_args,
                 "--background",
             ]
             if self.key == "incremental":
@@ -1822,6 +1857,7 @@ def run_agent_blocking(
         *_model_effort_argv(adapter, model, effort),
         f"--log={log_file}",
         f"--resume-state={resume_state}",
+        *_system_prompt_argv(prompt_file),
     ]
     state = policy_state if policy_state is not None else PolicyRetryState()
     claim = resumelib.ResumeClaim(attempt=1, manual=False, resumable=False)
@@ -3601,6 +3637,7 @@ Output:
             manual_extra=self._manual_prompt_extra(ws, name) if claim.manual else "",
         )
         prompt_file.write_text(prompt)
+        system_prompt_args = _system_prompt_argv(prompt_file)
         with contextlib.suppress(OSError):
             activity_log.unlink()
         env = os.environ.copy()
@@ -3622,6 +3659,7 @@ Output:
         for path in (
             log_file,
             pid_file,
+            _system_prompt_path(prompt_file),
             _last_message_path(log_file),
             activity_log,
             log_file.with_suffix(".raw.json"),
@@ -3655,6 +3693,7 @@ Output:
                     *_model_effort_argv(adapter, self._model, self._effort),
                     f"--log={log_file}",
                     f"--resume-state={resume_state}",
+                    *system_prompt_args,
                     "--background",
                 ],
                 env=env,

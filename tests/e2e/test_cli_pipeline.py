@@ -33,6 +33,7 @@ import unittest
 from pathlib import Path
 
 from specula import phaselib
+from specula.rules import with_rules
 
 REAL_ROOT = Path(__file__).resolve().parents[2]
 REAL_PKG = REAL_ROOT / "src" / "specula"
@@ -633,7 +634,7 @@ class CliE2E(unittest.TestCase):
         self.assertEqual(Path(f"{adapter}.validation-count").read_text(), "xx")
         self.assertEqual(
             Path(f"{adapter}.validation-prompt").read_text(),
-            phaselib._MANUAL_SESSION_RESUME_PROMPT,
+            with_rules(phaselib._MANUAL_SESSION_RESUME_PROMPT),
         )
         self.assertTrue((wd / "confirmed-bugs.md").is_file())
         self.assertTrue((wd / "bug-severity.md").is_file())
