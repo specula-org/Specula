@@ -32,7 +32,9 @@ class ContinuousCLI(unittest.TestCase):
         self.root = self.helper.specroot(("footest", "bartest"))
         # SANY checks every handoff: a fake one; no ambient TLA+ tools or strict switch.
         path = f"{self.helper.fake_sany(self.root)}{os.pathsep}{os.environ.get('PATH', '')}"
-        patcher = mock.patch.dict(os.environ, {"PATH": path, "SPECULA_ROOT": "", "SPECULA_STRICT_OUTPUTS": ""})
+        patcher = mock.patch.dict(
+            os.environ, {"PATH": path, "SPECULA_ROOT": "", "SPECULA_STRICT_OUTPUTS": "", "SPECULA_DELEGATION": ""}
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
         self.work = self.helper.workdir()
@@ -125,6 +127,10 @@ class ContinuousCLI(unittest.TestCase):
         self.assertEqual(meta["resume_configuration"]["orchestration"], "continuous")
         self.assertIn("MAIN SESSION: analysis", result.stdout)
         self.assertIn("Orchestration: continuous", result.stdout)
+        self.assertEqual(self.prompt(1).count("## Parallel Subagents"), 1)
+        self.assertIs(
+            json.loads((run / ".specula-resume/config.json").read_text())["configuration"]["delegation"], True
+        )
         summary = (run / "footest/.specula-output/summary.md").read_text()
         self.assertIn("| Main session (Phases 1-3) |", summary)
         self.assertIn("`footest/.specula-output/main.log`", (run / "pipeline-summary.md").read_text())
@@ -366,11 +372,12 @@ class ContinuousCLI(unittest.TestCase):
         self.run_cli("--agent=fake", "footest")
         run = self.run_dir()
         failure.unlink()
-        with mock.patch.dict(os.environ, {"SPECULA_RULES": "off", "SPECULA_NOTES": "off"}):
+        with mock.patch.dict(os.environ, {"SPECULA_RULES": "off", "SPECULA_NOTES": "off", "SPECULA_DELEGATION": "off"}):
             resumed = self.run_cli(f"--run-id={run.name}")
         self.assert_complete(resumed, run)
         self.assertIn("SPECULA_RULES: this run was created with rules on", resumed.stdout)
         self.assertIn("SPECULA_NOTES: this run was created with notes on", resumed.stdout)
+        self.assertIn("SPECULA_DELEGATION: this run was created with delegation guidance on", resumed.stdout)
         self.prompt(2)  # still pinned exactly once
         self.assertIn("SPECULA_RULES: this run was created", (run / "pipeline.log").read_text())
 

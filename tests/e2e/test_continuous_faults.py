@@ -76,7 +76,9 @@ class ContinuousFaults(unittest.TestCase):
         self.root = self.helper.specroot(("footest",))
         # SANY checks every handoff: a fake one; no ambient TLA+ tools or strict switch.
         path = f"{self.helper.fake_sany(self.root)}{os.pathsep}{os.environ.get('PATH', '')}"
-        patcher = mock.patch.dict(os.environ, {"PATH": path, "SPECULA_ROOT": "", "SPECULA_STRICT_OUTPUTS": ""})
+        patcher = mock.patch.dict(
+            os.environ, {"PATH": path, "SPECULA_ROOT": "", "SPECULA_STRICT_OUTPUTS": "", "SPECULA_DELEGATION": ""}
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
         self.work = self.helper.workdir()

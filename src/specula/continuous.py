@@ -58,6 +58,7 @@ if __package__ in (None, ""):
 
 from specula import output_contract, resumelib, stop_gate
 from specula.context_control import CONFIRMATION_REQUEST, CONFIRMATION_YIELD_RC, REPAIR_SNAPSHOT, write_json
+from specula.delegation import delegation_pointer, delegation_section
 from specula.notes import notes_section
 from specula.phaselib import (
     AgentFiles,
@@ -102,7 +103,9 @@ def _guidance_file(work: Path) -> Path | None:
     return None
 
 
-def _continuation_prompt(text: str, *, work_dir: Path | None = None, notes: bool = False) -> str:
+def _continuation_prompt(
+    text: str, *, work_dir: Path | None = None, notes: bool = False, delegation: bool = False
+) -> str:
     """Single hook for every continuation or resume prompt this module generates.
 
     It covers the compaction continue prompt (written by context_runner), the
@@ -110,8 +113,10 @@ def _continuation_prompt(text: str, *, work_dir: Path | None = None, notes: bool
     restart prompt. The pinned rules are prepended here; ``with_rules`` is
     idempotent, so prompts that also pass through phaselib's generic launch
     path still carry exactly one rules block. ``notes`` appends the working-
-    notes pointer for ``work_dir``, and a continuation that does not inline the
-    target-specific guidance points to its staged file. ``_manual_prompt_extra``
+    notes pointer for ``work_dir``, ``delegation`` a one-line reminder of the
+    delegation guidance (for a context that compaction just emptied), and a
+    continuation that does not inline the target-specific guidance points to
+    its staged file. ``_manual_prompt_extra``
     fragments are not wrapped: phaselib appends them (and the current guidance)
     to its own rules-pinned manual-resume prompt.
     """
@@ -121,6 +126,9 @@ def _continuation_prompt(text: str, *, work_dir: Path | None = None, notes: bool
             text.rstrip("\n")
             + f"\n\nThe target-specific instructions in `{guidance}` remain in effect; reread them before continuing.\n"
         )
+    pointer = delegation_pointer() if delegation else ""
+    if pointer:
+        text = text.rstrip("\n") + f"\n\n{pointer}\n"
     if notes and work_dir is not None:
         text = text.rstrip("\n") + "\n" + notes_section(work_dir, first=False)
     return with_rules(text)
@@ -300,6 +308,7 @@ def compaction_continue_prompt(status: str, handoff: str, work: Path) -> str:
         "to confirmation as instructed when validation is complete.\n",
         work_dir=work,
         notes=True,
+        delegation=True,
     )
 
 
@@ -465,6 +474,7 @@ Options:
             checking_skill=prompt_skill_ids("tla-checking-workflow"),
         )
         prompt += notes_section(work, first=notes_first)
+        prompt += delegation_section()
         return self._with_extra(ws, name, prompt)
 
     def _resume_context(self, ws: Workspace, name: str, *, new_session: bool = False) -> str:

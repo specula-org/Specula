@@ -42,7 +42,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     sys.modules["specula.pipelinelib"] = sys.modules[__name__]
-from specula import ci_init, ci_verdict, confirm_first, notes, output_contract, resumelib, rules
+from specula import ci_init, ci_verdict, confirm_first, delegation, notes, output_contract, resumelib, rules
 from specula import quota as _quota
 from specula.adapters.utils.run_lock import inherited_run_lock_fds
 from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
@@ -205,6 +205,12 @@ Output navigation (default isolated layout):
 
 DIVIDER = "════════════════════════════════════════════════════════════"
 ORCHESTRATION_MODES = ("continuous", "phased")
+# Switches of the continuous main session kept in a run's resume configuration:
+# (stored key, environment variable, current value, notice label).
+CONTINUOUS_TOGGLES = (
+    ("strict_outputs", output_contract.STRICT_ENV, output_contract.strict, "strict outputs"),
+    ("delegation", delegation.DELEGATION_ENV, delegation.enabled, "delegation guidance"),
+)
 DEFAULT_ORCHESTRATION = "continuous"
 BYOM_CONFLICTING_FLAGS = (
     "--skip-analysis",
@@ -1081,13 +1087,18 @@ class Pipeline:
             # is also how runs from before these features behave.
             **({"rules": True} if rules.enabled() else {}),
             **({"notes": True} if notes.enabled() else {}),
-            # Ablation switch for the continuous output contract; it has no
-            # effect on phased runs, so only continuous runs record it.
-            **({"strict_outputs": True} if self.orchestration == "continuous" and output_contract.strict() else {}),
+            # Continuous-only switches (the strict output contract, the
+            # delegation guidance) have no effect on phased runs, so only
+            # continuous runs record them.
+            **(
+                {key: True for key, _variable, enabled, _label in CONTINUOUS_TOGGLES if enabled()}
+                if self.orchestration == "continuous"
+                else {}
+            ),
         }
 
     def _restore_prompt_toggles(self, raw: dict[str, Any], *, allow_overrides: bool) -> None:
-        """Run child processes with the rules/notes (and strict-outputs) setting stored at creation."""
+        """Run child processes with the prompt and contract switches stored at creation."""
         for key, variable, module in (("rules", rules.RULES_ENV, rules), ("notes", notes.NOTES_ENV, notes)):
             stored = raw.get(key, False)
             if not isinstance(stored, bool):
@@ -1102,18 +1113,19 @@ class Pipeline:
                     f"keeping that instead of the current {'on' if current else 'off'} so resumed prompts match"
                 )
         if self.orchestration != "continuous":
-            return  # the strict output contract only applies to continuous runs
-        stored = raw.get("strict_outputs", False)
-        if not isinstance(stored, bool):
-            raise resumelib.ResumeError("invalid stored strict_outputs setting")
-        current = output_contract.strict()
-        if not allow_overrides and current != stored:
-            os.environ[output_contract.STRICT_ENV] = "on" if stored else "off"
-            self.resume_notices.append(
-                f"{output_contract.STRICT_ENV}: this run was created with strict outputs "
-                f"{'on' if stored else 'off'}; keeping that instead of the current {'on' if current else 'off'} "
-                "so its output contract does not change"
-            )
+            return  # the continuous-only switches do not apply to phased runs
+        for key, variable, enabled, label in CONTINUOUS_TOGGLES:
+            stored = raw.get(key, False)
+            if not isinstance(stored, bool):
+                raise resumelib.ResumeError(f"invalid stored {key} setting")
+            current = enabled()
+            if not allow_overrides and current != stored:
+                os.environ[variable] = "on" if stored else "off"
+                self.resume_notices.append(
+                    f"{variable}: this run was created with {label} {'on' if stored else 'off'}; "
+                    f"keeping that instead of the current {'on' if current else 'off'} so its main session "
+                    "keeps the same instructions"
+                )
 
     def _restore_orchestration(self, raw: dict[str, Any]) -> None:
         # Runs created before continuous orchestration have no field: phased.

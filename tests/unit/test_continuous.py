@@ -15,7 +15,7 @@ import pytest
 
 from specula import context_control as control
 from specula import context_runner as runner
-from specula import continuous, output_contract, resumelib, rules, stop_gate
+from specula import continuous, delegation, output_contract, resumelib, rules, stop_gate
 from specula import pipelinelib as pl
 from specula.agent_config import AgentConfigError, AgentSelection, load_agent_routing
 from specula.notes import NOTES_ENV, notes_section
@@ -37,7 +37,7 @@ def _clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "MAX_REPAIR_ROUNDS",
     ):
         monkeypatch.delenv(key, raising=False)
-    for key in (rules.RULES_ENV, NOTES_ENV, output_contract.STRICT_ENV):
+    for key in (rules.RULES_ENV, NOTES_ENV, output_contract.STRICT_ENV, delegation.DELEGATION_ENV):
         # Registered so values the code under test writes are undone too.
         monkeypatch.setenv(key, "")
         monkeypatch.delenv(key)
@@ -246,7 +246,7 @@ def test_strict_outputs_are_stored_for_continuous_runs_and_restored_on_attach(
     assert os.environ[output_contract.STRICT_ENV] == "on" and output_contract.strict()
     assert attach.resume_notices == [
         "SPECULA_STRICT_OUTPUTS: this run was created with strict outputs on; keeping that instead of the "
-        "current off so its output contract does not change"
+        "current off so its main session keeps the same instructions"
     ]
     relaxed, _, _ = parse(["--run-id=x"])
     relaxed._restore_resume_configuration(default)
@@ -261,6 +261,33 @@ def test_strict_outputs_are_stored_for_continuous_runs_and_restored_on_attach(
     assert output_contract.strict() and fresh.resume_notices == []
     with pytest.raises(resumelib.ResumeError, match="invalid stored strict_outputs"):
         parse(["--run-id=x"])[0]._restore_resume_configuration(dict(document, strict_outputs="on"))
+
+
+def test_delegation_is_stored_for_continuous_runs_and_restored_on_attach(monkeypatch: pytest.MonkeyPatch) -> None:
+    document = parse(["t|g|l|r"])[0]._resume_configuration_document()
+    assert document["delegation"] is True  # on by default
+    phased = parse(["--orchestration=phased", "t|g|l|r"])[0]._resume_configuration_document()
+    assert "delegation" not in phased  # phased configurations stay unchanged
+    monkeypatch.setenv(delegation.DELEGATION_ENV, "no")
+    off = parse(["t|g|l|r"])[0]._resume_configuration_document()
+    assert "delegation" not in off
+
+    attach, _, _ = parse(["--run-id=x"])
+    attach._restore_resume_configuration(document)
+    assert os.environ[delegation.DELEGATION_ENV] == "on" and delegation.enabled()
+    assert attach.resume_notices == [
+        "SPECULA_DELEGATION: this run was created with delegation guidance on; keeping that instead of the "
+        "current off so its main session keeps the same instructions"
+    ]
+    older, _, _ = parse(["--run-id=x"])
+    older._restore_resume_configuration(off)  # also continuous runs from before the guidance
+    assert not delegation.enabled() and len(older.resume_notices) == 1
+
+    phased_attach, _, _ = parse(["--run-id=x"])
+    phased_attach._restore_resume_configuration(phased)
+    assert not delegation.enabled() and phased_attach.resume_notices == []
+    with pytest.raises(resumelib.ResumeError, match="invalid stored delegation"):
+        parse(["--run-id=x"])[0]._restore_resume_configuration(dict(document, delegation=1))
 
 
 def test_routed_resume_configuration_uses_main_routes(tmp_path: Path) -> None:
@@ -391,6 +418,36 @@ def test_strict_outputs_restore_the_full_prompt_contract(
     for prompt in (default, strict):
         assert "\n\n\n" not in prompt
         assert "## Hand Off to Confirmation" in prompt and "BLOCKED.md" in prompt
+
+
+def test_main_prompt_carries_the_delegation_guidance_once(
+    run_workspace: tuple[Workspace, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws, work = run_workspace
+    phase = continuous.ContinuousPhase()
+    section = delegation.delegation_section().strip("\n")
+    first = phase.build_prompt(ws, "t|org/t|Go|Raft")
+    assert first.count("## Parallel Subagents") == 1 and section in first
+    assert first.index(section) > first.index("## If You Cannot Finish")
+    compacted = continuous.compaction_continue_prompt("completed", str(work / "handoff.md"), work)
+    assert compacted.count(delegation.POINTER) == 1 and "## Parallel Subagents" not in compacted
+
+    # A fresh-context restart is a new session: it gets the full guidance once.
+    (work / "spec").mkdir()
+    (work / "modeling-brief.md").write_text("brief")
+    continuous.save_state(work, "t", continuous.MainState(context="fresh"), "fresh-context")
+    restarted = phase.build_prompt(ws, "t|org/t|Go|Raft")
+    assert "## Continue From Existing Work" in restarted and restarted.count("## Parallel Subagents") == 1
+    # A resumed session already has it.
+    seed_active_main(ws, work, resumable=True)
+    seed_repair_round(work)
+    assert "Parallel Subagents" not in phase.build_prompt(ws, "t|org/t|Go|Raft")
+
+    monkeypatch.setenv(delegation.DELEGATION_ENV, "off")
+    (work / continuous.STATE_FILE).unlink()
+    assert "Parallel Subagents" not in phase.build_prompt(ws, "t|org/t|Go|Raft")
+    compacted_off = continuous.compaction_continue_prompt("completed", str(work / "handoff.md"), work)
+    assert compacted_off == compacted.replace(f"\n\n{delegation.POINTER}\n", "\n")
 
 
 def test_repair_resume_sends_only_the_continuation(
@@ -605,7 +662,9 @@ def test_runner_compacts_main_then_records_explicit_confirmation(
 ) -> None:
     work = configure_request(monkeypatch, tmp_path)
     monkeypatch.setattr(runner, "ROOT", tmp_path)
-    monkeypatch.setattr(continuous, "_continuation_prompt", lambda text, *, work_dir=None, notes=False: "HOOK " + text)
+    monkeypatch.setattr(
+        continuous, "_continuation_prompt", lambda text, *, work_dir=None, notes=False, delegation=False: "HOOK " + text
+    )
     tool = tmp_path / "tools/context_control"
     (tool / ".venv/bin").mkdir(parents=True)
     (tool / ".venv/bin/python").symlink_to(sys.executable)
