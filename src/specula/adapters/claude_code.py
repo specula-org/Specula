@@ -430,6 +430,12 @@ def main(argv: list[str]) -> int:
         # Alias determines the config dir authoritatively (do NOT inherit an
         # ambient CLAUDE_CONFIG_DIR, which would redirect quota-sensitive runs).
         os.environ["CLAUDE_CONFIG_DIR"] = os.environ.get("HOME", "") + "/." + (claude_alias or "claude")
+        # Headless `claude -p` kills subagents that are still running in the
+        # background when the main turn ends, so an agent that backgrounds its
+        # subagents and ends its turn loses their work. Keep subagents and shell
+        # commands in the foreground; parallel foreground subagents still run
+        # concurrently. An explicit caller setting wins.
+        os.environ.setdefault("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1")
         # ── Stop gate (execution layer) ──
         # Generic gate interface: the phase launcher exports SPECULA_PHASE +
         # SPECULA_WORK_DIR (see src/specula/stop_gate.py). Parallel workers may
