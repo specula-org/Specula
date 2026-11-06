@@ -47,7 +47,7 @@ Validation: every artifact the validation skill requires, including `{{spec_dir}
 
 ## Hand Off to Confirmation
 
-When validation is complete and `spec/bug-report.md` and `spec/findings.json` are current, wait for every background job you started and collect its results. Then call the `request_bug_confirmation` tool. If the tool is unavailable, run `python3 "$SPECULA_ROOT/tools/context_control/request.py" --confirm`. Follow the returned yield instruction exactly.
+When validation is complete and `spec/bug-report.md` and `spec/findings.json` are current, wait for every background job you started and collect its results, and check the work against the Target-Specific Instructions at the end of this prompt, if any; they stay in effect for the whole session, including after compaction and in repair rounds. Then call the `request_bug_confirmation` tool. If the tool is unavailable, run `python3 "$SPECULA_ROOT/tools/context_control/request.py" --confirm`. Follow the returned yield instruction exactly.
 
 Specula then pauses this session and confirms each finding in a separate clean context. Do not reproduce candidates or start confirmation agents yourself, and do not write `confirmed-bugs.md`, `bug-severity.md`, or `summary.md`. If confirmation returns repair requests, Specula resumes this same session with instructions: repair, revalidate, and request confirmation again. Otherwise this session's work is complete.
 

@@ -92,6 +92,17 @@ class ContinuousError(RuntimeError):
     """Persisted continuous state is inconsistent; refuse to guess."""
 
 
+def _guidance_file(work: Path) -> Path | None:
+    """The target-specific guidance staged for this run, if it has any content."""
+    for candidate in (work / ".prompt-extra.initial.md", work / ".prompt-extra.md"):
+        try:
+            if candidate.is_file() and not candidate.is_symlink() and candidate.read_text(errors="replace").strip():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
 def _continuation_prompt(text: str, *, work_dir: Path | None = None, notes: bool = False) -> str:
     """Single hook for every continuation or resume prompt this module generates.
 
@@ -100,9 +111,17 @@ def _continuation_prompt(text: str, *, work_dir: Path | None = None, notes: bool
     restart prompt. The pinned rules are prepended here; ``with_rules`` is
     idempotent, so prompts that also pass through phaselib's generic launch
     path still carry exactly one rules block. ``notes`` appends the working-
-    notes pointer for ``work_dir``. ``_manual_prompt_extra`` fragments are not
-    wrapped: phaselib appends them to its own (rules-pinned) manual-resume prompt.
+    notes pointer for ``work_dir``, and a continuation that does not inline the
+    target-specific guidance points to its staged file. ``_manual_prompt_extra``
+    fragments are not wrapped: phaselib appends them (and the current guidance)
+    to its own rules-pinned manual-resume prompt.
     """
+    guidance = _guidance_file(work_dir) if work_dir is not None else None
+    if guidance is not None and "\n## Target-Specific Instructions\n" not in text:
+        text = (
+            text.rstrip("\n")
+            + f"\n\nThe target-specific instructions in `{guidance}` remain in effect; reread them before continuing.\n"
+        )
     if notes and work_dir is not None:
         text = text.rstrip("\n") + "\n" + notes_section(work_dir, first=False)
     return with_rules(text)

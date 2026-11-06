@@ -827,3 +827,26 @@ def test_start_finishes_only_a_dangling_repair_commit(tmp_path: Path, monkeypatc
     pipeline.skip_repair_loop = True
     with contextlib.redirect_stdout(io.StringIO()), pytest.raises(continuous.ContinuousError, match="skip-repair-loop"):
         run._start()
+
+
+def test_continuations_point_to_the_staged_guidance(run_workspace: tuple[Workspace, Path]) -> None:
+    ws, work = run_workspace
+    seed_active_main(ws, work, resumable=True)
+    seed_repair_round(work)
+    phase = continuous.ContinuousPhase()
+    pointer = "remain in effect; reread them before continuing"
+    assert pointer not in phase.build_prompt(ws, "t|org/t|Go|Raft")  # no guidance staged
+    (work / ".prompt-extra.initial.md").write_text("")  # frozen without guidance
+    assert pointer not in phase.build_prompt(ws, "t|org/t|Go|Raft")
+    (work / ".prompt-extra.initial.md").write_text("Model only the leader lease.\n")
+    staged = str(work / ".prompt-extra.initial.md")
+    for prompt in (
+        phase.build_prompt(ws, "t|org/t|Go|Raft"),  # repair continuation
+        continuous.compaction_continue_prompt("completed", str(work / "handoff.md"), work),
+    ):
+        assert prompt.count(pointer) == 1 and staged in prompt
+    # A prompt that inlines the guidance does not point to it again.
+    restarted = continuous._continuation_prompt("x\n## Target-Specific Instructions\n\ny\n", work_dir=work)
+    assert pointer not in restarted
+    template = (Path(continuous.__file__).parent / "prompts/continuous.md").read_text()
+    assert "check the work against the Target-Specific Instructions" in template
