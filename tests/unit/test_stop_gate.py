@@ -198,6 +198,31 @@ class TestLivePids(GateCase):
         self.assertIn("wait_for_pid.sh", reason)
         self.assertIn(f"--pid-file {self.wd / 'spec' / 'output' / 'MC_run1.out.pid'}", reason)
 
+    @staticmethod
+    def grandparent_pid() -> int:
+        out = subprocess.run(
+            ["ps", "-o", "ppid=", "-p", str(os.getppid())],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        return int(out)
+
+    @staticmethod
+    def real_ancestor_chain() -> set[int]:
+        chain = {os.getpid()}
+        pid = os.getpid()
+        for _ in range(32):
+            out = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+            if not out.isdigit():
+                break
+            ppid = int(out)
+            if ppid <= 1:
+                break
+            chain.add(ppid)
+            pid = ppid
+        return chain
+
     def test_live_background_job_at_finding_root_blocks(self) -> None:
         self.deliver()
         self.spawn_sleeper(self.wd / "root-job.pid")
@@ -240,6 +265,114 @@ class TestLivePids(GateCase):
         (self.wd / "spec" / "self.pid").write_text(f"{os.getpid()}\n")
         allow, _ = sg.decide("spec_validation", self.wd)
         self.assertTrue(allow)
+
+    def test_grandparent_pid_ignored(self) -> None:
+        # A phase launcher is a deeper ancestor than the agent's parent, so
+        # os.getpid() alone does not cover this.
+        self.deliver()
+        grandparent = self.grandparent_pid()
+        (self.wd / "spec-validation.pid").write_text(f"{grandparent}\n")
+        allow, reason = sg.decide("spec_validation", self.wd)
+        self.assertTrue(allow, reason)
+
+    def test_ancestor_walk_reaches_beyond_self_and_parent(self) -> None:
+        ancestors = sg._ancestor_pids()
+        self.assertIn(os.getpid(), ancestors)
+        self.assertIn(os.getppid(), ancestors)
+        self.assertIn(self.grandparent_pid(), ancestors)
+
+    def test_ancestor_walk_covers_the_whole_chain(self) -> None:
+        self.assertLessEqual(self.real_ancestor_chain(), sg._ancestor_pids())
+
+    def test_ancestor_walk_without_proc_still_reaches_the_grandparent(self) -> None:
+        # Force the non-/proc path on every host, including Linux CI.
+        with mock.patch.object(sg, "_proc_ppid", return_value=None):
+            ancestors = sg._ancestor_pids()
+        self.assertIn(self.grandparent_pid(), ancestors)
+        self.assertLessEqual(self.real_ancestor_chain(), ancestors)
+
+    def test_ancestor_walk_builds_the_ps_snapshot_once(self) -> None:
+        # One `ps` call for the whole walk, not one per generation.
+        real_map = sg._ps_ppid_map()
+        with (
+            mock.patch.object(sg, "_proc_ppid", return_value=None),
+            mock.patch.object(sg, "_ps_ppid_map", return_value=real_map) as snapshot,
+        ):
+            sg._ancestor_pids()
+        self.assertEqual(snapshot.call_count, 1)
+
+    def test_ancestor_walk_degrades_to_self_and_parent(self) -> None:
+        with (
+            mock.patch.object(sg, "_proc_ppid", return_value=None),
+            mock.patch.object(sg, "_ps_ppid_map", return_value={}),
+        ):
+            ancestors = sg._ancestor_pids()
+        self.assertEqual(ancestors, {os.getpid(), os.getppid()})
+
+    def test_ancestor_walk_never_raises(self) -> None:
+        # Runs inside a Stop hook, so an unexpected error must not propagate.
+        with (
+            mock.patch.object(sg, "_proc_ppid", return_value=None),
+            mock.patch.object(sg, "_ps_ppid_map", side_effect=OSError("no ps")),
+        ):
+            self.assertEqual(sg._ancestor_pids(), {os.getpid(), os.getppid()})
+
+    def test_ps_ppid_map_tolerates_unusable_output(self) -> None:
+        for stdout in ("", "garbage\n", "1\n", "a b\n"):
+            completed = subprocess.CompletedProcess(["ps"], 0, stdout, "")
+            with mock.patch("specula.stop_gate.subprocess.run", return_value=completed):
+                self.assertEqual(sg._ps_ppid_map(), {})
+
+    def test_ps_ppid_map_parses_pid_ppid_pairs(self) -> None:
+        completed = subprocess.CompletedProcess(["ps"], 0, "  10   1\n  20  10\n", "")
+        with mock.patch("specula.stop_gate.subprocess.run", return_value=completed):
+            self.assertEqual(sg._ps_ppid_map(), {10: 1, 20: 10})
+
+    def test_ps_ppid_map_handles_failure_modes(self) -> None:
+        failed = subprocess.CompletedProcess(["ps"], 1, "10 1\n", "")
+        with mock.patch("specula.stop_gate.subprocess.run", return_value=failed):
+            self.assertEqual(sg._ps_ppid_map(), {})
+        for error in (OSError("missing"), subprocess.TimeoutExpired(["ps"], 10)):
+            with mock.patch("specula.stop_gate.subprocess.run", side_effect=error):
+                self.assertEqual(sg._ps_ppid_map(), {})
+
+    def test_ps_resolved_without_bin_on_path(self) -> None:
+        # A hook inherits its CLI's PATH, which need not include /bin.
+        grandparent = self.grandparent_pid()  # resolve before stripping PATH
+        with (
+            mock.patch.dict(os.environ, {"PATH": "/nonexistent"}),
+            mock.patch.object(sg, "_proc_ppid", return_value=None),
+        ):
+            self.assertIsNotNone(sg._ps_executable())
+            self.assertIn(grandparent, sg._ancestor_pids())
+
+    def test_ps_executable_prefers_path(self) -> None:
+        with mock.patch("specula.stop_gate.shutil.which", return_value="/opt/x/ps"):
+            self.assertEqual(sg._ps_executable(), "/opt/x/ps")
+
+    def test_ps_executable_falls_back_to_standard_locations(self) -> None:
+        with (
+            mock.patch("specula.stop_gate.shutil.which", return_value=None),
+            mock.patch("specula.stop_gate.os.access", side_effect=lambda p, _m: p == "/usr/bin/ps"),
+        ):
+            self.assertEqual(sg._ps_executable(), "/usr/bin/ps")
+
+    def test_no_ps_anywhere_degrades_without_spawning(self) -> None:
+        with (
+            mock.patch.object(sg, "_ps_executable", return_value=None),
+            mock.patch("specula.stop_gate.subprocess.run") as run,
+        ):
+            self.assertEqual(sg._ps_ppid_map(), {})
+        run.assert_not_called()
+
+    def test_cycle_in_ps_snapshot_terminates(self) -> None:
+        cycle = {os.getpid(): os.getppid(), os.getppid(): os.getpid()}
+        with (
+            mock.patch.object(sg, "_proc_ppid", return_value=None),
+            mock.patch.object(sg, "_ps_ppid_map", return_value=cycle),
+        ):
+            ancestors = sg._ancestor_pids()
+        self.assertEqual(ancestors, {os.getpid(), os.getppid()})
 
     def test_garbage_pid_file_ignored(self) -> None:
         self.deliver()

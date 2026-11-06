@@ -52,6 +52,8 @@ import contextlib
 import json
 import os
 import shlex
+import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -154,24 +156,84 @@ def _blocked_file(work_dir: Path) -> Path | None:
 # ──────────────────────────────────────────────────────────
 # Live background jobs (pid files under the work dir)
 # ──────────────────────────────────────────────────────────
+def _proc_ppid(pid: int) -> int | None:
+    """Parent of `pid` from /proc, or None where /proc is unavailable."""
+    try:
+        with open(f"/proc/{pid}/stat") as fh:
+            stat = fh.read()
+        # field 4 (ppid) sits after the parenthesized comm, which may
+        # itself contain spaces/parens — split after the LAST ')'.
+        return int(stat.rsplit(")", 1)[1].split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def _ps_executable() -> str | None:
+    """`ps` from PATH, else its standard locations: a hook inherits whatever
+    PATH its CLI was launched with, which need not include /bin."""
+    found = shutil.which("ps")
+    if found:
+        return found
+    return next((p for p in ("/bin/ps", "/usr/bin/ps") if os.access(p, os.X_OK)), None)
+
+
+def _ps_ppid_map() -> dict[int, int]:
+    """pid -> ppid for every visible process, via one `ps` call.
+
+    Fallback for hosts without /proc (macOS, the BSDs)."""
+    ps = _ps_executable()
+    if ps is None:
+        return {}
+    try:
+        result = subprocess.run(
+            [ps, "-Ao", "pid=,ppid="],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if result.returncode != 0:
+        return {}
+    parents: dict[int, int] = {}
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        try:
+            parents[int(fields[0])] = int(fields[1])
+        except ValueError:
+            continue
+    return parents
+
+
 def _ancestor_pids() -> set[int]:
     """This process's ancestor chain (the phase agent's own adapter/CLI pids
     land in work-dir pid files too — those are not orphaned background jobs).
-    Best-effort via /proc; on failure just self + parent."""
+
+    Reads /proc where available and falls back to one `ps` snapshot otherwise;
+    on total failure, just self + parent. Runs inside a Stop hook, so it never
+    raises."""
     pids = {os.getpid(), os.getppid()}
     try:
         pid = os.getpid()
+        walked = {pid}
+        parents: dict[int, int] | None = None
         for _ in range(32):
-            with open(f"/proc/{pid}/stat") as fh:
-                stat = fh.read()
-            # field 4 (ppid) sits after the parenthesized comm, which may
-            # itself contain spaces/parens — split after the LAST ')'.
-            ppid = int(stat.rsplit(")", 1)[1].split()[1])
-            if ppid <= 1:
+            ppid = _proc_ppid(pid)
+            if ppid is None:
+                # Snapshot once and reuse it, rather than one `ps` per generation.
+                if parents is None:
+                    parents = _ps_ppid_map()
+                ppid = parents.get(pid)
+            # `walked`, not `pids`: the latter is pre-seeded with the parent and
+            # would stop the walk on its first legitimate step.
+            if ppid is None or ppid <= 1 or ppid in walked:
                 break
             pids.add(ppid)
+            walked.add(ppid)
             pid = ppid
-    except (OSError, ValueError, IndexError):
+    except Exception:  # noqa: BLE001 - a crashed hook is worse than a short chain
         pass
     return pids
 
