@@ -42,7 +42,7 @@ import specula.progress as progress
 from specula import quota, resumelib, tlc_tasks
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC
-from specula.context_control import CONFIRMATION_YIELD_RC
+from specula.context_control import CONFIRMATION_YIELD_RC, CONTINUOUS_PHASES
 from specula.notes import notes_section
 from specula.output_index import BYOM_REPORT_FILENAME, PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
 from specula.prompts import render
@@ -625,6 +625,7 @@ class Phase:
     artifact_rejection_message: str | None = None
     dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
     next_phase_key: str | None = None  # consumer whose existing check() validates this handoff
+    yield_message = "Incremental conversation yielded to bug confirmation."  # continuous phases only
     progress_config = progress.ProgressConfig()
     # Tri-state tuning values set in run(): None = unspecified, "" = explicit
     # reset to the adapter/CLI default, non-empty = explicit override.
@@ -1287,8 +1288,8 @@ class Phase:
                     _refresh_target_indexes(ws, names)
                 raise
 
-        if self.key == "incremental" and failures and all(rc == CONFIRMATION_YIELD_RC for _, rc in failures):
-            print("Incremental conversation yielded to bug confirmation.")
+        if self.key in CONTINUOUS_PHASES and failures and all(rc == CONFIRMATION_YIELD_RC for _, rc in failures):
+            print(self.yield_message)
             return CONFIRMATION_YIELD_RC
 
         integrity_failures = self.audit_output_integrity(
@@ -1658,7 +1659,7 @@ class Phase:
                 *system_prompt_args,
                 "--background",
             ]
-            if self.key == "incremental":
+            if self.key in CONTINUOUS_PHASES:
                 command = [sys.executable, str(SCRIPT_DIR / "context_runner.py"), *command]
             tlc_tasks.prepare_environment(env, files["log"], SPECULA_ROOT)
             proc = subprocess.Popen(
@@ -3905,6 +3906,10 @@ def main(argv: list[str]) -> int:
         from specula.ci_phase import IncrementalPhase
 
         PHASES["incremental"] = IncrementalPhase()
+    elif argv and argv[0] == "main":
+        from specula.continuous import ContinuousPhase
+
+        PHASES["main"] = ContinuousPhase()
     if not argv or argv[0] not in PHASES:
         print(f"usage: phaselib.py <phase> [options] <target>...\nphases: {', '.join(PHASES)}", file=sys.stderr)
         return 2

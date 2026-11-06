@@ -1848,7 +1848,11 @@ class TestPhaseParallelArgs(TmpCwd):
 
     def test_full_pipeline_default_preserves_each_phase_default(self) -> None:
         p = pl.Pipeline()
-        self.assertIsNone(p.parse_args(["--max-turns=9", "--model=gpt-5.5", "--effort=high", "a|g|l|r", "b|g|l|r"]))
+        self.assertIsNone(
+            p.parse_args(
+                ["--orchestration=phased", "--max-turns=9", "--model=gpt-5.5", "--effort=high", "a|g|l|r", "b|g|l|r"]
+            )
+        )
         calls = self.capture_main(p)
         confirmation = calls["launch_bug_confirmation.sh"]
         self.assertFalse(any(arg.startswith("--max-parallel=") for arg in confirmation))
@@ -1860,13 +1864,13 @@ class TestPhaseParallelArgs(TmpCwd):
 
     def test_explicit_one_reaches_confirmation_and_stays_serial(self) -> None:
         p = pl.Pipeline()
-        self.assertIsNone(p.parse_args(["--max-parallel=1", "a|g|l|r", "b|g|l|r"]))
+        self.assertIsNone(p.parse_args(["--orchestration=phased", "--max-parallel=1", "a|g|l|r", "b|g|l|r"]))
         calls = self.capture_main(p)
         self.assertIn("--max-parallel=1", calls["launch_bug_confirmation.sh"])
 
     def test_explicit_nondefault_reaches_confirmation(self) -> None:
         p = pl.Pipeline()
-        self.assertIsNone(p.parse_args(["--max-parallel=7", "a|g|l|r", "b|g|l|r"]))
+        self.assertIsNone(p.parse_args(["--orchestration=phased", "--max-parallel=7", "a|g|l|r", "b|g|l|r"]))
         calls = self.capture_main(p)
         self.assertIn("--max-parallel=7", calls["launch_bug_confirmation.sh"])
 

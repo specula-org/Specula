@@ -20,8 +20,11 @@ PHASES = frozenset(
         "repair",
         "classify",
         "review",
+        "main",
     }
 )
+# Phased routes whose work one continuous main session performs.
+MAIN_SESSION_PHASES = ("analyze", "specgen", "harness", "validate", "repair")
 _TOP_LEVEL_FIELDS = frozenset({"version", "default_profile", "profiles", "phases"})
 _PROFILE_FIELDS = frozenset({"agent", "model", "effort"})
 
@@ -52,6 +55,34 @@ class AgentRouting:
         if profile is None:
             return self.default
         return self.profiles[profile]
+
+    def _main_session(self) -> tuple[AgentSelection, list[str]]:
+        explicit = self.phases.get("main")
+        if explicit is not None:
+            main = self.profiles[explicit]
+            routes = [phase for phase in MAIN_SESSION_PHASES if phase in self.phases]
+        else:
+            main = self.resolve("analyze")
+            # An unlisted repair route follows validate, exactly as in phased runs.
+            routes = [phase for phase in MAIN_SESSION_PHASES if phase != "repair" or phase in self.phases]
+        differing = [
+            phase for phase in routes if self.resolve(phase, fallback="validate" if phase == "repair" else None) != main
+        ]
+        return main, differing
+
+    def main_selection(self) -> AgentSelection:
+        """Selection for the continuous main session (analysis through repair)."""
+        main, differing = self._main_session()
+        if differing:
+            raise AgentConfigError(
+                f"agent config routes {', '.join(differing)} to a different profile than the main session; "
+                "one continuous main session uses a single profile"
+            )
+        return main
+
+    def main_session_differences(self) -> list[str]:
+        """Phased routes that one continuous main session cannot honor."""
+        return self._main_session()[1]
 
 
 def _as_object(value: object, location: str) -> dict[str, object]:

@@ -412,7 +412,7 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         guidance = self.tmp() / "guidance.md"
         guidance.write_text("first\n")
         first = self._pipeline(
-            ["--run-id=guided", f"--guidance={guidance}", "foo|o/r|Go|ref"],
+            ["--run-id=guided", "--orchestration=phased", f"--guidance={guidance}", "foo|o/r|Go|ref"],
             root,
         )
         assert first.run_dir is not None
@@ -477,6 +477,7 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         first = self._pipeline(
             [
                 "--run-id=restore",
+                "--orchestration=phased",
                 "--agent=codex",
                 "--model=gpt-5.5",
                 "--effort=high",
@@ -506,7 +507,7 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         other_cwd = self.tmp()
         root = self.tmp()
         os.chdir(launch_cwd)
-        first = self._pipeline(["--run-id=restore-cwd", "foo|o/r|Go|ref"], root)
+        first = self._pipeline(["--run-id=restore-cwd", "--orchestration=phased", "foo|o/r|Go|ref"], root)
         self._seed_active_turn(first)
 
         os.chdir(other_cwd)
@@ -756,7 +757,7 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
 
     def test_attach_rejects_skip_for_interrupted_classification(self) -> None:
         root = self.tmp()
-        first = self._pipeline(["--run-id=classification", "foo|o/r|Go|ref"], root)
+        first = self._pipeline(["--run-id=classification", "--orchestration=phased", "foo|o/r|Go|ref"], root)
         self._seed_active_turn(first, phase="bug_classification")
         assert first.run_dir is not None
         before = resumelib.active_entries(first.run_dir)
@@ -815,7 +816,7 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
 
     def test_live_inherited_run_lock_blocks_attach_after_dispatcher_closes(self) -> None:
         root = self.tmp()
-        running = self._pipeline(["--run-id=orphaned", "foo|o/r|Go|ref"], root)
+        running = self._pipeline(["--run-id=orphaned", "--orchestration=phased", "foo|o/r|Go|ref"], root)
         self._seed_active_turn(running)
         running._acquire_run_lock()
         assert running._run_lock_fd is not None
@@ -918,7 +919,13 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         original = self.tmp()
         (original / "source.txt").write_text("original\n")
         first = self._pipeline(
-            ["--run-id=private-resume", "--keep-original", f"--artifact={original}", "foo|o/r|Go|ref"],
+            [
+                "--run-id=private-resume",
+                "--orchestration=phased",
+                "--keep-original",
+                f"--artifact={original}",
+                "foo|o/r|Go|ref",
+            ],
             root,
         )
         first.prepare_source_snapshots(["foo"])

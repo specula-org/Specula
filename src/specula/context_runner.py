@@ -1,4 +1,7 @@
-"""Continue an incremental conversation across compactions and confirmation handoffs."""
+"""Continue one native conversation across compactions and confirmation handoffs.
+
+Used by the incremental CI workflow and by the continuous main session.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +23,7 @@ from specula.adapters.utils.usage import UsageTotals, accumulate_usage
 from specula.context_control import (
     CONFIRMATION_REQUEST,
     CONFIRMATION_YIELD_RC,
+    CONTINUOUS_PHASES,
     MCP_ENV,
     PYTHON_ENV,
     REQUEST_ENV,
@@ -122,9 +126,34 @@ def publish_usage(path: Path, agent: str, session_id: str | None, records: list[
     )
 
 
+def _bound_session(resume: Path, adapter: Path, previous: str | None) -> str:
+    """Return the exact native session that yielded, failing closed on any change."""
+    state = json.loads(resume.read_text())
+    if state.get("adapter") != adapter.stem or not state.get("session_id"):
+        raise ValueError("CI continuation requires the exact persisted native session")
+    if previous is not None and previous != state["session_id"]:
+        raise ValueError("Native conversation changed during CI continuation")
+    return str(state["session_id"])
+
+
+def _continue_prompt(phase: str, status: str, handoff: str, work: Path) -> str:
+    if phase == "main":
+        from specula.continuous import compaction_continue_prompt
+
+        return compaction_continue_prompt(status, handoff, work)
+    return (
+        f"Continue the same incremental CI task. Context compaction {status}. "
+        f"First read the saved handoff at {handoff}; then open only evidence needed for the next work. "
+        "Keep unresolved counterexamples, invalidated results and pending checks pending. "
+        "This was an internal pause, not finalization or a new run. "
+        "If compaction failed, continue without repeatedly retrying it. Finish the existing workflow.\n"
+    )
+
+
 def run(adapter: Path, arguments: list[str]) -> int:
     options = dict(arg[2:].split("=", 1) for arg in arguments if arg.startswith("--") and "=" in arg)
-    if os.environ.get("SPECULA_PHASE") != "incremental":
+    phase = os.environ.get("SPECULA_PHASE", "")
+    if phase not in CONTINUOUS_PHASES:
         return subprocess.call([str(adapter), *arguments], pass_fds=inherited_run_lock_fds())
     python = ROOT / "tools/context_control/.venv/bin/python"
     mcp_available = python.is_file()
@@ -140,6 +169,11 @@ def run(adapter: Path, arguments: list[str]) -> int:
         directory = Path(tempfile.mkdtemp(prefix="invocation-", dir=control))
         env = tool_environment(directory, work, python, adapter.stem, mcp_available=mcp_available)
     except OSError as exc:
+        if phase == "main":
+            # Every end of a main-session turn is a handoff that must be bound
+            # to its native session here; never run it unsupervised.
+            print(f"ERROR: continuous main session requires the context controller ({exc}).", flush=True)
+            return 1
         print(f"WARNING: context tool unavailable ({exc}); continuing without compaction.", flush=True)
         return subprocess.call([str(adapter), *arguments], pass_fds=inherited_run_lock_fds())
     records: list[UsageRecord | None] = []
@@ -162,23 +196,34 @@ def run(adapter: Path, arguments: list[str]) -> int:
                 records = [record]
             else:
                 records.append(record)
-            if rc != 0 or not request.is_file():
+            if rc != 0:
                 return rc
-            response = log.with_suffix(".last-message.txt") if adapter.stem == "codex" else log
-            expected = f"{YIELD_PREFIX} {env[TOKEN_ENV]}"
-            if response.read_text(errors="replace").strip().splitlines()[-1:] != [expected]:
-                return rc  # Never reinterpret an ordinary final response as a yield.
+            yielded = request.is_file()
+            if yielded:
+                response = log.with_suffix(".last-message.txt") if adapter.stem == "codex" else log
+                expected = f"{YIELD_PREFIX} {env[TOKEN_ENV]}"
+                yielded = response.read_text(errors="replace").strip().splitlines()[-1:] == [expected]
+            if not yielded:
+                if phase != "main":
+                    return rc  # Never reinterpret an ordinary final response as a yield.
+                # A main session never finishes on its own: an ordinary end of
+                # turn hands its current deliverables to the controller, which
+                # validates them before any confirmation starts.
+                session_id = _bound_session(resume, adapter, session_id)
+                write_json(
+                    work / CONFIRMATION_REQUEST,
+                    {"session_id": session_id, "status": "pending", "phase": phase, "implicit": True},
+                )
+                return CONFIRMATION_YIELD_RC
             pending = json.loads(request.read_text())
             if pending.get("token") != env[TOKEN_ENV]:
                 return 1
-            state = json.loads(resume.read_text())
-            if state.get("adapter") != adapter.stem or not state.get("session_id"):
-                raise ValueError("CI continuation requires the exact persisted native session")
-            if session_id is not None and session_id != state["session_id"]:
-                raise ValueError("Native conversation changed during CI continuation")
-            session_id = state["session_id"]
+            session_id = _bound_session(resume, adapter, session_id)
             if pending.get("action") == "confirm":
-                write_json(work / CONFIRMATION_REQUEST, {"session_id": session_id, "status": "pending"})
+                document: dict[str, Any] = {"session_id": session_id, "status": "pending"}
+                if phase == "main":
+                    document.update({"phase": phase, "implicit": False})
+                write_json(work / CONFIRMATION_REQUEST, document)
                 return CONFIRMATION_YIELD_RC
             round_number += 1
             archive = directory / str(round_number)
@@ -223,13 +268,7 @@ def run(adapter: Path, arguments: list[str]) -> int:
             if status == "failed" and receipt.get("error"):
                 print("Compaction note: " + str(receipt["error"]).replace("\n", " ")[:240], flush=True)
             prompt = directory / "continue.md"
-            prompt.write_text(
-                f"Continue the same incremental CI task. Context compaction {status}. "
-                f"First read the saved handoff at {pending['handoff_path']}; then open only evidence needed for the next work. "
-                "Keep unresolved counterexamples, invalidated results and pending checks pending. "
-                "This was an internal pause, not finalization or a new run. "
-                "If compaction failed, continue without repeatedly retrying it. Finish the existing workflow.\n"
-            )
+            prompt.write_text(_continue_prompt(phase, status, pending["handoff_path"], work))
             call_arguments = [arg for arg in arguments if not arg.startswith(("--prompt=", "--prompt-file="))]
             call_arguments.append(f"--prompt-file={prompt}")
     finally:

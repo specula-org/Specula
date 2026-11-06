@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from .adapters.utils import run_lock as adapter_run_lock
+from .context_control import CONTINUOUS_PHASES
 
 RESUME_DIRNAME = ".specula-resume"
 CONFIG_FILENAME = "config.json"
@@ -397,9 +398,9 @@ def ensure_phase(phase: str) -> None:
     if (
         phase == "bug_confirmation"
         and os.environ.get("SPECULA_CI_CONFIRMATION") == "1"
-        and phases <= {"incremental", "bug_confirmation"}
+        and phases <= CONTINUOUS_PHASES | {"bug_confirmation"}
     ):
-        return  # The CI controller keeps the parent conversation suspended.
+        return  # The CI/continuous controller keeps the parent conversation suspended.
     if phases != {phase}:
         waiting = ", ".join(sorted(phases))
         raise ResumeError(

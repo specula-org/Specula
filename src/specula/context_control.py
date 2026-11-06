@@ -15,6 +15,11 @@ MCP_ENV = "SPECULA_CONTEXT_MCP_CONFIG"
 YIELD_PREFIX = "SPECULA_CONTEXT_YIELD"
 TOOL_NAME = "request_context_compaction"
 CONFIRMATION_REQUEST = ".context-control/confirmation.json"
+# Phase keys whose launcher runs one native conversation through context_runner
+# (agent-requested compaction and the confirmation yield). ``incremental`` is the
+# CI update workflow; ``main`` is the continuous one-shot main session.
+CONTINUOUS_PHASES = frozenset({"incremental", "main"})
+REPAIR_SNAPSHOT = "spec/.repair-phase3-snapshot.json"
 CONFIRMATION_YIELD_RC = 73
 CONFIRMATION_TOOL = "request_bug_confirmation"
 CONFIRMATION_DESCRIPTION = (
@@ -40,12 +45,42 @@ def write_json(path: Path, value: Any) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _unconsumed_repairs(root: Path) -> list[str]:
+    """Repair requests a continuous main session was resumed to handle but has not consumed."""
+    try:
+        snapshot = json.loads((root / REPAIR_SNAPSHOT).read_text())
+    except FileNotFoundError:
+        return []
+    except (OSError, ValueError):
+        return ["the repair snapshot is unreadable"]
+    requests = snapshot.get("requests") if isinstance(snapshot, dict) else None
+    if not isinstance(requests, dict):
+        return ["the repair snapshot is invalid"]
+    pending: list[str] = []
+    for filename in sorted(requests):
+        status = ""
+        try:
+            lines = (root / "spec/repair-requests" / filename).read_text(errors="replace").splitlines()
+        except OSError:
+            lines = []
+        for line in lines[:25]:
+            if line.startswith("status:"):
+                status = "".join(line[len("status:") :].split())
+                break
+        if status != "CONSUMED":
+            pending.append(f"{Path(filename).stem}={status or '<missing>'}")
+    return pending
+
+
 def _request(action: str, handoff_path: str | None = None) -> dict[str, str]:
     raw = os.environ.get(REQUEST_ENV)
     token = os.environ.get(TOKEN_ENV)
     work = os.environ.get("SPECULA_WORK_DIR")
-    if os.environ.get("SPECULA_PHASE") != "incremental" or not raw or not token or not work:
-        raise ValueError("Workflow requests are available only inside an incremental CI run.")
+    phase = os.environ.get("SPECULA_PHASE")
+    if phase not in CONTINUOUS_PHASES or not raw or not token or not work:
+        raise ValueError(
+            "Workflow requests are available only inside an incremental CI run or a continuous Specula main session."
+        )
     root = Path(work).resolve()
     document: dict[str, str] = {"token": token}
     if handoff_path is not None:
@@ -58,6 +93,13 @@ def _request(action: str, handoff_path: str | None = None) -> dict[str, str]:
         for relative in ("modeling-brief.md", "spec/bug-report.md"):
             if not (root / relative).is_file():
                 raise ValueError(f"Save {relative} before requesting confirmation.")
+        if phase == "main":
+            unconsumed = _unconsumed_repairs(root)
+            if unconsumed:
+                raise ValueError(
+                    "Finish the repair round before requesting confirmation: mark each repaired request "
+                    f"CONSUMED after its full revalidation ({', '.join(unconsumed)})."
+                )
         document["action"] = action
     request = Path(raw)
     if not request.parent.is_dir():
@@ -69,15 +111,20 @@ def _request(action: str, handoff_path: str | None = None) -> dict[str, str]:
             f"call the native task_complete tool with summary exactly '{YIELD_PREFIX} {token}'. "
             "This completes only this internal invocation so autopilot stops; the controller will resume the CI task."
         )
+    if action != "confirm":
+        lead = "The controller will compact this same conversation after you yield. "
+    elif phase == "main":
+        lead = (
+            "The controller will confirm the findings in separate clean contexts and resumes this same "
+            "conversation only if repair work is needed. "
+        )
+    else:
+        lead = "The controller will run confirmation, then resume this same conversation. "
+    final = "confirmation or final reports" if phase == "main" else "final CI reports"
     return {
         "status": "requested",
         "instruction": (
-            (
-                "The controller will run confirmation, then resume this same conversation. "
-                if action == "confirm"
-                else "The controller will compact this same conversation after you yield. "
-            )
-            + "Do not write final CI reports or claim completion. Once outstanding tool results "
+            lead + f"Do not write {final} or claim completion. Once outstanding tool results "
             f"are collected, {yield_instruction}"
         ),
     }

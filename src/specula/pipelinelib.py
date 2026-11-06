@@ -148,6 +148,10 @@ Options:
   --confirm-debate       Phase 4a: add the adversarial Challenger debate (parallel mode; default off)
   --max-repair-rounds=N  Global repair-loop round cap; unresolved requests are then filed under deferred/ (default: 10; 0 = unlimited)
   --enable-reviews        Enable review steps (disabled by default)
+  --orchestration=MODE   continuous (default): one main agent session per target performs analysis
+                         through validation and repairs, while confirmation and classification keep
+                         separate clean contexts. phased: one agent session per phase. Options that
+                         continuous does not support yet select phased automatically
   --max-parallel=N       Hard limit for concurrent agents. When omitted, ordinary phases run 1 target
                          agent at a time and per-finding bug confirmation runs up to 4 at a time
   --max-turns=N          Max agent turns (default: 0 = unlimited)
@@ -200,6 +204,8 @@ Output navigation (default isolated layout):
 """
 
 DIVIDER = "════════════════════════════════════════════════════════════"
+ORCHESTRATION_MODES = ("continuous", "phased")
+DEFAULT_ORCHESTRATION = "continuous"
 BYOM_CONFLICTING_FLAGS = (
     "--skip-analysis",
     "--skip-specgen",
@@ -376,6 +382,12 @@ class Pipeline:
         self._repair_loop_targets: list[str] = []
         self.skip_reviews = True
         self._enable_reviews_given = False
+        # parse_args() applies the CLI default (continuous) and its fallback
+        # rules; embedders that configure Pipeline directly keep the phased
+        # sequence unless they select continuous themselves.
+        self.orchestration = "phased"
+        self._orchestration_requested: str | None = None
+        self._orchestration_fallback: str | None = None
         self.agent = "claude-code"
         self._agent_given = False
         self.agent_config_path: Path | None = None
@@ -480,6 +492,12 @@ class Pipeline:
             elif arg == "--enable-reviews":
                 self.skip_reviews = False
                 self._enable_reviews_given = True
+            elif arg.startswith("--orchestration="):
+                mode = arg.split("=", 1)[1]
+                if mode not in ORCHESTRATION_MODES or self._orchestration_requested is not None:
+                    print("ERROR: --orchestration requires one value: continuous or phased", file=sys.stderr)
+                    return 1
+                self._orchestration_requested = mode
             elif arg == "--isolate":
                 self.isolate = True
                 self._isolate_explicit = True
@@ -710,6 +728,51 @@ class Pipeline:
             if conv is float and not math.isfinite(parsed):
                 print(f"ERROR: {label} must be a finite number, got '{val}'", file=sys.stderr)
                 return 1
+        orchestration_error = self._resolve_orchestration()
+        if orchestration_error is not None:
+            print(f"ERROR: {orchestration_error}", file=sys.stderr)
+            return 1
+        return None
+
+    def _continuous_conflicts(self) -> list[str]:
+        """Options the continuous main session does not support yet."""
+        skips = ("--skip-analysis", "--skip-specgen", "--skip-harness", "--skip-validate")
+        conflicts = [flag for flag in skips if flag in self.argv]
+        for enabled, flag in (
+            (self.byom_path is not None, "--byom"),
+            (self.ci_init, "--ci-init"),
+            (self.confirm_first is not None, f"--confirm-first={self.confirm_first}"),
+            (self.findings_from is not None, "--findings-from"),
+            (not self.skip_reviews, "--enable-reviews"),
+            (not self.isolate, "--no-isolate"),
+        ):
+            if enabled:
+                conflicts.append(flag)
+        if self.agent_routing is not None and self._restored_routes is None:
+            differing = self.agent_routing.main_session_differences()
+            if differing:
+                conflicts.append(
+                    f"--agent-config routing {', '.join(differing)} to another profile than the main session"
+                )
+        return conflicts
+
+    def _resolve_orchestration(self) -> str | None:
+        """Select continuous by default; fall back to phased for unsupported options."""
+        requested = self._orchestration_requested
+        if getattr(self, "incremental", False):
+            # The incremental CI workflow is already one continuous conversation.
+            self.orchestration = "phased"
+            return None if requested is None else "--orchestration does not apply to --incremental"
+        conflicts = self._continuous_conflicts()
+        self._orchestration_fallback = None
+        if requested is None:
+            self.orchestration = "phased" if conflicts else DEFAULT_ORCHESTRATION
+            if conflicts:
+                self._orchestration_fallback = "; ".join(conflicts)
+            return None
+        if requested == "continuous" and conflicts:
+            return f"--orchestration=continuous does not support {'; '.join(conflicts)} yet; use --orchestration=phased"
+        self.orchestration = requested
         return None
 
     @staticmethod
@@ -931,6 +994,8 @@ class Pipeline:
                 raise SnapshotError(f"run storage must be outside the source tree: {source}")
 
     def _route_specs(self) -> dict[str, tuple[str, str | None]]:
+        if self.orchestration == "continuous":
+            return {"main": ("main", None), "confirm": ("confirm", None), "classify": ("classify", None)}
         return {
             "analyze": ("analyze", None),
             "specgen": ("specgen", None),
@@ -1008,13 +1073,26 @@ class Pipeline:
             "guidance": str(self.guidance_path) if self.guidance_path is not None else None,
             **({"ci_init": True} if self.ci_init else {}),
             **({"confirm_first": self.confirm_first} if self.confirm_first else {}),
+            **({"orchestration": self.orchestration} if self.orchestration == "continuous" else {}),
         }
+
+    def _restore_orchestration(self, raw: dict[str, Any]) -> None:
+        # Runs created before continuous orchestration have no field: phased.
+        stored = raw.get("orchestration", "phased")
+        if stored not in ORCHESTRATION_MODES:
+            raise resumelib.ResumeError("invalid stored orchestration mode")
+        requested = self._orchestration_requested
+        if requested is not None and requested != stored:
+            raise resumelib.ResumeError(f"this run uses {stored} orchestration; start a new run to use {requested}")
+        self.orchestration = stored
+        self._orchestration_fallback = None
 
     def _restore_resume_configuration(self, raw: dict[str, Any], *, allow_overrides: bool = False) -> None:
         if raw.get("version") != 1:
             raise resumelib.ResumeError(
                 "this run was created without manual conversation checkpoints; pass --fresh-context to continue"
             )
+        self._restore_orchestration(raw)
         stored_ci_init = raw.get("ci_init", False)
         if not isinstance(stored_ci_init, bool):
             raise resumelib.ResumeError("invalid stored CI initialization mode")
@@ -1257,9 +1335,19 @@ class Pipeline:
                 raise resumelib.ResumeError(f"this run's artifact is unavailable: {stored_artifact}")
             self.artifact = artifact
             self._artifact_given = True
+        if self.orchestration == "continuous":
+            conflicts = self._continuous_conflicts()
+            if conflicts:
+                raise resumelib.ResumeError(
+                    f"this run uses continuous orchestration, which does not support {'; '.join(conflicts)}"
+                )
 
     def _resume_phase(self, active: list[dict[str, Any]]) -> str:
         phases = {str(entry.get("phase")) for entry in active}
+        if self.orchestration == "continuous":
+            from specula.continuous import resume_phase
+
+            return resume_phase(phases)
         if len(phases) != 1:
             raise resumelib.ResumeError(
                 "unfinished conversations span multiple phases; pass --fresh-context to start over"
@@ -1269,6 +1357,10 @@ class Pipeline:
     def _position_at_manual_resume_phase(self, active: list[dict[str, Any]] | None = None) -> None:
         phase = self._manual_resume_phase
         if phase is None:
+            return
+        if self.orchestration == "continuous":
+            # The continuous controller positions each target from its own
+            # durable lifecycle state, not from phase skip flags.
             return
         controlling_skip: tuple[str, str] | None = {
             "code_analysis": ("skip_analysis", "--skip-analysis"),
@@ -1521,7 +1613,15 @@ class Pipeline:
                     if metadata.get("ci_init", False) != self.ci_init:
                         raise resumelib.ResumeError("CI initialization mode disagrees with run metadata")
                     active = resumelib.active_entries(self.run_dir)
-                    if not active:
+                    if not active and self.orchestration == "continuous":
+                        from specula.continuous import has_unfinished_work
+
+                        if not has_unfinished_work(self):
+                            raise resumelib.ResumeError(
+                                "this run has no unfinished agent conversation; pass --fresh-context to start over"
+                            )
+                        self._manual_resume_phase = "main"
+                    elif not active:
                         if not self._can_resume_ci_post_confirmation():
                             if self.ci_init:
                                 raise resumelib.ResumeError(
@@ -1766,6 +1866,7 @@ class Pipeline:
             "resume_configuration": resume_configuration,
             **({"ci_init": True} if self.ci_init else {}),
             **({"confirm_first": self.confirm_first} if self.confirm_first else {}),
+            **({"orchestration": self.orchestration} if self.orchestration == "continuous" else {}),
         }
         if self.agent_routing is not None:
             assert self.agent_config_path is not None
@@ -1799,6 +1900,11 @@ class Pipeline:
             return AgentSelection(agent=self.agent, model=self.model, effort=self.effort)
         if phase is None:
             return self.agent_routing.default
+        if phase == "main":
+            try:
+                return self.agent_routing.main_selection()
+            except AgentConfigError as exc:
+                raise resumelib.ResumeError(str(exc)) from exc
         return self.agent_routing.resolve(phase, fallback=fallback)
 
     def _resolved_run_tuning(self, selection: AgentSelection | None = None) -> tuple[str | None, str | None]:
@@ -3397,6 +3503,9 @@ class Pipeline:
         return {"only": ["--scenarios-only"], "continue": ["--after-scenarios"]}.get(self.confirm_first or "", [])
 
     def run_phase4_confirmation(self) -> None:
+        self.run_phase4_confirmation_for(self.extract_names())
+
+    def run_phase4_confirmation_for(self, names: list[str]) -> None:
         pre: list[str] = []
         if self.confirm_legacy:
             pre.append("--legacy-confirm")
@@ -3416,7 +3525,7 @@ class Pipeline:
             # explicit --max-parallel=1: omitted fans findings out to four,
             # while explicit 1 deliberately runs them serially. Other phases
             # still receive Pipeline's implicit default of one.
-            self._phase_args(self.extract_names(), pre=pre or None, phase="confirm"),
+            self._phase_args(names, pre=pre or None, phase="confirm"),
         )
 
     def _run_repair_result_dispatcher(
@@ -3918,6 +4027,7 @@ class Pipeline:
             # wart fix (step 7): the bash candidate list skipped the phase-2.5
             # and phase-3 agent logs (harness-gen.log, spec-validation.log)
             for log_file in (
+                work_dir / "main.log",
                 work_dir / "agent.log",
                 work_dir / "review-analysis.log",
                 work_dir / "spec-gen.log",
@@ -3963,8 +4073,7 @@ class Pipeline:
         there) and a botched CONSUMEDX counted as CONSUMED."""
         return sum(1 for f in files if rr_status(f) == status)
 
-    # ── main (runs inside the tee) ──
-    def main(self) -> int:
+    def print_run_header(self) -> None:
         print("╔══════════════════════════════════════════════════════════╗")
         print("║        Specula — Full Pipeline Runner                   ║")
         print("╚══════════════════════════════════════════════════════════╝")
@@ -4007,6 +4116,16 @@ class Pipeline:
         cap = "unlimited" if self.max_repair_rounds == "0" else self.max_repair_rounds
         print(f"Repair loop:  skip={_b(self.skip_repair_loop)} global_cap={cap}")
         print()
+
+    # ── main (runs inside the tee) ──
+    def main(self) -> int:
+        if self.orchestration == "continuous":
+            from specula.continuous import ContinuousRun
+
+            return ContinuousRun(self).main()
+        self.print_run_header()
+        if self._orchestration_fallback is not None:
+            log(f"Orchestration: phased (continuous orchestration does not support {self._orchestration_fallback} yet)")
 
         self.validate_agent_adapter()
 

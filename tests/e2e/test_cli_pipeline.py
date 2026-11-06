@@ -158,7 +158,7 @@ class CliE2E(unittest.TestCase):
     def test_run_dry_run_sequences_phases(self) -> None:
         root = self.specroot()
         work = self.workdir()
-        proc = self.run_cli(root, ["run", "--dry-run", "footest"], cwd=work)
+        proc = self.run_cli(root, ["run", "--orchestration=phased", "--dry-run", "footest"], cwd=work)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         out = proc.stdout
         # the full-chain banner + a dry-run phase line (proves the shim reached

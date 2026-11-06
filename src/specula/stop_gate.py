@@ -69,6 +69,7 @@ STATE_DIRNAME = ".stop-gate"
 CONTRACTS: dict[str, str] = {
     "spec_validation": "spec/bug-report.md",
     "bug_confirmation": "confirmed-bugs.md",
+    "main": "spec/bug-report.md",
 }
 
 # Where an agent may declare it cannot finish (checked in order).
@@ -342,6 +343,25 @@ def _live_pid_files(work_dir: Path) -> tuple[list[tuple[Path, int]], bool]:
     return live, incomplete
 
 
+def _compaction_pending() -> bool:
+    """True while this invocation's controller holds a context-compaction request.
+
+    A continuous main session yields mid-workflow, before its final deliverable
+    exists, so the controller can compact the same native conversation. That
+    pause is not phase completion; background jobs are still checked, and the
+    deliverable contract applies again to every later stop.
+    """
+    raw = os.environ.get("SPECULA_CONTEXT_REQUEST")
+    token = os.environ.get("SPECULA_CONTEXT_TOKEN")
+    if not raw or not token:
+        return False
+    try:
+        request = json.loads(Path(raw).read_text())
+    except (OSError, ValueError):
+        return False
+    return isinstance(request, dict) and request.get("token") == token and "handoff_path" in request
+
+
 # ──────────────────────────────────────────────────────────
 # The decision
 # ──────────────────────────────────────────────────────────
@@ -408,7 +428,7 @@ def decide(phase: str, work_dir: Path) -> tuple[bool, str]:
         )
 
     contract = CONTRACTS.get(phase)
-    if contract is not None:
+    if contract is not None and not _compaction_pending():
         deliverable = work_dir / contract
         try:
             missing = not _has_content(deliverable)

@@ -69,6 +69,9 @@ PHASES = (
 PHASE_BY_KEY = {phase.key: phase for phase in PHASES}
 INCREMENTAL_PHASE = PhaseDefinition("incremental", "Incremental workflow", ("incremental.usage.json",))
 PHASE_BY_KEY[INCREMENTAL_PHASE.key] = INCREMENTAL_PHASE
+# Continuous orchestration runs Phases 1-3 and their repairs in one main session.
+MAIN_PHASE = PhaseDefinition("main", "Main session (Phases 1-3)", ("main.usage.json",))
+PHASE_BY_KEY[MAIN_PHASE.key] = MAIN_PHASE
 
 _TURN_USAGE_RE = re.compile(r"^turn[0-9]{2}_(?:A|B|A-repair)\.usage\.json$")
 _FINDING_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -202,7 +205,11 @@ class TargetState:
     target: str
     run_complete: bool = False
     history_incomplete: bool = False
-    phases: dict[str, PhaseState] = field(default_factory=lambda: {key: PhaseState() for key in PHASE_BY_KEY})
+    # The main-session phase is recorded only once observed, so phased state
+    # files keep their existing shape.
+    phases: dict[str, PhaseState] = field(
+        default_factory=lambda: {key: PhaseState() for key in PHASE_BY_KEY if key != MAIN_PHASE.key}
+    )
     invocation_signatures: dict[str, str] = field(default_factory=dict)
     sessions: dict[str, SessionState] = field(default_factory=dict)
     maximum_parallelism: str = "-"
@@ -244,6 +251,8 @@ class TargetState:
         phases["incremental"] = (
             PhaseState.from_object(phases_data["incremental"]) if "incremental" in phases_data else PhaseState()
         )
+        if MAIN_PHASE.key in phases_data:
+            phases[MAIN_PHASE.key] = PhaseState.from_object(phases_data[MAIN_PHASE.key])
         configuration = _string_mapping(data.get("configuration")) or {}
         return cls(
             target=expected_target,
@@ -675,7 +684,7 @@ class ResourceSummaryTracker:
 
     @staticmethod
     def _mark_incomplete(state: TargetState, phase: str) -> None:
-        state.phases[phase].runtime_incomplete = True
+        state.phases.setdefault(phase, PhaseState()).runtime_incomplete = True
         state.phases[phase].usage_incomplete = True
         state.history_incomplete = True
         state.run_complete = False
@@ -686,7 +695,7 @@ class ResourceSummaryTracker:
         phase: str,
         record: dict[str, object],
     ) -> None:
-        phase_state = state.phases[phase]
+        phase_state = state.phases.setdefault(phase, PhaseState())
         elapsed = _nonnegative_float(record.get("elapsed_seconds"))
         assert elapsed is not None
         phase_state.runtime_seconds = math.fsum((phase_state.runtime_seconds, elapsed))
@@ -713,7 +722,7 @@ class ResourceSummaryTracker:
         relative: str,
         record: UsageRecord,
     ) -> None:
-        phase_state = state.phases[phase]
+        phase_state = state.phases.setdefault(phase, PhaseState())
         if not record.complete:
             phase_state.usage_incomplete = True
 
@@ -924,13 +933,14 @@ def render_summary(
     total_cost_observed = False
     incomplete = not state.run_complete or state.history_incomplete
     incremental = state.phases.get("incremental")
-    definitions = (
-        (INCREMENTAL_PHASE,)
-        if incremental is not None and (incremental.runtime_observed or incremental.tokens_observed)
-        else PHASES
-    )
+    main = state.phases.get(MAIN_PHASE.key)
+    definitions: tuple[PhaseDefinition, ...] = PHASES
+    if incremental is not None and (incremental.runtime_observed or incremental.tokens_observed):
+        definitions = (INCREMENTAL_PHASE,)
+    elif main is not None and (main.runtime_observed or main.tokens_observed):
+        definitions = (MAIN_PHASE, PHASE_BY_KEY["phase4a"], PHASE_BY_KEY["phase4b"])
     for definition in definitions:
-        phase = state.phases[definition.key]
+        phase = state.phases.get(definition.key, PhaseState())
         runtime_available = phase.runtime_observed and not phase.runtime_incomplete
         runtime = _format_runtime(phase.runtime_seconds) if runtime_available else "-"
         tokens = (

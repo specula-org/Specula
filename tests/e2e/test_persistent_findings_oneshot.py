@@ -81,6 +81,7 @@ class OneShotFindings(unittest.TestCase):
         guidance.write_text("Fixture reply scope.\n")
         args = [
             "run",
+            "--orchestration=phased",
             "--agent=fake",
             f"--artifact={fixture.source}",
             f"--guidance={guidance}",
