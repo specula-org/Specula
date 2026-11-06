@@ -70,6 +70,7 @@ CLAUDE_JSON = {
 # env that would otherwise steer the adapters; popped so construction is
 # deterministic regardless of the harness's ambient environment.
 _VOLATILE = (
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS",
     "CLAUDE_CONFIG_DIR",
     "CLAUDE_ALIAS",
     "CLAUDE_EFFORT",
@@ -125,6 +126,7 @@ class AdapterRun(TypedDict):
     opencode_config: str
     opencode_permission: str
     resumeenv: str
+    bgtasksenv: str
     stdin: str | None
     base: Path
 
@@ -190,6 +192,11 @@ class AdapterCase(unittest.TestCase):
             '"${SPECULA_RESUME_MODEL-<unset>}" "${SPECULA_RESUME_EFFORT-<unset>}" '
             '> "${ADAPTER_RESUME_ENV_FILE:-/dev/null}"'
         )
+        if name == "claude":
+            lines.append(
+                'printf "%s\\n" "${CLAUDE_CODE_DISABLE_BACKGROUND_TASKS-<unset>}" '
+                '> "${ADAPTER_BG_TASKS_ENV_FILE:-/dev/null}"'
+            )
         if name == "opencode":
             lines.append('printf "%s\\n" "${OPENCODE_FAKE_VCS-<unset>}" > "${ADAPTER_VCS_ENV_FILE:-/dev/null}"')
             lines.append('printf "%s\\n" "${OPENCODE_CONFIG-<unset>}" > "${ADAPTER_CONFIGDIR_FILE:-/dev/null}"')
@@ -263,6 +270,7 @@ class AdapterCase(unittest.TestCase):
             "ADAPTER_OPENCODE_CONFIG_FILE": base / "opencode_config.json",
             "ADAPTER_OPENCODE_PERMISSION_FILE": base / "opencode_permission.json",
             "ADAPTER_RESUME_ENV_FILE": base / "resumeenv.txt",
+            "ADAPTER_BG_TASKS_ENV_FILE": base / "bgtasksenv.txt",
             "ADAPTER_STDIN_FILE": base / "stdin.txt",
         }
         env = {k: v for k, v in os.environ.items() if k not in _VOLATILE}
@@ -292,6 +300,7 @@ class AdapterCase(unittest.TestCase):
             "opencode_config": read(record["ADAPTER_OPENCODE_CONFIG_FILE"]) or "",
             "opencode_permission": (read(record["ADAPTER_OPENCODE_PERMISSION_FILE"]) or "").strip(),
             "resumeenv": (read(record["ADAPTER_RESUME_ENV_FILE"]) or "").strip(),
+            "bgtasksenv": (read(record["ADAPTER_BG_TASKS_ENV_FILE"]) or "").strip(),
             "stdin": read(record["ADAPTER_STDIN_FILE"]),
             "base": base,
         }
@@ -652,6 +661,16 @@ class ClaudeCodeAdapter(AdapterCase):
         base = self.sandbox()
         r = self.invoke(self.base_flags(base), env_extra={"CLAUDECODE": "1"})
         self.assertEqual(r["sessionenv"], "<unset>")
+
+    def test_background_tasks_disabled_by_default(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(self.base_flags(base))
+        self.assertEqual(r["bgtasksenv"], "1")
+
+    def test_explicit_background_tasks_setting_wins(self) -> None:
+        base = self.sandbox()
+        r = self.invoke(self.base_flags(base), env_extra={"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "0"})
+        self.assertEqual(r["bgtasksenv"], "0")
 
     def test_resume_plumbing_environment_is_stripped_before_spawn(self) -> None:
         base = self.sandbox()
