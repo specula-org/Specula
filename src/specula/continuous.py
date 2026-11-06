@@ -285,12 +285,22 @@ def compaction_continue_prompt(status: str, handoff: str, work: Path) -> str:
     )
 
 
-def _repair_context(name: str, work: Path, repair_round: int, requests: list[str]) -> str:
+def _repair_context(name: str, work: Path, repair_round: int, requests: list[str], *, new_session: bool = False) -> str:
     spec = work / "spec"
     listed = ", ".join(requests) if requests else "every OPEN request"
+    opening = (
+        "Specula confirmed the findings of an earlier main session for this target, in separate clean contexts. "
+        "Confirmation judged some counterexamples to be spec, fault-model, or invariant artifacts rather than real "
+        "bugs, and recorded each as a repair request. This session takes over that repair; inspect the workspace "
+        "instead of assuming its state."
+        if new_session
+        else "Specula finished the confirmation batch you requested, in separate clean contexts. Confirmation judged "
+        "some counterexamples to be spec, fault-model, or invariant artifacts rather than real bugs, and recorded "
+        "each as a repair request. Continue this same session; do not restart completed work."
+    )
     return f"""## Repair Round {repair_round}: Confirmation Results for {name}
 
-Specula finished the confirmation batch you requested, in separate clean contexts. Confirmation judged some counterexamples to be spec, fault-model, or invariant artifacts rather than real bugs, and recorded each as a repair request. Continue this same session; do not restart completed work.
+{opening}
 
 Read `{work}/confirmed-bugs.md` and the OPEN repair requests in `{spec}/repair-requests/` ({listed}). Process ONLY status OPEN. Use each request's cited evidence and cross-check the relevant implementation, tests, documentation, and declared failure model to revise the spec, fault model, or invariant so it faithfully expresses what the system permits and guarantees; do not optimize merely for making the artifact disappear.
 
@@ -302,10 +312,11 @@ Run the complete conformance pass (full trace validation and model checking), up
 """
 
 
-def _rejection_context(name: str, reason: str) -> str:
+def _rejection_context(name: str, reason: str, *, new_session: bool = False) -> str:
+    handoff = "the last handoff of an earlier main session" if new_session else "your last handoff"
     return f"""## Confirmation Request Not Accepted
 
-Specula did not start confirmation for {name} after your last handoff:
+Specula did not start confirmation for {name} after {handoff}:
 
 {reason}
 
@@ -432,16 +443,18 @@ Options:
         prompt += notes_section(work, first=notes_first)
         return self._with_extra(ws, name, prompt)
 
-    def _resume_context(self, ws: Workspace, name: str) -> str:
+    def _resume_context(self, ws: Workspace, name: str, *, new_session: bool = False) -> str:
+        """Rejection and repair context; ``new_session`` words it for a session that did not hand off."""
         work = ws.work_dir(name)
         state = load_state(work, name)
         if state is None:
             return ""
         sections: list[str] = []
         if state.rejection:
-            sections.append(_rejection_context(name, state.rejection))
+            sections.append(_rejection_context(name, state.rejection, new_session=new_session))
         if state.repair_round > 0 and (work / REPAIR_SNAPSHOT).is_file():
-            sections.append(_repair_context(name, work, state.repair_round, repair_snapshot_requests(work)))
+            requests = repair_snapshot_requests(work)
+            sections.append(_repair_context(name, work, state.repair_round, requests, new_session=new_session))
         return "\n".join(sections)
 
     def _resumable(self, ws: Workspace, name: str) -> bool:
@@ -454,8 +467,9 @@ Options:
     def build_prompt(self, ws: Workspace, target: str) -> str:
         name = self.target_name(target)
         work = ws.work_dir(name)
-        context = self._resume_context(ws, name)
-        if self._resumable(ws, name):
+        resumable = self._resumable(ws, name)
+        context = self._resume_context(ws, name, new_session=not resumable)
+        if resumable:
             return _continuation_prompt(
                 context
                 or (

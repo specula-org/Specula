@@ -370,6 +370,15 @@ def test_unresumable_repair_restarts_with_full_prompt_and_context(run_workspace:
     prompt = strip_rules(continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft"))
     assert prompt.startswith("# Specula Main Session: t")
     assert "## Repair Round 1" in prompt
+    # A new session did not request that batch and is not "this same session".
+    assert "This session takes over that repair" in prompt
+    assert "batch you requested" not in prompt and "Continue this same session" not in prompt
+    state = continuous.load_state(work, "t")
+    assert state is not None
+    state.rejection = "Fixture reason."
+    continuous.save_state(work, "t", state, "rejected")
+    prompt = strip_rules(continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft"))
+    assert "after the last handoff of an earlier main session" in prompt and "your last handoff" not in prompt
 
 
 def test_fresh_context_lists_existing_work(run_workspace: tuple[Workspace, Path]) -> None:
