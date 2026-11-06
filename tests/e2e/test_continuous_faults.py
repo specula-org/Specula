@@ -667,6 +667,22 @@ class ContinuousFaults(unittest.TestCase):
         self.assertEqual(len(archived), 1)
         self.assertEqual(json.loads(archived[0].read_text())["context"], "original")
 
+    def test_skip_confirmation_at_a_repair_handoff_leaves_no_commit_proof(self) -> None:
+        self.flag("repair", "block-main-2")
+        run, _ = self.start("--agent=fake", "footest")
+        self.reached("main-2", run)
+        self.crash(run)
+        (self.adapters / "block-main-2").unlink()
+        resumed = self.attach("--skip-confirmation")
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertEqual(self.state()["stage"], "complete")
+        self.assertTrue(self.request()["skipped"])
+        spec = self.target() / "spec"
+        self.assertFalse((spec / ".repair-phase3-commit.json").exists())
+        self.assertFalse((spec / ".repair-phase3-snapshot.json").exists())
+        self.assertEqual(self.repair_loop()["pending"], [])
+        self.assertEqual(len(self.starts("MC-1")), 1)
+
     # ── 10. crash after classification, before the summary ──
     def test_crash_after_classification_does_not_repeat_it(self) -> None:
         run, _ = self.start("--agent=fake", "footest", faults="specula.pipelinelib:Pipeline.generate_summary")

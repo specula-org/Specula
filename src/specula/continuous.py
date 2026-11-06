@@ -907,6 +907,11 @@ class ContinuousRun:
             if unfinished:
                 detail = ", ".join(f"{path.stem}={rr_status(path) or '<missing>'}" for path in unfinished)
                 return f"Repair requests handed to this session were not consumed: {detail}."
+            if p.skip_confirmation:
+                # No scoped confirmation will consume a commit proof; publish none.
+                p.clear_repair_phase3_snapshot(name)
+                self._finish_reservation(name)
+                return None
             try:
                 p.publish_repair_phase3_commit(repair_round, [name])
             except RuntimeError as exc:
@@ -917,10 +922,7 @@ class ContinuousRun:
             raise ContinuousError(f"{name}: committed repair result is for another round")
         if loaded is not None:
             p.clear_repair_phase3_snapshot(name)
-        round_, pending = p.load_repair_loop_state()
-        if name in pending:
-            pending.remove(name)
-            p.save_repair_loop_state(round_, pending)
+        self._finish_reservation(name)
         work = self.work(name)
         request = load_request(work)
         assert request is not None
@@ -935,6 +937,13 @@ class ContinuousRun:
         )
         save_request(work, request)
         return None
+
+    def _finish_reservation(self, name: str) -> None:
+        p = self.p
+        round_, pending = p.load_repair_loop_state()
+        if name in pending:
+            pending.remove(name)
+            p.save_repair_loop_state(round_, pending)
 
     def _dispatch(self, names: list[str], states: dict[str, MainState]) -> None:
         p = self.p
