@@ -773,6 +773,13 @@ class ContinuousRun:
             print(f"  FAILED  {name}: see the message above")
         if not accepted:
             return "Confirmation prerequisites are missing:\n" + report.rstrip()
+        if gate != 0:
+            # Confirmation must never run beside a stray job of the main session
+            # (e.g. after the stop-gate fuse opened or on an adapter without hooks).
+            return (
+                "The completion audit failed. Wait for every background job you started, harvest its results, "
+                "and update the deliverables before requesting confirmation again:\n" + report.rstrip()
+            )
         return None
 
     def _reject(self, name: str, reason: str) -> None:

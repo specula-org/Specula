@@ -369,6 +369,32 @@ class ContinuousFaults(unittest.TestCase):
         self.assertEqual(self.sessions(), ["main-footest-1"] * 2)
         self.assertEqual((self.jobs_started(), self.harvests()), (1, [(False, True)]))
 
+    def test_unharvested_escaped_job_blocks_the_handoff(self) -> None:
+        self.flag("block-main-1", "background", "background-detached", "abandon-job")
+        run, _ = self.start("--agent=fake", "footest")
+        self.reached("main-1", run)
+        job = self.job()["pid"]
+        self.assertNotEqual(self.kill_agent("main-1", run), 0)
+        self.assertTrue(alive(job))
+        self.assertTrue(self.lock_is_free())
+
+        # The resumed session hands off while its registered job still runs.
+        early = self.attach()
+        self.assertEqual(early.returncode, 1, early.stdout + early.stderr)
+        self.assertEqual(self.request()["status"], "rejected")
+        self.assertIn("live background job", self.state()["rejection"])
+        self.assertEqual(len(self.mains()), 2)
+        self.assertEqual(self.starts("consolidate") + self.starts("CR-1"), [])
+        self.assertTrue(alive(job))
+
+        self.release("job")
+        self.wait_until(lambda: not alive(job), "the background job to finish")
+        resumed = self.attach()
+        self.assert_complete(resumed)
+        self.assertEqual(set(self.sessions()), {"main-footest-1"})
+        self.assertIn("Confirmation Request Not Accepted", self.prompt(len(self.mains())))
+        self.assertEqual(len(self.starts("CR-1")), 1)
+
     # ── 3. kill -9 during the native-compaction helper ──
     def test_sigkill_of_the_compaction_helper_continues_the_same_session(self) -> None:
         self.flag("compact-1", "block-compact")
