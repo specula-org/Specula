@@ -609,3 +609,63 @@ def test_has_unfinished_work(tmp_path: Path) -> None:
     assert continuous.has_unfinished_work(pipeline)
     continuous.save_state(work, "t", continuous.MainState(stage="complete"), "complete")
     assert not continuous.has_unfinished_work(pipeline)
+
+
+# ── adapters wire the context tools for every continuous phase ──────────────
+
+
+@pytest.mark.parametrize("phase", ["main", "incremental", "spec_validation"])
+@pytest.mark.parametrize("agent", ["claude-code", "codex", "copilot-cli", "opencode", "pi"])
+def test_adapters_expose_context_tools_to_continuous_phases(tmp_path: Path, phase: str, agent: str) -> None:
+    import test_adapters as adapters
+
+    work = tmp_path / "work"
+    work.mkdir()
+    directory = tmp_path / "control"
+    directory.mkdir()
+    env = runner.tool_environment(directory, work, Path(sys.executable), agent)
+    env = {key: env[key] for key in env if key.startswith("SPECULA_CONTEXT")}
+    env.update({"SPECULA_PHASE": phase, "SPECULA_WORK_DIR": str(work), "SPECULA_STOP_GATE": "off"})
+    env["COPILOT_HELP_TEXT"] = "--autopilot --additional-mcp-config"
+    fake = {"claude-code": "claude", "copilot-cli": "copilot"}.get(agent, agent)
+    fixture = json.dumps(adapters.CLAUDE_JSON) if agent == "claude-code" else ""
+    if agent == "opencode":
+        fixture = json.dumps({"type": "step_finish", "part": {"reason": "stop", "tokens": {}, "cost": 0}})
+    elif agent == "pi":
+        fixture = json.dumps(
+            {"type": "message_end", "message": {"role": "assistant", "content": [], "stopReason": "stop"}}
+        )
+    case = adapters.AdapterCase()
+    try:
+        observed = case.run_adapter(
+            [str(Path(runner.ROOT) / "scripts/launch/adapters" / f"{agent}.sh")],
+            ["--prompt=context tool smoke", "--max-turns=1", f"--log={tmp_path / 'agent.log'}"],
+            fake_name=fake,
+            fixture_text=fixture,
+            env_extra=env,
+            timeout=10,
+            run_dir=tmp_path,
+        )
+    finally:
+        case.doCleanups()
+    assert observed["returncode"] == 0, observed["stderr"]
+    argv = observed["argv"]
+    wired = phase != "spec_validation"
+    if agent == "claude-code":
+        assert ("--mcp-config" in argv and argv[argv.index("--mcp-config") + 1] == env[control.MCP_ENV]) is wired
+    elif agent == "codex":
+        assert ("mcp_servers.specula_context=" + env["SPECULA_CONTEXT_CODEX_CONFIG"] in argv) is wired
+    elif agent == "copilot-cli":
+        assert ("--additional-mcp-config" in argv) is wired
+    elif agent == "opencode":
+        config = json.loads(observed["opencode_config"] or "{}")
+        assert ("specula_context" in config.get("mcp", {})) is wired
+    else:
+        extension = str(Path(runner.ROOT) / "tools/context_control/pi-extension.js")
+        assert (extension in argv) is wired
+
+
+def test_pi_extension_accepts_every_continuous_phase() -> None:
+    source = (Path(runner.ROOT) / "tools/context_control/pi-extension.js").read_text()
+    for phase in control.CONTINUOUS_PHASES:
+        assert f'"{phase}"' in source

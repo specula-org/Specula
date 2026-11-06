@@ -181,7 +181,8 @@ fi
 # Keep the scripting channel free of version-specific stats footers. Provider
 # diagnostics still go to stderr, which is captured below for policy recovery.
 CMD=(copilot -p "$PROMPT" --allow-all --autopilot --silent)
-if [[ "${SPECULA_PHASE:-}" == "incremental" && -n "${SPECULA_CONTEXT_MCP_JSON:-}" ]]; then
+# Continuous phases (specula.context_control.CONTINUOUS_PHASES) get the context tools.
+if [[ ( "${SPECULA_PHASE:-}" == "incremental" || "${SPECULA_PHASE:-}" == "main" ) && -n "${SPECULA_CONTEXT_MCP_JSON:-}" ]]; then
   CMD+=(--additional-mcp-config "$SPECULA_CONTEXT_MCP_JSON")
 elif [[ -n "${SPECULA_TLC_TOOL_JSON:-}" ]]; then
   CMD+=(--additional-mcp-config "$SPECULA_TLC_TOOL_JSON")

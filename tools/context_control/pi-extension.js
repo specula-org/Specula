@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export default function (pi) {
-  if (process.env.SPECULA_PHASE !== "incremental" || !process.env.SPECULA_CONTEXT_REQUEST) return;
+  // Continuous phases (specula.context_control.CONTINUOUS_PHASES) get the context tools.
+  if (!["incremental", "main"].includes(process.env.SPECULA_PHASE) || !process.env.SPECULA_CONTEXT_REQUEST) return;
   pi.registerTool({
     name: "request_bug_confirmation",
     label: "Request bug confirmation",

@@ -570,7 +570,8 @@ def main(argv: list[str]) -> int:
             with contextlib.suppress(Exception):  # accounting must never block the turn
                 restored = restored_totals(os.environ["CLAUDE_CONFIG_DIR"], resume_session_id)
         cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", output_format]
-        if os.environ.get("SPECULA_PHASE") == "incremental" and os.environ.get("SPECULA_CONTEXT_MCP_CONFIG"):
+        # Continuous phases (specula.context_control.CONTINUOUS_PHASES) get the context tools.
+        if os.environ.get("SPECULA_PHASE") in {"incremental", "main"} and os.environ.get("SPECULA_CONTEXT_MCP_CONFIG"):
             cmd += ["--mcp-config", os.environ["SPECULA_CONTEXT_MCP_CONFIG"]]
         elif os.environ.get("SPECULA_TLC_TOOL_CONFIG"):
             cmd += ["--mcp-config", os.environ["SPECULA_TLC_TOOL_CONFIG"]]
