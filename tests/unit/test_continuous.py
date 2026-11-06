@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -459,6 +460,18 @@ def test_stop_gate_main_contract_pauses_only_for_compaction(monkeypatch: pytest.
     assert not stop_gate.decide("main", work)[0]
     (tmp_path / "request.json").write_text(json.dumps({"token": "token", "handoff_path": "h.md"}))
     assert stop_gate.decide("main", work)[0]
+    # Only the yield itself pauses: a turn that kept working past its request meets the contract.
+    assert stop_gate.decide("main", work, last_message="Saved.\nSPECULA_CONTEXT_YIELD token\n")[0]
+    allowed, reason = stop_gate.decide("main", work, last_message="Kept working; all done.")
+    assert not allowed and "spec/bug-report.md" in reason
+    hook = subprocess.run(
+        [sys.executable, str(Path(stop_gate.__file__)), "claude"],
+        input=json.dumps({"stop_hook_active": False, "last_assistant_message": "Kept working; all done."}),
+        capture_output=True,
+        text=True,
+        env={**os.environ, "SPECULA_PHASE": "main", "SPECULA_WORK_DIR": str(work)},
+    )
+    assert json.loads(hook.stdout)["decision"] == "block"
     (tmp_path / "request.json").unlink()
     (work / "spec/bug-report.md").write_text("report")
     assert stop_gate.decide("main", work)[0]

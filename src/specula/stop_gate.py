@@ -343,13 +343,16 @@ def _live_pid_files(work_dir: Path) -> tuple[list[tuple[Path, int]], bool]:
     return live, incomplete
 
 
-def _compaction_pending() -> bool:
+def _compaction_pending(last_message: str | None = None) -> bool:
     """True while this invocation's controller holds a context-compaction request.
 
     A continuous main session yields mid-workflow, before its final deliverable
     exists, so the controller can compact the same native conversation. That
     pause is not phase completion; background jobs are still checked, and the
-    deliverable contract applies again to every later stop.
+    deliverable contract applies again to every later stop. When the hook
+    reports the turn's final message, only the yield marker itself is the
+    pause: a turn that kept working past its request and then stopped
+    ordinarily meets the contract like any other stop.
     """
     raw = os.environ.get("SPECULA_CONTEXT_REQUEST")
     token = os.environ.get("SPECULA_CONTEXT_TOKEN")
@@ -359,14 +362,21 @@ def _compaction_pending() -> bool:
         request = json.loads(Path(raw).read_text())
     except (OSError, ValueError):
         return False
-    return isinstance(request, dict) and request.get("token") == token and "handoff_path" in request
+    if not (isinstance(request, dict) and request.get("token") == token and "handoff_path" in request):
+        return False
+    if last_message is None:
+        return True
+    return last_message.strip().splitlines()[-1:] == [f"SPECULA_CONTEXT_YIELD {token}"]
 
 
 # ──────────────────────────────────────────────────────────
 # The decision
 # ──────────────────────────────────────────────────────────
-def decide(phase: str, work_dir: Path) -> tuple[bool, str]:
-    """(allow, reason). Called at the moment the agent tries to end its turn."""
+def decide(phase: str, work_dir: Path, *, last_message: str | None = None) -> tuple[bool, str]:
+    """(allow, reason). Called at the moment the agent tries to end its turn.
+
+    ``last_message`` is the turn's final assistant message when the hook
+    payload carries it (``last_assistant_message``)."""
     if os.environ.get("SPECULA_STOP_GATE", "").lower() == "off":
         return True, "gate disabled (SPECULA_STOP_GATE=off)"
     if not phase or not work_dir.is_dir():
@@ -428,7 +438,7 @@ def decide(phase: str, work_dir: Path) -> tuple[bool, str]:
         )
 
     contract = CONTRACTS.get(phase)
-    if contract is not None and not _compaction_pending():
+    if contract is not None and not _compaction_pending(last_message):
         deliverable = work_dir / contract
         try:
             missing = not _has_content(deliverable)
@@ -462,8 +472,9 @@ def _hook_main(flavor: str) -> int:
     target_work_dir = os.environ.get("SPECULA_WORK_DIR") or "/nonexistent"
     work_dir = Path(os.environ.get("SPECULA_STOP_GATE_WORK_DIR") or target_work_dir)
 
+    last_message = payload.get("last_assistant_message") if isinstance(payload, dict) else None
     try:
-        allow, reason = decide(phase, work_dir)
+        allow, reason = decide(phase, work_dir, last_message=last_message if isinstance(last_message, str) else None)
     except Exception as e:  # fail-open: a broken gate must never wedge a run
         allow, reason = True, f"gate error ({e.__class__.__name__}: {e})"
 
