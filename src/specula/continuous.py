@@ -17,7 +17,9 @@ Durable lifecycle, per target (``<work>/.context-control/``):
     ``classified`` (only the summary remains), or ``complete``.
     ``repair_round`` is the round the main conversation works on (0 = initial
     pass), ``session_id`` the native session every handoff must come from,
-    and ``rejection`` the reason the last handoff was refused.
+    ``rejection`` the reason the last handoff was refused, and
+    ``auto_resumes`` how many times the controller already resumed the
+    current handoff with such a reason (reset when a handoff is accepted).
 
 ``confirmation.json`` (written by context_runner at each yield)
     ``pending`` -> ``confirming`` (with the dispatch identity) -> ``completed``,
@@ -78,6 +80,7 @@ STAGES = ("main", "confirm", "closed", "classified", "complete")
 REQUEST_STATUSES = ("pending", "confirming", "completed", "rejected")
 CONFIRMATION_ENV = "SPECULA_CI_CONFIRMATION"  # lets confirmation run while main stays suspended
 HISTORY_LIMIT = 100
+AUTO_RESUMES = 2  # automatic resumes of one rejected handoff within a run
 
 
 class ContinuousError(RuntimeError):
@@ -118,6 +121,7 @@ class MainState:
     session_id: str | None = None
     context: str = "original"  # "fresh" after --fresh-context abandoned a session
     rejection: str | None = None
+    auto_resumes: int = 0
     history: list[dict[str, Any]] = field(default_factory=list)
 
     def to_object(self, target: str) -> dict[str, Any]:
@@ -129,6 +133,7 @@ class MainState:
             "session_id": self.session_id,
             "context": self.context,
             "rejection": self.rejection,
+            "auto_resumes": self.auto_resumes,
             "history": self.history[-HISTORY_LIMIT:],
         }
 
@@ -141,6 +146,7 @@ class MainState:
         session_id = value.get("session_id")
         context = value.get("context")
         rejection = value.get("rejection")
+        auto_resumes = value.get("auto_resumes", 0)
         history = value.get("history")
         if (
             stage not in STAGES
@@ -150,6 +156,9 @@ class MainState:
             or (session_id is not None and (not isinstance(session_id, str) or not session_id))
             or context not in ("original", "fresh")
             or (rejection is not None and not isinstance(rejection, str))
+            or not isinstance(auto_resumes, int)
+            or isinstance(auto_resumes, bool)
+            or auto_resumes < 0
             or not isinstance(history, list)
         ):
             raise ContinuousError(f"invalid continuous state for {target}")
@@ -159,6 +168,7 @@ class MainState:
             session_id=session_id,
             context=str(context),
             rejection=rejection,
+            auto_resumes=auto_resumes,
             history=[entry for entry in history if isinstance(entry, dict)],
         )
 
@@ -760,7 +770,9 @@ class ContinuousRun:
         dispatch = [name for name in names if (requests[name] or {}).get("status") in ("pending", "confirming")]
         if dispatch:
             self._dispatch(dispatch, states)
-        self._decide(names, states)
+        # Rejected handoffs resume their main session; the rest are decided now.
+        completed = [name for name in names if (load_request(self.work(name)) or {}).get("status") == "completed"]
+        self._decide(completed, states)
 
     # ── confirmation dispatch ──
     def _handoff_error(self, name: str, state: MainState) -> str | None:
@@ -802,6 +814,24 @@ class ContinuousRun:
         state.rejection = reason
         self._save(name, state, "rejected")
         _log(f"ERROR: {name}: confirmation request not accepted: {reason.splitlines()[0]}")
+
+    def _may_auto_resume(self, name: str) -> bool:
+        """Whether a rejected handoff may resume its main session within this run."""
+        blocked = stop_gate._blocked_file(self.work(name))
+        if blocked is not None:
+            # As in the phased pipeline, a declared failure is terminal: fail once, never loop.
+            _log(f"ERROR: {name}: the main session declared that it cannot finish ({blocked})")
+            return False
+        if self._load(name).auto_resumes >= AUTO_RESUMES:
+            _log(f"ERROR: {name}: the handoff was still not accepted after {AUTO_RESUMES} automatic resumes")
+            return False
+        return True
+
+    def _reset_auto_resumes(self, name: str) -> None:
+        state = self._load(name)
+        if state.auto_resumes:
+            state.auto_resumes = 0
+            self._save(name, state, "accepted")
 
     def _accept_repair(self, name: str, state: MainState) -> str | None:
         """Commit a repair-round handoff with the phased snapshot/commit proofs."""
@@ -856,7 +886,7 @@ class ContinuousRun:
         p = self.p
         full: list[str] = []
         scoped: list[str] = []
-        rejected = False
+        rejected: list[str] = []
         for name in names:
             request = load_request(self.work(name))
             assert request is not None
@@ -872,13 +902,20 @@ class ContinuousRun:
                 full.append(name)
             if reason is not None:
                 self._reject(name, reason)
-                rejected = True
-        if rejected:
+                rejected.append(name)
+            else:
+                self._reset_auto_resumes(name)
+        if any([not self._may_auto_resume(name) for name in rejected]):
             _log(
                 "ERROR: the main session will resume with the reported problem; "
                 "rerun with --run-id to continue (accepted handoffs stay queued)"
             )
             raise SystemExit(1)
+        for name in rejected:
+            state = self._load(name)
+            state.auto_resumes += 1
+            self._save(name, state, "auto-resume")
+            _log(f"{name}: resuming the main session with the reported problem ({state.auto_resumes}/{AUTO_RESUMES})")
         if p.skip_confirmation:
             for name in full + scoped:
                 self._complete_request(name, skipped=True)

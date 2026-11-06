@@ -193,20 +193,56 @@ class ContinuousCLI(unittest.TestCase):
         run = self.run_dir()
         self.assertEqual(self.request(run)["status"], "rejected")
         state = self.state(run)
-        self.assertEqual((state["stage"], state["repair_round"]), ("main", 1))
+        self.assertEqual((state["stage"], state["repair_round"], state["auto_resumes"]), ("main", 1, 2))
         self.assertIn("RR-001=OPEN", state["rejection"])
         self.assertTrue((run / "footest/.specula-output/spec/.repair-phase3-snapshot.json").is_file())
         self.assertIn("RR-001=OPEN", (self.adapters / "tool-refusal.txt").read_text())
+        # The repair turn plus two automatic resumes with the reason, all in this run.
+        self.assertEqual([e["call"] for e in self.main_events()], [1, 2, 3, 4])
+        for call in (3, 4):
+            self.assertIn("Confirmation Request Not Accepted", self.prompt(call))
+        self.assertIn("handoff was still not accepted after 2 automatic resumes", failed.stdout)
+
+        # An attach is not a fresh budget: one more rejection fails at once.
+        again = self.run_cli(f"--run-id={run.name}")
+        self.assertEqual(again.returncode, 1, again.stdout + again.stderr)
+        self.assertEqual(len(self.main_events()), 5)
         unconsumed.unlink()
 
         resumed = self.run_cli(f"--run-id={run.name}")
         self.assert_complete(resumed, run)
-        manual = self.prompt(3)
+        manual = self.prompt(6)
         self.assertTrue(manual.startswith(_MANUAL_SESSION_RESUME_PROMPT))
         self.assertIn("Confirmation Request Not Accepted", manual)
         self.assertIn("## Repair Round 1", manual)
         self.assertEqual({e["session"] for e in self.main_events()}, {"main-footest-1"})
         self.assertEqual(json.loads((run / "repair-loop.json").read_text())["round"], 1)
+        self.assertEqual(self.state(run)["auto_resumes"], 0)
+
+    def test_rejected_handoff_resumes_automatically_within_the_run(self) -> None:
+        self.flag("repair")
+        self.flag("unconsumed")
+        self.flag("unconsumed-once")
+        result = self.run_cli("--agent=fake", "footest")
+        run = self.run_dir()
+        self.assert_complete(result, run)
+        self.assertEqual([e["call"] for e in self.main_events()], [1, 2, 3])
+        self.assertEqual({e["session"] for e in self.main_events()}, {"main-footest-1"})
+        resumed = self.prompt(3)
+        self.assertIn("Confirmation Request Not Accepted", resumed)
+        self.assertIn("## Repair Round 1", resumed)
+        self.assertIn("resuming the main session with the reported problem (1/2)", result.stdout)
+        self.assertEqual(json.loads((run / "repair-loop.json").read_text())["round"], 1)
+
+    def test_blocked_main_session_fails_once_without_automatic_resumes(self) -> None:
+        self.flag("blocked")
+        failed = self.run_cli("--agent=fake", "footest")
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        run = self.run_dir()
+        self.assertEqual(len(self.main_events()), 1)
+        self.assertEqual(self.request(run)["status"], "rejected")
+        self.assertEqual(self.state(run)["auto_resumes"], 0)
+        self.assertIn("declared that it cannot finish", failed.stdout)
 
     # ── interruption and recovery ──
     def test_interrupted_main_resumes_the_same_native_session(self) -> None:

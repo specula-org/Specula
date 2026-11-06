@@ -5,6 +5,8 @@ Behavior switches are files next to this script:
   fail-main-N     exit 9 on the Nth main invocation (after the session exists)
   implicit        end main turns without calling request_bug_confirmation
   unconsumed      the repair turn requests confirmation without consuming its RR
+  unconsumed-once ... only on the first repair turn
+  blocked         the first pass writes spec/BLOCKED.md instead of its deliverables
   fail-confirm    the CR-1 worker fails once
 
 Fault-injection switches (tests/e2e/test_continuous_faults.py):
@@ -172,6 +174,10 @@ def first_pass(session: str, call: int) -> None:
             start_background_job()
         remember(session, "analysis")
     block(f"main-{call}", session=session)
+    if (here / "blocked").exists():
+        (work / "spec").mkdir(exist_ok=True)
+        (work / "spec/BLOCKED.md").write_text("Fixture: the build cannot run here; nothing was validated.\n")
+        return
     if "validation" in done:
         return
     validation()
@@ -213,6 +219,9 @@ def repair_pass(session: str, call: int) -> None:
     stage = f"repair-{snapshot['round']}"
     if stage not in remembered(session):
         consume = not (here / "unconsumed").exists()
+        if not consume and (here / "unconsumed-once").exists():
+            for name in ("unconsumed", "unconsumed-once"):
+                (here / name).unlink()
         if consume:
             for filename in snapshot["requests"]:
                 rr = work / "spec/repair-requests" / filename

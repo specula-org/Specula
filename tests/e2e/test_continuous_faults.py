@@ -378,12 +378,13 @@ class ContinuousFaults(unittest.TestCase):
         self.assertTrue(alive(job))
         self.assertTrue(self.lock_is_free())
 
-        # The resumed session hands off while its registered job still runs.
+        # The resumed session hands off while its registered job still runs:
+        # rejected, resumed automatically twice with the reason, then failed.
         early = self.attach()
         self.assertEqual(early.returncode, 1, early.stdout + early.stderr)
         self.assertEqual(self.request()["status"], "rejected")
         self.assertIn("live background job", self.state()["rejection"])
-        self.assertEqual(len(self.mains()), 2)
+        self.assertEqual(len(self.mains()), 4)
         self.assertEqual(self.starts("consolidate") + self.starts("CR-1"), [])
         self.assertTrue(alive(job))
 
