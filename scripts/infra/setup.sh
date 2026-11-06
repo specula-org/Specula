@@ -211,7 +211,7 @@ setup_python_tool_env() {
   if [[ -n "$requirements_file" && -f "$requirements_file" ]]; then
     "$python_path" -I -m pip install -r "$requirements_file"
   else
-    "$python_path" -I -m pip install mcp
+    "$python_path" -I -m pip install "mcp<2"
   fi
 
   print_success "$tool_name dependencies installed"
