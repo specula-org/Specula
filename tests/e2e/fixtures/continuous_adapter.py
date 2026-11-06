@@ -20,6 +20,7 @@ Fault-injection switches (tests/e2e/test_continuous_faults.py):
   abandon-job     hand off without waiting for a live job
   compact-N       main call N requests native compaction instead of handing off
   rate-limit-N    exit 75 on the Nth main invocation (after the session exists)
+  policy-N        exit 76 (provider policy block) on the Nth main invocation
   cr2             consolidation adds a second code-review candidate CR-2
   quota-after-ID  the ID worker turns the fixture quota endpoint over its limit
 
@@ -246,6 +247,9 @@ if phase == "main":
     if (here / f"rate-limit-{calls}").exists():
         respond("API Error: rate limit reached (fixture).")
         raise SystemExit(75)
+    if (here / f"policy-{calls}").exists():
+        respond("Fixture provider policy block.")
+        raise SystemExit(76)
     # The conversation knows it is repairing even when resumed with a generic prompt.
     if (work / "spec/.repair-phase3-snapshot.json").exists():
         repair_pass(session, calls)

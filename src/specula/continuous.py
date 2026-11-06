@@ -370,6 +370,9 @@ Options:
     )
     check_ok_msg = "All repos OK."
     yield_message = "Main session yielded to the continuous controller."
+    # Retry budgets are per controller step (initial pass, each repair round,
+    # rejection resume, or attach); retries within one step still accumulate.
+    carry_retry_budgets = False
 
     def target_name(self, target: str) -> str:
         return _trim(target.split("|", 1)[0])

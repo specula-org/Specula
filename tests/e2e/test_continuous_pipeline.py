@@ -164,6 +164,18 @@ class ContinuousCLI(unittest.TestCase):
         self.assertEqual(self.request(run)["repair_round"], 1)
         self.assertIn("REPAIR ROUND 1: MAIN SESSION", result.stdout)
 
+    def test_retry_budgets_reset_for_each_main_session_step(self) -> None:
+        self.flag("repair")
+        self.flag("policy-1")
+        self.flag("policy-3")
+        result = self.run_cli("--agent=fake", "--policy-retries=1", "footest")
+        run = self.run_dir()
+        self.assert_complete(result, run)
+        # The repair round spends its own policy retry, not the initial pass's.
+        self.assertEqual([e["call"] for e in self.main_events()], [1, 2, 3, 4])
+        self.assertEqual({e["session"] for e in self.main_events()}, {"main-footest-1"})
+        self.assertEqual(result.stdout.count("retrying with a revised request (1/1)"), 2)
+
     def test_repair_cap_defers_without_resuming_main(self) -> None:
         self.flag("repair")
         result = self.run_cli("--agent=fake", "--max-repair-rounds=0", "--skip-repair-loop", "footest")

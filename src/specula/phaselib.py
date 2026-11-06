@@ -626,6 +626,10 @@ class Phase:
     dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
     next_phase_key: str | None = None  # consumer whose existing check() validates this handoff
     yield_message = "Incremental conversation yielded to bug confirmation."  # continuous phases only
+    # Whether a relaunch of an unfinished conversation (a CI confirmation
+    # handoff or a manual attach) keeps the retry budgets it already spent.
+    # The continuous main session budgets each controller step instead.
+    carry_retry_budgets = True
     progress_config = progress.ProgressConfig()
     # Tri-state tuning values set in run(): None = unspecified, "" = explicit
     # reset to the adapter/CLI default, non-empty = explicit override.
@@ -1541,7 +1545,7 @@ class Phase:
             )
         archived_attempts: dict[Path, Path] = {}
         if not dry_run:
-            if claim.manual or claim.attempt > 1:
+            if (claim.manual or claim.attempt > 1) and self.carry_retry_budgets:
                 # A CI confirmation handoff re-enters this launcher while the
                 # same logical conversation and its spent budgets stay active.
                 attempt = max(attempt, claim.rate_limit_attempt)
