@@ -522,7 +522,13 @@ def test_runner_turns_an_ordinary_main_ending_into_a_bound_handoff(
     )
     assert runner.run(adapter, runner_args(work)) == control.CONFIRMATION_YIELD_RC
     request = json.loads((work / control.CONFIRMATION_REQUEST).read_text())
-    assert request == {"session_id": "native-1", "status": "pending", "phase": "main", "implicit": True}
+    assert request == {
+        "session_id": "native-1",
+        "status": "pending",
+        "phase": "main",
+        "implicit": True,
+        "live_jobs": [],
+    }
 
 
 def test_runner_fails_closed_without_a_native_session(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -575,7 +581,13 @@ def test_runner_compacts_main_then_records_explicit_confirmation(
     )
     assert runner.run(adapter, runner_args(work)) == control.CONFIRMATION_YIELD_RC
     request = json.loads((work / control.CONFIRMATION_REQUEST).read_text())
-    assert request == {"session_id": "native-1", "status": "pending", "phase": "main", "implicit": False}
+    assert request == {
+        "session_id": "native-1",
+        "status": "pending",
+        "phase": "main",
+        "implicit": False,
+        "live_jobs": [],
+    }
     assert len(list(work.glob(".context-control/invocation-*/1/compaction.json"))) == 1
 
 

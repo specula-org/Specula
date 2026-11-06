@@ -18,6 +18,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from specula import stop_gate
 from specula.adapters.utils.claude_usage import invocation_usage
 from specula.adapters.utils.usage import UsageTotals, accumulate_usage
 from specula.context_control import (
@@ -137,6 +138,17 @@ def _bound_session(resume: Path, adapter: Path, previous: str | None) -> str:
     return str(state["session_id"])
 
 
+def _live_jobs(work: Path) -> list[str]:
+    """Background jobs still running when the main session hands off.
+
+    The phase runner stops them with the agent's session right after this
+    process exits, so the controller can no longer see them; record them in
+    the handoff instead of letting confirmation start on unharvested work.
+    """
+    live, _incomplete = stop_gate._live_pid_files(work)
+    return sorted({f"{path} (pid {pid})" for path, pid in live})
+
+
 def _continue_prompt(phase: str, status: str, handoff: str, work: Path) -> str:
     if phase == "main":
         from specula.continuous import compaction_continue_prompt
@@ -213,7 +225,13 @@ def run(adapter: Path, arguments: list[str]) -> int:
                 session_id = _bound_session(resume, adapter, session_id)
                 write_json(
                     work / CONFIRMATION_REQUEST,
-                    {"session_id": session_id, "status": "pending", "phase": phase, "implicit": True},
+                    {
+                        "session_id": session_id,
+                        "status": "pending",
+                        "phase": phase,
+                        "implicit": True,
+                        "live_jobs": _live_jobs(work),
+                    },
                 )
                 return CONFIRMATION_YIELD_RC
             pending = json.loads(request.read_text())
@@ -223,7 +241,7 @@ def run(adapter: Path, arguments: list[str]) -> int:
             if pending.get("action") == "confirm":
                 document: dict[str, Any] = {"session_id": session_id, "status": "pending"}
                 if phase == "main":
-                    document.update({"phase": phase, "implicit": False})
+                    document.update({"phase": phase, "implicit": False, "live_jobs": _live_jobs(work)})
                 write_json(work / CONFIRMATION_REQUEST, document)
                 return CONFIRMATION_YIELD_RC
             round_number += 1

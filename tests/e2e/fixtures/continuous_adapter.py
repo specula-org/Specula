@@ -20,6 +20,7 @@ Fault-injection switches (tests/e2e/test_continuous_faults.py):
   background-detached  the job's tool shell escapes the agent's session
   background-lock the job inherits the run lock, as a native CLI tool shell does
   abandon-job     hand off without waiting for a live job
+  abandon-job-once ... only at the first handoff
   compact-N       main call N requests native compaction instead of handing off
   rate-limit-N    exit 75 on the Nth main invocation (after the session exists)
   policy-N        exit 76 (provider policy block) on the Nth main invocation
@@ -118,7 +119,11 @@ def harvest_job() -> None:
     if not running and "Finished in" not in Path(job["log"]).read_text():
         start_background_job()
         job = json.loads((here / "job.json").read_text())
-    if not (here / "abandon-job").exists():
+    abandon = (here / "abandon-job").exists()
+    if abandon and (here / "abandon-job-once").exists():
+        for flag in ("abandon-job", "abandon-job-once"):
+            (here / flag).unlink()
+    if not abandon:
         waiter = here.parents[1] / "infra/wait_for_pid.sh"
         subprocess.run(["bash", str(waiter), "--pid", str(job["pid"]), "--timeout", "120s", "--quiet"], check=False)
     finished = "Finished in" in Path(job["log"]).read_text()

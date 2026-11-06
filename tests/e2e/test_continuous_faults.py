@@ -396,6 +396,21 @@ class ContinuousFaults(unittest.TestCase):
         self.assertIn("Confirmation Request Not Accepted", self.prompt(len(self.mains())))
         self.assertEqual(len(self.starts("CR-1")), 1)
 
+    def test_handoff_with_a_running_in_session_job_is_rejected_and_resumed(self) -> None:
+        # No stop hook held the turn: the session yields while its job still runs,
+        # and the phase runner stops that job with the session.
+        self.flag("background", "abandon-job", "abandon-job-once")
+        run, _ = self.start("--agent=fake", "footest")
+        self.wait_until(lambda: self.jobs_started() == 2, "the resumed session to restart its job", run)
+        self.release("job")
+        self.assertEqual(self.finish(run), 0, self.output(run))
+        self.assertEqual(self.state()["stage"], "complete")
+        self.assertEqual(self.sessions(), ["main-footest-1"] * 2)
+        self.assertEqual(self.harvests(), [(True, False), (False, True)])
+        self.assertIn("were still running when this session handed off", self.prompt(2))
+        self.assertEqual(len(self.starts("CR-1")), 1)
+        self.assertIn("Finished in", (self.target() / "job.log").read_text())
+
     # ── 3. kill -9 during the native-compaction helper ──
     def test_sigkill_of_the_compaction_helper_continues_the_same_session(self) -> None:
         self.flag("compact-1", "block-compact")

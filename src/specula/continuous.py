@@ -888,6 +888,14 @@ class ContinuousRun:
                 "The completion audit failed. Wait for every background job you started, harvest its results, "
                 "and update the deliverables before requesting confirmation again:\n" + report.rstrip()
             )
+        stopped = (load_request(work) or {}).get("live_jobs")
+        if isinstance(stopped, list) and stopped:
+            return (
+                "Background job(s) were still running when this session handed off: "
+                + ", ".join(map(str, stopped))
+                + ". Jobs started inside the session stop with it. Restart any job whose results you need, "
+                "wait for it in the foreground, harvest its results, then request confirmation again."
+            )
         return None
 
     def _reject(self, name: str, reason: str) -> None:
