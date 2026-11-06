@@ -34,6 +34,7 @@ from specula.context_control import (
 )
 from specula.resource_summary import UsageRecord, _claude_usage, _normalized_usage, _parse_usage_file
 from specula.resumelib import inherited_run_lock_fds
+from specula.rules import with_rules
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -141,7 +142,7 @@ def _continue_prompt(phase: str, status: str, handoff: str, work: Path) -> str:
         from specula.continuous import compaction_continue_prompt
 
         return compaction_continue_prompt(status, handoff, work)
-    return (
+    return with_rules(
         f"Continue the same incremental CI task. Context compaction {status}. "
         f"First read the saved handoff at {handoff}; then open only evidence needed for the next work. "
         "Keep unresolved counterexamples, invalidated results and pending checks pending. "

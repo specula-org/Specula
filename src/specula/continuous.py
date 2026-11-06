@@ -51,6 +51,7 @@ if __package__ in (None, ""):
 
 from specula import resumelib, stop_gate
 from specula.context_control import CONFIRMATION_REQUEST, CONFIRMATION_YIELD_RC, REPAIR_SNAPSHOT, write_json
+from specula.notes import notes_section
 from specula.phaselib import (
     AgentFiles,
     BugConfirmationPhase,
@@ -62,6 +63,7 @@ from specula.phaselib import (
     _wc_l,
 )
 from specula.prompts import render
+from specula.rules import with_rules
 from specula.skill_refs import prompt_skill_ids
 
 if TYPE_CHECKING:
@@ -81,17 +83,20 @@ class ContinuousError(RuntimeError):
     """Persisted continuous state is inconsistent; refuse to guess."""
 
 
-def _continuation_prompt(text: str, *, work_dir: Path | None = None) -> str:
+def _continuation_prompt(text: str, *, work_dir: Path | None = None, notes: bool = False) -> str:
     """Single hook for every continuation or resume prompt this module generates.
 
     It covers the compaction continue prompt (written by context_runner), the
     post-confirmation repair and rejection prompts, and the fresh-context
-    restart prompt. Prompts launched through ``Phase._launch`` also pass through
-    phaselib's generic launch path. ``_manual_prompt_extra`` fragments are not
-    wrapped: phaselib appends them to its own manual-resume prompt.
+    restart prompt. The pinned rules are prepended here; ``with_rules`` is
+    idempotent, so prompts that also pass through phaselib's generic launch
+    path still carry exactly one rules block. ``notes`` appends the working-
+    notes pointer for ``work_dir``. ``_manual_prompt_extra`` fragments are not
+    wrapped: phaselib appends them to its own (rules-pinned) manual-resume prompt.
     """
-    del work_dir  # reserved for workspace-specific additions (notes)
-    return text
+    if notes and work_dir is not None:
+        text = text.rstrip("\n") + "\n" + notes_section(work_dir, first=False)
+    return with_rules(text)
 
 
 def _now() -> str:
@@ -258,6 +263,7 @@ def compaction_continue_prompt(status: str, handoff: str, work: Path) -> str:
         "If compaction failed, continue without repeatedly retrying it. Continue the workflow, and hand off "
         "to confirmation as instructed when validation is complete.\n",
         work_dir=work,
+        notes=True,
     )
 
 
@@ -381,7 +387,7 @@ Options:
         wd = ws.work_dir(name)
         return {"log": wd / "main.log", "pid": wd / "main.pid", "prompt": wd / ".main-prompt.md", "mkdirs": [wd]}
 
-    def _main_prompt(self, ws: Workspace, target: str) -> str:
+    def _main_prompt(self, ws: Workspace, target: str, *, notes_first: bool = True) -> str:
         parts = [_trim(x) for x in target.split("|", 3)]
         parts += [""] * (4 - len(parts))
         name, github, language, reference = parts
@@ -402,6 +408,7 @@ Options:
             trace_skill=prompt_skill_ids("tla-trace-workflow"),
             checking_skill=prompt_skill_ids("tla-checking-workflow"),
         )
+        prompt += notes_section(work, first=notes_first)
         return self._with_extra(ws, name, prompt)
 
     def _resume_context(self, ws: Workspace, name: str) -> str:
@@ -436,9 +443,11 @@ Options:
                 ),
                 work_dir=work,
             )
-        prompt = self._main_prompt(ws, target)
         state = load_state(work, name)
-        if (state is not None and state.context == "fresh") or context:
+        fresh = state is not None and state.context == "fresh"
+        # A restarted session continues earlier notes rather than opening the area.
+        prompt = self._main_prompt(ws, target, notes_first=not (fresh or context))
+        if fresh or context:
             sections = [_fresh_context_section(name, work)] if _existing_work(work) else []
             if context:
                 sections.append(context)

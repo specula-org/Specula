@@ -13,10 +13,11 @@ import pytest
 
 from specula import context_control as control
 from specula import context_runner as runner
-from specula import continuous, resumelib, stop_gate
+from specula import continuous, resumelib, rules, stop_gate
 from specula import pipelinelib as pl
 from specula.agent_config import AgentConfigError, AgentSelection, load_agent_routing
-from specula.phaselib import Workspace
+from specula.notes import NOTES_ENV
+from specula.phaselib import Workspace, _retry_prompt
 from specula.resource_summary import PhaseState, RunDetails, TargetState, render_summary
 
 
@@ -32,6 +33,8 @@ def _clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         control.REQUEST_ENV,
         control.TOKEN_ENV,
         "MAX_REPAIR_ROUNDS",
+        rules.RULES_ENV,
+        NOTES_ENV,
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -310,7 +313,8 @@ def test_repair_resume_sends_only_the_continuation(
     seed_repair_round(work)
     seen: list[str] = []
 
-    def hook(text: str, *, work_dir: Path | None = None) -> str:
+    def hook(text: str, *, work_dir: Path | None = None, notes: bool = False) -> str:
+        assert not notes
         seen.append(text)
         assert work_dir == work
         return "HOOKED " + text
@@ -327,7 +331,7 @@ def test_unresumable_repair_restarts_with_full_prompt_and_context(run_workspace:
     ws, work = run_workspace
     seed_active_main(ws, work, resumable=False)
     seed_repair_round(work)
-    prompt = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
+    prompt = strip_rules(continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft"))
     assert prompt.startswith("# Specula Main Session: t")
     assert "## Repair Round 1" in prompt
 
@@ -436,7 +440,14 @@ def fake_adapter(tmp_path: Path, name: str, body: str) -> Path:
 def runner_args(work: Path) -> list[str]:
     prompt = work / "prompt.md"
     prompt.write_text("Original main task")
-    return [f"--log={work / 'main.log'}", f"--resume-state={work / 'main.resume.json'}", f"--prompt-file={prompt}"]
+    system = work / "prompt.system.md"
+    system.write_text("pinned rules")
+    return [
+        f"--log={work / 'main.log'}",
+        f"--resume-state={work / 'main.resume.json'}",
+        f"--prompt-file={prompt}",
+        f"--system-prompt-file={system}",
+    ]
 
 
 @pytest.mark.parametrize("agent", ["codex", "claude-code", "pi", "opencode", "copilot-cli"])
@@ -479,7 +490,7 @@ def test_runner_compacts_main_then_records_explicit_confirmation(
 ) -> None:
     work = configure_request(monkeypatch, tmp_path)
     monkeypatch.setattr(runner, "ROOT", tmp_path)
-    monkeypatch.setattr(continuous, "_continuation_prompt", lambda text, *, work_dir=None: "HOOK " + text)
+    monkeypatch.setattr(continuous, "_continuation_prompt", lambda text, *, work_dir=None, notes=False: "HOOK " + text)
     tool = tmp_path / "tools/context_control"
     (tool / ".venv/bin").mkdir(parents=True)
     (tool / ".venv/bin/python").symlink_to(sys.executable)
@@ -494,6 +505,7 @@ def test_runner_compacts_main_then_records_explicit_confirmation(
         agent,
         "second=resume.exists()\n"
         f"resume.write_text(json.dumps({{'adapter':{agent!r},'session_id':'native-1'}}))\n"
+        "assert any(a.startswith('--system-prompt-file=') for a in sys.argv[1:]), sys.argv\n"
         "if second:\n"
         " assert prompt.startswith('HOOK Continue the same Specula main session'), prompt\n"
         " (work/'spec/bug-report.md').write_text('report')\n"
@@ -515,6 +527,64 @@ def test_incremental_ordinary_ending_is_still_not_a_handoff(monkeypatch: pytest.
     adapter = fake_adapter(tmp_path, "codex", "respond('SPECULA_INCREMENTAL_COMPLETE run')\n")
     assert runner.run(adapter, runner_args(work)) == 0
     assert not (work / control.CONFIRMATION_REQUEST).exists()
+
+
+def strip_rules(text: str) -> str:
+    assert text.count(rules.RULES_TITLE) == 1, text[:200]
+    assert text.startswith(rules.RULES_TITLE)
+    return text.split(rules.RULES_SEPARATOR, 1)[1]
+
+
+def test_continuations_pin_rules_exactly_once(run_workspace: tuple[Workspace, Path]) -> None:
+    ws, work = run_workspace
+    seed_active_main(ws, work, resumable=True)
+    seed_repair_round(work)
+    phase = continuous.ContinuousPhase()
+    built = phase.build_prompt(ws, "t|org/t|Go|Raft")
+    # phaselib's generic launch path wraps again; the block must not repeat.
+    launched = _retry_prompt(built, "fresh", resumable=True)
+    assert launched == built
+    assert strip_rules(launched).startswith("## Repair Round 1")
+    compaction = continuous.compaction_continue_prompt("completed", str(work / "handoff.md"), work)
+    body = strip_rules(compaction)
+    assert body.startswith("Continue the same Specula main session")
+    assert "## Working Notes" in body and "Earlier phases may have left notes" in body
+    assert strip_rules(_retry_prompt(compaction, "fresh", resumable=False)) == body
+
+
+def test_main_prompt_opens_notes_and_fresh_context_continues_them(run_workspace: tuple[Workspace, Path]) -> None:
+    ws, work = run_workspace
+    phase = continuous.ContinuousPhase()
+    first = phase.build_prompt(ws, "t|org/t|Go|Raft")
+    assert first.count("## Working Notes") == 1
+    assert "Start notes whenever something is worth keeping" in first
+    assert first.index("## If You Cannot Finish") < first.index("## Working Notes")
+    (work / "modeling-brief.md").write_text("brief")
+    continuous.save_state(work, "t", continuous.MainState(context="fresh"), "fresh-context")
+    fresh = strip_rules(phase.build_prompt(ws, "t|org/t|Go|Raft"))
+    assert fresh.count("## Working Notes") == 1
+    assert "Earlier phases may have left notes" in fresh
+    assert "## Continue From Existing Work" in fresh
+
+
+def test_rules_and_notes_off_leave_continuations_bare(
+    run_workspace: tuple[Workspace, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws, work = run_workspace
+    monkeypatch.setenv(rules.RULES_ENV, "off")
+    monkeypatch.setenv(NOTES_ENV, "off")
+    prompt = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
+    assert prompt.startswith("# Specula Main Session: t")
+    assert "## Working Notes" not in prompt and rules.RULES_TITLE not in prompt
+    compaction = continuous.compaction_continue_prompt("failed", "h.md", work)
+    assert compaction.startswith("Continue the same Specula main session") and "Working Notes" not in compaction
+
+
+def test_incremental_compaction_continue_prompt_is_pinned_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = runner._continue_prompt("incremental", "completed", "h.md", Path("/w"))
+    assert strip_rules(prompt).startswith("Continue the same incremental CI task.")
+    monkeypatch.setenv(rules.RULES_ENV, "off")
+    assert runner._continue_prompt("incremental", "completed", "h.md", Path("/w")).startswith("Continue the same")
 
 
 # ── resource summary ─────────────────────────────────────────────────────────

@@ -52,8 +52,15 @@ def rules_identity() -> str:
 
 
 def with_rules(prompt: str) -> str:
-    """Prepend the rules block to ``prompt``; identity when rules are off."""
+    """Prepend the rules block to ``prompt`` once; identity when rules are off.
+
+    Idempotent: a prompt that already starts with the current block is returned
+    unchanged, so layered launch paths never pin the rules twice.
+    """
     block = rules_block()
     if not block:
         return prompt
-    return f"{block}{RULES_SEPARATOR}{prompt}"
+    prefix = f"{block}{RULES_SEPARATOR}"
+    if prompt.startswith(prefix):
+        return prompt
+    return prefix + prompt

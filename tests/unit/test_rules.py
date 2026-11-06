@@ -65,6 +65,14 @@ class RulesToggle(unittest.TestCase):
         self.assertTrue(pinned.endswith(prompt))
         self.assertEqual(pinned.count(rules.RULES_TITLE), 1)
 
+    def test_with_rules_is_idempotent(self) -> None:
+        pinned = rules.with_rules("# Task\n")
+        self.assertEqual(rules.with_rules(pinned), pinned)
+        self.assertEqual(rules.with_rules(rules.with_rules(pinned)).count(rules.RULES_TITLE), 1)
+        # A prompt that merely mentions the title elsewhere is still pinned.
+        quoted = f"Quote:\n{rules.rules_block()}"
+        self.assertEqual(rules.with_rules(quoted), rules.rules_block() + rules.RULES_SEPARATOR + quoted)
+
     def test_off_values_disable_rules_entirely(self) -> None:
         for value in ("off", "OFF", " off ", "0", "false", "no"):
             with self.subTest(value=value):
