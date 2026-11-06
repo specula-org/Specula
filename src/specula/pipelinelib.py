@@ -2364,6 +2364,15 @@ class Pipeline:
             "repair": self.skip_repair_loop,
         }
 
+    def add_resource_validation_limits(self, name: str, limits: list[str]) -> None:
+        """Best-effort: add target-specific validation limits to its summary."""
+        if self.resource_summary is None or not limits:
+            return
+        try:
+            self.resource_summary.add_validation_limits(name, limits)
+        except Exception as exc:
+            log(f"WARNING: cannot record validation limits for {name}: {exc}")
+
     def _complete_resource_summaries(self, names: list[str]) -> None:
         if self.resource_summary is None:
             return
@@ -3977,7 +3986,7 @@ class Pipeline:
             trace_count = (
                 len(list(traces_dir.rglob("*.ndjson"))) if traces_dir.is_dir() and not traces_dir.is_symlink() else 0
             )
-            harness = f"OK (traces: {trace_count})"
+            harness = f"OK (traces: {trace_count})" if trace_count else "WARN (run.sh written, no traces collected)"
         elif harness_dir.is_dir():
             harness = "INCOMPLETE (harness/ exists but no run.sh)"
         else:

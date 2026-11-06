@@ -1040,6 +1040,32 @@ def test_handoff_requires_only_the_required_outputs(tmp_path: Path, monkeypatch:
     assert "brief MISSING" in reason
 
 
+def test_a_handoff_without_traces_is_accepted_with_a_recorded_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run, work = handoff_run(tmp_path, monkeypatch)
+    state = continuous.MainState(stage="confirm", session_id="s")
+    continuous.save_state(work, "t", state, "yield")
+    control.write_json(work / control.CONFIRMATION_REQUEST, {"session_id": "s", "status": "pending"})
+    (work / "traces/t.ndjson").unlink()
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert run._handoff_error("t", state) is None
+    assert f"WARN  t: {output_contract.TRACES_LIMIT}" in out.getvalue()
+    request = continuous.load_request(work)
+    assert request is not None and request["validation_limits"] == [output_contract.TRACES_LIMIT]
+
+    published: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(run.p, "add_resource_validation_limits", lambda name, limits: published.append((name, limits)))
+    run._publish_validation_limits()
+    assert published == [("t", [output_contract.TRACES_LIMIT])]
+    (work / "traces/t.ndjson").write_text("{}\n")  # a later handoff with traces clears it
+    with contextlib.redirect_stdout(out):
+        assert run._handoff_error("t", state) is None
+    request = continuous.load_request(work)
+    assert request is not None and request["validation_limits"] == []
+
+
 def test_missing_sany_stops_before_any_handoff_is_accepted_or_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

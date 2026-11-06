@@ -6,7 +6,7 @@ Write each output to the path below, in the format its stage's skill describes. 
 
 ### Required
 
-Specula checks these before it starts confirmation and returns any problem to this session: each file must be non-empty, `base.tla`, `MC.tla`, and `Trace.tla` must parse with SANY, `findings.json` must follow the validation skill's findings format with every counterexample saved under `{{work_dir}}`, and `traces/` must hold at least one non-empty trace.
+Specula checks these before it starts confirmation and returns any problem to this session: each file must be non-empty, `base.tla`, `MC.tla`, and `Trace.tla` must parse with SANY, and `findings.json` must follow the validation skill's findings format with every counterexample saved under `{{work_dir}}`.
 
 - `{{work_dir}}/modeling-brief.md` — Modeling brief, including the code-review Scenarios that confirmation reads
 - `{{spec_dir}}/base.tla` — Base specification
@@ -15,7 +15,7 @@ Specula checks these before it starts confirmation and returns any problem to th
 - `{{spec_dir}}/Trace.tla` — Trace validation specification
 - `{{spec_dir}}/Trace.cfg` — Trace validation config
 - `{{work_dir}}/harness/run.sh` — One-command build + run + collect traces
-- `{{work_dir}}/traces/*.ndjson` — Trace files from test runs
+- `{{work_dir}}/traces/*.ndjson` — Trace files from test runs. Required whenever the harness can run; if it cannot, explain why in `bug-report.md`, and Specula records in the summary that trace validation did not run
 - `{{spec_dir}}/bug-report.md` — Bug hunting results, also when no bug was found
 - `{{spec_dir}}/findings.json` — Machine-readable mirror of the bug report (`"findings": []` when there is none)
 

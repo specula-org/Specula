@@ -337,6 +337,20 @@ class ContinuousCLI(unittest.TestCase):
         summary = (run / "pipeline-summary.md").read_text()
         self.assertIn("- **Phase 2 (Spec Gen)**: OK (4/4 files", summary)  # the phased lines
 
+    def test_a_handoff_without_traces_is_confirmed_and_the_gap_is_reported(self) -> None:
+        self.flag("no-traces")
+        result = self.run_cli("--agent=fake", "footest")
+        run = self.run_dir()
+        self.assert_complete(result, run)
+        self.assertEqual(len(self.main_events()), 1)  # accepted at once, not resumed
+        self.assertEqual(self.worker_starts("CR-1"), 1)
+        self.assertIn("WARN  footest: No execution traces were collected", result.stdout)
+        summary = (run / "footest/.specula-output/summary.md").read_text()
+        coverage = summary.split("## Run coverage", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("- No execution traces were collected, so trace validation did not compare the model", coverage)
+        pipeline_summary = (run / "pipeline-summary.md").read_text()
+        self.assertIn("- **Phase 2.5 (Harness)**: WARN (run.sh written, no traces collected)", pipeline_summary)
+
     def test_missing_sany_stops_without_resuming_main_and_attach_rechecks_the_handoff(self) -> None:
         jar = self.root / "lib/tla2tools.jar"
         jar.unlink()

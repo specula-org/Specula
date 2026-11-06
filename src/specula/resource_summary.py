@@ -562,6 +562,20 @@ class ResourceSummaryTracker:
             state.run_complete = True
             self._publish(name)
 
+    def add_validation_limits(self, name: str, limits: Iterable[str]) -> None:
+        """Add limits found during this run (e.g. at a handoff) to one target's summary."""
+        state = self._states.get(name)
+        if state is None:
+            return
+        added = tuple(
+            limit
+            for limit in dict.fromkeys(limits)
+            if isinstance(limit, str) and limit.strip() and limit not in state.validation_limits
+        )
+        if added:
+            state.validation_limits += added
+            self._publish(name)
+
     def refresh(self) -> None:
         """Regenerate every user-facing summary from its in-memory state."""
         for name in self._states:

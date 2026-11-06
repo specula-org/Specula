@@ -636,6 +636,8 @@ class ContinuousRun:
                 _log(f"ERROR: pipeline cannot complete with unfinished conversation(s) in {phases}")
                 return 1
         p.generate_summary()
+        if not p.dry_run:
+            self._publish_validation_limits()
         p._complete_resource_summaries(names)
         p.refresh_output_indexes()
         if not p.dry_run:
@@ -918,6 +920,9 @@ class ContinuousRun:
         sys.stdout.write(report)
         for problem in problems:
             print(f"    - {problem.splitlines()[0]}")
+        limits = output_contract.handoff_limits(work)
+        for limit in limits:
+            print(f"  WARN  {name}: {limit}")
         if gate != 0:
             print("Acceptance gate:")
             print(f"  FAILED  {name}: see the message above")
@@ -942,7 +947,20 @@ class ContinuousRun:
                 + ". Jobs started inside the session stop with it. Restart any job whose results you need, "
                 "wait for it in the foreground, harvest its results, then request confirmation again."
             )
+        request = load_request(work)
+        if request is not None:
+            # Bound to this handoff; the next handoff writes a new request.
+            request["validation_limits"] = limits
+            save_request(work, request)
         return None
+
+    def _publish_validation_limits(self) -> None:
+        """Carry each target's accepted-handoff limits (e.g. no traces) into its summary."""
+        for name in self.names:
+            request = load_request(self.work(name)) or {}
+            limits = request.get("validation_limits")
+            if isinstance(limits, list):
+                self.p.add_resource_validation_limits(name, [limit for limit in limits if isinstance(limit, str)])
 
     def _reject(self, name: str, reason: str) -> None:
         work = self.work(name)

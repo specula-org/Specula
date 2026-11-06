@@ -1029,6 +1029,22 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
         self.assertIn("- Configured maximum parallelism: 1", text)
         self.assertIn("- Configured TLC limits: 8G memory; 4 workers", text)
 
+    def test_target_limits_found_during_the_run_join_the_run_coverage(self) -> None:
+        other = self.target_dir("other")
+        tracker = self.tracker({"demo": self.work_dir, "other": other}, validation_limits=("Run-wide limit.",))
+        tracker.initialize(resume=False)
+        tracker.add_validation_limits("demo", ["No traces were collected.", "No traces were collected.", " "])
+        tracker.add_validation_limits("demo", ["Run-wide limit."])
+        tracker.add_validation_limits("missing", ["ignored"])
+        tracker.complete_run()
+        self.assertIn(
+            "## Run coverage\n\n- Run-wide limit.\n- No traces were collected.\n", self.summary(self.work_dir)
+        )
+        self.assertNotIn("No traces were collected.", self.summary(other))
+        self.assertEqual(
+            self.state(self.work_dir)["validation_limits"], ["Run-wide limit.", "No traces were collected."]
+        )
+
     def test_complete_summary_preserves_final_findings_and_orders_sections(self) -> None:
         fragment = (
             "The run reproduced one issue and found one mitigated issue.\n\n"

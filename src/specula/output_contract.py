@@ -16,13 +16,16 @@ Required, with their consumers:
   reports; MC and Trace extend base.
 - ``spec/MC.cfg``, ``spec/Trace.cfg``: the configurations model checking and
   trace validation run, including the full trace re-validation of a repair.
-- ``harness/run.sh`` and ``traces/*.ndjson``: trace re-collection and the
-  trace re-validation of repairs.
+- ``harness/run.sh``: trace re-collection and the trace re-validation of
+  repairs.
 - ``spec/bug-report.md`` and ``spec/findings.json``: the confirmation inputs;
   ``findings.json`` must pass the dispatcher's own MC-input validation.
 
-Each file must be non-empty, each required module must parse with SANY, and
-``traces/`` must hold a non-empty trace. ``SPECULA_STRICT_OUTPUTS=on`` restores
+Each file must be non-empty and each required module must parse with SANY.
+Traces are expected whenever the harness can run, but, as in phased mode, a
+handoff without them is accepted: the gap becomes a validation limit of the
+target's summary instead of failing a target whose model checking and
+code-review candidates are still worth confirming. ``SPECULA_STRICT_OUTPUTS=on`` restores
 the full contract for ablation: the prompt lists every phase output as
 required and the handoff requires each of them. A run keeps the value it was
 created with (see ``pipelinelib``).
@@ -91,6 +94,10 @@ _HINTS = {
     "harness/INSTRUMENTATION.md": "the guide for adjusting the instrumentation",
     "spec/changelog.md": "the validation changelog",
 }
+TRACES_LIMIT = (
+    "No execution traces were collected, so trace validation did not compare the model with the "
+    "implementation; spec/bug-report.md records why."
+)
 SANY_TIMEOUT_S = 120
 _SANY_ERRORS = re.compile(r"^\*\*\* Errors: *[1-9]|^Semantic errors:", re.MULTILINE)
 _SANY_NOISE = ("Parsing file ", "Semantic processing of module ", "Linting of module ", "****** SANY")
@@ -176,19 +183,22 @@ def sany_problem(spec_dir: Path, module: str, java: str, jars: list[Path]) -> st
     )
 
 
-def _traces_problem(work: Path) -> str | None:
+def traces_collected(work: Path) -> bool:
+    """Whether ``traces/`` holds at least one non-empty ``*.ndjson`` trace."""
     traces = work / TRACES_DIR
     if traces.is_dir() and not traces.is_symlink():
         for path in traces.rglob("*.ndjson"):
             try:
                 if path.is_file() and path.stat().st_size > 0:
-                    return None
+                    return True
             except OSError:
                 continue
-    return (
-        "`traces/` holds no non-empty `*.ndjson` trace. Run `harness/run.sh` to collect the traces "
-        "trace validation used, or record in `spec/BLOCKED.md` why no trace can be collected."
-    )
+    return False
+
+
+def handoff_limits(work: Path) -> list[str]:
+    """Validation limits an accepted handoff carries into the target's summary."""
+    return [] if traces_collected(work) else [TRACES_LIMIT]
 
 
 def handoff_problems(work: Path, *, strict: bool) -> list[str]:
@@ -210,9 +220,6 @@ def handoff_problems(work: Path, *, strict: bool) -> list[str]:
             directory = work / relative
             if not directory.is_dir() or not any(path.is_file() for path in directory.rglob("*")):
                 problems.append(f"`{relative}/` is missing or empty: write the harness sources it holds.")
-    trace_problem = _traces_problem(work)
-    if trace_problem is not None:
-        problems.append(trace_problem)
     findings = work / "spec" / "findings.json"
     if _has_content(findings):
         _, errors = _expected_mc_ids(work / "spec")

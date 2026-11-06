@@ -143,14 +143,22 @@ def test_findings_use_the_dispatcher_validation(tmp_path: Path, sany: Path) -> N
     assert problem.startswith("`spec/findings.json`: Expecting property name")
 
 
-def test_traces_must_hold_a_non_empty_trace(tmp_path: Path, sany: Path) -> None:
+def test_missing_traces_are_a_validation_limit_not_a_rejection(tmp_path: Path, sany: Path) -> None:
     work = tmp_path / "work"
     write_required(work)
+    assert oc.traces_collected(work) and oc.handoff_limits(work) == []
     (work / "traces/run-1/t.ndjson").write_text("")
-    (problem,) = oc.handoff_problems(work, strict=False)
-    assert problem.startswith("`traces/` holds no non-empty `*.ndjson` trace. Run `harness/run.sh`")
+    for strict in (False, True):
+        problems = oc.handoff_problems(work, strict=strict)
+        assert not any("traces" in problem for problem in problems)
+    assert oc.handoff_limits(work) == [oc.TRACES_LIMIT]
     shutil.rmtree(work / "traces")
-    assert oc.handoff_problems(work, strict=False) == [problem]
+    assert oc.handoff_problems(work, strict=False) == [] and oc.handoff_limits(work) == [oc.TRACES_LIMIT]
+    (work / "harness/run.sh").unlink()  # the harness entry point stays required
+    assert oc.handoff_problems(work, strict=False) == [
+        "`harness/run.sh` is missing: write the one-command script that builds the instrumented code, "
+        "runs it, and collects traces."
+    ]
 
 
 def test_strict_requires_the_advisory_files_and_harness_sources(tmp_path: Path, sany: Path) -> None:

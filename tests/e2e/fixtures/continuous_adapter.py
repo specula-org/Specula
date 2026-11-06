@@ -10,6 +10,7 @@ Behavior switches are files next to this script:
   fail-confirm    the CR-1 worker fails once
   minimal         the first pass writes only the outputs continuous mode requires
   sany-error      the first pass writes a Trace.tla that the fake SANY rejects
+  no-traces       the first pass collects no traces (the harness cannot run)
   fix-on-rejection  a main call resumed with unaccepted required outputs rewrites
                   each output the reason names
 
@@ -208,7 +209,8 @@ def validation() -> None:
         (spec / "brief-coverage.md").write_text("Fixture coverage.\n")
         (spec / "changelog.md").write_text("Fixture validation; MC was not run.\n")
     (work / "harness/run.sh").write_text("#!/bin/sh\n")
-    (work / "traces/fixture.ndjson").write_text('{"event":"fixture"}\n')
+    if not (here / "no-traces").exists():
+        (work / "traces/fixture.ndjson").write_text('{"event":"fixture"}\n')
     (spec / "bug-report.md").write_text("# Fixture report\nNo semantic verification performed.\n")
     findings: list[dict[str, str]] = []
     if (here / "repair").exists():
