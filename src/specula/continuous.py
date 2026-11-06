@@ -21,6 +21,10 @@ Durable lifecycle, per target (``<work>/.context-control/``):
     ``auto_resumes`` how many times the controller already resumed the
     current handoff with such a reason (reset when a handoff is accepted).
 
+``abandoning.json`` (controller-owned, transient)
+    A ``--fresh-context`` abandonment in progress. Until it is removed, every
+    invocation finishes that abandonment before any other work.
+
 ``confirmation.json`` (written by context_runner at each yield)
     ``pending`` -> ``confirming`` (with the dispatch identity) -> ``completed``,
     or ``rejected``. A request bound to another native session fails closed.
@@ -76,6 +80,7 @@ PHASE_KEY = "main"
 LAUNCHER = "launch_continuous.sh"
 STATE_FILE = ".context-control/main-state.json"
 ABANDONED_DIR = ".context-control/abandoned"
+ABANDONING_FILE = ".context-control/abandoning.json"  # a --fresh-context abandonment in progress
 STAGES = ("main", "confirm", "closed", "classified", "complete")
 REQUEST_STATUSES = ("pending", "confirming", "completed", "rejected")
 CONFIRMATION_ENV = "SPECULA_CI_CONFIRMATION"  # lets confirmation run while main stays suspended
@@ -258,6 +263,8 @@ def has_unfinished_work(pipeline: Pipeline) -> bool:
         except ContinuousError as exc:
             raise resumelib.ResumeError(str(exc)) from exc
         if state is not None and state.stage != "complete":
+            return True
+        if (Path(pipeline.get_work_dir(name)) / ABANDONING_FILE).is_file():
             return True
     return False
 
@@ -641,7 +648,7 @@ class ContinuousRun:
     def _start(self) -> None:
         """Create missing state; a fresh-context invocation abandons the old session's records."""
         p = self.p
-        if p.fresh_context:
+        if p.fresh_context or any((self.work(name) / ABANDONING_FILE).is_file() for name in self.names):
             self._abandon_previous_sessions()
             return
         for name in self.names:
@@ -654,14 +661,30 @@ class ContinuousRun:
         p.regenerate_ledger()
 
     def _abandon_previous_sessions(self) -> None:
+        """Archive the old session's records and start fresh; resumable after a crash.
+
+        The abandoning marker is durable before anything moves and is removed
+        only once the fresh state is complete, so an interrupted abandonment is
+        finished by the next invocation instead of leaving no state or the old
+        session's request looking current.
+        """
         p = self.p
         stamp = f"{time.time_ns()}"
         for name in self.names:
             work = self.work(name)
+            marker = work / ABANDONING_FILE
+            try:
+                stamp = str(json.loads(marker.read_text())["stamp"])
+            except FileNotFoundError:
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                write_json(marker, {"stamp": stamp})
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                raise ContinuousError(f"{name}: invalid fresh-context marker {marker}: {exc}") from exc
             archive = work / ABANDONED_DIR / stamp
             for relative in (STATE_FILE, CONFIRMATION_REQUEST):
                 source = work / relative
-                if source.is_file():
+                # Archived once: a file next to an archived copy is this abandonment's own output.
+                if source.is_file() and not (archive / source.name).exists():
                     archive.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(source), str(archive / source.name))
         # Recover like the phased pipeline: restore an uncommitted repair
@@ -684,6 +707,8 @@ class ContinuousRun:
             needing = [name for name in self.names if self._open_requests(name)]
             if needing:
                 self._reserve_repair_round(needing)
+        for name in self.names:
+            (self.work(name) / ABANDONING_FILE).unlink(missing_ok=True)
 
     def _position(self, name: str) -> MainState:
         """Reconcile one target's stage with its durable evidence (idempotent)."""

@@ -646,6 +646,27 @@ class ContinuousFaults(unittest.TestCase):
         self.assertEqual(len(self.starts("CR-1")), 2)
         self.assertEqual([e["resumed"] for e in self.starts("CR-2")], [False, False])
 
+    def test_crash_during_the_fresh_context_abandonment_is_finished_by_the_next_attach(self) -> None:
+        self.flag("block-main-1")
+        run, _ = self.start("--agent=fake", "footest")
+        self.reached("main-1", run)
+        self.crash(run)
+        (self.adapters / "block-main-1").unlink()
+        fault = "specula.pipelinelib:Pipeline.prepare_repair_state"
+        fresh, _ = self.start(f"--run-id={self.run_dir().name}", "--fresh-context", faults=fault)
+        self.reached("Pipeline.prepare_repair_state", fresh)
+        self.assertFalse((self.target() / ".context-control/main-state.json").exists())
+        self.crash(fresh)
+        # A plain attach finishes the abandonment instead of finding no state.
+        resumed = self.attach()
+        self.assert_fresh_session(resumed, ("CR-1",))
+        self.assertEqual(self.sessions(), ["main-footest-1", "main-footest-2"])
+        control = self.target() / ".context-control"
+        self.assertFalse((control / "abandoning.json").exists())
+        archived = list(control.glob("abandoned/*/main-state.json"))
+        self.assertEqual(len(archived), 1)
+        self.assertEqual(json.loads(archived[0].read_text())["context"], "original")
+
     # ── 10. crash after classification, before the summary ──
     def test_crash_after_classification_does_not_repeat_it(self) -> None:
         run, _ = self.start("--agent=fake", "footest", faults="specula.pipelinelib:Pipeline.generate_summary")
