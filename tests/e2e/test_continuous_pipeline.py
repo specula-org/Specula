@@ -15,6 +15,7 @@ import sys
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import test_cli_pipeline as fixtures
 
@@ -207,6 +208,19 @@ class ContinuousCLI(unittest.TestCase):
         self.assert_complete(resumed, run)
         self.assertEqual([e["session"] for e in self.main_events()], ["main-footest-1"] * 2)
         self.assertTrue(self.prompt(2).startswith(_MANUAL_SESSION_RESUME_PROMPT))
+
+    def test_attach_keeps_the_prompt_toggles_the_run_was_created_with(self) -> None:
+        failure = self.flag("fail-main-1")
+        self.run_cli("--agent=fake", "footest")
+        run = self.run_dir()
+        failure.unlink()
+        with mock.patch.dict(os.environ, {"SPECULA_RULES": "off", "SPECULA_NOTES": "off"}):
+            resumed = self.run_cli(f"--run-id={run.name}")
+        self.assert_complete(resumed, run)
+        self.assertIn("SPECULA_RULES: this run was created with rules on", resumed.stdout)
+        self.assertIn("SPECULA_NOTES: this run was created with notes on", resumed.stdout)
+        self.prompt(2)  # still pinned exactly once
+        self.assertIn("SPECULA_RULES: this run was created", (run / "pipeline.log").read_text())
 
     def test_interrupted_confirmation_resumes_without_relaunching_main(self) -> None:
         self.flag("fail-confirm")

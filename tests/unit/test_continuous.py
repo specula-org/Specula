@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -16,7 +17,7 @@ from specula import context_runner as runner
 from specula import continuous, resumelib, rules, stop_gate
 from specula import pipelinelib as pl
 from specula.agent_config import AgentConfigError, AgentSelection, load_agent_routing
-from specula.notes import NOTES_ENV
+from specula.notes import NOTES_ENV, notes_section
 from specula.phaselib import Workspace, _retry_prompt
 from specula.resource_summary import PhaseState, RunDetails, TargetState, render_summary
 
@@ -33,10 +34,12 @@ def _clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         control.REQUEST_ENV,
         control.TOKEN_ENV,
         "MAX_REPAIR_ROUNDS",
-        rules.RULES_ENV,
-        NOTES_ENV,
     ):
         monkeypatch.delenv(key, raising=False)
+    for key in (rules.RULES_ENV, NOTES_ENV):
+        # Registered so values the code under test writes are undone too.
+        monkeypatch.setenv(key, "")
+        monkeypatch.delenv(key)
 
 
 def parse(argv: list[str]) -> tuple[pl.Pipeline, int | None, str]:
@@ -190,6 +193,39 @@ def test_resume_configuration_records_and_restores_the_mode() -> None:
     invalid = dict(document, orchestration="serial")
     with pytest.raises(resumelib.ResumeError, match="invalid stored orchestration"):
         parse(["--run-id=x"])[0]._restore_resume_configuration(invalid)
+
+
+def test_prompt_toggles_are_stored_at_creation_and_restored_on_attach(monkeypatch: pytest.MonkeyPatch) -> None:
+    created, _, _ = parse(["t|g|l|r"])
+    document = created._resume_configuration_document()
+    assert (document["rules"], document["notes"]) == (True, True)
+    monkeypatch.setenv(rules.RULES_ENV, "off")
+    monkeypatch.setenv(NOTES_ENV, "0")
+    legacy = parse(["--orchestration=phased", "t|g|l|r"])[0]._resume_configuration_document()
+    assert "rules" not in legacy and "notes" not in legacy  # identical to runs from before the toggles
+
+    attach, _, _ = parse(["--run-id=x"])
+    attach._restore_resume_configuration(document)
+    assert os.environ[rules.RULES_ENV] == "on" and os.environ[NOTES_ENV] == "on"
+    assert rules.enabled() and notes_section(Path("/w"), first=False)
+    assert len(attach.resume_notices) == 2
+    assert all("keeping that instead of the current off" in notice for notice in attach.resume_notices)
+
+    same, _, _ = parse(["--run-id=x"])
+    same._restore_resume_configuration(document)
+    assert same.resume_notices == [] and os.environ[rules.RULES_ENV] == "on"
+
+    old_run, _, _ = parse(["--run-id=x"])
+    old_run._restore_resume_configuration(legacy)
+    assert os.environ[rules.RULES_ENV] == "off" and not rules.enabled()
+    assert len(old_run.resume_notices) == 2
+
+    monkeypatch.setenv(rules.RULES_ENV, "off")
+    fresh, _, _ = parse(["--run-id=x", "--fresh-context"])
+    fresh._restore_resume_configuration(document, allow_overrides=True)
+    assert os.environ[rules.RULES_ENV] == "off" and fresh.resume_notices == []
+    with pytest.raises(resumelib.ResumeError, match="invalid stored rules"):
+        parse(["--run-id=x"])[0]._restore_resume_configuration(dict(document, rules="yes"))
 
 
 def test_routed_resume_configuration_uses_main_routes(tmp_path: Path) -> None:

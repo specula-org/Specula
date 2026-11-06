@@ -42,7 +42,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     sys.modules["specula.pipelinelib"] = sys.modules[__name__]
-from specula import ci_init, ci_verdict, confirm_first, resumelib
+from specula import ci_init, ci_verdict, confirm_first, notes, resumelib, rules
 from specula import quota as _quota
 from specula.adapters.utils.run_lock import inherited_run_lock_fds
 from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
@@ -388,6 +388,8 @@ class Pipeline:
         self.orchestration = "phased"
         self._orchestration_requested: str | None = None
         self._orchestration_fallback: str | None = None
+        # Attach notes logged inside pipeline.log (e.g. restored prompt toggles).
+        self.resume_notices: list[str] = []
         self.agent = "claude-code"
         self._agent_given = False
         self.agent_config_path: Path | None = None
@@ -1074,7 +1076,28 @@ class Pipeline:
             **({"ci_init": True} if self.ci_init else {}),
             **({"confirm_first": self.confirm_first} if self.confirm_first else {}),
             **({"orchestration": self.orchestration} if self.orchestration == "continuous" else {}),
+            # Prompt toggles change every prompt and confirmation-cache digest,
+            # so a run keeps the values it was created with. Absent = off, which
+            # is also how runs from before these features behave.
+            **({"rules": True} if rules.enabled() else {}),
+            **({"notes": True} if notes.enabled() else {}),
         }
+
+    def _restore_prompt_toggles(self, raw: dict[str, Any], *, allow_overrides: bool) -> None:
+        """Run child processes with the rules/notes setting stored at creation."""
+        for key, variable, module in (("rules", rules.RULES_ENV, rules), ("notes", notes.NOTES_ENV, notes)):
+            stored = raw.get(key, False)
+            if not isinstance(stored, bool):
+                raise resumelib.ResumeError(f"invalid stored {key} setting")
+            if allow_overrides:
+                continue  # --fresh-context starts new conversations with the current setting
+            current = module.enabled()
+            if current != stored:
+                os.environ[variable] = "on" if stored else "off"  # inherited by every child process
+                self.resume_notices.append(
+                    f"{variable}: this run was created with {key} {'on' if stored else 'off'}; "
+                    f"keeping that instead of the current {'on' if current else 'off'} so resumed prompts match"
+                )
 
     def _restore_orchestration(self, raw: dict[str, Any]) -> None:
         # Runs created before continuous orchestration have no field: phased.
@@ -1093,6 +1116,7 @@ class Pipeline:
                 "this run was created without manual conversation checkpoints; pass --fresh-context to continue"
             )
         self._restore_orchestration(raw)
+        self._restore_prompt_toggles(raw, allow_overrides=allow_overrides)
         stored_ci_init = raw.get("ci_init", False)
         if not isinstance(stored_ci_init, bool):
             raise resumelib.ResumeError("invalid stored CI initialization mode")
@@ -4364,6 +4388,8 @@ def main(argv: list[str]) -> int:
     os.dup2(tee_in.fileno(), 2)
     try:
         print("\n" + _invocation_boundary(invocation_id, "started"))
+        for notice in p.resume_notices:
+            log(notice)
         code = p.main()
     except SystemExit as e:
         code = e.code if isinstance(e.code, int) else 1
