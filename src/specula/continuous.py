@@ -720,6 +720,12 @@ class ContinuousRun:
         self._start()
         while True:
             states = {name: self._position(name) for name in self.names}
+            stalled = self._unfinished_reservations(states)
+            if stalled:
+                # A crash interrupted a round reservation: finish it before any
+                # main session starts, so the round is not handed out again.
+                self._reserve_repair_round(stalled)
+                continue
             main_names = [name for name in self.names if states[name].stage == "main"]
             if main_names:
                 self._run_main(main_names, states)
@@ -948,31 +954,54 @@ class ContinuousRun:
             needing.append(name)
         if p.skip_repair_loop and not p.skip_confirmation and any(self._open_requests(name) for name in names):
             _log("Skipping repair loop (--skip-repair-loop)")
-        if needing and not self._reserve_repair_round(needing):
-            needing = []
+        reserved = self._reserve_repair_round(needing) if needing else []
         for name in names:
-            if name not in needing:
+            # Targets the reserved round did not take wait, still in "confirm", for the next round.
+            if reserved is None or name not in needing:
                 state = self._load(name)
                 state.stage = "closed"
                 state.rejection = None
                 self._save(name, state, "closed")
                 self._close_conversation(name)
 
-    def _reserve_repair_round(self, needing: list[str]) -> bool:
-        """Reserve one global round (once) and hand the OPEN requests to the main sessions."""
+    def _unfinished_reservations(self, states: dict[str, MainState]) -> list[str]:
+        """Targets reserved for the current round whose hand-over to the main session was interrupted."""
+        p = self.p
+        if p.skip_confirmation or p.skip_repair_loop:
+            return []
+        _round, pending = p.load_repair_loop_state()
+        return [
+            name
+            for name in self.names
+            if name in pending
+            and states[name].stage == "confirm"
+            and (load_request(self.work(name)) or {}).get("status") == "completed"
+            and self._open_requests(name)
+        ]
+
+    def _reserve_repair_round(self, needing: list[str]) -> list[str] | None:
+        """Reserve one global round (once) and hand the OPEN requests to the main sessions.
+
+        Returns the targets handed a round, or None when the round cap deferred
+        every OPEN request. A target joins each round at most once: while the
+        current round still has reserved targets, only those are handed over
+        and the other targets wait for the next round.
+        """
         p = self.p
         cap = int(p.max_repair_rounds)
         round_, pending = p.load_repair_loop_state()
-        if not set(pending) & set(needing):
+        current = sorted(set(pending) & set(needing))
+        if current:
+            needing = current
+        else:
             self._repair_loop_banner()
             if cap != 0 and round_ >= cap:
                 deferred = p.move_open_requests_to_deferred()
                 p.regenerate_ledger()
                 _log(f"Repair loop reached its {cap}-round cap; deferred {deferred} still-OPEN request(s).")
-                return False
+                return None
             round_ += 1
-        pending = sorted(set(pending) | set(needing))
-        p.save_repair_loop_state(round_, pending)
+            p.save_repair_loop_state(round_, sorted(set(pending) | set(needing)))
         for name in needing:
             existing = p.load_open_repair_snapshot(name)
             if existing is None:
@@ -986,4 +1015,4 @@ class ContinuousRun:
             self._save(name, state, f"repair-round-{round_}")
             _log(f"{name}: resuming the main session for repair round {round_}")
         p.regenerate_ledger()
-        return True
+        return needing

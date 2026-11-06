@@ -705,3 +705,55 @@ def test_pi_extension_accepts_every_continuous_phase() -> None:
     source = (Path(runner.ROOT) / "tools/context_control/pi-extension.js").read_text()
     for phase in control.CONTINUOUS_PHASES:
         assert f'"{phase}"' in source
+
+
+# ── repair-round reservation ────────────────────────────────────────────────
+
+
+def two_target_run(tmp_path: Path) -> tuple[pl.Pipeline, continuous.ContinuousRun]:
+    from test_pipelinelib import make_rr
+
+    pipeline = pl.Pipeline()
+    pipeline.targets = ["A|g|l|r", "B|g|l|r"]
+    pipeline.run_dir = tmp_path
+    for name in ("A", "B"):
+        work = Path(pipeline.get_work_dir(name))
+        (work / "spec/repair-requests").mkdir(parents=True)
+        make_rr(work / "spec/repair-requests", "RR-002", "OPEN")
+        continuous.save_state(work, name, continuous.MainState(stage="confirm", session_id=f"s-{name}"), "yield")
+        control.write_json(work / control.CONFIRMATION_REQUEST, {"session_id": f"s-{name}", "status": "completed"})
+    return pipeline, continuous.ContinuousRun(pipeline)
+
+
+def test_a_target_joins_each_repair_round_once(tmp_path: Path) -> None:
+    # B was reserved for round 1 but its hand-over was interrupted; A already did round 1.
+    pipeline, run = two_target_run(tmp_path)
+    pipeline.save_repair_loop_state(1, ["B"])
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert run._reserve_repair_round(["A", "B"]) == ["B"]
+    assert pipeline.load_repair_loop_state() == (1, ["B"])
+    assert (run._load("A").stage, run._load("A").repair_round) == ("confirm", 0)
+    assert (run._load("B").stage, run._load("B").repair_round) == ("main", 1)
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert run._reserve_repair_round(["A"]) == ["A"]  # the next round once B's is done
+    assert pipeline.load_repair_loop_state() == (2, ["A", "B"])
+
+
+def test_an_interrupted_reservation_is_finished_before_any_main_session(tmp_path: Path) -> None:
+    pipeline, run = two_target_run(tmp_path)
+    pipeline.save_repair_loop_state(1, ["A", "B"])
+    a = run._load("A")
+    a.stage, a.repair_round = "main", 1
+    run._save("A", a, "repair-round-1")  # the crash hit before B's state was saved
+    launched: list[tuple[str, int]] = []
+
+    def stop(names: list[str], states: dict[str, continuous.MainState]) -> None:
+        launched.extend((name, states[name].repair_round) for name in names)
+        raise SystemExit(0)
+
+    run._start = lambda: None  # type: ignore[method-assign]
+    run._run_main = stop  # type: ignore[method-assign]
+    with contextlib.redirect_stdout(io.StringIO()), pytest.raises(SystemExit):
+        run._drive()
+    assert launched == [("A", 1), ("B", 1)]
+    assert pipeline.load_repair_loop_state() == (1, ["A", "B"])
