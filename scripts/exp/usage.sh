@@ -13,6 +13,10 @@
 #                          "claude" maps to the default $HOME/.claude)
 #   default              — $HOME/.claude/.credentials.json
 #
+# On macOS the credentials live in the login Keychain rather than in a file, so
+# when the resolved file does not exist the profile's Keychain item is read
+# instead (set CLAUDE_CREDENTIALS to force a file and skip the Keychain).
+#
 # Exit codes:
 #   0  ok (or under threshold in --check mode)
 #   1  over threshold (--check mode)
@@ -30,15 +34,58 @@ else
   CREDENTIALS="$HOME/.claude/.credentials.json"
 fi
 
+# Base name of Claude Code's Keychain item.
+KEYCHAIN_SERVICE="${CLAUDE_KEYCHAIN_SERVICE:-Claude Code-credentials}"
+
 die() { echo "error: $*" >&2; exit 2; }
 
+# Keychain items to try, in order. Claude Code names its item
+# "<base>-<h>", h being the first 8 hex digits of sha256(config dir), whenever
+# CLAUDE_CONFIG_DIR is set (even to ~/.claude), and plain "<base>" otherwise.
+# Specula's adapter always sets it, so the suffixed item comes first; the plain
+# item is only ever the default profile's, so no other profile may fall back to it.
+keychain_services() {
+  [[ "$(uname -s)" == "Darwin" ]] || return 1
+  [[ -z "${CLAUDE_CREDENTIALS:-}" ]] || return 1
+  local hash
+  hash="$(python3 -c '
+import hashlib, sys, unicodedata
+print(hashlib.sha256(unicodedata.normalize("NFC", sys.argv[1]).encode()).hexdigest()[:8])
+' "${CREDENTIALS%/.credentials.json}")" || return 1
+  printf '%s\n' "$KEYCHAIN_SERVICE-$hash"
+  if [[ -z "${CLAUDE_CONFIG_DIR:-}" && "$CREDENTIALS" == "$HOME/.claude/.credentials.json" ]]; then
+    printf '%s\n' "$KEYCHAIN_SERVICE"
+  fi
+}
+
+# An existing file always wins, so file-based profiles are unaffected.
+credentials_json() {
+  if [[ -f "$CREDENTIALS" ]]; then
+    cat "$CREDENTIALS"
+    return 0
+  fi
+  local service json
+  while IFS= read -r service; do
+    if json="$(security find-generic-password -s "$service" -w 2>/dev/null)" && [[ -n "$json" ]]; then
+      printf '%s' "$json"
+      return 0
+    fi
+  done < <(keychain_services)
+  return 1
+}
+
 fetch_usage() {
-  [[ -f "$CREDENTIALS" ]] || die "credentials not found at $CREDENTIALS"
-  local token
-  token="$(python3 -c "
+  local credentials token tried nl=$'\n'
+  if ! credentials="$(credentials_json)" || [[ -z "$credentials" ]]; then
+    tried="$(keychain_services || true)"
+    if [[ -n "$tried" ]]; then
+      die "credentials not found at $CREDENTIALS, and no Keychain item named ${tried//$nl/ or } (run: claude /login)"
+    fi
+    die "credentials not found at $CREDENTIALS"
+  fi
+  token="$(printf '%s' "$credentials" | python3 -c "
 import json, sys
-with open('$CREDENTIALS') as f:
-    d = json.load(f)
+d = json.load(sys.stdin)
 token = d.get('claudeAiOauth', d).get('accessToken', '')
 if not token:
     sys.exit(1)
