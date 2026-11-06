@@ -264,6 +264,34 @@ class ContinuousCLI(unittest.TestCase):
         self.assertEqual(rejected.returncode, 1)
         self.assertIn("no unfinished agent conversation", rejected.stderr)
 
+    def test_crash_before_the_summary_does_not_repeat_classification(self) -> None:
+        script = (
+            "import sys\nfrom unittest.mock import patch\n"
+            f"sys.path.insert(0, {str(self.root / 'src')!r})\n"
+            "from specula import pipelinelib\n"
+            "with patch('specula.pipelinelib.Pipeline.generate_summary', side_effect=SystemExit(143)):\n"
+            "    raise SystemExit(pipelinelib.main(sys.argv[1:]))\n"
+        )
+        env = {key: value for key, value in os.environ.items() if key not in fixtures._VOLATILE}
+        env["HOME"] = str(self.work)
+        stopped = subprocess.run(
+            [sys.executable, "-c", script, "--agent=fake", f"--artifact={self.source}", "footest"],
+            cwd=self.work,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self.assertEqual(stopped.returncode, 143, stopped.stdout + stopped.stderr)
+        run = self.run_dir()
+        self.assertEqual(self.state(run)["stage"], "classified")
+        self.assertEqual(self.worker_starts("classify"), 1)
+        resumed = self.run_cli(f"--run-id={run.name}")
+        self.assert_complete(resumed, run)
+        self.assertIn("Phase 4b already completed for every target", resumed.stdout)
+        self.assertEqual(self.worker_starts("classify"), 1)
+        self.assertTrue((run / "pipeline-summary.md").is_file())
+
     def test_fresh_context_starts_a_new_session_from_existing_artifacts(self) -> None:
         self.flag("fail-main-1")
         failed = self.run_cli("--agent=fake", "footest")

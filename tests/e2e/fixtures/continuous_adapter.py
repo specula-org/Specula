@@ -153,6 +153,7 @@ elif "Consolidate + dedup" in prompt:
     (work / "spec/candidates.json").write_text(json.dumps({"generated_by": "consolidate", "findings": candidates}))
     respond("Fixture candidates written.")
 elif phase == "bug_classification":
+    event("start", "classify", target=target)
     statuses = _confirmation_finding_statuses((work / "confirmed-bugs.md").read_text()) or {}
     (work / "bug-severity.md").write_text("# Severity Classification\n\n## Summary\n\n## Per-entry classification\n")
     bullets = "".join(f"- **{fid} — fixture** — Status: {status}. Fixture only.\n" for fid, status in statuses.items())

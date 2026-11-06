@@ -13,10 +13,11 @@ Durable lifecycle, per target (``<work>/.context-control/``):
 ``main-state.json`` (controller-owned; atomic writes)
     ``stage``: ``main`` (the main conversation owns the work), ``confirm`` (it
     yielded; a confirmation batch is pending or running), ``closed`` (the
-    conversation is finished; classification and summary remain), or
-    ``complete``. ``repair_round`` is the round the main conversation works on
-    (0 = initial pass), ``session_id`` the native session every handoff must
-    come from, and ``rejection`` the reason the last handoff was refused.
+    conversation is finished; classification and summary remain),
+    ``classified`` (only the summary remains), or ``complete``.
+    ``repair_round`` is the round the main conversation works on (0 = initial
+    pass), ``session_id`` the native session every handoff must come from,
+    and ``rejection`` the reason the last handoff was refused.
 
 ``confirmation.json`` (written by context_runner at each yield)
     ``pending`` -> ``confirming`` (with the dispatch identity) -> ``completed``,
@@ -73,7 +74,7 @@ PHASE_KEY = "main"
 LAUNCHER = "launch_continuous.sh"
 STATE_FILE = ".context-control/main-state.json"
 ABANDONED_DIR = ".context-control/abandoned"
-STAGES = ("main", "confirm", "closed", "complete")
+STAGES = ("main", "confirm", "closed", "classified", "complete")
 REQUEST_STATUSES = ("pending", "confirming", "completed", "rejected")
 CONFIRMATION_ENV = "SPECULA_CI_CONFIRMATION"  # lets confirmation run while main stays suspended
 HISTORY_LIMIT = 100
@@ -539,14 +540,21 @@ class ContinuousRun:
             except (ContinuousError, resumelib.ResumeError) as exc:
                 _log(f"ERROR: {exc}")
                 return 1
-        if not p.skip_confirmation and not p.dry_run:
+        classified = not p.dry_run and all(self._load(name).stage in ("classified", "complete") for name in names)
+        if not p.skip_confirmation and not p.dry_run and not classified:
             p.persist_findings(names)
-        if not p.skip_classification:
+        if p.skip_classification:
+            _log("Skipping Phase 4b (--skip-classification)")
+        elif classified:
+            _log("Phase 4b already completed for every target; continuing with the summary")
+        else:
             with p.resource_phase("phase4b", names):
                 p.wait_for_phase_quota("classify")
                 p.run_phase4b_classification()
-        else:
-            _log("Skipping Phase 4b (--skip-classification)")
+            if not p.dry_run:
+                # Durable before the summary: an interruption now must not repeat Phase 4b.
+                for name in names:
+                    self._advance(name, "classified")
         if not p.dry_run and p.run_dir is not None:
             try:
                 active = resumelib.active_entries(p.run_dir)
@@ -562,10 +570,7 @@ class ContinuousRun:
         p.refresh_output_indexes()
         if not p.dry_run:
             for name in names:
-                state = self._load(name)
-                if state.stage != "complete":
-                    state.stage = "complete"
-                    save_state(self.work(name), name, state, "complete")
+                self._advance(name, "complete")
         elapsed = int(time.time()) - start
         print()
         _log(f"Pipeline completed in {elapsed // 60}m {elapsed % 60}s")
@@ -610,6 +615,12 @@ class ContinuousRun:
 
     def _save(self, name: str, state: MainState, event: str) -> None:
         save_state(self.work(name), name, state, event)
+
+    def _advance(self, name: str, stage: str) -> None:
+        state = self._load(name)
+        if STAGES.index(state.stage) < STAGES.index(stage):
+            state.stage = stage
+            self._save(name, state, stage)
 
     def _close_conversation(self, name: str) -> None:
         resumelib.complete_turn(("phase", PHASE_KEY, name), allow_previous_owner=True)
@@ -665,7 +676,7 @@ class ContinuousRun:
         """Reconcile one target's stage with its durable evidence (idempotent)."""
         work = self.work(name)
         state = self._load(name)
-        if state.stage in ("closed", "complete"):
+        if state.stage in ("closed", "classified", "complete"):
             self._close_conversation(name)
             return state
         request = load_request(work)
