@@ -104,6 +104,30 @@ async def test_mcp_discovery_and_real_tool_call(monkeypatch: pytest.MonkeyPatch,
     assert json.loads((tmp_path / "request.json").read_text())["handoff_path"] == str(work / "handoff.md")
 
 
+@pytest.mark.asyncio
+async def test_mcp_confirmation_returns_output_problems_as_the_tool_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    work = configure(monkeypatch, tmp_path)
+    monkeypatch.setenv("SPECULA_PHASE", "main")
+    (work / "modeling-brief.md").write_text("## Scenario 1: CR candidate")
+    (work / "spec").mkdir()
+    (work / "spec/bug-report.md").write_text("No MC violation.")
+    server = Path(control.__file__).resolve().parents[2] / "tools/context_control/mcp_server.py"
+    params = StdioServerParameters(command=sys.executable, args=[str(server)], env=dict(os.environ))
+    async with stdio_client(params) as (reader, writer), ClientSession(reader, writer) as session:
+        await session.initialize()
+        result = await session.call_tool(control.CONFIRMATION_TOOL, {})
+    assert result.isError
+    text = "".join(getattr(item, "text", "") for item in result.content)
+    assert "Confirmation was not requested. Required outputs are missing or invalid" in text
+    assert "`spec/MC.tla` is missing" in text and "`spec/findings.json` is missing" in text
+    assert not (tmp_path / "request.json").exists()
+
+
 @pytest.mark.parametrize("agent", ["codex", "claude-code", "pi", "opencode", "copilot-cli"])
 @pytest.mark.parametrize("outcome", ["completed", "failed"])
 @pytest.mark.parametrize("native_failure", [False, True])

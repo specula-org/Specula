@@ -170,6 +170,10 @@ def sany_problem(spec_dir: Path, module: str, java: str, jars: list[Path]) -> st
         except OSError as exc:
             raise SanyUnavailable(f"cannot run SANY: {exc}") from exc
     output = result.stdout + result.stderr
+    if "****** SANY" not in output:
+        # Every SANY run prints its banner first; without it Java did not start SANY (e.g. a broken jar).
+        first = next((line.strip() for line in output.splitlines() if line.strip()), f"exit {result.returncode}")
+        raise SanyUnavailable(f"SANY did not start: {first}")
     # Some SANY releases exit 0 after semantic errors; their error count still shows them.
     if result.returncode == 0 and _SANY_ERRORS.search(output) is None:
         return None
@@ -201,10 +205,11 @@ def handoff_limits(work: Path) -> list[str]:
     return [] if traces_collected(work) else [TRACES_LIMIT]
 
 
-def handoff_problems(work: Path, *, strict: bool) -> list[str]:
+def handoff_problems(work: Path, *, strict: bool, sany_optional: bool = False) -> list[str]:
     """Actionable problems with the required outputs in ``work``; empty when the handoff is valid.
 
-    Raises SanyUnavailable when the modules cannot be parsed in this environment.
+    Raises SanyUnavailable when the modules cannot be parsed in this environment,
+    unless ``sany_optional`` (the agent-side precheck) skips the parse instead.
     """
     from specula.confirmlib import _expected_mc_ids
 
@@ -229,10 +234,21 @@ def handoff_problems(work: Path, *, strict: bool) -> list[str]:
             for error in errors
         ]
     modules = [relative for relative in SANY_MODULES if _has_content(work / relative)]
-    if modules:
-        java, jars = sany_tools()
-        for relative in modules:
-            problem = sany_problem(work / "spec", Path(relative).name, java, jars)
-            if problem is not None:
-                problems.append(problem)
+    try:
+        if modules:
+            java, jars = sany_tools()
+            for relative in modules:
+                problem = sany_problem(work / "spec", Path(relative).name, java, jars)
+                if problem is not None:
+                    problems.append(problem)
+    except SanyUnavailable:
+        if not sany_optional:
+            raise
     return problems
+
+
+def rejection(problems: list[str], *, strict: bool) -> str:
+    """The message that returns ``problems`` to the main session."""
+    listed = "\n".join(f"- {problem}" for problem in problems)
+    note = "" if strict else "\n\nRecommended outputs are not checked."
+    return f"Required outputs are missing or invalid:\n\n{listed}{note}"

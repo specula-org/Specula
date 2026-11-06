@@ -6,7 +6,7 @@ Write each output to the path below, in the format its stage's skill describes. 
 
 ### Required
 
-Specula checks these before it starts confirmation and returns any problem to this session: each file must be non-empty, `base.tla`, `MC.tla`, and `Trace.tla` must parse with SANY, and `findings.json` must follow the validation skill's findings format with every counterexample saved under `{{work_dir}}`.
+`request_bug_confirmation` checks these and returns any problem instead of requesting confirmation, and Specula checks them again before it starts confirmation: each file must be non-empty, `base.tla`, `MC.tla`, and `Trace.tla` must parse with SANY, and `findings.json` must follow the validation skill's findings format with every counterexample saved under `{{work_dir}}`.
 
 - `{{work_dir}}/modeling-brief.md` — Modeling brief, including the code-review Scenarios that confirmation reads
 - `{{spec_dir}}/base.tla` — Base specification

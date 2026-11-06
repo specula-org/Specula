@@ -124,6 +124,28 @@ def test_semantic_errors_fail_even_when_sany_exits_zero(tmp_path: Path, sany: Pa
     assert "Unknown operator" in problem
 
 
+def test_a_java_that_does_not_start_sany_is_unavailable_not_a_parse_error(
+    tmp_path: Path, sany: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    work = tmp_path / "work"
+    write_required(work)
+    broken = tmp_path / "broken-bin"
+    broken.mkdir()
+    (broken / "java").write_text(
+        "#!/bin/sh\necho 'Error: Could not find or load main class tla2sany.SANY' >&2\nexit 1\n"
+    )
+    (broken / "java").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{broken}:/usr/bin:/bin")
+    with pytest.raises(oc.SanyUnavailable, match="SANY did not start: Error: Could not find or load main class"):
+        oc.handoff_problems(work, strict=False)
+    # The agent-side precheck skips the parse instead; the other checks still run.
+    assert oc.handoff_problems(work, strict=False, sany_optional=True) == []
+    (work / "spec/MC.cfg").unlink()
+    assert oc.handoff_problems(work, strict=False, sany_optional=True) == [
+        "`spec/MC.cfg` is missing: write the model-checking configuration."
+    ]
+
+
 def test_findings_use_the_dispatcher_validation(tmp_path: Path, sany: Path) -> None:
     work = tmp_path / "work"
     write_required(work)

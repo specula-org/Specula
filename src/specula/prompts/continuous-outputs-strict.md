@@ -2,7 +2,7 @@ Each stage's installed Specula skill is the single source of its methodology. Fo
 
 ## Output
 
-Write each stage's outputs to the same paths, in the same formats, as the separate Specula phases. Specula, the confirmation agents, and later runs read them there. Every output below is required. Specula checks them before it starts confirmation and returns any problem to this session: each file must be non-empty, `base.tla`, `MC.tla`, and `Trace.tla` must parse with SANY, and `findings.json` must follow the validation skill's findings format with every counterexample saved under `{{work_dir}}`. Traces are required whenever the harness can run; if it cannot, explain why in `{{spec_dir}}/bug-report.md`, and Specula records in the summary that trace validation did not run.
+Write each stage's outputs to the same paths, in the same formats, as the separate Specula phases. Specula, the confirmation agents, and later runs read them there. Every output below is required. `request_bug_confirmation` checks them and returns any problem instead of requesting confirmation, and Specula checks them again before it starts confirmation: each file must be non-empty, `base.tla`, `MC.tla`, and `Trace.tla` must parse with SANY, and `findings.json` must follow the validation skill's findings format with every counterexample saved under `{{work_dir}}`. Traces are required whenever the harness can run; if it cannot, explain why in `{{spec_dir}}/bug-report.md`, and Specula records in the summary that trace validation did not run.
 
 Code analysis:
 - `{{work_dir}}/modeling-brief.md` — The primary deliverable (input to spec generation and confirmation)

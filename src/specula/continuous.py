@@ -929,9 +929,7 @@ class ContinuousRun:
         if not accepted:
             return "Confirmation prerequisites are missing:\n" + report.rstrip()
         if problems:
-            listed = "\n".join(f"- {problem}" for problem in problems)
-            note = "" if strict else "\n\nRecommended outputs are not checked."
-            return f"Required outputs are missing or invalid:\n\n{listed}{note}"
+            return output_contract.rejection(problems, strict=strict)
         if gate != 0:
             # Confirmation must never run beside a stray job of the main session
             # (e.g. after the stop-gate fuse opened or on an adapter without hooks).

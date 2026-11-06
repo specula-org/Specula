@@ -11,8 +11,10 @@ Behavior switches are files next to this script:
   minimal         the first pass writes only the outputs continuous mode requires
   sany-error      the first pass writes a Trace.tla that the fake SANY rejects
   no-traces       the first pass collects no traces (the harness cannot run)
-  fix-on-rejection  a main call resumed with unaccepted required outputs rewrites
-                  each output the reason names
+  fix-on-rejection  when the confirmation tool or a resumed main call reports
+                  unaccepted required outputs, rewrite each output it names
+                  (after a tool refusal: in the same turn, then request again)
+  tool-no-sany    the confirmation tool runs without SANY (java off PATH)
 
 Fault-injection switches (tests/e2e/test_continuous_faults.py):
   block-POINT     at POINT, publish reached-POINT.json (pid, pgid, session) and
@@ -153,17 +155,36 @@ def usage(session: str, cost: float) -> None:
     )
 
 
+def request_with_tool() -> None:
+    if not (here / "tool-no-sany").exists():
+        request_confirmation()
+        return
+    path = os.environ["PATH"]
+    os.environ["PATH"] = "/usr/bin:/bin"  # neither the fake SANY nor a usable TLA+ jar
+    try:
+        request_confirmation()
+    finally:
+        os.environ["PATH"] = path
+
+
 def handoff() -> None:
     if (here / "implicit").exists():
         respond("Validation complete; deliverables saved.")
         return
-    try:
-        request_confirmation()
-    except ValueError as exc:
-        # The tool refused; end the turn anyway so the controller's own check runs.
-        (here / "tool-refusal.txt").write_text(str(exc))
-        respond("Repair attempt ended.")
-        return
+    for attempt in (1, 2):
+        try:
+            request_with_tool()
+            break
+        except ValueError as exc:
+            (here / "tool-refusal.txt").write_text(str(exc))
+            event("refusal", "tool", target=target, attempt=attempt)
+            fixable = "Required outputs are missing or invalid" in str(exc)
+            if attempt == 1 and fixable and (here / "fix-on-rejection").exists():
+                fix_rejected_outputs(str(exc))  # the tool result named them; fix in this turn
+                continue
+            # End the turn anyway so the controller's own check runs.
+            respond("Repair attempt ended.")
+            return
     respond(f"{YIELD_PREFIX} {os.environ[TOKEN_ENV]}")
 
 
@@ -231,10 +252,10 @@ def validation() -> None:
     (spec / "findings.json").write_text(json.dumps({"findings": findings}))
 
 
-def fix_rejected_outputs() -> None:
+def fix_rejected_outputs(reason: str) -> None:
     """Rewrite each output an unaccepted handoff named, as an agent reading the reason would."""
     fixed = []
-    for relative in re.findall(r"^- `([^`]+)`", prompt, flags=re.MULTILINE):
+    for relative in re.findall(r"^- `([^`]+)`", reason, flags=re.MULTILINE):
         path = work / relative.rstrip("/")
         if relative.endswith("/"):
             path.mkdir(parents=True, exist_ok=True)
@@ -292,7 +313,7 @@ if phase == "main":
         respond("Fixture provider policy block.")
         raise SystemExit(76)
     if (here / "fix-on-rejection").exists() and "Required outputs are missing or invalid" in prompt:
-        fix_rejected_outputs()
+        fix_rejected_outputs(prompt)
     # The conversation knows it is repairing even when resumed with a generic prompt.
     if (work / "spec/.repair-phase3-snapshot.json").exists():
         repair_pass(session, calls)

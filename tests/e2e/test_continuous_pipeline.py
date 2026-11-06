@@ -290,18 +290,37 @@ class ContinuousCLI(unittest.TestCase):
             self.assertNotIn(advisory, index)
         self.assertIn("| 2 | [Model-checking report](spec/bug-report.md) |", index)
 
-    def test_unparsable_module_is_rejected_with_sany_errors_and_fixed_in_the_same_session(self) -> None:
+    def test_the_tool_returns_output_problems_so_the_agent_fixes_them_before_yielding(self) -> None:
         self.flag("sany-error")
         self.flag("fix-on-rejection")
         result = self.run_cli("--agent=fake", "footest")
         run = self.run_dir()
         self.assert_complete(result, run)
+        self.assertEqual(len(self.main_events()), 1)  # fixed in the same turn; no rejection round trip
+        refusal = (self.adapters / "tool-refusal.txt").read_text()
+        self.assertTrue(refusal.startswith("Confirmation was not requested. Required outputs are missing or invalid"))
+        self.assertIn("- `spec/Trace.tla` does not parse with SANY (exit 255).", refusal)
+        self.assertIn("tla2sany.SANY Trace.tla", refusal)
+        self.assertIn('Encountered "SANY-ERROR"', refusal)
+        self.assertEqual([e["attempt"] for e in self.events() if e["kind"] == "refusal"], [1])
+        fixes = [e for e in self.events() if e["kind"] == "fix"]
+        self.assertEqual([e["fixed"] for e in fixes], [["spec/Trace.tla"]])
+        self.assertNotIn("Confirmation Request Not Accepted", result.stdout)
+        self.assertEqual(self.worker_starts("CR-1"), 1)
+
+    def test_without_sany_in_the_tool_the_controller_rejects_and_resumes_with_sany_errors(self) -> None:
+        self.flag("sany-error")
+        self.flag("fix-on-rejection")
+        self.flag("tool-no-sany")
+        result = self.run_cli("--agent=fake", "footest")
+        run = self.run_dir()
+        self.assert_complete(result, run)
+        self.assertFalse((self.adapters / "tool-refusal.txt").exists())  # the tool did not block
         self.assertEqual([e["session"] for e in self.main_events()], ["main-footest-1"] * 2)
         resumed = self.prompt(2)
         self.assertIn("Confirmation Request Not Accepted", resumed)
         self.assertIn("Required outputs are missing or invalid", resumed)
         self.assertIn("- `spec/Trace.tla` does not parse with SANY (exit 255).", resumed)
-        self.assertIn("tla2sany.SANY Trace.tla", resumed)
         self.assertIn('Encountered "SANY-ERROR"', resumed)
         fixes = [e for e in self.events() if e["kind"] == "fix"]
         self.assertEqual([e["fixed"] for e in fixes], [["spec/Trace.tla"]])

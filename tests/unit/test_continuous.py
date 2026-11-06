@@ -537,10 +537,21 @@ def configure_request(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, phase: st
     return work
 
 
+def write_valid_outputs(work: Path) -> None:
+    """The required outputs, with modules that parse whether or not SANY can run here."""
+    for relative in output_contract.REQUIRED_FILES:
+        path = work / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        module = Path(relative).stem
+        path.write_text(f"---- MODULE {module} ----\n====\n" if relative.endswith(".tla") else f"fixture {relative}\n")
+    (work / "spec/findings.json").write_text(json.dumps({"findings": []}))
+    (work / "traces").mkdir(exist_ok=True)
+    (work / "traces/t.ndjson").write_text("{}\n")
+
+
 def test_main_confirmation_request_requires_consumed_repairs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     work = configure_request(monkeypatch, tmp_path)
-    (work / "modeling-brief.md").write_text("brief")
-    (work / "spec/bug-report.md").write_text("report")
+    write_valid_outputs(work)
     result = control.request_confirmation()
     assert "only if repair work is needed" in result["instruction"]
     assert "final CI reports" not in result["instruction"]
@@ -553,6 +564,81 @@ def test_main_confirmation_request_requires_consumed_repairs(monkeypatch: pytest
     monkeypatch.setenv("SPECULA_PHASE", "spec_validation")
     with pytest.raises(ValueError, match="continuous Specula main session"):
         control.request_confirmation()
+
+
+def test_main_confirmation_tool_returns_output_problems_instead_of_requesting(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    work = configure_request(monkeypatch, tmp_path)
+    request = tmp_path / "request.json"
+    write_valid_outputs(work)
+    (work / "spec/MC.cfg").unlink()
+    with pytest.raises(ValueError) as refused:
+        control.request_confirmation()
+    message = str(refused.value)
+    assert message.startswith("Confirmation was not requested. Required outputs are missing or invalid:\n\n")
+    assert "- `spec/MC.cfg` is missing: write the model-checking configuration." in message
+    assert message.endswith("Fix these in this turn, then request confirmation again.")
+    assert not request.exists()  # no request, so no yield
+    (work / "spec/MC.cfg").write_text("INIT Init\n")
+
+    # SANY problems come back from the same check the controller runs.
+    monkeypatch.setattr(output_contract, "sany_tools", lambda: ("java", []))
+    monkeypatch.setattr(
+        output_contract,
+        "sany_problem",
+        lambda _spec, module, _java, _jars: (
+            f"`spec/{module}` does not parse with SANY (exit 255)." if module == "Trace.tla" else None
+        ),
+    )
+    with pytest.raises(ValueError, match=r"- `spec/Trace\.tla` does not parse with SANY"):
+        control.request_confirmation()
+    assert not request.exists()
+
+    # Without SANY here, or with a broken precheck, the tool does not block; the controller decides.
+    def unavailable() -> tuple[str, list[Path]]:
+        raise output_contract.SanyUnavailable("java was not found on PATH")
+
+    monkeypatch.setattr(output_contract, "sany_tools", unavailable)
+    (work / "traces/t.ndjson").unlink()  # missing traces never block either
+    assert control.request_confirmation()["status"] == "requested"
+    request.unlink()
+
+    def broken(*_args: object, **_kwargs: object) -> list[str]:
+        raise RuntimeError("precheck bug")
+
+    monkeypatch.setattr(output_contract, "handoff_problems", broken)
+    assert control.request_confirmation()["status"] == "requested"
+
+
+def test_strict_outputs_reach_the_precheck_and_its_mcp_server(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    work = configure_request(monkeypatch, tmp_path)
+    write_valid_outputs(work)
+    monkeypatch.setenv(output_contract.STRICT_ENV, "on")
+    with pytest.raises(ValueError, match="`analysis-report.md` is missing"):
+        control.request_confirmation()
+    config = control.mcp_config(Path("python"), Path("server.py"), dict(os.environ))
+    assert config["mcpServers"]["specula_context"]["env"][output_contract.STRICT_ENV] == "on"
+    monkeypatch.delenv(output_contract.STRICT_ENV)
+    config = control.mcp_config(Path("python"), Path("server.py"), dict(os.environ))
+    assert output_contract.STRICT_ENV not in config["mcpServers"]["specula_context"]["env"]
+
+
+def test_request_script_reports_a_refusal_without_requesting(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    work = configure_request(monkeypatch, tmp_path)
+    write_valid_outputs(work)
+    (work / "harness/run.sh").unlink()
+    script = Path(control.__file__).resolve().parents[2] / "tools/context_control/request.py"
+    result = subprocess.run([sys.executable, str(script), "--confirm"], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 1
+    refused = json.loads(result.stdout)
+    assert refused["status"] == "refused" and "`harness/run.sh` is missing" in refused["reason"]
+    assert "`harness/run.sh` is missing" in result.stderr and "Traceback" not in result.stderr
+    assert not (tmp_path / "request.json").exists()
+    (work / "harness/run.sh").write_text("#!/bin/sh\n")
+    result = subprocess.run([sys.executable, str(script), "--confirm"], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["status"] == "requested"
 
 
 def test_stop_gate_main_contract_pauses_only_for_compaction(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -673,7 +759,8 @@ def test_runner_compacts_main_then_records_explicit_confirmation(
         "assert json.loads(Path(sys.argv[1]).read_text())['session_id']=='native-1'\n"
         "Path(sys.argv[2]).write_text(json.dumps({'status':'completed'}))\n"
     )
-    (work / "modeling-brief.md").write_text("brief")
+    write_valid_outputs(work)
+    (work / "spec/bug-report.md").unlink()  # written by the turn that requests confirmation
     adapter = fake_adapter(
         tmp_path,
         agent,
