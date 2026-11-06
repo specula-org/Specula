@@ -28,6 +28,9 @@ from specula.snapshotlib import clean_git_environment
 DIRECTORY = "spec/persistent-findings"
 RECEIPTS = "spec/finding-reuse"
 CONTEXT = "persistent-findings-context.json"
+# A per-finding worker's proposal that failed validation. The dispatcher keeps
+# the verdict and moves the proposal here; the finding is then not reusable.
+SET_ASIDE_PROPOSAL = "issue.invalid.json"
 LIVE = {"REPRODUCED", "ENV_LIMITED", "MASKED"}
 INDEX = f"{DIRECTORY}/index.json"
 
@@ -600,6 +603,25 @@ def reused_body(work: Path, fid: str) -> str:
     )
 
 
+def _unanalyzed_proposal(fid: str, finding: dict[str, Any], cause: str) -> dict[str, Any]:
+    return {
+        "id": fid,
+        "status": finding["status"],
+        "source": finding.get("source", "unknown"),
+        "title": fid,
+        "cause": cause,
+        "trigger": "See confirmation evidence.",
+        "consequence": "See confirmation evidence.",
+        "sites": [],
+        "actions": [],
+        "invariants": [],
+        "premises": [],
+        "dependencies": [],
+        "evidence": [finding["evidence"]],
+        "reusable": False,
+    }
+
+
 def reconcile(
     work: Path, source: Path, run_id: str, findings: list[dict[str, Any]], *, confirmed_ids: Collection[str] = ()
 ) -> None:
@@ -621,6 +643,8 @@ def reconcile(
         refreshed = fid in confirmed_ids and (work / worker_path).exists()
         if refreshed or not (work / proposal_path).exists():
             proposal_path = worker_path
+        # Invalid reuse metadata costs a future reanalysis, not this run's result.
+        set_aside = not (work / proposal_path).exists() and (work / f"confirmation/{fid}/{SET_ASIDE_PROPOSAL}").exists()
         # A fresh source binding can inherit records with the same run ID.
         if (
             registered is not None
@@ -631,7 +655,11 @@ def reconcile(
             # A successfully dispatched confirmation may replace its old
             # dependencies using the worker's new proposal. Other findings
             # still reject stale proposals that merely rehash changed inputs.
-            if not refreshed and (registered["status"] != finding["status"] or check(work, source, fid)):
+            if (
+                not refreshed
+                and not set_aside
+                and (registered["status"] != finding["status"] or check(work, source, fid))
+            ):
                 raise FindingsError(f"{fid}: recorded conclusion changed; reanalyze and record it again")
         if (work / proposal_path).exists():
             proposal = json.loads(_bytes(work, proposal_path))
@@ -645,6 +673,12 @@ def reconcile(
             if finding.get("source") in {"model-checking", "code-review"}:
                 proposal["source"] = finding["source"]
             proposal["evidence"] = list(dict.fromkeys([finding["evidence"], *proposal.get("evidence", [])]))
+            prepared.append(_prepare_issue(work, source, run_id, proposal))
+        elif set_aside:
+            # This run's confirmation supersedes the record without reusable metadata.
+            proposal = _unanalyzed_proposal(fid, finding, "Issue metadata failed validation; reanalysis required.")
+            if registered is not None and registered["origin_run"] != run_id:
+                proposal["revises"] = record_digest(work, fid)
             prepared.append(_prepare_issue(work, source, run_id, proposal))
         elif (work / _record_path(fid)).exists() and load(work, fid)["origin_run"] == run_id:
             registered = load(work, fid)
@@ -665,22 +699,9 @@ def reconcile(
                     work,
                     source,
                     run_id,
-                    {
-                        "id": fid,
-                        "status": finding["status"],
-                        "source": finding.get("source", "unknown"),
-                        "title": fid,
-                        "cause": "Prior confirmation lacks a dependency record; reanalysis required.",
-                        "trigger": "See confirmation evidence.",
-                        "consequence": "See confirmation evidence.",
-                        "sites": [],
-                        "actions": [],
-                        "invariants": [],
-                        "premises": [],
-                        "dependencies": [],
-                        "evidence": [finding["evidence"]],
-                        "reusable": False,
-                    },
+                    _unanalyzed_proposal(
+                        fid, finding, "Prior confirmation lacks a dependency record; reanalysis required."
+                    ),
                 )
             )
     for issue in prepared:

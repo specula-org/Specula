@@ -745,3 +745,31 @@ def test_listed_reuse_still_rejects_invalid_receipt(baseline: tuple[Path, Path])
     write_json(work / persistent_findings.RECEIPTS / "MC-1.json", receipt)
     with pytest.raises(ERRORS, match="reuse receipt does not match"):
         ci_verdict.finalize(work, source, "v2", previous=previous)
+
+
+def test_set_aside_worker_proposal_supersedes_without_failing_the_run(baseline: tuple[Path, Path]) -> None:
+    source, old = baseline
+    work = next_work(old)
+    write(work / "evidence.md", "Fresh confirmation, no real verification performed.\n")
+    findings = [{"id": "MC-1", "status": "REPRODUCED", "source": "model-checking", "evidence": "evidence.md"}]
+    with pytest.raises(ERRORS, match="fresh reanalysis requires updated issue metadata"):
+        persistent_findings.reconcile(work, source, "v2", findings)
+    write(work / f"confirmation/MC-1/{persistent_findings.SET_ASIDE_PROPOSAL}", json.dumps({"id": "MC-1"}))
+    persistent_findings.reconcile(work, source, "v2", findings)
+    record = persistent_findings.load(work, "MC-1")
+    assert (record["origin_run"], record["status"], record["reusable"]) == ("v2", "REPRODUCED", False)
+    assert persistent_findings.check(work, source, "MC-1") == [
+        "No complete dependency record; analyze this issue once before reuse."
+    ]
+
+
+def test_set_aside_reconfirmation_replaces_the_stale_current_record(baseline: tuple[Path, Path]) -> None:
+    source, work = baseline
+    write(work / "spec/Invariant.tla", "repaired model property\n")
+    findings = [{"id": "MC-1", "status": "MASKED", "evidence": "evidence.md"}]
+    with pytest.raises(ERRORS, match="recorded conclusion changed"):
+        persistent_findings.reconcile(work, source, "v1", findings, confirmed_ids=["MC-1"])
+    write(work / f"confirmation/MC-1/{persistent_findings.SET_ASIDE_PROPOSAL}", json.dumps({"id": "MC-1"}))
+    persistent_findings.reconcile(work, source, "v1", findings, confirmed_ids=["MC-1"])
+    record = persistent_findings.load(work, "MC-1")
+    assert (record["status"], record["reusable"]) == ("MASKED", False)

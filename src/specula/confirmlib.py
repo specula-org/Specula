@@ -191,6 +191,16 @@ class _RepairTurn:
 
 
 @dataclass
+class _IssueFix:
+    """The one best-effort correction of a final verdict's persistent issue proposal."""
+
+    worker_turn: int  # the A turn whose native session is continued
+    prompt: str | None  # None when that session cannot be resumed
+    attempted: bool = False
+    dropped: str | None = None  # validator error once the proposal is set aside
+
+
+@dataclass
 class _FindingLease:
     """Per-finding state retained until a terminal verdict is durably saved."""
 
@@ -206,6 +216,7 @@ class _FindingLease:
     turn_cwds: dict[tuple[int, str], Path] = field(default_factory=dict)
     repair_turns: dict[tuple[int, str], _RepairTurn] = field(default_factory=dict)
     no_correction_drafts: dict[tuple[int, str], str] = field(default_factory=dict)
+    issue_fix: _IssueFix | None = None
     _run_lock: Any = field(default_factory=threading.RLock, repr=False, compare=False)
     _closed: bool = False
 
@@ -299,6 +310,16 @@ def _persist_lease(cfg: ConfirmConfig, f: Finding, lease: _FindingLease) -> None
             }
             for (previous_turn, previous_role), draft_digest in sorted(lease.no_correction_drafts.items())
         ],
+        "issue_fix": (
+            None
+            if lease.issue_fix is None
+            else {
+                "worker_turn": lease.issue_fix.worker_turn,
+                "prompt": lease.issue_fix.prompt,
+                "attempted": lease.issue_fix.attempted,
+                "dropped": lease.issue_fix.dropped,
+            }
+        ),
     }
     _lease_atomic_write(path, value)
     lease.state_path = path
@@ -513,6 +534,25 @@ def _load_lease(cfg: ConfirmConfig, f: Finding) -> _FindingLease:
             verdict,
             disabled,
         )
+    raw_issue_fix = value.get("issue_fix")
+    if raw_issue_fix is not None:
+        worker_turn = raw_issue_fix.get("worker_turn") if isinstance(raw_issue_fix, dict) else None
+        if (
+            not isinstance(raw_issue_fix, dict)
+            or not isinstance(worker_turn, int)
+            or isinstance(worker_turn, bool)
+            or (worker_turn, "A") not in lease.completed_turns
+            or not isinstance(raw_issue_fix.get("prompt"), (str, type(None)))
+            or not isinstance(raw_issue_fix.get("attempted"), bool)
+            or not isinstance(raw_issue_fix.get("dropped"), (str, type(None)))
+        ):
+            raise ConfirmationFailed(f"{f.id}: invalid issue-proposal correction checkpoint")
+        lease.issue_fix = _IssueFix(
+            worker_turn,
+            raw_issue_fix["prompt"],
+            raw_issue_fix["attempted"],
+            raw_issue_fix["dropped"],
+        )
     return lease
 
 
@@ -661,6 +701,7 @@ class ConfirmConfig:
             lease.turn_cwds.clear()
             lease.repair_turns.clear()
             lease.no_correction_drafts.clear()
+            lease.issue_fix = None
             if not retain_worktree:
                 try:
                     lease.cleanup()
@@ -722,9 +763,22 @@ def prompt_reproduce(cfg: ConfirmConfig, f: Finding, repo: str) -> str:
             finding_id=f.id,
             canon=" / ".join(CANON),
             fdir=str(f.fdir.absolute()),
+            work_dir=str(cfg.ws.work_dir(cfg.name).absolute()),
             context=_context(cfg, f, repo),
         )
         + cfg.prompt_extra
+    )
+
+
+def prompt_issue_fix(cfg: ConfirmConfig, f: Finding, status: str, error: str) -> str:
+    """A continuation of the worker's own session; its context is already there."""
+    return render(
+        "confirmation/issue-fix",
+        finding_id=f.id,
+        status=status,
+        error=error,
+        proposal=str((f.fdir / "issue.json").absolute()),
+        work_dir=str(cfg.ws.work_dir(cfg.name).absolute()),
     )
 
 
@@ -788,12 +842,14 @@ def run_turn(
     *,
     cwd: str | Path | None = None,
     lease: _FindingLease | None = None,
+    resume_from: Path | None = None,
 ) -> tuple[str | None, str]:
     """Run one agent turn synchronously; return (verdict, response text).
 
     Raises :class:`RateLimited` on adapter exit 75 — the turn is never silently
     downgraded to a terminal verdict; the caller records an uncached INCOMPLETE
-    outcome and returns 75 after writing the partial report so the scheduler retries."""
+    outcome and returns 75 after writing the partial report so the scheduler retries.
+    ``resume_from`` continues an earlier turn's exact native session."""
     prompt_file = f.fdir / f"turn{turn_no:02d}_{role}.prompt.md"
     log = f.fdir / f"turn{turn_no:02d}_{role}.log"
     if cfg.dry_run:
@@ -837,6 +893,7 @@ def run_turn(
         resume_kind="finding-turn",
         resume_finding_id=f.id,
         manual_prompt_extra=cfg.resume_prompt_extra,
+        resume_from=resume_from,
     )
     if rc == 75:
         raise RateLimited(f"{f.id} turn {turn_no} {role}")
@@ -1373,18 +1430,158 @@ def _validate_final_artifacts(cfg: ConfirmConfig, f: Finding, status: str) -> No
             raise InvalidAgentOutput(f"{f.id}: REPRODUCED requires a non-empty repro/test_bug{f.id}_* artifact")
     if status == "PENDING REPAIR":
         _read_repair_draft(cfg, f)
-    if status in CONFIRM:
-        work = cfg.ws.work_dir(cfg.name)
-        proposal = f.fdir / "issue.json"
-        if proposal.is_file() and (work / persistent_findings.CONTEXT).is_file():
-            try:
-                record = persistent_findings.validate_issue_proposal(work, proposal, source_kind=_source_kind(f))
-                if record["id"] != f.id:
-                    raise persistent_findings.FindingsError(
-                        f"proposal ID {record['id']!r} does not match finding ID {f.id!r}"
-                    )
-            except (OSError, ValueError, KeyError, TypeError) as exc:
-                raise InvalidAgentOutput(f"{f.id}: invalid persistent issue proposal: {exc}") from exc
+
+
+# A persistent issue proposal is reuse metadata for later runs, not confirmation
+# evidence: an invalid one costs a future reanalysis, never this verdict.
+ISSUE_FIX_ROLE = "A-issue"
+
+
+def _issue_proposal_error(cfg: ConfirmConfig, f: Finding, status: str) -> str | None:
+    """Return the validator error for a live verdict's worker proposal, if any."""
+    work = cfg.ws.work_dir(cfg.name)
+    proposal = f.fdir / "issue.json"
+    if status not in CONFIRM or not (work / persistent_findings.CONTEXT).is_file():
+        return None
+    if not proposal.exists() and not proposal.is_symlink():
+        return None
+    source_kind = _source_kind(f)
+    try:
+        record = persistent_findings.validate_issue_proposal(work, proposal, source_kind=source_kind)
+        if record["id"] != f.id:
+            raise persistent_findings.FindingsError(f"proposal ID {record['id']!r} does not match finding ID {f.id!r}")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return " ".join(str(exc).split()) or type(exc).__name__
+    return None
+
+
+def _set_aside_issue_proposal(f: Finding) -> None:
+    """Move an invalid proposal out of finalization's way, keeping it for diagnosis."""
+    proposal = f.fdir / "issue.json"
+    if not proposal.exists() and not proposal.is_symlink():
+        return
+    aside = f.fdir / persistent_findings.SET_ASIDE_PROPOSAL
+    if aside.is_dir() and not aside.is_symlink():
+        shutil.rmtree(aside)
+    elif aside.exists() or aside.is_symlink():
+        aside.unlink()
+    os.replace(proposal, aside)
+
+
+def _issue_proposal_note(error: str) -> str:
+    return (
+        "\n\n- **Persistence**: Not automatically reusable; the issue proposal failed validation "
+        f"and was set aside as `{persistent_findings.SET_ASIDE_PROPOSAL}` ({error})."
+    )
+
+
+def _drop_issue_proposal(
+    cfg: ConfirmConfig,
+    f: Finding,
+    status: str,
+    error: str,
+    lease: _FindingLease | None = None,
+) -> str:
+    """Keep the verdict, warn durably, and make the finding non-reusable."""
+    message = (
+        f"{f.id}: invalid persistent issue proposal ({error}); VERDICT {status} is kept, the proposal is set "
+        f"aside as {persistent_findings.SET_ASIDE_PROPOSAL}, and this finding will not be reused automatically"
+    )
+    _log(f"  WARNING: {message}")
+    with contextlib.suppress(OSError):
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+        with (f.fdir / "error.txt").open("a", encoding="utf-8") as error_log:
+            error_log.write(f"\n=== Warning at {timestamp} ===\n{message}\n")
+    if lease is not None and lease.issue_fix is not None:
+        # Record the decision before moving the file: a replay then never
+        # mistakes the missing proposal for a valid absence.
+        lease.issue_fix.dropped = error
+        _persist_lease(cfg, f, lease)
+    _set_aside_issue_proposal(f)
+    return _issue_proposal_note(error)
+
+
+def _repro_snapshot(cfg: ConfirmConfig, f: Finding) -> dict[Path, bytes]:
+    return {path: path.read_bytes() for path in _repro_files(cfg, f)}
+
+
+def _restore_repro_snapshot(cfg: ConfirmConfig, f: Finding, snapshot: dict[Path, bytes]) -> None:
+    """Keep the evidence the verdict was judged on unchanged by a metadata turn."""
+    current = _repro_snapshot(cfg, f)
+    if current == snapshot:
+        return
+    _log(f"  WARNING: {f.id}: issue-proposal correction changed reproduction evidence; restoring it")
+    for path in current.keys() - snapshot.keys():
+        path.unlink()
+    for path, body in snapshot.items():
+        if current.get(path) != body:
+            if path.is_symlink():
+                path.unlink()
+            elif path.is_dir():
+                shutil.rmtree(path)
+            path.write_bytes(body)
+
+
+def _settle_issue_proposal(
+    cfg: ConfirmConfig,
+    f: Finding,
+    status: str,
+    lease: _FindingLease,
+    worker_turn: int,
+) -> str:
+    """Give an invalid proposal one correction in the worker's session, else drop it.
+
+    Returns the report note for a dropped proposal ("" otherwise). Rate limits
+    propagate so the replay continues the same correction turn; every other
+    correction failure keeps the verdict.
+    """
+    fix = lease.issue_fix
+    if fix is not None and fix.worker_turn != worker_turn:
+        raise ConfirmationFailed(f"{f.id}: retained issue-proposal correction belongs to another turn")
+    if fix is not None and fix.dropped is not None:
+        _set_aside_issue_proposal(f)
+        return _issue_proposal_note(fix.dropped)
+    error = _issue_proposal_error(cfg, f, status)
+    if error is None:
+        return ""
+    worker_log = f.fdir / f"turn{worker_turn:02d}_A.log"
+    session = worker_log.with_suffix(".resume.json")
+    worker_cwd = lease.turn_cwds.get((worker_turn, "A"))
+    if fix is None:
+        resumable = worker_cwd is not None and session.is_file() and not session.is_symlink()
+        _log(
+            f"  WARNING: {f.id}: invalid persistent issue proposal ({error}); "
+            + ("asking the worker session to fix it once" if resumable else "the worker session cannot be resumed")
+        )
+        fix = _IssueFix(worker_turn, prompt_issue_fix(cfg, f, status, error) if resumable else None)
+        lease.issue_fix = fix
+        _persist_lease(cfg, f, lease)
+    if fix.prompt is not None and not fix.attempted:
+        evidence = _repro_snapshot(cfg, f)
+        try:
+            run_turn(
+                cfg,
+                f,
+                ISSUE_FIX_ROLE,
+                worker_turn,
+                fix.prompt,
+                cwd=worker_cwd,
+                lease=lease,
+                resume_from=session,
+            )
+        except RateLimited:
+            raise
+        except Exception as exc:
+            _log(f"  WARNING: {f.id}: issue-proposal correction failed ({exc})")
+        _restore_repro_snapshot(cfg, f, evidence)
+        fix.attempted = True
+        _persist_lease(cfg, f, lease)
+        cfg.clear_policy_states(("finding", f.id, str(worker_turn), ISSUE_FIX_ROLE))
+        error = _issue_proposal_error(cfg, f, status)
+        if error is None:
+            _log(f"  [{f.id}] issue proposal corrected in the worker session")
+            return ""
+    return _drop_issue_proposal(cfg, f, status, error, lease)
 
 
 def _repair_draft_warning(cfg: ConfirmConfig, f: Finding, draft: RepairDraft) -> str | None:
@@ -1415,8 +1612,12 @@ def _final_outcome(
     consensus: bool,
     rounds: int,
     body: str,
+    *,
+    lease: _FindingLease,
+    worker_turn: int,
 ) -> Outcome:
     _validate_final_artifacts(cfg, f, status)
+    body += _settle_issue_proposal(cfg, f, status, lease, worker_turn)
     return Outcome(f, status, consensus, rounds, body)
 
 
@@ -1465,6 +1666,7 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                 rr_body = f.fdir / "repair-request.body.md"
                 if rr_body.is_file():
                     rr_body.unlink()
+                (f.fdir / persistent_findings.SET_ASIDE_PROPOSAL).unlink(missing_ok=True)
                 lease.initialized = True
             repo_for_agent = lease.repo_for_agent
             turn = 1
@@ -1592,6 +1794,7 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                 return correction_turn
 
         # Turn 1 — Reproducer (neutral): investigate + reproduce.
+        a_turn = 1  # the latest A turn: the worker session that owns issue.json
         a_prompt = prompt_reproduce(cfg, f, repo_for_agent)
         a_cwd = _fresh_turn_cwd(f, "A", 1, lease)
         a_verdict, a_text = run_turn(
@@ -1618,10 +1821,14 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
         initial_text = a_text
         if a_verdict not in CONFIRM:
             _log(f"  [{f.id}] A: {a_verdict} (dismissal) — no debate")
-            return _final_outcome(cfg, f, a_verdict, True, 0, _compose_evidence(a_text, []))
+            return _final_outcome(
+                cfg, f, a_verdict, True, 0, _compose_evidence(a_text, []), lease=lease, worker_turn=a_turn
+            )
         if not cfg.debate:
             _log(f"  [{f.id}] A: {a_verdict} (debate off) — verdict final")
-            return _final_outcome(cfg, f, a_verdict, True, 0, _compose_evidence(a_text, []))
+            return _final_outcome(
+                cfg, f, a_verdict, True, 0, _compose_evidence(a_text, []), lease=lease, worker_turn=a_turn
+            )
 
         _log(f"  [{f.id}] A: {a_verdict} → opening debate")
         defenses: list[str] = []
@@ -1658,6 +1865,8 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                     True,
                     rnd,
                     _compose_evidence(initial_text, [*defenses, b_text]),
+                    lease=lease,
+                    worker_turn=a_turn,
                 )
             turn += 1
             defend_prompt = prompt_defend(cfg, f, repo_for_agent, str(debate))
@@ -1677,14 +1886,33 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
             if a_verdict != "PENDING REPAIR" and a_verdict == b_verdict:
                 _validate_final_artifacts(cfg, f, a_verdict)
             _accept_turn(cfg, f, "A", turn, defend_prompt, defend_cwd, lease, a_verdict, a_text)
+            a_turn = turn
             if a_verdict == "PENDING REPAIR":
                 turn = prepare_pending(turn)
             defenses.append(a_text)
             _log(f"  [{f.id}] round {rnd}: B={b_verdict} A={a_verdict}")
             if a_verdict and b_verdict and a_verdict == b_verdict:
-                return _final_outcome(cfg, f, a_verdict, True, rnd, _compose_evidence(initial_text, defenses))
+                return _final_outcome(
+                    cfg,
+                    f,
+                    a_verdict,
+                    True,
+                    rnd,
+                    _compose_evidence(initial_text, defenses),
+                    lease=lease,
+                    worker_turn=a_turn,
+                )
         _log(f"  [{f.id}] no consensus after {cfg.rounds} rounds → NEEDS MORE INFO")
-        return _final_outcome(cfg, f, "NEEDS MORE INFO", False, cfg.rounds, _compose_evidence(initial_text, defenses))
+        return _final_outcome(
+            cfg,
+            f,
+            "NEEDS MORE INFO",
+            False,
+            cfg.rounds,
+            _compose_evidence(initial_text, defenses),
+            lease=lease,
+            worker_turn=a_turn,
+        )
     finally:
         lease._run_lock.release()
         if owned_lease:
@@ -1837,7 +2065,7 @@ def _repo_cache_identity(cfg: ConfirmConfig) -> dict[str, str]:
 def _prompt_sources() -> dict[str, str]:
     root = Path(__file__).resolve().parent / "prompts" / "confirmation"
     result: dict[str, str] = {}
-    for name in ("context.md", "reproduce.md", "challenge.md", "defend.md", "repair-draft-retry.md"):
+    for name in ("context.md", "reproduce.md", "challenge.md", "defend.md", "repair-draft-retry.md", "issue-fix.md"):
         path = root / name
         result[name] = path.read_text() if path.is_file() else ""
     return result
@@ -2135,6 +2363,14 @@ def run_finding_safe(
         _discard_persisted_lease(cfg, f)
         cfg.clear_policy_states(("finding", f.id))
         _log(f"  [{f.id}] cached {cached.status} — skip (idempotent)")
+        error = _issue_proposal_error(cfg, f, cached.status)
+        if error is not None:
+            # Inputs outside the verdict identity changed since it was saved.
+            cached.body += _drop_issue_proposal(cfg, f, cached.status, error)
+            try:
+                _rewrite_stored_body(f, cached.body)
+            except (OSError, ValueError) as exc:
+                _log(f"  WARNING: {f.id}: could not record the persistence note in verdict.json ({exc})")
         return cached
     try:
         lease = cfg.acquire_finding_lease(f)

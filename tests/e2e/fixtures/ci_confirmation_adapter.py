@@ -23,7 +23,9 @@ phase = os.environ["SPECULA_PHASE"]
 repair_enabled = (Path(__file__).parent / "repair-confirmation").exists()
 reconfirm_model = (Path(__file__).parent / "reconfirm-model-dependency").exists()
 name = "main" if phase == "incremental" else log.parent.name
-session = "workflow" if name == "main" else log.stem + "-" + name
+# An issue-proposal correction continues its worker's exact native session.
+issue_fix = log.stem.endswith("_A-issue")
+session = "workflow" if name == "main" else log.stem.removesuffix("-issue") + "-" + name
 if resume.exists():
     assert json.loads(resume.read_text())["session_id"] == session
 resume.write_text(json.dumps({"adapter": "fake", "session_id": session}))
@@ -186,6 +188,12 @@ if phase == "incremental":
             )
         )
         log.write_text("SPECULA_INCREMENTAL_COMPLETE " + run.name + "\n")
+elif issue_fix:
+    proposal = log.parent / "issue.json"
+    document = json.loads(proposal.read_text())
+    document["dependencies"] = [dep for dep in document["dependencies"] if dep["path"] != "spec/missing-evidence.tla"]
+    proposal.write_text(json.dumps(document))
+    log.write_text("Removed the unavailable dependency from the issue proposal.\n")
 elif "Consolidate + dedup" in prompt:
     candidates = [
         {
