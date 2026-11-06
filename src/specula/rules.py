@@ -40,6 +40,17 @@ def rules_block() -> str:
     return f"{RULES_TITLE}\n\n{body}\n"
 
 
+def rules_identity() -> str:
+    """Path-free identity of the pinned rules, for confirmation verdict caching.
+
+    The ``rules.md`` template text when rules are on; ``""`` when off, so
+    ``SPECULA_RULES=off`` keeps fingerprints computed before rule pinning.
+    """
+    if not enabled():
+        return ""
+    return (PROMPTS_DIR / "rules.md").read_text(encoding="utf-8")
+
+
 def with_rules(prompt: str) -> str:
     """Prepend the rules block to ``prompt``; identity when rules are off."""
     block = rules_block()

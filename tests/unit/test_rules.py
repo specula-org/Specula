@@ -74,6 +74,11 @@ class RulesToggle(unittest.TestCase):
                 self.assertEqual(rules.with_rules("exact prompt\n"), "exact prompt\n")
                 self.assertEqual(rules.with_rules(""), "")
 
+    def test_identity_is_the_path_free_template_text_and_empty_when_off(self) -> None:
+        self.assertEqual(rules.rules_identity(), RULES_MD.read_text(encoding="utf-8"))
+        os.environ[rules.RULES_ENV] = "off"
+        self.assertEqual(rules.rules_identity(), "")
+
     def test_other_values_keep_rules_on(self) -> None:
         for value in ("", "on", "1", "yes"):
             with self.subTest(value=value):

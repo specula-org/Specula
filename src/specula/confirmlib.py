@@ -54,6 +54,7 @@ from specula.phaselib import (
     run_agent_blocking,
 )
 from specula.prompts import render
+from specula.rules import rules_identity
 from specula.skill_refs import prompt_skill_ids
 from specula.snapshotlib import SNAPSHOT_MODE_ENV, clean_git_environment
 
@@ -788,6 +789,15 @@ def _worker_notes_identity() -> dict[str, str]:
     """
     identity = worker_notes_identity()
     return {"notes": identity} if identity else {}
+
+
+def _rules_identity() -> dict[str, str]:
+    """Verdict-fingerprint entry for the pinned rules every turn prompt carries.
+
+    Empty when rules are off, so SPECULA_RULES=off keeps pre-rules fingerprints.
+    """
+    identity = rules_identity()
+    return {"rules": identity} if identity else {}
 
 
 def prompt_reproduce(cfg: ConfirmConfig, f: Finding, repo: str) -> str:
@@ -2264,6 +2274,7 @@ def _verdict_fingerprint(cfg: ConfirmConfig, f: Finding) -> str:
             "prompts": _prompt_sources(),
             "skill": _skill_identity(),
             **_worker_notes_identity(),
+            **_rules_identity(),
         }
     )
 

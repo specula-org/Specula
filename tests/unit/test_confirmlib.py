@@ -27,7 +27,7 @@ from typing import Any
 from unittest import mock
 
 from specula import confirmlib as C
-from specula import notes, persistent_findings, resumelib
+from specula import notes, persistent_findings, resumelib, rules
 from specula import phaselib as PhaseLib
 from specula import pipelinelib as PL
 from specula import prompts as P
@@ -3306,6 +3306,35 @@ class TestPromptExtraAndLog(ConfirmCase):
         # Off omits the key entirely, so fingerprints saved before notes existed stay valid.
         self.assertNotIn("notes", identities[1])
         self.assertEqual({key: value for key, value in identities[0].items() if key != "notes"}, identities[1])
+
+    def test_rules_off_restores_verdict_fingerprint(self) -> None:
+        patcher = mock.patch.dict(os.environ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop(rules.RULES_ENV, None)
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T")
+        f = self.finding(ws, "T")
+        identities: list[dict[str, Any]] = []
+        real_digest = C._digest
+
+        def capture(value: Any) -> str:
+            if isinstance(value, dict) and "prompts" in value:
+                identities.append(value)
+            return real_digest(value)
+
+        with mock.patch.object(C, "_digest", side_effect=capture):
+            on_fingerprint = C._verdict_fingerprint(cfg, f)
+        os.environ[rules.RULES_ENV] = "off"
+        with mock.patch.object(C, "_digest", side_effect=capture):
+            off_fingerprint = C._verdict_fingerprint(cfg, f)
+
+        self.assertNotEqual(on_fingerprint, off_fingerprint)
+        # The template text, never a rendered path-bearing prompt.
+        self.assertEqual(identities[0]["rules"], (P.PROMPTS_DIR / "rules.md").read_text())
+        # Off omits the key entirely, so fingerprints saved before rule pinning stay valid.
+        self.assertNotIn("rules", identities[1])
+        self.assertEqual({key: value for key, value in identities[0].items() if key != "rules"}, identities[1])
 
     def test_parallel_prompts_assign_rr_queue_only_to_dispatcher(self) -> None:
         ws = self.seed("T", [])
