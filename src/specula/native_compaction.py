@@ -19,6 +19,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+from specula.adapters.utils.claude_usage import restored_totals
 from specula.context_control import write_json
 
 
@@ -130,6 +131,11 @@ async def claude(state: dict[str, Any], log: Path, alias: str) -> dict[str, Any]
     for key in ("CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT"):
         env.pop(key, None)
     env["CLAUDE_CONFIG_DIR"] = str(Path.home() / f".{alias or 'claude'}")
+    # The resumed CLI reports session running totals; keep what it restores so
+    # the receipt can be reduced to the compaction's own usage.
+    restored = None
+    with contextlib.suppress(Exception):
+        restored = restored_totals(env["CLAUDE_CONFIG_DIR"], state["session_id"])
     argv = ["claude", "--print", "--resume", state["session_id"], "--output-format", "stream-json", "--verbose"]
     if state.get("model"):
         argv += ["--model", state["model"]]
@@ -154,6 +160,7 @@ async def claude(state: dict[str, Any], log: Path, alias: str) -> dict[str, Any]
                     "status": "completed" if boundary else "skipped",
                     "evidence": boundary or event,
                     "usage_payload": event,
+                    "restored_usage": restored,
                 }
 
 

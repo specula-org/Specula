@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import IO, Any
 
 if __package__:
+    from .utils.claude_usage import invocation_usage, restored_totals
     from .utils.event_stream import stream_events
     from .utils.policy import (
         POLICY_BLOCKED_RC,
@@ -44,6 +45,10 @@ if __package__:
     from .utils.run_lock import inherited_run_lock_fds
     from .utils.transient import TRANSIENT_FAILURE_RC, final_diagnostic_has_transient_failure, looks_transient
 else:
+    from utils.claude_usage import (  # type: ignore[import-not-found, no-redef]
+        invocation_usage,
+        restored_totals,
+    )
     from utils.event_stream import stream_events  # type: ignore[import-not-found, no-redef]
     from utils.policy import (  # type: ignore[import-not-found, no-redef]
         POLICY_BLOCKED_RC,
@@ -127,6 +132,24 @@ def _parse_result(raw_text: str) -> dict[str, Any] | None:
         if isinstance(candidate, dict) and (candidate.get("type") == "result" or "result" in candidate):
             return candidate
     return None
+
+
+def _result_records(raw_text: str, final: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every result record of the invocation, ending with *final*.
+
+    A stream-json run writes one result per turn; usage stated per result must
+    be summed over all of them. Anything else has only its final result."""
+    records: list[dict[str, Any]] = []
+    for line in raw_text.splitlines():
+        if '"result"' not in line:
+            continue
+        try:
+            candidate = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(candidate, dict) and candidate.get("type") == "result":
+            records.append(candidate)
+    return records if records and records[-1] == final else [final]
 
 
 def _rate_limited(raw_text: str, streaming: bool) -> bool:
@@ -275,10 +298,21 @@ def _extract_log(d: dict[str, Any] | None, raw_text: str, log_file: str) -> None
             print(raw_text, file=fh)
 
 
-def _extract_usage(d: dict[str, Any] | None, usage_path: str, fallback_session_id: str = "") -> None:
+def _extract_usage(
+    d: dict[str, Any] | None,
+    usage_path: str,
+    fallback_session_id: str = "",
+    *,
+    results: list[dict[str, Any]] | None = None,
+    resumed: bool = False,
+    restored: dict[str, object] | None = None,
+) -> None:
     """Usage stats -> .usage.json, fixing num_turns from the session JSONL when a
     session_id is present. Any failure reports ``parse_failed`` and retains a
-    known session ID so a resumable failed turn stays attributable."""
+    known session ID so a resumable failed turn stays attributable.
+
+    Cost and token fields describe this invocation only: a resumed session's
+    running totals are reduced by what the CLI restored (see claude_usage)."""
     session_id = fallback_session_id
     if isinstance(d, dict):
         result_session_id = d.get("session_id")
@@ -287,14 +321,16 @@ def _extract_usage(d: dict[str, Any] | None, usage_path: str, fallback_session_i
     try:
         if d is None:
             raise ValueError("result JSON unparseable")
+        invocation = invocation_usage(results or [d], resumed=resumed, restored=restored)
         usage = {
             "session_id": session_id,
-            "total_cost_usd": d.get("total_cost_usd", 0),
+            "total_cost_usd": invocation.pop("total_cost_usd"),
             "num_turns": d.get("num_turns", 0),
             "duration_ms": d.get("duration_ms", 0),
             "stop_reason": d.get("stop_reason", ""),
-            "usage": d.get("usage", {}),
-            "model_usage": d.get("modelUsage", {}),
+            "usage": invocation.pop("usage"),
+            "model_usage": invocation.pop("model_usage"),
+            **invocation,
         }
         if session_id:
             cwd = os.getcwd()
@@ -506,6 +542,12 @@ def main(argv: list[str]) -> int:
             stream_activity_log = hidden_activity_log
         streaming = bool(stream_activity_log)
         output_format = "stream-json" if streaming else "json"
+        # A resumed session reports running totals that include its earlier
+        # invocations; keep what the CLI will restore to subtract it afterwards.
+        restored: dict[str, object] | None = None
+        if resume_session_id:
+            with contextlib.suppress(Exception):  # accounting must never block the turn
+                restored = restored_totals(os.environ["CLAUDE_CONFIG_DIR"], resume_session_id)
         cmd = ["claude", "--print", "--dangerously-skip-permissions", "--output-format", output_format]
         if os.environ.get("SPECULA_PHASE") == "incremental" and os.environ.get("SPECULA_CONTEXT_MCP_CONFIG"):
             cmd += ["--mcp-config", os.environ["SPECULA_CONTEXT_MCP_CONFIG"]]
@@ -702,7 +744,14 @@ def main(argv: list[str]) -> int:
                 postprocess_failed = True
                 print(f"claude-code adapter: readable log write failed: {e}", file=sys.stderr)
         try:
-            _extract_usage(result, _derived_path(log_file, ".usage.json"), usage_session_id)
+            _extract_usage(
+                result,
+                _derived_path(log_file, ".usage.json"),
+                usage_session_id,
+                results=_result_records(raw_text, result) if result is not None else None,
+                resumed=bool(resume_session_id),
+                restored=restored,
+            )
         except OSError as e:
             postprocess_failed = True
             print(f"claude-code adapter: usage write failed: {e}", file=sys.stderr)

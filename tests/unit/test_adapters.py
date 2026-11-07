@@ -73,6 +73,32 @@ CLAUDE_JSON = {
     "modelUsage": {},
 }
 
+
+def _claude_cost_state(session_id: str, total: float, models: dict[str, Any]) -> str:
+    """A transcript cost-state line with every field Claude Code requires to restore it."""
+    fields = ("totalAPIDuration", "totalAPIDurationWithoutRetries", "totalToolDuration", "totalDuration")
+    record = {
+        "type": "cost-state",
+        "sessionId": session_id,
+        "totalCostUSD": total,
+        **dict.fromkeys(fields, 1000),
+        "totalLinesAdded": 0,
+        "totalLinesRemoved": 0,
+        "startTime": 1793978192556,
+        "modelUsage": {
+            name: {
+                "inputTokens": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0,
+                "webSearchRequests": 0,
+                **u,
+            }
+            for name, u in models.items()
+        },
+    }
+    return json.dumps(record) + "\n"
+
+
 # env that would otherwise steer the adapters; popped so construction is
 # deterministic regardless of the harness's ambient environment.
 _VOLATILE = (
@@ -697,6 +723,180 @@ class ClaudeCodeAdapter(AdapterCase):
         usage = base / "out.usage.json"
         self.assertEqual(log.read_text(), "done\n")
         self.assertEqual(json.loads(usage.read_text())["total_cost_usd"], 0.5)
+
+    def test_resumed_session_usage_excludes_earlier_invocations(self) -> None:
+        # Claude Code restores a resumed session's saved running totals, so its
+        # result also counts earlier invocations. The sidecar keeps this one's.
+        session_id = "4c1d2b7e-0000-4000-8000-000000000001"
+        saved = {"m": {"inputTokens": 1, "outputTokens": 10, "cacheReadInputTokens": 100, "costUSD": 2.0}}
+        running = {"m": {"inputTokens": 3, "outputTokens": 25, "cacheReadInputTokens": 400, "costUSD": 3.5}}
+        since = {"m": {"inputTokens": 2, "outputTokens": 15, "cacheReadInputTokens": 300, "costUSD": 1.5}}
+        result = {"type": "result", **CLAUDE_JSON, "session_id": session_id, "total_cost_usd": 3.5}
+        cases = {
+            "since-last-result": (
+                {**result, "modelUsage": running, "model_usage_since_last_result": since, "result_index": 0},
+                1.5,
+            ),
+            "restored-cost-state": ({**result, "modelUsage": running}, 1.5),
+        }
+        for name, (fixture, want) in cases.items():
+            with self.subTest(name):
+                base = self.sandbox()
+                transcript = base / ".claude" / "projects" / "-any-project" / f"{session_id}.jsonl"
+                transcript.parent.mkdir(parents=True)
+                transcript.write_text(_claude_cost_state(session_id, 2.0, saved))
+                state = base / "resume.json"
+                state.write_text(
+                    json.dumps(
+                        {
+                            "version": 1,
+                            "adapter": "claude-code",
+                            "session_id": session_id,
+                            "cwd": str(base),
+                            "model": "",
+                            "effort": "max",
+                        }
+                    )
+                )
+                run = self.run_adapter(
+                    self.CMD,
+                    [*self.base_flags(base), f"--resume-state={state}"],
+                    fake_name="claude",
+                    fixture_text=json.dumps(fixture),
+                    record_extra=True,
+                    run_dir=base,
+                )
+                self.assertEqual(run["returncode"], 0, run["stderr"])
+                self.assertIn("--resume", run["argv"])
+                usage = json.loads((base / "out.usage.json").read_text())
+                self.assertEqual(usage["total_cost_usd"], want)
+                self.assertEqual(usage["session_total_cost_usd"], 3.5)
+                self.assertEqual(usage["usage_scope"], "invocation")
+                self.assertEqual(usage["model_usage"]["m"]["outputTokens"], 15)
+                self.assertEqual(usage["usage"]["cache_read_input_tokens"], 300)
+
+    def _claude_session_case(self, session_id: str, saved_cost: float | None) -> tuple[Path, Path]:
+        base = self.sandbox()
+        if saved_cost is not None:
+            transcript = base / ".claude" / "projects" / "-any-project" / f"{session_id}.jsonl"
+            transcript.parent.mkdir(parents=True)
+            saved = {"m": {"inputTokens": 1, "outputTokens": 10, "costUSD": saved_cost}}
+            transcript.write_text(_claude_cost_state(session_id, saved_cost, saved))
+        state = base / "resume.json"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "claude-code",
+                    "session_id": session_id,
+                    "cwd": str(base),
+                    "model": "",
+                    "effort": "max",
+                }
+            )
+        )
+        return base, state
+
+    @staticmethod
+    def _two_result_stream(session_id: str, saved_cost: float) -> str:
+        """init, then results r0 ($2 since start) and r1 ($1 since r0) of one process."""
+
+        def result(index: int, since: float, running: float) -> str:
+            return json.dumps(
+                {
+                    "type": "result",
+                    **CLAUDE_JSON,
+                    "session_id": session_id,
+                    "result_index": index,
+                    "total_cost_usd": running,
+                    "modelUsage": {"m": {"inputTokens": 1 + index, "outputTokens": 10 + 5 * index, "costUSD": running}},
+                    "model_usage_since_last_result": {"m": {"inputTokens": 1, "outputTokens": 5, "costUSD": since}},
+                }
+            )
+
+        init = json.dumps({"type": "system", "subtype": "init", "session_id": session_id})
+        assistant = json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "hi"}]}})
+        return "\n".join([init, assistant, result(0, 2.0, saved_cost + 2.0), result(1, 1.0, saved_cost + 3.0)])
+
+    def test_resumed_multi_result_stream_counts_every_result(self) -> None:
+        session_id = "4c1d2b7e-0000-4000-8000-000000000003"
+        cases = {"activity-log": "out.activity.jsonl", "hidden-stream": None}
+        if Path("/dev/full").exists():
+            # The failed sink keeps only the last result, whose since-last usage
+            # misses r0: the restore point must be used instead.
+            cases["failed-activity-sink"] = "/dev/full"
+        for name, activity in cases.items():
+            with self.subTest(name):
+                base, state = self._claude_session_case(session_id, 0.5)
+                env = {"TMPDIR": str(base)}
+                if activity is not None:
+                    env["SPECULA_ACTIVITY_LOG"] = activity if activity.startswith("/") else str(base / activity)
+                run = self.run_adapter(
+                    self.CMD,
+                    [*self.base_flags(base), f"--resume-state={state}"],
+                    fake_name="claude",
+                    fixture_text=self._two_result_stream(session_id, 0.5),
+                    record_extra=True,
+                    env_extra=env,
+                    run_dir=base,
+                    timeout=10,
+                )
+                self.assertEqual(run["returncode"], 0, run["stderr"])
+                usage = json.loads((base / "out.usage.json").read_text())
+                self.assertEqual(usage["total_cost_usd"], 3.0)
+                self.assertEqual(usage["session_total_cost_usd"], 3.5)
+                self.assertNotIn("usage_complete", usage)
+                want = "restored_session_totals" if name == "failed-activity-sink" else "model_usage_since_last_result"
+                self.assertEqual(usage["cost_basis"], want)
+
+    def test_fresh_multi_result_stream_uses_final_running_total(self) -> None:
+        base = self.sandbox()
+        session_id = "4c1d2b7e-0000-4000-8000-000000000004"
+        run = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={base / 'resume.json'}"],
+            fake_name="claude",
+            fixture_text=self._two_result_stream(session_id, 0.0),
+            record_extra=True,
+            env_extra={"TMPDIR": str(base)},
+            run_dir=base,
+        )
+        self.assertEqual(run["returncode"], 0, run["stderr"])
+        self.assertNotIn("--resume", run["argv"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertEqual(usage["total_cost_usd"], 3.0)
+        self.assertEqual(usage["cost_basis"], "new_session")
+
+    def test_resumed_session_without_restore_point_has_unknown_cost(self) -> None:
+        base = self.sandbox()
+        session_id = "4c1d2b7e-0000-4000-8000-000000000002"
+        state = base / "resume.json"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "claude-code",
+                    "session_id": session_id,
+                    "cwd": str(base),
+                    "model": "",
+                    "effort": "max",
+                }
+            )
+        )
+        fixture = {"type": "result", **CLAUDE_JSON, "session_id": session_id, "modelUsage": {"m": {"costUSD": 0.5}}}
+        run = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="claude",
+            fixture_text=json.dumps(fixture),
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(run["returncode"], 0, run["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertIsNone(usage["total_cost_usd"])
+        self.assertFalse(usage["usage_complete"])
+        self.assertEqual(usage["session_total_cost_usd"], 0.5)
 
     def test_specula_activity_uses_stream_json(self) -> None:
         base = self.sandbox()
