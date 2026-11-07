@@ -1,0 +1,1629 @@
+{
+  "cases": [
+    {
+      "case_id": "case-001",
+      "category": "A_DISTRIBUTED",
+      "changed_files": [
+        {
+          "new_path": "cluster_benchmark/tests/benchmark/store.rs",
+          "old_path": "cluster_benchmark/tests/benchmark/store.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "examples/mem-log/src/log_store.rs",
+          "old_path": "examples/mem-log/src/log_store.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "examples/raft-kv-memstore-singlethreaded/src/store.rs",
+          "old_path": "examples/raft-kv-memstore-singlethreaded/src/store.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "examples/raft-kv-memstore/tests/cluster/test_cluster.rs",
+          "old_path": "examples/raft-kv-memstore/tests/cluster/test_cluster.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "examples/rocksstore/src/log_store.rs",
+          "old_path": "examples/rocksstore/src/log_store.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/raft_core.rs",
+          "old_path": "openraft/src/core/raft_core.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/engine_impl.rs",
+          "old_path": "openraft/src/engine/engine_impl.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/tests/initialize_test.rs",
+          "old_path": "openraft/src/engine/tests/initialize_test.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/raft/mod.rs",
+          "old_path": "openraft/src/raft/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/replication/response.rs",
+          "old_path": "openraft/src/replication/response.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/storage/callback.rs",
+          "old_path": "openraft/src/storage/callback.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/testing/log/suite.rs",
+          "old_path": "openraft/src/testing/log/suite.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "stores/memstore/src/lib.rs",
+          "old_path": "stores/memstore/src/lib.rs",
+          "status": "M"
+        }
+      ],
+      "new_source_files": [
+        "cluster_benchmark/tests/benchmark/store.rs",
+        "examples/mem-log/src/log_store.rs",
+        "examples/raft-kv-memstore-singlethreaded/src/store.rs",
+        "examples/raft-kv-memstore/tests/cluster/test_cluster.rs",
+        "examples/rocksstore/src/log_store.rs",
+        "openraft/src/core/raft_core.rs",
+        "openraft/src/engine/engine_impl.rs",
+        "openraft/src/engine/tests/initialize_test.rs",
+        "openraft/src/raft/mod.rs",
+        "openraft/src/replication/response.rs",
+        "openraft/src/storage/callback.rs",
+        "openraft/src/testing/log/suite.rs",
+        "stores/memstore/src/lib.rs"
+      ],
+      "old_source_files": [
+        "cluster_benchmark/tests/benchmark/store.rs",
+        "examples/mem-log/src/log_store.rs",
+        "examples/raft-kv-memstore-singlethreaded/src/store.rs",
+        "examples/raft-kv-memstore/tests/cluster/test_cluster.rs",
+        "examples/rocksstore/src/log_store.rs",
+        "openraft/src/core/raft_core.rs",
+        "openraft/src/engine/engine_impl.rs",
+        "openraft/src/engine/tests/initialize_test.rs",
+        "openraft/src/raft/mod.rs",
+        "openraft/src/replication/response.rs",
+        "openraft/src/storage/callback.rs",
+        "openraft/src/testing/log/suite.rs",
+        "stores/memstore/src/lib.rs"
+      ],
+      "schema_version": 1
+    },
+    {
+      "case_id": "case-002",
+      "category": "A_DISTRIBUTED",
+      "changed_files": [
+        {
+          "new_path": "zookeeper-server/src/main/java/org/apache/zookeeper/server/ZooKeeperServer.java",
+          "old_path": "zookeeper-server/src/main/java/org/apache/zookeeper/server/ZooKeeperServer.java",
+          "status": "M"
+        },
+        {
+          "new_path": "zookeeper-server/src/main/java/org/apache/zookeeper/server/quorum/Learner.java",
+          "old_path": "zookeeper-server/src/main/java/org/apache/zookeeper/server/quorum/Learner.java",
+          "status": "M"
+        },
+        {
+          "new_path": "zookeeper-server/src/test/java/org/apache/zookeeper/server/quorum/DIFFSyncConsistencyTest.java",
+          "old_path": "zookeeper-server/src/test/java/org/apache/zookeeper/server/quorum/DIFFSyncConsistencyTest.java",
+          "status": "A"
+        }
+      ],
+      "new_source_files": [
+        "zookeeper-server/src/main/java/org/apache/zookeeper/server/ZooKeeperServer.java",
+        "zookeeper-server/src/main/java/org/apache/zookeeper/server/quorum/Learner.java",
+        "zookeeper-server/src/test/java/org/apache/zookeeper/server/quorum/DIFFSyncConsistencyTest.java"
+      ],
+      "old_source_files": [
+        "zookeeper-server/src/main/java/org/apache/zookeeper/server/ZooKeeperServer.java",
+        "zookeeper-server/src/main/java/org/apache/zookeeper/server/quorum/Learner.java"
+      ],
+      "schema_version": 1
+    },
+    {
+      "case_id": "case-003",
+      "category": "A_DISTRIBUTED",
+      "changed_files": [
+        {
+          "new_path": ".changelog/unreleased/bug-fixes/0000-asa-2024-001-fix-validate.md",
+          "old_path": ".changelog/unreleased/bug-fixes/0000-asa-2024-001-fix-validate.md",
+          "status": "A"
+        },
+        {
+          "new_path": "types/params.go",
+          "old_path": "types/params.go",
+          "status": "M"
+        },
+        {
+          "new_path": "types/params_test.go",
+          "old_path": "types/params_test.go",
+          "status": "M"
+        }
+      ],
+      "new_source_files": [
+        ".changelog/unreleased/bug-fixes/0000-asa-2024-001-fix-validate.md",
+        "types/params.go",
+        "types/params_test.go"
+      ],
+      "old_source_files": [
+        "types/params.go",
+        "types/params_test.go"
+      ],
+      "schema_version": 1
+    },
+    {
+      "case_id": "case-004",
+      "category": "A_DISTRIBUTED",
+      "changed_files": [
+        {
+          "new_path": "openraft/src/core/raft_core.rs",
+          "old_path": "openraft/src/core/raft_core.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/raft_msg/mod.rs",
+          "old_path": "openraft/src/core/raft_msg/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/metrics/raft_metrics.rs",
+          "old_path": "openraft/src/metrics/raft_metrics.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/metrics/wait.rs",
+          "old_path": "openraft/src/metrics/wait.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/raft/mod.rs",
+          "old_path": "openraft/src/raft/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/utime.rs",
+          "old_path": "openraft/src/utime.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/client_api/main.rs",
+          "old_path": "tests/tests/client_api/main.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/client_api/t14_transfer_leader.rs",
+          "old_path": "tests/tests/client_api/t14_transfer_leader.rs",
+          "status": "A"
+        }
+      ],
+      "new_source_files": [
+        "openraft/src/core/raft_core.rs",
+        "openraft/src/core/raft_msg/mod.rs",
+        "openraft/src/metrics/raft_metrics.rs",
+        "openraft/src/metrics/wait.rs",
+        "openraft/src/raft/mod.rs",
+        "openraft/src/utime.rs",
+        "tests/tests/client_api/main.rs",
+        "tests/tests/client_api/t14_transfer_leader.rs"
+      ],
+      "old_source_files": [
+        "openraft/src/core/raft_core.rs",
+        "openraft/src/core/raft_msg/mod.rs",
+        "openraft/src/metrics/raft_metrics.rs",
+        "openraft/src/metrics/wait.rs",
+        "openraft/src/raft/mod.rs",
+        "openraft/src/utime.rs",
+        "tests/tests/client_api/main.rs"
+      ],
+      "schema_version": 1
+    },
+    {
+      "case_id": "case-005",
+      "category": "A_DISTRIBUTED",
+      "changed_files": [
+        {
+          "new_path": "src/java/main/org/apache/zookeeper/server/ZooKeeperServer.java",
+          "old_path": "src/java/main/org/apache/zookeeper/server/ZooKeeperServer.java",
+          "status": "M"
+        },
+        {
+          "new_path": "src/java/main/org/apache/zookeeper/server/ZooKeeperServerMain.java",
+          "old_path": "src/java/main/org/apache/zookeeper/server/ZooKeeperServerMain.java",
+          "status": "M"
+        },
+        {
+          "new_path": "src/java/main/org/apache/zookeeper/server/quorum/Learner.java",
+          "old_path": "src/java/main/org/apache/zookeeper/server/quorum/Learner.java",
+          "status": "M"
+        },
+        {
+          "new_path": "src/java/test/org/apache/zookeeper/server/quorum/Zab1_0Test.java",
+          "old_path": "src/java/test/org/apache/zookeeper/server/quorum/Zab1_0Test.java",
+          "status": "M"
+        }
+      ],
+      "new_source_files": [
+        "src/java/main/org/apache/zookeeper/server/ZooKeeperServer.java",
+        "src/java/main/org/apache/zookeeper/server/ZooKeeperServerMain.java",
+        "src/java/main/org/apache/zookeeper/server/quorum/Learner.java",
+        "src/java/test/org/apache/zookeeper/server/quorum/Zab1_0Test.java"
+      ],
+      "old_source_files": [
+        "src/java/main/org/apache/zookeeper/server/ZooKeeperServer.java",
+        "src/java/main/org/apache/zookeeper/server/ZooKeeperServerMain.java",
+        "src/java/main/org/apache/zookeeper/server/quorum/Learner.java",
+        "src/java/test/org/apache/zookeeper/server/quorum/Zab1_0Test.java"
+      ],
+      "schema_version": 1
+    },
+    {
+      "case_id": "case-006",
+      "category": "A_DISTRIBUTED",
+      "changed_files": [
+        {
+          "new_path": "raft_test.go",
+          "old_path": "raft_test.go",
+          "status": "M"
+        },
+        {
+          "new_path": "read_only.go",
+          "old_path": "read_only.go",
+          "status": "M"
+        }
+      ],
+      "new_source_files": [
+        "raft_test.go",
+        "read_only.go"
+      ],
+      "old_source_files": [
+        "raft_test.go",
+        "read_only.go"
+      ],
+      "schema_version": 1
+    },
+    {
+      "case_id": "case-007",
+      "category": "A_DISTRIBUTED",
+      "changed_files": [
+        {
+          "new_path": "openraft/src/core/raft_core.rs",
+          "old_path": "openraft/src/core/raft_core.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/error/mod.rs",
+          "old_path": "openraft/src/error/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/network/v2/network.rs",
+          "old_path": "openraft/src/network/v2/network.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/progress/entry/update.rs",
+          "old_path": "openraft/src/progress/entry/update.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/raft/message/append_entries_response.rs",
+          "old_path": "openraft/src/raft/message/append_entries_response.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/raft/message/stream_append_error.rs",
+          "old_path": "openraft/src/raft/message/stream_append_error.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/replication/inflight_append.rs",
+          "old_path": "openraft/src/replication/inflight_append.rs",
+          "status": "A"
+        },
+        {
+          "new_path": "openraft/src/replication/inflight_append_queue.rs",
+          "old_path": "openraft/src/replication/inflight_append_queue.rs",
+          "status": "A"
+        },
+        {
+          "new_path": "openraft/src/replication/mod.rs",
+          "old_path": "openraft/src/replication/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/replication/replication_context.rs",
+          "old_path": "openraft/src/replication/replication_context.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/replication/request.rs",
+          "old_path": "openraft/src/replication/request.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/replication/snapshot_transmitter.rs",
+          "old_path": "openraft/src/replication/snapshot_transmitter.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/replication/stream_context.rs",
+          "old_path": "openraft/src/replication/stream_context.rs",
+          "status": "A"
+        },
+        {
+          "new_path": "openraft/src/replication/stream_state.rs",
+          "old_path": "openraft/src/replication/stream_state.rs",
+          "status": "A"
+        },
+        {
+          "new_path": "tests/tests/append_entries/t10_stream_append.rs",
+          "old_path": "tests/tests/append_entries/t10_stream_append.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/client_api/t11_client_reads.rs",
+          "old_path": "tests/tests/client_api/t11_client_reads.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/snapshot_streaming/t30_purge_in_snapshot_logs.rs",
+          "old_path": "tests/tests/snapshot_streaming/t30_purge_in_snapshot_logs.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/snapshot_streaming/t34_replication_does_not_block_purge.rs",
+          "old_path": "tests/tests/snapshot_streaming/t34_replication_does_not_block_purge.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/snapshot_streaming/t90_issue_808_snapshot_to_unreachable_node_should_not_block.rs",
+          "old_path": "tests/tests/snapshot_streaming/t90_issue_808_snapshot_to_unreachable_node_should_not_block.rs",
+          "status": "M"
+        }
+      ],
+      "new_source_files": [
+        "openraft/src/core/raft_core.rs",
+        "openraft/src/error/mod.rs",
+        "openraft/src/network/v2/network.rs",
+        "openraft/src/progress/entry/update.rs",
+        "openraft/src/raft/message/append_entries_response.rs",
+        "openraft/src/raft/message/stream_append_error.rs",
+        "openraft/src/replication/inflight_append.rs",
+        "openraft/src/replication/inflight_append_queue.rs",
+        "openraft/src/replication/mod.rs",
+        "openraft/src/replication/replication_context.rs",
+        "openraft/src/replication/request.rs",
+        "openraft/src/replication/snapshot_transmitter.rs",
+        "openraft/src/replication/stream_context.rs",
+        "openraft/src/replication/stream_state.rs",
+        "tests/tests/append_entries/t10_stream_append.rs",
+        "tests/tests/client_api/t11_client_reads.rs",
+        "tests/tests/snapshot_streaming/t30_purge_in_snapshot_logs.rs",
+        "tests/tests/snapshot_streaming/t34_replication_does_not_block_purge.rs",
+        "tests/tests/snapshot_streaming/t90_issue_808_snapshot_to_unreachable_node_should_not_block.rs"
+      ],
+      "old_source_files": [
+        "openraft/src/core/raft_core.rs",
+        "openraft/src/error/mod.rs",
+        "openraft/src/network/v2/network.rs",
+        "openraft/src/progress/entry/update.rs",
+        "openraft/src/raft/message/append_entries_response.rs",
+        "openraft/src/raft/message/stream_append_error.rs",
+        "openraft/src/replication/mod.rs",
+        "openraft/src/replication/replication_context.rs",
+        "openraft/src/replication/request.rs",
+        "openraft/src/replication/snapshot_transmitter.rs",
+        "tests/tests/append_entries/t10_stream_append.rs",
+        "tests/tests/client_api/t11_client_reads.rs",
+        "tests/tests/snapshot_streaming/t30_purge_in_snapshot_logs.rs",
+        "tests/tests/snapshot_streaming/t34_replication_does_not_block_purge.rs",
+        "tests/tests/snapshot_streaming/t90_issue_808_snapshot_to_unreachable_node_should_not_block.rs"
+      ],
+      "schema_version": 1
+    },
+    {
+      "case_id": "case-008",
+      "category": "A_DISTRIBUTED",
+      "changed_files": [
+        {
+          "new_path": "cfgmgr/intfmgr.cpp",
+          "old_path": "cfgmgr/intfmgr.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "cfgmgr/intfmgr.h",
+          "old_path": "cfgmgr/intfmgr.h",
+          "status": "M"
+        },
+        {
+          "new_path": "cfgmgr/intfmgrd.cpp",
+          "old_path": "cfgmgr/intfmgrd.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "cfgmgr/teammgr.cpp",
+          "old_path": "cfgmgr/teammgr.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "cfgmgr/teammgr.h",
+          "old_path": "cfgmgr/teammgr.h",
+          "status": "M"
+        },
+        {
+          "new_path": "cfgmgr/vxlanmgr.cpp",
+          "old_path": "cfgmgr/vxlanmgr.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "cfgmgr/vxlanmgr.h",
+          "old_path": "cfgmgr/vxlanmgr.h",
+          "status": "M"
+        },
+        {
+          "new_path": "fdbsyncd/fdbsync.cpp",
+          "old_path": "fdbsyncd/fdbsync.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "fdbsyncd/fdbsync.h",
+          "old_path": "fdbsyncd/fdbsync.h",
+          "status": "M"
+        },
+        {
+          "new_path": "fdbsyncd/fdbsyncd.cpp",
+          "old_path": "fdbsyncd/fdbsyncd.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "fpmsyncd/fpm/fpm.h",
+          "old_path": "fpmsyncd/fpm/fpm.h",
+          "status": "M"
+        },
+        {
+          "new_path": "fpmsyncd/fpmlink.cpp",
+          "old_path": "fpmsyncd/fpmlink.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "fpmsyncd/fpmsyncd.cpp",
+          "old_path": "fpmsyncd/fpmsyncd.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "fpmsyncd/routesync.cpp",
+          "old_path": "fpmsyncd/routesync.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "fpmsyncd/routesync.h",
+          "old_path": "fpmsyncd/routesync.h",
+          "status": "M"
+        },
+        {
+          "new_path": "lib/fdb_defs.h",
+          "old_path": "lib/fdb_defs.h",
+          "status": "A"
+        },
+        {
+          "new_path": "neighsyncd/neighsync.cpp",
+          "old_path": "neighsyncd/neighsync.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "neighsyncd/neighsync.h",
+          "old_path": "neighsyncd/neighsync.h",
+          "status": "M"
+        },
+        {
+          "new_path": "neighsyncd/neighsyncd.cpp",
+          "old_path": "neighsyncd/neighsyncd.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/Makefile.am",
+          "old_path": "orchagent/Makefile.am",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/fdborch.cpp",
+          "old_path": "orchagent/fdborch.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/fdborch.h",
+          "old_path": "orchagent/fdborch.h",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/flex_counter/flex_counter_manager.cpp",
+          "old_path": "orchagent/flex_counter/flex_counter_manager.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/flex_counter/flex_counter_manager.h",
+          "old_path": "orchagent/flex_counter/flex_counter_manager.h",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/intfsorch.cpp",
+          "old_path": "orchagent/intfsorch.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/intfsorch.h",
+          "old_path": "orchagent/intfsorch.h",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/neighorch.cpp",
+          "old_path": "orchagent/neighorch.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/neighorch.h",
+          "old_path": "orchagent/neighorch.h",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/orchdaemon.cpp",
+          "old_path": "orchagent/orchdaemon.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/orchdaemon.h",
+          "old_path": "orchagent/orchdaemon.h",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/p4orch/tests/Makefile.am",
+          "old_path": "orchagent/p4orch/tests/Makefile.am",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/p4orch/tests/fake_routeorch.cpp",
+          "old_path": "orchagent/p4orch/tests/fake_routeorch.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/p4orch/tests/mock_routeorch.h",
+          "old_path": "orchagent/p4orch/tests/mock_routeorch.h",
+          "status": "A"
+        },
+        {
+          "new_path": "orchagent/p4orch/tests/mock_sai_tunnel.cpp",
+          "old_path": "orchagent/p4orch/tests/mock_sai_tunnel.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/p4orch/tests/mock_sai_tunnel.h",
+          "old_path": "orchagent/p4orch/tests/mock_sai_tunnel.h",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/p4orch/tests/test_main.cpp",
+          "old_path": "orchagent/p4orch/tests/test_main.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/port.h",
+          "old_path": "orchagent/port.h",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/portsorch.cpp",
+          "old_path": "orchagent/portsorch.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/portsorch.h",
+          "old_path": "orchagent/portsorch.h",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/request_parser.cpp",
+          "old_path": "orchagent/request_parser.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/routeorch.cpp",
+          "old_path": "orchagent/routeorch.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/routeorch.h",
+          "old_path": "orchagent/routeorch.h",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/saihelper.cpp",
+          "old_path": "orchagent/saihelper.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/vrforch.cpp",
+          "old_path": "orchagent/vrforch.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/vrforch.h",
+          "old_path": "orchagent/vrforch.h",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/vxlanorch.cpp",
+          "old_path": "orchagent/vxlanorch.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "orchagent/vxlanorch.h",
+          "old_path": "orchagent/vxlanorch.h",
+          "status": "M"
+        },
+        {
+          "new_path": "run-gtest-suite.py",
+          "old_path": "run-gtest-suite.py",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/evpn_tunnel.py",
+          "old_path": "tests/evpn_tunnel.py",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/Makefile.am",
+          "old_path": "tests/mock_tests/Makefile.am",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/aclorch_ut.cpp",
+          "old_path": "tests/mock_tests/aclorch_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/buffermgrdyn_ut.cpp",
+          "old_path": "tests/mock_tests/buffermgrdyn_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/bufferorch_ut.cpp",
+          "old_path": "tests/mock_tests/bufferorch_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/check.h",
+          "old_path": "tests/mock_tests/check.h",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/fdborch/fdborch_vxlan_ut.cpp",
+          "old_path": "tests/mock_tests/fdborch/fdborch_vxlan_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/fdborch/flush_syncd_notif_ut.cpp",
+          "old_path": "tests/mock_tests/fdborch/flush_syncd_notif_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/fdbsyncd/fdbsyncd_ut.cpp",
+          "old_path": "tests/mock_tests/fdbsyncd/fdbsyncd_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/flexcounter_ut.cpp",
+          "old_path": "tests/mock_tests/flexcounter_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/flowcounterrouteorch_ut.cpp",
+          "old_path": "tests/mock_tests/flowcounterrouteorch_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/fpmsyncd/test_routesync.cpp",
+          "old_path": "tests/mock_tests/fpmsyncd/test_routesync.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/fpmsyncd/ut_helpers_fpmsyncd.cpp",
+          "old_path": "tests/mock_tests/fpmsyncd/ut_helpers_fpmsyncd.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/intfmgrd/intfmgr_ut.cpp",
+          "old_path": "tests/mock_tests/intfmgrd/intfmgr_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/intfsorch_ut.cpp",
+          "old_path": "tests/mock_tests/intfsorch_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/mock_hiredis.cpp",
+          "old_path": "tests/mock_tests/mock_hiredis.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/mock_orch_test.cpp",
+          "old_path": "tests/mock_tests/mock_orch_test.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/mock_orchagent_main.cpp",
+          "old_path": "tests/mock_tests/mock_orchagent_main.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/mock_orchagent_main.h",
+          "old_path": "tests/mock_tests/mock_orchagent_main.h",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/mock_sai_tunnel.h",
+          "old_path": "tests/mock_tests/mock_sai_tunnel.h",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/mux_rollback_ut.cpp",
+          "old_path": "tests/mock_tests/mux_rollback_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/neighorch_ut.cpp",
+          "old_path": "tests/mock_tests/neighorch_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/portsorch_ut.cpp",
+          "old_path": "tests/mock_tests/portsorch_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/qosorch_ut.cpp",
+          "old_path": "tests/mock_tests/qosorch_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/routeorch_ut.cpp",
+          "old_path": "tests/mock_tests/routeorch_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/shlorch_ut.cpp",
+          "old_path": "tests/mock_tests/shlorch_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/teammgrd/teammgr_ut.cpp",
+          "old_path": "tests/mock_tests/teammgrd/teammgr_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/mock_tests/vxlanorch_ut.cpp",
+          "old_path": "tests/mock_tests/vxlanorch_ut.cpp",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/test_evpn_fdb.py",
+          "old_path": "tests/test_evpn_fdb.py",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/test_evpn_fdb_p2mp.py",
+          "old_path": "tests/test_evpn_fdb_p2mp.py",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/test_evpn_l3_vxlan.py",
+          "old_path": "tests/test_evpn_l3_vxlan.py",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/test_evpn_l3_vxlan_p2mp.py",
+          "old_path": "tests/test_evpn_l3_vxlan_p2mp.py",
+          "status": "M"
+        }
+      ],
+      "new_source_files": [
+        "cfgmgr/intfmgr.cpp",
+        "cfgmgr/intfmgr.h",
+        "cfgmgr/intfmgrd.cpp",
+        "cfgmgr/teammgr.cpp",
+        "cfgmgr/teammgr.h",
+        "cfgmgr/vxlanmgr.cpp",
+        "cfgmgr/vxlanmgr.h",
+        "fdbsyncd/fdbsync.cpp",
+        "fdbsyncd/fdbsync.h",
+        "fdbsyncd/fdbsyncd.cpp",
+        "fpmsyncd/fpm/fpm.h",
+        "fpmsyncd/fpmlink.cpp",
+        "fpmsyncd/fpmsyncd.cpp",
+        "fpmsyncd/routesync.cpp",
+        "fpmsyncd/routesync.h",
+        "lib/fdb_defs.h",
+        "neighsyncd/neighsync.cpp",
+        "neighsyncd/neighsync.h",
+        "neighsyncd/neighsyncd.cpp",
+        "orchagent/Makefile.am",
+        "orchagent/fdborch.cpp",
+        "orchagent/fdborch.h",
+        "orchagent/flex_counter/flex_counter_manager.cpp",
+        "orchagent/flex_counter/flex_counter_manager.h",
+        "orchagent/intfsorch.cpp",
+        "orchagent/intfsorch.h",
+        "orchagent/neighorch.cpp",
+        "orchagent/neighorch.h",
+        "orchagent/orchdaemon.cpp",
+        "orchagent/orchdaemon.h",
+        "orchagent/p4orch/tests/Makefile.am",
+        "orchagent/p4orch/tests/fake_routeorch.cpp",
+        "orchagent/p4orch/tests/mock_routeorch.h",
+        "orchagent/p4orch/tests/mock_sai_tunnel.cpp",
+        "orchagent/p4orch/tests/mock_sai_tunnel.h",
+        "orchagent/p4orch/tests/test_main.cpp",
+        "orchagent/port.h",
+        "orchagent/portsorch.cpp",
+        "orchagent/portsorch.h",
+        "orchagent/request_parser.cpp",
+        "orchagent/routeorch.cpp",
+        "orchagent/routeorch.h",
+        "orchagent/saihelper.cpp",
+        "orchagent/vrforch.cpp",
+        "orchagent/vrforch.h",
+        "orchagent/vxlanorch.cpp",
+        "orchagent/vxlanorch.h",
+        "run-gtest-suite.py",
+        "tests/evpn_tunnel.py",
+        "tests/mock_tests/Makefile.am",
+        "tests/mock_tests/aclorch_ut.cpp",
+        "tests/mock_tests/buffermgrdyn_ut.cpp",
+        "tests/mock_tests/bufferorch_ut.cpp",
+        "tests/mock_tests/check.h",
+        "tests/mock_tests/fdborch/fdborch_vxlan_ut.cpp",
+        "tests/mock_tests/fdborch/flush_syncd_notif_ut.cpp",
+        "tests/mock_tests/fdbsyncd/fdbsyncd_ut.cpp",
+        "tests/mock_tests/flexcounter_ut.cpp",
+        "tests/mock_tests/flowcounterrouteorch_ut.cpp",
+        "tests/mock_tests/fpmsyncd/test_routesync.cpp",
+        "tests/mock_tests/fpmsyncd/ut_helpers_fpmsyncd.cpp",
+        "tests/mock_tests/intfmgrd/intfmgr_ut.cpp",
+        "tests/mock_tests/intfsorch_ut.cpp",
+        "tests/mock_tests/mock_hiredis.cpp",
+        "tests/mock_tests/mock_orch_test.cpp",
+        "tests/mock_tests/mock_orchagent_main.cpp",
+        "tests/mock_tests/mock_orchagent_main.h",
+        "tests/mock_tests/mock_sai_tunnel.h",
+        "tests/mock_tests/mux_rollback_ut.cpp",
+        "tests/mock_tests/neighorch_ut.cpp",
+        "tests/mock_tests/portsorch_ut.cpp",
+        "tests/mock_tests/qosorch_ut.cpp",
+        "tests/mock_tests/routeorch_ut.cpp",
+        "tests/mock_tests/shlorch_ut.cpp",
+        "tests/mock_tests/teammgrd/teammgr_ut.cpp",
+        "tests/mock_tests/vxlanorch_ut.cpp",
+        "tests/test_evpn_fdb.py",
+        "tests/test_evpn_fdb_p2mp.py",
+        "tests/test_evpn_l3_vxlan.py",
+        "tests/test_evpn_l3_vxlan_p2mp.py"
+      ],
+      "old_source_files": [
+        "cfgmgr/intfmgr.cpp",
+        "cfgmgr/intfmgr.h",
+        "cfgmgr/intfmgrd.cpp",
+        "cfgmgr/teammgr.cpp",
+        "cfgmgr/teammgr.h",
+        "cfgmgr/vxlanmgr.cpp",
+        "cfgmgr/vxlanmgr.h",
+        "fdbsyncd/fdbsync.cpp",
+        "fdbsyncd/fdbsync.h",
+        "fdbsyncd/fdbsyncd.cpp",
+        "fpmsyncd/fpm/fpm.h",
+        "fpmsyncd/fpmlink.cpp",
+        "fpmsyncd/fpmsyncd.cpp",
+        "fpmsyncd/routesync.cpp",
+        "fpmsyncd/routesync.h",
+        "neighsyncd/neighsync.cpp",
+        "neighsyncd/neighsync.h",
+        "neighsyncd/neighsyncd.cpp",
+        "orchagent/Makefile.am",
+        "orchagent/fdborch.cpp",
+        "orchagent/fdborch.h",
+        "orchagent/flex_counter/flex_counter_manager.cpp",
+        "orchagent/flex_counter/flex_counter_manager.h",
+        "orchagent/intfsorch.cpp",
+        "orchagent/intfsorch.h",
+        "orchagent/neighorch.cpp",
+        "orchagent/neighorch.h",
+        "orchagent/orchdaemon.cpp",
+        "orchagent/orchdaemon.h",
+        "orchagent/p4orch/tests/Makefile.am",
+        "orchagent/p4orch/tests/fake_routeorch.cpp",
+        "orchagent/p4orch/tests/mock_sai_tunnel.cpp",
+        "orchagent/p4orch/tests/mock_sai_tunnel.h",
+        "orchagent/p4orch/tests/test_main.cpp",
+        "orchagent/port.h",
+        "orchagent/portsorch.cpp",
+        "orchagent/portsorch.h",
+        "orchagent/request_parser.cpp",
+        "orchagent/routeorch.cpp",
+        "orchagent/routeorch.h",
+        "orchagent/saihelper.cpp",
+        "orchagent/vrforch.cpp",
+        "orchagent/vrforch.h",
+        "orchagent/vxlanorch.cpp",
+        "orchagent/vxlanorch.h",
+        "run-gtest-suite.py",
+        "tests/evpn_tunnel.py",
+        "tests/mock_tests/Makefile.am",
+        "tests/mock_tests/aclorch_ut.cpp",
+        "tests/mock_tests/buffermgrdyn_ut.cpp",
+        "tests/mock_tests/bufferorch_ut.cpp",
+        "tests/mock_tests/check.h",
+        "tests/mock_tests/fdborch/fdborch_vxlan_ut.cpp",
+        "tests/mock_tests/fdborch/flush_syncd_notif_ut.cpp",
+        "tests/mock_tests/fdbsyncd/fdbsyncd_ut.cpp",
+        "tests/mock_tests/flexcounter_ut.cpp",
+        "tests/mock_tests/flowcounterrouteorch_ut.cpp",
+        "tests/mock_tests/fpmsyncd/test_routesync.cpp",
+        "tests/mock_tests/fpmsyncd/ut_helpers_fpmsyncd.cpp",
+        "tests/mock_tests/intfmgrd/intfmgr_ut.cpp",
+        "tests/mock_tests/intfsorch_ut.cpp",
+        "tests/mock_tests/mock_hiredis.cpp",
+        "tests/mock_tests/mock_orch_test.cpp",
+        "tests/mock_tests/mock_orchagent_main.cpp",
+        "tests/mock_tests/mock_orchagent_main.h",
+        "tests/mock_tests/mock_sai_tunnel.h",
+        "tests/mock_tests/mux_rollback_ut.cpp",
+        "tests/mock_tests/neighorch_ut.cpp",
+        "tests/mock_tests/portsorch_ut.cpp",
+        "tests/mock_tests/qosorch_ut.cpp",
+        "tests/mock_tests/routeorch_ut.cpp",
+        "tests/mock_tests/shlorch_ut.cpp",
+        "tests/mock_tests/teammgrd/teammgr_ut.cpp",
+        "tests/mock_tests/vxlanorch_ut.cpp",
+        "tests/test_evpn_fdb.py",
+        "tests/test_evpn_fdb_p2mp.py",
+        "tests/test_evpn_l3_vxlan.py",
+        "tests/test_evpn_l3_vxlan_p2mp.py"
+      ],
+      "schema_version": 1
+    },
+    {
+      "case_id": "case-009",
+      "category": "A_DISTRIBUTED",
+      "changed_files": [
+        {
+          "new_path": "Makefile",
+          "old_path": "Makefile",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/config/config.rs",
+          "old_path": "openraft/src/config/config.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/core_state.rs",
+          "old_path": "openraft/src/core/core_state.rs",
+          "status": "A"
+        },
+        {
+          "new_path": "openraft/src/core/mod.rs",
+          "old_path": "openraft/src/core/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/raft_core.rs",
+          "old_path": "openraft/src/core/raft_core.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/sm/response.rs",
+          "old_path": "openraft/src/core/sm/response.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/sm/worker.rs",
+          "old_path": "openraft/src/core/sm/worker.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/engine_impl.rs",
+          "old_path": "openraft/src/engine/engine_impl.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/raft/mod.rs",
+          "old_path": "openraft/src/raft/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/storage/helper.rs",
+          "old_path": "openraft/src/storage/helper.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/storage/v2/raft_state_machine.rs",
+          "old_path": "openraft/src/storage/v2/raft_state_machine.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/testing/log/suite.rs",
+          "old_path": "openraft/src/testing/log/suite.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "stores/memstore/src/lib.rs",
+          "old_path": "stores/memstore/src/lib.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/snapshot_building/main.rs",
+          "old_path": "tests/tests/snapshot_building/main.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/snapshot_building/t11_snapshot_builder_control.rs",
+          "old_path": "tests/tests/snapshot_building/t11_snapshot_builder_control.rs",
+          "status": "A"
+        }
+      ],
+      "new_source_files": [
+        "Makefile",
+        "openraft/src/config/config.rs",
+        "openraft/src/core/core_state.rs",
+        "openraft/src/core/mod.rs",
+        "openraft/src/core/raft_core.rs",
+        "openraft/src/core/sm/response.rs",
+        "openraft/src/core/sm/worker.rs",
+        "openraft/src/engine/engine_impl.rs",
+        "openraft/src/raft/mod.rs",
+        "openraft/src/storage/helper.rs",
+        "openraft/src/storage/v2/raft_state_machine.rs",
+        "openraft/src/testing/log/suite.rs",
+        "stores/memstore/src/lib.rs",
+        "tests/tests/snapshot_building/main.rs",
+        "tests/tests/snapshot_building/t11_snapshot_builder_control.rs"
+      ],
+      "old_source_files": [
+        "Makefile",
+        "openraft/src/config/config.rs",
+        "openraft/src/core/mod.rs",
+        "openraft/src/core/raft_core.rs",
+        "openraft/src/core/sm/response.rs",
+        "openraft/src/core/sm/worker.rs",
+        "openraft/src/engine/engine_impl.rs",
+        "openraft/src/raft/mod.rs",
+        "openraft/src/storage/helper.rs",
+        "openraft/src/storage/v2/raft_state_machine.rs",
+        "openraft/src/testing/log/suite.rs",
+        "stores/memstore/src/lib.rs",
+        "tests/tests/snapshot_building/main.rs"
+      ],
+      "schema_version": 1
+    },
+    {
+      "case_id": "case-010",
+      "category": "A_DISTRIBUTED",
+      "changed_files": [
+        {
+          "new_path": "zookeeper-server/src/main/java/org/apache/zookeeper/server/ZooKeeperServer.java",
+          "old_path": "zookeeper-server/src/main/java/org/apache/zookeeper/server/ZooKeeperServer.java",
+          "status": "M"
+        },
+        {
+          "new_path": "zookeeper-server/src/main/java/org/apache/zookeeper/server/quorum/Learner.java",
+          "old_path": "zookeeper-server/src/main/java/org/apache/zookeeper/server/quorum/Learner.java",
+          "status": "M"
+        },
+        {
+          "new_path": "zookeeper-server/src/test/java/org/apache/zookeeper/server/quorum/QuorumPeerMainTest.java",
+          "old_path": "zookeeper-server/src/test/java/org/apache/zookeeper/server/quorum/QuorumPeerMainTest.java",
+          "status": "M"
+        }
+      ],
+      "new_source_files": [
+        "zookeeper-server/src/main/java/org/apache/zookeeper/server/ZooKeeperServer.java",
+        "zookeeper-server/src/main/java/org/apache/zookeeper/server/quorum/Learner.java",
+        "zookeeper-server/src/test/java/org/apache/zookeeper/server/quorum/QuorumPeerMainTest.java"
+      ],
+      "old_source_files": [
+        "zookeeper-server/src/main/java/org/apache/zookeeper/server/ZooKeeperServer.java",
+        "zookeeper-server/src/main/java/org/apache/zookeeper/server/quorum/Learner.java",
+        "zookeeper-server/src/test/java/org/apache/zookeeper/server/quorum/QuorumPeerMainTest.java"
+      ],
+      "schema_version": 1
+    },
+    {
+      "case_id": "case-011",
+      "category": "A_DISTRIBUTED",
+      "changed_files": [
+        {
+          "new_path": "openraft/src/config/config.rs",
+          "old_path": "openraft/src/config/config.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/config/config_clap_test.rs",
+          "old_path": "openraft/src/config/config_clap_test.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/config/runtime_config.rs",
+          "old_path": "openraft/src/config/runtime_config.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/notification.rs",
+          "old_path": "openraft/src/core/notification.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/notification_name.rs",
+          "old_path": "openraft/src/core/notification_name.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/raft_core.rs",
+          "old_path": "openraft/src/core/raft_core.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/raft_msg/external_command.rs",
+          "old_path": "openraft/src/core/raft_msg/external_command.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/raft_msg/mod.rs",
+          "old_path": "openraft/src/core/raft_msg/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/raft_msg/raft_msg_name.rs",
+          "old_path": "openraft/src/core/raft_msg/raft_msg_name.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/docs/protocol/mod.rs",
+          "old_path": "openraft/src/docs/protocol/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/docs/protocol/pre_vote.md",
+          "old_path": "openraft/src/docs/protocol/pre_vote.md",
+          "status": "A"
+        },
+        {
+          "new_path": "openraft/src/engine/command.rs",
+          "old_path": "openraft/src/engine/command.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/command_name.rs",
+          "old_path": "openraft/src/engine/command_name.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/engine_impl.rs",
+          "old_path": "openraft/src/engine/engine_impl.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/handler/vote_handler/mod.rs",
+          "old_path": "openraft/src/engine/handler/vote_handler/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/mod.rs",
+          "old_path": "openraft/src/engine/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/tests/handle_pre_vote_req_test.rs",
+          "old_path": "openraft/src/engine/tests/handle_pre_vote_req_test.rs",
+          "status": "A"
+        },
+        {
+          "new_path": "openraft/src/engine/tests/handle_pre_vote_resp_test.rs",
+          "old_path": "openraft/src/engine/tests/handle_pre_vote_resp_test.rs",
+          "status": "A"
+        },
+        {
+          "new_path": "openraft/src/engine/tests/pre_elect_test.rs",
+          "old_path": "openraft/src/engine/tests/pre_elect_test.rs",
+          "status": "A"
+        },
+        {
+          "new_path": "openraft/src/network/v2/network.rs",
+          "old_path": "openraft/src/network/v2/network.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/network/vote_trait.rs",
+          "old_path": "openraft/src/network/vote_trait.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/proposer/candidate.rs",
+          "old_path": "openraft/src/proposer/candidate.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/raft/api/protocol.rs",
+          "old_path": "openraft/src/raft/api/protocol.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/raft/mod.rs",
+          "old_path": "openraft/src/raft/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/raft/runtime_config_handle.rs",
+          "old_path": "openraft/src/raft/runtime_config_handle.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/raft/trigger.rs",
+          "old_path": "openraft/src/raft/trigger.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/client_api/t11_client_reads.rs",
+          "old_path": "tests/tests/client_api/t11_client_reads.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/client_api/t90_issue_1761_purge_stranded_responder.rs",
+          "old_path": "tests/tests/client_api/t90_issue_1761_purge_stranded_responder.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/elect/main.rs",
+          "old_path": "tests/tests/elect/main.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/elect/t11_elect_seize_leadership.rs",
+          "old_path": "tests/tests/elect/t11_elect_seize_leadership.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/elect/t12_pre_vote.rs",
+          "old_path": "tests/tests/elect/t12_pre_vote.rs",
+          "status": "A"
+        },
+        {
+          "new_path": "tests/tests/fixtures/mod.rs",
+          "old_path": "tests/tests/fixtures/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/life_cycle/t50_leader_restart_clears_state.rs",
+          "old_path": "tests/tests/life_cycle/t50_leader_restart_clears_state.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/membership/t30_elect_with_new_config.rs",
+          "old_path": "tests/tests/membership/t30_elect_with_new_config.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/metrics/t10_metrics_recorder.rs",
+          "old_path": "tests/tests/metrics/t10_metrics_recorder.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/metrics/t30_leader_metrics.rs",
+          "old_path": "tests/tests/metrics/t30_leader_metrics.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/metrics/t50_log_progress_api.rs",
+          "old_path": "tests/tests/metrics/t50_log_progress_api.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/metrics/t50_watch_leader_api.rs",
+          "old_path": "tests/tests/metrics/t50_watch_leader_api.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "tests/tests/replication/t50_append_entries_backoff_rejoin.rs",
+          "old_path": "tests/tests/replication/t50_append_entries_backoff_rejoin.rs",
+          "status": "M"
+        }
+      ],
+      "new_source_files": [
+        "openraft/src/config/config.rs",
+        "openraft/src/config/config_clap_test.rs",
+        "openraft/src/config/runtime_config.rs",
+        "openraft/src/core/notification.rs",
+        "openraft/src/core/notification_name.rs",
+        "openraft/src/core/raft_core.rs",
+        "openraft/src/core/raft_msg/external_command.rs",
+        "openraft/src/core/raft_msg/mod.rs",
+        "openraft/src/core/raft_msg/raft_msg_name.rs",
+        "openraft/src/docs/protocol/mod.rs",
+        "openraft/src/docs/protocol/pre_vote.md",
+        "openraft/src/engine/command.rs",
+        "openraft/src/engine/command_name.rs",
+        "openraft/src/engine/engine_impl.rs",
+        "openraft/src/engine/handler/vote_handler/mod.rs",
+        "openraft/src/engine/mod.rs",
+        "openraft/src/engine/tests/handle_pre_vote_req_test.rs",
+        "openraft/src/engine/tests/handle_pre_vote_resp_test.rs",
+        "openraft/src/engine/tests/pre_elect_test.rs",
+        "openraft/src/network/v2/network.rs",
+        "openraft/src/network/vote_trait.rs",
+        "openraft/src/proposer/candidate.rs",
+        "openraft/src/raft/api/protocol.rs",
+        "openraft/src/raft/mod.rs",
+        "openraft/src/raft/runtime_config_handle.rs",
+        "openraft/src/raft/trigger.rs",
+        "tests/tests/client_api/t11_client_reads.rs",
+        "tests/tests/client_api/t90_issue_1761_purge_stranded_responder.rs",
+        "tests/tests/elect/main.rs",
+        "tests/tests/elect/t11_elect_seize_leadership.rs",
+        "tests/tests/elect/t12_pre_vote.rs",
+        "tests/tests/fixtures/mod.rs",
+        "tests/tests/life_cycle/t50_leader_restart_clears_state.rs",
+        "tests/tests/membership/t30_elect_with_new_config.rs",
+        "tests/tests/metrics/t10_metrics_recorder.rs",
+        "tests/tests/metrics/t30_leader_metrics.rs",
+        "tests/tests/metrics/t50_log_progress_api.rs",
+        "tests/tests/metrics/t50_watch_leader_api.rs",
+        "tests/tests/replication/t50_append_entries_backoff_rejoin.rs"
+      ],
+      "old_source_files": [
+        "openraft/src/config/config.rs",
+        "openraft/src/config/config_clap_test.rs",
+        "openraft/src/config/runtime_config.rs",
+        "openraft/src/core/notification.rs",
+        "openraft/src/core/notification_name.rs",
+        "openraft/src/core/raft_core.rs",
+        "openraft/src/core/raft_msg/external_command.rs",
+        "openraft/src/core/raft_msg/mod.rs",
+        "openraft/src/core/raft_msg/raft_msg_name.rs",
+        "openraft/src/docs/protocol/mod.rs",
+        "openraft/src/engine/command.rs",
+        "openraft/src/engine/command_name.rs",
+        "openraft/src/engine/engine_impl.rs",
+        "openraft/src/engine/handler/vote_handler/mod.rs",
+        "openraft/src/engine/mod.rs",
+        "openraft/src/network/v2/network.rs",
+        "openraft/src/network/vote_trait.rs",
+        "openraft/src/proposer/candidate.rs",
+        "openraft/src/raft/api/protocol.rs",
+        "openraft/src/raft/mod.rs",
+        "openraft/src/raft/runtime_config_handle.rs",
+        "openraft/src/raft/trigger.rs",
+        "tests/tests/client_api/t11_client_reads.rs",
+        "tests/tests/client_api/t90_issue_1761_purge_stranded_responder.rs",
+        "tests/tests/elect/main.rs",
+        "tests/tests/elect/t11_elect_seize_leadership.rs",
+        "tests/tests/fixtures/mod.rs",
+        "tests/tests/life_cycle/t50_leader_restart_clears_state.rs",
+        "tests/tests/membership/t30_elect_with_new_config.rs",
+        "tests/tests/metrics/t10_metrics_recorder.rs",
+        "tests/tests/metrics/t30_leader_metrics.rs",
+        "tests/tests/metrics/t50_log_progress_api.rs",
+        "tests/tests/metrics/t50_watch_leader_api.rs",
+        "tests/tests/replication/t50_append_entries_backoff_rejoin.rs"
+      ],
+      "schema_version": 1
+    },
+    {
+      "case_id": "case-012",
+      "category": "A_DISTRIBUTED",
+      "changed_files": [
+        {
+          "new_path": "README.md",
+          "old_path": "README.md",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/admin.rs",
+          "old_path": "openraft/src/core/admin.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/leader_state.rs",
+          "old_path": "openraft/src/core/leader_state.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/raft_core.rs",
+          "old_path": "openraft/src/core/raft_core.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/core/replication.rs",
+          "old_path": "openraft/src/core/replication.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/command.rs",
+          "old_path": "openraft/src/engine/command.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/elect_test.rs",
+          "old_path": "openraft/src/engine/elect_test.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/engine_impl.rs",
+          "old_path": "openraft/src/engine/engine_impl.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/follower_commit_entries_test.rs",
+          "old_path": "openraft/src/engine/follower_commit_entries_test.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/handle_append_entries_req_test.rs",
+          "old_path": "openraft/src/engine/handle_append_entries_req_test.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/handle_vote_req_test.rs",
+          "old_path": "openraft/src/engine/handle_vote_req_test.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/handle_vote_resp_test.rs",
+          "old_path": "openraft/src/engine/handle_vote_resp_test.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/initialize_test.rs",
+          "old_path": "openraft/src/engine/initialize_test.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/internal_handle_vote_req_test.rs",
+          "old_path": "openraft/src/engine/internal_handle_vote_req_test.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/leader_append_entries_test.rs",
+          "old_path": "openraft/src/engine/leader_append_entries_test.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/mod.rs",
+          "old_path": "openraft/src/engine/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/engine/update_effective_membership_test.rs",
+          "old_path": "openraft/src/engine/update_effective_membership_test.rs",
+          "status": "A"
+        },
+        {
+          "new_path": "openraft/src/engine/update_progress_test.rs",
+          "old_path": "openraft/src/engine/update_progress_test.rs",
+          "status": "A"
+        },
+        {
+          "new_path": "openraft/src/leader/leader.rs",
+          "old_path": "openraft/src/leader/leader.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/membership/membership.rs",
+          "old_path": "openraft/src/membership/membership.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/membership/membership_test.rs",
+          "old_path": "openraft/src/membership/membership_test.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/progress/mod.rs",
+          "old_path": "openraft/src/progress/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/quorum/mod.rs",
+          "old_path": "openraft/src/quorum/mod.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/quorum/quorum_set.rs",
+          "old_path": "openraft/src/quorum/quorum_set.rs",
+          "status": "M"
+        },
+        {
+          "new_path": "openraft/src/quorum/util.rs",
+          "old_path": "openraft/src/quorum/util.rs",
+          "status": "D"
+        },
+        {
+          "new_path": "openraft/src/quorum/util_test.rs",
+          "old_path": "openraft/src/quorum/util_test.rs",
+          "status": "D"
+        },
+        {
+          "new_path": "openraft/src/raft_state.rs",
+          "old_path": "openraft/src/raft_state.rs",
+          "status": "M"
+        }
+      ],
+      "new_source_files": [
+        "README.md",
+        "openraft/src/core/admin.rs",
+        "openraft/src/core/leader_state.rs",
+        "openraft/src/core/raft_core.rs",
+        "openraft/src/core/replication.rs",
+        "openraft/src/engine/command.rs",
+        "openraft/src/engine/elect_test.rs",
+        "openraft/src/engine/engine_impl.rs",
+        "openraft/src/engine/follower_commit_entries_test.rs",
+        "openraft/src/engine/handle_append_entries_req_test.rs",
+        "openraft/src/engine/handle_vote_req_test.rs",
+        "openraft/src/engine/handle_vote_resp_test.rs",
+        "openraft/src/engine/initialize_test.rs",
+        "openraft/src/engine/internal_handle_vote_req_test.rs",
+        "openraft/src/engine/leader_append_entries_test.rs",
+        "openraft/src/engine/mod.rs",
+        "openraft/src/engine/update_effective_membership_test.rs",
+        "openraft/src/engine/update_progress_test.rs",
+        "openraft/src/leader/leader.rs",
+        "openraft/src/membership/membership.rs",
+        "openraft/src/membership/membership_test.rs",
+        "openraft/src/progress/mod.rs",
+        "openraft/src/quorum/mod.rs",
+        "openraft/src/quorum/quorum_set.rs",
+        "openraft/src/raft_state.rs"
+      ],
+      "old_source_files": [
+        "README.md",
+        "openraft/src/core/admin.rs",
+        "openraft/src/core/leader_state.rs",
+        "openraft/src/core/raft_core.rs",
+        "openraft/src/core/replication.rs",
+        "openraft/src/engine/command.rs",
+        "openraft/src/engine/elect_test.rs",
+        "openraft/src/engine/engine_impl.rs",
+        "openraft/src/engine/follower_commit_entries_test.rs",
+        "openraft/src/engine/handle_append_entries_req_test.rs",
+        "openraft/src/engine/handle_vote_req_test.rs",
+        "openraft/src/engine/handle_vote_resp_test.rs",
+        "openraft/src/engine/initialize_test.rs",
+        "openraft/src/engine/internal_handle_vote_req_test.rs",
+        "openraft/src/engine/leader_append_entries_test.rs",
+        "openraft/src/engine/mod.rs",
+        "openraft/src/leader/leader.rs",
+        "openraft/src/membership/membership.rs",
+        "openraft/src/membership/membership_test.rs",
+        "openraft/src/progress/mod.rs",
+        "openraft/src/quorum/mod.rs",
+        "openraft/src/quorum/quorum_set.rs",
+        "openraft/src/quorum/util.rs",
+        "openraft/src/quorum/util_test.rs",
+        "openraft/src/raft_state.rs"
+      ],
+      "schema_version": 1
+    }
+  ],
+  "schema_version": 1
+}

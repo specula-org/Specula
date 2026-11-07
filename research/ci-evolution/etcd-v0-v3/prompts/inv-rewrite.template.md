@@ -1,0 +1,5 @@
+Independently derive correctness properties relevant to the supplied source update. Do not consult an old invariant suite or any prior maintenance conclusion. Work only from /workspace old/source, new/source, update.patch and state-vocabulary.md. No external browsing or other agents.
+
+Identify the update-related behaviors that must be allowed and must be forbidden, using code contracts, intent comments, and tests as evidence. Produce only the properties relevant to this update and its old/new interactions. Do not force a requirement change merely because implementation behavior changed. An implementation bug can violate its own intended requirement.
+
+For every candidate, give a precise predicate and a concrete forbidden behavior/state/transition it rejects, plus an allowed nearby control. Record the requirement evidence and any state/history fields needed to observe it. Separate unsupported guesses. Do not run tests/TLC yet or modify source. Save out/candidates.json and a concise out/candidates.md. Your candidates will later be compared semantically with the existing properties and validated against both versions.

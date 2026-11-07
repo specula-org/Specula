@@ -1,0 +1,10 @@
+#!/bin/sh
+for arg in "$@"; do
+    case "$arg" in
+        fetch|pull|clone|ls-remote|submodule)
+            echo "Git network/history acquisition is disabled in this blind experiment" >&2
+            exit 126
+            ;;
+    esac
+done
+exec /usr/bin/git "$@"

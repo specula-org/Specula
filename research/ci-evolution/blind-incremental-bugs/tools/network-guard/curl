@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "direct network research is disabled in this blind experiment; use an approved package manager only" >&2
+exit 126

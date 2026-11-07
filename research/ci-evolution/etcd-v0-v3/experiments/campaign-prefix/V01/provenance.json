@@ -1,0 +1,9 @@
+{
+  "trace": "/home/ubuntu/specula-etcd-ci-init-20260912.FNeLj3NS/ci-clean/runs/20260913-175006-a818/etcd-raft/.specula-output/traces/joint-autoleave.ndjson",
+  "trace_sha256": "4ba1bd3fafc14de159b26d973e4c9fd85bc19276d5d9efe5a2ed2ceb80af93ee",
+  "source_version": "V01",
+  "prefix_mode": "exact source-post validated original TraceNext from TraceInit",
+  "branch": "one original Campaign action at any prefix, with conservative old-RawNode caller ordering",
+  "property_repair": "Campaign-local singleton now JointWon(config,{self}), previously validated with four local code/model/witness controls",
+  "scope": "under-approximate guided reference-model search, not exhaustive checking"
+}

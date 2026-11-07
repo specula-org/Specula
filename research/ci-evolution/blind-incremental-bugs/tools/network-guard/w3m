@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "web lookup is disabled in this blind experiment" >&2
+exit 126

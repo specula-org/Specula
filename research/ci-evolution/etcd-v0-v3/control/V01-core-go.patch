@@ -1,0 +1,1706 @@
+diff --git a/bootstrap.go b/bootstrap.go
+new file mode 100644
+index 0000000..bd82b20
+--- /dev/null
++++ b/bootstrap.go
+@@ -0,0 +1,80 @@
++// Copyright 2015 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package raft
++
++import (
++	"errors"
++
++	pb "go.etcd.io/etcd/raft/raftpb"
++)
++
++// Bootstrap initializes the RawNode for first use by appending configuration
++// changes for the supplied peers. This method returns an error if the Storage
++// is nonempty.
++//
++// It is recommended that instead of calling this method, applications bootstrap
++// their state manually by setting up a Storage that has a first index > 1 and
++// which stores the desired ConfState as its InitialState.
++func (rn *RawNode) Bootstrap(peers []Peer) error {
++	if len(peers) == 0 {
++		return errors.New("must provide at least one peer to Bootstrap")
++	}
++	lastIndex, err := rn.raft.raftLog.storage.LastIndex()
++	if err != nil {
++		return err
++	}
++
++	if lastIndex != 0 {
++		return errors.New("can't bootstrap a nonempty Storage")
++	}
++
++	// We've faked out initial entries above, but nothing has been
++	// persisted. Start with an empty HardState (thus the first Ready will
++	// emit a HardState update for the app to persist).
++	rn.prevHardSt = emptyState
++
++	// TODO(tbg): remove StartNode and give the application the right tools to
++	// bootstrap the initial membership in a cleaner way.
++	rn.raft.becomeFollower(1, None)
++	ents := make([]pb.Entry, len(peers))
++	for i, peer := range peers {
++		cc := pb.ConfChange{Type: pb.ConfChangeAddNode, NodeID: peer.ID, Context: peer.Context}
++		data, err := cc.Marshal()
++		if err != nil {
++			return err
++		}
++
++		ents[i] = pb.Entry{Type: pb.EntryConfChange, Term: 1, Index: uint64(i + 1), Data: data}
++	}
++	rn.raft.raftLog.append(ents...)
++
++	// Now apply them, mainly so that the application can call Campaign
++	// immediately after StartNode in tests. Note that these nodes will
++	// be added to raft twice: here and when the application's Ready
++	// loop calls ApplyConfChange. The calls to addNode must come after
++	// all calls to raftLog.append so progress.next is set after these
++	// bootstrapping entries (it is an error if we try to append these
++	// entries since they have already been committed).
++	// We do not set raftLog.applied so the application will be able
++	// to observe all conf changes via Ready.CommittedEntries.
++	//
++	// TODO(bdarnell): These entries are still unstable; do we need to preserve
++	// the invariant that committed < unstable?
++	rn.raft.raftLog.committed = uint64(len(ents))
++	for _, peer := range peers {
++		rn.raft.applyConfChange(pb.ConfChange{NodeID: peer.ID, Type: pb.ConfChangeAddNode}.AsV2())
++	}
++	return nil
++}
+diff --git a/confchange/confchange.go b/confchange/confchange.go
+new file mode 100644
+index 0000000..bfb2033
+--- /dev/null
++++ b/confchange/confchange.go
+@@ -0,0 +1,424 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package confchange
++
++import (
++	"errors"
++	"fmt"
++	"strings"
++
++	"go.etcd.io/etcd/raft/quorum"
++	pb "go.etcd.io/etcd/raft/raftpb"
++	"go.etcd.io/etcd/raft/tracker"
++)
++
++// Changer facilitates configuration changes. It exposes methods to handle
++// simple and joint consensus while performing the proper validation that allows
++// refusing invalid configuration changes before they affect the active
++// configuration.
++type Changer struct {
++	Tracker   tracker.ProgressTracker
++	LastIndex uint64
++}
++
++// EnterJoint verifies that the outgoing (=right) majority config of the joint
++// config is empty and initializes it with a copy of the incoming (=left)
++// majority config. That is, it transitions from
++//
++//     (1 2 3)&&()
++// to
++//     (1 2 3)&&(1 2 3).
++//
++// The supplied changes are then applied to the incoming majority config,
++// resulting in a joint configuration that in terms of the Raft thesis[1]
++// (Section 4.3) corresponds to `C_{new,old}`.
++//
++// [1]: https://github.com/ongardie/dissertation/blob/master/online-trim.pdf
++func (c Changer) EnterJoint(autoLeave bool, ccs ...pb.ConfChangeSingle) (tracker.Config, tracker.ProgressMap, error) {
++	cfg, prs, err := c.checkAndCopy()
++	if err != nil {
++		return c.err(err)
++	}
++	if joint(cfg) {
++		err := errors.New("config is already joint")
++		return c.err(err)
++	}
++	if len(incoming(cfg.Voters)) == 0 {
++		// We allow adding nodes to an empty config for convenience (testing and
++		// bootstrap), but you can't enter a joint state.
++		err := errors.New("can't make a zero-voter config joint")
++		return c.err(err)
++	}
++	// Clear the outgoing config.
++	{
++		*outgoingPtr(&cfg.Voters) = quorum.MajorityConfig{}
++
++	}
++	// Copy incoming to outgoing.
++	for id := range incoming(cfg.Voters) {
++		outgoing(cfg.Voters)[id] = struct{}{}
++	}
++
++	if err := c.apply(&cfg, prs, ccs...); err != nil {
++		return c.err(err)
++	}
++	cfg.AutoLeave = autoLeave
++	return checkAndReturn(cfg, prs)
++}
++
++// LeaveJoint transitions out of a joint configuration. It is an error to call
++// this method if the configuration is not joint, i.e. if the outgoing majority
++// config Voters[1] is empty.
++//
++// The outgoing majority config of the joint configuration will be removed,
++// that is, the incoming config is promoted as the sole decision maker. In the
++// notation of the Raft thesis[1] (Section 4.3), this method transitions from
++// `C_{new,old}` into `C_new`.
++//
++// At the same time, any staged learners (LearnersNext) the addition of which
++// was held back by an overlapping voter in the former outgoing config will be
++// inserted into Learners.
++//
++// [1]: https://github.com/ongardie/dissertation/blob/master/online-trim.pdf
++func (c Changer) LeaveJoint() (tracker.Config, tracker.ProgressMap, error) {
++	cfg, prs, err := c.checkAndCopy()
++	if err != nil {
++		return c.err(err)
++	}
++	if !joint(cfg) {
++		err := errors.New("can't leave a non-joint config")
++		return c.err(err)
++	}
++	if len(outgoing(cfg.Voters)) == 0 {
++		err := fmt.Errorf("configuration is not joint: %v", cfg)
++		return c.err(err)
++	}
++	for id := range cfg.LearnersNext {
++		nilAwareAdd(&cfg.Learners, id)
++		prs[id].IsLearner = true
++	}
++	cfg.LearnersNext = nil
++
++	for id := range outgoing(cfg.Voters) {
++		_, isVoter := incoming(cfg.Voters)[id]
++		_, isLearner := cfg.Learners[id]
++
++		if !isVoter && !isLearner {
++			delete(prs, id)
++		}
++	}
++	*outgoingPtr(&cfg.Voters) = nil
++	cfg.AutoLeave = false
++
++	return checkAndReturn(cfg, prs)
++}
++
++// Simple carries out a series of configuration changes that (in aggregate)
++// mutates the incoming majority config Voters[0] by at most one. This method
++// will return an error if that is not the case, if the resulting quorum is
++// zero, or if the configuration is in a joint state (i.e. if there is an
++// outgoing configuration).
++func (c Changer) Simple(ccs ...pb.ConfChangeSingle) (tracker.Config, tracker.ProgressMap, error) {
++	cfg, prs, err := c.checkAndCopy()
++	if err != nil {
++		return c.err(err)
++	}
++	if joint(cfg) {
++		err := errors.New("can't apply simple config change in joint config")
++		return c.err(err)
++	}
++	if err := c.apply(&cfg, prs, ccs...); err != nil {
++		return c.err(err)
++	}
++	if n := symdiff(incoming(c.Tracker.Voters), incoming(cfg.Voters)); n > 1 {
++		return tracker.Config{}, nil, errors.New("more than one voter changed without entering joint config")
++	}
++	if err := checkInvariants(cfg, prs); err != nil {
++		return tracker.Config{}, tracker.ProgressMap{}, nil
++	}
++
++	return checkAndReturn(cfg, prs)
++}
++
++// apply a change to the configuration. By convention, changes to voters are
++// always made to the incoming majority config Voters[0]. Voters[1] is either
++// empty or preserves the outgoing majority configuration while in a joint state.
++func (c Changer) apply(cfg *tracker.Config, prs tracker.ProgressMap, ccs ...pb.ConfChangeSingle) error {
++	for _, cc := range ccs {
++		if cc.NodeID == 0 {
++			// etcd replaces the NodeID with zero if it decides (downstream of
++			// raft) to not apply a change, so we have to have explicit code
++			// here to ignore these.
++			continue
++		}
++		switch cc.Type {
++		case pb.ConfChangeAddNode:
++			c.makeVoter(cfg, prs, cc.NodeID)
++		case pb.ConfChangeAddLearnerNode:
++			c.makeLearner(cfg, prs, cc.NodeID)
++		case pb.ConfChangeRemoveNode:
++			c.remove(cfg, prs, cc.NodeID)
++		case pb.ConfChangeUpdateNode:
++		default:
++			return fmt.Errorf("unexpected conf type %d", cc.Type)
++		}
++	}
++	if len(incoming(cfg.Voters)) == 0 {
++		return errors.New("removed all voters")
++	}
++	return nil
++}
++
++// makeVoter adds or promotes the given ID to be a voter in the incoming
++// majority config.
++func (c Changer) makeVoter(cfg *tracker.Config, prs tracker.ProgressMap, id uint64) {
++	pr := prs[id]
++	if pr == nil {
++		c.initProgress(cfg, prs, id, false /* isLearner */)
++		return
++	}
++
++	pr.IsLearner = false
++	nilAwareDelete(&cfg.Learners, id)
++	nilAwareDelete(&cfg.LearnersNext, id)
++	incoming(cfg.Voters)[id] = struct{}{}
++	return
++}
++
++// makeLearner makes the given ID a learner or stages it to be a learner once
++// an active joint configuration is exited.
++//
++// The former happens when the peer is not a part of the outgoing config, in
++// which case we either add a new learner or demote a voter in the incoming
++// config.
++//
++// The latter case occurs when the configuration is joint and the peer is a
++// voter in the outgoing config. In that case, we do not want to add the peer
++// as a learner because then we'd have to track a peer as a voter and learner
++// simultaneously. Instead, we add the learner to LearnersNext, so that it will
++// be added to Learners the moment the outgoing config is removed by
++// LeaveJoint().
++func (c Changer) makeLearner(cfg *tracker.Config, prs tracker.ProgressMap, id uint64) {
++	pr := prs[id]
++	if pr == nil {
++		c.initProgress(cfg, prs, id, true /* isLearner */)
++		return
++	}
++	if pr.IsLearner {
++		return
++	}
++	// Remove any existing voter in the incoming config...
++	c.remove(cfg, prs, id)
++	// ... but save the Progress.
++	prs[id] = pr
++	// Use LearnersNext if we can't add the learner to Learners directly, i.e.
++	// if the peer is still tracked as a voter in the outgoing config. It will
++	// be turned into a learner in LeaveJoint().
++	//
++	// Otherwise, add a regular learner right away.
++	if _, onRight := outgoing(cfg.Voters)[id]; onRight {
++		nilAwareAdd(&cfg.LearnersNext, id)
++	} else {
++		pr.IsLearner = true
++		nilAwareAdd(&cfg.Learners, id)
++	}
++}
++
++// remove this peer as a voter or learner from the incoming config.
++func (c Changer) remove(cfg *tracker.Config, prs tracker.ProgressMap, id uint64) {
++	if _, ok := prs[id]; !ok {
++		return
++	}
++
++	delete(incoming(cfg.Voters), id)
++	nilAwareDelete(&cfg.Learners, id)
++	nilAwareDelete(&cfg.LearnersNext, id)
++
++	// If the peer is still a voter in the outgoing config, keep the Progress.
++	if _, onRight := outgoing(cfg.Voters)[id]; !onRight {
++		delete(prs, id)
++	}
++}
++
++// initProgress initializes a new progress for the given node or learner.
++func (c Changer) initProgress(cfg *tracker.Config, prs tracker.ProgressMap, id uint64, isLearner bool) {
++	if !isLearner {
++		incoming(cfg.Voters)[id] = struct{}{}
++	} else {
++		nilAwareAdd(&cfg.Learners, id)
++	}
++	prs[id] = &tracker.Progress{
++		// We initialize Progress.Next with lastIndex+1 so that the peer will be
++		// probed without an index first.
++		//
++		// TODO(tbg): verify that, this is just my best guess.
++		Next:      c.LastIndex + 1,
++		Match:     0,
++		Inflights: tracker.NewInflights(c.Tracker.MaxInflight),
++		IsLearner: isLearner,
++		// When a node is first added, we should mark it as recently active.
++		// Otherwise, CheckQuorum may cause us to step down if it is invoked
++		// before the added node has had a chance to communicate with us.
++		RecentActive: true,
++	}
++}
++
++// checkInvariants makes sure that the config and progress are compatible with
++// each other. This is used to check both what the Changer is initialized with,
++// as well as what it returns.
++func checkInvariants(cfg tracker.Config, prs tracker.ProgressMap) error {
++	// NB: intentionally allow the empty config. In production we'll never see a
++	// non-empty config (we prevent it from being created) but we will need to
++	// be able to *create* an initial config, for example during bootstrap (or
++	// during tests). Instead of having to hand-code this, we allow
++	// transitioning from an empty config into any other legal and non-empty
++	// config.
++	for _, ids := range []map[uint64]struct{}{
++		cfg.Voters.IDs(),
++		cfg.Learners,
++		cfg.LearnersNext,
++	} {
++		for id := range ids {
++			if _, ok := prs[id]; !ok {
++				return fmt.Errorf("no progress for %d", id)
++			}
++		}
++	}
++
++	// Any staged learner was staged because it could not be directly added due
++	// to a conflicting voter in the outgoing config.
++	for id := range cfg.LearnersNext {
++		if _, ok := outgoing(cfg.Voters)[id]; !ok {
++			return fmt.Errorf("%d is in LearnersNext, but not Voters[1]", id)
++		}
++		if prs[id].IsLearner {
++			return fmt.Errorf("%d is in LearnersNext, but is already marked as learner", id)
++		}
++	}
++	// Conversely Learners and Voters doesn't intersect at all.
++	for id := range cfg.Learners {
++		if _, ok := outgoing(cfg.Voters)[id]; ok {
++			return fmt.Errorf("%d is in Learners and Voters[1]", id)
++		}
++		if _, ok := incoming(cfg.Voters)[id]; ok {
++			return fmt.Errorf("%d is in Learners and Voters[0]", id)
++		}
++		if !prs[id].IsLearner {
++			return fmt.Errorf("%d is in Learners, but is not marked as learner", id)
++		}
++	}
++
++	if !joint(cfg) {
++		// We enforce that empty maps are nil instead of zero.
++		if outgoing(cfg.Voters) != nil {
++			return fmt.Errorf("Voters[1] must be nil when not joint")
++		}
++		if cfg.LearnersNext != nil {
++			return fmt.Errorf("LearnersNext must be nil when not joint")
++		}
++		if cfg.AutoLeave {
++			return fmt.Errorf("AutoLeave must be false when not joint")
++		}
++	}
++
++	return nil
++}
++
++// checkAndCopy copies the tracker's config and progress map (deeply enough for
++// the purposes of the Changer) and returns those copies. It returns an error
++// if checkInvariants does.
++func (c Changer) checkAndCopy() (tracker.Config, tracker.ProgressMap, error) {
++	cfg := c.Tracker.Config.Clone()
++	prs := tracker.ProgressMap{}
++
++	for id, pr := range c.Tracker.Progress {
++		// A shallow copy is enough because we only mutate the Learner field.
++		ppr := *pr
++		prs[id] = &ppr
++	}
++	return checkAndReturn(cfg, prs)
++}
++
++// checkAndReturn calls checkInvariants on the input and returns either the
++// resulting error or the input.
++func checkAndReturn(cfg tracker.Config, prs tracker.ProgressMap) (tracker.Config, tracker.ProgressMap, error) {
++	if err := checkInvariants(cfg, prs); err != nil {
++		return tracker.Config{}, tracker.ProgressMap{}, err
++	}
++	return cfg, prs, nil
++}
++
++// err returns zero values and an error.
++func (c Changer) err(err error) (tracker.Config, tracker.ProgressMap, error) {
++	return tracker.Config{}, nil, err
++}
++
++// nilAwareAdd populates a map entry, creating the map if necessary.
++func nilAwareAdd(m *map[uint64]struct{}, id uint64) {
++	if *m == nil {
++		*m = map[uint64]struct{}{}
++	}
++	(*m)[id] = struct{}{}
++}
++
++// nilAwareDelete deletes from a map, nil'ing the map itself if it is empty after.
++func nilAwareDelete(m *map[uint64]struct{}, id uint64) {
++	if *m == nil {
++		return
++	}
++	delete(*m, id)
++	if len(*m) == 0 {
++		*m = nil
++	}
++}
++
++// symdiff returns the count of the symmetric difference between the sets of
++// uint64s, i.e. len( (l - r) \union (r - l)).
++func symdiff(l, r map[uint64]struct{}) int {
++	var n int
++	pairs := [][2]quorum.MajorityConfig{
++		{l, r}, // count elems in l but not in r
++		{r, l}, // count elems in r but not in l
++	}
++	for _, p := range pairs {
++		for id := range p[0] {
++			if _, ok := p[1][id]; !ok {
++				n++
++			}
++		}
++	}
++	return n
++}
++
++func joint(cfg tracker.Config) bool {
++	return len(outgoing(cfg.Voters)) > 0
++}
++
++func incoming(voters quorum.JointConfig) quorum.MajorityConfig      { return voters[0] }
++func outgoing(voters quorum.JointConfig) quorum.MajorityConfig      { return voters[1] }
++func outgoingPtr(voters *quorum.JointConfig) *quorum.MajorityConfig { return &voters[1] }
++
++// Describe prints the type and NodeID of the configuration changes as a
++// space-delimited string.
++func Describe(ccs ...pb.ConfChangeSingle) string {
++	var buf strings.Builder
++	for _, cc := range ccs {
++		if buf.Len() > 0 {
++			buf.WriteByte(' ')
++		}
++		fmt.Fprintf(&buf, "%s(%d)", cc.Type, cc.NodeID)
++	}
++	return buf.String()
++}
+diff --git a/node.go b/node.go
+index 4a3b2f1..ddfce04 100644
+--- a/node.go
++++ b/node.go
+@@ -132,10 +132,20 @@ type Node interface {
+ 	// Propose proposes that data be appended to the log. Note that proposals can be lost without
+ 	// notice, therefore it is user's job to ensure proposal retries.
+ 	Propose(ctx context.Context, data []byte) error
+-	// ProposeConfChange proposes config change.
+-	// At most one ConfChange can be in the process of going through consensus.
+-	// Application needs to call ApplyConfChange when applying EntryConfChange type entry.
+-	ProposeConfChange(ctx context.Context, cc pb.ConfChange) error
++	// ProposeConfChange proposes a configuration change. Like any proposal, the
++	// configuration change may be dropped with or without an error being
++	// returned. In particular, configuration changes are dropped unless the
++	// leader has certainty that there is no prior unapplied configuration
++	// change in its log.
++	//
++	// The method accepts either a pb.ConfChange (deprecated) or pb.ConfChangeV2
++	// message. The latter allows arbitrary configuration changes via joint
++	// consensus, notably including replacing a voter. Passing a ConfChangeV2
++	// message is only allowed if all Nodes participating in the cluster run a
++	// version of this library aware of the V2 API. See pb.ConfChangeV2 for
++	// usage details and semantics.
++	ProposeConfChange(ctx context.Context, cc pb.ConfChangeI) error
++
+ 	// Step advances the state machine using the given message. ctx.Err() will be returned, if any.
+ 	Step(ctx context.Context, msg pb.Message) error
+ 
+@@ -156,11 +166,13 @@ type Node interface {
+ 	// a long time to apply the snapshot data. To continue receiving Ready without blocking raft
+ 	// progress, it can call Advance before finishing applying the last ready.
+ 	Advance()
+-	// ApplyConfChange applies config change to the local node.
+-	// Returns an opaque ConfState protobuf which must be recorded
+-	// in snapshots. Will never return nil; it returns a pointer only
+-	// to match MemoryStorage.Compact.
+-	ApplyConfChange(cc pb.ConfChange) *pb.ConfState
++	// ApplyConfChange applies a config change (previously passed to
++	// ProposeConfChange) to the node. This must be called whenever a config
++	// change is observed in Ready.CommittedEntries.
++	//
++	// Returns an opaque non-nil ConfState protobuf which must be recorded in
++	// snapshots.
++	ApplyConfChange(cc pb.ConfChangeI) *pb.ConfState
+ 
+ 	// TransferLeadership attempts to transfer leadership to the given transferee.
+ 	TransferLeadership(ctx context.Context, lead, transferee uint64)
+@@ -197,52 +209,22 @@ type Peer struct {
+ 
+ // StartNode returns a new Node given configuration and a list of raft peers.
+ // It appends a ConfChangeAddNode entry for each given peer to the initial log.
++//
++// Peers must not be zero length; call RestartNode in that case.
+ func StartNode(c *Config, peers []Peer) Node {
+-	r := newRaft(c)
+-	// become the follower at term 1 and apply initial configuration
+-	// entries of term 1
+-	r.becomeFollower(1, None)
+-	for _, peer := range peers {
+-		cc := pb.ConfChange{Type: pb.ConfChangeAddNode, NodeID: peer.ID, Context: peer.Context}
+-		d, err := cc.Marshal()
+-		if err != nil {
+-			panic("unexpected marshal error")
+-		}
+-		// TODO(tbg): this should append the ConfChange for the own node first
+-		// and also call applyConfChange below for that node first. Otherwise
+-		// we have a Raft group (for a little while) that doesn't have itself
+-		// in its config, which is bad.
+-		// This whole way of setting things up is rickety. The app should just
+-		// populate the initial ConfState appropriately and then all of this
+-		// goes away.
+-		e := pb.Entry{
+-			Type:  pb.EntryConfChange,
+-			Term:  1,
+-			Index: r.raftLog.lastIndex() + 1,
+-			Data:  d,
+-		}
+-		r.raftLog.append(e)
++	if len(peers) == 0 {
++		panic("no peers given; use RestartNode instead")
+ 	}
+-	// Mark these initial entries as committed.
+-	// TODO(bdarnell): These entries are still unstable; do we need to preserve
+-	// the invariant that committed < unstable?
+-	r.raftLog.committed = r.raftLog.lastIndex()
+-	// Now apply them, mainly so that the application can call Campaign
+-	// immediately after StartNode in tests. Note that these nodes will
+-	// be added to raft twice: here and when the application's Ready
+-	// loop calls ApplyConfChange. The calls to addNode must come after
+-	// all calls to raftLog.append so progress.next is set after these
+-	// bootstrapping entries (it is an error if we try to append these
+-	// entries since they have already been committed).
+-	// We do not set raftLog.applied so the application will be able
+-	// to observe all conf changes via Ready.CommittedEntries.
+-	for _, peer := range peers {
+-		r.applyConfChange(pb.ConfChange{NodeID: peer.ID, Type: pb.ConfChangeAddNode})
++	rn, err := NewRawNode(c)
++	if err != nil {
++		panic(err)
+ 	}
++	rn.Bootstrap(peers)
+ 
+ 	n := newNode()
+ 	n.logger = c.Logger
+-	go n.run(r)
++
++	go n.run(rn)
+ 	return &n
+ }
+ 
+@@ -251,11 +233,13 @@ func StartNode(c *Config, peers []Peer) Node {
+ // If the caller has an existing state machine, pass in the last log index that
+ // has been applied to it; otherwise use zero.
+ func RestartNode(c *Config) Node {
+-	r := newRaft(c)
+-
++	rn, err := NewRawNode(c)
++	if err != nil {
++		panic(err)
++	}
+ 	n := newNode()
+ 	n.logger = c.Logger
+-	go n.run(r)
++	go n.run(rn)
+ 	return &n
+ }
+ 
+@@ -268,7 +252,7 @@ type msgWithResult struct {
+ type node struct {
+ 	propc      chan msgWithResult
+ 	recvc      chan pb.Message
+-	confc      chan pb.ConfChange
++	confc      chan pb.ConfChangeV2
+ 	confstatec chan pb.ConfState
+ 	readyc     chan Ready
+ 	advancec   chan struct{}
+@@ -284,7 +268,7 @@ func newNode() node {
+ 	return node{
+ 		propc:      make(chan msgWithResult),
+ 		recvc:      make(chan pb.Message),
+-		confc:      make(chan pb.ConfChange),
++		confc:      make(chan pb.ConfChangeV2),
+ 		confstatec: make(chan pb.ConfState),
+ 		readyc:     make(chan Ready),
+ 		advancec:   make(chan struct{}),
+@@ -310,30 +294,30 @@ func (n *node) Stop() {
+ 	<-n.done
+ }
+ 
+-func (n *node) run(r *raft) {
++func (n *node) run(rn *RawNode) {
+ 	var propc chan msgWithResult
+ 	var readyc chan Ready
+ 	var advancec chan struct{}
+-	var prevLastUnstablei, prevLastUnstablet uint64
+-	var havePrevLastUnstablei bool
+-	var prevSnapi uint64
+-	var applyingToI uint64
+ 	var rd Ready
+ 
++	r := rn.raft
++
+ 	lead := None
+-	prevSoftSt := r.softState()
+-	prevHardSt := emptyState
+ 
+ 	for {
+ 		if advancec != nil {
+ 			readyc = nil
+-		} else {
+-			rd = newReady(r, prevSoftSt, prevHardSt)
+-			if rd.containsUpdates() {
+-				readyc = n.readyc
+-			} else {
+-				readyc = nil
+-			}
++		} else if rn.HasReady() {
++			// Populate a Ready. Note that this Ready is not guaranteed to
++			// actually be handled. We will arm readyc, but there's no guarantee
++			// that we will actually send on it. It's possible that we will
++			// service another channel instead, loop around, and then populate
++			// the Ready again. We could instead force the previous Ready to be
++			// handled first, but it's generally good to emit larger Readys plus
++			// it simplifies testing (by emitting less frequently and more
++			// predictably).
++			rd = rn.Ready()
++			readyc = n.readyc
+ 		}
+ 
+ 		if lead != r.lead {
+@@ -369,11 +353,27 @@ func (n *node) run(r *raft) {
+ 				r.Step(m)
+ 			}
+ 		case cc := <-n.confc:
++			_, okBefore := r.prs.Progress[r.id]
+ 			cs := r.applyConfChange(cc)
+-			if _, ok := r.prs.Progress[r.id]; !ok {
+-				// block incoming proposal when local node is
+-				// removed
+-				if cc.NodeID == r.id {
++			// If the node was removed, block incoming proposals. Note that we
++			// only do this if the node was in the config before. Nodes may be
++			// a member of the group without knowing this (when they're catching
++			// up on the log and don't have the latest config) and we don't want
++			// to block the proposal channel in that case.
++			//
++			// NB: propc is reset when the leader changes, which, if we learn
++			// about it, sort of implies that we got readded, maybe? This isn't
++			// very sound and likely has bugs.
++			if _, okAfter := r.prs.Progress[r.id]; okBefore && !okAfter {
++				var found bool
++				for _, sl := range [][]uint64{cs.Nodes, cs.NodesJoint} {
++					for _, id := range sl {
++						if id == r.id {
++							found = true
++						}
++					}
++				}
++				if !found {
+ 					propc = nil
+ 				}
+ 			}
+@@ -382,40 +382,13 @@ func (n *node) run(r *raft) {
+ 			case <-n.done:
+ 			}
+ 		case <-n.tickc:
+-			r.tick()
++			rn.Tick()
+ 		case readyc <- rd:
+-			if rd.SoftState != nil {
+-				prevSoftSt = rd.SoftState
+-			}
+-			if len(rd.Entries) > 0 {
+-				prevLastUnstablei = rd.Entries[len(rd.Entries)-1].Index
+-				prevLastUnstablet = rd.Entries[len(rd.Entries)-1].Term
+-				havePrevLastUnstablei = true
+-			}
+-			if !IsEmptyHardState(rd.HardState) {
+-				prevHardSt = rd.HardState
+-			}
+-			if !IsEmptySnap(rd.Snapshot) {
+-				prevSnapi = rd.Snapshot.Metadata.Index
+-			}
+-			if index := rd.appliedCursor(); index != 0 {
+-				applyingToI = index
+-			}
+-
+-			r.msgs = nil
+-			r.readStates = nil
+-			r.reduceUncommittedSize(rd.CommittedEntries)
++			rn.acceptReady(rd)
+ 			advancec = n.advancec
+ 		case <-advancec:
+-			if applyingToI != 0 {
+-				r.raftLog.appliedTo(applyingToI)
+-				applyingToI = 0
+-			}
+-			if havePrevLastUnstablei {
+-				r.raftLog.stableTo(prevLastUnstablei, prevLastUnstablet)
+-				havePrevLastUnstablei = false
+-			}
+-			r.raftLog.stableSnapTo(prevSnapi)
++			rn.commitReady(rd)
++			rd = Ready{}
+ 			advancec = nil
+ 		case c := <-n.status:
+ 			c <- getStatus(r)
+@@ -452,12 +425,20 @@ func (n *node) Step(ctx context.Context, m pb.Message) error {
+ 	return n.step(ctx, m)
+ }
+ 
+-func (n *node) ProposeConfChange(ctx context.Context, cc pb.ConfChange) error {
+-	data, err := cc.Marshal()
++func confChangeToMsg(c pb.ConfChangeI) (pb.Message, error) {
++	typ, data, err := pb.MarshalConfChange(c)
++	if err != nil {
++		return pb.Message{}, err
++	}
++	return pb.Message{Type: pb.MsgProp, Entries: []pb.Entry{{Type: typ, Data: data}}}, nil
++}
++
++func (n *node) ProposeConfChange(ctx context.Context, cc pb.ConfChangeI) error {
++	msg, err := confChangeToMsg(cc)
+ 	if err != nil {
+ 		return err
+ 	}
+-	return n.Step(ctx, pb.Message{Type: pb.MsgProp, Entries: []pb.Entry{{Type: pb.EntryConfChange, Data: data}}})
++	return n.Step(ctx, msg)
+ }
+ 
+ func (n *node) step(ctx context.Context, m pb.Message) error {
+@@ -518,10 +499,10 @@ func (n *node) Advance() {
+ 	}
+ }
+ 
+-func (n *node) ApplyConfChange(cc pb.ConfChange) *pb.ConfState {
++func (n *node) ApplyConfChange(cc pb.ConfChangeI) *pb.ConfState {
+ 	var cs pb.ConfState
+ 	select {
+-	case n.confc <- cc:
++	case n.confc <- cc.AsV2():
+ 	case <-n.done:
+ 	}
+ 	select {
+diff --git a/quorum/majority.go b/quorum/majority.go
+index 5eba503..9b10e95 100644
+--- a/quorum/majority.go
++++ b/quorum/majority.go
+@@ -102,6 +102,16 @@ func (c MajorityConfig) Describe(l AckedIndexer) string {
+ 	return buf.String()
+ }
+ 
++// Slice returns the MajorityConfig as a sorted slice.
++func (c MajorityConfig) Slice() []uint64 {
++	var sl []uint64
++	for id := range c {
++		sl = append(sl, id)
++	}
++	sort.Slice(sl, func(i, j int) bool { return sl[i] < sl[j] })
++	return sl
++}
++
+ type uint64Slice []uint64
+ 
+ func insertionSort(sl uint64Slice) {
+diff --git a/raft.go b/raft.go
+index 846ff49..16174f2 100644
+--- a/raft.go
++++ b/raft.go
+@@ -24,6 +24,7 @@ import (
+ 	"sync"
+ 	"time"
+ 
++	"go.etcd.io/etcd/raft/confchange"
+ 	"go.etcd.io/etcd/raft/quorum"
+ 	pb "go.etcd.io/etcd/raft/raftpb"
+ 	"go.etcd.io/etcd/raft/tracker"
+@@ -356,15 +357,11 @@ func newRaft(c *Config) *raft {
+ 	}
+ 	for _, p := range peers {
+ 		// Add node to active config.
+-		r.prs.InitProgress(p, 0 /* match */, 1 /* next */, false /* isLearner */)
++		r.applyConfChange(pb.ConfChange{Type: pb.ConfChangeAddNode, NodeID: p}.AsV2())
+ 	}
+ 	for _, p := range learners {
+ 		// Add learner to active config.
+-		r.prs.InitProgress(p, 0 /* match */, 1 /* next */, true /* isLearner */)
+-
+-		if r.id == p {
+-			r.isLearner = true
+-		}
++		r.applyConfChange(pb.ConfChange{Type: pb.ConfChangeAddLearnerNode, NodeID: p}.AsV2())
+ 	}
+ 
+ 	if !isHardStateEqual(hs, emptyState) {
+@@ -554,6 +551,46 @@ func (r *raft) bcastHeartbeatWithCtx(ctx []byte) {
+ 	})
+ }
+ 
++func (r *raft) advance(rd Ready) {
++	// If entries were applied (or a snapshot), update our cursor for
++	// the next Ready. Note that if the current HardState contains a
++	// new Commit index, this does not mean that we're also applying
++	// all of the new entries due to commit pagination by size.
++	if index := rd.appliedCursor(); index > 0 {
++		r.raftLog.appliedTo(index)
++		if r.prs.Config.AutoLeave && index >= r.pendingConfIndex && r.state == StateLeader {
++			// If the current (and most recent, at least for this leader's term)
++			// configuration should be auto-left, initiate that now.
++			ccdata, err := (&pb.ConfChangeV2{}).Marshal()
++			if err != nil {
++				panic(err)
++			}
++			ent := pb.Entry{
++				Type: pb.EntryConfChangeV2,
++				Data: ccdata,
++			}
++			if !r.appendEntry(ent) {
++				// If we could not append the entry, bump the pending conf index
++				// so that we'll try again later.
++				//
++				// TODO(tbg): test this case.
++				r.pendingConfIndex = r.raftLog.lastIndex()
++			} else {
++				r.logger.Infof("initiating automatic transition out of joint configuration %s", r.prs.Config)
++			}
++		}
++	}
++	r.reduceUncommittedSize(rd.CommittedEntries)
++
++	if len(rd.Entries) > 0 {
++		e := rd.Entries[len(rd.Entries)-1]
++		r.raftLog.stableTo(e.Index, e.Term)
++	}
++	if !IsEmptySnap(rd.Snapshot) {
++		r.raftLog.stableSnapTo(rd.Snapshot.Metadata.Index)
++	}
++}
++
+ // maybeCommit attempts to advance the commit index. Returns true if
+ // the commit index changed (in which case the caller should call
+ // r.bcastAppend).
+@@ -976,10 +1013,10 @@ func stepLeader(r *raft, m pb.Message) error {
+ 
+ 		for i := range m.Entries {
+ 			e := &m.Entries[i]
+-			if e.Type == pb.EntryConfChange {
++			if e.Type == pb.EntryConfChange || e.Type == pb.EntryConfChangeV2 {
+ 				if r.pendingConfIndex > r.raftLog.applied {
+-					r.logger.Infof("propose conf %s ignored since pending unapplied configuration [index %d, applied %d]",
+-						e, r.pendingConfIndex, r.raftLog.applied)
++					r.logger.Infof("%x propose conf %s ignored since pending unapplied configuration [index %d, applied %d]",
++						r.id, e, r.pendingConfIndex, r.raftLog.applied)
+ 					m.Entries[i] = pb.Entry{Type: pb.EntryNormal}
+ 				} else {
+ 					r.pendingConfIndex = r.raftLog.lastIndex() + uint64(i) + 1
+@@ -1040,7 +1077,7 @@ func stepLeader(r *raft, m pb.Message) error {
+ 		pr.RecentActive = true
+ 
+ 		if m.Reject {
+-			r.logger.Debugf("%x received msgApp rejection(lastindex: %d) from %x for index %d",
++			r.logger.Debugf("%x received MsgAppResp(MsgApp was rejected, lastindex: %d) from %x for index %d",
+ 				r.id, m.RejectHint, m.From, m.Index)
+ 			if pr.MaybeDecrTo(m.Index, m.RejectHint) {
+ 				r.logger.Debugf("%x decreased progress of %x to [%s]", r.id, m.From, pr)
+@@ -1137,8 +1174,8 @@ func stepLeader(r *raft, m pb.Message) error {
+ 			pr.BecomeProbe()
+ 			r.logger.Debugf("%x snapshot failed, resumed sending replication messages to %x [%s]", r.id, m.From, pr)
+ 		}
+-		// If snapshot finish, wait for the msgAppResp from the remote node before sending
+-		// out the next msgApp.
++		// If snapshot finish, wait for the MsgAppResp from the remote node before sending
++		// out the next MsgApp.
+ 		// If snapshot failure, wait for a heartbeat interval before next try
+ 		pr.ProbeSent = true
+ 	case pb.MsgUnreachable:
+@@ -1297,7 +1334,7 @@ func (r *raft) handleAppendEntries(m pb.Message) {
+ 	if mlastIndex, ok := r.raftLog.maybeAppend(m.Index, m.LogTerm, m.Commit, m.Entries...); ok {
+ 		r.send(pb.Message{To: m.From, Type: pb.MsgAppResp, Index: mlastIndex})
+ 	} else {
+-		r.logger.Debugf("%x [logterm: %d, index: %d] rejected msgApp [logterm: %d, index: %d] from %x",
++		r.logger.Debugf("%x [logterm: %d, index: %d] rejected MsgApp [logterm: %d, index: %d] from %x",
+ 			r.id, r.raftLog.zeroTermOnErrCompacted(r.raftLog.term(m.Index)), m.Index, m.LogTerm, m.Index, m.From)
+ 		r.send(pb.Message{To: m.From, Type: pb.MsgAppResp, Index: m.Index, Reject: true, RejectHint: r.raftLog.lastIndex()})
+ 	}
+@@ -1379,10 +1416,10 @@ func (r *raft) restore(s pb.Snapshot) bool {
+ 	// Reset the configuration and add the (potentially updated) peers in anew.
+ 	r.prs = tracker.MakeProgressTracker(r.prs.MaxInflight)
+ 	for _, id := range s.Metadata.ConfState.Nodes {
+-		r.applyConfChange(pb.ConfChange{NodeID: id, Type: pb.ConfChangeAddNode})
++		r.applyConfChange(pb.ConfChange{NodeID: id, Type: pb.ConfChangeAddNode}.AsV2())
+ 	}
+ 	for _, id := range s.Metadata.ConfState.Learners {
+-		r.applyConfChange(pb.ConfChange{NodeID: id, Type: pb.ConfChangeAddLearnerNode})
++		r.applyConfChange(pb.ConfChange{NodeID: id, Type: pb.ConfChangeAddLearnerNode}.AsV2())
+ 	}
+ 
+ 	pr := r.prs.Progress[r.id]
+@@ -1400,61 +1437,38 @@ func (r *raft) promotable() bool {
+ 	return pr != nil && !pr.IsLearner
+ }
+ 
+-func (r *raft) applyConfChange(cc pb.ConfChange) pb.ConfState {
+-	addNodeOrLearnerNode := func(id uint64, isLearner bool) {
+-		// NB: this method is intentionally hidden from view. All mutations of
+-		// the conf state must call applyConfChange directly.
+-		pr := r.prs.Progress[id]
+-		if pr == nil {
+-			r.prs.InitProgress(id, 0, r.raftLog.lastIndex()+1, isLearner)
+-		} else {
+-			if isLearner && !pr.IsLearner {
+-				// Can only change Learner to Voter.
+-				//
+-				// TODO(tbg): why?
+-				r.logger.Infof("%x ignored addLearner: do not support changing %x from raft peer to learner.", r.id, id)
+-				return
+-			}
+-
+-			if isLearner == pr.IsLearner {
+-				// Ignore any redundant addNode calls (which can happen because the
+-				// initial bootstrapping entries are applied twice).
+-				return
+-			}
+-
+-			// Change Learner to Voter, use origin Learner progress.
+-			r.prs.RemoveAny(id)
+-			r.prs.InitProgress(id, 0 /* match */, 1 /* next */, false /* isLearner */)
+-			pr.IsLearner = false
+-			*r.prs.Progress[id] = *pr
++func (r *raft) applyConfChange(cc pb.ConfChangeV2) pb.ConfState {
++	cfg, prs, err := func() (tracker.Config, tracker.ProgressMap, error) {
++		changer := confchange.Changer{
++			Tracker:   r.prs,
++			LastIndex: r.raftLog.lastIndex(),
+ 		}
+-
+-		// When a node is first added, we should mark it as recently active.
+-		// Otherwise, CheckQuorum may cause us to step down if it is invoked
+-		// before the added node has had a chance to communicate with us.
+-		r.prs.Progress[id].RecentActive = true
+-	}
+-
+-	var removed int
+-	if cc.NodeID != None {
+-		switch cc.Type {
+-		case pb.ConfChangeAddNode:
+-			addNodeOrLearnerNode(cc.NodeID, false /* isLearner */)
+-		case pb.ConfChangeAddLearnerNode:
+-			addNodeOrLearnerNode(cc.NodeID, true /* isLearner */)
+-		case pb.ConfChangeRemoveNode:
+-			removed++
+-			r.prs.RemoveAny(cc.NodeID)
+-		case pb.ConfChangeUpdateNode:
+-		default:
+-			panic("unexpected conf type")
++		if cc.LeaveJoint() {
++			return changer.LeaveJoint()
++		} else if autoLeave, ok := cc.EnterJoint(); ok {
++			return changer.EnterJoint(autoLeave, cc.Changes...)
+ 		}
++		return changer.Simple(cc.Changes...)
++	}()
++
++	if err != nil {
++		// TODO(tbg): return the error to the caller.
++		panic(err)
+ 	}
+ 
++	r.prs.Config = cfg
++	r.prs.Progress = prs
++
+ 	r.logger.Infof("%x switched to configuration %s", r.id, r.prs.Config)
+ 	// Now that the configuration is updated, handle any side effects.
+ 
+-	cs := pb.ConfState{Nodes: r.prs.VoterNodes(), Learners: r.prs.LearnerNodes()}
++	cs := pb.ConfState{
++		Nodes:        r.prs.Voters[0].Slice(),
++		NodesJoint:   r.prs.Voters[1].Slice(),
++		Learners:     quorum.MajorityConfig(r.prs.Learners).Slice(),
++		LearnersNext: quorum.MajorityConfig(r.prs.LearnersNext).Slice(),
++		AutoLeave:    r.prs.AutoLeave,
++	}
+ 	pr, ok := r.prs.Progress[r.id]
+ 
+ 	// Update whether the node itself is a learner, resetting to false when the
+@@ -1479,12 +1493,10 @@ func (r *raft) applyConfChange(cc pb.ConfChange) pb.ConfState {
+ 	if r.state != StateLeader || len(cs.Nodes) == 0 {
+ 		return cs
+ 	}
+-	if removed > 0 {
++	if r.maybeCommit() {
+ 		// The quorum size may have been reduced (but not to zero), so see if
+ 		// any pending entries can be committed.
+-		if r.maybeCommit() {
+-			r.bcastAppend()
+-		}
++		r.bcastAppend()
+ 	}
+ 	// If the the leadTransferee was removed, abort the leadership transfer.
+ 	if _, tOK := r.prs.Progress[r.leadTransferee]; !tOK && r.leadTransferee != 0 {
+diff --git a/raftpb/confchange.go b/raftpb/confchange.go
+new file mode 100644
+index 0000000..a91c18d
+--- /dev/null
++++ b/raftpb/confchange.go
+@@ -0,0 +1,105 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package raftpb
++
++import (
++	"fmt"
++
++	"github.com/gogo/protobuf/proto"
++)
++
++// ConfChangeI abstracts over ConfChangeV2 and (legacy) ConfChange to allow
++// treating them in a unified manner.
++type ConfChangeI interface {
++	AsV2() ConfChangeV2
++	AsV1() (ConfChange, bool)
++}
++
++// MarshalConfChange calls Marshal on the underlying ConfChange or ConfChangeV2
++// and returns the result along with the corresponding EntryType.
++func MarshalConfChange(c ConfChangeI) (EntryType, []byte, error) {
++	var typ EntryType
++	var ccdata []byte
++	var err error
++	if ccv1, ok := c.AsV1(); ok {
++		typ = EntryConfChange
++		ccdata, err = ccv1.Marshal()
++	} else {
++		ccv2 := c.AsV2()
++		typ = EntryConfChangeV2
++		ccdata, err = ccv2.Marshal()
++	}
++	return typ, ccdata, err
++}
++
++// AsV2 returns a V2 configuration change carrying out the same operation.
++func (c ConfChange) AsV2() ConfChangeV2 {
++	return ConfChangeV2{
++		Changes: []ConfChangeSingle{{
++			Type:   c.Type,
++			NodeID: c.NodeID,
++		}},
++		Context: c.Context,
++	}
++}
++
++// AsV1 returns the ConfChange and true.
++func (c ConfChange) AsV1() (ConfChange, bool) {
++	return c, true
++}
++
++// AsV2 is the identity.
++func (c ConfChangeV2) AsV2() ConfChangeV2 { return c }
++
++// AsV1 returns ConfChange{} and false.
++func (c ConfChangeV2) AsV1() (ConfChange, bool) { return ConfChange{}, false }
++
++// EnterJoint returns two bools. The second bool is true if and only if this
++// config change will use Joint Consensus, which is the case if it contains more
++// than one change or if the use of Joint Consensus was requested explicitly.
++// The first bool can only be true if second one is, and indicates whether the
++// Joint State will be left automatically.
++func (c *ConfChangeV2) EnterJoint() (autoLeave bool, ok bool) {
++	// NB: in theory, more config changes could qualify for the "simple"
++	// protocol but it depends on the config on top of which the changes apply.
++	// For example, adding two learners is not OK if both nodes are part of the
++	// base config (i.e. two voters are turned into learners in the process of
++	// applying the conf change). In practice, these distinctions should not
++	// matter, so we keep it simple and use Joint Consensus liberally.
++	if c.Transition != ConfChangeTransitionAuto || len(c.Changes) > 1 {
++		// Use Joint Consensus.
++		var autoLeave bool
++		switch c.Transition {
++		case ConfChangeTransitionAuto:
++			autoLeave = true
++		case ConfChangeTransitionJointImplicit:
++			autoLeave = true
++		case ConfChangeTransitionJointExplicit:
++		default:
++			panic(fmt.Sprintf("unknown transition: %+v", c))
++		}
++		return autoLeave, true
++	}
++	return false, false
++}
++
++// LeaveJoint is true if the configuration change leaves a joint configuration.
++// This is the case if the ConfChangeV2 is zero, with the possible exception of
++// the Context field.
++func (c *ConfChangeV2) LeaveJoint() bool {
++	cpy := *c
++	cpy.Context = nil
++	return proto.Equal(&cpy, &ConfChangeV2{})
++}
+diff --git a/rawnode.go b/rawnode.go
+index 77183b7..9c192fd 100644
+--- a/rawnode.go
++++ b/rawnode.go
+@@ -37,40 +37,14 @@ type RawNode struct {
+ 	prevHardSt pb.HardState
+ }
+ 
+-func (rn *RawNode) newReady() Ready {
+-	return newReady(rn.raft, rn.prevSoftSt, rn.prevHardSt)
+-}
+-
+-func (rn *RawNode) commitReady(rd Ready) {
+-	if rd.SoftState != nil {
+-		rn.prevSoftSt = rd.SoftState
+-	}
+-	if !IsEmptyHardState(rd.HardState) {
+-		rn.prevHardSt = rd.HardState
+-	}
+-
+-	// If entries were applied (or a snapshot), update our cursor for
+-	// the next Ready. Note that if the current HardState contains a
+-	// new Commit index, this does not mean that we're also applying
+-	// all of the new entries due to commit pagination by size.
+-	if index := rd.appliedCursor(); index > 0 {
+-		rn.raft.raftLog.appliedTo(index)
+-	}
+-
+-	if len(rd.Entries) > 0 {
+-		e := rd.Entries[len(rd.Entries)-1]
+-		rn.raft.raftLog.stableTo(e.Index, e.Term)
+-	}
+-	if !IsEmptySnap(rd.Snapshot) {
+-		rn.raft.raftLog.stableSnapTo(rd.Snapshot.Metadata.Index)
+-	}
+-	if len(rd.ReadStates) != 0 {
+-		rn.raft.readStates = nil
+-	}
+-}
+-
+-// NewRawNode returns a new RawNode given configuration and a list of raft peers.
+-func NewRawNode(config *Config, peers []Peer) (*RawNode, error) {
++// NewRawNode instantiates a RawNode from the given configuration.
++//
++// See Bootstrap() for bootstrapping an initial state; this replaces the former
++// 'peers' argument to this method (with identical behavior). However, It is
++// recommended that instead of calling Bootstrap, applications bootstrap their
++// state manually by setting up a Storage that has a first index > 1 and which
++// stores the desired ConfState as its InitialState.
++func NewRawNode(config *Config) (*RawNode, error) {
+ 	if config.ID == 0 {
+ 		panic("config.ID must not be zero")
+ 	}
+@@ -78,41 +52,8 @@ func NewRawNode(config *Config, peers []Peer) (*RawNode, error) {
+ 	rn := &RawNode{
+ 		raft: r,
+ 	}
+-	lastIndex, err := config.Storage.LastIndex()
+-	if err != nil {
+-		panic(err) // TODO(bdarnell)
+-	}
+-	// If the log is empty, this is a new RawNode (like StartNode); otherwise it's
+-	// restoring an existing RawNode (like RestartNode).
+-	// TODO(bdarnell): rethink RawNode initialization and whether the application needs
+-	// to be able to tell us when it expects the RawNode to exist.
+-	if lastIndex == 0 {
+-		r.becomeFollower(1, None)
+-		ents := make([]pb.Entry, len(peers))
+-		for i, peer := range peers {
+-			cc := pb.ConfChange{Type: pb.ConfChangeAddNode, NodeID: peer.ID, Context: peer.Context}
+-			data, err := cc.Marshal()
+-			if err != nil {
+-				panic("unexpected marshal error")
+-			}
+-
+-			ents[i] = pb.Entry{Type: pb.EntryConfChange, Term: 1, Index: uint64(i + 1), Data: data}
+-		}
+-		r.raftLog.append(ents...)
+-		r.raftLog.committed = uint64(len(ents))
+-		for _, peer := range peers {
+-			r.applyConfChange(pb.ConfChange{NodeID: peer.ID, Type: pb.ConfChangeAddNode})
+-		}
+-	}
+-
+-	// Set the initial hard and soft states after performing all initialization.
+ 	rn.prevSoftSt = r.softState()
+-	if lastIndex == 0 {
+-		rn.prevHardSt = emptyState
+-	} else {
+-		rn.prevHardSt = r.hardState()
+-	}
+-
++	rn.prevHardSt = r.hardState()
+ 	return rn, nil
+ }
+ 
+@@ -150,23 +91,19 @@ func (rn *RawNode) Propose(data []byte) error {
+ 		}})
+ }
+ 
+-// ProposeConfChange proposes a config change.
+-func (rn *RawNode) ProposeConfChange(cc pb.ConfChange) error {
+-	data, err := cc.Marshal()
++// ProposeConfChange proposes a config change. See (Node).ProposeConfChange for
++// details.
++func (rn *RawNode) ProposeConfChange(cc pb.ConfChangeI) error {
++	m, err := confChangeToMsg(cc)
+ 	if err != nil {
+ 		return err
+ 	}
+-	return rn.raft.Step(pb.Message{
+-		Type: pb.MsgProp,
+-		Entries: []pb.Entry{
+-			{Type: pb.EntryConfChange, Data: data},
+-		},
+-	})
++	return rn.raft.Step(m)
+ }
+ 
+ // ApplyConfChange applies a config change to the local node.
+-func (rn *RawNode) ApplyConfChange(cc pb.ConfChange) *pb.ConfState {
+-	cs := rn.raft.applyConfChange(cc)
++func (rn *RawNode) ApplyConfChange(cc pb.ConfChangeI) *pb.ConfState {
++	cs := rn.raft.applyConfChange(cc.AsV2())
+ 	return &cs
+ }
+ 
+@@ -182,14 +119,45 @@ func (rn *RawNode) Step(m pb.Message) error {
+ 	return ErrStepPeerNotFound
+ }
+ 
+-// Ready returns the current point-in-time state of this RawNode.
++// Ready returns the outstanding work that the application needs to handle. This
++// includes appending and applying entries or a snapshot, updating the HardState,
++// and sending messages. Ready() is a read-only operation, that is, it does not
++// require the caller to actually handle the result. Typically, a caller will
++// want to handle the Ready and must pass the Ready to Advance *after* having
++// done so. While a Ready is being handled, the RawNode must not be used for
++// operations that may alter its state. For example, it is illegal to call
++// Ready, followed by Step, followed by Advance.
+ func (rn *RawNode) Ready() Ready {
+ 	rd := rn.newReady()
+-	rn.raft.msgs = nil
+-	rn.raft.reduceUncommittedSize(rd.CommittedEntries)
+ 	return rd
+ }
+ 
++func (rn *RawNode) newReady() Ready {
++	return newReady(rn.raft, rn.prevSoftSt, rn.prevHardSt)
++}
++
++// acceptReady is called when the consumer of the RawNode has decided to go
++// ahead and handle a Ready. Nothing must alter the state of the RawNode between
++// this call and the prior call to Ready().
++func (rn *RawNode) acceptReady(rd Ready) {
++	if rd.SoftState != nil {
++		rn.prevSoftSt = rd.SoftState
++	}
++	if len(rd.ReadStates) != 0 {
++		rn.raft.readStates = nil
++	}
++	rn.raft.msgs = nil
++}
++
++// commitReady is called when the consumer of the RawNode has successfully
++// handled a Ready (having previously called acceptReady).
++func (rn *RawNode) commitReady(rd Ready) {
++	if !IsEmptyHardState(rd.HardState) {
++		rn.prevHardSt = rd.HardState
++	}
++	rn.raft.advance(rd)
++}
++
+ // HasReady called when RawNode user need to check if any Ready pending.
+ // Checking logic in this method should be consistent with Ready.containsUpdates().
+ func (rn *RawNode) HasReady() bool {
+@@ -215,21 +183,25 @@ func (rn *RawNode) HasReady() bool {
+ // Advance notifies the RawNode that the application has applied and saved progress in the
+ // last Ready results.
+ func (rn *RawNode) Advance(rd Ready) {
++	// Advance combines accept and commit. Callers can't mutate the RawNode
++	// between the call to Ready and the matching call to Advance, or the work
++	// done in acceptReady will clobber potentially newer data that has not been
++	// emitted in a Ready yet.
++	rn.acceptReady(rd)
+ 	rn.commitReady(rd)
+ }
+ 
+-// Status returns the current status of the given group.
+-func (rn *RawNode) Status() *Status {
++// Status returns the current status of the given group. This allocates, see
++// BasicStatus and WithProgress for allocation-friendlier choices.
++func (rn *RawNode) Status() Status {
+ 	status := getStatus(rn.raft)
+-	return &status
++	return status
+ }
+ 
+-// StatusWithoutProgress returns a Status without populating the Progress field
+-// (and returns the Status as a value to avoid forcing it onto the heap). This
+-// is more performant if the Progress is not required. See WithProgress for an
+-// allocation-free way to introspect the Progress.
+-func (rn *RawNode) StatusWithoutProgress() Status {
+-	return getStatusWithoutProgress(rn.raft)
++// BasicStatus returns a BasicStatus. Notably this does not contain the
++// Progress map; see WithProgress for an allocation-free way to inspect it.
++func (rn *RawNode) BasicStatus() BasicStatus {
++	return getBasicStatus(rn.raft)
+ }
+ 
+ // ProgressType indicates the type of replica a Progress corresponds to.
+diff --git a/status.go b/status.go
+index bf4898c..adc6048 100644
+--- a/status.go
++++ b/status.go
+@@ -21,14 +21,22 @@ import (
+ 	"go.etcd.io/etcd/raft/tracker"
+ )
+ 
++// Status contains information about this Raft peer and its view of the system.
++// The Progress is only populated on the leader.
+ type Status struct {
++	BasicStatus
++	Config   tracker.Config
++	Progress map[uint64]tracker.Progress
++}
++
++// BasicStatus contains basic information about the Raft peer. It does not allocate.
++type BasicStatus struct {
+ 	ID uint64
+ 
+ 	pb.HardState
+ 	SoftState
+ 
+-	Applied  uint64
+-	Progress map[uint64]tracker.Progress
++	Applied uint64
+ 
+ 	LeadTransferee uint64
+ }
+@@ -37,19 +45,17 @@ func getProgressCopy(r *raft) map[uint64]tracker.Progress {
+ 	m := make(map[uint64]tracker.Progress)
+ 	r.prs.Visit(func(id uint64, pr *tracker.Progress) {
+ 		var p tracker.Progress
+-		p, pr = *pr, nil /* avoid accidental reuse below */
+-
+-		// The inflight buffer is tricky to copy and besides, it isn't exposed
+-		// to the client, so pretend it's nil.
+-		p.Inflights = nil
++		p = *pr
++		p.Inflights = pr.Inflights.Clone()
++		pr = nil
+ 
+ 		m[id] = p
+ 	})
+ 	return m
+ }
+ 
+-func getStatusWithoutProgress(r *raft) Status {
+-	s := Status{
++func getBasicStatus(r *raft) BasicStatus {
++	s := BasicStatus{
+ 		ID:             r.id,
+ 		LeadTransferee: r.leadTransferee,
+ 	}
+@@ -61,10 +67,12 @@ func getStatusWithoutProgress(r *raft) Status {
+ 
+ // getStatus gets a copy of the current raft status.
+ func getStatus(r *raft) Status {
+-	s := getStatusWithoutProgress(r)
++	var s Status
++	s.BasicStatus = getBasicStatus(r)
+ 	if s.RaftState == StateLeader {
+ 		s.Progress = getProgressCopy(r)
+ 	}
++	s.Config = r.prs.Config.Clone()
+ 	return s
+ }
+ 
+diff --git a/tracker/inflights.go b/tracker/inflights.go
+index 9e209e2..1a05634 100644
+--- a/tracker/inflights.go
++++ b/tracker/inflights.go
+@@ -40,6 +40,14 @@ func NewInflights(size int) *Inflights {
+ 	}
+ }
+ 
++// Clone returns an *Inflights that is identical to but shares no memory with
++// the receiver.
++func (in *Inflights) Clone() *Inflights {
++	ins := *in
++	ins.buffer = append([]uint64(nil), in.buffer...)
++	return &ins
++}
++
+ // Add notifies the Inflights that a new message with the given index is being
+ // dispatched. Full() must be called prior to Add() to verify that there is room
+ // for one more message, and consecutive calls to add Add() must provide a
+diff --git a/tracker/progress.go b/tracker/progress.go
+index a7f1ab7..697277b 100644
+--- a/tracker/progress.go
++++ b/tracker/progress.go
+@@ -16,6 +16,7 @@ package tracker
+ 
+ import (
+ 	"fmt"
++	"sort"
+ 	"strings"
+ )
+ 
+@@ -235,3 +236,22 @@ func (pr *Progress) String() string {
+ 	}
+ 	return buf.String()
+ }
++
++// ProgressMap is a map of *Progress.
++type ProgressMap map[uint64]*Progress
++
++// String prints the ProgressMap in sorted key order, one Progress per line.
++func (m ProgressMap) String() string {
++	ids := make([]uint64, 0, len(m))
++	for k := range m {
++		ids = append(ids, k)
++	}
++	sort.Slice(ids, func(i, j int) bool {
++		return ids[i] < ids[j]
++	})
++	var buf strings.Builder
++	for _, id := range ids {
++		fmt.Fprintf(&buf, "%d: %s\n", id, m[id])
++	}
++	return buf.String()
++}
+diff --git a/tracker/tracker.go b/tracker/tracker.go
+index 4b3396f..f67f3aa 100644
+--- a/tracker/tracker.go
++++ b/tracker/tracker.go
+@@ -17,6 +17,7 @@ package tracker
+ import (
+ 	"fmt"
+ 	"sort"
++	"strings"
+ 
+ 	"go.etcd.io/etcd/raft/quorum"
+ )
+@@ -24,6 +25,11 @@ import (
+ // Config reflects the configuration tracked in a ProgressTracker.
+ type Config struct {
+ 	Voters quorum.JointConfig
++	// AutoLeave is true if the configuration is joint and a transition to the
++	// incoming configuration should be carried out automatically by Raft when
++	// this is possible. If false, the configuration will be joint until the
++	// application initiates the transition manually.
++	AutoLeave bool
+ 	// Learners is a set of IDs corresponding to the learners active in the
+ 	// current configuration.
+ 	//
+@@ -33,12 +39,11 @@ type Config struct {
+ 	// simplifies the implementation since it allows peers to have clarity about
+ 	// its current role without taking into account joint consensus.
+ 	Learners map[uint64]struct{}
+-	// TODO(tbg): when we actually carry out joint consensus changes and turn a
+-	// voter into a learner, we cannot add the learner when entering the joint
+-	// state. This is because this would violate the invariant that the inter-
+-	// section of voters and learners is empty. For example, assume a Voter is
+-	// removed and immediately re-added as a learner (or in other words, it is
+-	// demoted).
++	// When we turn a voter into a learner during a joint consensus transition,
++	// we cannot add the learner directly when entering the joint state. This is
++	// because this would violate the invariant that the intersection of
++	// voters and learners is empty. For example, assume a Voter is removed and
++	// immediately re-added as a learner (or in other words, it is demoted):
+ 	//
+ 	// Initially, the configuration will be
+ 	//
+@@ -51,7 +56,7 @@ type Config struct {
+ 	//   learners: {3}
+ 	//
+ 	// but this violates the invariant (3 is both voter and learner). Instead,
+-	// we have
++	// we get
+ 	//
+ 	//   voters:   {1 2} & {1 2 3}
+ 	//   learners: {}
+@@ -66,20 +71,43 @@ type Config struct {
+ 	//
+ 	// Note that next_learners is not used while adding a learner that is not
+ 	// also a voter in the joint config. In this case, the learner is added
+-	// to Learners right away when entering the joint configuration, so that it
+-	// is caught up as soon as possible.
+-	//
+-	// NextLearners        map[uint64]struct{}
++	// right away when entering the joint configuration, so that it is caught up
++	// as soon as possible.
++	LearnersNext map[uint64]struct{}
+ }
+ 
+-func (c *Config) String() string {
+-	if len(c.Learners) == 0 {
+-		return fmt.Sprintf("voters=%s", c.Voters)
++func (c Config) String() string {
++	var buf strings.Builder
++	fmt.Fprintf(&buf, "voters=%s", c.Voters)
++	if c.Learners != nil {
++		fmt.Fprintf(&buf, " learners=%s", quorum.MajorityConfig(c.Learners).String())
++	}
++	if c.LearnersNext != nil {
++		fmt.Fprintf(&buf, " learners_next=%s", quorum.MajorityConfig(c.LearnersNext).String())
++	}
++	if c.AutoLeave {
++		fmt.Fprintf(&buf, " autoleave")
++	}
++	return buf.String()
++}
++
++// Clone returns a copy of the Config that shares no memory with the original.
++func (c *Config) Clone() Config {
++	clone := func(m map[uint64]struct{}) map[uint64]struct{} {
++		if m == nil {
++			return nil
++		}
++		mm := make(map[uint64]struct{}, len(m))
++		for k := range m {
++			mm[k] = struct{}{}
++		}
++		return mm
++	}
++	return Config{
++		Voters:       quorum.JointConfig{clone(c.Voters[0]), clone(c.Voters[1])},
++		Learners:     clone(c.Learners),
++		LearnersNext: clone(c.LearnersNext),
+ 	}
+-	return fmt.Sprintf(
+-		"voters=%s learners=%s",
+-		c.Voters, quorum.MajorityConfig(c.Learners).String(),
+-	)
+ }
+ 
+ // ProgressTracker tracks the currently active configuration and the information
+@@ -88,7 +116,7 @@ func (c *Config) String() string {
+ type ProgressTracker struct {
+ 	Config
+ 
+-	Progress map[uint64]*Progress
++	Progress ProgressMap
+ 
+ 	Votes map[uint64]bool
+ 
+@@ -102,11 +130,10 @@ func MakeProgressTracker(maxInflight int) ProgressTracker {
+ 		Config: Config{
+ 			Voters: quorum.JointConfig{
+ 				quorum.MajorityConfig{},
+-				// TODO(tbg): this will be mostly empty, so make it a nil pointer
+-				// in the common case.
+-				quorum.MajorityConfig{},
++				nil, // only populated when used
+ 			},
+-			Learners: map[uint64]struct{}{},
++			Learners:     nil, // only populated when used
++			LearnersNext: nil, // only populated when used
+ 		},
+ 		Votes:    map[uint64]bool{},
+ 		Progress: map[uint64]*Progress{},
+@@ -139,44 +166,6 @@ func (p *ProgressTracker) Committed() uint64 {
+ 	return uint64(p.Voters.CommittedIndex(matchAckIndexer(p.Progress)))
+ }
+ 
+-// RemoveAny removes this peer, which *must* be tracked as a voter or learner,
+-// from the tracker.
+-func (p *ProgressTracker) RemoveAny(id uint64) {
+-	_, okPR := p.Progress[id]
+-	_, okV1 := p.Voters[0][id]
+-	_, okV2 := p.Voters[1][id]
+-	_, okL := p.Learners[id]
+-
+-	okV := okV1 || okV2
+-
+-	if !okPR {
+-		panic("attempting to remove unknown peer %x")
+-	} else if !okV && !okL {
+-		panic("attempting to remove unknown peer %x")
+-	} else if okV && okL {
+-		panic(fmt.Sprintf("peer %x is both voter and learner", id))
+-	}
+-
+-	delete(p.Voters[0], id)
+-	delete(p.Voters[1], id)
+-	delete(p.Learners, id)
+-	delete(p.Progress, id)
+-}
+-
+-// InitProgress initializes a new progress for the given node or learner. The
+-// node may not exist yet in either form or a panic will ensue.
+-func (p *ProgressTracker) InitProgress(id, match, next uint64, isLearner bool) {
+-	if pr := p.Progress[id]; pr != nil {
+-		panic(fmt.Sprintf("peer %x already tracked as node %v", id, pr))
+-	}
+-	if !isLearner {
+-		p.Voters[0][id] = struct{}{}
+-	} else {
+-		p.Learners[id] = struct{}{}
+-	}
+-	p.Progress[id] = &Progress{Next: next, Match: match, Inflights: NewInflights(p.MaxInflight), IsLearner: isLearner}
+-}
+-
+ // Visit invokes the supplied closure for all tracked progresses.
+ func (p *ProgressTracker) Visit(f func(id uint64, pr *Progress)) {
+ 	for id, pr := range p.Progress {
+@@ -211,6 +200,9 @@ func (p *ProgressTracker) VoterNodes() []uint64 {
+ 
+ // LearnerNodes returns a sorted slice of learners.
+ func (p *ProgressTracker) LearnerNodes() []uint64 {
++	if len(p.Learners) == 0 {
++		return nil
++	}
+ 	nodes := make([]uint64, 0, len(p.Learners))
+ 	for id := range p.Learners {
+ 		nodes = append(nodes, id)

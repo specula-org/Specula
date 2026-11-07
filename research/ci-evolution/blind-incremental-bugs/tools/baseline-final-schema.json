@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workflow_status",
+    "summary",
+    "trace_validation",
+    "model_checking",
+    "outputs",
+    "blockers"
+  ],
+  "properties": {
+    "workflow_status": {
+      "type": "string",
+      "enum": [
+        "COMPLETED",
+        "COMPLETED_WITH_LIMITED_COVERAGE",
+        "FAILED",
+        "BLOCKED"
+      ]
+    },
+    "summary": {"type": "string"},
+    "trace_validation": {
+      "type": "string",
+      "enum": ["PASSED", "LIMITED_COVERAGE", "FAILED", "NOT_RUN"]
+    },
+    "model_checking": {
+      "type": "string",
+      "enum": ["PASSED", "LIMITED_COVERAGE", "FINDINGS", "FAILED", "NOT_RUN"]
+    },
+    "outputs": {"type": "array", "items": {"type": "string"}},
+    "blockers": {"type": "array", "items": {"type": "string"}}
+  }
+}

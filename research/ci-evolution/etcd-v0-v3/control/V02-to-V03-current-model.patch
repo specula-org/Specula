@@ -1,0 +1,213 @@
+--- V02/base.tla
++++ V03/base.tla
+@@ -2,10 +2,9 @@
+ EXTENDS Naturals, Integers, Sequences, FiniteSets, Bags, TLC
+ 
+ (***************************************************************************
+-Category A. etcd-raft incremental revision 3d0faba4ee302b1b61b3eaa084fafc284854ac07
+-(protocol files aligned with 46580dcf61734b12ae757dbabdf31c2b862acd68).
+-Source references are relative to ../../source. S1..S6 and the first U1..U5
+-are retained history; V02-U1..U5 are the current scenarios in modeling-brief.md.
++Category A. Supplied V03 source, adjacent to supplied V02.
++Source references use /workspace/new/source; update.patch is the version delta.
++The inherited V02 predicates are preserved for the following property phase.
+ Core functions below are pure record transformations: one Step/Tick is atomic.
+ Caller completion, transport, application, and Advance are separate actions.
+ Prefix witnesses are ghosts, never consulted by protocol decision guards.
+@@ -75,12 +74,10 @@
+ BootstrapPayload == 1
+ BootstrapEncoded == 1
+ EmptyEncoded == 1
+-\* Empty ConfChangeV2 marshals to a two-byte payload and a ten-byte Entry in
+-\* this source revision. Trace domains retain those concrete sizes; compact MC
+-\* domains map them to their largest abstract representatives.
+-AutoLeaveWeight == IF 2\in PayloadWeights /\ 10\in EncodedWeights
+-                   THEN 2 ELSE MaxSet(PayloadWeights)
+-AutoLeaveEncoded == IF 10\in EncodedWeights THEN 10 ELSE MaxSet(EncodedWeights)
++\* V03 raft.go:advance: automatic leave uses nil Data, zero payload bytes.
++\* It has the same Entry encoding size as the empty leader entry.
++AutoLeaveWeight == 0
++AutoLeaveEncoded == EmptyEncoded
+ BootLog == [k \in 1..Len(BootPeers) |-> Entry(1,k,"AddVoter",0,BootPeers[k],BootstrapPayload,BootstrapEncoded)]
+ LegacyConfKinds == {"AddVoter","AddLearner","Remove","Update"}
+ ConfKinds == LegacyConfKinds \cup {"V2"}
+@@ -180,10 +177,11 @@
+     !.prs=[n \in Members(r) |-> Progress(IF n=r.id THEN Last(r) ELSE 0,Last(r)+1,FALSE)]]
+ BecomeFollower(r,t,leader,timeout) ==
+     [Reset(r,t,timeout) EXCEPT !.role="Follower", !.lead=leader]
+-\* raft.go:596-616; self Match is volatile, payload quota permits oversized first.
++\* V03 raft.go:appendEntry/increaseUncommittedSize; zero payload always passes,
++\* and a zero held quota admits an oversized first proposal. Self Match is volatile.
+ AppendEntry(r,es) == LET fixed==[k \in DOMAIN es |->
+                                      [es[k] EXCEPT !.term=r.term, !.index=Last(r)+k]] IN
+-    IF r.quota>0 /\ r.quota+Weight(es)>MaxUncommitted
++    IF r.quota>0 /\ Weight(es)>0 /\ r.quota+Weight(es)>MaxUncommitted
+     THEN [r EXCEPT !.decision="DropQuota"]
+     ELSE LET a==AppendLog([r EXCEPT !.quota=@+Weight(es)],fixed)
+              b==[a EXCEPT !.prs[r.id]=MaybeUpdate(@,Last(a),Hist(a))]
+@@ -309,7 +307,9 @@
+     IF a.fatal#"" THEN a ELSE Send(a,
+        [Message("MsgHeartbeatResp",r.id,m.from,r.term) EXCEPT !.context=m.context])
+ \* confchange/restore.go:22-154; raft.go:newRaft,restore. Revision 46580dcf
+-\* reconstructs the complete ConfState atomically. The preceding live-snapshot
++\* reconstructs the complete ConfState atomically. V03 initProgress uses Next=index;
++\* the live restore self MaybeUpdate(Next-1) consequently sets Match=index-1.
++\* The preceding live-snapshot
+ \* membership guard still checks only incoming voters and current learners.
+ \* UPDATE-MAP
+ \* code: confchange/restore.go:Restore; raft.go:newRaft,restore
+@@ -325,17 +325,22 @@
+            !.config=cfg, !.cfgHist=s.hist,
+            !.yes={}, !.no={},
+            !.prs=[n \in VoterIDs(cfg)\cup cfg.learners |->
+-                     Progress(IF n=r.id THEN s.index ELSE 0,s.index+1,TRUE)]]
++                     Progress(IF n=r.id THEN s.index-1 ELSE 0,s.index,TRUE)]]
+ HandleSnapshot(r,m,timeout) == LET a==Restore(r,m.snapshot,timeout) IN
+     Send(a,[Message("MsgAppResp",r.id,m.from,a.term) EXCEPT
+             !.index=IF a.usnap=m.snapshot /\ m.snapshot.index>r.commit THEN Last(a) ELSE a.commit,
+             !.witness=Prefix(Hist(a),a.commit)])
+ 
+-\* raft.go:999-1030; both legacy and V2 entries share pending-conf admission.
++\* V03 raft.go:stepLeader MsgProp (1035-1075): phase admission is based on
++\* len(AsV2().Changes), not LeaveJoint(). Empty explicit transitions therefore
++\* pass this gate in joint state, then panic if the caller applies them.
++\* UPDATE-MAP code: raft.go:stepLeader; Update!AffectedConfigurationActions
+ RECURSIVE RewriteConf(_,_,_)
+ RewriteConf(r,es,k) == IF k>Len(es) THEN [state |-> r, entries |-> es] ELSE
+     IF es[k].kind\notin ConfKinds THEN RewriteConf(r,es,k+1)
+-    ELSE IF r.pendingConf>r.applied THEN
++    ELSE IF r.pendingConf>r.applied \/
++            (r.config.outgoing#{} /\ es[k].changes# <<>>) \/
++            (r.config.outgoing={} /\ es[k].changes= <<>>) THEN
+         RewriteConf(r,[es EXCEPT ![k]=Entry(0,0,"Normal",0,0,0,EmptyEncoded)],k+1)
+     ELSE RewriteConf([r EXCEPT !.pendingConf=Last(r)+k],es,k+1)
+ \* raft.go:962-994; preserve admission, rewrite, quota drop as observations.
+@@ -559,17 +564,32 @@
+     IF ValidConfigTransition(cfg,e) THEN ConfigCandidate(cfg,e) ELSE cfg
+ RECURSIVE ConfigOf(_)
+ ConfigOf(h) == IF h= <<>> THEN EmptyConfig ELSE ConfigAfter(ConfigOf(Prefix(h,Len(h)-1)),h[Len(h)])
++\* V03 switchToConfig probes every Progress, including self. Paused and
++\* compacted/empty paths are delegated to the unchanged MaybeSendAppend.
++RECURSIVE ProbeConfig(_, _)
++ProbeConfig(r,peers) == IF peers={} \/ r.fatal#"" THEN r ELSE
++ LET n==MinSet(peers) IN ProbeConfig(MaybeSendAppend(r,n,FALSE),peers\{n})
++\* Pre-existing model repair: Changer.remove may delete Progress before a
++\* later change re-adds the same ID. Preserve that intermediate lifecycle.
++RECURSIVE ChangeProgress(_,_,_,_)
++ChangeProgress(cfg,prs,last,changes) == IF changes= <<>> THEN prs ELSE
++ LET nextCfg==ApplySingle(cfg,Head(changes))
++     nextPrs==[n \in VoterIDs(nextCfg)\cup nextCfg.learners |->
++         IF n \in DOMAIN prs THEN prs[n] ELSE Progress(0,last,TRUE)]
++ IN ChangeProgress(nextCfg,nextPrs,last,Tail(changes))
+ ApplyConfCore(r,e,timeout) ==
+     LET cfg==ConfigCandidate(r.config,e)
+         members==VoterIDs(cfg)\cup cfg.learners
+         a==IF ~ValidConfigTransition(r.config,e)
+            THEN Fatal(r,"invalid configuration transition") ELSE
+-           [r EXCEPT !.config=cfg, !.prs=[n \in members |->
+-              IF n\notin Members(r) THEN Progress(0,Last(r)+1,TRUE) ELSE r.prs[n]]]
++           LET startCfg==IF EntersJoint(e) THEN [r.config EXCEPT !.outgoing=r.config.voters] ELSE r.config
++               changed==IF IsLeave(e) \/ CanceledEntry(e) THEN r.prs ELSE
++                            ChangeProgress(startCfg,r.prs,Last(r),e.changes)
++           IN [r EXCEPT !.config=cfg, !.prs=[n \in members |-> changed[n]]]
+     IN IF a.fatal#"" \/ r.role#"Leader" \/ ~Promotable(a) \/ cfg.voters={} THEN a ELSE
+        LET b==MaybeCommit(a)
+-           c==IF b.commit>a.commit THEN BcastAppend(b) ELSE b
+-       IN IF c.transfer#0 /\ c.transfer\notin members THEN [c EXCEPT !.transfer=0] ELSE c
++           c==IF b.commit>a.commit THEN BcastAppend(b) ELSE ProbeConfig(b,Members(b))
++       IN IF c.transfer#0 /\ c.transfer\notin VoterIDs(cfg) THEN [c EXCEPT !.transfer=0] ELSE c
+ 
+ (***************************************************************************
+ Caller, storage and observation layer: S1/S3/S4/S5/S6.
+@@ -722,7 +742,7 @@
+                ELSE q.target=e.target
+ 
+ ProposalObservation(r,es,a,qs) ==
+-    [node |-> r.id, role |-> r.role, voters |-> VoterIDs(r.config), learners |-> r.config.learners,
++    [node |-> r.id, role |-> r.role, config |-> r.config, voters |-> VoterIDs(r.config), learners |-> r.config.learners,
+      lead |-> r.lead, noForward |-> r.noForward, transfer |-> r.transfer,
+      quota |-> r.quota, pending |-> r.pendingConf, applied |-> r.applied,
+      before |-> Hist(r), entries |-> es, after |-> Hist(a), decision |-> a.decision,
+@@ -795,7 +815,7 @@
+         role |-> "Follower", lead |-> 0, config |-> cfg, cfgHist |-> h,
+         store |-> Store(<<>>,EmptySnapshot,0,EmptyHS), unstable |-> h, uoff |-> 1,
+         usnap |-> EmptySnapshot, commit |-> Len(h), applied |-> 0,
+-        prs |-> [p \in cfg.voters |-> Progress(0,Len(h)+1,TRUE)],
++        prs |-> [p \in cfg.voters |-> Progress(0,Len(h),TRUE)],
+         yes |-> {}, no |-> {}, pendingConf |-> 0, quota |-> 0,
+         elapsed |-> 0, heartbeat |-> 0, timeout |-> timeout, transfer |-> 0,
+         preVote |-> n\in PreVoteNodes, checkQuorum |-> n\in CheckQuorumNodes,
+@@ -1082,23 +1102,27 @@
+              Append(@,[batch |-> b.id, snapshot |-> b.snapshot, entries |-> b.committed])]
+     /\ ready'=[ready EXCEPT ![n].queued=TRUE]
+     /\ UNCHANGED <<raft,disk,requests,wire,history>>
+-\* rawnode.go:170-177, raft.go:556-587 and log_unstable.go:77-114.
++\* V03 rawnode.go:Advance, raft.go:advance, log_unstable.go:stableTo/stableSnapTo.
+ \* Both wrappers accepted messages/read states before Advance. Advance preserves
+-\* any output produced after that acceptance and appends auto-leave after apply.
++\* any output produced after acceptance. Quota release precedes appliedTo;
++\* auto-leave requires crossing pending from below and records the appended index.
+ \* UPDATE-MAP
+ \* code: rawnode.go:Advance; raft.go:advance
+ \* update: Update!AffectedReadyActions
+ AdvanceCore(r,b,n) ==
+-    LET a==AppliedTo(r,b.cursor)
++    LET reduced==[r EXCEPT !.quota=Max(0,@-Weight(b.committed))]
++        a==AppliedTo(reduced,b.cursor)
+         leave==V2Entry(0,0,0,<<>>,"Auto",AutoLeaveWeight,AutoLeaveEncoded)
+-        auto==a.fatal="" /\ b.cursor>0 /\ a.config.autoLeave /\ b.cursor>=a.pendingConf /\ a.role="Leader"
++        auto==a.fatal="" /\ b.cursor>0 /\ a.config.autoLeave /\
++              r.applied<r.pendingConf /\ b.cursor>=r.pendingConf /\ a.role="Leader"
+         b0==IF auto THEN AppendEntry(a,<<leave>>) ELSE a
+-        b1==IF auto /\ b0.decision="DropQuota" THEN [b0 EXCEPT !.pendingConf=Last(b0)] ELSE b0
++        b1==IF ~auto THEN b0 ELSE IF b0.decision="DropQuota"
++            THEN Fatal(b0,"refused un-refusable auto-leaving ConfChangeV2")
++            ELSE [b0 EXCEPT !.pendingConf=Last(b0)]
+         last==IF b.entries= <<>> THEN MissingEntry(0) ELSE b.entries[Len(b.entries)]
+         stable==b.entries# <<>> /\ last.index>=b1.uoff /\ last.index<=Last(b1) /\
+                  Term(b1,last.index)=last.term
+-    IN [b1 EXCEPT
+-        !.quota=Max(0,@-Weight(b.committed)),
++    IN IF b1.fatal#"" THEN b1 ELSE [b1 EXCEPT
+         !.unstable=IF stable THEN Suffix(@,last.index+2-r.uoff) ELSE @,
+         !.uoff=IF stable THEN last.index+1 ELSE @,
+         !.usnap=IF b.snapshot.index>0 /\ r.usnap.index=b.snapshot.index THEN EmptySnapshot ELSE @,
+@@ -1118,6 +1142,10 @@
+               ssBefore |-> r.prevSS, ssAfter |-> a.prevSS]},
+             !.autoLeaveChecks=@\cup
+             {[eligible |-> r.config.autoLeave /\ b.cursor>=r.pendingConf /\ r.role="Leader",
++              oldApplied |-> r.applied, cursor |-> b.cursor, pendingBefore |-> r.pendingConf,
++              crossingEligible |-> r.config.autoLeave /\ b.cursor>0 /\
++                  r.applied<r.pendingConf /\ b.cursor>=r.pendingConf /\ r.role="Leader",
++              quotaBefore |-> r.quota, committedWeight |-> Weight(b.committed), quotaAfter |-> a.quota,
+               beforeLast |-> Last(r), afterHist |-> Hist(a), pending |-> a.pendingConf,
+               decision |-> a.decision]}],raft',disk,"Advance")
+     /\ ready'=[ready EXCEPT ![n]=EmptyReady]
+@@ -1142,7 +1170,7 @@
+               ELSE Append(application[n].hist,e)
+            a==IF e.kind\in ConfKinds THEN ApplyConfCore(raft[n],e,timeout) ELSE raft[n]
+            b0==IF e.kind\in ConfKinds THEN [a EXCEPT !.cfgHist=IF e.index>Len(a.cfgHist) THEN Prefix(h,e.index) ELSE @] ELSE a
+-           b==WrapperLoop(IF n\notin RawNodes /\ e.target=n /\ e.id\notin CancelChanges /\ n\notin Members(b0)
++           b==WrapperLoop(IF n\notin RawNodes /\ n\in Members(raft[n]) /\ n\notin Members(b0)
+                   THEN [b0 EXCEPT !.propcEnabled=FALSE] ELSE b0)
+        IN /\ e.index<=Len(application[n].hist)+1
+           /\ raft'=[raft EXCEPT ![n]=b]
+@@ -1230,7 +1258,8 @@
+            ProtocolCrash(n)
+ \* raft.go:322-375, confchange/restore.go:22-154. Construction atomically
+ \* reconstructs all incoming/outgoing voter, learner, staged learner and
+-\* auto-leave state before loading HardState.
++\* auto-leave state before loading HardState. V03 initProgress Next=Last is
++\* temporary here: becomeFollower/Reset still overwrites Next with Last+1.
+ \* UPDATE-MAP
+ \* code: raft.go:newRaft; confchange/restore.go:Restore
+ \* update: Update!AffectedRecoveryActions
+@@ -1243,7 +1272,7 @@
+           !.term=d.hs.term, !.vote=d.hs.vote, !.config=cfg, !.cfgHist=app,
+           !.store=Store(h,d.snapshot,d.snapshot.index,d.hs), !.unstable= <<>>,
+           !.uoff=Len(h)+1, !.commit=d.snapshot.index, !.applied=d.snapshot.index,
+-          !.prs=[p\in VoterIDs(cfg)\cup cfg.learners |-> Progress(0,1,FALSE)]]
++          !.prs=[p\in VoterIDs(cfg)\cup cfg.learners |-> Progress(0,Len(h),TRUE)]]
+         a==IF d.hs=EmptyHS THEN baseR ELSE
+              IF d.hs.commit<d.snapshot.index \/ d.hs.commit>Len(h)
+              THEN Fatal(baseR,"loadState commit out of range")

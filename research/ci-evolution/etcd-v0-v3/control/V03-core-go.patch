@@ -1,0 +1,524 @@
+diff --git a/confchange/confchange.go b/confchange/confchange.go
+index 58c74bf..741f811 100644
+--- a/confchange/confchange.go
++++ b/confchange/confchange.go
+@@ -142,9 +142,6 @@ func (c Changer) Simple(ccs ...pb.ConfChangeSingle) (tracker.Config, tracker.Pro
+ 	if n := symdiff(incoming(c.Tracker.Voters), incoming(cfg.Voters)); n > 1 {
+ 		return tracker.Config{}, nil, errors.New("more than one voter changed without entering joint config")
+ 	}
+-	if err := checkInvariants(cfg, prs); err != nil {
+-		return tracker.Config{}, tracker.ProgressMap{}, nil
+-	}
+ 
+ 	return checkAndReturn(cfg, prs)
+ }
+@@ -257,11 +254,15 @@ func (c Changer) initProgress(cfg *tracker.Config, prs tracker.ProgressMap, id u
+ 		nilAwareAdd(&cfg.Learners, id)
+ 	}
+ 	prs[id] = &tracker.Progress{
+-		// We initialize Progress.Next with lastIndex+1 so that the peer will be
+-		// probed without an index first.
++		// Initializing the Progress with the last index means that the follower
++		// can be probed (with the last index).
+ 		//
+-		// TODO(tbg): verify that, this is just my best guess.
+-		Next:      c.LastIndex + 1,
++		// TODO(tbg): seems awfully optimistic. Using the first index would be
++		// better. The general expectation here is that the follower has no log
++		// at all (and will thus likely need a snapshot), though the app may
++		// have applied a snapshot out of band before adding the replica (thus
++		// making the first index the better choice).
++		Next:      c.LastIndex,
+ 		Match:     0,
+ 		Inflights: tracker.NewInflights(c.Tracker.MaxInflight),
+ 		IsLearner: isLearner,
+diff --git a/log_unstable.go b/log_unstable.go
+index 1005bf6..1bff5a7 100644
+--- a/log_unstable.go
++++ b/log_unstable.go
+@@ -55,10 +55,7 @@ func (u *unstable) maybeLastIndex() (uint64, bool) {
+ // is any.
+ func (u *unstable) maybeTerm(i uint64) (uint64, bool) {
+ 	if i < u.offset {
+-		if u.snapshot == nil {
+-			return 0, false
+-		}
+-		if u.snapshot.Metadata.Index == i {
++		if u.snapshot != nil && u.snapshot.Metadata.Index == i {
+ 			return u.snapshot.Metadata.Term, true
+ 		}
+ 		return 0, false
+@@ -71,6 +68,7 @@ func (u *unstable) maybeTerm(i uint64) (uint64, bool) {
+ 	if i > last {
+ 		return 0, false
+ 	}
++
+ 	return u.entries[i-u.offset].Term, true
+ }
+ 
+diff --git a/raft.go b/raft.go
+index 62e7964..90eedfe 100644
+--- a/raft.go
++++ b/raft.go
+@@ -20,6 +20,7 @@ import (
+ 	"fmt"
+ 	"math"
+ 	"math/rand"
++	"sort"
+ 	"strings"
+ 	"sync"
+ 	"time"
+@@ -366,7 +367,7 @@ func newRaft(c *Config) *raft {
+ 	}
+ 	assertConfStatesEquivalent(r.logger, cs, r.switchToConfig(cfg, prs))
+ 
+-	if !isHardStateEqual(hs, emptyState) {
++	if !IsEmptyHardState(hs) {
+ 		r.loadState(hs)
+ 	}
+ 	if c.Applied > 0 {
+@@ -529,7 +530,6 @@ func (r *raft) bcastAppend() {
+ 		if id == r.id {
+ 			return
+ 		}
+-
+ 		r.sendAppend(id)
+ 	})
+ }
+@@ -554,35 +554,34 @@ func (r *raft) bcastHeartbeatWithCtx(ctx []byte) {
+ }
+ 
+ func (r *raft) advance(rd Ready) {
++	r.reduceUncommittedSize(rd.CommittedEntries)
++
+ 	// If entries were applied (or a snapshot), update our cursor for
+ 	// the next Ready. Note that if the current HardState contains a
+ 	// new Commit index, this does not mean that we're also applying
+ 	// all of the new entries due to commit pagination by size.
+-	if index := rd.appliedCursor(); index > 0 {
+-		r.raftLog.appliedTo(index)
+-		if r.prs.Config.AutoLeave && index >= r.pendingConfIndex && r.state == StateLeader {
++	if newApplied := rd.appliedCursor(); newApplied > 0 {
++		oldApplied := r.raftLog.applied
++		r.raftLog.appliedTo(newApplied)
++
++		if r.prs.Config.AutoLeave && oldApplied < r.pendingConfIndex && newApplied >= r.pendingConfIndex && r.state == StateLeader {
+ 			// If the current (and most recent, at least for this leader's term)
+-			// configuration should be auto-left, initiate that now.
+-			ccdata, err := (&pb.ConfChangeV2{}).Marshal()
+-			if err != nil {
+-				panic(err)
+-			}
++			// configuration should be auto-left, initiate that now. We use a
++			// nil Data which unmarshals into an empty ConfChangeV2 and has the
++			// benefit that appendEntry can never refuse it based on its size
++			// (which registers as zero).
+ 			ent := pb.Entry{
+ 				Type: pb.EntryConfChangeV2,
+-				Data: ccdata,
++				Data: nil,
+ 			}
++			// There's no way in which this proposal should be able to be rejected.
+ 			if !r.appendEntry(ent) {
+-				// If we could not append the entry, bump the pending conf index
+-				// so that we'll try again later.
+-				//
+-				// TODO(tbg): test this case.
+-				r.pendingConfIndex = r.raftLog.lastIndex()
+-			} else {
+-				r.logger.Infof("initiating automatic transition out of joint configuration %s", r.prs.Config)
++				panic("refused un-refusable auto-leaving ConfChangeV2")
+ 			}
++			r.pendingConfIndex = r.raftLog.lastIndex()
++			r.logger.Infof("initiating automatic transition out of joint configuration %s", r.prs.Config)
+ 		}
+ 	}
+-	r.reduceUncommittedSize(rd.CommittedEntries)
+ 
+ 	if len(rd.Entries) > 0 {
+ 		e := rd.Entries[len(rd.Entries)-1]
+@@ -795,7 +794,16 @@ func (r *raft) campaign(t CampaignType) {
+ 		}
+ 		return
+ 	}
+-	for id := range r.prs.Voters.IDs() {
++	var ids []uint64
++	{
++		idMap := r.prs.Voters.IDs()
++		ids = make([]uint64, 0, len(idMap))
++		for id := range idMap {
++			ids = append(ids, id)
++		}
++		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
++	}
++	for _, id := range ids {
+ 		if id == r.id {
+ 			continue
+ 		}
+@@ -1027,10 +1035,36 @@ func stepLeader(r *raft, m pb.Message) error {
+ 
+ 		for i := range m.Entries {
+ 			e := &m.Entries[i]
+-			if e.Type == pb.EntryConfChange || e.Type == pb.EntryConfChangeV2 {
+-				if r.pendingConfIndex > r.raftLog.applied {
+-					r.logger.Infof("%x propose conf %s ignored since pending unapplied configuration [index %d, applied %d]",
+-						r.id, e, r.pendingConfIndex, r.raftLog.applied)
++			var cc pb.ConfChangeI
++			if e.Type == pb.EntryConfChange {
++				var ccc pb.ConfChange
++				if err := ccc.Unmarshal(e.Data); err != nil {
++					panic(err)
++				}
++				cc = ccc
++			} else if e.Type == pb.EntryConfChangeV2 {
++				var ccc pb.ConfChangeV2
++				if err := ccc.Unmarshal(e.Data); err != nil {
++					panic(err)
++				}
++				cc = ccc
++			}
++			if cc != nil {
++				alreadyPending := r.pendingConfIndex > r.raftLog.applied
++				alreadyJoint := len(r.prs.Config.Voters[1]) > 0
++				wantsLeaveJoint := len(cc.AsV2().Changes) == 0
++
++				var refused string
++				if alreadyPending {
++					refused = fmt.Sprintf("possible unapplied conf change at index %d (applied to %d)", r.pendingConfIndex, r.raftLog.applied)
++				} else if alreadyJoint && !wantsLeaveJoint {
++					refused = "must transition out of joint config first"
++				} else if !alreadyJoint && wantsLeaveJoint {
++					refused = "not in joint state; refusing empty conf change"
++				}
++
++				if refused != "" {
++					r.logger.Infof("%x ignoring conf change %v at config %s: %s", r.id, cc, r.prs.Config, refused)
+ 					m.Entries[i] = pb.Entry{Type: pb.EntryNormal}
+ 				} else {
+ 					r.pendingConfIndex = r.raftLog.lastIndex() + uint64(i) + 1
+@@ -1064,7 +1098,7 @@ func stepLeader(r *raft, m pb.Message) error {
+ 			case ReadOnlyLeaseBased:
+ 				ri := r.raftLog.committed
+ 				if m.From == None || m.From == r.id { // from local member
+-					r.readStates = append(r.readStates, ReadState{Index: r.raftLog.committed, RequestCtx: m.Entries[0].Data})
++					r.readStates = append(r.readStates, ReadState{Index: ri, RequestCtx: m.Entries[0].Data})
+ 				} else {
+ 					r.send(pb.Message{To: m.From, Type: pb.MsgReadIndexResp, Index: ri, Entries: m.Entries})
+ 				}
+@@ -1396,7 +1430,7 @@ func (r *raft) restore(s pb.Snapshot) bool {
+ 	}
+ 
+ 	// More defense-in-depth: throw away snapshot if recipient is not in the
+-	// config. This shouuldn't ever happen (at the time of writing) but lots of
++	// config. This shouldn't ever happen (at the time of writing) but lots of
+ 	// code here and there assumes that r.id is in the progress tracker.
+ 	found := false
+ 	cs := s.Metadata.ConfState
+@@ -1518,13 +1552,21 @@ func (r *raft) switchToConfig(cfg tracker.Config, prs tracker.ProgressMap) pb.Co
+ 	if r.state != StateLeader || len(cs.Voters) == 0 {
+ 		return cs
+ 	}
++
+ 	if r.maybeCommit() {
+-		// The quorum size may have been reduced (but not to zero), so see if
+-		// any pending entries can be committed.
++		// If the configuration change means that more entries are committed now,
++		// broadcast/append to everyone in the updated config.
+ 		r.bcastAppend()
++	} else {
++		// Otherwise, still probe the newly added replicas; there's no reason to
++		// let them wait out a heartbeat interval (or the next incoming
++		// proposal).
++		r.prs.Visit(func(id uint64, pr *tracker.Progress) {
++			r.maybeSendAppend(id, false /* sendIfEmpty */)
++		})
+ 	}
+-	// If the the leadTransferee was removed, abort the leadership transfer.
+-	if _, tOK := r.prs.Progress[r.leadTransferee]; !tOK && r.leadTransferee != 0 {
++	// If the the leadTransferee was removed or demoted, abort the leadership transfer.
++	if _, tOK := r.prs.Config.Voters.IDs()[r.leadTransferee]; !tOK && r.leadTransferee != 0 {
+ 		r.abortLeaderTransfer()
+ 	}
+ 
+@@ -1564,16 +1606,21 @@ func (r *raft) abortLeaderTransfer() {
+ // If the new entries would exceed the limit, the method returns false. If not,
+ // the increase in uncommitted entry size is recorded and the method returns
+ // true.
++// Configuration changes are never refused.
+ func (r *raft) increaseUncommittedSize(ents []pb.Entry) bool {
+ 	var s uint64
+ 	for _, e := range ents {
+ 		s += uint64(PayloadSize(e))
+ 	}
+ 
+-	if r.uncommittedSize > 0 && r.uncommittedSize+s > r.maxUncommittedSize {
++	if r.uncommittedSize > 0 && s > 0 && r.uncommittedSize+s > r.maxUncommittedSize {
+ 		// If the uncommitted tail of the Raft log is empty, allow any size
+ 		// proposal. Otherwise, limit the size of the uncommitted tail of the
+ 		// log and drop any proposal that would push the size over the limit.
++		// Note the added requirement s>0 which is used to make sure that
++		// appending single empty entries to the log always succeeds, used both
++		// for replicating a new leader's initial empty entry, and for
++		// auto-leaving joint configurations.
+ 		return false
+ 	}
+ 	r.uncommittedSize += s
+diff --git a/raftpb/confchange.go b/raftpb/confchange.go
+index a91c18d..47fae65 100644
+--- a/raftpb/confchange.go
++++ b/raftpb/confchange.go
+@@ -16,6 +16,8 @@ package raftpb
+ 
+ import (
+ 	"fmt"
++	"strconv"
++	"strings"
+ 
+ 	"github.com/gogo/protobuf/proto"
+ )
+@@ -71,7 +73,7 @@ func (c ConfChangeV2) AsV1() (ConfChange, bool) { return ConfChange{}, false }
+ // than one change or if the use of Joint Consensus was requested explicitly.
+ // The first bool can only be true if second one is, and indicates whether the
+ // Joint State will be left automatically.
+-func (c *ConfChangeV2) EnterJoint() (autoLeave bool, ok bool) {
++func (c ConfChangeV2) EnterJoint() (autoLeave bool, ok bool) {
+ 	// NB: in theory, more config changes could qualify for the "simple"
+ 	// protocol but it depends on the config on top of which the changes apply.
+ 	// For example, adding two learners is not OK if both nodes are part of the
+@@ -98,8 +100,71 @@ func (c *ConfChangeV2) EnterJoint() (autoLeave bool, ok bool) {
+ // LeaveJoint is true if the configuration change leaves a joint configuration.
+ // This is the case if the ConfChangeV2 is zero, with the possible exception of
+ // the Context field.
+-func (c *ConfChangeV2) LeaveJoint() bool {
+-	cpy := *c
+-	cpy.Context = nil
+-	return proto.Equal(&cpy, &ConfChangeV2{})
++func (c ConfChangeV2) LeaveJoint() bool {
++	// NB: c is already a copy.
++	c.Context = nil
++	return proto.Equal(&c, &ConfChangeV2{})
++}
++
++// ConfChangesFromString parses a Space-delimited sequence of operations into a
++// slice of ConfChangeSingle. The supported operations are:
++// - vn: make n a voter,
++// - ln: make n a learner,
++// - rn: remove n, and
++// - un: update n.
++func ConfChangesFromString(s string) ([]ConfChangeSingle, error) {
++	var ccs []ConfChangeSingle
++	toks := strings.Split(strings.TrimSpace(s), " ")
++	if toks[0] == "" {
++		toks = nil
++	}
++	for _, tok := range toks {
++		if len(tok) < 2 {
++			return nil, fmt.Errorf("unknown token %s", tok)
++		}
++		var cc ConfChangeSingle
++		switch tok[0] {
++		case 'v':
++			cc.Type = ConfChangeAddNode
++		case 'l':
++			cc.Type = ConfChangeAddLearnerNode
++		case 'r':
++			cc.Type = ConfChangeRemoveNode
++		case 'u':
++			cc.Type = ConfChangeUpdateNode
++		default:
++			return nil, fmt.Errorf("unknown input: %s", tok)
++		}
++		id, err := strconv.ParseUint(tok[1:], 10, 64)
++		if err != nil {
++			return nil, err
++		}
++		cc.NodeID = id
++		ccs = append(ccs, cc)
++	}
++	return ccs, nil
++}
++
++// ConfChangesToString is the inverse to ConfChangesFromString.
++func ConfChangesToString(ccs []ConfChangeSingle) string {
++	var buf strings.Builder
++	for i, cc := range ccs {
++		if i > 0 {
++			buf.WriteByte(' ')
++		}
++		switch cc.Type {
++		case ConfChangeAddNode:
++			buf.WriteByte('v')
++		case ConfChangeAddLearnerNode:
++			buf.WriteByte('l')
++		case ConfChangeRemoveNode:
++			buf.WriteByte('r')
++		case ConfChangeUpdateNode:
++			buf.WriteByte('u')
++		default:
++			buf.WriteString("unknown")
++		}
++		fmt.Fprintf(&buf, "%d", cc.NodeID)
++	}
++	return buf.String()
+ }
+diff --git a/storage.go b/storage.go
+index 14ad686..6be5745 100644
+--- a/storage.go
++++ b/storage.go
+@@ -44,6 +44,8 @@ var ErrSnapshotTemporarilyUnavailable = errors.New("snapshot is temporarily unav
+ // become inoperable and refuse to participate in elections; the
+ // application is responsible for cleanup and recovery in this case.
+ type Storage interface {
++	// TODO(tbg): split this into two interfaces, LogStorage and StateStorage.
++
+ 	// InitialState returns the saved HardState and ConfState information.
+ 	InitialState() (pb.HardState, pb.ConfState, error)
+ 	// Entries returns a slice of log entries in the range [lo,hi).
+diff --git a/tracker/progress.go b/tracker/progress.go
+index 697277b..62c81f4 100644
+--- a/tracker/progress.go
++++ b/tracker/progress.go
+@@ -52,6 +52,8 @@ type Progress struct {
+ 	// RecentActive is true if the progress is recently active. Receiving any messages
+ 	// from the corresponding follower indicates the progress is active.
+ 	// RecentActive can be reset to false after an election timeout.
++	//
++	// TODO(tbg): the leader should always have this set to true.
+ 	RecentActive bool
+ 
+ 	// ProbeSent is used while this follower is in StateProbe. When ProbeSent is
+diff --git a/util.go b/util.go
+index 8394f64..785cf73 100644
+--- a/util.go
++++ b/util.go
+@@ -17,6 +17,7 @@ package raft
+ import (
+ 	"bytes"
+ 	"fmt"
++	"strings"
+ 
+ 	pb "go.etcd.io/etcd/raft/raftpb"
+ )
+@@ -60,6 +61,69 @@ func voteRespMsgType(msgt pb.MessageType) pb.MessageType {
+ 	}
+ }
+ 
++func DescribeHardState(hs pb.HardState) string {
++	var buf strings.Builder
++	fmt.Fprintf(&buf, "Term:%d", hs.Term)
++	if hs.Vote != 0 {
++		fmt.Fprintf(&buf, " Vote:%d", hs.Vote)
++	}
++	fmt.Fprintf(&buf, " Commit:%d", hs.Commit)
++	return buf.String()
++}
++
++func DescribeSoftState(ss SoftState) string {
++	return fmt.Sprintf("Lead:%d State:%s", ss.Lead, ss.RaftState)
++}
++
++func DescribeConfState(state pb.ConfState) string {
++	return fmt.Sprintf(
++		"Voters:%v VotersOutgoing:%v Learners:%v LearnersNext:%v AutoLeave:%v",
++		state.Voters, state.VotersOutgoing, state.Learners, state.LearnersNext, state.AutoLeave,
++	)
++}
++
++func DescribeSnapshot(snap pb.Snapshot) string {
++	m := snap.Metadata
++	return fmt.Sprintf("Index:%d Term:%d ConfState:%s", m.Index, m.Term, DescribeConfState(m.ConfState))
++}
++
++func DescribeReady(rd Ready, f EntryFormatter) string {
++	var buf strings.Builder
++	if rd.SoftState != nil {
++		fmt.Fprint(&buf, DescribeSoftState(*rd.SoftState))
++		buf.WriteByte('\n')
++	}
++	if !IsEmptyHardState(rd.HardState) {
++		fmt.Fprintf(&buf, "HardState %s", DescribeHardState(rd.HardState))
++		buf.WriteByte('\n')
++	}
++	if len(rd.ReadStates) > 0 {
++		fmt.Fprintf(&buf, "ReadStates %v\n", rd.ReadStates)
++	}
++	if len(rd.Entries) > 0 {
++		buf.WriteString("Entries:\n")
++		fmt.Fprint(&buf, DescribeEntries(rd.Entries, f))
++	}
++	if !IsEmptySnap(rd.Snapshot) {
++		fmt.Fprintf(&buf, "Snapshot %s\n", DescribeSnapshot(rd.Snapshot))
++	}
++	if len(rd.CommittedEntries) > 0 {
++		buf.WriteString("CommittedEntries:\n")
++		fmt.Fprint(&buf, DescribeEntries(rd.CommittedEntries, f))
++	}
++	if len(rd.Messages) > 0 {
++		buf.WriteString("Messages:\n")
++		for _, msg := range rd.Messages {
++			fmt.Fprint(&buf, DescribeMessage(msg, f))
++			buf.WriteByte('\n')
++		}
++	}
++	if buf.Len() > 0 {
++		return fmt.Sprintf("Ready MustSync=%t:\n%s", rd.MustSync, buf.String())
++	}
++	return "<empty Ready>"
++}
++
+ // EntryFormatter can be implemented by the application to provide human-readable formatting
+ // of entry data. Nil is a valid EntryFormatter and will use a default format.
+ type EntryFormatter func([]byte) string
+@@ -86,7 +150,7 @@ func DescribeMessage(m pb.Message, f EntryFormatter) string {
+ 		fmt.Fprintf(&buf, "]")
+ 	}
+ 	if !IsEmptySnap(m.Snapshot) {
+-		fmt.Fprintf(&buf, " Snapshot:%v", m.Snapshot)
++		fmt.Fprintf(&buf, " Snapshot: %s", DescribeSnapshot(m.Snapshot))
+ 	}
+ 	return buf.String()
+ }
+@@ -100,13 +164,39 @@ func PayloadSize(e pb.Entry) int {
+ // DescribeEntry returns a concise human-readable description of an
+ // Entry for debugging.
+ func DescribeEntry(e pb.Entry, f EntryFormatter) string {
++	if f == nil {
++		f = func(data []byte) string { return fmt.Sprintf("%q", data) }
++	}
++
++	formatConfChange := func(cc pb.ConfChangeI) string {
++		// TODO(tbg): give the EntryFormatter a type argument so that it gets
++		// a chance to expose the Context.
++		return pb.ConfChangesToString(cc.AsV2().Changes)
++	}
++
+ 	var formatted string
+-	if e.Type == pb.EntryNormal && f != nil {
++	switch e.Type {
++	case pb.EntryNormal:
+ 		formatted = f(e.Data)
+-	} else {
+-		formatted = fmt.Sprintf("%q", e.Data)
++	case pb.EntryConfChange:
++		var cc pb.ConfChange
++		if err := cc.Unmarshal(e.Data); err != nil {
++			formatted = err.Error()
++		} else {
++			formatted = formatConfChange(cc)
++		}
++	case pb.EntryConfChangeV2:
++		var cc pb.ConfChangeV2
++		if err := cc.Unmarshal(e.Data); err != nil {
++			formatted = err.Error()
++		} else {
++			formatted = formatConfChange(cc)
++		}
++	}
++	if formatted != "" {
++		formatted = " " + formatted
+ 	}
+-	return fmt.Sprintf("%d/%d %s %s", e.Term, e.Index, e.Type, formatted)
++	return fmt.Sprintf("%d/%d %s%s", e.Term, e.Index, e.Type, formatted)
+ }
+ 
+ // DescribeEntries calls DescribeEntry for each Entry, adding a newline to

@@ -1,0 +1,764 @@
+diff --git a/confchange/confchange.go b/confchange/confchange.go
+index bfb2033..58c74bf 100644
+--- a/confchange/confchange.go
++++ b/confchange/confchange.go
+@@ -62,10 +62,7 @@ func (c Changer) EnterJoint(autoLeave bool, ccs ...pb.ConfChangeSingle) (tracker
+ 		return c.err(err)
+ 	}
+ 	// Clear the outgoing config.
+-	{
+-		*outgoingPtr(&cfg.Voters) = quorum.MajorityConfig{}
+-
+-	}
++	*outgoingPtr(&cfg.Voters) = quorum.MajorityConfig{}
+ 	// Copy incoming to outgoing.
+ 	for id := range incoming(cfg.Voters) {
+ 		outgoing(cfg.Voters)[id] = struct{}{}
+diff --git a/confchange/restore.go b/confchange/restore.go
+new file mode 100644
+index 0000000..724068d
+--- /dev/null
++++ b/confchange/restore.go
+@@ -0,0 +1,155 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package confchange
++
++import (
++	pb "go.etcd.io/etcd/raft/raftpb"
++	"go.etcd.io/etcd/raft/tracker"
++)
++
++// toConfChangeSingle translates a conf state into 1) a slice of operations creating
++// first the config that will become the outgoing one, and then the incoming one, and
++// b) another slice that, when applied to the config resulted from 1), represents the
++// ConfState.
++func toConfChangeSingle(cs pb.ConfState) (out []pb.ConfChangeSingle, in []pb.ConfChangeSingle) {
++	// Example to follow along this code:
++	// voters=(1 2 3) learners=(5) outgoing=(1 2 4 6) learners_next=(4)
++	//
++	// This means that before entering the joint config, the configuration
++	// had voters (1 2 4) and perhaps some learners that are already gone.
++	// The new set of voters is (1 2 3), i.e. (1 2) were kept around, and (4 6)
++	// are no longer voters; however 4 is poised to become a learner upon leaving
++	// the joint state.
++	// We can't tell whether 5 was a learner before entering the joint config,
++	// but it doesn't matter (we'll pretend that it wasn't).
++	//
++	// The code below will construct
++	// outgoing = add 1; add 2; add 4; add 6
++	// incoming = remove 1; remove 2; remove 4; remove 6
++	//            add 1;    add 2;    add 3;
++	//            add-learner 5;
++	//            add-learner 4;
++	//
++	// So, when starting with an empty config, after applying 'outgoing' we have
++	//
++	//   quorum=(1 2 4 6)
++	//
++	// From which we enter a joint state via 'incoming'
++	//
++	//   quorum=(1 2 3)&&(1 2 4 6) learners=(5) learners_next=(4)
++	//
++	// as desired.
++
++	for _, id := range cs.VotersOutgoing {
++		// If there are outgoing voters, first add them one by one so that the
++		// (non-joint) config has them all.
++		out = append(out, pb.ConfChangeSingle{
++			Type:   pb.ConfChangeAddNode,
++			NodeID: id,
++		})
++
++	}
++
++	// We're done constructing the outgoing slice, now on to the incoming one
++	// (which will apply on top of the config created by the outgoing slice).
++
++	// First, we'll remove all of the outgoing voters.
++	for _, id := range cs.VotersOutgoing {
++		in = append(in, pb.ConfChangeSingle{
++			Type:   pb.ConfChangeRemoveNode,
++			NodeID: id,
++		})
++	}
++	// Then we'll add the incoming voters and learners.
++	for _, id := range cs.Voters {
++		in = append(in, pb.ConfChangeSingle{
++			Type:   pb.ConfChangeAddNode,
++			NodeID: id,
++		})
++	}
++	for _, id := range cs.Learners {
++		in = append(in, pb.ConfChangeSingle{
++			Type:   pb.ConfChangeAddLearnerNode,
++			NodeID: id,
++		})
++	}
++	// Same for LearnersNext; these are nodes we want to be learners but which
++	// are currently voters in the outgoing config.
++	for _, id := range cs.LearnersNext {
++		in = append(in, pb.ConfChangeSingle{
++			Type:   pb.ConfChangeAddLearnerNode,
++			NodeID: id,
++		})
++	}
++	return out, in
++}
++
++func chain(chg Changer, ops ...func(Changer) (tracker.Config, tracker.ProgressMap, error)) (tracker.Config, tracker.ProgressMap, error) {
++	for _, op := range ops {
++		cfg, prs, err := op(chg)
++		if err != nil {
++			return tracker.Config{}, nil, err
++		}
++		chg.Tracker.Config = cfg
++		chg.Tracker.Progress = prs
++	}
++	return chg.Tracker.Config, chg.Tracker.Progress, nil
++}
++
++// Restore takes a Changer (which must represent an empty configuration), and
++// runs a sequence of changes enacting the configuration described in the
++// ConfState.
++//
++// TODO(tbg) it's silly that this takes a Changer. Unravel this by making sure
++// the Changer only needs a ProgressMap (not a whole Tracker) at which point
++// this can just take LastIndex and MaxInflight directly instead and cook up
++// the results from that alone.
++func Restore(chg Changer, cs pb.ConfState) (tracker.Config, tracker.ProgressMap, error) {
++	outgoing, incoming := toConfChangeSingle(cs)
++
++	var ops []func(Changer) (tracker.Config, tracker.ProgressMap, error)
++
++	if len(outgoing) == 0 {
++		// No outgoing config, so just apply the incoming changes one by one.
++		for _, cc := range incoming {
++			cc := cc // loop-local copy
++			ops = append(ops, func(chg Changer) (tracker.Config, tracker.ProgressMap, error) {
++				return chg.Simple(cc)
++			})
++		}
++	} else {
++		// The ConfState describes a joint configuration.
++		//
++		// First, apply all of the changes of the outgoing config one by one, so
++		// that it temporarily becomes the incoming active config. For example,
++		// if the config is (1 2 3)&(2 3 4), this will establish (2 3 4)&().
++		for _, cc := range outgoing {
++			cc := cc // loop-local copy
++			ops = append(ops, func(chg Changer) (tracker.Config, tracker.ProgressMap, error) {
++				return chg.Simple(cc)
++			})
++		}
++		// Now enter the joint state, which rotates the above additions into the
++		// outgoing config, and adds the incoming config in. Continuing the
++		// example above, we'd get (1 2 3)&(2 3 4), i.e. the incoming operations
++		// would be removing 2,3,4 and then adding in 1,2,3 while transitioning
++		// into a joint state.
++		ops = append(ops, func(chg Changer) (tracker.Config, tracker.ProgressMap, error) {
++			return chg.EnterJoint(cs.AutoLeave, incoming...)
++		})
++	}
++
++	return chain(chg, ops...)
++}
+diff --git a/logger.go b/logger.go
+index 426a77d..6d89629 100644
+--- a/logger.go
++++ b/logger.go
+@@ -19,6 +19,7 @@ import (
+ 	"io/ioutil"
+ 	"log"
+ 	"os"
++	"sync"
+ )
+ 
+ type Logger interface {
+@@ -41,11 +42,16 @@ type Logger interface {
+ 	Panicf(format string, v ...interface{})
+ }
+ 
+-func SetLogger(l Logger) { raftLogger = l }
++func SetLogger(l Logger) {
++	raftLoggerMu.Lock()
++	raftLogger = l
++	raftLoggerMu.Unlock()
++}
+ 
+ var (
+ 	defaultLogger = &DefaultLogger{Logger: log.New(os.Stderr, "raft", log.LstdFlags)}
+ 	discardLogger = &DefaultLogger{Logger: log.New(ioutil.Discard, "", 0)}
++	raftLoggerMu  sync.Mutex
+ 	raftLogger    = Logger(defaultLogger)
+ )
+ 
+diff --git a/node.go b/node.go
+index ddfce04..ab6185b 100644
+--- a/node.go
++++ b/node.go
+@@ -221,10 +221,9 @@ func StartNode(c *Config, peers []Peer) Node {
+ 	}
+ 	rn.Bootstrap(peers)
+ 
+-	n := newNode()
+-	n.logger = c.Logger
++	n := newNode(rn)
+ 
+-	go n.run(rn)
++	go n.run()
+ 	return &n
+ }
+ 
+@@ -237,9 +236,8 @@ func RestartNode(c *Config) Node {
+ 	if err != nil {
+ 		panic(err)
+ 	}
+-	n := newNode()
+-	n.logger = c.Logger
+-	go n.run(rn)
++	n := newNode(rn)
++	go n.run()
+ 	return &n
+ }
+ 
+@@ -261,10 +259,10 @@ type node struct {
+ 	stop       chan struct{}
+ 	status     chan chan Status
+ 
+-	logger Logger
++	rn *RawNode
+ }
+ 
+-func newNode() node {
++func newNode(rn *RawNode) node {
+ 	return node{
+ 		propc:      make(chan msgWithResult),
+ 		recvc:      make(chan pb.Message),
+@@ -279,6 +277,7 @@ func newNode() node {
+ 		done:   make(chan struct{}),
+ 		stop:   make(chan struct{}),
+ 		status: make(chan chan Status),
++		rn:     rn,
+ 	}
+ }
+ 
+@@ -294,20 +293,20 @@ func (n *node) Stop() {
+ 	<-n.done
+ }
+ 
+-func (n *node) run(rn *RawNode) {
++func (n *node) run() {
+ 	var propc chan msgWithResult
+ 	var readyc chan Ready
+ 	var advancec chan struct{}
+ 	var rd Ready
+ 
+-	r := rn.raft
++	r := n.rn.raft
+ 
+ 	lead := None
+ 
+ 	for {
+ 		if advancec != nil {
+ 			readyc = nil
+-		} else if rn.HasReady() {
++		} else if n.rn.HasReady() {
+ 			// Populate a Ready. Note that this Ready is not guaranteed to
+ 			// actually be handled. We will arm readyc, but there's no guarantee
+ 			// that we will actually send on it. It's possible that we will
+@@ -316,7 +315,7 @@ func (n *node) run(rn *RawNode) {
+ 			// handled first, but it's generally good to emit larger Readys plus
+ 			// it simplifies testing (by emitting less frequently and more
+ 			// predictably).
+-			rd = rn.Ready()
++			rd = n.rn.readyWithoutAccept()
+ 			readyc = n.readyc
+ 		}
+ 
+@@ -366,7 +365,7 @@ func (n *node) run(rn *RawNode) {
+ 			// very sound and likely has bugs.
+ 			if _, okAfter := r.prs.Progress[r.id]; okBefore && !okAfter {
+ 				var found bool
+-				for _, sl := range [][]uint64{cs.Nodes, cs.NodesJoint} {
++				for _, sl := range [][]uint64{cs.Voters, cs.VotersOutgoing} {
+ 					for _, id := range sl {
+ 						if id == r.id {
+ 							found = true
+@@ -382,12 +381,12 @@ func (n *node) run(rn *RawNode) {
+ 			case <-n.done:
+ 			}
+ 		case <-n.tickc:
+-			rn.Tick()
++			n.rn.Tick()
+ 		case readyc <- rd:
+-			rn.acceptReady(rd)
++			n.rn.acceptReady(rd)
+ 			advancec = n.advancec
+ 		case <-advancec:
+-			rn.commitReady(rd)
++			n.rn.Advance(rd)
+ 			rd = Ready{}
+ 			advancec = nil
+ 		case c := <-n.status:
+@@ -406,7 +405,7 @@ func (n *node) Tick() {
+ 	case n.tickc <- struct{}{}:
+ 	case <-n.done:
+ 	default:
+-		n.logger.Warningf("A tick missed to fire. Node blocks too long!")
++		n.rn.raft.logger.Warningf("%x (leader %v) A tick missed to fire. Node blocks too long!", n.rn.raft.id, n.rn.raft.id == n.rn.raft.lead)
+ 	}
+ }
+ 
+diff --git a/quorum/majority.go b/quorum/majority.go
+index 9b10e95..8858a36 100644
+--- a/quorum/majority.go
++++ b/quorum/majority.go
+@@ -112,9 +112,7 @@ func (c MajorityConfig) Slice() []uint64 {
+ 	return sl
+ }
+ 
+-type uint64Slice []uint64
+-
+-func insertionSort(sl uint64Slice) {
++func insertionSort(sl []uint64) {
+ 	a, b := 0, len(sl)
+ 	for i := a + 1; i < b; i++ {
+ 		for j := i; j > a && sl[j] < sl[j-1]; j-- {
+@@ -141,12 +139,12 @@ func (c MajorityConfig) CommittedIndex(l AckedIndexer) Index {
+ 	// performance is a lesser concern (additionally the performance
+ 	// implications of an allocation here are far from drastic).
+ 	var stk [7]uint64
+-	srt := uint64Slice(stk[:])
+-
+-	if cap(srt) < n {
++	var srt []uint64
++	if len(stk) >= n {
++		srt = stk[:n]
++	} else {
+ 		srt = make([]uint64, n)
+ 	}
+-	srt = srt[:n]
+ 
+ 	{
+ 		// Fill the slice with the indexes observed. Any unused slots will be
+diff --git a/raft.go b/raft.go
+index 16174f2..62e7964 100644
+--- a/raft.go
++++ b/raft.go
+@@ -263,7 +263,8 @@ type raft struct {
+ 
+ 	maxMsgSize         uint64
+ 	maxUncommittedSize uint64
+-	prs                tracker.ProgressTracker
++	// TODO(tbg): rename to trk.
++	prs tracker.ProgressTracker
+ 
+ 	state StateType
+ 
+@@ -327,18 +328,18 @@ func newRaft(c *Config) *raft {
+ 	if err != nil {
+ 		panic(err) // TODO(bdarnell)
+ 	}
+-	peers := c.peers
+-	learners := c.learners
+-	if len(cs.Nodes) > 0 || len(cs.Learners) > 0 {
+-		if len(peers) > 0 || len(learners) > 0 {
++
++	if len(c.peers) > 0 || len(c.learners) > 0 {
++		if len(cs.Voters) > 0 || len(cs.Learners) > 0 {
+ 			// TODO(bdarnell): the peers argument is always nil except in
+ 			// tests; the argument should be removed and these tests should be
+ 			// updated to specify their nodes through a snapshot.
+-			panic("cannot specify both newRaft(peers, learners) and ConfState.(Nodes, Learners)")
++			panic("cannot specify both newRaft(peers, learners) and ConfState.(Voters, Learners)")
+ 		}
+-		peers = cs.Nodes
+-		learners = cs.Learners
++		cs.Voters = c.peers
++		cs.Learners = c.learners
+ 	}
++
+ 	r := &raft{
+ 		id:                        c.ID,
+ 		lead:                      None,
+@@ -355,14 +356,15 @@ func newRaft(c *Config) *raft {
+ 		readOnly:                  newReadOnly(c.ReadOnlyOption),
+ 		disableProposalForwarding: c.DisableProposalForwarding,
+ 	}
+-	for _, p := range peers {
+-		// Add node to active config.
+-		r.applyConfChange(pb.ConfChange{Type: pb.ConfChangeAddNode, NodeID: p}.AsV2())
+-	}
+-	for _, p := range learners {
+-		// Add learner to active config.
+-		r.applyConfChange(pb.ConfChange{Type: pb.ConfChangeAddLearnerNode, NodeID: p}.AsV2())
++
++	cfg, prs, err := confchange.Restore(confchange.Changer{
++		Tracker:   r.prs,
++		LastIndex: raftlog.lastIndex(),
++	}, cs)
++	if err != nil {
++		panic(err)
+ 	}
++	assertConfStatesEquivalent(r.logger, cs, r.switchToConfig(cfg, prs))
+ 
+ 	if !isHardStateEqual(hs, emptyState) {
+ 		r.loadState(hs)
+@@ -920,12 +922,6 @@ func (r *raft) Step(m pb.Message) error {
+ 		}
+ 
+ 	case pb.MsgVote, pb.MsgPreVote:
+-		if r.isLearner {
+-			// TODO: learner may need to vote, in case of node down when confchange.
+-			r.logger.Infof("%x [logterm: %d, index: %d, vote: %x] ignored %s from %x [logterm: %d, index: %d] at term %d: learner can not vote",
+-				r.id, r.raftLog.lastTerm(), r.raftLog.lastIndex(), r.Vote, m.Type, m.From, m.LogTerm, m.Index, r.Term)
+-			return nil
+-		}
+ 		// We can vote if this is a repeat of a vote we've already cast...
+ 		canVote := r.Vote == m.From ||
+ 			// ...we haven't voted and we don't think there's a leader yet in this term...
+@@ -934,6 +930,24 @@ func (r *raft) Step(m pb.Message) error {
+ 			(m.Type == pb.MsgPreVote && m.Term > r.Term)
+ 		// ...and we believe the candidate is up to date.
+ 		if canVote && r.raftLog.isUpToDate(m.Index, m.LogTerm) {
++			// Note: it turns out that that learners must be allowed to cast votes.
++			// This seems counter- intuitive but is necessary in the situation in which
++			// a learner has been promoted (i.e. is now a voter) but has not learned
++			// about this yet.
++			// For example, consider a group in which id=1 is a learner and id=2 and
++			// id=3 are voters. A configuration change promoting 1 can be committed on
++			// the quorum `{2,3}` without the config change being appended to the
++			// learner's log. If the leader (say 2) fails, there are de facto two
++			// voters remaining. Only 3 can win an election (due to its log containing
++			// all committed entries), but to do so it will need 1 to vote. But 1
++			// considers itself a learner and will continue to do so until 3 has
++			// stepped up as leader, replicates the conf change to 1, and 1 applies it.
++			// Ultimately, by receiving a request to vote, the learner realizes that
++			// the candidate believes it to be a voter, and that it should act
++			// accordingly. The candidate's config may be stale, too; but in that case
++			// it won't win the election, at least in the absence of the bug discussed
++			// in:
++			// https://github.com/etcd-io/etcd/issues/7625#issuecomment-488798263.
+ 			r.logger.Infof("%x [logterm: %d, index: %d, vote: %x] cast %s for %x [logterm: %d, index: %d] at term %d",
+ 				r.id, r.raftLog.lastTerm(), r.raftLog.lastIndex(), r.Vote, m.Type, m.From, m.LogTerm, m.Index, r.Term)
+ 			// When responding to Msg{Pre,}Vote messages we include the term
+@@ -1093,6 +1107,9 @@ func stepLeader(r *raft, m pb.Message) error {
+ 				case pr.State == tracker.StateProbe:
+ 					pr.BecomeReplicate()
+ 				case pr.State == tracker.StateSnapshot && pr.Match >= pr.PendingSnapshot:
++					// TODO(tbg): we should also enter this branch if a snapshot is
++					// received that is below pr.PendingSnapshot but which makes it
++					// possible to use the log again.
+ 					r.logger.Debugf("%x recovered from needing snapshot, resumed sending replication messages to %x [%s]", r.id, m.From, pr)
+ 					// Transition back to replicating state via probing state
+ 					// (which takes the snapshot into account). If we didn't
+@@ -1384,7 +1401,7 @@ func (r *raft) restore(s pb.Snapshot) bool {
+ 	found := false
+ 	cs := s.Metadata.ConfState
+ 	for _, set := range [][]uint64{
+-		cs.Nodes,
++		cs.Voters,
+ 		cs.Learners,
+ 	} {
+ 		for _, id := range set {
+@@ -1415,13 +1432,19 @@ func (r *raft) restore(s pb.Snapshot) bool {
+ 
+ 	// Reset the configuration and add the (potentially updated) peers in anew.
+ 	r.prs = tracker.MakeProgressTracker(r.prs.MaxInflight)
+-	for _, id := range s.Metadata.ConfState.Nodes {
+-		r.applyConfChange(pb.ConfChange{NodeID: id, Type: pb.ConfChangeAddNode}.AsV2())
+-	}
+-	for _, id := range s.Metadata.ConfState.Learners {
+-		r.applyConfChange(pb.ConfChange{NodeID: id, Type: pb.ConfChangeAddLearnerNode}.AsV2())
++	cfg, prs, err := confchange.Restore(confchange.Changer{
++		Tracker:   r.prs,
++		LastIndex: r.raftLog.lastIndex(),
++	}, cs)
++
++	if err != nil {
++		// This should never happen. Either there's a bug in our config change
++		// handling or the client corrupted the conf change.
++		panic(fmt.Sprintf("unable to restore config %+v: %s", cs, err))
+ 	}
+ 
++	assertConfStatesEquivalent(r.logger, cs, r.switchToConfig(cfg, prs))
++
+ 	pr := r.prs.Progress[r.id]
+ 	pr.MaybeUpdate(pr.Next - 1) // TODO(tbg): this is untested and likely unneeded
+ 
+@@ -1456,19 +1479,21 @@ func (r *raft) applyConfChange(cc pb.ConfChangeV2) pb.ConfState {
+ 		panic(err)
+ 	}
+ 
++	return r.switchToConfig(cfg, prs)
++}
++
++// switchToConfig reconfigures this node to use the provided configuration. It
++// updates the in-memory state and, when necessary, carries out additional
++// actions such as reacting to the removal of nodes or changed quorum
++// requirements.
++//
++// The inputs usually result from restoring a ConfState or applying a ConfChange.
++func (r *raft) switchToConfig(cfg tracker.Config, prs tracker.ProgressMap) pb.ConfState {
+ 	r.prs.Config = cfg
+ 	r.prs.Progress = prs
+ 
+ 	r.logger.Infof("%x switched to configuration %s", r.id, r.prs.Config)
+-	// Now that the configuration is updated, handle any side effects.
+-
+-	cs := pb.ConfState{
+-		Nodes:        r.prs.Voters[0].Slice(),
+-		NodesJoint:   r.prs.Voters[1].Slice(),
+-		Learners:     quorum.MajorityConfig(r.prs.Learners).Slice(),
+-		LearnersNext: quorum.MajorityConfig(r.prs.LearnersNext).Slice(),
+-		AutoLeave:    r.prs.AutoLeave,
+-	}
++	cs := r.prs.ConfState()
+ 	pr, ok := r.prs.Progress[r.id]
+ 
+ 	// Update whether the node itself is a learner, resetting to false when the
+@@ -1490,7 +1515,7 @@ func (r *raft) applyConfChange(cc pb.ConfChangeV2) pb.ConfState {
+ 
+ 	// The remaining steps only make sense if this node is the leader and there
+ 	// are other nodes.
+-	if r.state != StateLeader || len(cs.Nodes) == 0 {
++	if r.state != StateLeader || len(cs.Voters) == 0 {
+ 		return cs
+ 	}
+ 	if r.maybeCommit() {
+diff --git a/raftpb/confstate.go b/raftpb/confstate.go
+new file mode 100644
+index 0000000..4bda932
+--- /dev/null
++++ b/raftpb/confstate.go
+@@ -0,0 +1,45 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package raftpb
++
++import (
++	"fmt"
++	"reflect"
++	"sort"
++)
++
++// Equivalent returns a nil error if the inputs describe the same configuration.
++// On mismatch, returns a descriptive error showing the differences.
++func (cs ConfState) Equivalent(cs2 ConfState) error {
++	cs1 := cs
++	orig1, orig2 := cs1, cs2
++	s := func(sl *[]uint64) {
++		*sl = append([]uint64(nil), *sl...)
++		sort.Slice(*sl, func(i, j int) bool { return (*sl)[i] < (*sl)[j] })
++	}
++
++	for _, cs := range []*ConfState{&cs1, &cs2} {
++		s(&cs.Voters)
++		s(&cs.Learners)
++		s(&cs.VotersOutgoing)
++		s(&cs.LearnersNext)
++		cs.XXX_unrecognized = nil
++	}
++
++	if !reflect.DeepEqual(cs1, cs2) {
++		return fmt.Errorf("ConfStates not equivalent after sorting:\n%+#v\n%+#v\nInputs were:\n%+#v\n%+#v", cs1, cs2, orig1, orig2)
++	}
++	return nil
++}
+diff --git a/rawnode.go b/rawnode.go
+index 9c192fd..90eb694 100644
+--- a/rawnode.go
++++ b/rawnode.go
+@@ -45,9 +45,6 @@ type RawNode struct {
+ // state manually by setting up a Storage that has a first index > 1 and which
+ // stores the desired ConfState as its InitialState.
+ func NewRawNode(config *Config) (*RawNode, error) {
+-	if config.ID == 0 {
+-		panic("config.ID must not be zero")
+-	}
+ 	r := newRaft(config)
+ 	rn := &RawNode{
+ 		raft: r,
+@@ -121,18 +118,17 @@ func (rn *RawNode) Step(m pb.Message) error {
+ 
+ // Ready returns the outstanding work that the application needs to handle. This
+ // includes appending and applying entries or a snapshot, updating the HardState,
+-// and sending messages. Ready() is a read-only operation, that is, it does not
+-// require the caller to actually handle the result. Typically, a caller will
+-// want to handle the Ready and must pass the Ready to Advance *after* having
+-// done so. While a Ready is being handled, the RawNode must not be used for
+-// operations that may alter its state. For example, it is illegal to call
+-// Ready, followed by Step, followed by Advance.
++// and sending messages. The returned Ready() *must* be handled and subsequently
++// passed back via Advance().
+ func (rn *RawNode) Ready() Ready {
+-	rd := rn.newReady()
++	rd := rn.readyWithoutAccept()
++	rn.acceptReady(rd)
+ 	return rd
+ }
+ 
+-func (rn *RawNode) newReady() Ready {
++// readyWithoutAccept returns a Ready. This is a read-only operation, i.e. there
++// is no obligation that the Ready must be handled.
++func (rn *RawNode) readyWithoutAccept() Ready {
+ 	return newReady(rn.raft, rn.prevSoftSt, rn.prevHardSt)
+ }
+ 
+@@ -149,15 +145,6 @@ func (rn *RawNode) acceptReady(rd Ready) {
+ 	rn.raft.msgs = nil
+ }
+ 
+-// commitReady is called when the consumer of the RawNode has successfully
+-// handled a Ready (having previously called acceptReady).
+-func (rn *RawNode) commitReady(rd Ready) {
+-	if !IsEmptyHardState(rd.HardState) {
+-		rn.prevHardSt = rd.HardState
+-	}
+-	rn.raft.advance(rd)
+-}
+-
+ // HasReady called when RawNode user need to check if any Ready pending.
+ // Checking logic in this method should be consistent with Ready.containsUpdates().
+ func (rn *RawNode) HasReady() bool {
+@@ -183,12 +170,10 @@ func (rn *RawNode) HasReady() bool {
+ // Advance notifies the RawNode that the application has applied and saved progress in the
+ // last Ready results.
+ func (rn *RawNode) Advance(rd Ready) {
+-	// Advance combines accept and commit. Callers can't mutate the RawNode
+-	// between the call to Ready and the matching call to Advance, or the work
+-	// done in acceptReady will clobber potentially newer data that has not been
+-	// emitted in a Ready yet.
+-	rn.acceptReady(rd)
+-	rn.commitReady(rd)
++	if !IsEmptyHardState(rd.HardState) {
++		rn.prevHardSt = rd.HardState
++	}
++	rn.raft.advance(rd)
+ }
+ 
+ // Status returns the current status of the given group. This allocates, see
+diff --git a/tracker/tracker.go b/tracker/tracker.go
+index f67f3aa..a458114 100644
+--- a/tracker/tracker.go
++++ b/tracker/tracker.go
+@@ -20,6 +20,7 @@ import (
+ 	"strings"
+ 
+ 	"go.etcd.io/etcd/raft/quorum"
++	pb "go.etcd.io/etcd/raft/raftpb"
+ )
+ 
+ // Config reflects the configuration tracked in a ProgressTracker.
+@@ -141,6 +142,17 @@ func MakeProgressTracker(maxInflight int) ProgressTracker {
+ 	return p
+ }
+ 
++// ConfState returns a ConfState representing the active configuration.
++func (p *ProgressTracker) ConfState() pb.ConfState {
++	return pb.ConfState{
++		Voters:         p.Voters[0].Slice(),
++		VotersOutgoing: p.Voters[1].Slice(),
++		Learners:       quorum.MajorityConfig(p.Learners).Slice(),
++		LearnersNext:   quorum.MajorityConfig(p.LearnersNext).Slice(),
++		AutoLeave:      p.AutoLeave,
++	}
++}
++
+ // IsSingleton returns true if (and only if) there is only one voting member
+ // (i.e. the leader) in the current configuration.
+ func (p *ProgressTracker) IsSingleton() bool {
+@@ -166,10 +178,35 @@ func (p *ProgressTracker) Committed() uint64 {
+ 	return uint64(p.Voters.CommittedIndex(matchAckIndexer(p.Progress)))
+ }
+ 
+-// Visit invokes the supplied closure for all tracked progresses.
++func insertionSort(sl []uint64) {
++	a, b := 0, len(sl)
++	for i := a + 1; i < b; i++ {
++		for j := i; j > a && sl[j] < sl[j-1]; j-- {
++			sl[j], sl[j-1] = sl[j-1], sl[j]
++		}
++	}
++}
++
++// Visit invokes the supplied closure for all tracked progresses in stable order.
+ func (p *ProgressTracker) Visit(f func(id uint64, pr *Progress)) {
+-	for id, pr := range p.Progress {
+-		f(id, pr)
++	n := len(p.Progress)
++	// We need to sort the IDs and don't want to allocate since this is hot code.
++	// The optimization here mirrors that in `(MajorityConfig).CommittedIndex`,
++	// see there for details.
++	var sl [7]uint64
++	ids := sl[:]
++	if len(sl) >= n {
++		ids = sl[:n]
++	} else {
++		ids = make([]uint64, n)
++	}
++	for id := range p.Progress {
++		n--
++		ids[n] = id
++	}
++	insertionSort(ids)
++	for _, id := range ids {
++		f(id, p.Progress[id])
+ 	}
+ }
+ 
+diff --git a/util.go b/util.go
+index c145d26..8394f64 100644
+--- a/util.go
++++ b/util.go
+@@ -25,13 +25,6 @@ func (st StateType) MarshalJSON() ([]byte, error) {
+ 	return []byte(fmt.Sprintf("%q", st.String())), nil
+ }
+ 
+-// uint64Slice implements sort interface
+-type uint64Slice []uint64
+-
+-func (p uint64Slice) Len() int           { return len(p) }
+-func (p uint64Slice) Less(i, j int) bool { return p[i] < p[j] }
+-func (p uint64Slice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+-
+ func min(a, b uint64) uint64 {
+ 	if a > b {
+ 		return b
+@@ -140,3 +133,11 @@ func limitSize(ents []pb.Entry, maxSize uint64) []pb.Entry {
+ 	}
+ 	return ents[:limit]
+ }
++
++func assertConfStatesEquivalent(l Logger, cs1, cs2 pb.ConfState) {
++	err := cs1.Equivalent(cs2)
++	if err == nil {
++		return
++	}
++	l.Panic(err)
++}

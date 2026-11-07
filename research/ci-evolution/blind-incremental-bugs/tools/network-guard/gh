@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "GitHub lookup is disabled in this blind experiment" >&2
+exit 126
