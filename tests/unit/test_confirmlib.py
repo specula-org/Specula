@@ -181,6 +181,12 @@ if stem.endswith("_A-issue"):
     count.write_text(count.read_text() + "x" if count.exists() else "x")
     with (capture / (stem + ".sessions")).open("a") as sessions:
         sessions.write(resume.read_text().strip() + " " + os.getcwd() + "\\n")
+    # A misbehaving metadata turn: it touches evidence before any exit.
+    if os.environ.get("ISSUE_EVIDENCE", "mutate") == "delete":
+        repro.unlink()
+    else:
+        repro.write_text("changed by the metadata turn\\n")
+    (repro.parent / f"test_bug{fdir.name}_extra.sh").write_text("new evidence\\n")
     mode = os.environ.get("ISSUE_FIX", "fix")
     if mode == "rate-limit-once" and count.read_text() == "x":
         log.write_text("rate limited\\n")
@@ -188,8 +194,6 @@ if stem.endswith("_A-issue"):
     if mode != "keep":
         proposal["title"] = "Fixture defect"
         (fdir / "issue.json").write_text(json.dumps(proposal))
-        repro.write_text("changed by the metadata turn\\n")
-        (repro.parent / f"test_bug{fdir.name}_extra.sh").write_text("new evidence\\n")
     log.write_text("Updated only the issue proposal.\\n")
     raise SystemExit(0)
 resume.write_text(f"session-{fdir.name}-{stem}\\n")
@@ -255,6 +259,17 @@ class TestIssueProposal(ConfirmCase):
         persistent_findings.finalize_confirmation(self.work)
         return persistent_findings.load(self.work, "MC-1")
 
+    def assert_judged_evidence(self) -> None:
+        """Only the reproduction the verdict was judged on remains, and is cached."""
+        repro = self.work / "repro" / "test_bugMC-1_case.sh"
+        self.assertEqual(sorted(path.name for path in repro.parent.iterdir()), [repro.name])
+        self.assertEqual(repro.read_text(), "#!/bin/sh\n# fixture reproduction\nexit 0\n")
+        self.assertFalse((self.fdir / C._ISSUE_EVIDENCE_DIR).exists())
+        verdict = self.fdir / "verdict.json"
+        if verdict.exists():
+            digest = hashlib.sha256(repro.read_bytes()).hexdigest()
+            self.assertEqual(json.loads(verdict.read_text())["artifacts"], {"repro": {repro.name: digest}})
+
     def test_issue_proposal_error_reports_validator_message_without_rejecting_evidence(self) -> None:
         cfg = self.cfg(self.ws, "T")
         finding = self.finding(self.ws, "T", "CR-1")
@@ -291,8 +306,7 @@ class TestIssueProposal(ConfirmCase):
         self.assertIn("at most 160 characters", worker_prompt)
         self.assertIn("single exact line", worker_prompt)
         # The metadata turn cannot change the evidence the verdict was judged on.
-        self.assertEqual(sorted(path.name for path in (self.work / "repro").iterdir()), ["test_bugMC-1_case.sh"])
-        self.assertIn("fixture reproduction", (self.work / "repro/test_bugMC-1_case.sh").read_text())
+        self.assert_judged_evidence()
         self.assertFalse((self.fdir / "issue.invalid.json").exists())
         self.assertFalse((self.fdir / "error.txt").exists())
         report = (self.work / "confirmed-bugs.md").read_text()
@@ -377,8 +391,12 @@ class TestIssueProposal(ConfirmCase):
         with self.env(ISSUE_FIX="rate-limit-once"):
             self.assertEqual(C.run_parallel_confirmation(cfg, retain_rate_limited_state=True), 75)
             self.assertNotIn("| MC-1 | REPRODUCED", (self.work / "confirmed-bugs.md").read_text())
+            repro = self.work / "repro" / "test_bugMC-1_case.sh"
+            self.assertEqual(sorted(path.name for path in repro.parent.iterdir()), [repro.name])
+            self.assertIn("fixture reproduction", repro.read_text())
             self.assertEqual(C.run_parallel_confirmation(cfg), 0)
         self.assertEqual(self.calls(), ["turn01_A", "turn01_A-issue", "turn01_A-issue"])
+        self.assert_judged_evidence()
         sessions = {line.split()[0] for line in (self.root / "turn01_A-issue.sessions").read_text().splitlines()}
         self.assertEqual(sessions, {"session-MC-1-turn01_A"})
         prompts = (self.root / "turn01_A-issue.prompts").read_text().split("\n<end>\n")
@@ -419,6 +437,33 @@ class TestIssueProposal(ConfirmCase):
         sessions = {line.split()[0] for line in (self.root / "turn01_A-issue.sessions").read_text().splitlines()}
         self.assertEqual(sessions, {"session-MC-1-turn01_A"})
         self.assertTrue(self.finalize()["reusable"])
+
+    def _crash_after_correction_then_attach(self, evidence: str) -> None:
+        class Crash(BaseException):
+            pass
+
+        def first(cfg: C.ConfirmConfig) -> int:
+            # The process dies after the correction turn, before any restore.
+            with (
+                mock.patch.object(C, "_restore_issue_evidence", side_effect=Crash),
+                self.assertRaises(Crash),
+            ):
+                C.run_parallel_confirmation(cfg)
+            self.assertTrue((self.fdir / C._ISSUE_EVIDENCE_DIR).is_dir())
+            checkpoint = json.loads((self.fdir / ".resume-lease.json").read_text())
+            self.assertEqual(list(checkpoint["issue_fix"]["evidence"]), ["test_bugMC-1_case.sh"])
+            return 1
+
+        self._attach(first, ISSUE_EVIDENCE=evidence)
+        self.assertEqual(self.calls(), ["turn01_A", "turn01_A-issue"])
+        self.assert_judged_evidence()
+        self.assertTrue(self.finalize()["reusable"])
+
+    def test_crash_after_correction_restores_changed_evidence_on_attach(self) -> None:
+        self._crash_after_correction_then_attach("mutate")
+
+    def test_crash_after_correction_restores_deleted_evidence_on_attach(self) -> None:
+        self._crash_after_correction_then_attach("delete")
 
     def test_manual_attach_after_dropping_does_not_ask_again(self) -> None:
         def first(cfg: C.ConfirmConfig) -> int:

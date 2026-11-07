@@ -198,6 +198,9 @@ class _IssueFix:
     prompt: str | None  # None when that session cannot be resumed
     attempted: bool = False
     dropped: str | None = None  # validator error once the proposal is set aside
+    # Repro name -> digest of the judged evidence, durably copied before the
+    # correction turn; None once that turn's evidence has been restored.
+    evidence: dict[str, str] | None = None
 
 
 @dataclass
@@ -318,6 +321,7 @@ def _persist_lease(cfg: ConfirmConfig, f: Finding, lease: _FindingLease) -> None
                 "prompt": lease.issue_fix.prompt,
                 "attempted": lease.issue_fix.attempted,
                 "dropped": lease.issue_fix.dropped,
+                "evidence": lease.issue_fix.evidence,
             }
         ),
     }
@@ -537,6 +541,7 @@ def _load_lease(cfg: ConfirmConfig, f: Finding) -> _FindingLease:
     raw_issue_fix = value.get("issue_fix")
     if raw_issue_fix is not None:
         worker_turn = raw_issue_fix.get("worker_turn") if isinstance(raw_issue_fix, dict) else None
+        evidence = raw_issue_fix.get("evidence") if isinstance(raw_issue_fix, dict) else None
         if (
             not isinstance(raw_issue_fix, dict)
             or not isinstance(worker_turn, int)
@@ -545,6 +550,19 @@ def _load_lease(cfg: ConfirmConfig, f: Finding) -> _FindingLease:
             or not isinstance(raw_issue_fix.get("prompt"), (str, type(None)))
             or not isinstance(raw_issue_fix.get("attempted"), bool)
             or not isinstance(raw_issue_fix.get("dropped"), (str, type(None)))
+            or (
+                evidence is not None
+                and (
+                    not isinstance(evidence, dict)
+                    or any(
+                        not isinstance(name, str)
+                        or not _is_repro_name(f, name)
+                        or not isinstance(digest, str)
+                        or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+                        for name, digest in evidence.items()
+                    )
+                )
+            )
         ):
             raise ConfirmationFailed(f"{f.id}: invalid issue-proposal correction checkpoint")
         lease.issue_fix = _IssueFix(
@@ -552,6 +570,7 @@ def _load_lease(cfg: ConfirmConfig, f: Finding) -> _FindingLease:
             raw_issue_fix["prompt"],
             raw_issue_fix["attempted"],
             raw_issue_fix["dropped"],
+            evidence,
         )
     return lease
 
@@ -1501,25 +1520,67 @@ def _drop_issue_proposal(
     return _issue_proposal_note(error)
 
 
-def _repro_snapshot(cfg: ConfirmConfig, f: Finding) -> dict[Path, bytes]:
-    return {path: path.read_bytes() for path in _repro_files(cfg, f)}
+_ISSUE_EVIDENCE_DIR = ".issue-fix-evidence"
 
 
-def _restore_repro_snapshot(cfg: ConfirmConfig, f: Finding, snapshot: dict[Path, bytes]) -> None:
-    """Keep the evidence the verdict was judged on unchanged by a metadata turn."""
-    current = _repro_snapshot(cfg, f)
-    if current == snapshot:
-        return
-    _log(f"  WARNING: {f.id}: issue-proposal correction changed reproduction evidence; restoring it")
-    for path in current.keys() - snapshot.keys():
+def _is_repro_name(f: Finding, name: str) -> bool:
+    return name.startswith(f"test_bug{f.id}_") and "/" not in name and "\\" not in name
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    elif path.exists() or path.is_symlink():
         path.unlink()
-    for path, body in snapshot.items():
-        if current.get(path) != body:
-            if path.is_symlink():
-                path.unlink()
-            elif path.is_dir():
-                shutil.rmtree(path)
-            path.write_bytes(body)
+
+
+def _snapshot_issue_evidence(cfg: ConfirmConfig, f: Finding) -> dict[str, str]:
+    """Durably copy the judged reproduction evidence before a metadata-only turn."""
+    root = f.fdir / _ISSUE_EVIDENCE_DIR
+    staging = root.with_name(f"{root.name}.{secrets.token_hex(4)}.tmp")
+    staging.mkdir()
+    try:
+        digests: dict[str, str] = {}
+        for path in _repro_files(cfg, f):
+            shutil.copy2(path, staging / path.name)
+            digests[path.name] = hashlib.sha256((staging / path.name).read_bytes()).hexdigest()
+        _remove_path(root)
+        os.replace(staging, root)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+    return digests
+
+
+def _restore_issue_evidence(cfg: ConfirmConfig, f: Finding, digests: dict[str, str]) -> None:
+    """Return reproduction evidence to exactly the judged snapshot."""
+    repro_dir = cfg.ws.work_dir(cfg.name) / "repro"
+    root = f.fdir / _ISSUE_EVIDENCE_DIR
+    changed = False
+    for path in _repro_files(cfg, f):
+        if path.name not in digests:
+            path.unlink()
+            changed = True
+    for name, digest in sorted(digests.items()):
+        path = repro_dir / name
+        if path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == digest:
+            continue
+        saved = root / name
+        if saved.is_symlink() or not saved.is_file() or hashlib.sha256(saved.read_bytes()).hexdigest() != digest:
+            raise ConfirmationFailed(f"{f.id}: retained reproduction evidence snapshot is unavailable: {saved}")
+        _remove_path(path)
+        shutil.copy2(saved, path)
+        changed = True
+    if changed:
+        _log(f"  WARNING: {f.id}: issue-proposal correction changed reproduction evidence; restored it")
+
+
+def _close_issue_evidence(cfg: ConfirmConfig, f: Finding, lease: _FindingLease) -> None:
+    """Forget the snapshot once the correction turn can no longer change evidence."""
+    if lease.issue_fix is not None:
+        lease.issue_fix.evidence = None
+        _persist_lease(cfg, f, lease)
+    _remove_path(f.fdir / _ISSUE_EVIDENCE_DIR)
 
 
 def _settle_issue_proposal(
@@ -1543,6 +1604,8 @@ def _settle_issue_proposal(
         return _issue_proposal_note(fix.dropped)
     error = _issue_proposal_error(cfg, f, status)
     if error is None:
+        if fix is not None:
+            _close_issue_evidence(cfg, f, lease)
         return ""
     worker_log = f.fdir / f"turn{worker_turn:02d}_A.log"
     session = worker_log.with_suffix(".resume.json")
@@ -1553,11 +1616,18 @@ def _settle_issue_proposal(
             f"  WARNING: {f.id}: invalid persistent issue proposal ({error}); "
             + ("asking the worker session to fix it once" if resumable else "the worker session cannot be resumed")
         )
-        fix = _IssueFix(worker_turn, prompt_issue_fix(cfg, f, status, error) if resumable else None)
+        fix = _IssueFix(
+            worker_turn,
+            prompt_issue_fix(cfg, f, status, error) if resumable else None,
+            evidence=_snapshot_issue_evidence(cfg, f) if resumable else None,
+        )
         lease.issue_fix = fix
         _persist_lease(cfg, f, lease)
     if fix.prompt is not None and not fix.attempted:
-        evidence = _repro_snapshot(cfg, f)
+        if fix.evidence is None:
+            fix.evidence = _snapshot_issue_evidence(cfg, f)
+            _persist_lease(cfg, f, lease)
+        evidence = fix.evidence
         try:
             run_turn(
                 cfg,
@@ -1573,9 +1643,11 @@ def _settle_issue_proposal(
             raise
         except Exception as exc:
             _log(f"  WARNING: {f.id}: issue-proposal correction failed ({exc})")
-        _restore_repro_snapshot(cfg, f, evidence)
+        finally:
+            # Also on a rate limit; a crash is covered by the replay restore.
+            _restore_issue_evidence(cfg, f, evidence)
         fix.attempted = True
-        _persist_lease(cfg, f, lease)
+        _close_issue_evidence(cfg, f, lease)
         cfg.clear_policy_states(("finding", f.id, str(worker_turn), ISSUE_FIX_ROLE))
         error = _issue_proposal_error(cfg, f, status)
         if error is None:
@@ -1667,7 +1739,12 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                 if rr_body.is_file():
                     rr_body.unlink()
                 (f.fdir / persistent_findings.SET_ASIDE_PROPOSAL).unlink(missing_ok=True)
+                _remove_path(f.fdir / _ISSUE_EVIDENCE_DIR)
                 lease.initialized = True
+            if lease.issue_fix is not None and lease.issue_fix.evidence is not None:
+                # Before any replayed validation: an interrupted metadata turn
+                # must not leave changed evidence behind for this verdict.
+                _restore_issue_evidence(cfg, f, lease.issue_fix.evidence)
             repo_for_agent = lease.repo_for_agent
             turn = 1
 
