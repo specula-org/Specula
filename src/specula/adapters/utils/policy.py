@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
 # Dedicated adapter outcome consumed by the common phase runner. Keep it
@@ -27,9 +28,17 @@ _POLICY_CODES = {
 _POLICY_TEXT_RE = re.compile(
     r"(?:cyber[_\s-]*policy|content[_\s-]*policy|content filtering policy|"
     r"output blocked by content filtering|blocked by (?:the )?(?:model(?:'s)? )?content filter|"
-    r"flagged for possible cybersecurity risk)",
+    r"flagged for possible cybersecurity risk|"
+    # Claude real-time safeguards: "API Error: <model>'s safeguards flagged
+    # this message. ..." followed by a "Details: `[cyber]`" category line.
+    r"safeguards flagged this message|details:\s*`?\[cyber\]`?)",
     re.IGNORECASE,
 )
+# Correlation identifiers that providers append after the diagnostic proper
+# ("Request ID: req_...", "Message ID: msg_..."). They carry no failure class,
+# so the final-diagnostic fallback looks past them; any other trailing line
+# still ends the backward scan.
+_DIAGNOSTIC_ID_TRAILER_RE = re.compile(r"(?:request|message)[ _-]?id\s*[:=]\s*\S+", re.IGNORECASE)
 
 
 def _normalized_code(value: str) -> str:
@@ -63,9 +72,30 @@ def looks_policy_blocked(value: object, depth: int = 0) -> bool:
     )
 
 
+def refusal_stop(record: Mapping[str, object]) -> bool:
+    """Whether a failed Claude result ended on a provider safety refusal.
+
+    Claude Code reports real-time safeguard blocks as a terminal ``result``
+    whose ``stop_reason`` is ``"refusal"``; the accompanying text varies by
+    model and CLI release. Callers must first establish that the result
+    envelope itself failed: a successful turn is never reclassified.
+    """
+    stop_reason = record.get("stop_reason")
+    return isinstance(stop_reason, str) and stop_reason.casefold() == "refusal"
+
+
+def _final_diagnostic_line(text: str) -> str:
+    """The final non-empty line of ``text``, past trailing correlation IDs."""
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if line and not _DIAGNOSTIC_ID_TRAILER_RE.fullmatch(line):
+            return line
+    return ""
+
+
 def final_diagnostic_has_policy_block(text: str) -> bool:
-    """Classify only a failed CLI's final non-empty diagnostic line."""
-    diagnostic = next((line.strip() for line in reversed(text.splitlines()) if line.strip()), "")
+    """Classify only a failed CLI's final diagnostic line (IDs excluded)."""
+    diagnostic = _final_diagnostic_line(text)
     if not diagnostic:
         return False
     try:

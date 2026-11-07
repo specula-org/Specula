@@ -33,7 +33,12 @@ from typing import IO, Any
 
 if __package__:
     from .utils.event_stream import stream_events
-    from .utils.policy import POLICY_BLOCKED_RC, final_diagnostic_has_policy_block, looks_policy_blocked
+    from .utils.policy import (
+        POLICY_BLOCKED_RC,
+        final_diagnostic_has_policy_block,
+        looks_policy_blocked,
+        refusal_stop,
+    )
     from .utils.resume import ResumeStateError, capture_session_id, read_session_id
     from .utils.run_lock import inherited_run_lock_fds
     from .utils.transient import TRANSIENT_FAILURE_RC, final_diagnostic_has_transient_failure, looks_transient
@@ -43,6 +48,7 @@ else:
         POLICY_BLOCKED_RC,
         final_diagnostic_has_policy_block,
         looks_policy_blocked,
+        refusal_stop,
     )
     from utils.resume import (  # type: ignore[import-not-found, no-redef]
         ResumeStateError,
@@ -185,9 +191,10 @@ def _rate_limited(raw_text: str, streaming: bool) -> bool:
 def _result_policy_blocked(record: object) -> bool:
     """Whether Claude's terminal result is an unresolved provider policy block.
 
-    Inspect the result text only after the terminal envelope declares an error.
+    Inspect the result only after the terminal envelope declares an error.
     Successful agents may legitimately quote a policy-block diagnostic while
-    explaining or repairing an earlier run.
+    explaining or repairing an earlier run. A failed result that stopped on a
+    safety refusal is a block regardless of its (release-specific) wording.
     """
     if not isinstance(record, dict):
         return False
@@ -203,7 +210,7 @@ def _result_policy_blocked(record: object) -> bool:
         and api_status in (None, "", 0, "0")
     ):
         return False
-    return looks_policy_blocked(record) or looks_policy_blocked(record.get("result"))
+    return refusal_stop(record) or looks_policy_blocked(record) or looks_policy_blocked(record.get("result"))
 
 
 def _result_transient_failure(record: object) -> bool:
