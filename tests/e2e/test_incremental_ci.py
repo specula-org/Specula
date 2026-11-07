@@ -365,7 +365,7 @@ class IncrementalCLI(unittest.TestCase):
     def test_reconfirmation_refreshes_recorded_model_dependencies(self) -> None:
         self._check_model_dependency_reconfirmation(interrupt=False)
 
-    def test_pending_reconfirmation_can_resume_after_proposal_validation_failure(self) -> None:
+    def test_reconfirmation_proposal_validation_failure_is_fixed_in_the_worker_session(self) -> None:
         self._check_model_dependency_reconfirmation(interrupt=True)
 
     def _check_model_dependency_reconfirmation(self, *, interrupt: bool) -> None:
@@ -380,21 +380,12 @@ class IncrementalCLI(unittest.TestCase):
         run = self.latest()
         work = run / "footest/.specula-output"
         before = json.loads((work / "spec/MC-2-before.json").read_text())
-        if interrupt:
-            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            self.assertIn("missing-evidence.tla", result.stdout + result.stderr)
-            self.assertEqual(json.loads((work / ".context-control/confirmation.json").read_text())["status"], "pending")
-            self.assertEqual(json.loads((work / "spec/persistent-findings/MC-2.json").read_text()), before)
-            proposal = work / "confirmation/MC-2/issue.json"
-            document = json.loads(proposal.read_text())
-            document["dependencies"] = [
-                dep for dep in document["dependencies"] if dep["path"] != "spec/missing-evidence.tla"
-            ]
-            proposal.write_text(json.dumps(document))
-            (self.adapter.parent / "interrupt-model-record").unlink()
-            result = self.run_ci(f"--run-id={run.name}")
-            self.assertIn("[MC-2] A: REPRODUCED", result.stdout)
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        if interrupt:
+            # The invalid proposal is fixed once in the worker's own session; the verdict stands.
+            self.assertIn("missing-evidence.tla", (work / "bug-confirmation.log").read_text())
+            self.assertIn("issue proposal corrected in the worker session", result.stdout)
+            self.assertFalse((work / "confirmation/MC-2/issue.invalid.json").exists())
         after = json.loads((work / "spec/MC-2-after.json").read_text())
 
         before_hash = next(dep["sha256"] for dep in before["dependencies"] if dep["path"] == "spec/base.tla")

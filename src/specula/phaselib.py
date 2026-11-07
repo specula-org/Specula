@@ -240,6 +240,23 @@ def _clear_resume_state(path: Path) -> None:
     raise RuntimeError(f"stale resume state still exists after removal: {path}")
 
 
+def _seed_resume_state(source: Path, destination: Path) -> None:
+    """Bind a new logical turn to an earlier turn's exact native session."""
+    try:
+        info = source.lstat()
+    except OSError as exc:
+        raise RuntimeError(f"cannot continue native session from {source}: {exc}") from exc
+    if not stat.S_ISREG(info.st_mode):
+        raise RuntimeError(f"unsafe native session state: {source}")
+    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+    try:
+        temporary.write_bytes(source.read_bytes())
+        os.replace(temporary, destination)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            temporary.unlink()
+
+
 def _transient_resume_delay(attempt: int) -> float:
     """Short bounded backoff; attempt is the 1-based resume number."""
     return min(TRANSIENT_RESUME_BACKOFF_MAX_SECONDS, float(2 ** min(attempt + 1, 6)))
@@ -1689,6 +1706,7 @@ def run_agent_blocking(
     resume_kind: str = "turn",
     resume_finding_id: str | None = None,
     manual_prompt_extra: str = "",
+    resume_from: Path | None = None,
 ) -> tuple[int, str]:
     """Run an agent turn, blocking, and return (returncode, log text).
 
@@ -1715,6 +1733,11 @@ def run_agent_blocking(
     original prompt. Callers that automatically replay exit 75 may pass
     ``policy_state`` so the native session and both budgets survive that wait.
     The caller must discard that state after any non-75 terminal result.
+    ``resume_from`` binds a new logical turn to another turn's native session
+    state, so its first invocation continues that exact conversation. Its
+    retries replay the original prompt (with the policy note after a policy
+    block) instead of a generic continuation. The caller must use that turn's
+    cwd, adapter, and tuning.
     """
     if policy_retries < 0:
         raise ValueError("policy_retries must be a non-negative integer")
@@ -1818,6 +1841,8 @@ def run_agent_blocking(
             state.resume_state = resume_state
         elif state.resume_state != resume_state:
             raise ValueError("policy_state belongs to a different logical turn")
+        if resume_from is not None and not resume_state.is_file():
+            _seed_resume_state(resume_from, resume_state)
 
         def persist_cursor() -> None:
             if resume_logical is not None:
@@ -1837,7 +1862,9 @@ def run_agent_blocking(
             if state.invocation_attempt > 1:
                 archived_attempts = _archive_attempt(attempt_files, state.invocation_attempt - 1)
             persist_cursor()
-            resumable = resume_state.is_file()
+            # A turn seeded from another session may fail before the provider
+            # records its request, so every retry replays that request.
+            resumable = resume_state.is_file() and resume_from is None
             prompt_reason = "policy" if policy_attempt > 0 and not resumable else state.retry_reason
             current_prompt = _retry_prompt(
                 prompt,
@@ -1845,6 +1872,8 @@ def run_agent_blocking(
                 resumable=resumable,
                 manual_extra=manual_prompt_extra if state.retry_reason == "manual" else "",
             )
+            if resume_from is not None and state.retry_reason == "manual":
+                current_prompt += manual_prompt_extra  # like every other manual continuation
             prompt_file.write_text(current_prompt)
             with contextlib.suppress(OSError):
                 log_file.unlink()
