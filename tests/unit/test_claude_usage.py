@@ -101,12 +101,28 @@ OLD_RESUMED = {
 }
 
 
+def _cost_state(session: str, total: float, models: dict[str, Any]) -> dict[str, Any]:
+    """A cost-state record with every field Claude Code requires before restoring it."""
+    durations = ("totalAPIDuration", "totalAPIDurationWithoutRetries", "totalToolDuration", "totalDuration")
+    return {
+        "type": "cost-state",
+        "sessionId": session,
+        "totalCostUSD": total,
+        **dict.fromkeys(durations, 1000),
+        "totalLinesAdded": 3,
+        "totalLinesRemoved": 0,
+        "startTime": 1793978192556,
+        "modelUsage": {name: {"webSearchRequests": 0, **entry} for name, entry in models.items()},
+        "hasUnknownModelCost": False,
+    }
+
+
 def _transcript(config: Path, session: str, states: list[dict[str, Any]], *, project: str = "-work-dir") -> Path:
     path = config / "projects" / project / f"{session}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [json.dumps({"type": "user", "message": {"content": "cost-state is mentioned here"}})]
     for state in states:
-        lines.append(json.dumps({"type": "cost-state", "sessionId": session, "startTime": 1793978192556, **state}))
+        lines.append(json.dumps(_cost_state(session, state["totalCostUSD"], state["modelUsage"])))
         lines.append(json.dumps({"type": "assistant", "message": {"usage": {"output_tokens": 1}}}))
     path.write_text("\n".join(lines) + "\n")
     return path
@@ -275,3 +291,35 @@ def test_result_index_gap_falls_back_to_the_restore_point() -> None:
         assert unknown["total_cost_usd"] is None and unknown["usage_complete"] is False
     unnumbered = {k: v for k, v in _probe(0, 3.0, 4.0).items() if k != "result_index"}
     assert invocation_usage([unnumbered], resumed=True, restored=None)["cost_basis"] == "unavailable"
+
+
+def test_cost_state_the_cli_would_reject_is_not_a_restore_point(tmp_path: Path) -> None:
+    config = tmp_path / "profile"
+    saved = {"m": _probe_model(1.0)}
+    valid = _cost_state(SESSION, 1.0, saved)
+    model = valid["modelUsage"]["m"]
+    rejected: dict[str, Any] = {
+        "no-modelUsage": {k: v for k, v in valid.items() if k != "modelUsage"},
+        "no-duration": {k: v for k, v in valid.items() if k != "totalToolDuration"},
+        "model-missing-field": {
+            **valid,
+            "modelUsage": {"m": {k: v for k, v in model.items() if k != "webSearchRequests"}},
+        },
+        "control-char-model": {**valid, "modelUsage": {"m\u0007": model}},
+        "non-bool-flag": {**valid, "hasUnknownModelCost": "no"},
+        "cost-over-limit": {**valid, "totalCostUSD": 2e9},
+        "tokens-over-limit": {
+            **valid,
+            "modelUsage": {"a": {**model, "inputTokens": 6e14}, "b": {**model, "inputTokens": 6e14}},
+        },
+    }
+    current = {**_probe(0, 1.0, 2.0)}
+    del current["model_usage_since_last_result"]
+    for name, record in rejected.items():
+        path = _transcript(config, SESSION, [])
+        later = {**record, "totalCostUSD": 1.5} if name != "cost-over-limit" else record
+        path.write_text(json.dumps(valid) + "\n" + json.dumps(later) + "\n")
+        restored = restored_totals(config, SESSION)
+        assert restored is not None and restored["total_cost_usd"] == 1.0, name
+        usage: Any = invocation_usage([current], resumed=True, restored=restored)
+        assert usage["total_cost_usd"] == 1.0 and usage["usage"]["output_tokens"] == 10, name

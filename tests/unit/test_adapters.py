@@ -73,6 +73,32 @@ CLAUDE_JSON = {
     "modelUsage": {},
 }
 
+
+def _claude_cost_state(session_id: str, total: float, models: dict[str, Any]) -> str:
+    """A transcript cost-state line with every field Claude Code requires to restore it."""
+    fields = ("totalAPIDuration", "totalAPIDurationWithoutRetries", "totalToolDuration", "totalDuration")
+    record = {
+        "type": "cost-state",
+        "sessionId": session_id,
+        "totalCostUSD": total,
+        **dict.fromkeys(fields, 1000),
+        "totalLinesAdded": 0,
+        "totalLinesRemoved": 0,
+        "startTime": 1793978192556,
+        "modelUsage": {
+            name: {
+                "inputTokens": 0,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0,
+                "webSearchRequests": 0,
+                **u,
+            }
+            for name, u in models.items()
+        },
+    }
+    return json.dumps(record) + "\n"
+
+
 # env that would otherwise steer the adapters; popped so construction is
 # deterministic regardless of the harness's ambient environment.
 _VOLATILE = (
@@ -718,12 +744,7 @@ class ClaudeCodeAdapter(AdapterCase):
                 base = self.sandbox()
                 transcript = base / ".claude" / "projects" / "-any-project" / f"{session_id}.jsonl"
                 transcript.parent.mkdir(parents=True)
-                transcript.write_text(
-                    json.dumps(
-                        {"type": "cost-state", "sessionId": session_id, "totalCostUSD": 2.0, "modelUsage": saved}
-                    )
-                    + "\n"
-                )
+                transcript.write_text(_claude_cost_state(session_id, 2.0, saved))
                 state = base / "resume.json"
                 state.write_text(
                     json.dumps(
@@ -760,12 +781,7 @@ class ClaudeCodeAdapter(AdapterCase):
             transcript = base / ".claude" / "projects" / "-any-project" / f"{session_id}.jsonl"
             transcript.parent.mkdir(parents=True)
             saved = {"m": {"inputTokens": 1, "outputTokens": 10, "costUSD": saved_cost}}
-            transcript.write_text(
-                json.dumps(
-                    {"type": "cost-state", "sessionId": session_id, "totalCostUSD": saved_cost, "modelUsage": saved}
-                )
-                + "\n"
-            )
+            transcript.write_text(_claude_cost_state(session_id, saved_cost, saved))
         state = base / "resume.json"
         state.write_text(
             json.dumps(

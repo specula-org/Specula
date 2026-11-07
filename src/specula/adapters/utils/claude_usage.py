@@ -24,6 +24,7 @@ from __future__ import annotations
 import glob
 import json
 import math
+import unicodedata
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -42,6 +43,33 @@ _ADDITIVE_FIELDS = (
 )
 # Float noise in the CLI's cost sums; anything below this is not a reset.
 _COST_TOLERANCE = 1e-9
+# The fields and bounds Claude Code requires of a ``cost-state`` record before
+# restoring it on resume (2.1.316 transcript schema); it skips any other record.
+_STATE_LIMIT = 1e15
+_STATE_COST_LIMIT = 1e9
+_STATE_FIELDS = (
+    "totalAPIDuration",
+    "totalAPIDurationWithoutRetries",
+    "totalToolDuration",
+    "totalLinesAdded",
+    "totalLinesRemoved",
+    "totalDuration",
+    "startTime",
+)
+_STATE_MODEL_FIELDS = (
+    "inputTokens",
+    "outputTokens",
+    "cacheReadInputTokens",
+    "cacheCreationInputTokens",
+    "webSearchRequests",
+    "costUSD",
+)
+_STATE_OPTIONAL_MODEL_FIELDS = (
+    "thinkingTokens",
+    "cacheCreationEphemeral5mInputTokens",
+    "cacheCreationEphemeral1hInputTokens",
+)
+_STATE_SUMMED_FIELDS = ("inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens")
 
 
 def _number(value: object) -> float | None:
@@ -63,11 +91,43 @@ def session_transcript(config_dir: str | Path, session_id: str) -> Path | None:
     return files[0] if len(files) == 1 else None
 
 
+def _bounded(value: object, limit: float = _STATE_LIMIT) -> bool:
+    number = _number(value)
+    return number is not None and number <= limit
+
+
+def _restorable_cost_state(record: Mapping[str, object], session_id: str) -> bool:
+    """Whether the CLI would restore *record* (mirrors its cost-state schema)."""
+    if record.get("type") != "cost-state" or record.get("sessionId") != session_id:
+        return False
+    if not _bounded(record.get("totalCostUSD"), _STATE_COST_LIMIT):
+        return False
+    if not all(_bounded(record.get(field)) for field in _STATE_FIELDS):
+        return False
+    if "hasUnknownModelCost" in record and not isinstance(record["hasUnknownModelCost"], bool):
+        return False
+    models = record.get("modelUsage")
+    if not isinstance(models, dict):
+        return False
+    for model, entry in models.items():
+        if not model or any(unicodedata.category(char) in {"Cc", "Cf"} for char in model):
+            return False
+        if not isinstance(entry, dict) or not all(_bounded(entry.get(field)) for field in _STATE_MODEL_FIELDS):
+            return False
+        if not all(field not in entry or _bounded(entry[field]) for field in _STATE_OPTIONAL_MODEL_FIELDS):
+            return False
+    return all(
+        math.fsum(_number(entry[field]) or 0.0 for entry in models.values()) <= _STATE_LIMIT
+        for field in _STATE_SUMMED_FIELDS
+    )
+
+
 def restored_totals(config_dir: str | Path, session_id: str) -> dict[str, object] | None:
     """Totals ``claude --resume <session_id>`` starts from, or None when unknown.
 
-    The CLI restores the transcript's last valid ``cost-state`` record for the
-    session; a transcript without one restores nothing (zero totals).
+    The CLI restores the transcript's last ``cost-state`` record for the session
+    that satisfies its schema, skipping malformed ones; a transcript without one
+    restores nothing (zero totals).
     """
     transcript = session_transcript(config_dir, session_id)
     if transcript is None:
@@ -82,19 +142,8 @@ def restored_totals(config_dir: str | Path, session_id: str) -> dict[str, object
                     record = json.loads(line)
                 except ValueError:
                     continue
-                if (
-                    not isinstance(record, dict)
-                    or record.get("type") != "cost-state"
-                    or record.get("sessionId") != session_id
-                ):
-                    continue
-                cost = _number(record.get("totalCostUSD"))
-                models = record.get("modelUsage", {})
-                if cost is None or not isinstance(models, dict):
-                    continue
-                if not all(isinstance(entry, dict) for entry in models.values()):
-                    continue
-                restored = {"total_cost_usd": cost, "model_usage": models}
+                if isinstance(record, dict) and _restorable_cost_state(record, session_id):
+                    restored = {"total_cost_usd": float(record["totalCostUSD"]), "model_usage": record["modelUsage"]}
     except (OSError, UnicodeError):
         return None
     return restored

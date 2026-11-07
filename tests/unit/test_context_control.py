@@ -305,10 +305,11 @@ async def test_claude_compaction_receipt_keeps_restored_session_totals(
     transcript = tmp_path / ".alias" / "projects" / "-work" / "original.jsonl"
     transcript.parent.mkdir(parents=True)
     model = {"inputTokens": 10, "outputTokens": 20, "cacheReadInputTokens": 30, "cacheCreationInputTokens": 40}
-    saved = {"m": {**model, "costUSD": 1.25}}
-    transcript.write_text(
-        json.dumps({"type": "cost-state", "sessionId": "original", "totalCostUSD": 1.25, "modelUsage": saved}) + "\n"
-    )
+    saved = {"m": {**model, "webSearchRequests": 0, "costUSD": 1.25}}
+    durations = ("totalAPIDuration", "totalAPIDurationWithoutRetries", "totalToolDuration", "totalDuration")
+    state = {"type": "cost-state", "sessionId": "original", "totalCostUSD": 1.25, "modelUsage": saved}
+    state.update(dict.fromkeys(durations, 1000), totalLinesAdded=0, totalLinesRemoved=0, startTime=1)
+    transcript.write_text(json.dumps(state) + "\n")
     after = {"m": {**{k: v * 2 for k, v in model.items()}, "costUSD": 1.5}}
 
     def handler(_m: Any) -> list[dict[str, Any]]:
