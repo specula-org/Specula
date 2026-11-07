@@ -1734,8 +1734,10 @@ def run_agent_blocking(
     ``policy_state`` so the native session and both budgets survive that wait.
     The caller must discard that state after any non-75 terminal result.
     ``resume_from`` binds a new logical turn to another turn's native session
-    state, so its first invocation continues that exact conversation. The
-    caller must use that turn's cwd, adapter, and tuning.
+    state, so its first invocation continues that exact conversation. Its
+    retries replay the original prompt (with the policy note after a policy
+    block) instead of a generic continuation. The caller must use that turn's
+    cwd, adapter, and tuning.
     """
     if policy_retries < 0:
         raise ValueError("policy_retries must be a non-negative integer")
@@ -1860,7 +1862,9 @@ def run_agent_blocking(
             if state.invocation_attempt > 1:
                 archived_attempts = _archive_attempt(attempt_files, state.invocation_attempt - 1)
             persist_cursor()
-            resumable = resume_state.is_file()
+            # A turn seeded from another session may fail before the provider
+            # records its request, so every retry replays that request.
+            resumable = resume_state.is_file() and resume_from is None
             prompt_reason = "policy" if policy_attempt > 0 and not resumable else state.retry_reason
             current_prompt = _retry_prompt(
                 prompt,

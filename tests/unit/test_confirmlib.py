@@ -188,9 +188,9 @@ if stem.endswith("_A-issue"):
         repro.write_text("changed by the metadata turn\\n")
     (repro.parent / f"test_bug{fdir.name}_extra.sh").write_text("new evidence\\n")
     mode = os.environ.get("ISSUE_FIX", "fix")
-    if mode == "rate-limit-once" and count.read_text() == "x":
-        log.write_text("rate limited\\n")
-        raise SystemExit(75)
+    if mode == "fail-once" and count.read_text() == "x":
+        log.write_text("interrupted before the provider recorded the request\\n")
+        raise SystemExit(int(os.environ.get("ISSUE_FAIL_RC", "75")))
     if mode != "keep":
         proposal["title"] = "Fixture defect"
         (fdir / "issue.json").write_text(json.dumps(proposal))
@@ -388,7 +388,7 @@ class TestIssueProposal(ConfirmCase):
 
     def test_rate_limited_correction_resumes_the_same_correction_turn(self) -> None:
         cfg = self.issue_cfg()
-        with self.env(ISSUE_FIX="rate-limit-once"):
+        with self.env(ISSUE_FIX="fail-once"):
             self.assertEqual(C.run_parallel_confirmation(cfg, retain_rate_limited_state=True), 75)
             self.assertNotIn("| MC-1 | REPRODUCED", (self.work / "confirmed-bugs.md").read_text())
             repro = self.work / "repro" / "test_bugMC-1_case.sh"
@@ -401,10 +401,32 @@ class TestIssueProposal(ConfirmCase):
         self.assertEqual(sessions, {"session-MC-1-turn01_A"})
         prompts = (self.root / "turn01_A-issue.prompts").read_text().split("\n<end>\n")
         self.assertIn("issue title must be at most 160 characters", prompts[0])
-        self.assertEqual(prompts[1], PhaseLib._SESSION_RESUME_PROMPT)
+        self.assertEqual(prompts[1], prompts[0])  # the continuation still carries the fix request
         self.assertTrue(self.finalize()["reusable"])
         self.assertEqual(cfg._finding_leases, {})
         self.assertEqual(cfg._policy_states, {})
+
+    def test_first_call_provider_failure_retries_with_the_fix_request(self) -> None:
+        for rc, retries in ((74, "transient_resumes"), (76, "policy_retries")):
+            with self.subTest(rc=rc):
+                shutil.rmtree(self.fdir, ignore_errors=True)
+                for path in self.root.glob("turn01_A*"):
+                    path.unlink()
+                (self.root / "calls").unlink(missing_ok=True)
+                cfg = self.issue_cfg(**{retries: 1})
+                with (
+                    self.env(ISSUE_FIX="fail-once", ISSUE_FAIL_RC=str(rc)),
+                    mock.patch.object(PhaseLib, "_transient_resume_delay", return_value=0),
+                ):
+                    self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+                self.assertEqual(self.calls(), ["turn01_A", "turn01_A-issue", "turn01_A-issue"])
+                prompts = (self.root / "turn01_A-issue.prompts").read_text().split("\n<end>\n")
+                self.assertIn("issue title must be at most 160 characters", prompts[0])
+                expected = PhaseLib._policy_recovery_prompt(prompts[0]) if rc == 76 else prompts[0]
+                self.assertEqual(prompts[1], expected)
+                sessions = (self.root / "turn01_A-issue.sessions").read_text().splitlines()
+                self.assertEqual({line.split()[0] for line in sessions}, {"session-MC-1-turn01_A"})
+                self.assertTrue(json.loads((self.fdir / "issue.json").read_text())["title"] == "Fixture defect")
 
     def _attach(self, first: Callable[[C.ConfirmConfig], int], **env: str) -> C.ConfirmConfig:
         resumelib.initialize_run(self.root)
@@ -430,10 +452,10 @@ class TestIssueProposal(ConfirmCase):
             self.assertFalse(checkpoint["issue_fix"]["attempted"])
             return code
 
-        self._attach(first, ISSUE_FIX="rate-limit-once")
+        self._attach(first, ISSUE_FIX="fail-once")
         self.assertEqual(self.calls(), ["turn01_A", "turn01_A-issue", "turn01_A-issue"])
         prompts = (self.root / "turn01_A-issue.prompts").read_text().split("\n<end>\n")
-        self.assertEqual(prompts[1], PhaseLib._MANUAL_SESSION_RESUME_PROMPT)
+        self.assertEqual(prompts[1], prompts[0])
         sessions = {line.split()[0] for line in (self.root / "turn01_A-issue.sessions").read_text().splitlines()}
         self.assertEqual(sessions, {"session-MC-1-turn01_A"})
         self.assertTrue(self.finalize()["reusable"])
