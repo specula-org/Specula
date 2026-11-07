@@ -230,3 +230,48 @@ def test_usage_stated_per_result_is_summed_over_results() -> None:
     # Nothing counted is zero usage, not a missing record.
     idle: Any = invocation_usage([{**SECOND, "model_usage_since_last_result": {}}], resumed=True, restored=None)
     assert idle["total_cost_usd"] == 0.0 and idle["usage"]["output_tokens"] == 0
+
+
+def _probe(index: int, since_cost: float, total: float) -> dict[str, Any]:
+    """One result of a two-result process: r0 states $3, r1 states $1 (running total $4)."""
+    return {
+        "type": "result",
+        "session_id": SESSION,
+        "result_index": index,
+        "total_cost_usd": total,
+        "modelUsage": {"m": _probe_model(total)},
+        "model_usage_since_last_result": {"m": _probe_model(since_cost)},
+    }
+
+
+def _probe_model(cost: float) -> dict[str, Any]:
+    tokens = int(cost)
+    return {
+        "inputTokens": tokens,
+        "outputTokens": 10 * tokens,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "costUSD": cost,
+    }
+
+
+def test_fresh_session_uses_the_final_running_total() -> None:
+    # Only the last result was observed (e.g. the activity sink failed); its
+    # running total is still exact for a session this invocation started.
+    usage = invocation_usage([_probe(1, 1.0, 4.0)], resumed=False, restored=None)
+    assert usage["cost_basis"] == "new_session" and usage["total_cost_usd"] == 4.0
+    assert _claude_usage({"session_id": SESSION, **usage}).total_tokens == 44
+
+
+def test_result_index_gap_falls_back_to_the_restore_point() -> None:
+    restored = {"total_cost_usd": 0.0, "model_usage": {}}
+    both: Any = invocation_usage([_probe(0, 3.0, 4.0), _probe(1, 1.0, 4.0)], resumed=True, restored=restored)
+    assert both["cost_basis"] == "model_usage_since_last_result" and both["total_cost_usd"] == 4.0
+    for seen in ([_probe(1, 1.0, 4.0)], [_probe(0, 3.0, 4.0), _probe(2, 1.0, 4.0)]):
+        gap: Any = invocation_usage(seen, resumed=True, restored=restored)
+        assert gap["cost_basis"] == "restored_session_totals" and gap["total_cost_usd"] == 4.0
+        assert gap["usage"]["output_tokens"] == 40
+        unknown = invocation_usage(seen, resumed=True, restored=None)
+        assert unknown["total_cost_usd"] is None and unknown["usage_complete"] is False
+    unnumbered = {k: v for k, v in _probe(0, 3.0, 4.0).items() if k != "result_index"}
+    assert invocation_usage([unnumbered], resumed=True, restored=None)["cost_basis"] == "unavailable"

@@ -6,12 +6,14 @@ transcript (its last ``cost-state`` record), so the ``total_cost_usd`` and
 the session. Specula records usage per invocation, so a result is reduced to
 what its own process added:
 
-1. ``model_usage_since_last_result`` (stream-json results of recent CLI
-   versions) states what the process counted since its previous result; the sum
-   over an invocation's results is that invocation's usage.
-2. Otherwise a resumed result is reduced by the totals the CLI restored, read
+1. A fresh session's totals are already per invocation; its final result's
+   running total is exact.
+2. For a resumed session, ``model_usage_since_last_result`` (stream-json
+   results of recent CLI versions) states what the process counted since its
+   previous result; summed over every result from ``result_index`` 0 it is the
+   invocation's usage. A missing result (a gap in ``result_index``) loses usage.
+3. Otherwise a resumed result is reduced by the totals the CLI restored, read
    from the transcript before launch.
-3. A fresh session's totals are already per invocation.
 
 A resumed result with neither source has no known per-invocation cost.
 Stdlib only: the adapter runs under any python3 without an install.
@@ -198,8 +200,22 @@ def invocation_usage(
     if resumed:
         fields["session_total_cost_usd"] = final.get("total_cost_usd")
 
+    if not resumed:
+        return {
+            "total_cost_usd": final.get("total_cost_usd", 0),
+            "usage": final.get("usage", {}),
+            "model_usage": reported_models if reported_models is not None else {},
+            **fields,
+            "cost_basis": "new_session",
+        }
+
     since = [result.get("model_usage_since_last_result") for result in results]
-    if all(isinstance(snapshot, dict) for snapshot in since):
+    # Each result states only the usage since the previous one, so the sum is
+    # complete only when every result of the process was observed.
+    numbered = [result.get("result_index") for result in results] == list(range(len(results))) and all(
+        type(result.get("result_index")) is int for result in results
+    )
+    if numbered and all(isinstance(snapshot, dict) for snapshot in since):
         models = _sum_models([snapshot for snapshot in since if isinstance(snapshot, dict)])
         if models is not None:
             return {
@@ -209,15 +225,6 @@ def invocation_usage(
                 **fields,
                 "cost_basis": "model_usage_since_last_result",
             }
-
-    if not resumed:
-        return {
-            "total_cost_usd": final.get("total_cost_usd", 0),
-            "usage": final.get("usage", {}),
-            "model_usage": reported_models if reported_models is not None else {},
-            **fields,
-            "cost_basis": "new_session",
-        }
 
     reported_cost = _number(final.get("total_cost_usd"))
     restored_cost = _number(restored.get("total_cost_usd")) if restored is not None else None
