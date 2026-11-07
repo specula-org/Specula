@@ -54,6 +54,12 @@ EVENT_STREAM_COMMAND = [
     str(REPO_ROOT / "src"),
 ]
 
+# Claude Code 2.1.316's final result for a real-time cyber safeguard block
+# (stop_reason=refusal, is_error=true; IDs sanitized).
+CLAUDE_CYBER_REFUSAL = json.loads(
+    (Path(__file__).resolve().parent / "fixtures" / "claude-cyber-refusal.result.json").read_text(encoding="utf-8")
+)
+
 # A minimal well-formed claude result: the claude adapter parses this for
 # .log/.usage.json. codex/copilot don't parse it, so any text is fine for them.
 CLAUDE_JSON = {
@@ -791,6 +797,159 @@ class ClaudeCodeAdapter(AdapterCase):
             env_extra={"ADAPTER_EXIT_CODE": "1"},
         )
         self.assertEqual(r["returncode"], 76, r["stderr"])
+
+    def test_cyber_safeguard_refusal_exits_shared_status(self) -> None:
+        session_id = CLAUDE_CYBER_REFUSAL["session_id"]
+        streamed = "\n".join(
+            [
+                json.dumps({"type": "system", "subtype": "init", "session_id": session_id}),
+                json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "Reproducing."}]}}),
+                json.dumps(CLAUDE_CYBER_REFUSAL),
+            ]
+        )
+        for mode in ("json", "activity", "resume-state"):
+            with self.subTest(mode=mode):
+                base = self.sandbox()
+                flags = self.base_flags(base)
+                env_extra = {"ADAPTER_EXIT_CODE": "1", "TMPDIR": str(base)}
+                fixture = json.dumps(CLAUDE_CYBER_REFUSAL)
+                if mode == "activity":
+                    env_extra["SPECULA_ACTIVITY_LOG"] = str(base / "out.activity.jsonl")
+                    fixture = streamed
+                elif mode == "resume-state":
+                    flags.append(f"--resume-state={base}/resume.json")
+                    fixture = streamed
+                r = self.run_adapter(
+                    self.CMD,
+                    flags,
+                    fake_name="claude",
+                    fixture_text=fixture,
+                    record_extra=True,
+                    env_extra=env_extra,
+                    run_dir=base,
+                )
+                self.assertEqual(r["returncode"], 76, r["stderr"])
+                self.assertIn("provider policy block", r["stderr"])
+                self.assertEqual(json.loads((base / "out.usage.json").read_text())["stop_reason"], "refusal")
+                if mode == "resume-state":
+                    # Policy recovery resumes this exact session.
+                    self.assertEqual(json.loads((base / "resume.json").read_text())["session_id"], session_id)
+
+    def test_failed_refusal_without_known_wording_is_a_policy_block(self) -> None:
+        base = self.sandbox()
+        record = {**CLAUDE_CYBER_REFUSAL, "result": "API Error: the request could not be completed."}
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+            env_extra={"ADAPTER_EXIT_CODE": "1"},
+        )
+        self.assertEqual(r["returncode"], 76, r["stderr"])
+
+    def test_refusal_keeps_rate_limit_and_transient_precedence(self) -> None:
+        # A refusal stop is a policy block only without an API status or a
+        # transient diagnostic; otherwise that failure keeps its own recovery.
+        cases = (
+            ("status-529", 529, "API Error: 529 Overloaded", 74),
+            ("status-503", "503", "API Error: Service unavailable.", 74),
+            ("status-429", 429, "API Error: 429 rate_limit_error", 75),
+            ("transport-null-status", None, "API Error: Connection reset by server.", 74),
+            ("null-status", None, "API Error: the request could not be completed.", 76),
+        )
+        for name, status, text, expected in cases:
+            record = {**CLAUDE_CYBER_REFUSAL, "api_error_status": status, "result": text}
+            for streaming in (False, True):
+                with self.subTest(name, streaming=streaming):
+                    base = self.sandbox()
+                    env_extra = {"ADAPTER_EXIT_CODE": "1"}
+                    if streaming:
+                        env_extra["SPECULA_ACTIVITY_LOG"] = str(base / "out.activity.jsonl")
+                    r = self.run_adapter(
+                        self.CMD,
+                        self.base_flags(base),
+                        fake_name="claude",
+                        fixture_text=json.dumps(record),
+                        record_extra=True,
+                        env_extra=env_extra,
+                        run_dir=base,
+                    )
+                    self.assertEqual(r["returncode"], expected, r["stderr"])
+
+    def test_quoted_cyber_safeguard_message_is_not_a_policy_block(self) -> None:
+        quoted = CLAUDE_CYBER_REFUSAL["result"]
+        report = (
+            f"The earlier attempt ended with:\n{quoted}\nThe cyber safeguards are unrelated.\nVERDICT: FALSE POSITIVE"
+        )
+        assistant = json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": quoted}]}})
+        generic_failure = json.dumps(
+            {
+                "type": "result",
+                **CLAUDE_JSON,
+                "is_error": True,
+                "terminal_reason": "api_error",
+                "api_error_status": 400,
+                "result": "API Error: 400 invalid_request_error",
+            }
+        )
+        cases = (
+            ("json-success-report", json.dumps({"type": "result", **CLAUDE_JSON, "result": report}), True, "0", 0),
+            (
+                "stream-assistant-then-success",
+                "\n".join([assistant, json.dumps({"type": "result", **CLAUDE_JSON, "result": report})]),
+                False,
+                "0",
+                0,
+            ),
+            ("stream-assistant-then-generic-failure", "\n".join([assistant, generic_failure]), False, "1", 1),
+            (
+                "successful-envelope-refusal-stop",
+                json.dumps({"type": "result", **CLAUDE_JSON, "stop_reason": "refusal", "result": report}),
+                True,
+                "0",
+                0,
+            ),
+        )
+        for name, fixture, json_mode, native_rc, expected in cases:
+            with self.subTest(name):
+                base = self.sandbox()
+                env_extra = {"ADAPTER_EXIT_CODE": native_rc}
+                if not json_mode:
+                    env_extra["SPECULA_ACTIVITY_LOG"] = str(base / "out.activity.jsonl")
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="claude",
+                    fixture_text=fixture,
+                    record_extra=True,
+                    env_extra=env_extra,
+                    run_dir=base,
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
+                self.assertNotIn("provider policy block", r["stderr"])
+
+    def test_plain_safeguard_diagnostic_with_id_trailers_uses_failed_cli_status(self) -> None:
+        plain = CLAUDE_CYBER_REFUSAL["result"] + "\n"
+        streamed = "\n".join(
+            [json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "working"}]}}), plain]
+        )
+        for streaming, native_rc, expected in ((False, "9", 76), (True, "9", 76), (False, "0", 0), (True, "0", 0)):
+            with self.subTest(streaming=streaming, native_rc=native_rc):
+                base = self.sandbox()
+                env_extra = {"ADAPTER_EXIT_CODE": native_rc}
+                if streaming:
+                    env_extra["SPECULA_ACTIVITY_LOG"] = str(base / "out.activity.jsonl")
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="claude",
+                    fixture_text=streamed if streaming else plain,
+                    record_extra=True,
+                    env_extra=env_extra,
+                    run_dir=base,
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
 
     def test_terminal_transient_failure_exits_shared_status(self) -> None:
         base = self.sandbox()
@@ -5440,6 +5599,31 @@ class CopilotAdapter(AdapterCase):
             env_extra={"COPILOT_HELP_TEXT": "--autopilot"},
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
+
+    def test_text_transcript_quote_before_id_line_is_not_a_policy_block(self) -> None:
+        # Copilot's text-mode log is the agent transcript, so a trailing ID
+        # line is not a CLI trailer to look past (unlike Claude Code's).
+        transcripts = (
+            "The earlier run said: This content was flagged for possible cybersecurity risk.\nRequest ID: req_1\n",
+            "The earlier run said: Opus 4.8's safeguards flagged this message.\nRequest ID: req_1\n",
+        )
+        for transcript in transcripts:
+            for streaming in (False, True):
+                with self.subTest(transcript=transcript, streaming=streaming):
+                    base = self.sandbox()
+                    env_extra = {"COPILOT_HELP_TEXT": "--autopilot", "ADAPTER_EXIT_CODE": "9"}
+                    if streaming:
+                        env_extra["SPECULA_ACTIVITY_LOG"] = str(base / "out.activity.jsonl")
+                        env_extra["COPILOT_HELP_TEXT"] = "--autopilot\n--stream"
+                    r = self.run_adapter(
+                        self.CMD,
+                        self.base_flags(base),
+                        fake_name="copilot",
+                        fixture_text=transcript,
+                        env_extra=env_extra,
+                        run_dir=base,
+                    )
+                    self.assertEqual(r["returncode"], 9, r["stderr"])
 
     @unittest.skipUnless(Path("/dev/full").exists(), "requires /dev/full")
     def test_readable_log_failure_keeps_raw_stream_and_fails_adapter(self) -> None:

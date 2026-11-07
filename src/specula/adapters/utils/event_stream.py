@@ -12,6 +12,7 @@ import contextlib
 import json
 import re
 import sys
+from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +22,9 @@ from .policy import (
     PLAIN_POLICY_DIAGNOSTIC_RC,
     POLICY_BLOCKED_RC,
     final_diagnostic_has_policy_block,
+    looks_claude_safeguard_block,
     looks_policy_blocked,
+    refusal_policy_block,
 )
 from .resume import RESUME_STATE_FAILURE_RC, ResumeStateError, capture_session_id
 from .text import SUMMARY_LIMIT, readable, readable_fragment, summary, tool_summary
@@ -62,6 +65,8 @@ class _LogEvent:
 
 
 _INVALID_RECORD = object()
+# Enough trailing non-JSON lines to reach a diagnostic past its ID trailers.
+_PLAIN_DIAGNOSTIC_TAIL_LINES = 8
 
 
 def _line_event(text: str) -> _LogEvent:
@@ -341,6 +346,13 @@ def _structured_policy_block_error(adapter_name: str, record: object) -> str | N
         # result string, which is deliberately not a generic recursive field in
         # looks_policy_blocked: successful reports may quote an old error.
         result = record.get("result")
+        if refusal_policy_block(record):
+            # Real-time safeguard blocks: a failed envelope's refusal stop
+            # (without an API status) is authoritative even when the wording is
+            # not recognized.
+            return _policy_diagnostic(result) or "provider safeguards refused the request"
+        if looks_claude_safeguard_block(result):
+            return _policy_diagnostic(result)
         if looks_policy_blocked(record):
             payload = record
         elif looks_policy_blocked(result):
@@ -673,6 +685,9 @@ def stream_events(
     captured_session_id: str | None = None
     seen_session_ids: set[str] = set()
     final_plain_diagnostic = ""
+    # The trailing run of non-JSON lines, so Claude Code's policy fallback can
+    # look past the correlation-ID lines that follow its diagnostic.
+    final_plain_block: deque[str] = deque(maxlen=_PLAIN_DIAGNOSTIC_TAIL_LINES)
     plain_diagnostics: list[str] = []
     subagent_results: list[PiSubagentResult] = []
     raw_failures: list[str] = []
@@ -735,10 +750,13 @@ def stream_events(
                 # for a provider diagnostic.
                 plain_diagnostics.append(decoded)
                 final_plain_diagnostic = decoded
+                final_plain_block.append(decoded)
             else:
-                # Only the final non-empty physical stream line may serve as
-                # the out-of-band fallback. A later JSON event supersedes it.
+                # Only the final non-JSON stream output may serve as the
+                # out-of-band fallback: its last line (Claude Code's policy
+                # check skips trailing ID lines). A later JSON event supersedes it.
                 final_plain_diagnostic = ""
+                final_plain_block.clear()
         detected_session_id = _session_id(adapter_name, record)
         if detected_session_id is not None and detected_session_id not in seen_session_ids:
             seen_session_ids.add(detected_session_id)
@@ -927,8 +945,12 @@ def stream_events(
     for failure in resume_failures:
         print(f"adapter resume state failed: {failure}", file=sys.stderr)
     plain_policy_block_error = None
-    if structured_stream and not successful_terminal and final_diagnostic_has_policy_block(final_plain_diagnostic):
-        plain_policy_block_error = summary(final_plain_diagnostic, None)
+    claude = adapter_name == "claude-code"
+    # Library callers may pass lines without terminators; never merge two
+    # physical lines into one diagnostic. Other adapters keep the final line.
+    plain_policy = "\n".join(line.rstrip("\r\n") for line in final_plain_block) if claude else final_plain_diagnostic
+    if structured_stream and not successful_terminal and final_diagnostic_has_policy_block(plain_policy, claude=claude):
+        plain_policy_block_error = summary(plain_policy, None)
     plain_transient_error = None
     if structured_stream and not successful_terminal and final_diagnostic_has_transient_failure(final_plain_diagnostic):
         plain_transient_error = summary(final_plain_diagnostic, None)

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from pathlib import Path
+
+from .transient import looks_transient
 
 # Dedicated adapter outcome consumed by the common phase runner. Keep it
 # distinct from quota's EX_TEMPFAIL (75): a policy block needs a changed
@@ -30,6 +33,15 @@ _POLICY_TEXT_RE = re.compile(
     r"flagged for possible cybersecurity risk)",
     re.IGNORECASE,
 )
+# Claude Code's real-time safeguard diagnostic: "API Error: <model>'s
+# safeguards flagged this message. ..." followed by a "Details: `[cyber]`"
+# category line. Applied only on Claude Code paths.
+_CLAUDE_SAFEGUARD_TEXT_RE = re.compile(r"safeguards flagged this message|details:\s*`?\[cyber\]`?", re.IGNORECASE)
+# Correlation identifiers that Claude Code appends after that diagnostic
+# ("Request ID: req_...", "Message ID: msg_..."). They carry no failure class,
+# so the Claude Code fallback looks past them; any other trailing line still
+# ends the backward scan.
+_DIAGNOSTIC_ID_TRAILER_RE = re.compile(r"(?:request|message)[ _-]?id\s*[:=]\s*\S+", re.IGNORECASE)
 
 
 def _normalized_code(value: str) -> str:
@@ -63,9 +75,53 @@ def looks_policy_blocked(value: object, depth: int = 0) -> bool:
     )
 
 
-def final_diagnostic_has_policy_block(text: str) -> bool:
-    """Classify only a failed CLI's final non-empty diagnostic line."""
-    diagnostic = next((line.strip() for line in reversed(text.splitlines()) if line.strip()), "")
+def looks_claude_safeguard_block(value: object) -> bool:
+    """Recognize Claude Code's safeguard diagnostic in an identified error.
+
+    Like ``looks_policy_blocked``, callers must first establish that ``value``
+    is a failed Claude Code result or its failed CLI's final diagnostic.
+    """
+    return isinstance(value, str) and bool(_CLAUDE_SAFEGUARD_TEXT_RE.search(value))
+
+
+def refusal_policy_block(record: Mapping[str, object]) -> bool:
+    """Whether a failed Claude result is a provider safety refusal.
+
+    Claude Code reports real-time safeguard blocks as a terminal ``result``
+    whose ``stop_reason`` is ``"refusal"`` and which carries no API status; the
+    accompanying text varies by model and CLI release. A refusal stop next to
+    an API status (429, 5xx) or a transient transport diagnostic belongs to
+    that failure instead, so rate-limit waits and transient backoff keep
+    precedence and do not spend the policy budget. Callers must first establish
+    that the result envelope itself failed: a successful turn is never
+    reclassified.
+    """
+    stop_reason = record.get("stop_reason")
+    if not isinstance(stop_reason, str) or stop_reason.casefold() != "refusal":
+        return False
+    if record.get("api_error_status") not in (None, "", 0, "0"):
+        return False
+    return not (looks_transient(record) or looks_transient(record.get("result")))
+
+
+def _final_diagnostic_line(text: str, *, skip_id_trailers: bool) -> str:
+    """The final non-empty line of ``text``, optionally past correlation IDs."""
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if line and not (skip_id_trailers and _DIAGNOSTIC_ID_TRAILER_RE.fullmatch(line)):
+            return line
+    return ""
+
+
+def final_diagnostic_has_policy_block(text: str, *, claude: bool = False) -> bool:
+    """Classify only a failed CLI's final non-empty diagnostic line.
+
+    ``claude=True`` is for Claude Code's own out-of-band output: it also
+    recognizes the safeguard diagnostic and looks past the Request ID /
+    Message ID lines that follow it. Other fallbacks may scan an agent's
+    transcript (Copilot text mode), where an ID line is not a CLI trailer.
+    """
+    diagnostic = _final_diagnostic_line(text, skip_id_trailers=claude)
     if not diagnostic:
         return False
     try:
@@ -76,7 +132,7 @@ def final_diagnostic_has_policy_block(text: str) -> bool:
         # A valid JSON line belongs to an agent/event channel. Structured error
         # envelopes are classified by the adapter parser, not this fallback.
         return False
-    return looks_policy_blocked(diagnostic)
+    return looks_policy_blocked(diagnostic) or (claude and looks_claude_safeguard_block(diagnostic))
 
 
 def failed_log_has_policy_block(path: Path) -> bool:

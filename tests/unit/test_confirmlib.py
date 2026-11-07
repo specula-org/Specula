@@ -34,6 +34,9 @@ from specula import prompts as P
 from specula.phaselib import Workspace
 
 EVIDENCE = "The investigation inspected the real call path and captured concrete observed behavior."
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CLAUDE_CODE_ADAPTER = REPO_ROOT / "scripts" / "launch" / "adapters" / "claude-code.sh"
+CLAUDE_CYBER_REFUSAL = Path(__file__).resolve().parent / "fixtures" / "claude-cyber-refusal.result.json"
 
 
 def _response(status: str, extra: str = "") -> str:
@@ -784,6 +787,79 @@ class TestDriver(ConfirmCase):
         self.assertNotIn(marker, (root / "prompt-3.md").read_text())
         self.assertEqual((root / "prompt-4.md").read_text(), (root / "prompt-3.md").read_text())
         self.assertFalse((root / "prompt-5.md").exists())
+
+    def test_claude_cyber_refusal_resumes_session_with_policy_continuation(self) -> None:
+        # The real claude-code adapter drives a fake `claude`: the first call
+        # ends in Claude Code's real-time cyber safeguard result, the second
+        # (resumed) call succeeds. The turn must recover, not go INCOMPLETE.
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        root = Path(self.tmp)
+        refusal = json.loads(CLAUDE_CYBER_REFUSAL.read_text(encoding="utf-8"))
+        session_id = refusal["session_id"]
+        (root / "refusal.json").write_text(json.dumps(refusal) + "\n")
+        success = {
+            "type": "result",
+            "subtype": "success",
+            "is_error": False,
+            "stop_reason": "end_turn",
+            "terminal_reason": "completed",
+            "session_id": session_id,
+            "result": _response("FALSE POSITIVE"),
+            "usage": {},
+            "modelUsage": {},
+        }
+        (root / "success.json").write_text(json.dumps(success) + "\n")
+        bindir = root / "bin"
+        bindir.mkdir()
+        fake = bindir / "claude"
+        fake.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -eu\n"
+            'printf x >> "$FAKE_CLAUDE_DIR/count"\n'
+            'attempt=$(wc -c < "$FAKE_CLAUDE_DIR/count" | tr -d " ")\n'
+            'printf "%s\\n" "$@" > "$FAKE_CLAUDE_DIR/argv-$attempt.txt"\n'
+            'cat > "$FAKE_CLAUDE_DIR/stdin-$attempt.md"\n'
+            'printf \'{"type":"system","subtype":"init","session_id":"%s"}\\n\' "$FAKE_CLAUDE_SESSION"\n'
+            'if [ "$attempt" -eq 1 ]; then cat "$FAKE_CLAUDE_DIR/refusal.json"; exit 1; fi\n'
+            'cat "$FAKE_CLAUDE_DIR/success.json"\n'
+        )
+        fake.chmod(0o755)
+        home = root / "home"
+        home.mkdir()
+        env = {
+            "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '/usr/bin:/bin')}",
+            "HOME": str(home),
+            "FAKE_CLAUDE_DIR": str(root),
+            "FAKE_CLAUDE_SESSION": session_id,
+            "SPECULA_PROGRESS": "off",
+        }
+        cfg = self.cfg(ws, "T", adapter=CLAUDE_CODE_ADAPTER, max_parallel=1)
+
+        with mock.patch.dict(os.environ, env, clear=False):
+            for key in (
+                "SPECULA_SANDBOX",
+                "SPECULA_ACTIVITY_LOG",
+                "SPECULA_MODEL",
+                "SPECULA_EFFORT",
+                "CLAUDE_CONFIG_DIR",
+                "CLAUDE_ALIAS",
+                "CLAUDE_MODEL",
+                "CLAUDE_EFFORT",
+            ):
+                os.environ.pop(key, None)
+            rc = C.run_parallel_confirmation(cfg)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual((root / "count").read_text(), "xx")
+        first_argv = (root / "argv-1.txt").read_text().splitlines()
+        resumed_argv = (root / "argv-2.txt").read_text().splitlines()
+        self.assertNotIn("--resume", first_argv)
+        self.assertEqual(resumed_argv[resumed_argv.index("--resume") + 1], session_id)
+        self.assertEqual((root / "stdin-2.md").read_text().strip(), PhaseLib._POLICY_SESSION_RESUME_PROMPT)
+        report = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
+        self.assertNotIn("INCOMPLETE", report)
+        self.assertIn("FALSE POSITIVE", report)
+        self.assertEqual(cfg._policy_states, {})
 
     def test_outer_rate_replay_reuses_completed_a_and_resumes_b_in_same_lease(self) -> None:
         ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
