@@ -174,6 +174,9 @@ with (capture / "calls").open("a") as calls:
     calls.write(stem + "\\n")
 with (capture / (stem + ".prompts")).open("a") as prompts:
     prompts.write(prompt.read_text() + "\\n<end>\\n")
+with (capture / (stem + ".system")).open("a") as system:
+    pinned = args.get("system-prompt-file")
+    system.write((Path(pinned).read_text() if pinned else "<none>") + "\\n<end>\\n")
 repro = work / "repro" / f"test_bug{fdir.name}_case.sh"
 proposal = json.loads(os.environ["ISSUE_PROPOSAL"])
 proposal["id"] = fdir.name
@@ -437,6 +440,38 @@ class TestIssueProposal(ConfirmCase):
                 sessions = (self.root / "turn01_A-issue.sessions").read_text().splitlines()
                 self.assertEqual({line.split()[0] for line in sessions}, {"session-MC-1-turn01_A"})
                 self.assertTrue(json.loads((self.fdir / "issue.json").read_text())["title"] == "Fixture defect")
+
+    def test_correction_turn_and_its_replays_pin_the_rules_once(self) -> None:
+        for rc, retries, setting in (
+            (74, "transient_resumes", None),
+            (76, "policy_retries", None),
+            (74, "transient_resumes", "off"),
+        ):
+            with self.subTest(rc=rc, rules=setting):
+                shutil.rmtree(self.fdir, ignore_errors=True)
+                for path in self.root.glob("turn01_A*"):
+                    path.unlink()
+                (self.root / "calls").unlink(missing_ok=True)
+                with (
+                    self.env(ISSUE_FIX="fail-once", ISSUE_FAIL_RC=str(rc)),
+                    mock.patch.dict(os.environ),
+                    mock.patch.object(PhaseLib, "_transient_resume_delay", return_value=0),
+                ):
+                    os.environ.pop(rules.RULES_ENV, None)
+                    if setting is not None:
+                        os.environ[rules.RULES_ENV] = setting
+                    block = rules.rules_block()
+                    self.assertEqual(C.run_parallel_confirmation(self.issue_cfg(**{retries: 1})), 0)
+                self.assertEqual(self.calls(), ["turn01_A", "turn01_A-issue", "turn01_A-issue"])
+                prompts = (self.root / "turn01_A-issue.prompts").read_text().split("\n<end>\n")[:2]
+                systems = (self.root / "turn01_A-issue.system").read_text().split("\n<end>\n")[:2]
+                prefix = block + rules.RULES_SEPARATOR if block else ""
+                for prompt in prompts:
+                    self.assertTrue(prompt.startswith(prefix + "# Fix the persistent issue proposal for MC-1"))
+                    self.assertEqual(prompt.count(rules.RULES_TITLE), 1 if block else 0)
+                    # A metadata-only continuation of the worker session gets no notes section.
+                    self.assertNotIn("Working Notes", prompt)
+                self.assertEqual(systems, [block or "<none>"] * 2)
 
     def test_rate_limited_correction_restores_a_deleted_repro_directory(self) -> None:
         cfg = self.issue_cfg()
@@ -3268,6 +3303,7 @@ class TestPromptExtraAndLog(ConfirmCase):
         # A focused draft correction redoes no investigation and gets no notes.
         retry = C.prompt_repair_draft_retry(cfg, f, "/repo", "warn", Path("/prev.log"))
         self.assertNotIn("Working Notes", retry)
+        self.assertNotIn("Working Notes", C.prompt_issue_fix(cfg, f, "REPRODUCED", "title too long"))
 
     def test_notes_off_restores_worker_prompts_and_verdict_fingerprint(self) -> None:
         self._isolate_notes_env()
@@ -3335,6 +3371,7 @@ class TestPromptExtraAndLog(ConfirmCase):
         # Off omits the key entirely, so fingerprints saved before rule pinning stay valid.
         self.assertNotIn("rules", identities[1])
         self.assertEqual({key: value for key, value in identities[0].items() if key != "rules"}, identities[1])
+        self.assertTrue(all("issue-fix.md" in identity["prompts"] for identity in identities))
 
     def test_parallel_prompts_assign_rr_queue_only_to_dispatcher(self) -> None:
         ws = self.seed("T", [])
