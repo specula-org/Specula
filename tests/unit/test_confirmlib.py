@@ -305,6 +305,9 @@ class TestIssueProposal(ConfirmCase):
         worker_prompt = (self.root / "turn01_A.prompts").read_text()
         self.assertIn("at most 160 characters", worker_prompt)
         self.assertIn("single exact line", worker_prompt)
+        self.assertIn(
+            f"in a configured run, run `specula findings --work {self.work.absolute()} validate", worker_prompt
+        )
         # The metadata turn cannot change the evidence the verdict was judged on.
         self.assert_judged_evidence()
         self.assertFalse((self.fdir / "issue.invalid.json").exists())
