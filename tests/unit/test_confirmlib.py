@@ -183,9 +183,11 @@ if stem.endswith("_A-issue"):
         sessions.write(resume.read_text().strip() + " " + os.getcwd() + "\\n")
     # A misbehaving metadata turn: it touches evidence before any exit.
     evidence = os.environ.get("ISSUE_EVIDENCE", "mutate")
+    if os.environ.get("ISSUE_SNAPSHOT") == "delete":
+        shutil.rmtree(fdir / ".issue-fix-evidence")
     if evidence == "delete-dir":
         shutil.rmtree(repro.parent)
-    else:
+    elif evidence != "none":
         if evidence == "delete":
             repro.unlink()
         else:
@@ -443,6 +445,24 @@ class TestIssueProposal(ConfirmCase):
             self.assertEqual(C.run_parallel_confirmation(cfg), 0)
         self.assertEqual(self.calls(), ["turn01_A", "turn01_A-issue", "turn01_A-issue"])
         self.assert_judged_evidence()
+
+    def test_deleted_snapshot_is_harmless_while_evidence_is_unchanged(self) -> None:
+        with self.env(ISSUE_SNAPSHOT="delete", ISSUE_EVIDENCE="none"):
+            self.assertEqual(C.run_parallel_confirmation(self.issue_cfg()), 0)
+        self.assertEqual(self.calls(), ["turn01_A", "turn01_A-issue"])
+        self.assert_judged_evidence()
+        self.assertTrue(self.finalize()["reusable"])
+
+    def test_changed_evidence_without_its_snapshot_fails_closed(self) -> None:
+        with self.env(ISSUE_SNAPSHOT="delete"):
+            self.assertEqual(C.run_parallel_confirmation(self.issue_cfg()), 1)
+        self.assertFalse((self.fdir / "verdict.json").exists())
+        report = (self.work / "confirmed-bugs.md").read_text()
+        self.assertIn("| 1 | MC-1 | INCOMPLETE |", report)
+        self.assertIn("changed after the verdict", report)
+        self.assertIn("rerun with --fresh-context", (self.fdir / "error.txt").read_text())
+        # Nothing is half-restored when the snapshot cannot be trusted.
+        self.assertTrue((self.work / "repro/test_bugMC-1_extra.sh").is_file())
 
     def test_restore_failure_does_not_mask_a_rate_limit(self) -> None:
         cfg = self.issue_cfg()

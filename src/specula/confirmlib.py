@@ -1553,26 +1553,40 @@ def _snapshot_issue_evidence(cfg: ConfirmConfig, f: Finding) -> dict[str, str]:
 
 
 def _restore_issue_evidence(cfg: ConfirmConfig, f: Finding, digests: dict[str, str]) -> None:
-    """Return reproduction evidence to exactly the judged snapshot."""
+    """Return reproduction evidence to exactly the judged snapshot.
+
+    The snapshot lives in the agent-writable finding directory. Losing it is
+    harmless while the evidence still matches the checkpoint digests; changed
+    evidence without its retained copy fails closed before anything is touched.
+    """
     repro_dir = cfg.ws.work_dir(cfg.name) / "repro"
     root = f.fdir / _ISSUE_EVIDENCE_DIR
-    changed = False
-    for path in _repro_files(cfg, f):
-        if path.name not in digests:
-            path.unlink()
-            changed = True
-    for name, digest in sorted(digests.items()):
-        path = repro_dir / name
-        if path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == digest:
-            continue
+    extra = [path for path in _repro_files(cfg, f) if path.name not in digests]
+    changed = [
+        name
+        for name, digest in sorted(digests.items())
+        if not (repro_dir / name).is_file() or hashlib.sha256((repro_dir / name).read_bytes()).hexdigest() != digest
+    ]
+    for name in changed:
         saved = root / name
-        if saved.is_symlink() or not saved.is_file() or hashlib.sha256(saved.read_bytes()).hexdigest() != digest:
-            raise ConfirmationFailed(f"{f.id}: retained reproduction evidence snapshot is unavailable: {saved}")
+        if (
+            root.is_symlink()
+            or saved.is_symlink()
+            or not saved.is_file()
+            or hashlib.sha256(saved.read_bytes()).hexdigest() != digests[name]
+        ):
+            raise ConfirmationFailed(
+                f"{f.id}: reproduction evidence {repro_dir / name} changed after the verdict and its retained "
+                f"snapshot {saved} is unavailable; rerun with --fresh-context"
+            )
+    for path in extra:
+        path.unlink()
+    for name in changed:
+        path = repro_dir / name
         _remove_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(saved, path)
-        changed = True
-    if changed:
+        shutil.copy2(root / name, path)
+    if extra or changed:
         _log(f"  WARNING: {f.id}: issue-proposal correction changed reproduction evidence; restored it")
 
 
