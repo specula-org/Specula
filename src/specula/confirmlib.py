@@ -1569,6 +1569,7 @@ def _restore_issue_evidence(cfg: ConfirmConfig, f: Finding, digests: dict[str, s
         if saved.is_symlink() or not saved.is_file() or hashlib.sha256(saved.read_bytes()).hexdigest() != digest:
             raise ConfirmationFailed(f"{f.id}: retained reproduction evidence snapshot is unavailable: {saved}")
         _remove_path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(saved, path)
         changed = True
     if changed:
@@ -1628,6 +1629,7 @@ def _settle_issue_proposal(
             fix.evidence = _snapshot_issue_evidence(cfg, f)
             _persist_lease(cfg, f, lease)
         evidence = fix.evidence
+        rate_limited: RateLimited | None = None
         try:
             run_turn(
                 cfg,
@@ -1639,13 +1641,20 @@ def _settle_issue_proposal(
                 lease=lease,
                 resume_from=session,
             )
-        except RateLimited:
-            raise
+        except RateLimited as exc:
+            rate_limited = exc
         except Exception as exc:
             _log(f"  WARNING: {f.id}: issue-proposal correction failed ({exc})")
-        finally:
-            # Also on a rate limit; a crash is covered by the replay restore.
+        # Also on a rate limit; a crash is covered by the replay restore.
+        try:
             _restore_issue_evidence(cfg, f, evidence)
+        except Exception as exc:
+            if rate_limited is None:
+                raise
+            # The replay restores again before any validation; keep the retryable status.
+            _log(f"  WARNING: {f.id}: could not restore reproduction evidence yet ({exc})")
+        if rate_limited is not None:
+            raise rate_limited
         fix.attempted = True
         _close_issue_evidence(cfg, f, lease)
         cfg.clear_policy_states(("finding", f.id, str(worker_turn), ISSUE_FIX_ROLE))

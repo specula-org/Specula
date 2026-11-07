@@ -162,7 +162,7 @@ class TestVerdict(ConfirmCase):
 
 
 _ISSUE_ADAPTER = """#!/usr/bin/env python3
-import json, os, sys
+import json, os, shutil, sys
 from pathlib import Path
 
 args = dict(arg[2:].split("=", 1) for arg in sys.argv[1:] if arg.startswith("--") and "=" in arg)
@@ -182,11 +182,15 @@ if stem.endswith("_A-issue"):
     with (capture / (stem + ".sessions")).open("a") as sessions:
         sessions.write(resume.read_text().strip() + " " + os.getcwd() + "\\n")
     # A misbehaving metadata turn: it touches evidence before any exit.
-    if os.environ.get("ISSUE_EVIDENCE", "mutate") == "delete":
-        repro.unlink()
+    evidence = os.environ.get("ISSUE_EVIDENCE", "mutate")
+    if evidence == "delete-dir":
+        shutil.rmtree(repro.parent)
     else:
-        repro.write_text("changed by the metadata turn\\n")
-    (repro.parent / f"test_bug{fdir.name}_extra.sh").write_text("new evidence\\n")
+        if evidence == "delete":
+            repro.unlink()
+        else:
+            repro.write_text("changed by the metadata turn\\n")
+        (repro.parent / f"test_bug{fdir.name}_extra.sh").write_text("new evidence\\n")
     mode = os.environ.get("ISSUE_FIX", "fix")
     if mode == "fail-once" and count.read_text() == "x":
         log.write_text("interrupted before the provider recorded the request\\n")
@@ -430,6 +434,30 @@ class TestIssueProposal(ConfirmCase):
                 sessions = (self.root / "turn01_A-issue.sessions").read_text().splitlines()
                 self.assertEqual({line.split()[0] for line in sessions}, {"session-MC-1-turn01_A"})
                 self.assertTrue(json.loads((self.fdir / "issue.json").read_text())["title"] == "Fixture defect")
+
+    def test_rate_limited_correction_restores_a_deleted_repro_directory(self) -> None:
+        cfg = self.issue_cfg()
+        with self.env(ISSUE_FIX="fail-once", ISSUE_EVIDENCE="delete-dir"):
+            self.assertEqual(C.run_parallel_confirmation(cfg, retain_rate_limited_state=True), 75)
+            self.assertIn("fixture reproduction", (self.work / "repro/test_bugMC-1_case.sh").read_text())
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+        self.assertEqual(self.calls(), ["turn01_A", "turn01_A-issue", "turn01_A-issue"])
+        self.assert_judged_evidence()
+
+    def test_restore_failure_does_not_mask_a_rate_limit(self) -> None:
+        cfg = self.issue_cfg()
+        restore = C._restore_issue_evidence
+        with self.env(ISSUE_FIX="fail-once"):
+            with mock.patch.object(C, "_restore_issue_evidence", side_effect=C.ConfirmationFailed("disk error")):
+                self.assertEqual(C.run_parallel_confirmation(cfg, retain_rate_limited_state=True), 75)
+            self.assertIn(
+                "could not restore reproduction evidence yet (disk error)",
+                (self.work / "bug-confirmation.log").read_text(),
+            )
+            with mock.patch.object(C, "_restore_issue_evidence", side_effect=restore) as replay:
+                self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+            self.assertGreaterEqual(replay.call_count, 2)  # before replayed validation, then after the turn
+        self.assert_judged_evidence()
 
     def _attach(self, first: Callable[[C.ConfirmConfig], int], **env: str) -> C.ConfirmConfig:
         resumelib.initialize_run(self.root)
