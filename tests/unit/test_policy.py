@@ -16,6 +16,7 @@ from specula.adapters.utils.event_stream import StreamStatus, stream_events  # n
 from specula.adapters.utils.policy import (  # noqa: E402
     failed_log_has_policy_block,
     final_diagnostic_has_policy_block,
+    looks_claude_safeguard_block,
     looks_policy_blocked,
     refusal_policy_block,
 )
@@ -95,8 +96,11 @@ class TestPolicyErrorPayload(unittest.TestCase):
         )
         for message in messages:
             with self.subTest(message=message):
-                self.assertTrue(looks_policy_blocked(message))
-                self.assertTrue(looks_policy_blocked({"message": message}))
+                self.assertTrue(looks_claude_safeguard_block(message))
+                # The wording is Claude Code's: shared provider-error
+                # classification for other adapters is unchanged.
+                self.assertFalse(looks_policy_blocked(message))
+                self.assertFalse(looks_policy_blocked({"message": message}))
 
     def test_prose_about_cyber_safeguards_is_not_a_policy_block(self) -> None:
         # Even inside an error envelope, ordinary words are not a verdict: only
@@ -112,8 +116,10 @@ class TestPolicyErrorPayload(unittest.TestCase):
         )
         for message in messages:
             with self.subTest(message=message):
+                self.assertFalse(looks_claude_safeguard_block(message))
                 self.assertFalse(looks_policy_blocked(message))
                 self.assertFalse(looks_policy_blocked({"message": message}))
+        self.assertFalse(looks_claude_safeguard_block({"message": "safeguards flagged this message"}))
 
     def test_refusal_policy_block_requires_a_refusal_stop(self) -> None:
         self.assertTrue(refusal_policy_block(claude_cyber_refusal()))
@@ -248,7 +254,9 @@ class TestFailedLogPolicyFallback(unittest.TestCase):
         )
         for text in cases:
             with self.subTest(text=text):
-                self.assertTrue(final_diagnostic_has_policy_block(text))
+                self.assertTrue(final_diagnostic_has_policy_block(text, claude=True))
+                # Other adapters' fallbacks keep the plain final-line rule.
+                self.assertFalse(final_diagnostic_has_policy_block(text))
 
     def test_id_trailers_do_not_reach_past_an_unrelated_final_diagnostic(self) -> None:
         cases = (
@@ -264,16 +272,23 @@ class TestFailedLogPolicyFallback(unittest.TestCase):
         )
         for text in cases:
             with self.subTest(text=text):
+                self.assertFalse(final_diagnostic_has_policy_block(text, claude=True))
                 self.assertFalse(final_diagnostic_has_policy_block(text))
 
-    def test_failed_log_with_claude_safeguard_diagnostic(self) -> None:
-        with tempfile.TemporaryDirectory() as raw:
-            log = Path(raw) / "agent.log"
-            result = claude_cyber_refusal()["result"]
-            assert isinstance(result, str)
-            log.write_text(result + "\n", encoding="utf-8")
+    def test_failed_log_fallback_does_not_skip_id_lines(self) -> None:
+        # Copilot's text-mode log is the agent transcript: a quoted diagnostic
+        # followed by an ID line must not become a policy block.
+        transcripts = (
+            "The earlier run said: This content was flagged for possible cybersecurity risk.\nRequest ID: req_1\n",
+            "The earlier run said: Opus 4.8's safeguards flagged this message.\nRequest ID: req_1\n",
+            str(claude_cyber_refusal()["result"]) + "\n",
+        )
+        for text in transcripts:
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as raw:
+                log = Path(raw) / "agent.log"
+                log.write_text(text, encoding="utf-8")
 
-            self.assertTrue(failed_log_has_policy_block(log))
+                self.assertFalse(failed_log_has_policy_block(log))
 
     def test_missing_failed_log_is_not_a_policy_block(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -354,6 +369,16 @@ class TestClaudeSafeguardStream(unittest.TestCase):
 
         self.assertIsNotNone(status.plain_policy_block_error)
         self.assertIn("safeguards flagged this message", status.plain_policy_block_error or "")
+
+    def test_other_adapters_keep_the_final_plain_line_rule(self) -> None:
+        lines: list[object] = [
+            "HTTP 400: This content was flagged for possible cybersecurity risk.",
+            "Request ID: req_1",
+        ]
+        for adapter in ("codex", "copilot-json", "opencode", "pi"):
+            with self.subTest(adapter=adapter):
+                self.assertIsNone(self.stream(lines, adapter).plain_policy_block_error)
+        self.assertIsNotNone(self.stream(lines).plain_policy_block_error)
 
     def test_plain_tail_never_merges_unterminated_lines(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

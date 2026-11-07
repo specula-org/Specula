@@ -22,6 +22,7 @@ from .policy import (
     PLAIN_POLICY_DIAGNOSTIC_RC,
     POLICY_BLOCKED_RC,
     final_diagnostic_has_policy_block,
+    looks_claude_safeguard_block,
     looks_policy_blocked,
     refusal_policy_block,
 )
@@ -350,6 +351,8 @@ def _structured_policy_block_error(adapter_name: str, record: object) -> str | N
             # (without an API status) is authoritative even when the wording is
             # not recognized.
             return _policy_diagnostic(result) or "provider safeguards refused the request"
+        if looks_claude_safeguard_block(result):
+            return _policy_diagnostic(result)
         if looks_policy_blocked(record):
             payload = record
         elif looks_policy_blocked(result):
@@ -682,8 +685,8 @@ def stream_events(
     captured_session_id: str | None = None
     seen_session_ids: set[str] = set()
     final_plain_diagnostic = ""
-    # The trailing run of non-JSON lines, so the policy fallback can look past
-    # correlation-ID lines that follow a provider diagnostic.
+    # The trailing run of non-JSON lines, so Claude Code's policy fallback can
+    # look past the correlation-ID lines that follow its diagnostic.
     final_plain_block: deque[str] = deque(maxlen=_PLAIN_DIAGNOSTIC_TAIL_LINES)
     plain_diagnostics: list[str] = []
     subagent_results: list[PiSubagentResult] = []
@@ -750,8 +753,8 @@ def stream_events(
                 final_plain_block.append(decoded)
             else:
                 # Only the final non-JSON stream output may serve as the
-                # out-of-band fallback: its last line (the policy check skips
-                # trailing ID lines). A later JSON event supersedes it.
+                # out-of-band fallback: its last line (Claude Code's policy
+                # check skips trailing ID lines). A later JSON event supersedes it.
                 final_plain_diagnostic = ""
                 final_plain_block.clear()
         detected_session_id = _session_id(adapter_name, record)
@@ -942,11 +945,12 @@ def stream_events(
     for failure in resume_failures:
         print(f"adapter resume state failed: {failure}", file=sys.stderr)
     plain_policy_block_error = None
+    claude = adapter_name == "claude-code"
     # Library callers may pass lines without terminators; never merge two
-    # physical lines into one diagnostic.
-    plain_block = "\n".join(line.rstrip("\r\n") for line in final_plain_block)
-    if structured_stream and not successful_terminal and final_diagnostic_has_policy_block(plain_block):
-        plain_policy_block_error = summary(plain_block, None)
+    # physical lines into one diagnostic. Other adapters keep the final line.
+    plain_policy = "\n".join(line.rstrip("\r\n") for line in final_plain_block) if claude else final_plain_diagnostic
+    if structured_stream and not successful_terminal and final_diagnostic_has_policy_block(plain_policy, claude=claude):
+        plain_policy_block_error = summary(plain_policy, None)
     plain_transient_error = None
     if structured_stream and not successful_terminal and final_diagnostic_has_transient_failure(final_plain_diagnostic):
         plain_transient_error = summary(final_plain_diagnostic, None)

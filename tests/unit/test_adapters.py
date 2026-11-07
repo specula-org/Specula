@@ -5600,6 +5600,31 @@ class CopilotAdapter(AdapterCase):
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
 
+    def test_text_transcript_quote_before_id_line_is_not_a_policy_block(self) -> None:
+        # Copilot's text-mode log is the agent transcript, so a trailing ID
+        # line is not a CLI trailer to look past (unlike Claude Code's).
+        transcripts = (
+            "The earlier run said: This content was flagged for possible cybersecurity risk.\nRequest ID: req_1\n",
+            "The earlier run said: Opus 4.8's safeguards flagged this message.\nRequest ID: req_1\n",
+        )
+        for transcript in transcripts:
+            for streaming in (False, True):
+                with self.subTest(transcript=transcript, streaming=streaming):
+                    base = self.sandbox()
+                    env_extra = {"COPILOT_HELP_TEXT": "--autopilot", "ADAPTER_EXIT_CODE": "9"}
+                    if streaming:
+                        env_extra["SPECULA_ACTIVITY_LOG"] = str(base / "out.activity.jsonl")
+                        env_extra["COPILOT_HELP_TEXT"] = "--autopilot\n--stream"
+                    r = self.run_adapter(
+                        self.CMD,
+                        self.base_flags(base),
+                        fake_name="copilot",
+                        fixture_text=transcript,
+                        env_extra=env_extra,
+                        run_dir=base,
+                    )
+                    self.assertEqual(r["returncode"], 9, r["stderr"])
+
     @unittest.skipUnless(Path("/dev/full").exists(), "requires /dev/full")
     def test_readable_log_failure_keeps_raw_stream_and_fails_adapter(self) -> None:
         for cli_rc, expected in (("0", 1), ("9", 9)):
