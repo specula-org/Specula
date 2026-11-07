@@ -1173,8 +1173,9 @@ def _select_retry_usage(
         continued = logical_relative in continued_usage
         retry = continued or any(relative != logical_relative for relative, _record in snapshots)
         agents = {record.agent for _relative, record in snapshots}
-        # Claude reports each invocation separately. Codex and Copilot snapshots
-        # are cumulative within a session and are reduced to deltas by
+        # The Claude adapter records each invocation's own usage, reducing a
+        # resumed session's running totals. Codex and Copilot snapshots are
+        # cumulative within a session and are reduced to deltas by
         # _accumulate_record.
         precise = agents == {"claude-code"} or (
             agents in ({"codex"}, {"copilot-cli"})
@@ -1377,7 +1378,10 @@ def _claude_usage(payload: dict[str, object]) -> UsageRecord:
         total_tokens=tokens[0] if tokens is not None else None,
         cached_input_tokens=tokens[1] if tokens is not None else None,
         cost_usd=cost,
-        complete=tokens is not None and cost is not None and not invalid_model_usage,
+        complete=tokens is not None
+        and cost is not None
+        and not invalid_model_usage
+        and payload.get("usage_complete") is not False,
     )
 
 

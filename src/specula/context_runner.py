@@ -15,6 +15,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from specula.adapters.utils.claude_usage import invocation_usage
 from specula.adapters.utils.usage import UsageTotals, accumulate_usage
 from specula.context_control import (
     CONFIRMATION_REQUEST,
@@ -70,8 +71,12 @@ def tool_environment(
 
 def compaction_usage(agent: str, receipt: dict[str, Any]) -> UsageRecord | None:
     if agent == "claude-code" and isinstance(receipt.get("usage_payload"), dict):
+        # The helper resumes the session, so its result carries the session's
+        # running totals; record only what the compaction itself added.
         payload = receipt["usage_payload"]
-        return _claude_usage({**payload, "model_usage": payload.get("modelUsage", {})})
+        restored = receipt.get("restored_usage")
+        usage = invocation_usage([payload], resumed=True, restored=restored if isinstance(restored, dict) else None)
+        return _claude_usage({"session_id": payload.get("session_id"), **usage})
     totals = UsageTotals()
     if agent == "pi" and isinstance(receipt.get("pi_usage"), dict):
         accumulate_usage(

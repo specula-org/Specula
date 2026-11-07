@@ -698,6 +698,90 @@ class ClaudeCodeAdapter(AdapterCase):
         self.assertEqual(log.read_text(), "done\n")
         self.assertEqual(json.loads(usage.read_text())["total_cost_usd"], 0.5)
 
+    def test_resumed_session_usage_excludes_earlier_invocations(self) -> None:
+        # Claude Code restores a resumed session's saved running totals, so its
+        # result also counts earlier invocations. The sidecar keeps this one's.
+        session_id = "4c1d2b7e-0000-4000-8000-000000000001"
+        saved = {"m": {"inputTokens": 1, "outputTokens": 10, "cacheReadInputTokens": 100, "costUSD": 2.0}}
+        running = {"m": {"inputTokens": 3, "outputTokens": 25, "cacheReadInputTokens": 400, "costUSD": 3.5}}
+        since = {"m": {"inputTokens": 2, "outputTokens": 15, "cacheReadInputTokens": 300, "costUSD": 1.5}}
+        result = {"type": "result", **CLAUDE_JSON, "session_id": session_id, "total_cost_usd": 3.5}
+        cases = {
+            "since-last-result": ({**result, "modelUsage": running, "model_usage_since_last_result": since}, 1.5),
+            "restored-cost-state": ({**result, "modelUsage": running}, 1.5),
+        }
+        for name, (fixture, want) in cases.items():
+            with self.subTest(name):
+                base = self.sandbox()
+                transcript = base / ".claude" / "projects" / "-any-project" / f"{session_id}.jsonl"
+                transcript.parent.mkdir(parents=True)
+                transcript.write_text(
+                    json.dumps(
+                        {"type": "cost-state", "sessionId": session_id, "totalCostUSD": 2.0, "modelUsage": saved}
+                    )
+                    + "\n"
+                )
+                state = base / "resume.json"
+                state.write_text(
+                    json.dumps(
+                        {
+                            "version": 1,
+                            "adapter": "claude-code",
+                            "session_id": session_id,
+                            "cwd": str(base),
+                            "model": "",
+                            "effort": "max",
+                        }
+                    )
+                )
+                run = self.run_adapter(
+                    self.CMD,
+                    [*self.base_flags(base), f"--resume-state={state}"],
+                    fake_name="claude",
+                    fixture_text=json.dumps(fixture),
+                    record_extra=True,
+                    run_dir=base,
+                )
+                self.assertEqual(run["returncode"], 0, run["stderr"])
+                self.assertIn("--resume", run["argv"])
+                usage = json.loads((base / "out.usage.json").read_text())
+                self.assertEqual(usage["total_cost_usd"], want)
+                self.assertEqual(usage["session_total_cost_usd"], 3.5)
+                self.assertEqual(usage["usage_scope"], "invocation")
+                self.assertEqual(usage["model_usage"]["m"]["outputTokens"], 15)
+                self.assertEqual(usage["usage"]["cache_read_input_tokens"], 300)
+
+    def test_resumed_session_without_restore_point_has_unknown_cost(self) -> None:
+        base = self.sandbox()
+        session_id = "4c1d2b7e-0000-4000-8000-000000000002"
+        state = base / "resume.json"
+        state.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "adapter": "claude-code",
+                    "session_id": session_id,
+                    "cwd": str(base),
+                    "model": "",
+                    "effort": "max",
+                }
+            )
+        )
+        fixture = {"type": "result", **CLAUDE_JSON, "session_id": session_id, "modelUsage": {"m": {"costUSD": 0.5}}}
+        run = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="claude",
+            fixture_text=json.dumps(fixture),
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(run["returncode"], 0, run["stderr"])
+        usage = json.loads((base / "out.usage.json").read_text())
+        self.assertIsNone(usage["total_cost_usd"])
+        self.assertFalse(usage["usage_complete"])
+        self.assertEqual(usage["session_total_cost_usd"], 0.5)
+
     def test_specula_activity_uses_stream_json(self) -> None:
         base = self.sandbox()
         activity = base / "out.activity.jsonl"

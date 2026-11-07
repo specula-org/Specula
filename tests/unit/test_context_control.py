@@ -295,6 +295,43 @@ async def test_claude_distinguishes_noop_from_completed_compaction(
 
 
 @pytest.mark.asyncio
+async def test_claude_compaction_receipt_keeps_restored_session_totals(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # The resumed helper reports session running totals (here $1.25 saved by
+    # earlier turns + $0.25 of compaction); the receipt keeps the restore point.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    transcript = tmp_path / ".alias" / "projects" / "-work" / "original.jsonl"
+    transcript.parent.mkdir(parents=True)
+    model = {"inputTokens": 10, "outputTokens": 20, "cacheReadInputTokens": 30, "cacheCreationInputTokens": 40}
+    saved = {"m": {**model, "costUSD": 1.25}}
+    transcript.write_text(
+        json.dumps({"type": "cost-state", "sessionId": "original", "totalCostUSD": 1.25, "modelUsage": saved}) + "\n"
+    )
+    after = {"m": {**{k: v * 2 for k, v in model.items()}, "costUSD": 1.5}}
+
+    def handler(_m: Any) -> list[dict[str, Any]]:
+        return [
+            {"type": "system", "subtype": "compact_boundary", "session_id": "original"},
+            {
+                "type": "result",
+                "subtype": "success",
+                "session_id": "original",
+                "total_cost_usd": 1.5,
+                "modelUsage": after,
+            },
+        ]
+
+    mock_process(monkeypatch, handler)
+    result = await native.claude({"session_id": "original"}, tmp_path / "log", "alias")
+    assert result["restored_usage"] == {"total_cost_usd": 1.25, "model_usage": saved}
+    record = runner.compaction_usage("claude-code", result)
+    assert record is not None and record.complete
+    assert record.cost_usd == 0.25 and record.total_tokens == 100
+
+
+@pytest.mark.asyncio
 async def test_pi_native_rpc_preserves_session_and_returns_compaction_usage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
