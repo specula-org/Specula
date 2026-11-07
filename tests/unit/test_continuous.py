@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -68,7 +69,6 @@ def test_continuous_is_the_cli_default_and_phased_stays_selectable() -> None:
 @pytest.mark.parametrize(
     "flag",
     [
-        "--skip-analysis",
         "--skip-specgen",
         "--skip-harness",
         "--skip-validate",
@@ -88,6 +88,17 @@ def test_unsupported_options_fall_back_by_default_and_fail_when_explicit(flag: s
     assert rc == 1
     assert f"--orchestration=continuous does not support {flag}" in err
     assert "--orchestration=phased" in err
+
+
+def test_skip_analysis_selects_continuous_from_existing_analysis() -> None:
+    # The main session then starts at spec generation; only the analysis stage can be skipped.
+    for argv in (["--skip-analysis", "t|g|l|r"], ["--orchestration=continuous", "--skip-analysis", "t|g|l|r"]):
+        pipeline, rc, err = parse(argv)
+        assert rc is None, err
+        assert pipeline.orchestration == "continuous" and pipeline._orchestration_fallback is None
+        assert pipeline.skip_analysis
+    _, rc, err = parse(["--orchestration=continuous", "--skip-analysis", "--skip-specgen", "t|g|l|r"])
+    assert rc == 1 and "does not support --skip-specgen" in err and "--skip-analysis" not in err
 
 
 def test_path_options_fall_back(tmp_path: Path) -> None:
@@ -189,7 +200,10 @@ def test_resume_configuration_records_and_restores_the_mode() -> None:
     with pytest.raises(resumelib.ResumeError, match="uses phased orchestration"):
         switched._restore_resume_configuration(phased_run._resume_configuration_document(), allow_overrides=True)
     skipped, _, _ = parse(["--run-id=x", "--skip-analysis"])
-    with pytest.raises(resumelib.ResumeError, match="does not support --skip-analysis"):
+    skipped._restore_resume_configuration(document)  # the controller checks it against the durable state
+    assert skipped.orchestration == "continuous" and skipped.skip_analysis
+    skipped, _, _ = parse(["--run-id=x", "--skip-specgen"])
+    with pytest.raises(resumelib.ResumeError, match="does not support --skip-specgen"):
         skipped._restore_resume_configuration(document)
     invalid = dict(document, orchestration="serial")
     with pytest.raises(resumelib.ResumeError, match="invalid stored orchestration"):
@@ -334,6 +348,21 @@ def test_state_round_trip_and_fail_closed(tmp_path: Path) -> None:
         continuous.load_request(tmp_path)
 
 
+def test_state_records_the_analysis_mode(tmp_path: Path) -> None:
+    continuous.save_state(tmp_path, "t", continuous.MainState(analysis="existing"), "start")
+    loaded = continuous.load_state(tmp_path, "t")
+    assert loaded is not None and loaded.analysis == "existing"
+    path = continuous.state_path(tmp_path)
+    document = json.loads(path.read_text())
+    assert document["analysis"] == "existing"
+    path.write_text(json.dumps({key: value for key, value in document.items() if key != "analysis"}))
+    older = continuous.load_state(tmp_path, "t")  # states written before the field existed
+    assert older is not None and older.analysis == "session"
+    path.write_text(json.dumps({**document, "analysis": "skipped"}))
+    with pytest.raises(continuous.ContinuousError):
+        continuous.load_state(tmp_path, "t")
+
+
 # ── the main-session phase ───────────────────────────────────────────────────
 
 
@@ -442,6 +471,52 @@ def test_main_prompt_keeps_skill_methodology_and_allows_probes(run_workspace: tu
     assert "The skills' parallelization guidance applies as written" in prompt
     assert f"`{work}/notes/sub-<topic>.md`" in prompt
     assert "If a subagent's reply is missing, truncated, or blocked, read its notes file" in prompt
+
+
+def test_main_prompt_from_existing_analysis_starts_at_spec_generation(run_workspace: tuple[Workspace, Path]) -> None:
+    ws, work = run_workspace
+    phase = continuous.ContinuousPhase()
+    default = phase.build_prompt(ws, "t|org/t|Go|Raft")
+    continuous.save_state(work, "t", continuous.MainState(analysis="existing"), "start")
+    prompt = phase.build_prompt(ws, "t|org/t|Go|Raft")
+    workflow = prompt[prompt.index("## Workflow") : prompt.index("## Output")]
+    # Stages 2-4 keep the skills binding at full depth; Stage 1 reads the existing results.
+    assert FOLLOW_EXACTLY in workflow and prompt.count("follow it exactly") == 1
+    assert "1. **Code analysis**: already complete." in workflow
+    assert f"Read `{work}/modeling-brief.md` and `{work}/analysis-report.md` in full" in workflow
+    assert f"`{work}/analysis/`" in workflow and "Begin with Spec generation." in workflow
+    assert "Do not redo the analysis or rewrite these files" in workflow
+    assert "**code-analysis**" not in prompt and "**code-analysis**" in default
+    assert "starting from a completed code analysis" in prompt
+    assert "one continuous session: code analysis," not in prompt
+    for kept in ("2. **Spec generation**", "3. **Harness generation**", "4. **Validation and bug hunting**"):
+        assert kept in workflow
+
+    # Everything outside the session scope and Stage 1 is the default prompt.
+    def outside(text: str) -> str:
+        lines = text.splitlines()
+        return "\n".join(line for line in lines[3:] if not line.startswith("1. **Code analysis**"))
+
+    marker = re.compile(r"specula-skill:[0-9a-f]+")
+    assert marker.sub("", outside(prompt)) == marker.sub("", outside(default))
+
+
+def test_main_launcher_requires_the_brief_of_an_existing_analysis(
+    run_workspace: tuple[Workspace, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    ws, work = run_workspace
+    phase = continuous.ContinuousPhase()
+    continuous.save_state(work, "t", continuous.MainState(analysis="existing"), "start")
+    assert not phase.check(ws, ["t"])
+    assert "MISSING  t — modeling-brief.md" in capsys.readouterr().out
+    assert phase.check_fail_msg == "ERROR: Missing prerequisites. Run code analysis first."
+    (work / "modeling-brief.md").write_text("\n")
+    assert not continuous.ContinuousPhase().check(ws, ["t"])  # an empty brief is no analysis
+    (work / "modeling-brief.md").write_text("# Brief\n")
+    assert continuous.ContinuousPhase().check(ws, ["t"])
+    (work / "modeling-brief.md").unlink()
+    continuous.save_state(work, "t", continuous.MainState(), "start")
+    assert continuous.ContinuousPhase().check(ws, ["t"])  # the session performs the analysis itself
 
 
 def test_main_prompt_carries_the_delegation_guidance_once(
@@ -1013,6 +1088,89 @@ def test_an_interrupted_reservation_is_finished_before_any_main_session(tmp_path
         run._drive()
     assert launched == [("A", 1), ("B", 1)]
     assert pipeline.load_repair_loop_state() == (1, ["A", "B"])
+
+
+def skip_analysis_run(tmp_path: Path, *, fresh: bool = False) -> tuple[pl.Pipeline, continuous.ContinuousRun]:
+    pipeline = pl.Pipeline()
+    pipeline.targets = ["A|g|l|r", "B|g|l|r"]
+    pipeline.run_dir = tmp_path
+    pipeline.skip_analysis = True
+    pipeline.fresh_context = fresh
+    for name in ("A", "B"):
+        Path(pipeline.get_work_dir(name)).mkdir(parents=True)
+    return pipeline, continuous.ContinuousRun(pipeline)
+
+
+def seed_analysis(pipeline: pl.Pipeline, name: str) -> Path:
+    work = Path(pipeline.get_work_dir(name))
+    (work / "modeling-brief.md").write_text("# Shared brief\n")
+    (work / "analysis-report.md").write_text("Shared report.\n")
+    return work
+
+
+def test_start_from_existing_analysis_requires_every_brief_before_any_state(tmp_path: Path) -> None:
+    pipeline, run = skip_analysis_run(tmp_path)
+    seed_analysis(pipeline, "A")
+    with pytest.raises(continuous.ContinuousError, match=r"modeling-brief.md is missing or empty for B \("):
+        run._start()
+    assert continuous.load_state(run.work("A"), "A") is None
+    seed_analysis(pipeline, "B")
+    with contextlib.redirect_stdout(io.StringIO()):
+        run._start()
+    for name in ("A", "B"):
+        state = run._load(name)
+        assert (state.analysis, state.context, state.stage) == ("existing", "original", "main")
+    # The mode is durable: an attach without the flag keeps it.
+    pipeline.skip_analysis = False
+    with contextlib.redirect_stdout(io.StringIO()):
+        run._start()
+    assert run._load("A").analysis == "existing"
+
+
+def test_skip_analysis_cannot_retarget_a_session_that_performs_the_analysis(tmp_path: Path) -> None:
+    pipeline, run = skip_analysis_run(tmp_path)
+    for name in ("A", "B"):
+        seed_analysis(pipeline, name)
+        continuous.save_state(run.work(name), name, continuous.MainState(), "start")
+    with pytest.raises(continuous.ContinuousError, match="A: --skip-analysis does not apply to this run"):
+        run._start()
+    # After its handoff the analysis is done; the flag no longer matters.
+    for name in ("A", "B"):
+        continuous.save_state(run.work(name), name, continuous.MainState(stage="confirm", session_id="s"), "yield")
+        control.write_json(run.work(name) / control.CONFIRMATION_REQUEST, {"session_id": "s", "status": "pending"})
+    with contextlib.redirect_stdout(io.StringIO()):
+        run._start()
+    assert run._load("A").analysis == "session"
+
+
+def test_fresh_context_from_existing_analysis(tmp_path: Path) -> None:
+    # Seeded Phase 1 outputs only: nothing is abandoned, so the session starts original.
+    pipeline, run = skip_analysis_run(tmp_path, fresh=True)
+    with pytest.raises(continuous.ContinuousError, match="missing or empty for A"):
+        run._start()
+    assert not (run.work("A") / continuous.ABANDONING_FILE).exists()
+    for name in ("A", "B"):
+        seed_analysis(pipeline, name)
+    with contextlib.redirect_stdout(io.StringIO()):
+        run._start()
+    assert [(run._load(n).analysis, run._load(n).context) for n in ("A", "B")] == [("existing", "original")] * 2
+    # Restarting that run without the flag abandons its session and keeps starting from the analysis.
+    (run.work("A") / "spec").mkdir()
+    (run.work("A") / "spec/base.tla").write_text("---- MODULE base ----\n====\n")
+    pipeline.skip_analysis = False
+    with contextlib.redirect_stdout(io.StringIO()):
+        run._start()
+    assert [(run._load(n).analysis, run._load(n).context) for n in ("A", "B")] == [("existing", "fresh")] * 2
+    # A run whose session performed the analysis stays that way unless the flag asks otherwise.
+    for name in ("A", "B"):
+        continuous.save_state(run.work(name), name, continuous.MainState(), "start")
+    with contextlib.redirect_stdout(io.StringIO()):
+        run._start()
+    assert run._load("A").analysis == "session" and run._load("A").context == "fresh"
+    pipeline.skip_analysis = True
+    with contextlib.redirect_stdout(io.StringIO()):
+        run._start()
+    assert run._load("A").analysis == "existing" and run._load("A").context == "fresh"
 
 
 def test_start_finishes_only_a_dangling_repair_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

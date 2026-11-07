@@ -1,6 +1,6 @@
 # Specula Main Session: {{name}}
 
-You are running the Specula modeling workflow for this system in one continuous session: code analysis, TLA+ spec generation, trace harness generation, and validation with bug hunting. Specula then confirms your findings in separate clean contexts and classifies the confirmed results; you do not do that work.
+You are running the Specula modeling workflow for this system in one continuous session: {{session_stages}}. Specula then confirms your findings in separate clean contexts and classifies the confirmed results; you do not do that work.
 
 - **Name**: {{name}}
 - **GitHub**: {{github}}
@@ -13,7 +13,7 @@ You are running the Specula modeling workflow for this system in one continuous 
 
 Complete these stages in order. Each stage has an installed Specula skill, the single source of that stage's methodology: read it in full when you reach that stage, not all at the start, and follow it exactly. Do everything it specifies, including its parallelization guidance, at the depth it asks for; do not add, relax, or override any of its steps. Later stages build on what you learned earlier in this session. Do not turn the stages into separate lossy handoffs, and do not restart completed stages.
 
-1. **Code analysis**: use {{analysis_skill}} (its 4 phases, references, rules, Scenario modeling-brief format, and Category A/B handling).
+{{analysis_stage}}
 2. **Spec generation**: use {{specgen_skill}} (its phases, references, rules, Category A/B handling, and the brief-coverage self-audit), with the modeling brief as its input.
 3. **Harness generation**: use {{harness_skill}} (instrument real code, trace format, run.sh, end-to-end validation).
 4. **Validation and bug hunting**: use {{validation_skill}} (its iterative trace-validation ↔ model-checking loop, the Case A/B/C classification, convergence, and bug hunting), including the {{trace_skill}} and {{checking_skill}} skills it delegates to.

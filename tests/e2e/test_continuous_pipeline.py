@@ -511,9 +511,14 @@ class ContinuousCLI(unittest.TestCase):
         rejected = self.run_cli(f"--run-id={run.name}", "--orchestration=phased")
         self.assertEqual(rejected.returncode, 1)
         self.assertIn("this run uses continuous orchestration", rejected.stderr)
-        skipped = self.run_cli(f"--run-id={run.name}", "--skip-analysis")
+        skipped = self.run_cli(f"--run-id={run.name}", "--skip-specgen")
         self.assertEqual(skipped.returncode, 1)
-        self.assertIn("does not support --skip-analysis", skipped.stderr)
+        self.assertIn("does not support --skip-specgen", skipped.stderr)
+        # Its unfinished main session performs the analysis; --skip-analysis cannot retarget it.
+        retarget = self.run_cli(f"--run-id={run.name}", "--skip-analysis")
+        self.assertEqual(retarget.returncode, 1, retarget.stdout + retarget.stderr)
+        self.assertIn("--skip-analysis does not apply to this run", retarget.stdout)
+        self.assertEqual(len(self.main_events()), 1)
 
     # ── targets and options ──
     def test_multiple_targets_run_parallel_main_sessions_then_confirm_each(self) -> None:
@@ -549,16 +554,77 @@ class ContinuousCLI(unittest.TestCase):
         self.assertFalse((run / "footest/.specula-output/confirmed-bugs.md").exists())
 
     def test_unsupported_options_fall_back_or_fail_before_storage(self) -> None:
-        explicit = self.run_cli("--orchestration=continuous", "--skip-analysis", "--dry-run", "footest")
+        explicit = self.run_cli("--orchestration=continuous", "--skip-specgen", "--dry-run", "footest")
         self.assertEqual(explicit.returncode, 1)
-        self.assertIn("--orchestration=continuous does not support --skip-analysis", explicit.stderr)
+        self.assertIn("--orchestration=continuous does not support --skip-specgen", explicit.stderr)
         self.assertFalse((self.root / "runs").exists())
-        fallback = self.run_cli("--skip-analysis", "--dry-run", "footest")
+        fallback = self.run_cli("--skip-specgen", "--dry-run", "footest")
         self.assertEqual(fallback.returncode, 0, fallback.stderr)
         self.assertIn(
-            "Orchestration: phased (continuous orchestration does not support --skip-analysis", fallback.stdout
+            "Orchestration: phased (continuous orchestration does not support --skip-specgen", fallback.stdout
         )
-        self.assertIn("launch_spec_generation.sh", fallback.stdout)
+        self.assertIn("launch_harness_generation.sh", fallback.stdout)
+        self.assertNotIn("launch_spec_generation.sh", fallback.stdout)
+        # --skip-analysis keeps continuous orchestration; a dry run, like the phased one, checks no outputs.
+        dry = self.run_cli("--skip-analysis", "--dry-run", "footest")
+        self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
+        self.assertIn("Orchestration: continuous (one main session per target for spec generation", dry.stdout)
+        self.assertIn("MAIN SESSION: spec → harness → validation from existing code analysis", dry.stdout)
+        self.assertIn("launch_continuous.sh", dry.stdout)
+
+    # ── starting from existing analysis ──
+    def seed_analysis(self, run_id: str, target: str = "footest") -> Path:
+        work = self.root / "runs" / run_id / target / ".specula-output"
+        (work / "analysis").mkdir(parents=True)
+        (work / "modeling-brief.md").write_text("# Shared brief\n\n## Scenario 1: Candidate one\n")
+        (work / "analysis-report.md").write_text("Shared Phase 1 report.\n")
+        (work / "analysis/batch_1.txt").write_text("Shared archaeology batch.\n")
+        return work
+
+    def test_skip_analysis_starts_the_main_session_from_existing_analysis(self) -> None:
+        work = self.seed_analysis("shared")
+        self.flag("fail-main-1")
+        failed = self.run_cli("--agent=fake", "--run-id=shared", "--fresh-context", "--skip-analysis", "footest")
+        self.assertEqual(failed.returncode, 9, failed.stdout + failed.stderr)
+        run = self.run_dir()
+        self.assertEqual(run.name, "shared")
+        self.assertIn("Orchestration: continuous (one main session per target for spec generation", failed.stdout)
+        self.assertIn("MAIN SESSION: spec → harness → validation from existing code analysis", failed.stdout)
+        state = self.state(run)
+        self.assertEqual((state["analysis"], state["context"]), ("existing", "original"))
+        prompt = self.prompt(1)
+        self.assertIn("1. **Code analysis**: already complete.", prompt)
+        self.assertIn(f"Read `{work}/modeling-brief.md` and `{work}/analysis-report.md` in full", prompt)
+        self.assertIn("follow it exactly", prompt)
+        self.assertNotIn("**code-analysis**", prompt)
+        self.assertNotIn("## Continue From Existing Work", prompt)
+        # A plain attach resumes the same session; the durable state keeps the analysis mode.
+        (self.adapters / "fail-main-1").unlink()
+        resumed = self.run_cli(f"--run-id={run.name}")
+        self.assert_complete(resumed, run)
+        self.assertEqual([e["session"] for e in self.main_events()], ["main-footest-1", "main-footest-1"])
+        self.assertEqual(self.state(run)["analysis"], "existing")
+        self.assertEqual([e["kind"] for e in self.events() if e["name"] == "analysis"], ["reused", "stage"])
+        self.assertEqual((work / "modeling-brief.md").read_text(), "# Shared brief\n\n## Scenario 1: Candidate one\n")
+        self.assertEqual((work / "analysis-report.md").read_text(), "Shared Phase 1 report.\n")
+        phases = [e["phase"] for e in self.events()]
+        self.assertNotIn("code_analysis", phases)
+        self.assertNotIn("spec_generation", phases)
+
+    def test_skip_analysis_without_a_brief_fails_before_any_agent(self) -> None:
+        missing = self.run_cli("--agent=fake", "--skip-analysis", "footest")
+        self.assertEqual(missing.returncode, 1, missing.stdout + missing.stderr)
+        self.assertIn("--skip-analysis starts the main session from existing code-analysis outputs", missing.stdout)
+        self.assertIn("modeling-brief.md is missing or empty for footest", missing.stdout)
+        self.assertEqual(self.events(), [])
+        run = self.run_dir()
+        self.assertFalse((run / "footest/.specula-output/.context-control/main-state.json").exists())
+        empty = self.seed_analysis("empty")
+        (empty / "modeling-brief.md").write_text("\n")
+        rejected = self.run_cli("--agent=fake", "--run-id=empty", "--fresh-context", "--skip-analysis", "footest")
+        self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+        self.assertIn("modeling-brief.md is missing or empty for footest", rejected.stdout)
+        self.assertEqual(self.events(), [])
 
     def test_agent_config_routes_main_confirmation_and_classification(self) -> None:
         config = self.work / "agents.json"

@@ -150,8 +150,9 @@ Options:
   --enable-reviews        Enable review steps (disabled by default)
   --orchestration=MODE   continuous (default): one main agent session per target performs analysis
                          through validation and repairs, while confirmation and classification keep
-                         separate clean contexts. phased: one agent session per phase. Options that
-                         continuous does not support yet select phased automatically
+                         separate clean contexts; with --skip-analysis it starts at spec generation
+                         from the existing Phase 1 outputs. phased: one agent session per phase.
+                         Options that continuous does not support yet select phased automatically
   --max-parallel=N       Hard limit for concurrent agents. When omitted, ordinary phases run 1 target
                          agent at a time and per-finding bug confirmation runs up to 4 at a time
   --max-turns=N          Max agent turns (default: 0 = unlimited)
@@ -743,8 +744,13 @@ class Pipeline:
         return None
 
     def _continuous_conflicts(self) -> list[str]:
-        """Options the continuous main session does not support yet."""
-        skips = ("--skip-analysis", "--skip-specgen", "--skip-harness", "--skip-validate")
+        """Options the continuous main session does not support yet.
+
+        ``--skip-analysis`` is supported: the main session then starts at spec
+        generation from the Phase 1 outputs already in each target's output
+        directory. The other stages run in one conversation and cannot be skipped.
+        """
+        skips = ("--skip-specgen", "--skip-harness", "--skip-validate")
         conflicts = [flag for flag in skips if flag in self.argv]
         for enabled, flag in (
             (self.byom_path is not None, "--byom"),

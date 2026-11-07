@@ -1,7 +1,9 @@
 """Continuous orchestration: one native main session per target for Phases 1-3.
 
 The main session (phase key ``main``) performs analysis, spec generation,
-harness generation, and validation in one native conversation. It may request
+harness generation, and validation in one native conversation. With
+``--skip-analysis`` it starts at spec generation instead, from the Phase 1
+outputs already in the target's output directory. It may request
 native compaction, and every end of its turn is a handoff to this controller
 (``context_runner`` binds it to the exact native session, rc 73). The
 controller validates the handoff, runs the unchanged one-shot confirmation in
@@ -20,6 +22,9 @@ Durable lifecycle, per target (``<work>/.context-control/``):
     ``rejection`` the reason the last handoff was refused, and
     ``auto_resumes`` how many times the controller already resumed the
     current handoff with such a reason (reset when a handoff is accepted).
+    ``analysis`` is ``session`` (the main session performs code analysis) or
+    ``existing`` (the run started from existing Phase 1 outputs); it is fixed
+    when the state is created and survives resume and ``--fresh-context``.
 
 ``abandoning.json`` (controller-owned, transient)
     A ``--fresh-context`` abandonment in progress. Until it is removed, every
@@ -86,6 +91,13 @@ REQUEST_STATUSES = ("pending", "confirming", "completed", "rejected")
 CONFIRMATION_ENV = "SPECULA_CI_CONFIRMATION"  # lets confirmation run while main stays suspended
 HISTORY_LIMIT = 100
 AUTO_RESUMES = 2  # automatic resumes of one rejected handoff within a run
+ANALYSIS_MODES = ("session", "existing")
+ANALYSIS_OUTPUTS = ("modeling-brief.md", "analysis-report.md")  # Phase 1 outputs --skip-analysis reuses
+SESSION_STAGES = {
+    "session": "code analysis, TLA+ spec generation, trace harness generation, and validation with bug hunting",
+    "existing": "TLA+ spec generation, trace harness generation, and validation with bug hunting, "
+    "starting from a completed code analysis",
+}
 
 
 class ContinuousError(RuntimeError):
@@ -134,6 +146,15 @@ def _continuation_prompt(
     return with_rules(text)
 
 
+def has_existing_analysis(work: Path) -> bool:
+    """Whether ``work`` holds the non-empty modeling brief a main session can start from."""
+    brief = work / "modeling-brief.md"
+    try:
+        return brief.is_file() and bool(brief.read_text(errors="replace").strip())
+    except OSError:
+        return False
+
+
 def _now() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
@@ -153,6 +174,7 @@ class MainState:
     context: str = "original"  # "fresh" after --fresh-context abandoned a session
     rejection: str | None = None
     auto_resumes: int = 0
+    analysis: str = "session"  # "existing": the run started from existing Phase 1 outputs
     history: list[dict[str, Any]] = field(default_factory=list)
 
     def to_object(self, target: str) -> dict[str, Any]:
@@ -165,6 +187,7 @@ class MainState:
             "context": self.context,
             "rejection": self.rejection,
             "auto_resumes": self.auto_resumes,
+            "analysis": self.analysis,
             "history": self.history[-HISTORY_LIMIT:],
         }
 
@@ -178,6 +201,7 @@ class MainState:
         context = value.get("context")
         rejection = value.get("rejection")
         auto_resumes = value.get("auto_resumes", 0)
+        analysis = value.get("analysis", "session")
         history = value.get("history")
         if (
             stage not in STAGES
@@ -190,6 +214,7 @@ class MainState:
             or not isinstance(auto_resumes, int)
             or isinstance(auto_resumes, bool)
             or auto_resumes < 0
+            or analysis not in ANALYSIS_MODES
             or not isinstance(history, list)
         ):
             raise ContinuousError(f"invalid continuous state for {target}")
@@ -200,6 +225,7 @@ class MainState:
             context=str(context),
             rejection=rejection,
             auto_resumes=auto_resumes,
+            analysis=str(analysis),
             history=[entry for entry in history if isinstance(entry, dict)],
         )
 
@@ -351,7 +377,8 @@ Fix the reported problem, save the current deliverables, then request confirmati
 """
 
 
-def _existing_work(work: Path) -> list[str]:
+def _existing_work(work: Path, *, beyond_analysis: bool = False) -> list[str]:
+    """Deliverables already in ``work``; ``beyond_analysis`` leaves out the Phase 1 outputs."""
     found: list[str] = []
     for relative in (
         "notes/INDEX.md",
@@ -367,6 +394,8 @@ def _existing_work(work: Path) -> list[str]:
         "spec/findings.json",
         "confirmed-bugs.md",
     ):
+        if beyond_analysis and relative in ANALYSIS_OUTPUTS:
+            continue
         if (work / relative).is_file():
             found.append(f"`{work / relative}`")
     traces = work / "traces"
@@ -440,7 +469,23 @@ Options:
             else:
                 print(f"  MISSING  {name} — use --artifact=<path> or place repo at {name}/artifact/<repo>/")
                 ok = False
+            work = ws.work_dir(name)
+            try:
+                analysis = self._analysis_mode(work, name)
+            except ContinuousError as exc:
+                print(f"  INVALID  {name} — {exc}")
+                ok = False
+                continue
+            if analysis == "existing" and not has_existing_analysis(work):
+                print(f"  MISSING  {name} — modeling-brief.md (this run starts from existing code-analysis outputs)")
+                self.check_fail_msg = "ERROR: Missing prerequisites. Run code analysis first."
+                ok = False
         return ok
+
+    @staticmethod
+    def _analysis_mode(work: Path, name: str) -> str:
+        state = load_state(work, name)
+        return state.analysis if state is not None else "session"
 
     def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
         wd = ws.work_dir(name)
@@ -451,6 +496,11 @@ Options:
         parts += [""] * (4 - len(parts))
         name, github, language, reference = parts
         work = ws.work_dir(name)
+        analysis = self._analysis_mode(work, name)
+        if analysis == "existing":
+            analysis_stage = render("continuous-analysis-existing", work_dir=str(work))
+        else:
+            analysis_stage = render("continuous-analysis", analysis_skill=prompt_skill_ids("code-analysis"))
         contract = render(
             "continuous-outputs-strict" if output_contract.strict() else "continuous-outputs",
             work_dir=str(work),
@@ -458,6 +508,8 @@ Options:
         )
         prompt = render(
             "continuous",
+            session_stages=SESSION_STAGES[analysis],
+            analysis_stage=analysis_stage.rstrip("\n"),
             output_contract=contract.rstrip("\n"),
             name=name,
             github=github,
@@ -466,7 +518,6 @@ Options:
             repo=ws.find_repo_dir(name),
             work_dir=str(work),
             spec_dir=str(work / "spec"),
-            analysis_skill=prompt_skill_ids("code-analysis"),
             specgen_skill=prompt_skill_ids("spec-generation"),
             harness_skill=prompt_skill_ids("harness-generation"),
             validation_skill=prompt_skill_ids("validation-workflow"),
@@ -584,8 +635,13 @@ class ContinuousRun:
     def main(self) -> int:
         p = self.p
         p.print_run_header()
-        print("Orchestration: continuous (one main session per target for analysis through validation;")
-        print("               confirmation and classification run in separate clean contexts)")
+        if p.skip_analysis:
+            print("Orchestration: continuous (one main session per target for spec generation through validation,")
+            print("               from existing code-analysis outputs; confirmation and classification run in")
+            print("               separate clean contexts)")
+        else:
+            print("Orchestration: continuous (one main session per target for analysis through validation;")
+            print("               confirmation and classification run in separate clean contexts)")
         if output_contract.strict():
             print(f"Outputs:       every phase output is required ({output_contract.STRICT_ENV}=on)")
         print()
@@ -651,7 +707,11 @@ class ContinuousRun:
     def _dry_run(self) -> None:
         p = self.p
         with p.resource_phase("main", self.names):
-            p._phase(self._main_banner(0), LAUNCHER, p._phase_args(p.targets, phase="main"))
+            p._phase(
+                self._main_banner(0, existing_analysis=p.skip_analysis),
+                LAUNCHER,
+                p._phase_args(p.targets, phase="main"),
+            )
         if p.skip_confirmation:
             _log("Skipping Phase 4a (--skip-confirmation)")
             return
@@ -666,9 +726,14 @@ class ContinuousRun:
         )
 
     @staticmethod
-    def _main_banner(repair_round: int) -> str:
+    def _main_banner(repair_round: int, *, existing_analysis: bool = False) -> str:
         if repair_round:
             return f"REPAIR ROUND {repair_round}: MAIN SESSION (resumed with confirmation results)"
+        if existing_analysis:
+            return (
+                "MAIN SESSION: spec → harness → validation from existing code analysis "
+                "(one continuous session per target)"
+            )
         return "MAIN SESSION: analysis → spec → harness → validation (one continuous session per target)"
 
     def _repair_loop_banner(self) -> None:
@@ -703,18 +768,63 @@ class ContinuousRun:
         if p.fresh_context or any((self.work(name) / ABANDONING_FILE).is_file() for name in self.names):
             self._abandon_previous_sessions()
             return
-        for name in self.names:
+        states = {name: load_state(self.work(name), name) for name in self.names}
+        new = [name for name, state in states.items() if state is None]
+        analysis = "existing" if p.skip_analysis else "session"
+        if p.skip_analysis:
+            self._require_existing_analysis(new)
+            for name, state in states.items():
+                if (
+                    state is not None
+                    and state.analysis == "session"
+                    and state.stage == "main"
+                    and not state.repair_round
+                ):
+                    raise ContinuousError(
+                        f"{name}: --skip-analysis does not apply to this run: its main session performs code "
+                        "analysis and has not handed off yet. Resume without --skip-analysis, or pass "
+                        "--fresh-context to start a new main session from the existing analysis outputs"
+                    )
+        for name in new:
             work = self.work(name)
-            if load_state(work, name) is None:
-                if load_request(work) is not None:
-                    raise ContinuousError(f"{name}: confirmation request exists without controller state")
-                self._save(name, MainState(), "start")
+            if load_request(work) is not None:
+                raise ContinuousError(f"{name}: confirmation request exists without controller state")
+            self._save(name, MainState(analysis=analysis), "start")
         p.reconcile_deferred_state()
         dangling = {name for name in self.names if self._dangling_commit(name)}
         if dangling:
             # Finish it before a main session rewrites the findings it is bound to.
             self._finish_committed_repairs(dangling, "a committed repair result no confirmation request covers")
         p.regenerate_ledger()
+
+    def _require_existing_analysis(self, names: list[str]) -> None:
+        """Fail before any state is written when a target lacks the Phase 1 outputs to start from."""
+        missing = [name for name in names if not has_existing_analysis(self.work(name))]
+        if missing:
+            listed = ", ".join(f"{name} ({self.work(name) / 'modeling-brief.md'})" for name in missing)
+            raise ContinuousError(
+                "--skip-analysis starts the main session from existing code-analysis outputs, but "
+                f"modeling-brief.md is missing or empty for {listed}. Run code analysis first, or place its "
+                "outputs in the target's output directory"
+            )
+
+    def _prior_main_state(self, name: str) -> tuple[bool, str]:
+        """Whether a main state exists to abandon (current, or archived by an interrupted
+        abandonment), and the analysis mode it recorded."""
+        work = self.work(name)
+        candidates: list[Path] = []
+        marker = work / ABANDONING_FILE
+        with contextlib.suppress(OSError, ValueError, KeyError, TypeError):
+            stamp = str(json.loads(marker.read_text())["stamp"])
+            candidates.append(work / ABANDONED_DIR / stamp / Path(STATE_FILE).name)  # already archived
+        candidates.append(state_path(work))
+        for path in candidates:
+            if path.is_file():
+                try:
+                    return True, MainState.from_object(json.loads(path.read_text()), name).analysis
+                except (OSError, ValueError, ContinuousError):
+                    return True, "session"
+        return False, "session"
 
     def _dangling_commit(self, name: str) -> bool:
         """A repair commit proof that the current handoff will not dispatch."""
@@ -757,6 +867,12 @@ class ContinuousRun:
         session's request looking current.
         """
         p = self.p
+        # A run that started from existing analysis keeps doing so; --skip-analysis also selects it now.
+        prior = {name: self._prior_main_state(name) for name in self.names}
+        analysis = {
+            name: "existing" if p.skip_analysis or prior[name][1] == "existing" else "session" for name in self.names
+        }
+        self._require_existing_analysis([name for name in self.names if analysis[name] == "existing"])
         stamp = f"{time.time_ns()}"
         for name in self.names:
             work = self.work(name)
@@ -783,7 +899,14 @@ class ContinuousRun:
                 recovered, "the committed repair result of the abandoned session before the fresh main session"
             )
         for name in self.names:
-            self._save(name, MainState(context="fresh"), "fresh-context")
+            # Nothing was abandoned when only seeded Phase 1 outputs exist: that session starts original.
+            seeded = (
+                analysis[name] == "existing"
+                and not prior[name][0]
+                and not _existing_work(self.work(name), beyond_analysis=True)
+            )
+            state = MainState(context="original" if seeded else "fresh", analysis=analysis[name])
+            self._save(name, state, "fresh-context")
         if not p.skip_confirmation and not p.skip_repair_loop:
             needing = [name for name in self.names if self._open_requests(name)]
             if needing:
@@ -854,7 +977,9 @@ class ContinuousRun:
     def _run_main(self, names: list[str], states: dict[str, MainState]) -> None:
         p = self.p
         repair_round = max(states[name].repair_round for name in names)
-        banner = self._main_banner(repair_round)
+        banner = self._main_banner(
+            repair_round, existing_analysis=all(states[name].analysis == "existing" for name in names)
+        )
         if all(states[name].rejection for name in names):
             banner = "MAIN SESSION (resumed after an unaccepted confirmation request)"
         p.wait_for_phase_quota("main")

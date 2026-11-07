@@ -35,7 +35,9 @@ Fault-injection switches (tests/e2e/test_continuous_faults.py):
   quota-after-ID  the ID worker turns the fixture quota endpoint over its limit
 
 The first pass is staged: a resumed session skips the stages it completed
-(its conversation remembers them); a new session starts over.
+(its conversation remembers them); a new session starts over. A main prompt
+that reports code analysis as already complete (--skip-analysis) keeps the
+existing Phase 1 outputs instead of writing its own.
 """
 
 import json
@@ -60,6 +62,7 @@ prompt = Path(options["prompt-file"]).read_text()
 phase = os.environ["SPECULA_PHASE"]
 target = work.parent.name
 adapter = os.environ.get("FIXTURE_ADAPTER", "fake")
+ANALYSIS_COMPLETE = "1. **Code analysis**: already complete."
 
 
 def event(kind: str, name: str, **extra: object) -> None:
@@ -199,9 +202,13 @@ def compact() -> None:
 def first_pass(session: str, call: int) -> None:
     done = remembered(session)
     if "analysis" not in done:
-        (work / "modeling-brief.md").write_text("# Fixture brief\n\n## Scenario 1: Candidate one\n")
-        if not (here / "minimal").exists():
-            (work / "analysis-report.md").write_text("Fixture analysis; no real verification.\n")
+        opening = here / f"opening-{session}.md"
+        if ANALYSIS_COMPLETE in (opening.read_text() if opening.exists() else prompt):
+            event("reused", "analysis", target=target, session=session)
+        else:
+            (work / "modeling-brief.md").write_text("# Fixture brief\n\n## Scenario 1: Candidate one\n")
+            if not (here / "minimal").exists():
+                (work / "analysis-report.md").write_text("Fixture analysis; no real verification.\n")
         if (here / "background").exists() and not (here / "job.json").exists():
             start_background_job()
         remember(session, "analysis")
@@ -300,6 +307,7 @@ if phase == "main":
         number = int(sessions.read_text()) + 1 if sessions.exists() else 1
         sessions.write_text(str(number))
         session = f"main-{target}-{number}"
+        (here / f"opening-{session}.md").write_text(prompt)  # a resumed conversation still knows its task
     resume.write_text(json.dumps({"adapter": adapter, "session_id": session}))
     usage(session, 0.01)
     event("start", "main", target=target, session=session, call=calls, model=options.get("model"), resumed=resumed)
