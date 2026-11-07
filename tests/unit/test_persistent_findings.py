@@ -745,3 +745,36 @@ def test_listed_reuse_still_rejects_invalid_receipt(baseline: tuple[Path, Path])
     write_json(work / persistent_findings.RECEIPTS / "MC-1.json", receipt)
     with pytest.raises(ERRORS, match="reuse receipt does not match"):
         ci_verdict.finalize(work, source, "v2", previous=previous)
+
+
+def test_set_aside_proposal_never_replaces_another_runs_record(
+    baseline: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    source, old = baseline
+    work = next_work(old)
+    write(work / "evidence.md", "Fresh confirmation, no real verification performed.\n")
+    findings = [{"id": "MC-1", "status": "REPRODUCED", "source": "model-checking", "evidence": "evidence.md"}]
+    with pytest.raises(ERRORS, match="fresh reanalysis requires updated issue metadata"):
+        persistent_findings.reconcile(work, source, "v2", findings)
+    historical = persistent_findings.load(work, "MC-1")
+    bundle = work / persistent_findings.DIRECTORY / "evidence/MC-1"
+    bundled = sorted(path.relative_to(bundle) for path in bundle.rglob("*"))
+    write(work / f"confirmation/MC-1/{persistent_findings.SET_ASIDE_PROPOSAL}", json.dumps({"id": "MC-1"}))
+    persistent_findings.reconcile(work, source, "v2", findings)
+    assert persistent_findings.load(work, "MC-1") == historical
+    assert historical["origin_run"] == "v1" and historical["reusable"]
+    assert sorted(path.relative_to(bundle) for path in bundle.rglob("*")) == bundled
+    assert "kept the existing record from run v1" in capsys.readouterr().err
+    assert "kept the existing record from run v1" in (work / "confirmation/MC-1/error.txt").read_text()
+
+
+def test_set_aside_reconfirmation_replaces_the_stale_current_record(baseline: tuple[Path, Path]) -> None:
+    source, work = baseline
+    write(work / "spec/Invariant.tla", "repaired model property\n")
+    findings = [{"id": "MC-1", "status": "MASKED", "evidence": "evidence.md"}]
+    with pytest.raises(ERRORS, match="recorded conclusion changed"):
+        persistent_findings.reconcile(work, source, "v1", findings, confirmed_ids=["MC-1"])
+    write(work / f"confirmation/MC-1/{persistent_findings.SET_ASIDE_PROPOSAL}", json.dumps({"id": "MC-1"}))
+    persistent_findings.reconcile(work, source, "v1", findings, confirmed_ids=["MC-1"])
+    record = persistent_findings.load(work, "MC-1")
+    assert (record["status"], record["reusable"]) == ("MASKED", False)
