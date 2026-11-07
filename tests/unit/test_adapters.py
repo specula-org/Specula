@@ -848,6 +848,35 @@ class ClaudeCodeAdapter(AdapterCase):
         )
         self.assertEqual(r["returncode"], 76, r["stderr"])
 
+    def test_refusal_keeps_rate_limit_and_transient_precedence(self) -> None:
+        # A refusal stop is a policy block only without an API status or a
+        # transient diagnostic; otherwise that failure keeps its own recovery.
+        cases = (
+            ("status-529", 529, "API Error: 529 Overloaded", 74),
+            ("status-503", "503", "API Error: Service unavailable.", 74),
+            ("status-429", 429, "API Error: 429 rate_limit_error", 75),
+            ("transport-null-status", None, "API Error: Connection reset by server.", 74),
+            ("null-status", None, "API Error: the request could not be completed.", 76),
+        )
+        for name, status, text, expected in cases:
+            record = {**CLAUDE_CYBER_REFUSAL, "api_error_status": status, "result": text}
+            for streaming in (False, True):
+                with self.subTest(name, streaming=streaming):
+                    base = self.sandbox()
+                    env_extra = {"ADAPTER_EXIT_CODE": "1"}
+                    if streaming:
+                        env_extra["SPECULA_ACTIVITY_LOG"] = str(base / "out.activity.jsonl")
+                    r = self.run_adapter(
+                        self.CMD,
+                        self.base_flags(base),
+                        fake_name="claude",
+                        fixture_text=json.dumps(record),
+                        record_extra=True,
+                        env_extra=env_extra,
+                        run_dir=base,
+                    )
+                    self.assertEqual(r["returncode"], expected, r["stderr"])
+
     def test_quoted_cyber_safeguard_message_is_not_a_policy_block(self) -> None:
         quoted = CLAUDE_CYBER_REFUSAL["result"]
         report = (

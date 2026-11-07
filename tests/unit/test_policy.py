@@ -17,7 +17,7 @@ from specula.adapters.utils.policy import (  # noqa: E402
     failed_log_has_policy_block,
     final_diagnostic_has_policy_block,
     looks_policy_blocked,
-    refusal_stop,
+    refusal_policy_block,
 )
 
 # Claude Code 2.1.316's final stream-json result for a real-time cyber
@@ -115,9 +115,9 @@ class TestPolicyErrorPayload(unittest.TestCase):
                 self.assertFalse(looks_policy_blocked(message))
                 self.assertFalse(looks_policy_blocked({"message": message}))
 
-    def test_refusal_stop_reads_only_the_stop_reason(self) -> None:
-        self.assertTrue(refusal_stop(claude_cyber_refusal()))
-        self.assertTrue(refusal_stop({"stop_reason": "REFUSAL"}))
+    def test_refusal_policy_block_requires_a_refusal_stop(self) -> None:
+        self.assertTrue(refusal_policy_block(claude_cyber_refusal()))
+        self.assertTrue(refusal_policy_block({"stop_reason": "REFUSAL"}))
         for record in (
             {"stop_reason": "end_turn"},
             {"stop_reason": None},
@@ -126,7 +126,19 @@ class TestPolicyErrorPayload(unittest.TestCase):
             {},
         ):
             with self.subTest(record=record):
-                self.assertFalse(refusal_stop(record))
+                self.assertFalse(refusal_policy_block(record))
+
+    def test_refusal_with_api_status_or_transient_failure_is_not_a_policy_block(self) -> None:
+        refusal = claude_cyber_refusal()
+        for status in (None, "", 0, "0"):
+            with self.subTest(status=status):
+                self.assertTrue(refusal_policy_block({**refusal, "api_error_status": status}))
+        for status in (429, "429", 500, 503, 529, "529", 400):
+            with self.subTest(status=status):
+                self.assertFalse(refusal_policy_block({**refusal, "api_error_status": status}))
+        for result in ("API Error: Connection reset by server.", "Selected model is at capacity."):
+            with self.subTest(result=result):
+                self.assertFalse(refusal_policy_block({**refusal, "result": result}))
 
     def test_deeply_nested_provider_error_is_recognized(self) -> None:
         payload = {

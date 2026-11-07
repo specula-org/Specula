@@ -37,7 +37,7 @@ if __package__:
         POLICY_BLOCKED_RC,
         final_diagnostic_has_policy_block,
         looks_policy_blocked,
-        refusal_stop,
+        refusal_policy_block,
     )
     from .utils.resume import ResumeStateError, capture_session_id, read_session_id
     from .utils.run_lock import inherited_run_lock_fds
@@ -48,7 +48,7 @@ else:
         POLICY_BLOCKED_RC,
         final_diagnostic_has_policy_block,
         looks_policy_blocked,
-        refusal_stop,
+        refusal_policy_block,
     )
     from utils.resume import (  # type: ignore[import-not-found, no-redef]
         ResumeStateError,
@@ -210,7 +210,7 @@ def _result_policy_blocked(record: object) -> bool:
         and api_status in (None, "", 0, "0")
     ):
         return False
-    return refusal_stop(record) or looks_policy_blocked(record) or looks_policy_blocked(record.get("result"))
+    return refusal_policy_block(record) or looks_policy_blocked(record) or looks_policy_blocked(record.get("result"))
 
 
 def _result_transient_failure(record: object) -> bool:

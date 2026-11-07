@@ -23,7 +23,7 @@ from .policy import (
     POLICY_BLOCKED_RC,
     final_diagnostic_has_policy_block,
     looks_policy_blocked,
-    refusal_stop,
+    refusal_policy_block,
 )
 from .resume import RESUME_STATE_FAILURE_RC, ResumeStateError, capture_session_id
 from .text import SUMMARY_LIMIT, readable, readable_fragment, summary, tool_summary
@@ -345,9 +345,10 @@ def _structured_policy_block_error(adapter_name: str, record: object) -> str | N
         # result string, which is deliberately not a generic recursive field in
         # looks_policy_blocked: successful reports may quote an old error.
         result = record.get("result")
-        if refusal_stop(record):
-            # Real-time safeguard blocks: the failed envelope's stop_reason is
-            # authoritative even when the wording is not recognized.
+        if refusal_policy_block(record):
+            # Real-time safeguard blocks: a failed envelope's refusal stop
+            # (without an API status) is authoritative even when the wording is
+            # not recognized.
             return _policy_diagnostic(result) or "provider safeguards refused the request"
         if looks_policy_blocked(record):
             payload = record

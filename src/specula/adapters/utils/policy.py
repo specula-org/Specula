@@ -7,6 +7,8 @@ import re
 from collections.abc import Mapping
 from pathlib import Path
 
+from .transient import looks_transient
+
 # Dedicated adapter outcome consumed by the common phase runner. Keep it
 # distinct from quota's EX_TEMPFAIL (75): a policy block needs a changed
 # request immediately, not backoff followed by a replay.
@@ -72,16 +74,24 @@ def looks_policy_blocked(value: object, depth: int = 0) -> bool:
     )
 
 
-def refusal_stop(record: Mapping[str, object]) -> bool:
-    """Whether a failed Claude result ended on a provider safety refusal.
+def refusal_policy_block(record: Mapping[str, object]) -> bool:
+    """Whether a failed Claude result is a provider safety refusal.
 
     Claude Code reports real-time safeguard blocks as a terminal ``result``
-    whose ``stop_reason`` is ``"refusal"``; the accompanying text varies by
-    model and CLI release. Callers must first establish that the result
-    envelope itself failed: a successful turn is never reclassified.
+    whose ``stop_reason`` is ``"refusal"`` and which carries no API status; the
+    accompanying text varies by model and CLI release. A refusal stop next to
+    an API status (429, 5xx) or a transient transport diagnostic belongs to
+    that failure instead, so rate-limit waits and transient backoff keep
+    precedence and do not spend the policy budget. Callers must first establish
+    that the result envelope itself failed: a successful turn is never
+    reclassified.
     """
     stop_reason = record.get("stop_reason")
-    return isinstance(stop_reason, str) and stop_reason.casefold() == "refusal"
+    if not isinstance(stop_reason, str) or stop_reason.casefold() != "refusal":
+        return False
+    if record.get("api_error_status") not in (None, "", 0, "0"):
+        return False
+    return not (looks_transient(record) or looks_transient(record.get("result")))
 
 
 def _final_diagnostic_line(text: str) -> str:
