@@ -1249,7 +1249,11 @@ class TestDriver(ConfirmCase):
         resumed_argv = (root / "argv-2.txt").read_text().splitlines()
         self.assertNotIn("--resume", first_argv)
         self.assertEqual(resumed_argv[resumed_argv.index("--resume") + 1], session_id)
-        self.assertEqual((root / "stdin-2.md").read_text().strip(), PhaseLib._POLICY_SESSION_RESUME_PROMPT)
+        self.assertEqual(
+            (root / "stdin-2.md").read_text().strip(), with_rules(PhaseLib._POLICY_SESSION_RESUME_PROMPT).strip()
+        )
+        for argv in (first_argv, resumed_argv):
+            self.assertEqual("--append-system-prompt-file" in argv, bool(rules.rules_block()))
         report = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
         self.assertNotIn("INCOMPLETE", report)
         self.assertIn("FALSE POSITIVE", report)
