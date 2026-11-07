@@ -47,11 +47,11 @@ See `harness-generation` skill's `guide.md` Step 0 for classification details.
    Also classify the target as Category A or B and identify the semantic boundaries that matter (crash windows vs linearization / reclamation windows).
 2. **Bug Archaeology** — Mine git history and issue tracker for historical bugs. Group into **Scenarios** by shared mechanism.
 3. **Deep Analysis** — Systematic code reading guided by Scenarios. Look for: code path inconsistencies, non-atomic persistence with crash windows, missing guards, deviations from the reference algorithm.
-4. **Modeling Brief** — Synthesize findings into a concise handoff document. For each Scenario: mechanism, evidence, modeling approach, invariants.
+4. **Modeling Brief** — Describe the requested baseline behavior, contracts, interfaces, abstractions, and findings in enough detail for spec generation. Link companion documents for large scopes. For each Scenario: mechanism, evidence, modeling approach, invariants.
 
 ### Key Principle
 
-Scenarios are the organizing concept. Group by mechanism ("non-atomic persistence with crash window", "missing migrationId filter"), not by file or component. Each Scenario directly maps to a spec extension.
+Group findings into Scenarios by mechanism ("non-atomic persistence with crash window", "missing migrationId filter"). Model the requested behavior and component interactions even where no bug hypothesis exists. Document length and Scenario count follow the scope.
 
 ### Output
 
@@ -68,14 +68,14 @@ Scenarios are the organizing concept. Group by mechanism ("non-atomic persistenc
 
 ### What Happens
 
-1. **Base Spec** (`base.tla`) — Core TLA+ specification. Scope driven by Scenarios, logic faithful to implementation code. Every logic block annotated with `file:line`.
+1. **Base Spec** (`base.tla` and supporting modules as needed) — Core TLA+ specification. Scope follows the requested behavior, contracts, and Scenarios; logic is faithful to implementation code. Every logic block is annotated with `file:line`.
 2. **MC Spec** (`MC.tla` + `MC.cfg` + `MC_hunt_*.cfg`) — Counter-bounded fault injection for model checking. Hunting configs target specific scenarios.
 3. **Trace Spec** (`Trace.tla` + `Trace.cfg`) — Drives TLC through recorded traces to verify spec-implementation consistency.
 4. **Instrumentation Spec** (`instrumentation-spec.md`) — Maps spec actions to code locations for harness generation.
 
 ### Key Principles
 
-- **Scenario-driven scope**: Every extension traces to a Scenario
+- **Scope-driven modeling**: Every extension traces to requested behavior, a system contract, or a Scenario
 - **Code-faithful logic**: Model the implementation, not the paper
 - **Source line annotations**: Every condition cites `file:line`
 - **Split actions where code paths diverge**
@@ -116,8 +116,8 @@ Run `MC.cfg` (0 faults) to verify structural invariants hold. Fix fidelity issue
 ### 3C: Bug Hunting
 
 Run `MC_hunt_*.cfg` with fault injection. BFS + Simulation strategy:
-1. BFS first (30 min) — exhaustive within reachable diameter
-2. If diameter ≤ 25 → follow up with simulation (30 min) for deeper states
+1. BFS first with a selected exploration budget; record completed depth and remaining work
+2. If the required interactions remain out of reach, follow up with simulation at an appropriate depth and budget
 3. Violation = **Case C** (real bug) — analyze counterexample, cross-reference with code
 
 ### Output

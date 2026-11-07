@@ -57,17 +57,17 @@ Apply fixes directly without waiting for user confirmation. If the prompt explic
 
 ### Runtime Parameters
 
-These parameters apply to **all** model checking runs — convergence and bug hunting alike. The run duration is the primary constraint; do not constrain state space size.
+Choose campaign parameters for the required behavior and available resources, respecting explicit user budgets. Record them with each result. The examples below are starting points, not limits on spec size, exploration depth, or total investigation time.
 
 | Parameter | Rule | Notes |
 |-----------|------|-------|
-| **Timeout** | **30 minutes** per run (`-t 30`) | The single hard constraint. If TLC hasn't found a violation in 30 min, the run ends. |
+| **Timeout** | Choose a per-run exploration budget (e.g., `-t 30`) | Extend or split campaigns when the target needs more exploration and the overall budget permits. A timeout is not an exhaustive pass. |
 | **Workers** | Prefer `-w auto` for one TLC; use an explicit count when running several TLCs concurrently | `auto` uses every CPU visible to that JVM. It does not coordinate with other TLC processes. |
 | **Heap memory** | Choose together with off-heap (e.g., `-m 50G`) | The wrapper accounts for the declared heap and off-heap as one request. |
 | **Off-heap memory** | Give `OffHeapDiskFPSet` the larger share when useful (e.g., `-M 200G`) | The sum of `-m + -M` must fit the remaining Specula-run budget. |
-| **Simulation depth** | 50–100 (`-p 50` to `-p 100`) | Shorter (50) for simple protocols (few actions, shallow state graphs). Longer (100) for complex protocols (many interleaving actions, deep state graphs). |
-| **Simulation traces** | As many as possible (`-n 999999999`) | Let the timeout be the stopping condition, not trace count. |
-| **State space size** | **Do not constrain.** | Let TLC explore as much as possible within the 30-min window. |
+| **Simulation depth** | Enough transitions to reach and exercise the target interactions | Values such as `-p 50` or `-p 100` suit some small protocols; longer lifecycles may require substantially greater depth. |
+| **Simulation traces** | Choose a finite campaign or use the exploration timeout | Record both the selected bounds and the actual number explored. |
+| **State space size** | Preserve target behavior and its enabling interleavings | Manage search cost through explicit configurations and campaign budgets; report what each reduction excludes. |
 
 **Common run script options**:
 | Flag | Purpose | Example |
@@ -125,7 +125,7 @@ timeout 5m  make build                       # not just `make build`
 timeout 30m java tlc2.TLC ...                # TLC has its own -t flag too; outer timeout is belt-and-suspenders
 ```
 
-Pick `N` as ~5–10× the expected runtime, capped at 30 min for any single command. A timeout that fires is a real signal — report it as a finding (likely a deadlock), do **not** auto-retry blindly. We have lost a full overnight run to a deadlocked `cargo test` with no outer timeout; do not let it happen again.
+Pick `N` from the expected runtime and available budget, allowing enough time for large builds or long tests. Investigate an unexpected timeout before retrying: distinguish slow progress, resource exhaustion, and a possible deadlock. A timeout alone does not establish a bug.
 
 **Block on the PID, not on a log marker.** A subprocess killed by SIGTERM (e.g. TLC hitting its own `-t` budget) exits without writing any natural-termination marker, so any wait that watches for a log token can spin forever on a static file. The `wait_for_pid.sh` helper blocks via `tail --pid` and unblocks on any exit (natural, SIGTERM, SIGKILL, OOM):
 

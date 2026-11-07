@@ -19,8 +19,8 @@ implementation fact to assume.
 
 ### Priority Questions
 
-List genuine priorities in order (typically 3–5). Never invent questions only
-to reach that range.
+List all genuine priorities in order. The examples below do not set a minimum
+or maximum number of questions.
 
 1. When [event or condition], can [observable undesired outcome]?
    Expected behavior: [The intended user-visible or system contract.]

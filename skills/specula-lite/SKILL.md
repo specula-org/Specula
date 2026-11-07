@@ -1,6 +1,6 @@
 ---
 name: specula-lite
-description: Find bugs in concurrent or distributed code using TLA+ modeling, model checking, and code-level reproduction. Use for a focused investigation with one coding agent, without trace validation or the full Specula pipeline.
+description: Find bugs in concurrent or distributed code using TLA+ modeling, model checking, and code-level reproduction. Use for an investigation without trace validation or the full Specula pipeline.
 ---
 
 # Specula Lite
@@ -29,7 +29,7 @@ Read the bundled guides as methodology, in the sequence below. `guides` is the d
 
 **These Lite rules govern the workflow when a shared guide describes the standard pipeline:**
 
-- Use one agent throughout. Perform referenced subagent/Task work yourself, sequentially; do not launch other agents or Specula's pipeline/confirmation dispatchers.
+- Coordinate the investigation in the current session. Delegate independent analysis, model work, or reproduction when useful and supported by the host; reconcile shared interfaces and evidence before integrating results. Do not launch Specula's pipeline/confirmation dispatchers.
 - Skip trace-validation instrumentation, execution-trace collection, harness generation, `Trace.tla`/`Trace.cfg`, and instrumentation specifications. Do not invoke `validation-workflow` or `tla-trace-workflow`. TLC counterexample traces remain essential evidence and are different from implementation traces.
 - Use the scripts below and the host's file/shell tools instead of MCP tools, `specula` commands, background-run wrappers, or agent-specific launchers. VAV is optional if already available; do not install the full CFA/Maven stack as a prerequisite for Lite.
 - Continue autonomously after the opening answer. Do not wait for the user between phases or stop at the first model counterexample. Investigate and reproduce candidates before completing the report.
@@ -42,7 +42,7 @@ Read the bundled guides as methodology, in the sequence below. `guides` is the d
 1. **Analyze the code.** Read `code_analysis/guide.md`, then the references relevant to the target's distributed/concurrent/BFT category. Follow the user's scope, inspect relevant history and known reports, and write `modeling-brief.md` with mechanisms, source locations, proposed properties, assumptions, and exclusions. Apply the guide's investigative methods to this scope; repository-wide issue quotas are not prerequisites.
 2. **Build the model.** Read `spec_generation/guide.md`, especially `references/base-spec-methodology.md`, `mc-spec-pattern.md`, and `brief-coverage-checklist.md`. Produce the base and model-checking modules/configurations, with source correspondence and a coverage audit of the chosen brief. Skip its trace and instrumentation outputs. Include implementation guards and atomicity boundaries, not just the reference algorithm.
 3. **Check and investigate counterexamples.** Read `tla-checking-workflow/guide.md`, especially its counterexample classifications, fidelity checklist, and TLC gotchas. Parse the model, check structural and substantive properties, then investigate the relevant fault/interleaving scenarios. Use actual tool results to distinguish property mismatch, model error, and a candidate implementation defect. A clean finite check only covers the recorded model/configuration; it does not certify the implementation.
-4. **Attempt reproduction.** Read `bug-confirmation/guide.md` and its investigation/reproduction phases. Handle candidates sequentially, including code-review candidates without a model counterexample. Establish reachable preconditions and observable harm in the real implementation. Execute tests and retain commands and outputs. When reproduction exposes a model artifact, correct the model and return to checking directly. A failure to reproduce alone does not establish that a candidate is false.
+4. **Attempt reproduction.** Read `bug-confirmation/guide.md` and its investigation/reproduction phases. Handle every candidate, including code-review candidates without a model counterexample. Keep independent attempts isolated if running them in parallel. Establish reachable preconditions and observable harm in the real implementation. Execute tests and retain commands and outputs. When reproduction exposes a model artifact, correct the model and return to checking directly. A failure to reproduce alone does not establish that a candidate is false.
 5. **Report.** Use `bug-classification/guide.md` for impact/severity reasoning, writing the final result directly to `report.md`; its pipeline-specific intermediate report formats are not required. Finish when the selected scope has been investigated, relevant checks have completed or have an explained blocker, and every candidate has an evidence-backed disposition. An external blocker may leave an explicitly incomplete result; do not manufacture successful completion.
 
 ## Tool calls
