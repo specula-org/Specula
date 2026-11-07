@@ -474,7 +474,7 @@ Options:
             checking_skill=prompt_skill_ids("tla-checking-workflow"),
         )
         prompt += notes_section(work, first=notes_first)
-        prompt += delegation_section()
+        prompt += delegation_section(work)
         return self._with_extra(ws, name, prompt)
 
     def _resume_context(self, ws: Workspace, name: str, *, new_session: bool = False) -> str:

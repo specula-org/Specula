@@ -278,7 +278,9 @@ class ContinuousCLI(unittest.TestCase):
         prompt = self.prompt(1)
         self.assertIn("### Required", prompt)
         self.assertIn("### Recommended", prompt)
-        self.assertNotIn("follow it exactly", prompt)
+        # Only the file set is relaxed: the default prompt keeps the phased methodology strength.
+        self.assertIn("follow it exactly", prompt)
+        self.assertIn("Only the set of files is relaxed", prompt)
         summary = (run / "pipeline-summary.md").read_text()
         self.assertIn("- **Phase 2 (Spec Gen)**: OK (5/5 required files, base: 1 lines)", summary)
         self.assertIn("- **Phase 2.5 (Harness)**: OK (traces: 1)", summary)

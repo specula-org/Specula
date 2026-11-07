@@ -409,15 +409,39 @@ def test_strict_outputs_restore_the_full_prompt_contract(
     ws, work = run_workspace
     default = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
     assert "### Required" in default and "### Recommended" in default
-    assert "methodology reference" in default and "follow it exactly" not in default.lower()
+    assert "Only the set of files is relaxed" in default
     assert default.index(f"{work}/spec/instrumentation-spec.md") > default.index("### Recommended")
     monkeypatch.setenv(output_contract.STRICT_ENV, "on")
     strict = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
     assert "### Recommended" not in strict and "Every output below is required" in strict
-    assert "Follow it exactly: do everything it specifies; do not add, relax, or override any step here." in strict
+    assert "Only the set of files is relaxed" not in strict
     for prompt in (default, strict):
         assert "\n\n\n" not in prompt
         assert "## Hand Off to Confirmation" in prompt and "BLOCKED.md" in prompt
+        # Relaxing the file set never relaxes the methodology: both variants keep the phased strength.
+        assert prompt.count("follow it exactly") == 1 and FOLLOW_EXACTLY in prompt
+
+
+FOLLOW_EXACTLY = (
+    "Do everything it specifies, including its parallelization guidance, at the depth it asks for; "
+    "do not add, relax, or override any of its steps."
+)
+
+
+def test_main_prompt_keeps_skill_methodology_and_allows_probes(run_workspace: tuple[Workspace, Path]) -> None:
+    ws, work = run_workspace
+    prompt = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
+    workflow = prompt[prompt.index("## Workflow") : prompt.index("## Output")]
+    assert "read it in full when you reach that stage" in workflow and FOLLOW_EXACTLY in workflow
+    # Only formal confirmation is reserved; hypothesis probes are expected.
+    assert "Do not reproduce candidates" not in prompt
+    assert "Formal confirmation is Specula's: do not start confirmation agents" in prompt
+    assert "running small probe programs to test hypotheses during analysis and validation" in prompt
+    # The delegation section adds the subagent-notes rule on top of the skills' guidance.
+    assert "is your decision" not in prompt
+    assert "The skills' parallelization guidance applies as written" in prompt
+    assert f"`{work}/notes/sub-<topic>.md`" in prompt
+    assert "If a subagent's reply is missing, truncated, or blocked, read its notes file" in prompt
 
 
 def test_main_prompt_carries_the_delegation_guidance_once(
@@ -425,7 +449,7 @@ def test_main_prompt_carries_the_delegation_guidance_once(
 ) -> None:
     ws, work = run_workspace
     phase = continuous.ContinuousPhase()
-    section = delegation.delegation_section().strip("\n")
+    section = delegation.delegation_section(work).strip("\n")
     first = phase.build_prompt(ws, "t|org/t|Go|Raft")
     assert first.count("## Parallel Subagents") == 1 and section in first
     assert first.index(section) > first.index("## If You Cannot Finish")
@@ -445,7 +469,8 @@ def test_main_prompt_carries_the_delegation_guidance_once(
 
     monkeypatch.setenv(delegation.DELEGATION_ENV, "off")
     (work / continuous.STATE_FILE).unlink()
-    assert "Parallel Subagents" not in phase.build_prompt(ws, "t|org/t|Go|Raft")
+    off = phase.build_prompt(ws, "t|org/t|Go|Raft")
+    assert "Parallel Subagents" not in off and "sub-<topic>.md" not in off
     compacted_off = continuous.compaction_continue_prompt("completed", str(work / "handoff.md"), work)
     assert compacted_off == compacted.replace(f"\n\n{delegation.POINTER}\n", "\n")
 

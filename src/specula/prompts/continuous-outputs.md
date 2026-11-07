@@ -1,4 +1,4 @@
-Each stage's skill is the methodology reference for that stage: apply its procedure, references, and rules. The Output section below is this session's contract. Its required outputs must exist and be valid when you request confirmation. The other files the skills describe are recommendations: write them when they help you or a later reader, for example to keep working state across compaction or to record why the model looks as it does.
+The Output section below is this session's contract. Its required outputs must exist and be valid when you request confirmation. The other files the skills describe are recommendations: write them when they help you or a later reader, for example to keep working state across compaction or to record why the model looks as it does. Only the set of files is relaxed; the skills' steps and depth are not.
 
 ## Output
 

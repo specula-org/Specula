@@ -256,7 +256,7 @@ def test_default_prompt_splits_required_and_recommended_like_the_check() -> None
     for relative in oc.ADVISORY_FILES:
         assert f"`/W/{relative}`" in recommended and f"`/W/{relative}`" not in required
     assert "`/W/harness/src/`" in recommended
-    assert "follow it exactly" not in required.lower() and "methodology reference" in required
+    assert "Only the set of files is relaxed; the skills' steps and depth are not." in required
 
 
 def test_strict_prompt_lists_every_output_as_required() -> None:
@@ -264,4 +264,4 @@ def test_strict_prompt_lists_every_output_as_required() -> None:
     assert recommended == ""
     for relative in (*oc.REQUIRED_FILES, *oc.ADVISORY_FILES):
         assert f"`/W/{relative}`" in required
-    assert "Follow it exactly" in required and "Every output below is required" in required
+    assert "Every output below is required" in required and "relaxed" not in required

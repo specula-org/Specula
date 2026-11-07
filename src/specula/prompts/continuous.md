@@ -11,7 +11,7 @@ You are running the Specula modeling workflow for this system in one continuous 
 
 ## Workflow
 
-Complete these stages in order. Each stage has an installed Specula skill; read it in full when you reach that stage, not all at the start. Later stages build on what you learned earlier in this session. Do not turn the stages into separate lossy handoffs, and do not restart completed stages.
+Complete these stages in order. Each stage has an installed Specula skill, the single source of that stage's methodology: read it in full when you reach that stage, not all at the start, and follow it exactly. Do everything it specifies, including its parallelization guidance, at the depth it asks for; do not add, relax, or override any of its steps. Later stages build on what you learned earlier in this session. Do not turn the stages into separate lossy handoffs, and do not restart completed stages.
 
 1. **Code analysis**: use {{analysis_skill}} (its 4 phases, references, rules, Scenario modeling-brief format, and Category A/B handling).
 2. **Spec generation**: use {{specgen_skill}} (its phases, references, rules, Category A/B handling, and the brief-coverage self-audit), with the modeling brief as its input.
@@ -24,7 +24,7 @@ Complete these stages in order. Each stage has an installed Specula skill; read 
 
 When validation is complete and `spec/bug-report.md` and `spec/findings.json` are current, wait for every background job you started and collect its results, and check the work against the Target-Specific Instructions at the end of this prompt, if any; they stay in effect for the whole session, including after compaction and in repair rounds. Then call the `request_bug_confirmation` tool. If the tool is unavailable, run `python3 "$SPECULA_ROOT/tools/context_control/request.py" --confirm`. Follow the returned yield instruction exactly.
 
-Specula then pauses this session and confirms each finding in a separate clean context. Do not reproduce candidates or start confirmation agents yourself, and do not write `confirmed-bugs.md`, `bug-severity.md`, or `summary.md`. If confirmation returns repair requests, Specula resumes this same session with instructions: repair, revalidate, and request confirmation again. Otherwise this session's work is complete.
+Specula then pauses this session and confirms each finding in a separate clean context. Formal confirmation is Specula's: do not start confirmation agents, and do not write confirmation verdicts, `confirmed-bugs.md`, `bug-severity.md`, or `summary.md`. Building the system and running small probe programs to test hypotheses during analysis and validation is part of the skills' methodology and expected. If confirmation returns repair requests, Specula resumes this same session with instructions: repair, revalidate, and request confirmation again. Otherwise this session's work is complete.
 
 ## Preserve Context
 
