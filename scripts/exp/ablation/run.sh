@@ -282,27 +282,39 @@ ws = '$WORKSPACE_DIR'
 total = {'total_cost_usd': 0, 'num_turns': 0, 'duration_ms': 0, 'phases': {}}
 model_totals = {}
 
+def number(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
 for uf in sorted(glob.glob(f'{ws}/*.usage.json')):
     phase = os.path.basename(uf).replace('.usage.json', '')
     try:
         d = json.load(open(uf))
-        if 'error' in d: continue
-        cost = d.get('total_cost_usd', 0)
-        turns = d.get('num_turns', 0)
-        dur = d.get('duration_ms', 0)
+    except (OSError, ValueError):
+        d = None
+    if not isinstance(d, dict):
+        d = {'error': 'unreadable'}
+    # A phase whose cost is unknown (failed parse, or a resumed session whose own
+    # cost could not be determined) stays listed and marks the total incomplete.
+    cost = None if 'error' in d else number(d.get('total_cost_usd'))
+    turns = number(d.get('num_turns')) or 0
+    dur = number(d.get('duration_ms')) or 0
+    if cost is None:
+        total['cost_incomplete'] = True
+    else:
         total['total_cost_usd'] += cost
-        total['num_turns'] += turns
-        total['duration_ms'] += dur
-        total['phases'][phase] = {'cost': cost, 'turns': turns, 'duration_ms': dur}
+    total['num_turns'] += turns
+    total['duration_ms'] += dur
+    total['phases'][phase] = {'cost': cost, 'turns': turns, 'duration_ms': dur}
 
-        for model, u in d.get('model_usage', {}).items():
-            if model not in model_totals:
-                model_totals[model] = {'inputTokens': 0, 'outputTokens': 0,
-                    'cacheReadInputTokens': 0, 'cacheCreationInputTokens': 0, 'costUSD': 0}
-            for k in model_totals[model]:
-                model_totals[model][k] += u.get(k, 0)
-    except:
-        pass
+    model_usage = d.get('model_usage')
+    for model, u in (model_usage.items() if isinstance(model_usage, dict) else ()):
+        if not isinstance(u, dict):
+            continue
+        if model not in model_totals:
+            model_totals[model] = {'inputTokens': 0, 'outputTokens': 0,
+                'cacheReadInputTokens': 0, 'cacheCreationInputTokens': 0, 'costUSD': 0}
+        for k in model_totals[model]:
+            model_totals[model][k] += number(u.get(k)) or 0
 
 total['model_usage'] = model_totals
 total['elapsed_seconds'] = $ELAPSED
@@ -349,10 +361,12 @@ d = json.load(open('$WORKSPACE_DIR/usage_total.json'))
 cost = d.get('total_cost_usd', 0)
 turns = d.get('num_turns', 0)
 elapsed = d.get('elapsed_seconds', 0)
-print(f'  Total: cost=\${cost:.2f} turns={turns} elapsed={elapsed//60}m{elapsed%60}s')
+partial = ' (incomplete: some phase costs unknown)' if d.get('cost_incomplete') else ''
+print(f'  Total: cost=\${cost:.2f}{partial} turns={turns} elapsed={elapsed//60}m{elapsed%60}s')
 phases = d.get('phases', {})
 for p, v in sorted(phases.items()):
-    print(f'    {p}: \${v[\"cost\"]:.2f} ({v[\"turns\"]} turns)')
+    shown = 'unknown' if v['cost'] is None else f'\${v[\"cost\"]:.2f}'
+    print(f'    {p}: {shown} ({v[\"turns\"]} turns)')
 " 2>/dev/null
 fi
 
