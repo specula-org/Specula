@@ -16,6 +16,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 from collections.abc import Collection
 from pathlib import Path
 from typing import Any
@@ -603,6 +604,15 @@ def reused_body(work: Path, fid: str) -> str:
     )
 
 
+def _set_aside_warning(work: Path, fid: str, message: str) -> None:
+    """Report a skipped registration without failing the run."""
+    print(f"WARNING: {message}", file=sys.stderr, flush=True)
+    with contextlib.suppress(OSError):
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+        with (work / f"confirmation/{_id(fid)}/error.txt").open("a", encoding="utf-8") as stream:
+            stream.write(f"\n=== Warning at {timestamp} ===\n{message}\n")
+
+
 def _unanalyzed_proposal(fid: str, finding: dict[str, Any], cause: str) -> dict[str, Any]:
     return {
         "id": fid,
@@ -675,10 +685,17 @@ def reconcile(
             proposal["evidence"] = list(dict.fromkeys([finding["evidence"], *proposal.get("evidence", [])]))
             prepared.append(_prepare_issue(work, source, run_id, proposal))
         elif set_aside:
-            # This run's confirmation supersedes the record without reusable metadata.
-            proposal = _unanalyzed_proposal(fid, finding, "Issue metadata failed validation; reanalysis required.")
             if registered is not None and registered["origin_run"] != run_id:
-                proposal["revises"] = record_digest(work, fid)
+                # A shared local ID does not establish issue identity: never
+                # replace another run's record (or its evidence) on that basis.
+                _set_aside_warning(
+                    work,
+                    fid,
+                    f"{fid}: kept the existing record from run {registered['origin_run']}; this run's "
+                    "confirmation is not registered because its issue metadata failed validation",
+                )
+                continue
+            proposal = _unanalyzed_proposal(fid, finding, "Issue metadata failed validation; reanalysis required.")
             prepared.append(_prepare_issue(work, source, run_id, proposal))
         elif (work / _record_path(fid)).exists() and load(work, fid)["origin_run"] == run_id:
             registered = load(work, fid)
