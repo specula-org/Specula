@@ -417,7 +417,9 @@ run_codex() {
   if [[ -n "${SPECULA_TLC_TOOL_CODEX:-}" ]]; then
     # A nested override replaces boolean code_mode=true with a table. Preserve
     # Codex's resolved feature state in the same environment as the session.
-    if ! code_mode_enabled="$("${cmd[@]}" codex features list </dev/null | awk '$1 == "code_mode" {print $NF}')"; then
+    # cmd is empty unless sandboxed; bash < 4.4 (macOS /bin/bash) treats an
+    # empty "${cmd[@]}" as unbound under `set -u`.
+    if ! code_mode_enabled="$(${cmd[@]+"${cmd[@]}"} codex features list </dev/null | awk '$1 == "code_mode" {print $NF}')"; then
       echo "codex adapter: could not read the configured Code Mode state" >&2
       return 1
     fi
