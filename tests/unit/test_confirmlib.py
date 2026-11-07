@@ -488,7 +488,7 @@ class TestIssueProposal(ConfirmCase):
             self.assertGreaterEqual(replay.call_count, 2)  # before replayed validation, then after the turn
         self.assert_judged_evidence()
 
-    def _attach(self, first: Callable[[C.ConfirmConfig], int], **env: str) -> C.ConfirmConfig:
+    def _attach(self, first: Callable[[C.ConfirmConfig], int], *, guidance: str = "", **env: str) -> C.ConfirmConfig:
         resumelib.initialize_run(self.root)
         resumelib.save_configuration(self.root, {"agent": self.adapter.stem})
         with self.env(**env, **{resumelib.INVOCATION_ENV: "invocation-1"}):
@@ -497,7 +497,7 @@ class TestIssueProposal(ConfirmCase):
             self.assertNotEqual(first(self.issue_cfg()), 0)
             os.environ[resumelib.INVOCATION_ENV] = "invocation-2"
             os.environ[resumelib.MANUAL_ENV] = "1"
-            resumed = self.issue_cfg()
+            resumed = self.issue_cfg(resume_prompt_extra=guidance)
             self.assertEqual(C.run_parallel_confirmation(resumed), 0)
             os.environ.pop(resumelib.MANUAL_ENV, None)
         self.assertEqual(resumelib.active_entries(self.root), [])
@@ -512,10 +512,11 @@ class TestIssueProposal(ConfirmCase):
             self.assertFalse(checkpoint["issue_fix"]["attempted"])
             return code
 
-        self._attach(first, ISSUE_FIX="fail-once")
+        guidance = "\n## Target-Specific Instructions\n\nLatest fixture guidance.\n"
+        self._attach(first, guidance=guidance, ISSUE_FIX="fail-once")
         self.assertEqual(self.calls(), ["turn01_A", "turn01_A-issue", "turn01_A-issue"])
         prompts = (self.root / "turn01_A-issue.prompts").read_text().split("\n<end>\n")
-        self.assertEqual(prompts[1], prompts[0])
+        self.assertEqual(prompts[1], prompts[0] + guidance)
         sessions = {line.split()[0] for line in (self.root / "turn01_A-issue.sessions").read_text().splitlines()}
         self.assertEqual(sessions, {"session-MC-1-turn01_A"})
         self.assertTrue(self.finalize()["reusable"])

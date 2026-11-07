@@ -1872,6 +1872,8 @@ def run_agent_blocking(
                 resumable=resumable,
                 manual_extra=manual_prompt_extra if state.retry_reason == "manual" else "",
             )
+            if resume_from is not None and state.retry_reason == "manual":
+                current_prompt += manual_prompt_extra  # like every other manual continuation
             prompt_file.write_text(current_prompt)
             with contextlib.suppress(OSError):
                 log_file.unlink()
