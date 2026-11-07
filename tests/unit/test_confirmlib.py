@@ -446,6 +446,15 @@ class TestIssueProposal(ConfirmCase):
         self.assertEqual(self.calls(), ["turn01_A", "turn01_A-issue", "turn01_A-issue"])
         self.assert_judged_evidence()
 
+    def test_fresh_start_removes_stale_evidence_snapshots(self) -> None:
+        self.fdir.mkdir(parents=True)
+        for name in (C._ISSUE_EVIDENCE_DIR, f"{C._ISSUE_EVIDENCE_DIR}.0123abcd.tmp"):
+            (self.fdir / name).mkdir()
+            (self.fdir / name / "test_bugMC-1_old.sh").write_text("stale\n")
+        with self.env(ISSUE_WRITE="0"):
+            self.assertEqual(C.run_parallel_confirmation(self.issue_cfg()), 0)
+        self.assertEqual(sorted(self.fdir.glob(f"{C._ISSUE_EVIDENCE_DIR}*")), [])
+
     def test_deleted_snapshot_is_harmless_while_evidence_is_unchanged(self) -> None:
         with self.env(ISSUE_SNAPSHOT="delete", ISSUE_EVIDENCE="none"):
             self.assertEqual(C.run_parallel_confirmation(self.issue_cfg()), 0)

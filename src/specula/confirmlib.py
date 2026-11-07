@@ -1762,7 +1762,8 @@ def run_finding(cfg: ConfirmConfig, f: Finding, *, _lease: _FindingLease | None 
                 if rr_body.is_file():
                     rr_body.unlink()
                 (f.fdir / persistent_findings.SET_ASIDE_PROPOSAL).unlink(missing_ok=True)
-                _remove_path(f.fdir / _ISSUE_EVIDENCE_DIR)
+                for snapshot in (f.fdir / _ISSUE_EVIDENCE_DIR, *f.fdir.glob(f"{_ISSUE_EVIDENCE_DIR}.*.tmp")):
+                    _remove_path(snapshot)
                 lease.initialized = True
             if lease.issue_fix is not None and lease.issue_fix.evidence is not None:
                 # Before any replayed validation: an interrupted metadata turn
