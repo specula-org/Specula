@@ -777,6 +777,8 @@ class Pipeline:
             return None if requested is None else "--orchestration does not apply to --incremental"
         if requested != "continuous":
             self.orchestration = "phased"
+            if self.agent_routing is not None and "main" in self.agent_routing.phases:
+                return "--agent-config phases.main applies only to --orchestration=continuous"
             return None
         conflicts = self._continuous_conflicts()
         if conflicts:
@@ -1065,7 +1067,9 @@ class Pipeline:
         default = self._resumable_selection(self._agent_selection())
         routes = self._resumable_routes()
         return {
-            "version": 1,
+            # Continuous runs use version 2, so Specula releases without continuous
+            # orchestration refuse to resume them instead of continuing them as phased.
+            "version": 2 if self.orchestration == "continuous" else 1,
             "default": self._selection_document(default),
             "routes": (
                 {name: self._selection_document(selection) for name, selection in routes.items()}
@@ -1148,10 +1152,12 @@ class Pipeline:
             self._apply_continuous_prompt_defaults()
 
     def _restore_resume_configuration(self, raw: dict[str, Any], *, allow_overrides: bool = False) -> None:
-        if raw.get("version") != 1:
+        if raw.get("version") not in (1, 2):
             raise resumelib.ResumeError(
                 "this run was created without manual conversation checkpoints; pass --fresh-context to continue"
             )
+        if raw.get("version") == 2 and raw.get("orchestration") != "continuous":
+            raise resumelib.ResumeError("invalid stored orchestration mode")
         self._restore_orchestration(raw)
         self._restore_prompt_toggles(raw, allow_overrides=allow_overrides)
         stored_ci_init = raw.get("ci_init", False)

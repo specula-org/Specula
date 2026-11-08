@@ -167,9 +167,13 @@ def _log(message: str) -> None:
 
 
 def apply_prompt_defaults() -> None:
-    """Turn on the continuous prompt additions for this process and its children unless set."""
+    """Turn on the continuous prompt additions for this process and its children unless set.
+
+    An exported-but-empty variable counts as unset, as with the other Specula switches.
+    """
     for variable in PROMPT_DEFAULTS:
-        os.environ.setdefault(variable, "on")
+        if not os.environ.get(variable, "").strip():
+            os.environ[variable] = "on"
 
 
 # ── durable state ──────────────────────────────────────────────────────────

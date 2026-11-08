@@ -2,6 +2,7 @@
 """Pi's tool bridge to the same CI-scoped request handler as MCP."""
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -13,6 +14,8 @@ if __name__ == "__main__":
     try:
         result = request_confirmation() if sys.argv[1:] == ["--confirm"] else request_compaction(sys.argv[1])
     except ValueError as exc:
+        if os.environ.get("SPECULA_PHASE") != "main":
+            raise  # the incremental CI workflow keeps its original failure output
         # Refused without writing a request: report why, as the MCP tool's error does.
         print(json.dumps({"status": "refused", "reason": str(exc)}))
         print(exc, file=sys.stderr)

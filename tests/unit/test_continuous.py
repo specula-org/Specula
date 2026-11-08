@@ -79,7 +79,7 @@ def test_continuous_turns_on_rules_and_notes_unless_set(monkeypatch: pytest.Monk
     document = continuous_run._resume_configuration_document()
     assert (document["rules"], document["notes"]) == (True, True)
     monkeypatch.setenv(rules.RULES_ENV, "off")
-    monkeypatch.delenv(NOTES_ENV)
+    monkeypatch.setenv(NOTES_ENV, "")  # exported but empty: unset, as for the other switches
     parse(["--orchestration=continuous", "t|g|l|r"])
     assert os.environ[rules.RULES_ENV] == "off" and os.environ[NOTES_ENV] == "on"
 
@@ -168,6 +168,15 @@ def test_agent_config_main_route_rules(tmp_path: Path) -> None:
     assert load_agent_routing(write_config(config, {"main": "base"})).main_session_differences() == []
 
 
+def test_phased_rejects_a_main_route(tmp_path: Path) -> None:
+    config = write_config(tmp_path / "agents.json", {"main": "main"})
+    for argv in ([f"--agent-config={config}", "t|g|l|r"], ["--orchestration=phased", f"--agent-config={config}", "t"]):
+        _, rc, err = parse(argv)
+        assert rc == 1 and "phases.main applies only to --orchestration=continuous" in err
+    pipeline, rc, err = parse(["--orchestration=continuous", f"--agent-config={config}", "t|g|l|r"])
+    assert rc is None, err
+
+
 def test_agent_config_conflict_stays_phased_or_rejects_continuous(tmp_path: Path) -> None:
     config = write_config(tmp_path / "agents.json", {"analyze": "main", "validate": "check"})
     default, rc, _ = parse([f"--agent-config={config}", "t|g|l|r"])
@@ -199,8 +208,13 @@ def test_resume_configuration_records_and_restores_the_mode() -> None:
     continuous_run, _, _ = parse(["--orchestration=continuous", "t|g|l|r"])
     document = continuous_run._resume_configuration_document()
     assert document["orchestration"] == "continuous"
+    # Version 2 makes releases without continuous orchestration refuse to resume the run.
+    assert document["version"] == 2
     phased_run, _, _ = parse(["--orchestration=phased", "t|g|l|r"])
-    assert "orchestration" not in phased_run._resume_configuration_document()  # identical to older runs
+    phased_document = phased_run._resume_configuration_document()
+    assert "orchestration" not in phased_document and phased_document["version"] == 1  # identical to older runs
+    with pytest.raises(resumelib.ResumeError, match="invalid stored orchestration"):
+        parse(["--run-id=x"])[0]._restore_resume_configuration(dict(phased_document, version=2))
 
     attach, _, _ = parse(["--run-id=x"])
     attach._restore_resume_configuration(document)
@@ -736,9 +750,22 @@ def test_strict_outputs_reach_the_precheck_and_its_mcp_server(monkeypatch: pytes
         control.request_confirmation()
     config = control.mcp_config(Path("python"), Path("server.py"), dict(os.environ))
     assert config["mcpServers"]["specula_context"]["env"][output_contract.STRICT_ENV] == "on"
+    monkeypatch.setenv("SPECULA_PHASE", "incremental")  # the incremental CI server never reads it
+    config = control.mcp_config(Path("python"), Path("server.py"), dict(os.environ))
+    assert output_contract.STRICT_ENV not in config["mcpServers"]["specula_context"]["env"]
+    monkeypatch.setenv("SPECULA_PHASE", "main")
     monkeypatch.delenv(output_contract.STRICT_ENV)
     config = control.mcp_config(Path("python"), Path("server.py"), dict(os.environ))
     assert output_contract.STRICT_ENV not in config["mcpServers"]["specula_context"]["env"]
+
+
+def test_request_script_keeps_the_incremental_failure_output(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    configure_request(monkeypatch, tmp_path, phase="incremental")
+    monkeypatch.delenv(control.TOKEN_ENV)
+    script = Path(control.__file__).resolve().parents[2] / "tools/context_control/request.py"
+    result = subprocess.run([sys.executable, str(script), "--confirm"], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 1 and result.stdout == ""
+    assert "Traceback" in result.stderr and "ValueError" in result.stderr
 
 
 def test_request_script_reports_a_refusal_without_requesting(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -177,7 +177,8 @@ def mcp_config(python: Path, server: Path, env: dict[str, str]) -> dict[str, Any
                         "SPECULA_WORK_DIR",
                         "SPECULA_PHASE",
                         "SPECULA_CONTEXT_AGENT",
-                        "SPECULA_STRICT_OUTPUTS",  # the precheck applies the run's output contract
+                        # The main session's precheck applies the run's output contract.
+                        *(("SPECULA_STRICT_OUTPUTS",) if env.get("SPECULA_PHASE") == "main" else ()),
                     )
                     if key in env
                 },
