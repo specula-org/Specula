@@ -39,6 +39,7 @@ BACKGROUND=false
 POLICY_BLOCKED_RC=76  # Keep in sync with src/specula/adapters/utils/policy.py.
 PLAIN_POLICY_DIAGNOSTIC_RC=77  # Internal event-stream candidate; never returned to the runner.
 TRANSIENT_FAILURE_RC=74  # Keep in sync with src/specula/adapters/utils/transient.py.
+AUTH_REFRESH_FAILURE_RC=72  # Keep in sync with src/specula/adapters/utils/transient.py.
 PLAIN_TRANSIENT_DIAGNOSTIC_RC=78  # Internal event-stream candidate; never returned to the runner.
 RESUME_STATE_FAILURE_RC=79  # Internal event-stream integrity failure; never returned to the runner.
 
@@ -263,7 +264,7 @@ if [[ -z "$ACTIVITY_LOG" ]]; then
   if (( COPILOT_RC != 0 )) && failed_log_is_transient_failure; then
     exit "$TRANSIENT_FAILURE_RC"
   fi
-  if (( COPILOT_RC == TRANSIENT_FAILURE_RC )); then
+  if (( COPILOT_RC == TRANSIENT_FAILURE_RC || COPILOT_RC == AUTH_REFRESH_FAILURE_RC )); then
     exit 1
   fi
   if (( USAGE_RC != 0 )); then
@@ -340,7 +341,7 @@ if (( COPILOT_RC != 0 )) && [[ "$COPILOT_JSON_STREAM" != true ]] && failed_log_i
   exit "$TRANSIENT_FAILURE_RC"
 fi
 if (( COPILOT_RC != 0 )); then
-  if (( COPILOT_RC == TRANSIENT_FAILURE_RC )); then
+  if (( COPILOT_RC == TRANSIENT_FAILURE_RC || COPILOT_RC == AUTH_REFRESH_FAILURE_RC )); then
     exit 1
   fi
   exit "$COPILOT_RC"

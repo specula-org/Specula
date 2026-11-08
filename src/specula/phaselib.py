@@ -41,7 +41,7 @@ if __package__ in (None, ""):
 import specula.progress as progress
 from specula import quota, resumelib, tlc_tasks
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
-from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC
+from specula.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC
 from specula.context_control import CONFIRMATION_YIELD_RC
 from specula.output_index import BYOM_REPORT_FILENAME, PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
 from specula.prompts import render
@@ -81,6 +81,9 @@ AGENT_TERMINATION_GRACE_SECONDS = 2.0
 MAX_DEBATE_ROUNDS = 5
 DEFAULT_POLICY_RETRIES = 20
 DEFAULT_TRANSIENT_RESUMES = 20
+# A credential-refresh race clears on the next attempt; a dead login does not,
+# so it must fail in bounded time instead of using the full transient budget.
+AUTH_REFRESH_RESUMES = 2
 TRANSIENT_RESUME_BACKOFF_MAX_SECONDS = 60.0
 BYOM_PATH_ENV = "SPECULA_BYOM_PATH"
 
@@ -260,6 +263,24 @@ def _seed_resume_state(source: Path, destination: Path) -> None:
 def _transient_resume_delay(attempt: int) -> float:
     """Short bounded backoff; attempt is the 1-based resume number."""
     return min(TRANSIENT_RESUME_BACKOFF_MAX_SECONDS, float(2 ** min(attempt + 1, 6)))
+
+
+def _transient_resume_limit(rc: int, transient_resumes: int) -> int | None:
+    """Session-resume budget for a retryable adapter status, else None.
+
+    Both statuses resume the exact session and share one transient cursor. A
+    credential-refresh failure is retried only while that cursor is below its
+    small cap, so a turn never spends more than the cap on a dead login.
+    """
+    if rc == TRANSIENT_FAILURE_RC:
+        return transient_resumes
+    if rc == AUTH_REFRESH_FAILURE_RC:
+        return min(transient_resumes, AUTH_REFRESH_RESUMES)
+    return None
+
+
+def _transient_failure_label(rc: int) -> str:
+    return "credential refresh failure" if rc == AUTH_REFRESH_FAILURE_RC else "temporary provider failure"
 
 
 def _retry_prompt(original: str, reason: str, *, resumable: bool, manual_extra: str = "") -> str:
@@ -1127,8 +1148,9 @@ class Phase:
                                 failures.append((completed_agent.name, rc))
                                 _resource_finish_target(completed_agent.name)
                             continue
-                        if rc == TRANSIENT_FAILURE_RC:
-                            if completed_agent.transient_attempt < self._transient_resumes:
+                        transient_limit = _transient_resume_limit(rc, self._transient_resumes)
+                        if transient_limit is not None:
+                            if completed_agent.transient_attempt < transient_limit:
                                 _resource_pause_target(completed_agent.name)
                                 next_transient_attempt = completed_agent.transient_attempt + 1
                                 delay = _transient_resume_delay(next_transient_attempt)
@@ -1139,8 +1161,8 @@ class Phase:
                                     else "retrying before a session was captured"
                                 )
                                 print(
-                                    f"[{_ts()}] {completed_agent.name}: temporary provider failure; {mode} "
-                                    f"({next_transient_attempt}/{self._transient_resumes}) after {delay:g}s"
+                                    f"[{_ts()}] {completed_agent.name}: {_transient_failure_label(rc)}; {mode} "
+                                    f"({next_transient_attempt}/{transient_limit}) after {delay:g}s"
                                 )
                                 pending.insert(
                                     0,
@@ -1728,7 +1750,9 @@ def run_agent_blocking(
     75) is the caller's concern. A provider policy block (exit 76) advances up
     to ``policy_retries`` continuation levels. A retryable provider/transport
     failure (exit 74) resumes up to ``transient_resumes`` times with bounded
-    backoff. Every retry reuses the exact native session captured in a state
+    backoff; a credential-refresh failure (exit 72) takes the same path only
+    while fewer than ``AUTH_REFRESH_RESUMES`` resumes have been used. Every
+    retry reuses the exact native session captured in a state
     file; if the CLI failed before emitting an ID, Specula safely replays the
     original prompt. Callers that automatically replay exit 75 may pass
     ``policy_state`` so the native session and both budgets survive that wait.
@@ -1909,15 +1933,16 @@ def run_agent_blocking(
             text = result_file.read_text(errors="replace") if result_file.is_file() else ""
             # Resource runtime is target-level wall time. A Phase 4a target can
             # have sibling turns running, so only outer target schedulers pause it.
-            if rc == TRANSIENT_FAILURE_RC and state.transient_attempt < transient_resumes:
+            transient_limit = _transient_resume_limit(rc, transient_resumes)
+            if transient_limit is not None and state.transient_attempt < transient_limit:
                 state.transient_attempt += 1
                 state.retry_reason = "transient"
                 persist_cursor()
                 delay = _transient_resume_delay(state.transient_attempt)
                 mode = "resuming the exact session" if resume_state.is_file() else "retrying the original request"
                 print(
-                    f"[{_ts()}] Temporary provider failure; {mode} "
-                    f"({state.transient_attempt}/{transient_resumes}) after {delay:g}s"
+                    f"[{_ts()}] {_transient_failure_label(rc).capitalize()}; {mode} "
+                    f"({state.transient_attempt}/{transient_limit}) after {delay:g}s"
                 )
                 time.sleep(delay)
                 continue
@@ -2955,6 +2980,9 @@ Prerequisites:
             attempt = 1
             try:
                 while True:
+                    # This also tells confirmation that a 75 is replayed, so a
+                    # batch whose rate-limited findings sit beside a permanent
+                    # failure returns 75 while a retry remains and 1 after it.
                     will_retry_rate_limit = (
                         not failures and self._reactive_rate_limit_enabled() and attempt <= retry_limit
                     )
@@ -3416,13 +3444,14 @@ Output:
                             retry_reason="policy",
                         )
                         continue
-                    if rc == TRANSIENT_FAILURE_RC and request.transient_attempt < self._transient_resumes:
+                    transient_limit = _transient_resume_limit(rc, self._transient_resumes)
+                    if transient_limit is not None and request.transient_attempt < transient_limit:
                         _resource_pause_target(name)
                         next_transient_attempt = request.transient_attempt + 1
                         delay = _transient_resume_delay(next_transient_attempt)
                         print(
-                            f"[{_ts()}] {name}: temporary provider failure; resuming review "
-                            f"({next_transient_attempt}/{self._transient_resumes}) after {delay:g}s"
+                            f"[{_ts()}] {name}: {_transient_failure_label(rc)}; resuming review "
+                            f"({next_transient_attempt}/{transient_limit}) after {delay:g}s"
                         )
                         time.sleep(delay)
                         request = _LaunchRequest(

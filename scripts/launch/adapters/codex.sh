@@ -40,6 +40,7 @@ MODEL="${CODEX_MODEL:-}"
 POLICY_BLOCKED_RC=76  # Keep in sync with src/specula/adapters/utils/policy.py.
 PLAIN_POLICY_DIAGNOSTIC_RC=77  # Internal event-stream candidate; never returned to the runner.
 TRANSIENT_FAILURE_RC=74  # Keep in sync with src/specula/adapters/utils/transient.py.
+AUTH_REFRESH_FAILURE_RC=72  # Keep in sync with src/specula/adapters/utils/transient.py.
 PLAIN_TRANSIENT_DIAGNOSTIC_RC=78  # Internal event-stream candidate; never returned to the runner.
 RESUME_STATE_FAILURE_RC=79  # Internal event-stream integrity failure; never returned to the runner.
 
@@ -511,6 +512,8 @@ run_codex() {
     # Native 74 is EX_IOERR; only a classified provider diagnostic may expose
     # Specula's retry/resume contract to the phase runner.
     codex_rc=1
+  elif (( codex_rc == AUTH_REFRESH_FAILURE_RC )); then
+    codex_rc=1  # Likewise never a native passthrough.
   fi
 
   local exact_session_id=""

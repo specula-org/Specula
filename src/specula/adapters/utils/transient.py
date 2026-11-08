@@ -13,6 +13,11 @@ import re
 from pathlib import Path
 
 TRANSIENT_FAILURE_RC = 74
+# A failed OAuth credential refresh. Sessions that share one login can race on
+# the rotating refresh token; the loser fails although the next attempt reads
+# the winner's fresh credentials. A login that is genuinely dead fails the same
+# way, so the phase runner resumes this status only a few times.
+AUTH_REFRESH_FAILURE_RC = 72
 # Like policy's plain-diagnostic code, this is private to an adapter wrapper.
 # The wrapper may normalize it only after confirming that the native CLI failed.
 PLAIN_TRANSIENT_DIAGNOSTIC_RC = 78
@@ -86,6 +91,22 @@ _PLAIN_TRANSIENT_DIAGNOSTIC_RE = re.compile(
     re.IGNORECASE,
 )
 
+# The CLI's non-interactive diagnostics for a failed credential refresh, and
+# the underlying error messages: the refresh token was rejected (typically
+# because a concurrent session already rotated it) or another session held the
+# refresh lock. A revoked token, an invalid API key, or a full config disk is
+# not a race and is deliberately absent. The message must start the diagnostic,
+# so a longer text that merely mentions one of them never matches.
+_AUTH_REFRESH_DIAGNOSTIC_RE = re.compile(
+    r"^\s*(?:(?:error|fatal)(?:\[[^\]]+\])?\s*[:=-]\s*)?(?:"
+    r"(?:failed to authenticate\s*:\s*)?oauth session expired and could not be refreshed\b|"
+    r"oauth refresh token is no longer valid\b|"
+    r"(?:failed to refresh oauth token|oauth access token could not be refreshed)\s*:\s*"
+    r"another claude code process is (?:refreshing it|holding the refresh lock)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def _normalized_code(value: str) -> str:
     value = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", value)
@@ -121,16 +142,37 @@ def looks_transient(value: object, depth: int = 0) -> bool:
     return any(looks_transient(value.get(key), depth + 1) for key in ("data", "error", "cause", "body", "response"))
 
 
-def final_diagnostic_has_transient_failure(text: str) -> bool:
-    """Classify only a failed CLI's final non-empty, non-JSON diagnostic."""
+def _final_plain_diagnostic(text: str) -> str:
+    """The final non-empty line of a CLI capture, or "" when it is JSON."""
     diagnostic = next((line.strip() for line in reversed(text.splitlines()) if line.strip()), "")
     if not diagnostic:
-        return False
+        return ""
     try:
         json.loads(diagnostic)
     except (TypeError, ValueError):
-        return bool(_PLAIN_TRANSIENT_DIAGNOSTIC_RE.search(diagnostic))
-    return False
+        return diagnostic
+    return ""
+
+
+def final_diagnostic_has_transient_failure(text: str) -> bool:
+    """Classify only a failed CLI's final non-empty, non-JSON diagnostic."""
+    diagnostic = _final_plain_diagnostic(text)
+    return bool(diagnostic) and bool(_PLAIN_TRANSIENT_DIAGNOSTIC_RE.search(diagnostic))
+
+
+def looks_auth_refresh_failure(value: object) -> bool:
+    """Recognize a credential-refresh failure as an identified error's text.
+
+    Like ``looks_transient``, callers must first establish that ``value`` is
+    the message of a failed terminal envelope, never agent-authored output.
+    """
+    return isinstance(value, str) and bool(_AUTH_REFRESH_DIAGNOSTIC_RE.match(value))
+
+
+def final_diagnostic_has_auth_refresh_failure(text: str) -> bool:
+    """Classify only a failed CLI's final non-empty, non-JSON diagnostic."""
+    diagnostic = _final_plain_diagnostic(text)
+    return bool(diagnostic) and looks_auth_refresh_failure(diagnostic)
 
 
 def failed_log_has_transient_failure(path: Path) -> bool:

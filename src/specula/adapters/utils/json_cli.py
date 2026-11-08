@@ -21,7 +21,7 @@ from .policy import POLICY_BLOCKED_RC
 from .resume import capture_session_id
 from .run_lock import inherited_run_lock_fds
 from .text import summary
-from .transient import TRANSIENT_FAILURE_RC
+from .transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC
 from .usage import augment_opencode_usage, augment_pi_usage
 
 RATE_LIMIT_RC = 75  # EX_TEMPFAIL; this is the scheduler contract in specula.quota.
@@ -361,8 +361,9 @@ def run_json_cli(
             if native_status != 0:
                 # 74 is Specula's normalized transient contract, not a native
                 # CLI passthrough. An unrelated EX_IOERR must not trigger twenty
-                # session resumes without a classified provider diagnostic.
-                return 1 if native_status == TRANSIENT_FAILURE_RC else native_status
+                # session resumes without a classified provider diagnostic, nor
+                # a native 72 the credential-refresh resumes.
+                return 1 if native_status in (TRANSIENT_FAILURE_RC, AUTH_REFRESH_FAILURE_RC) else native_status
             if stream_failed or status is None or not status.log_ok or not usage_ok:
                 return 1
             failure = status.structured_error or status.terminal_error

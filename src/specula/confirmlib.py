@@ -4388,9 +4388,12 @@ def load_findings(cfg: ConfirmConfig) -> list[Finding]:
 
 def run_parallel_confirmation(cfg: ConfirmConfig, *, retain_rate_limited_state: bool = False) -> int:
     """Drive step 0 (consolidate) → per-finding fan-out → aggregate for ONE
-    target. Returns 75 for exclusively rate-limited incomplete findings and 1 for
-    permanent/format/infrastructure incomplete findings while retaining their
-    partial report. Pre-fan-out or aggregation failures withhold the deliverable."""
+    target. Returns 75 when rate-limited incomplete findings remain and 1 for
+    permanent/format/infrastructure incomplete findings, retaining the partial
+    report either way. ``retain_rate_limited_state`` means the caller waits and
+    replays this target after a 75; only then does 75 also win over another
+    finding's permanent failure (see ``_drive_confirmation``). Pre-fan-out or
+    aggregation failures withhold the deliverable."""
     result = 1
     try:
         try:
@@ -4399,7 +4402,7 @@ def run_parallel_confirmation(cfg: ConfirmConfig, *, retain_rate_limited_state: 
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 log_path.write_text("")  # summary link + `tail -f` follow THIS run
                 _set_log_file(log_path)
-            result = _drive_confirmation(cfg)
+            result = _drive_confirmation(cfg, rate_limit_replay=retain_rate_limited_state)
         except Exception as exc:
             try:
                 _log(f"confirmation driver crashed ({exc})")
@@ -4451,7 +4454,7 @@ def _post_validate_repair_state(cfg: ConfirmConfig) -> int:
     return 0
 
 
-def _drive_confirmation(cfg: ConfirmConfig) -> int:
+def _drive_confirmation(cfg: ConfirmConfig, *, rate_limit_replay: bool = False) -> int:
     if cfg.max_parallel < 1:
         return _withhold(cfg, "invalid max_parallel; expected a positive integer")
     if cfg.debate and cfg.rounds < 1:
@@ -4784,11 +4787,18 @@ def _drive_confirmation(cfg: ConfirmConfig) -> int:
     if post_validation != 0:
         return post_validation
     # Keep the partial report, but do not tell the scheduler/downstream that an
-    # incomplete target succeeded. A permanent failure wins over rate limiting;
-    # only an exclusively rate-limited partial result is retryable with rc 75.
+    # incomplete target succeeded. Rate-limited findings (interrupted or never
+    # started) are retryable with rc 75. When the caller will wait for quota and
+    # replay this target, 75 wins even if another, independent finding failed
+    # permanently: one failure must not cancel the others' retry, and the replay
+    # keeps cached verdicts while re-attempting every uncached finding,
+    # including the failed one. Without such a replay, or once no rate-limited
+    # finding remains, a permanent failure wins, so it is never hidden behind 75.
     incomplete_codes = [o.failure_code or 1 for o in outcomes if o.status == INCOMPLETE]
-    if any(code != quota.RATE_LIMIT_RC for code in incomplete_codes):
-        return 1
-    if incomplete_codes:
+    rate_limited = quota.RATE_LIMIT_RC in incomplete_codes
+    permanent = any(code != quota.RATE_LIMIT_RC for code in incomplete_codes)
+    if rate_limited and (rate_limit_replay or not permanent):
         return quota.RATE_LIMIT_RC
+    if permanent:
+        return 1
     return 0

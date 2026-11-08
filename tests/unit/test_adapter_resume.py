@@ -18,7 +18,9 @@ from specula.adapters.utils.event_stream import stream_events
 from specula.adapters.utils.resume import ResumeStateError, capture_session_id, read_session_id
 from specula.adapters.utils.transient import (
     failed_log_has_transient_failure,
+    final_diagnostic_has_auth_refresh_failure,
     final_diagnostic_has_transient_failure,
+    looks_auth_refresh_failure,
     looks_transient,
 )
 
@@ -508,6 +510,58 @@ class TestTransientFailureClassification(unittest.TestCase):
         for text in prose:
             with self.subTest(text=text):
                 self.assertFalse(final_diagnostic_has_transient_failure(text))
+
+
+class TestAuthRefreshFailureClassification(unittest.TestCase):
+    REFRESH_FAILURES = (
+        "Failed to authenticate: OAuth session expired and could not be refreshed",
+        "OAuth refresh token is no longer valid; run /login to re-authenticate",
+        "Failed to refresh OAuth token: another Claude Code process is refreshing it or exited mid-refresh. "
+        "This is usually transient; retry in a minute",
+        "OAuth access token could not be refreshed: another Claude Code process is holding the refresh lock",
+    )
+
+    def test_recognizes_refresh_failure_messages(self) -> None:
+        for message in self.REFRESH_FAILURES:
+            with self.subTest(message=message):
+                self.assertTrue(looks_auth_refresh_failure(message))
+                self.assertTrue(final_diagnostic_has_auth_refresh_failure(f"Error: {message}\n"))
+        self.assertTrue(
+            looks_auth_refresh_failure("  failed to authenticate: oauth session expired and could not be refreshed")
+        )
+
+    def test_dead_logins_and_other_auth_errors_are_not_refresh_races(self) -> None:
+        messages = (
+            "Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.",
+            "Invalid API key \u00b7 Please run /login",
+            "Login expired \u00b7 Please run /login",
+            "Failed to refresh OAuth token: the disk that holds the config directory is full",
+            "API Error: 401 authentication_error",
+        )
+        for message in messages:
+            with self.subTest(message=message):
+                self.assertFalse(looks_auth_refresh_failure(message))
+                self.assertFalse(final_diagnostic_has_auth_refresh_failure(message))
+
+    def test_text_that_only_mentions_a_refresh_failure_is_not_classified(self) -> None:
+        prose = (
+            "The earlier run ended with: Failed to authenticate: OAuth session expired and could not be refreshed",
+            "Fixed the OAuth handling. OAuth session expired and could not be refreshed is no longer reported.",
+            "I checked the OAuth refresh flow; the token is valid.",
+        )
+        for text in prose:
+            with self.subTest(text=text):
+                self.assertFalse(looks_auth_refresh_failure(text))
+                self.assertFalse(final_diagnostic_has_auth_refresh_failure(text))
+        self.assertFalse(looks_auth_refresh_failure({"result": self.REFRESH_FAILURES[0]}))
+        self.assertFalse(looks_transient(self.REFRESH_FAILURES[0]))
+
+    def test_plain_fallback_uses_only_final_non_json_line(self) -> None:
+        message = self.REFRESH_FAILURES[0]
+        self.assertTrue(final_diagnostic_has_auth_refresh_failure(f"starting\n{message}\n\n"))
+        self.assertFalse(final_diagnostic_has_auth_refresh_failure(f"{message}\nfatal: invalid request\n"))
+        self.assertFalse(final_diagnostic_has_auth_refresh_failure(json.dumps({"result": message}) + "\n"))
+        self.assertFalse(final_diagnostic_has_auth_refresh_failure(""))
 
 
 if __name__ == "__main__":
