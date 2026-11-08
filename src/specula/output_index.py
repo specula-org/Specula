@@ -17,6 +17,7 @@ from urllib.parse import quote_from_bytes
 from specula import confirm_first, output_contract
 from specula.ci_init import BASELINE_FILENAME
 from specula.notes import INDEX_FILENAME as NOTES_INDEX_FILENAME
+from specula.notes import enabled as notes_enabled
 from specula.notes import index_path
 
 INDEX_FILENAME = "index.md"
@@ -281,7 +282,7 @@ def render_target_index(name: str, work_dir: Path, *, pipeline_log: Path | None 
     if _is_file_under(work_dir, repair_ledger):
         technical.append(f"- Repair history: {_link('repair-ledger.md', repair_ledger, work_dir)}")
     notes_index = index_path(work_dir)
-    if _is_file_under(work_dir, notes_index):
+    if notes_enabled() and _is_file_under(work_dir, notes_index):
         technical.append(f"- Working notes: {_link(NOTES_INDEX_FILENAME, notes_index, work_dir)}")
     if technical:
         lines += ["", "## Technical Details", "", *technical]

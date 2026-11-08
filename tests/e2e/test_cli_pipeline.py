@@ -33,7 +33,6 @@ import unittest
 from pathlib import Path
 
 from specula import phaselib
-from specula.rules import with_rules
 
 REAL_ROOT = Path(__file__).resolve().parents[2]
 REAL_PKG = REAL_ROOT / "src" / "specula"
@@ -176,7 +175,7 @@ class CliE2E(unittest.TestCase):
     def test_run_dry_run_sequences_phases(self) -> None:
         root = self.specroot()
         work = self.workdir()
-        proc = self.run_cli(root, ["run", "--orchestration=phased", "--dry-run", "footest"], cwd=work)
+        proc = self.run_cli(root, ["run", "--dry-run", "footest"], cwd=work)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         out = proc.stdout
         # the full-chain banner + a dry-run phase line (proves the shim reached
@@ -652,7 +651,7 @@ class CliE2E(unittest.TestCase):
         self.assertEqual(Path(f"{adapter}.validation-count").read_text(), "xx")
         self.assertEqual(
             Path(f"{adapter}.validation-prompt").read_text(),
-            with_rules(phaselib._MANUAL_SESSION_RESUME_PROMPT),
+            phaselib._MANUAL_SESSION_RESUME_PROMPT,
         )
         self.assertTrue((wd / "confirmed-bugs.md").is_file())
         self.assertTrue((wd / "bug-severity.md").is_file())

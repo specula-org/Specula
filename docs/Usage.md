@@ -480,6 +480,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse earlier outputs |
 | `--skip-validate`, `--skip-confirmation`, `--skip-classification` | Reuse later outputs |
 | `--confirm-debate` | Add the adversarial confirmation debate in parallel Phase 4 mode |
+| `--orchestration=MODE` | `phased` (default) runs one agent session per step; `continuous` (experimental) runs analysis through validation in one agent session per target, with confirmation and classification still in separate sessions. `continuous` does not support `--byom`, `--ci-init`, `--confirm-first`, `--findings-from`, `--enable-reviews`, `--no-isolate`, `--skip-specgen`, `--skip-harness`, `--skip-validate`, or an `--agent-config` that routes Phases 1-3 to different profiles |
 | `--skip-repair-loop` | Disable the confirmation back-edge repair loop |
 | `--max-repair-rounds=N` | Set the global repair-loop round cap (default `10`; `0` means unlimited) |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse early-phase outputs |

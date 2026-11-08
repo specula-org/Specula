@@ -17,7 +17,6 @@ import test_cli_pipeline as fixtures
 
 from specula.ci_store import CIStore, asset_hashes
 from specula.phaselib import _POLICY_SESSION_RESUME_PROMPT, _SESSION_RESUME_PROMPT
-from specula.rules import with_rules
 
 
 class IncrementalCLI(unittest.TestCase):
@@ -446,8 +445,8 @@ class IncrementalCLI(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(Path(f"{self.adapter}.attempts").read_text(), "3\n")
-        self.assertEqual(Path(f"{self.adapter}.prompt-2").read_text(), with_rules(_SESSION_RESUME_PROMPT))
-        self.assertEqual(Path(f"{self.adapter}.prompt-3").read_text(), with_rules(_POLICY_SESSION_RESUME_PROMPT))
+        self.assertEqual(Path(f"{self.adapter}.prompt-2").read_text(), _SESSION_RESUME_PROMPT)
+        self.assertEqual(Path(f"{self.adapter}.prompt-3").read_text(), _POLICY_SESSION_RESUME_PROMPT)
         run = self.latest()
         meta = json.loads((run / "run.json").read_text())
         for config in (meta, meta["resume_configuration"]):

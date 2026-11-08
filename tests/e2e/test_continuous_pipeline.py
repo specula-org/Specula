@@ -25,6 +25,13 @@ from specula.rules import RULES_SEPARATOR, RULES_TITLE
 FIXTURE = Path(__file__).parent / "fixtures/continuous_adapter.py"
 
 
+def continuous_args(args: tuple[str, ...] | list[str]) -> list[str]:
+    """Select continuous orchestration (opt-in) unless the test chose a mode itself."""
+    if any(arg.startswith("--orchestration") for arg in args):
+        return list(args)
+    return ["--orchestration=continuous", *args]
+
+
 class ContinuousCLI(unittest.TestCase):
     def setUp(self) -> None:
         self.helper = fixtures.CliE2E()
@@ -66,7 +73,9 @@ class ContinuousCLI(unittest.TestCase):
         return path
 
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
-        return self.helper.run_cli(self.root, ["run", f"--artifact={self.source}", *args], cwd=self.work)
+        return self.helper.run_cli(
+            self.root, ["run", f"--artifact={self.source}", *continuous_args(args)], cwd=self.work
+        )
 
     def run_dir(self) -> Path:
         return self.helper.sole_run_dir(self.root)
@@ -439,7 +448,7 @@ class ContinuousCLI(unittest.TestCase):
         env = {key: value for key, value in os.environ.items() if key not in fixtures._VOLATILE}
         env["HOME"] = str(self.work)
         stopped = subprocess.run(
-            [sys.executable, "-c", script, "--agent=fake", f"--artifact={self.source}", "footest"],
+            [sys.executable, "-c", script, *continuous_args(["--agent=fake", f"--artifact={self.source}", "footest"])],
             cwd=self.work,
             env=env,
             capture_output=True,
@@ -469,7 +478,7 @@ class ContinuousCLI(unittest.TestCase):
         env = {key: value for key, value in os.environ.items() if key not in fixtures._VOLATILE}
         env["HOME"] = str(self.work)
         stopped = subprocess.run(
-            [sys.executable, "-c", script, "--agent=fake", f"--artifact={self.source}", "footest"],
+            [sys.executable, "-c", script, *continuous_args(["--agent=fake", f"--artifact={self.source}", "footest"])],
             cwd=self.work,
             env=env,
             capture_output=True,
@@ -524,7 +533,10 @@ class ContinuousCLI(unittest.TestCase):
     def test_multiple_targets_run_parallel_main_sessions_then_confirm_each(self) -> None:
         result = self.helper.run_cli(
             self.root,
-            ["run", "--agent=fake", "--max-parallel=2", "footest|o/f|Go|Raft", "bartest|o/b|Go|Raft"],
+            [
+                "run",
+                *continuous_args(["--agent=fake", "--max-parallel=2", "footest|o/f|Go|Raft", "bartest|o/b|Go|Raft"]),
+            ],
             cwd=self.work,
         )
         # Isolated runs read canonical sources from case-studies/<name>/artifact.
@@ -535,7 +547,10 @@ class ContinuousCLI(unittest.TestCase):
         shutil.rmtree(self.root / "runs")
         result = self.helper.run_cli(
             self.root,
-            ["run", "--agent=fake", "--max-parallel=2", "footest|o/f|Go|Raft", "bartest|o/b|Go|Raft"],
+            [
+                "run",
+                *continuous_args(["--agent=fake", "--max-parallel=2", "footest|o/f|Go|Raft", "bartest|o/b|Go|Raft"]),
+            ],
             cwd=self.work,
         )
         run = self.run_dir()
@@ -553,18 +568,19 @@ class ContinuousCLI(unittest.TestCase):
         self.assertEqual(self.worker_starts("CR-1"), 0)
         self.assertFalse((run / "footest/.specula-output/confirmed-bugs.md").exists())
 
-    def test_unsupported_options_fall_back_or_fail_before_storage(self) -> None:
+    def test_unsupported_options_fail_before_storage_and_the_default_stays_phased(self) -> None:
         explicit = self.run_cli("--orchestration=continuous", "--skip-specgen", "--dry-run", "footest")
         self.assertEqual(explicit.returncode, 1)
         self.assertIn("--orchestration=continuous does not support --skip-specgen", explicit.stderr)
         self.assertFalse((self.root / "runs").exists())
-        fallback = self.run_cli("--skip-specgen", "--dry-run", "footest")
-        self.assertEqual(fallback.returncode, 0, fallback.stderr)
-        self.assertIn(
-            "Orchestration: phased (continuous orchestration does not support --skip-specgen", fallback.stdout
+        default = self.helper.run_cli(
+            self.root, ["run", f"--artifact={self.source}", "--skip-specgen", "--dry-run", "footest"], cwd=self.work
         )
-        self.assertIn("launch_harness_generation.sh", fallback.stdout)
-        self.assertNotIn("launch_spec_generation.sh", fallback.stdout)
+        self.assertEqual(default.returncode, 0, default.stderr)
+        self.assertNotIn("Orchestration:", default.stdout)
+        self.assertNotIn("launch_continuous.sh", default.stdout)
+        self.assertIn("launch_harness_generation.sh", default.stdout)
+        self.assertNotIn("launch_spec_generation.sh", default.stdout)
         # --skip-analysis keeps continuous orchestration; a dry run, like the phased one, checks no outputs.
         dry = self.run_cli("--skip-analysis", "--dry-run", "footest")
         self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)

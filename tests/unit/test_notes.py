@@ -20,11 +20,11 @@ class NotesCase(unittest.TestCase):
         patcher = mock.patch.dict(os.environ)
         patcher.start()
         self.addCleanup(patcher.stop)
-        os.environ.pop(notes.NOTES_ENV, None)
+        os.environ[notes.NOTES_ENV] = "on"
 
 
 class TestNotesSection(NotesCase):
-    def test_enabled_by_default_and_appendable_to_a_prompt(self) -> None:
+    def test_enabled_sections_append_to_a_prompt(self) -> None:
         self.assertTrue(notes.enabled())
         for first in (True, False):
             with self.subTest(first=first):
@@ -70,18 +70,21 @@ class TestNotesSection(NotesCase):
                 lines = (PROMPTS_DIR / template).read_text().splitlines()
                 self.assertLessEqual(len(lines), 20)
 
-    def test_off_values_disable_every_section(self) -> None:
-        for value in ("off", "OFF", " off ", "0", "false", "no"):
+    def test_off_by_default_and_for_any_other_value(self) -> None:
+        for value in (None, "", "off", "OFF", " off ", "0", "false", "no", "maybe"):
             with self.subTest(value=value):
-                os.environ[notes.NOTES_ENV] = value
+                if value is None:
+                    os.environ.pop(notes.NOTES_ENV, None)
+                else:
+                    os.environ[notes.NOTES_ENV] = value
                 self.assertFalse(notes.enabled())
                 self.assertEqual(notes.notes_section(WORK, first=True), "")
                 self.assertEqual(notes.notes_section(WORK, first=False), "")
                 self.assertEqual(notes.worker_notes_section(WORK, FINDING), "")
                 self.assertEqual(notes.worker_notes_identity(), "")
 
-    def test_other_values_keep_notes_on(self) -> None:
-        for value in ("", "on", "1", "yes"):
+    def test_on_values_enable_notes(self) -> None:
+        for value in ("on", "ON", " on ", "1", "true", "yes"):
             with self.subTest(value=value):
                 os.environ[notes.NOTES_ENV] = value
                 self.assertTrue(notes.enabled())

@@ -7,8 +7,9 @@ gates on them and no pipeline code consumes them; the output index only links
 each agent about the area (``prompts/notes.md``; per-finding confirmation
 workers get the read-only ``prompts/notes-worker.md``).
 
-``SPECULA_NOTES=off`` (also ``0``/``false``/``no``) disables every section, so
-prompts are exactly what they were before the notes area existed.
+Off by default, so prompts are exactly what they were before the notes area
+existed. ``SPECULA_NOTES=on`` (also ``1``/``true``/``yes``) enables every
+section; continuous orchestration turns it on unless the variable is set.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ NOTES_ENV = "SPECULA_NOTES"
 NOTES_DIRNAME = "notes"
 INDEX_FILENAME = "INDEX.md"
 WORKER_TEMPLATE = "notes-worker"
-_DISABLED = frozenset({"0", "false", "no", "off"})
+_ENABLED = frozenset({"1", "true", "yes", "on"})
 
 # Phase 1 opens the area. A prior attempt in the same workspace may have left
 # notes, so the agent reads (and verifies) rather than blindly trusting them.
@@ -37,8 +38,8 @@ _START_LATER = (
 
 
 def enabled() -> bool:
-    """Whether the notes prompt sections are on (the default)."""
-    return os.environ.get(NOTES_ENV, "").strip().lower() not in _DISABLED
+    """Whether the notes prompt sections are on (``SPECULA_NOTES=on``; off by default)."""
+    return os.environ.get(NOTES_ENV, "").strip().lower() in _ENABLED
 
 
 def notes_dir(work_dir: Path) -> Path:

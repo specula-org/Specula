@@ -212,13 +212,17 @@ class TestTargetIndex(OutputIndexCase):
     def test_working_notes_index_is_listed_under_technical_details_only_when_present(self) -> None:
         work_dir = self.root / ".specula-output"
         self.write(work_dir, "notes/build-recipe.md")
-        without_index = oi.render_target_index("demo", work_dir)
+        with mock.patch.dict(os.environ, {"SPECULA_NOTES": "on"}):
+            without_index = oi.render_target_index("demo", work_dir)
         self.assertNotIn("## Technical Details", without_index)
         self.assertNotIn("notes/", without_index)
 
         self.write(work_dir, "notes/INDEX.md", "- build-recipe.md — how to build\n")
         self.write(work_dir, "spec/repair-ledger.md")
-        rendered = oi.render_target_index("demo", work_dir)
+        with mock.patch.dict(os.environ, {"SPECULA_NOTES": ""}):
+            self.assertNotIn("Working notes", oi.render_target_index("demo", work_dir))  # notes off: as before
+        with mock.patch.dict(os.environ, {"SPECULA_NOTES": "on"}):
+            rendered = oi.render_target_index("demo", work_dir)
         technical = rendered.split("## Technical Details", 1)[1]
         self.assertIn("- Working notes: [INDEX.md](notes/INDEX.md)", technical)
         self.assertLess(technical.index("Repair history"), technical.index("Working notes"))
@@ -235,7 +239,7 @@ class TestTargetIndex(OutputIndexCase):
         linked_dir.mkdir(parents=True)
         (linked_dir / "notes").symlink_to(outside, target_is_directory=True)
         for work_dir in (linked_file, linked_dir):
-            with self.subTest(work_dir=work_dir):
+            with self.subTest(work_dir=work_dir), mock.patch.dict(os.environ, {"SPECULA_NOTES": "on"}):
                 rendered = oi.render_target_index("demo", work_dir)
                 self.assertNotIn("Working notes", rendered)
                 self.assertNotIn("## Technical Details", rendered)

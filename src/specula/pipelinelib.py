@@ -148,11 +148,12 @@ Options:
   --confirm-debate       Phase 4a: add the adversarial Challenger debate (parallel mode; default off)
   --max-repair-rounds=N  Global repair-loop round cap; unresolved requests are then filed under deferred/ (default: 10; 0 = unlimited)
   --enable-reviews        Enable review steps (disabled by default)
-  --orchestration=MODE   continuous (default): one main agent session per target performs analysis
-                         through validation and repairs, while confirmation and classification keep
-                         separate clean contexts; with --skip-analysis it starts at spec generation
-                         from the existing Phase 1 outputs. phased: one agent session per phase.
-                         Options that continuous does not support yet select phased automatically
+  --orchestration=MODE   phased (default): one agent session per phase. continuous (experimental): one
+                         main agent session per target performs analysis through validation and repairs,
+                         while confirmation and classification keep separate clean contexts; with
+                         --skip-analysis it starts at spec generation from the existing Phase 1 outputs.
+                         Continuous runs also pin the hard rules and add the working-notes area unless
+                         SPECULA_RULES/SPECULA_NOTES are set, and reject options they do not support yet
   --max-parallel=N       Hard limit for concurrent agents. When omitted, ordinary phases run 1 target
                          agent at a time and per-finding bug confirmation runs up to 4 at a time
   --max-turns=N          Max agent turns (default: 0 = unlimited)
@@ -212,7 +213,6 @@ CONTINUOUS_TOGGLES = (
     ("strict_outputs", output_contract.STRICT_ENV, output_contract.strict, "strict outputs"),
     ("delegation", delegation.DELEGATION_ENV, delegation.enabled, "delegation guidance"),
 )
-DEFAULT_ORCHESTRATION = "continuous"
 BYOM_CONFLICTING_FLAGS = (
     "--skip-analysis",
     "--skip-specgen",
@@ -389,12 +389,10 @@ class Pipeline:
         self._repair_loop_targets: list[str] = []
         self.skip_reviews = True
         self._enable_reviews_given = False
-        # parse_args() applies the CLI default (continuous) and its fallback
-        # rules; embedders that configure Pipeline directly keep the phased
-        # sequence unless they select continuous themselves.
+        # Phased unless --orchestration=continuous is requested (parse_args)
+        # or restored from a continuous run's configuration.
         self.orchestration = "phased"
         self._orchestration_requested: str | None = None
-        self._orchestration_fallback: str | None = None
         # Attach notes logged inside pipeline.log (e.g. restored prompt toggles).
         self.resume_notices: list[str] = []
         self.agent = "claude-code"
@@ -771,23 +769,27 @@ class Pipeline:
         return conflicts
 
     def _resolve_orchestration(self) -> str | None:
-        """Select continuous by default; fall back to phased for unsupported options."""
+        """Phased unless continuous is requested; continuous rejects options it does not support."""
         requested = self._orchestration_requested
         if getattr(self, "incremental", False):
             # The incremental CI workflow is already one continuous conversation.
             self.orchestration = "phased"
             return None if requested is None else "--orchestration does not apply to --incremental"
-        conflicts = self._continuous_conflicts()
-        self._orchestration_fallback = None
-        if requested is None:
-            self.orchestration = "phased" if conflicts else DEFAULT_ORCHESTRATION
-            if conflicts:
-                self._orchestration_fallback = "; ".join(conflicts)
+        if requested != "continuous":
+            self.orchestration = "phased"
             return None
-        if requested == "continuous" and conflicts:
+        conflicts = self._continuous_conflicts()
+        if conflicts:
             return f"--orchestration=continuous does not support {'; '.join(conflicts)} yet; use --orchestration=phased"
-        self.orchestration = requested
+        self.orchestration = "continuous"
+        self._apply_continuous_prompt_defaults()
         return None
+
+    @staticmethod
+    def _apply_continuous_prompt_defaults() -> None:
+        from specula.continuous import apply_prompt_defaults
+
+        apply_prompt_defaults()
 
     @staticmethod
     def _normalize_byom_path(raw_path: str) -> Path:
@@ -1142,7 +1144,8 @@ class Pipeline:
         if requested is not None and requested != stored:
             raise resumelib.ResumeError(f"this run uses {stored} orchestration; start a new run to use {requested}")
         self.orchestration = stored
-        self._orchestration_fallback = None
+        if stored == "continuous":
+            self._apply_continuous_prompt_defaults()
 
     def _restore_resume_configuration(self, raw: dict[str, Any], *, allow_overrides: bool = False) -> None:
         if raw.get("version") != 1:
@@ -4233,8 +4236,6 @@ class Pipeline:
 
             return ContinuousRun(self).main()
         self.print_run_header()
-        if self._orchestration_fallback is not None:
-            log(f"Orchestration: phased (continuous orchestration does not support {self._orchestration_fallback} yet)")
 
         self.validate_agent_adapter()
 

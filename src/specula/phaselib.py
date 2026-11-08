@@ -3911,8 +3911,9 @@ def main(argv: list[str]) -> int:
 
         PHASES["incremental"] = IncrementalPhase()
     elif argv and argv[0] == "main":
-        from specula.continuous import ContinuousPhase
+        from specula.continuous import ContinuousPhase, apply_prompt_defaults
 
+        apply_prompt_defaults()
         PHASES["main"] = ContinuousPhase()
     if not argv or argv[0] not in PHASES:
         print(f"usage: phaselib.py <phase> [options] <target>...\nphases: {', '.join(PHASES)}", file=sys.stderr)

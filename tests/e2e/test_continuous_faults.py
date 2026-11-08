@@ -37,6 +37,13 @@ FAULTS = FIXTURES / "faults"
 TIMEOUT = 120.0
 
 
+def continuous_args(args: tuple[str, ...] | list[str]) -> list[str]:
+    """Select continuous orchestration (opt-in) unless the test chose a mode itself."""
+    if any(arg.startswith("--orchestration") for arg in args):
+        return list(args)
+    return ["--orchestration=continuous", *args]
+
+
 def _ppid(pid: str) -> int | None:
     try:
         stat = Path(f"/proc/{pid}/stat").read_text()
@@ -135,7 +142,7 @@ class ContinuousFaults(unittest.TestCase):
             extra["FAULT_QUOTA"] = "1"
         with output.open("wb") as stream:
             process = subprocess.Popen(
-                [*command, f"--artifact={self.source}", *args],
+                [*command, f"--artifact={self.source}", *continuous_args(args)],
                 cwd=self.work,
                 env=self.environment(extra),
                 stdout=stream,
@@ -147,7 +154,13 @@ class ContinuousFaults(unittest.TestCase):
 
     def attach(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, str(self.root / "src/specula/cli.py"), "run", f"--run-id={self.run_dir().name}", *args],
+            [
+                sys.executable,
+                str(self.root / "src/specula/cli.py"),
+                "run",
+                f"--run-id={self.run_dir().name}",
+                *continuous_args(args),
+            ],
             cwd=self.work,
             env=self.environment(),
             capture_output=True,

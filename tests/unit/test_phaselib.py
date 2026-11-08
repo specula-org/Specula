@@ -679,9 +679,9 @@ class TestRepairMode(PhaseCase):
 
 
 class TestWorkingNotes(PhaseCase):
-    """S1b: every phase prompt points at the shared notes area, appended after the
-    phase's own contract and before the target guidance; SPECULA_NOTES=off removes
-    exactly that section and nothing else."""
+    """S1b: with SPECULA_NOTES=on every phase prompt points at the shared notes area,
+    appended after the phase's own contract and before the target guidance; off
+    (the default) removes exactly that section and nothing else."""
 
     # (phase key, extra flags, prompt filename, first?)
     CASES: list[tuple[str, list[str], str, bool]] = [
@@ -701,6 +701,7 @@ class TestWorkingNotes(PhaseCase):
         self.repo.mkdir()
         self.work_dir().mkdir(parents=True)
         (self.work_dir() / ".prompt-extra.md").write_text("Target guidance.\n")
+        self.set_env("SPECULA_NOTES", "on")
 
     def prompt(self, key: str, extra: list[str], filename: str) -> str:
         spec = BY_KEY[key]
@@ -861,8 +862,8 @@ class TestArgErrors(PhaseCase):
 class TestRulePinning(PhaseCase):
     """The pinned rules lead every prompt the generic launchers write (fresh,
     replayed, and continuation) and reach the adapter as --system-prompt-file on
-    every invocation; SPECULA_RULES=off restores the exact pre-rules prompts and
-    adapter argv."""
+    every invocation when SPECULA_RULES=on; off (the default) keeps the exact
+    pre-rules prompts and adapter argv."""
 
     RECORDING_ADAPTER = (
         'printf x >> "$COUNT_FILE"\n'
@@ -888,6 +889,7 @@ class TestRulePinning(PhaseCase):
         self.patch_attr(phaselib.Phase, "progress_config", ProgressConfig(poll_seconds=0.005))
         self.patch_attr(phaselib, "_transient_resume_delay", lambda _attempt: 0.0)
         self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULA_RULES", "on")
         self.adapter = adapters / "fake.sh"
         self.captures = self.tmp()
         self.set_env("CAPTURE_DIR", str(self.captures))
@@ -1001,7 +1003,7 @@ class TestRulePinning(PhaseCase):
             if spec["key"] == "bug_confirmation":
                 extra.append("--legacy-confirm")
             with self.subTest(phase=spec["key"]):
-                self.set_env("SPECULA_RULES", None)
+                self.set_env("SPECULA_RULES", "on")
                 rc, pinned_out = self.dry_run(spec, extra=extra)
                 self.assertEqual(rc, 0, pinned_out)
                 prompt = self.work_dir() / spec["prompt"]
@@ -1562,7 +1564,7 @@ class TestHandoffGate(PhaseCase):
         first_prompt = (captures / "prompt-1.md").read_text()
         resumed_prompt = (captures / "prompt-2.md").read_text()
         self.assertIn("modeling-brief.md", first_prompt)
-        self.assertEqual(resumed_prompt, with_rules(phaselib._SESSION_RESUME_PROMPT))
+        self.assertEqual(resumed_prompt, phaselib._SESSION_RESUME_PROMPT)
         self.assertLess(len(resumed_prompt), len(first_prompt))
         resume_paths = (captures / "resume-paths").read_text().splitlines()
         self.assertEqual(resume_paths, [str(self.work_dir() / "agent.resume.json")] * 2)
@@ -1619,10 +1621,7 @@ class TestHandoffGate(PhaseCase):
         self.assertIn("modeling-brief.md", original_prompt)
         self.assertEqual(
             resumed_prompt,
-            with_rules(
-                phaselib._MANUAL_SESSION_RESUME_PROMPT
-                + "\n## Target-Specific Instructions\n\nFocus on trace fidelity\n"
-            ),
+            phaselib._MANUAL_SESSION_RESUME_PROMPT + "\n## Target-Specific Instructions\n\nFocus on trace fidelity\n",
         )
         self.assertNotIn("Original priority", resumed_prompt)
         self.assertEqual((self.work_dir() / "agent.attempt-1.log").read_text(), "interrupted\n")
@@ -1710,9 +1709,7 @@ class TestHandoffGate(PhaseCase):
 
                 self.assertEqual(resumed_rc, 0, resumed_out)
                 self.assertEqual((captures / f"{case_name}.count").read_text(), "xx")
-                self.assertEqual(
-                    (self.work_dir() / prompt_rel).read_text(), with_rules(phaselib._MANUAL_SESSION_RESUME_PROMPT)
-                )
+                self.assertEqual((self.work_dir() / prompt_rel).read_text(), phaselib._MANUAL_SESSION_RESUME_PROMPT)
                 self.assertEqual(resumelib.active_entries(self.run_dir), [])
                 self.assertEqual(resumelib.completed_entries(self.run_dir), [])
 
@@ -2952,10 +2949,10 @@ class TestRunAgentBlocking(PhaseCase):
         self.assertEqual(rc, 0)
         self.assertEqual(text, "continued\n")
         self.assertEqual(count.read_text(), "xxx")
-        self.assertEqual((captures / "prompt-1.md").read_text(), with_rules("original prompt"))
+        self.assertEqual((captures / "prompt-1.md").read_text(), "original prompt")
         second_prompt = (captures / "prompt-2.md").read_text()
         third_prompt = (captures / "prompt-3.md").read_text()
-        self.assertTrue(second_prompt.startswith(with_rules("original prompt")))
+        self.assertTrue(second_prompt.startswith("original prompt"))
         self.assertIn(
             "Continue After Provider Policy Interruption",
             second_prompt,
@@ -3075,10 +3072,8 @@ class TestRunAgentBlocking(PhaseCase):
         self.assertEqual(text, "continued answer\n")
         self.assertEqual(count.read_text(), "xx")
         sleep.assert_called_once_with(phaselib._transient_resume_delay(1))
-        self.assertEqual(
-            (captures / "prompt-1.md").read_text(), with_rules("original blocking prompt with detailed evidence")
-        )
-        self.assertEqual((captures / "prompt-2.md").read_text(), with_rules(phaselib._SESSION_RESUME_PROMPT))
+        self.assertEqual((captures / "prompt-1.md").read_text(), "original blocking prompt with detailed evidence")
+        self.assertEqual((captures / "prompt-2.md").read_text(), phaselib._SESSION_RESUME_PROMPT)
         self.assertEqual((captures / "resume-paths").read_text().splitlines(), [str(captures / "turn.resume.json")] * 2)
         self.assertEqual((captures / "turn.attempt-1.log").read_text(), "capacity failure\n")
         self.assertEqual(log_file.read_text(), "continued answer\n")
@@ -3195,10 +3190,10 @@ class TestRunAgentBlocking(PhaseCase):
         self.assertEqual(state.invocation_attempt, 4)
         self.assertEqual(state.resume_state, captures / "turn.resume.json")
         self.assertEqual((captures / "sessions").read_text().splitlines(), ["shared-session-789"] * 4)
-        self.assertEqual((captures / "prompt-1.md").read_text(), with_rules("original prompt"))
-        self.assertEqual((captures / "prompt-2.md").read_text(), with_rules(phaselib._SESSION_RESUME_PROMPT))
-        self.assertEqual((captures / "prompt-3.md").read_text(), with_rules(phaselib._POLICY_SESSION_RESUME_PROMPT))
-        self.assertEqual((captures / "prompt-4.md").read_text(), with_rules(phaselib._SESSION_RESUME_PROMPT))
+        self.assertEqual((captures / "prompt-1.md").read_text(), "original prompt")
+        self.assertEqual((captures / "prompt-2.md").read_text(), phaselib._SESSION_RESUME_PROMPT)
+        self.assertEqual((captures / "prompt-3.md").read_text(), phaselib._POLICY_SESSION_RESUME_PROMPT)
+        self.assertEqual((captures / "prompt-4.md").read_text(), phaselib._SESSION_RESUME_PROMPT)
         self.assertEqual((captures / "turn.attempt-3.log").read_text(), "attempt-3\n")
         self.assertEqual(log_file.read_text(), "attempt-4\n")
 
@@ -3279,7 +3274,7 @@ class TestRunAgentBlocking(PhaseCase):
 
         self.assertEqual(second_rc, POLICY_BLOCKED_RC)
         self.assertEqual(count.read_text(), "xxxx")
-        self.assertEqual((captures / "prompt-4.md").read_text(), with_rules(phaselib._MANUAL_SESSION_RESUME_PROMPT))
+        self.assertEqual((captures / "prompt-4.md").read_text(), phaselib._MANUAL_SESSION_RESUME_PROMPT)
         for attempt in range(1, 4):
             self.assertEqual(
                 (captures / f"turn.attempt-{attempt}.log").read_text(),
@@ -4750,9 +4745,7 @@ class TestReviewPhase(PhaseCase):
 
                 self.assertEqual(resumed_rc, 0, resumed_out)
                 self.assertEqual((captures / f"review-{phase}.count").read_text(), "xx")
-                self.assertEqual(
-                    (self.work_dir() / prompt_rel).read_text(), with_rules(phaselib._MANUAL_SESSION_RESUME_PROMPT)
-                )
+                self.assertEqual((self.work_dir() / prompt_rel).read_text(), phaselib._MANUAL_SESSION_RESUME_PROMPT)
                 self.assertEqual(resumelib.active_entries(self.run_dir), [])
                 self.assertEqual(resumelib.completed_entries(self.run_dir), [])
 

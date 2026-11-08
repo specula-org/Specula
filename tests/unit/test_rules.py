@@ -40,7 +40,9 @@ class RulesText(unittest.TestCase):
     def test_rules_avoid_process_name_tokens(self) -> None:
         # Some adapters put the text in the CLI argv; an agent's `pkill -f TLC`
         # or `pkill -f java` must never match its own session process.
-        text = rules.rules_block()
+        with mock.patch.dict(os.environ, {rules.RULES_ENV: "on"}):
+            text = rules.rules_block()
+        self.assertTrue(text)
         for token in ("tlc", "java", "tla2tools", "wait_for_pid"):
             with self.subTest(token=token):
                 self.assertNotRegex(text, re.compile(re.escape(token), re.IGNORECASE))
@@ -51,7 +53,7 @@ class RulesToggle(unittest.TestCase):
         patcher = mock.patch.dict(os.environ)
         patcher.start()
         self.addCleanup(patcher.stop)
-        os.environ.pop(rules.RULES_ENV, None)
+        os.environ[rules.RULES_ENV] = "on"
 
     def test_block_is_titled_rules_text(self) -> None:
         block = rules.rules_block()
@@ -73,10 +75,13 @@ class RulesToggle(unittest.TestCase):
         quoted = f"Quote:\n{rules.rules_block()}"
         self.assertEqual(rules.with_rules(quoted), rules.rules_block() + rules.RULES_SEPARATOR + quoted)
 
-    def test_off_values_disable_rules_entirely(self) -> None:
-        for value in ("off", "OFF", " off ", "0", "false", "no"):
+    def test_off_by_default_and_for_any_other_value(self) -> None:
+        for value in (None, "", "off", "OFF", " off ", "0", "false", "no", "maybe"):
             with self.subTest(value=value):
-                os.environ[rules.RULES_ENV] = value
+                if value is None:
+                    os.environ.pop(rules.RULES_ENV, None)
+                else:
+                    os.environ[rules.RULES_ENV] = value
                 self.assertFalse(rules.enabled())
                 self.assertEqual(rules.rules_block(), "")
                 self.assertEqual(rules.with_rules("exact prompt\n"), "exact prompt\n")
@@ -87,8 +92,8 @@ class RulesToggle(unittest.TestCase):
         os.environ[rules.RULES_ENV] = "off"
         self.assertEqual(rules.rules_identity(), "")
 
-    def test_other_values_keep_rules_on(self) -> None:
-        for value in ("", "on", "1", "yes"):
+    def test_on_values_enable_rules(self) -> None:
+        for value in ("on", "ON", " on ", "1", "true", "yes"):
             with self.subTest(value=value):
                 os.environ[rules.RULES_ENV] = value
                 self.assertTrue(rules.enabled())

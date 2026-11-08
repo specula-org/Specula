@@ -32,7 +32,6 @@ from specula import phaselib as PhaseLib
 from specula import pipelinelib as PL
 from specula import prompts as P
 from specula.phaselib import Workspace
-from specula.rules import with_rules
 
 EVIDENCE = "The investigation inspected the real call path and captured concrete observed behavior."
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1249,9 +1248,7 @@ class TestDriver(ConfirmCase):
         resumed_argv = (root / "argv-2.txt").read_text().splitlines()
         self.assertNotIn("--resume", first_argv)
         self.assertEqual(resumed_argv[resumed_argv.index("--resume") + 1], session_id)
-        self.assertEqual(
-            (root / "stdin-2.md").read_text().strip(), with_rules(PhaseLib._POLICY_SESSION_RESUME_PROMPT).strip()
-        )
+        self.assertEqual((root / "stdin-2.md").read_text().strip(), PhaseLib._POLICY_SESSION_RESUME_PROMPT)
         for argv in (first_argv, resumed_argv):
             self.assertEqual("--append-system-prompt-file" in argv, bool(rules.rules_block()))
         report = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
@@ -1327,7 +1324,7 @@ class TestDriver(ConfirmCase):
         self.assertEqual((root / "a-count").read_text(), "x")
         self.assertEqual((root / "b-count").read_text(), "xx")
         self.assertEqual(len(set((root / "b-cwds").read_text().splitlines())), 1)
-        self.assertEqual((root / "b-resume-prompt").read_text(), with_rules(PhaseLib._SESSION_RESUME_PROMPT))
+        self.assertEqual((root / "b-resume-prompt").read_text(), PhaseLib._SESSION_RESUME_PROMPT)
         self.assertEqual((root / "resume-check").read_text(), "passed")
         self.assertEqual(cfg._finding_leases, {})
         self.assertEqual(cfg._policy_states, {})
@@ -1425,7 +1422,7 @@ class TestDriver(ConfirmCase):
         self.assertEqual((root / "a-count").read_text(), "x")
         self.assertEqual((root / "b-count").read_text(), "xx")
         self.assertEqual(len(set((root / "b-cwds").read_text().splitlines())), 1)
-        self.assertEqual((root / "b-resume-prompt").read_text(), with_rules(PhaseLib._MANUAL_SESSION_RESUME_PROMPT))
+        self.assertEqual((root / "b-resume-prompt").read_text(), PhaseLib._MANUAL_SESSION_RESUME_PROMPT)
         self.assertEqual((root / "resume-check").read_text(), "passed")
         self.assertEqual(resumelib.active_entries(root), [])
         self.assertFalse(lease_checkpoint.exists())
@@ -1563,7 +1560,7 @@ class TestDriver(ConfirmCase):
         )
         self.assertEqual((root / "b-count").read_text(), "xx")
         self.assertEqual(len(set((root / "b-cwds").read_text().splitlines())), 1)
-        self.assertEqual((root / "b-resume-prompt").read_text(), with_rules(PhaseLib._MANUAL_SESSION_RESUME_PROMPT))
+        self.assertEqual((root / "b-resume-prompt").read_text(), PhaseLib._MANUAL_SESSION_RESUME_PROMPT)
         self.assertEqual((root / "resume-check").read_text(), "passed")
         self.assertEqual(
             (ws.work_dir("T") / "confirmation" / "MC-1" / "repair-request.body.md").read_text(),
@@ -1907,7 +1904,7 @@ class TestDriver(ConfirmCase):
         self.assertEqual((root / "consolidate-count").read_text(), "xx")
         self.assertEqual(
             (root / "consolidate-prompt-2").read_text(),
-            with_rules(PhaseLib._SESSION_RESUME_PROMPT),
+            PhaseLib._SESSION_RESUME_PROMPT,
         )
         self.assertEqual(cfg._policy_states, {})
 
@@ -1963,7 +1960,7 @@ class TestDriver(ConfirmCase):
         self.assertEqual((root / "consolidate-count").read_text(), "xx")
         self.assertEqual(
             (root / "consolidate-prompt-2").read_text(),
-            with_rules(PhaseLib._MANUAL_SESSION_RESUME_PROMPT),
+            PhaseLib._MANUAL_SESSION_RESUME_PROMPT,
         )
         self.assertEqual(resumelib.active_entries(root), [])
 
@@ -3286,7 +3283,7 @@ class TestPromptExtraAndLog(ConfirmCase):
         patcher = mock.patch.dict(os.environ)
         patcher.start()
         self.addCleanup(patcher.stop)
-        os.environ.pop(notes.NOTES_ENV, None)
+        os.environ[notes.NOTES_ENV] = "on"
 
     def test_finding_turns_read_shared_notes_but_write_only_their_finding_dir(self) -> None:
         self._isolate_notes_env()
@@ -3351,7 +3348,7 @@ class TestPromptExtraAndLog(ConfirmCase):
         patcher = mock.patch.dict(os.environ)
         patcher.start()
         self.addCleanup(patcher.stop)
-        os.environ.pop(rules.RULES_ENV, None)
+        os.environ[rules.RULES_ENV] = "on"
         ws = self.seed("T", [])
         cfg = self.cfg(ws, "T")
         f = self.finding(ws, "T")

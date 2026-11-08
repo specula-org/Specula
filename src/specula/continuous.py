@@ -64,7 +64,7 @@ if __package__ in (None, ""):
 from specula import output_contract, resumelib, stop_gate
 from specula.context_control import CONFIRMATION_REQUEST, CONFIRMATION_YIELD_RC, REPAIR_SNAPSHOT, write_json
 from specula.delegation import delegation_pointer, delegation_section
-from specula.notes import notes_section
+from specula.notes import NOTES_ENV, notes_section
 from specula.phaselib import (
     AgentFiles,
     BugConfirmationPhase,
@@ -75,13 +75,16 @@ from specula.phaselib import (
     _wc_l,
 )
 from specula.prompts import render
-from specula.rules import with_rules
+from specula.rules import RULES_ENV, with_rules
 from specula.skill_refs import prompt_skill_ids
 
 if TYPE_CHECKING:
     from specula.pipelinelib import Pipeline
 
 PHASE_KEY = "main"
+# Prompt additions that are off by default and on for continuous runs unless
+# the variable is set: the pinned hard rules and the working-notes area.
+PROMPT_DEFAULTS = (RULES_ENV, NOTES_ENV)
 LAUNCHER = "launch_continuous.sh"
 STATE_FILE = output_contract.MAIN_STATE_FILE
 ABANDONED_DIR = ".context-control/abandoned"
@@ -161,6 +164,12 @@ def _now() -> str:
 
 def _log(message: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {message}")
+
+
+def apply_prompt_defaults() -> None:
+    """Turn on the continuous prompt additions for this process and its children unless set."""
+    for variable in PROMPT_DEFAULTS:
+        os.environ.setdefault(variable, "on")
 
 
 # ── durable state ──────────────────────────────────────────────────────────

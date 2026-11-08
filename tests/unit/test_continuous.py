@@ -55,15 +55,33 @@ def parse(argv: list[str]) -> tuple[pl.Pipeline, int | None, str]:
 # ── mode selection ──────────────────────────────────────────────────────────
 
 
-def test_continuous_is_the_cli_default_and_phased_stays_selectable() -> None:
+def test_phased_is_the_cli_default_and_continuous_is_opt_in() -> None:
     default, rc, _ = parse(["t|g|l|r"])
-    assert rc is None and default.orchestration == "continuous" and default._orchestration_fallback is None
+    assert rc is None and default.orchestration == "phased"
     phased, rc, _ = parse(["--orchestration=phased", "t|g|l|r"])
     assert rc is None and phased.orchestration == "phased"
+    continuous_run, rc, _ = parse(["--orchestration=continuous", "t|g|l|r"])
+    assert rc is None and continuous_run.orchestration == "continuous"
     for argv in (["--orchestration=serial", "t"], ["--orchestration=phased", "--orchestration=continuous", "t"]):
         _, rc, err = parse(argv)
         assert rc == 1 and "--orchestration requires one value" in err
     assert pl.Pipeline().orchestration == "phased"  # embedders opt in explicitly
+
+
+def test_continuous_turns_on_rules_and_notes_unless_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    parse(["t|g|l|r"])
+    assert rules.RULES_ENV not in os.environ and NOTES_ENV not in os.environ
+    assert not rules.enabled() and not notes_section(Path("/w"), first=False)
+    phased = parse(["--orchestration=phased", "t|g|l|r"])[0]._resume_configuration_document()
+    assert "rules" not in phased and "notes" not in phased  # identical to runs from before the toggles
+    continuous_run, _, _ = parse(["--orchestration=continuous", "t|g|l|r"])
+    assert os.environ[rules.RULES_ENV] == "on" and os.environ[NOTES_ENV] == "on"
+    document = continuous_run._resume_configuration_document()
+    assert (document["rules"], document["notes"]) == (True, True)
+    monkeypatch.setenv(rules.RULES_ENV, "off")
+    monkeypatch.delenv(NOTES_ENV)
+    parse(["--orchestration=continuous", "t|g|l|r"])
+    assert os.environ[rules.RULES_ENV] == "off" and os.environ[NOTES_ENV] == "on"
 
 
 @pytest.mark.parametrize(
@@ -79,36 +97,35 @@ def test_continuous_is_the_cli_default_and_phased_stays_selectable() -> None:
         "--ci-init",
     ],
 )
-def test_unsupported_options_fall_back_by_default_and_fail_when_explicit(flag: str) -> None:
-    fallback, rc, _ = parse([flag, "t|g|l|r"])
-    assert rc is None
-    assert fallback.orchestration == "phased"
-    assert fallback._orchestration_fallback is not None and flag in fallback._orchestration_fallback
+def test_unsupported_options_stay_phased_and_reject_continuous(flag: str) -> None:
+    default, rc, _ = parse([flag, "t|g|l|r"])
+    assert rc is None and default.orchestration == "phased"
     _, rc, err = parse(["--orchestration=continuous", flag, "t|g|l|r"])
     assert rc == 1
     assert f"--orchestration=continuous does not support {flag}" in err
     assert "--orchestration=phased" in err
 
 
-def test_skip_analysis_selects_continuous_from_existing_analysis() -> None:
+def test_skip_analysis_starts_continuous_from_existing_analysis() -> None:
     # The main session then starts at spec generation; only the analysis stage can be skipped.
-    for argv in (["--skip-analysis", "t|g|l|r"], ["--orchestration=continuous", "--skip-analysis", "t|g|l|r"]):
-        pipeline, rc, err = parse(argv)
-        assert rc is None, err
-        assert pipeline.orchestration == "continuous" and pipeline._orchestration_fallback is None
-        assert pipeline.skip_analysis
+    pipeline, rc, err = parse(["--orchestration=continuous", "--skip-analysis", "t|g|l|r"])
+    assert rc is None, err
+    assert pipeline.orchestration == "continuous" and pipeline.skip_analysis
+    phased, rc, err = parse(["--skip-analysis", "t|g|l|r"])
+    assert rc is None, err
+    assert phased.orchestration == "phased" and phased.skip_analysis
     _, rc, err = parse(["--orchestration=continuous", "--skip-analysis", "--skip-specgen", "t|g|l|r"])
     assert rc == 1 and "does not support --skip-specgen" in err and "--skip-analysis" not in err
 
 
-def test_path_options_fall_back(tmp_path: Path) -> None:
+def test_path_options_stay_phased(tmp_path: Path) -> None:
     model = tmp_path / "model.tla"
     model.write_text("---- MODULE model ----\n====\n")
     prior = tmp_path / "prior"
     prior.mkdir()
     for flag in (f"--byom={model}", f"--findings-from={prior}"):
-        fallback, rc, _ = parse([flag, "t|g|l|r"])
-        assert rc is None and fallback.orchestration == "phased"
+        default, rc, _ = parse([flag, "t|g|l|r"])
+        assert rc is None and default.orchestration == "phased"
         _, rc, err = parse(["--orchestration=continuous", flag, "t|g|l|r"])
         assert rc == 1 and "does not support" in err
 
@@ -151,15 +168,14 @@ def test_agent_config_main_route_rules(tmp_path: Path) -> None:
     assert load_agent_routing(write_config(config, {"main": "base"})).main_session_differences() == []
 
 
-def test_agent_config_conflict_falls_back_or_errors(tmp_path: Path) -> None:
+def test_agent_config_conflict_stays_phased_or_rejects_continuous(tmp_path: Path) -> None:
     config = write_config(tmp_path / "agents.json", {"analyze": "main", "validate": "check"})
-    fallback, rc, _ = parse([f"--agent-config={config}", "t|g|l|r"])
-    assert rc is None and fallback.orchestration == "phased"
-    assert fallback._orchestration_fallback is not None and "--agent-config" in fallback._orchestration_fallback
+    default, rc, _ = parse([f"--agent-config={config}", "t|g|l|r"])
+    assert rc is None and default.orchestration == "phased"
     _, rc, err = parse(["--orchestration=continuous", f"--agent-config={config}", "t|g|l|r"])
     assert rc == 1 and "--agent-config routing" in err
     good = write_config(tmp_path / "good.json", {"main": "main", "confirm": "check", "classify": "base"})
-    pipeline, rc, _ = parse([f"--agent-config={good}", "t|g|l|r"])
+    pipeline, rc, _ = parse(["--orchestration=continuous", f"--agent-config={good}", "t|g|l|r"])
     assert rc is None and pipeline.orchestration == "continuous"
     assert set(pipeline._route_specs()) == {"main", "confirm", "classify"}
     assert pipeline._agent_selection("main") == AgentSelection("codex", "main-model")
@@ -180,7 +196,7 @@ def test_incremental_keeps_its_own_path() -> None:
 
 
 def test_resume_configuration_records_and_restores_the_mode() -> None:
-    continuous_run, _, _ = parse(["t|g|l|r"])
+    continuous_run, _, _ = parse(["--orchestration=continuous", "t|g|l|r"])
     document = continuous_run._resume_configuration_document()
     assert document["orchestration"] == "continuous"
     phased_run, _, _ = parse(["--orchestration=phased", "t|g|l|r"])
@@ -211,7 +227,7 @@ def test_resume_configuration_records_and_restores_the_mode() -> None:
 
 
 def test_prompt_toggles_are_stored_at_creation_and_restored_on_attach(monkeypatch: pytest.MonkeyPatch) -> None:
-    created, _, _ = parse(["t|g|l|r"])
+    created, _, _ = parse(["--orchestration=continuous", "t|g|l|r"])
     document = created._resume_configuration_document()
     assert (document["rules"], document["notes"]) == (True, True)
     monkeypatch.setenv(rules.RULES_ENV, "off")
@@ -247,12 +263,12 @@ def test_strict_outputs_are_stored_for_continuous_runs_and_restored_on_attach(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(output_contract.STRICT_ENV, "on")
-    document = parse(["t|g|l|r"])[0]._resume_configuration_document()
+    document = parse(["--orchestration=continuous", "t|g|l|r"])[0]._resume_configuration_document()
     assert document["strict_outputs"] is True
     phased = parse(["--orchestration=phased", "t|g|l|r"])[0]._resume_configuration_document()
     assert "strict_outputs" not in phased  # no effect there, so phased configurations stay unchanged
     monkeypatch.setenv(output_contract.STRICT_ENV, "off")
-    default = parse(["t|g|l|r"])[0]._resume_configuration_document()
+    default = parse(["--orchestration=continuous", "t|g|l|r"])[0]._resume_configuration_document()
     assert "strict_outputs" not in default
 
     attach, _, _ = parse(["--run-id=x"])
@@ -278,12 +294,12 @@ def test_strict_outputs_are_stored_for_continuous_runs_and_restored_on_attach(
 
 
 def test_delegation_is_stored_for_continuous_runs_and_restored_on_attach(monkeypatch: pytest.MonkeyPatch) -> None:
-    document = parse(["t|g|l|r"])[0]._resume_configuration_document()
+    document = parse(["--orchestration=continuous", "t|g|l|r"])[0]._resume_configuration_document()
     assert document["delegation"] is True  # on by default
     phased = parse(["--orchestration=phased", "t|g|l|r"])[0]._resume_configuration_document()
     assert "delegation" not in phased  # phased configurations stay unchanged
     monkeypatch.setenv(delegation.DELEGATION_ENV, "no")
-    off = parse(["t|g|l|r"])[0]._resume_configuration_document()
+    off = parse(["--orchestration=continuous", "t|g|l|r"])[0]._resume_configuration_document()
     assert "delegation" not in off
 
     attach, _, _ = parse(["--run-id=x"])
@@ -306,7 +322,7 @@ def test_delegation_is_stored_for_continuous_runs_and_restored_on_attach(monkeyp
 
 def test_routed_resume_configuration_uses_main_routes(tmp_path: Path) -> None:
     config = write_config(tmp_path / "agents.json", {"main": "main", "confirm": "check"})
-    pipeline, _, _ = parse([f"--agent-config={config}", "t|g|l|r"])
+    pipeline, _, _ = parse(["--orchestration=continuous", f"--agent-config={config}", "t|g|l|r"])
     document = pipeline._resume_configuration_document()
     assert set(document["routes"]) == {"main", "confirm", "classify"}
     attach, _, _ = parse(["--run-id=x"])
@@ -375,6 +391,7 @@ def run_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[t
     source.mkdir()
     monkeypatch.setenv("SPECULA_RUN_DIR", str(run))
     monkeypatch.setenv(resumelib.INVOCATION_ENV, "a" * 32)
+    continuous.apply_prompt_defaults()  # as a continuous run's pipeline does
     ws = Workspace(["t|org/t|Go|Raft"], artifact=str(source), run_dir=run)
     work = ws.work_dir("t")
     work.mkdir(parents=True)
@@ -947,11 +964,14 @@ def test_rules_and_notes_off_leave_continuations_bare(
     assert compaction.startswith("Continue the same Specula main session") and "Working Notes" not in compaction
 
 
-def test_incremental_compaction_continue_prompt_is_pinned_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    prompt = runner._continue_prompt("incremental", "completed", "h.md", Path("/w"))
-    assert strip_rules(prompt).startswith("Continue the same incremental CI task.")
-    monkeypatch.setenv(rules.RULES_ENV, "off")
-    assert runner._continue_prompt("incremental", "completed", "h.md", Path("/w")).startswith("Continue the same")
+def test_incremental_compaction_continue_prompt_is_pinned_only_when_rules_are_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bare = runner._continue_prompt("incremental", "completed", "h.md", Path("/w"))
+    assert bare.startswith("Continue the same incremental CI task.")  # unchanged by default
+    monkeypatch.setenv(rules.RULES_ENV, "on")
+    pinned = runner._continue_prompt("incremental", "completed", "h.md", Path("/w"))
+    assert pinned.count(rules.RULES_TITLE) == 1 and strip_rules(pinned) == bare
 
 
 # ── resource summary ─────────────────────────────────────────────────────────

@@ -81,7 +81,6 @@ class OneShotFindings(unittest.TestCase):
         guidance.write_text("Fixture reply scope.\n")
         args = [
             "run",
-            "--orchestration=phased",
             "--agent=fake",
             f"--artifact={fixture.source}",
             f"--guidance={guidance}",
@@ -215,14 +214,7 @@ class OneShotFindings(unittest.TestCase):
         fixture.change_source("BUG\naccept reply\nEND\nlogging v1\n")
         if interrupt_mc2:
             adapter.with_suffix(".interrupt-MC-2").touch()
-        args = [
-            "run",
-            "--orchestration=phased",
-            "--agent=fake",
-            f"--artifact={fixture.source}",
-            f"--guidance={guidance}",
-            "--skip-repair-loop",
-        ]
+        args = ["run", "--agent=fake", f"--artifact={fixture.source}", f"--guidance={guidance}", "--skip-repair-loop"]
         first = fixture.helper.run_cli(fixture.root, [*args, "footest"], cwd=fixture.work)
         run = (fixture.root / "runs/latest").resolve()
         work = run / "footest/.specula-output"

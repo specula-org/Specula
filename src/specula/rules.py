@@ -6,8 +6,9 @@ rules in ``prompts/rules.md`` are the few skill requirements whose violation
 invalidates a run's results; they are restated at the start of every prompt the
 launcher writes and, where the agent CLI supports it, in its system prompt.
 
-``SPECULA_RULES=off`` (also ``0``/``false``/``no``) disables both, restoring the
-exact pre-rules prompts and adapter arguments.
+Off by default, so prompts and adapter arguments are exactly what they were
+before rule pinning. ``SPECULA_RULES=on`` (also ``1``/``true``/``yes``) enables
+it; continuous orchestration turns it on unless the variable is set.
 
 Keep ``rules.md`` short and free of process-name tokens (for example the model
 checker's class name or ``java``): some adapters pass the text in the CLI's
@@ -24,16 +25,16 @@ from specula.prompts import PROMPTS_DIR
 RULES_ENV = "SPECULA_RULES"
 RULES_TITLE = "# Specula hard rules"
 RULES_SEPARATOR = "\n---\n\n"
-_OFF_VALUES = frozenset({"0", "false", "no", "off"})
+_ON_VALUES = frozenset({"1", "true", "yes", "on"})
 
 
 def enabled() -> bool:
-    """Whether rule pinning is on (the default)."""
-    return os.environ.get(RULES_ENV, "").strip().lower() not in _OFF_VALUES
+    """Whether rule pinning is on (``SPECULA_RULES=on``; off by default)."""
+    return os.environ.get(RULES_ENV, "").strip().lower() in _ON_VALUES
 
 
 def rules_block() -> str:
-    """The titled rules block, or ``""`` when ``SPECULA_RULES=off``."""
+    """The titled rules block, or ``""`` when rule pinning is off."""
     if not enabled():
         return ""
     body = (PROMPTS_DIR / "rules.md").read_text(encoding="utf-8").strip()
@@ -43,8 +44,8 @@ def rules_block() -> str:
 def rules_identity() -> str:
     """Path-free identity of the pinned rules, for confirmation verdict caching.
 
-    The ``rules.md`` template text when rules are on; ``""`` when off, so
-    ``SPECULA_RULES=off`` keeps fingerprints computed before rule pinning.
+    The ``rules.md`` template text when rules are on; ``""`` when off, so runs
+    without rule pinning keep fingerprints computed before it existed.
     """
     if not enabled():
         return ""
