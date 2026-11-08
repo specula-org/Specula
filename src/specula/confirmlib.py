@@ -4621,7 +4621,8 @@ def _drive_confirmation(cfg: ConfirmConfig, *, rate_limit_replay: bool = False) 
                 "resume checkpoint no longer matches current findings: " + ", ".join(missing),
             )
         _log(f"Restoring {len(recovery_ids)} interrupted finding conversation(s) serially")
-        failed_recovery: Outcome | None = None
+        failed_recoveries: list[Outcome] = []
+        rate_limited_recovery: Outcome | None = None
         for finding_id in recovery_ids:
             finding = by_id[finding_id]
             if cfg.repair_round is None:
@@ -4633,13 +4634,21 @@ def _drive_confirmation(cfg: ConfirmConfig, *, rate_limit_replay: bool = False) 
                     prior=prior_by_id.get(finding.id),
                     repair_evidence=repair_evidence_by_id[finding.id],
                 )
-            if recovered.status == INCOMPLETE:
-                failed_recovery = recovered
+            if recovered.status != INCOMPLETE:
+                continue
+            if recovered.failure_code == quota.RATE_LIMIT_RC:
+                rate_limited_recovery = recovered
                 break
-        if failed_recovery is not None:
-            outcomes.append(failed_recovery)
-            for finding in findings:
-                if finding.id == failed_recovery.finding.id:
+            # One finding's permanent failure says nothing about the others:
+            # keep it INCOMPLETE and go on restoring and running the rest.
+            failed_recoveries.append(recovered)
+        outcomes.extend(failed_recoveries)
+        failed_ids = {outcome.finding.id for outcome in failed_recoveries}
+        scheduled_findings = [finding for finding in findings if finding.id not in failed_ids]
+        if rate_limited_recovery is not None:
+            outcomes.append(rate_limited_recovery)
+            for finding in scheduled_findings:
+                if finding.id == rate_limited_recovery.finding.id:
                     continue
                 cached = _load_verdict(finding, cfg)
                 if cached is not None:
@@ -4656,7 +4665,7 @@ def _drive_confirmation(cfg: ConfirmConfig, *, rate_limit_replay: bool = False) 
                             "INCOMPLETE — this finding was not started while an interrupted conversation "
                             "was being restored. It was NOT judged and was NOT cached. Re-run to retry."
                         ),
-                        failure_code=failed_recovery.failure_code or 1,
+                        failure_code=quota.RATE_LIMIT_RC,
                     )
                 )
             scheduled_findings = []
