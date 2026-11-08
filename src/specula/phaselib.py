@@ -2980,6 +2980,9 @@ Prerequisites:
             attempt = 1
             try:
                 while True:
+                    # This also tells confirmation that a 75 is replayed, so a
+                    # batch whose rate-limited findings sit beside a permanent
+                    # failure returns 75 while a retry remains and 1 after it.
                     will_retry_rate_limit = (
                         not failures and self._reactive_rate_limit_enabled() and attempt <= retry_limit
                     )

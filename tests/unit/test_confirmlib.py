@@ -1950,10 +1950,233 @@ class TestDriver(ConfirmCase):
 
         with mock.patch.object(C, "run_agent_blocking", agent):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T"))
-        self.assertEqual(rc, 1)  # permanent failure wins over the simultaneous rate limit
+        # No caller replay is armed, so nothing would retry the rate-limited
+        # finding: the permanent failure wins and is not reported as 75.
+        self.assertEqual(rc, 1)
         cb = ws.work_dir("T") / "confirmed-bugs.md"
         self.assertTrue(cb.is_file())
         self.assertIn("2 incomplete", cb.read_text())  # both marked in the disposition summary
+
+    def _mixed_batch(self) -> tuple[Workspace, C.ConfirmConfig, dict[str, list[int]], list[str]]:
+        """MC-1 fails permanently, MC-2 is rate-limited, MC-3 is never started, MC-4 is cached."""
+        findings = [
+            {"id": fid, "source": "model-checking", "title": fid, "summary": "s"}
+            for fid in ("MC-1", "MC-2", "MC-3", "MC-4")
+        ]
+        ws = self.seed("T", findings)
+        cfg = self.cfg(ws, "T", max_parallel=1)
+        cached = C.load_findings(cfg)[3]
+        C._save_verdict(C.Outcome(cached, "NEEDS MORE INFO", True, 0, EVIDENCE), cfg)
+        plan: dict[str, list[int]] = {"MC-1": [9], "MC-2": [75], "MC-3": []}
+        calls: list[str] = []
+        return ws, cfg, plan, calls
+
+    @staticmethod
+    def _planned_agent(plan: dict[str, list[int]], calls: list[str]) -> Callable[..., tuple[int, str]]:
+        def agent(*args: object, **_kwargs: object) -> tuple[int, str]:
+            fid = Path(str(args[2])).parent.name
+            calls.append(fid)
+            rc = plan[fid].pop(0) if plan[fid] else 0
+            return (rc, _response("FALSE POSITIVE") if rc == 0 else "")
+
+        return agent
+
+    def test_armed_replay_retries_rate_limited_findings_beside_a_permanent_failure(self) -> None:
+        ws, cfg, plan, calls = self._mixed_batch()
+        report = ws.work_dir("T") / "confirmed-bugs.md"
+        agent = self._planned_agent(plan, calls)
+
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            first_rc = C.run_parallel_confirmation(cfg, retain_rate_limited_state=True)
+        # MC-1's permanent failure does not cancel the wait-and-retry of MC-2/MC-3.
+        self.assertEqual(first_rc, 75)
+        self.assertEqual(calls, ["MC-1", "MC-2"])
+        text = report.read_text()
+        self.assertIn("| 1 | MC-1 | INCOMPLETE |", text)
+        self.assertIn("| 2 | MC-2 | INCOMPLETE |", text)
+        self.assertIn("| 3 | MC-3 | INCOMPLETE |", text)
+        self.assertIn("not started because another finding was rate-limited", text)
+        self.assertIn("| 4 | MC-4 | NEEDS MORE INFO |", text)
+        # Only the rate-limited finding keeps a runtime lease for the replay.
+        self.assertEqual(set(cfg._finding_leases), {"MC-2"})
+
+        # The replay keeps the cached verdict and re-attempts every uncached
+        # finding, including the one that failed permanently.
+        plan["MC-1"].append(9)
+        calls.clear()
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            second_rc = C.run_parallel_confirmation(cfg, retain_rate_limited_state=True)
+        self.assertEqual(calls, ["MC-1", "MC-2", "MC-3"])
+        # No rate-limited finding remains, so the persisting failure is reported.
+        self.assertEqual(second_rc, 1)
+        self.assertEqual(cfg._finding_leases, {})
+        text = report.read_text()
+        self.assertIn("| 1 | MC-1 | INCOMPLETE |", text)
+        self.assertIn("| 2 | MC-2 | FALSE POSITIVE |", text)
+        self.assertIn("| 3 | MC-3 | FALSE POSITIVE |", text)
+        self.assertIn("| 4 | MC-4 | NEEDS MORE INFO |", text)
+
+        # A later run re-attempts only the still-uncached finding.
+        calls.clear()
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+        self.assertEqual(calls, ["MC-1"])
+
+    def test_permanent_failure_wins_when_no_replay_follows(self) -> None:
+        ws, cfg, plan, calls = self._mixed_batch()
+        agent = self._planned_agent(plan, calls)
+
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            self.assertEqual(C.run_parallel_confirmation(cfg, retain_rate_limited_state=True), 75)
+        # The last permitted replay hits the limit again: with no further replay
+        # armed, the permanent failure is reported instead of 75.
+        plan["MC-1"].append(9)
+        plan["MC-2"].append(75)
+        calls.clear()
+        with mock.patch.object(C, "run_agent_blocking", agent):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 1)
+        self.assertEqual(calls, ["MC-1", "MC-2"])
+        self.assertEqual(cfg._finding_leases, {})
+        text = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
+        for row in ("| 1 | MC-1 | INCOMPLETE |", "| 2 | MC-2 | INCOMPLETE |", "| 3 | MC-3 | INCOMPLETE |"):
+            self.assertIn(row, text)
+        self.assertIn("| 4 | MC-4 | NEEDS MORE INFO |", text)
+        for fid in ("MC-1", "MC-2", "MC-3"):
+            self.assertFalse((ws.work_dir("T") / "confirmation" / fid / "verdict.json").exists())
+
+    def test_armed_replay_with_resume_ledger_retries_the_permanent_failure_fresh(self) -> None:
+        findings = [{"id": fid, "source": "model-checking", "title": fid, "summary": "s"} for fid in ("MC-1", "MC-2")]
+        ws = self.seed("T", findings)
+        root = Path(self.tmp)
+        adapter = root / "mixed-adapter.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "prompt= log= resume=\n"
+            'for arg do case "$arg" in\n'
+            "  --prompt-file=*) prompt=${arg#*=} ;;\n"
+            "  --log=*) log=${arg#*=} ;;\n"
+            "  --resume-state=*) resume=${arg#*=} ;;\n"
+            "esac; done\n"
+            'fid=$(basename "$(dirname "$prompt")")\n'
+            'printf x >> "$CAPTURE/$fid.count"\n'
+            'attempt=$(wc -c < "$CAPTURE/$fid.count")\n'
+            'cp "$prompt" "$CAPTURE/$fid-prompt-$attempt"\n'
+            'if [ -f "$resume" ]; then cp "$resume" "$CAPTURE/$fid-resume-$attempt"; fi\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            '  printf "session-%s" "$fid" > "$resume"\n'
+            '  printf "failed\\n" > "$log"\n'
+            '  if [ "$fid" = MC-1 ]; then exit 9; fi\n'
+            "  exit 75\n"
+            "fi\n"
+            'printf \'%s\\n\' "$FALSE_POSITIVE" > "$log"\n'
+        )
+        adapter.chmod(0o755)
+        resumelib.initialize_run(root)
+        resumelib.save_configuration(root, {"agent": adapter.stem})
+        cfg = self.cfg(ws, "T", adapter=adapter, max_parallel=1)
+        env = {
+            "CAPTURE": str(root),
+            "FALSE_POSITIVE": _response("FALSE POSITIVE"),
+            resumelib.INVOCATION_ENV: "invocation-1",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            os.environ.pop(resumelib.MANUAL_ENV, None)
+            os.environ.pop(resumelib.FRESH_ENV, None)
+            self.assertEqual(C.run_parallel_confirmation(cfg, retain_rate_limited_state=True), 75)
+            self.assertEqual(
+                sorted(entry["finding_id"] for entry in resumelib.active_entries(root)),
+                ["MC-1", "MC-2"],
+            )
+            self.assertEqual(C.run_parallel_confirmation(cfg, retain_rate_limited_state=True), 0)
+            self.assertEqual(resumelib.active_entries(root), [])
+
+        self.assertEqual((root / "MC-1.count").read_text(), "xx")
+        self.assertEqual((root / "MC-2.count").read_text(), "xx")
+        # The failed finding starts over with its original request; the
+        # rate-limited one continues its exact session.
+        self.assertEqual((root / "MC-1-prompt-2").read_text(), (root / "MC-1-prompt-1").read_text())
+        self.assertFalse((root / "MC-1-resume-2").exists())
+        self.assertEqual((root / "MC-2-prompt-2").read_text(), PhaseLib._SESSION_RESUME_PROMPT)
+        self.assertEqual((root / "MC-2-resume-2").read_text(), "session-MC-2")
+        text = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
+        self.assertIn("| 1 | MC-1 | FALSE POSITIVE |", text)
+        self.assertIn("| 2 | MC-2 | FALSE POSITIVE |", text)
+
+    def _run_confirmation_phase(
+        self, retries: int, plan: dict[str, list[int]]
+    ) -> tuple[Workspace, int, int, list[str]]:
+        """Drive the real phase retry loop over the real driver.
+
+        Returns the workspace, the phase code, the number of quota waits, and
+        the finding turns started, in order (max_parallel=1).
+        """
+        findings = [{"id": fid, "source": "model-checking", "title": fid, "summary": "s"} for fid in plan]
+        ws = self.seed("T", findings)
+        work = ws.work_dir("T")
+        candidates = (work / "spec" / "candidates.json").read_text()
+        (work / "spec" / "bug-report.md").write_text("# Bug report\n")
+        (work / "modeling-brief.md").write_text("# Brief\n")
+        repo = _git_repo(Path(self.tmp) / "artifact")
+        calls: list[str] = []
+
+        def agent(*args: object, **_kwargs: object) -> tuple[int, str]:
+            fid = Path(str(args[2])).parent.name
+            if fid == "spec":  # step 0 rewrites the same candidates
+                (work / "spec" / "candidates.json").write_text(candidates)
+                return (0, "")
+            calls.append(fid)
+            rc = plan[fid].pop(0) if plan[fid] else 0
+            return (rc, _response("FALSE POSITIVE") if rc == 0 else "")
+
+        waits: list[int] = []
+        env = {"SPECULA_RATE_LIMIT_REACTIVE": "1", "SPECULA_RATE_LIMIT_RETRIES": str(retries)}
+        with (
+            mock.patch.dict(os.environ, env, clear=False),
+            mock.patch.object(C, "run_agent_blocking", agent),
+            mock.patch.object(PhaseLib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1)),
+            mock.patch.object(PhaseLib.Phase, "_acceptance", lambda _self, _ws, _names: None),
+        ):
+            code = PhaseLib.BugConfirmationPhase().run([f"--artifact={repo}", "--max-parallel=1", "T"])
+        return ws, code, len(waits), calls
+
+    def test_phase_replays_rate_limited_findings_beside_a_permanent_failure(self) -> None:
+        # MC-1 fails permanently, MC-2 completes, MC-3 hits the limit, and
+        # MC-4 is never started.
+        plan = {"MC-1": [9, 9], "MC-2": [0], "MC-3": [75], "MC-4": []}
+
+        ws, code, waits, calls = self._run_confirmation_phase(2, plan)
+
+        self.assertEqual(waits, 1)
+        # The replay re-attempts MC-1 and keeps MC-2's verdict from the first pass.
+        self.assertEqual(calls, ["MC-1", "MC-2", "MC-3", "MC-1", "MC-3", "MC-4"])
+        self.assertEqual(code, 1)
+        text = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
+        self.assertIn("| 1 | MC-1 | INCOMPLETE |", text)
+        for row in ("| 2 | MC-2 | FALSE POSITIVE |", "| 3 | MC-3 | FALSE POSITIVE |", "| 4 | MC-4 | FALSE POSITIVE |"):
+            self.assertIn(row, text)
+
+    def test_phase_reports_permanent_failure_once_rate_limit_retries_are_exhausted(self) -> None:
+        plan = {"MC-1": [9, 9], "MC-2": [75, 75], "MC-3": []}
+
+        ws, code, waits, calls = self._run_confirmation_phase(1, plan)
+
+        self.assertEqual(waits, 1)
+        self.assertEqual(calls, ["MC-1", "MC-2", "MC-1", "MC-2"])
+        self.assertEqual(code, 1)
+        text = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
+        for row in ("| 1 | MC-1 | INCOMPLETE |", "| 2 | MC-2 | INCOMPLETE |", "| 3 | MC-3 | INCOMPLETE |"):
+            self.assertIn(row, text)
+
+    def test_armed_replay_still_reports_an_exclusively_permanent_failure(self) -> None:
+        findings = [{"id": fid, "source": "model-checking", "title": fid, "summary": "s"} for fid in ("MC-1", "MC-2")]
+        ws = self.seed("T", findings)
+        plan: dict[str, list[int]] = {"MC-1": [9], "MC-2": []}
+        calls: list[str] = []
+        with mock.patch.object(C, "run_agent_blocking", self._planned_agent(plan, calls)):
+            rc = C.run_parallel_confirmation(self.cfg(ws, "T"), retain_rate_limited_state=True)
+        self.assertEqual(rc, 1)
+        self.assertEqual(sorted(calls), ["MC-1", "MC-2"])
 
     def test_cache_write_failure_is_incomplete_delivers(self) -> None:
         # A _save_verdict failure (disk full) makes the finding INCOMPLETE and still
