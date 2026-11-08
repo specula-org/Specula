@@ -2178,6 +2178,109 @@ class TestDriver(ConfirmCase):
         self.assertEqual(rc, 1)
         self.assertEqual(sorted(calls), ["MC-1", "MC-2"])
 
+    def _interrupted_batch(self) -> tuple[Workspace, Path, Callable[[str], int]]:
+        """Leave MC-1..MC-3 with interrupted conversations and MC-4 unstarted.
+
+        The returned callable runs the next invocation of the same run; each
+        finding's adapter exit codes come from ``plan-<id>``, one per attempt.
+        """
+        fids = ("MC-1", "MC-2", "MC-3", "MC-4")
+        ws = self.seed("T", [{"id": fid, "source": "model-checking", "title": fid, "summary": "s"} for fid in fids])
+        root = Path(self.tmp)
+        adapter = root / "planned-adapter.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "prompt= log= resume=\n"
+            'for arg do case "$arg" in\n'
+            "  --prompt-file=*) prompt=${arg#*=} ;;\n"
+            "  --log=*) log=${arg#*=} ;;\n"
+            "  --resume-state=*) resume=${arg#*=} ;;\n"
+            "esac; done\n"
+            'fid=$(basename "$(dirname "$prompt")")\n'
+            'printf \'%s\\n\' "$fid" >> "$CAPTURE/calls"\n'
+            'printf x >> "$CAPTURE/$fid.count"\n'
+            'attempt=$(wc -c < "$CAPTURE/$fid.count")\n'
+            'code=$(sed -n "${attempt}p" "$CAPTURE/plan-$fid")\n'
+            'if [ "${code:-0}" -ne 0 ]; then\n'
+            '  if [ -n "$resume" ]; then printf "session-%s" "$fid" > "$resume"; fi\n'
+            '  printf "failed\\n" > "$log"\n'
+            '  exit "$code"\n'
+            "fi\n"
+            'printf \'%s\\n\' "$FALSE_POSITIVE" > "$log"\n'
+        )
+        adapter.chmod(0o755)
+        resumelib.initialize_run(root)
+        resumelib.save_configuration(root, {"agent": adapter.stem})
+        # First invocation: MC-1 and MC-2 fail permanently, MC-3 hits the rate
+        # limit, and MC-4 is never started. All three conversations stay open.
+        for fid, plan in (("MC-1", "9"), ("MC-2", "9"), ("MC-3", "75"), ("MC-4", "")):
+            (root / f"plan-{fid}").write_text(plan + "\n")
+
+        def invoke(invocation: str, *, attach: bool = True) -> int:
+            env = {
+                "CAPTURE": str(root),
+                "FALSE_POSITIVE": _response("FALSE POSITIVE"),
+                resumelib.INVOCATION_ENV: invocation,
+            }
+            with mock.patch.dict(os.environ, env, clear=False):
+                os.environ.pop(resumelib.MANUAL_ENV, None)
+                os.environ.pop(resumelib.FRESH_ENV, None)
+                if attach:  # `specula run --run-id` on the same run
+                    os.environ[resumelib.MANUAL_ENV] = "1"
+                return C.run_parallel_confirmation(self.cfg(ws, "T", adapter=adapter, max_parallel=1))
+
+        self.assertEqual(invoke("invocation-1", attach=False), 1)
+        self.assertEqual(
+            [entry["finding_id"] for entry in resumelib.active_entries(root)],
+            ["MC-1", "MC-2", "MC-3"],
+        )
+        (root / "calls").unlink()
+        return ws, root, invoke
+
+    def test_permanent_restore_failure_does_not_block_other_findings(self) -> None:
+        ws, root, invoke = self._interrupted_batch()
+        # MC-1 fails again when restored; everything else would now succeed.
+        (root / "plan-MC-1").write_text("9\n9\n")
+
+        self.assertEqual(invoke("invocation-2"), 1)
+
+        # MC-1 is restored first, but its failure no longer keeps the other
+        # restorations and the unstarted MC-4 from running.
+        self.assertEqual((root / "calls").read_text().split(), ["MC-1", "MC-2", "MC-3", "MC-4"])
+        text = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
+        self.assertIn("| 1 | MC-1 | INCOMPLETE |", text)
+        for row in ("| 2 | MC-2 | FALSE POSITIVE |", "| 3 | MC-3 | FALSE POSITIVE |", "| 4 | MC-4 | FALSE POSITIVE |"):
+            self.assertIn(row, text)
+        self.assertEqual([entry["finding_id"] for entry in resumelib.active_entries(root)], ["MC-1"])
+
+    def test_rate_limited_restore_still_stops_the_batch(self) -> None:
+        ws, root, invoke = self._interrupted_batch()
+        # MC-1 fails again and MC-2 hits the limit while being restored.
+        (root / "plan-MC-1").write_text("9\n9\n")
+        (root / "plan-MC-2").write_text("9\n75\n")
+        reported: list[C.Outcome] = []
+
+        def capture(cfg: C.ConfirmConfig, outcomes: list[C.Outcome]) -> None:
+            reported.extend(outcomes)
+            real_aggregate(cfg, outcomes)
+
+        real_aggregate = C.aggregate
+        with mock.patch.object(C, "aggregate", capture):
+            self.assertEqual(invoke("invocation-2"), 1)
+
+        # The permanent failure does not stop restoration; the rate limit does.
+        self.assertEqual((root / "calls").read_text().split(), ["MC-1", "MC-2"])
+        # Only MC-1 failed; the findings stopped by the rate limit stay retryable.
+        self.assertEqual(
+            {outcome.finding.id: outcome.failure_code for outcome in reported},
+            {"MC-1": 1, "MC-2": 75, "MC-3": 75, "MC-4": 75},
+        )
+        text = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
+        for fid in ("MC-1", "MC-2", "MC-3", "MC-4"):
+            self.assertIn(f"| {fid[-1]} | {fid} | INCOMPLETE |", text)
+        self.assertIn("not started while an interrupted conversation was being restored", text)
+
     def test_cache_write_failure_is_incomplete_delivers(self) -> None:
         # A _save_verdict failure (disk full) makes the finding INCOMPLETE and still
         # delivers the report — never discards it.
