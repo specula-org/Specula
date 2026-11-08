@@ -50,7 +50,7 @@ import specula.progress as progress_module  # noqa: E402
 import specula.quota as quota  # noqa: E402
 from specula import phaselib, resource_summary, resumelib, snapshotlib  # noqa: E402
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC  # noqa: E402
-from specula.adapters.utils.transient import TRANSIENT_FAILURE_RC  # noqa: E402
+from specula.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC  # noqa: E402
 from specula.output_index import BYOM_REPORT_FILENAME  # noqa: E402
 from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
 from specula.skill_refs import CODEX_PLUGIN_NAME, prompt_skill_ids  # noqa: E402
@@ -1466,6 +1466,66 @@ class TestHandoffGate(PhaseCase):
         self.assertNotIn("(21/20)", out)
         self.assertIn(f"adapter exited {TRANSIENT_FAILURE_RC}", out)
 
+    def test_credential_refresh_failure_uses_small_resume_cap(self) -> None:
+        count = self.tmp() / "count"
+        self.set_env("COUNT_FILE", str(count))
+        self.patch_attr(phaselib, "_transient_resume_delay", lambda _attempt: 0.0)
+        self.write_adapter('printf x >> "$COUNT_FILE"\nexit 72\n')
+
+        rc, out = self.run_analysis()
+
+        cap = phaselib.AUTH_REFRESH_RESUMES
+        self.assertLess(cap, phaselib.DEFAULT_TRANSIENT_RESUMES)
+        self.assertEqual(rc, AUTH_REFRESH_FAILURE_RC, out)
+        self.assertEqual(count.read_text(), "x" * (cap + 1))
+        self.assertIn("credential refresh failure", out)
+        self.assertIn(f"({cap}/{cap})", out)
+        self.assertNotIn(f"({cap + 1}/", out)
+
+    def test_credential_refresh_failure_resumes_the_exact_session(self) -> None:
+        count = self.tmp() / "count"
+        captures = self.tmp()
+        self.set_env("COUNT_FILE", str(count))
+        self.set_env("CAPTURE_DIR", str(captures))
+        self.patch_attr(phaselib, "_transient_resume_delay", lambda _attempt: 0.0)
+        self.write_adapter(
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in '
+            "--prompt-file=*) prompt=${arg#*=} ;; "
+            "--log=*) log=${arg#*=} ;; "
+            "--resume-state=*) resume=${arg#*=} ;; "
+            "esac; done\n"
+            'cp "$prompt" "$CAPTURE_DIR/prompt-$attempt.md"\n'
+            'if [ "$attempt" -eq 1 ]; then\n'
+            '  printf "session-auth-1\\n" > "$resume"\n'
+            "  exit 72\n"
+            "fi\n"
+            '[ "$(cat "$resume")" = "session-auth-1" ]\n'
+            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+        )
+
+        rc, out = self.run_analysis()
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(count.read_text(), "xx")
+        self.assertEqual((captures / "prompt-2.md").read_text(), phaselib._SESSION_RESUME_PROMPT)
+        self.assertIn(
+            f"credential refresh failure; resuming the exact session (1/{phaselib.AUTH_REFRESH_RESUMES})", out
+        )
+
+    def test_zero_transient_resumes_disables_credential_refresh_resume(self) -> None:
+        count = self.tmp() / "count"
+        self.set_env("COUNT_FILE", str(count))
+        self.patch_attr(phaselib, "_transient_resume_delay", lambda _attempt: 0.0)
+        self.write_adapter('printf x >> "$COUNT_FILE"\nexit 72\n')
+
+        rc, out = self.run_analysis(options=["--transient-resumes=0"])
+
+        self.assertEqual(rc, AUTH_REFRESH_FAILURE_RC, out)
+        self.assertEqual(count.read_text(), "x")
+        self.assertNotIn("credential refresh failure;", out)
+
     def test_zero_transient_resumes_disables_continuation(self) -> None:
         count = self.tmp() / "count"
         self.set_env("COUNT_FILE", str(count))
@@ -2690,6 +2750,50 @@ class TestRunAgentBlocking(PhaseCase):
         self.assertEqual((captures / "resume-paths").read_text().splitlines(), [str(captures / "turn.resume.json")] * 2)
         self.assertEqual((captures / "turn.attempt-1.log").read_text(), "capacity failure\n")
         self.assertEqual(log_file.read_text(), "continued answer\n")
+
+    def test_blocking_credential_refresh_failure_is_bounded_and_shares_transient_cursor(self) -> None:
+        adapter = self.tmp() / "adapter.sh"
+        count = self.tmp() / "count"
+        captures = self.tmp()
+        adapter.write_text(
+            "#!/bin/sh\n"
+            'printf x >> "$COUNT_FILE"\n'
+            'attempt=$(wc -c < "$COUNT_FILE")\n'
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            'printf "attempt-%s\\n" "$attempt" > "$log"\n'
+            "set -- $ADAPTER_CODES\n"
+            "shift $((attempt - 1))\n"
+            'exit "${1:-99}"\n'
+        )
+        adapter.chmod(0o755)
+        self.set_env("COUNT_FILE", str(count))
+        cases = (
+            # A dead login: the first invocation plus AUTH_REFRESH_RESUMES resumes.
+            ("72 72 72 72", AUTH_REFRESH_FAILURE_RC, 3),
+            # A refresh race clears on the next attempt.
+            ("72 0", 0, 2),
+            # Earlier transient resumes count toward the credential-refresh cap.
+            ("74 74 72 0", AUTH_REFRESH_FAILURE_RC, 3),
+            # The ordinary transient budget is unaffected by an earlier refresh failure.
+            ("72 74 74 74 0", 0, 5),
+        )
+        for codes, expected_rc, invocations in cases:
+            with self.subTest(codes=codes):
+                count.unlink(missing_ok=True)
+                self.set_env("ADAPTER_CODES", codes)
+                with mock.patch("specula.phaselib.time.sleep"):
+                    rc, text = phaselib.run_agent_blocking(
+                        adapter,
+                        "prompt body",
+                        captures / f"{codes.replace(' ', '-')}.prompt.md",
+                        captures / f"{codes.replace(' ', '-')}.log",
+                        phase_key="bug_confirmation",
+                        work_dir=self.work_dir(),
+                        claude_alias="profile",
+                    )
+                self.assertEqual(rc, expected_rc, text)
+                self.assertEqual(count.read_text(), "x" * invocations)
+                self.assertEqual(text, f"attempt-{invocations}\n")
 
     def test_rate_limit_replay_preserves_exact_session_and_spent_retry_budgets(self) -> None:
         adapter = self.tmp() / "adapter.sh"

@@ -43,7 +43,14 @@ if __package__:
     )
     from .utils.resume import ResumeStateError, capture_session_id, read_session_id
     from .utils.run_lock import inherited_run_lock_fds
-    from .utils.transient import TRANSIENT_FAILURE_RC, final_diagnostic_has_transient_failure, looks_transient
+    from .utils.transient import (
+        AUTH_REFRESH_FAILURE_RC,
+        TRANSIENT_FAILURE_RC,
+        final_diagnostic_has_auth_refresh_failure,
+        final_diagnostic_has_transient_failure,
+        looks_auth_refresh_failure,
+        looks_transient,
+    )
 else:
     from utils.claude_usage import (  # type: ignore[import-not-found, no-redef]
         invocation_usage,
@@ -64,8 +71,11 @@ else:
     )
     from utils.run_lock import inherited_run_lock_fds  # type: ignore[import-not-found, no-redef]
     from utils.transient import (  # type: ignore[import-not-found, no-redef]
+        AUTH_REFRESH_FAILURE_RC,
         TRANSIENT_FAILURE_RC,
+        final_diagnostic_has_auth_refresh_failure,
         final_diagnostic_has_transient_failure,
+        looks_auth_refresh_failure,
         looks_transient,
     )
 
@@ -213,6 +223,19 @@ def _rate_limited(raw_text: str, streaming: bool) -> bool:
     return False
 
 
+def _failed_result(record: object) -> bool:
+    """Whether a terminal result envelope declares that the invocation failed."""
+    if not isinstance(record, dict):
+        return False
+    subtype = record.get("subtype")
+    return (
+        record.get("is_error") is True
+        or (isinstance(subtype, str) and subtype.startswith("error"))
+        or record.get("terminal_reason") == "api_error"
+        or record.get("api_error_status") not in (None, "", 0, "0")
+    )
+
+
 def _result_policy_blocked(record: object) -> bool:
     """Whether Claude's terminal result is an unresolved provider policy block.
 
@@ -221,19 +244,7 @@ def _result_policy_blocked(record: object) -> bool:
     explaining or repairing an earlier run. A failed result that stopped on a
     safety refusal is a block regardless of its (release-specific) wording.
     """
-    if not isinstance(record, dict):
-        return False
-    verdict = record.get("is_error")
-    subtype = record.get("subtype")
-    terminal_reason = record.get("terminal_reason")
-    api_status = record.get("api_error_status")
-    subtype_is_error = isinstance(subtype, str) and subtype.startswith("error")
-    if (
-        verdict is not True
-        and not subtype_is_error
-        and terminal_reason != "api_error"
-        and api_status in (None, "", 0, "0")
-    ):
+    if not isinstance(record, dict) or not _failed_result(record):
         return False
     result = record.get("result")
     return (
@@ -250,23 +261,20 @@ def _result_transient_failure(record: object) -> bool:
     The failed-envelope gate is essential: a successful report may quote the
     same capacity or transport diagnostic while describing earlier work.
     """
-    if not isinstance(record, dict):
+    if not isinstance(record, dict) or not _failed_result(record):
         return False
-    verdict = record.get("is_error")
-    subtype = record.get("subtype")
-    terminal_reason = record.get("terminal_reason")
-    api_status = record.get("api_error_status")
-    subtype_is_error = isinstance(subtype, str) and subtype.startswith("error")
-    if (
-        verdict is not True
-        and not subtype_is_error
-        and terminal_reason != "api_error"
-        and api_status in (None, "", 0, "0")
-    ):
-        return False
-    if api_status in (500, 502, 503, 504, 529, "500", "502", "503", "504", "529"):
+    if record.get("api_error_status") in (500, 502, 503, 504, 529, "500", "502", "503", "504", "529"):
         return True
     return looks_transient(record) or looks_transient(record.get("result"))
+
+
+def _result_auth_refresh_failure(record: object) -> bool:
+    """Whether the terminal result is a failed OAuth credential refresh.
+
+    Only a failed envelope whose result text *is* the CLI's refresh diagnostic
+    qualifies; a report that mentions such a failure never does.
+    """
+    return isinstance(record, dict) and _failed_result(record) and looks_auth_refresh_failure(record.get("result"))
 
 
 def _drain(stream: IO[bytes]) -> None:
@@ -726,6 +734,12 @@ def main(argv: list[str]) -> int:
             # failed CLI with no structured terminal result. Agent-authored text
             # and successful reports are never retry signals.
             transient_failure = final_diagnostic_has_transient_failure(raw_text)
+        auth_refresh_failure = _result_auth_refresh_failure(result)
+        if cli_rc != 0 and result is None and not activity_failed:
+            # The same failed-CLI-only plain fallback. A stream capture keeps
+            # the CLI's own non-JSON lines in order, so its final line is the
+            # final diagnostic; a reconstructed capture is not, so skip it.
+            auth_refresh_failure = final_diagnostic_has_auth_refresh_failure(raw_text)
         if streaming:
             try:
                 with open(raw_json, "w") as out:
@@ -766,8 +780,12 @@ def main(argv: list[str]) -> int:
         if transient_failure:
             print("claude-code adapter: transient provider failure", file=sys.stderr)
             return TRANSIENT_FAILURE_RC
+        if auth_refresh_failure:
+            print("claude-code adapter: credential refresh failure", file=sys.stderr)
+            return AUTH_REFRESH_FAILURE_RC
         if cli_rc != 0:
-            return 1 if cli_rc == TRANSIENT_FAILURE_RC else cli_rc
+            # Both are Specula retry contracts, never native CLI passthroughs.
+            return 1 if cli_rc in (TRANSIENT_FAILURE_RC, AUTH_REFRESH_FAILURE_RC) else cli_rc
         return 1 if stream_failed or postprocess_failed else 0
     finally:
         if hidden_activity_log is not None:

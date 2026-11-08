@@ -1377,6 +1377,145 @@ class ClaudeCodeAdapter(AdapterCase):
         )
         self.assertEqual(r["returncode"], 0, r["stderr"])
 
+    AUTH_REFRESH_RESULT = {
+        "type": "result",
+        **CLAUDE_JSON,
+        "subtype": "success",
+        "is_error": True,
+        "terminal_reason": "api_error",
+        "result": "Failed to authenticate: OAuth session expired and could not be refreshed",
+    }
+
+    def test_failed_credential_refresh_result_exits_auth_refresh_status(self) -> None:
+        for streaming in (False, True):
+            for native_rc in ("1", "0"):
+                with self.subTest(streaming=streaming, native_rc=native_rc):
+                    base = self.sandbox()
+                    env_extra = {"ADAPTER_EXIT_CODE": native_rc}
+                    if streaming:
+                        env_extra["SPECULA_ACTIVITY_LOG"] = str(base / "out.activity.jsonl")
+                    r = self.run_adapter(
+                        self.CMD,
+                        self.base_flags(base),
+                        fake_name="claude",
+                        fixture_text=json.dumps(self.AUTH_REFRESH_RESULT),
+                        record_extra=True,
+                        env_extra=env_extra,
+                    )
+                    self.assertEqual(r["returncode"], 72, r["stderr"])
+                    self.assertIn("credential refresh failure", r["stderr"])
+
+    def test_refresh_lock_race_result_exits_auth_refresh_status(self) -> None:
+        base = self.sandbox()
+        record = {
+            **self.AUTH_REFRESH_RESULT,
+            "result": "Failed to refresh OAuth token: another Claude Code process is refreshing it or exited "
+            "mid-refresh. This is usually transient; retry in a minute",
+        }
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+            env_extra={"ADAPTER_EXIT_CODE": "1"},
+        )
+        self.assertEqual(r["returncode"], 72, r["stderr"])
+
+    def test_credential_refresh_text_outside_a_failed_diagnostic_is_not_retryable(self) -> None:
+        message = self.AUTH_REFRESH_RESULT["result"]
+        cases = (
+            ("successful-report", {"type": "result", **CLAUDE_JSON, "result": message}, "0", 0),
+            (
+                "failed-report-quoting",
+                {**self.AUTH_REFRESH_RESULT, "result": f"The previous session said: {message}. Fixed now."},
+                "1",
+                1,
+            ),
+            (
+                "revoked-login",
+                {
+                    **self.AUTH_REFRESH_RESULT,
+                    "result": "Failed to authenticate: OAuth token revoked. Please log in again.",
+                },
+                "1",
+                1,
+            ),
+        )
+        for name, record, native_rc, expected in cases:
+            with self.subTest(name=name):
+                base = self.sandbox()
+                r = self.run_adapter(
+                    self.CMD,
+                    self.base_flags(base),
+                    fake_name="claude",
+                    fixture_text=json.dumps(record),
+                    record_extra=True,
+                    env_extra={"ADAPTER_EXIT_CODE": native_rc},
+                )
+                self.assertEqual(r["returncode"], expected, r["stderr"])
+
+    def test_streamed_agent_text_mentioning_refresh_failure_is_not_retryable(self) -> None:
+        base = self.sandbox()
+        message = self.AUTH_REFRESH_RESULT["result"]
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": message}]}}),
+                json.dumps({"type": "result", **CLAUDE_JSON, "is_error": True, "result": "Execution error"}),
+            ]
+        )
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=fixture,
+            record_extra=True,
+            env_extra={"SPECULA_ACTIVITY_LOG": str(base / "out.activity.jsonl"), "ADAPTER_EXIT_CODE": "1"},
+        )
+        self.assertEqual(r["returncode"], 1, r["stderr"])
+
+    def test_plain_credential_refresh_diagnostic_requires_failed_cli(self) -> None:
+        message = self.AUTH_REFRESH_RESULT["result"]
+        for streaming in (False, True):
+            for native_rc, expected in (("1", 72), ("75", 75), ("0", 0)):
+                with self.subTest(streaming=streaming, native_rc=native_rc):
+                    base = self.sandbox()
+                    env_extra = {"ADAPTER_EXIT_CODE": native_rc}
+                    fixture = f"{message}\n"
+                    if streaming:
+                        env_extra["SPECULA_ACTIVITY_LOG"] = str(base / "out.activity.jsonl")
+                        assistant = {"type": "assistant", "message": {"content": [{"type": "text", "text": "x"}]}}
+                        fixture = json.dumps(assistant) + "\n" + fixture
+                    r = self.run_adapter(
+                        self.CMD,
+                        self.base_flags(base),
+                        fake_name="claude",
+                        fixture_text=fixture,
+                        record_extra=True,
+                        env_extra=env_extra,
+                    )
+                    self.assertEqual(r["returncode"], expected, r["stderr"])
+
+    def test_transient_classification_wins_over_credential_refresh(self) -> None:
+        base = self.sandbox()
+        record = {**self.AUTH_REFRESH_RESULT, "api_error_status": 503}
+        r = self.run_adapter(
+            self.CMD,
+            self.base_flags(base),
+            fake_name="claude",
+            fixture_text=json.dumps(record),
+            record_extra=True,
+            env_extra={"ADAPTER_EXIT_CODE": "1"},
+        )
+        self.assertEqual(r["returncode"], 74, r["stderr"])
+
+    def test_native_retry_statuses_are_not_passed_through(self) -> None:
+        for native_rc in ("72", "74"):
+            with self.subTest(native_rc=native_rc):
+                base = self.sandbox()
+                r = self.invoke(self.base_flags(base), env_extra={"ADAPTER_EXIT_CODE": native_rc})
+                self.assertEqual(r["returncode"], 1, r["stderr"])
+
     def test_rate_limit_in_stream_result_exits_75(self) -> None:
         base = self.sandbox()
         activity = base / "out.activity.jsonl"
@@ -2629,6 +2768,16 @@ class OpenCodeAdapter(AdapterCase):
                 )
                 self.assertEqual(result["returncode"], native_status, result["stderr"])
 
+    def test_native_retry_statuses_are_not_passed_through(self) -> None:
+        for native_status in (72, 74):
+            with self.subTest(native_status=native_status):
+                base = self.sandbox()
+                result = self.invoke(
+                    self.base_flags(base),
+                    env_extra={"ADAPTER_EXIT_CODE": str(native_status)},
+                )
+                self.assertEqual(result["returncode"], 1, result["stderr"])
+
     def test_incomplete_terminal_event_overrides_zero_native_exit(self) -> None:
         for name, fixture, diagnostic in (
             (
@@ -3253,6 +3402,16 @@ class PiAdapter(AdapterCase):
                 )
                 self.assertEqual(result["returncode"], 75, result["stderr"])
                 self.assertIn("rate limit hit", result["stderr"])
+
+    def test_native_retry_statuses_are_not_passed_through(self) -> None:
+        for native_status in (72, 74):
+            with self.subTest(native_status=native_status):
+                base = self.sandbox()
+                result = self.invoke(
+                    self.base_flags(base),
+                    env_extra={"ADAPTER_EXIT_CODE": str(native_status)},
+                )
+                self.assertEqual(result["returncode"], 1, result["stderr"])
 
     def test_top_level_rate_limit_maps_to_retry_status(self) -> None:
         fixture = json.dumps(
@@ -4463,6 +4622,13 @@ class CodexAdapter(AdapterCase):
                 r = self.invoke(self.base_flags(base), env_extra={"ADAPTER_EXIT_CODE": cli_rc})
                 self.assertEqual(r["returncode"], int(cli_rc), r["stderr"])
 
+    def test_native_retry_statuses_are_not_passed_through(self) -> None:
+        for cli_rc in ("72", "74"):
+            with self.subTest(cli_rc=cli_rc):
+                base = self.sandbox()
+                r = self.invoke(self.base_flags(base), env_extra={"ADAPTER_EXIT_CODE": cli_rc})
+                self.assertEqual(r["returncode"], 1, r["stderr"])
+
     def test_policy_block_overrides_native_failure_with_activity_stream(self) -> None:
         base = self.sandbox()
         activity = base / "out.activity.jsonl"
@@ -5635,6 +5801,27 @@ class CopilotAdapter(AdapterCase):
                     },
                 )
                 self.assertEqual(r["returncode"], expected, r["stderr"])
+
+    def test_native_retry_statuses_are_not_passed_through(self) -> None:
+        stream = json.dumps({"type": "session.start", "data": {"sessionId": "session-1"}})
+        for native_rc in ("72", "74"):
+            for streaming in (False, True):
+                with self.subTest(native_rc=native_rc, streaming=streaming):
+                    base = self.sandbox()
+                    env_extra = {"ADAPTER_EXIT_CODE": native_rc}
+                    if streaming:
+                        env_extra["SPECULA_ACTIVITY_LOG"] = str(base / "out.activity.jsonl")
+                        env_extra["COPILOT_HELP_TEXT"] = "--autopilot\n--output-format\n--stream"
+                        r = self.run_adapter(
+                            self.CMD,
+                            self.base_flags(base),
+                            fake_name="copilot",
+                            fixture_text=stream,
+                            env_extra=env_extra,
+                        )
+                    else:
+                        r = self.invoke(self.base_flags(base), env_extra=env_extra)
+                    self.assertEqual(r["returncode"], 1, r["stderr"])
 
     def test_json_stream_plain_policy_diagnostic_uses_failed_cli_status(self) -> None:
         fixture = "\n".join(
