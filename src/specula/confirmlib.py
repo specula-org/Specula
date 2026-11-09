@@ -2252,6 +2252,16 @@ def _spec_identity(cfg: ConfirmConfig, f: Finding) -> dict[str, str]:
     return result
 
 
+def _fingerprint_finding_data(f: Finding) -> dict[str, Any]:
+    """Finding data for the verdict fingerprint, without ``persistent_record``.
+
+    That key only points to the finding's persistent record. Phase 4 writes the
+    record itself, so keeping the key would invalidate every verdict the next
+    time this run's confirmation starts.
+    """
+    return {key: value for key, value in f.data.items() if key != "persistent_record"}
+
+
 def _verdict_fingerprint(cfg: ConfirmConfig, f: Finding) -> str:
     confirmation_identity: Any
     if cfg.repair_round is None:
@@ -2266,7 +2276,7 @@ def _verdict_fingerprint(cfg: ConfirmConfig, f: Finding) -> str:
         {
             "version": _VERDICT_FINGERPRINT_VERSION,
             "generation": confirmation_identity,
-            "finding": f.data,
+            "finding": _fingerprint_finding_data(f),
             "spec": _spec_identity(cfg, f),
             "repo": _repo_cache_identity(cfg),
             "adapter": _adapter_identity(cfg),
