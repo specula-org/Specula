@@ -35,8 +35,8 @@ BACKGROUND=false
 CLAUDE_ALIAS=""
 RESUME_STATE=""
 RESUME_STATE_SET=false
-SYSTEM_PROMPT_FILE=""
-SYSTEM_PROMPT_FILE_SET=false
+system_prompt_file=""
+system_prompt_file_set=false
 # Read adapter-specific environment defaults before parsing so an explicit
 # empty flag can still win and clear them.
 EFFORT="${CODEX_EFFORT:-}"
@@ -59,7 +59,7 @@ for arg in "$@"; do
     --effort=*)      EFFORT="${arg#*=}" ;;
     --model=*)       MODEL="${arg#*=}" ;;
     --resume-state=*) RESUME_STATE="${arg#*=}"; RESUME_STATE_SET=true ;;
-    --system-prompt-file=*) SYSTEM_PROMPT_FILE="${arg#*=}"; SYSTEM_PROMPT_FILE_SET=true ;;
+    --system-prompt-file=*) system_prompt_file="${arg#*=}"; system_prompt_file_set=true ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
       exit 0
@@ -106,13 +106,13 @@ if [[ -n "$RESUME_STATE" && -d "$RESUME_STATE" ]]; then
   exit 1
 fi
 
-if [[ "$SYSTEM_PROMPT_FILE_SET" == true && -z "$SYSTEM_PROMPT_FILE" ]]; then
+if [[ "$system_prompt_file_set" == true && -z "$system_prompt_file" ]]; then
   echo "codex adapter: --system-prompt-file requires a path" >&2
   exit 1
 fi
 
-if [[ -n "$SYSTEM_PROMPT_FILE" && ! -f "$SYSTEM_PROMPT_FILE" ]]; then
-  echo "codex adapter: system prompt file not found: $SYSTEM_PROMPT_FILE" >&2
+if [[ -n "$system_prompt_file" && ! -f "$system_prompt_file" ]]; then
+  echo "codex adapter: system prompt file not found: $system_prompt_file" >&2
   exit 1
 fi
 
@@ -477,7 +477,7 @@ run_codex() {
   # are valid TOML) and travels in argv, so it must stay small. A user's own
   # config.toml developer_instructions is never replaced: the rules then stay in
   # the task prompt only.
-  if [[ -n "$SYSTEM_PROMPT_FILE" ]]; then
+  if [[ -n "$system_prompt_file" ]]; then
     local codex_config="${CODEX_HOME:-$HOME/.codex}/config.toml"
     if [[ -f "$codex_config" ]] && grep -Eq '^[[:space:]]*developer_instructions[[:space:]]*=' "$codex_config"; then
       echo "codex adapter: $codex_config sets developer_instructions; leaving it in place (system prompt file not applied)" >&2
@@ -488,8 +488,8 @@ import json, sys
 with open(sys.argv[1], encoding="utf-8") as stream:
     text = stream.read()
 sys.stdout.write(json.dumps(text, ensure_ascii=False).replace("\x7f", "\\u007f"))
-' "$SYSTEM_PROMPT_FILE")"; then
-        echo "codex adapter: cannot read system prompt file: $SYSTEM_PROMPT_FILE" >&2
+' "$system_prompt_file")"; then
+        echo "codex adapter: cannot read system prompt file: $system_prompt_file" >&2
         return 1
       fi
       cmd+=(-c "developer_instructions=$developer_instructions")
