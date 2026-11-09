@@ -7,7 +7,6 @@ import contextlib
 import fcntl
 import html
 import json
-import math
 import os
 import re
 import secrets
@@ -29,7 +28,7 @@ from specula.ci_inheritance import candidate_for, inherit, matches_source, resul
 from specula.ci_store import CIError, CIStore, git, read_json, write_json
 from specula.ci_workflow import INTERRUPTED_EXIT_CODES, CIPipeline
 from specula.pipelinelib import Pipeline, _valid_run_id
-from specula.resource_summary import _format_cost, _format_runtime
+from specula.resource_summary import format_brief_usage
 
 
 def sha(value: object) -> str:
@@ -417,7 +416,7 @@ class GitHubCI:
             if row.get("failure"):
                 status += f" ({row['failure']}{': ' + str(row['reason']) if row.get('reason') else ''})"
             lines.append(
-                f"| {html.escape(str(row['commit']))} | {html.escape(status)} | {html.escape(str(row.get('verdict') or '-'))} | {html.escape(str(row.get('run_id') or '-'))} | {_usage_cell(row.get('usage'))} |"
+                f"| {html.escape(str(row['commit']))} | {html.escape(status)} | {html.escape(str(row.get('verdict') or '-'))} | {html.escape(str(row.get('run_id') or '-'))} | {format_brief_usage(row.get('usage'))} |"
             )
             if row.get("resume"):
                 resumes.append(f"- {html.escape(str(row['commit']))}: <code>{html.escape(str(row['resume']))}</code>")
@@ -466,20 +465,6 @@ class GitHubCI:
         if summary:
             with Path(summary).open("a") as stream:
                 stream.write(content)
-
-
-def _usage_cell(usage: object) -> str:
-    if not isinstance(usage, dict):
-        return "-"
-    parts = [
-        render(value)
-        for value, render in ((usage.get("runtime_seconds"), _format_runtime), (usage.get("cost_usd"), _format_cost))
-        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0
-    ]
-    if not parts:
-        return "-"
-    text = ", ".join(parts)
-    return text if usage.get("complete") is True else f"{text} (incomplete)"
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -581,6 +581,11 @@ class ResourceSummaryTracker:
         for name in self._states:
             self._publish(name)
 
+    def usage(self, name: str) -> RunUsage | None:
+        """Cumulative usage across resumed attempts, even if a state write failed."""
+        state = self._states.get(name)
+        return _recorded_usage(state) if state is not None else None
+
     def _load_state(self, name: str, work_dir: Path) -> TargetState | None:
         path = work_dir / STATE_FILENAME
         if not path.exists():
@@ -1023,15 +1028,14 @@ def _phase_recorded(phase: PhaseState | None) -> bool:
 
 
 def _usage_definitions(state: TargetState) -> tuple[PhaseDefinition, ...]:
-    incremental = state.phases.get("incremental")
-    main = state.phases.get(MAIN_PHASE.key)
-    if incremental is not None and (incremental.runtime_observed or incremental.tokens_observed):
+    # An interrupted first conversation is recorded but unmeasured; it still selects its layout.
+    if _phase_recorded(state.phases.get(INCREMENTAL_PHASE.key)):
         # Incremental CI confirms candidates in Phase 4a outside the main conversation.
         confirmation = PHASE_BY_KEY["phase4a"]
         if _phase_recorded(state.phases.get(confirmation.key)):
             return (INCREMENTAL_PHASE, confirmation)
         return (INCREMENTAL_PHASE,)
-    if main is not None and (main.runtime_observed or main.tokens_observed):
+    if _phase_recorded(state.phases.get(MAIN_PHASE.key)):
         return (MAIN_PHASE, PHASE_BY_KEY["phase4a"], PHASE_BY_KEY["phase4b"])
     return PHASES
 
@@ -1091,14 +1095,26 @@ def usage_totals(state: TargetState) -> RunUsage:
     )
 
 
-def read_usage(work_dir: Path, target: str) -> RunUsage | None:
-    """Usage recorded in a target's durable resource state, or None when there is none."""
-    try:
-        document: object = json.loads(_read_safe_file(work_dir, work_dir / STATE_FILENAME))
-    except (OSError, UnicodeError, ValueError):
+def _recorded_usage(state: TargetState) -> RunUsage | None:
+    """Usage for a result record, or None when no phase recorded any usage."""
+    if not any(_phase_recorded(phase) for phase in state.phases.values()):
         return None
-    state = TargetState.from_object(document, target)
-    return usage_totals(state) if state is not None else None
+    return usage_totals(state)
+
+
+def format_brief_usage(usage: object) -> str:
+    """Runtime and estimated cost of a serialized RunUsage, for one table cell."""
+    if not isinstance(usage, dict):
+        return "-"
+    parts = [
+        render(value)
+        for value, render in ((usage.get("runtime_seconds"), _format_runtime), (usage.get("cost_usd"), _format_cost))
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0
+    ]
+    if not parts:
+        return "-"
+    text = ", ".join(parts)
+    return text if usage.get("complete") is True else f"{text} (incomplete)"
 
 
 def _findings_summary(state: TargetState, work_dir: Path | None, enabled: bool) -> str | None:
