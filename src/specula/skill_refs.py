@@ -30,6 +30,15 @@ def prompt_skill_ids(name: str) -> str:
     return f"**{name}**{_SKILL_REF_PREFIX}{name} -->"
 
 
+def stable_skill_refs(prompt: str) -> str:
+    """Return ``prompt`` with skill references in a form every process shares.
+
+    Each Specula process uses its own reference marker, so compare prompts
+    across invocations (for example, on attach) in this form.
+    """
+    return _SKILL_REF.sub(lambda match: f"<!-- specula-skill:{match.group(1)} -->", prompt)
+
+
 def _warn_codex_plugin_probe(action: str) -> None:
     print(
         f"WARNING: could not {action} enabled Codex plugins; using standalone Specula skill IDs.",
